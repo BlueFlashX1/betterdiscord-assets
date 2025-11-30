@@ -48,30 +48,79 @@ Before installation, ensure you have:
 
 ### Prerequisites
 
-- BetterDiscord must be installed and enabled
+**Before installing plugins and themes, you must have BetterDiscord installed:**
+
+1. **Install BetterDiscord:**
+   - Download from: `https://betterdiscord.app/`
+   - Run the installer
+   - Follow the installation wizard
+   - Restart Discord when prompted
+
+2. **Verify BetterDiscord is enabled:**
+   - Open Discord Settings
+   - Look for "BetterDiscord" section in the left sidebar
+   - If you see it, BetterDiscord is installed correctly
+
+**Requirements:**
 - Discord desktop app (not browser version)
+- BetterDiscord must be installed and enabled
 
 ### Step-by-Step Installation
 
-1. **Locate BetterDiscord folders:**
-   - macOS: `~/Library/Application Support/BetterDiscord/`
-   - Windows: `%AppData%\BetterDiscord\`
-   - Linux: `~/.config/BetterDiscord/`
+**Step 1: Locate BetterDiscord Folders**
 
-2. **Install plugins:**
-   - Copy all `.plugin.js` files from `plugins/` folder
-   - Paste into `BetterDiscord/plugins/` folder
+Find your BetterDiscord installation folder:
+- **macOS:** `~/Library/Application Support/BetterDiscord/`
+- **Windows:** `%AppData%\BetterDiscord\` (usually `C:\Users\YourName\AppData\Roaming\BetterDiscord\`)
+- **Linux:** `~/.config/BetterDiscord/`
 
-3. **Install theme:**
-   - Copy `SoloLeveling-ClearVision.theme.css` from `themes/` folder
-   - Paste into `BetterDiscord/themes/` folder
+**Step 2: Install Plugins**
 
-4. **Enable in Discord:**
-   - Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS) to reload Discord
-   - Open Discord Settings → BetterDiscord → Plugins
-   - Enable all Solo Leveling plugins
-   - Open Discord Settings → BetterDiscord → Themes
-   - Enable `SoloLeveling-ClearVision` theme
+1. Open the downloaded `plugins/` folder
+2. Copy all 7 `.plugin.js` files:
+   - `SoloLevelingStats.plugin.js`
+   - `CriticalHit.plugin.js`
+   - `SkillTree.plugin.js`
+   - `TitleManager.plugin.js`
+   - `LevelProgressBar.plugin.js`
+   - `SoloLevelingToasts.plugin.js`
+   - `LevelUpAnimation.plugin.js`
+3. Paste all files into `BetterDiscord/plugins/` folder
+
+**Step 3: Install Theme**
+
+1. Open the downloaded `themes/` folder
+2. Copy `SoloLeveling-ClearVision.theme.css`
+3. Paste into `BetterDiscord/themes/` folder
+
+**Step 4: Enable in BetterDiscord**
+
+1. **Reload Discord:**
+   - Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS)
+   - Or close and reopen Discord
+
+2. **Enable Plugins:**
+   - Open Discord Settings (gear icon)
+   - Click "BetterDiscord" in left sidebar
+   - Click "Plugins" tab
+   - Toggle ON all 7 Solo Leveling plugins:
+     - SoloLevelingStats (REQUIRED - enable first)
+     - CriticalHit
+     - SkillTree
+     - TitleManager
+     - LevelProgressBar
+     - SoloLevelingToasts
+     - LevelUpAnimation
+
+3. **Enable Theme:**
+   - Still in Discord Settings → BetterDiscord
+   - Click "Themes" tab
+   - Toggle ON `SoloLeveling-ClearVision`
+
+4. **Verify Installation:**
+   - You should see a chat UI panel (SoloLevelingStats)
+   - Discord should have purple theme colors
+   - Start chatting to see XP tracking
 
 ### Quick Install (macOS Terminal)
 
