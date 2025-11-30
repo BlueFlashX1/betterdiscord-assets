@@ -14,12 +14,14 @@
 ## 📦 Plugins (7)
 
 ### Core System Plugins:
+
 1. **SoloLevelingStats.plugin.js** - Core stats/leveling system
 2. **CriticalHit.plugin.js** - Critical hit message effects
 3. **SkillTree.plugin.js** - Passive abilities system
 4. **TitleManager.plugin.js** - Title management
 
 ### Visual Enhancement Plugins:
+
 5. **LevelProgressBar.plugin.js** - Always-visible progress bar
 6. **SoloLevelingToasts.plugin.js** - Custom toast notifications
 7. **LevelUpAnimation.plugin.js** - Level up celebration animation
@@ -39,6 +41,7 @@
 ## 📚 Documentation (13 files)
 
 ### Root Documentation:
+
 - `README.md` - Main documentation (408 lines)
 - `SECURITY_REVIEW.md` - Security audit report
 - `GIT_SETUP.md` - Git repository setup guide
@@ -47,6 +50,7 @@
 - `REPO_OVERVIEW.md` - This file
 
 ### Plugin Documentation (`plugins/docs/`):
+
 - `DEBUG_DISCORD.md` - Debugging guide
 - `PIXEL_ART_SOURCES.md` - Pixel art resources
 - `PLUGIN_ANALYSIS.md` - Plugin analysis
@@ -55,10 +59,12 @@
 - `SOLO-LEVELING-STATS-VERIFICATION.md` - Verification guide
 
 ### Theme Documentation (`themes/docs/`):
+
 - `README.md` - Theme overview
 - `SOLO-LEVELING-THEME-README.md` - Detailed theme docs
 
 ### General Documentation (`docs/`):
+
 - `CRITICAL-HIT-SETUP.md` - CriticalHit setup guide
 - `CRITICAL-HIT-VERIFICATION.md` - Verification guide
 - `IDEAS.md` - General ideas
@@ -70,11 +76,13 @@
 ## 🔧 Scripts (5)
 
 ### Development Scripts (`scripts/`):
+
 - `link-plugin.js` - Link plugin to BetterDiscord
 - `link-theme.js` - Link theme to BetterDiscord
 - `watch-plugin.js` - Watch plugin for changes
 
 ### Utility Scripts (`plugins/`):
+
 - `enable-plugins.sh` - Enable all plugins
 - `disable-heavy-plugins.sh` - Disable heavy plugins
 
@@ -140,21 +148,25 @@ betterdiscord-assets/
 ## ❌ Excluded Files (via .gitignore)
 
 ### Large Files:
+
 - `themes/*.gif` - GIF files (104MB+ total)
 - `themes/*Debug.js` - Debug JavaScript files
 
 ### Development Files:
+
 - `node_modules/` - Node.js dependencies
 - `backups/` - Local backup files
 - `plugins/backups/` - Plugin backups
 - `package-lock.json` - Lock file
 
 ### Personal/Experimental:
+
 - `MyPlugin.plugin.js` - Personal plugin
 - `MyTheme.theme.css` - Personal theme
 - `PixelSnake.plugin.js` - Unrelated plugin
 
 ### Other:
+
 - `*.backup`, `*.bak`, `*.tmp`, `*.log` - Temporary files
 - `.DS_Store`, `Thumbs.db` - OS files
 - `.vscode/`, `.idea/` - IDE files
@@ -195,4 +207,3 @@ git commit -m "Initial commit: Solo Leveling BetterDiscord Suite"
 git remote add origin https://github.com/YOUR_USERNAME/betterdiscord-assets.git
 git push -u origin main
 ```
-

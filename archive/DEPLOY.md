@@ -79,4 +79,3 @@ git push -u origin main
 3. Add topics: `betterdiscord`, `discord`, `solo-leveling`, `plugins`, `theme`, `rpg`
 4. Update README with installation instructions
 5. Consider adding releases for version tags
-

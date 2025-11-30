@@ -122,4 +122,3 @@ betterdiscord-assets/
 - **Backups**: Keep backups local, don't commit to git
 - **Personal plugins**: MyPlugin, MyTheme, PixelSnake excluded (personal/experimental)
 - **Dependencies**: node_modules excluded - users install via `npm install` if needed
-
