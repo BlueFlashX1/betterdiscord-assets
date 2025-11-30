@@ -247,6 +247,9 @@ module.exports = class SkillTree {
     this.settings = this.defaultSettings;
     this.skillTreeModal = null;
     this.skillTreeButton = null;
+    this.urlCheckInterval = null;
+    this.levelCheckInterval = null; // Deprecated - using events instead
+    this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
   }
 
   start() {
@@ -258,7 +261,7 @@ module.exports = class SkillTree {
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
 
-    // Watch for level ups from SoloLevelingStats
+    // Watch for level ups from SoloLevelingStats (event-based, no polling)
     this.setupLevelUpWatcher();
 
     // Recalculate SP on startup based on current level
@@ -268,10 +271,43 @@ module.exports = class SkillTree {
   }
 
   setupLevelUpWatcher() {
-    // Check for level changes periodically
-    this.levelCheckInterval = setInterval(() => {
-      this.checkForLevelUp();
-    }, 2000); // Check every 2 seconds
+    // Subscribe to SoloLevelingStats levelChanged events for real-time updates
+    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+    if (!soloPlugin) {
+      console.warn('SkillTree: SoloLevelingStats plugin not found, using fallback polling');
+      // Fallback to polling if events not available
+      this.levelCheckInterval = setInterval(() => {
+        this.checkForLevelUp();
+      }, 2000);
+      return;
+    }
+
+    const instance = soloPlugin.instance || soloPlugin;
+    if (!instance || typeof instance.on !== 'function') {
+      console.warn('SkillTree: Event system not available, using fallback polling');
+      // Fallback to polling if events not available
+      this.levelCheckInterval = setInterval(() => {
+        this.checkForLevelUp();
+      }, 2000);
+      return;
+    }
+
+    // Subscribe to level changed events
+    const unsubscribeLevel = instance.on('levelChanged', (data) => {
+      // data contains: { oldLevel, newLevel, ... }
+      if (data.newLevel > (this.settings.lastLevel || 1)) {
+        const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
+        this.awardSPForLevelUp(levelsGained);
+        this.settings.lastLevel = data.newLevel;
+        this.saveSettings();
+      }
+    });
+    this.eventUnsubscribers.push(unsubscribeLevel);
+
+    console.log('SkillTree: ✅ Event-based level up detection enabled - no polling needed');
+    
+    // Initial check on startup
+    this.checkForLevelUp();
   }
 
   checkForLevelUp() {
@@ -411,6 +447,10 @@ module.exports = class SkillTree {
     this.removeSkillTreeButton();
     this.closeSkillTreeModal();
     this.removeCSS();
+    
+    // Unsubscribe from events
+    this.unsubscribeFromEvents();
+    
     if (this.urlCheckInterval) {
       clearInterval(this.urlCheckInterval);
       this.urlCheckInterval = null;
@@ -420,6 +460,20 @@ module.exports = class SkillTree {
       this.levelCheckInterval = null;
     }
     console.log('SkillTree: Plugin stopped');
+  }
+
+  /**
+   * Unsubscribe from all SoloLevelingStats events
+   */
+  unsubscribeFromEvents() {
+    this.eventUnsubscribers.forEach(unsubscribe => {
+      try {
+        unsubscribe();
+      } catch (error) {
+        console.error('SkillTree: Error unsubscribing from events', error);
+      }
+    });
+    this.eventUnsubscribers = [];
   }
 
   loadSettings() {
