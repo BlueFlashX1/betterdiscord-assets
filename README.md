@@ -4,182 +4,172 @@ A comprehensive BetterDiscord plugin and theme suite inspired by the Solo Leveli
 
 ## Assets
 
-This repository hosts animated background assets:
 - `shadows-army-solo-leveling.gif` - Solo Leveling Shadow Army animated background
 - `shadows-army-solo-leveling-imgur.gif` - Alternative version hosted on Imgur
 
 ## Installation
 
-### Quick Install
+### Prerequisites
+
+- BetterDiscord must be installed and enabled
+- Discord desktop app (not browser version)
+
+### Step-by-Step Installation
+
+1. **Locate BetterDiscord folders:**
+   - macOS: `~/Library/Application Support/BetterDiscord/`
+   - Windows: `%AppData%\BetterDiscord\`
+   - Linux: `~/.config/BetterDiscord/`
+
+2. **Install plugins:**
+   - Copy all `.plugin.js` files from `plugins/` folder
+   - Paste into `BetterDiscord/plugins/` folder
+
+3. **Install theme:**
+   - Copy `SoloLeveling-ClearVision.theme.css` from `themes/` folder
+   - Paste into `BetterDiscord/themes/` folder
+
+4. **Enable in Discord:**
+   - Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS) to reload Discord
+   - Open Discord Settings → BetterDiscord → Plugins
+   - Enable all Solo Leveling plugins
+   - Open Discord Settings → BetterDiscord → Themes
+   - Enable `SoloLeveling-ClearVision` theme
+
+### Quick Install (macOS Terminal)
+
 ```bash
-# Copy plugins to BetterDiscord
+# Navigate to repository
+cd /path/to/betterdiscord-dev
+
+# Copy plugins
 cp plugins/*.plugin.js ~/Library/Application\ Support/BetterDiscord/plugins/
 
-# Copy theme to BetterDiscord
+# Copy theme
 cp themes/SoloLeveling-ClearVision.theme.css ~/Library/Application\ Support/BetterDiscord/themes/
-```
 
-### Manual Install
-1. Copy plugin files from `plugins/` to `~/Library/Application Support/BetterDiscord/plugins/`
-2. Copy theme file from `themes/` to `~/Library/Application Support/BetterDiscord/themes/`
-3. Reload Discord (Ctrl+R / Cmd+R)
-4. Enable plugins and theme in BetterDiscord settings
+# Reload Discord (Ctrl+R or Cmd+R)
+```
 
 ## Core Plugins
 
 ### SoloLevelingStats
-The foundation plugin that tracks Discord activity and rewards progression.
+Foundation plugin that tracks Discord activity and rewards progression.
 
-**Features:**
-- Level System: Gain XP from messages, level up, unlock stat points
-- Stat System: 5 stats (STR, AGI, INT, VIT, LUK) with unique bonuses
-  - Strength: +5% XP per message per point (max 20 points)
-  - Agility: +2% crit chance per point (max 20 points, capped at 90%)
-  - Intelligence: +10% bonus XP from long messages per point (max 20 points)
-  - Vitality: +5% daily quest rewards per point (max 20 points)
-  - Luck: Random % buffs that stack (2-8% per point, max 20 points)
-- Rank System: E → D → C → B → A → S → SS → SSS → SSS+ → NH → Monarch → Monarch+ → Shadow Monarch progression
-- Daily Quests: 5 quests reset daily with XP and stat point rewards
-- Achievements: 20+ Solo Leveling-themed achievements with titles
-- Activity Tracking: Messages, characters typed, channels visited, time active
-- Chat UI: In-game style panel showing stats, level, XP, quests
+- **Level System:** Gain XP from messages, level up, unlock stat points
+- **Stat System:** 5 stats (STR, AGI, INT, VIT, LUK) with unique bonuses
+  - Strength: +5% XP per message per point (max 20)
+  - Agility: +2% crit chance per point (max 20, capped at 90%)
+  - Intelligence: +10% bonus XP from long messages per point (max 20)
+  - Vitality: +5% daily quest rewards per point (max 20)
+  - Luck: Random % buffs that stack (2-8% per point, max 20)
+- **Rank System:** E → D → C → B → A → S → SS → SSS → SSS+ → NH → Monarch → Monarch+ → Shadow Monarch
+- **Daily Quests:** 5 quests reset daily with XP and stat point rewards
+- **Achievements:** 20+ Solo Leveling-themed achievements with titles
+- **Activity Tracking:** Messages, characters typed, channels visited, time active
+- **Chat UI:** In-game style panel showing stats, level, XP, quests
 
-**Dependencies:** None (standalone)
+**Dependencies:** None
 
 ### CriticalHit
-Visual effects plugin where messages have a chance to land critical hits with special styling.
+Visual effects plugin where messages have a chance to land critical hits.
 
-**Features:**
-- Base Crit Chance: 10% (fixed, cannot be changed manually)
-- Agility Integration: Crit chance increases with Agility stat (+2% per point, max 90%)
-- Skill Tree Integration: Crit chance bonuses from unlocked skills
-- Visual Effects:
-  - Purple-to-black horizontal gradient text
-  - Bebas Neue font (bold, condensed, all-caps)
-  - Subtle glow effect
-  - Smooth animations
-- Message Persistence: Crits persist across channel changes and Discord restarts
-- Smart Filtering: Excludes replies, system messages, bots (configurable)
-- History System: Stores crit history for 30 days (configurable)
+- **Base Crit Chance:** 10% (fixed, buffed by Agility stat)
+- **Agility Integration:** +2% crit chance per Agility point (max 90%)
+- **Skill Tree Integration:** Crit bonuses from unlocked skills
+- **Visual Effects:** Purple-to-black gradient, Bebas Neue font, glow, animations
+- **Message Persistence:** Crits persist across channel changes and restarts
+- **Smart Filtering:** Excludes replies, system messages, bots (configurable)
+- **History System:** Stores crit history for 30 days
 
-**Dependencies:** SoloLevelingStats (for Agility stat bonuses), SkillTree (for skill-based crit bonuses)
+**Dependencies:** SoloLevelingStats, SkillTree
 
 ### SkillTree
-Passive abilities system to unlock powerful passive skills that enhance your stats.
+Passive abilities system to unlock powerful skills.
 
-**Features:**
-- 5 Skill Branches: Strength, Agility, Intelligence, Vitality, Luck
-- 25 Total Skills: 5 skills per branch with progressive unlocks
-- Skill Points: Earn 1 SP per level (level 1 = 0 SP, level 2 = 1 SP, etc.)
-- Skill Effects:
-  - XP bonuses (per message, long messages)
-  - Crit chance bonuses
-  - Quest reward bonuses
-  - All-stat bonuses (multiplies all stat effects)
-- Prerequisites: Stat requirements and prerequisite skills
-- Reset Function: Reset tree and recalculate SP based on current level
-- Visual UI: Modal with skill tree visualization, unlock buttons
+- **5 Skill Branches:** Strength, Agility, Intelligence, Vitality, Luck
+- **25 Total Skills:** 5 skills per branch with progressive unlocks
+- **Skill Points:** Earn 1 SP per level (level 1 = 0 SP, level 2 = 1 SP)
+- **Skill Effects:** XP bonuses, crit chance bonuses, quest rewards, all-stat bonuses
+- **Prerequisites:** Stat requirements and prerequisite skills
+- **Reset Function:** Reset tree and recalculate SP based on current level
+- **Visual UI:** Modal with skill tree visualization
 
-**Dependencies:** SoloLevelingStats (for stat requirements and level tracking)
+**Dependencies:** SoloLevelingStats
 
 ### TitleManager
-Title system to display and equip achievement titles with XP bonuses.
+Title system to display and equip achievement titles.
 
-**Features:**
-- Title Collection: View all unlocked titles from achievements
-- Equip Titles: Equip one title at a time for XP bonuses
-- Title Bonuses: Varied XP bonuses (3% to 50% depending on achievement)
-- Visual UI: Modal showing active title, available titles, bonuses
-- Solo Leveling Lore: All titles themed after Solo Leveling (E-Rank Hunter, Shadow Monarch, etc.)
+- **Title Collection:** View all unlocked titles from achievements
+- **Equip Titles:** Equip one title at a time for XP bonuses
+- **Title Bonuses:** Varied XP bonuses (3% to 50% depending on achievement)
+- **Visual UI:** Modal showing active title, available titles, bonuses
+- **Solo Leveling Lore:** All titles themed after Solo Leveling
 
-**Dependencies:** SoloLevelingStats (for titles and achievements)
+**Dependencies:** SoloLevelingStats
 
 ## Visual Enhancement Plugins
 
 ### LevelProgressBar
-Always-visible progress bar that shows level progress at top or bottom of Discord.
+Always-visible progress bar showing level progress.
 
-**Features:**
 - Position: Top or bottom of Discord window
-- Display Options: Level, Rank, XP, progress bar
-- Compact Mode: Smaller bar for minimal UI
-- Opacity Control: 0-100% opacity
-- Real-time Updates: Updates every second
+- Display: Level, Rank, XP, progress bar
+- Compact Mode: Smaller bar option
+- Opacity: 0-100% control
+- Updates: Every second
 
-**Dependencies:** SoloLevelingStats (for level/XP data)
+**Dependencies:** SoloLevelingStats
 
 ### SoloLevelingToasts
-Custom notifications with Solo Leveling-themed toast notifications for events.
+Custom toast notifications for events.
 
-**Features:**
-- Purple Gradient: Matches Solo Leveling theme
-- Particle Effects: Animated particles on notifications (default: 20 particles)
-- Position Control: Top-right, top-left, bottom-right, bottom-left
-- Auto-dismiss: Configurable timeout (default: 5 seconds)
-- Max Toasts: Limit visible toasts (default: 5)
+- Purple gradient matching theme
+- Particle effects (default: 20 particles)
+- Position control (4 corners)
+- Auto-dismiss (default: 5 seconds)
+- Max toasts limit (default: 5)
 
-**Dependencies:** SoloLevelingStats (hooks into level ups, quests, achievements)
+**Dependencies:** SoloLevelingStats
 
 ### LevelUpAnimation
-Level up celebration with floating "LEVEL UP!" animation when you level up.
+Floating "LEVEL UP!" animation on level up.
 
-**Features:**
-- Floating Animation: Text floats upward with fade
-- Particle Effects: 30 particles per animation (configurable)
-- Glow Effect: Purple glow matching theme
-- Customizable: Duration (default: 3 seconds), distance (default: 150px), particle count, font size
+- Floating animation with fade
+- Particle effects (30 particles, configurable)
+- Purple glow matching theme
+- Customizable duration, distance, particle count, font size
 
-**Dependencies:** SoloLevelingStats (detects level ups)
+**Dependencies:** SoloLevelingStats
 
 ## Theme
 
 ### SoloLeveling-ClearVision
 Dark purple Solo Leveling theme based on ClearVision v7.
 
-**Features:**
-- Dark Theme: Deep purple/black color scheme
-- Solo Leveling Aesthetic: Matches manhwa art style
-- Orbitron Font: Futuristic font family throughout
-- Custom Styling:
-  - Message containers with purple accents
-  - Enhanced embeds and cards
-  - Improved sidebar visibility
-  - Status indicators with glow
-  - Smooth animations and transitions
-- Performance Optimized: Removed expensive blur effects, optimized animations
+- Dark purple/black color scheme
+- Solo Leveling aesthetic matching manhwa art style
+- Orbitron font family throughout
+- Custom styling: Message containers, embeds, sidebar, status indicators
+- Performance optimized: Removed expensive blur effects
 
-**Font Stack:**
-- Primary: `'Orbitron', sans-serif`
-- Code: `'Orbitron', monospace`
-- Headings: `'Orbitron', sans-serif` (weight 500)
+**Font Stack:** `'Orbitron', sans-serif` (weight 400-500)
 
 ## Plugin Integration
 
-### How Plugins Work Together:
-
 ```
 SoloLevelingStats (Core)
-├── CriticalHit (reads Agility stat for crit chance)
-├── SkillTree (reads stats for skill requirements, saves bonuses)
-├── TitleManager (reads titles/achievements, equips titles)
-├── LevelProgressBar (reads level/XP for display)
-├── SoloLevelingToasts (hooks into events for notifications)
-└── LevelUpAnimation (detects level ups for animations)
+├── CriticalHit (reads Agility stat)
+├── SkillTree (reads stats, saves bonuses)
+├── TitleManager (reads titles/achievements)
+├── LevelProgressBar (reads level/XP)
+├── SoloLevelingToasts (hooks into events)
+└── LevelUpAnimation (detects level ups)
 ```
-
-### Data Flow:
-1. SoloLevelingStats tracks activity and calculates stats
-2. CriticalHit reads Agility bonus from SoloLevelingStats
-3. SkillTree reads stats for requirements, saves bonuses to shared storage
-4. SoloLevelingStats reads SkillTree bonuses when calculating XP
-5. TitleManager reads titles from SoloLevelingStats achievements
-6. Visual plugins (ProgressBar, Toasts, Animation) display SoloLevelingStats data
 
 ## Achievement System
 
-### Solo Leveling Lore Titles:
-
-**Early Game:**
+**Early Game Titles:**
 - The Weakest Hunter (+3% XP)
 - E-Rank Hunter (+8% XP)
 - D-Rank Hunter (+12% XP)
@@ -201,125 +191,87 @@ SoloLevelingStats (Core)
 - Monarch of Destruction (+45% XP)
 - The Ruler (+50% XP)
 
-**Activity Titles:**
-- Dungeon Grinder, Gate Explorer, Raid Veteran, Eternal Hunter
-- Gate Traveler, Dungeon Master, Dimension Walker, Realm Conqueror
+**Activity Titles:** Dungeon Grinder, Gate Explorer, Raid Veteran, Eternal Hunter, Gate Traveler, Dungeon Master, Dimension Walker, Realm Conqueror
 
 ## Skill Tree System
 
-### Skill Branches:
+**Strength Branch:** Power Strike → Mighty Blow → Devastating Force, Armor Break (side), Berserker Rage (ultimate)
 
-**Strength Branch** (5 skills):
-- Power Strike → Mighty Blow → Devastating Force
-- Armor Break (side path)
-- Berserker Rage (ultimate: XP + crit)
+**Agility Branch:** Quick Reflexes → Lightning Speed → Blinding Speed, Shadow Step (side), Transcendent Speed (ultimate)
 
-**Agility Branch** (5 skills):
-- Quick Reflexes → Lightning Speed → Blinding Speed
-- Shadow Step (side path)
-- Transcendent Speed (ultimate: crit + XP)
+**Intelligence Branch:** Mental Clarity → Genius Mind → Master Strategist, Tactical Analysis (side), Omniscient Mind (ultimate)
 
-**Intelligence Branch** (5 skills):
-- Mental Clarity → Genius Mind → Master Strategist
-- Tactical Analysis (side path)
-- Omniscient Mind (ultimate: long message + quest)
+**Vitality Branch:** Robust Health → Iron Will → Immortal Body, Regeneration (side), Eternal Vitality (ultimate)
 
-**Vitality Branch** (5 skills):
-- Robust Health → Iron Will → Immortal Body
-- Regeneration (side path)
-- Eternal Vitality (ultimate: quest + XP)
-
-**Luck Branch** (5 skills):
-- Lucky Break → Fortune's Favor → Divine Luck
-- Serendipity (side path)
-- Fate's Blessing (ultimate: all-stat + crit)
+**Luck Branch:** Lucky Break → Fortune's Favor → Divine Luck, Serendipity (side), Fate's Blessing (ultimate)
 
 ## Configuration
 
-### CriticalHit Settings:
-- Enable/disable crits
-- Gradient on/off
-- Animation on/off
-- Glow effect on/off
-- Font customization
-- Message filtering options
-- History retention (days)
+**CriticalHit:** Enable/disable crits, gradient, animation, glow, font, filtering, history retention
 
-### SkillTree Settings:
-- Enable/disable skill tree
-- View skill points
-- View unlocked skills
-- Reset tree (refunds all SP)
+**SkillTree:** Enable/disable, view skill points, view unlocked skills, reset tree
 
-### TitleManager Settings:
-- Enable/disable title manager
-- View available titles
-- Equip/unequip titles
+**TitleManager:** Enable/disable, view titles, equip/unequip titles
 
-### SoloLevelingStats Settings:
-- Enable/disable stats tracking
-- Allocate stat points
-- View achievements
-- View daily quests
-- Chat UI toggle
+**SoloLevelingStats:** Enable/disable tracking, allocate stat points, view achievements, view daily quests, chat UI toggle
+
+## Quick Start
+
+1. Install BetterDiscord (if not installed)
+2. Copy plugins to BetterDiscord plugins folder
+3. Copy theme to BetterDiscord themes folder
+4. Reload Discord (Ctrl+R / Cmd+R)
+5. Enable plugins in BetterDiscord settings
+6. Enable theme in BetterDiscord themes
+7. Start chatting - XP and stats track automatically
+
+## Tips & Tricks
+
+- **Maximize XP:** Type longer messages (200+ chars), complete daily quests
+- **Increase Crit Chance:** Level up Agility stat (max 90% with stats + skills)
+- **Unlock Skills:** Meet stat requirements, spend skill points wisely
+- **Equip Titles:** Higher-tier titles give better XP bonuses
+- **Complete Quests:** Daily quests reset at midnight, give stat points
+- **Track Progress:** Use LevelProgressBar to always see your level
+
+## Troubleshooting
+
+**Plugins not loading?**
+- Verify BetterDiscord is installed and enabled
+- Check files are in correct directories
+- Check console for errors (Ctrl+Shift+I / Cmd+Option+I)
+
+**Stats not tracking?**
+- Ensure SoloLevelingStats plugin is enabled
+- Verify you're sending messages (not just reading)
+- Check chat UI is visible (toggle in settings)
+
+**Crits not appearing?**
+- Verify CriticalHit plugin is enabled
+- Check SoloLevelingStats is running (for Agility bonuses)
+- Verify message filters aren't excluding your messages
+
+**Skills not unlocking?**
+- Check stat requirements are met
+- Verify prerequisite skills are unlocked
+- Ensure you have enough skill points
 
 ## File Structure
 
 ```
 betterdiscord-dev/
 ├── plugins/
-│   ├── SoloLevelingStats.plugin.js    # Core stats system
-│   ├── CriticalHit.plugin.js           # Crit message effects
-│   ├── SkillTree.plugin.js            # Passive abilities
-│   ├── TitleManager.plugin.js         # Title management
-│   ├── LevelProgressBar.plugin.js     # Progress bar UI
-│   ├── SoloLevelingToasts.plugin.js   # Toast notifications
-│   └── LevelUpAnimation.plugin.js     # Level up animation
+│   ├── SoloLevelingStats.plugin.js
+│   ├── CriticalHit.plugin.js
+│   ├── SkillTree.plugin.js
+│   ├── TitleManager.plugin.js
+│   ├── LevelProgressBar.plugin.js
+│   ├── SoloLevelingToasts.plugin.js
+│   └── LevelUpAnimation.plugin.js
 ├── themes/
-│   └── SoloLeveling-ClearVision.theme.css  # Main theme
-└── README.md                          # This file
+│   └── SoloLeveling-ClearVision.theme.css
+└── README.md
 ```
-
-## Quick Start
-
-1. Install BetterDiscord (if not already installed)
-2. Copy plugins to `~/Library/Application Support/BetterDiscord/plugins/`
-3. Copy theme to `~/Library/Application Support/BetterDiscord/themes/`
-4. Reload Discord (Ctrl+R / Cmd+R)
-5. Enable plugins in BetterDiscord settings
-6. Enable theme in BetterDiscord themes
-7. Start chatting - XP and stats will track automatically
-
-## Tips & Tricks
-
-- Maximize XP: Type longer messages (200+ chars), complete daily quests
-- Increase Crit Chance: Level up Agility stat (max 90% with stats + skills)
-- Unlock Skills: Meet stat requirements, spend skill points wisely
-- Equip Titles: Higher-tier titles give better XP bonuses
-- Complete Quests: Daily quests reset at midnight, give stat points
-- Track Progress: Use LevelProgressBar to always see your level
-
-## Troubleshooting
-
-**Plugins not loading?**
-- Check BetterDiscord is installed and enabled
-- Verify files are in correct directories
-- Check console for errors (Ctrl+Shift+I)
-
-**Stats not tracking?**
-- Ensure SoloLevelingStats plugin is enabled
-- Check you're sending messages (not just reading)
-- Verify chat UI is visible (toggle in settings)
-
-**Crits not appearing?**
-- Check CriticalHit plugin is enabled
-- Verify SoloLevelingStats is running (for Agility bonuses)
-- Check message filters aren't excluding your messages
-
-**Skills not unlocking?**
-- Verify stat requirements are met
-- Check prerequisite skills are unlocked
-- Ensure you have enough skill points
 
 ## License
 
@@ -331,16 +283,9 @@ Matthew - Solo Leveling BetterDiscord Suite Developer
 
 ## Version History
 
-- **v1.0.0** (2025-11-30)
-  - Initial release
-  - Core stats system
-  - Critical hit system
-  - Skill tree system
-  - Title management
-  - Visual enhancements
-  - Solo Leveling theme
+- **v1.0.0** (2025-11-30): Initial release with core stats system, critical hit system, skill tree system, title management, visual enhancements, and Solo Leveling theme
 
 ## Additional Resources
 
-- Plugin Ideas: See `plugins/docs/PLUGIN_IDEAS.md`
-- Solo Leveling Stats Docs: See `plugins/docs/SOLO-LEVELING-STATS-README.md`
+- Plugin Ideas: `plugins/docs/PLUGIN_IDEAS.md`
+- Solo Leveling Stats Docs: `plugins/docs/SOLO-LEVELING-STATS-README.md`
