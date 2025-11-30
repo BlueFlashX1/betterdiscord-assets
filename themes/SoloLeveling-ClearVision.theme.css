@@ -1,0 +1,1171 @@
+/**
+ * @name Solo Leveling (ClearVision Base)
+ * @author Matthew
+ * @version 1.0.0
+ * @description Dark purple Solo Leveling theme based on ClearVision v7
+ * @source https://github.com/ClearVision/ClearVision-v7
+ * @authorId
+ */
+
+/* IMPORT CSS */
+@import url('https://clearvision.github.io/ClearVision-v7/main.css');
+@import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
+/* Import Orbitron font - Single font for both Solo Leveling theme and Critical Hit */
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
+/* SETTINGS */
+:root {
+  /* ACCENT COLORS - Solo Leveling Purple Palette */
+  --main-color: #8a2be2; /* Blue Violet - Primary accent */
+  --hover-color: #ba55d3; /* Medium Orchid - Hover state */
+  --success-color: #00ff88; /* Success green */
+  --danger-color: #ff4444; /* Error red */
+
+  /* STATUS COLORS */
+  --online-color: #00ff88; /* Green for online */
+  --idle-color: #ffaa00; /* Orange for idle */
+  --dnd-color: #ff0000; /* Red for do not disturb */
+  --streaming-color: #8a2be2; /* Purple for streaming */
+  --offline-color: #8b7fa8; /* Muted purple for offline */
+
+  /* APP BACKGROUND - Dark Purple Gradient */
+  --background-shading-percent: 100%; /* Full background shading */
+  --background-image: none; /* No background image, use gradient */
+  --background-position: center;
+  --background-size: cover;
+  --background-attachment: fixed;
+  --background-filter: saturate(calc(var(--saturation-factor, 1) * 1));
+
+  /* USER POPOUT BACKGROUND */
+  --user-popout-image: var(--background-image);
+  --user-popout-position: var(--background-position);
+  --user-popout-size: var(--background-size);
+  --user-popout-attachment: var(--background-attachment);
+  --user-popout-filter: var(--background-filter);
+
+  /* USER MODAL BACKGROUND */
+  --user-modal-image: var(--background-image);
+  --user-modal-position: var(--background-position);
+  --user-modal-size: var(--background-size);
+  --user-modal-attachment: var(--background-attachment);
+  --user-modal-filter: var(--background-filter);
+
+  /* HOME ICON */
+  --home-icon: url(https://clearvision.github.io/icons/discord.svg);
+  --home-size: cover;
+
+  /* FONTS - Solo Leveling Typography (Single font: Orbitron for consistency with Critical Hit) */
+  --main-font: 'Orbitron', sans-serif;
+  --code-font: 'Orbitron', monospace;
+  --heading-font: 'Orbitron', sans-serif;
+
+  /* CHANNEL COLORS */
+  --channel-normal: var(--interactive-normal);
+  --channel-muted: var(--interactive-muted);
+  --channel-hover: var(--interactive-hover);
+  --channel-selected: var(--interactive-active);
+  --channel-selected-bg: var(--main-color);
+  --channel-unread: var(--main-color);
+  --channel-unread-hover: var(--hover-color);
+
+  /* ACCESSIBILITY */
+  --focus-color: var(--main-color);
+}
+
+/* THEME SPECIFIC SHADING - Solo Leveling Dark Purple */
+/* Override background-shading to be transparent for bright animated background */
+/* LIGHT THEME */
+:is(.theme-light, .theme-dark .theme-light) {
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
+  --card-shading: rgba(10, 10, 15, 0.2);
+  --popout-shading: rgba(10, 10, 15, 0.7);
+  --modal-shading: rgba(10, 10, 15, 0.5);
+  --input-shading: rgba(138, 43, 226, 0.1);
+  --normal-text: #e0d0ff;
+  --muted-text: #b894e6;
+}
+
+/* ASH THEME */
+:is(.theme-dark, .theme-light .theme-dark) {
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
+  --card-shading: rgba(10, 10, 15, 0.4);
+  --popout-shading: rgba(10, 10, 15, 0.8);
+  --modal-shading: rgba(10, 10, 15, 0.6);
+  --input-shading: rgba(138, 43, 226, 0.15);
+  --normal-text: #e0d0ff;
+  --muted-text: #b894e6;
+}
+
+/* DARK THEME */
+:is(.theme-darker, .theme-light .theme-darker) {
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
+  --card-shading: rgba(10, 10, 15, 0.5);
+  --popout-shading: rgba(10, 10, 15, 0.9);
+  --modal-shading: rgba(10, 10, 15, 0.7);
+  --input-shading: rgba(138, 43, 226, 0.2);
+  --normal-text: #e0d0ff;
+  --muted-text: #b894e6;
+}
+
+/* ONYX THEME */
+:is(.theme-midnight, .theme-light .theme-midnight) {
+  --background-shading: rgba(5, 5, 10, 0.05) !important; /* Very light for bright background */
+  --card-shading: rgba(5, 5, 10, 0.6);
+  --popout-shading: rgba(5, 5, 10, 0.95);
+  --modal-shading: rgba(5, 5, 10, 0.8);
+  --input-shading: rgba(138, 43, 226, 0.25);
+  --normal-text: #e0d0ff;
+  --muted-text: #b894e6;
+}
+
+/* ========================================
+   SOLO LEVELING CUSTOM STYLES
+   ======================================== */
+
+/* Background - Video/GIF Animated Solo Leveling */
+body {
+  background: transparent !important;
+  background-attachment: fixed !important;
+  position: relative !important;
+}
+
+/* Video Background - Solo Leveling Shadow Army Animated GIF */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    /* GitHub hosted GIF - Update after pushing to GitHub */ url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/shadows-army-solo-leveling-imgur.gif')
+    center center / cover no-repeat;
+  background-attachment: fixed;
+  opacity: 1 !important; /* Maximum brightness */
+  pointer-events: none;
+  z-index: -2;
+  animation: soloLevelingFade 10s ease-in-out infinite;
+}
+
+/* Dark overlay for text readability - 0.5 opacity */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(10, 10, 15, 0.5) !important;
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* Override any app background overlays that might darken the animated background */
+[class*='app']::before,
+[class*='app']::after,
+[class*='base']::before,
+[class*='base']::after {
+  background: transparent !important;
+  opacity: 0 !important;
+}
+
+/* Override ClearVision background-shading on main app container */
+[class*='app'] {
+  background: transparent !important;
+}
+
+@keyframes soloLevelingFade {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes soloLevelingPulse {
+  0%,
+  100% {
+    opacity: 0.5;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.1);
+  }
+}
+
+/* ========================================
+   TYPOGRAPHY ENHANCEMENTS - Solo Leveling
+   ======================================== */
+
+/* Global Font Override - Orbitron (Single font for Solo Leveling theme & Critical Hit) */
+* {
+  font-family: var(--main-font) !important;
+  font-weight: 400 !important; /* Normal weight - easy to read, NOT bold/thick */
+}
+
+/* Headings - Orbitron for Solo Leveling aesthetic */
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+[class*='title'],
+[class*='header'] [class*='title'],
+[class*='name'][class*='header'] {
+  font-family: var(--heading-font) !important;
+  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  letter-spacing: 0.5px !important;
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.3), 0 0 8px rgba(124, 58, 237, 0.2) !important;
+}
+
+/* Message Text - Better Readability */
+/* Exclude crit hit messages from theme text-shadow */
+[class*='message'] [class*='content']:not(.bd-crit-hit):not([class*='bd-crit-hit']),
+[class*='message'] [class*='text']:not(.bd-crit-hit):not([class*='bd-crit-hit']),
+[class*='messageContent']:not(.bd-crit-hit):not([class*='bd-crit-hit']) {
+  font-family: var(--main-font) !important;
+  font-weight: 400 !important;
+  line-height: 1.5 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Critical Hit Messages - Let plugin handle all styling */
+/* First, remove theme text-shadow from crit hit messages */
+.bd-crit-hit,
+[class*='message'] .bd-crit-hit,
+[class*='message'].bd-crit-hit,
+[class*='message'] [class*='content'].bd-crit-hit,
+[class*='message'] [class*='text'].bd-crit-hit,
+[class*='messageContent'].bd-crit-hit,
+[class*='message'] .bd-crit-hit [class*='content'],
+[class*='message'] .bd-crit-hit [class*='text'],
+[class*='message'].bd-crit-hit [class*='content'],
+[class*='message'].bd-crit-hit [class*='text'] {
+  text-shadow: none !important;
+  /* Remove theme text-shadow completely */
+}
+
+/* Apply glow directly via CSS to ensure it works with theme */
+.bd-crit-hit,
+[class*='message'] .bd-crit-hit [class*='content'],
+[class*='message'] .bd-crit-hit [class*='text'],
+[class*='message'].bd-crit-hit [class*='content'],
+[class*='message'].bd-crit-hit [class*='text'],
+[class*='message'] [class*='content'].bd-crit-hit,
+[class*='message'] [class*='text'].bd-crit-hit {
+  text-shadow: 0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4),
+    0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2) !important;
+  /* Apply purple glow directly - matches plugin's glow */
+}
+
+/* Username - Enhanced with subtle glow */
+[class*='message'] [class*='username'],
+[class*='message'] [class*='author'],
+[class*='username'] {
+  font-family: var(--main-font) !important;
+  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  text-shadow: 0 0 3px rgba(139, 92, 246, 0.4), 0 0 6px rgba(124, 58, 237, 0.2) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Channel Names - Better visibility */
+[class*='channel'] [class*='name'],
+[class*='channelName'] {
+  font-family: var(--main-font) !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+}
+
+/* Selected Channel Name - Enhanced glow */
+[class*='selected'] [class*='name'],
+[class*='modeSelected'] [class*='name'],
+[class*='channel'][class*='selected'] [class*='name'] {
+  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.5), 0 0 8px rgba(124, 58, 237, 0.3),
+    0 0 12px rgba(109, 40, 217, 0.2) !important;
+  color: rgba(255, 255, 255, 1) !important;
+}
+
+/* Code Blocks - Better monospace */
+code,
+[class*='code'],
+[class*='codeBlock'],
+pre {
+  font-family: var(--code-font) !important;
+  font-weight: 400 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+  background: rgba(20, 20, 30, 0.8) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 0 4px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Timestamps - Use Discord default (no overrides) */
+
+/* Input Text - Better readability */
+input,
+textarea,
+[class*='input'],
+[class*='textArea'],
+[class*='channelTextArea'] {
+  font-family: var(--main-font) !important;
+  font-weight: 400 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+}
+
+/* Buttons - Enhanced text */
+button,
+[class*='button'] {
+  font-family: var(--main-font) !important;
+  font-weight: 500 !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ========================================
+   GLOW EFFECTS - Solo Leveling Style
+   ======================================== */
+
+/* Selected Channel - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+[class*='selected'][class*='channel'],
+[class*='modeSelected'] [class*='container'],
+[class*='channel'][class*='selected'] {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
+  /* REMOVED: animation - causes lag */
+  border-left: 2px solid rgba(139, 92, 246, 0.6) !important;
+}
+
+/* Active Server - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+[class*='guild'][class*='selected'],
+[class*='server'][class*='selected'],
+[class*='guild'][class*='active'],
+[class*='server'][class*='active'] {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
+  /* REMOVED: animation - causes lag */
+  border-radius: 50% !important;
+}
+
+/* Focused Input - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+[class*='input']:focus,
+[class*='textArea']:focus,
+[class*='slateTextArea']:focus,
+[class*='channelTextArea']:focus,
+input:focus,
+textarea:focus {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
+  /* REMOVED: animation - causes lag */
+  outline: none !important;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+}
+
+/* Send Message Button - Purple Glow on Hover */
+[class*='sendButton'],
+[class*='button'][class*='send'],
+button[aria-label*='Send'],
+button[aria-label*='send'],
+[class*='channelTextArea'] + [class*='button'],
+[class*='slateTextArea'] + [class*='button'],
+[class*='textArea'] + [class*='button'] {
+  transition: box-shadow 0.2s ease !important;
+}
+
+[class*='sendButton']:hover,
+[class*='button'][class*='send']:hover,
+button[aria-label*='Send']:hover,
+button[aria-label*='send']:hover,
+[class*='channelTextArea'] + [class*='button']:hover,
+[class*='slateTextArea'] + [class*='button']:hover,
+[class*='textArea'] + [class*='button']:hover {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6), 0 0 16px rgba(124, 58, 237, 0.4),
+    0 0 20px rgba(109, 40, 217, 0.3) !important;
+  transform: scale(1.05) !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Settings Button - Purple Glow on Hover */
+[class*='settingsButton'],
+[class*='button'][class*='settings'],
+button[aria-label*='Settings'],
+button[aria-label*='settings'],
+[class*='iconButton'][class*='settings'],
+[class*='guildSettings'],
+[class*='userSettings'],
+[class*='accountButton'],
+button[aria-label*='User Settings'],
+button[aria-label*='Server Settings'] {
+  transition: box-shadow 0.2s ease !important;
+}
+
+[class*='settingsButton']:hover,
+[class*='button'][class*='settings']:hover,
+button[aria-label*='Settings']:hover,
+button[aria-label*='settings']:hover,
+[class*='iconButton'][class*='settings']:hover,
+[class*='guildSettings']:hover,
+[class*='userSettings']:hover,
+[class*='accountButton']:hover,
+button[aria-label*='User Settings']:hover,
+button[aria-label*='Server Settings']:hover {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6), 0 0 16px rgba(124, 58, 237, 0.4),
+    0 0 20px rgba(109, 40, 217, 0.3) !important;
+  transform: scale(1.05) !important;
+  transition: all 0.2s ease !important;
+}
+
+/* Input Focus - Enhanced glow handled in enhanced input section below */
+
+/* Username - Enhanced Glow */
+[class*='message'] [class*='username']:hover,
+[class*='message'] [class*='author']:hover {
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.5), 0 0 8px rgba(124, 58, 237, 0.3) !important;
+  transition: text-shadow 0.2s ease !important;
+}
+
+/* Selected Channel Name - Already enhanced in typography section */
+
+/* Header Title - Enhanced Glow */
+[class*='title'][class*='header'],
+[class*='header'] [class*='title'],
+[class*='header'] [class*='name'] {
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.4), 0 0 8px rgba(124, 58, 237, 0.3) !important;
+}
+
+/* ========================================
+   ADDITIONAL GLOW EFFECTS - Enhanced
+   ======================================== */
+
+/* Buttons - Enhanced glow on hover */
+button:hover,
+[class*='button']:hover:not([class*='selected']) {
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4), 0 0 12px rgba(124, 58, 237, 0.3) !important;
+  transition: box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+/* Links - Subtle purple glow on hover */
+a:hover,
+[class*='link']:hover {
+  text-shadow: 0 0 3px rgba(139, 92, 246, 0.4), 0 0 6px rgba(124, 58, 237, 0.2) !important;
+  transition: text-shadow 0.2s ease !important;
+}
+
+/* Notification Badges - Enhanced glow */
+[class*='badge'],
+[class*='notification'],
+[class*='unread'] {
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.5), 0 0 10px rgba(124, 58, 237, 0.3) !important;
+}
+
+/* Tooltips - Purple glow */
+[class*='tooltip'],
+[class*='popup'] {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3),
+    0 0 20px rgba(109, 40, 217, 0.2) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Context Menu - Enhanced glow */
+[class*='contextMenu'],
+[class*='menu'] {
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Message Hover - Subtle glow */
+[class*='message']:hover:not([class*='message']:has(.bd-crit-hit)) {
+  box-shadow: 0 0 4px rgba(139, 92, 246, 0.2) !important;
+  transition: box-shadow 0.2s ease !important;
+}
+
+/* Scrollbar Thumb - Glow on hover */
+::-webkit-scrollbar-thumb:hover {
+  box-shadow: 0 0 6px rgba(139, 92, 246, 0.5), 0 0 10px rgba(124, 58, 237, 0.3) !important;
+}
+
+/* ========================================
+   REACTION POPUPS - Fully Opaque
+   ======================================== */
+
+/* Reaction Background - Solid, No Transparency, Purple Glow */
+[class*='reaction'],
+[class*='reactionBtn'] {
+  background: var(--background-tertiary) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+  box-shadow: 0 0 4px rgba(138, 43, 226, 0.4), 0 0 6px rgba(139, 92, 246, 0.3) !important;
+}
+
+[class*='reaction']:hover,
+[class*='reactionBtn']:hover {
+  background: rgba(138, 43, 226, 0.15) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+[class*='reaction'][class*='reactionMe'],
+[class*='reactionBtn'][class*='reactionMe'] {
+  background: rgba(138, 43, 226, 0.25) !important;
+  opacity: 1 !important;
+  backdrop-filter: none !important;
+}
+
+/* Reaction Panel/Container - Fully Opaque */
+[class*='message'] [class*='reaction'],
+[class*='message'] [class*='reactionButton'],
+[class*='message'] [class*='reactionInner'],
+[class*='reactionInner'],
+[class*='reactionButton'],
+[class*='reactionButtonContainer'],
+[class*='reactionToolbar'],
+[class*='reactionBar'],
+[class*='reactionContainer'],
+[class*='reactionWrapper'],
+[class*='reactionButtonRow'],
+[class*='reactionRow'],
+[class*='reactionButtons'],
+[class*='reactionButtonGroup'],
+[class*='reactionAdd'],
+[class*='reactionAddButton'],
+[class*='wrapper'][class*='reaction'],
+[class*='container'][class*='reaction'] {
+  background: #0f0f1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+}
+
+/* Reaction Panel on Hover - Fully Opaque */
+[class*='message']:hover [class*='reaction'],
+[class*='message']:hover [class*='reactionButton'],
+[class*='message']:hover [class*='reactionInner'],
+[class*='message']:hover [class*='reactionButtonContainer'],
+[class*='message']:hover [class*='reactionToolbar'],
+[class*='message']:hover [class*='reactionBar'],
+[class*='message']:hover [class*='reactionContainer'],
+[class*='message']:hover [class*='reactionWrapper'],
+[class*='message']:hover [class*='reactionButtonRow'],
+[class*='message']:hover [class*='reactionRow'],
+[class*='message']:hover [class*='reactionButtons'],
+[class*='message']:hover [class*='reactionButtonGroup'],
+[class*='message']:hover [class*='reactionAdd'],
+[class*='message']:hover [class*='reactionAddButton'],
+[class*='message']:hover [class*='wrapper'][class*='reaction'],
+[class*='message']:hover [class*='container'][class*='reaction'] {
+  background: #0f0f1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+}
+
+/* Reaction Tooltip/Popup - Fully Opaque with Visible Text */
+[class*='reaction'] [class*='tooltip'],
+[class*='reaction'] [class*='popup'],
+[class*='reaction'] [class*='overlay'],
+[class*='reactionTooltip'],
+[class*='reactionPopup'],
+[class*='reactionUsers'],
+[class*='reactionUserList'],
+[class*='reactionList'],
+[class*='reactionListPopout'],
+[class*='reactionPopout'],
+[class*='reactionUsersPopout'] {
+  background: #0f0f1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  color: #e0d0ff !important;
+}
+
+/* Reaction Popup Text Elements - Visible */
+[class*='reaction'] [class*='user'],
+[class*='reaction'] [class*='username'],
+[class*='reaction'] [class*='name'],
+[class*='reaction'] [class*='note'],
+[class*='reaction'] [class*='message'],
+[class*='reaction'] [class*='text'],
+[class*='reaction'] [class*='content'],
+[class*='reaction'] [class*='tooltip'] *,
+[class*='reaction'] [class*='popup'] *,
+[class*='reaction'] [class*='overlay'] *,
+[class*='reactionTooltip'] *,
+[class*='reactionPopup'] *,
+[class*='reactionUsers'] *,
+[class*='reactionUserList'] *,
+[class*='reactionList'] *,
+[class*='reactionListPopout'] *,
+[class*='reactionPopout'] *,
+[class*='reactionUsersPopout'] * {
+  background: transparent !important;
+  color: #e0d0ff !important;
+  opacity: 1 !important;
+}
+
+/* ========================================
+   TOOLTIPS & POPUPS - Fully Opaque
+   ======================================== */
+
+/* Tooltip - Fully Opaque with Visible Text (No Purple Glow) */
+[class*='tooltip'],
+[class*='tooltipContent'],
+[class*='tooltipContentWrapper'],
+[class*='tooltipWrapper'],
+[class*='tippy'],
+[class*='tippyBox'],
+[class*='tippyContent'] {
+  background: #0f0f1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+  color: #e0d0ff !important;
+}
+
+[class*='tooltip'] *,
+[class*='tooltipContent'] *,
+[class*='tippy'] *,
+[class*='tippyContent'] * {
+  color: #e0d0ff !important;
+  opacity: 1 !important;
+}
+
+/* Context Menu - Fully Opaque (No Purple Glow) */
+[class*='contextMenu'],
+[class*='menu'],
+[class*='menuContent'],
+[class*='menuItem'],
+[class*='menuItemGroup'] {
+  background: #0f0f1a !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  opacity: 1 !important;
+}
+
+/* ========================================
+   MESSAGE STYLING
+   ======================================== */
+
+/* Message Container - Better Visual Separation (FIXED: Removed padding that broke avatar alignment) */
+[class*='message'] {
+  border-left: 2px solid transparent !important;
+  transition: border-color 0.2s ease !important;
+  /* REMOVED: padding-left and margin-left that broke avatar alignment */
+}
+
+/* Message Hover Effect - Subtle Purple Glow (OPTIMIZED: Reduced shadow complexity) */
+[class*='message']:hover:not(.bd-crit-hit) {
+  background: rgba(138, 43, 226, 0.05) !important;
+  opacity: 1 !important;
+  border-left-color: rgba(138, 43, 226, 0.4) !important;
+  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important; /* OPTIMIZED: Single shadow instead of multiple */
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* Crit Hit Messages - No Hover Blur, Keep Original Styling */
+[class*='message'].bd-crit-hit:hover {
+  background: transparent !important;
+  opacity: 1 !important;
+  filter: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Remove outline on messages when clicked */
+[class*='message']:focus,
+[class*='message']:focus-within,
+[class*='message'] *:focus {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* ========================================
+   SERVER LIST - Remove Purple
+   ======================================== */
+
+/* Server List - Remove Purple Indicators */
+/* Server list styling handled below with specific selectors */
+
+/* Selected Server Indicator Bar - Remove Purple */
+[class*='guild'][class*='selected']::before,
+[class*='server'][class*='selected']::before,
+[class*='guild'][class*='active']::before,
+[class*='server'][class*='active']::before,
+[class*='guild'][class*='selected'] [class*='pill'],
+[class*='server'][class*='selected'] [class*='pill'],
+[class*='guild'][class*='active'] [class*='pill'],
+[class*='server'][class*='active'] [class*='pill'] {
+  background: var(--interactive-active) !important;
+  background-color: var(--interactive-active) !important;
+}
+
+/* Selected Server Background - Remove Purple */
+[class*='guild'][class*='selected'],
+[class*='server'][class*='selected'],
+[class*='guild'][class*='active'],
+[class*='server'][class*='active'] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Server Notification Badge - Hidden */
+[class*='guild'] [class*='badge'],
+[class*='server'] [class*='badge'],
+[class*='guild'] [class*='unread'],
+[class*='server'] [class*='unread'],
+[class*='guild'] [class*='numberBadge'],
+[class*='server'] [class*='numberBadge'],
+[class*='guild'] [class*='unreadBadge'],
+[class*='server'] [class*='unreadBadge'],
+[class*='guild'] [class*='notificationBadge'],
+[class*='server'] [class*='notificationBadge'] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+}
+
+/* Server Icon - Remove Purple Border/Background */
+[class*='guildIcon'],
+[class*='serverIcon'],
+[class*='guildIconWrapper'],
+[class*='serverIconWrapper'] {
+  border-color: transparent !important;
+  background: transparent !important;
+}
+
+/* Server Icon Hover - Remove Purple */
+[class*='guildIcon']:hover,
+[class*='serverIcon']:hover {
+  background: var(--background-modifier-hover) !important;
+  background-color: var(--background-modifier-hover) !important;
+}
+
+/* ========================================
+   REFINEMENTS & ENHANCEMENTS - Minimal & Clean
+   ======================================== */
+
+/* Custom Scrollbar - Purple Gradient with Glow on Hover */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent !important;
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    135deg,
+    rgba(138, 43, 226, 0.3) 0%,
+    rgba(139, 92, 246, 0.3) 100%
+  ) !important;
+  border-radius: 5px;
+  transition: all 0.3s ease !important;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(138, 43, 226, 0.6) 0%,
+    rgba(139, 92, 246, 0.6) 100%
+  ) !important;
+  box-shadow: 0 0 8px rgba(138, 43, 226, 0.8), 0 0 12px rgba(139, 92, 246, 0.6) !important;
+}
+
+/* Notification Badges - Purple Glow */
+[class*='unread'],
+[class*='unreadBadge'],
+[class*='badge'],
+[class*='numberBadge'],
+[class*='notificationBadge'],
+[class*='mentionBadge'] {
+  background: var(--main-color) !important;
+  color: #fff !important;
+  box-shadow: 0 0 8px rgba(138, 43, 226, 0.6) !important;
+}
+
+/* ========================================
+   LOADING SCREENS - Solo Leveling Themed
+   ======================================== */
+
+/* Loading Spinner/Indicator - Shadow Army Particles */
+[class*='loading'],
+[class*='spinner'],
+[class*='loader'],
+[class*='loadingSpinner'] {
+  position: relative;
+}
+
+[class*='loading']::before,
+[class*='spinner']::before,
+[class*='loader']::before,
+[class*='loadingSpinner']::before {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(138, 43, 226, 0.6) 0%, transparent 70%);
+  animation: shadowParticlePulse 2s ease-in-out infinite;
+  border-radius: 50%;
+}
+
+[class*='loading']::after,
+[class*='spinner']::after,
+[class*='loader']::after,
+[class*='loadingSpinner']::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+  animation: shadowParticlePulse 2s ease-in-out infinite 0.5s;
+  border-radius: 50%;
+}
+
+/* Loading Overlay - Shadow Army Effect */
+[class*='loadingOverlay'],
+[class*='loadingScreen'],
+[class*='splashScreen'] {
+  background: linear-gradient(
+    135deg,
+    rgba(10, 10, 15, 0.95) 0%,
+    rgba(15, 15, 26, 0.95) 100%
+  ) !important;
+  position: relative;
+  overflow: hidden;
+}
+
+[class*='loadingOverlay']::before,
+[class*='loadingScreen']::before,
+[class*='splashScreen']::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(75, 0, 130, 0.15) 0%, transparent 50%);
+  animation: shadowArmyParticles 4s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes shadowParticlePulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 0.8;
+    transform: scale(1.2);
+  }
+}
+
+@keyframes shadowArmyParticles {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: translate(0, 0) scale(1);
+  }
+  25% {
+    opacity: 0.5;
+    transform: translate(10px, -10px) scale(1.1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: translate(-10px, 10px) scale(0.9);
+  }
+  75% {
+    opacity: 0.6;
+    transform: translate(5px, 5px) scale(1.05);
+  }
+}
+
+/* ========================================
+   NOTIFICATION TOASTS - Removed (User Request)
+   ======================================== */
+
+/* ========================================
+   DEBUGGING HELPER - Theme Feature Monitoring
+   ======================================== */
+
+/* Add debugging script for theme features */
+/* This will be injected via BetterDiscord's theme system */
+
+/* ========================================
+   ANIMATIONS
+   ======================================== */
+
+@keyframes soloGlow {
+  0%,
+  100% {
+    box-shadow: 0 0 4px rgba(138, 43, 226, 0.3), 0 0 6px rgba(138, 43, 226, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 6px rgba(138, 43, 226, 0.5), 0 0 8px rgba(138, 43, 226, 0.3);
+  }
+}
+
+@keyframes soloGlowPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 6px rgba(138, 43, 226, 0.4), 0 0 10px rgba(139, 92, 246, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 12px rgba(138, 43, 226, 0.7), 0 0 18px rgba(139, 92, 246, 0.5);
+  }
+}
+
+/* ========================================
+   LIMITED GLOW EFFECTS - Only Key Panels
+   ======================================== */
+
+/* Selected Channel Panel - Keep Glow */
+/* (Already defined above in GLOW EFFECTS section) */
+
+/* Button Panel - Keep Glow on Hover */
+/* (Already defined above in GLOW EFFECTS section) */
+
+/* Input Panel - Keep Glow on Focus */
+/* (Already defined above in GLOW EFFECTS section) */
+
+/* Username/Header Panel - Keep Glow */
+/* (Already defined above in GLOW EFFECTS section) */
+
+/* Removed: Embed, Code Block, Role Tag, Badge, Pinned Message, Reaction, Status, Scrollbar glows */
+/* These are now without glow effects for a cleaner look */
+
+/* ========================================
+   ENHANCED EMBEDS & CARDS - Solo Leveling Style
+   ======================================== */
+
+/* Embed Containers - Better Visibility (OPTIMIZED: Removed expensive blur) */
+[class*='embed'],
+[class*='embedWrapper'],
+[class*='embedContainer'] {
+  background: rgba(15, 15, 26, 0.9) !important;
+  border-left: 3px solid rgba(138, 43, 226, 0.5) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  /* REMOVED: backdrop-filter: blur(10px) - too expensive */
+}
+
+/* Solo Leveling Plugin Embed - Enhanced Styling */
+[class*='embed'][class*='solo'],
+[class*='embed'] [class*='solo'],
+[class*='embed'] [class*='leveling'],
+[class*='embed'] [class*='rank'],
+[class*='embed'] [class*='xp'] {
+  background: rgba(138, 43, 226, 0.1) !important;
+  border-left-color: rgba(138, 43, 226, 0.8) !important;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.3), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Embed Title - Enhanced */
+[class*='embed'] [class*='title'],
+[class*='embedTitle'] {
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.4) !important;
+  font-weight: 500 !important;
+}
+
+/* Embed Description - Better Readability */
+[class*='embed'] [class*='description'],
+[class*='embedDescription'] {
+  color: rgba(255, 255, 255, 0.9) !important;
+  line-height: 1.6 !important;
+}
+
+/* Embed Fields - Better Separation */
+[class*='embed'] [class*='field'],
+[class*='embedField'] {
+  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+}
+
+/* ========================================
+   ENHANCED INPUT AREA - Solo Leveling Style
+   ======================================== */
+
+/* Message Input Container - More Prominent (OPTIMIZED: Removed expensive blur) */
+[class*='channelTextArea'],
+[class*='slateTextArea'],
+[class*='textArea'] {
+  background: rgba(15, 15, 26, 0.95) !important;
+  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  border-radius: 8px !important;
+  /* REMOVED: backdrop-filter: blur(10px) - too expensive */
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* Message Input Focus - Enhanced Glow */
+[class*='channelTextArea']:focus-within,
+[class*='slateTextArea']:focus-within,
+[class*='textArea']:focus-within {
+  border-color: rgba(138, 43, 226, 0.6) !important;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.4), 0 0 20px rgba(139, 92, 246, 0.3),
+    0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ========================================
+   ENHANCED SIDEBAR - Better Channel Visibility
+   ======================================== */
+
+/* Channel List Container - Better Background (OPTIMIZED: Removed expensive blur) */
+[class*='channels'],
+[class*='channelList'],
+[class*='sidebar'] {
+  background: rgba(10, 10, 15, 0.7) !important;
+  /* REMOVED: backdrop-filter: blur(5px) - too expensive, causes lag */
+}
+
+/* Channel Item - Better Hover State */
+[class*='channel']:not([class*='selected']):hover {
+  background: rgba(138, 43, 226, 0.1) !important;
+  border-radius: 4px !important;
+  transition: background 0.2s ease !important;
+}
+
+/* Channel Unread Indicator - More Visible (OPTIMIZED: Removed animation to reduce lag) */
+[class*='channel'] [class*='unread'],
+[class*='channel'] [class*='unreadBadge'] {
+  background: var(--main-color) !important;
+  box-shadow: 0 0 8px rgba(138, 43, 226, 0.8) !important;
+  /* REMOVED: animation - causes lag with many channels */
+}
+
+/* ========================================
+   ENHANCED STATUS INDICATORS - More Visible
+   ======================================== */
+
+/* Online Status - Enhanced Green Glow */
+[class*='status'][class*='online'],
+[class*='statusOnline'],
+[class*='status'][style*='online'] {
+  box-shadow: 0 0 6px rgba(0, 255, 136, 0.6), 0 0 10px rgba(0, 255, 136, 0.4) !important;
+  border: 2px solid rgba(0, 255, 136, 0.8) !important;
+}
+
+/* Idle Status - Enhanced Orange Glow */
+[class*='status'][class*='idle'],
+[class*='statusIdle'],
+[class*='status'][style*='idle'] {
+  box-shadow: 0 0 6px rgba(255, 170, 0, 0.6), 0 0 10px rgba(255, 170, 0, 0.4) !important;
+  border: 2px solid rgba(255, 170, 0, 0.8) !important;
+}
+
+/* DND Status - Enhanced Red Glow */
+[class*='status'][class*='dnd'],
+[class*='statusDnd'],
+[class*='status'][style*='dnd'] {
+  box-shadow: 0 0 6px rgba(255, 68, 68, 0.6), 0 0 10px rgba(255, 68, 68, 0.4) !important;
+  border: 2px solid rgba(255, 68, 68, 0.8) !important;
+}
+
+/* Streaming Status - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+[class*='status'][class*='streaming'],
+[class*='statusStreaming'],
+[class*='status'][style*='streaming'] {
+  box-shadow: 0 0 10px rgba(138, 43, 226, 0.8) !important; /* OPTIMIZED: Single shadow */
+  border: 2px solid rgba(138, 43, 226, 0.9) !important;
+  /* REMOVED: animation - causes lag */
+}
+
+/* ========================================
+   ENHANCED USER POPOUTS - Better Visibility
+   ======================================== */
+
+/* User Popout Container - Enhanced Background (OPTIMIZED: Removed expensive blur) */
+[class*='userPopout'],
+[class*='userPopoutOuter'],
+[class*='userProfileModal'] {
+  background: rgba(15, 15, 26, 0.98) !important;
+  /* REMOVED: backdrop-filter: blur(20px) - very expensive, causes lag */
+  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(138, 43, 226, 0.2) !important;
+}
+
+/* User Popout Header - Enhanced */
+[class*='userPopout'] [class*='header'],
+[class*='userPopout'] [class*='banner'] {
+  border-bottom: 2px solid rgba(138, 43, 226, 0.4) !important;
+}
+
+/* User Popout Username - Enhanced Glow */
+[class*='userPopout'] [class*='username'],
+[class*='userPopout'] [class*='name'] {
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.5), 0 0 10px rgba(124, 58, 237, 0.3) !important;
+}
+
+/* ========================================
+   ENHANCED MODALS - Better Visibility
+   ======================================== */
+
+/* Modal Container - Enhanced (OPTIMIZED: Removed expensive blur) */
+[class*='modal'],
+[class*='modalRoot'],
+[class*='modalContent'] {
+  background: rgba(15, 15, 26, 0.99) !important;
+  /* REMOVED: backdrop-filter: blur(20px) - very expensive, causes lag */
+  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(138, 43, 226, 0.2) !important;
+}
+
+/* Modal Header - Enhanced */
+[class*='modal'] [class*='header'],
+[class*='modal'] [class*='title'] {
+  border-bottom: 2px solid rgba(138, 43, 226, 0.4) !important;
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.4) !important;
+}
+
+/* ========================================
+   SMOOTHER ANIMATIONS - Enhanced Transitions (OPTIMIZED)
+   ======================================== */
+
+/* REMOVED: Global * selector - too expensive, causes lag */
+/* Only apply transitions to specific elements that need them */
+
+/* Button Transitions - Smoother (OPTIMIZED: Only specific properties) */
+button,
+[class*='button'] {
+  transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+/* Input Transitions - Smoother (OPTIMIZED: Only specific properties) */
+input,
+textarea,
+[class*='input'] {
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
+}
+
+/* ========================================
+   BETTER CONTRAST - Improved Readability
+   ======================================== */
+
+/* Message Text - Better Contrast */
+[class*='message'] [class*='content']:not(.bd-crit-hit) {
+  color: rgba(255, 255, 255, 0.98) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Username - Better Contrast */
+[class*='message'] [class*='username'],
+[class*='message'] [class*='author'] {
+  color: rgba(255, 255, 255, 0.98) !important;
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.5), 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Channel Name - Better Contrast */
+[class*='channel'] [class*='name'] {
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
+}
+
+/* Selected Channel - Enhanced Contrast */
+[class*='selected'] [class*='name'] {
+  color: rgba(255, 255, 255, 1) !important;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+}

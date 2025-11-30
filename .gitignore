@@ -1,0 +1,117 @@
+# ============================================
+# BLACKLIST - Files/Folders to NEVER commit
+# ============================================
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Backups (keep local, don't commit)
+backups/
+**/backups/
+*.backup
+*.bak
+*.old
+*.orig
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.cache
+*.swp
+*.swo
+*~
+.#*
+
+# OS files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# IDE files
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+.project
+.classpath
+.settings/
+
+# Large media files (GIFs, videos, images)
+*.gif
+*.mp4
+*.avi
+*.mov
+*.webm
+*.mkv
+*.png
+*.jpg
+*.jpeg
+*.webp
+!docs/**/*.png
+!docs/**/*.jpg
+
+# Debug/test files
+*Debug.js
+*debug.js
+*Test.js
+*test.js
+*.test.js
+*.spec.js
+*_test.js
+*_spec.js
+test/
+tests/
+__tests__/
+spec/
+specs/
+
+# Personal/experimental files
+MyPlugin.plugin.js
+MyTheme.theme.css
+PixelSnake.plugin.js
+personal/
+experimental/
+scratch/
+drafts/
+
+# Sensitive data
+.env
+.env.local
+.env.*.local
+*.key
+*.pem
+*.cert
+secrets/
+credentials/
+config.local.*
+
+# Build artifacts
+dist/
+build/
+out/
+*.min.js
+*.min.css
+*.bundle.js
+
+# Empty directories
+SoloLevelingStats/
+empty/
+
+# Git files (if nested repos exist)
+.git/
+.gitignore.local
+
+# Documentation drafts
+*draft.md
+*todo.md
+*notes.md
+!docs/**/*.md
