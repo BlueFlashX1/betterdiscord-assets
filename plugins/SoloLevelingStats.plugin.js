@@ -10,6 +10,35 @@
  */
 
 module.exports = class SoloLevelingStats {
+  // Verification helper - call this from console: BdApi.Plugins.get('SoloLevelingStats').instance.verifyMessageDetection()
+  verifyMessageDetection() {
+    console.log('=== SoloLevelingStats Message Detection Verification ===');
+    console.log('Plugin Enabled:', this.settings.enabled);
+    console.log('Current Level:', this.settings.level);
+    console.log('Current XP:', this.settings.xp);
+    console.log('Total XP:', this.settings.totalXP);
+    console.log('Messages Sent:', this.settings.activity.messagesSent);
+    console.log('Characters Typed:', this.settings.activity.charactersTyped);
+    console.log('');
+    console.log('Message Observer Active:', !!this.messageObserver);
+    console.log('Input Handler Active:', !!this.messageInputHandler);
+    console.log('Input Monitoring Active:', this.inputMonitoringActive);
+    console.log('');
+    console.log('Processed Message IDs:', this.processedMessageIds?.size || 0);
+    console.log('Recent Messages:', this.recentMessages?.size || 0);
+    console.log('');
+    console.log('To test: Send a message in Discord and check if XP increases.');
+    console.log('Enable debug mode in settings to see detailed logs.');
+    return {
+      enabled: this.settings.enabled,
+      level: this.settings.level,
+      xp: this.settings.xp,
+      totalXP: this.settings.totalXP,
+      messagesSent: this.settings.activity.messagesSent,
+      observerActive: !!this.messageObserver,
+      inputHandlerActive: !!this.messageInputHandler,
+    };
+  }
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -124,39 +153,46 @@ module.exports = class SoloLevelingStats {
   // Error logging helper
   debugError(operation, error, context = {}) {
     this.debug.errorCount++;
+
+    // Extract error message properly
+    let errorMessage = 'Unknown error';
+    let errorStack = null;
+
+    if (error instanceof Error) {
+      errorMessage = error.message || String(error);
+      errorStack = error.stack;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      // Try to extract meaningful info from error object
+      errorMessage = error.message || error.toString() || JSON.stringify(error).substring(0, 200);
+      errorStack = error.stack;
+    } else {
+      errorMessage = String(error);
+    }
+
     this.debug.lastError = {
       operation,
-      error: error.message || error,
-      stack: error.stack,
+      error: errorMessage,
+      stack: errorStack,
       context,
       timestamp: Date.now(),
     };
 
     const timestamp = new Date().toISOString();
-    console.error(`[SoloLevelingStats:ERROR:${operation}]`, {
-      message: error.message || error,
-      stack: error.stack,
+    console.error(`[SoloLevelingStats:ERROR:${operation}]`, errorMessage, {
+      stack: errorStack,
       context,
       timestamp,
     });
 
     // Also log to debug file
-    console.warn(`[SoloLevelingStats:ERROR:${operation}] ${error.message || error}`, context);
+    console.warn(`[SoloLevelingStats:ERROR:${operation}] ${errorMessage}`, context);
   }
 
   start() {
     try {
       this.debugLog('START', 'Plugin starting...');
-
-      // Verify getSettingsPanel is accessible (prototype method)
-      console.log(
-        '[SoloLevelingStats] Method accessible in start():',
-        typeof this.getSettingsPanel === 'function'
-      );
-      console.log(
-        '[SoloLevelingStats] Method on prototype:',
-        typeof SoloLevelingStats.prototype.getSettingsPanel === 'function'
-      );
 
       // Load settings
       this.loadSettings();
@@ -275,58 +311,85 @@ module.exports = class SoloLevelingStats {
     // For now, we'll store the agility bonus in a way CriticalHit can read it
 
     try {
+      // Validate settings exist
+      if (!this.settings || !this.settings.stats) {
+        this.debugError('SAVE_AGILITY_BONUS', new Error('Settings or stats not initialized'));
+        return;
+      }
+
       // Store agility bonus in BetterDiscord Data for CriticalHit to read
       // Agility scales: +2% crit chance per point (simplified scaling)
       // CriticalHit will cap total crit chance at 90%
       // Luck buffs enhance Agility bonus: (base AGI bonus) * (1 + luck multiplier)
-      const baseAgilityBonus = this.settings.stats.agility * 0.02; // 2% per point
-      const totalLuckBuff = this.getTotalLuckBuff();
+      const agilityStat = this.settings.stats.agility || 0;
+      const agilityBonus = agilityStat * 0.02; // 2% per point
+      const baseAgilityBonus = agilityStat * 0.02; // 2% per point
+      const totalLuckBuff = this.getTotalLuckBuff ? this.getTotalLuckBuff() : 0;
       const luckMultiplier = totalLuckBuff / 100;
       const enhancedAgilityBonus = baseAgilityBonus * (1 + luckMultiplier); // Luck enhances Agility
 
+      // Prepare data object (ensure all values are serializable numbers)
+      const agilityData = {
+        bonus: isNaN(enhancedAgilityBonus) ? 0 : Number(enhancedAgilityBonus.toFixed(6)),
+        baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
+        agility: agilityStat,
+        luckEnhanced: totalLuckBuff > 0,
+      };
+
       // Always save agility bonus (even if 0) so CriticalHit knows current agility
-      // Save the enhanced bonus (base + luck enhancement)
-      BdApi.Data.save('SoloLevelingStats', 'agilityBonus', {
-        bonus: enhancedAgilityBonus, // Stored as decimal (e.g., 0.20 for 20%) - includes Luck enhancement
-        baseBonus: baseAgilityBonus, // Base agility bonus without Luck
-        agility: this.settings.stats.agility,
-        luckEnhanced: totalLuckBuff > 0, // Flag indicating if Luck enhanced this
-      });
+      BdApi.Data.save('SoloLevelingStats', 'agilityBonus', agilityData);
 
       // Only log if there's a bonus
       if (agilityBonus > 0) {
-        this.debugLog('AGILITY_BONUS', `Agility bonus available for CriticalHit: +${(agilityBonus * 100).toFixed(1)}% (Agility: ${this.settings.stats.agility})`);
+        this.debugLog(
+          'AGILITY_BONUS',
+          `Agility bonus available for CriticalHit: +${(agilityBonus * 100).toFixed(
+            1
+          )}% (Agility: ${agilityStat})`
+        );
       }
 
       // Save Luck buffs for CriticalHit to read (stacked random buffs apply to crit chance)
       try {
         let luckCritBonus = 0;
         if (
-          this.settings.stats.luck > 0 &&
+          (this.settings.stats.luck || 0) > 0 &&
           Array.isArray(this.settings.luckBuffs) &&
           this.settings.luckBuffs.length > 0
         ) {
           // Sum all stacked luck buffs for crit chance bonus
-          luckCritBonus = this.getTotalLuckBuff() / 100; // Convert % to decimal
+          luckCritBonus = totalLuckBuff / 100; // Convert % to decimal
         }
 
-        BdApi.Data.save('SoloLevelingStats', 'luckBonus', {
-          bonus: luckCritBonus, // Stored as decimal (e.g., 0.15 for 15%)
-          luck: this.settings.stats.luck,
+        const luckData = {
+          bonus: isNaN(luckCritBonus) ? 0 : Number(luckCritBonus.toFixed(6)),
+          luck: this.settings.stats.luck || 0,
           luckBuffs: Array.isArray(this.settings.luckBuffs) ? [...this.settings.luckBuffs] : [],
-          totalBuffPercent: luckCritBonus * 100, // Total buff percentage
-        });
+          totalBuffPercent: isNaN(luckCritBonus) ? 0 : Number((luckCritBonus * 100).toFixed(2)),
+        };
+
+        BdApi.Data.save('SoloLevelingStats', 'luckBonus', luckData);
 
         if (luckCritBonus > 0) {
-          this.debugLog('LUCK_BONUS', `Luck buffs available for CriticalHit: +${(luckCritBonus * 100).toFixed(1)}% crit chance (${this.settings.luckBuffs.length} stacked buffs)`);
+          this.debugLog(
+            'LUCK_BONUS',
+            `Luck buffs available for CriticalHit: +${(luckCritBonus * 100).toFixed(
+              1
+            )}% crit chance (${this.settings.luckBuffs.length} stacked buffs)`
+          );
         }
       } catch (error) {
         this.debugError('SAVE_LUCK_BONUS', error);
       }
     } catch (error) {
-      // Error saving bonus - that's okay
+      // Error saving bonus - log but don't crash
       this.debugError('SAVE_AGILITY_BONUS', error);
     }
+  }
+
+  saveAgilityBonus() {
+    // Alias for integrateWithCriticalHit for backward compatibility
+    this.integrateWithCriticalHit();
   }
 
   createChatUI() {
@@ -524,25 +587,37 @@ module.exports = class SoloLevelingStats {
   }
 
   renderChatActivity() {
+    // Safe access with fallbacks
+    const messagesSent = this.settings?.activity?.messagesSent ?? 0;
+    const charactersTyped = this.settings?.activity?.charactersTyped ?? 0;
+    const channelsVisited = this.settings?.activity?.channelsVisited;
+    const channelsCount =
+      channelsVisited instanceof Set
+        ? channelsVisited.size
+        : Array.isArray(channelsVisited)
+        ? channelsVisited.length
+        : 0;
+    const timeActive = this.settings?.activity?.timeActive ?? 0;
+
     return `
       <div class="sls-chat-activity-grid">
         <div class="sls-chat-activity-item">
           <div class="sls-chat-activity-label">Messages</div>
-          <div class="sls-chat-activity-value">${this.settings.activity.messagesSent.toLocaleString()}</div>
+          <div class="sls-chat-activity-value">${messagesSent.toLocaleString()}</div>
         </div>
         <div class="sls-chat-activity-item">
           <div class="sls-chat-activity-label">Characters</div>
-          <div class="sls-chat-activity-value">${this.settings.activity.charactersTyped.toLocaleString()}</div>
+          <div class="sls-chat-activity-value">${charactersTyped.toLocaleString()}</div>
         </div>
         <div class="sls-chat-activity-item">
           <div class="sls-chat-activity-label">Channels</div>
-          <div class="sls-chat-activity-value">${this.settings.activity.channelsVisited.size}</div>
+          <div class="sls-chat-activity-value">${channelsCount}</div>
         </div>
         <div class="sls-chat-activity-item">
           <div class="sls-chat-activity-label">Time Active</div>
-          <div class="sls-chat-activity-value">${Math.round(
-            this.settings.activity.timeActive / 60
-          )}h ${Math.round(this.settings.activity.timeActive % 60)}m</div>
+          <div class="sls-chat-activity-value">${Math.round(timeActive / 60)}h ${Math.round(
+      timeActive % 60
+    )}m</div>
         </div>
       </div>
     `;
@@ -706,10 +781,11 @@ module.exports = class SoloLevelingStats {
 
     if (toggleBtn && content) {
       // Check initial state - if no inline style, it's expanded by default
-      const isCurrentlyExpanded = content.style.display !== 'none' &&
-                                  (content.style.display === '' ||
-                                   content.style.display === 'block' ||
-                                   window.getComputedStyle(content).display !== 'none');
+      const isCurrentlyExpanded =
+        content.style.display !== 'none' &&
+        (content.style.display === '' ||
+          content.style.display === 'block' ||
+          window.getComputedStyle(content).display !== 'none');
 
       // Set initial arrow state
       toggleBtn.textContent = isCurrentlyExpanded ? '▼' : '▲';
@@ -719,10 +795,11 @@ module.exports = class SoloLevelingStats {
         e.preventDefault();
 
         // Toggle content visibility
-        const isExpanded = content.style.display !== 'none' &&
-                          (content.style.display === '' ||
-                           content.style.display === 'block' ||
-                           window.getComputedStyle(content).display !== 'none');
+        const isExpanded =
+          content.style.display !== 'none' &&
+          (content.style.display === '' ||
+            content.style.display === 'block' ||
+            window.getComputedStyle(content).display !== 'none');
 
         content.style.display = isExpanded ? 'none' : 'block';
         toggleBtn.textContent = isExpanded ? '▲' : '▼';
@@ -1717,16 +1794,32 @@ module.exports = class SoloLevelingStats {
   }
 
   saveSettings(immediate = false) {
+    // Prevent saving if settings aren't initialized
+    if (!this.settings) {
+      this.debugError('SAVE_SETTINGS', new Error('Settings not initialized'));
+      return;
+    }
+
     try {
       // Save agility and luck bonuses for CriticalHit before saving settings
-      this.saveAgilityBonus();
+      try {
+        this.saveAgilityBonus();
+      } catch (error) {
+        // Don't fail entire save if agility bonus save fails
+        this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
+      }
 
-      // Convert Set to Array for storage
+      // Convert Set to Array for storage and ensure all data is serializable
       const settingsToSave = {
         ...this.settings,
         activity: {
           ...this.settings.activity,
-          channelsVisited: Array.from(this.settings.activity.channelsVisited),
+          channelsVisited:
+            this.settings.activity?.channelsVisited instanceof Set
+              ? Array.from(this.settings.activity.channelsVisited)
+              : Array.isArray(this.settings.activity?.channelsVisited)
+              ? this.settings.activity.channelsVisited
+              : [],
         },
         // Add metadata for debugging
         _metadata: {
@@ -1735,8 +1828,34 @@ module.exports = class SoloLevelingStats {
         },
       };
 
-      BdApi.Data.save('SoloLevelingStats', 'settings', settingsToSave);
-      this.lastSaveTime = Date.now();
+      // Remove any non-serializable properties (functions, undefined, etc.)
+      const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
+
+      // Save with retry logic (synchronous retries)
+      let saveSuccess = false;
+      let lastError = null;
+
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          BdApi.Data.save('SoloLevelingStats', 'settings', cleanSettings);
+          this.lastSaveTime = Date.now();
+          saveSuccess = true;
+          break;
+        } catch (error) {
+          lastError = error;
+          if (attempt < 2) {
+            // Small delay before retry (synchronous)
+            const start = Date.now();
+            while (Date.now() - start < 50 * (attempt + 1)) {
+              // Busy wait for small delay
+            }
+          }
+        }
+      }
+
+      if (!saveSuccess) {
+        throw lastError || new Error('Failed to save settings after 3 attempts');
+      }
 
       if (immediate) {
         // OPTIMIZED: Removed verbose logging for frequent saves (happens every 5 seconds)
@@ -1746,7 +1865,22 @@ module.exports = class SoloLevelingStats {
       this.debugError('SAVE_SETTINGS', error);
       // Try to save to backup location
       try {
-        BdApi.Data.save('SoloLevelingStats', 'settings_backup', settingsToSave);
+        // Ensure we have a clean copy for backup
+        const backupData = JSON.parse(
+          JSON.stringify({
+            ...this.settings,
+            activity: {
+              ...this.settings.activity,
+              channelsVisited:
+                this.settings.activity?.channelsVisited instanceof Set
+                  ? Array.from(this.settings.activity.channelsVisited)
+                  : Array.isArray(this.settings.activity?.channelsVisited)
+                  ? this.settings.activity.channelsVisited
+                  : [],
+            },
+          })
+        );
+        BdApi.Data.save('SoloLevelingStats', 'settings_backup', backupData);
         this.debugLog('SAVE_SETTINGS', 'Saved to backup location');
       } catch (backupError) {
         this.debugError('SAVE_SETTINGS_BACKUP', backupError);
@@ -1756,10 +1890,63 @@ module.exports = class SoloLevelingStats {
 
   migrateData() {
     // Migration logic for future updates
-    if (!this.settings.stats) {
+    try {
+      // Ensure stats object exists
+      if (!this.settings.stats || typeof this.settings.stats !== 'object') {
+        this.settings.stats = { ...this.defaultSettings.stats };
+      } else {
+        // Ensure all stat properties exist
+        const defaultStats = this.defaultSettings.stats;
+        Object.keys(defaultStats).forEach((key) => {
+          if (
+            this.settings.stats[key] === undefined ||
+            typeof this.settings.stats[key] !== 'number'
+          ) {
+            this.settings.stats[key] = defaultStats[key];
+          }
+        });
+      }
+
+      // Ensure activity object exists
+      if (!this.settings.activity || typeof this.settings.activity !== 'object') {
+        this.settings.activity = { ...this.defaultSettings.activity };
+      } else {
+        // Ensure all activity properties exist
+        const defaultActivity = this.defaultSettings.activity;
+        Object.keys(defaultActivity).forEach((key) => {
+          if (this.settings.activity[key] === undefined) {
+            this.settings.activity[key] = defaultActivity[key];
+          }
+        });
+      }
+
+      // Ensure luckBuffs array exists
+      if (!Array.isArray(this.settings.luckBuffs)) {
+        this.settings.luckBuffs = [];
+      }
+
+      // Ensure channelsVisited is a Set
+      if (!(this.settings.activity.channelsVisited instanceof Set)) {
+        if (Array.isArray(this.settings.activity.channelsVisited)) {
+          this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
+        } else {
+          this.settings.activity.channelsVisited = new Set();
+        }
+      }
+
+      if (
+        this.settings.unallocatedStatPoints === undefined ||
+        typeof this.settings.unallocatedStatPoints !== 'number'
+      ) {
+        this.settings.unallocatedStatPoints = 0;
+      }
+    } catch (error) {
+      this.debugError('MIGRATE_DATA', error);
+      // Fallback to defaults if migration fails
       this.settings.stats = { ...this.defaultSettings.stats };
-    }
-    if (this.settings.unallocatedStatPoints === undefined) {
+      this.settings.activity = { ...this.defaultSettings.activity };
+      this.settings.activity.channelsVisited = new Set();
+      this.settings.luckBuffs = [];
       this.settings.unallocatedStatPoints = 0;
     }
   }
@@ -2491,6 +2678,16 @@ module.exports = class SoloLevelingStats {
       }
 
       const { channelId, channelType, serverId, isDM } = channelInfo;
+
+      // Ensure channelsVisited is a Set
+      if (!(this.settings.activity.channelsVisited instanceof Set)) {
+        if (Array.isArray(this.settings.activity.channelsVisited)) {
+          this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
+        } else {
+          this.settings.activity.channelsVisited = new Set();
+        }
+      }
+
       const previousSize = this.settings.activity.channelsVisited.size;
       const wasNewChannel = !this.settings.activity.channelsVisited.has(channelId);
 
@@ -2836,7 +3033,8 @@ module.exports = class SoloLevelingStats {
       }
 
       // Get Luck buff multiplier (applies to ALL stat bonuses)
-      const totalLuckBuff = this.getTotalLuckBuff();
+      const totalLuckBuff =
+        typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
       const luckMultiplier = totalLuckBuff / 100; // Convert percentage to multiplier
 
       // Apply skill tree all-stat bonus (if any)
@@ -2855,7 +3053,8 @@ module.exports = class SoloLevelingStats {
       // Luck buffs enhance Strength bonus: (base STR bonus) * (1 + luck multiplier)
       // Skill tree all-stat bonus enhances all stat bonuses
       const baseStrengthMultiplier = 1 + this.settings.stats.strength * 0.05;
-      const enhancedStrengthMultiplier = baseStrengthMultiplier * (1 + luckMultiplier + skillAllStatBonus);
+      const enhancedStrengthMultiplier =
+        baseStrengthMultiplier * (1 + luckMultiplier + skillAllStatBonus);
       xp = Math.round(xp * enhancedStrengthMultiplier);
 
       // Intelligence: Enhanced scaling for long messages
@@ -2876,6 +3075,17 @@ module.exports = class SoloLevelingStats {
         const luckBonusXP = Math.round(xp * luckMultiplier);
         xp += luckBonusXP;
 
+        // Calculate int multiplier info for debug log (only if message is long enough)
+        let intEnhancedInfo = 'N/A';
+        if (messageLength > 200) {
+          const intBaseBonus = this.settings.stats.intelligence * 0.1;
+          const intAdvancedBonus = Math.max(0, (this.settings.stats.intelligence - 5) * 0.02);
+          const baseIntMultiplier = 1 + intBaseBonus + intAdvancedBonus;
+          const enhancedIntMultiplier =
+            baseIntMultiplier * (1 + luckMultiplier + skillAllStatBonus);
+          intEnhancedInfo = baseIntMultiplier.toFixed(2) + ' → ' + enhancedIntMultiplier.toFixed(2);
+        }
+
         this.debugLog('AWARD_XP_LUCK', 'Stacked luck buffs applied', {
           luckStat: this.settings.stats.luck,
           luckBuffs: [...this.settings.luckBuffs],
@@ -2884,8 +3094,9 @@ module.exports = class SoloLevelingStats {
           baseXP: xp - luckBonusXP,
           luckBonusXP,
           finalXP: xp,
-          strengthEnhanced: baseStrengthMultiplier.toFixed(2) + ' → ' + enhancedStrengthMultiplier.toFixed(2),
-          intEnhanced: messageLength > 200 ? (baseIntMultiplier ? baseIntMultiplier.toFixed(2) + ' → ' + enhancedIntMultiplier.toFixed(2) : 'N/A') : 'N/A',
+          strengthEnhanced:
+            baseStrengthMultiplier.toFixed(2) + ' → ' + enhancedStrengthMultiplier.toFixed(2),
+          intEnhanced: intEnhancedInfo,
         });
       }
 
@@ -2911,12 +3122,15 @@ module.exports = class SoloLevelingStats {
       });
 
       // Save immediately on XP gain (important data)
-      try {
-        this.saveSettings(true);
-        this.debugLog('AWARD_XP', 'Settings saved after XP gain');
-      } catch (error) {
-        this.debugError('AWARD_XP', error, { phase: 'save_after_xp' });
-      }
+      // Use setTimeout to avoid blocking the main thread
+      setTimeout(() => {
+        try {
+          this.saveSettings(true);
+          this.debugLog('AWARD_XP', 'Settings saved after XP gain');
+        } catch (error) {
+          this.debugError('AWARD_XP', error, { phase: 'save_after_xp' });
+        }
+      }, 0);
 
       // Update chat UI
       try {
@@ -3385,7 +3599,8 @@ module.exports = class SoloLevelingStats {
       this.settings.luckBuffs.push(roundedBuff);
 
       // Calculate total stacked buff
-      const totalLuckBuff = this.getTotalLuckBuff();
+      const totalLuckBuff =
+        typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
 
       this.debugLog('ALLOCATE_STAT_LUCK', 'Random luck buff generated', {
         newBuff: roundedBuff,
@@ -3548,7 +3763,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 10,000 messages',
         condition: { type: 'messages', value: 10000 },
         title: 'S-Rank Hunter',
-        titleBonus: { xp: 0.40 }, // +40% XP
+        titleBonus: { xp: 0.4 }, // +40% XP
       },
       // Character/Writing Milestones
       {
@@ -3569,11 +3784,11 @@ module.exports = class SoloLevelingStats {
       },
       {
         id: 'ruler_authority',
-        name: 'Ruler\'s Authority',
+        name: "Ruler's Authority",
         description: 'Type 150,000 characters',
         condition: { type: 'characters', value: 150000 },
-        title: 'Ruler\'s Authority',
-        titleBonus: { xp: 0.30 }, // +30% XP
+        title: "Ruler's Authority",
+        titleBonus: { xp: 0.3 }, // +30% XP
       },
       // Level Milestones
       {
@@ -3582,7 +3797,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 15',
         condition: { type: 'level', value: 15 },
         title: 'The Awakened',
-        titleBonus: { xp: 0.10 }, // +10% XP
+        titleBonus: { xp: 0.1 }, // +10% XP
       },
       {
         id: 'shadow_army',
@@ -3590,7 +3805,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 30',
         condition: { type: 'level', value: 30 },
         title: 'Shadow Army Commander',
-        titleBonus: { xp: 0.20 }, // +20% XP
+        titleBonus: { xp: 0.2 }, // +20% XP
       },
       {
         id: 'necromancer',
@@ -3705,7 +3920,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 100 and be active for 50 hours',
         condition: { type: 'level', value: 100 },
         title: 'The Ruler',
-        titleBonus: { xp: 0.50 }, // +50% XP
+        titleBonus: { xp: 0.5 }, // +50% XP
       },
     ];
   }
@@ -3723,7 +3938,13 @@ module.exports = class SoloLevelingStats {
       case 'time':
         return this.settings.activity.timeActive >= condition.value;
       case 'channels':
-        return this.settings.activity.channelsVisited.size >= condition.value;
+        const channelsVisited = this.settings.activity?.channelsVisited;
+        if (channelsVisited instanceof Set) {
+          return channelsVisited.size >= condition.value;
+        } else if (Array.isArray(channelsVisited)) {
+          return channelsVisited.length >= condition.value;
+        }
+        return false;
       default:
         return false;
     }
@@ -3829,7 +4050,7 @@ module.exports = class SoloLevelingStats {
     const vitalityBaseBonus = this.settings.stats.vitality * 0.05;
     const vitalityAdvancedBonus = Math.max(0, (this.settings.stats.vitality - 10) * 0.01);
     const baseVitalityBonus = vitalityBaseBonus + vitalityAdvancedBonus;
-    const totalLuckBuff = this.getTotalLuckBuff();
+    const totalLuckBuff = typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
     const luckMultiplier = totalLuckBuff / 100;
 
     // Get skill tree bonuses
@@ -3846,7 +4067,8 @@ module.exports = class SoloLevelingStats {
     }
 
     // Luck and skill tree enhance Vitality: base bonus multiplied by (1 + luck multiplier + skill all-stat bonus)
-    const enhancedVitalityBonus = baseVitalityBonus * (1 + luckMultiplier + skillAllStatBonus) + skillQuestBonus;
+    const enhancedVitalityBonus =
+      baseVitalityBonus * (1 + luckMultiplier + skillAllStatBonus) + skillQuestBonus;
     const vitalityBonus = 1 + enhancedVitalityBonus;
     const xpReward = Math.round(rewards.xp * vitalityBonus);
 
