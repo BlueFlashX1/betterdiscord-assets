@@ -3028,9 +3028,13 @@ module.exports = class SoloLevelingStats {
       B: 1.3,
       A: 1.4,
       S: 1.5,
-      NH: 1.7, // National Hunter
-      M: 2.0, // Monarch
-      SM: 2.5, // Shadow Monarch (Final)
+      SS: 1.7,
+      SSS: 1.9,
+      'SSS+': 2.1,
+      NH: 2.3, // National Hunter
+      Monarch: 2.6,
+      'Monarch+': 3.0,
+      'Shadow Monarch': 3.5, // Shadow Monarch (Final)
     };
     return rankMultipliers[this.settings.rank] || 1.0;
   }
