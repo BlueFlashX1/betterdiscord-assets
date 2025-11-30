@@ -1,0 +1,24 @@
+{
+  "name": "betterdiscord-dev",
+  "version": "1.0.0",
+  "description": "BetterDiscord plugin and theme development environment",
+  "scripts": {
+    "build:plugin": "node scripts/build-plugin.js",
+    "watch:plugin": "node scripts/watch-plugin.js",
+    "link:plugin": "node scripts/link-plugin.js",
+    "link:theme": "node scripts/link-theme.js",
+    "dev": "npm run watch:plugin"
+  },
+  "keywords": [
+    "betterdiscord",
+    "discord",
+    "plugin",
+    "theme"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "chokidar": "^3.5.3",
+    "fs-extra": "^11.2.0"
+  }
+}

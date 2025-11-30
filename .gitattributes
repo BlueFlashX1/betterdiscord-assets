@@ -1,0 +1,19 @@
+# Auto detect text files and perform LF normalization
+* text=auto
+
+# Plugin files
+*.plugin.js text eol=lf
+
+# Theme files
+*.theme.css text eol=lf
+
+# Documentation
+*.md text eol=lf
+
+# Scripts
+*.sh text eol=lf
+*.js text eol=lf
+
+# JSON config
+*.json text eol=lf
+
