@@ -305,7 +305,7 @@ module.exports = class SkillTree {
     this.eventUnsubscribers.push(unsubscribeLevel);
 
     console.log('SkillTree: ✅ Event-based level up detection enabled - no polling needed');
-    
+
     // Initial check on startup
     this.checkForLevelUp();
   }
@@ -447,10 +447,10 @@ module.exports = class SkillTree {
     this.removeSkillTreeButton();
     this.closeSkillTreeModal();
     this.removeCSS();
-    
+
     // Unsubscribe from events
     this.unsubscribeFromEvents();
-    
+
     if (this.urlCheckInterval) {
       clearInterval(this.urlCheckInterval);
       this.urlCheckInterval = null;
