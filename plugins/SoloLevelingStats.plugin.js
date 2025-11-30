@@ -3233,19 +3233,62 @@ module.exports = class SoloLevelingStats {
       const critBonus = this.checkCriticalHitBonus();
       if (critBonus > 0) {
         const baseXP = xp;
-        xp = Math.round(xp * (1 + critBonus));
+        let critMultiplier = critBonus;
+        let isMegaCrit = false;
+        
+        // Check for Dagger Throw Master mega crit (1000x multiplier)
+        const activeTitle = this.settings.achievements?.activeTitle;
+        if (activeTitle === 'Dagger Throw Master') {
+          const agilityStat = this.settings.stats?.agility || 0;
+          // Chance = Agility stat * 2% (e.g., 10 AGI = 20% chance)
+          const megaCritChance = agilityStat * 0.02;
+          const roll = Math.random();
+          
+          if (roll < megaCritChance) {
+            // MEGA CRIT! 1000x multiplier
+            critMultiplier = 999; // 1000x total (1 + 999 = 1000x)
+            isMegaCrit = true;
+            
+            // Show epic notification
+            this.showNotification(
+              `💥💥💥 MEGA CRITICAL HIT! 💥💥💥\n` +
+              `Dagger Throw Master activated!\n` +
+              `1000x XP Multiplier!`,
+              'success',
+              8000
+            );
+            
+            this.debugLog('AWARD_XP_MEGA_CRIT', 'Mega crit activated!', {
+              agilityStat,
+              megaCritChance: (megaCritChance * 100).toFixed(1) + '%',
+              roll: roll.toFixed(4),
+              multiplier: '1000x',
+            });
+          }
+        }
+        
+        xp = Math.round(xp * (1 + critMultiplier));
         // Track crit for achievements
         if (!this.settings.activity.critsLanded) {
           this.settings.activity.critsLanded = 0;
         }
         this.settings.activity.critsLanded++;
-        this.debugLog('AWARD_XP_CRIT', 'Critical hit bonus applied', {
+        
+        const logData = {
           critBonus: (critBonus * 100).toFixed(0) + '%',
           baseXP,
           critBonusXP: xp - baseXP,
           finalXP: xp,
           totalCrits: this.settings.activity.critsLanded,
-        });
+        };
+        
+        if (isMegaCrit) {
+          logData.megaCrit = true;
+          logData.multiplier = '1000x';
+          logData.agilityStat = this.settings.stats?.agility || 0;
+        }
+        
+        this.debugLog('AWARD_XP_CRIT', isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied', logData);
       }
 
       // Rank bonus multiplier (higher rank = more XP)
@@ -4191,7 +4234,7 @@ module.exports = class SoloLevelingStats {
       {
         id: 'dagger_throw_master',
         name: 'Dagger Throw Master',
-        description: 'Land 1,000 critical hits',
+        description: 'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
         titleBonus: { xp: 0.25 }, // +25% XP
