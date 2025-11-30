@@ -27,7 +27,7 @@ module.exports = class SoloLevelingStats {
       level: 1,
       xp: 0,
       totalXP: 0,
-      // Rank system (E, D, C, B, A, S, NH, M, SM)
+      // Rank system (E, D, C, B, A, S, SS, SSS, SSS+, NH, Monarch, Monarch+, Shadow Monarch)
       rank: 'E',
       rankHistory: [],
       // Activity tracking
@@ -3144,10 +3144,14 @@ module.exports = class SoloLevelingStats {
       C: { level: 25, achievements: 5, name: 'C-Rank Hunter', next: 'B' },
       B: { level: 50, achievements: 10, name: 'B-Rank Hunter', next: 'A' },
       A: { level: 100, achievements: 15, name: 'A-Rank Hunter', next: 'S' },
-      S: { level: 200, achievements: 20, name: 'S-Rank Hunter', next: 'NH' },
-      NH: { level: 500, achievements: 25, name: 'National Hunter', next: 'M' },
-      M: { level: 1000, achievements: 30, name: 'Monarch', next: 'SM' },
-      SM: { level: 2000, achievements: 35, name: 'Shadow Monarch', next: null },
+      S: { level: 200, achievements: 20, name: 'S-Rank Hunter', next: 'SS' },
+      SS: { level: 300, achievements: 22, name: 'SS-Rank Hunter', next: 'SSS' },
+      SSS: { level: 400, achievements: 24, name: 'SSS-Rank Hunter', next: 'SSS+' },
+      'SSS+': { level: 500, achievements: 26, name: 'SSS+-Rank Hunter', next: 'NH' },
+      NH: { level: 700, achievements: 28, name: 'National Hunter', next: 'Monarch' },
+      Monarch: { level: 1000, achievements: 30, name: 'Monarch', next: 'Monarch+' },
+      'Monarch+': { level: 1500, achievements: 33, name: 'Monarch+', next: 'Shadow Monarch' },
+      'Shadow Monarch': { level: 2000, achievements: 35, name: 'Shadow Monarch', next: null },
     };
   }
 

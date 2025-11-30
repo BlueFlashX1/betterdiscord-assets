@@ -38,7 +38,7 @@ The foundation plugin that tracks Discord activity and rewards progression.
   - Intelligence: +10% bonus XP from long messages per point (max 20 points)
   - Vitality: +5% daily quest rewards per point (max 20 points)
   - Luck: Random % buffs that stack (2-8% per point, max 20 points)
-- Rank System: E → D → C → B → A → S → National Level progression
+- Rank System: E → D → C → B → A → S → SS → SSS → SSS+ → NH → Monarch → Monarch+ → Shadow Monarch progression
 - Daily Quests: 5 quests reset daily with XP and stat point rewards
 - Achievements: 20+ Solo Leveling-themed achievements with titles
 - Activity Tracking: Messages, characters typed, channels visited, time active
