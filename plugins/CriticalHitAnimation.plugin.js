@@ -27,6 +27,8 @@ module.exports = class CriticalHitAnimation {
     this.lastCritTime = 0;
     this.comboCount = 0;
     this.comboTimeout = null;
+    this.animatedMessages = new Set(); // Track which messages have been animated (prevent duplicates)
+    this.pendingAnimations = new Map(); // Track pending animations with timeouts
   }
 
   start() {
@@ -269,21 +271,63 @@ module.exports = class CriticalHitAnimation {
     };
   }
 
-  showCriticalHitAnimation(comboCount = 1) {
+  getMessageId(messageElement) {
+    // Try to get message ID from various attributes
+    const messageId = messageElement.getAttribute('id') ||
+                      messageElement.getAttribute('data-message-id') ||
+                      messageElement.querySelector('[class*="message"]')?.getAttribute('id') ||
+                      messageElement.closest('[class*="message"]')?.getAttribute('id');
+    
+    // Extract Discord ID if present (17-19 digits)
+    if (messageId) {
+      const match = messageId.match(/\d{17,19}/);
+      if (match) return match[0];
+      return messageId; // Return as-is if no Discord ID found
+    }
+    
+    // Fallback: use element reference
+    return `element-${messageElement.offsetTop}-${messageElement.offsetLeft}`;
+  }
+
+  showCriticalHitAnimation(messageElement = null, comboCount = 1) {
     if (!this.settings.enabled) {
       this.debugLog('Animation disabled, skipping');
       return;
     }
 
+    // Prevent duplicate animations for the same message
+    if (messageElement) {
+      const messageId = this.getMessageId(messageElement);
+      
+      // Check if we've already animated this message
+      if (this.animatedMessages.has(messageId)) {
+        this.debugLog('Message already animated, skipping duplicate', { messageId });
+        return;
+      }
+      
+      // Check if there's a pending animation for this message
+      if (this.pendingAnimations.has(messageId)) {
+        this.debugLog('Animation already pending for this message', { messageId });
+        return;
+      }
+      
+      // Mark as pending
+      this.pendingAnimations.set(messageId, Date.now());
+    }
+
     // Anti-spam: Check cooldown
     const now = Date.now();
     const timeSinceLastCrit = now - this.lastCritTime;
-
+    
     if (timeSinceLastCrit < this.settings.cooldown && comboCount === 1) {
       // Within cooldown - increment combo instead
       this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
       this.updateComboTimeout();
       this.showComboAnimation();
+      if (messageElement) {
+        const messageId = this.getMessageId(messageElement);
+        this.pendingAnimations.delete(messageId);
+      }
       return;
     }
 
@@ -296,6 +340,19 @@ module.exports = class CriticalHitAnimation {
 
     this.lastCritTime = now;
     this.updateComboTimeout();
+    
+    // Mark message as animated
+    if (messageElement) {
+      const messageId = this.getMessageId(messageElement);
+      this.animatedMessages.add(messageId);
+      this.pendingAnimations.delete(messageId);
+      
+      // Clean up old entries (keep last 100)
+      if (this.animatedMessages.size > 100) {
+        const entries = Array.from(this.animatedMessages);
+        this.animatedMessages = new Set(entries.slice(-50));
+      }
+    }
 
     try {
       const position = this.getMessageAreaPosition();
@@ -445,12 +502,43 @@ module.exports = class CriticalHitAnimation {
           (_, args) => {
             // args[0] is messageElement, args[1] is critSettings
             const messageElement = args[0];
-            if (messageElement && messageElement.classList.contains('bd-crit-hit')) {
-              // Crit was applied - trigger animation
-              setTimeout(() => {
-                this.showCriticalHitAnimation();
-              }, 50); // Small delay to ensure styling is applied
-            }
+            if (!messageElement) return;
+            
+            // Verify crit was actually applied and message is in DOM
+            const checkCritApplied = () => {
+              // Check if message is still in DOM and has crit class
+              if (!document.contains(messageElement)) {
+                return false;
+              }
+              
+              // Verify crit class is present
+              if (!messageElement.classList.contains('bd-crit-hit')) {
+                return false;
+              }
+              
+              // Check if message is fully rendered (has content)
+              const content = messageElement.querySelector('[class*="messageContent"]') ||
+                            messageElement.querySelector('[class*="content"]') ||
+                            messageElement;
+              
+              if (!content || !content.textContent?.trim()) {
+                return false; // Message not fully rendered yet
+              }
+              
+              return true;
+            };
+            
+            // Delay to ensure message is fully processed and not during typing
+            setTimeout(() => {
+              if (checkCritApplied()) {
+                // Additional delay to ensure it's not a premature detection
+                setTimeout(() => {
+                  if (checkCritApplied()) {
+                    this.showCriticalHitAnimation(messageElement);
+                  }
+                }, 100); // 100ms delay to ensure crit is confirmed
+              }
+            }, 150); // Initial delay to ensure styling is applied
           }
         );
         this.debugLog('Hooked into CriticalHit.applyCritStyleWithSettings');
@@ -467,11 +555,29 @@ module.exports = class CriticalHitAnimation {
           'applyCritStyle',
           (_, args) => {
             const messageElement = args[0];
-            if (messageElement && messageElement.classList.contains('bd-crit-hit')) {
-              setTimeout(() => {
-                this.showCriticalHitAnimation();
-              }, 50);
-            }
+            if (!messageElement) return;
+            
+            const checkCritApplied = () => {
+              if (!document.contains(messageElement)) return false;
+              if (!messageElement.classList.contains('bd-crit-hit')) return false;
+              
+              const content = messageElement.querySelector('[class*="messageContent"]') ||
+                            messageElement.querySelector('[class*="content"]') ||
+                            messageElement;
+              
+              if (!content || !content.textContent?.trim()) return false;
+              return true;
+            };
+            
+            setTimeout(() => {
+              if (checkCritApplied()) {
+                setTimeout(() => {
+                  if (checkCritApplied()) {
+                    this.showCriticalHitAnimation(messageElement);
+                  }
+                }, 100);
+              }
+            }, 150);
           }
         );
         this.debugLog('Hooked into CriticalHit.applyCritStyle');
@@ -502,6 +608,13 @@ module.exports = class CriticalHitAnimation {
       clearTimeout(this.comboTimeout);
       this.comboTimeout = null;
     }
+    // Clear pending animations
+    this.pendingAnimations.forEach((timestamp, messageId) => {
+      // Clear old pending animations (older than 5 seconds)
+      if (Date.now() - timestamp > 5000) {
+        this.pendingAnimations.delete(messageId);
+      }
+    });
   }
 
   debugLog(operation, message, data = null) {
