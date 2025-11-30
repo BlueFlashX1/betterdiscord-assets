@@ -98,28 +98,45 @@ module.exports = class CriticalHitAnimation {
       const messageElement = args[0];
       if (!messageElement) return;
 
-      const messageId = this.getMessageId(messageElement);
-      if (!messageId || messageId.length < 17) return;
+      // CRITICAL: Verify message actually has the crit class
+      if (!messageElement.classList || !messageElement.classList.contains('bd-crit-hit')) {
+        return; // Not a critical hit, skip
+      }
 
-      // Skip if already animated
-      if (this.animatedMessages.has(messageId)) return;
+      const messageId = this.getMessageId(messageElement);
+      // Validate message ID is a proper Discord ID (17-19 digits)
+      if (!messageId || !/^\d{17,19}$/.test(messageId)) return;
 
       // Check if own message
       const userId = this.getUserId(messageElement);
+      // Validate user ID is a proper Discord ID (17-19 digits)
+      if (!userId || !/^\d{17,19}$/.test(userId)) return;
+
       if (!this.isOwnMessage(messageElement, userId)) return;
 
-      // Check if new message (not in history)
-      if (this.isMessageInHistory(messageId)) {
-        // Check if recent (within 10 seconds) - allow animation
+      // Check if message is old (in history) vs new (not in history)
+      const isInHistory = this.isMessageInHistory(messageId);
+
+      if (isInHistory) {
+        // Message is in history - check if it's recent (just saved) or old (restored)
         const messageTime = this.getMessageTimestamp(messageElement);
         const timeDiff = Date.now() - (messageTime || 0);
-        if (timeDiff > 10000) return; // Too old, skip
+
+        if (timeDiff > 10000) {
+          // Old message (> 10 seconds) - skip entirely (it's a restoration)
+          return;
+        }
+        // Recent message (within 10 seconds) - it was just saved to history, allow animation
+      } else {
+        // New message (not in history) - proceed with animation
       }
 
-      // Mark as animated and show animation
-      this.animatedMessages.add(messageId);
+      // Show animation
       setTimeout(() => {
-        this.showAnimation(messageElement);
+        // Double-check crit class is still present before animating
+        if (messageElement.classList && messageElement.classList.contains('bd-crit-hit')) {
+          this.showAnimation(messageElement);
+        }
       }, 50);
     });
   }
@@ -155,6 +172,7 @@ module.exports = class CriticalHitAnimation {
           const messageObj = fiber.memoizedProps?.message || fiber.memoizedState?.message;
           if (messageObj?.id) {
             const id = String(messageObj.id).trim();
+            // Validate it's a proper Discord message ID (17-19 digits)
             if (/^\d{17,19}$/.test(id)) return id;
           }
           fiber = fiber.return;
@@ -163,8 +181,13 @@ module.exports = class CriticalHitAnimation {
 
       const dataId = element.getAttribute('data-message-id');
       if (dataId) {
-        const match = dataId.match(/\d{17,19}/);
+        const match = dataId.match(/^\d{17,19}$/); // Only match if entire string is valid ID
         if (match) return match[0];
+        // If composite format, extract last valid ID
+        const allMatches = dataId.match(/\d{17,19}/g);
+        if (allMatches && allMatches.length > 0) {
+          return allMatches[allMatches.length - 1]; // Take last match (usually message ID)
+        }
       }
     } catch (e) {}
     return null;
@@ -177,7 +200,10 @@ module.exports = class CriticalHitAnimation {
         let fiber = element[reactKey];
         for (let i = 0; i < 30 && fiber; i++) {
           const authorId = fiber.memoizedProps?.message?.author?.id || fiber.memoizedState?.message?.author?.id;
-          if (authorId && /^\d{17,19}$/.test(authorId)) return authorId;
+          // Validate it's a proper Discord user ID (17-19 digits)
+          if (authorId && /^\d{17,19}$/.test(String(authorId).trim())) {
+            return String(authorId).trim();
+          }
           fiber = fiber.return;
         }
       }
@@ -206,6 +232,11 @@ module.exports = class CriticalHitAnimation {
 
   showAnimation(messageElement) {
     if (!this.settings.enabled) return;
+
+    // Final safety check: verify message still has crit class
+    if (!messageElement || !messageElement.classList || !messageElement.classList.contains('bd-crit-hit')) {
+      return; // Not a critical hit, don't animate
+    }
 
     const userId = this.getUserId(messageElement) || 'unknown';
     const userCombo = this.getUserCombo(userId);
