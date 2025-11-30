@@ -17,7 +17,7 @@ module.exports = class CriticalHitAnimation {
       shakeDuration: 250,
       cooldown: 500,
       showCombo: true,
-      maxCombo: 5,
+      maxCombo: 999, // Unlimited (high cap for display purposes)
       ownUserId: null,
     };
 
@@ -107,6 +107,9 @@ module.exports = class CriticalHitAnimation {
       // Validate message ID is a proper Discord ID (17-19 digits)
       if (!messageId || !/^\d{17,19}$/.test(messageId)) return;
 
+      // Skip if already animated (prevent duplicates)
+      if (this.animatedMessages.has(messageId)) return;
+
       // Check if own message
       const userId = this.getUserId(messageElement);
       // Validate user ID is a proper Discord ID (17-19 digits)
@@ -131,7 +134,8 @@ module.exports = class CriticalHitAnimation {
         // New message (not in history) - proceed with animation
       }
 
-      // Show animation
+      // Mark as animated and show animation
+      this.animatedMessages.add(messageId);
       setTimeout(() => {
         // Double-check crit class is still present before animating
         if (messageElement.classList && messageElement.classList.contains('bd-crit-hit')) {
@@ -245,7 +249,8 @@ module.exports = class CriticalHitAnimation {
 
     let combo = 1;
     if (timeSinceLastCrit <= 10000) {
-      combo = Math.min(userCombo.comboCount + 1, this.settings.maxCombo);
+      // Unlimited combo - just increment, no cap
+      combo = userCombo.comboCount + 1;
     }
 
     this.updateUserCombo(userId, combo, now);
