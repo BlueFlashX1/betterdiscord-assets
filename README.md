@@ -2,10 +2,47 @@
 
 A comprehensive BetterDiscord plugin and theme suite inspired by the Solo Leveling manhwa, featuring RPG-style progression, achievements, skill trees, and immersive visual effects.
 
-## Assets
+## Download Assets
 
+### Required Files
+
+**Plugins (7 files):**
+- `SoloLevelingStats.plugin.js` - Core stats system (REQUIRED)
+- `CriticalHit.plugin.js` - Critical hit effects
+- `SkillTree.plugin.js` - Skill tree system
+- `TitleManager.plugin.js` - Title management
+- `LevelProgressBar.plugin.js` - Progress bar UI
+- `SoloLevelingToasts.plugin.js` - Toast notifications
+- `LevelUpAnimation.plugin.js` - Level up animation
+
+**Theme (1 file):**
+- `SoloLeveling-ClearVision.theme.css` - Dark purple Solo Leveling theme
+
+**Optional Assets:**
 - `shadows-army-solo-leveling.gif` - Solo Leveling Shadow Army animated background
 - `shadows-army-solo-leveling-imgur.gif` - Alternative version hosted on Imgur
+
+### How to Download
+
+1. **From GitHub Repository:**
+   - Navigate to: `https://github.com/BlueFlashX1/betterdiscord-assets`
+   - Click "Code" → "Download ZIP"
+   - Extract the ZIP file
+   - Navigate to `plugins/` folder for plugin files
+   - Navigate to `themes/` folder for theme file
+
+2. **Individual File Download:**
+   - Click on each `.plugin.js` file in the `plugins/` folder
+   - Click "Raw" button to download directly
+   - Click on `SoloLeveling-ClearVision.theme.css` in the `themes/` folder
+   - Click "Raw" button to download directly
+
+### File Checklist
+
+Before installation, ensure you have:
+- [ ] All 7 plugin files (`.plugin.js` extension)
+- [ ] 1 theme file (`SoloLeveling-ClearVision.theme.css`)
+- [ ] BetterDiscord installed and enabled
 
 ## Installation
 
