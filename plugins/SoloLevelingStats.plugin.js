@@ -1362,9 +1362,9 @@ module.exports = class SoloLevelingStats {
       .sls-chat-progress-fill {
         height: 100%;
         background: linear-gradient(90deg, #8a2be2 0%, #9370db 50%, #ba55d3 100%);
-        box-shadow: 0 0 8px rgba(138, 43, 226, 0.9), 
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.9),
                     0 0 12px rgba(139, 92, 246, 0.6),
-                    inset 0 0 4px rgba(255, 255, 255, 0.2);
+                    inset 0 0 4px rgba(186, 85, 211, 0.3);
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         border-radius: 3px;
@@ -1377,7 +1377,7 @@ module.exports = class SoloLevelingStats {
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
+        background: linear-gradient(90deg, transparent 0%, rgba(186, 85, 211, 0.4) 50%, transparent 100%);
         animation: shimmer 2s infinite;
         border-radius: 3px;
       }
@@ -1389,7 +1389,7 @@ module.exports = class SoloLevelingStats {
         left: 0;
         right: 0;
         height: 10px;
-        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(186, 85, 211, 0.5) 0%, transparent 70%);
         animation: sparkle 3s infinite;
         pointer-events: none;
       }
@@ -1399,11 +1399,11 @@ module.exports = class SoloLevelingStats {
         position: absolute;
         width: 4px;
         height: 4px;
-        background: rgba(255, 255, 255, 0.8);
+        background: rgba(186, 85, 211, 0.9);
         border-radius: 50%;
         pointer-events: none;
         animation: sparkle-float 2s infinite;
-        box-shadow: 0 0 4px rgba(139, 92, 246, 0.8);
+        box-shadow: 0 0 6px rgba(186, 85, 211, 0.8);
       }
 
       /* Milestone markers */
@@ -4698,17 +4698,17 @@ module.exports = class SoloLevelingStats {
       `💰 +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
 
     this.showNotification(message, 'success', 4000);
-    
+
     // Quest completion celebration animation
     this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
   }
-  
+
   showQuestCompletionCelebration(questName, xpReward, statPoints) {
     try {
       // Find quest card in UI
       const questCards = document.querySelectorAll('.sls-chat-quest-item');
       let questCard = null;
-      
+
       // Find the completed quest card
       for (const card of questCards) {
         const cardText = card.textContent || '';
@@ -4717,7 +4717,7 @@ module.exports = class SoloLevelingStats {
           break;
         }
       }
-      
+
       // Create celebration overlay
       const celebration = document.createElement('div');
       celebration.className = 'sls-quest-celebration';
@@ -4728,18 +4728,24 @@ module.exports = class SoloLevelingStats {
           <div class="sls-quest-celebration-name">${this.escapeHtml(questName)}</div>
           <div class="sls-quest-celebration-rewards">
             <div class="sls-quest-reward-item">💰 +${xpReward} XP</div>
-            ${statPoints > 0 ? `<div class="sls-quest-reward-item">⭐ +${statPoints} Stat Point${statPoints > 1 ? 's' : ''}</div>` : ''}
+            ${
+              statPoints > 0
+                ? `<div class="sls-quest-reward-item">⭐ +${statPoints} Stat Point${
+                    statPoints > 1 ? 's' : ''
+                  }</div>`
+                : ''
+            }
           </div>
         </div>
       `;
-      
+
       // Position near quest card if found, otherwise center screen
       if (questCard) {
         const rect = questCard.getBoundingClientRect();
         celebration.style.left = `${rect.left + rect.width / 2}px`;
         celebration.style.top = `${rect.top + rect.height / 2}px`;
         celebration.style.transform = 'translate(-50%, -50%)';
-        
+
         // Highlight quest card
         questCard.classList.add('sls-quest-celebrating');
         setTimeout(() => {
@@ -4751,17 +4757,17 @@ module.exports = class SoloLevelingStats {
         celebration.style.top = '50%';
         celebration.style.transform = 'translate(-50%, -50%)';
       }
-      
+
       document.body.appendChild(celebration);
-      
+
       // Create particles
       this.createQuestParticles(celebration);
-      
+
       // Remove after animation
       setTimeout(() => {
         celebration.remove();
       }, 3000);
-      
+
       this.debugLog('QUEST_CELEBRATION', 'Quest completion celebration shown', {
         questName,
         xpReward,
@@ -4771,34 +4777,34 @@ module.exports = class SoloLevelingStats {
       this.debugError('QUEST_CELEBRATION', error);
     }
   }
-  
+
   createQuestParticles(container) {
     const particleCount = 30;
     const colors = ['#8b5cf6', '#7c3aed', '#6d28d9', '#ffffff', '#00ff88'];
-    
+
     for (let i = 0; i < particleCount; i++) {
       const particle = document.createElement('div');
       particle.className = 'sls-quest-particle';
       particle.style.left = '50%';
       particle.style.top = '50%';
       particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-      
+
       const angle = (Math.PI * 2 * i) / particleCount;
       const distance = 100 + Math.random() * 50;
       const x = Math.cos(angle) * distance;
       const y = Math.sin(angle) * distance;
-      
+
       particle.style.setProperty('--particle-x', `${x}px`);
       particle.style.setProperty('--particle-y', `${y}px`);
-      
+
       container.appendChild(particle);
-      
+
       setTimeout(() => {
         particle.remove();
       }, 2000);
     }
   }
-  
+
   escapeHtml(text) {
     if (typeof text !== 'string') return text;
     const div = document.createElement('div');

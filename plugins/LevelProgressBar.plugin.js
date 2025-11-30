@@ -304,21 +304,21 @@ module.exports = class LevelProgressBar {
         border: 1px solid rgba(139, 92, 246, 0.2);
         min-width: 100px;
       }
-      
+
       .lpb-progress-fill.lpb-xp-gain {
         animation: lpb-xp-glow 1s ease-out;
       }
-      
+
       @keyframes lpb-xp-glow {
         0%, 100% {
           box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
                       0 0 20px rgba(139, 92, 246, 0.5),
-                      inset 0 0 10px rgba(255, 255, 255, 0.2);
+                      inset 0 0 10px rgba(139, 92, 246, 0.3);
         }
         50% {
           box-shadow: 0 0 20px rgba(139, 92, 246, 1),
                       0 0 40px rgba(139, 92, 246, 0.8),
-                      inset 0 0 15px rgba(255, 255, 255, 0.4);
+                      inset 0 0 15px rgba(186, 85, 211, 0.5);
         }
       }
 
@@ -334,7 +334,7 @@ module.exports = class LevelProgressBar {
         position: relative;
         box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
                     0 0 20px rgba(139, 92, 246, 0.5),
-                    inset 0 0 10px rgba(255, 255, 255, 0.2);
+                    inset 0 0 10px rgba(139, 92, 246, 0.3);
       }
 
       .lpb-progress-fill::after {
@@ -344,7 +344,7 @@ module.exports = class LevelProgressBar {
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+        background: linear-gradient(90deg, transparent, rgba(186, 85, 211, 0.5), transparent);
         animation: lpb-shimmer 2s infinite;
         border-radius: 6px;
       }
@@ -356,7 +356,7 @@ module.exports = class LevelProgressBar {
         left: 0;
         right: 0;
         height: 16px;
-        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(255, 255, 255, 0.7) 0%, transparent 70%);
+        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(186, 85, 211, 0.6) 0%, transparent 70%);
         animation: lpb-sparkle 3s infinite;
         pointer-events: none;
         border-radius: 6px;
@@ -367,11 +367,11 @@ module.exports = class LevelProgressBar {
         position: absolute;
         width: 4px;
         height: 4px;
-        background: rgba(255, 255, 255, 0.9);
+        background: rgba(186, 85, 211, 0.9);
         border-radius: 50%;
         pointer-events: none;
         animation: lpb-sparkle-float 2s infinite;
-        box-shadow: 0 0 6px rgba(139, 92, 246, 0.9);
+        box-shadow: 0 0 8px rgba(186, 85, 211, 0.9);
         top: 50%;
         transform: translateY(-50%);
       }
@@ -544,7 +544,7 @@ module.exports = class LevelProgressBar {
 
       // Initial update
       this.updateProgressBar();
-      
+
       // Initialize milestone markers
       setTimeout(() => {
         const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
@@ -669,7 +669,7 @@ module.exports = class LevelProgressBar {
       if (progressFill) {
         const oldWidth = parseFloat(progressFill.style.width) || 0;
         progressFill.style.width = `${xpPercent}%`;
-        
+
         // Add glow effect on XP gain
         if (xpPercent > oldWidth) {
           progressFill.classList.add('lpb-xp-gain');
@@ -677,15 +677,15 @@ module.exports = class LevelProgressBar {
             progressFill.classList.remove('lpb-xp-gain');
           }, 1000);
         }
-        
+
         // Create sparkle particles on XP gain
         if (xpPercent > oldWidth && progressTrack) {
           this.createProgressSparkles(progressTrack, xpPercent);
         }
-        
+
         // Update milestone markers
         this.updateMilestoneMarkers(progressTrack, xpPercent);
-        
+
         this.debugLog('UPDATE_BAR', 'Progress fill updated', {
           width: `${xpPercent}%`,
           oldWidth: `${oldWidth}%`,
@@ -850,7 +850,7 @@ module.exports = class LevelProgressBar {
       sparkle.style.left = `${xpPercent}%`;
       sparkle.style.animationDelay = `${i * 0.2}s`;
       progressTrack.appendChild(sparkle);
-      
+
       setTimeout(() => {
         if (sparkle.parentElement) {
           sparkle.remove();
@@ -861,11 +861,11 @@ module.exports = class LevelProgressBar {
 
   updateMilestoneMarkers(progressTrack, xpPercent) {
     if (!progressTrack) return;
-    
+
     // Remove existing markers
     const existingMarkers = progressTrack.querySelectorAll('.lpb-milestone');
     existingMarkers.forEach(m => m.remove());
-    
+
     // Add markers at 25%, 50%, 75%
     const milestones = [25, 50, 75];
     milestones.forEach(milestone => {
