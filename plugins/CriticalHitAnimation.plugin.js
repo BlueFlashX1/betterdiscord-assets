@@ -1,0 +1,519 @@
+/**
+ * @name CriticalHitAnimation
+ * @author BlueFlashX1
+ * @description Animated "CRITICAL HIT!" notification with subtle screen shake when crits land
+ * @version 1.0.0
+ */
+
+module.exports = class CriticalHitAnimation {
+  constructor() {
+    this.defaultSettings = {
+      enabled: true,
+      animationDuration: 1500, // 1.5 seconds (shorter than level up)
+      floatDistance: 100, // pixels to float up
+      fontSize: 36, // Slightly smaller than level up
+      screenShake: true, // Enable subtle screen shake
+      shakeIntensity: 3, // pixels (subtle)
+      shakeDuration: 250, // milliseconds
+      cooldown: 500, // Minimum ms between animations (anti-spam)
+      showCombo: true, // Show combo counter for rapid crits
+      maxCombo: 5, // Maximum combo to display
+    };
+
+    this.settings = this.defaultSettings;
+    this.animationContainer = null;
+    this.activeAnimations = new Set();
+    this.patcher = null;
+    this.lastCritTime = 0;
+    this.comboCount = 0;
+    this.comboTimeout = null;
+  }
+
+  start() {
+    this.loadSettings();
+    this.injectCSS();
+    this.hookIntoCriticalHit();
+    this.debugLog('Plugin started');
+  }
+
+  stop() {
+    this.unhookFromCriticalHit();
+    this.removeAllAnimations();
+    this.removeCSS();
+    this.debugLog('Plugin stopped');
+  }
+
+  loadSettings() {
+    try {
+      const saved = BdApi.Data.load('CriticalHitAnimation', 'settings');
+      if (saved) {
+        this.settings = { ...this.defaultSettings, ...saved };
+        this.debugLog('Settings loaded', this.settings);
+      }
+    } catch (error) {
+      this.debugError('Failed to load settings', error);
+    }
+  }
+
+  saveSettings() {
+    try {
+      BdApi.Data.save('CriticalHitAnimation', 'settings', this.settings);
+      this.debugLog('Settings saved');
+    } catch (error) {
+      this.debugError('Failed to save settings', error);
+    }
+  }
+
+  getSettingsPanel() {
+    const panel = document.createElement('div');
+    panel.style.padding = '20px';
+    panel.innerHTML = `
+      <div style="margin-bottom: 20px;">
+        <h3 style="color: #ef4444; margin-bottom: 10px;">Critical Hit Animation Settings</h3>
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="cha-enabled">
+          <span style="margin-left: 10px;">Enable Critical Hit Animation</span>
+        </label>
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${this.settings.screenShake ? 'checked' : ''} id="cha-shake">
+          <span style="margin-left: 10px;">Enable Screen Shake</span>
+        </label>
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${this.settings.showCombo ? 'checked' : ''} id="cha-combo">
+          <span style="margin-left: 10px;">Show Combo Counter</span>
+        </label>
+        <label style="display: block; margin-bottom: 10px;">
+          <span style="display: block; margin-bottom: 5px;">Animation Duration (ms):</span>
+          <input type="number" id="cha-duration" value="${this.settings.animationDuration}" min="500" max="3000" step="100" style="width: 100%; padding: 5px;">
+        </label>
+        <label style="display: block; margin-bottom: 10px;">
+          <span style="display: block; margin-bottom: 5px;">Shake Intensity (px):</span>
+          <input type="number" id="cha-shake-intensity" value="${this.settings.shakeIntensity}" min="0" max="10" step="1" style="width: 100%; padding: 5px;">
+        </label>
+        <label style="display: block; margin-bottom: 10px;">
+          <span style="display: block; margin-bottom: 5px;">Cooldown (ms):</span>
+          <input type="number" id="cha-cooldown" value="${this.settings.cooldown}" min="100" max="2000" step="100" style="width: 100%; padding: 5px;">
+        </label>
+        <label style="display: block; margin-bottom: 10px;">
+          <span style="display: block; margin-bottom: 5px;">Font Size (px):</span>
+          <input type="number" id="cha-fontsize" value="${this.settings.fontSize}" min="24" max="72" step="4" style="width: 100%; padding: 5px;">
+        </label>
+      </div>
+    `;
+
+    // Event listeners
+    panel.querySelector('#cha-enabled').addEventListener('change', (e) => {
+      this.settings.enabled = e.target.checked;
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-shake').addEventListener('change', (e) => {
+      this.settings.screenShake = e.target.checked;
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-combo').addEventListener('change', (e) => {
+      this.settings.showCombo = e.target.checked;
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-duration').addEventListener('change', (e) => {
+      this.settings.animationDuration = parseInt(e.target.value);
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-shake-intensity').addEventListener('change', (e) => {
+      this.settings.shakeIntensity = parseInt(e.target.value);
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-cooldown').addEventListener('change', (e) => {
+      this.settings.cooldown = parseInt(e.target.value);
+      this.saveSettings();
+    });
+
+    panel.querySelector('#cha-fontsize').addEventListener('change', (e) => {
+      this.settings.fontSize = parseInt(e.target.value);
+      this.saveSettings();
+    });
+
+    return panel;
+  }
+
+  injectCSS() {
+    const styleId = 'critical-hit-animation-css';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.textContent = `
+      .cha-animation-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 999998; /* Below level up animation */
+      }
+
+      .cha-critical-hit-text {
+        position: absolute;
+        font-family: 'Press Start 2P', monospace;
+        font-weight: bold;
+        text-transform: uppercase;
+        white-space: nowrap;
+        user-select: none;
+        pointer-events: none;
+        animation: cha-float-up var(--cha-duration, 1.5s) ease-out forwards;
+      }
+
+      @keyframes cha-float-up {
+        0% {
+          opacity: 0;
+          transform: translateY(0) scale(0.5);
+        }
+        10% {
+          opacity: 1;
+          transform: translateY(0) scale(1.2);
+        }
+        20% {
+          transform: translateY(0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(var(--cha-float-distance, -100px)) scale(0.8);
+        }
+      }
+
+      @keyframes cha-glow-pulse {
+        0%, 100% {
+          filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.8))
+                  drop-shadow(0 0 20px rgba(249, 115, 22, 0.6))
+                  drop-shadow(0 0 30px rgba(239, 68, 68, 0.4));
+        }
+        50% {
+          filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1))
+                  drop-shadow(0 0 40px rgba(249, 115, 22, 0.8))
+                  drop-shadow(0 0 60px rgba(239, 68, 68, 0.6));
+        }
+      }
+
+      .cha-critical-hit-text {
+        animation: cha-float-up var(--cha-duration, 1.5s) ease-out forwards,
+                   cha-glow-pulse 0.5s ease-in-out infinite;
+        background: linear-gradient(135deg, #ef4444 0%, #ef4444 50%, #f97316 50%, #ffffff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-shadow: 0 0 20px rgba(239, 68, 68, 0.8),
+                     0 0 40px rgba(249, 115, 22, 0.6);
+      }
+
+      .cha-combo-text {
+        font-size: 0.7em;
+        margin-top: 10px;
+        opacity: 0.9;
+      }
+
+      @keyframes cha-screen-shake {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(-2px, -2px); }
+        50% { transform: translate(2px, 2px); }
+        75% { transform: translate(-2px, 2px); }
+      }
+
+      .cha-screen-shake {
+        animation: cha-screen-shake var(--cha-shake-duration, 250ms) ease-out;
+      }
+    `;
+    document.head.appendChild(style);
+    this.debugLog('CSS injected');
+  }
+
+  removeCSS() {
+    const style = document.getElementById('critical-hit-animation-css');
+    if (style) style.remove();
+  }
+
+  getAnimationContainer() {
+    if (!this.animationContainer) {
+      this.animationContainer = document.createElement('div');
+      this.animationContainer.className = 'cha-animation-container';
+      document.body.appendChild(this.animationContainer);
+      this.debugLog('Animation container created');
+    }
+    return this.animationContainer;
+  }
+
+  getMessageAreaPosition() {
+    // Try to find the message input area or chat container
+    const chatInput = document.querySelector('[class*="channelTextArea"]');
+    const messageList = document.querySelector('[class*="messagesWrapper"]');
+    const chatContainer = document.querySelector('[class*="chat"]');
+
+    let targetElement = chatInput || messageList || chatContainer;
+
+    if (targetElement) {
+      const rect = targetElement.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+
+    // Fallback: center of screen, slightly lower than level up
+    return {
+      x: window.innerWidth / 2,
+      y: window.innerHeight / 2 + 50, // 50px lower than level up
+    };
+  }
+
+  showCriticalHitAnimation(comboCount = 1) {
+    if (!this.settings.enabled) {
+      this.debugLog('Animation disabled, skipping');
+      return;
+    }
+
+    // Anti-spam: Check cooldown
+    const now = Date.now();
+    const timeSinceLastCrit = now - this.lastCritTime;
+
+    if (timeSinceLastCrit < this.settings.cooldown && comboCount === 1) {
+      // Within cooldown - increment combo instead
+      this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
+      this.updateComboTimeout();
+      this.showComboAnimation();
+      return;
+    }
+
+    // Reset combo if enough time has passed
+    if (timeSinceLastCrit > 2000) {
+      this.comboCount = 1;
+    } else {
+      this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
+    }
+
+    this.lastCritTime = now;
+    this.updateComboTimeout();
+
+    try {
+      const position = this.getMessageAreaPosition();
+      const container = this.getAnimationContainer();
+
+      // Apply screen shake if enabled
+      if (this.settings.screenShake && this.settings.shakeIntensity > 0) {
+        this.applyScreenShake();
+      }
+
+      // Create main text element
+      const textElement = document.createElement('div');
+      textElement.className = 'cha-critical-hit-text';
+
+      // Show combo if applicable
+      const displayText = this.comboCount > 1 && this.settings.showCombo
+        ? `CRITICAL HIT! x${this.comboCount}`
+        : 'CRITICAL HIT!';
+
+      textElement.innerHTML = displayText;
+
+      textElement.style.left = `${position.x}px`;
+      textElement.style.top = `${position.y}px`;
+      textElement.style.fontSize = `${this.settings.fontSize}px`;
+      textElement.style.setProperty('--cha-float-distance', `-${this.settings.floatDistance}px`);
+      textElement.style.setProperty('--cha-duration', `${this.settings.animationDuration}ms`);
+
+      // Transform to center the text
+      textElement.style.transform = 'translate(-50%, -50%)';
+      textElement.style.textAlign = 'center';
+
+      container.appendChild(textElement);
+
+      // Track animation
+      const animationId = `cha-${Date.now()}`;
+      this.activeAnimations.add(animationId);
+
+      // Clean up after animation
+      setTimeout(() => {
+        textElement.remove();
+        this.activeAnimations.delete(animationId);
+
+        // Remove container if no active animations
+        if (this.activeAnimations.size === 0 && this.animationContainer) {
+          this.animationContainer.remove();
+          this.animationContainer = null;
+        }
+      }, this.settings.animationDuration);
+
+      this.debugLog('Critical hit animation shown', {
+        comboCount: this.comboCount,
+        position,
+        animationId,
+      });
+    } catch (error) {
+      this.debugError('Failed to show critical hit animation', error);
+    }
+  }
+
+  showComboAnimation() {
+    // Update existing animation with combo count
+    const container = this.getAnimationContainer();
+    if (!container) return;
+
+    const existingText = container.querySelector('.cha-critical-hit-text');
+    if (existingText && this.comboCount > 1) {
+      existingText.innerHTML = `CRITICAL HIT! x${this.comboCount}`;
+      // Reset animation to show combo
+      existingText.style.animation = 'none';
+      setTimeout(() => {
+        existingText.style.animation = '';
+      }, 10);
+    }
+  }
+
+  updateComboTimeout() {
+    // Clear existing timeout
+    if (this.comboTimeout) {
+      clearTimeout(this.comboTimeout);
+    }
+
+    // Reset combo after 2 seconds of no crits
+    this.comboTimeout = setTimeout(() => {
+      this.comboCount = 0;
+    }, 2000);
+  }
+
+  applyScreenShake() {
+    const shakeDuration = this.settings.shakeDuration;
+    const shakeIntensity = this.settings.shakeIntensity;
+
+    // Apply shake to body or main Discord container
+    const discordContainer = document.querySelector('[class*="app"]') || document.body;
+
+    // Create shake keyframes dynamically based on intensity
+    const shakeStyle = document.createElement('style');
+    shakeStyle.id = 'cha-shake-style';
+    shakeStyle.textContent = `
+      @keyframes cha-screen-shake-${shakeIntensity} {
+        0%, 100% { transform: translate(0, 0); }
+        25% { transform: translate(-${shakeIntensity}px, -${shakeIntensity}px); }
+        50% { transform: translate(${shakeIntensity}px, ${shakeIntensity}px); }
+        75% { transform: translate(-${shakeIntensity}px, ${shakeIntensity}px); }
+      }
+      .cha-screen-shake-active {
+        animation: cha-screen-shake-${shakeIntensity} ${shakeDuration}ms ease-out;
+      }
+    `;
+
+    // Remove old shake style if exists
+    const oldShakeStyle = document.getElementById('cha-shake-style');
+    if (oldShakeStyle) oldShakeStyle.remove();
+
+    document.head.appendChild(shakeStyle);
+    discordContainer.classList.add('cha-screen-shake-active');
+
+    // Remove shake class after animation
+    setTimeout(() => {
+      discordContainer.classList.remove('cha-screen-shake-active');
+      shakeStyle.remove();
+    }, shakeDuration);
+  }
+
+  hookIntoCriticalHit() {
+    try {
+      const critPlugin = BdApi.Plugins.get('CriticalHit');
+      if (!critPlugin) {
+        this.debugLog('CriticalHit plugin not found, will retry...');
+        // Retry after a delay
+        setTimeout(() => this.hookIntoCriticalHit(), 2000);
+        return;
+      }
+
+      const instance = critPlugin.instance || critPlugin;
+      if (!instance) {
+        this.debugLog('CriticalHit instance not found, will retry...');
+        setTimeout(() => this.hookIntoCriticalHit(), 2000);
+        return;
+      }
+
+      // Patch applyCritStyleWithSettings method to detect crits
+      if (instance.applyCritStyleWithSettings) {
+        this.patcher = BdApi.Patcher.after(
+          'CriticalHitAnimation',
+          instance,
+          'applyCritStyleWithSettings',
+          (_, args) => {
+            // args[0] is messageElement, args[1] is critSettings
+            const messageElement = args[0];
+            if (messageElement && messageElement.classList.contains('bd-crit-hit')) {
+              // Crit was applied - trigger animation
+              setTimeout(() => {
+                this.showCriticalHitAnimation();
+              }, 50); // Small delay to ensure styling is applied
+            }
+          }
+        );
+        this.debugLog('Hooked into CriticalHit.applyCritStyleWithSettings');
+      } else {
+        this.debugLog('applyCritStyleWithSettings method not found, will retry...');
+        setTimeout(() => this.hookIntoCriticalHit(), 2000);
+      }
+
+      // Also patch applyCritStyle method (fallback)
+      if (instance.applyCritStyle) {
+        BdApi.Patcher.after(
+          'CriticalHitAnimation',
+          instance,
+          'applyCritStyle',
+          (_, args) => {
+            const messageElement = args[0];
+            if (messageElement && messageElement.classList.contains('bd-crit-hit')) {
+              setTimeout(() => {
+                this.showCriticalHitAnimation();
+              }, 50);
+            }
+          }
+        );
+        this.debugLog('Hooked into CriticalHit.applyCritStyle');
+      }
+    } catch (error) {
+      this.debugError('Failed to hook into CriticalHit', error);
+      // Retry after delay
+      setTimeout(() => this.hookIntoCriticalHit(), 2000);
+    }
+  }
+
+  unhookFromCriticalHit() {
+    if (this.patcher) {
+      BdApi.Patcher.unpatchAll('CriticalHitAnimation');
+      this.patcher = null;
+      this.debugLog('Unhooked from CriticalHit');
+    }
+  }
+
+  removeAllAnimations() {
+    if (this.animationContainer) {
+      this.animationContainer.remove();
+      this.animationContainer = null;
+    }
+    this.activeAnimations.clear();
+    this.comboCount = 0;
+    if (this.comboTimeout) {
+      clearTimeout(this.comboTimeout);
+      this.comboTimeout = null;
+    }
+  }
+
+  debugLog(operation, message, data = null) {
+    if (typeof message === 'object' && data === null) {
+      data = message;
+      message = operation;
+      operation = 'GENERAL';
+    }
+    console.log(`[CriticalHitAnimation] ${operation}:`, message, data || '');
+  }
+
+  debugError(operation, error, data = null) {
+    console.error(`[CriticalHitAnimation] ERROR [${operation}]:`, error, data || '');
+  }
+};
