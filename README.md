@@ -2,6 +2,12 @@
 
 A comprehensive BetterDiscord plugin and theme suite inspired by the Solo Leveling manhwa, featuring RPG-style progression, achievements, skill trees, and immersive visual effects.
 
+## 📦 Assets
+
+This repository also hosts animated background assets:
+- `shadows-army-solo-leveling.gif` - Solo Leveling Shadow Army animated background
+- `shadows-army-solo-leveling-imgur.gif` - Alternative version hosted on Imgur
+
 ## 📦 Installation
 
 ### Quick Install
