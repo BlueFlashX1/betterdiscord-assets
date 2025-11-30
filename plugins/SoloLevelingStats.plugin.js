@@ -97,6 +97,14 @@ module.exports = class SoloLevelingStats {
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
 
+    // Event emitter system for real-time progress bar updates
+    this.eventListeners = {
+      xpChanged: [],
+      levelChanged: [],
+      rankChanged: [],
+      statsChanged: [],
+    };
+
     // Debug system (OPTIMIZED: Default disabled, better throttling)
     this.debug = {
       enabled: false, // OPTIMIZED: Default disabled to reduce CPU/memory usage
@@ -188,6 +196,102 @@ module.exports = class SoloLevelingStats {
 
     // Also log to debug file
     console.warn(`[SoloLevelingStats:ERROR:${operation}] ${errorMessage}`, context);
+  }
+
+  // ============================================================================
+  // Event Emitter System for Real-Time Updates
+  // ============================================================================
+
+  /**
+   * Subscribe to an event
+   * @param {string} eventName - Event name: 'xpChanged', 'levelChanged', 'rankChanged', 'statsChanged'
+   * @param {Function} callback - Callback function to call when event fires
+   * @returns {Function} Unsubscribe function
+   */
+  on(eventName, callback) {
+    if (!this.eventListeners[eventName]) {
+      this.eventListeners[eventName] = [];
+    }
+    this.eventListeners[eventName].push(callback);
+
+    // Return unsubscribe function
+    return () => {
+      const index = this.eventListeners[eventName].indexOf(callback);
+      if (index > -1) {
+        this.eventListeners[eventName].splice(index, 1);
+      }
+    };
+  }
+
+  /**
+   * Emit an event to all listeners
+   * @param {string} eventName - Event name
+   * @param {Object} data - Event data
+   */
+  emit(eventName, data = {}) {
+    if (!this.eventListeners[eventName]) {
+      return;
+    }
+
+    // Call all listeners
+    this.eventListeners[eventName].forEach((callback) => {
+      try {
+        callback(data);
+      } catch (error) {
+        this.debugError('EVENT_EMIT', error, { eventName, callback: callback.name || 'anonymous' });
+      }
+    });
+  }
+
+  /**
+   * Emit XP changed event with current state
+   */
+  emitXPChanged() {
+    const levelInfo = this.getCurrentLevel();
+    this.emit('xpChanged', {
+      level: this.settings.level,
+      xp: levelInfo.xp,
+      xpRequired: levelInfo.xpRequired,
+      totalXP: this.settings.totalXP,
+      rank: this.settings.rank,
+      levelInfo,
+    });
+  }
+
+  /**
+   * Emit level changed event
+   */
+  emitLevelChanged(oldLevel, newLevel) {
+    const levelInfo = this.getCurrentLevel();
+    this.emit('levelChanged', {
+      oldLevel,
+      newLevel,
+      xp: levelInfo.xp,
+      xpRequired: levelInfo.xpRequired,
+      totalXP: this.settings.totalXP,
+      rank: this.settings.rank,
+      levelInfo,
+    });
+    // Also emit XP changed since level affects XP display
+    this.emitXPChanged();
+  }
+
+  /**
+   * Emit rank changed event
+   */
+  emitRankChanged(oldRank, newRank) {
+    const levelInfo = this.getCurrentLevel();
+    this.emit('rankChanged', {
+      oldRank,
+      newRank,
+      level: this.settings.level,
+      xp: levelInfo.xp,
+      xpRequired: levelInfo.xpRequired,
+      totalXP: this.settings.totalXP,
+      levelInfo,
+    });
+    // Also emit XP changed since rank affects XP display
+    this.emitXPChanged();
   }
 
   start() {
@@ -283,6 +387,9 @@ module.exports = class SoloLevelingStats {
     // OPTIMIZED: Use debugLog instead of direct console.log
     this.debugLog('START', `Started! Level ${this.settings.level}, ${this.settings.xp} XP`);
     this.debugLog('START', `Rank ${this.settings.rank}, Total XP: ${this.settings.totalXP}`);
+
+    // Emit initial XP changed event for progress bar plugins
+    this.emitXPChanged();
 
     // Force log to debug file
     try {
@@ -1775,6 +1882,9 @@ module.exports = class SoloLevelingStats {
             messagesSent: this.settings.activity.messagesSent,
             rank: this.settings.rank,
           });
+
+          // Emit initial XP changed event for progress bar plugins
+          this.emitXPChanged();
         } catch (error) {
           this.debugError('LOAD_SETTINGS', error, { phase: 'settings_merge' });
           throw error;
@@ -3121,6 +3231,9 @@ module.exports = class SoloLevelingStats {
         oldLevel,
       });
 
+      // Emit XP changed event for real-time progress bar updates
+      this.emitXPChanged();
+
       // Save immediately on XP gain (important data)
       // Use setTimeout to avoid blocking the main thread
       setTimeout(() => {
@@ -3304,6 +3417,9 @@ module.exports = class SoloLevelingStats {
           unallocatedPoints: this.settings.unallocatedStatPoints,
         });
 
+        // Emit level changed event for real-time progress bar updates
+        this.emitLevelChanged(oldLevel, newLevel);
+
         // Save immediately on level up (critical event)
         try {
           this.saveSettings(true);
@@ -3342,6 +3458,8 @@ module.exports = class SoloLevelingStats {
       } else {
         // Update current XP
         this.settings.xp = levelInfo.xp;
+        // Emit XP changed event (level didn't change but XP did)
+        this.emitXPChanged();
         // Update chat UI
         try {
           this.updateChatUI();
@@ -3418,6 +3536,9 @@ module.exports = class SoloLevelingStats {
           level: this.settings.level,
           achievements: this.settings.achievements.unlocked.length,
         });
+
+        // Emit rank changed event for real-time progress bar updates
+        this.emitRankChanged(oldRank, nextRank);
 
         // Add to rank history
         if (!this.settings.rankHistory) {
@@ -4077,6 +4198,9 @@ module.exports = class SoloLevelingStats {
     this.settings.xp += xpReward;
     this.settings.totalXP += xpReward;
     this.settings.unallocatedStatPoints += rewards.statPoints;
+
+    // Emit XP changed event for real-time progress bar updates
+    this.emitXPChanged();
 
     // Save immediately on quest completion (important event)
     this.saveSettings(true);

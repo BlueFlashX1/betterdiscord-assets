@@ -15,7 +15,7 @@ module.exports = class LevelProgressBar {
       showXP: true,
       compact: false, // Compact mode (smaller bar)
       opacity: 1.0, // 100% opacity - fully opaque
-      updateInterval: 1000, // Update every second
+      updateInterval: 5000, // Fallback polling interval (only used if events unavailable)
     };
 
     this.settings = this.defaultSettings;
@@ -24,6 +24,8 @@ module.exports = class LevelProgressBar {
     this.lastLevel = 0;
     this.lastXP = 0;
     this.debugEnabled = false; // OPTIMIZED: Disable debug logging by default
+    this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
+    this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
   }
 
   start() {
@@ -31,15 +33,33 @@ module.exports = class LevelProgressBar {
     this.loadSettings();
     this.injectCSS();
     this.createProgressBar();
-    this.startUpdating();
+
+    // Try to subscribe to events immediately, with retry if SoloLevelingStats not ready yet
+    this.subscribeToEvents();
+
+    // If subscription failed, retry after a short delay (SoloLevelingStats might still be loading)
+    if (this.eventUnsubscribers.length === 0) {
+      setTimeout(() => {
+        this.subscribeToEvents();
+        // If still no events after retry, use fallback polling
+        if (this.eventUnsubscribers.length === 0) {
+          this.debugLog('START', 'Events not available after retry, using fallback polling');
+          this.startUpdating();
+        }
+      }, 1000);
+    }
+
     this.debugLog('START', 'Plugin started successfully', {
       enabled: this.settings.enabled,
       position: this.settings.position,
+      eventBased: this.eventUnsubscribers.length > 0,
+      fallbackPolling: this.eventUnsubscribers.length === 0,
     });
   }
 
   stop() {
     this.debugLog('STOP', 'Plugin stopping');
+    this.unsubscribeFromEvents();
     this.stopUpdating();
     this.removeProgressBar();
     this.removeCSS();
@@ -563,18 +583,97 @@ module.exports = class LevelProgressBar {
     }
   }
 
+  /**
+   * Subscribe to SoloLevelingStats events for real-time updates
+   * @returns {boolean} True if subscription successful, false otherwise
+   */
+  subscribeToEvents() {
+    // Don't subscribe twice
+    if (this.eventUnsubscribers.length > 0) {
+      this.debugLog('SUBSCRIBE_EVENTS', 'Already subscribed to events');
+      return true;
+    }
+
+    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+    if (!soloPlugin) {
+      this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not found');
+      return false;
+    }
+
+    const instance = soloPlugin.instance || soloPlugin;
+    if (!instance || typeof instance.on !== 'function') {
+      this.debugLog('SUBSCRIBE_EVENTS', 'Event system not available', {
+        hasInstance: !!instance,
+        hasOnMethod: !!(instance && typeof instance.on === 'function'),
+      });
+      return false;
+    }
+
+    // Subscribe to XP changed events (fires on any XP change)
+    const unsubscribeXP = instance.on('xpChanged', (data) => {
+      this.debugLog('EVENT_XP_CHANGED', 'XP changed event received', data);
+      // Update immediately - no polling needed
+      this.updateProgressBar();
+    });
+    this.eventUnsubscribers.push(unsubscribeXP);
+
+    // Subscribe to level changed events
+    const unsubscribeLevel = instance.on('levelChanged', (data) => {
+      this.debugLog('EVENT_LEVEL_CHANGED', 'Level changed event received', data);
+      // Update immediately - no polling needed
+      this.updateProgressBar();
+    });
+    this.eventUnsubscribers.push(unsubscribeLevel);
+
+    // Subscribe to rank changed events
+    const unsubscribeRank = instance.on('rankChanged', (data) => {
+      this.debugLog('EVENT_RANK_CHANGED', 'Rank changed event received', data);
+      // Update immediately - no polling needed
+      this.updateProgressBar();
+    });
+    this.eventUnsubscribers.push(unsubscribeRank);
+
+    // Log successful subscription (always log, not just debug)
+    console.log('[LevelProgressBar] ✅ Event-based updates enabled - progress bar will update in real-time');
+
+    this.debugLog('SUBSCRIBE_EVENTS', 'Successfully subscribed to events', {
+      listenersCount: this.eventUnsubscribers.length,
+    });
+
+    // Initial update
+    this.updateProgressBar();
+
+    return true;
+  }
+
+  /**
+   * Unsubscribe from all events
+   */
+  unsubscribeFromEvents() {
+    this.eventUnsubscribers.forEach(unsubscribe => {
+      try {
+        unsubscribe();
+      } catch (error) {
+        this.debugError('UNSUBSCRIBE_EVENTS', error);
+      }
+    });
+    this.eventUnsubscribers = [];
+    this.debugLog('UNSUBSCRIBE_EVENTS', 'Unsubscribed from all events');
+  }
+
   startUpdating() {
     if (this.updateInterval) {
       this.debugLog('START_UPDATE', 'Update interval already running');
       return;
     }
 
+    // Only use polling as fallback - slower interval since events should handle most updates
     this.updateInterval = setInterval(() => {
       this.updateProgressBar();
-    }, this.settings.updateInterval);
+    }, this.settings.updateInterval || 5000); // Default to 5 seconds for fallback
 
-    this.debugLog('START_UPDATE', 'Update interval started', {
-      interval: this.settings.updateInterval,
+    this.debugLog('START_UPDATE', 'Fallback polling started', {
+      interval: this.settings.updateInterval || 5000,
     });
   }
 
