@@ -277,14 +277,14 @@ module.exports = class CriticalHitAnimation {
                       messageElement.getAttribute('data-message-id') ||
                       messageElement.querySelector('[class*="message"]')?.getAttribute('id') ||
                       messageElement.closest('[class*="message"]')?.getAttribute('id');
-    
+
     // Extract Discord ID if present (17-19 digits)
     if (messageId) {
       const match = messageId.match(/\d{17,19}/);
       if (match) return match[0];
       return messageId; // Return as-is if no Discord ID found
     }
-    
+
     // Fallback: use element reference
     return `element-${messageElement.offsetTop}-${messageElement.offsetLeft}`;
   }
@@ -298,19 +298,19 @@ module.exports = class CriticalHitAnimation {
     // Prevent duplicate animations for the same message
     if (messageElement) {
       const messageId = this.getMessageId(messageElement);
-      
+
       // Check if we've already animated this message
       if (this.animatedMessages.has(messageId)) {
         this.debugLog('Message already animated, skipping duplicate', { messageId });
         return;
       }
-      
+
       // Check if there's a pending animation for this message
       if (this.pendingAnimations.has(messageId)) {
         this.debugLog('Animation already pending for this message', { messageId });
         return;
       }
-      
+
       // Mark as pending
       this.pendingAnimations.set(messageId, Date.now());
     }
@@ -318,7 +318,7 @@ module.exports = class CriticalHitAnimation {
     // Anti-spam: Check cooldown
     const now = Date.now();
     const timeSinceLastCrit = now - this.lastCritTime;
-    
+
     if (timeSinceLastCrit < this.settings.cooldown && comboCount === 1) {
       // Within cooldown - increment combo instead
       this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
@@ -331,8 +331,8 @@ module.exports = class CriticalHitAnimation {
       return;
     }
 
-    // Reset combo if enough time has passed
-    if (timeSinceLastCrit > 2000) {
+    // Reset combo if enough time has passed (10 seconds for typing)
+    if (timeSinceLastCrit > 10000) {
       this.comboCount = 1;
     } else {
       this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
@@ -340,13 +340,13 @@ module.exports = class CriticalHitAnimation {
 
     this.lastCritTime = now;
     this.updateComboTimeout();
-    
+
     // Mark message as animated
     if (messageElement) {
       const messageId = this.getMessageId(messageElement);
       this.animatedMessages.add(messageId);
       this.pendingAnimations.delete(messageId);
-      
+
       // Clean up old entries (keep last 100)
       if (this.animatedMessages.size > 100) {
         const entries = Array.from(this.animatedMessages);
@@ -434,10 +434,10 @@ module.exports = class CriticalHitAnimation {
       clearTimeout(this.comboTimeout);
     }
 
-    // Reset combo after 2 seconds of no crits
+    // Reset combo after 10 seconds of no crits (allows for typing time)
     this.comboTimeout = setTimeout(() => {
       this.comboCount = 0;
-    }, 2000);
+    }, 10000);
   }
 
   applyScreenShake() {
@@ -503,31 +503,31 @@ module.exports = class CriticalHitAnimation {
             // args[0] is messageElement, args[1] is critSettings
             const messageElement = args[0];
             if (!messageElement) return;
-            
+
             // Verify crit was actually applied and message is in DOM
             const checkCritApplied = () => {
               // Check if message is still in DOM and has crit class
               if (!document.contains(messageElement)) {
                 return false;
               }
-              
+
               // Verify crit class is present
               if (!messageElement.classList.contains('bd-crit-hit')) {
                 return false;
               }
-              
+
               // Check if message is fully rendered (has content)
               const content = messageElement.querySelector('[class*="messageContent"]') ||
                             messageElement.querySelector('[class*="content"]') ||
                             messageElement;
-              
+
               if (!content || !content.textContent?.trim()) {
                 return false; // Message not fully rendered yet
               }
-              
+
               return true;
             };
-            
+
             // Delay to ensure message is fully processed and not during typing
             setTimeout(() => {
               if (checkCritApplied()) {
@@ -556,19 +556,19 @@ module.exports = class CriticalHitAnimation {
           (_, args) => {
             const messageElement = args[0];
             if (!messageElement) return;
-            
+
             const checkCritApplied = () => {
               if (!document.contains(messageElement)) return false;
               if (!messageElement.classList.contains('bd-crit-hit')) return false;
-              
+
               const content = messageElement.querySelector('[class*="messageContent"]') ||
                             messageElement.querySelector('[class*="content"]') ||
                             messageElement;
-              
+
               if (!content || !content.textContent?.trim()) return false;
               return true;
             };
-            
+
             setTimeout(() => {
               if (checkCritApplied()) {
                 setTimeout(() => {
