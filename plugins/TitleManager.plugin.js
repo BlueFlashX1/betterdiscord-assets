@@ -1,11 +1,11 @@
 /**
- * @name TitleManager
+ * @name SoloLevelingTitleManager
  * @author Matthew
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.0.0
+ * @version 1.0.1
  */
 
-module.exports = class TitleManager {
+module.exports = class SoloLevelingTitleManager {
   constructor() {
     this.defaultSettings = {
       enabled: true,
