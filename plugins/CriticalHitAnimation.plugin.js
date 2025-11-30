@@ -28,6 +28,7 @@ module.exports = class CriticalHitAnimation {
     this.animatedMessages = new Set();
     this.currentUserId = null;
     this.pluginStartTime = Date.now();
+    this.lastAnimationTime = 0; // Track last animation time for cooldown
   }
 
   start() {
@@ -94,6 +95,35 @@ module.exports = class CriticalHitAnimation {
       return;
     }
 
+    // Hook into checkForCrit to detect non-crit messages and reset combo
+    if (instance.checkForCrit) {
+      BdApi.Patcher.after('CriticalHitAnimation', instance, 'checkForCrit', (_, args, returnValue) => {
+        const messageElement = args[0];
+        if (!messageElement) return;
+
+        // Check if own message
+        const userId = this.getUserId(messageElement);
+        if (!userId || !/^\d{17,19}$/.test(userId)) return;
+        if (!this.isOwnMessage(messageElement, userId)) return;
+
+        // Wait a bit for crit class to be applied (if it's a crit)
+        setTimeout(() => {
+          // If message doesn't have crit class, reset combo
+          if (!messageElement.classList || !messageElement.classList.contains('bd-crit-hit')) {
+            const key = userId || 'unknown';
+            if (this.userCombos.has(key)) {
+              this.userCombos.get(key).comboCount = 0;
+              // Clear timeout since combo is reset
+              if (this.userCombos.get(key).timeout) {
+                clearTimeout(this.userCombos.get(key).timeout);
+                this.userCombos.get(key).timeout = null;
+              }
+            }
+          }
+        }, 200); // Wait 200ms for crit class to be applied
+      });
+    }
+
     BdApi.Patcher.after('CriticalHitAnimation', instance, 'onCritHit', (_, args) => {
       const messageElement = args[0];
       if (!messageElement) return;
@@ -109,6 +139,12 @@ module.exports = class CriticalHitAnimation {
 
       // Skip if already animated (prevent duplicates)
       if (this.animatedMessages.has(messageId)) return;
+
+      // Cooldown: Prevent rapid duplicate animations (minimum 100ms between animations)
+      const now = Date.now();
+      if (now - this.lastAnimationTime < 100) {
+        return; // Too soon, skip
+      }
 
       // Check if own message
       const userId = this.getUserId(messageElement);
@@ -136,6 +172,7 @@ module.exports = class CriticalHitAnimation {
 
       // Mark as animated and show animation
       this.animatedMessages.add(messageId);
+      this.lastAnimationTime = Date.now(); // Update cooldown timer
       setTimeout(() => {
         // Double-check crit class is still present before animating
         if (messageElement.classList && messageElement.classList.contains('bd-crit-hit')) {
@@ -304,6 +341,8 @@ module.exports = class CriticalHitAnimation {
     combo.comboCount = comboCount;
     combo.lastCritTime = lastCritTime;
 
+    // Reset combo after 10 seconds of NO crits (non-crit messages don't affect combo)
+    // This timeout is reset every time a crit happens, so combo only resets if 10 seconds pass without crits
     if (combo.timeout) clearTimeout(combo.timeout);
     combo.timeout = setTimeout(() => {
       if (this.userCombos.has(key)) {
