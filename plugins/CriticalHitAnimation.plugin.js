@@ -24,9 +24,7 @@ module.exports = class CriticalHitAnimation {
     this.animationContainer = null;
     this.activeAnimations = new Set();
     this.patcher = null;
-    this.lastCritTime = 0;
-    this.comboCount = 0;
-    this.comboTimeout = null;
+    this.userCombos = new Map(); // Track combos per user: Map<userId, {comboCount, lastCritTime, timeout}>
     this.animatedMessages = new Set(); // Track which messages have been animated (prevent duplicates)
     this.pendingAnimations = new Map(); // Track pending animations with timeouts
   }
@@ -289,11 +287,112 @@ module.exports = class CriticalHitAnimation {
     return `element-${messageElement.offsetTop}-${messageElement.offsetLeft}`;
   }
 
+  getUserId(messageElement) {
+    // Try to extract user ID from message element
+    try {
+      // Method 1: Try React props (Discord stores message data in React)
+      const reactKey = Object.keys(messageElement).find(
+        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+      );
+      
+      if (reactKey) {
+        let fiber = messageElement[reactKey];
+        for (let i = 0; i < 15 && fiber; i++) {
+          // Try to get author ID from message props
+          const authorId =
+            fiber.memoizedProps?.message?.author?.id ||
+            fiber.memoizedState?.message?.author?.id ||
+            fiber.memoizedProps?.message?.authorId ||
+            fiber.memoizedProps?.author?.id;
+          
+          if (authorId && /^\d{17,19}$/.test(authorId)) {
+            return authorId;
+          }
+          
+          fiber = fiber.return;
+        }
+      }
+
+      // Method 2: Try to find author element and extract ID
+      const authorElement = messageElement.querySelector('[class*="author"]') ||
+                           messageElement.querySelector('[class*="username"]');
+      
+      if (authorElement) {
+        const authorId = authorElement.getAttribute('data-user-id') ||
+                        authorElement.getAttribute('data-author-id') ||
+                        authorElement.getAttribute('id');
+        
+        if (authorId) {
+          const match = authorId.match(/\d{17,19}/);
+          if (match) return match[0];
+        }
+      }
+
+      // Method 3: Try to get from message ID (sometimes includes user ID)
+      const messageId = this.getMessageId(messageElement);
+      if (messageId && messageId.length > 19) {
+        // Might be composite ID with user ID
+        const matches = messageId.match(/\d{17,19}/g);
+        if (matches && matches.length > 1) {
+          return matches[1]; // Second match might be user ID
+        }
+      }
+    } catch (error) {
+      this.debugError('GET_USER_ID', error);
+    }
+
+    // Fallback: return null if can't determine user
+    return null;
+  }
+
+  getUserCombo(userId) {
+    if (!userId) {
+      // Fallback to global combo if user ID not available
+      return { comboCount: 0, lastCritTime: 0, timeout: null };
+    }
+
+    if (!this.userCombos.has(userId)) {
+      this.userCombos.set(userId, {
+        comboCount: 0,
+        lastCritTime: 0,
+        timeout: null,
+      });
+    }
+
+    return this.userCombos.get(userId);
+  }
+
+  updateUserCombo(userId, comboCount, lastCritTime) {
+    if (!userId) return;
+
+    const userCombo = this.getUserCombo(userId);
+    userCombo.comboCount = comboCount;
+    userCombo.lastCritTime = lastCritTime;
+
+    // Clear existing timeout
+    if (userCombo.timeout) {
+      clearTimeout(userCombo.timeout);
+    }
+
+    // Reset combo after 10 seconds of no crits from this user
+    userCombo.timeout = setTimeout(() => {
+      if (this.userCombos.has(userId)) {
+        this.userCombos.get(userId).comboCount = 0;
+      }
+    }, 10000);
+
+    this.userCombos.set(userId, userCombo);
+  }
+
   showCriticalHitAnimation(messageElement = null, comboCount = 1) {
     if (!this.settings.enabled) {
       this.debugLog('Animation disabled, skipping');
       return;
     }
+
+    // Get user ID from message element
+    const userId = messageElement ? this.getUserId(messageElement) : null;
+    const userCombo = this.getUserCombo(userId);
 
     // Prevent duplicate animations for the same message
     if (messageElement) {
@@ -301,13 +400,13 @@ module.exports = class CriticalHitAnimation {
 
       // Check if we've already animated this message
       if (this.animatedMessages.has(messageId)) {
-        this.debugLog('Message already animated, skipping duplicate', { messageId });
+        this.debugLog('Message already animated, skipping duplicate', { messageId, userId });
         return;
       }
 
       // Check if there's a pending animation for this message
       if (this.pendingAnimations.has(messageId)) {
-        this.debugLog('Animation already pending for this message', { messageId });
+        this.debugLog('Animation already pending for this message', { messageId, userId });
         return;
       }
 
@@ -315,15 +414,15 @@ module.exports = class CriticalHitAnimation {
       this.pendingAnimations.set(messageId, Date.now());
     }
 
-    // Anti-spam: Check cooldown
+    // Anti-spam: Check cooldown per user
     const now = Date.now();
-    const timeSinceLastCrit = now - this.lastCritTime;
+    const timeSinceLastCrit = now - userCombo.lastCritTime;
 
     if (timeSinceLastCrit < this.settings.cooldown && comboCount === 1) {
       // Within cooldown - increment combo instead
-      this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
-      this.updateComboTimeout();
-      this.showComboAnimation();
+      const newCombo = Math.min(userCombo.comboCount + 1, this.settings.maxCombo);
+      this.updateUserCombo(userId, newCombo, now);
+      this.showComboAnimation(userId, newCombo);
       if (messageElement) {
         const messageId = this.getMessageId(messageElement);
         this.pendingAnimations.delete(messageId);
@@ -332,14 +431,15 @@ module.exports = class CriticalHitAnimation {
     }
 
     // Reset combo if enough time has passed (10 seconds for typing)
-    if (timeSinceLastCrit > 10000) {
-      this.comboCount = 1;
+    let newCombo = 1;
+    if (timeSinceLastCrit <= 10000) {
+      newCombo = Math.min(userCombo.comboCount + 1, this.settings.maxCombo);
     } else {
-      this.comboCount = Math.min(this.comboCount + 1, this.settings.maxCombo);
+      newCombo = 1; // Reset combo after 10 seconds
     }
 
-    this.lastCritTime = now;
-    this.updateComboTimeout();
+    this.updateUserCombo(userId, newCombo, now);
+    const currentCombo = newCombo; // Store for use in animation
 
     // Mark message as animated
     if (messageElement) {
@@ -366,12 +466,15 @@ module.exports = class CriticalHitAnimation {
       // Create main text element
       const textElement = document.createElement('div');
       textElement.className = 'cha-critical-hit-text';
-
+      
+      // Get current combo for this user
+      const currentCombo = userId ? this.getUserCombo(userId).comboCount : 1;
+      
       // Show combo if applicable
-      const displayText = this.comboCount > 1 && this.settings.showCombo
-        ? `CRITICAL HIT! x${this.comboCount}`
+      const displayText = currentCombo > 1 && this.settings.showCombo
+        ? `CRITICAL HIT! x${currentCombo}`
         : 'CRITICAL HIT!';
-
+      
       textElement.innerHTML = displayText;
 
       textElement.style.left = `${position.x}px`;
@@ -403,7 +506,8 @@ module.exports = class CriticalHitAnimation {
       }, this.settings.animationDuration);
 
       this.debugLog('Critical hit animation shown', {
-        comboCount: this.comboCount,
+        userId: userId || 'unknown',
+        comboCount: currentCombo,
         position,
         animationId,
       });
@@ -412,32 +516,20 @@ module.exports = class CriticalHitAnimation {
     }
   }
 
-  showComboAnimation() {
-    // Update existing animation with combo count
+  showComboAnimation(userId, comboCount) {
+    // Update existing animation with combo count for this user
     const container = this.getAnimationContainer();
     if (!container) return;
 
     const existingText = container.querySelector('.cha-critical-hit-text');
-    if (existingText && this.comboCount > 1) {
-      existingText.innerHTML = `CRITICAL HIT! x${this.comboCount}`;
+    if (existingText && comboCount > 1) {
+      existingText.innerHTML = `CRITICAL HIT! x${comboCount}`;
       // Reset animation to show combo
       existingText.style.animation = 'none';
       setTimeout(() => {
         existingText.style.animation = '';
       }, 10);
     }
-  }
-
-  updateComboTimeout() {
-    // Clear existing timeout
-    if (this.comboTimeout) {
-      clearTimeout(this.comboTimeout);
-    }
-
-    // Reset combo after 10 seconds of no crits (allows for typing time)
-    this.comboTimeout = setTimeout(() => {
-      this.comboCount = 0;
-    }, 10000);
   }
 
   applyScreenShake() {
@@ -603,11 +695,15 @@ module.exports = class CriticalHitAnimation {
       this.animationContainer = null;
     }
     this.activeAnimations.clear();
-    this.comboCount = 0;
-    if (this.comboTimeout) {
-      clearTimeout(this.comboTimeout);
-      this.comboTimeout = null;
-    }
+    
+    // Clear all user combos and timeouts
+    this.userCombos.forEach((userCombo) => {
+      if (userCombo.timeout) {
+        clearTimeout(userCombo.timeout);
+      }
+    });
+    this.userCombos.clear();
+    
     // Clear pending animations
     this.pendingAnimations.forEach((timestamp, messageId) => {
       // Clear old pending animations (older than 5 seconds)
