@@ -1354,44 +1354,61 @@ module.exports = class SoloLevelingStats {
         background: rgba(10, 10, 15, 0.9);
         border-radius: 3px;
         overflow: visible;
-        border: 1px solid rgba(138, 43, 226, 0.4);
-        box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
+        border: none !important; /* Remove border that creates glow */
+        box-shadow: none !important;
+        filter: none !important;
         position: relative;
       }
 
       .sls-chat-progress-fill {
         height: 100%;
         background: linear-gradient(90deg, #8a2be2 0%, #9370db 50%, #ba55d3 100%);
-        box-shadow: 0 0 8px rgba(138, 43, 226, 0.9),
-                    0 0 12px rgba(139, 92, 246, 0.6),
-                    inset 0 0 4px rgba(186, 85, 211, 0.3);
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         border-radius: 3px;
+        /* COMPLETE GLOW REMOVAL - ALL POSSIBLE SOURCES */
+        box-shadow: none !important;
+        filter: none !important;
+        outline: none !important;
+        border: none !important;
+        text-shadow: none !important;
+        drop-shadow: none !important;
+        -webkit-box-shadow: none !important;
+        -moz-box-shadow: none !important;
+        -webkit-filter: none !important;
+        -moz-filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
+      /* Force remove glow from ALL states and pseudo-elements */
+      .sls-chat-progress-fill *,
+      .sls-chat-progress-fill::before,
+      .sls-chat-progress-fill::after,
+      .sls-chat-progress-fill:hover,
+      .sls-chat-progress-fill:active,
+      .sls-chat-progress-fill:focus {
+        box-shadow: none !important;
+        filter: none !important;
+        text-shadow: none !important;
+        outline: none !important;
+        border: none !important;
+      }
+
+      /* Purple glow shimmer completely disabled */
       .sls-chat-progress-fill::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(90deg, transparent 0%, rgba(186, 85, 211, 0.4) 50%, transparent 100%);
-        animation: shimmer 2s infinite;
-        border-radius: 3px;
+        display: none !important;
+        content: none !important;
+        background: none !important;
+        animation: none !important;
       }
 
+      /* Purple glow overlay completely disabled */
       .sls-chat-progress-fill::before {
-        content: '';
-        position: absolute;
-        top: -2px;
-        left: 0;
-        right: 0;
-        height: 10px;
-        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(186, 85, 211, 0.5) 0%, transparent 70%);
-        animation: sparkle 3s infinite;
-        pointer-events: none;
+        display: none !important;
+        content: none !important;
+        background: none !important;
+        animation: none !important;
       }
 
       /* Sparkle particles */
@@ -4548,6 +4565,15 @@ module.exports = class SoloLevelingStats {
   }
 
   unlockAchievement(achievement) {
+    // Double-check: prevent duplicate unlocks
+    if (this.settings.achievements.unlocked.includes(achievement.id)) {
+      this.debugLog('ACHIEVEMENT', 'Achievement already unlocked, skipping', {
+        achievementId: achievement.id,
+        achievementName: achievement.name,
+      });
+      return; // Already unlocked, don't show notification again
+    }
+
     // Add to unlocked list
     this.settings.achievements.unlocked.push(achievement.id);
 
@@ -4568,6 +4594,13 @@ module.exports = class SoloLevelingStats {
       (achievement.title ? `👑 Title acquired: ${achievement.title}` : '');
 
     this.showNotification(message, 'success', 5000);
+
+    this.debugLog('ACHIEVEMENT', 'Achievement unlocked', {
+      achievementId: achievement.id,
+      achievementName: achievement.name,
+      title: achievement.title,
+      totalUnlocked: this.settings.achievements.unlocked.length,
+    });
 
     // Save immediately on achievement unlock (important event)
     this.saveSettings(true);

@@ -301,25 +301,20 @@ module.exports = class LevelProgressBar {
         border-radius: 6px;
         overflow: visible;
         position: relative;
-        border: 1px solid rgba(139, 92, 246, 0.2);
+        border: none !important; /* Remove border that creates glow */
+        box-shadow: none !important;
+        filter: none !important;
         min-width: 100px;
       }
 
+      /* XP glow animation disabled */
       .lpb-progress-fill.lpb-xp-gain {
-        animation: lpb-xp-glow 1s ease-out;
+        animation: none !important;
+        box-shadow: none !important;
       }
 
       @keyframes lpb-xp-glow {
-        0%, 100% {
-          box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
-                      0 0 20px rgba(139, 92, 246, 0.5),
-                      inset 0 0 10px rgba(139, 92, 246, 0.3);
-        }
-        50% {
-          box-shadow: 0 0 20px rgba(139, 92, 246, 1),
-                      0 0 40px rgba(139, 92, 246, 0.8),
-                      inset 0 0 15px rgba(186, 85, 211, 0.5);
-        }
+        /* Disabled - no glow animation */
       }
 
       .lpb-compact .lpb-progress-track {
@@ -332,34 +327,49 @@ module.exports = class LevelProgressBar {
         border-radius: 6px;
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
-                    0 0 20px rgba(139, 92, 246, 0.5),
-                    inset 0 0 10px rgba(139, 92, 246, 0.3);
+        /* COMPLETE GLOW REMOVAL - ALL POSSIBLE SOURCES */
+        box-shadow: none !important;
+        filter: none !important;
+        outline: none !important;
+        border: none !important;
+        text-shadow: none !important;
+        drop-shadow: none !important;
+        -webkit-box-shadow: none !important;
+        -moz-box-shadow: none !important;
+        -webkit-filter: none !important;
+        -moz-filter: none !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
       }
 
+      /* Force remove glow from ALL states and pseudo-elements */
+      .lpb-progress-fill *,
+      .lpb-progress-fill::before,
+      .lpb-progress-fill::after,
+      .lpb-progress-fill:hover,
+      .lpb-progress-fill:active,
+      .lpb-progress-fill:focus {
+        box-shadow: none !important;
+        filter: none !important;
+        text-shadow: none !important;
+        outline: none !important;
+        border: none !important;
+      }
+
+      /* Purple glow shimmer completely disabled */
       .lpb-progress-fill::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: linear-gradient(90deg, transparent, rgba(186, 85, 211, 0.5), transparent);
-        animation: lpb-shimmer 2s infinite;
-        border-radius: 6px;
+        display: none !important;
+        content: none !important;
+        background: none !important;
+        animation: none !important;
       }
 
+      /* Purple glow overlay completely disabled */
       .lpb-progress-fill::before {
-        content: '';
-        position: absolute;
-        top: -2px;
-        left: 0;
-        right: 0;
-        height: 16px;
-        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(186, 85, 211, 0.6) 0%, transparent 70%);
-        animation: lpb-sparkle 3s infinite;
-        pointer-events: none;
-        border-radius: 6px;
+        display: none !important;
+        content: none !important;
+        background: none !important;
+        animation: none !important;
       }
 
       /* Sparkle particles */
@@ -670,13 +680,13 @@ module.exports = class LevelProgressBar {
         const oldWidth = parseFloat(progressFill.style.width) || 0;
         progressFill.style.width = `${xpPercent}%`;
 
-        // Add glow effect on XP gain
-        if (xpPercent > oldWidth) {
-          progressFill.classList.add('lpb-xp-gain');
-          setTimeout(() => {
-            progressFill.classList.remove('lpb-xp-gain');
-          }, 1000);
-        }
+        // XP gain glow effect disabled
+        // if (xpPercent > oldWidth) {
+        //   progressFill.classList.add('lpb-xp-gain');
+        //   setTimeout(() => {
+        //     progressFill.classList.remove('lpb-xp-gain');
+        //   }, 1000);
+        // }
 
         // Create sparkle particles on XP gain
         if (xpPercent > oldWidth && progressTrack) {
