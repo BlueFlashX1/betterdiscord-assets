@@ -439,7 +439,6 @@ module.exports = class CriticalHitAnimation {
     }
 
     this.updateUserCombo(userId, newCombo, now);
-    const currentCombo = newCombo; // Store for use in animation
 
     // Mark message as animated
     if (messageElement) {
@@ -467,8 +466,8 @@ module.exports = class CriticalHitAnimation {
       const textElement = document.createElement('div');
       textElement.className = 'cha-critical-hit-text';
       
-      // Get current combo for this user
-      const currentCombo = userId ? this.getUserCombo(userId).comboCount : 1;
+      // Use the combo we just calculated
+      const currentCombo = newCombo;
       
       // Show combo if applicable
       const displayText = currentCombo > 1 && this.settings.showCombo
