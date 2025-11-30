@@ -443,25 +443,6 @@ module.exports = class CriticalHitAnimation {
     this.userCombos.set(key, userCombo);
   }
 
-    const userCombo = this.getUserCombo(userId);
-    userCombo.comboCount = comboCount;
-    userCombo.lastCritTime = lastCritTime;
-
-    // Clear existing timeout
-    if (userCombo.timeout) {
-      clearTimeout(userCombo.timeout);
-    }
-
-    // Reset combo after 10 seconds of no crits from this user
-    userCombo.timeout = setTimeout(() => {
-      if (this.userCombos.has(userId)) {
-        this.userCombos.get(userId).comboCount = 0;
-      }
-    }, 10000);
-
-    this.userCombos.set(userId, userCombo);
-  }
-
   showCriticalHitAnimation(messageElement = null, comboCount = 1) {
     if (!this.settings.enabled) {
       this.debugLog('Animation disabled, skipping');
