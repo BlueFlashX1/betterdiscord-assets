@@ -67,6 +67,7 @@ module.exports = class SoloLevelingStats {
         timeActive: 0, // in minutes
         lastActiveTime: null, // Will be set in start()
         sessionStartTime: null, // Will be set in start()
+        critsLanded: 0, // Track critical hits for achievements
       },
       // Daily quests
       dailyQuests: {
@@ -96,6 +97,8 @@ module.exports = class SoloLevelingStats {
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
+    this.lastMessageId = null; // Track last message ID for crit detection
+    this.lastMessageElement = null; // Track last message element for crit detection
 
     // Event emitter system for real-time progress bar updates
     this.eventListeners = {
@@ -2715,6 +2718,22 @@ module.exports = class SoloLevelingStats {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'track_channel' });
       }
 
+      // Store message info for crit detection
+      try {
+        // Try to find the message element in DOM
+        const messageElements = document.querySelectorAll('[class*="message"]');
+        if (messageElements.length > 0) {
+          // Get the most recent message (last in list)
+          const lastMsg = Array.from(messageElements).pop();
+          if (lastMsg) {
+            this.lastMessageElement = lastMsg;
+            this.lastMessageId = this.getMessageId(lastMsg);
+          }
+        }
+      } catch (error) {
+        // Ignore errors in message tracking
+      }
+
       // Calculate and award XP (this will save immediately)
       try {
         this.awardXP(messageText, messageLength);
@@ -3210,6 +3229,25 @@ module.exports = class SoloLevelingStats {
         });
       }
 
+      // Critical Hit Bonus: +25% XP multiplier if message was a crit
+      const critBonus = this.checkCriticalHitBonus();
+      if (critBonus > 0) {
+        const baseXP = xp;
+        xp = Math.round(xp * (1 + critBonus));
+        // Track crit for achievements
+        if (!this.settings.activity.critsLanded) {
+          this.settings.activity.critsLanded = 0;
+        }
+        this.settings.activity.critsLanded++;
+        this.debugLog('AWARD_XP_CRIT', 'Critical hit bonus applied', {
+          critBonus: (critBonus * 100).toFixed(0) + '%',
+          baseXP,
+          critBonusXP: xp - baseXP,
+          finalXP: xp,
+          totalCrits: this.settings.activity.critsLanded,
+        });
+      }
+
       // Rank bonus multiplier (higher rank = more XP)
       const rankMultiplier = this.getRankMultiplier();
       xp *= rankMultiplier;
@@ -3266,6 +3304,55 @@ module.exports = class SoloLevelingStats {
         messagePreview: messageText?.substring(0, 30),
       });
     }
+  }
+
+  checkCriticalHitBonus() {
+    // Check if the last message was a critical hit
+    // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
+    try {
+      if (!this.lastMessageElement) {
+        // Try to find the message element
+        const messageElements = document.querySelectorAll('[class*="message"]');
+        if (messageElements.length > 0) {
+          const lastMsg = Array.from(messageElements).pop();
+          if (lastMsg && lastMsg.classList.contains('bd-crit-hit')) {
+            return 0.25; // +25% XP bonus for crit hits
+          }
+        }
+        return 0;
+      }
+
+      // Check if the tracked message element has crit class
+      if (this.lastMessageElement.classList.contains('bd-crit-hit')) {
+        return 0.25; // +25% XP bonus for crit hits
+      }
+
+      // Also check by message ID if CriticalHit plugin stores crit info
+      if (this.lastMessageId) {
+        try {
+          const critPlugin = BdApi.Plugins.get('CriticalHit');
+          if (critPlugin) {
+            const instance = critPlugin.instance || critPlugin;
+            if (instance && instance.critMessages) {
+              // Check if this message is in the crit set
+              const messageElements = document.querySelectorAll('[class*="message"]');
+              for (const msgEl of messageElements) {
+                const msgId = this.getMessageId(msgEl);
+                if (msgId === this.lastMessageId && msgEl.classList.contains('bd-crit-hit')) {
+                  return 0.25; // +25% XP bonus
+                }
+              }
+            }
+          }
+        } catch (error) {
+          // CriticalHit plugin not available or error accessing
+        }
+      }
+    } catch (error) {
+      this.debugError('CHECK_CRIT_BONUS', error);
+    }
+
+    return 0; // No crit bonus
   }
 
   calculateQualityBonus(messageText, messageLength) {
@@ -4043,6 +4130,136 @@ module.exports = class SoloLevelingStats {
         title: 'The Ruler',
         titleBonus: { xp: 0.5 }, // +50% XP
       },
+      // Character-Based Titles
+      {
+        id: 'sung_jin_woo',
+        name: 'Sung Jin-Woo',
+        description: 'Reach Level 50, send 5,000 messages, and type 100,000 characters',
+        condition: { type: 'level', value: 50 },
+        title: 'Sung Jin-Woo',
+        titleBonus: { xp: 0.35 }, // +35% XP
+      },
+      {
+        id: 'the_weakest',
+        name: 'The Weakest',
+        description: 'Send your first 10 messages',
+        condition: { type: 'messages', value: 10 },
+        title: 'The Weakest',
+        titleBonus: { xp: 0.02 }, // +2% XP
+      },
+      {
+        id: 's_rank_jin_woo',
+        name: 'S-Rank Hunter Jin-Woo',
+        description: 'Reach S-Rank and Level 50',
+        condition: { type: 'level', value: 50 },
+        title: 'S-Rank Hunter Jin-Woo',
+        titleBonus: { xp: 0.42 }, // +42% XP
+      },
+      {
+        id: 'shadow_sovereign',
+        name: 'Shadow Sovereign',
+        description: 'Reach Level 60 and send 7,500 messages',
+        condition: { type: 'level', value: 60 },
+        title: 'Shadow Sovereign',
+        titleBonus: { xp: 0.4 }, // +40% XP
+      },
+      {
+        id: 'ashborn_successor',
+        name: "Ashborn's Successor",
+        description: 'Reach Level 75 and type 200,000 characters',
+        condition: { type: 'level', value: 75 },
+        title: "Ashborn's Successor",
+        titleBonus: { xp: 0.48 }, // +48% XP
+      },
+      // Ability/Skill Titles
+      {
+        id: 'arise',
+        name: 'Arise',
+        description: 'Unlock 10 achievements',
+        condition: { type: 'achievements', value: 10 },
+        title: 'Arise',
+        titleBonus: { xp: 0.12 }, // +12% XP
+      },
+      {
+        id: 'shadow_exchange',
+        name: 'Shadow Exchange',
+        description: 'Send 3,000 messages',
+        condition: { type: 'messages', value: 3000 },
+        title: 'Shadow Exchange',
+        titleBonus: { xp: 0.2 }, // +20% XP
+      },
+      {
+        id: 'dagger_throw_master',
+        name: 'Dagger Throw Master',
+        description: 'Land 1,000 critical hits',
+        condition: { type: 'crits', value: 1000 },
+        title: 'Dagger Throw Master',
+        titleBonus: { xp: 0.25 }, // +25% XP
+      },
+      {
+        id: 'stealth_master',
+        name: 'Stealth Master',
+        description: 'Be active for 30 hours during off-peak hours',
+        condition: { type: 'time', value: 1800 },
+        title: 'Stealth Master',
+        titleBonus: { xp: 0.18 }, // +18% XP
+      },
+      {
+        id: 'mana_manipulator',
+        name: 'Mana Manipulator',
+        description: 'Reach 15 Intelligence stat',
+        condition: { type: 'stat', stat: 'intelligence', value: 15 },
+        title: 'Mana Manipulator',
+        titleBonus: { xp: 0.22 }, // +22% XP
+      },
+      {
+        id: 'shadow_storage',
+        name: 'Shadow Storage',
+        description: 'Visit 25 unique channels',
+        condition: { type: 'channels', value: 25 },
+        title: 'Shadow Storage',
+        titleBonus: { xp: 0.16 }, // +16% XP
+      },
+      {
+        id: 'beast_monarch',
+        name: 'Beast Monarch',
+        description: 'Reach 15 Strength stat',
+        condition: { type: 'stat', stat: 'strength', value: 15 },
+        title: 'Beast Monarch',
+        titleBonus: { xp: 0.28 }, // +28% XP
+      },
+      {
+        id: 'frost_monarch',
+        name: 'Frost Monarch',
+        description: 'Send 8,000 messages',
+        condition: { type: 'messages', value: 8000 },
+        title: 'Frost Monarch',
+        titleBonus: { xp: 0.3 }, // +30% XP
+      },
+      {
+        id: 'plague_monarch',
+        name: 'Plague Monarch',
+        description: 'Reach Level 65',
+        condition: { type: 'level', value: 65 },
+        title: 'Plague Monarch',
+        titleBonus: { xp: 0.32 }, // +32% XP
+      },
+      {
+        id: 'monarch_white_flames',
+        name: 'Monarch of White Flames',
+        description: 'Land 500 critical hits',
+        condition: { type: 'crits', value: 500 },
+        title: 'Monarch of White Flames',
+        titleBonus: { xp: 0.26 }, // +26% XP
+      },
+      {
+        id: 'monarch_transfiguration',
+        name: 'Monarch of Transfiguration',
+        description: 'Reach Level 70 and type 150,000 characters',
+        condition: { type: 'level', value: 70 },
+        title: 'Monarch of Transfiguration',
+        titleBonus: { xp: 0.34 }, // +34% XP
+      },
     ];
   }
 
@@ -4066,6 +4283,12 @@ module.exports = class SoloLevelingStats {
           return channelsVisited.length >= condition.value;
         }
         return false;
+      case 'achievements':
+        return (this.settings.achievements?.unlocked?.length || 0) >= condition.value;
+      case 'crits':
+        return (this.settings.activity?.critsLanded || 0) >= condition.value;
+      case 'stat':
+        return this.settings.stats?.[condition.stat] >= condition.value;
       default:
         return false;
     }
