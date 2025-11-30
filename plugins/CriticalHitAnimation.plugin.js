@@ -57,7 +57,7 @@ module.exports = class CriticalHitAnimation {
         const reactKey = Object.keys(appElement).find(
           (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
         );
-        
+
         if (reactKey) {
           let fiber = appElement[reactKey];
           for (let i = 0; i < 20 && fiber; i++) {
@@ -470,16 +470,16 @@ module.exports = class CriticalHitAnimation {
 
     // Get user ID from message element
     const userId = messageElement ? this.getUserId(messageElement) : null;
-    
+
     // Only animate for own messages
     if (this.currentUserId && userId && userId !== this.currentUserId) {
-      this.debugLog('Animation skipped - not own message', { 
-        messageUserId: userId, 
-        currentUserId: this.currentUserId 
+      this.debugLog('Animation skipped - not own message', {
+        messageUserId: userId,
+        currentUserId: this.currentUserId
       });
       return; // Skip animation for other users' messages
     }
-    
+
     // If currentUserId not set yet, try to get it and skip if message is not from us
     if (!this.currentUserId && messageElement) {
       // Try to get current user ID one more time
@@ -491,14 +491,14 @@ module.exports = class CriticalHitAnimation {
       }
       // Check again after getting user ID
       if (userId && userId !== this.currentUserId) {
-        this.debugLog('Animation skipped - not own message', { 
-          messageUserId: userId, 
-          currentUserId: this.currentUserId 
+        this.debugLog('Animation skipped - not own message', {
+          messageUserId: userId,
+          currentUserId: this.currentUserId
         });
         return;
       }
     }
-    
+
     const userCombo = this.getUserCombo(userId);
 
     // Prevent duplicate animations for the same message
