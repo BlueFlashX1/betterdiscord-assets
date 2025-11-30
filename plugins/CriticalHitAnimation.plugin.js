@@ -346,24 +346,42 @@ module.exports = class CriticalHitAnimation {
   }
 
   getUserCombo(userId) {
-    if (!userId) {
-      // Fallback to global combo if user ID not available
-      return { comboCount: 0, lastCritTime: 0, timeout: null };
-    }
-
-    if (!this.userCombos.has(userId)) {
-      this.userCombos.set(userId, {
+    // Use 'unknown' as fallback key if userId is null
+    const key = userId || 'unknown';
+    
+    if (!this.userCombos.has(key)) {
+      this.userCombos.set(key, {
         comboCount: 0,
         lastCritTime: 0,
         timeout: null,
       });
     }
 
-    return this.userCombos.get(userId);
+    return this.userCombos.get(key);
   }
 
   updateUserCombo(userId, comboCount, lastCritTime) {
-    if (!userId) return;
+    // Use 'unknown' as fallback key if userId is null
+    const key = userId || 'unknown';
+    
+    const userCombo = this.getUserCombo(key);
+    userCombo.comboCount = comboCount;
+    userCombo.lastCritTime = lastCritTime;
+
+    // Clear existing timeout
+    if (userCombo.timeout) {
+      clearTimeout(userCombo.timeout);
+    }
+
+    // Reset combo after 10 seconds of no crits from this user
+    userCombo.timeout = setTimeout(() => {
+      if (this.userCombos.has(key)) {
+        this.userCombos.get(key).comboCount = 0;
+      }
+    }, 10000);
+
+    this.userCombos.set(key, userCombo);
+  }
 
     const userCombo = this.getUserCombo(userId);
     userCombo.comboCount = comboCount;
