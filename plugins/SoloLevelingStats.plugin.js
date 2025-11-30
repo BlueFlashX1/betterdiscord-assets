@@ -1353,17 +1353,21 @@ module.exports = class SoloLevelingStats {
         height: 6px;
         background: rgba(10, 10, 15, 0.9);
         border-radius: 3px;
-        overflow: hidden;
+        overflow: visible;
         border: 1px solid rgba(138, 43, 226, 0.4);
         box-shadow: inset 0 0 4px rgba(0, 0, 0, 0.5);
+        position: relative;
       }
 
       .sls-chat-progress-fill {
         height: 100%;
         background: linear-gradient(90deg, #8a2be2 0%, #9370db 50%, #ba55d3 100%);
-        box-shadow: 0 0 6px rgba(138, 43, 226, 0.8), inset 0 0 4px rgba(255, 255, 255, 0.1);
-        transition: width 0.3s ease;
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.9), 
+                    0 0 12px rgba(139, 92, 246, 0.6),
+                    inset 0 0 4px rgba(255, 255, 255, 0.2);
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
+        border-radius: 3px;
       }
 
       .sls-chat-progress-fill::after {
@@ -1373,13 +1377,214 @@ module.exports = class SoloLevelingStats {
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.2) 50%, transparent 100%);
+        background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.3) 50%, transparent 100%);
         animation: shimmer 2s infinite;
+        border-radius: 3px;
+      }
+
+      .sls-chat-progress-fill::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: 0;
+        right: 0;
+        height: 10px;
+        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(255, 255, 255, 0.6) 0%, transparent 70%);
+        animation: sparkle 3s infinite;
+        pointer-events: none;
+      }
+
+      /* Sparkle particles */
+      .sls-chat-progress-bar .sls-progress-sparkle {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.8);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: sparkle-float 2s infinite;
+        box-shadow: 0 0 4px rgba(139, 92, 246, 0.8);
+      }
+
+      /* Milestone markers */
+      .sls-chat-progress-bar .sls-milestone-marker {
+        position: absolute;
+        top: -8px;
+        width: 2px;
+        height: 22px;
+        background: rgba(139, 92, 246, 0.5);
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .sls-chat-progress-bar .sls-milestone-marker::after {
+        content: '';
+        position: absolute;
+        top: -4px;
+        left: -3px;
+        width: 8px;
+        height: 8px;
+        background: rgba(139, 92, 246, 0.8);
+        border-radius: 50%;
+        box-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
       }
 
       @keyframes shimmer {
         0% { transform: translateX(-100%); }
         100% { transform: translateX(100%); }
+      }
+
+      @keyframes sparkle {
+        0%, 100% { opacity: 0; }
+        50% { opacity: 1; }
+      }
+
+      @keyframes sparkle-float {
+        0% {
+          opacity: 0;
+          transform: translateY(0) scale(0);
+        }
+        50% {
+          opacity: 1;
+          transform: translateY(-10px) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-20px) scale(0);
+        }
+      }
+
+      /* Quest celebration styles */
+      .sls-quest-celebration {
+        position: fixed;
+        z-index: 100000;
+        pointer-events: none;
+        animation: quest-celebration-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+
+      .sls-quest-celebration-content {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(109, 40, 217, 0.95) 100%);
+        border: 3px solid rgba(255, 255, 255, 0.8);
+        border-radius: 16px;
+        padding: 30px 40px;
+        text-align: center;
+        box-shadow: 0 0 30px rgba(139, 92, 246, 0.8),
+                    0 0 60px rgba(139, 92, 246, 0.5),
+                    inset 0 0 20px rgba(255, 255, 255, 0.2);
+        backdrop-filter: blur(10px);
+      }
+
+      .sls-quest-celebration-icon {
+        font-size: 64px;
+        animation: quest-icon-bounce 0.6s ease-out;
+        margin-bottom: 10px;
+      }
+
+      .sls-quest-celebration-text {
+        font-family: 'Press Start 2P', monospace;
+        font-size: 20px;
+        color: #ffffff;
+        text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+                     0 0 20px rgba(139, 92, 246, 0.8);
+        margin-bottom: 10px;
+        animation: quest-text-glow 1s ease-in-out infinite;
+      }
+
+      .sls-quest-celebration-name {
+        font-size: 18px;
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: bold;
+        margin-bottom: 15px;
+      }
+
+      .sls-quest-celebration-rewards {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        margin-top: 15px;
+      }
+
+      .sls-quest-reward-item {
+        font-size: 16px;
+        color: #00ff88;
+        font-weight: bold;
+        text-shadow: 0 0 8px rgba(0, 255, 136, 0.6);
+        animation: quest-reward-pop 0.4s ease-out 0.2s both;
+      }
+
+      .sls-quest-particle {
+        position: absolute;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        pointer-events: none;
+        animation: quest-particle-burst 2s ease-out forwards;
+      }
+
+      .sls-quest-celebrating {
+        animation: quest-card-pulse 0.5s ease-out;
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.8) !important;
+      }
+
+      @keyframes quest-celebration-pop {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.3);
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.1);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      @keyframes quest-icon-bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-20px); }
+      }
+
+      @keyframes quest-text-glow {
+        0%, 100% {
+          text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
+                       0 0 20px rgba(139, 92, 246, 0.8);
+        }
+        50% {
+          text-shadow: 0 0 20px rgba(255, 255, 255, 1),
+                       0 0 40px rgba(139, 92, 246, 1);
+        }
+      }
+
+      @keyframes quest-reward-pop {
+        0% {
+          opacity: 0;
+          transform: scale(0);
+        }
+        100% {
+          opacity: 1;
+          transform: scale(1);
+        }
+      }
+
+      @keyframes quest-particle-burst {
+        0% {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(var(--particle-x, 0), var(--particle-y, 0)) scale(0);
+        }
+      }
+
+      @keyframes quest-card-pulse {
+        0%, 100% {
+          transform: scale(1);
+        }
+        50% {
+          transform: scale(1.05);
+        }
       }
 
       .sls-chat-stats {
@@ -3235,7 +3440,7 @@ module.exports = class SoloLevelingStats {
         const baseXP = xp;
         let critMultiplier = critBonus;
         let isMegaCrit = false;
-        
+
         // Check for Dagger Throw Master mega crit (1000x multiplier)
         const activeTitle = this.settings.achievements?.activeTitle;
         if (activeTitle === 'Dagger Throw Master') {
@@ -3243,21 +3448,21 @@ module.exports = class SoloLevelingStats {
           // Chance = Agility stat * 2% (e.g., 10 AGI = 20% chance)
           const megaCritChance = agilityStat * 0.02;
           const roll = Math.random();
-          
+
           if (roll < megaCritChance) {
             // MEGA CRIT! 1000x multiplier
             critMultiplier = 999; // 1000x total (1 + 999 = 1000x)
             isMegaCrit = true;
-            
+
             // Show epic notification
             this.showNotification(
               `💥💥💥 MEGA CRITICAL HIT! 💥💥💥\n` +
-              `Dagger Throw Master activated!\n` +
-              `1000x XP Multiplier!`,
+                `Dagger Throw Master activated!\n` +
+                `1000x XP Multiplier!`,
               'success',
               8000
             );
-            
+
             this.debugLog('AWARD_XP_MEGA_CRIT', 'Mega crit activated!', {
               agilityStat,
               megaCritChance: (megaCritChance * 100).toFixed(1) + '%',
@@ -3266,14 +3471,14 @@ module.exports = class SoloLevelingStats {
             });
           }
         }
-        
+
         xp = Math.round(xp * (1 + critMultiplier));
         // Track crit for achievements
         if (!this.settings.activity.critsLanded) {
           this.settings.activity.critsLanded = 0;
         }
         this.settings.activity.critsLanded++;
-        
+
         const logData = {
           critBonus: (critBonus * 100).toFixed(0) + '%',
           baseXP,
@@ -3281,14 +3486,18 @@ module.exports = class SoloLevelingStats {
           finalXP: xp,
           totalCrits: this.settings.activity.critsLanded,
         };
-        
+
         if (isMegaCrit) {
           logData.megaCrit = true;
           logData.multiplier = '1000x';
           logData.agilityStat = this.settings.stats?.agility || 0;
         }
-        
-        this.debugLog('AWARD_XP_CRIT', isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied', logData);
+
+        this.debugLog(
+          'AWARD_XP_CRIT',
+          isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied',
+          logData
+        );
       }
 
       // Rank bonus multiplier (higher rank = more XP)
@@ -4234,7 +4443,8 @@ module.exports = class SoloLevelingStats {
       {
         id: 'dagger_throw_master',
         name: 'Dagger Throw Master',
-        description: 'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
+        description:
+          'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
         titleBonus: { xp: 0.25 }, // +25% XP
@@ -4488,6 +4698,112 @@ module.exports = class SoloLevelingStats {
       `💰 +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
 
     this.showNotification(message, 'success', 4000);
+    
+    // Quest completion celebration animation
+    this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
+  }
+  
+  showQuestCompletionCelebration(questName, xpReward, statPoints) {
+    try {
+      // Find quest card in UI
+      const questCards = document.querySelectorAll('.sls-chat-quest-item');
+      let questCard = null;
+      
+      // Find the completed quest card
+      for (const card of questCards) {
+        const cardText = card.textContent || '';
+        if (cardText.includes(questName) || card.classList.contains('sls-chat-quest-complete')) {
+          questCard = card;
+          break;
+        }
+      }
+      
+      // Create celebration overlay
+      const celebration = document.createElement('div');
+      celebration.className = 'sls-quest-celebration';
+      celebration.innerHTML = `
+        <div class="sls-quest-celebration-content">
+          <div class="sls-quest-celebration-icon">🎉</div>
+          <div class="sls-quest-celebration-text">QUEST COMPLETE!</div>
+          <div class="sls-quest-celebration-name">${this.escapeHtml(questName)}</div>
+          <div class="sls-quest-celebration-rewards">
+            <div class="sls-quest-reward-item">💰 +${xpReward} XP</div>
+            ${statPoints > 0 ? `<div class="sls-quest-reward-item">⭐ +${statPoints} Stat Point${statPoints > 1 ? 's' : ''}</div>` : ''}
+          </div>
+        </div>
+      `;
+      
+      // Position near quest card if found, otherwise center screen
+      if (questCard) {
+        const rect = questCard.getBoundingClientRect();
+        celebration.style.left = `${rect.left + rect.width / 2}px`;
+        celebration.style.top = `${rect.top + rect.height / 2}px`;
+        celebration.style.transform = 'translate(-50%, -50%)';
+        
+        // Highlight quest card
+        questCard.classList.add('sls-quest-celebrating');
+        setTimeout(() => {
+          questCard.classList.remove('sls-quest-celebrating');
+        }, 3000);
+      } else {
+        // Center of screen
+        celebration.style.left = '50%';
+        celebration.style.top = '50%';
+        celebration.style.transform = 'translate(-50%, -50%)';
+      }
+      
+      document.body.appendChild(celebration);
+      
+      // Create particles
+      this.createQuestParticles(celebration);
+      
+      // Remove after animation
+      setTimeout(() => {
+        celebration.remove();
+      }, 3000);
+      
+      this.debugLog('QUEST_CELEBRATION', 'Quest completion celebration shown', {
+        questName,
+        xpReward,
+        statPoints,
+      });
+    } catch (error) {
+      this.debugError('QUEST_CELEBRATION', error);
+    }
+  }
+  
+  createQuestParticles(container) {
+    const particleCount = 30;
+    const colors = ['#8b5cf6', '#7c3aed', '#6d28d9', '#ffffff', '#00ff88'];
+    
+    for (let i = 0; i < particleCount; i++) {
+      const particle = document.createElement('div');
+      particle.className = 'sls-quest-particle';
+      particle.style.left = '50%';
+      particle.style.top = '50%';
+      particle.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+      
+      const angle = (Math.PI * 2 * i) / particleCount;
+      const distance = 100 + Math.random() * 50;
+      const x = Math.cos(angle) * distance;
+      const y = Math.sin(angle) * distance;
+      
+      particle.style.setProperty('--particle-x', `${x}px`);
+      particle.style.setProperty('--particle-y', `${y}px`);
+      
+      container.appendChild(particle);
+      
+      setTimeout(() => {
+        particle.remove();
+      }, 2000);
+    }
+  }
+  
+  escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // ============================================================================

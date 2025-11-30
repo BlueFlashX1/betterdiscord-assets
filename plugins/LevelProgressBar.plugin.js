@@ -299,10 +299,27 @@ module.exports = class LevelProgressBar {
         height: 12px;
         background: rgba(20, 20, 30, 0.8);
         border-radius: 6px;
-        overflow: hidden;
+        overflow: visible;
         position: relative;
         border: 1px solid rgba(139, 92, 246, 0.2);
         min-width: 100px;
+      }
+      
+      .lpb-progress-fill.lpb-xp-gain {
+        animation: lpb-xp-glow 1s ease-out;
+      }
+      
+      @keyframes lpb-xp-glow {
+        0%, 100% {
+          box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
+                      0 0 20px rgba(139, 92, 246, 0.5),
+                      inset 0 0 10px rgba(255, 255, 255, 0.2);
+        }
+        50% {
+          box-shadow: 0 0 20px rgba(139, 92, 246, 1),
+                      0 0 40px rgba(139, 92, 246, 0.8),
+                      inset 0 0 15px rgba(255, 255, 255, 0.4);
+        }
       }
 
       .lpb-compact .lpb-progress-track {
@@ -313,10 +330,11 @@ module.exports = class LevelProgressBar {
         height: 100%;
         background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
         border-radius: 6px;
-        transition: width 0.5s ease-out;
+        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        box-shadow: 0 0 10px rgba(139, 92, 246, 0.6),
-                    inset 0 0 10px rgba(255, 255, 255, 0.1);
+        box-shadow: 0 0 12px rgba(139, 92, 246, 0.8),
+                    0 0 20px rgba(139, 92, 246, 0.5),
+                    inset 0 0 10px rgba(255, 255, 255, 0.2);
       }
 
       .lpb-progress-fill::after {
@@ -326,8 +344,91 @@ module.exports = class LevelProgressBar {
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
         animation: lpb-shimmer 2s infinite;
+        border-radius: 6px;
+      }
+
+      .lpb-progress-fill::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: 0;
+        right: 0;
+        height: 16px;
+        background: radial-gradient(circle at var(--sparkle-x, 50%), rgba(255, 255, 255, 0.7) 0%, transparent 70%);
+        animation: lpb-sparkle 3s infinite;
+        pointer-events: none;
+        border-radius: 6px;
+      }
+
+      /* Sparkle particles */
+      .lpb-progress-track .lpb-sparkle {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background: rgba(255, 255, 255, 0.9);
+        border-radius: 50%;
+        pointer-events: none;
+        animation: lpb-sparkle-float 2s infinite;
+        box-shadow: 0 0 6px rgba(139, 92, 246, 0.9);
+        top: 50%;
+        transform: translateY(-50%);
+      }
+
+      /* Milestone markers */
+      .lpb-progress-track .lpb-milestone {
+        position: absolute;
+        top: -10px;
+        width: 2px;
+        height: 32px;
+        background: rgba(139, 92, 246, 0.6);
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .lpb-progress-track .lpb-milestone::after {
+        content: '';
+        position: absolute;
+        top: -5px;
+        left: -4px;
+        width: 10px;
+        height: 10px;
+        background: rgba(139, 92, 246, 0.9);
+        border-radius: 50%;
+        box-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
+        animation: lpb-milestone-pulse 2s infinite;
+      }
+
+      @keyframes lpb-sparkle {
+        0%, 100% { opacity: 0; }
+        50% { opacity: 1; }
+      }
+
+      @keyframes lpb-sparkle-float {
+        0% {
+          opacity: 0;
+          transform: translateY(-50%) scale(0);
+        }
+        50% {
+          opacity: 1;
+          transform: translateY(-60%) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translateY(-70%) scale(0);
+        }
+      }
+
+      @keyframes lpb-milestone-pulse {
+        0%, 100% {
+          transform: scale(1);
+          opacity: 0.9;
+        }
+        50% {
+          transform: scale(1.3);
+          opacity: 1;
+        }
       }
 
       @keyframes lpb-shimmer {
@@ -443,6 +544,22 @@ module.exports = class LevelProgressBar {
 
       // Initial update
       this.updateProgressBar();
+      
+      // Initialize milestone markers
+      setTimeout(() => {
+        const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
+        if (progressTrack) {
+          const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+          if (soloPlugin) {
+            const instance = soloPlugin.instance || soloPlugin;
+            if (instance && instance.getCurrentLevel) {
+              const levelInfo = instance.getCurrentLevel();
+              const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+              this.updateMilestoneMarkers(progressTrack, xpPercent);
+            }
+          }
+        }
+      }, 100);
     } catch (error) {
       this.debugError('CREATE_BAR', error);
     }
@@ -548,10 +665,30 @@ module.exports = class LevelProgressBar {
 
       // Update progress bar
       const progressFill = this.progressBar.querySelector('#lpb-progress-fill');
+      const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
       if (progressFill) {
+        const oldWidth = parseFloat(progressFill.style.width) || 0;
         progressFill.style.width = `${xpPercent}%`;
+        
+        // Add glow effect on XP gain
+        if (xpPercent > oldWidth) {
+          progressFill.classList.add('lpb-xp-gain');
+          setTimeout(() => {
+            progressFill.classList.remove('lpb-xp-gain');
+          }, 1000);
+        }
+        
+        // Create sparkle particles on XP gain
+        if (xpPercent > oldWidth && progressTrack) {
+          this.createProgressSparkles(progressTrack, xpPercent);
+        }
+        
+        // Update milestone markers
+        this.updateMilestoneMarkers(progressTrack, xpPercent);
+        
         this.debugLog('UPDATE_BAR', 'Progress fill updated', {
           width: `${xpPercent}%`,
+          oldWidth: `${oldWidth}%`,
         });
       }
 
@@ -702,5 +839,42 @@ module.exports = class LevelProgressBar {
 
   debugError(operation, error, data = null) {
     console.error(`[LevelProgressBar] ERROR [${operation}]:`, error, data || '');
+  }
+
+  createProgressSparkles(progressTrack, xpPercent) {
+    // Create 3-5 sparkles along the progress bar
+    const sparkleCount = 3 + Math.floor(Math.random() * 3);
+    for (let i = 0; i < sparkleCount; i++) {
+      const sparkle = document.createElement('div');
+      sparkle.className = 'lpb-sparkle';
+      sparkle.style.left = `${xpPercent}%`;
+      sparkle.style.animationDelay = `${i * 0.2}s`;
+      progressTrack.appendChild(sparkle);
+      
+      setTimeout(() => {
+        if (sparkle.parentElement) {
+          sparkle.remove();
+        }
+      }, 2000);
+    }
+  }
+
+  updateMilestoneMarkers(progressTrack, xpPercent) {
+    if (!progressTrack) return;
+    
+    // Remove existing markers
+    const existingMarkers = progressTrack.querySelectorAll('.lpb-milestone');
+    existingMarkers.forEach(m => m.remove());
+    
+    // Add markers at 25%, 50%, 75%
+    const milestones = [25, 50, 75];
+    milestones.forEach(milestone => {
+      if (xpPercent >= milestone - 1) { // Show if reached or close
+        const marker = document.createElement('div');
+        marker.className = 'lpb-milestone';
+        marker.style.left = `${milestone}%`;
+        progressTrack.appendChild(marker);
+      }
+    });
   }
 };
