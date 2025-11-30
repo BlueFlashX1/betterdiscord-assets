@@ -27,13 +27,73 @@ module.exports = class CriticalHitAnimation {
     this.userCombos = new Map(); // Track combos per user: Map<userId, {comboCount, lastCritTime, timeout}>
     this.animatedMessages = new Set(); // Track which messages have been animated (prevent duplicates)
     this.pendingAnimations = new Map(); // Track pending animations with timeouts
+    this.currentUserId = null; // Current user's ID (only animate for own messages)
   }
 
   start() {
     this.loadSettings();
     this.injectCSS();
+    this.getCurrentUserId();
     this.hookIntoCriticalHit();
-    this.debugLog('Plugin started');
+    this.debugLog('Plugin started', { currentUserId: this.currentUserId });
+  }
+
+  getCurrentUserId() {
+    try {
+      // Method 1: Try to get from Discord's user store
+      const UserStore = BdApi.findModuleByProps('getCurrentUser', 'getUser');
+      if (UserStore && UserStore.getCurrentUser) {
+        const currentUser = UserStore.getCurrentUser();
+        if (currentUser && currentUser.id) {
+          this.currentUserId = currentUser.id;
+          this.debugLog('GET_CURRENT_USER', 'Got user ID from UserStore', { userId: this.currentUserId });
+          return;
+        }
+      }
+
+      // Method 2: Try to get from React props in Discord app
+      const appElement = document.querySelector('[class*="app"]');
+      if (appElement) {
+        const reactKey = Object.keys(appElement).find(
+          (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+        );
+        
+        if (reactKey) {
+          let fiber = appElement[reactKey];
+          for (let i = 0; i < 20 && fiber; i++) {
+            const user = fiber.memoizedProps?.user || fiber.memoizedState?.user;
+            if (user && user.id && /^\d{17,19}$/.test(user.id)) {
+              this.currentUserId = user.id;
+              this.debugLog('GET_CURRENT_USER', 'Got user ID from React props', { userId: this.currentUserId });
+              return;
+            }
+            fiber = fiber.return;
+          }
+        }
+      }
+
+      // Method 3: Try to get from window.DiscordUser (if available)
+      if (window.DiscordUser && window.DiscordUser.id) {
+        this.currentUserId = window.DiscordUser.id;
+        this.debugLog('GET_CURRENT_USER', 'Got user ID from window.DiscordUser', { userId: this.currentUserId });
+        return;
+      }
+
+      // Retry after a delay if not found yet
+      setTimeout(() => {
+        if (!this.currentUserId) {
+          this.getCurrentUserId();
+        }
+      }, 2000);
+    } catch (error) {
+      this.debugError('GET_CURRENT_USER', error);
+      // Retry after delay
+      setTimeout(() => {
+        if (!this.currentUserId) {
+          this.getCurrentUserId();
+        }
+      }, 2000);
+    }
   }
 
   stop() {
@@ -294,7 +354,7 @@ module.exports = class CriticalHitAnimation {
       const reactKey = Object.keys(messageElement).find(
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
-      
+
       if (reactKey) {
         let fiber = messageElement[reactKey];
         for (let i = 0; i < 15 && fiber; i++) {
@@ -304,11 +364,11 @@ module.exports = class CriticalHitAnimation {
             fiber.memoizedState?.message?.author?.id ||
             fiber.memoizedProps?.message?.authorId ||
             fiber.memoizedProps?.author?.id;
-          
+
           if (authorId && /^\d{17,19}$/.test(authorId)) {
             return authorId;
           }
-          
+
           fiber = fiber.return;
         }
       }
@@ -316,12 +376,12 @@ module.exports = class CriticalHitAnimation {
       // Method 2: Try to find author element and extract ID
       const authorElement = messageElement.querySelector('[class*="author"]') ||
                            messageElement.querySelector('[class*="username"]');
-      
+
       if (authorElement) {
         const authorId = authorElement.getAttribute('data-user-id') ||
                         authorElement.getAttribute('data-author-id') ||
                         authorElement.getAttribute('id');
-        
+
         if (authorId) {
           const match = authorId.match(/\d{17,19}/);
           if (match) return match[0];
@@ -348,7 +408,7 @@ module.exports = class CriticalHitAnimation {
   getUserCombo(userId) {
     // Use 'unknown' as fallback key if userId is null
     const key = userId || 'unknown';
-    
+
     if (!this.userCombos.has(key)) {
       this.userCombos.set(key, {
         comboCount: 0,
@@ -363,7 +423,7 @@ module.exports = class CriticalHitAnimation {
   updateUserCombo(userId, comboCount, lastCritTime) {
     // Use 'unknown' as fallback key if userId is null
     const key = userId || 'unknown';
-    
+
     const userCombo = this.getUserCombo(key);
     userCombo.comboCount = comboCount;
     userCombo.lastCritTime = lastCritTime;
@@ -410,6 +470,35 @@ module.exports = class CriticalHitAnimation {
 
     // Get user ID from message element
     const userId = messageElement ? this.getUserId(messageElement) : null;
+    
+    // Only animate for own messages
+    if (this.currentUserId && userId && userId !== this.currentUserId) {
+      this.debugLog('Animation skipped - not own message', { 
+        messageUserId: userId, 
+        currentUserId: this.currentUserId 
+      });
+      return; // Skip animation for other users' messages
+    }
+    
+    // If currentUserId not set yet, try to get it and skip if message is not from us
+    if (!this.currentUserId && messageElement) {
+      // Try to get current user ID one more time
+      this.getCurrentUserId();
+      // If we still don't have it, skip to be safe (don't animate for others)
+      if (!this.currentUserId) {
+        this.debugLog('Animation skipped - current user ID not available yet');
+        return;
+      }
+      // Check again after getting user ID
+      if (userId && userId !== this.currentUserId) {
+        this.debugLog('Animation skipped - not own message', { 
+          messageUserId: userId, 
+          currentUserId: this.currentUserId 
+        });
+        return;
+      }
+    }
+    
     const userCombo = this.getUserCombo(userId);
 
     // Prevent duplicate animations for the same message
@@ -483,15 +572,15 @@ module.exports = class CriticalHitAnimation {
       // Create main text element
       const textElement = document.createElement('div');
       textElement.className = 'cha-critical-hit-text';
-      
+
       // Use the combo we just calculated
       const currentCombo = newCombo;
-      
+
       // Show combo if applicable
       const displayText = currentCombo > 1 && this.settings.showCombo
         ? `CRITICAL HIT! x${currentCombo}`
         : 'CRITICAL HIT!';
-      
+
       textElement.innerHTML = displayText;
 
       textElement.style.left = `${position.x}px`;
@@ -712,7 +801,7 @@ module.exports = class CriticalHitAnimation {
       this.animationContainer = null;
     }
     this.activeAnimations.clear();
-    
+
     // Clear all user combos and timeouts
     this.userCombos.forEach((userCombo) => {
       if (userCombo.timeout) {
@@ -720,7 +809,7 @@ module.exports = class CriticalHitAnimation {
       }
     });
     this.userCombos.clear();
-    
+
     // Clear pending animations
     this.pendingAnimations.forEach((timestamp, messageId) => {
       // Clear old pending animations (older than 5 seconds)
