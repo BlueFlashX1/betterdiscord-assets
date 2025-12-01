@@ -794,16 +794,20 @@ module.exports = class SoloLevelingStats {
 
     return quests
       .map(({ id, name, desc, quest }) => {
-        const percentage = (quest.progress / quest.target) * 100;
+        // Cap progress at target for display
+        const cappedProgress = Math.min(quest.progress, quest.target);
+        const percentage = Math.min((cappedProgress / quest.target) * 100, 100);
+        const progressText = quest.completed ? quest.target : Math.floor(cappedProgress);
+        const percentageText = percentage.toFixed(1);
         return `
         <div class="sls-chat-quest-item ${quest.completed ? 'sls-chat-quest-complete' : ''}">
           <div class="sls-chat-quest-header">
             <span class="sls-chat-quest-name">${name}</span>
-            <span class="sls-chat-quest-progress">${quest.progress}/${quest.target}</span>
+            <span class="sls-chat-quest-progress">${progressText}/${quest.target}</span>
           </div>
           <div class="sls-chat-quest-desc">${desc}</div>
           <div class="sls-chat-progress-bar">
-            <div class="sls-chat-progress-fill" style="width: ${percentage}%"></div>
+            <div class="sls-chat-progress-fill" style="width: ${percentageText}%"></div>
           </div>
           ${quest.completed ? '<div class="sls-chat-quest-badge">Complete</div>' : ''}
         </div>
@@ -3002,6 +3006,7 @@ module.exports = class SoloLevelingStats {
       try {
         this.updateQuestProgress('messageMaster', 1);
         this.updateQuestProgress('characterChampion', messageLength);
+        this.updateQuestProgress('perfectStreak', 1); // Track Perfect Streak quest
         this.debugLog('PROCESS_MESSAGE', 'Quest progress updated');
       } catch (error) {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'update_quests' });
@@ -4991,6 +4996,11 @@ module.exports = class SoloLevelingStats {
     }
 
     quest.progress += amount;
+    // Cap progress at target to prevent exceeding
+    if (quest.progress > quest.target) {
+      quest.progress = quest.target;
+    }
+
     if (quest.progress >= quest.target) {
       quest.completed = true;
       this.completeQuest(questId);
@@ -5110,23 +5120,17 @@ module.exports = class SoloLevelingStats {
         </div>
       `;
 
-      // Position near quest card if found, otherwise center screen
-      if (questCard) {
-        const rect = questCard.getBoundingClientRect();
-        celebration.style.left = `${rect.left + rect.width / 2}px`;
-        celebration.style.top = `${rect.top + rect.height / 2}px`;
-        celebration.style.transform = 'translate(-50%, -50%)';
+      // Always center on screen for better visibility
+      celebration.style.left = '50%';
+      celebration.style.top = '50%';
+      celebration.style.transform = 'translate(-50%, -50%)';
 
-        // Highlight quest card
+      // Highlight quest card if found (but don't position dialog there)
+      if (questCard) {
         questCard.classList.add('sls-quest-celebrating');
         setTimeout(() => {
           questCard.classList.remove('sls-quest-celebrating');
         }, 3000);
-      } else {
-        // Center of screen
-        celebration.style.left = '50%';
-        celebration.style.top = '50%';
-        celebration.style.transform = 'translate(-50%, -50%)';
       }
 
       document.body.appendChild(celebration);
@@ -5272,18 +5276,22 @@ module.exports = class SoloLevelingStats {
   }
 
   renderQuest(questId, questName, questDesc, questData) {
-    const percentage = (questData.progress / questData.target) * 100;
+    // Cap progress at target for display
+    const cappedProgress = Math.min(questData.progress, questData.target);
+    const percentage = Math.min((cappedProgress / questData.target) * 100, 100);
     const isComplete = questData.completed;
+    const progressText = isComplete ? questData.target : Math.floor(cappedProgress);
+    const percentageText = percentage.toFixed(1);
 
     return `
       <div class="sls-quest-item ${isComplete ? 'sls-quest-complete' : ''}">
         <div class="sls-quest-header">
           <div class="sls-quest-name">${questName}</div>
-          <div class="sls-quest-progress">${questData.progress}/${questData.target}</div>
+          <div class="sls-quest-progress">${progressText}/${questData.target}</div>
         </div>
         <div class="sls-quest-desc">${questDesc}</div>
         <div class="sls-progress-bar">
-          <div class="sls-progress-fill" style="width: ${percentage}%"></div>
+          <div class="sls-progress-fill" style="width: ${percentageText}%"></div>
         </div>
         ${isComplete ? '<div class="sls-quest-complete-badge">✓ Complete</div>' : ''}
       </div>
