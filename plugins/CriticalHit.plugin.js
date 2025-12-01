@@ -15,7 +15,7 @@ module.exports = class CriticalHit {
       critChance: 10, // 10% base chance by default (can be buffed by Agility stat up to 90%)
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
-      critFont: "'Bebas Neue', sans-serif", // Bebas Neue - bold, condensed, all-caps display font
+      critFont: "'Nova Flat', sans-serif", // Nova Flat - gradient text font
             critAnimation: true, // Add a subtle animation
       critGlow: true, // Add a glow effect
       // Filter settings
@@ -1447,23 +1447,17 @@ module.exports = class CriticalHit {
         });
       }
 
-        // Apply font styles with !important to override ALL CSS including Discord's
+        // Apply font styles with !important to override ALL CSS including Discord's - Force Nova Flat
         content.style.setProperty(
           'font-family',
-          critSettings.font || this.settings.critFont,
+          "'Nova Flat', sans-serif", // Force Nova Flat, ignore saved font
           'important'
         );
-        content.style.setProperty('font-weight', '900', 'important'); // Maximum bold - black/heavy weight for supercharged impact
-        content.style.setProperty('font-size', '1.3em', 'important'); // Even larger for maximum impact
-        content.style.setProperty('font-stretch', 'ultra-condensed', 'important'); // Ultra condensed for maximum boldness
-        content.style.setProperty('letter-spacing', '2px', 'important'); // Maximum spacing for dramatic impact
-        content.style.setProperty('text-transform', 'uppercase', 'important'); // Uppercase for dramatic effect
-        content.style.setProperty(
-          '-webkit-text-stroke',
-          '1.5px rgba(139, 92, 246, 0.8)',
-          'important'
-        ); // Thick stroke for supercharged definition
-        content.style.setProperty('text-stroke', '1.5px rgba(139, 92, 246, 0.8)', 'important');
+        content.style.setProperty('font-weight', 'bold', 'important'); // Bold for more impact
+        content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
+        content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
+        content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
+        content.style.setProperty('text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
         content.style.setProperty('font-synthesis', 'none', 'important'); // Prevent font synthesis
         content.style.setProperty('font-variant', 'normal', 'important'); // Override any font variants
         content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
@@ -2861,18 +2855,12 @@ module.exports = class CriticalHit {
         }
 
           // Apply font styles with !important to override ALL CSS including Discord's
-          content.style.setProperty('font-family', this.settings.critFont, 'important');
-          content.style.setProperty('font-weight', '800', 'important'); // Extra bold - impactful but not as heavy as 900
-          content.style.setProperty('font-size', '1.2em', 'important'); // Larger for more impact
-          content.style.setProperty('font-stretch', 'ultra-condensed', 'important'); // Ultra condensed for maximum boldness
-          content.style.setProperty('letter-spacing', '1.5px', 'important'); // Good spacing for impact
-          content.style.setProperty('text-transform', 'uppercase', 'important'); // Uppercase for dramatic effect
-          content.style.setProperty(
-            '-webkit-text-stroke',
-            '1px rgba(139, 92, 246, 0.7)',
-            'important'
-          ); // Strong stroke for definition
-          content.style.setProperty('text-stroke', '1px rgba(139, 92, 246, 0.7)', 'important');
+          content.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important'); // Force Nova Flat
+          content.style.setProperty('font-weight', 'bold', 'important'); // Bold for more impact
+          content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
+          content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
+          content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
+          content.style.setProperty('text-stroke', 'none', 'important');
           content.style.setProperty('font-synthesis', 'none', 'important'); // Prevent font synthesis
           content.style.setProperty('font-variant', 'normal', 'important'); // Override any font variants
           content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
@@ -2933,14 +2921,58 @@ module.exports = class CriticalHit {
             return;
         }
 
+    // Pre-load Nova Flat font
+    if (!document.getElementById('bd-crit-hit-nova-flat-font')) {
+        const fontLink = document.createElement('link');
+        fontLink.id = 'bd-crit-hit-nova-flat-font';
+        fontLink.rel = 'stylesheet';
+        fontLink.href = 'https://fonts.googleapis.com/css2?family=Nova+Flat&display=swap';
+        document.head.appendChild(fontLink);
+    }
+
+    // Force Nova Flat on all existing crit hit messages
+    const forceNovaFlat = () => {
+      const critMessages = document.querySelectorAll('.bd-crit-hit');
+      critMessages.forEach((msg) => {
+        // Apply to message itself
+        msg.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important');
+
+        // Find all possible content elements
+        const contentSelectors = [
+          '[class*="messageContent"]',
+          '[class*="markup"]',
+          '[class*="textContainer"]',
+          '[class*="content"]',
+          '[class*="text"]',
+          'span',
+          'div',
+          'p'
+        ];
+
+        contentSelectors.forEach((selector) => {
+          const elements = msg.querySelectorAll(selector);
+          elements.forEach((el) => {
+            // Skip username/timestamp elements
+            if (!el.closest('[class*="username"]') &&
+                !el.closest('[class*="timestamp"]') &&
+                !el.closest('[class*="author"]') &&
+                !el.closest('[class*="header"]')) {
+              el.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important');
+            }
+          });
+        });
+      });
+    };
+
+    // Run immediately and set up observer to keep enforcing it
+    forceNovaFlat();
+    setInterval(forceNovaFlat, 1000); // Check every second to prevent reverts
+
     const style = document.createElement('style');
     style.id = 'bd-crit-hit-styles';
         style.textContent = `
-            /* Import Bebas Neue font for critical hits - bold, condensed, all-caps display font */
-            @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
-
-            /* Fallback: Orbitron if Bebas Neue not available */
-            @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+            /* Import Nova Flat font for critical hits - gradient text font */
+            @import url('https://fonts.googleapis.com/css2?family=Nova+Flat&display=swap');
 
             @keyframes critPulse {
                 0%, 100% { transform: scale(1); }
@@ -2951,13 +2983,29 @@ module.exports = class CriticalHit {
                 position: relative;
             }
 
+            /* Apply Nova Flat font to ALL elements within crit hit messages */
+            .bd-crit-hit,
+            .bd-crit-hit *,
+            .bd-crit-hit [class*='messageContent'],
+            .bd-crit-hit [class*='markup'],
+            .bd-crit-hit [class*='textContainer'],
+            .bd-crit-hit [class*='content'],
+            .bd-crit-hit [class*='text'],
+            .bd-crit-hit span,
+            .bd-crit-hit div,
+            .bd-crit-hit p {
+                font-family: 'Nova Flat', sans-serif !important;
+            }
+
             /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
+            /* Red to Orange to Yellow gradient for fiery effect */
             .bd-crit-hit .bd-crit-text-content {
-                background: linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%) !important;
+                background: linear-gradient(135deg, #ff4444 0%, #ff8800 25%, #ffaa00 50%, #ffcc00 75%, #ffff00 100%) !important;
                 -webkit-background-clip: text !important;
                 background-clip: text !important;
                 -webkit-text-fill-color: transparent !important;
                 color: transparent !important;
+                display: inline-block !important; /* Required for background-clip to work */
             }
 
             /* Explicitly exclude username/timestamp from gradient */
@@ -2979,22 +3027,30 @@ module.exports = class CriticalHit {
                              0 0 10px rgba(124, 58, 237, 0.7),
                              0 0 15px rgba(109, 40, 217, 0.6),
                              0 0 20px rgba(91, 33, 182, 0.5) !important;
-                font-family: 'Bebas Neue', 'Orbitron', sans-serif !important; /* Bebas Neue - bold, condensed, all-caps display font */
-                font-weight: 900 !important; /* Maximum bold - black/heavy weight for supercharged impact */
-                font-size: 1.3em !important; /* Even larger for maximum impact */
-                font-stretch: ultra-condensed !important; /* Ultra condensed for maximum boldness */
+                font-family: 'Nova Flat', sans-serif !important; /* Nova Flat - gradient text font */
+                font-weight: bold !important; /* Bold for more impact */
+                font-size: 1.6em !important; /* Larger for more impact */
                 font-synthesis: none !important; /* Prevent font synthesis */
                 font-variant: normal !important; /* Override any font variants */
                 font-style: normal !important; /* Override italic/oblique */
-                letter-spacing: 2px !important; /* Maximum spacing for dramatic impact */
-                text-transform: uppercase !important; /* Uppercase for dramatic effect */
-                -webkit-text-stroke: 1.5px rgba(139, 92, 246, 0.8) !important; /* Thick stroke for supercharged definition */
-                text-stroke: 1.5px rgba(139, 92, 246, 0.8) !important;
+                letter-spacing: 1px !important; /* Slight spacing */
+                -webkit-text-stroke: none !important; /* Remove stroke for cleaner gradient */
+                text-stroke: none !important;
+                display: inline-block !important; /* Ensure gradient works */
             }
 
-            /* Override font on all child elements to ensure consistency */
-            .bd-crit-hit .bd-crit-text-content * {
-                font-family: inherit !important;
+            /* Apply Nova Flat font to all text within crit hit messages */
+            .bd-crit-hit .bd-crit-text-content,
+            .bd-crit-hit [class*='messageContent'],
+            .bd-crit-hit [class*='markup'],
+            .bd-crit-hit [class*='textContainer'] {
+                font-family: 'Nova Flat', sans-serif !important;
+            }
+
+            /* Override font on all child elements to ensure consistency - use Nova Flat directly */
+            .bd-crit-hit .bd-crit-text-content *,
+            .bd-crit-hit * {
+                font-family: 'Nova Flat', sans-serif !important;
                 font-weight: inherit !important;
                 font-size: inherit !important;
                 font-stretch: inherit !important;
@@ -3007,13 +3063,13 @@ module.exports = class CriticalHit {
                 text-stroke: inherit !important;
             }
 
-            /* Explicitly reset glow/text effects on username/timestamp */
+            /* Explicitly reset glow/text effects on username/timestamp - but keep Nova Flat font */
             .bd-crit-hit [class*='username'],
             .bd-crit-hit [class*='timestamp'],
             .bd-crit-hit [class*='author'],
             .bd-crit-hit [class*='header'] {
                 text-shadow: unset !important;
-                font-family: unset !important;
+                font-family: 'Nova Flat', sans-serif !important; /* Still use Nova Flat */
                 font-weight: unset !important;
                 font-size: unset !important;
                 font-stretch: unset !important;
@@ -3072,7 +3128,7 @@ module.exports = class CriticalHit {
                 font-size: 20px;
                 font-weight: 600;
                 color: var(--text-normal);
-                font-family: var(--font-display);
+                font-family: 'Nova Flat', sans-serif !important;
             }
 
             .crit-settings-subtitle {
@@ -3217,7 +3273,7 @@ module.exports = class CriticalHit {
                 border-radius: 6px;
                 color: var(--text-normal);
                 font-size: 14px;
-                font-family: var(--font-code);
+                font-family: 'Nova Flat', sans-serif !important;
                 transition: all 0.2s ease;
             }
 
@@ -4308,19 +4364,14 @@ module.exports = class CriticalHit {
             });
           }
 
-          // Apply font styles with !important to override ALL CSS including Discord's
-          content.style.setProperty('font-family', this.settings.critFont, 'important');
-          content.style.setProperty('font-weight', '800', 'important'); // Extra bold - impactful but not as heavy as 900
-          content.style.setProperty('font-size', '1.2em', 'important'); // Larger for more impact
-          content.style.setProperty('font-stretch', 'ultra-condensed', 'important'); // Ultra condensed for maximum boldness
-          content.style.setProperty('letter-spacing', '1.5px', 'important'); // Good spacing for impact
-          content.style.setProperty('text-transform', 'uppercase', 'important'); // Uppercase for dramatic effect
-          content.style.setProperty(
-            '-webkit-text-stroke',
-            '1px rgba(139, 92, 246, 0.7)',
-            'important'
-          ); // Strong stroke for definition
-          content.style.setProperty('text-stroke', '1px rgba(139, 92, 246, 0.7)', 'important');
+          // Apply font styles with !important to override ALL CSS including Discord's - Force Nova Flat
+          content.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important'); // Force Nova Flat
+          content.style.setProperty('font-weight', 'bold', 'important'); // Bold for more impact
+          content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
+          content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
+          content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
+          content.style.setProperty('text-stroke', 'none', 'important');
+          content.style.setProperty('text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
           content.style.setProperty('font-synthesis', 'none', 'important');
           content.style.setProperty('font-variant', 'normal', 'important');
           content.style.setProperty('font-style', 'normal', 'important');

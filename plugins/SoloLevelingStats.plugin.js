@@ -45,7 +45,7 @@ module.exports = class SoloLevelingStats {
       // Stat definitions
       stats: {
         strength: 0, // +5% XP per message per point (max 20)
-        agility: 0, // +2% crit chance per point (max 20)
+        agility: 0, // +2% crit chance per point (max 20, capped at 25% total), +1% EXP per point during crit hits
         intelligence: 0, // +10% bonus XP from long messages per point (max 20)
         vitality: 0, // +5% daily quest rewards per point (max 20)
         luck: 0, // Each point grants a random % buff that stacks (max 20)
@@ -429,21 +429,24 @@ module.exports = class SoloLevelingStats {
 
       // Store agility bonus in BetterDiscord Data for CriticalHit to read
       // Agility scales: +2% crit chance per point (simplified scaling)
-      // CriticalHit will cap total crit chance at 90%
+      // CRIT CHANCE CAPPED AT 25% MAX (user request)
       // Luck buffs enhance Agility bonus: (base AGI bonus) * (1 + luck multiplier)
       const agilityStat = this.settings.stats.agility || 0;
-      const agilityBonus = agilityStat * 0.02; // 2% per point
       const baseAgilityBonus = agilityStat * 0.02; // 2% per point
       const totalLuckBuff = this.getTotalLuckBuff ? this.getTotalLuckBuff() : 0;
       const luckMultiplier = totalLuckBuff / 100;
       const enhancedAgilityBonus = baseAgilityBonus * (1 + luckMultiplier); // Luck enhances Agility
 
+      // CAP CRIT CHANCE AT 25% (0.25)
+      const agilityBonus = Math.min(enhancedAgilityBonus, 0.25);
+
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {
-        bonus: isNaN(enhancedAgilityBonus) ? 0 : Number(enhancedAgilityBonus.toFixed(6)),
+        bonus: isNaN(agilityBonus) ? 0 : Number(agilityBonus.toFixed(6)),
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
         agility: agilityStat,
         luckEnhanced: totalLuckBuff > 0,
+        capped: enhancedAgilityBonus > 0.25, // Indicate if it was capped
       };
 
       // Always save agility bonus (even if 0) so CriticalHit knows current agility
@@ -825,7 +828,12 @@ module.exports = class SoloLevelingStats {
   renderChatStatButtons() {
     const stats = [
       { key: 'strength', name: 'STR', fullName: 'Strength', desc: '+5% XP' },
-      { key: 'agility', name: 'AGI', fullName: 'Agility', desc: '+2% Crit' },
+      {
+        key: 'agility',
+        name: 'AGI',
+        fullName: 'Agility',
+        desc: '+2% Crit (capped 25%), +1% EXP/Crit',
+      },
       { key: 'intelligence', name: 'INT', fullName: 'Intelligence', desc: '+10% Long Msg' },
       { key: 'vitality', name: 'VIT', fullName: 'Vitality', desc: '+5% Quests' },
       { key: 'luck', name: 'LUK', fullName: 'Luck', desc: 'Random buff stacks' },
@@ -860,7 +868,11 @@ module.exports = class SoloLevelingStats {
   renderChatStats() {
     const statDefs = {
       strength: { name: 'STR', desc: '+5% XP/msg', gain: 'Send messages' },
-      agility: { name: 'AGI', desc: '+2% crit chance', gain: 'Send messages' },
+      agility: {
+        name: 'AGI',
+        desc: '+2% crit chance (capped 25%), +1% EXP per point during crit hits',
+        gain: 'Send messages',
+      },
       intelligence: { name: 'INT', desc: '+10% long msg XP', gain: 'Long messages' },
       vitality: { name: 'VIT', desc: '+5% quest rewards', gain: 'Complete quests' },
       luck: { name: 'LUK', desc: 'Random buff per point (stacks)', gain: 'Allocate stat points' },
@@ -1192,7 +1204,7 @@ module.exports = class SoloLevelingStats {
               // Update title
               const statDefs = {
                 strength: { fullName: 'Strength', desc: '+5% XP' },
-                agility: { fullName: 'Agility', desc: '+2% Crit' },
+                agility: { fullName: 'Agility', desc: '+2% Crit (capped 25%), +1% EXP/Crit' },
                 intelligence: { fullName: 'Intelligence', desc: '+10% Long Msg' },
                 vitality: { fullName: 'Vitality', desc: '+5% Quests' },
                 luck: { fullName: 'Luck', desc: 'Random buff stacks' },
@@ -3578,26 +3590,23 @@ module.exports = class SoloLevelingStats {
   checkCriticalHitBonus() {
     // Check if the last message was a critical hit
     // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
+    // Agility affects EXP multiplier: base 0.25 (25%) + agility bonus
     try {
+      let isCrit = false;
+
       if (!this.lastMessageElement) {
         // Try to find the message element
         const messageElements = document.querySelectorAll('[class*="message"]');
         if (messageElements.length > 0) {
           const lastMsg = Array.from(messageElements).pop();
           if (lastMsg && lastMsg.classList.contains('bd-crit-hit')) {
-            return 0.25; // +25% XP bonus for crit hits
+            isCrit = true;
           }
         }
-        return 0;
-      }
-
-      // Check if the tracked message element has crit class
-      if (this.lastMessageElement.classList.contains('bd-crit-hit')) {
-        return 0.25; // +25% XP bonus for crit hits
-      }
-
-      // Also check by message ID if CriticalHit plugin stores crit info
-      if (this.lastMessageId) {
+      } else if (this.lastMessageElement.classList.contains('bd-crit-hit')) {
+        isCrit = true;
+      } else if (this.lastMessageId) {
+        // Also check by message ID if CriticalHit plugin stores crit info
         try {
           const critPlugin = BdApi.Plugins.get('CriticalHit');
           if (critPlugin) {
@@ -3608,7 +3617,8 @@ module.exports = class SoloLevelingStats {
               for (const msgEl of messageElements) {
                 const msgId = this.getMessageId(msgEl);
                 if (msgId === this.lastMessageId && msgEl.classList.contains('bd-crit-hit')) {
-                  return 0.25; // +25% XP bonus
+                  isCrit = true;
+                  break;
                 }
               }
             }
@@ -3617,6 +3627,62 @@ module.exports = class SoloLevelingStats {
           // CriticalHit plugin not available or error accessing
         }
       }
+
+      if (!isCrit) {
+        return 0; // No crit bonus
+      }
+
+      // Get agility stat for EXP multiplier
+      const agilityStat = this.settings.stats?.agility || 0;
+
+      // Base crit bonus: 0.25 (25%)
+      // Agility bonus: +0.01 per point (1% per agility point)
+      // Example: 10 agility = +0.10 (10%) = total 0.35 (35% bonus)
+      const agilityBonus = agilityStat * 0.01;
+      const baseCritBonus = 0.25;
+      let critMultiplier = baseCritBonus + agilityBonus;
+
+      // Check for combo multiplier (from CriticalHitAnimation)
+      // Higher combos = exponentially more EXP (scales with combo number itself)
+      try {
+        const comboData = BdApi.Data.load('CriticalHitAnimation', 'userCombo');
+        if (comboData && comboData.comboCount > 1) {
+          const comboCount = comboData.comboCount || 1;
+
+          // Exponential combo scaling: combo bonus = (comboCount - 1) ^ 1.5 * 0.02
+          // Examples:
+          //   2x combo: (2-1)^1.5 * 0.02 = 0.02 (2%)
+          //   3x combo: (3-1)^1.5 * 0.02 = 0.056 (5.6%)
+          //   5x combo: (5-1)^1.5 * 0.02 = 0.16 (16%)
+          //   10x combo: (10-1)^1.5 * 0.02 = 0.54 (54%)
+          //   20x combo: (20-1)^1.5 * 0.02 = 1.65 (165%)
+          const comboBonus = Math.pow(comboCount - 1, 1.5) * 0.02;
+          critMultiplier += comboBonus;
+
+          // Agility also enhances combo bonus: combo bonus * (1 + agility * 0.01)
+          // Example: 10x combo (0.54) with 10 agility = 0.54 * 1.10 = 0.594
+          const agilityComboEnhancement = comboBonus * (agilityStat * 0.01);
+          critMultiplier += agilityComboEnhancement;
+
+          this.debugLog('CHECK_CRIT_BONUS', 'Combo detected', {
+            comboCount,
+            comboBonus: (comboBonus * 100).toFixed(1) + '%',
+            agilityComboEnhancement: (agilityComboEnhancement * 100).toFixed(1) + '%',
+            totalComboBonus: ((comboBonus + agilityComboEnhancement) * 100).toFixed(1) + '%',
+          });
+        }
+      } catch (error) {
+        // Combo data not available or error accessing
+      }
+
+      this.debugLog('CHECK_CRIT_BONUS', 'Crit bonus calculated', {
+        baseCritBonus: (baseCritBonus * 100).toFixed(0) + '%',
+        agilityStat,
+        agilityBonus: (agilityBonus * 100).toFixed(1) + '%',
+        totalMultiplier: (critMultiplier * 100).toFixed(1) + '%',
+      });
+
+      return critMultiplier;
     } catch (error) {
       this.debugError('CHECK_CRIT_BONUS', error);
     }
@@ -4117,7 +4183,9 @@ module.exports = class SoloLevelingStats {
     // Calculate new effect strength for feedback (for non-luck stats)
     const statEffects = {
       strength: `+${(this.settings.stats[statName] * 5).toFixed(0)}% XP per message`,
-      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance`,
+      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance (capped 25%), +${
+        this.settings.stats[statName]
+      }% EXP per crit`,
       intelligence: `+${(
         this.settings.stats[statName] * 10 +
         Math.max(0, (this.settings.stats[statName] - 5) * 2)

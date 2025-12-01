@@ -304,19 +304,19 @@ module.exports = class CriticalHitAnimation {
     const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
     textElement.innerHTML = combo > 1 && this.settings.showCombo ? `CRITICAL HIT! x${combo}` : 'CRITICAL HIT!';
+    // Apply positioning and animation via inline styles, but let CSS class handle font and gradient
     textElement.style.cssText = `
       position: absolute;
       left: ${position.x}px;
       top: ${position.y}px;
       font-size: ${this.settings.fontSize}px;
       font-weight: bold;
-      color: #ff4444;
-      text-shadow: 0 0 10px rgba(255, 68, 68, 0.8), 0 0 20px rgba(255, 68, 68, 0.6);
       transform: translate(-50%, -50%);
       text-align: center;
       pointer-events: none;
       z-index: 999999;
       animation: chaFloatUp ${this.settings.animationDuration}ms ease-out forwards;
+      color: transparent !important;
     `;
 
     container.appendChild(textElement);
@@ -341,12 +341,33 @@ module.exports = class CriticalHitAnimation {
     combo.comboCount = comboCount;
     combo.lastCritTime = lastCritTime;
 
+    // Save combo data for SoloLevelingStats to read
+    try {
+      BdApi.Data.save('CriticalHitAnimation', 'userCombo', {
+        userId: key,
+        comboCount: comboCount,
+        lastCritTime: lastCritTime,
+      });
+    } catch (error) {
+      // Silently fail if save doesn't work
+    }
+
     // Reset combo after 10 seconds of NO crits (non-crit messages don't affect combo)
     // This timeout is reset every time a crit happens, so combo only resets if 10 seconds pass without crits
     if (combo.timeout) clearTimeout(combo.timeout);
     combo.timeout = setTimeout(() => {
       if (this.userCombos.has(key)) {
         this.userCombos.get(key).comboCount = 0;
+        // Clear saved combo data when reset
+        try {
+          BdApi.Data.save('CriticalHitAnimation', 'userCombo', {
+            userId: key,
+            comboCount: 0,
+            lastCritTime: 0,
+          });
+        } catch (error) {
+          // Silently fail
+        }
       }
     }, 10000);
   }
@@ -399,6 +420,19 @@ module.exports = class CriticalHitAnimation {
   }
 
   injectCSS() {
+    // Inject Nova Flat font if not already loaded
+    if (!document.getElementById('cha-nova-flat-font')) {
+      const fontLink = document.createElement('link');
+      fontLink.id = 'cha-nova-flat-font';
+      fontLink.rel = 'stylesheet';
+      fontLink.href = 'https://fonts.googleapis.com/css2?family=Nova+Flat&display=swap';
+      document.head.appendChild(fontLink);
+    }
+
+    // Remove old styles if they exist
+    const oldStyle = document.getElementById('cha-styles');
+    if (oldStyle) oldStyle.remove();
+
     const style = document.createElement('style');
     style.id = 'cha-styles';
     style.textContent = `
@@ -415,6 +449,16 @@ module.exports = class CriticalHitAnimation {
           opacity: 0;
           transform: translate(-50%, calc(-50% - ${this.settings.floatDistance * 1.5}px)) scale(0.9);
         }
+      }
+      .cha-critical-hit-text {
+        font-family: 'Nova Flat', sans-serif !important;
+        background: linear-gradient(135deg, #ff4444 0%, #ff8800 25%, #ffaa00 50%, #ffcc00 75%, #ffff00 100%) !important;
+        -webkit-background-clip: text !important;
+        -webkit-text-fill-color: transparent !important;
+        background-clip: text !important;
+        color: transparent !important;
+        filter: drop-shadow(0 0 8px rgba(255, 68, 68, 0.8)) drop-shadow(0 0 16px rgba(255, 136, 0, 0.6)) !important;
+        display: inline-block !important;
       }
     `;
     document.head.appendChild(style);
