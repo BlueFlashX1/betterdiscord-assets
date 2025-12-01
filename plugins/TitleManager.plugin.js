@@ -115,7 +115,15 @@ module.exports = class SoloLevelingTitleManager {
       if (!soloPlugin) return false;
       const instance = soloPlugin.instance || soloPlugin;
 
-      // Check if title exists in unlocked titles
+      // Check if title exists in unlocked titles and is not in unwanted list
+      const unwantedTitles = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
+      if (unwantedTitles.includes(titleName)) {
+        if (BdApi && typeof BdApi.showToast === 'function') {
+          BdApi.showToast('This title has been removed', { type: 'error', timeout: 2000 });
+        }
+        return false;
+      }
+
       const soloData = this.getSoloLevelingData();
       if (!soloData || !soloData.titles.includes(titleName)) {
         if (BdApi && typeof BdApi.showToast === 'function') {
@@ -130,7 +138,17 @@ module.exports = class SoloLevelingTitleManager {
           // Show notification
           if (BdApi && typeof BdApi.showToast === 'function') {
             const bonus = this.getTitleBonus(titleName);
-            const bonusText = bonus && bonus.xp > 0 ? ` (+${(bonus.xp * 100).toFixed(0)}% XP)` : '';
+            const buffs = [];
+            if (bonus) {
+              if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
+              if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+              if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
+              if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
+              if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
+              if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
+              if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+            }
+            const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
             BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, { type: 'success', timeout: 3000 });
           }
           this.refreshModal();
@@ -292,8 +310,12 @@ module.exports = class SoloLevelingTitleManager {
     }
 
     const soloData = this.getSoloLevelingData();
-    const titles = soloData?.titles || [];
-    const activeTitle = soloData?.activeTitle || null;
+    // Filter out unwanted titles
+    const unwantedTitles = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
+    let titles = (soloData?.titles || []).filter(title => !unwantedTitles.includes(title));
+    const activeTitle = soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
+      ? soloData.activeTitle
+      : null;
 
     const modal = document.createElement('div');
     modal.className = 'tm-title-modal';
@@ -304,13 +326,22 @@ module.exports = class SoloLevelingTitleManager {
           <button class="tm-close-button" onclick="this.closest('.tm-title-modal').remove()">×</button>
         </div>
         <div class="tm-modal-body">
-          ${activeTitle ? `
+              ${activeTitle ? `
             <div class="tm-active-title">
               <div class="tm-active-label">Active Title:</div>
               <div class="tm-active-name">${this.escapeHtml(activeTitle)}</div>
               ${(() => {
                 const bonus = this.getTitleBonus(activeTitle);
-                return bonus && bonus.xp > 0 ? `<div class="tm-active-bonus">+${(bonus.xp * 100).toFixed(0)}% XP Bonus</div>` : '';
+                if (!bonus) return '';
+                const buffs = [];
+                if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
+                if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
+                if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
+                if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
+                if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
+                if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+                return buffs.length > 0 ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>` : '';
               })()}
               <button class="tm-unequip-btn" id="tm-unequip-btn">Unequip</button>
             </div>
@@ -333,11 +364,21 @@ module.exports = class SoloLevelingTitleManager {
                   .map((title) => {
                     const isActive = title === activeTitle;
                     const bonus = this.getTitleBonus(title);
+                    const buffs = [];
+                    if (bonus) {
+                      if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
+                      if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                      if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
+                      if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
+                      if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
+                      if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
+                      if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+                    }
                     return `
                       <div class="tm-title-card ${isActive ? 'active' : ''}">
                         <div class="tm-title-icon">👑</div>
                         <div class="tm-title-name">${this.escapeHtml(title)}</div>
-                        ${bonus && bonus.xp > 0 ? `<div class="tm-title-bonus">+${(bonus.xp * 100).toFixed(0)}% XP</div>` : ''}
+                        ${buffs.length > 0 ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>` : ''}
                         ${isActive ? `
                           <div class="tm-title-status">Equipped</div>
                         ` : `

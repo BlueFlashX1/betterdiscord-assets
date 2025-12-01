@@ -437,28 +437,38 @@ module.exports = class SoloLevelingStats {
       const luckMultiplier = totalLuckBuff / 100;
       const enhancedAgilityBonus = baseAgilityBonus * (1 + luckMultiplier); // Luck enhances Agility
 
-      // CAP CRIT CHANCE AT 25% (0.25)
-      const agilityBonus = Math.min(enhancedAgilityBonus, 0.25);
+      // Add title crit chance bonus
+      const titleBonus = this.getActiveTitleBonus();
+      const titleCritBonus = titleBonus.critChance || 0;
+
+      // CAP CRIT CHANCE AT 25% (0.25) - includes title bonus
+      const totalCritBonus = enhancedAgilityBonus + titleCritBonus;
+      const cappedCritBonus = Math.min(totalCritBonus, 0.25);
 
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {
-        bonus: isNaN(agilityBonus) ? 0 : Number(agilityBonus.toFixed(6)),
+        bonus: isNaN(cappedCritBonus) ? 0 : Number(cappedCritBonus.toFixed(6)),
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
+        titleCritBonus: isNaN(titleCritBonus) ? 0 : Number(titleCritBonus.toFixed(6)),
         agility: agilityStat,
         luckEnhanced: totalLuckBuff > 0,
-        capped: enhancedAgilityBonus > 0.25, // Indicate if it was capped
+        capped: totalCritBonus > 0.25, // Indicate if it was capped
       };
 
       // Always save agility bonus (even if 0) so CriticalHit knows current agility
       BdApi.Data.save('SoloLevelingStats', 'agilityBonus', agilityData);
 
       // Only log if there's a bonus
-      if (agilityBonus > 0) {
+      if (cappedCritBonus > 0) {
+        const bonusParts = [];
+        if (enhancedAgilityBonus > 0)
+          bonusParts.push(`Agility: +${(enhancedAgilityBonus * 100).toFixed(1)}%`);
+        if (titleCritBonus > 0) bonusParts.push(`Title: +${(titleCritBonus * 100).toFixed(1)}%`);
         this.debugLog(
           'AGILITY_BONUS',
-          `Agility bonus available for CriticalHit: +${(agilityBonus * 100).toFixed(
+          `Crit bonus available for CriticalHit: +${(cappedCritBonus * 100).toFixed(
             1
-          )}% (Agility: ${agilityStat})`
+          )}% (${bonusParts.join(', ')})`
         );
       }
 
@@ -640,11 +650,20 @@ module.exports = class SoloLevelingStats {
         <div class="sls-chat-title-display">
           <span class="sls-chat-title-label">Title:</span>
           <span class="sls-chat-title-name">${this.settings.achievements.activeTitle}</span>
-          ${
-            titleBonus.xp > 0
-              ? `<span class="sls-chat-title-bonus">+${(titleBonus.xp * 100).toFixed(0)}% XP</span>`
-              : ''
-          }
+          ${(() => {
+            const buffs = [];
+            if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
+            if (titleBonus.critChance > 0)
+              buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+            if (titleBonus.strength > 0) buffs.push(`+${titleBonus.strength} STR`);
+            if (titleBonus.agility > 0) buffs.push(`+${titleBonus.agility} AGI`);
+            if (titleBonus.intelligence > 0) buffs.push(`+${titleBonus.intelligence} INT`);
+            if (titleBonus.vitality > 0) buffs.push(`+${titleBonus.vitality} VIT`);
+            if (titleBonus.luck > 0) buffs.push(`+${titleBonus.luck} LUK`);
+            return buffs.length > 0
+              ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
+              : '';
+          })()}
         </div>
         `
             : ''
@@ -3377,6 +3396,7 @@ module.exports = class SoloLevelingStats {
       if (titleBonus.xp > 0) {
         xp *= 1 + titleBonus.xp;
       }
+      // Note: Other title bonuses (critChance, stats) are applied elsewhere
 
       // Apply skill tree bonuses (from SkillTree plugin)
       try {
@@ -4260,7 +4280,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 50 messages',
         condition: { type: 'messages', value: 50 },
         title: 'The Weakest Hunter',
-        titleBonus: { xp: 0.03 }, // +3% XP
+        titleBonus: { xp: 0.03, strength: 1 }, // +3% XP, +1 Strength
       },
       {
         id: 'e_rank',
@@ -4308,7 +4328,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 10,000 messages',
         condition: { type: 'messages', value: 10000 },
         title: 'S-Rank Hunter',
-        titleBonus: { xp: 0.4 }, // +40% XP
+        titleBonus: { xp: 0.4, strength: 2, critChance: 0.02 }, // +40% XP, +2 Strength, +2% Crit Chance
       },
       // Character/Writing Milestones
       {
@@ -4317,7 +4337,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 25,000 characters',
         condition: { type: 'characters', value: 25000 },
         title: 'Shadow Extraction',
-        titleBonus: { xp: 0.15 }, // +15% XP
+        titleBonus: { xp: 0.15, critChance: 0.02, agility: 1 }, // +15% XP, +2% Crit Chance, +1 Agility
       },
       {
         id: 'domain_expansion',
@@ -4449,7 +4469,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50 and send 5,000 messages',
         condition: { type: 'level', value: 50 },
         title: 'Shadow Monarch',
-        titleBonus: { xp: 0.38 }, // +38% XP
+        titleBonus: { xp: 0.38, critChance: 0.03, agility: 2, strength: 1 }, // +38% XP, +3% Crit Chance, +2 Agility, +1 Strength
       },
       {
         id: 'monarch_of_destruction',
@@ -4465,7 +4485,15 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 100 and be active for 50 hours',
         condition: { type: 'level', value: 100 },
         title: 'The Ruler',
-        titleBonus: { xp: 0.5 }, // +50% XP
+        titleBonus: {
+          xp: 0.5,
+          critChance: 0.05,
+          strength: 2,
+          agility: 2,
+          intelligence: 2,
+          vitality: 2,
+          luck: 1,
+        }, // +50% XP, +5% Crit Chance, +2 All Stats, +1 Luck
       },
       // Character-Based Titles
       {
@@ -4506,7 +4534,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 200,000 characters',
         condition: { type: 'level', value: 75 },
         title: "Ashborn's Successor",
-        titleBonus: { xp: 0.48 }, // +48% XP
+        titleBonus: { xp: 0.48, critChance: 0.04, intelligence: 2, agility: 2 }, // +48% XP, +4% Crit Chance, +2 Intelligence, +2 Agility
       },
       // Ability/Skill Titles
       {
@@ -4532,7 +4560,7 @@ module.exports = class SoloLevelingStats {
           'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
-        titleBonus: { xp: 0.25 }, // +25% XP
+        titleBonus: { xp: 0.25, critChance: 0.05, agility: 2 }, // +25% XP, +5% Crit Chance, +2 Agility
       },
       {
         id: 'stealth_master',
@@ -4548,7 +4576,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Intelligence stat',
         condition: { type: 'stat', stat: 'intelligence', value: 15 },
         title: 'Mana Manipulator',
-        titleBonus: { xp: 0.22 }, // +22% XP
+        titleBonus: { xp: 0.22, intelligence: 2 }, // +22% XP, +2 Intelligence
       },
       {
         id: 'shadow_storage',
@@ -4564,7 +4592,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Strength stat',
         condition: { type: 'stat', stat: 'strength', value: 15 },
         title: 'Beast Monarch',
-        titleBonus: { xp: 0.28 }, // +28% XP
+        titleBonus: { xp: 0.28, strength: 2 }, // +28% XP, +2 Strength
       },
       {
         id: 'frost_monarch',
@@ -4588,7 +4616,7 @@ module.exports = class SoloLevelingStats {
         description: 'Land 500 critical hits',
         condition: { type: 'crits', value: 500 },
         title: 'Monarch of White Flames',
-        titleBonus: { xp: 0.26 }, // +26% XP
+        titleBonus: { xp: 0.26, critChance: 0.04, agility: 1 }, // +26% XP, +4% Crit Chance, +1 Agility
       },
       {
         id: 'monarch_transfiguration',
@@ -4675,6 +4703,17 @@ module.exports = class SoloLevelingStats {
   }
 
   setActiveTitle(title) {
+    // Filter out unwanted titles
+    const unwantedTitles = [
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+    ];
+
     // Allow null to unequip title
     if (title === null || title === '') {
       this.settings.achievements.activeTitle = null;
@@ -4684,6 +4723,16 @@ module.exports = class SoloLevelingStats {
       }
       return true;
     }
+
+    // Block unwanted titles
+    if (unwantedTitles.includes(title)) {
+      return false;
+    }
+
+    // Also remove unwanted titles from unlocked titles list
+    this.settings.achievements.titles = this.settings.achievements.titles.filter(
+      (t) => !unwantedTitles.includes(t)
+    );
 
     if (this.settings.achievements.titles.includes(title)) {
       this.settings.achievements.activeTitle = title;
@@ -4698,8 +4747,37 @@ module.exports = class SoloLevelingStats {
   }
 
   getActiveTitleBonus() {
-    if (!this.settings.achievements.activeTitle) {
-      return { xp: 0 };
+    // Filter out unwanted titles
+    const unwantedTitles = [
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+    ];
+    if (
+      !this.settings.achievements.activeTitle ||
+      unwantedTitles.includes(this.settings.achievements.activeTitle)
+    ) {
+      // If active title is unwanted, unequip it
+      if (
+        this.settings.achievements.activeTitle &&
+        unwantedTitles.includes(this.settings.achievements.activeTitle)
+      ) {
+        this.settings.achievements.activeTitle = null;
+        this.saveSettings(true);
+      }
+      return {
+        xp: 0,
+        critChance: 0,
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0,
+      };
     }
 
     const achievements = this.getAchievementDefinitions();
@@ -4707,7 +4785,17 @@ module.exports = class SoloLevelingStats {
       (a) => a.title === this.settings.achievements.activeTitle
     );
 
-    return achievement?.titleBonus || { xp: 0 };
+    const bonus = achievement?.titleBonus || { xp: 0 };
+    // Ensure all buff types are present (default to 0)
+    return {
+      xp: bonus.xp || 0,
+      critChance: bonus.critChance || 0,
+      strength: bonus.strength || 0,
+      agility: bonus.agility || 0,
+      intelligence: bonus.intelligence || 0,
+      vitality: bonus.vitality || 0,
+      luck: bonus.luck || 0,
+    };
   }
 
   // ============================================================================

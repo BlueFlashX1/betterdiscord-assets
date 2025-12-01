@@ -2275,24 +2275,67 @@ module.exports = class CriticalHit {
             return; // Not a real message
         }
 
+      // Check if this message was already determined to be a crit or non-crit
+      // Use message ID to ensure consistent results
+      if (messageId) {
+        // Check history first - if message is in history, use that determination
+        const historyEntry = this.messageHistory.find(
+          (e) => e.messageId === messageId && e.channelId === this.currentChannelId
+        );
+
+        if (historyEntry) {
+          // Message already processed - use saved determination
+          const isCrit = historyEntry.isCrit || false;
+
+          this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
+            messageId,
+            isCrit,
+            wasProcessed: true
+          });
+
+          if (isCrit) {
+            // It's a crit - apply style
+            if (!messageElement.classList.contains('bd-crit-hit')) {
+              this.applyCritStyle(messageElement);
+              this.critMessages.add(messageElement);
+            }
+            // Mark as processed
+            this.processedMessages.add(messageId);
+            return;
+          } else {
+            // It's NOT a crit - mark as processed and return
+            this.processedMessages.add(messageId);
+            this.debugLog('CHECK_FOR_CRIT', 'Message is non-crit (from history), skipping', {
+              messageId
+            });
+            return;
+          }
+        }
+      }
+
       // Calculate effective crit chance (base + agility bonus, capped at 90%)
       const effectiveCritChance = this.getEffectiveCritChance();
-        const roll = Math.random() * 100;
+
+      // Use deterministic random based on message ID to ensure same message always gets same result
+      // This prevents the same message from being crit on one check and non-crit on another
+      let roll;
+      if (messageId) {
+        // Create a deterministic "random" number based on message ID
+        // This ensures the same message always gets the same roll
+        const hash = this.simpleHash(messageId + this.currentChannelId);
+        roll = (hash % 10000) / 100; // Convert to 0-100 range
+      } else {
+        // Fallback to true random if no message ID (shouldn't happen)
+        roll = Math.random() * 100;
+      }
 
       this.debugLog('CHECK_FOR_CRIT', 'Checking for crit', {
         messageId,
-        roll,
+        roll: roll.toFixed(2),
         baseCritChance: this.settings.critChance,
         effectiveCritChance,
         isCrit: roll <= effectiveCritChance,
-      });
-
-      this.debugLog('CHECK_FOR_CRIT', 'Checking for crit', {
-        messageId,
-        roll,
-        baseCritChance: this.settings.critChance,
-        effectiveCritChance: effectiveCritChance,
-        isCrit: roll <= effectiveCritChance,
+        deterministic: !!messageId
       });
 
         // Get message info
@@ -2308,7 +2351,14 @@ module.exports = class CriticalHit {
       // Update stats
       this.stats.totalMessages++;
 
-      if (roll <= effectiveCritChance) {
+      const isCrit = roll <= effectiveCritChance;
+
+      // Mark as processed IMMEDIATELY to prevent re-checking
+      if (messageId) {
+        this.processedMessages.add(messageId);
+      }
+
+      if (isCrit) {
             // CRITICAL HIT!
         this.stats.totalCrits++;
         this.updateStats(); // Recalculate crit rate
@@ -2427,12 +2477,20 @@ module.exports = class CriticalHit {
           });
         }
         } else {
-            // Mark as processed even if not a crit (using message ID)
+            // NOT A CRIT - Mark as processed and save to history immediately
+            this.debugLog('CHECK_FOR_CRIT', '❌ Non-crit message detected', {
+              messageId,
+              roll: roll.toFixed(2),
+              effectiveCritChance,
+              authorId
+            });
+
+            // Mark as processed IMMEDIATELY to prevent re-checking
             if (messageId) {
               this.processedMessages.add(messageId);
             }
 
-            // Store in history (non-crit) for tracking
+            // Store in history (non-crit) for tracking - CRITICAL to prevent false positives
             if (messageId && this.currentChannelId) {
           try {
                 this.addToHistory({
@@ -2440,13 +2498,26 @@ module.exports = class CriticalHit {
                     authorId: authorId, // Store author ID for filtering
                     channelId: this.currentChannelId,
                     timestamp: Date.now(),
-                    isCrit: false,
+                    isCrit: false, // EXPLICITLY mark as non-crit
                     messageContent: messageContent.substring(0, 200),
               author: author, // Author username for display
+                });
+
+                // Save immediately to ensure it's persisted
+                this.saveMessageHistory();
+
+                this.debugLog('CHECK_FOR_CRIT', '✅ Non-crit saved to history', {
+                  messageId,
+                  channelId: this.currentChannelId
                 });
           } catch (error) {
             this.debugError('CHECK_FOR_CRIT', error, { phase: 'save_non_crit_history' });
           }
+        } else {
+          this.debugLog('CHECK_FOR_CRIT', '⚠️ Cannot save non-crit - missing messageId or channelId', {
+            hasMessageId: !!messageId,
+            hasChannelId: !!this.currentChannelId
+          });
         }
       }
     } catch (error) {
@@ -4026,6 +4097,17 @@ module.exports = class CriticalHit {
   // ============================================================================
 
   // Get effective crit chance (base + agility bonus + luck buffs, capped at 90%)
+  // Simple hash function for deterministic random number generation
+  simpleHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+  }
+
   getEffectiveCritChance() {
     let baseChance = this.settings.critChance || 10;
 
