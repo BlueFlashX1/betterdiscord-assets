@@ -381,6 +381,9 @@ module.exports = class SoloLevelingStats {
     // Start auto-save interval
     this.startAutoSave();
 
+    // Cleanup unwanted titles from saved data
+    this.cleanupUnwantedTitles();
+
     // Integrate with CriticalHit plugin (if available)
     this.integrateWithCriticalHit();
 
@@ -4626,6 +4629,127 @@ module.exports = class SoloLevelingStats {
         title: 'Monarch of Transfiguration',
         titleBonus: { xp: 0.34 }, // +34% XP
       },
+      // Solo Leveling Lore Titles
+      {
+        id: 'shadow_soldier',
+        name: 'Shadow Soldier',
+        description: 'Land 100 critical hits',
+        condition: { type: 'crits', value: 100 },
+        title: 'Shadow Soldier',
+        titleBonus: { xp: 0.08, critChance: 0.01, agility: 1 }, // +8% XP, +1% Crit, +1 AGI
+      },
+      {
+        id: 'kamish_slayer',
+        name: 'Kamish Slayer',
+        description: 'Reach Level 80 and land 2,000 critical hits',
+        condition: { type: 'level', value: 80 },
+        title: 'Kamish Slayer',
+        titleBonus: { xp: 0.4, critChance: 0.05, strength: 2, agility: 2 }, // +40% XP, +5% Crit, +2 STR, +2 AGI
+      },
+      {
+        id: 'demon_tower_conqueror',
+        name: 'Demon Tower Conqueror',
+        description: 'Reach Level 60 and visit 40 unique channels',
+        condition: { type: 'level', value: 60 },
+        title: 'Demon Tower Conqueror',
+        titleBonus: { xp: 0.32, intelligence: 2, vitality: 1 }, // +32% XP, +2 INT, +1 VIT
+      },
+      {
+        id: 'double_awakening',
+        name: 'Double Awakening',
+        description: 'Reach Level 25 and send 3,500 messages',
+        condition: { type: 'level', value: 25 },
+        title: 'Double Awakening',
+        titleBonus: { xp: 0.15, critChance: 0.02, strength: 1, agility: 1 }, // +15% XP, +2% Crit, +1 STR, +1 AGI
+      },
+      {
+        id: 'system_user',
+        name: 'System User',
+        description: 'Unlock 15 achievements',
+        condition: { type: 'achievements', value: 15 },
+        title: 'System User',
+        titleBonus: { xp: 0.2, intelligence: 2, luck: 1 }, // +20% XP, +2 INT, +1 LUK
+      },
+      {
+        id: 'instant_dungeon_master',
+        name: 'Instant Dungeon Master',
+        description: 'Type 200,000 characters and be active for 75 hours',
+        condition: { type: 'characters', value: 200000 },
+        title: 'Instant Dungeon Master',
+        titleBonus: { xp: 0.35, intelligence: 2, vitality: 2 }, // +35% XP, +2 INT, +2 VIT
+      },
+      {
+        id: 'shadow_army_general',
+        name: 'Shadow Army General',
+        description: 'Reach Level 55 and land 750 critical hits',
+        condition: { type: 'level', value: 55 },
+        title: 'Shadow Army General',
+        titleBonus: { xp: 0.3, critChance: 0.03, agility: 2, strength: 1 }, // +30% XP, +3% Crit, +2 AGI, +1 STR
+      },
+      {
+        id: 'monarch_of_beasts',
+        name: 'Monarch of Beasts',
+        description: 'Reach 18 Strength stat',
+        condition: { type: 'stat', stat: 'strength', value: 18 },
+        title: 'Monarch of Beasts',
+        titleBonus: { xp: 0.32, strength: 3, critChance: 0.02 }, // +32% XP, +3 STR, +2% Crit
+      },
+      {
+        id: 'monarch_of_insects',
+        name: 'Monarch of Insects',
+        description: 'Send 12,000 messages',
+        condition: { type: 'messages', value: 12000 },
+        title: 'Monarch of Insects',
+        titleBonus: { xp: 0.42, agility: 2, intelligence: 1 }, // +42% XP, +2 AGI, +1 INT
+      },
+      {
+        id: 'monarch_of_iron_body',
+        name: 'Monarch of Iron Body',
+        description: 'Reach 18 Vitality stat',
+        condition: { type: 'stat', stat: 'vitality', value: 18 },
+        title: 'Monarch of Iron Body',
+        titleBonus: { xp: 0.3, vitality: 3, strength: 1 }, // +30% XP, +3 VIT, +1 STR
+      },
+      {
+        id: 'monarch_of_beginning',
+        name: 'Monarch of Beginning',
+        description: 'Reach Level 90 and unlock 20 achievements',
+        condition: { type: 'level', value: 90 },
+        title: 'Monarch of Beginning',
+        titleBonus: { xp: 0.45, critChance: 0.04, strength: 2, agility: 2, intelligence: 2 }, // +45% XP, +4% Crit, +2 All Combat Stats
+      },
+      {
+        id: 'absolute_ruler',
+        name: 'Absolute Ruler',
+        description: 'Reach Level 120 and type 300,000 characters',
+        condition: { type: 'level', value: 120 },
+        title: 'Absolute Ruler',
+        titleBonus: {
+          xp: 0.52,
+          critChance: 0.06,
+          strength: 3,
+          agility: 3,
+          intelligence: 2,
+          vitality: 2,
+          luck: 2,
+        }, // +52% XP, +6% Crit, +3 STR/AGI, +2 INT/VIT, +2 LUK
+      },
+      {
+        id: 'shadow_sovereign_heir',
+        name: 'Shadow Sovereign Heir',
+        description: 'Reach Level 85 and land 1,500 critical hits',
+        condition: { type: 'level', value: 85 },
+        title: 'Shadow Sovereign Heir',
+        titleBonus: { xp: 0.43, critChance: 0.05, agility: 3, intelligence: 2 }, // +43% XP, +5% Crit, +3 AGI, +2 INT
+      },
+      {
+        id: 'ruler_of_chaos',
+        name: 'Ruler of Chaos',
+        description: 'Reach Level 110 and be active for 150 hours',
+        condition: { type: 'level', value: 110 },
+        title: 'Ruler of Chaos',
+        titleBonus: { xp: 0.48, critChance: 0.05, strength: 2, agility: 2, luck: 2 }, // +48% XP, +5% Crit, +2 STR/AGI, +2 LUK
+      },
     ];
   }
 
@@ -4700,6 +4824,64 @@ module.exports = class SoloLevelingStats {
 
     // Save immediately on achievement unlock (important event)
     this.saveSettings(true);
+  }
+
+  cleanupUnwantedTitles() {
+    const unwantedTitles = [
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+    ];
+
+    let cleaned = false;
+
+    // Remove from unlocked titles
+    if (this.settings.achievements?.titles) {
+      const beforeCount = this.settings.achievements.titles.length;
+      this.settings.achievements.titles = this.settings.achievements.titles.filter(
+        (t) => !unwantedTitles.includes(t)
+      );
+      if (this.settings.achievements.titles.length !== beforeCount) {
+        cleaned = true;
+      }
+    }
+
+    // Unequip if active
+    if (
+      this.settings.achievements?.activeTitle &&
+      unwantedTitles.includes(this.settings.achievements.activeTitle)
+    ) {
+      this.settings.achievements.activeTitle = null;
+      cleaned = true;
+    }
+
+    // Remove from unlocked achievements if they exist
+    if (this.settings.achievements?.unlocked) {
+      const achievements = this.getAchievementDefinitions();
+      const unwantedIds = achievements
+        .filter((a) => unwantedTitles.includes(a.title))
+        .map((a) => a.id);
+      if (unwantedIds.length > 0) {
+        const beforeCount = this.settings.achievements.unlocked.length;
+        this.settings.achievements.unlocked = this.settings.achievements.unlocked.filter(
+          (id) => !unwantedIds.includes(id)
+        );
+        if (this.settings.achievements.unlocked.length !== beforeCount) {
+          cleaned = true;
+        }
+      }
+    }
+
+    if (cleaned) {
+      this.saveSettings(true);
+      this.debugLog('CLEANUP', 'Removed unwanted titles from saved data', {
+        removedTitles: unwantedTitles,
+      });
+    }
   }
 
   setActiveTitle(title) {
