@@ -384,6 +384,9 @@ module.exports = class SoloLevelingStats {
     // Cleanup unwanted titles from saved data
     this.cleanupUnwantedTitles();
 
+    // Apply retroactive natural stat growth based on level and activity
+    this.applyRetroactiveNaturalStatGrowth();
+
     // Integrate with CriticalHit plugin (if available)
     this.integrateWithCriticalHit();
 
@@ -865,10 +868,16 @@ module.exports = class SoloLevelingStats {
       { key: 'luck', name: 'LUK', fullName: 'Luck', desc: 'Random buff stacks' },
     ];
 
+    const totalStats = this.getTotalEffectiveStats();
+    const titleBonus = this.getActiveTitleBonus();
+
     return stats
       .map((stat) => {
-        const currentValue = this.settings.stats[stat.key];
-        const isMaxed = currentValue >= 20;
+        const baseValue = this.settings.stats[stat.key];
+        const totalValue = totalStats[stat.key];
+        const titleBuff = titleBonus[stat.key] || 0;
+        const hasTitleBuff = titleBuff > 0;
+        const isMaxed = baseValue >= 20;
         const canAllocate = this.settings.unallocatedStatPoints > 0 && !isMaxed;
 
         return `
@@ -878,17 +887,36 @@ module.exports = class SoloLevelingStats {
         }"
           data-stat="${stat.key}"
           ${!canAllocate ? 'disabled' : ''}
-          title="${stat.fullName}: ${currentValue}/20${isMaxed ? ' (MAXED)' : ''} - ${
-          stat.desc
-        } per point"
+          title="${stat.fullName}: ${baseValue}/20 (Total: ${totalValue}${
+          hasTitleBuff ? ` +${titleBuff} from title` : ''
+        })${isMaxed ? ' (MAXED)' : ''} - ${stat.desc} per point"
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
-          <div class="sls-chat-stat-btn-value">${currentValue}</div>
+          <div class="sls-chat-stat-btn-value">
+            ${totalValue}
+            ${hasTitleBuff ? `<span class="sls-chat-stat-buff">(+${titleBuff})</span>` : ''}
+          </div>
           ${canAllocate ? '<div class="sls-chat-stat-btn-plus">+</div>' : ''}
         </button>
       `;
       })
       .join('');
+  }
+
+  /**
+   * Get total effective stats including base stats, natural growth, allocated stats, and title buffs
+   */
+  getTotalEffectiveStats() {
+    const baseStats = { ...this.settings.stats };
+    const titleBonus = this.getActiveTitleBonus();
+
+    return {
+      strength: baseStats.strength + (titleBonus.strength || 0),
+      agility: baseStats.agility + (titleBonus.agility || 0),
+      intelligence: baseStats.intelligence + (titleBonus.intelligence || 0),
+      vitality: baseStats.vitality + (titleBonus.vitality || 0),
+      luck: baseStats.luck + (titleBonus.luck || 0),
+    };
   }
 
   renderChatStats() {
@@ -904,18 +932,22 @@ module.exports = class SoloLevelingStats {
       luck: { name: 'LUK', desc: 'Random buff per point (stacks)', gain: 'Allocate stat points' },
     };
 
-    return Object.entries(this.settings.stats)
-      .map(([key, value]) => {
+    const baseStats = this.settings.stats;
+    const totalStats = this.getTotalEffectiveStats();
+    const titleBonus = this.getActiveTitleBonus();
+
+    return Object.entries(baseStats)
+      .map(([key, baseValue]) => {
         const def = statDefs[key];
+        const totalValue = totalStats[key];
+        const titleBuff = titleBonus[key] || 0;
+        const hasTitleBuff = titleBuff > 0;
+
         return `
         <div class="sls-chat-stat-item" data-stat="${key}">
           <span class="sls-chat-stat-name">${def.name}</span>
-          <span class="sls-chat-stat-value">${value}</span>
-          <div class="sls-chat-stat-tooltip">
-            <div class="sls-tooltip-title">${def.name}</div>
-            <div class="sls-tooltip-desc">${def.desc}</div>
-            <div class="sls-tooltip-gain">Gain: ${def.gain}</div>
-          </div>
+          <span class="sls-chat-stat-value">${totalValue}</span>
+          ${hasTitleBuff ? `<span class="sls-chat-stat-buff-indicator">+${titleBuff}</span>` : ''}
         </div>
       `;
       })
@@ -969,18 +1001,6 @@ module.exports = class SoloLevelingStats {
           section.style.display = isExpanded ? 'none' : 'block';
           if (arrow) arrow.textContent = isExpanded ? '▼' : '▲';
         }
-      });
-    });
-
-    // Stat tooltips
-    panel.querySelectorAll('.sls-chat-stat-item').forEach((item) => {
-      item.addEventListener('mouseenter', (e) => {
-        const tooltip = item.querySelector('.sls-chat-stat-tooltip');
-        if (tooltip) tooltip.style.display = 'block';
-      });
-      item.addEventListener('mouseleave', (e) => {
-        const tooltip = item.querySelector('.sls-chat-stat-tooltip');
-        if (tooltip) tooltip.style.display = 'none';
       });
     });
 
@@ -1682,43 +1702,6 @@ module.exports = class SoloLevelingStats {
         font-weight: 700;
         font-size: 12px;
         text-shadow: 0 0 3px rgba(138, 43, 226, 0.7);
-      }
-
-      .sls-chat-stat-tooltip {
-        display: none;
-        position: absolute;
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-bottom: 8px;
-        background: rgba(10, 10, 15, 0.95);
-        border: 1px solid rgba(138, 43, 226, 0.6);
-        border-radius: 8px;
-        padding: 8px 12px;
-        min-width: 150px;
-        box-shadow: 0 0 6px rgba(138, 43, 226, 0.5);
-        z-index: 1001;
-        pointer-events: none;
-      }
-
-      .sls-tooltip-title {
-        color: #d4a5ff;
-        font-weight: 700;
-        font-size: 12px;
-        margin-bottom: 4px;
-        text-shadow: 0 0 3px rgba(138, 43, 226, 0.7);
-      }
-
-      .sls-tooltip-desc {
-        color: #b894e6;
-        font-size: 11px;
-        margin-bottom: 4px;
-      }
-
-      .sls-tooltip-gain {
-        color: #a78bfa;
-        font-size: 10px;
-        font-style: italic;
       }
 
       .sls-chat-stat-points {
@@ -3012,6 +2995,14 @@ module.exports = class SoloLevelingStats {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'update_quests' });
       }
 
+      // Process natural stat growth (scales with current stats)
+      try {
+        this.processNaturalStatGrowth();
+        this.debugLog('PROCESS_MESSAGE', 'Natural stat growth processed');
+      } catch (error) {
+        this.debugError('PROCESS_MESSAGE', error, { phase: 'natural_stat_growth' });
+      }
+
       // Check for achievements (will save if achievement unlocked)
       try {
         this.checkAchievements();
@@ -3867,6 +3858,19 @@ module.exports = class SoloLevelingStats {
           unallocatedPoints: this.settings.unallocatedStatPoints,
         });
 
+        // Process natural stat growth for each level gained (handles skipped levels)
+        // This ensures stats grow naturally even when multiple levels are gained at once
+        try {
+          for (let i = 0; i < levelsGained; i++) {
+            this.processNaturalStatGrowth();
+          }
+          this.debugLog('CHECK_LEVEL_UP', 'Natural stat growth processed for skipped levels', {
+            levelsGained,
+          });
+        } catch (error) {
+          this.debugError('CHECK_LEVEL_UP', error, { phase: 'natural_stat_growth_on_levelup' });
+        }
+
         // Emit level changed event for real-time progress bar updates
         this.emitLevelChanged(oldLevel, newLevel);
 
@@ -4255,6 +4259,204 @@ module.exports = class SoloLevelingStats {
     return true;
   }
 
+  /**
+   * Apply retroactive natural stat growth based on level and activity
+   * This calculates what stats should be based on messages sent and level
+   */
+  applyRetroactiveNaturalStatGrowth() {
+    try {
+      // Check if we've already applied retroactive growth
+      if (this.settings._retroactiveStatGrowthApplied) {
+        return; // Already applied
+      }
+
+      const messagesSent = this.settings.activity?.messagesSent || 0;
+      const level = this.settings.level || 1;
+      const charactersTyped = this.settings.activity?.charactersTyped || 0;
+
+      // Calculate expected natural stat growth based on activity
+      // Formula: Each message has ~0.3% base chance, scaling with stats
+      // For retroactive: Estimate based on messages sent and level
+      // Higher level = more messages = more natural growth opportunities
+
+      // Base growth per 100 messages: ~0.3 stat points (0.3% chance per message)
+      // But it scales with current stats, so we'll use a progressive formula
+      const baseGrowthPer100Messages = 0.3;
+      const levelMultiplier = 1 + (level - 1) * 0.02; // +2% per level
+      const messageBasedGrowth = Math.floor(
+        (messagesSent / 100) * baseGrowthPer100Messages * levelMultiplier
+      );
+
+      // Also grant stats based on level (higher level = more activity = more growth)
+      const levelBasedGrowth = Math.floor((level - 1) * 0.15); // ~0.15 stats per level
+
+      // Total retroactive growth to distribute
+      const totalGrowth = messageBasedGrowth + levelBasedGrowth;
+
+      if (totalGrowth > 0) {
+        const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+        let statsAdded = 0;
+
+        // Distribute growth evenly across all stats
+        const growthPerStat = Math.floor(totalGrowth / statNames.length);
+        const remainder = totalGrowth % statNames.length;
+
+        statNames.forEach((statName, index) => {
+          const currentStat = this.settings.stats[statName] || 0;
+          if (currentStat >= 20) return; // Skip maxed stats
+
+          // Add base growth per stat
+          let growthToAdd = growthPerStat;
+          // Add remainder to first stats
+          if (index < remainder) {
+            growthToAdd += 1;
+          }
+
+          // Cap at 20
+          const maxToAdd = Math.min(growthToAdd, 20 - currentStat);
+          if (maxToAdd > 0) {
+            this.settings.stats[statName] += maxToAdd;
+            statsAdded += maxToAdd;
+
+            // Special handling for Luck: Generate random buffs
+            if (statName === 'luck') {
+              if (!Array.isArray(this.settings.luckBuffs)) {
+                this.settings.luckBuffs = [];
+              }
+              for (let i = 0; i < maxToAdd; i++) {
+                const randomBuff = Math.random() * 6 + 2; // 2% to 8%
+                const roundedBuff = Math.round(randomBuff * 10) / 10;
+                this.settings.luckBuffs.push(roundedBuff);
+              }
+            }
+          }
+        });
+
+        if (statsAdded > 0) {
+          // Mark as applied
+          this.settings._retroactiveStatGrowthApplied = true;
+
+          // Save immediately
+          this.saveSettings(true);
+
+          this.debugLog('RETROACTIVE_STAT_GROWTH', 'Applied retroactive natural stat growth', {
+            messagesSent,
+            level,
+            totalGrowth,
+            statsAdded,
+            newStats: { ...this.settings.stats },
+          });
+
+          // Show notification
+          this.showNotification(
+            `✨ Retroactive Natural Growth Applied! ✨\n+${statsAdded} total stat points based on your level ${level} and ${messagesSent.toLocaleString()} messages!`,
+            'success',
+            5000
+          );
+        }
+      }
+    } catch (error) {
+      this.debugError('RETROACTIVE_STAT_GROWTH', error);
+    }
+  }
+
+  /**
+   * Process natural stat growth - stats increase automatically based on current stat values
+   * Higher stats = higher chance to grow further (scaling effect)
+   */
+  processNaturalStatGrowth() {
+    try {
+      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+      let statsGrown = [];
+
+      statNames.forEach((statName) => {
+        const currentStat = this.settings.stats[statName] || 0;
+
+        // Skip if already maxed
+        if (currentStat >= 20) {
+          return;
+        }
+
+        // Calculate growth chance: base 0.3% + (0.05% per stat point)
+        // This means: 0 STR = 0.3%, 10 STR = 0.8%, 20 STR = 1.3%
+        // Higher stats have better chance to grow further (compounding effect)
+        const baseChance = 0.003; // 0.3% base chance
+        const scalingFactor = 0.0005; // +0.05% per stat point
+        const growthChance = baseChance + currentStat * scalingFactor;
+
+        // Roll for natural growth
+        const roll = Math.random();
+        if (roll < growthChance) {
+          // Natural stat growth!
+          const oldValue = currentStat;
+          this.settings.stats[statName]++;
+
+          // Special handling for Luck: Generate random buff that stacks
+          if (statName === 'luck') {
+            if (!Array.isArray(this.settings.luckBuffs)) {
+              this.settings.luckBuffs = [];
+            }
+            const randomBuff = Math.random() * 6 + 2; // 2% to 8%
+            const roundedBuff = Math.round(randomBuff * 10) / 10;
+            this.settings.luckBuffs.push(roundedBuff);
+          }
+
+          statsGrown.push({
+            stat: statName,
+            oldValue,
+            newValue: this.settings.stats[statName],
+            chance: (growthChance * 100).toFixed(2) + '%',
+          });
+
+          this.debugLog('NATURAL_STAT_GROWTH', `Natural ${statName} growth!`, {
+            statName,
+            oldValue,
+            newValue: this.settings.stats[statName],
+            growthChance: (growthChance * 100).toFixed(2) + '%',
+            roll: roll.toFixed(4),
+          });
+        }
+      });
+
+      // If any stats grew, save and update UI
+      if (statsGrown.length > 0) {
+        // Save immediately (important change)
+        this.saveSettings(true);
+
+        // Update chat UI
+        this.updateChatUI();
+
+        // Emit stats changed event
+        this.emit('statsChanged', {
+          stats: { ...this.settings.stats },
+          statsGrown,
+        });
+
+        // Show notification if multiple stats grew, or if it's a significant stat
+        if (statsGrown.length > 1) {
+          const statsList = statsGrown
+            .map(
+              (s) =>
+                `${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} (${s.oldValue}→${s.newValue})`
+            )
+            .join(', ');
+          this.showNotification(`✨ Natural Growth! ✨\n${statsList}`, 'success', 4000);
+        } else if (statsGrown.length === 1) {
+          const s = statsGrown[0];
+          this.showNotification(
+            `✨ Natural ${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} Growth! ✨\n${
+              s.oldValue
+            } → ${s.newValue}`,
+            'success',
+            3000
+          );
+        }
+      }
+    } catch (error) {
+      this.debugError('NATURAL_STAT_GROWTH', error);
+    }
+  }
+
   // ============================================================================
   // PHASE 4: Achievement System
   // ============================================================================
@@ -4296,7 +4498,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 200 messages',
         condition: { type: 'messages', value: 200 },
         title: 'E-Rank Hunter',
-        titleBonus: { xp: 0.08 }, // +8% XP
+        titleBonus: { xp: 0.08, strength: 1 }, // +8% XP, +1 STR
       },
       {
         id: 'd_rank',
@@ -4304,7 +4506,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 500 messages',
         condition: { type: 'messages', value: 500 },
         title: 'D-Rank Hunter',
-        titleBonus: { xp: 0.12 }, // +12% XP
+        titleBonus: { xp: 0.12, agility: 1 }, // +12% XP, +1 AGI
       },
       {
         id: 'c_rank',
@@ -4312,7 +4514,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 1,000 messages',
         condition: { type: 'messages', value: 1000 },
         title: 'C-Rank Hunter',
-        titleBonus: { xp: 0.18 }, // +18% XP
+        titleBonus: { xp: 0.18, critChance: 0.01, strength: 1 }, // +18% XP, +1% Crit, +1 STR
       },
       {
         id: 'b_rank',
@@ -4320,7 +4522,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 2,500 messages',
         condition: { type: 'messages', value: 2500 },
         title: 'B-Rank Hunter',
-        titleBonus: { xp: 0.25 }, // +25% XP
+        titleBonus: { xp: 0.25, critChance: 0.02, agility: 1, intelligence: 1 }, // +25% XP, +2% Crit, +1 AGI, +1 INT
       },
       {
         id: 'a_rank',
@@ -4328,7 +4530,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 5,000 messages',
         condition: { type: 'messages', value: 5000 },
         title: 'A-Rank Hunter',
-        titleBonus: { xp: 0.32 }, // +32% XP
+        titleBonus: { xp: 0.32, critChance: 0.02, strength: 1, agility: 1 }, // +32% XP, +2% Crit, +1 STR, +1 AGI
       },
       {
         id: 's_rank',
@@ -4353,7 +4555,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 75,000 characters',
         condition: { type: 'characters', value: 75000 },
         title: 'Domain Expansion',
-        titleBonus: { xp: 0.22 }, // +22% XP
+        titleBonus: { xp: 0.22, intelligence: 2, critChance: 0.01 }, // +22% XP, +2 INT, +1% Crit
       },
       {
         id: 'ruler_authority',
@@ -4361,7 +4563,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 150,000 characters',
         condition: { type: 'characters', value: 150000 },
         title: "Ruler's Authority",
-        titleBonus: { xp: 0.3 }, // +30% XP
+        titleBonus: { xp: 0.3, intelligence: 2, critChance: 0.02 }, // +30% XP, +2 INT, +2% Crit
       },
       // Level Milestones
       {
@@ -4370,7 +4572,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 15',
         condition: { type: 'level', value: 15 },
         title: 'The Awakened',
-        titleBonus: { xp: 0.1 }, // +10% XP
+        titleBonus: { xp: 0.1, critChance: 0.01, strength: 1 }, // +10% XP, +1% Crit, +1 STR
       },
       {
         id: 'shadow_army',
@@ -4378,7 +4580,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 30',
         condition: { type: 'level', value: 30 },
         title: 'Shadow Army Commander',
-        titleBonus: { xp: 0.2 }, // +20% XP
+        titleBonus: { xp: 0.2, critChance: 0.02, agility: 2, strength: 1 }, // +20% XP, +2% Crit, +2 AGI, +1 STR
       },
       {
         id: 'necromancer',
@@ -4386,7 +4588,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50',
         condition: { type: 'level', value: 50 },
         title: 'Necromancer',
-        titleBonus: { xp: 0.28 }, // +28% XP
+        titleBonus: { xp: 0.28, critChance: 0.03, intelligence: 2, vitality: 1 }, // +28% XP, +3% Crit, +2 INT, +1 VIT
       },
       {
         id: 'national_level',
@@ -4394,7 +4596,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75',
         condition: { type: 'level', value: 75 },
         title: 'National Level Hunter',
-        titleBonus: { xp: 0.35 }, // +35% XP
+        titleBonus: { xp: 0.35, critChance: 0.04, strength: 2, agility: 2, intelligence: 1 }, // +35% XP, +4% Crit, +2 STR/AGI, +1 INT
       },
       {
         id: 'monarch_candidate',
@@ -4402,7 +4604,14 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 100',
         condition: { type: 'level', value: 100 },
         title: 'Monarch Candidate',
-        titleBonus: { xp: 0.42 }, // +42% XP
+        titleBonus: {
+          xp: 0.42,
+          critChance: 0.04,
+          strength: 2,
+          agility: 2,
+          intelligence: 2,
+          vitality: 1,
+        }, // +42% XP, +4% Crit, +2 STR/AGI/INT, +1 VIT
       },
       // Activity/Time Milestones
       {
@@ -4411,7 +4620,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 5 hours',
         condition: { type: 'time', value: 300 }, // minutes
         title: 'Dungeon Grinder',
-        titleBonus: { xp: 0.06 }, // +6% XP
+        titleBonus: { xp: 0.06, vitality: 1 }, // +6% XP, +1 VIT
       },
       {
         id: 'gate_explorer',
@@ -4419,7 +4628,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 20 hours',
         condition: { type: 'time', value: 1200 },
         title: 'Gate Explorer',
-        titleBonus: { xp: 0.14 }, // +14% XP
+        titleBonus: { xp: 0.14, vitality: 1, agility: 1 }, // +14% XP, +1 VIT, +1 AGI
       },
       {
         id: 'raid_veteran',
@@ -4427,7 +4636,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 50 hours',
         condition: { type: 'time', value: 3000 },
         title: 'Raid Veteran',
-        titleBonus: { xp: 0.24 }, // +24% XP
+        titleBonus: { xp: 0.24, vitality: 2, strength: 1 }, // +24% XP, +2 VIT, +1 STR
       },
       {
         id: 'eternal_hunter',
@@ -4435,7 +4644,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 100 hours',
         condition: { type: 'time', value: 6000 },
         title: 'Eternal Hunter',
-        titleBonus: { xp: 0.33 }, // +33% XP
+        titleBonus: { xp: 0.33, vitality: 2, strength: 1, agility: 1 }, // +33% XP, +2 VIT, +1 STR, +1 AGI
       },
       // Channel/Exploration Milestones
       {
@@ -4444,7 +4653,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 5 unique channels',
         condition: { type: 'channels', value: 5 },
         title: 'Gate Traveler',
-        titleBonus: { xp: 0.04 }, // +4% XP
+        titleBonus: { xp: 0.04, agility: 1 }, // +4% XP, +1 AGI
       },
       {
         id: 'dungeon_master',
@@ -4452,7 +4661,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 15 unique channels',
         condition: { type: 'channels', value: 15 },
         title: 'Dungeon Master',
-        titleBonus: { xp: 0.11 }, // +11% XP
+        titleBonus: { xp: 0.11, intelligence: 1, agility: 1 }, // +11% XP, +1 INT, +1 AGI
       },
       {
         id: 'dimension_walker',
@@ -4460,7 +4669,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 30 unique channels',
         condition: { type: 'channels', value: 30 },
         title: 'Dimension Walker',
-        titleBonus: { xp: 0.19 }, // +19% XP
+        titleBonus: { xp: 0.19, intelligence: 2, agility: 1, critChance: 0.01 }, // +19% XP, +2 INT, +1 AGI, +1% Crit
       },
       {
         id: 'realm_conqueror',
@@ -4468,7 +4677,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 50 unique channels',
         condition: { type: 'channels', value: 50 },
         title: 'Realm Conqueror',
-        titleBonus: { xp: 0.27 }, // +27% XP
+        titleBonus: { xp: 0.27, intelligence: 2, agility: 2, critChance: 0.02 }, // +27% XP, +2 INT, +2 AGI, +2% Crit
       },
       // Special Titles (High Requirements)
       {
@@ -4485,7 +4694,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 100,000 characters',
         condition: { type: 'level', value: 75 },
         title: 'Monarch of Destruction',
-        titleBonus: { xp: 0.45 }, // +45% XP
+        titleBonus: { xp: 0.45, critChance: 0.05, strength: 3, intelligence: 2 }, // +45% XP, +5% Crit, +3 STR, +2 INT
       },
       {
         id: 'the_ruler',
@@ -4510,7 +4719,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50, send 5,000 messages, and type 100,000 characters',
         condition: { type: 'level', value: 50 },
         title: 'Sung Jin-Woo',
-        titleBonus: { xp: 0.35 }, // +35% XP
+        titleBonus: { xp: 0.35, critChance: 0.03, strength: 2, agility: 2 }, // +35% XP, +3% Crit, +2 STR, +2 AGI
       },
       {
         id: 'the_weakest',
@@ -4518,7 +4727,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send your first 10 messages',
         condition: { type: 'messages', value: 10 },
         title: 'The Weakest',
-        titleBonus: { xp: 0.02 }, // +2% XP
+        titleBonus: { xp: 0.02, luck: 1 }, // +2% XP, +1 LUK
       },
       {
         id: 's_rank_jin_woo',
@@ -4526,7 +4735,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach S-Rank and Level 50',
         condition: { type: 'level', value: 50 },
         title: 'S-Rank Hunter Jin-Woo',
-        titleBonus: { xp: 0.42 }, // +42% XP
+        titleBonus: { xp: 0.42, critChance: 0.04, strength: 2, agility: 2, intelligence: 1 }, // +42% XP, +4% Crit, +2 STR/AGI, +1 INT
       },
       {
         id: 'shadow_sovereign',
@@ -4534,7 +4743,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 60 and send 7,500 messages',
         condition: { type: 'level', value: 60 },
         title: 'Shadow Sovereign',
-        titleBonus: { xp: 0.4 }, // +40% XP
+        titleBonus: { xp: 0.4, critChance: 0.04, agility: 3, strength: 2 }, // +40% XP, +4% Crit, +3 AGI, +2 STR
       },
       {
         id: 'ashborn_successor',
@@ -4551,7 +4760,7 @@ module.exports = class SoloLevelingStats {
         description: 'Unlock 10 achievements',
         condition: { type: 'achievements', value: 10 },
         title: 'Arise',
-        titleBonus: { xp: 0.12 }, // +12% XP
+        titleBonus: { xp: 0.12, critChance: 0.01, luck: 1 }, // +12% XP, +1% Crit, +1 LUK
       },
       {
         id: 'shadow_exchange',
@@ -4559,7 +4768,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 3,000 messages',
         condition: { type: 'messages', value: 3000 },
         title: 'Shadow Exchange',
-        titleBonus: { xp: 0.2 }, // +20% XP
+        titleBonus: { xp: 0.2, critChance: 0.02, agility: 1 }, // +20% XP, +2% Crit, +1 AGI
       },
       {
         id: 'dagger_throw_master',
@@ -4576,7 +4785,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 30 hours during off-peak hours',
         condition: { type: 'time', value: 1800 },
         title: 'Stealth Master',
-        titleBonus: { xp: 0.18 }, // +18% XP
+        titleBonus: { xp: 0.18, agility: 2, critChance: 0.02 }, // +18% XP, +2 AGI, +2% Crit
       },
       {
         id: 'mana_manipulator',
@@ -4592,7 +4801,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 25 unique channels',
         condition: { type: 'channels', value: 25 },
         title: 'Shadow Storage',
-        titleBonus: { xp: 0.16 }, // +16% XP
+        titleBonus: { xp: 0.16, intelligence: 1, agility: 1 }, // +16% XP, +1 INT, +1 AGI
       },
       {
         id: 'beast_monarch',
@@ -4600,7 +4809,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Strength stat',
         condition: { type: 'stat', stat: 'strength', value: 15 },
         title: 'Beast Monarch',
-        titleBonus: { xp: 0.28, strength: 2 }, // +28% XP, +2 Strength
+        titleBonus: { xp: 0.28, strength: 2, critChance: 0.02 }, // +28% XP, +2 Strength, +2% Crit
       },
       {
         id: 'frost_monarch',
@@ -4608,7 +4817,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 8,000 messages',
         condition: { type: 'messages', value: 8000 },
         title: 'Frost Monarch',
-        titleBonus: { xp: 0.3 }, // +30% XP
+        titleBonus: { xp: 0.3, critChance: 0.03, intelligence: 2, agility: 1 }, // +30% XP, +3% Crit, +2 INT, +1 AGI
       },
       {
         id: 'plague_monarch',
@@ -4616,7 +4825,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 65',
         condition: { type: 'level', value: 65 },
         title: 'Plague Monarch',
-        titleBonus: { xp: 0.32 }, // +32% XP
+        titleBonus: { xp: 0.32, critChance: 0.03, intelligence: 2, vitality: 1 }, // +32% XP, +3% Crit, +2 INT, +1 VIT
       },
       {
         id: 'monarch_white_flames',
@@ -4632,7 +4841,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 70 and type 150,000 characters',
         condition: { type: 'level', value: 70 },
         title: 'Monarch of Transfiguration',
-        titleBonus: { xp: 0.34 }, // +34% XP
+        titleBonus: { xp: 0.34, critChance: 0.04, intelligence: 3, agility: 1 }, // +34% XP, +4% Crit, +3 INT, +1 AGI
       },
       // Solo Leveling Lore Titles
       {
