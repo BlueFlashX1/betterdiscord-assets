@@ -1,6 +1,6 @@
 /**
  * @name SoloLevelingStats
- * @author Matthew
+ * @author BlueFlashXS
  * @description Solo Leveling-inspired stats system that tracks Discord activity and rewards progression through levels, stats, achievements, and daily quests
  * @version 1.0.0
  * @authorId
@@ -44,11 +44,11 @@ module.exports = class SoloLevelingStats {
       enabled: true,
       // Stat definitions
       stats: {
-        strength: 0, // +5% XP per message per point (max 20)
-        agility: 0, // +2% crit chance per point (max 20, capped at 25% total), +1% EXP per point during crit hits
-        intelligence: 0, // +10% bonus XP from long messages per point (max 20)
-        vitality: 0, // +5% daily quest rewards per point (max 20)
-        luck: 0, // Each point grants a random % buff that stacks (max 20)
+        strength: 0, // +5% XP per message per point
+        agility: 0, // +2% crit chance per point (capped at 25% total), +1% EXP per point during crit hits
+        intelligence: 0, // +10% bonus XP from long messages per point
+        vitality: 0, // +5% daily quest rewards per point
+        luck: 0, // Each point grants a random % buff that stacks
       },
       luckBuffs: [], // Array of random buff percentages that stack (e.g., [2.5, 4.1, 3.7])
       unallocatedStatPoints: 0,
@@ -877,19 +877,16 @@ module.exports = class SoloLevelingStats {
         const totalValue = totalStats[stat.key];
         const titleBuff = titleBonus[stat.key] || 0;
         const hasTitleBuff = titleBuff > 0;
-        const isMaxed = baseValue >= 20;
-        const canAllocate = this.settings.unallocatedStatPoints > 0 && !isMaxed;
+        const canAllocate = this.settings.unallocatedStatPoints > 0;
 
         return `
         <button
-          class="sls-chat-stat-btn ${isMaxed ? 'sls-chat-stat-btn-maxed' : ''} ${
-          canAllocate ? 'sls-chat-stat-btn-available' : ''
-        }"
+          class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
           data-stat="${stat.key}"
           ${!canAllocate ? 'disabled' : ''}
-          title="${stat.fullName}: ${baseValue}/20 (Total: ${totalValue}${
+          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${
           hasTitleBuff ? ` +${titleBuff} from title` : ''
-        })${isMaxed ? ' (MAXED)' : ''} - ${stat.desc} per point"
+        }) - ${stat.desc} per point"
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
           <div class="sls-chat-stat-btn-value">
@@ -1162,10 +1159,8 @@ module.exports = class SoloLevelingStats {
       }
       // Update button state
       const currentValue = this.settings.stats[statName];
-      const isMaxed = currentValue >= 20;
-      const canAllocate = this.settings.unallocatedStatPoints > 0 && !isMaxed;
+      const canAllocate = this.settings.unallocatedStatPoints > 0;
       btn.disabled = !canAllocate;
-      btn.classList.toggle('sls-chat-stat-btn-maxed', isMaxed);
       btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
       // Update plus indicator
       const plusEl = btn.querySelector('.sls-chat-stat-btn-plus');
@@ -1230,10 +1225,8 @@ module.exports = class SoloLevelingStats {
 
               // Update button state
               const currentValue = this.settings.stats[statName] || 0;
-              const isMaxed = currentValue >= 20;
-              const canAllocate = this.settings.unallocatedStatPoints > 0 && !isMaxed;
+              const canAllocate = this.settings.unallocatedStatPoints > 0;
               btn.disabled = !canAllocate;
-              btn.classList.toggle('sls-chat-stat-btn-maxed', isMaxed);
               btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
 
               // Update plus indicator
@@ -1257,9 +1250,7 @@ module.exports = class SoloLevelingStats {
               };
               const def = statDefs[statName];
               if (def) {
-                btn.title = `${def.fullName}: ${currentValue}/20${isMaxed ? ' (MAXED)' : ''} - ${
-                  def.desc
-                } per point`;
+                btn.title = `${def.fullName}: ${currentValue} - ${def.desc} per point`;
               }
             });
           }
@@ -4145,16 +4136,6 @@ module.exports = class SoloLevelingStats {
       return false;
     }
 
-    // Check max (20 per stat)
-    if (this.settings.stats[statName] >= 20) {
-      this.showNotification(
-        `${statName.charAt(0).toUpperCase() + statName.slice(1)} is already maxed!`,
-        'error',
-        2000
-      );
-      return false;
-    }
-
     const oldValue = this.settings.stats[statName];
     this.settings.stats[statName]++;
     this.settings.unallocatedStatPoints--;
@@ -4303,8 +4284,6 @@ module.exports = class SoloLevelingStats {
 
         statNames.forEach((statName, index) => {
           const currentStat = this.settings.stats[statName] || 0;
-          if (currentStat >= 20) return; // Skip maxed stats
-
           // Add base growth per stat
           let growthToAdd = growthPerStat;
           // Add remainder to first stats
@@ -4312,11 +4291,9 @@ module.exports = class SoloLevelingStats {
             growthToAdd += 1;
           }
 
-          // Cap at 20
-          const maxToAdd = Math.min(growthToAdd, 20 - currentStat);
-          if (maxToAdd > 0) {
-            this.settings.stats[statName] += maxToAdd;
-            statsAdded += maxToAdd;
+          if (growthToAdd > 0) {
+            this.settings.stats[statName] += growthToAdd;
+            statsAdded += growthToAdd;
 
             // Special handling for Luck: Generate random buffs
             if (statName === 'luck') {
@@ -4371,11 +4348,6 @@ module.exports = class SoloLevelingStats {
 
       statNames.forEach((statName) => {
         const currentStat = this.settings.stats[statName] || 0;
-
-        // Skip if already maxed
-        if (currentStat >= 20) {
-          return;
-        }
 
         // Calculate growth chance: base 0.3% + (0.05% per stat point)
         // This means: 0 STR = 0.3%, 10 STR = 0.8%, 20 STR = 1.3%
@@ -5448,36 +5420,27 @@ module.exports = class SoloLevelingStats {
   }
 
   renderStatBar(statName, statKey, currentValue, description, statValue) {
-    const maxValue = 20;
-    const percentage = (currentValue / maxValue) * 100;
-    const canAllocate = this.settings.unallocatedStatPoints > 0 && currentValue < maxValue;
-
     // Calculate effect strength for visual feedback
     const effectStrength = statValue || currentValue;
-    const isMaxed = currentValue >= maxValue;
-    const effectClass = isMaxed
-      ? 'sls-stat-maxed'
-      : effectStrength >= 15
-      ? 'sls-stat-strong'
-      : effectStrength >= 10
-      ? 'sls-stat-medium'
-      : 'sls-stat-weak';
+    const effectClass =
+      effectStrength >= 15
+        ? 'sls-stat-strong'
+        : effectStrength >= 10
+        ? 'sls-stat-medium'
+        : 'sls-stat-weak';
+
+    const canAllocate = this.settings.unallocatedStatPoints > 0;
 
     return `
       <div class="sls-stat-item ${effectClass}">
         <div class="sls-stat-header">
           <div class="sls-stat-name">${statName}</div>
-          <div class="sls-stat-value">${currentValue}/${maxValue}${isMaxed ? ' (MAX)' : ''}</div>
-        </div>
-        <div class="sls-stat-bar">
-          <div class="sls-stat-bar-fill" style="width: ${percentage}%"></div>
+          <div class="sls-stat-value">${currentValue}</div>
         </div>
         <div class="sls-stat-desc">${description}</div>
         ${
           canAllocate
             ? `<button class="sls-stat-allocate" data-stat="${statKey}" title="Allocate 1 point to ${statName}">+1</button>`
-            : isMaxed
-            ? '<div class="sls-stat-maxed-badge">MAXED</div>'
             : '<div class="sls-stat-no-points">No points available</div>'
         }
       </div>

@@ -1,6 +1,6 @@
 /**
  * @name SkillTree
- * @author Matthew
+ * @author BlueFlashXS
  * @description Skill tree system with unlockable passive abilities for Solo Leveling Stats
  * @version 1.0.0
  */

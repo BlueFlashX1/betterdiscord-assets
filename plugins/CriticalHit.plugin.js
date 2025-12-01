@@ -1,6 +1,6 @@
 /**
  * @name CriticalHit
- * @author Matthew
+ * @author BlueFlashXS
  * @description Messages have a chance to land a critical hit with special purple-black gradient styling and font!
  * @version 1.0.0
  */
