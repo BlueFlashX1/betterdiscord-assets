@@ -12,6 +12,8 @@
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
 /* Import Orbitron font - Single font for both Solo Leveling theme and Critical Hit */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+/* Import Nova Flat font for Critical Hit gradient text */
+@import url('https://fonts.googleapis.com/css2?family=Nova+Flat&display=swap');
 
 /* SETTINGS */
 :root {
@@ -200,10 +202,41 @@ body::after {
    TYPOGRAPHY ENHANCEMENTS - Solo Leveling
    ======================================== */
 
-/* Global Font Override - Orbitron (Single font for Solo Leveling theme & Critical Hit) */
+/* Global Font Override - Orbitron (Single font for Solo Leveling theme) */
 * {
   font-family: var(--main-font) !important;
   font-weight: 400 !important; /* Normal weight - easy to read, NOT bold/thick */
+}
+
+/* Explicitly exclude crit hit messages and their children from global font override */
+/* Let plugin handle font for crit hit messages - COMPLETE EXCLUSION */
+.bd-crit-hit,
+.bd-crit-hit *,
+.bd-crit-hit *::before,
+.bd-crit-hit *::after,
+[class*='message'].bd-crit-hit,
+[class*='message'].bd-crit-hit *,
+[class*='message'].bd-crit-hit *::before,
+[class*='message'].bd-crit-hit *::after,
+[class*='message'] .bd-crit-hit,
+[class*='message'] .bd-crit-hit *,
+[class*='message'] .bd-crit-hit *::before,
+[class*='message'] .bd-crit-hit *::after,
+[class*='message'] [class*='content'].bd-crit-hit,
+[class*='message'] [class*='content'].bd-crit-hit *,
+[class*='message'] [class*='text'].bd-crit-hit,
+[class*='message'] [class*='text'].bd-crit-hit *,
+[class*='messageContent'].bd-crit-hit,
+[class*='messageContent'].bd-crit-hit * {
+  font-family: unset !important; /* Remove theme font completely */
+  font-weight: unset !important;
+  font-style: unset !important;
+  font-variant: unset !important;
+  font-stretch: unset !important;
+  font-size: unset !important;
+  line-height: unset !important;
+  letter-spacing: unset !important;
+  text-transform: unset !important;
 }
 
 /* Headings - Orbitron for Solo Leveling aesthetic */
@@ -305,6 +338,127 @@ pre {
 }
 
 /* Timestamps - Use Discord default (no overrides) */
+
+/* Activity Timestamp Bars - Completely Disabled/Hidden/Transparent */
+/* Target all possible activity timestamp elements */
+[class*='activity'],
+[class*='activityCard'],
+[class*='richPresence'],
+[class*='activityBar'],
+[class*='activityTimestamp'],
+[class*='activityTime'],
+[class*='activityTimeBar'],
+[class*='activityTimeStamp'],
+[class*='activityTimeStampBar'],
+[class*='activity'][class*='time'],
+[class*='activity'][class*='timestamp'],
+[class*='activity'][class*='bar'],
+[class*='richPresence'][class*='time'],
+[class*='richPresence'][class*='timestamp'],
+[class*='richPresence'][class*='bar'],
+[class*='activity'] [class*='time'],
+[class*='activity'] [class*='timestamp'],
+[class*='activity'] [class*='timeBar'],
+[class*='richPresence'] [class*='time'],
+[class*='richPresence'] [class*='timestamp'],
+[class*='richPresence'] [class*='timeBar'],
+[class*='activityCard'] [class*='time'],
+[class*='activityCard'] [class*='timestamp'],
+[class*='activityCard'] [class*='timeBar'],
+[class*='activityPanel'] [class*='timestamp'],
+[class*='activityPanel'] [class*='timestampContainer'],
+[class*='activityPanel'] [class*='bar'],
+[class*='activityPanel'] [class*='time'],
+[class*='activityPanel'] [class*='timeBar'],
+[class*='richPresence'] [class*='timestamp'],
+[class*='richPresence'] [class*='timestampContainer'],
+[class*='richPresence'] [class*='bar'],
+[class*='richPresence'] [class*='time'],
+[class*='richPresence'] [class*='timeBar'] {
+  display: none !important;
+  visibility: hidden !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Make activity timestamp backgrounds transparent (if they're still visible) */
+[class*='activityPanel'] [class*='timestamp'],
+[class*='activityPanel'] [class*='timestampContainer'],
+[class*='activityPanel'] [class*='bar'],
+[class*='richPresence'] [class*='timestamp'],
+[class*='richPresence'] [class*='timestampContainer'],
+[class*='richPresence'] [class*='bar'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Ensure the text remains visible but without purple background */
+[class*='activityPanel'] [class*='timestamp'] span,
+[class*='activityPanel'] [class*='timestamp'] time,
+[class*='richPresence'] [class*='timestamp'] span,
+[class*='richPresence'] [class*='timestamp'] time {
+  color: var(--text-normal) !important;
+  text-shadow: 0 0 2px rgba(0,0,0,0.5) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Remove ANY purple/violet backgrounds from activity-related elements */
+[class*='activity'] [style*='background'],
+[class*='richPresence'] [style*='background'],
+[class*='activityCard'] [style*='background'] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Target any element inside activity cards that might have purple backgrounds */
+[class*='activity'] [class*='bar'],
+[class*='richPresence'] [class*='bar'],
+[class*='activityCard'] [class*='bar'],
+[class*='activity'] [class*='container'],
+[class*='richPresence'] [class*='container'],
+[class*='activityCard'] [class*='container'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Remove purple highlights from any timestamp-related elements */
+[class*='timestamp'][style*='background'],
+[class*='time'][style*='background'],
+[class*='bar'][style*='background'] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* Remove purple/violet colored backgrounds from activity-related elements only */
+[class*='activity'][style*='#8a2be2'],
+[class*='activity'][style*='#ba55d3'],
+[class*='activity'][style*='#8b7fa8'],
+[class*='richPresence'][style*='#8a2be2'],
+[class*='richPresence'][style*='#ba55d3'],
+[class*='richPresence'][style*='#8b7fa8'],
+[class*='activity'][style*='rgba(138, 43, 226'],
+[class*='activity'][style*='rgba(139, 92, 246'],
+[class*='richPresence'][style*='rgba(138, 43, 226'],
+[class*='richPresence'][style*='rgba(139, 92, 246'] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
 
 /* Input Text - Better readability */
 input,
