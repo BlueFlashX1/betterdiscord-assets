@@ -15,7 +15,7 @@ module.exports = class CriticalHitMerged {
     // ============================================================================
     this.defaultSettings = {
       enabled: true,
-      critChance: 50, // TEMPORARY: 50% for testing (normally 6% base chance, can be buffed by Agility/Luck/Skill Tree up to 25% max)
+      critChance: 30, // Base crit chance (can be buffed by Agility/Luck/Skill Tree up to 30% max)
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
       critFont: "'Nova Flat', sans-serif", // Nova Flat - gradient text font
@@ -5035,7 +5035,7 @@ module.exports = class CriticalHitMerged {
         return; // Not a real message
       }
 
-      // Calculate effective crit chance (base + agility bonus, capped at 25%)
+      // Calculate effective crit chance (base + agility bonus, capped at 30%)
       const effectiveCritChance = this.getEffectiveCritChance();
 
       // Use deterministic random based on content to ensure same message always gets same result
@@ -7276,11 +7276,11 @@ module.exports = class CriticalHitMerged {
                               }
                               return `<span class="crit-agility-bonus" style="color: #666; font-size: 0.9em; margin-left: 8px;">(Effective: ${effectiveCrit.toFixed(
                                 1
-                              )}%, max 25%)</span>`;
+                              )}%, max 30%)</span>`;
                             })()}
                         </label>
                         <div class="crit-form-description" style="margin-top: 8px;">
-                            Base crit chance is 6% by default. Increase Agility/Luck stats to boost crit chance (capped at 25% to prevent spam).
+                            Base crit chance is 30% by default. Increase Agility/Luck stats to boost crit chance (capped at 30% to prevent spam).
                         </div>
                     </div>
 
@@ -7583,7 +7583,7 @@ module.exports = class CriticalHitMerged {
           bonusSpan.textContent = `${bonuses.join(' + ')} = ${effectiveCrit.toFixed(1)}%`;
           bonusSpan.style.color = '#8b5cf6';
         } else {
-          bonusSpan.textContent = `(Effective: ${effectiveCrit.toFixed(1)}%, max 25%)`;
+          bonusSpan.textContent = `(Effective: ${effectiveCrit.toFixed(1)}%, max 30%)`;
           bonusSpan.style.color = '#666';
         }
       }
@@ -7720,7 +7720,7 @@ module.exports = class CriticalHitMerged {
   // SETTINGS UPDATE METHODS
   // ============================================================================
 
-  // Get effective crit chance (base + agility bonus + luck buffs, capped at 25%)
+  // Get effective crit chance (base + agility bonus + luck buffs, capped at 30%)
   // Simple hash function for deterministic random number generation
   simpleHash(str) {
     let hash = 0;
@@ -7786,13 +7786,13 @@ module.exports = class CriticalHitMerged {
       });
     }
 
-    // Cap at 25% maximum to prevent spam in group chats
-    return Math.min(25, Math.max(0, baseChance));
+    // Cap at 30% maximum to prevent spam in group chats
+    return Math.min(30, Math.max(0, baseChance));
   }
 
   updateCritChance(value) {
-    // Cap base crit chance at 25% (effective chance is also capped at 25% to prevent spam)
-    this.settings.critChance = Math.max(0, Math.min(25, parseFloat(value) || 0));
+    // Cap base crit chance at 30% (effective chance is also capped at 30% to prevent spam)
+    this.settings.critChance = Math.max(0, Math.min(30, parseFloat(value) || 0));
     this.saveSettings();
     // Update label value in settings panel if it exists
     const labelValue = document.querySelector('.crit-label-value');

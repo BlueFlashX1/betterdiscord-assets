@@ -2,10 +2,20 @@
  * @name ShadowAriseAnimation
  * @author BlueFlashX1
  * @description Solo Leveling Shadow ARISE animation when a shadow is extracted (integrates with ShadowArmy)
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 module.exports = class ShadowAriseAnimation {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
+
+  /**
+   * Initialize ShadowAriseAnimation plugin with default settings
+   * Operations:
+   * 1. Set up default settings (enabled, duration, scale, showRankAndRole)
+   * 2. Initialize settings and animation container reference
+   */
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -18,16 +28,43 @@ module.exports = class ShadowAriseAnimation {
     this.animationContainer = null;
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
+
+  /**
+   * Start the ShadowAriseAnimation plugin
+   * Operations:
+   * 1. Load saved settings from localStorage
+   * 2. Inject CSS styles for animation
+   */
   start() {
     this.loadSettings();
     this.injectCSS();
   }
 
+  /**
+   * Stop the ShadowAriseAnimation plugin and clean up resources
+   * Operations:
+   * 1. Remove all active animations from DOM
+   * 2. Remove injected CSS styles
+   */
   stop() {
     this.removeAllAnimations();
     this.removeCSS();
   }
 
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Load settings from localStorage with defaults
+   * Operations:
+   * 1. Attempt to load saved settings using BdApi.Data
+   * 2. Merge with default settings
+   * 3. Handle errors gracefully with console logging
+   */
   loadSettings() {
     try {
       const saved = BdApi.Data.load('ShadowAriseAnimation', 'settings');
@@ -39,6 +76,13 @@ module.exports = class ShadowAriseAnimation {
     }
   }
 
+  /**
+   * Save current settings to localStorage
+   * Operations:
+   * 1. Serialize settings object to JSON
+   * 2. Save using BdApi.Data.save()
+   * 3. Handle errors gracefully with console logging
+   */
   saveSettings() {
     try {
       BdApi.Data.save('ShadowAriseAnimation', 'settings', this.settings);
@@ -47,6 +91,18 @@ module.exports = class ShadowAriseAnimation {
     }
   }
 
+  // ============================================================================
+  // SETTINGS UI
+  // ============================================================================
+
+  /**
+   * Generate settings panel HTML for BetterDiscord settings UI
+   * Operations:
+   * 1. Create panel div element
+   * 2. Generate HTML with checkboxes and inputs for all settings
+   * 3. Attach event listeners for setting changes
+   * 4. Return panel element
+   */
   getSettingsPanel() {
     const panel = document.createElement('div');
     panel.style.padding = '16px';
@@ -95,6 +151,17 @@ module.exports = class ShadowAriseAnimation {
     return panel;
   }
 
+  // ============================================================================
+  // CSS STYLING
+  // ============================================================================
+
+  /**
+   * Inject CSS styles for ARISE animation
+   * Operations:
+   * 1. Check if styles already injected (prevent duplicates)
+   * 2. Create style element with all animation CSS rules
+   * 3. Append to document head
+   */
   injectCSS() {
     const styleId = 'shadow-arise-animation-css';
     if (document.getElementById(styleId)) return;
@@ -198,11 +265,30 @@ module.exports = class ShadowAriseAnimation {
     document.head.appendChild(style);
   }
 
+  /**
+   * Remove injected CSS styles
+   * Operations:
+   * 1. Find style element by ID
+   * 2. Remove from document head if found
+   */
   removeCSS() {
     const style = document.getElementById('shadow-arise-animation-css');
     if (style) style.remove();
   }
 
+  // ============================================================================
+  // ANIMATION MANAGEMENT
+  // ============================================================================
+
+  /**
+   * Get or create animation container element
+   * Operations:
+   * 1. Check if container already exists
+   * 2. Create new container div if needed
+   * 3. Append to document body
+   * 4. Store reference for later use
+   * 5. Return container element
+   */
   getContainer() {
     if (!this.animationContainer) {
       const container = document.createElement('div');
@@ -213,6 +299,13 @@ module.exports = class ShadowAriseAnimation {
     return this.animationContainer;
   }
 
+  /**
+   * Remove all animations and clean up container
+   * Operations:
+   * 1. Check if container exists and has parent
+   * 2. Remove container from DOM
+   * 3. Clear reference to null
+   */
   removeAllAnimations() {
     if (this.animationContainer && this.animationContainer.parentNode) {
       this.animationContainer.parentNode.removeChild(this.animationContainer);
@@ -221,7 +314,18 @@ module.exports = class ShadowAriseAnimation {
   }
 
   /**
-   * Public API used by ShadowArmy: trigger an ARISE animation for a given shadow.
+   * Public API used by ShadowArmy: trigger an ARISE animation for a given shadow
+   * Operations:
+   * 1. Check if animation is enabled
+   * 2. Validate document exists (SSR safety)
+   * 3. Get animation container
+   * 4. Create wrapper element with animation class
+   * 5. Set CSS custom properties (duration, scale)
+   * 6. Create "ARISE" text element with gradient styling
+   * 7. Optionally create meta element with rank and role
+   * 8. Spawn particle effects (22 particles with random positions)
+   * 9. Append wrapper to container
+   * 10. Schedule removal after animation duration
    */
   triggerArise(shadow) {
     if (!this.settings.enabled) return;

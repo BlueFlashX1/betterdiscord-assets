@@ -2,7 +2,7 @@
  * @name SoloLevelingToasts
  * @author BlueFlashX1
  * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.0.2
+ * @version 1.0.3
  */
 
 module.exports = class SoloLevelingToasts {
@@ -14,7 +14,7 @@ module.exports = class SoloLevelingToasts {
       enabled: true,
       showParticles: true,
       particleCount: 20,
-      animationDuration: 500, // Slide-in animation
+      animationDuration: 200, // Faster slide-in animation (reduced from 500ms)
       defaultTimeout: 4000, // 4 seconds (middle of 3-5 range)
       position: 'top-right', // top-right, top-left, bottom-right, bottom-left
       maxToasts: 5, // Maximum number of toasts visible at once
@@ -25,11 +25,15 @@ module.exports = class SoloLevelingToasts {
     this.activeToasts = [];
     this.patcher = null;
     this.lastToastTime = 0;
-    this.toastCooldown = 300; // Minimum 300ms between toasts
+    this.toastCooldown = 50; // Reduced from 300ms to 50ms for faster response
     this.pendingToasts = new Map(); // Debounce similar toasts
     this.messageGroups = new Map(); // Group similar messages with counts
-    this.groupWindow = 2000; // 2 second window to group similar messages
+    this.groupWindow = 1000; // Reduced from 2000ms to 1000ms for faster grouping
     this.debugMode = false; // Set to true only for debugging
+
+    // Pre-created DOM elements for faster rendering
+    this.toastTemplate = null;
+    this.particleTemplate = null;
   }
 
   // ============================================================================
@@ -261,17 +265,23 @@ module.exports = class SoloLevelingToasts {
         pointer-events: auto;
         cursor: pointer;
         overflow: hidden;
-        animation: sl-toast-slide-in 0.5s ease-out forwards;
+        animation: sl-toast-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        will-change: transform, opacity;
+        transform: translateZ(0); /* Force GPU acceleration */
+        backface-visibility: hidden; /* Optimize rendering */
       }
 
       @keyframes sl-toast-slide-in {
-        from {
+        0% {
           opacity: 0;
-          transform: translateX(100%);
+          transform: translateX(100%) scale(0.9);
         }
-        to {
+        50% {
           opacity: 1;
-          transform: translateX(0);
+        }
+        100% {
+          opacity: 1;
+          transform: translateX(0) scale(1);
         }
       }
 
@@ -280,13 +290,16 @@ module.exports = class SoloLevelingToasts {
       }
 
       @keyframes sl-toast-slide-in-left {
-        from {
+        0% {
           opacity: 0;
-          transform: translateX(-100%);
+          transform: translateX(-100%) scale(0.9);
         }
-        to {
+        50% {
           opacity: 1;
-          transform: translateX(0);
+        }
+        100% {
+          opacity: 1;
+          transform: translateX(0) scale(1);
         }
       }
 
@@ -296,13 +309,16 @@ module.exports = class SoloLevelingToasts {
       }
 
       @keyframes sl-toast-slide-in-bottom {
-        from {
+        0% {
           opacity: 0;
-          transform: translateY(100%);
+          transform: translateY(100%) scale(0.9);
         }
-        to {
+        50% {
           opacity: 1;
-          transform: translateY(0);
+        }
+        100% {
+          opacity: 1;
+          transform: translateY(0) scale(1);
         }
       }
 
@@ -773,12 +789,12 @@ module.exports = class SoloLevelingToasts {
       group.count++;
       group.lastSeen = now;
 
-      // Reset timeout - wait for more messages
+      // Reset timeout - wait for more messages (reduced window)
       if (group.timeoutId) {
         clearTimeout(group.timeoutId);
       }
 
-      // Update existing toast if visible
+      // Update existing toast if visible (immediate update)
       const existingToast = this.findToastByKey(groupKey);
       if (existingToast) {
         this.updateToastCount(existingToast, group.count);
@@ -788,12 +804,13 @@ module.exports = class SoloLevelingToasts {
         return;
       }
 
-      // Schedule display after grouping window
+      // Faster grouping window - show after 200ms instead of full window
+      const fastGroupDelay = Math.min(200, this.groupWindow);
       group.timeoutId = setTimeout(() => {
         this.messageGroups.delete(groupKey);
         const combinedMessage = this.combineMessages(group.messages);
         this._showToastInternal(combinedMessage, type, timeout);
-      }, this.groupWindow);
+      }, fastGroupDelay);
 
       return;
     }
@@ -807,16 +824,29 @@ module.exports = class SoloLevelingToasts {
       count: 1,
       lastSeen: now,
       timeoutId: null,
+      shown: false,
     };
 
-    // Schedule display after grouping window
-    group.timeoutId = setTimeout(() => {
-      this.messageGroups.delete(groupKey);
-      const combinedMessage = this.combineMessages(group.messages);
-      this._showToastInternal(combinedMessage, type, timeout);
-    }, this.groupWindow);
-
+    // Set group immediately so subsequent messages can join
     this.messageGroups.set(groupKey, group);
+
+    // Show immediately for new messages (no grouping delay for first message)
+    // Use requestAnimationFrame for instant, smooth display
+    requestAnimationFrame(() => {
+      const currentGroup = this.messageGroups.get(groupKey);
+      if (currentGroup && !currentGroup.shown) {
+        currentGroup.shown = true;
+        const combinedMessage = this.combineMessages(currentGroup.messages);
+        this._showToastInternal(combinedMessage, type, timeout);
+
+        // Schedule deletion after group window to allow combining
+        setTimeout(() => {
+          if (this.messageGroups.get(groupKey) === currentGroup) {
+            this.messageGroups.delete(groupKey);
+          }
+        }, this.groupWindow);
+      }
+    });
   }
 
   /**
@@ -953,6 +983,7 @@ module.exports = class SoloLevelingToasts {
         processedMessage = this.summarizeMessage(processedMessage);
       }
 
+      // Create toast element (optimized DOM creation)
       const toast = document.createElement('div');
       toast.className = `sl-toast ${toastType}`;
       toast.style.setProperty('--sl-toast-timeout', `${toastTimeout}ms`);
@@ -962,10 +993,19 @@ module.exports = class SoloLevelingToasts {
       const title = lines[0] || 'Notification';
       const body = lines.slice(1).join('\n') || '';
 
-      toast.innerHTML = `
-        <div class="sl-toast-title">${this.escapeHtml(title)}</div>
-        ${body ? `<div class="sl-toast-message">${this.escapeHtml(body)}</div>` : ''}
-      `;
+      // Use textContent for title (faster than innerHTML for text-only)
+      const titleEl = document.createElement('div');
+      titleEl.className = 'sl-toast-title';
+      titleEl.textContent = title;
+      toast.appendChild(titleEl);
+
+      // Add body if exists
+      if (body) {
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'sl-toast-message';
+        bodyEl.textContent = body;
+        toast.appendChild(bodyEl);
+      }
 
       // Add progress bar animation
       const progressBar = document.createElement('div');
@@ -987,13 +1027,16 @@ module.exports = class SoloLevelingToasts {
         }, 1000);
       });
 
-      this.toastContainer.appendChild(toast);
-      this.activeToasts.push(toast);
+      // Use requestAnimationFrame for instant, smooth DOM insertion
+      requestAnimationFrame(() => {
+        this.toastContainer.appendChild(toast);
+        this.activeToasts.push(toast);
 
-      // Create particles
-      setTimeout(() => {
-        this.createParticles(toast, this.settings.particleCount);
-      }, 50);
+        // Create particles immediately (reduced delay for faster effect)
+        requestAnimationFrame(() => {
+          this.createParticles(toast, this.settings.particleCount);
+        });
+      });
 
       // Auto-dismiss - start fade out 1 second before timeout ends
       const fadeOutDelay = Math.max(0, toastTimeout - 1000);
