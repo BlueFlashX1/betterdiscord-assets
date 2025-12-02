@@ -115,3 +115,11 @@ empty/
 *todo.md
 *notes.md
 !docs/**/*.md
+
+# Exclude most MD files (keep only README.md)
+*.md
+!README.md
+!plugins/*.md
+!themes/*.md
+docs/**/*.md
+archive/**/*.md
