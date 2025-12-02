@@ -2,7 +2,7 @@
  * @name SoloLevelingToasts
  * @author BlueFlashX1
  * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.0.1
+ * @version 1.0.2
  */
 
 module.exports = class SoloLevelingToasts {
@@ -408,7 +408,7 @@ module.exports = class SoloLevelingToasts {
       }
 
       .sl-toast.fading-out {
-        animation: sl-toast-fade-out 2s ease-out forwards !important;
+        animation: sl-toast-fade-out 1s ease-out forwards !important;
         pointer-events: none;
       }
     `;
@@ -887,12 +887,12 @@ module.exports = class SoloLevelingToasts {
     }
 
     // Schedule new fade-out
-    const fadeOutDelay = Math.max(0, timeout - 2000);
+    const fadeOutDelay = Math.max(0, timeout - 1000);
     const timeoutId = setTimeout(() => {
       this.startFadeOut(toast);
       setTimeout(() => {
         this.removeToast(toast, true);
-      }, 2000);
+      }, 1000);
     }, fadeOutDelay);
 
     toast.dataset.fadeTimeout = timeoutId.toString();
@@ -984,7 +984,7 @@ module.exports = class SoloLevelingToasts {
         // Remove from DOM after fade completes
         setTimeout(() => {
           this.removeToast(toast, true);
-        }, 2000);
+        }, 1000);
       });
 
       this.toastContainer.appendChild(toast);
@@ -995,14 +995,14 @@ module.exports = class SoloLevelingToasts {
         this.createParticles(toast, this.settings.particleCount);
       }, 50);
 
-      // Auto-dismiss - start fade out 2 seconds before timeout ends
-      const fadeOutDelay = Math.max(0, toastTimeout - 2000);
+      // Auto-dismiss - start fade out 1 second before timeout ends
+      const fadeOutDelay = Math.max(0, toastTimeout - 1000);
       const timeoutId = setTimeout(() => {
         this.startFadeOut(toast);
         // Remove from DOM after fade completes
         setTimeout(() => {
           this.removeToast(toast, true);
-        }, 2000);
+        }, 1000);
       }, fadeOutDelay);
 
       // Store timeout ID for potential reset

@@ -2,7 +2,7 @@
  * @name LevelProgressBar
  * @author BlueFlashX1
  * @description Always-visible level progress bar for Solo Leveling Stats
- * @version 1.0.1
+ * @version 1.0.2
  */
 
 module.exports = class LevelProgressBar {
@@ -277,9 +277,7 @@ module.exports = class LevelProgressBar {
       }
 
       .lpb-progress-track {
-        flex: 1;
-        min-width: 100px;
-        max-width: 300px;
+        width: 800px;
         height: 12px;
         background: rgba(20, 20, 30, 0.8);
         border-radius: 6px;
