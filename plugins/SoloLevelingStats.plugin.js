@@ -545,7 +545,9 @@ module.exports = class SoloLevelingStats {
           bonus: isNaN(perceptionCritBonus) ? 0 : Number(perceptionCritBonus.toFixed(6)),
           perception: perceptionStat,
           perceptionBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
-          totalBuffPercent: isNaN(perceptionCritBonus) ? 0 : Number((perceptionCritBonus * 100).toFixed(2)),
+          totalBuffPercent: isNaN(perceptionCritBonus)
+            ? 0
+            : Number((perceptionCritBonus * 100).toFixed(2)),
           // Keep old key for backward compatibility
           luck: perceptionStat,
           luckBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
@@ -690,16 +692,12 @@ module.exports = class SoloLevelingStats {
       <div class="sls-chat-content" id="sls-chat-content">
         <!-- Level & XP -->
         <div class="sls-chat-level">
-          <div class="sls-chat-level-header">
+          <div class="sls-chat-level-row">
             <div class="sls-chat-rank">Rank: ${this.settings.rank}</div>
-            <div class="sls-chat-level-number">Lv. ${this.settings.level}</div>
-          </div>
-          <div class="sls-chat-xp">
-            <div class="sls-chat-xp-text">${levelInfo.xp} / ${levelInfo.xpRequired} XP</div>
+            <div class="sls-chat-level-number">Lv.${this.settings.level}</div>
             <div class="sls-chat-progress-bar">
               <div class="sls-chat-progress-fill" style="width: ${xpPercent}%"></div>
             </div>
-            <div class="sls-chat-total-xp">Total: ${this.settings.totalXP.toLocaleString()} XP</div>
           </div>
         </div>
 
@@ -715,18 +713,28 @@ module.exports = class SoloLevelingStats {
             if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
             if (titleBonus.critChance > 0)
               buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-            // Support both old format (raw) and new format (percentage)
-            const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
-            const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
-            const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
-            const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
-            const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
-
-            if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
-            if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
-            if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
-            if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
-            if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
+            // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
+            if (titleBonus.strengthPercent > 0)
+              buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
+            if (titleBonus.agilityPercent > 0)
+              buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
+            if (titleBonus.intelligencePercent > 0)
+              buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
+            if (titleBonus.vitalityPercent > 0)
+              buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+            if (titleBonus.perceptionPercent > 0)
+              buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
+            // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
+            if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
+              buffs.push(`+${titleBonus.strength} STR`);
+            if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
+              buffs.push(`+${titleBonus.agility} AGI`);
+            if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
+              buffs.push(`+${titleBonus.intelligence} INT`);
+            if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
+              buffs.push(`+${titleBonus.vitality} VIT`);
+            if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
+              buffs.push(`+${titleBonus.luck} LUK`);
             return buffs.length > 0
               ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
               : '';
@@ -938,17 +946,22 @@ module.exports = class SoloLevelingStats {
         const totalValue = totalStats[stat.key];
         // Support both old format (raw) and new format (percentage)
         const statPercentKey = `${stat.key}Percent`;
-        const titleBuffPercent = titleBonus[statPercentKey] || (titleBonus[stat.key] ? titleBonus[stat.key] / 100 : 0);
+        const titleBuffPercent =
+          titleBonus[statPercentKey] || (titleBonus[stat.key] ? titleBonus[stat.key] / 100 : 0);
         const hasTitleBuff = titleBuffPercent > 0;
         const canAllocate = this.settings.unallocatedStatPoints > 0;
-        const titleBuffDisplay = hasTitleBuff ? ` +${(titleBuffPercent * 100).toFixed(0)}% from title` : '';
+        const titleBuffDisplay = hasTitleBuff
+          ? ` +${(titleBuffPercent * 100).toFixed(0)}% from title`
+          : '';
 
         return `
         <button
           class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
           data-stat="${stat.key}"
           ${!canAllocate ? 'disabled' : ''}
-          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${titleBuffDisplay}) - ${stat.desc} per point"
+          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${titleBuffDisplay}) - ${
+          stat.desc
+        } per point"
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
           <div class="sls-chat-stat-btn-value">
@@ -976,11 +989,17 @@ module.exports = class SoloLevelingStats {
     // Apply MULTIPLICATIVE percentage-based stat bonuses from titles
     // Titles are multiplicative since you can only equip one at a time
     // Support both old format (raw numbers) and new format (percentages)
-    const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
-    const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
-    const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
-    const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
-    const perceptionPercent = titleBonus.perceptionPercent || (perceptionTitleBonus ? perceptionTitleBonus / 100 : 0);
+    const strengthPercent =
+      titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
+    const agilityPercent =
+      titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
+    const intelligencePercent =
+      titleBonus.intelligencePercent ||
+      (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
+    const vitalityPercent =
+      titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
+    const perceptionPercent =
+      titleBonus.perceptionPercent || (perceptionTitleBonus ? perceptionTitleBonus / 100 : 0);
 
     // Apply multiplicatively (multiply base stats by title multiplier)
     return {
@@ -1004,7 +1023,11 @@ module.exports = class SoloLevelingStats {
       },
       intelligence: { name: 'INT', desc: '+10% long msg XP', gain: 'Long messages' },
       vitality: { name: 'VIT', desc: '+5% quest rewards', gain: 'Complete quests' },
-      perception: { name: 'PER', desc: 'Random buff per point (stacks)', gain: 'Allocate stat points' },
+      perception: {
+        name: 'PER',
+        desc: 'Random buff per point (stacks)',
+        gain: 'Allocate stat points',
+      },
     };
 
     const baseStats = this.settings.stats;
@@ -1017,14 +1040,21 @@ module.exports = class SoloLevelingStats {
         const totalValue = totalStats[key];
         // Support both old format (raw) and new format (percentage)
         const statPercentKey = `${key}Percent`;
-        const titleBuffPercent = titleBonus[statPercentKey] || (titleBonus[key] ? titleBonus[key] / 100 : 0);
+        const titleBuffPercent =
+          titleBonus[statPercentKey] || (titleBonus[key] ? titleBonus[key] / 100 : 0);
         const hasTitleBuff = titleBuffPercent > 0;
 
         return `
         <div class="sls-chat-stat-item" data-stat="${key}">
           <span class="sls-chat-stat-name">${def.name}</span>
           <span class="sls-chat-stat-value">${totalValue}</span>
-          ${hasTitleBuff ? `<span class="sls-chat-stat-buff-indicator">+${(titleBuffPercent * 100).toFixed(0)}%</span>` : ''}
+          ${
+            hasTitleBuff
+              ? `<span class="sls-chat-stat-buff-indicator">+${(titleBuffPercent * 100).toFixed(
+                  0
+                )}%</span>`
+              : ''
+          }
         </div>
       `;
       })
@@ -1174,15 +1204,7 @@ module.exports = class SoloLevelingStats {
 
     // Update level display
     const levelNumber = this.chatUIPanel.querySelector('.sls-chat-level-number');
-    if (levelNumber) levelNumber.textContent = `Lv. ${this.settings.level}`;
-
-    // Update XP display
-    const xpText = this.chatUIPanel.querySelector('.sls-chat-xp-text');
-    if (xpText) xpText.textContent = `${levelInfo.xp} / ${levelInfo.xpRequired} XP`;
-
-    // Update total XP
-    const totalXPEl = this.chatUIPanel.querySelector('.sls-chat-total-xp');
-    if (totalXPEl) totalXPEl.textContent = `Total: ${this.settings.totalXP.toLocaleString()} XP`;
+    if (levelNumber) levelNumber.textContent = `Lv.${this.settings.level}`;
 
     // Update progress bar
     const progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
@@ -1200,23 +1222,36 @@ module.exports = class SoloLevelingStats {
           titleDiv.className = 'sls-chat-title-display';
           titleDiv.innerHTML = `
             <span class="sls-chat-title-label">Title:</span>
-            <span class="sls-chat-title-name">${this.escapeHtml(this.settings.achievements.activeTitle)}</span>
+            <span class="sls-chat-title-name">${this.escapeHtml(
+              this.settings.achievements.activeTitle
+            )}</span>
             ${(() => {
               const buffs = [];
               if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-              if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-              // Support both old format (raw) and new format (percentage)
-              const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
-              const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
-              const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
-              const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
-              const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
-
-              if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
-              if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
-              if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
-              if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
-              if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
+              if (titleBonus.critChance > 0)
+                buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+              // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
+              if (titleBonus.strengthPercent > 0)
+                buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
+              if (titleBonus.agilityPercent > 0)
+                buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
+              if (titleBonus.intelligencePercent > 0)
+                buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
+              if (titleBonus.vitalityPercent > 0)
+                buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+              if (titleBonus.perceptionPercent > 0)
+                buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
+              // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
+              if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
+                buffs.push(`+${titleBonus.strength} STR`);
+              if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
+                buffs.push(`+${titleBonus.agility} AGI`);
+              if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
+                buffs.push(`+${titleBonus.intelligence} INT`);
+              if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
+                buffs.push(`+${titleBonus.vitality} VIT`);
+              if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
+                buffs.push(`+${titleBonus.luck} LUK`);
 
               return buffs.length > 0
                 ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
@@ -1230,22 +1265,33 @@ module.exports = class SoloLevelingStats {
         const titleBonusEl = titleDisplay.querySelector('.sls-chat-title-bonus');
         if (titleName) titleName.textContent = this.settings.achievements.activeTitle;
         if (titleBonusEl) {
-          // Build complete bonus list matching renderChatUI format
+          // Build complete bonus list matching TitleManager format exactly
           const buffs = [];
           if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-          if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-          // Support both old format (raw) and new format (percentage)
-          const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
-          const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
-          const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
-          const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
-          const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
-
-          if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
-          if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
-          if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
-          if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
-          if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
+          if (titleBonus.critChance > 0)
+            buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+          // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
+          if (titleBonus.strengthPercent > 0)
+            buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
+          if (titleBonus.agilityPercent > 0)
+            buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
+          if (titleBonus.intelligencePercent > 0)
+            buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
+          if (titleBonus.vitalityPercent > 0)
+            buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+          if (titleBonus.perceptionPercent > 0)
+            buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
+          // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
+          if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
+            buffs.push(`+${titleBonus.strength} STR`);
+          if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
+            buffs.push(`+${titleBonus.agility} AGI`);
+          if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
+            buffs.push(`+${titleBonus.intelligence} INT`);
+          if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
+            buffs.push(`+${titleBonus.vitality} VIT`);
+          if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
+            buffs.push(`+${titleBonus.luck} LUK`);
 
           titleBonusEl.textContent = buffs.length > 0 ? buffs.join(', ') : '';
         }
@@ -1466,59 +1512,79 @@ module.exports = class SoloLevelingStats {
 
       .sls-chat-level {
         margin-bottom: 10px;
+        display: flex;
+        flex-direction: row;
+        width: 100%;
       }
 
-      .sls-chat-level-header {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        margin-bottom: 8px;
-        flex-wrap: wrap;
+      .sls-chat-level-row {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 8px;
+        flex-wrap: nowrap !important;
+        margin-bottom: 0;
+        width: 100%;
       }
 
       .sls-chat-rank {
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 700;
         color: #ba55d3;
         text-shadow: 0 0 5px rgba(138, 43, 226, 0.9);
-        padding: 3px 8px;
+        padding: 2px 6px;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.2) 0%, rgba(75, 0, 130, 0.15) 100%);
         border: 1px solid rgba(138, 43, 226, 0.4);
-        border-radius: 5px;
-        display: inline-block;
+        border-radius: 4px;
+        display: inline-flex !important;
+        flex-shrink: 0;
         box-shadow: 0 0 4px rgba(138, 43, 226, 0.3);
+        white-space: nowrap;
+        line-height: 1.2;
+        align-items: center;
       }
 
       .sls-chat-level-number {
-        font-size: 18px;
+        font-size: 13px;
         font-weight: 800;
         color: #d4a5ff;
         text-shadow: 0 0 6px rgba(138, 43, 226, 1), 0 0 12px rgba(138, 43, 226, 0.6);
         letter-spacing: 0.5px;
-      }
-
-      .sls-chat-xp {
-        margin-bottom: 10px;
+        white-space: nowrap;
+        line-height: 1;
+        display: inline-flex !important;
+        flex-shrink: 0;
+        align-items: center;
       }
 
       .sls-chat-xp-text {
-        font-size: 10px;
+        font-size: 11px;
         color: #b894e6;
-        margin-bottom: 5px;
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
         font-weight: 600;
+        white-space: nowrap;
+        line-height: 1;
+        display: inline-flex !important;
+        flex-shrink: 0;
+        align-items: center;
       }
 
       .sls-chat-progress-bar {
-        width: 100%;
-        height: 6px;
+        flex: 1;
+        min-width: 80px;
+        max-width: 200px;
+        height: 8px;
         background: rgba(10, 10, 15, 0.9);
-        border-radius: 3px;
-        overflow: visible;
-        border: none !important; /* Remove border that creates glow */
+        border-radius: 4px;
+        overflow: hidden;
+        border: none !important;
         box-shadow: none !important;
         filter: none !important;
         position: relative;
+        align-self: center;
+        margin: 0;
+        display: flex;
+        align-items: center;
       }
 
       .sls-chat-progress-fill {
@@ -1526,7 +1592,7 @@ module.exports = class SoloLevelingStats {
         background: linear-gradient(90deg, #8a2be2 0%, #9370db 50%, #ba55d3 100%);
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        border-radius: 3px;
+        border-radius: 4px;
         /* COMPLETE GLOW REMOVAL - ALL POSSIBLE SOURCES */
         box-shadow: none !important;
         filter: none !important;
@@ -1904,8 +1970,13 @@ module.exports = class SoloLevelingStats {
       .sls-chat-total-xp {
         font-size: 10px;
         color: #a78bfa;
-        margin-top: 4px;
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.4);
+        font-weight: 600;
+        white-space: nowrap;
+        display: inline-flex !important;
+        flex-shrink: 0;
+        line-height: 1;
+        align-items: center;
       }
 
       .sls-chat-title-display {
@@ -2212,12 +2283,18 @@ module.exports = class SoloLevelingStats {
           }
 
           // Migration: Convert luck to perception
-          if (this.settings.stats.luck !== undefined && this.settings.stats.perception === undefined) {
+          if (
+            this.settings.stats.luck !== undefined &&
+            this.settings.stats.perception === undefined
+          ) {
             this.settings.stats.perception = this.settings.stats.luck;
             delete this.settings.stats.luck;
             this.debugLog('LOAD_SETTINGS', 'Migrated luck stat to perception');
           }
-          if (this.settings.luckBuffs !== undefined && this.settings.perceptionBuffs === undefined) {
+          if (
+            this.settings.luckBuffs !== undefined &&
+            this.settings.perceptionBuffs === undefined
+          ) {
             this.settings.perceptionBuffs = this.settings.luckBuffs;
             delete this.settings.luckBuffs;
             this.debugLog('LOAD_SETTINGS', 'Migrated luckBuffs to perceptionBuffs');
@@ -3631,18 +3708,18 @@ module.exports = class SoloLevelingStats {
       // These are MULTIPLICATIVE since they're milestone rewards
       // Slightly nerfed but still impactful
       const milestoneMultipliers = {
-        25: 1.12,   // +12% at level 25 (was 1.15)
-        50: 1.20,  // +20% at level 50 (was 1.25)
-        75: 1.28,  // +28% at level 75 (was 1.35)
-        100: 1.40, // +40% at level 100 (was 1.50)
+        25: 1.12, // +12% at level 25 (was 1.15)
+        50: 1.2, // +20% at level 50 (was 1.25)
+        75: 1.28, // +28% at level 75 (was 1.35)
+        100: 1.4, // +40% at level 100 (was 1.50)
         150: 1.55, // +55% at level 150 (was 1.65)
-        200: 1.70, // +70% at level 200 (was 1.80)
+        200: 1.7, // +70% at level 200 (was 1.80)
         300: 1.85, // +85% at level 300
-        400: 2.00, // +100% at level 400 (Double XP!)
+        400: 2.0, // +100% at level 400 (Double XP!)
         500: 2.15, // +115% at level 500
         700: 2.35, // +135% at level 700
-        1000: 2.60, // +160% at level 1000
-        1500: 2.90, // +190% at level 1500
+        1000: 2.6, // +160% at level 1000
+        1500: 2.9, // +190% at level 1500
         2000: 3.25, // +225% at level 2000
       };
 
@@ -3720,14 +3797,18 @@ module.exports = class SoloLevelingStats {
         }
         this.settings.activity.critsLanded++;
 
-        this.debugLog('AWARD_XP_CRIT', isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied', {
-          critBonus: (critBonus * 100).toFixed(0) + '%',
-          baseXPBeforeCrit,
-          critBonusXP: xp - baseXPBeforeCrit,
-          finalXP: xp,
-          totalCrits: this.settings.activity.critsLanded,
-          isMegaCrit,
-        });
+        this.debugLog(
+          'AWARD_XP_CRIT',
+          isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied',
+          {
+            critBonus: (critBonus * 100).toFixed(0) + '%',
+            baseXPBeforeCrit,
+            critBonusXP: xp - baseXPBeforeCrit,
+            finalXP: xp,
+            totalCrits: this.settings.activity.critsLanded,
+            isMegaCrit,
+          }
+        );
       }
 
       // ===== RANK BONUS (Multiplicative, but final) =====
@@ -3745,9 +3826,14 @@ module.exports = class SoloLevelingStats {
         baseXP,
         totalPercentageBonus: totalPercentageBonus.toFixed(1) + '%',
         cappedPercentageBonus: cappedPercentageBonus.toFixed(1) + '%',
-        skillTreeMultiplier: skillTreeMultiplier > 1.0 ? `${((skillTreeMultiplier - 1) * 100).toFixed(1)}%` : 'None',
-        milestoneMultiplier: milestoneMultiplier > 1.0 ? `${((milestoneMultiplier - 1) * 100).toFixed(0)}%` : 'None',
-        levelReduction: currentLevel > 10 ? ((Math.max(1 / (1 + (currentLevel - 10) * 0.008), 0.75) * 100).toFixed(1) + '%') : 'N/A',
+        skillTreeMultiplier:
+          skillTreeMultiplier > 1.0 ? `${((skillTreeMultiplier - 1) * 100).toFixed(1)}%` : 'None',
+        milestoneMultiplier:
+          milestoneMultiplier > 1.0 ? `${((milestoneMultiplier - 1) * 100).toFixed(0)}%` : 'None',
+        levelReduction:
+          currentLevel > 10
+            ? (Math.max(1 / (1 + (currentLevel - 10) * 0.008), 0.75) * 100).toFixed(1) + '%'
+            : 'N/A',
         rankMultiplier: `${((this.getRankMultiplier() - 1) * 100).toFixed(0)}%`,
         finalXP: xp,
         messageLength,
@@ -4047,17 +4133,17 @@ module.exports = class SoloLevelingStats {
     // Buffed rank multipliers for clear, noticeable progression
     // Slightly nerfed but still very impactful - each rank feels like a major power spike
     const rankMultipliers = {
-      E: 1.0,           // Base (no bonus)
-      D: 1.25,          // +25% (was 1.3)
-      C: 1.50,          // +50% (was 1.6)
-      B: 1.85,          // +85% (was 2.0) - Nearly double XP!
-      A: 2.25,          // +125% (was 2.5)
-      S: 2.75,          // +175% (was 3.2)
-      SS: 3.50,         // +250% (was 4.0) - 3.5x XP!
-      SSS: 4.25,        // +325% (was 5.0) - 4.25x XP!
-      'SSS+': 5.25,     // +425% (was 6.5) - 5.25x XP!
-      NH: 6.50,         // +550% (was 8.0) - National Hunter - 6.5x XP!
-      Monarch: 8.00,    // +700% (was 10.0) - 8x XP!
+      E: 1.0, // Base (no bonus)
+      D: 1.25, // +25% (was 1.3)
+      C: 1.5, // +50% (was 1.6)
+      B: 1.85, // +85% (was 2.0) - Nearly double XP!
+      A: 2.25, // +125% (was 2.5)
+      S: 2.75, // +175% (was 3.2)
+      SS: 3.5, // +250% (was 4.0) - 3.5x XP!
+      SSS: 4.25, // +325% (was 5.0) - 4.25x XP!
+      'SSS+': 5.25, // +425% (was 6.5) - 5.25x XP!
+      NH: 6.5, // +550% (was 8.0) - National Hunter - 6.5x XP!
+      Monarch: 8.0, // +700% (was 10.0) - 8x XP!
       'Monarch+': 10.0, // +900% (was 13.0) - 10x XP!
       'Shadow Monarch': 12.5, // +1150% (was 16.0) - Shadow Monarch - 12.5x XP!
     };
@@ -4106,7 +4192,23 @@ module.exports = class SoloLevelingStats {
   checkLevelUp(oldLevel) {
     try {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3831',message:'CHECK_LEVEL_UP - entry',data:{oldLevel,currentLevel:this.settings.level,unallocatedPoints:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          location: 'SoloLevelingStats.plugin.js:3831',
+          message: 'CHECK_LEVEL_UP - entry',
+          data: {
+            oldLevel,
+            currentLevel: this.settings.level,
+            unallocatedPoints: this.settings.unallocatedStatPoints,
+          },
+          timestamp: Date.now(),
+          sessionId: 'debug-session',
+          runId: 'run1',
+          hypothesisId: 'A',
+        }),
+      }).catch(() => {});
       // #endregion
 
       this.debugLog('CHECK_LEVEL_UP', 'Checking for level up', { oldLevel });
@@ -4119,7 +4221,24 @@ module.exports = class SoloLevelingStats {
         const levelsGained = newLevel - oldLevel;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3840',message:'LEVEL UP DETECTED',data:{oldLevel,newLevel,levelsGained,unallocatedPointsBefore:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'SoloLevelingStats.plugin.js:3840',
+            message: 'LEVEL UP DETECTED',
+            data: {
+              oldLevel,
+              newLevel,
+              levelsGained,
+              unallocatedPointsBefore: this.settings.unallocatedStatPoints,
+            },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'run1',
+            hypothesisId: 'A',
+          }),
+        }).catch(() => {});
         // #endregion
 
         this.settings.level = newLevel;
@@ -4129,7 +4248,24 @@ module.exports = class SoloLevelingStats {
         const statPointsAfter = this.settings.unallocatedStatPoints;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3844',message:'STAT POINTS AWARDED',data:{levelsGained,statPointsBefore,statPointsAfter,statPointsAdded:statPointsAfter-statPointsBefore},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            location: 'SoloLevelingStats.plugin.js:3844',
+            message: 'STAT POINTS AWARDED',
+            data: {
+              levelsGained,
+              statPointsBefore,
+              statPointsAfter,
+              statPointsAdded: statPointsAfter - statPointsBefore,
+            },
+            timestamp: Date.now(),
+            sessionId: 'debug-session',
+            runId: 'run1',
+            hypothesisId: 'A',
+          }),
+        }).catch(() => {});
         // #endregion
 
         this.debugLog('CHECK_LEVEL_UP', 'Level up detected!', {
@@ -4149,7 +4285,19 @@ module.exports = class SoloLevelingStats {
           const statsAfter = { ...this.settings.stats };
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3858',message:'NATURAL STAT GROWTH PROCESSED',data:{levelsGained,statsBefore,statsAfter},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'SoloLevelingStats.plugin.js:3858',
+              message: 'NATURAL STAT GROWTH PROCESSED',
+              data: { levelsGained, statsBefore, statsAfter },
+              timestamp: Date.now(),
+              sessionId: 'debug-session',
+              runId: 'run1',
+              hypothesisId: 'A',
+            }),
+          }).catch(() => {});
           // #endregion
 
           this.debugLog('CHECK_LEVEL_UP', 'Natural stat growth processed for skipped levels', {
@@ -4176,9 +4324,22 @@ module.exports = class SoloLevelingStats {
           // Update pending notification with latest level
           this.pendingLevelUp.oldLevel = Math.min(this.pendingLevelUp.oldLevel, oldLevel);
           this.pendingLevelUp.newLevel = Math.max(this.pendingLevelUp.newLevel, newLevel);
-          this.pendingLevelUp.levelsGained = this.pendingLevelUp.newLevel - this.pendingLevelUp.oldLevel;
+          this.pendingLevelUp.levelsGained =
+            this.pendingLevelUp.newLevel - this.pendingLevelUp.oldLevel;
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3880',message:'UPDATING PENDING LEVEL UP',data:{pendingLevelUp:this.pendingLevelUp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'SoloLevelingStats.plugin.js:3880',
+              message: 'UPDATING PENDING LEVEL UP',
+              data: { pendingLevelUp: this.pendingLevelUp },
+              timestamp: Date.now(),
+              sessionId: 'debug-session',
+              runId: 'run1',
+              hypothesisId: 'A',
+            }),
+          }).catch(() => {});
           // #endregion
         } else {
           // Create new pending notification
@@ -4188,7 +4349,19 @@ module.exports = class SoloLevelingStats {
             levelsGained,
           };
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3888',message:'CREATING PENDING LEVEL UP',data:{pendingLevelUp:this.pendingLevelUp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              location: 'SoloLevelingStats.plugin.js:3888',
+              message: 'CREATING PENDING LEVEL UP',
+              data: { pendingLevelUp: this.pendingLevelUp },
+              timestamp: Date.now(),
+              sessionId: 'debug-session',
+              runId: 'run1',
+              hypothesisId: 'A',
+            }),
+          }).catch(() => {});
           // #endregion
         }
 
@@ -4198,9 +4371,25 @@ module.exports = class SoloLevelingStats {
         }
         this.levelUpDebounceTimeout = setTimeout(() => {
           if (this.pendingLevelUp) {
-            const { oldLevel: finalOldLevel, newLevel: finalNewLevel, levelsGained: finalLevelsGained } = this.pendingLevelUp;
+            const {
+              oldLevel: finalOldLevel,
+              newLevel: finalNewLevel,
+              levelsGained: finalLevelsGained,
+            } = this.pendingLevelUp;
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3897',message:'SHOWING DEBOUNCED LEVEL UP NOTIFICATION',data:{finalOldLevel,finalNewLevel,finalLevelsGained},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                location: 'SoloLevelingStats.plugin.js:3897',
+                message: 'SHOWING DEBOUNCED LEVEL UP NOTIFICATION',
+                data: { finalOldLevel, finalNewLevel, finalLevelsGained },
+                timestamp: Date.now(),
+                sessionId: 'debug-session',
+                runId: 'run1',
+                hypothesisId: 'A',
+              }),
+            }).catch(() => {});
             // #endregion
             this.showLevelUpNotification(finalNewLevel, finalOldLevel);
             this.pendingLevelUp = null;
@@ -4370,7 +4559,24 @@ module.exports = class SoloLevelingStats {
 
   showLevelUpNotification(newLevel, oldLevel) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:4043',message:'SHOW_LEVEL_UP_NOTIFICATION',data:{oldLevel,newLevel,levelsGained:newLevel-oldLevel,unallocatedPoints:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        location: 'SoloLevelingStats.plugin.js:4043',
+        message: 'SHOW_LEVEL_UP_NOTIFICATION',
+        data: {
+          oldLevel,
+          newLevel,
+          levelsGained: newLevel - oldLevel,
+          unallocatedPoints: this.settings.unallocatedStatPoints,
+        },
+        timestamp: Date.now(),
+        sessionId: 'debug-session',
+        runId: 'run1',
+        hypothesisId: 'A',
+      }),
+    }).catch(() => {});
     // #endregion
 
     const levelInfo = this.getCurrentLevel();
@@ -4403,7 +4609,9 @@ module.exports = class SoloLevelingStats {
     this.showNotification(message, 'success', 5000);
 
     // Play level up sound/effect (optional)
-    console.log(`LEVEL UP! ${oldLevel} → ${newLevel} (${levelsGained} level(s), Rank: ${this.settings.rank})`);
+    console.log(
+      `LEVEL UP! ${oldLevel} → ${newLevel} (${levelsGained} level(s), Rank: ${this.settings.rank})`
+    );
   }
 
   showNotification(message, type = 'info', timeout = 3000) {
@@ -4836,7 +5044,7 @@ module.exports = class SoloLevelingStats {
       const activeTitle = this.settings.achievements?.activeTitle;
       if (activeTitle) {
         const achievements = this.getAchievementDefinitions();
-        const titleAchievement = achievements.find(a => a.title === activeTitle);
+        const titleAchievement = achievements.find((a) => a.title === activeTitle);
         if (titleAchievement) {
           const stillMeetsRequirements = this.checkAchievementCondition(titleAchievement);
           if (!stillMeetsRequirements) {
@@ -4857,7 +5065,21 @@ module.exports = class SoloLevelingStats {
       // Find the highest rank the user qualifies for based on level
       // Level 71 falls between B-Rank (50) and A-Rank (100)
       // So they should be B-Rank if they have enough achievements
-      const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+      const rankOrder = [
+        'Shadow Monarch',
+        'Monarch+',
+        'Monarch',
+        'NH',
+        'SSS+',
+        'SSS',
+        'SS',
+        'S',
+        'A',
+        'B',
+        'C',
+        'D',
+        'E',
+      ];
       for (const rank of rankOrder) {
         const req = rankRequirements[rank];
         if (req && targetLevel >= req.level && currentAchievements >= req.achievements) {
@@ -4908,19 +5130,19 @@ module.exports = class SoloLevelingStats {
       const finalAchievementsCount = this.settings.achievements?.unlocked?.length || 0;
 
       // Show notification
-      const statsSummary = statNames.map(s => `${s.toUpperCase()}: ${baseStats[s]}`).join(', ');
+      const statsSummary = statNames.map((s) => `${s.toUpperCase()}: ${baseStats[s]}`).join(', ');
       const activeTitleMsg = this.settings.achievements?.activeTitle
         ? `\n👑 Active Title: ${this.settings.achievements.activeTitle}`
         : '';
 
       this.showNotification(
         `🔄 Level Reset Complete! 🔄\n` +
-        `Level: ${oldLevel} → ${targetLevel}\n` +
-        `Total XP: ${oldTotalXP.toLocaleString()} → ${this.settings.totalXP.toLocaleString()}\n` +
-        `Rank: ${oldRank} → ${correctRank}\n` +
-        `Natural Stats: ${statsSummary}\n` +
-        `Unallocated Points: ${this.settings.unallocatedStatPoints} (5 per level)\n` +
-        `Achievements: ${finalAchievementsCount} unlocked${activeTitleMsg}`,
+          `Level: ${oldLevel} → ${targetLevel}\n` +
+          `Total XP: ${oldTotalXP.toLocaleString()} → ${this.settings.totalXP.toLocaleString()}\n` +
+          `Rank: ${oldRank} → ${correctRank}\n` +
+          `Natural Stats: ${statsSummary}\n` +
+          `Unallocated Points: ${this.settings.unallocatedStatPoints} (5 per level)\n` +
+          `Achievements: ${finalAchievementsCount} unlocked${activeTitleMsg}`,
         'success',
         8000
       );
@@ -5114,7 +5336,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 10,000 messages',
         condition: { type: 'messages', value: 10000 },
         title: 'S-Rank Hunter',
-        titleBonus: { xp: 0.4, strengthPercent: 0.10, critChance: 0.02 }, // +40% XP, +10% Strength, +2% Crit Chance
+        titleBonus: { xp: 0.4, strengthPercent: 0.1, critChance: 0.02 }, // +40% XP, +10% Strength, +2% Crit Chance
       },
       // Character/Writing Milestones
       {
@@ -5131,7 +5353,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 75,000 characters',
         condition: { type: 'characters', value: 75000 },
         title: 'Domain Expansion',
-        titleBonus: { xp: 0.22, intelligencePercent: 0.10, critChance: 0.01 }, // +22% XP, +10% INT, +1% Crit
+        titleBonus: { xp: 0.22, intelligencePercent: 0.1, critChance: 0.01 }, // +22% XP, +10% INT, +1% Crit
       },
       {
         id: 'ruler_authority',
@@ -5139,7 +5361,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 150,000 characters',
         condition: { type: 'characters', value: 150000 },
         title: "Ruler's Authority",
-        titleBonus: { xp: 0.3, intelligencePercent: 0.10, critChance: 0.02 }, // +30% XP, +10% INT, +2% Crit
+        titleBonus: { xp: 0.3, intelligencePercent: 0.1, critChance: 0.02 }, // +30% XP, +10% INT, +2% Crit
       },
       // Level Milestones (1-2000)
       {
@@ -5180,7 +5402,12 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 20',
         condition: { type: 'level', value: 20 },
         title: 'Experienced Hunter',
-        titleBonus: { xp: 0.15, critChance: 0.02, strengthPercent: 0.05, intelligencePercent: 0.05 }, // +15% XP, +2% Crit, +5% STR/INT
+        titleBonus: {
+          xp: 0.15,
+          critChance: 0.02,
+          strengthPercent: 0.05,
+          intelligencePercent: 0.05,
+        }, // +15% XP, +2% Crit, +5% STR/INT
       },
       {
         id: 'shadow_army',
@@ -5188,7 +5415,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 30',
         condition: { type: 'level', value: 30 },
         title: 'Shadow Army Commander',
-        titleBonus: { xp: 0.22, critChance: 0.025, agilityPercent: 0.10, strengthPercent: 0.05 }, // +22% XP, +2.5% Crit, +10% AGI, +5% STR
+        titleBonus: { xp: 0.22, critChance: 0.025, agilityPercent: 0.1, strengthPercent: 0.05 }, // +22% XP, +2.5% Crit, +10% AGI, +5% STR
       },
       {
         id: 'elite_hunter',
@@ -5196,7 +5423,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 40',
         condition: { type: 'level', value: 40 },
         title: 'Elite Hunter',
-        titleBonus: { xp: 0.25, critChance: 0.025, strengthPercent: 0.10, agilityPercent: 0.05, intelligencePercent: 0.05 }, // +25% XP, +2.5% Crit, +10% STR, +5% AGI/INT
+        titleBonus: {
+          xp: 0.25,
+          critChance: 0.025,
+          strengthPercent: 0.1,
+          agilityPercent: 0.05,
+          intelligencePercent: 0.05,
+        }, // +25% XP, +2.5% Crit, +10% STR, +5% AGI/INT
       },
       {
         id: 'necromancer',
@@ -5204,7 +5437,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50',
         condition: { type: 'level', value: 50 },
         title: 'Necromancer',
-        titleBonus: { xp: 0.32, critChance: 0.035, intelligencePercent: 0.10, vitalityPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +3.5% Crit, +10% INT, +5% VIT/AGI
+        titleBonus: {
+          xp: 0.32,
+          critChance: 0.035,
+          intelligencePercent: 0.1,
+          vitalityPercent: 0.05,
+          agilityPercent: 0.05,
+        }, // +32% XP, +3.5% Crit, +10% INT, +5% VIT/AGI
       },
       {
         id: 'national_level',
@@ -5212,7 +5451,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75',
         condition: { type: 'level', value: 75 },
         title: 'National Level Hunter',
-        titleBonus: { xp: 0.35, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +35% XP, +4% Crit, +10% STR/AGI, +5% INT
+        titleBonus: {
+          xp: 0.35,
+          critChance: 0.04,
+          strengthPercent: 0.1,
+          agilityPercent: 0.1,
+          intelligencePercent: 0.05,
+        }, // +35% XP, +4% Crit, +10% STR/AGI, +5% INT
       },
       {
         id: 'monarch_candidate',
@@ -5221,12 +5466,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 100 },
         title: 'Monarch Candidate',
         titleBonus: {
-          xp: 0.50,
+          xp: 0.5,
           critChance: 0.05,
           strengthPercent: 0.15,
           agilityPercent: 0.15,
-          intelligencePercent: 0.10,
-          vitalityPercent: 0.10,
+          intelligencePercent: 0.1,
+          vitalityPercent: 0.1,
         }, // +50% XP, +5% Crit, +15% STR/AGI, +10% INT/VIT
       },
       {
@@ -5236,12 +5481,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 150 },
         title: 'High-Rank Hunter',
         titleBonus: {
-          xp: 0.60,
+          xp: 0.6,
           critChance: 0.06,
           strengthPercent: 0.15,
           agilityPercent: 0.15,
           intelligencePercent: 0.15,
-          vitalityPercent: 0.10,
+          vitalityPercent: 0.1,
         }, // +60% XP, +6% Crit, +15% STR/AGI/INT, +10% VIT
       },
       {
@@ -5251,10 +5496,10 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 200 },
         title: 'S-Rank Elite',
         titleBonus: {
-          xp: 0.70,
+          xp: 0.7,
           critChance: 0.07,
-          strengthPercent: 0.20,
-          agilityPercent: 0.20,
+          strengthPercent: 0.2,
+          agilityPercent: 0.2,
           intelligencePercent: 0.15,
           vitalityPercent: 0.15,
         }, // +70% XP, +7% Crit, +20% STR/AGI, +15% INT/VIT
@@ -5266,11 +5511,11 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 250 },
         title: 'Transcendent Hunter',
         titleBonus: {
-          xp: 0.80,
+          xp: 0.8,
           critChance: 0.08,
-          strengthPercent: 0.20,
-          agilityPercent: 0.20,
-          intelligencePercent: 0.20,
+          strengthPercent: 0.2,
+          agilityPercent: 0.2,
+          intelligencePercent: 0.2,
           vitalityPercent: 0.15,
         }, // +80% XP, +8% Crit, +20% All Stats, +15% VIT
       },
@@ -5281,12 +5526,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 300 },
         title: 'Legendary Hunter',
         titleBonus: {
-          xp: 0.90,
+          xp: 0.9,
           critChance: 0.09,
           strengthPercent: 0.25,
           agilityPercent: 0.25,
-          intelligencePercent: 0.20,
-          vitalityPercent: 0.20,
+          intelligencePercent: 0.2,
+          vitalityPercent: 0.2,
         }, // +90% XP, +9% Crit, +25% STR/AGI, +20% INT/VIT
       },
       {
@@ -5297,11 +5542,11 @@ module.exports = class SoloLevelingStats {
         title: 'Mythic Hunter',
         titleBonus: {
           xp: 1.05,
-          critChance: 0.10,
+          critChance: 0.1,
           strengthPercent: 0.25,
           agilityPercent: 0.25,
           intelligencePercent: 0.25,
-          vitalityPercent: 0.20,
+          vitalityPercent: 0.2,
         }, // +105% XP, +10% Crit, +25% All Stats, +20% VIT
       },
       {
@@ -5311,10 +5556,10 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 500 },
         title: 'Divine Hunter',
         titleBonus: {
-          xp: 1.20,
+          xp: 1.2,
           critChance: 0.12,
-          strengthPercent: 0.30,
-          agilityPercent: 0.30,
+          strengthPercent: 0.3,
+          agilityPercent: 0.3,
           intelligencePercent: 0.25,
           vitalityPercent: 0.25,
         }, // +120% XP, +12% Crit, +30% STR/AGI, +25% INT/VIT
@@ -5328,9 +5573,9 @@ module.exports = class SoloLevelingStats {
         titleBonus: {
           xp: 1.35,
           critChance: 0.13,
-          strengthPercent: 0.30,
-          agilityPercent: 0.30,
-          intelligencePercent: 0.30,
+          strengthPercent: 0.3,
+          agilityPercent: 0.3,
+          intelligencePercent: 0.3,
           vitalityPercent: 0.25,
         }, // +135% XP, +13% Crit, +30% All Stats, +25% VIT
       },
@@ -5341,12 +5586,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 700 },
         title: 'National Hunter Elite',
         titleBonus: {
-          xp: 1.50,
+          xp: 1.5,
           critChance: 0.15,
           strengthPercent: 0.35,
           agilityPercent: 0.35,
-          intelligencePercent: 0.30,
-          vitalityPercent: 0.30,
+          intelligencePercent: 0.3,
+          vitalityPercent: 0.3,
         }, // +150% XP, +15% Crit, +35% STR/AGI, +30% INT/VIT
       },
       {
@@ -5361,7 +5606,7 @@ module.exports = class SoloLevelingStats {
           strengthPercent: 0.35,
           agilityPercent: 0.35,
           intelligencePercent: 0.35,
-          vitalityPercent: 0.30,
+          vitalityPercent: 0.3,
         }, // +165% XP, +16% Crit, +35% All Stats, +30% VIT
       },
       {
@@ -5371,10 +5616,10 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 900 },
         title: 'Monarch Heir',
         titleBonus: {
-          xp: 1.80,
+          xp: 1.8,
           critChance: 0.18,
-          strengthPercent: 0.40,
-          agilityPercent: 0.40,
+          strengthPercent: 0.4,
+          agilityPercent: 0.4,
           intelligencePercent: 0.35,
           vitalityPercent: 0.35,
         }, // +180% XP, +18% Crit, +40% STR/AGI, +35% INT/VIT
@@ -5386,11 +5631,11 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 1000 },
         title: 'True Monarch',
         titleBonus: {
-          xp: 2.00,
-          critChance: 0.20,
-          strengthPercent: 0.40,
-          agilityPercent: 0.40,
-          intelligencePercent: 0.40,
+          xp: 2.0,
+          critChance: 0.2,
+          strengthPercent: 0.4,
+          agilityPercent: 0.4,
+          intelligencePercent: 0.4,
           vitalityPercent: 0.35,
         }, // +200% XP, +20% Crit, +40% All Stats, +35% VIT
       },
@@ -5405,8 +5650,8 @@ module.exports = class SoloLevelingStats {
           critChance: 0.22,
           strengthPercent: 0.45,
           agilityPercent: 0.45,
-          intelligencePercent: 0.40,
-          vitalityPercent: 0.40,
+          intelligencePercent: 0.4,
+          vitalityPercent: 0.4,
         }, // +225% XP, +22% Crit, +45% STR/AGI, +40% INT/VIT
       },
       {
@@ -5416,12 +5661,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 1500 },
         title: 'Monarch Supreme',
         titleBonus: {
-          xp: 2.50,
+          xp: 2.5,
           critChance: 0.25,
           strengthPercent: 0.45,
           agilityPercent: 0.45,
           intelligencePercent: 0.45,
-          vitalityPercent: 0.40,
+          vitalityPercent: 0.4,
         }, // +250% XP, +25% Crit, +45% All Stats, +40% VIT
       },
       {
@@ -5433,8 +5678,8 @@ module.exports = class SoloLevelingStats {
         titleBonus: {
           xp: 2.75,
           critChance: 0.27,
-          strengthPercent: 0.50,
-          agilityPercent: 0.50,
+          strengthPercent: 0.5,
+          agilityPercent: 0.5,
           intelligencePercent: 0.45,
           vitalityPercent: 0.45,
         }, // +275% XP, +27% Crit, +50% STR/AGI, +45% INT/VIT
@@ -5446,12 +5691,12 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 2000 },
         title: 'Shadow Monarch (Final)',
         titleBonus: {
-          xp: 3.00,
-          critChance: 0.30,
-          strengthPercent: 0.50,
-          agilityPercent: 0.50,
-          intelligencePercent: 0.50,
-          vitalityPercent: 0.50,
+          xp: 3.0,
+          critChance: 0.3,
+          strengthPercent: 0.5,
+          agilityPercent: 0.5,
+          intelligencePercent: 0.5,
+          vitalityPercent: 0.5,
         }, // +300% XP, +30% Crit, +50% All Stats
       },
       // Activity/Time Milestones
@@ -5477,7 +5722,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 50 hours',
         condition: { type: 'time', value: 3000 },
         title: 'Raid Veteran',
-        titleBonus: { xp: 0.24, vitalityPercent: 0.10, strengthPercent: 0.05 }, // +24% XP, +10% VIT, +5% STR
+        titleBonus: { xp: 0.24, vitalityPercent: 0.1, strengthPercent: 0.05 }, // +24% XP, +10% VIT, +5% STR
       },
       {
         id: 'eternal_hunter',
@@ -5485,7 +5730,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 100 hours',
         condition: { type: 'time', value: 6000 },
         title: 'Eternal Hunter',
-        titleBonus: { xp: 0.33, vitalityPercent: 0.10, strengthPercent: 0.05, agilityPercent: 0.05 }, // +33% XP, +10% VIT, +5% STR, +5% AGI
+        titleBonus: { xp: 0.33, vitalityPercent: 0.1, strengthPercent: 0.05, agilityPercent: 0.05 }, // +33% XP, +10% VIT, +5% STR, +5% AGI
       },
       // Channel/Exploration Milestones
       {
@@ -5510,7 +5755,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 30 unique channels',
         condition: { type: 'channels', value: 30 },
         title: 'Dimension Walker',
-        titleBonus: { xp: 0.19, intelligencePercent: 0.10, agilityPercent: 0.05, critChance: 0.01 }, // +19% XP, +10% INT, +5% AGI, +1% Crit
+        titleBonus: { xp: 0.19, intelligencePercent: 0.1, agilityPercent: 0.05, critChance: 0.01 }, // +19% XP, +10% INT, +5% AGI, +1% Crit
       },
       {
         id: 'realm_conqueror',
@@ -5518,7 +5763,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 50 unique channels',
         condition: { type: 'channels', value: 50 },
         title: 'Realm Conqueror',
-        titleBonus: { xp: 0.27, intelligencePercent: 0.10, agilityPercent: 0.10, critChance: 0.02 }, // +27% XP, +10% INT, +10% AGI, +2% Crit
+        titleBonus: { xp: 0.27, intelligencePercent: 0.1, agilityPercent: 0.1, critChance: 0.02 }, // +27% XP, +10% INT, +10% AGI, +2% Crit
       },
       // Special Titles (High Requirements)
       {
@@ -5527,7 +5772,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50 and send 5,000 messages',
         condition: { type: 'level', value: 50 },
         title: 'Shadow Monarch',
-        titleBonus: { xp: 0.38, critChance: 0.03, agilityPercent: 0.10, strengthPercent: 0.05 }, // +38% XP, +3% Crit Chance, +10% Agility, +5% Strength
+        titleBonus: { xp: 0.38, critChance: 0.03, agilityPercent: 0.1, strengthPercent: 0.05 }, // +38% XP, +3% Crit Chance, +10% Agility, +5% Strength
       },
       {
         id: 'monarch_of_destruction',
@@ -5535,7 +5780,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 100,000 characters',
         condition: { type: 'level', value: 75 },
         title: 'Monarch of Destruction',
-        titleBonus: { xp: 0.45, critChance: 0.05, strengthPercent: 0.15, intelligencePercent: 0.10 }, // +45% XP, +5% Crit, +15% STR, +10% INT
+        titleBonus: { xp: 0.45, critChance: 0.05, strengthPercent: 0.15, intelligencePercent: 0.1 }, // +45% XP, +5% Crit, +15% STR, +10% INT
       },
       {
         id: 'the_ruler',
@@ -5546,10 +5791,10 @@ module.exports = class SoloLevelingStats {
         titleBonus: {
           xp: 0.5,
           critChance: 0.05,
-          strengthPercent: 0.10,
-          agilityPercent: 0.10,
-          intelligencePercent: 0.10,
-          vitalityPercent: 0.10,
+          strengthPercent: 0.1,
+          agilityPercent: 0.1,
+          intelligencePercent: 0.1,
+          vitalityPercent: 0.1,
           perceptionPercent: 0.05,
         }, // +50% XP, +5% Crit Chance, +10% All Stats, +5% Perception
       },
@@ -5560,7 +5805,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50, send 5,000 messages, and type 100,000 characters',
         condition: { type: 'level', value: 50 },
         title: 'Sung Jin-Woo',
-        titleBonus: { xp: 0.35, critChance: 0.03, strengthPercent: 0.10, agilityPercent: 0.10 }, // +35% XP, +3% Crit, +10% STR, +10% AGI
+        titleBonus: { xp: 0.35, critChance: 0.03, strengthPercent: 0.1, agilityPercent: 0.1 }, // +35% XP, +3% Crit, +10% STR, +10% AGI
       },
       {
         id: 'the_weakest',
@@ -5576,7 +5821,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach S-Rank and Level 50',
         condition: { type: 'level', value: 50 },
         title: 'S-Rank Hunter Jin-Woo',
-        titleBonus: { xp: 0.42, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +42% XP, +4% Crit, +10% STR/AGI, +5% INT
+        titleBonus: {
+          xp: 0.42,
+          critChance: 0.04,
+          strengthPercent: 0.1,
+          agilityPercent: 0.1,
+          intelligencePercent: 0.05,
+        }, // +42% XP, +4% Crit, +10% STR/AGI, +5% INT
       },
       {
         id: 'shadow_sovereign',
@@ -5584,7 +5835,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 60 and send 7,500 messages',
         condition: { type: 'level', value: 60 },
         title: 'Shadow Sovereign',
-        titleBonus: { xp: 0.4, critChance: 0.04, agilityPercent: 0.15, strengthPercent: 0.10 }, // +40% XP, +4% Crit, +15% AGI, +10% STR
+        titleBonus: { xp: 0.4, critChance: 0.04, agilityPercent: 0.15, strengthPercent: 0.1 }, // +40% XP, +4% Crit, +15% AGI, +10% STR
       },
       {
         id: 'ashborn_successor',
@@ -5592,7 +5843,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 200,000 characters',
         condition: { type: 'level', value: 75 },
         title: "Ashborn's Successor",
-        titleBonus: { xp: 0.48, critChance: 0.04, intelligencePercent: 0.10, agilityPercent: 0.10 }, // +48% XP, +4% Crit Chance, +10% Intelligence, +10% Agility
+        titleBonus: { xp: 0.48, critChance: 0.04, intelligencePercent: 0.1, agilityPercent: 0.1 }, // +48% XP, +4% Crit Chance, +10% Intelligence, +10% Agility
       },
       // Ability/Skill Titles
       {
@@ -5618,7 +5869,7 @@ module.exports = class SoloLevelingStats {
           'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
-        titleBonus: { xp: 0.25, critChance: 0.05, agilityPercent: 0.10 }, // +25% XP, +5% Crit Chance, +10% Agility
+        titleBonus: { xp: 0.25, critChance: 0.05, agilityPercent: 0.1 }, // +25% XP, +5% Crit Chance, +10% Agility
       },
       {
         id: 'stealth_master',
@@ -5626,7 +5877,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 30 hours during off-peak hours',
         condition: { type: 'time', value: 1800 },
         title: 'Stealth Master',
-        titleBonus: { xp: 0.18, agilityPercent: 0.10, critChance: 0.02 }, // +18% XP, +10% AGI, +2% Crit
+        titleBonus: { xp: 0.18, agilityPercent: 0.1, critChance: 0.02 }, // +18% XP, +10% AGI, +2% Crit
       },
       {
         id: 'mana_manipulator',
@@ -5634,7 +5885,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Intelligence stat',
         condition: { type: 'stat', stat: 'intelligence', value: 15 },
         title: 'Mana Manipulator',
-        titleBonus: { xp: 0.22, intelligencePercent: 0.10 }, // +22% XP, +10% Intelligence
+        titleBonus: { xp: 0.22, intelligencePercent: 0.1 }, // +22% XP, +10% Intelligence
       },
       {
         id: 'shadow_storage',
@@ -5650,7 +5901,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Strength stat',
         condition: { type: 'stat', stat: 'strength', value: 15 },
         title: 'Beast Monarch',
-        titleBonus: { xp: 0.28, strengthPercent: 0.10, critChance: 0.02 }, // +28% XP, +10% Strength, +2% Crit
+        titleBonus: { xp: 0.28, strengthPercent: 0.1, critChance: 0.02 }, // +28% XP, +10% Strength, +2% Crit
       },
       {
         id: 'frost_monarch',
@@ -5658,7 +5909,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 8,000 messages',
         condition: { type: 'messages', value: 8000 },
         title: 'Frost Monarch',
-        titleBonus: { xp: 0.3, critChance: 0.03, intelligencePercent: 0.10, agilityPercent: 0.05 }, // +30% XP, +3% Crit, +10% INT, +5% AGI
+        titleBonus: { xp: 0.3, critChance: 0.03, intelligencePercent: 0.1, agilityPercent: 0.05 }, // +30% XP, +3% Crit, +10% INT, +5% AGI
       },
       {
         id: 'plague_monarch',
@@ -5666,7 +5917,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 65',
         condition: { type: 'level', value: 65 },
         title: 'Plague Monarch',
-        titleBonus: { xp: 0.32, critChance: 0.03, intelligencePercent: 0.10, vitalityPercent: 0.05 }, // +32% XP, +3% Crit, +10% INT, +5% VIT
+        titleBonus: { xp: 0.32, critChance: 0.03, intelligencePercent: 0.1, vitalityPercent: 0.05 }, // +32% XP, +3% Crit, +10% INT, +5% VIT
       },
       {
         id: 'monarch_white_flames',
@@ -5699,7 +5950,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 80 and land 2,000 critical hits',
         condition: { type: 'level', value: 80 },
         title: 'Kamish Slayer',
-        titleBonus: { xp: 0.4, critChance: 0.05, strengthPercent: 0.10, agilityPercent: 0.10 }, // +40% XP, +5% Crit, +10% STR, +10% AGI
+        titleBonus: { xp: 0.4, critChance: 0.05, strengthPercent: 0.1, agilityPercent: 0.1 }, // +40% XP, +5% Crit, +10% STR, +10% AGI
       },
       {
         id: 'demon_tower_conqueror',
@@ -5707,7 +5958,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 60 and visit 40 unique channels',
         condition: { type: 'level', value: 60 },
         title: 'Demon Tower Conqueror',
-        titleBonus: { xp: 0.32, intelligencePercent: 0.10, vitalityPercent: 0.05 }, // +32% XP, +10% INT, +5% VIT
+        titleBonus: { xp: 0.32, intelligencePercent: 0.1, vitalityPercent: 0.05 }, // +32% XP, +10% INT, +5% VIT
       },
       {
         id: 'double_awakening',
@@ -5723,7 +5974,7 @@ module.exports = class SoloLevelingStats {
         description: 'Unlock 15 achievements',
         condition: { type: 'achievements', value: 15 },
         title: 'System User',
-        titleBonus: { xp: 0.2, intelligencePercent: 0.10, perceptionPercent: 0.05 }, // +20% XP, +10% INT, +5% Perception
+        titleBonus: { xp: 0.2, intelligencePercent: 0.1, perceptionPercent: 0.05 }, // +20% XP, +10% INT, +5% Perception
       },
       {
         id: 'instant_dungeon_master',
@@ -5731,7 +5982,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 200,000 characters and be active for 75 hours',
         condition: { type: 'characters', value: 200000 },
         title: 'Instant Dungeon Master',
-        titleBonus: { xp: 0.35, intelligencePercent: 0.10, vitalityPercent: 0.10 }, // +35% XP, +10% INT, +10% VIT
+        titleBonus: { xp: 0.35, intelligencePercent: 0.1, vitalityPercent: 0.1 }, // +35% XP, +10% INT, +10% VIT
       },
       {
         id: 'shadow_army_general',
@@ -5739,7 +5990,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 55 and land 750 critical hits',
         condition: { type: 'level', value: 55 },
         title: 'Shadow Army General',
-        titleBonus: { xp: 0.3, critChance: 0.03, agilityPercent: 0.10, strengthPercent: 0.05 }, // +30% XP, +3% Crit, +10% AGI, +5% STR
+        titleBonus: { xp: 0.3, critChance: 0.03, agilityPercent: 0.1, strengthPercent: 0.05 }, // +30% XP, +3% Crit, +10% AGI, +5% STR
       },
       {
         id: 'monarch_of_beasts',
@@ -5755,7 +6006,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 12,000 messages',
         condition: { type: 'messages', value: 12000 },
         title: 'Monarch of Insects',
-        titleBonus: { xp: 0.42, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +42% XP, +10% AGI, +5% INT
+        titleBonus: { xp: 0.42, agilityPercent: 0.1, intelligencePercent: 0.05 }, // +42% XP, +10% AGI, +5% INT
       },
       {
         id: 'monarch_of_iron_body',
@@ -5771,7 +6022,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 90 and unlock 20 achievements',
         condition: { type: 'level', value: 90 },
         title: 'Monarch of Beginning',
-        titleBonus: { xp: 0.45, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.10 }, // +45% XP, +4% Crit, +10% All Combat Stats
+        titleBonus: {
+          xp: 0.45,
+          critChance: 0.04,
+          strengthPercent: 0.1,
+          agilityPercent: 0.1,
+          intelligencePercent: 0.1,
+        }, // +45% XP, +4% Crit, +10% All Combat Stats
       },
       {
         id: 'absolute_ruler',
@@ -5784,9 +6041,9 @@ module.exports = class SoloLevelingStats {
           critChance: 0.06,
           strengthPercent: 0.15,
           agilityPercent: 0.15,
-          intelligencePercent: 0.10,
-          vitalityPercent: 0.10,
-          perceptionPercent: 0.10,
+          intelligencePercent: 0.1,
+          vitalityPercent: 0.1,
+          perceptionPercent: 0.1,
         }, // +52% XP, +6% Crit, +15% STR/AGI, +10% INT/VIT/PER
       },
       {
@@ -5795,7 +6052,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 85 and land 1,500 critical hits',
         condition: { type: 'level', value: 85 },
         title: 'Shadow Sovereign Heir',
-        titleBonus: { xp: 0.43, critChance: 0.05, agilityPercent: 0.15, intelligencePercent: 0.10 }, // +43% XP, +5% Crit, +15% AGI, +10% INT
+        titleBonus: { xp: 0.43, critChance: 0.05, agilityPercent: 0.15, intelligencePercent: 0.1 }, // +43% XP, +5% Crit, +15% AGI, +10% INT
       },
       {
         id: 'ruler_of_chaos',
@@ -5803,7 +6060,13 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 110 and be active for 150 hours',
         condition: { type: 'level', value: 110 },
         title: 'Ruler of Chaos',
-        titleBonus: { xp: 0.48, critChance: 0.05, strengthPercent: 0.10, agilityPercent: 0.10, perceptionPercent: 0.10 }, // +48% XP, +5% Crit, +10% STR/AGI/PER
+        titleBonus: {
+          xp: 0.48,
+          critChance: 0.05,
+          strengthPercent: 0.1,
+          agilityPercent: 0.1,
+          perceptionPercent: 0.1,
+        }, // +48% XP, +5% Crit, +10% STR/AGI/PER
       },
     ];
   }
@@ -6009,11 +6272,19 @@ module.exports = class SoloLevelingStats {
       return {
         xp: 0,
         critChance: 0,
+        // Old format (raw numbers) - for backward compatibility
         strength: 0,
         agility: 0,
         intelligence: 0,
         vitality: 0,
         luck: 0,
+        perception: 0,
+        // New format (percentages) - primary format
+        strengthPercent: 0,
+        agilityPercent: 0,
+        intelligencePercent: 0,
+        vitalityPercent: 0,
+        perceptionPercent: 0,
       };
     }
 
@@ -6023,15 +6294,27 @@ module.exports = class SoloLevelingStats {
     );
 
     const bonus = achievement?.titleBonus || { xp: 0 };
-    // Ensure all buff types are present (default to 0)
+    // Return the raw titleBonus object directly (same as TitleManager)
+    // This ensures both plugins see the exact same data structure
+    // The display code handles both old format (raw) and new format (percentages)
     return {
+      ...bonus,
+      // Ensure defaults for common properties to avoid undefined issues
       xp: bonus.xp || 0,
       critChance: bonus.critChance || 0,
+      // Old format (raw numbers) - for backward compatibility
       strength: bonus.strength || 0,
       agility: bonus.agility || 0,
       intelligence: bonus.intelligence || 0,
       vitality: bonus.vitality || 0,
       luck: bonus.luck || 0,
+      perception: bonus.perception || 0,
+      // New format (percentages) - primary format
+      strengthPercent: bonus.strengthPercent || 0,
+      agilityPercent: bonus.agilityPercent || 0,
+      intelligencePercent: bonus.intelligencePercent || 0,
+      vitalityPercent: bonus.vitalityPercent || 0,
+      perceptionPercent: bonus.perceptionPercent || 0,
     };
   }
 
@@ -6078,7 +6361,8 @@ module.exports = class SoloLevelingStats {
     const vitalityBaseBonus = this.settings.stats.vitality * 0.05;
     const vitalityAdvancedBonus = Math.max(0, (this.settings.stats.vitality - 10) * 0.01);
     const baseVitalityBonus = vitalityBaseBonus + vitalityAdvancedBonus;
-    const totalPerceptionBuff = typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
+    const totalPerceptionBuff =
+      typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
     const perceptionMultiplier = totalPerceptionBuff / 100;
 
     // Get skill tree bonuses

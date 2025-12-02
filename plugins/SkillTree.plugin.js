@@ -1014,8 +1014,9 @@ module.exports = class SkillTree {
         justify-content: center;
         transition: all 0.2s;
         color: var(--interactive-normal, #b9bbbe);
-        padding: 4px;
+        padding: 6px;
         margin: 0 2px;
+        box-sizing: border-box;
       }
       .st-skill-tree-button:hover {
         background: var(--background-modifier-hover, rgba(79, 84, 92, 0.16));
@@ -1028,6 +1029,7 @@ module.exports = class SkillTree {
       .st-skill-tree-button svg {
         width: 20px;
         height: 20px;
+        display: block;
       }
 
       /* Modal Container */

@@ -236,11 +236,20 @@ module.exports = class LevelProgressBar {
         border-bottom: 2px solid rgba(139, 92, 246, 0.5);
         padding: 8px 20px 8px 80px;
         display: flex;
+        flex-direction: row;
         align-items: center;
         justify-content: flex-start;
-        gap: 20px;
+        gap: 12px;
         box-shadow: 0 2px 10px rgba(139, 92, 246, 0.3);
         backdrop-filter: blur(10px);
+      }
+
+      .lpb-progress-bar-content {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 0;
+        flex-shrink: 0;
       }
 
       .lpb-progress-container.bottom .lpb-progress-bar {
@@ -263,10 +272,14 @@ module.exports = class LevelProgressBar {
         align-items: center;
         gap: 8px;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        flex-shrink: 0;
+        line-height: 1;
       }
 
       .lpb-progress-track {
-        width: 100%;
+        flex: 1;
+        min-width: 100px;
+        max-width: 300px;
         height: 12px;
         background: rgba(20, 20, 30, 0.8);
         border-radius: 6px;
@@ -275,7 +288,7 @@ module.exports = class LevelProgressBar {
         border: none !important; /* Remove border that creates glow */
         box-shadow: none !important;
         filter: none !important;
-        min-width: 100px;
+        align-self: center;
       }
 
       /* XP glow animation disabled */
@@ -296,51 +309,52 @@ module.exports = class LevelProgressBar {
         height: 100%;
         background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
         border-radius: 6px;
-        transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        /* COMPLETE GLOW REMOVAL - ALL POSSIBLE SOURCES */
-        box-shadow: none !important;
-        filter: none !important;
-        outline: none !important;
-        border: none !important;
-        text-shadow: none !important;
-        drop-shadow: none !important;
-        -webkit-box-shadow: none !important;
-        -moz-box-shadow: none !important;
-        -webkit-filter: none !important;
-        -moz-filter: none !important;
-        backdrop-filter: none !important;
-        -webkit-backdrop-filter: none !important;
+        overflow: hidden;
+        box-shadow: 0 0 10px rgba(139, 92, 246, 0.5), inset 0 0 20px rgba(167, 139, 250, 0.3);
       }
 
-      /* Force remove glow from ALL states and pseudo-elements */
-      .lpb-progress-fill *,
-      .lpb-progress-fill::before,
-      .lpb-progress-fill::after,
-      .lpb-progress-fill:hover,
-      .lpb-progress-fill:active,
-      .lpb-progress-fill:focus {
-        box-shadow: none !important;
-        filter: none !important;
-        text-shadow: none !important;
-        outline: none !important;
-        border: none !important;
-      }
-
-      /* Purple glow shimmer completely disabled */
-      .lpb-progress-fill::after {
-        display: none !important;
-        content: none !important;
-        background: none !important;
-        animation: none !important;
-      }
-
-      /* Purple glow overlay completely disabled */
+      /* Shimmer animation overlay */
       .lpb-progress-fill::before {
-        display: none !important;
-        content: none !important;
-        background: none !important;
-        animation: none !important;
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(255, 255, 255, 0.3) 50%,
+          transparent 100%
+        );
+        animation: lpb-shimmer 2s infinite;
+        display: block !important;
+      }
+
+      /* XP gain pulse animation */
+      .lpb-progress-fill.lpb-xp-gain {
+        animation: lpb-xp-pulse 0.6s ease-out;
+      }
+
+      @keyframes lpb-xp-pulse {
+        0% {
+          box-shadow: 0 0 10px rgba(139, 92, 246, 0.5), inset 0 0 20px rgba(167, 139, 250, 0.3);
+        }
+        50% {
+          box-shadow: 0 0 20px rgba(139, 92, 246, 0.8), inset 0 0 30px rgba(167, 139, 250, 0.6);
+          transform: scaleY(1.1);
+        }
+        100% {
+          box-shadow: 0 0 10px rgba(139, 92, 246, 0.5), inset 0 0 20px rgba(167, 139, 250, 0.3);
+          transform: scaleY(1);
+        }
+      }
+
+      /* Subtle glow effect on hover */
+      .lpb-progress-fill:hover {
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.7), inset 0 0 25px rgba(167, 139, 250, 0.4);
       }
 
       /* Sparkle particles */
@@ -417,7 +431,7 @@ module.exports = class LevelProgressBar {
           transform: translateX(-100%);
         }
         100% {
-          transform: translateX(100%);
+          transform: translateX(300%);
         }
       }
 
@@ -470,12 +484,29 @@ module.exports = class LevelProgressBar {
       const bar = document.createElement('div');
       bar.className = `lpb-progress-bar ${this.settings.compact ? 'compact' : ''}`;
 
+      // Content wrapper for text
+      const contentWrapper = document.createElement('div');
+      contentWrapper.className = 'lpb-progress-bar-content';
+
       // Single line format matching SoloLevelingStats chat UI: "Rank: E Lv.1 0/100 XP"
       const progressText = document.createElement('div');
       progressText.className = 'lpb-progress-text';
       progressText.id = 'lpb-progress-text';
       progressText.textContent = 'Rank: E Lv.1 0/100 XP';
-      bar.appendChild(progressText);
+      contentWrapper.appendChild(progressText);
+      bar.appendChild(contentWrapper);
+
+      // Progress track with animated fill
+      const progressTrack = document.createElement('div');
+      progressTrack.className = 'lpb-progress-track';
+
+      const progressFill = document.createElement('div');
+      progressFill.className = 'lpb-progress-fill';
+      progressFill.id = 'lpb-progress-fill';
+      progressFill.style.width = '0%';
+
+      progressTrack.appendChild(progressFill);
+      bar.appendChild(progressTrack);
 
       container.appendChild(bar);
       document.body.appendChild(container);
@@ -636,6 +667,17 @@ module.exports = class LevelProgressBar {
 
       // Update progress text (single line format matching SoloLevelingStats)
       this.updateProgressText(rank, currentLevel, currentXP, xpRequired);
+
+      // Update progress fill animation
+      const progressFill = this.progressBar.querySelector('#lpb-progress-fill');
+      if (progressFill) {
+        progressFill.style.width = `${xpPercent}%`;
+        // Add XP gain animation class temporarily
+        progressFill.classList.add('lpb-xp-gain');
+        setTimeout(() => {
+          progressFill.classList.remove('lpb-xp-gain');
+        }, 600);
+      }
 
       // Update milestone markers
       const progressTrack = this.progressBar.querySelector('.lpb-progress-track');

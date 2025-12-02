@@ -639,23 +639,25 @@ module.exports = class SoloLevelingTitleManager {
         background: transparent;
         border: none;
         border-radius: 4px;
-        width: 40px;
-        height: 40px;
+        width: 32px;
+        height: 32px;
         cursor: pointer;
         color: var(--interactive-normal, #b9bbbe);
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s ease;
-        margin-left: 8px;
+        margin: 0 2px;
         flex-shrink: 0;
-        padding: 0;
+        padding: 6px;
+        box-sizing: border-box;
       }
 
       .tm-title-button svg {
         width: 20px;
         height: 20px;
         transition: all 0.2s ease;
+        display: block;
       }
 
       .tm-title-button:hover {
