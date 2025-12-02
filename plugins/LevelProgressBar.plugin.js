@@ -605,7 +605,13 @@ module.exports = class LevelProgressBar {
 
     try {
       const soloData = this.getSoloLevelingData();
-      if (!soloData) return;
+      if (!soloData) {
+        this.debugLog('UPDATE_BAR', 'SoloLevelingStats data not available', {
+          hasBar: !!this.progressBar,
+          enabled: this.settings.enabled,
+        });
+        return;
+      }
 
       const { levelInfo, rank } = soloData;
       const currentLevel = levelInfo.level;
@@ -662,6 +668,41 @@ module.exports = class LevelProgressBar {
         hasBar: !!this.progressBar,
         enabled: this.settings.enabled,
       });
+    }
+  }
+
+  // ============================================================================
+  // PROGRESS TEXT UPDATE METHODS
+  // ============================================================================
+  /**
+   * Update progress text with current rank, level, and XP
+   * Format: "Rank: E Lv.1 0/100 XP"
+   * @param {string} rank - Current rank
+   * @param {number} level - Current level
+   * @param {number} xp - Current XP in level
+   * @param {number} xpRequired - XP required for next level
+   */
+  updateProgressText(rank, level, xp, xpRequired) {
+    try {
+      const progressText = this.progressBar?.querySelector('#lpb-progress-text');
+      if (!progressText) {
+        this.debugLog('UPDATE_TEXT', 'Progress text element not found');
+        return;
+      }
+
+      // Format: "Rank: E Lv.1 0/100 XP"
+      const text = `Rank: ${rank} Lv.${level} ${xp}/${xpRequired} XP`;
+      progressText.textContent = text;
+
+      this.debugLog('UPDATE_TEXT', 'Progress text updated', {
+        rank,
+        level,
+        xp,
+        xpRequired,
+        text,
+      });
+    } catch (error) {
+      this.debugError('UPDATE_TEXT', error);
     }
   }
 
