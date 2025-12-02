@@ -10,6 +10,9 @@
  */
 
 module.exports = class SoloLevelingStats {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   // Verification helper - call this from console: BdApi.Plugins.get('SoloLevelingStats').instance.verifyMessageDetection()
   verifyMessageDetection() {
     console.log('=== SoloLevelingStats Message Detection Verification ===');
@@ -39,18 +42,19 @@ module.exports = class SoloLevelingStats {
       inputHandlerActive: !!this.messageInputHandler,
     };
   }
+
   constructor() {
     this.defaultSettings = {
       enabled: true,
       // Stat definitions
       stats: {
-        strength: 0, // +5% XP per message per point
+        strength: 0, // +2% XP per message per point (additive, with diminishing returns)
         agility: 0, // +2% crit chance per point (capped at 25% total), +1% EXP per point during crit hits
-        intelligence: 0, // +10% bonus XP from long messages per point
+        intelligence: 0, // +5% bonus XP from long messages per point (additive, with diminishing returns)
         vitality: 0, // +5% daily quest rewards per point
-        luck: 0, // Each point grants a random % buff that stacks
+        perception: 0, // Each point grants a random % buff that stacks (renamed from Luck)
       },
-      luckBuffs: [], // Array of random buff percentages that stack (e.g., [2.5, 4.1, 3.7])
+      perceptionBuffs: [], // Array of random buff percentages that stack (e.g., [2.5, 4.1, 3.7]) - renamed from luckBuffs
       unallocatedStatPoints: 0,
       // Level system
       level: 1,
@@ -97,6 +101,10 @@ module.exports = class SoloLevelingStats {
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
+    // Level up debouncing to prevent spam
+    this.pendingLevelUp = null;
+    this.levelUpDebounceTimeout = null;
+    this.levelUpDebounceDelay = 500; // 500ms debounce for level up notifications
     this.lastMessageId = null; // Track last message ID for crit detection
     this.lastMessageElement = null; // Track last message element for crit detection
 
@@ -109,6 +117,10 @@ module.exports = class SoloLevelingStats {
     };
 
     // Debug system (OPTIMIZED: Default disabled, better throttling)
+    // ============================================================================
+    // EVENT SYSTEM
+    // ============================================================================
+    this.events = {};
     this.debug = {
       enabled: false, // OPTIMIZED: Default disabled to reduce CPU/memory usage
       verbose: false, // Set to true for verbose logging (includes frequent operations)
@@ -246,57 +258,96 @@ module.exports = class SoloLevelingStats {
     });
   }
 
+  // ============================================================================
+  // EVENT EMISSION METHODS
+  // ============================================================================
   /**
-   * Emit XP changed event with current state
+   * Emit XP changed event for real-time updates
    */
   emitXPChanged() {
-    const levelInfo = this.getCurrentLevel();
-    this.emit('xpChanged', {
-      level: this.settings.level,
-      xp: levelInfo.xp,
-      xpRequired: levelInfo.xpRequired,
-      totalXP: this.settings.totalXP,
-      rank: this.settings.rank,
-      levelInfo,
-    });
+    try {
+      const levelInfo = this.getCurrentLevel();
+      if (!levelInfo) {
+        this.debugLog('EMIT_XP_CHANGED', 'Level info not available, skipping emit');
+        return;
+      }
+
+      this.emit('xpChanged', {
+        level: this.settings.level,
+        xp: levelInfo.xp,
+        xpRequired: levelInfo.xpRequired,
+        totalXP: this.settings.totalXP,
+        rank: this.settings.rank,
+        levelInfo,
+      });
+    } catch (error) {
+      this.debugError('EMIT_XP_CHANGED', error);
+    }
   }
 
   /**
    * Emit level changed event
+   * @param {number} oldLevel - Previous level
+   * @param {number} newLevel - New level
    */
   emitLevelChanged(oldLevel, newLevel) {
-    const levelInfo = this.getCurrentLevel();
-    this.emit('levelChanged', {
-      oldLevel,
-      newLevel,
-      xp: levelInfo.xp,
-      xpRequired: levelInfo.xpRequired,
-      totalXP: this.settings.totalXP,
-      rank: this.settings.rank,
-      levelInfo,
-    });
-    // Also emit XP changed since level affects XP display
-    this.emitXPChanged();
+    try {
+      const levelInfo = this.getCurrentLevel();
+      if (!levelInfo) {
+        this.debugLog('EMIT_LEVEL_CHANGED', 'Level info not available, skipping emit');
+        return;
+      }
+
+      this.emit('levelChanged', {
+        oldLevel,
+        newLevel,
+        xp: levelInfo.xp,
+        xpRequired: levelInfo.xpRequired,
+        totalXP: this.settings.totalXP,
+        rank: this.settings.rank,
+        levelInfo,
+      });
+
+      // Also emit XP changed since level affects XP display
+      this.emitXPChanged();
+    } catch (error) {
+      this.debugError('EMIT_LEVEL_CHANGED', error);
+    }
   }
 
   /**
    * Emit rank changed event
+   * @param {string} oldRank - Previous rank
+   * @param {string} newRank - New rank
    */
   emitRankChanged(oldRank, newRank) {
-    const levelInfo = this.getCurrentLevel();
-    this.emit('rankChanged', {
-      oldRank,
-      newRank,
-      level: this.settings.level,
-      xp: levelInfo.xp,
-      xpRequired: levelInfo.xpRequired,
-      totalXP: this.settings.totalXP,
-      levelInfo,
-    });
-    // Also emit XP changed since rank affects XP display
-    this.emitXPChanged();
+    try {
+      const levelInfo = this.getCurrentLevel();
+      if (!levelInfo) {
+        this.debugLog('EMIT_RANK_CHANGED', 'Level info not available, skipping emit');
+        return;
+      }
+
+      this.emit('rankChanged', {
+        oldRank,
+        newRank,
+        level: this.settings.level,
+        xp: levelInfo.xp,
+        xpRequired: levelInfo.xpRequired,
+        totalXP: this.settings.totalXP,
+        levelInfo,
+      });
+
+      // Also emit XP changed since rank affects XP display
+      this.emitXPChanged();
+    } catch (error) {
+      this.debugError('EMIT_RANK_CHANGED', error);
+    }
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
   start() {
     try {
       this.debugLog('START', 'Plugin starting...');
@@ -436,12 +487,12 @@ module.exports = class SoloLevelingStats {
       // Store agility bonus in BetterDiscord Data for CriticalHit to read
       // Agility scales: +2% crit chance per point (simplified scaling)
       // CRIT CHANCE CAPPED AT 25% MAX (user request)
-      // Luck buffs enhance Agility bonus: (base AGI bonus) * (1 + luck multiplier)
+      // Perception buffs enhance Agility bonus: (base AGI bonus) * (1 + perception multiplier)
       const agilityStat = this.settings.stats.agility || 0;
       const baseAgilityBonus = agilityStat * 0.02; // 2% per point
-      const totalLuckBuff = this.getTotalLuckBuff ? this.getTotalLuckBuff() : 0;
-      const luckMultiplier = totalLuckBuff / 100;
-      const enhancedAgilityBonus = baseAgilityBonus * (1 + luckMultiplier); // Luck enhances Agility
+      const totalPerceptionBuff = this.getTotalPerceptionBuff ? this.getTotalPerceptionBuff() : 0;
+      const perceptionMultiplier = totalPerceptionBuff / 100;
+      const enhancedAgilityBonus = baseAgilityBonus * (1 + perceptionMultiplier); // Perception enhances Agility
 
       // Add title crit chance bonus
       const titleBonus = this.getActiveTitleBonus();
@@ -457,7 +508,7 @@ module.exports = class SoloLevelingStats {
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
         titleCritBonus: isNaN(titleCritBonus) ? 0 : Number(titleCritBonus.toFixed(6)),
         agility: agilityStat,
-        luckEnhanced: totalLuckBuff > 0,
+        perceptionEnhanced: totalPerceptionBuff > 0,
         capped: totalCritBonus > 0.25, // Indicate if it was capped
       };
 
@@ -478,37 +529,40 @@ module.exports = class SoloLevelingStats {
         );
       }
 
-      // Save Luck buffs for CriticalHit to read (stacked random buffs apply to crit chance)
+      // Save Perception buffs for CriticalHit to read (stacked random buffs apply to crit chance)
       try {
-        let luckCritBonus = 0;
-        if (
-          (this.settings.stats.luck || 0) > 0 &&
-          Array.isArray(this.settings.luckBuffs) &&
-          this.settings.luckBuffs.length > 0
-        ) {
-          // Sum all stacked luck buffs for crit chance bonus
-          luckCritBonus = totalLuckBuff / 100; // Convert % to decimal
+        let perceptionCritBonus = 0;
+        // Migration: Support both old 'luck' and new 'perception' names
+        const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
+        const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
+
+        if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
+          // Sum all stacked perception buffs for crit chance bonus
+          perceptionCritBonus = totalPerceptionBuff / 100; // Convert % to decimal
         }
 
-        const luckData = {
-          bonus: isNaN(luckCritBonus) ? 0 : Number(luckCritBonus.toFixed(6)),
-          luck: this.settings.stats.luck || 0,
-          luckBuffs: Array.isArray(this.settings.luckBuffs) ? [...this.settings.luckBuffs] : [],
-          totalBuffPercent: isNaN(luckCritBonus) ? 0 : Number((luckCritBonus * 100).toFixed(2)),
+        const perceptionData = {
+          bonus: isNaN(perceptionCritBonus) ? 0 : Number(perceptionCritBonus.toFixed(6)),
+          perception: perceptionStat,
+          perceptionBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
+          totalBuffPercent: isNaN(perceptionCritBonus) ? 0 : Number((perceptionCritBonus * 100).toFixed(2)),
+          // Keep old key for backward compatibility
+          luck: perceptionStat,
+          luckBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
         };
 
-        BdApi.Data.save('SoloLevelingStats', 'luckBonus', luckData);
+        BdApi.Data.save('SoloLevelingStats', 'luckBonus', perceptionData); // Keep old key name for CriticalHit compatibility
 
-        if (luckCritBonus > 0) {
+        if (perceptionCritBonus > 0) {
           this.debugLog(
-            'LUCK_BONUS',
-            `Luck buffs available for CriticalHit: +${(luckCritBonus * 100).toFixed(
+            'PERCEPTION_BONUS',
+            `Perception buffs available for CriticalHit: +${(perceptionCritBonus * 100).toFixed(
               1
-            )}% crit chance (${this.settings.luckBuffs.length} stacked buffs)`
+            )}% crit chance (${perceptionBuffs.length} stacked buffs)`
           );
         }
       } catch (error) {
-        this.debugError('SAVE_LUCK_BONUS', error);
+        this.debugError('SAVE_PERCEPTION_BONUS', error);
       }
     } catch (error) {
       // Error saving bonus - log but don't crash
@@ -661,11 +715,18 @@ module.exports = class SoloLevelingStats {
             if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
             if (titleBonus.critChance > 0)
               buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-            if (titleBonus.strength > 0) buffs.push(`+${titleBonus.strength} STR`);
-            if (titleBonus.agility > 0) buffs.push(`+${titleBonus.agility} AGI`);
-            if (titleBonus.intelligence > 0) buffs.push(`+${titleBonus.intelligence} INT`);
-            if (titleBonus.vitality > 0) buffs.push(`+${titleBonus.vitality} VIT`);
-            if (titleBonus.luck > 0) buffs.push(`+${titleBonus.luck} LUK`);
+            // Support both old format (raw) and new format (percentage)
+            const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
+            const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
+            const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
+            const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
+            const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
+
+            if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
+            if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
+            if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
+            if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
+            if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
             return buffs.length > 0
               ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
               : '';
@@ -865,7 +926,7 @@ module.exports = class SoloLevelingStats {
       },
       { key: 'intelligence', name: 'INT', fullName: 'Intelligence', desc: '+10% Long Msg' },
       { key: 'vitality', name: 'VIT', fullName: 'Vitality', desc: '+5% Quests' },
-      { key: 'luck', name: 'LUK', fullName: 'Luck', desc: 'Random buff stacks' },
+      { key: 'perception', name: 'PER', fullName: 'Perception', desc: 'Random buff stacks' },
     ];
 
     const totalStats = this.getTotalEffectiveStats();
@@ -875,18 +936,19 @@ module.exports = class SoloLevelingStats {
       .map((stat) => {
         const baseValue = this.settings.stats[stat.key];
         const totalValue = totalStats[stat.key];
-        const titleBuff = titleBonus[stat.key] || 0;
-        const hasTitleBuff = titleBuff > 0;
+        // Support both old format (raw) and new format (percentage)
+        const statPercentKey = `${stat.key}Percent`;
+        const titleBuffPercent = titleBonus[statPercentKey] || (titleBonus[stat.key] ? titleBonus[stat.key] / 100 : 0);
+        const hasTitleBuff = titleBuffPercent > 0;
         const canAllocate = this.settings.unallocatedStatPoints > 0;
+        const titleBuffDisplay = hasTitleBuff ? ` +${(titleBuffPercent * 100).toFixed(0)}% from title` : '';
 
         return `
         <button
           class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
           data-stat="${stat.key}"
           ${!canAllocate ? 'disabled' : ''}
-          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${
-          hasTitleBuff ? ` +${titleBuff} from title` : ''
-        }) - ${stat.desc} per point"
+          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${titleBuffDisplay}) - ${stat.desc} per point"
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
           <div class="sls-chat-stat-btn-value">
@@ -907,12 +969,28 @@ module.exports = class SoloLevelingStats {
     const baseStats = { ...this.settings.stats };
     const titleBonus = this.getActiveTitleBonus();
 
+    // Migration: Support both 'luck' and 'perception' for backward compatibility
+    const perceptionStat = baseStats.perception ?? baseStats.luck ?? 0;
+    const perceptionTitleBonus = titleBonus.perception ?? titleBonus.luck ?? 0;
+
+    // Apply MULTIPLICATIVE percentage-based stat bonuses from titles
+    // Titles are multiplicative since you can only equip one at a time
+    // Support both old format (raw numbers) and new format (percentages)
+    const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
+    const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
+    const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
+    const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
+    const perceptionPercent = titleBonus.perceptionPercent || (perceptionTitleBonus ? perceptionTitleBonus / 100 : 0);
+
+    // Apply multiplicatively (multiply base stats by title multiplier)
     return {
-      strength: baseStats.strength + (titleBonus.strength || 0),
-      agility: baseStats.agility + (titleBonus.agility || 0),
-      intelligence: baseStats.intelligence + (titleBonus.intelligence || 0),
-      vitality: baseStats.vitality + (titleBonus.vitality || 0),
-      luck: baseStats.luck + (titleBonus.luck || 0),
+      strength: Math.round(baseStats.strength * (1 + strengthPercent)),
+      agility: Math.round(baseStats.agility * (1 + agilityPercent)),
+      intelligence: Math.round(baseStats.intelligence * (1 + intelligencePercent)),
+      vitality: Math.round(baseStats.vitality * (1 + vitalityPercent)),
+      perception: Math.round(perceptionStat * (1 + perceptionPercent)),
+      // Keep 'luck' for backward compatibility with title bonuses
+      luck: Math.round(perceptionStat * (1 + perceptionPercent)),
     };
   }
 
@@ -926,7 +1004,7 @@ module.exports = class SoloLevelingStats {
       },
       intelligence: { name: 'INT', desc: '+10% long msg XP', gain: 'Long messages' },
       vitality: { name: 'VIT', desc: '+5% quest rewards', gain: 'Complete quests' },
-      luck: { name: 'LUK', desc: 'Random buff per point (stacks)', gain: 'Allocate stat points' },
+      perception: { name: 'PER', desc: 'Random buff per point (stacks)', gain: 'Allocate stat points' },
     };
 
     const baseStats = this.settings.stats;
@@ -937,14 +1015,16 @@ module.exports = class SoloLevelingStats {
       .map(([key, baseValue]) => {
         const def = statDefs[key];
         const totalValue = totalStats[key];
-        const titleBuff = titleBonus[key] || 0;
-        const hasTitleBuff = titleBuff > 0;
+        // Support both old format (raw) and new format (percentage)
+        const statPercentKey = `${key}Percent`;
+        const titleBuffPercent = titleBonus[statPercentKey] || (titleBonus[key] ? titleBonus[key] / 100 : 0);
+        const hasTitleBuff = titleBuffPercent > 0;
 
         return `
         <div class="sls-chat-stat-item" data-stat="${key}">
           <span class="sls-chat-stat-name">${def.name}</span>
           <span class="sls-chat-stat-value">${totalValue}</span>
-          ${hasTitleBuff ? `<span class="sls-chat-stat-buff-indicator">+${titleBuff}</span>` : ''}
+          ${hasTitleBuff ? `<span class="sls-chat-stat-buff-indicator">+${(titleBuffPercent * 100).toFixed(0)}%</span>` : ''}
         </div>
       `;
       })
@@ -1120,14 +1200,28 @@ module.exports = class SoloLevelingStats {
           titleDiv.className = 'sls-chat-title-display';
           titleDiv.innerHTML = `
             <span class="sls-chat-title-label">Title:</span>
-            <span class="sls-chat-title-name">${this.settings.achievements.activeTitle}</span>
-            ${
-              titleBonus.xp > 0
-                ? `<span class="sls-chat-title-bonus">+${(titleBonus.xp * 100).toFixed(
-                    0
-                  )}% XP</span>`
-                : ''
-            }
+            <span class="sls-chat-title-name">${this.escapeHtml(this.settings.achievements.activeTitle)}</span>
+            ${(() => {
+              const buffs = [];
+              if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
+              if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+              // Support both old format (raw) and new format (percentage)
+              const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
+              const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
+              const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
+              const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
+              const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
+
+              if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
+              if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
+              if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
+              if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
+              if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
+
+              return buffs.length > 0
+                ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
+                : '';
+            })()}
           `;
           levelSection.parentElement.insertBefore(titleDiv, levelSection.nextElementSibling);
         }
@@ -1135,8 +1229,25 @@ module.exports = class SoloLevelingStats {
         const titleName = titleDisplay.querySelector('.sls-chat-title-name');
         const titleBonusEl = titleDisplay.querySelector('.sls-chat-title-bonus');
         if (titleName) titleName.textContent = this.settings.achievements.activeTitle;
-        if (titleBonusEl && titleBonus.xp > 0) {
-          titleBonusEl.textContent = `+${(titleBonus.xp * 100).toFixed(0)}% XP`;
+        if (titleBonusEl) {
+          // Build complete bonus list matching renderChatUI format
+          const buffs = [];
+          if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
+          if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+          // Support both old format (raw) and new format (percentage)
+          const strengthPercent = titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
+          const agilityPercent = titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
+          const intelligencePercent = titleBonus.intelligencePercent || (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
+          const vitalityPercent = titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
+          const perceptionPercent = titleBonus.perceptionPercent || ((titleBonus.perception ?? titleBonus.luck ?? 0) / 100);
+
+          if (strengthPercent > 0) buffs.push(`+${(strengthPercent * 100).toFixed(0)}% STR`);
+          if (agilityPercent > 0) buffs.push(`+${(agilityPercent * 100).toFixed(0)}% AGI`);
+          if (intelligencePercent > 0) buffs.push(`+${(intelligencePercent * 100).toFixed(0)}% INT`);
+          if (vitalityPercent > 0) buffs.push(`+${(vitalityPercent * 100).toFixed(0)}% VIT`);
+          if (perceptionPercent > 0) buffs.push(`+${(perceptionPercent * 100).toFixed(0)}% PER`);
+
+          titleBonusEl.textContent = buffs.length > 0 ? buffs.join(', ') : '';
         }
       }
     } else if (titleDisplay) {
@@ -1246,7 +1357,8 @@ module.exports = class SoloLevelingStats {
                 agility: { fullName: 'Agility', desc: '+2% Crit (capped 25%), +1% EXP/Crit' },
                 intelligence: { fullName: 'Intelligence', desc: '+10% Long Msg' },
                 vitality: { fullName: 'Vitality', desc: '+5% Quests' },
-                luck: { fullName: 'Luck', desc: 'Random buff stacks' },
+                perception: { fullName: 'Perception', desc: 'Random buff stacks' },
+                luck: { fullName: 'Perception', desc: 'Random buff stacks' }, // Backward compatibility
               };
               const def = statDefs[statName];
               if (def) {
@@ -2000,6 +2112,13 @@ module.exports = class SoloLevelingStats {
   }
 
   stop() {
+    // Clean up level up debounce timeout
+    if (this.levelUpDebounceTimeout) {
+      clearTimeout(this.levelUpDebounceTimeout);
+      this.levelUpDebounceTimeout = null;
+    }
+    this.pendingLevelUp = null;
+
     // Stop observing
     if (this.messageObserver) {
       this.messageObserver.disconnect();
@@ -2092,16 +2211,28 @@ module.exports = class SoloLevelingStats {
             this.debugLog('LOAD_SETTINGS', 'Initialized new channelsVisited Set');
           }
 
-          // Initialize luckBuffs array if it doesn't exist
-          if (!Array.isArray(this.settings.luckBuffs)) {
-            this.settings.luckBuffs = [];
-            this.debugLog('LOAD_SETTINGS', 'Initialized luckBuffs array', {});
+          // Migration: Convert luck to perception
+          if (this.settings.stats.luck !== undefined && this.settings.stats.perception === undefined) {
+            this.settings.stats.perception = this.settings.stats.luck;
+            delete this.settings.stats.luck;
+            this.debugLog('LOAD_SETTINGS', 'Migrated luck stat to perception');
+          }
+          if (this.settings.luckBuffs !== undefined && this.settings.perceptionBuffs === undefined) {
+            this.settings.perceptionBuffs = this.settings.luckBuffs;
+            delete this.settings.luckBuffs;
+            this.debugLog('LOAD_SETTINGS', 'Migrated luckBuffs to perceptionBuffs');
+          }
+
+          // Initialize perceptionBuffs array if it doesn't exist
+          if (!Array.isArray(this.settings.perceptionBuffs)) {
+            this.settings.perceptionBuffs = [];
+            this.debugLog('LOAD_SETTINGS', 'Initialized perceptionBuffs array', {});
           } else {
-            const totalBuff = this.settings.luckBuffs.reduce((sum, buff) => sum + buff, 0);
-            this.debugLog('LOAD_SETTINGS', 'Loaded luckBuffs', {
-              count: this.settings.luckBuffs.length,
+            const totalBuff = this.settings.perceptionBuffs.reduce((sum, buff) => sum + buff, 0);
+            this.debugLog('LOAD_SETTINGS', 'Loaded perceptionBuffs', {
+              count: this.settings.perceptionBuffs.length,
               totalBuff: totalBuff.toFixed(1) + '%',
-              buffs: [...this.settings.luckBuffs],
+              buffs: [...this.settings.perceptionBuffs],
             });
           }
 
@@ -2267,9 +2398,19 @@ module.exports = class SoloLevelingStats {
         });
       }
 
-      // Ensure luckBuffs array exists
-      if (!Array.isArray(this.settings.luckBuffs)) {
-        this.settings.luckBuffs = [];
+      // Migration: Convert luck to perception
+      if (this.settings.stats.luck !== undefined && this.settings.stats.perception === undefined) {
+        this.settings.stats.perception = this.settings.stats.luck;
+        delete this.settings.stats.luck;
+      }
+      if (this.settings.luckBuffs !== undefined && this.settings.perceptionBuffs === undefined) {
+        this.settings.perceptionBuffs = this.settings.luckBuffs;
+        delete this.settings.luckBuffs;
+      }
+
+      // Ensure perceptionBuffs array exists
+      if (!Array.isArray(this.settings.perceptionBuffs)) {
+        this.settings.perceptionBuffs = [];
       }
 
       // Ensure channelsVisited is a Set
@@ -3353,147 +3494,207 @@ module.exports = class SoloLevelingStats {
     try {
       this.debugLog('AWARD_XP', 'Calculating XP', { messageLength });
 
+      // Get current level for calculations
+      const levelInfo = this.getCurrentLevel();
+      const currentLevel = levelInfo.level;
+
+      // ===== BASE XP CALCULATION (Additive Bonuses) =====
       // Base XP: 10 per message
-      let xp = 10;
+      let baseXP = 10;
 
-      // ===== ENHANCED XP GAINS =====
-
-      // 1. Character bonus: +0.15 per character (max +75) - increased from 50
+      // 1. Character bonus: +0.15 per character (max +75)
       const charBonus = Math.min(messageLength * 0.15, 75);
-      xp += charBonus;
+      baseXP += charBonus;
 
       // 2. Quality bonuses based on message content
       const qualityBonus = this.calculateQualityBonus(messageText, messageLength);
-      xp += qualityBonus;
+      baseXP += qualityBonus;
 
       // 3. Message type bonuses
       const typeBonus = this.calculateMessageTypeBonus(messageText);
-      xp += typeBonus;
+      baseXP += typeBonus;
 
-      // 4. Engagement bonus (if message gets reactions later, tracked separately)
-      // This is handled when reactions are detected
-
-      // 5. Time-based bonus (active during peak hours)
+      // 4. Time-based bonus (active during peak hours)
       const timeBonus = this.calculateTimeBonus();
-      xp += timeBonus;
+      baseXP += timeBonus;
 
-      // 6. Channel activity bonus (more active channels = more XP)
+      // 5. Channel activity bonus (more active channels = more XP)
       const channelBonus = this.calculateChannelActivityBonus();
-      xp += channelBonus;
+      baseXP += channelBonus;
 
-      // Apply active title bonus
-      const titleBonus = this.getActiveTitleBonus();
-      if (titleBonus.xp > 0) {
-        xp *= 1 + titleBonus.xp;
-      }
-      // Note: Other title bonuses (critChance, stats) are applied elsewhere
+      // 6. Activity streak bonus (reward consistent daily activity)
+      // This helps balance progression at high levels by rewarding regular play
+      const streakBonus = this.calculateActivityStreakBonus();
+      baseXP += streakBonus;
 
-      // Apply skill tree bonuses (from SkillTree plugin)
+      // ===== PERCENTAGE BONUSES (Additive, Not Multiplicative) =====
+      let totalPercentageBonus = 0; // Track all percentage bonuses additively
+
+      // ===== SKILL TREE BONUSES (Additive Percentage - Permanent Buffs) =====
+      // Skill Tree bonuses are ADDITIVE percentage bonuses (like title bonuses)
+      // They're permanent buffs that add to the percentage pool
+      // Reset stat multiplier for this calculation
+      this._skillTreeStatMultiplier = null;
+
       try {
         const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
         if (skillBonuses) {
-          // Apply XP bonus
+          // XP bonus: Additive percentage (adds to percentage pool)
           if (skillBonuses.xpBonus > 0) {
-            xp *= 1 + skillBonuses.xpBonus;
+            totalPercentageBonus += skillBonuses.xpBonus * 100; // Convert to percentage
           }
-          // Apply long message bonus
+          // Long message bonus: Additive percentage (adds to percentage pool)
           if (messageLength > 200 && skillBonuses.longMsgBonus > 0) {
-            xp *= 1 + skillBonuses.longMsgBonus;
+            totalPercentageBonus += skillBonuses.longMsgBonus * 100; // Convert to percentage
           }
-        }
-      } catch (error) {
-        // SkillTree not available or error loading bonuses
-      }
-
-      // Get Luck buff multiplier (applies to ALL stat bonuses)
-      const totalLuckBuff =
-        typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
-      const luckMultiplier = totalLuckBuff / 100; // Convert percentage to multiplier
-
-      // Apply skill tree all-stat bonus (if any)
-      let skillAllStatBonus = 0;
-      try {
-        const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
-        if (skillBonuses && skillBonuses.allStatBonus > 0) {
-          skillAllStatBonus = skillBonuses.allStatBonus;
+          // All stat bonus: Multiplies stat-based bonuses (strength, intelligence, perception)
+          // This is a multiplier for stat bonuses, not a direct percentage bonus
+          if (skillBonuses.allStatBonus > 0) {
+            this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus;
+          }
         }
       } catch (error) {
         // SkillTree not available
       }
 
-      // Stat multipliers - Enhanced scaling for meaningful effects
-      // Strength: +5% XP per point (multiplicative - gets stronger)
-      // Luck buffs enhance Strength bonus: (base STR bonus) * (1 + luck multiplier)
-      // Skill tree all-stat bonus enhances all stat bonuses
-      const baseStrengthMultiplier = 1 + this.settings.stats.strength * 0.05;
-      const enhancedStrengthMultiplier =
-        baseStrengthMultiplier * (1 + luckMultiplier + skillAllStatBonus);
-      xp = Math.round(xp * enhancedStrengthMultiplier);
+      // Title bonus will be applied multiplicatively after percentage bonuses
+      // (stored for later application)
 
-      // Intelligence: Enhanced scaling for long messages
-      // Base +10% per point, +2% per point after 5 (diminishing returns but still meaningful)
-      // Luck buffs enhance Intelligence bonus: (base INT bonus) * (1 + luck multiplier)
-      // Skill tree all-stat bonus enhances all stat bonuses
-      if (messageLength > 200) {
-        const intBaseBonus = this.settings.stats.intelligence * 0.1;
-        const intAdvancedBonus = Math.max(0, (this.settings.stats.intelligence - 5) * 0.02);
-        const baseIntMultiplier = 1 + intBaseBonus + intAdvancedBonus;
-        const enhancedIntMultiplier = baseIntMultiplier * (1 + luckMultiplier + skillAllStatBonus);
-        xp = Math.round(xp * enhancedIntMultiplier);
+      // Get Perception buff (renamed from Luck)
+      const totalPerceptionBuff =
+        typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
+
+      // Apply Skill Tree allStatBonus multiplier to Perception buff if available
+      let adjustedPerceptionBuff = totalPerceptionBuff;
+      if (this._skillTreeStatMultiplier && totalPerceptionBuff > 0) {
+        adjustedPerceptionBuff = totalPerceptionBuff * this._skillTreeStatMultiplier;
       }
+      totalPercentageBonus += adjustedPerceptionBuff;
 
-      // Luck: Apply stacked buffs as additional XP bonus (on top of enhanced stat bonuses)
-      // This gives Luck a direct XP boost in addition to enhancing other stats
-      if (totalLuckBuff > 0) {
-        const luckBonusXP = Math.round(xp * luckMultiplier);
-        xp += luckBonusXP;
-
-        // Calculate int multiplier info for debug log (only if message is long enough)
-        let intEnhancedInfo = 'N/A';
-        if (messageLength > 200) {
-          const intBaseBonus = this.settings.stats.intelligence * 0.1;
-          const intAdvancedBonus = Math.max(0, (this.settings.stats.intelligence - 5) * 0.02);
-          const baseIntMultiplier = 1 + intBaseBonus + intAdvancedBonus;
-          const enhancedIntMultiplier =
-            baseIntMultiplier * (1 + luckMultiplier + skillAllStatBonus);
-          intEnhancedInfo = baseIntMultiplier.toFixed(2) + ' → ' + enhancedIntMultiplier.toFixed(2);
+      // ===== STAT BONUSES (Additive with Diminishing Returns) =====
+      // Strength: +2% per point, with diminishing returns after 20 points
+      const strengthStat = this.settings.stats.strength || 0;
+      let strengthBonus = 0;
+      if (strengthStat > 0) {
+        if (strengthStat <= 20) {
+          strengthBonus = strengthStat * 2; // 2% per point up to 20
+        } else {
+          // Diminishing returns: 40% base + (stat - 20) * 0.5%
+          strengthBonus = 40 + (strengthStat - 20) * 0.5;
         }
-
-        this.debugLog('AWARD_XP_LUCK', 'Stacked luck buffs applied', {
-          luckStat: this.settings.stats.luck,
-          luckBuffs: [...this.settings.luckBuffs],
-          totalStackedBuff: totalLuckBuff.toFixed(1) + '%',
-          luckMultiplier: (luckMultiplier * 100).toFixed(1) + '%',
-          baseXP: xp - luckBonusXP,
-          luckBonusXP,
-          finalXP: xp,
-          strengthEnhanced:
-            baseStrengthMultiplier.toFixed(2) + ' → ' + enhancedStrengthMultiplier.toFixed(2),
-          intEnhanced: intEnhancedInfo,
-        });
+        // Apply Skill Tree allStatBonus multiplier if available
+        if (this._skillTreeStatMultiplier) {
+          strengthBonus *= this._skillTreeStatMultiplier;
+        }
+        totalPercentageBonus += strengthBonus;
       }
 
-      // Critical Hit Bonus: +25% XP multiplier if message was a crit
+      // Intelligence: +5% per point for long messages, with diminishing returns after 15 points
+      if (messageLength > 200) {
+        const intelligenceStat = this.settings.stats.intelligence || 0;
+        let intelligenceBonus = 0;
+        if (intelligenceStat > 0) {
+          if (intelligenceStat <= 15) {
+            intelligenceBonus = intelligenceStat * 5; // 5% per point up to 15
+          } else {
+            // Diminishing returns: 75% base + (stat - 15) * 1%
+            intelligenceBonus = 75 + (intelligenceStat - 15) * 1;
+          }
+          // Apply Skill Tree allStatBonus multiplier if available
+          if (this._skillTreeStatMultiplier) {
+            intelligenceBonus *= this._skillTreeStatMultiplier;
+          }
+          totalPercentageBonus += intelligenceBonus;
+        }
+      }
+
+      // Perception: Apply stacked buffs as additive percentage bonus
+      if (totalPerceptionBuff > 0) {
+        totalPercentageBonus += totalPerceptionBuff;
+      }
+
+      // ===== APPLY PERCENTAGE BONUSES (Additive) =====
+      // Cap total percentage bonus at 500% (6x multiplier max) to prevent exponential growth
+      const cappedPercentageBonus = Math.min(totalPercentageBonus, 500);
+      let xp = Math.round(baseXP * (1 + cappedPercentageBonus / 100));
+
+      // ===== TITLE BONUS (Multiplicative - Single Equipped Title) =====
+      // Titles are MULTIPLICATIVE since you can only equip one title at a time
+      // This makes title choice meaningful and powerful
+      const titleBonus = this.getActiveTitleBonus();
+      if (titleBonus.xp > 0) {
+        xp = Math.round(xp * (1 + titleBonus.xp));
+      }
+
+      // ===== MILESTONE BONUSES (Multiplicative - Catch-up mechanism) =====
+      // At certain level milestones, multiply XP to help balance diminishing returns
+      // These are MULTIPLICATIVE since they're milestone rewards
+      // Slightly nerfed but still impactful
+      const milestoneMultipliers = {
+        25: 1.12,   // +12% at level 25 (was 1.15)
+        50: 1.20,  // +20% at level 50 (was 1.25)
+        75: 1.28,  // +28% at level 75 (was 1.35)
+        100: 1.40, // +40% at level 100 (was 1.50)
+        150: 1.55, // +55% at level 150 (was 1.65)
+        200: 1.70, // +70% at level 200 (was 1.80)
+        300: 1.85, // +85% at level 300
+        400: 2.00, // +100% at level 400 (Double XP!)
+        500: 2.15, // +115% at level 500
+        700: 2.35, // +135% at level 700
+        1000: 2.60, // +160% at level 1000
+        1500: 2.90, // +190% at level 1500
+        2000: 3.25, // +225% at level 2000
+      };
+
+      // Apply highest milestone multiplier reached
+      let milestoneMultiplier = 1.0;
+      for (const [milestone, multiplier] of Object.entries(milestoneMultipliers)) {
+        if (currentLevel >= parseInt(milestone)) {
+          milestoneMultiplier = multiplier;
+        }
+      }
+
+      if (milestoneMultiplier > 1.0) {
+        xp = Math.round(xp * milestoneMultiplier);
+      }
+
+      // ===== LEVEL-BASED DIMINISHING RETURNS (Balanced) =====
+      // At higher levels, XP gains are reduced to prevent rapid leveling
+      // Floor: 75% ensures progression feels rewarding but balanced
+      if (currentLevel > 10) {
+        // Balanced diminishing returns formula: multiplier = 1 / (1 + (level - 10) * 0.008)
+        // Minimum floor: 75% (never reduce below 75%)
+        // Level 10: 1.0x (no reduction)
+        // Level 20: ~0.93x (7% reduction)
+        // Level 50: ~0.76x (24% reduction)
+        // Level 100: ~0.75x (25% reduction - floor)
+        // Level 200: ~0.75x (still at floor)
+        const rawMultiplier = 1 / (1 + (currentLevel - 10) * 0.008);
+        const levelReductionMultiplier = Math.max(rawMultiplier, 0.75); // Floor at 75%
+        xp = Math.round(xp * levelReductionMultiplier);
+
+        // Minimum XP floor: Always award at least 10 XP per message (ensures visible progress)
+        const minXP = 10;
+        xp = Math.max(xp, minXP);
+      }
+
+      // ===== CRITICAL HIT BONUS (Multiplicative, but capped) =====
       const critBonus = this.checkCriticalHitBonus();
       if (critBonus > 0) {
-        const baseXP = xp;
+        const baseXPBeforeCrit = xp;
         let critMultiplier = critBonus;
         let isMegaCrit = false;
 
-        // Check for Dagger Throw Master mega crit (1000x multiplier)
+        // Check for Dagger Throw Master mega crit (special case - keep 1000x)
         const activeTitle = this.settings.achievements?.activeTitle;
         if (activeTitle === 'Dagger Throw Master') {
           const agilityStat = this.settings.stats?.agility || 0;
-          // Chance = Agility stat * 2% (e.g., 10 AGI = 20% chance)
           const megaCritChance = agilityStat * 0.02;
           const roll = Math.random();
 
           if (roll < megaCritChance) {
-            // MEGA CRIT! 1000x multiplier
-            critMultiplier = 999; // 1000x total (1 + 999 = 1000x)
+            critMultiplier = 999; // 1000x total
             isMegaCrit = true;
-
-            // Show epic notification
             this.showNotification(
               `💥💥💥 MEGA CRITICAL HIT! 💥💥💥\n` +
                 `Dagger Throw Master activated!\n` +
@@ -3501,7 +3702,6 @@ module.exports = class SoloLevelingStats {
               'success',
               8000
             );
-
             this.debugLog('AWARD_XP_MEGA_CRIT', 'Mega crit activated!', {
               agilityStat,
               megaCritChance: (megaCritChance * 100).toFixed(1) + '%',
@@ -3511,41 +3711,48 @@ module.exports = class SoloLevelingStats {
           }
         }
 
+        // Apply crit multiplier (only multiplicative bonus remaining)
         xp = Math.round(xp * (1 + critMultiplier));
+
         // Track crit for achievements
         if (!this.settings.activity.critsLanded) {
           this.settings.activity.critsLanded = 0;
         }
         this.settings.activity.critsLanded++;
 
-        const logData = {
+        this.debugLog('AWARD_XP_CRIT', isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied', {
           critBonus: (critBonus * 100).toFixed(0) + '%',
-          baseXP,
-          critBonusXP: xp - baseXP,
+          baseXPBeforeCrit,
+          critBonusXP: xp - baseXPBeforeCrit,
           finalXP: xp,
           totalCrits: this.settings.activity.critsLanded,
-        };
-
-        if (isMegaCrit) {
-          logData.megaCrit = true;
-          logData.multiplier = '1000x';
-          logData.agilityStat = this.settings.stats?.agility || 0;
-        }
-
-        this.debugLog(
-          'AWARD_XP_CRIT',
-          isMegaCrit ? 'MEGA CRITICAL HIT!' : 'Critical hit bonus applied',
-          logData
-        );
+          isMegaCrit,
+        });
       }
 
-      // Rank bonus multiplier (higher rank = more XP)
+      // ===== RANK BONUS (Multiplicative, but final) =====
+      // Rank multiplier applied last (this is the only remaining multiplicative bonus)
       const rankMultiplier = this.getRankMultiplier();
-      xp *= rankMultiplier;
+      xp = Math.round(xp * rankMultiplier);
 
-      // Round XP
+      // Final rounding
       xp = Math.round(xp);
-      this.debugLog('AWARD_XP', 'XP calculated', { xp, messageLength });
+
+      // Calculate skill tree multiplier for logging (if any)
+      const skillTreeMultiplier = this._skillTreeStatMultiplier || 1.0;
+
+      this.debugLog('AWARD_XP', 'XP calculated', {
+        baseXP,
+        totalPercentageBonus: totalPercentageBonus.toFixed(1) + '%',
+        cappedPercentageBonus: cappedPercentageBonus.toFixed(1) + '%',
+        skillTreeMultiplier: skillTreeMultiplier > 1.0 ? `${((skillTreeMultiplier - 1) * 100).toFixed(1)}%` : 'None',
+        milestoneMultiplier: milestoneMultiplier > 1.0 ? `${((milestoneMultiplier - 1) * 100).toFixed(0)}%` : 'None',
+        levelReduction: currentLevel > 10 ? ((Math.max(1 / (1 + (currentLevel - 10) * 0.008), 0.75) * 100).toFixed(1) + '%') : 'N/A',
+        rankMultiplier: `${((this.getRankMultiplier() - 1) * 100).toFixed(0)}%`,
+        finalXP: xp,
+        messageLength,
+        currentLevel,
+      });
 
       // Add XP
       const oldLevel = this.settings.level;
@@ -3553,14 +3760,26 @@ module.exports = class SoloLevelingStats {
       this.settings.xp += xp;
       this.settings.totalXP += xp;
 
+      // Update level based on new total XP
+      const newLevelInfo = this.getCurrentLevel();
+      if (this.settings.level !== newLevelInfo.level) {
+        this.settings.level = newLevelInfo.level;
+        this.settings.xp = newLevelInfo.xp;
+      } else {
+        this.settings.xp = newLevelInfo.xp;
+      }
+
       this.debugLog('AWARD_XP', 'XP added', {
         xpAwarded: xp,
         oldTotalXP,
         newTotalXP: this.settings.totalXP,
         oldLevel,
+        newLevel: this.settings.level,
+        currentXP: this.settings.xp,
+        xpRequired: newLevelInfo.xpRequired,
       });
 
-      // Emit XP changed event for real-time progress bar updates
+      // Emit XP changed event for real-time progress bar updates (must be synchronous)
       this.emitXPChanged();
 
       // Save immediately on XP gain (important data)
@@ -3767,42 +3986,98 @@ module.exports = class SoloLevelingStats {
     return 2;
   }
 
+  calculateActivityStreakBonus() {
+    // Reward consistent daily activity to help balance progression at high levels
+    // Tracks consecutive days with activity (messages sent)
+    try {
+      const today = new Date().toDateString();
+      const lastActiveDate = this.settings.activity?.lastActiveDate;
+
+      // Initialize streak tracking if needed
+      if (!this.settings.activity.streakDays) {
+        this.settings.activity.streakDays = 0;
+      }
+
+      // Check if this is a new day
+      if (lastActiveDate !== today) {
+        // Check if streak continues (yesterday was active)
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = yesterday.toDateString();
+
+        if (lastActiveDate === yesterdayStr) {
+          // Streak continues
+          this.settings.activity.streakDays = (this.settings.activity.streakDays || 0) + 1;
+        } else if (lastActiveDate && lastActiveDate !== today) {
+          // Streak broken
+          this.settings.activity.streakDays = 1;
+        } else {
+          // First day or no previous activity
+          this.settings.activity.streakDays = 1;
+        }
+
+        this.settings.activity.lastActiveDate = today;
+      }
+
+      // Calculate bonus based on streak (capped at 7 days for balance)
+      // 1 day: +1 XP, 2 days: +2 XP, 3 days: +4 XP, 4 days: +6 XP, 5 days: +8 XP, 6 days: +10 XP, 7+ days: +12 XP
+      const streakDays = Math.min(this.settings.activity.streakDays || 0, 7);
+      const streakBonus = streakDays <= 1 ? streakDays : Math.min(2 + (streakDays - 1) * 2, 12);
+
+      return streakBonus;
+    } catch (error) {
+      this.debugError('CALCULATE_STREAK_BONUS', error);
+      return 0;
+    }
+  }
+
   // Get total Luck buff percentage (helper method)
-  getTotalLuckBuff() {
-    if (
-      this.settings.stats.luck > 0 &&
-      Array.isArray(this.settings.luckBuffs) &&
-      this.settings.luckBuffs.length > 0
-    ) {
-      return this.settings.luckBuffs.reduce((sum, buff) => sum + buff, 0);
+  getTotalPerceptionBuff() {
+    // Migration: Support both old 'luck' and new 'perception' names
+    const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
+    const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
+
+    if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
+      return perceptionBuffs.reduce((sum, buff) => sum + buff, 0);
     }
     return 0;
   }
 
   getRankMultiplier() {
+    // Buffed rank multipliers for clear, noticeable progression
+    // Slightly nerfed but still very impactful - each rank feels like a major power spike
     const rankMultipliers = {
-      E: 1.0,
-      D: 1.1,
-      C: 1.2,
-      B: 1.3,
-      A: 1.4,
-      S: 1.5,
-      SS: 1.7,
-      SSS: 1.9,
-      'SSS+': 2.1,
-      NH: 2.3, // National Hunter
-      Monarch: 2.6,
-      'Monarch+': 3.0,
-      'Shadow Monarch': 3.5, // Shadow Monarch (Final)
+      E: 1.0,           // Base (no bonus)
+      D: 1.25,          // +25% (was 1.3)
+      C: 1.50,          // +50% (was 1.6)
+      B: 1.85,          // +85% (was 2.0) - Nearly double XP!
+      A: 2.25,          // +125% (was 2.5)
+      S: 2.75,          // +175% (was 3.2)
+      SS: 3.50,         // +250% (was 4.0) - 3.5x XP!
+      SSS: 4.25,        // +325% (was 5.0) - 4.25x XP!
+      'SSS+': 5.25,     // +425% (was 6.5) - 5.25x XP!
+      NH: 6.50,         // +550% (was 8.0) - National Hunter - 6.5x XP!
+      Monarch: 8.00,    // +700% (was 10.0) - 8x XP!
+      'Monarch+': 10.0, // +900% (was 13.0) - 10x XP!
+      'Shadow Monarch': 12.5, // +1150% (was 16.0) - Shadow Monarch - 12.5x XP!
     };
     return rankMultipliers[this.settings.rank] || 1.0;
   }
 
   getXPRequiredForLevel(level) {
-    // Exponential scaling: baseXP * (level ^ 1.5)
+    // Balanced exponential scaling: baseXP * (level ^ 1.6) + baseXP * level * 0.25
+    // Reduced steepness to make progression feel more rewarding
     // No level cap - unlimited progression
+    // Formula breakdown:
+    // - Level 1: ~125 XP
+    // - Level 10: ~1,100 XP
+    // - Level 50: ~13,000 XP
+    // - Level 100: ~45,000 XP
+    // - Level 200: ~130,000 XP
     const baseXP = 100;
-    return Math.round(baseXP * Math.pow(level, 1.5));
+    const exponentialPart = baseXP * Math.pow(level, 1.6); // Reduced from 1.7 to 1.6
+    const linearPart = baseXP * level * 0.25; // Reduced from 0.3 to 0.25
+    return Math.round(exponentialPart + linearPart);
   }
 
   getCurrentLevel() {
@@ -3830,6 +4105,10 @@ module.exports = class SoloLevelingStats {
 
   checkLevelUp(oldLevel) {
     try {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3831',message:'CHECK_LEVEL_UP - entry',data:{oldLevel,currentLevel:this.settings.level,unallocatedPoints:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+
       this.debugLog('CHECK_LEVEL_UP', 'Checking for level up', { oldLevel });
 
       const levelInfo = this.getCurrentLevel();
@@ -3838,9 +4117,20 @@ module.exports = class SoloLevelingStats {
       if (newLevel > oldLevel) {
         // LEVEL UP!
         const levelsGained = newLevel - oldLevel;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3840',message:'LEVEL UP DETECTED',data:{oldLevel,newLevel,levelsGained,unallocatedPointsBefore:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
+
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
-        this.settings.unallocatedStatPoints += levelsGained; // Award stat points for each level
+        const statPointsBefore = this.settings.unallocatedStatPoints;
+        this.settings.unallocatedStatPoints += levelsGained * 5; // Award 5 stat points for each level
+        const statPointsAfter = this.settings.unallocatedStatPoints;
+
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3844',message:'STAT POINTS AWARDED',data:{levelsGained,statPointsBefore,statPointsAfter,statPointsAdded:statPointsAfter-statPointsBefore},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+        // #endregion
 
         this.debugLog('CHECK_LEVEL_UP', 'Level up detected!', {
           oldLevel,
@@ -3852,9 +4142,16 @@ module.exports = class SoloLevelingStats {
         // Process natural stat growth for each level gained (handles skipped levels)
         // This ensures stats grow naturally even when multiple levels are gained at once
         try {
+          const statsBefore = { ...this.settings.stats };
           for (let i = 0; i < levelsGained; i++) {
             this.processNaturalStatGrowth();
           }
+          const statsAfter = { ...this.settings.stats };
+
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3858',message:'NATURAL STAT GROWTH PROCESSED',data:{levelsGained,statsBefore,statsAfter},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+
           this.debugLog('CHECK_LEVEL_UP', 'Natural stat growth processed for skipped levels', {
             levelsGained,
           });
@@ -3873,12 +4170,43 @@ module.exports = class SoloLevelingStats {
           this.debugError('CHECK_LEVEL_UP', error, { phase: 'save_after_levelup' });
         }
 
-        // Show level up notification
-        try {
-          this.showLevelUpNotification(newLevel, oldLevel);
-        } catch (error) {
-          this.debugError('CHECK_LEVEL_UP', error, { phase: 'show_notification' });
+        // Debounce level up notification to prevent spam
+        // If there's already a pending notification, update it with the latest level
+        if (this.pendingLevelUp) {
+          // Update pending notification with latest level
+          this.pendingLevelUp.oldLevel = Math.min(this.pendingLevelUp.oldLevel, oldLevel);
+          this.pendingLevelUp.newLevel = Math.max(this.pendingLevelUp.newLevel, newLevel);
+          this.pendingLevelUp.levelsGained = this.pendingLevelUp.newLevel - this.pendingLevelUp.oldLevel;
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3880',message:'UPDATING PENDING LEVEL UP',data:{pendingLevelUp:this.pendingLevelUp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
+        } else {
+          // Create new pending notification
+          this.pendingLevelUp = {
+            oldLevel,
+            newLevel,
+            levelsGained,
+          };
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3888',message:'CREATING PENDING LEVEL UP',data:{pendingLevelUp:this.pendingLevelUp},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+          // #endregion
         }
+
+        // Clear existing timeout and set new one
+        if (this.levelUpDebounceTimeout) {
+          clearTimeout(this.levelUpDebounceTimeout);
+        }
+        this.levelUpDebounceTimeout = setTimeout(() => {
+          if (this.pendingLevelUp) {
+            const { oldLevel: finalOldLevel, newLevel: finalNewLevel, levelsGained: finalLevelsGained } = this.pendingLevelUp;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:3897',message:'SHOWING DEBOUNCED LEVEL UP NOTIFICATION',data:{finalOldLevel,finalNewLevel,finalLevelsGained},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+            // #endregion
+            this.showLevelUpNotification(finalNewLevel, finalOldLevel);
+            this.pendingLevelUp = null;
+            this.levelUpDebounceTimeout = null;
+          }
+        }, this.levelUpDebounceDelay);
 
         // Check for level achievements
         try {
@@ -4041,23 +4369,41 @@ module.exports = class SoloLevelingStats {
   }
 
   showLevelUpNotification(newLevel, oldLevel) {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SoloLevelingStats.plugin.js:4043',message:'SHOW_LEVEL_UP_NOTIFICATION',data:{oldLevel,newLevel,levelsGained:newLevel-oldLevel,unallocatedPoints:this.settings.unallocatedStatPoints},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+
     const levelInfo = this.getCurrentLevel();
-    const bonusPoints = newLevel * 50;
     const levelsGained = newLevel - oldLevel;
+
+    // Calculate total bonus points for all levels gained
+    // For multiple level ups: sum of (oldLevel+1)*50 + (oldLevel+2)*50 + ... + newLevel*50
+    let totalBonusPoints = 0;
+    for (let level = oldLevel + 1; level <= newLevel; level++) {
+      totalBonusPoints += level * 50;
+    }
+
     const rankInfo = this.getRankRequirements()[this.settings.rank];
 
-    const message =
-      `[SYSTEM] Level up detected. HP fully restored.\n\n` +
-      `LEVEL UP! You're now Level ${newLevel}!\n` +
-      `Rank: ${this.settings.rank} - ${rankInfo.name}\n` +
-      `HP: ${oldLevel * 10}/${oldLevel * 10} → ${newLevel * 10}/${newLevel * 10}\n` +
-      `Bonus: +${bonusPoints} points!\n` +
-      `+${levelsGained} stat point(s)! Use settings to allocate stats`;
+    // Build message with correct stats for multiple level ups
+    let message = `[SYSTEM] Level up detected. HP fully restored.\n\n`;
+
+    if (levelsGained > 1) {
+      message += `LEVEL UP! ${levelsGained}x Level Up! You're now Level ${newLevel}!\n`;
+      message += `(Level ${oldLevel} → Level ${newLevel})\n`;
+    } else {
+      message += `LEVEL UP! You're now Level ${newLevel}!\n`;
+    }
+
+    message += `Rank: ${this.settings.rank} - ${rankInfo.name}\n`;
+    message += `HP: ${oldLevel * 10}/${oldLevel * 10} → ${newLevel * 10}/${newLevel * 10}\n`;
+    message += `Bonus: +${totalBonusPoints} points!\n`;
+    message += `+${levelsGained} stat point(s)! Use settings to allocate stats`;
 
     this.showNotification(message, 'success', 5000);
 
     // Play level up sound/effect (optional)
-    console.log(`LEVEL UP! ${oldLevel} → ${newLevel} (Rank: ${this.settings.rank})`);
+    console.log(`LEVEL UP! ${oldLevel} → ${newLevel} (${levelsGained} level(s), Rank: ${this.settings.rank})`);
   }
 
   showNotification(message, type = 'info', timeout = 3000) {
@@ -4140,37 +4486,47 @@ module.exports = class SoloLevelingStats {
     this.settings.stats[statName]++;
     this.settings.unallocatedStatPoints--;
 
-    // Special handling for Luck: Generate random buff that stacks
-    if (statName === 'luck') {
+    // Special handling for Perception: Generate random buff that stacks
+    if (statName === 'perception' || statName === 'luck') {
+      // Migration: Use 'perception' as the canonical name
+      if (statName === 'luck') {
+        statName = 'perception';
+        if (this.settings.stats.perception === undefined) {
+          this.settings.stats.perception = oldValue;
+        }
+        this.settings.stats.perception++;
+        delete this.settings.stats.luck;
+      }
+
       // Generate random buff between 2% and 8% (can be adjusted)
       const randomBuff = Math.random() * 6 + 2; // 2% to 8%
       const roundedBuff = Math.round(randomBuff * 10) / 10; // Round to 1 decimal
 
-      // Initialize luckBuffs array if it doesn't exist
-      if (!Array.isArray(this.settings.luckBuffs)) {
-        this.settings.luckBuffs = [];
+      // Initialize perceptionBuffs array if it doesn't exist
+      if (!Array.isArray(this.settings.perceptionBuffs)) {
+        this.settings.perceptionBuffs = [];
       }
 
       // Add the new buff to the stack
-      this.settings.luckBuffs.push(roundedBuff);
+      this.settings.perceptionBuffs.push(roundedBuff);
 
       // Calculate total stacked buff
-      const totalLuckBuff =
-        typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
+      const totalPerceptionBuff =
+        typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
 
-      this.debugLog('ALLOCATE_STAT_LUCK', 'Random luck buff generated', {
+      this.debugLog('ALLOCATE_STAT_PERCEPTION', 'Random perception buff generated', {
         newBuff: roundedBuff,
-        totalBuffs: this.settings.luckBuffs.length,
-        allBuffs: [...this.settings.luckBuffs],
-        totalStackedBuff: totalLuckBuff.toFixed(1) + '%',
-        luckStat: this.settings.stats.luck,
+        totalBuffs: this.settings.perceptionBuffs.length,
+        allBuffs: [...this.settings.perceptionBuffs],
+        totalStackedBuff: totalPerceptionBuff.toFixed(1) + '%',
+        perceptionStat: this.settings.stats.perception,
       });
 
       // Show notification with buff info
       this.showNotification(
-        `+1 Luck! (${oldValue} → ${
+        `+1 Perception! (${oldValue} → ${
           this.settings.stats[statName]
-        })\nRandom Buff: +${roundedBuff.toFixed(1)}% (Total: +${totalLuckBuff.toFixed(
+        })\nRandom Buff: +${roundedBuff.toFixed(1)}% (Total: +${totalPerceptionBuff.toFixed(
           1
         )}% stacked)`,
         'success',
@@ -4338,6 +4694,254 @@ module.exports = class SoloLevelingStats {
   }
 
   /**
+   * Reset level to target level and recalculate stats appropriately
+   * This fixes cases where rapid leveling occurred due to old XP system
+   */
+  resetLevelTo(targetLevel) {
+    try {
+      const oldLevel = this.settings.level || 1;
+      const oldTotalXP = this.settings.totalXP || 0;
+      const oldStats = { ...this.settings.stats };
+
+      // Calculate total XP required for target level
+      // getCurrentLevel() calculates level by summing XP requirements until totalXP is exceeded
+      // So for level 71, we need totalXP >= sum of levels 1-70, but < sum of levels 1-71
+      // We'll set it to exactly the minimum needed for level 71
+      let totalXPNeeded = 0;
+      for (let level = 1; level < targetLevel; level++) {
+        totalXPNeeded += this.getXPRequiredForLevel(level);
+      }
+      // Add a small amount to ensure we're at the target level (not one below)
+      // This ensures getCurrentLevel() returns the correct level
+      totalXPNeeded += 1;
+
+      // Set level and XP
+      this.settings.level = targetLevel;
+      this.settings.totalXP = totalXPNeeded;
+
+      // Verify the calculation matches getCurrentLevel()
+      const levelInfo = this.getCurrentLevel();
+      if (levelInfo.level !== targetLevel) {
+        // Adjust if needed - set to exactly what getCurrentLevel expects
+        this.settings.totalXP = levelInfo.totalXPNeeded + 1;
+        const verifyLevel = this.getCurrentLevel();
+        if (verifyLevel.level !== targetLevel) {
+          // Fallback: calculate directly
+          let correctTotalXP = 0;
+          for (let level = 1; level < targetLevel; level++) {
+            correctTotalXP += this.getXPRequiredForLevel(level);
+          }
+          this.settings.totalXP = correctTotalXP;
+        }
+      }
+
+      // Recalculate to get accurate current XP
+      const finalLevelInfo = this.getCurrentLevel();
+      this.settings.xp = finalLevelInfo.xp;
+
+      // Reset unallocated stat points (5 per level)
+      this.settings.unallocatedStatPoints = targetLevel * 5;
+
+      // Calculate natural stat growth for target level
+      // Using expected values from the natural growth formula
+      // Formula: baseChance = 0.003, scalingFactor = 0.0005 per stat point
+      // Expected growth per level per stat ≈ 0.003 + (avgStat * 0.0005)
+      // We'll simulate this level by level using expected values
+      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const baseStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+
+      // Simulate natural growth level by level
+      for (let level = 1; level < targetLevel; level++) {
+        statNames.forEach((statName) => {
+          const currentStat = baseStats[statName] || 0;
+          // Expected growth chance: base 0.3% + (0.05% per stat point)
+          const baseChance = 0.003;
+          const scalingFactor = 0.0005;
+          const growthChance = baseChance + currentStat * scalingFactor;
+
+          // Use expected value (probability * 1 stat point)
+          // This gives us the average growth per level
+          const expectedGrowth = growthChance;
+          baseStats[statName] += expectedGrowth;
+        });
+      }
+
+      // Round to integers (natural growth gives whole stat points)
+      statNames.forEach((statName) => {
+        baseStats[statName] = Math.round(baseStats[statName]);
+      });
+
+      // Also add level-based growth (from retroactive formula)
+      // levelBasedGrowth = Math.floor((level - 1) * 0.15) distributed evenly
+      const levelBasedGrowth = Math.floor((targetLevel - 1) * 0.15);
+      const growthPerStat = Math.floor(levelBasedGrowth / statNames.length);
+      const remainder = levelBasedGrowth % statNames.length;
+
+      statNames.forEach((statName, index) => {
+        baseStats[statName] += growthPerStat;
+        if (index < remainder) {
+          baseStats[statName] += 1;
+        }
+      });
+
+      // Set stats (migrate luck to perception if needed)
+      this.settings.stats = {
+        strength: baseStats.strength,
+        agility: baseStats.agility,
+        intelligence: baseStats.intelligence,
+        vitality: baseStats.vitality,
+        perception: baseStats.perception,
+      };
+
+      // Reset perception buffs (generate some based on perception stat)
+      if (baseStats.perception > 0) {
+        this.settings.perceptionBuffs = [];
+        // Generate buffs for perception stat (similar to allocation)
+        for (let i = 0; i < baseStats.perception; i++) {
+          const randomBuff = Math.random() * 6 + 2; // 2% to 8%
+          const roundedBuff = Math.round(randomBuff * 10) / 10;
+          this.settings.perceptionBuffs.push(roundedBuff);
+        }
+      } else {
+        this.settings.perceptionBuffs = [];
+      }
+
+      // Clear old luck data if it exists
+      if (this.settings.stats.luck !== undefined) {
+        delete this.settings.stats.luck;
+      }
+      if (this.settings.luckBuffs !== undefined) {
+        delete this.settings.luckBuffs;
+      }
+
+      // Reset retroactive growth flag so it doesn't interfere
+      this.settings._retroactiveStatGrowthApplied = true;
+
+      // Check and unlock achievements that should be unlocked at this level FIRST
+      // This ensures achievements are properly unlocked based on the new level
+      // We need to do this BEFORE calculating rank, since rank depends on achievement count
+      try {
+        this.checkAchievements();
+      } catch (error) {
+        // Silently handle errors
+      }
+
+      // Verify and update active title if needed
+      const activeTitle = this.settings.achievements?.activeTitle;
+      if (activeTitle) {
+        const achievements = this.getAchievementDefinitions();
+        const titleAchievement = achievements.find(a => a.title === activeTitle);
+        if (titleAchievement) {
+          const stillMeetsRequirements = this.checkAchievementCondition(titleAchievement);
+          if (!stillMeetsRequirements) {
+            this.settings.achievements.activeTitle = null;
+          }
+        }
+      }
+
+      // NOW recalculate rank based on level 71 and updated achievement count
+      // Rank requirements: level 71 should be B-Rank (requires level 50, achievements 10)
+      // But we need to check what rank the user should actually have based on level and achievements
+      const rankRequirements = this.getRankRequirements();
+      let correctRank = 'E'; // Default to E
+
+      // Get updated achievement count (after checking achievements above)
+      const currentAchievements = this.settings.achievements?.unlocked?.length || 0;
+
+      // Find the highest rank the user qualifies for based on level
+      // Level 71 falls between B-Rank (50) and A-Rank (100)
+      // So they should be B-Rank if they have enough achievements
+      const rankOrder = ['Shadow Monarch', 'Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+      for (const rank of rankOrder) {
+        const req = rankRequirements[rank];
+        if (req && targetLevel >= req.level && currentAchievements >= req.achievements) {
+          correctRank = rank;
+          break;
+        }
+      }
+
+      // Set the correct rank
+      const oldRank = this.settings.rank;
+      this.settings.rank = correctRank;
+
+      // Update rank history if rank changed
+      if (oldRank !== correctRank) {
+        if (!this.settings.rankHistory) {
+          this.settings.rankHistory = [];
+        }
+        this.settings.rankHistory.push({
+          rank: correctRank,
+          level: targetLevel,
+          achievements: currentAchievements,
+          timestamp: Date.now(),
+        });
+      }
+
+      // Check daily quests - they don't depend on level, but we should verify they're still valid
+      // Daily quests are reset daily, so we don't need to change them
+
+      // Emit rank changed event if rank changed
+      if (oldRank !== correctRank) {
+        this.emitRankChanged(oldRank, correctRank);
+      }
+
+      // Save immediately
+      this.saveSettings(true);
+
+      // Update UI
+      this.updateChatUI();
+      this.emitXPChanged();
+      this.emitLevelChanged(oldLevel, targetLevel);
+      this.emit('statsChanged', {
+        stats: { ...this.settings.stats },
+        statsGrown: [],
+      });
+
+      // Verify final state
+      const finalLevelCheck = this.getCurrentLevel();
+      const finalAchievementsCount = this.settings.achievements?.unlocked?.length || 0;
+
+      // Show notification
+      const statsSummary = statNames.map(s => `${s.toUpperCase()}: ${baseStats[s]}`).join(', ');
+      const activeTitleMsg = this.settings.achievements?.activeTitle
+        ? `\n👑 Active Title: ${this.settings.achievements.activeTitle}`
+        : '';
+
+      this.showNotification(
+        `🔄 Level Reset Complete! 🔄\n` +
+        `Level: ${oldLevel} → ${targetLevel}\n` +
+        `Total XP: ${oldTotalXP.toLocaleString()} → ${this.settings.totalXP.toLocaleString()}\n` +
+        `Rank: ${oldRank} → ${correctRank}\n` +
+        `Natural Stats: ${statsSummary}\n` +
+        `Unallocated Points: ${this.settings.unallocatedStatPoints} (5 per level)\n` +
+        `Achievements: ${finalAchievementsCount} unlocked${activeTitleMsg}`,
+        'success',
+        8000
+      );
+
+      return {
+        success: true,
+        oldLevel,
+        newLevel: targetLevel,
+        stats: { ...this.settings.stats },
+        unallocatedPoints: this.settings.unallocatedStatPoints,
+      };
+    } catch (error) {
+      this.debugError('RESET_LEVEL', error);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
    * Process natural stat growth - stats increase automatically based on current stat values
    * Higher stats = higher chance to grow further (scaling effect)
    */
@@ -4462,7 +5066,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 50 messages',
         condition: { type: 'messages', value: 50 },
         title: 'The Weakest Hunter',
-        titleBonus: { xp: 0.03, strength: 1 }, // +3% XP, +1 Strength
+        titleBonus: { xp: 0.03, strengthPercent: 0.05 }, // +3% XP, +5% Strength
       },
       {
         id: 'e_rank',
@@ -4470,7 +5074,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 200 messages',
         condition: { type: 'messages', value: 200 },
         title: 'E-Rank Hunter',
-        titleBonus: { xp: 0.08, strength: 1 }, // +8% XP, +1 STR
+        titleBonus: { xp: 0.08, strengthPercent: 0.05 }, // +8% XP, +5% STR
       },
       {
         id: 'd_rank',
@@ -4478,7 +5082,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 500 messages',
         condition: { type: 'messages', value: 500 },
         title: 'D-Rank Hunter',
-        titleBonus: { xp: 0.12, agility: 1 }, // +12% XP, +1 AGI
+        titleBonus: { xp: 0.12, agilityPercent: 0.05 }, // +12% XP, +5% AGI
       },
       {
         id: 'c_rank',
@@ -4486,7 +5090,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 1,000 messages',
         condition: { type: 'messages', value: 1000 },
         title: 'C-Rank Hunter',
-        titleBonus: { xp: 0.18, critChance: 0.01, strength: 1 }, // +18% XP, +1% Crit, +1 STR
+        titleBonus: { xp: 0.18, critChance: 0.01, strengthPercent: 0.05 }, // +18% XP, +1% Crit, +5% STR
       },
       {
         id: 'b_rank',
@@ -4494,7 +5098,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 2,500 messages',
         condition: { type: 'messages', value: 2500 },
         title: 'B-Rank Hunter',
-        titleBonus: { xp: 0.25, critChance: 0.02, agility: 1, intelligence: 1 }, // +25% XP, +2% Crit, +1 AGI, +1 INT
+        titleBonus: { xp: 0.25, critChance: 0.02, agilityPercent: 0.05, intelligencePercent: 0.05 }, // +25% XP, +2% Crit, +5% AGI, +5% INT
       },
       {
         id: 'a_rank',
@@ -4502,7 +5106,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 5,000 messages',
         condition: { type: 'messages', value: 5000 },
         title: 'A-Rank Hunter',
-        titleBonus: { xp: 0.32, critChance: 0.02, strength: 1, agility: 1 }, // +32% XP, +2% Crit, +1 STR, +1 AGI
+        titleBonus: { xp: 0.32, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +2% Crit, +5% STR, +5% AGI
       },
       {
         id: 's_rank',
@@ -4510,7 +5114,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 10,000 messages',
         condition: { type: 'messages', value: 10000 },
         title: 'S-Rank Hunter',
-        titleBonus: { xp: 0.4, strength: 2, critChance: 0.02 }, // +40% XP, +2 Strength, +2% Crit Chance
+        titleBonus: { xp: 0.4, strengthPercent: 0.10, critChance: 0.02 }, // +40% XP, +10% Strength, +2% Crit Chance
       },
       // Character/Writing Milestones
       {
@@ -4519,7 +5123,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 25,000 characters',
         condition: { type: 'characters', value: 25000 },
         title: 'Shadow Extraction',
-        titleBonus: { xp: 0.15, critChance: 0.02, agility: 1 }, // +15% XP, +2% Crit Chance, +1 Agility
+        titleBonus: { xp: 0.15, critChance: 0.02, agilityPercent: 0.05 }, // +15% XP, +2% Crit Chance, +5% Agility
       },
       {
         id: 'domain_expansion',
@@ -4527,7 +5131,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 75,000 characters',
         condition: { type: 'characters', value: 75000 },
         title: 'Domain Expansion',
-        titleBonus: { xp: 0.22, intelligence: 2, critChance: 0.01 }, // +22% XP, +2 INT, +1% Crit
+        titleBonus: { xp: 0.22, intelligencePercent: 0.10, critChance: 0.01 }, // +22% XP, +10% INT, +1% Crit
       },
       {
         id: 'ruler_authority',
@@ -4535,16 +5139,48 @@ module.exports = class SoloLevelingStats {
         description: 'Type 150,000 characters',
         condition: { type: 'characters', value: 150000 },
         title: "Ruler's Authority",
-        titleBonus: { xp: 0.3, intelligence: 2, critChance: 0.02 }, // +30% XP, +2 INT, +2% Crit
+        titleBonus: { xp: 0.3, intelligencePercent: 0.10, critChance: 0.02 }, // +30% XP, +10% INT, +2% Crit
       },
-      // Level Milestones
+      // Level Milestones (1-2000)
+      {
+        id: 'first_steps',
+        name: 'First Steps',
+        description: 'Reach Level 1',
+        condition: { type: 'level', value: 1 },
+        title: 'First Steps',
+        titleBonus: { xp: 0.02, critChance: 0.005 }, // +2% XP, +0.5% Crit
+      },
+      {
+        id: 'novice_hunter',
+        name: 'Novice Hunter',
+        description: 'Reach Level 5',
+        condition: { type: 'level', value: 5 },
+        title: 'Novice Hunter',
+        titleBonus: { xp: 0.05, critChance: 0.01, strengthPercent: 0.05 }, // +5% XP, +1% Crit, +5% STR
+      },
+      {
+        id: 'rising_hunter',
+        name: 'Rising Hunter',
+        description: 'Reach Level 10',
+        condition: { type: 'level', value: 10 },
+        title: 'Rising Hunter',
+        titleBonus: { xp: 0.08, critChance: 0.01, agilityPercent: 0.05 }, // +8% XP, +1% Crit, +5% AGI
+      },
       {
         id: 'awakened',
         name: 'The Awakened',
         description: 'Reach Level 15',
         condition: { type: 'level', value: 15 },
         title: 'The Awakened',
-        titleBonus: { xp: 0.1, critChance: 0.01, strength: 1 }, // +10% XP, +1% Crit, +1 STR
+        titleBonus: { xp: 0.12, critChance: 0.015, strengthPercent: 0.05, agilityPercent: 0.05 }, // +12% XP, +1.5% Crit, +5% STR/AGI
+      },
+      {
+        id: 'experienced_hunter',
+        name: 'Experienced Hunter',
+        description: 'Reach Level 20',
+        condition: { type: 'level', value: 20 },
+        title: 'Experienced Hunter',
+        titleBonus: { xp: 0.15, critChance: 0.02, strengthPercent: 0.05, intelligencePercent: 0.05 }, // +15% XP, +2% Crit, +5% STR/INT
       },
       {
         id: 'shadow_army',
@@ -4552,7 +5188,15 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 30',
         condition: { type: 'level', value: 30 },
         title: 'Shadow Army Commander',
-        titleBonus: { xp: 0.2, critChance: 0.02, agility: 2, strength: 1 }, // +20% XP, +2% Crit, +2 AGI, +1 STR
+        titleBonus: { xp: 0.22, critChance: 0.025, agilityPercent: 0.10, strengthPercent: 0.05 }, // +22% XP, +2.5% Crit, +10% AGI, +5% STR
+      },
+      {
+        id: 'elite_hunter',
+        name: 'Elite Hunter',
+        description: 'Reach Level 40',
+        condition: { type: 'level', value: 40 },
+        title: 'Elite Hunter',
+        titleBonus: { xp: 0.25, critChance: 0.025, strengthPercent: 0.10, agilityPercent: 0.05, intelligencePercent: 0.05 }, // +25% XP, +2.5% Crit, +10% STR, +5% AGI/INT
       },
       {
         id: 'necromancer',
@@ -4560,7 +5204,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50',
         condition: { type: 'level', value: 50 },
         title: 'Necromancer',
-        titleBonus: { xp: 0.28, critChance: 0.03, intelligence: 2, vitality: 1 }, // +28% XP, +3% Crit, +2 INT, +1 VIT
+        titleBonus: { xp: 0.32, critChance: 0.035, intelligencePercent: 0.10, vitalityPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +3.5% Crit, +10% INT, +5% VIT/AGI
       },
       {
         id: 'national_level',
@@ -4568,7 +5212,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75',
         condition: { type: 'level', value: 75 },
         title: 'National Level Hunter',
-        titleBonus: { xp: 0.35, critChance: 0.04, strength: 2, agility: 2, intelligence: 1 }, // +35% XP, +4% Crit, +2 STR/AGI, +1 INT
+        titleBonus: { xp: 0.35, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +35% XP, +4% Crit, +10% STR/AGI, +5% INT
       },
       {
         id: 'monarch_candidate',
@@ -4577,13 +5221,238 @@ module.exports = class SoloLevelingStats {
         condition: { type: 'level', value: 100 },
         title: 'Monarch Candidate',
         titleBonus: {
-          xp: 0.42,
-          critChance: 0.04,
-          strength: 2,
-          agility: 2,
-          intelligence: 2,
-          vitality: 1,
-        }, // +42% XP, +4% Crit, +2 STR/AGI/INT, +1 VIT
+          xp: 0.50,
+          critChance: 0.05,
+          strengthPercent: 0.15,
+          agilityPercent: 0.15,
+          intelligencePercent: 0.10,
+          vitalityPercent: 0.10,
+        }, // +50% XP, +5% Crit, +15% STR/AGI, +10% INT/VIT
+      },
+      {
+        id: 'high_rank_hunter',
+        name: 'High-Rank Hunter',
+        description: 'Reach Level 150',
+        condition: { type: 'level', value: 150 },
+        title: 'High-Rank Hunter',
+        titleBonus: {
+          xp: 0.60,
+          critChance: 0.06,
+          strengthPercent: 0.15,
+          agilityPercent: 0.15,
+          intelligencePercent: 0.15,
+          vitalityPercent: 0.10,
+        }, // +60% XP, +6% Crit, +15% STR/AGI/INT, +10% VIT
+      },
+      {
+        id: 's_rank_elite',
+        name: 'S-Rank Elite',
+        description: 'Reach Level 200',
+        condition: { type: 'level', value: 200 },
+        title: 'S-Rank Elite',
+        titleBonus: {
+          xp: 0.70,
+          critChance: 0.07,
+          strengthPercent: 0.20,
+          agilityPercent: 0.20,
+          intelligencePercent: 0.15,
+          vitalityPercent: 0.15,
+        }, // +70% XP, +7% Crit, +20% STR/AGI, +15% INT/VIT
+      },
+      {
+        id: 'transcendent_hunter',
+        name: 'Transcendent Hunter',
+        description: 'Reach Level 250',
+        condition: { type: 'level', value: 250 },
+        title: 'Transcendent Hunter',
+        titleBonus: {
+          xp: 0.80,
+          critChance: 0.08,
+          strengthPercent: 0.20,
+          agilityPercent: 0.20,
+          intelligencePercent: 0.20,
+          vitalityPercent: 0.15,
+        }, // +80% XP, +8% Crit, +20% All Stats, +15% VIT
+      },
+      {
+        id: 'legendary_hunter',
+        name: 'Legendary Hunter',
+        description: 'Reach Level 300',
+        condition: { type: 'level', value: 300 },
+        title: 'Legendary Hunter',
+        titleBonus: {
+          xp: 0.90,
+          critChance: 0.09,
+          strengthPercent: 0.25,
+          agilityPercent: 0.25,
+          intelligencePercent: 0.20,
+          vitalityPercent: 0.20,
+        }, // +90% XP, +9% Crit, +25% STR/AGI, +20% INT/VIT
+      },
+      {
+        id: 'mythic_hunter',
+        name: 'Mythic Hunter',
+        description: 'Reach Level 400',
+        condition: { type: 'level', value: 400 },
+        title: 'Mythic Hunter',
+        titleBonus: {
+          xp: 1.05,
+          critChance: 0.10,
+          strengthPercent: 0.25,
+          agilityPercent: 0.25,
+          intelligencePercent: 0.25,
+          vitalityPercent: 0.20,
+        }, // +105% XP, +10% Crit, +25% All Stats, +20% VIT
+      },
+      {
+        id: 'divine_hunter',
+        name: 'Divine Hunter',
+        description: 'Reach Level 500',
+        condition: { type: 'level', value: 500 },
+        title: 'Divine Hunter',
+        titleBonus: {
+          xp: 1.20,
+          critChance: 0.12,
+          strengthPercent: 0.30,
+          agilityPercent: 0.30,
+          intelligencePercent: 0.25,
+          vitalityPercent: 0.25,
+        }, // +120% XP, +12% Crit, +30% STR/AGI, +25% INT/VIT
+      },
+      {
+        id: 'celestial_hunter',
+        name: 'Celestial Hunter',
+        description: 'Reach Level 600',
+        condition: { type: 'level', value: 600 },
+        title: 'Celestial Hunter',
+        titleBonus: {
+          xp: 1.35,
+          critChance: 0.13,
+          strengthPercent: 0.30,
+          agilityPercent: 0.30,
+          intelligencePercent: 0.30,
+          vitalityPercent: 0.25,
+        }, // +135% XP, +13% Crit, +30% All Stats, +25% VIT
+      },
+      {
+        id: 'national_hunter_elite',
+        name: 'National Hunter Elite',
+        description: 'Reach Level 700',
+        condition: { type: 'level', value: 700 },
+        title: 'National Hunter Elite',
+        titleBonus: {
+          xp: 1.50,
+          critChance: 0.15,
+          strengthPercent: 0.35,
+          agilityPercent: 0.35,
+          intelligencePercent: 0.30,
+          vitalityPercent: 0.30,
+        }, // +150% XP, +15% Crit, +35% STR/AGI, +30% INT/VIT
+      },
+      {
+        id: 'monarch_aspirant',
+        name: 'Monarch Aspirant',
+        description: 'Reach Level 800',
+        condition: { type: 'level', value: 800 },
+        title: 'Monarch Aspirant',
+        titleBonus: {
+          xp: 1.65,
+          critChance: 0.16,
+          strengthPercent: 0.35,
+          agilityPercent: 0.35,
+          intelligencePercent: 0.35,
+          vitalityPercent: 0.30,
+        }, // +165% XP, +16% Crit, +35% All Stats, +30% VIT
+      },
+      {
+        id: 'monarch_heir',
+        name: 'Monarch Heir',
+        description: 'Reach Level 900',
+        condition: { type: 'level', value: 900 },
+        title: 'Monarch Heir',
+        titleBonus: {
+          xp: 1.80,
+          critChance: 0.18,
+          strengthPercent: 0.40,
+          agilityPercent: 0.40,
+          intelligencePercent: 0.35,
+          vitalityPercent: 0.35,
+        }, // +180% XP, +18% Crit, +40% STR/AGI, +35% INT/VIT
+      },
+      {
+        id: 'true_monarch',
+        name: 'True Monarch',
+        description: 'Reach Level 1000',
+        condition: { type: 'level', value: 1000 },
+        title: 'True Monarch',
+        titleBonus: {
+          xp: 2.00,
+          critChance: 0.20,
+          strengthPercent: 0.40,
+          agilityPercent: 0.40,
+          intelligencePercent: 0.40,
+          vitalityPercent: 0.35,
+        }, // +200% XP, +20% Crit, +40% All Stats, +35% VIT
+      },
+      {
+        id: 'monarch_transcendent',
+        name: 'Monarch Transcendent',
+        description: 'Reach Level 1200',
+        condition: { type: 'level', value: 1200 },
+        title: 'Monarch Transcendent',
+        titleBonus: {
+          xp: 2.25,
+          critChance: 0.22,
+          strengthPercent: 0.45,
+          agilityPercent: 0.45,
+          intelligencePercent: 0.40,
+          vitalityPercent: 0.40,
+        }, // +225% XP, +22% Crit, +45% STR/AGI, +40% INT/VIT
+      },
+      {
+        id: 'monarch_supreme',
+        name: 'Monarch Supreme',
+        description: 'Reach Level 1500',
+        condition: { type: 'level', value: 1500 },
+        title: 'Monarch Supreme',
+        titleBonus: {
+          xp: 2.50,
+          critChance: 0.25,
+          strengthPercent: 0.45,
+          agilityPercent: 0.45,
+          intelligencePercent: 0.45,
+          vitalityPercent: 0.40,
+        }, // +250% XP, +25% Crit, +45% All Stats, +40% VIT
+      },
+      {
+        id: 'monarch_ultimate',
+        name: 'Monarch Ultimate',
+        description: 'Reach Level 1800',
+        condition: { type: 'level', value: 1800 },
+        title: 'Monarch Ultimate',
+        titleBonus: {
+          xp: 2.75,
+          critChance: 0.27,
+          strengthPercent: 0.50,
+          agilityPercent: 0.50,
+          intelligencePercent: 0.45,
+          vitalityPercent: 0.45,
+        }, // +275% XP, +27% Crit, +50% STR/AGI, +45% INT/VIT
+      },
+      {
+        id: 'shadow_monarch_final',
+        name: 'Shadow Monarch (Final)',
+        description: 'Reach Level 2000',
+        condition: { type: 'level', value: 2000 },
+        title: 'Shadow Monarch (Final)',
+        titleBonus: {
+          xp: 3.00,
+          critChance: 0.30,
+          strengthPercent: 0.50,
+          agilityPercent: 0.50,
+          intelligencePercent: 0.50,
+          vitalityPercent: 0.50,
+        }, // +300% XP, +30% Crit, +50% All Stats
       },
       // Activity/Time Milestones
       {
@@ -4592,7 +5461,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 5 hours',
         condition: { type: 'time', value: 300 }, // minutes
         title: 'Dungeon Grinder',
-        titleBonus: { xp: 0.06, vitality: 1 }, // +6% XP, +1 VIT
+        titleBonus: { xp: 0.06, vitalityPercent: 0.05 }, // +6% XP, +5% VIT
       },
       {
         id: 'gate_explorer',
@@ -4600,7 +5469,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 20 hours',
         condition: { type: 'time', value: 1200 },
         title: 'Gate Explorer',
-        titleBonus: { xp: 0.14, vitality: 1, agility: 1 }, // +14% XP, +1 VIT, +1 AGI
+        titleBonus: { xp: 0.14, vitalityPercent: 0.05, agilityPercent: 0.05 }, // +14% XP, +5% VIT, +5% AGI
       },
       {
         id: 'raid_veteran',
@@ -4608,7 +5477,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 50 hours',
         condition: { type: 'time', value: 3000 },
         title: 'Raid Veteran',
-        titleBonus: { xp: 0.24, vitality: 2, strength: 1 }, // +24% XP, +2 VIT, +1 STR
+        titleBonus: { xp: 0.24, vitalityPercent: 0.10, strengthPercent: 0.05 }, // +24% XP, +10% VIT, +5% STR
       },
       {
         id: 'eternal_hunter',
@@ -4616,7 +5485,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 100 hours',
         condition: { type: 'time', value: 6000 },
         title: 'Eternal Hunter',
-        titleBonus: { xp: 0.33, vitality: 2, strength: 1, agility: 1 }, // +33% XP, +2 VIT, +1 STR, +1 AGI
+        titleBonus: { xp: 0.33, vitalityPercent: 0.10, strengthPercent: 0.05, agilityPercent: 0.05 }, // +33% XP, +10% VIT, +5% STR, +5% AGI
       },
       // Channel/Exploration Milestones
       {
@@ -4625,7 +5494,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 5 unique channels',
         condition: { type: 'channels', value: 5 },
         title: 'Gate Traveler',
-        titleBonus: { xp: 0.04, agility: 1 }, // +4% XP, +1 AGI
+        titleBonus: { xp: 0.04, agilityPercent: 0.05 }, // +4% XP, +5% AGI
       },
       {
         id: 'dungeon_master',
@@ -4633,7 +5502,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 15 unique channels',
         condition: { type: 'channels', value: 15 },
         title: 'Dungeon Master',
-        titleBonus: { xp: 0.11, intelligence: 1, agility: 1 }, // +11% XP, +1 INT, +1 AGI
+        titleBonus: { xp: 0.11, intelligencePercent: 0.05, agilityPercent: 0.05 }, // +11% XP, +5% INT, +5% AGI
       },
       {
         id: 'dimension_walker',
@@ -4641,7 +5510,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 30 unique channels',
         condition: { type: 'channels', value: 30 },
         title: 'Dimension Walker',
-        titleBonus: { xp: 0.19, intelligence: 2, agility: 1, critChance: 0.01 }, // +19% XP, +2 INT, +1 AGI, +1% Crit
+        titleBonus: { xp: 0.19, intelligencePercent: 0.10, agilityPercent: 0.05, critChance: 0.01 }, // +19% XP, +10% INT, +5% AGI, +1% Crit
       },
       {
         id: 'realm_conqueror',
@@ -4649,7 +5518,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 50 unique channels',
         condition: { type: 'channels', value: 50 },
         title: 'Realm Conqueror',
-        titleBonus: { xp: 0.27, intelligence: 2, agility: 2, critChance: 0.02 }, // +27% XP, +2 INT, +2 AGI, +2% Crit
+        titleBonus: { xp: 0.27, intelligencePercent: 0.10, agilityPercent: 0.10, critChance: 0.02 }, // +27% XP, +10% INT, +10% AGI, +2% Crit
       },
       // Special Titles (High Requirements)
       {
@@ -4658,7 +5527,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50 and send 5,000 messages',
         condition: { type: 'level', value: 50 },
         title: 'Shadow Monarch',
-        titleBonus: { xp: 0.38, critChance: 0.03, agility: 2, strength: 1 }, // +38% XP, +3% Crit Chance, +2 Agility, +1 Strength
+        titleBonus: { xp: 0.38, critChance: 0.03, agilityPercent: 0.10, strengthPercent: 0.05 }, // +38% XP, +3% Crit Chance, +10% Agility, +5% Strength
       },
       {
         id: 'monarch_of_destruction',
@@ -4666,7 +5535,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 100,000 characters',
         condition: { type: 'level', value: 75 },
         title: 'Monarch of Destruction',
-        titleBonus: { xp: 0.45, critChance: 0.05, strength: 3, intelligence: 2 }, // +45% XP, +5% Crit, +3 STR, +2 INT
+        titleBonus: { xp: 0.45, critChance: 0.05, strengthPercent: 0.15, intelligencePercent: 0.10 }, // +45% XP, +5% Crit, +15% STR, +10% INT
       },
       {
         id: 'the_ruler',
@@ -4677,12 +5546,12 @@ module.exports = class SoloLevelingStats {
         titleBonus: {
           xp: 0.5,
           critChance: 0.05,
-          strength: 2,
-          agility: 2,
-          intelligence: 2,
-          vitality: 2,
-          luck: 1,
-        }, // +50% XP, +5% Crit Chance, +2 All Stats, +1 Luck
+          strengthPercent: 0.10,
+          agilityPercent: 0.10,
+          intelligencePercent: 0.10,
+          vitalityPercent: 0.10,
+          perceptionPercent: 0.05,
+        }, // +50% XP, +5% Crit Chance, +10% All Stats, +5% Perception
       },
       // Character-Based Titles
       {
@@ -4691,7 +5560,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 50, send 5,000 messages, and type 100,000 characters',
         condition: { type: 'level', value: 50 },
         title: 'Sung Jin-Woo',
-        titleBonus: { xp: 0.35, critChance: 0.03, strength: 2, agility: 2 }, // +35% XP, +3% Crit, +2 STR, +2 AGI
+        titleBonus: { xp: 0.35, critChance: 0.03, strengthPercent: 0.10, agilityPercent: 0.10 }, // +35% XP, +3% Crit, +10% STR, +10% AGI
       },
       {
         id: 'the_weakest',
@@ -4699,7 +5568,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send your first 10 messages',
         condition: { type: 'messages', value: 10 },
         title: 'The Weakest',
-        titleBonus: { xp: 0.02, luck: 1 }, // +2% XP, +1 LUK
+        titleBonus: { xp: 0.02, perceptionPercent: 0.05 }, // +2% XP, +5% Perception
       },
       {
         id: 's_rank_jin_woo',
@@ -4707,7 +5576,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach S-Rank and Level 50',
         condition: { type: 'level', value: 50 },
         title: 'S-Rank Hunter Jin-Woo',
-        titleBonus: { xp: 0.42, critChance: 0.04, strength: 2, agility: 2, intelligence: 1 }, // +42% XP, +4% Crit, +2 STR/AGI, +1 INT
+        titleBonus: { xp: 0.42, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +42% XP, +4% Crit, +10% STR/AGI, +5% INT
       },
       {
         id: 'shadow_sovereign',
@@ -4715,7 +5584,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 60 and send 7,500 messages',
         condition: { type: 'level', value: 60 },
         title: 'Shadow Sovereign',
-        titleBonus: { xp: 0.4, critChance: 0.04, agility: 3, strength: 2 }, // +40% XP, +4% Crit, +3 AGI, +2 STR
+        titleBonus: { xp: 0.4, critChance: 0.04, agilityPercent: 0.15, strengthPercent: 0.10 }, // +40% XP, +4% Crit, +15% AGI, +10% STR
       },
       {
         id: 'ashborn_successor',
@@ -4723,7 +5592,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 75 and type 200,000 characters',
         condition: { type: 'level', value: 75 },
         title: "Ashborn's Successor",
-        titleBonus: { xp: 0.48, critChance: 0.04, intelligence: 2, agility: 2 }, // +48% XP, +4% Crit Chance, +2 Intelligence, +2 Agility
+        titleBonus: { xp: 0.48, critChance: 0.04, intelligencePercent: 0.10, agilityPercent: 0.10 }, // +48% XP, +4% Crit Chance, +10% Intelligence, +10% Agility
       },
       // Ability/Skill Titles
       {
@@ -4732,7 +5601,7 @@ module.exports = class SoloLevelingStats {
         description: 'Unlock 10 achievements',
         condition: { type: 'achievements', value: 10 },
         title: 'Arise',
-        titleBonus: { xp: 0.12, critChance: 0.01, luck: 1 }, // +12% XP, +1% Crit, +1 LUK
+        titleBonus: { xp: 0.12, critChance: 0.01, perceptionPercent: 0.05 }, // +12% XP, +1% Crit, +5% Perception
       },
       {
         id: 'shadow_exchange',
@@ -4740,7 +5609,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 3,000 messages',
         condition: { type: 'messages', value: 3000 },
         title: 'Shadow Exchange',
-        titleBonus: { xp: 0.2, critChance: 0.02, agility: 1 }, // +20% XP, +2% Crit, +1 AGI
+        titleBonus: { xp: 0.2, critChance: 0.02, agilityPercent: 0.05 }, // +20% XP, +2% Crit, +5% AGI
       },
       {
         id: 'dagger_throw_master',
@@ -4749,7 +5618,7 @@ module.exports = class SoloLevelingStats {
           'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
-        titleBonus: { xp: 0.25, critChance: 0.05, agility: 2 }, // +25% XP, +5% Crit Chance, +2 Agility
+        titleBonus: { xp: 0.25, critChance: 0.05, agilityPercent: 0.10 }, // +25% XP, +5% Crit Chance, +10% Agility
       },
       {
         id: 'stealth_master',
@@ -4757,7 +5626,7 @@ module.exports = class SoloLevelingStats {
         description: 'Be active for 30 hours during off-peak hours',
         condition: { type: 'time', value: 1800 },
         title: 'Stealth Master',
-        titleBonus: { xp: 0.18, agility: 2, critChance: 0.02 }, // +18% XP, +2 AGI, +2% Crit
+        titleBonus: { xp: 0.18, agilityPercent: 0.10, critChance: 0.02 }, // +18% XP, +10% AGI, +2% Crit
       },
       {
         id: 'mana_manipulator',
@@ -4765,7 +5634,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Intelligence stat',
         condition: { type: 'stat', stat: 'intelligence', value: 15 },
         title: 'Mana Manipulator',
-        titleBonus: { xp: 0.22, intelligence: 2 }, // +22% XP, +2 Intelligence
+        titleBonus: { xp: 0.22, intelligencePercent: 0.10 }, // +22% XP, +10% Intelligence
       },
       {
         id: 'shadow_storage',
@@ -4773,7 +5642,7 @@ module.exports = class SoloLevelingStats {
         description: 'Visit 25 unique channels',
         condition: { type: 'channels', value: 25 },
         title: 'Shadow Storage',
-        titleBonus: { xp: 0.16, intelligence: 1, agility: 1 }, // +16% XP, +1 INT, +1 AGI
+        titleBonus: { xp: 0.16, intelligencePercent: 0.05, agilityPercent: 0.05 }, // +16% XP, +5% INT, +5% AGI
       },
       {
         id: 'beast_monarch',
@@ -4781,7 +5650,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 15 Strength stat',
         condition: { type: 'stat', stat: 'strength', value: 15 },
         title: 'Beast Monarch',
-        titleBonus: { xp: 0.28, strength: 2, critChance: 0.02 }, // +28% XP, +2 Strength, +2% Crit
+        titleBonus: { xp: 0.28, strengthPercent: 0.10, critChance: 0.02 }, // +28% XP, +10% Strength, +2% Crit
       },
       {
         id: 'frost_monarch',
@@ -4789,7 +5658,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 8,000 messages',
         condition: { type: 'messages', value: 8000 },
         title: 'Frost Monarch',
-        titleBonus: { xp: 0.3, critChance: 0.03, intelligence: 2, agility: 1 }, // +30% XP, +3% Crit, +2 INT, +1 AGI
+        titleBonus: { xp: 0.3, critChance: 0.03, intelligencePercent: 0.10, agilityPercent: 0.05 }, // +30% XP, +3% Crit, +10% INT, +5% AGI
       },
       {
         id: 'plague_monarch',
@@ -4797,7 +5666,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 65',
         condition: { type: 'level', value: 65 },
         title: 'Plague Monarch',
-        titleBonus: { xp: 0.32, critChance: 0.03, intelligence: 2, vitality: 1 }, // +32% XP, +3% Crit, +2 INT, +1 VIT
+        titleBonus: { xp: 0.32, critChance: 0.03, intelligencePercent: 0.10, vitalityPercent: 0.05 }, // +32% XP, +3% Crit, +10% INT, +5% VIT
       },
       {
         id: 'monarch_white_flames',
@@ -4805,7 +5674,7 @@ module.exports = class SoloLevelingStats {
         description: 'Land 500 critical hits',
         condition: { type: 'crits', value: 500 },
         title: 'Monarch of White Flames',
-        titleBonus: { xp: 0.26, critChance: 0.04, agility: 1 }, // +26% XP, +4% Crit Chance, +1 Agility
+        titleBonus: { xp: 0.26, critChance: 0.04, agilityPercent: 0.05 }, // +26% XP, +4% Crit Chance, +5% Agility
       },
       {
         id: 'monarch_transfiguration',
@@ -4813,7 +5682,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 70 and type 150,000 characters',
         condition: { type: 'level', value: 70 },
         title: 'Monarch of Transfiguration',
-        titleBonus: { xp: 0.34, critChance: 0.04, intelligence: 3, agility: 1 }, // +34% XP, +4% Crit, +3 INT, +1 AGI
+        titleBonus: { xp: 0.34, critChance: 0.04, intelligencePercent: 0.15, agilityPercent: 0.05 }, // +34% XP, +4% Crit, +15% INT, +5% AGI
       },
       // Solo Leveling Lore Titles
       {
@@ -4822,7 +5691,7 @@ module.exports = class SoloLevelingStats {
         description: 'Land 100 critical hits',
         condition: { type: 'crits', value: 100 },
         title: 'Shadow Soldier',
-        titleBonus: { xp: 0.08, critChance: 0.01, agility: 1 }, // +8% XP, +1% Crit, +1 AGI
+        titleBonus: { xp: 0.08, critChance: 0.01, agilityPercent: 0.05 }, // +8% XP, +1% Crit, +5% AGI
       },
       {
         id: 'kamish_slayer',
@@ -4830,7 +5699,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 80 and land 2,000 critical hits',
         condition: { type: 'level', value: 80 },
         title: 'Kamish Slayer',
-        titleBonus: { xp: 0.4, critChance: 0.05, strength: 2, agility: 2 }, // +40% XP, +5% Crit, +2 STR, +2 AGI
+        titleBonus: { xp: 0.4, critChance: 0.05, strengthPercent: 0.10, agilityPercent: 0.10 }, // +40% XP, +5% Crit, +10% STR, +10% AGI
       },
       {
         id: 'demon_tower_conqueror',
@@ -4838,7 +5707,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 60 and visit 40 unique channels',
         condition: { type: 'level', value: 60 },
         title: 'Demon Tower Conqueror',
-        titleBonus: { xp: 0.32, intelligence: 2, vitality: 1 }, // +32% XP, +2 INT, +1 VIT
+        titleBonus: { xp: 0.32, intelligencePercent: 0.10, vitalityPercent: 0.05 }, // +32% XP, +10% INT, +5% VIT
       },
       {
         id: 'double_awakening',
@@ -4846,7 +5715,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 25 and send 3,500 messages',
         condition: { type: 'level', value: 25 },
         title: 'Double Awakening',
-        titleBonus: { xp: 0.15, critChance: 0.02, strength: 1, agility: 1 }, // +15% XP, +2% Crit, +1 STR, +1 AGI
+        titleBonus: { xp: 0.15, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +15% XP, +2% Crit, +5% STR, +5% AGI
       },
       {
         id: 'system_user',
@@ -4854,7 +5723,7 @@ module.exports = class SoloLevelingStats {
         description: 'Unlock 15 achievements',
         condition: { type: 'achievements', value: 15 },
         title: 'System User',
-        titleBonus: { xp: 0.2, intelligence: 2, luck: 1 }, // +20% XP, +2 INT, +1 LUK
+        titleBonus: { xp: 0.2, intelligencePercent: 0.10, perceptionPercent: 0.05 }, // +20% XP, +10% INT, +5% Perception
       },
       {
         id: 'instant_dungeon_master',
@@ -4862,7 +5731,7 @@ module.exports = class SoloLevelingStats {
         description: 'Type 200,000 characters and be active for 75 hours',
         condition: { type: 'characters', value: 200000 },
         title: 'Instant Dungeon Master',
-        titleBonus: { xp: 0.35, intelligence: 2, vitality: 2 }, // +35% XP, +2 INT, +2 VIT
+        titleBonus: { xp: 0.35, intelligencePercent: 0.10, vitalityPercent: 0.10 }, // +35% XP, +10% INT, +10% VIT
       },
       {
         id: 'shadow_army_general',
@@ -4870,7 +5739,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 55 and land 750 critical hits',
         condition: { type: 'level', value: 55 },
         title: 'Shadow Army General',
-        titleBonus: { xp: 0.3, critChance: 0.03, agility: 2, strength: 1 }, // +30% XP, +3% Crit, +2 AGI, +1 STR
+        titleBonus: { xp: 0.3, critChance: 0.03, agilityPercent: 0.10, strengthPercent: 0.05 }, // +30% XP, +3% Crit, +10% AGI, +5% STR
       },
       {
         id: 'monarch_of_beasts',
@@ -4878,7 +5747,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 18 Strength stat',
         condition: { type: 'stat', stat: 'strength', value: 18 },
         title: 'Monarch of Beasts',
-        titleBonus: { xp: 0.32, strength: 3, critChance: 0.02 }, // +32% XP, +3 STR, +2% Crit
+        titleBonus: { xp: 0.32, strengthPercent: 0.15, critChance: 0.02 }, // +32% XP, +15% STR, +2% Crit
       },
       {
         id: 'monarch_of_insects',
@@ -4886,7 +5755,7 @@ module.exports = class SoloLevelingStats {
         description: 'Send 12,000 messages',
         condition: { type: 'messages', value: 12000 },
         title: 'Monarch of Insects',
-        titleBonus: { xp: 0.42, agility: 2, intelligence: 1 }, // +42% XP, +2 AGI, +1 INT
+        titleBonus: { xp: 0.42, agilityPercent: 0.10, intelligencePercent: 0.05 }, // +42% XP, +10% AGI, +5% INT
       },
       {
         id: 'monarch_of_iron_body',
@@ -4894,7 +5763,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach 18 Vitality stat',
         condition: { type: 'stat', stat: 'vitality', value: 18 },
         title: 'Monarch of Iron Body',
-        titleBonus: { xp: 0.3, vitality: 3, strength: 1 }, // +30% XP, +3 VIT, +1 STR
+        titleBonus: { xp: 0.3, vitalityPercent: 0.15, strengthPercent: 0.05 }, // +30% XP, +15% VIT, +5% STR
       },
       {
         id: 'monarch_of_beginning',
@@ -4902,7 +5771,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 90 and unlock 20 achievements',
         condition: { type: 'level', value: 90 },
         title: 'Monarch of Beginning',
-        titleBonus: { xp: 0.45, critChance: 0.04, strength: 2, agility: 2, intelligence: 2 }, // +45% XP, +4% Crit, +2 All Combat Stats
+        titleBonus: { xp: 0.45, critChance: 0.04, strengthPercent: 0.10, agilityPercent: 0.10, intelligencePercent: 0.10 }, // +45% XP, +4% Crit, +10% All Combat Stats
       },
       {
         id: 'absolute_ruler',
@@ -4913,12 +5782,12 @@ module.exports = class SoloLevelingStats {
         titleBonus: {
           xp: 0.52,
           critChance: 0.06,
-          strength: 3,
-          agility: 3,
-          intelligence: 2,
-          vitality: 2,
-          luck: 2,
-        }, // +52% XP, +6% Crit, +3 STR/AGI, +2 INT/VIT, +2 LUK
+          strengthPercent: 0.15,
+          agilityPercent: 0.15,
+          intelligencePercent: 0.10,
+          vitalityPercent: 0.10,
+          perceptionPercent: 0.10,
+        }, // +52% XP, +6% Crit, +15% STR/AGI, +10% INT/VIT/PER
       },
       {
         id: 'shadow_sovereign_heir',
@@ -4926,7 +5795,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 85 and land 1,500 critical hits',
         condition: { type: 'level', value: 85 },
         title: 'Shadow Sovereign Heir',
-        titleBonus: { xp: 0.43, critChance: 0.05, agility: 3, intelligence: 2 }, // +43% XP, +5% Crit, +3 AGI, +2 INT
+        titleBonus: { xp: 0.43, critChance: 0.05, agilityPercent: 0.15, intelligencePercent: 0.10 }, // +43% XP, +5% Crit, +15% AGI, +10% INT
       },
       {
         id: 'ruler_of_chaos',
@@ -4934,7 +5803,7 @@ module.exports = class SoloLevelingStats {
         description: 'Reach Level 110 and be active for 150 hours',
         condition: { type: 'level', value: 110 },
         title: 'Ruler of Chaos',
-        titleBonus: { xp: 0.48, critChance: 0.05, strength: 2, agility: 2, luck: 2 }, // +48% XP, +5% Crit, +2 STR/AGI, +2 LUK
+        titleBonus: { xp: 0.48, critChance: 0.05, strengthPercent: 0.10, agilityPercent: 0.10, perceptionPercent: 0.10 }, // +48% XP, +5% Crit, +10% STR/AGI/PER
       },
     ];
   }
@@ -5202,15 +6071,15 @@ module.exports = class SoloLevelingStats {
       return;
     }
 
-    // Apply vitality bonus to rewards (enhanced by Luck buffs and skill tree)
+    // Apply vitality bonus to rewards (enhanced by Perception buffs and skill tree)
     // Vitality scales: +5% base per point, +1% per point after 10 (better scaling)
-    // Luck buffs enhance Vitality bonus: (base VIT bonus) * (1 + luck multiplier)
+    // Perception buffs enhance Vitality bonus: (base VIT bonus) * (1 + perception multiplier)
     // Skill tree all-stat bonus enhances all stat bonuses
     const vitalityBaseBonus = this.settings.stats.vitality * 0.05;
     const vitalityAdvancedBonus = Math.max(0, (this.settings.stats.vitality - 10) * 0.01);
     const baseVitalityBonus = vitalityBaseBonus + vitalityAdvancedBonus;
-    const totalLuckBuff = typeof this.getTotalLuckBuff === 'function' ? this.getTotalLuckBuff() : 0;
-    const luckMultiplier = totalLuckBuff / 100;
+    const totalPerceptionBuff = typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
+    const perceptionMultiplier = totalPerceptionBuff / 100;
 
     // Get skill tree bonuses
     let skillAllStatBonus = 0;
@@ -5225,9 +6094,9 @@ module.exports = class SoloLevelingStats {
       // SkillTree not available
     }
 
-    // Luck and skill tree enhance Vitality: base bonus multiplied by (1 + luck multiplier + skill all-stat bonus)
+    // Perception and skill tree enhance Vitality: base bonus multiplied by (1 + perception multiplier + skill all-stat bonus)
     const enhancedVitalityBonus =
-      baseVitalityBonus * (1 + luckMultiplier + skillAllStatBonus) + skillQuestBonus;
+      baseVitalityBonus * (1 + perceptionMultiplier + skillAllStatBonus) + skillQuestBonus;
     const vitalityBonus = 1 + enhancedVitalityBonus;
     const xpReward = Math.round(rewards.xp * vitalityBonus);
 

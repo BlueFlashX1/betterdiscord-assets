@@ -6,6 +6,9 @@
  */
 
 module.exports = class LevelProgressBar {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -28,6 +31,9 @@ module.exports = class LevelProgressBar {
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
   start() {
     this.debugLog('START', 'Plugin starting');
     this.loadSettings();
@@ -66,6 +72,9 @@ module.exports = class LevelProgressBar {
     this.debugLog('STOP', 'Plugin stopped successfully');
   }
 
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
   loadSettings() {
     try {
       const saved = BdApi.Data.load('LevelProgressBar', 'settings');
@@ -244,54 +253,16 @@ module.exports = class LevelProgressBar {
         padding: 4px 15px 4px 80px;
       }
 
-      .lpb-info-section {
+      .lpb-progress-text {
+        font-size: 14px;
+        font-weight: 600;
+        color: #a78bfa;
+        text-shadow: 0 0 8px rgba(167, 139, 250, 0.6);
+        white-space: nowrap;
         display: flex;
         align-items: center;
-        gap: 15px;
-        flex-shrink: 0;
-      }
-
-      .lpb-compact .lpb-info-section {
-        gap: 10px;
-      }
-
-      .lpb-level-text {
-        font-family: 'Press Start 2P', monospace;
-        font-size: 11px;
-        color: rgba(255, 255, 255, 0.9);
-        white-space: nowrap;
-      }
-
-      .lpb-compact .lpb-level-text {
-        font-size: 9px;
-      }
-
-      .lpb-rank-text {
-        font-family: 'Press Start 2P', monospace;
-        font-size: 10px;
-        color: #8b5cf6;
-        text-shadow: 0 0 3px rgba(139, 92, 246, 0.5),
-                     0 0 6px rgba(124, 58, 237, 0.4),
-                     0 0 9px rgba(109, 40, 217, 0.3);
-        white-space: nowrap;
-      }
-
-      .lpb-compact .lpb-rank-text {
-        font-size: 8px;
-      }
-
-      .lpb-progress-section {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        min-width: 0;
-        width: 1100px;
-        flex-shrink: 0;
-      }
-
-      .lpb-compact .lpb-progress-section {
         gap: 8px;
-        width: 1000px;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       }
 
       .lpb-progress-track {
@@ -474,6 +445,12 @@ module.exports = class LevelProgressBar {
     if (style) style.remove();
   }
 
+  // ============================================================================
+  // PROGRESS BAR CREATION & MANAGEMENT
+  // ============================================================================
+  /**
+   * Create progress bar element
+   */
   createProgressBar() {
     if (!this.settings.enabled) {
       this.debugLog('CREATE_BAR', 'Plugin disabled, skipping');
@@ -493,50 +470,12 @@ module.exports = class LevelProgressBar {
       const bar = document.createElement('div');
       bar.className = `lpb-progress-bar ${this.settings.compact ? 'compact' : ''}`;
 
-      // Info section (Level, Rank)
-      const infoSection = document.createElement('div');
-      infoSection.className = 'lpb-info-section';
-
-      if (this.settings.showRank) {
-        const rankText = document.createElement('div');
-        rankText.className = 'lpb-rank-text';
-        rankText.id = 'lpb-rank';
-        rankText.textContent = 'Rank: E';
-        infoSection.appendChild(rankText);
-      }
-
-      if (this.settings.showLevel) {
-        const levelText = document.createElement('div');
-        levelText.className = 'lpb-level-text';
-        levelText.id = 'lpb-level';
-        levelText.textContent = 'Lv. 1';
-        infoSection.appendChild(levelText);
-      }
-
-      bar.appendChild(infoSection);
-
-      // Progress section
-      const progressSection = document.createElement('div');
-      progressSection.className = 'lpb-progress-section';
-
-      if (this.settings.showXP) {
-        const xpText = document.createElement('div');
-        xpText.className = 'lpb-xp-text';
-        xpText.id = 'lpb-xp';
-        xpText.textContent = '0 / 100 XP';
-        progressSection.appendChild(xpText);
-      }
-
-      const progressTrack = document.createElement('div');
-      progressTrack.className = 'lpb-progress-track';
-      const progressFill = document.createElement('div');
-      progressFill.className = 'lpb-progress-fill';
-      progressFill.id = 'lpb-progress-fill';
-      progressFill.style.width = '0%';
-      progressTrack.appendChild(progressFill);
-      progressSection.appendChild(progressTrack);
-
-      bar.appendChild(progressSection);
+      // Single line format matching SoloLevelingStats chat UI: "Rank: E Lv.1 0/100 XP"
+      const progressText = document.createElement('div');
+      progressText.className = 'lpb-progress-text';
+      progressText.id = 'lpb-progress-text';
+      progressText.textContent = 'Rank: E Lv.1 0/100 XP';
+      bar.appendChild(progressText);
 
       container.appendChild(bar);
       document.body.appendChild(container);
@@ -552,7 +491,9 @@ module.exports = class LevelProgressBar {
         showXP: this.settings.showXP,
       });
 
-      // Initial update
+      // Initial update - force update even if data hasn't changed
+      this.lastLevel = null;
+      this.lastXP = null;
       this.updateProgressBar();
 
       // Initialize milestone markers
@@ -583,6 +524,9 @@ module.exports = class LevelProgressBar {
     }
   }
 
+  /**
+   * Update progress bar position
+   */
   updateProgressBarPosition() {
     if (this.progressBar) {
       this.progressBar.className = `lpb-progress-container ${this.settings.position}`;
@@ -592,7 +536,65 @@ module.exports = class LevelProgressBar {
     }
   }
 
+  /**
+   * Get SoloLevelingStats instance and level info
+   * @returns {Object|null} - Object with instance and levelInfo, or null if unavailable
+   */
+  getSoloLevelingData() {
+    try {
+      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!soloPlugin) {
+        this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not found');
+        return null;
+      }
+
+      const instance = soloPlugin.instance || soloPlugin;
+      if (!instance?.getCurrentLevel) {
+        this.debugLog('GET_SOLO_DATA', 'Instance or method not found', {
+          hasInstance: !!instance,
+          hasMethod: !!(instance && instance.getCurrentLevel),
+        });
+        return null;
+      }
+
+      // Get current level info (calculates level from totalXP)
+      const levelInfo = instance.getCurrentLevel();
+      if (!levelInfo) {
+        this.debugLog('GET_SOLO_DATA', 'Level info not available');
+        return null;
+      }
+
+      // Get rank from settings (not from levelInfo)
+      const rank = instance.settings?.rank || 'E';
+
+      // Debug log to verify data
+      this.debugLog('GET_SOLO_DATA', 'Retrieved SoloLevelingStats data', {
+        level: levelInfo.level,
+        xp: levelInfo.xp,
+        xpRequired: levelInfo.xpRequired,
+        rank: rank,
+        totalXP: instance.settings?.totalXP,
+      });
+
+      return {
+        instance,
+        levelInfo,
+        rank: rank,
+      };
+    } catch (error) {
+      this.debugError('GET_SOLO_DATA', error);
+      return null;
+    }
+  }
+
+  // ============================================================================
+  // PROGRESS BAR UPDATE METHODS
+  // ============================================================================
+  /**
+   * Update progress bar with current data
+   */
   updateProgressBar() {
+    // Early returns for invalid states
     if (!this.progressBar || !this.settings.enabled) {
       this.debugLog('UPDATE_BAR', 'Skipping update', {
         hasBar: !!this.progressBar,
@@ -602,32 +604,18 @@ module.exports = class LevelProgressBar {
     }
 
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) {
-        this.debugLog('UPDATE_BAR', 'SoloLevelingStats plugin not found');
-        return;
-      }
+      const soloData = this.getSoloLevelingData();
+      if (!soloData) return;
 
-      const instance = soloPlugin.instance || soloPlugin;
-      if (!instance || !instance.getCurrentLevel) {
-        this.debugLog('UPDATE_BAR', 'SoloLevelingStats instance or method not found', {
-          hasInstance: !!instance,
-          hasMethod: !!(instance && instance.getCurrentLevel),
-        });
-        return;
-      }
-
-      const levelInfo = instance.getCurrentLevel();
+      const { levelInfo, rank } = soloData;
       const currentLevel = levelInfo.level;
       const currentXP = levelInfo.xp;
-      const xpRequired = levelInfo.xpRequired;
-      const xpPercent = (currentXP / xpRequired) * 100;
-      const rank = instance.settings?.rank || 'E';
+      const xpRequired = levelInfo.xpRequired || 1; // Prevent division by zero
+      const xpPercent = Math.min((currentXP / xpRequired) * 100, 100); // Cap at 100%
 
-      // Check if data changed (OPTIMIZED: Removed verbose logging for no-change case)
-      if (currentLevel === this.lastLevel && currentXP === this.lastXP) {
-        // OPTIMIZED: Don't log "No change detected" - happens every second, causes spam
-        return; // No change, skip update
+      // Skip update if data hasn't changed (but allow initial update)
+      if (this.lastLevel !== null && this.lastXP !== null && currentLevel === this.lastLevel && currentXP === this.lastXP) {
+        return;
       }
 
       this.debugLog('UPDATE_BAR', 'Data changed, updating bar', {
@@ -640,66 +628,13 @@ module.exports = class LevelProgressBar {
       this.lastLevel = currentLevel;
       this.lastXP = currentXP;
 
-      // Update rank
-      if (this.settings.showRank) {
-        const rankEl = this.progressBar.querySelector('#lpb-rank');
-        if (rankEl) {
-          rankEl.textContent = `Rank: ${rank}`;
-          this.debugLog('UPDATE_BAR', 'Rank updated', { rank });
-        } else {
-          this.debugLog('UPDATE_BAR', 'Rank element not found');
-        }
-      }
+      // Update progress text (single line format matching SoloLevelingStats)
+      this.updateProgressText(rank, currentLevel, currentXP, xpRequired);
 
-      // Update level
-      if (this.settings.showLevel) {
-        const levelEl = this.progressBar.querySelector('#lpb-level');
-        if (levelEl) {
-          levelEl.textContent = `Lv. ${currentLevel}`;
-          this.debugLog('UPDATE_BAR', 'Level updated', { level: currentLevel });
-        } else {
-          this.debugLog('UPDATE_BAR', 'Level element not found');
-        }
-      }
-
-      // Update XP
-      if (this.settings.showXP) {
-        const xpEl = this.progressBar.querySelector('#lpb-xp');
-        if (xpEl) {
-          xpEl.textContent = `${currentXP} / ${xpRequired} XP`;
-          this.debugLog('UPDATE_BAR', 'XP updated', { xp: currentXP, xpRequired });
-        } else {
-          this.debugLog('UPDATE_BAR', 'XP element not found');
-        }
-      }
-
-      // Update progress bar
-      const progressFill = this.progressBar.querySelector('#lpb-progress-fill');
+      // Update milestone markers
       const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
-      if (progressFill) {
-        const oldWidth = parseFloat(progressFill.style.width) || 0;
-        progressFill.style.width = `${xpPercent}%`;
-
-        // XP gain glow effect disabled
-        // if (xpPercent > oldWidth) {
-        //   progressFill.classList.add('lpb-xp-gain');
-        //   setTimeout(() => {
-        //     progressFill.classList.remove('lpb-xp-gain');
-        //   }, 1000);
-        // }
-
-        // Create sparkle particles on XP gain
-        if (xpPercent > oldWidth && progressTrack) {
-          this.createProgressSparkles(progressTrack, xpPercent);
-        }
-
-        // Update milestone markers
+      if (progressTrack) {
         this.updateMilestoneMarkers(progressTrack, xpPercent);
-
-        this.debugLog('UPDATE_BAR', 'Progress fill updated', {
-          width: `${xpPercent}%`,
-          oldWidth: `${oldWidth}%`,
-        });
       }
 
       // Update compact class
@@ -730,6 +665,9 @@ module.exports = class LevelProgressBar {
     }
   }
 
+  // ============================================================================
+  // EVENT SUBSCRIPTION METHODS
+  // ============================================================================
   /**
    * Subscribe to SoloLevelingStats events for real-time updates
    * @returns {boolean} True if subscription successful, false otherwise
@@ -808,6 +746,12 @@ module.exports = class LevelProgressBar {
     this.debugLog('UNSUBSCRIBE_EVENTS', 'Unsubscribed from all events');
   }
 
+  // ============================================================================
+  // FALLBACK POLLING METHODS
+  // ============================================================================
+  /**
+   * Start fallback polling (only used if events unavailable)
+   */
   startUpdating() {
     if (this.updateInterval) {
       this.debugLog('START_UPDATE', 'Update interval already running');

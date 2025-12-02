@@ -6,6 +6,9 @@
  */
 
 module.exports = class SoloLevelingTitleManager {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -14,8 +17,12 @@ module.exports = class SoloLevelingTitleManager {
     this.settings = this.defaultSettings;
     this.titleButton = null;
     this.titleModal = null;
+    this._urlChangeCleanup = null; // Cleanup function for URL change watcher
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
   start() {
     this.loadSettings();
     this.injectCSS();
@@ -27,12 +34,108 @@ module.exports = class SoloLevelingTitleManager {
     console.log('TitleManager: Plugin started');
   }
 
+  stop() {
+    this.removeTitleButton();
+    this.closeTitleModal();
+    this.removeCSS();
+
+    // Cleanup URL change watcher
+    if (this._urlChangeCleanup) {
+      this._urlChangeCleanup();
+      this._urlChangeCleanup = null;
+    }
+
+    console.log('TitleManager: Plugin stopped');
+  }
+
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+  loadSettings() {
+    try {
+      const saved = BdApi.Data.load('TitleManager', 'settings');
+      if (saved) {
+        this.settings = { ...this.defaultSettings, ...saved };
+      }
+    } catch (error) {
+      console.error('TitleManager: Error loading settings', error);
+    }
+  }
+
+  saveSettings() {
+    try {
+      BdApi.Data.save('TitleManager', 'settings', this.settings);
+    } catch (error) {
+      console.error('TitleManager: Error saving settings', error);
+    }
+  }
+
+  // ============================================================================
+  // DATA ACCESS METHODS
+  // ============================================================================
+  /**
+   * Get SoloLevelingStats data
+   * @returns {Object|null} - SoloLevelingStats data or null if unavailable
+   */
+  getSoloLevelingData() {
+    try {
+      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!soloPlugin) return null;
+
+      const instance = soloPlugin.instance || soloPlugin;
+      const achievements = instance.settings?.achievements || {};
+
+      return {
+        titles: achievements.titles || [],
+        activeTitle: achievements.activeTitle || null,
+        achievements: achievements,
+      };
+    } catch (error) {
+      console.error('TitleManager: Error getting SoloLevelingStats data', error);
+      return null;
+    }
+  }
+
+  /**
+   * Get title bonus info
+   * @param {string} titleName - Title name
+   * @returns {Object|null} - Title bonus object or null
+   */
+  getTitleBonus(titleName) {
+    try {
+      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!soloPlugin) return null;
+      const instance = soloPlugin.instance || soloPlugin;
+
+      // Find achievement with this title
+      if (instance.getAchievementDefinitions) {
+        const achievements = instance.getAchievementDefinitions();
+        const achievement = achievements.find((a) => a.title === titleName);
+        return achievement?.titleBonus || null;
+      }
+      return null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  // ============================================================================
+  // TITLE MANAGEMENT METHODS
+  // ============================================================================
+  // ============================================================================
+  // EVENT HANDLING & WATCHERS
+  // ============================================================================
+  /**
+   * Setup channel watcher for URL changes (event-based, no polling)
+   */
   setupChannelWatcher() {
-    // Watch for URL changes (channel navigation)
-    let lastUrl = location.href;
-    this.urlCheckInterval = setInterval(() => {
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
+    // Use event-based URL change detection (more efficient than polling)
+    let lastUrl = window.location.href;
+
+    const handleUrlChange = () => {
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
         // Recreate button after channel change
         setTimeout(() => {
           if (!this.titleButton || !document.contains(this.titleButton)) {
@@ -40,17 +143,50 @@ module.exports = class SoloLevelingTitleManager {
           }
         }, 500);
       }
-    }, 1000);
+    };
+
+    // Listen to browser navigation events
+    window.addEventListener('popstate', handleUrlChange);
+
+    // Override pushState and replaceState to detect programmatic navigation
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      handleUrlChange();
+    };
+
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      handleUrlChange();
+    };
+
+    // Store cleanup function
+    this._urlChangeCleanup = () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+    };
   }
 
-  stop() {
+  // ============================================================================
+  // UI METHODS
+  // ============================================================================
+  /**
+   * Create title button in Discord UI
+   */
+  createTitleButton() {
     this.removeTitleButton();
     this.closeTitleModal();
     this.removeCSS();
-    if (this.urlCheckInterval) {
-      clearInterval(this.urlCheckInterval);
-      this.urlCheckInterval = null;
+
+    // Cleanup URL change watcher
+    if (this._urlChangeCleanup) {
+      this._urlChangeCleanup();
+      this._urlChangeCleanup = null;
     }
+
     console.log('TitleManager: Plugin stopped');
   }
 
@@ -73,18 +209,25 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // Get SoloLevelingStats data
+  /**
+   * Get SoloLevelingStats data
+   * @returns {Object|null} - SoloLevelingStats data or null if unavailable
+   */
   getSoloLevelingData() {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin) return null;
+
       const instance = soloPlugin.instance || soloPlugin;
+      const achievements = instance.settings?.achievements || {};
+
       return {
-        titles: instance.settings?.achievements?.titles || [],
-        activeTitle: instance.settings?.achievements?.activeTitle || null,
-        achievements: instance.settings?.achievements || {},
+        titles: achievements.titles || [],
+        activeTitle: achievements.activeTitle || null,
+        achievements: achievements,
       };
     } catch (error) {
+      console.error('TitleManager: Error getting SoloLevelingStats data', error);
       return null;
     }
   }
@@ -108,7 +251,11 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // Equip a title
+  /**
+   * Equip a title
+   * @param {string} titleName - Title name to equip
+   * @returns {boolean} - True if successful
+   */
   equipTitle(titleName) {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -142,11 +289,18 @@ module.exports = class SoloLevelingTitleManager {
             if (bonus) {
               if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
               if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-              if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
-              if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
-              if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
-              if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
-              if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+              // Check for percentage-based stat bonuses (new format)
+              if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+              if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+              if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+              if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+              if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+              // Support old format (raw numbers) for backward compatibility
+              if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
+              if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
+              if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
+              if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
+              if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
             }
             const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
             BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, { type: 'success', timeout: 3000 });
@@ -162,7 +316,10 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // Unequip title
+  /**
+   * Unequip currently active title
+   * @returns {boolean} - True if successful
+   */
   unequipTitle() {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -313,6 +470,16 @@ module.exports = class SoloLevelingTitleManager {
     // Filter out unwanted titles
     const unwantedTitles = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
     let titles = (soloData?.titles || []).filter(title => !unwantedTitles.includes(title));
+
+    // Sort titles by XP bonus percentage (ascending: lowest to highest)
+    titles.sort((titleA, titleB) => {
+      const bonusA = this.getTitleBonus(titleA);
+      const bonusB = this.getTitleBonus(titleB);
+      const xpA = bonusA?.xp || 0;
+      const xpB = bonusB?.xp || 0;
+      return xpA - xpB; // Ascending order
+    });
+
     const activeTitle = soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
       ? soloData.activeTitle
       : null;
@@ -326,7 +493,7 @@ module.exports = class SoloLevelingTitleManager {
           <button class="tm-close-button" onclick="this.closest('.tm-title-modal').remove()">×</button>
         </div>
         <div class="tm-modal-body">
-              ${activeTitle ? `
+          ${activeTitle ? `
             <div class="tm-active-title">
               <div class="tm-active-label">Active Title:</div>
               <div class="tm-active-name">${this.escapeHtml(activeTitle)}</div>
@@ -336,11 +503,18 @@ module.exports = class SoloLevelingTitleManager {
                 const buffs = [];
                 if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
                 if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
-                if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
-                if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
-                if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
-                if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+                // Check for percentage-based stat bonuses (new format)
+                if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+                if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+                if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+                if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+                if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+                // Support old format (raw numbers) for backward compatibility
+                if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
+                if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
+                if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
+                if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
+                if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
                 return buffs.length > 0 ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>` : '';
               })()}
               <button class="tm-unequip-btn" id="tm-unequip-btn">Unequip</button>
@@ -368,11 +542,18 @@ module.exports = class SoloLevelingTitleManager {
                     if (bonus) {
                       if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
                       if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                      if (bonus.strength > 0) buffs.push(`+${bonus.strength} STR`);
-                      if (bonus.agility > 0) buffs.push(`+${bonus.agility} AGI`);
-                      if (bonus.intelligence > 0) buffs.push(`+${bonus.intelligence} INT`);
-                      if (bonus.vitality > 0) buffs.push(`+${bonus.vitality} VIT`);
-                      if (bonus.luck > 0) buffs.push(`+${bonus.luck} LUK`);
+                      // Check for percentage-based stat bonuses (new format)
+                      if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+                      if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+                      if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+                      if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+                      if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+                      // Support old format (raw numbers) for backward compatibility
+                      if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
+                      if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
+                      if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
+                      if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
+                      if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
                     }
                     return `
                       <div class="tm-title-card ${isActive ? 'active' : ''}">

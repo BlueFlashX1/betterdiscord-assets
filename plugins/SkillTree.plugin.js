@@ -1,379 +1,286 @@
 /**
  * @name SkillTree
  * @author BlueFlashXS
- * @description Skill tree system with unlockable passive abilities for Solo Leveling Stats
- * @version 1.0.0
+ * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
+ * @version 2.0.0
  */
 
 module.exports = class SkillTree {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
       skillPoints: 0, // Skill points separate from stat points
-      unlockedSkills: [], // Array of unlocked skill IDs
+      unlockedSkills: [], // Array of unlocked skill IDs (legacy support)
+      skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
       lastLevel: 1, // Track last level to detect level ups
       totalEarnedSP: 0, // Total SP earned from level ups (for reset calculation)
     };
 
-    // Skill definitions - passive abilities that enhance stats
+    // Solo Leveling Lore-Appropriate Skill Tree
+    // Skills are organized by tiers: Tier 1 (Low), Tier 2 (Mid), Tier 3 (High), Tier 4 (Master)
+    // Higher tiers have higher costs but better growth rates
     this.skillTree = {
-      strength: {
-        name: 'Strength Branch',
+      // ===== TIER 1: BASIC SKILLS (Level 1-50) =====
+      // Low cost, slow growth, accessible early game
+      tier1: {
+        name: 'Basic Abilities',
+        tier: 1,
+        maxLevel: 10,
+        baseCost: 1, // Base SP cost to unlock
+        upgradeCostMultiplier: 1.5, // Each upgrade costs baseCost * (level * multiplier)
+        growthRate: 1.0, // Growth multiplier (lower = slower growth)
         skills: [
           {
-            id: 'str_1',
-            name: 'Power Strike',
-            desc: '+8% XP per message',
-            cost: 1,
-            requirement: { strength: 3 },
-            effect: { xpBonus: 0.08 },
+            id: 'shadow_extraction',
+            name: 'Shadow Extraction Mastery',
+            desc: 'Mastery over extracting shadows from defeated enemies. Each level increases XP gain.',
+            lore: 'The passive ability to extract shadows and turn them into your army.',
+            requirement: { level: 5 },
+            baseEffect: { xpBonus: 0.02 }, // +2% per level
+            perLevelEffect: { xpBonus: 0.02 }, // +2% per level upgrade
           },
           {
-            id: 'str_2',
-            name: 'Mighty Blow',
-            desc: '+15% XP per message',
-            cost: 2,
-            requirement: { strength: 6, skills: ['str_1'] },
-            effect: { xpBonus: 0.15 },
+            id: 'shadow_storage',
+            name: 'Shadow Storage Capacity',
+            desc: 'Increased capacity for storing extracted shadows. Increases long message XP.',
+            lore: 'Passively store your shadow army for later use.',
+            requirement: { level: 8 },
+            baseEffect: { longMsgBonus: 0.03 }, // +3% per level
+            perLevelEffect: { longMsgBonus: 0.03 },
           },
           {
-            id: 'str_3',
-            name: 'Devastating Force',
-            desc: '+22% XP per message',
-            cost: 3,
-            requirement: { strength: 10, skills: ['str_2'] },
-            effect: { xpBonus: 0.22 },
+            id: 'basic_combat',
+            name: 'Combat Proficiency',
+            desc: 'Fundamental combat knowledge. Increases crit chance.',
+            lore: 'Passive mastery of combat basics.',
+            requirement: { level: 10, strength: 5 },
+            baseEffect: { critBonus: 0.01 }, // +1% per level
+            perLevelEffect: { critBonus: 0.01 },
           },
           {
-            id: 'str_4',
-            name: 'Armor Break',
-            desc: '+12% XP from long messages',
-            cost: 2,
-            requirement: { strength: 8, skills: ['str_2'] },
-            effect: { longMsgBonus: 0.12 },
-          },
-          {
-            id: 'str_5',
-            name: 'Berserker Rage',
-            desc: '+18% XP per message, +6% crit chance',
-            cost: 4,
-            requirement: { strength: 15, skills: ['str_3', 'str_4'] },
-            effect: { xpBonus: 0.18, critBonus: 0.06 },
+            id: 'mana_sense',
+            name: 'Mana Sensitivity',
+            desc: 'Heightened sensitivity to mana flow. Increases XP from all sources.',
+            lore: 'Passively feel the flow of mana around you.',
+            requirement: { level: 15, intelligence: 5 },
+            baseEffect: { xpBonus: 0.015 }, // +1.5% per level
+            perLevelEffect: { xpBonus: 0.015 },
           },
         ],
       },
-      agility: {
-        name: 'Agility Branch',
+      // ===== TIER 2: INTERMEDIATE SKILLS (Level 50-150) =====
+      // Medium cost, medium growth, mid-game progression
+      tier2: {
+        name: 'Intermediate Abilities',
+        tier: 2,
+        maxLevel: 15,
+        baseCost: 3,
+        upgradeCostMultiplier: 2.0,
+        growthRate: 1.5, // 50% faster growth than Tier 1
         skills: [
           {
-            id: 'agi_1',
-            name: 'Quick Reflexes',
-            desc: '+4% crit chance',
-            cost: 1,
-            requirement: { agility: 3 },
-            effect: { critBonus: 0.04 },
+            id: 'shadow_exchange',
+            name: 'Shadow Exchange Efficiency',
+            desc: 'Efficient conversion of shadows into power. Significantly increases XP gain.',
+            lore: 'Passively trade shadows for power boosts.',
+            requirement: { level: 50, skills: ['shadow_extraction'] },
+            baseEffect: { xpBonus: 0.05 }, // +5% per level
+            perLevelEffect: { xpBonus: 0.05 },
           },
           {
-            id: 'agi_2',
-            name: 'Lightning Speed',
-            desc: '+8% crit chance',
-            cost: 2,
-            requirement: { agility: 6, skills: ['agi_1'] },
-            effect: { critBonus: 0.08 },
+            id: 'arise',
+            name: 'Shadow Command Mastery',
+            desc: 'Mastery over commanding your shadow army. Increases all stat bonuses.',
+            lore: 'Passive command over shadows that brings them to life.',
+            requirement: { level: 60, skills: ['shadow_storage'] },
+            baseEffect: { allStatBonus: 0.02 }, // +2% per level
+            perLevelEffect: { allStatBonus: 0.02 },
           },
           {
-            id: 'agi_3',
-            name: 'Blinding Speed',
-            desc: '+12% crit chance',
-            cost: 3,
-            requirement: { agility: 10, skills: ['agi_2'] },
-            effect: { critBonus: 0.12 },
+            id: 'instant_dungeon',
+            name: 'Dungeon Mastery',
+            desc: 'Mastery over creating training grounds. Increases quest rewards.',
+            lore: 'Passively generate dungeons for training and grinding.',
+            requirement: { level: 75, intelligence: 15 },
+            baseEffect: { questBonus: 0.04 }, // +4% per level
+            perLevelEffect: { questBonus: 0.04 },
           },
           {
-            id: 'agi_4',
-            name: 'Shadow Step',
-            desc: '+10% XP per message',
-            cost: 2,
-            requirement: { agility: 8, skills: ['agi_2'] },
-            effect: { xpBonus: 0.10 },
+            id: 'dagger_throw',
+            name: 'Dagger Mastery',
+            desc: 'Mastery over throwing daggers. Increases crit chance significantly.',
+            lore: 'Passive mastery of Jin-Woo\'s signature combat technique.',
+            requirement: { level: 80, agility: 15 },
+            baseEffect: { critBonus: 0.02 }, // +2% per level
+            perLevelEffect: { critBonus: 0.02 },
           },
           {
-            id: 'agi_5',
-            name: 'Transcendent Speed',
-            desc: '+16% crit chance, +8% XP',
-            cost: 4,
-            requirement: { agility: 15, skills: ['agi_3', 'agi_4'] },
-            effect: { critBonus: 0.16, xpBonus: 0.08 },
+            id: 'stealth',
+            name: 'Shadow Stealth',
+            desc: 'Passive ability to move unseen through shadows. Increases XP and crit chance.',
+            lore: 'Become one with the shadows.',
+            requirement: { level: 90, agility: 20 },
+            baseEffect: { xpBonus: 0.03, critBonus: 0.015 }, // +3% XP, +1.5% crit per level
+            perLevelEffect: { xpBonus: 0.03, critBonus: 0.015 },
           },
         ],
       },
-      intelligence: {
-        name: 'Intelligence Branch',
+      // ===== TIER 3: ADVANCED SKILLS (Level 150-500) =====
+      // High cost, high growth, late-game power
+      tier3: {
+        name: 'Advanced Abilities',
+        tier: 3,
+        maxLevel: 20,
+        baseCost: 5,
+        upgradeCostMultiplier: 2.5,
+        growthRate: 2.0, // 2x faster growth than Tier 1
         skills: [
           {
-            id: 'int_1',
-            name: 'Mental Clarity',
-            desc: '+12% long message XP',
-            cost: 1,
-            requirement: { intelligence: 3 },
-            effect: { longMsgBonus: 0.12 },
+            id: 'domain_expansion',
+            name: 'Domain Mastery',
+            desc: 'Mastery over expanding your domain of influence. Massive XP and stat bonuses.',
+            lore: 'Passively create a domain where you are absolute ruler.',
+            requirement: { level: 150, intelligence: 30, skills: ['instant_dungeon'] },
+            baseEffect: { xpBonus: 0.08, allStatBonus: 0.03 }, // +8% XP, +3% stats per level
+            perLevelEffect: { xpBonus: 0.08, allStatBonus: 0.03 },
           },
           {
-            id: 'int_2',
-            name: 'Genius Mind',
-            desc: '+20% long message XP',
-            cost: 2,
-            requirement: { intelligence: 6, skills: ['int_1'] },
-            effect: { longMsgBonus: 0.20 },
+            id: 'ruler_authority',
+            name: 'Ruler\'s Presence',
+            desc: 'Passive aura of absolute authority. Increases all bonuses.',
+            lore: 'The passive power to rule over all.',
+            requirement: { level: 200, skills: ['arise'] },
+            baseEffect: { xpBonus: 0.06, allStatBonus: 0.04, critBonus: 0.02 }, // +6% XP, +4% stats, +2% crit per level
+            perLevelEffect: { xpBonus: 0.06, allStatBonus: 0.04, critBonus: 0.02 },
           },
           {
-            id: 'int_3',
-            name: 'Master Strategist',
-            desc: '+28% long message XP',
-            cost: 3,
-            requirement: { intelligence: 10, skills: ['int_2'] },
-            effect: { longMsgBonus: 0.28 },
+            id: 'shadow_army',
+            name: 'Shadow Legion Mastery',
+            desc: 'Mastery over commanding a legion of shadows. Massive XP and quest bonuses.',
+            lore: 'Passively build an army of shadows to fight for you.',
+            requirement: { level: 250, skills: ['shadow_exchange', 'arise'] },
+            baseEffect: { xpBonus: 0.10, questBonus: 0.06 }, // +10% XP, +6% quest per level
+            perLevelEffect: { xpBonus: 0.10, questBonus: 0.06 },
           },
           {
-            id: 'int_4',
-            name: 'Tactical Analysis',
-            desc: '+10% quest rewards',
-            cost: 2,
-            requirement: { intelligence: 8, skills: ['int_2'] },
-            effect: { questBonus: 0.10 },
-          },
-          {
-            id: 'int_5',
-            name: 'Omniscient Mind',
-            desc: '+35% long message XP, +15% quest rewards',
-            cost: 4,
-            requirement: { intelligence: 15, skills: ['int_3', 'int_4'] },
-            effect: { longMsgBonus: 0.35, questBonus: 0.15 },
+            id: 'monarch_power',
+            name: 'Monarch\'s Aura',
+            desc: 'Passive aura of monarch-level power. Extreme bonuses.',
+            lore: 'The power of a Monarch passively flows through you.',
+            requirement: { level: 300, strength: 50, agility: 50 },
+            baseEffect: { xpBonus: 0.12, critBonus: 0.03, allStatBonus: 0.05 }, // +12% XP, +3% crit, +5% stats per level
+            perLevelEffect: { xpBonus: 0.12, critBonus: 0.03, allStatBonus: 0.05 },
           },
         ],
       },
-      vitality: {
-        name: 'Vitality Branch',
+      // ===== TIER 4: MASTER SKILLS (Level 500-1000) =====
+      // Very high cost, very high growth, end-game mastery
+      tier4: {
+        name: 'Master Abilities',
+        tier: 4,
+        maxLevel: 25,
+        baseCost: 10,
+        upgradeCostMultiplier: 3.0,
+        growthRate: 3.0, // 3x faster growth than Tier 1
         skills: [
           {
-            id: 'vit_1',
-            name: 'Robust Health',
-            desc: '+8% quest rewards',
-            cost: 1,
-            requirement: { vitality: 3 },
-            effect: { questBonus: 0.08 },
+            id: 'shadow_monarch',
+            name: 'Shadow Monarch\'s Presence',
+            desc: 'Passive presence of the Shadow Monarch. Ultimate power over shadows.',
+            lore: 'The ultimate form - passive ruler of all shadows.',
+            requirement: { level: 500, skills: ['monarch_power', 'shadow_army'] },
+            baseEffect: { xpBonus: 0.15, allStatBonus: 0.08, critBonus: 0.04 }, // +15% XP, +8% stats, +4% crit per level
+            perLevelEffect: { xpBonus: 0.15, allStatBonus: 0.08, critBonus: 0.04 },
           },
           {
-            id: 'vit_2',
-            name: 'Iron Will',
-            desc: '+15% quest rewards',
-            cost: 2,
-            requirement: { vitality: 6, skills: ['vit_1'] },
-            effect: { questBonus: 0.15 },
-          },
-          {
-            id: 'vit_3',
-            name: 'Immortal Body',
-            desc: '+22% quest rewards',
-            cost: 3,
-            requirement: { vitality: 10, skills: ['vit_2'] },
-            effect: { questBonus: 0.22 },
-          },
-          {
-            id: 'vit_4',
-            name: 'Regeneration',
-            desc: '+6% XP per message',
-            cost: 2,
-            requirement: { vitality: 8, skills: ['vit_2'] },
-            effect: { xpBonus: 0.06 },
-          },
-          {
-            id: 'vit_5',
-            name: 'Eternal Vitality',
-            desc: '+28% quest rewards, +12% XP',
-            cost: 4,
-            requirement: { vitality: 15, skills: ['vit_3', 'vit_4'] },
-            effect: { questBonus: 0.28, xpBonus: 0.12 },
+            id: 'ashborn_legacy',
+            name: 'Ashborn\'s Legacy',
+            desc: 'Passive inheritance of the first Shadow Monarch\'s power. Transcendent bonuses.',
+            lore: 'The legacy of Ashborn passively flows through you.',
+            requirement: { level: 750, skills: ['shadow_monarch'] },
+            baseEffect: { xpBonus: 0.20, allStatBonus: 0.10, critBonus: 0.05, questBonus: 0.08 }, // +20% XP, +10% stats, +5% crit, +8% quest per level
+            perLevelEffect: { xpBonus: 0.20, allStatBonus: 0.10, critBonus: 0.05, questBonus: 0.08 },
           },
         ],
       },
-      luck: {
-        name: 'Luck Branch',
+      // ===== TIER 5: TRANSCENDENT SKILLS (Level 1000-1500) =====
+      // Extremely high cost, extremely high growth, transcendent power
+      tier5: {
+        name: 'Transcendent Abilities',
+        tier: 5,
+        maxLevel: 30,
+        baseCost: 15,
+        upgradeCostMultiplier: 3.5,
+        growthRate: 4.0, // 4x faster growth than Tier 1
         skills: [
           {
-            id: 'luk_1',
-            name: 'Lucky Break',
-            desc: '+4% to all stat bonuses',
-            cost: 1,
-            requirement: { luck: 3 },
-            effect: { allStatBonus: 0.04 },
+            id: 'absolute_ruler',
+            name: 'Absolute Authority',
+            desc: 'Passive authority over all existence. Maximum power.',
+            lore: 'The ultimate passive authority - rule over everything.',
+            requirement: { level: 1000, skills: ['ashborn_legacy'] },
+            baseEffect: { xpBonus: 0.25, allStatBonus: 0.12, critBonus: 0.06, questBonus: 0.10, longMsgBonus: 0.15 }, // +25% XP, +12% stats, +6% crit, +10% quest, +15% long msg per level
+            perLevelEffect: { xpBonus: 0.25, allStatBonus: 0.12, critBonus: 0.06, questBonus: 0.10, longMsgBonus: 0.15 },
           },
           {
-            id: 'luk_2',
-            name: 'Fortune\'s Favor',
-            desc: '+8% to all stat bonuses',
-            cost: 2,
-            requirement: { luck: 6, skills: ['luk_1'] },
-            effect: { allStatBonus: 0.08 },
+            id: 'void_mastery',
+            name: 'Void Mastery',
+            desc: 'Mastery over the void itself. Transcendent XP and stat bonuses.',
+            lore: 'Passive control over the void between dimensions.',
+            requirement: { level: 1200, skills: ['absolute_ruler'] },
+            baseEffect: { xpBonus: 0.30, allStatBonus: 0.15, critBonus: 0.08 }, // +30% XP, +15% stats, +8% crit per level
+            perLevelEffect: { xpBonus: 0.30, allStatBonus: 0.15, critBonus: 0.08 },
           },
           {
-            id: 'luk_3',
-            name: 'Divine Luck',
-            desc: '+12% to all stat bonuses',
-            cost: 3,
-            requirement: { luck: 10, skills: ['luk_2'] },
-            effect: { allStatBonus: 0.12 },
-          },
-          {
-            id: 'luk_4',
-            name: 'Serendipity',
-            desc: '+5% crit chance',
-            cost: 2,
-            requirement: { luck: 8, skills: ['luk_2'] },
-            effect: { critBonus: 0.05 },
-          },
-          {
-            id: 'luk_5',
-            name: 'Fate\'s Blessing',
-            desc: '+16% to all stat bonuses, +8% crit chance',
-            cost: 4,
-            requirement: { luck: 15, skills: ['luk_3', 'luk_4'] },
-            effect: { allStatBonus: 0.16, critBonus: 0.08 },
+            id: 'dimension_ruler',
+            name: 'Dimension Ruler\'s Aura',
+            desc: 'Passive aura that rules across all dimensions. Massive bonuses.',
+            lore: 'Your presence passively affects all dimensions.',
+            requirement: { level: 1400, skills: ['void_mastery'] },
+            baseEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.10, questBonus: 0.12 }, // +35% XP, +18% stats, +10% crit, +12% quest per level
+            perLevelEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.10, questBonus: 0.12 },
           },
         ],
       },
-      combat: {
-        name: 'Combat Branch',
+      // ===== TIER 6: ULTIMATE SKILLS (Level 1500-2000) =====
+      // Maximum cost, maximum growth, ultimate power
+      tier6: {
+        name: 'Ultimate Abilities',
+        tier: 6,
+        maxLevel: 35,
+        baseCost: 25,
+        upgradeCostMultiplier: 4.0,
+        growthRate: 5.0, // 5x faster growth than Tier 1
         skills: [
           {
-            id: 'combat_1',
-            name: 'Critical Focus',
-            desc: '+3% crit chance',
-            cost: 1,
-            requirement: { strength: 5, agility: 5 },
-            effect: { critBonus: 0.03 },
+            id: 'omnipotent_presence',
+            name: 'Omnipotent Presence',
+            desc: 'Passive presence that transcends all limitations. Ultimate bonuses.',
+            lore: 'Your very existence passively defies all known limits.',
+            requirement: { level: 1500, skills: ['dimension_ruler'] },
+            baseEffect: { xpBonus: 0.40, allStatBonus: 0.20, critBonus: 0.12, questBonus: 0.15, longMsgBonus: 0.20 }, // +40% XP, +20% stats, +12% crit, +15% quest, +20% long msg per level
+            perLevelEffect: { xpBonus: 0.40, allStatBonus: 0.20, critBonus: 0.12, questBonus: 0.15, longMsgBonus: 0.20 },
           },
           {
-            id: 'combat_2',
-            name: 'Precision Strike',
-            desc: '+6% crit chance, +5% XP per message',
-            cost: 2,
-            requirement: { strength: 8, agility: 8, skills: ['combat_1'] },
-            effect: { critBonus: 0.06, xpBonus: 0.05 },
+            id: 'eternal_shadow',
+            name: 'Eternal Shadow\'s Embrace',
+            desc: 'Passive embrace of eternal shadow power. Transcendent bonuses.',
+            lore: 'The eternal shadow itself passively flows through you.',
+            requirement: { level: 1750, skills: ['omnipotent_presence'] },
+            baseEffect: { xpBonus: 0.45, allStatBonus: 0.25, critBonus: 0.15, questBonus: 0.18 }, // +45% XP, +25% stats, +15% crit, +18% quest per level
+            perLevelEffect: { xpBonus: 0.45, allStatBonus: 0.25, critBonus: 0.15, questBonus: 0.18 },
           },
           {
-            id: 'combat_3',
-            name: 'Combo Master',
-            desc: '+8% XP per message',
-            cost: 2,
-            requirement: { agility: 10, skills: ['combat_1'] },
-            effect: { xpBonus: 0.08 },
-          },
-          {
-            id: 'combat_4',
-            name: 'Devastating Crit',
-            desc: '+9% crit chance, +8% XP per message',
-            cost: 3,
-            requirement: { strength: 12, agility: 12, skills: ['combat_2'] },
-            effect: { critBonus: 0.09, xpBonus: 0.08 },
-          },
-          {
-            id: 'combat_5',
-            name: 'Perfect Execution',
-            desc: '+12% crit chance, +12% XP per message',
-            cost: 4,
-            requirement: { strength: 15, agility: 15, skills: ['combat_3', 'combat_4'] },
-            effect: { critBonus: 0.12, xpBonus: 0.12 },
-          },
-        ],
-      },
-      utility: {
-        name: 'Utility Branch',
-        skills: [
-          {
-            id: 'util_1',
-            name: 'Quest Enthusiast',
-            desc: '+6% quest rewards',
-            cost: 1,
-            requirement: { vitality: 5, intelligence: 5 },
-            effect: { questBonus: 0.06 },
-          },
-          {
-            id: 'util_2',
-            name: 'Channel Explorer',
-            desc: '+8% XP per message',
-            cost: 2,
-            requirement: { intelligence: 8, skills: ['util_1'] },
-            effect: { xpBonus: 0.08 },
-          },
-          {
-            id: 'util_3',
-            name: 'Quest Master',
-            desc: '+12% quest rewards',
-            cost: 2,
-            requirement: { vitality: 10, skills: ['util_1'] },
-            effect: { questBonus: 0.12 },
-          },
-          {
-            id: 'util_4',
-            name: 'Dimension Walker',
-            desc: '+10% XP per message, +5% quest rewards',
-            cost: 3,
-            requirement: { intelligence: 12, skills: ['util_2', 'util_3'] },
-            effect: { xpBonus: 0.10, questBonus: 0.05 },
-          },
-          {
-            id: 'util_5',
-            name: 'Universal Explorer',
-            desc: '+18% quest rewards, +12% XP per message',
-            cost: 4,
-            requirement: { vitality: 15, intelligence: 15, skills: ['util_4'] },
-            effect: { questBonus: 0.18, xpBonus: 0.12 },
-          },
-        ],
-      },
-      mastery: {
-        name: 'Mastery Branch',
-        skills: [
-          {
-            id: 'mast_1',
-            name: 'XP Amplifier',
-            desc: '+10% XP per message',
-            cost: 2,
-            requirement: { strength: 10, intelligence: 10 },
-            effect: { xpBonus: 0.10 },
-          },
-          {
-            id: 'mast_2',
-            name: 'Stat Synergy',
-            desc: '+6% to all stat bonuses',
-            cost: 2,
-            requirement: { luck: 10, skills: ['mast_1'] },
-            effect: { allStatBonus: 0.06 },
-          },
-          {
-            id: 'mast_3',
-            name: 'Perfect Balance',
-            desc: '+8% to all stat bonuses, +5% XP',
-            cost: 3,
-            requirement: { strength: 12, agility: 12, intelligence: 12, skills: ['mast_2'] },
-            effect: { allStatBonus: 0.08, xpBonus: 0.05 },
-          },
-          {
-            id: 'mast_4',
-            name: 'Transcendent Power',
-            desc: '+12% to all stat bonuses, +8% XP, +4% crit',
-            cost: 4,
-            requirement: { strength: 15, agility: 15, intelligence: 15, luck: 12, skills: ['mast_3'] },
-            effect: { allStatBonus: 0.12, xpBonus: 0.08, critBonus: 0.04 },
-          },
-          {
-            id: 'mast_5',
-            name: 'Absolute Mastery',
-            desc: '+18% to all stat bonuses, +12% XP, +6% crit, +10% quest',
-            cost: 5,
-            requirement: { strength: 18, agility: 18, intelligence: 18, vitality: 15, luck: 15, skills: ['mast_4'] },
-            effect: { allStatBonus: 0.18, xpBonus: 0.12, critBonus: 0.06, questBonus: 0.10 },
+            id: 'true_monarch',
+            name: 'True Monarch\'s Dominion',
+            desc: 'Passive dominion over all reality. Maximum possible power.',
+            lore: 'The true monarch\'s passive dominion extends over all existence.',
+            requirement: { level: 2000, skills: ['eternal_shadow'] },
+            baseEffect: { xpBonus: 0.50, allStatBonus: 0.30, critBonus: 0.18, questBonus: 0.20, longMsgBonus: 0.25 }, // +50% XP, +30% stats, +18% crit, +20% quest, +25% long msg per level
+            perLevelEffect: { xpBonus: 0.50, allStatBonus: 0.30, critBonus: 0.18, questBonus: 0.20, longMsgBonus: 0.25 },
           },
         ],
       },
@@ -382,11 +289,14 @@ module.exports = class SkillTree {
     this.settings = this.defaultSettings;
     this.skillTreeModal = null;
     this.skillTreeButton = null;
-    this.urlCheckInterval = null;
     this.levelCheckInterval = null; // Deprecated - using events instead
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
+    this._urlChangeCleanup = null; // Cleanup function for URL change watcher
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
   start() {
     this.loadSettings();
     this.injectCSS();
@@ -402,9 +312,15 @@ module.exports = class SkillTree {
     // Recalculate SP on startup based on current level
     this.recalculateSPFromLevel();
 
+    // Set global instance for button handlers
+    window.skillTreeInstance = this;
+
     console.log('SkillTree: Plugin started');
   }
 
+  // ============================================================================
+  // EVENT HANDLING & WATCHERS
+  // ============================================================================
   setupLevelUpWatcher() {
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -445,6 +361,56 @@ module.exports = class SkillTree {
     this.checkForLevelUp();
   }
 
+  stop() {
+    // Unsubscribe from events
+    this.unsubscribeFromEvents();
+
+    // Clear intervals
+    if (this.levelCheckInterval) {
+      clearInterval(this.levelCheckInterval);
+      this.levelCheckInterval = null;
+    }
+
+    // Cleanup URL change watcher
+    if (this._urlChangeCleanup) {
+      this._urlChangeCleanup();
+      this._urlChangeCleanup = null;
+    }
+
+    // Remove UI elements
+    if (this.skillTreeButton) {
+      this.skillTreeButton.remove();
+      this.skillTreeButton = null;
+    }
+
+    // Disconnect toolbar observer
+    if (this.toolbarObserver) {
+      this.toolbarObserver.disconnect();
+      this.toolbarObserver = null;
+    }
+
+    if (this.skillTreeModal) {
+      this.skillTreeModal.remove();
+      this.skillTreeModal = null;
+    }
+
+    // Clear global instance
+    if (window.skillTreeInstance === this) {
+      window.skillTreeInstance = null;
+    }
+
+    // Remove CSS
+    const styleElement = document.getElementById('skilltree-css');
+    if (styleElement) {
+      styleElement.remove();
+    }
+
+    console.log('SkillTree: Plugin stopped');
+  }
+
+  // ============================================================================
+  // LEVEL UP & SP MANAGEMENT
+  // ============================================================================
   checkForLevelUp() {
     try {
       const soloData = this.getSoloLevelingData();
@@ -465,13 +431,21 @@ module.exports = class SkillTree {
     }
   }
 
-  // Calculate total SP that should be earned based on level
+  /**
+   * Calculate total SP that should be earned based on level
+   * Fixed gain: 1 SP per level (no diminishing returns)
+   * @param {number} level - Current level
+   * @returns {number} - Total SP earned
+   */
   calculateSPForLevel(level) {
     // 1 SP per level (level 1 = 0 SP, level 2 = 1 SP, level 3 = 2 SP, etc.)
     return Math.max(0, level - 1);
   }
 
-  // Award SP when leveling up
+  /**
+   * Award SP when leveling up (fixed 1 SP per level)
+   * @param {number} levelsGained - Number of levels gained
+   */
   awardSPForLevelUp(levelsGained) {
     const spEarned = levelsGained; // 1 SP per level
     this.settings.skillPoints += spEarned;
@@ -487,7 +461,9 @@ module.exports = class SkillTree {
     }
   }
 
-  // Recalculate SP based on current level (for reset or initial setup)
+  /**
+   * Recalculate SP based on current level (for reset or initial setup)
+   */
   recalculateSPFromLevel() {
     try {
       const soloData = this.getSoloLevelingData();
@@ -520,81 +496,252 @@ module.exports = class SkillTree {
     }
   }
 
-  // Get total SP spent on unlocked skills
-  getTotalSpentSP() {
-    let totalSpent = 0;
-    Object.values(this.skillTree).forEach((branch) => {
-      branch.skills.forEach((skill) => {
-        if (this.settings.unlockedSkills.includes(skill.id)) {
-          totalSpent += skill.cost;
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+  loadSettings() {
+    try {
+      const saved = BdApi.Data.load('SkillTree', 'settings');
+      if (saved) {
+        this.settings = { ...this.defaultSettings, ...saved };
+        // Migrate old unlockedSkills to skillLevels
+        if (this.settings.unlockedSkills && this.settings.unlockedSkills.length > 0) {
+          if (!this.settings.skillLevels) {
+            this.settings.skillLevels = {};
+          }
+          this.settings.unlockedSkills.forEach((skillId) => {
+            if (!this.settings.skillLevels[skillId]) {
+              this.settings.skillLevels[skillId] = 1; // Set to level 1
+            }
+          });
+          // Clear old array
+          this.settings.unlockedSkills = [];
+          this.saveSettings();
+        }
+      }
+    } catch (error) {
+      console.error('SkillTree: Error loading settings', error);
+    }
+  }
+
+  saveSettings() {
+    try {
+      BdApi.Data.save('SkillTree', 'settings', this.settings);
+      this.saveSkillBonuses(); // Update bonuses in shared storage
+    } catch (error) {
+      console.error('SkillTree: Error saving settings', error);
+    }
+  }
+
+  // ============================================================================
+  // SKILL BONUS CALCULATION
+  // ============================================================================
+  /**
+   * Save skill bonuses to shared storage for SoloLevelingStats to read
+   */
+  saveSkillBonuses() {
+    try {
+      const bonuses = this.calculateSkillBonuses();
+      BdApi.Data.save('SkillTree', 'bonuses', bonuses);
+    } catch (error) {
+      console.error('SkillTree: Error saving bonuses', error);
+    }
+  }
+
+  /**
+   * Calculate total bonuses from all unlocked and upgraded skills
+   * @returns {Object} - Object with xpBonus, critBonus, longMsgBonus, questBonus, allStatBonus
+   */
+  calculateSkillBonuses() {
+    const bonuses = {
+      xpBonus: 0,
+      critBonus: 0,
+      longMsgBonus: 0,
+      questBonus: 0,
+      allStatBonus: 0,
+    };
+
+    // Calculate bonuses from all skills at their current levels
+    Object.values(this.skillTree).forEach((tier) => {
+      if (!tier.skills) return;
+
+      tier.skills.forEach((skill) => {
+        const effect = this.getSkillEffect(skill, tier);
+        if (effect) {
+          if (effect.xpBonus) bonuses.xpBonus += effect.xpBonus;
+          if (effect.critBonus) bonuses.critBonus += effect.critBonus;
+          if (effect.longMsgBonus) bonuses.longMsgBonus += effect.longMsgBonus;
+          if (effect.questBonus) bonuses.questBonus += effect.questBonus;
+          if (effect.allStatBonus) bonuses.allStatBonus += effect.allStatBonus;
         }
       });
     });
+
+    return bonuses;
+  }
+
+  // ============================================================================
+  // DATA ACCESS METHODS
+  // ============================================================================
+  /**
+   * Get SoloLevelingStats data
+   * @returns {Object|null} - SoloLevelingStats data or null if unavailable
+   */
+  getSoloLevelingData() {
+    try {
+      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!soloPlugin) return null;
+      const instance = soloPlugin.instance || soloPlugin;
+      return {
+        stats: instance.settings?.stats || {},
+        level: instance.settings?.level || 1,
+        totalXP: instance.settings?.totalXP || 0,
+      };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Calculate total SP spent on skills
+   * @returns {number} - Total SP spent
+   */
+  getTotalSpentSP() {
+    let totalSpent = 0;
+
+    Object.values(this.skillTree).forEach((tier) => {
+      if (!tier.skills) return;
+
+      tier.skills.forEach((skill) => {
+        const skillLevel = this.getSkillLevel(skill.id);
+        if (skillLevel > 0) {
+          // Calculate SP spent: unlock cost + upgrade costs
+          totalSpent += this.getSkillUnlockCost(skill, tier);
+          totalSpent += this.getSkillUpgradeCost(skill, tier, skillLevel);
+        }
+      });
+    });
+
     return totalSpent;
   }
 
-  // Reset skill tree - refunds all SP and unlocks
-  resetSkillTree() {
-    const spentSP = this.getTotalSpentSP();
-    this.settings.unlockedSkills = [];
-
-    // Recalculate SP based on current level
-    this.recalculateSPFromLevel();
-
-    // Set available SP to total earned minus spent (which is now 0)
-    const soloData = this.getSoloLevelingData();
-    if (soloData && soloData.level) {
-      const expectedSP = this.calculateSPForLevel(soloData.level);
-      this.settings.totalEarnedSP = expectedSP;
-      this.settings.skillPoints = expectedSP; // All SP available since nothing is spent
-    }
-
-    this.saveSettings();
-    this.saveSkillBonuses(); // Update bonuses (all cleared)
-
-    if (BdApi && typeof BdApi.showToast === 'function') {
-      BdApi.showToast('Skill Tree Reset! All SP refunded.', {
-        type: 'info',
-        timeout: 3000
-      });
-    }
-
-    return true;
+  // ============================================================================
+  // SKILL DATA ACCESS METHODS
+  // ============================================================================
+  /**
+   * Get skill level (0 = not unlocked)
+   * @param {string} skillId - Skill ID
+   * @returns {number} - Skill level (0 if not unlocked)
+   */
+  getSkillLevel(skillId) {
+    return this.settings.skillLevels[skillId] || 0;
   }
 
-  setupChannelWatcher() {
-    // Watch for URL changes (channel navigation)
-    let lastUrl = location.href;
-    this.urlCheckInterval = setInterval(() => {
-      if (location.href !== lastUrl) {
-        lastUrl = location.href;
-        // Recreate button after channel change
-        setTimeout(() => {
-          if (!this.skillTreeButton || !document.contains(this.skillTreeButton)) {
-            this.createSkillTreeButton();
-          }
-        }, 500);
+  /**
+   * Get skill unlock cost
+   * @param {Object} skill - Skill definition
+   * @param {Object} tier - Tier definition
+   * @returns {number} - Unlock cost in SP
+   */
+  getSkillUnlockCost(skill, tier) {
+    return tier.baseCost || 1;
+  }
+
+  /**
+   * Get total upgrade cost for a skill up to a certain level
+   * @param {Object} skill - Skill definition
+   * @param {Object} tier - Tier definition
+   * @param {number} targetLevel - Target level
+   * @returns {number} - Total upgrade cost
+   */
+  getSkillUpgradeCost(skill, tier, targetLevel) {
+    if (targetLevel <= 1) return 0;
+
+    let totalCost = 0;
+    const baseCost = tier.baseCost || 1;
+    const multiplier = tier.upgradeCostMultiplier || 1.5;
+
+    // Cost for level 2, 3, 4, etc.
+    for (let level = 2; level <= targetLevel; level++) {
+      totalCost += Math.ceil(baseCost * (level - 1) * multiplier);
+    }
+
+    return totalCost;
+  }
+
+  /**
+   * Get cost to upgrade skill to next level
+   * @param {Object} skill - Skill definition
+   * @param {Object} tier - Tier definition
+   * @returns {number|null} - Cost in SP, or null if max level
+   */
+  getNextUpgradeCost(skill, tier) {
+    const currentLevel = this.getSkillLevel(skill.id);
+    if (currentLevel === 0) {
+      // Unlock cost
+      return tier.baseCost || 1;
+    }
+
+    const maxLevel = tier.maxLevel || 10;
+    if (currentLevel >= maxLevel) {
+      return null; // Already max level
+    }
+
+    const baseCost = tier.baseCost || 1;
+    const multiplier = tier.upgradeCostMultiplier || 1.5;
+    return Math.ceil(baseCost * currentLevel * multiplier);
+  }
+
+  /**
+   * Get skill effect at current level
+   * @param {Object} skill - Skill definition
+   * @param {Object} tier - Tier definition
+   * @returns {Object|null} - Effect object or null if not unlocked
+   */
+  getSkillEffect(skill, tier) {
+    const level = this.getSkillLevel(skill.id);
+    if (level === 0) return null;
+
+    const effect = {};
+    const growthRate = tier.growthRate || 1.0;
+
+    // Calculate effect: baseEffect applies once, then perLevelEffect scales with level and growth rate
+    // For level 1: baseEffect only
+    // For level 2+: baseEffect + (perLevelEffect * (level - 1) * growthRate)
+    Object.keys(skill.baseEffect || {}).forEach((key) => {
+      const baseValue = skill.baseEffect[key] || 0;
+      const perLevelValue = (skill.perLevelEffect && skill.perLevelEffect[key]) ? skill.perLevelEffect[key] : 0;
+      // Level 1 gets base effect, each additional level adds perLevelEffect scaled by growth rate
+      effect[key] = baseValue + (perLevelValue * (level - 1) * growthRate);
+    });
+
+    return effect;
+  }
+
+  // ============================================================================
+  // SKILL UPGRADE METHODS
+  // ============================================================================
+  /**
+   * Find skill and tier by skill ID
+   * @param {string} skillId - Skill ID to find
+   * @returns {Object|null} - Object with skill and tier, or null if not found
+   */
+  findSkillAndTier(skillId) {
+    try {
+      for (const tierKey in this.skillTree) {
+        const tierData = this.skillTree[tierKey];
+        if (!tierData?.skills) continue;
+
+        const foundSkill = tierData.skills.find(s => s.id === skillId);
+        if (foundSkill) {
+          return { skill: foundSkill, tier: tierData };
+        }
       }
-    }, 1000);
-  }
-
-  stop() {
-    this.removeSkillTreeButton();
-    this.closeSkillTreeModal();
-    this.removeCSS();
-
-    // Unsubscribe from events
-    this.unsubscribeFromEvents();
-
-    if (this.urlCheckInterval) {
-      clearInterval(this.urlCheckInterval);
-      this.urlCheckInterval = null;
+      return null;
+    } catch (error) {
+      console.error('SkillTree: Error finding skill', error);
+      return null;
     }
-    if (this.levelCheckInterval) {
-      clearInterval(this.levelCheckInterval);
-      this.levelCheckInterval = null;
-    }
-    console.log('SkillTree: Plugin stopped');
   }
 
   /**
@@ -611,143 +758,654 @@ module.exports = class SkillTree {
     this.eventUnsubscribers = [];
   }
 
-  loadSettings() {
+  /**
+   * Check if skill can be unlocked/upgraded
+   * @param {Object} skill - Skill definition
+   * @param {Object} tier - Tier definition
+   * @returns {boolean} - True if skill can be upgraded
+   */
+  canUnlockSkill(skill, tier) {
     try {
-      const saved = BdApi.Data.load('SkillTree', 'settings');
-      if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
+      const soloData = this.getSoloLevelingData();
+      if (!soloData) return false;
+
+      const currentLevel = this.getSkillLevel(skill.id);
+      const maxLevel = tier.maxLevel || 10;
+
+      // Early returns for invalid states
+      if (currentLevel >= maxLevel) return false;
+
+      const cost = this.getNextUpgradeCost(skill, tier);
+      if (!cost || this.settings.skillPoints < cost) return false;
+
+      // Check level requirement
+      if (skill.requirement?.level && soloData.level < skill.requirement.level) {
+        return false;
       }
+
+      // Check stat requirements
+      const stats = soloData.stats || {};
+      const requirement = skill.requirement || {};
+
+      if (requirement.strength && (stats.strength || 0) < requirement.strength) return false;
+      if (requirement.agility && (stats.agility || 0) < requirement.agility) return false;
+      if (requirement.intelligence && (stats.intelligence || 0) < requirement.intelligence) return false;
+      if (requirement.vitality && (stats.vitality || 0) < requirement.vitality) return false;
+
+      // Support both perception and luck (migration)
+      const perception = stats.perception || stats.luck || 0;
+      if (requirement.perception && perception < requirement.perception) return false;
+      if (requirement.luck && perception < requirement.luck) return false;
+
+      // Check prerequisite skills
+      if (requirement.skills && Array.isArray(requirement.skills)) {
+        const hasAllPrereqs = requirement.skills.every(prereqId =>
+          this.getSkillLevel(prereqId) > 0
+        );
+        if (!hasAllPrereqs) return false;
+      }
+
+      return true;
     } catch (error) {
-      console.error('SkillTree: Error loading settings', error);
+      console.error('SkillTree: Error checking if skill can be unlocked', error);
+      return false;
     }
   }
 
-  saveSettings() {
+  /**
+   * Unlock or upgrade a skill
+   * @param {string} skillId - Skill ID to unlock/upgrade
+   * @returns {boolean} - True if successful
+   */
+  unlockOrUpgradeSkill(skillId) {
     try {
-      BdApi.Data.save('SkillTree', 'settings', this.settings);
-      this.saveSkillBonuses(); // Update bonuses in shared storage
+      const result = this.findSkillAndTier(skillId);
+      if (!result) {
+        console.error('SkillTree: Skill not found:', skillId);
+        return false;
+      }
+
+      const { skill, tier } = result;
+
+      if (!this.canUnlockSkill(skill, tier)) {
+        return false;
+      }
+
+      const cost = this.getNextUpgradeCost(skill, tier);
+      if (!cost) return false;
+
+      // Deduct SP and upgrade skill
+      this.settings.skillPoints -= cost;
+      const currentLevel = this.getSkillLevel(skillId);
+      this.settings.skillLevels[skillId] = (currentLevel || 0) + 1;
+
+      // Legacy support: add to unlockedSkills if not already there
+      if (!this.settings.unlockedSkills) {
+        this.settings.unlockedSkills = [];
+      }
+      if (!this.settings.unlockedSkills.includes(skillId)) {
+        this.settings.unlockedSkills.push(skillId);
+      }
+
+      this.saveSettings();
+      this.updateButtonText();
+
+      // Show notification
+      const newLevel = this.getSkillLevel(skillId);
+      if (BdApi?.showToast) {
+        const message = currentLevel === 0
+          ? `Skill Unlocked: ${skill.name}`
+          : `${skill.name} upgraded to Level ${newLevel}!`;
+
+        BdApi.showToast(message, {
+          type: 'success',
+          timeout: 3000
+        });
+      }
+
+      return true;
     } catch (error) {
-      console.error('SkillTree: Error saving settings', error);
+      console.error('SkillTree: Error unlocking/upgrading skill', error);
+      return false;
     }
   }
 
-  // Save skill bonuses to shared storage for SoloLevelingStats to read
-  saveSkillBonuses() {
+  /**
+   * Max upgrade a skill (use all remaining SP)
+   * @param {string} skillId - Skill ID to max upgrade
+   * @returns {boolean} - True if successful
+   */
+  maxUpgradeSkill(skillId) {
     try {
-      const bonuses = this.calculateSkillBonuses();
-      BdApi.Data.save('SkillTree', 'bonuses', bonuses);
-    } catch (error) {
-      console.error('SkillTree: Error saving bonuses', error);
-    }
-  }
+      const result = this.findSkillAndTier(skillId);
+      if (!result) {
+        console.error('SkillTree: Skill not found:', skillId);
+        return false;
+      }
 
-  calculateSkillBonuses() {
-    const bonuses = {
-      xpBonus: 0,
-      critBonus: 0,
-      longMsgBonus: 0,
-      questBonus: 0,
-      allStatBonus: 0,
-    };
+      const { skill, tier } = result;
+      const currentLevel = this.getSkillLevel(skillId);
+      const maxLevel = tier.maxLevel || 10;
 
-    // Calculate bonuses from unlocked skills
-    Object.values(this.skillTree).forEach((branch) => {
-      branch.skills.forEach((skill) => {
-        if (this.settings.unlockedSkills.includes(skill.id)) {
-          if (skill.effect.xpBonus) bonuses.xpBonus += skill.effect.xpBonus;
-          if (skill.effect.critBonus) bonuses.critBonus += skill.effect.critBonus;
-          if (skill.effect.longMsgBonus) bonuses.longMsgBonus += skill.effect.longMsgBonus;
-          if (skill.effect.questBonus) bonuses.questBonus += skill.effect.questBonus;
-          if (skill.effect.allStatBonus) bonuses.allStatBonus += skill.effect.allStatBonus;
+      // Early returns
+      if (currentLevel >= maxLevel) return false;
+
+      // Check requirements
+      if (!this.canUnlockSkill(skill, tier)) {
+        return false;
+      }
+
+      // Calculate how many levels we can afford
+      let levelsUpgraded = 0;
+      let totalCost = 0;
+      let targetLevel = currentLevel;
+      let remainingSP = this.settings.skillPoints;
+
+      while (targetLevel < maxLevel && remainingSP > 0) {
+        // Calculate cost for next level
+        const nextCost = targetLevel === 0
+          ? (tier.baseCost || 1) // Unlock cost
+          : Math.ceil((tier.baseCost || 1) * targetLevel * (tier.upgradeCostMultiplier || 1.5)); // Upgrade cost
+
+        if (!nextCost || remainingSP < nextCost) {
+          break; // Can't afford next upgrade
         }
-      });
-    });
 
-    return bonuses;
-  }
+        totalCost += nextCost;
+        remainingSP -= nextCost;
+        targetLevel++;
+        levelsUpgraded++;
+      }
 
-  // Get SoloLevelingStats data
-  getSoloLevelingData() {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-      const instance = soloPlugin.instance || soloPlugin;
-      return {
-        stats: instance.settings?.stats || {},
-        level: instance.settings?.level || 1,
-        totalXP: instance.settings?.totalXP || 0,
-      };
+      if (levelsUpgraded === 0) {
+        return false; // Can't afford any upgrades
+      }
+
+      // Apply upgrades
+      this.settings.skillPoints -= totalCost;
+      this.settings.skillLevels[skillId] = targetLevel;
+
+      // Legacy support
+      if (!this.settings.unlockedSkills) {
+        this.settings.unlockedSkills = [];
+      }
+      if (!this.settings.unlockedSkills.includes(skillId)) {
+        this.settings.unlockedSkills.push(skillId);
+      }
+
+      this.saveSettings();
+      this.updateButtonText();
+
+      // Show notification
+      if (BdApi?.showToast) {
+        const message = currentLevel === 0
+          ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
+          : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
+
+        BdApi.showToast(message, {
+          type: 'success',
+          timeout: 3000
+        });
+      }
+
+      return true;
     } catch (error) {
-      return null;
+      console.error('SkillTree: Error max upgrading skill', error);
+      return false;
     }
   }
 
-  // Check if skill can be unlocked
-  canUnlockSkill(skill) {
-    const soloData = this.getSoloLevelingData();
-    if (!soloData) return false;
+  stop() {
+    // Unsubscribe from events
+    this.unsubscribeFromEvents();
 
-    // Check if already unlocked
-    if (this.settings.unlockedSkills.includes(skill.id)) return false;
+    // Clear intervals
+    if (this.levelCheckInterval) {
+      clearInterval(this.levelCheckInterval);
+      this.levelCheckInterval = null;
+    }
 
-    // Check skill points
-    if (this.settings.skillPoints < skill.cost) return false;
+    // Cleanup URL change watcher
+    if (this._urlChangeCleanup) {
+      this._urlChangeCleanup();
+      this._urlChangeCleanup = null;
+    }
 
-    // Check stat requirements
-    if (skill.requirement.strength && soloData.stats.strength < skill.requirement.strength) return false;
-    if (skill.requirement.agility && soloData.stats.agility < skill.requirement.agility) return false;
-    if (skill.requirement.intelligence && soloData.stats.intelligence < skill.requirement.intelligence) return false;
-    if (skill.requirement.vitality && soloData.stats.vitality < skill.requirement.vitality) return false;
-    if (skill.requirement.luck && soloData.stats.luck < skill.requirement.luck) return false;
+    // Remove UI elements
+    if (this.skillTreeButton) {
+      this.skillTreeButton.remove();
+      this.skillTreeButton = null;
+  }
 
-    // Check prerequisite skills
-    if (skill.requirement.skills) {
-      for (const prereqId of skill.requirement.skills) {
-        if (!this.settings.unlockedSkills.includes(prereqId)) return false;
+    if (this.skillTreeModal) {
+      this.skillTreeModal.remove();
+      this.skillTreeModal = null;
+    }
+
+    // Clear global instance
+    if (window.skillTreeInstance === this) {
+      window.skillTreeInstance = null;
+    }
+
+    // Remove CSS
+    const styleElement = document.getElementById('skilltree-css');
+    if (styleElement) {
+      styleElement.remove();
+    }
+
+    console.log('SkillTree: Plugin stopped');
+  }
+
+  // ... (rest of the UI methods remain the same, but need to be updated to show skill levels and upgrade costs)
+  // For brevity, I'll include the key UI methods that need updating
+
+  injectCSS() {
+    const css = `
+      /* Main Button - Matching TitleManager style */
+      .st-skill-tree-button {
+        width: 32px;
+        height: 32px;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s;
+        color: var(--interactive-normal, #b9bbbe);
+        padding: 4px;
+        margin: 0 2px;
       }
-    }
-
-    return true;
-  }
-
-    unlockSkill(skillId) {
-    // Find skill in tree
-    let skill = null;
-    for (const branch of Object.values(this.skillTree)) {
-      const found = branch.skills.find((s) => s.id === skillId);
-      if (found) {
-        skill = found;
-        break;
+      .st-skill-tree-button:hover {
+        background: var(--background-modifier-hover, rgba(79, 84, 92, 0.16));
+        color: var(--interactive-hover, #dcddde);
+        transform: scale(1.1);
       }
+      .st-skill-tree-button:active {
+        transform: scale(0.95);
+      }
+      .st-skill-tree-button svg {
+        width: 20px;
+        height: 20px;
+      }
+
+      /* Modal Container */
+      .skilltree-modal {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f0f1e 100%);
+        border-radius: 16px;
+        padding: 0;
+        max-width: 900px;
+        width: 90vw;
+        max-height: 85vh;
+        overflow: hidden;
+        z-index: 10001;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
+                    0 0 100px rgba(102, 126, 234, 0.3),
+                    inset 0 0 100px rgba(118, 75, 162, 0.1);
+        border: 2px solid rgba(102, 126, 234, 0.3);
+        animation: modalFadeIn 0.3s ease-out;
+      }
+      @keyframes modalFadeIn {
+        from {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.9);
+        }
+        to {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      /* Modal Content */
+      .skilltree-modal-content {
+        padding: 30px;
+        overflow-y: auto;
+        max-height: calc(85vh - 60px);
+        background: linear-gradient(180deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 30, 0.98) 100%);
+      }
+
+      /* Header */
+      .skilltree-header {
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+        padding: 25px 30px;
+        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        position: relative;
+        overflow: hidden;
+      }
+      .skilltree-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
+        animation: shimmer 3s infinite;
+      }
+      @keyframes shimmer {
+        0% { left: -100%; }
+        100% { left: 100%; }
+      }
+      .skilltree-header h2 {
+        margin: 0 0 12px 0;
+        color: #fff;
+        font-size: 28px;
+        font-weight: 800;
+        text-shadow: 0 2px 10px rgba(102, 126, 234, 0.8),
+                     0 0 20px rgba(118, 75, 162, 0.6);
+        letter-spacing: 1px;
+        background: linear-gradient(135deg, #fff 0%, #e0e7ff 50%, #c7d2fe 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+      }
+      .skilltree-header-info {
+        display: flex;
+        gap: 20px;
+        align-items: center;
+        flex-wrap: wrap;
+      }
+      .skilltree-stat {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 16px;
+        background: rgba(102, 126, 234, 0.15);
+        border: 1px solid rgba(102, 126, 234, 0.3);
+        border-radius: 8px;
+        color: #e0e7ff;
+        font-size: 14px;
+        font-weight: 600;
+        backdrop-filter: blur(10px);
+        box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      }
+      .skilltree-stat-value {
+        color: #fbbf24;
+        font-weight: 700;
+        text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);
+      }
+
+      /* Close Button */
+      .skilltree-close-btn {
+        position: absolute;
+        top: 15px;
+        right: 15px;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+        font-size: 18px;
+        font-weight: 700;
+        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+        transition: all 0.2s;
+        z-index: 10;
+      }
+      .skilltree-close-btn:hover {
+        transform: scale(1.1) rotate(90deg);
+        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+      }
+
+      /* Tier Section */
+      .skilltree-tier {
+        margin: 35px 0;
+        padding: 25px;
+        background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+        border-radius: 12px;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        position: relative;
+        overflow: hidden;
+      }
+      .skilltree-tier::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+        background-size: 200% 100%;
+        animation: gradientShift 3s ease infinite;
+      }
+      .skilltree-tier-header {
+        color: #fff;
+        margin: 0 0 20px 0;
+        font-size: 22px;
+        font-weight: 700;
+        padding-bottom: 12px;
+        border-bottom: 2px solid rgba(102, 126, 234, 0.4);
+        text-shadow: 0 2px 8px rgba(102, 126, 234, 0.6);
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .skilltree-tier-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 12px;
+        font-size: 12px;
+        font-weight: 700;
+        color: white;
+        text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+      }
+
+      /* Skill Card */
+      .skilltree-skill {
+        background: linear-gradient(135deg, rgba(30, 30, 50, 0.8) 0%, rgba(20, 20, 35, 0.9) 100%);
+        border-radius: 10px;
+        padding: 18px;
+        margin: 12px 0;
+        border: 1px solid rgba(102, 126, 234, 0.2);
+        border-left: 4px solid #667eea;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        position: relative;
+        overflow: hidden;
+      }
+      .skilltree-skill::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 100%;
+        height: 100%;
+        background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+        transition: left 0.5s;
+      }
+      .skilltree-skill:hover {
+        transform: translateX(5px);
+        border-color: rgba(102, 126, 234, 0.5);
+        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.3),
+                    0 0 30px rgba(118, 75, 162, 0.2),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+      .skilltree-skill:hover::before {
+        left: 100%;
+      }
+      .skilltree-skill.unlocked {
+        border-left-color: #10b981;
+        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(30, 30, 50, 0.8) 100%);
+      }
+      .skilltree-skill.max-level {
+        border-left-color: #fbbf24;
+        background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(30, 30, 50, 0.8) 100%);
+        box-shadow: 0 4px 20px rgba(251, 191, 36, 0.2),
+                    0 0 30px rgba(251, 191, 36, 0.1);
+      }
+      .skilltree-skill-name {
+        font-weight: 700;
+        color: #fff;
+        margin-bottom: 6px;
+        font-size: 16px;
+        text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+        letter-spacing: 0.3px;
+      }
+      .skilltree-skill-desc {
+        color: #cbd5e1;
+        font-size: 13px;
+        margin-bottom: 10px;
+        line-height: 1.5;
+      }
+      .skilltree-skill-lore {
+        color: #a78bfa;
+        font-size: 11px;
+        font-style: italic;
+        margin-top: 6px;
+        padding-left: 12px;
+        border-left: 2px solid rgba(167, 139, 250, 0.3);
+      }
+      .skilltree-skill-level {
+        color: #10b981;
+        font-size: 12px;
+        margin-bottom: 6px;
+        font-weight: 600;
+        text-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+      }
+      .skilltree-skill-effects {
+        color: #34d399;
+        font-size: 11px;
+        margin-top: 8px;
+        padding: 8px;
+        background: rgba(16, 185, 129, 0.1);
+        border-radius: 6px;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+      }
+      .skilltree-skill-cost {
+        color: #fbbf24;
+        font-size: 12px;
+        font-weight: 600;
+        margin-top: 8px;
+        text-shadow: 0 0 8px rgba(251, 191, 36, 0.5);
+      }
+      .skilltree-skill-max {
+        color: #fbbf24;
+        font-size: 12px;
+        font-weight: 700;
+        margin-top: 8px;
+        text-shadow: 0 0 10px rgba(251, 191, 36, 0.6);
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      .skilltree-btn-group {
+        display: flex;
+        gap: 8px;
+        margin-top: 12px;
+      }
+      .skilltree-upgrade-btn {
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 20px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        transition: all 0.2s;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        flex: 1;
+      }
+      .skilltree-upgrade-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+      }
+      .skilltree-upgrade-btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+      .skilltree-upgrade-btn:disabled {
+        background: linear-gradient(135deg, #475569 0%, #334155 100%);
+        cursor: not-allowed;
+        opacity: 0.5;
+        box-shadow: none;
+      }
+      .skilltree-max-btn {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 10px 16px;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 700;
+        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+        transition: all 0.2s;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .skilltree-max-btn:hover:not(:disabled) {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      }
+      .skilltree-max-btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+      .skilltree-max-btn:disabled {
+        background: linear-gradient(135deg, #475569 0%, #334155 100%);
+        cursor: not-allowed;
+        opacity: 0.5;
+        box-shadow: none;
+      }
+
+      /* Scrollbar */
+      .skilltree-modal-content::-webkit-scrollbar {
+        width: 10px;
+      }
+      .skilltree-modal-content::-webkit-scrollbar-track {
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 5px;
+      }
+      .skilltree-modal-content::-webkit-scrollbar-thumb {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-radius: 5px;
+        border: 2px solid rgba(0, 0, 0, 0.3);
+      }
+      .skilltree-modal-content::-webkit-scrollbar-thumb:hover {
+        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+      }
+    `;
+
+    // Remove existing style if it exists
+    const existingStyle = document.getElementById('skilltree-css');
+    if (existingStyle) {
+      existingStyle.remove();
     }
 
-    if (!skill) return false;
-
-    if (!this.canUnlockSkill(skill)) return false;
-
-    // Unlock skill (deduct SP)
-    this.settings.skillPoints -= skill.cost;
-    this.settings.unlockedSkills.push(skillId);
-    this.saveSettings();
-
-    // Recalculate to ensure SP is correct
-    this.recalculateSPFromLevel();
-
-    // Show notification
-    if (BdApi && typeof BdApi.showToast === 'function') {
-      BdApi.showToast(`Skill Unlocked: ${skill.name}`, { type: 'success', timeout: 3000 });
-    }
-
-    return true;
+    // Create and inject style element
+    const style = document.createElement('style');
+    style.id = 'skilltree-css';
+    style.textContent = css;
+    document.head.appendChild(style);
   }
 
+  /**
+   * Create skill tree button in Discord UI (matching TitleManager style and position)
+   */
   createSkillTreeButton() {
-    // Remove any existing buttons first (prevent duplicates)
+    // Remove any existing buttons first
     const existingButtons = document.querySelectorAll('.st-skill-tree-button');
     existingButtons.forEach(btn => btn.remove());
     this.skillTreeButton = null;
 
-    // Find Discord's button row - look for the container with keyboard, gift, GIF, emoji icons
+    // Find Discord's button row - same method as TitleManager
     const findToolbar = () => {
       // Method 1: Find by looking for common Discord button classes
       const buttonRow =
@@ -784,41 +1442,49 @@ module.exports = class SkillTree {
 
     const toolbar = findToolbar();
     if (!toolbar) {
-      // Retry after delay if toolbar not loaded yet
       setTimeout(() => this.createSkillTreeButton(), 1000);
       return;
     }
 
-    // Create skill tree button with SVG icon
+    // Create button with skill tree/layers icon
     const button = document.createElement('button');
     button.className = 'st-skill-tree-button';
     button.innerHTML = `
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7l10 5 10-5-10-5z"></path>
-        <path d="M2 17l10 5 10-5"></path>
-        <path d="M2 12l10 5 10-5"></path>
+        <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
+        <path d="M2 17L12 22L22 17"></path>
+        <path d="M2 12L12 17L22 12"></path>
       </svg>
     `;
-    button.title = 'Skill Tree';
-    button.addEventListener('click', () => this.openSkillTreeModal());
+    button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
+    button.addEventListener('click', () => this.showSkillTreeModal());
 
-    // Insert button at the end of toolbar (after Discord's buttons, before apps button if exists)
+    // Insert button after title button (or before apps button if no title button)
+    const titleBtn = toolbar.querySelector('.tm-title-button');
     const appsButton = Array.from(toolbar.children).find(el =>
       el.querySelector('[class*="apps"]') ||
       el.getAttribute('aria-label')?.toLowerCase().includes('app')
     );
 
-    if (appsButton) {
+    if (titleBtn) {
+      toolbar.insertBefore(button, titleBtn.nextSibling);
+    } else if (appsButton) {
       toolbar.insertBefore(button, appsButton);
     } else {
       toolbar.appendChild(button);
     }
+
     this.skillTreeButton = button;
+    this.updateButtonText();
 
     // Watch for toolbar changes and reposition if needed
     this.observeToolbar(toolbar);
   }
 
+  /**
+   * Observe toolbar for changes and reposition button if needed
+   * @param {HTMLElement} toolbar - Toolbar element to observe
+   */
   observeToolbar(toolbar) {
     if (this.toolbarObserver) {
       this.toolbarObserver.disconnect();
@@ -837,419 +1503,202 @@ module.exports = class SkillTree {
     });
   }
 
-  removeSkillTreeButton() {
+  /**
+   * Update button text with current SP count
+   */
+  updateButtonText() {
     if (this.skillTreeButton) {
-      this.skillTreeButton.remove();
-      this.skillTreeButton = null;
-    }
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
+      // Update tooltip with current SP count
+      this.skillTreeButton.title = `Skill Tree (${this.settings.skillPoints} SP)`;
     }
   }
 
-  openSkillTreeModal() {
+  /**
+   * Show skill tree modal with scroll position preservation
+   */
+  showSkillTreeModal() {
+    // Save scroll position before refresh
+    let scrollPosition = 0;
     if (this.skillTreeModal) {
-      this.closeSkillTreeModal();
-      return;
-    }
-
-    const soloData = this.getSoloLevelingData();
-    const modal = document.createElement('div');
-    modal.className = 'st-skill-tree-modal';
-    modal.innerHTML = `
-      <div class="st-modal-content">
-        <div class="st-modal-header">
-          <h2>⚡ Skill Tree</h2>
-          <button class="st-close-button" onclick="this.closest('.st-skill-tree-modal').remove()">×</button>
-        </div>
-        <div class="st-modal-body">
-          <div class="st-skill-points">
-            <span class="st-label">Skill Points:</span>
-            <span class="st-value">${this.settings.skillPoints}</span>
-            <span class="st-sp-info">(Total Earned: ${this.settings.totalEarnedSP || 0}, Spent: ${this.getTotalSpentSP()})</span>
-            <button class="st-reset-btn" id="st-reset-btn" style="margin-left: auto; padding: 6px 12px; background: rgba(255, 68, 68, 0.8); border: 1px solid rgba(255, 68, 68, 1); border-radius: 6px; color: white; cursor: pointer; font-size: 12px;">Reset Tree</button>
-          </div>
-          ${Object.entries(this.skillTree)
-            .map(
-              ([branchKey, branch]) => `
-            <div class="st-branch">
-              <h3 class="st-branch-title">${branch.name}</h3>
-              <div class="st-skills-grid">
-                ${branch.skills
-                  .map((skill) => {
-                    const isUnlocked = this.settings.unlockedSkills.includes(skill.id);
-                    const canUnlock = this.canUnlockSkill(skill);
-                    const soloData = this.getSoloLevelingData();
-                    const hasStatReq =
-                      !skill.requirement.strength ||
-                      (soloData && soloData.stats.strength >= skill.requirement.strength) ||
-                      !skill.requirement.agility ||
-                      (soloData && soloData.stats.agility >= skill.requirement.agility) ||
-                      !skill.requirement.intelligence ||
-                      (soloData && soloData.stats.intelligence >= skill.requirement.intelligence) ||
-                      !skill.requirement.vitality ||
-                      (soloData && soloData.stats.vitality >= skill.requirement.vitality) ||
-                      !skill.requirement.luck ||
-                      (soloData && soloData.stats.luck >= skill.requirement.luck);
-
-                    return `
-                      <div class="st-skill ${isUnlocked ? 'unlocked' : ''} ${canUnlock ? 'can-unlock' : ''}"
-                           data-skill-id="${skill.id}">
-                        <div class="st-skill-icon">${isUnlocked ? '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6L9 17l-5-5"></path></svg>' : '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>'}</div>
-                        <div class="st-skill-name">${this.escapeHtml(skill.name)}</div>
-                        <div class="st-skill-desc">${this.escapeHtml(skill.desc)}</div>
-                        <div class="st-skill-cost">Cost: ${skill.cost} SP</div>
-                        ${!isUnlocked && !hasStatReq ? `<div class="st-skill-req">Requires: ${this.escapeHtml(this.getRequirementText(skill))}</div>` : ''}
-                        ${!isUnlocked && canUnlock ? `<button class="st-unlock-btn" data-skill-id="${this.escapeHtml(skill.id)}">Unlock</button>` : ''}
-                      </div>
-                    `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-      </div>
-    `;
-
-    // Store instance reference (namespaced for security)
-    if (!window._skillTreeInstances) window._skillTreeInstances = new WeakMap();
-    window._skillTreeInstances.set(modal, this);
-
-    // Add event listeners for buttons (secure, no inline onclick)
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        this.closeSkillTreeModal();
-        return;
-      }
-
-      // Handle unlock button clicks
-      if (e.target.classList.contains('st-unlock-btn')) {
-        const skillId = e.target.getAttribute('data-skill-id');
-        if (skillId) {
-          this.unlockSkill(skillId);
-          this.refreshModal();
-        }
-      }
-
-      // Handle reset button
-      if (e.target.id === 'st-reset-btn' || e.target.closest('#st-reset-btn')) {
-        this.resetSkillTree();
-        this.refreshModal();
-      }
-    });
-
-    document.body.appendChild(modal);
-    this.skillTreeModal = modal;
-  }
-
-  // HTML escaping utility for XSS prevention
-  escapeHtml(text) {
-    if (typeof text !== 'string') return text;
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
-
-  getRequirementText(skill) {
-    const reqs = [];
-    if (skill.requirement.strength) reqs.push(`STR ${skill.requirement.strength}`);
-    if (skill.requirement.agility) reqs.push(`AGI ${skill.requirement.agility}`);
-    if (skill.requirement.intelligence) reqs.push(`INT ${skill.requirement.intelligence}`);
-    if (skill.requirement.vitality) reqs.push(`VIT ${skill.requirement.vitality}`);
-    if (skill.requirement.luck) reqs.push(`LUK ${skill.requirement.luck}`);
-    return reqs.join(', ');
-  }
-
-  refreshModal() {
-    this.closeSkillTreeModal();
-    setTimeout(() => this.openSkillTreeModal(), 100);
-  }
-
-  closeSkillTreeModal() {
-    if (this.skillTreeModal) {
-      if (window._skillTreeInstances) {
-        window._skillTreeInstances.delete(this.skillTreeModal);
+      const content = this.skillTreeModal.querySelector('.skilltree-modal-content');
+      if (content) {
+        scrollPosition = content.scrollTop;
       }
       this.skillTreeModal.remove();
-      this.skillTreeModal = null;
     }
-  }
 
-  injectCSS() {
-    const styleId = 'skill-tree-css';
-    if (document.getElementById(styleId)) return;
+    // Create modal
+    this.skillTreeModal = document.createElement('div');
+    this.skillTreeModal.className = 'skilltree-modal';
+    this.skillTreeModal.innerHTML = this.renderSkillTree();
 
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
-      .st-skill-tree-button {
-        background: transparent;
-        border: none;
-        border-radius: 4px;
-        width: 40px;
-        height: 40px;
-        cursor: pointer;
-        color: var(--interactive-normal, #b9bbbe);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: all 0.2s ease;
-        margin-left: 8px;
-        flex-shrink: 0;
-        padding: 0;
+    // Add close button
+    const closeBtn = document.createElement('button');
+    closeBtn.textContent = '✕';
+    closeBtn.className = 'skilltree-close-btn';
+    closeBtn.onclick = () => {
+      if (this.skillTreeModal) {
+        this.skillTreeModal.remove();
+        this.skillTreeModal = null;
       }
+    };
+    this.skillTreeModal.appendChild(closeBtn);
 
-      .st-skill-tree-button svg {
-        width: 20px;
-        height: 20px;
-        transition: all 0.2s ease;
+    document.body.appendChild(this.skillTreeModal);
+
+    // Restore scroll position
+    if (scrollPosition > 0) {
+      const content = this.skillTreeModal.querySelector('.skilltree-modal-content');
+      if (content) {
+        content.scrollTop = scrollPosition;
       }
+    }
 
-      .st-skill-tree-button:hover {
-        background: var(--background-modifier-hover, rgba(4, 4, 5, 0.6));
-        color: var(--interactive-hover, #dcddde);
-      }
-
-      .st-skill-tree-button:hover svg {
-        transform: scale(1.1);
-      }
-
-      .st-skill-tree-modal {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 10000;
-        animation: fadeIn 0.3s ease;
-      }
-
-      @keyframes fadeIn {
-        from { opacity: 0; }
-        to { opacity: 1; }
-      }
-
-      .st-modal-content {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
-        border-radius: 16px;
-        width: 90%;
-        max-width: 1200px;
-        max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
-      }
-
-      .st-modal-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 20px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
-      }
-
-      .st-modal-header h2 {
-        margin: 0;
-        color: #8b5cf6;
-        font-family: 'Orbitron', sans-serif;
-        font-size: 24px;
-      }
-
-      .st-close-button {
-        background: transparent;
-        border: none;
-        color: #8b5cf6;
-        font-size: 32px;
-        cursor: pointer;
-        width: 40px;
-        height: 40px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        border-radius: 8px;
-        transition: all 0.2s ease;
-      }
-
-      .st-close-button:hover {
-        background: rgba(139, 92, 246, 0.2);
-      }
-
-      .st-modal-body {
-        padding: 20px;
-      }
-
-      .st-skill-points {
-        background: rgba(139, 92, 246, 0.2);
-        border: 2px solid rgba(139, 92, 246, 0.5);
-        border-radius: 8px;
-        padding: 15px;
-        margin-bottom: 20px;
-        display: flex;
-        align-items: center;
-        gap: 10px;
-      }
-
-      .st-skill-points .st-label {
-        font-weight: bold;
-        color: #8b5cf6;
-        font-size: 18px;
-      }
-
-      .st-skill-points .st-value {
-        color: white;
-        font-size: 24px;
-        font-weight: bold;
-      }
-
-      .st-skill-points .st-sp-info {
-        color: rgba(255, 255, 255, 0.6);
-        font-size: 12px;
-        margin-left: 10px;
-      }
-
-      .st-branch {
-        margin-bottom: 30px;
-      }
-
-      .st-branch-title {
-        color: #8b5cf6;
-        font-family: 'Orbitron', sans-serif;
-        font-size: 20px;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
-      }
-
-      .st-skills-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-        gap: 15px;
-      }
-
-      .st-skill {
-        background: rgba(20, 20, 30, 0.8);
-        border: 2px solid rgba(139, 92, 246, 0.3);
-        border-radius: 12px;
-        padding: 15px;
-        transition: all 0.3s ease;
-        position: relative;
-      }
-
-      .st-skill.unlocked {
-        border-color: rgba(0, 255, 136, 0.6);
-        background: rgba(0, 255, 136, 0.1);
-      }
-
-      .st-skill.can-unlock {
-        border-color: rgba(139, 92, 246, 0.8);
-        cursor: pointer;
-      }
-
-      .st-skill.can-unlock:hover {
-        border-color: rgba(139, 92, 246, 1);
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
-        transform: translateY(-2px);
-      }
-
-      .st-skill-icon {
-        font-size: 32px;
-        text-align: center;
-        margin-bottom: 10px;
-      }
-
-      .st-skill-name {
-        font-weight: bold;
-        color: #8b5cf6;
-        font-size: 16px;
-        margin-bottom: 5px;
-        text-align: center;
-      }
-
-      .st-skill-desc {
-        color: rgba(255, 255, 255, 0.8);
-        font-size: 14px;
-        margin-bottom: 10px;
-        text-align: center;
-      }
-
-      .st-skill-cost {
-        color: rgba(255, 255, 255, 0.6);
-        font-size: 12px;
-        text-align: center;
-        margin-bottom: 5px;
-      }
-
-      .st-skill-req {
-        color: rgba(255, 200, 0, 0.8);
-        font-size: 11px;
-        text-align: center;
-        margin-top: 5px;
-      }
-
-      .st-unlock-btn {
-        width: 100%;
-        margin-top: 10px;
-        padding: 8px;
-        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-        border: none;
-        border-radius: 6px;
-        color: white;
-        font-weight: bold;
-        cursor: pointer;
-        transition: all 0.2s ease;
-      }
-
-      .st-unlock-btn:hover {
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-        box-shadow: 0 0 10px rgba(139, 92, 246, 0.6);
-      }
-    `;
-
-    document.head.appendChild(style);
-  }
-
-  removeCSS() {
-    const style = document.getElementById('skill-tree-css');
-    if (style) style.remove();
-  }
-
-  getSettingsPanel() {
-    const panel = document.createElement('div');
-    panel.style.padding = '20px';
-    panel.innerHTML = `
-      <div>
-        <h3 style="color: #8b5cf6;">Skill Tree Settings</h3>
-        <label style="display: flex; align-items: center; margin-bottom: 10px;">
-          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="st-enabled">
-          <span style="margin-left: 10px;">Enable Skill Tree</span>
-        </label>
-        <div style="margin-top: 20px;">
-          <p>Skill Points: <strong>${this.settings.skillPoints}</strong></p>
-          <p>Unlocked Skills: <strong>${this.settings.unlockedSkills.length}</strong></p>
-        </div>
-      </div>
-    `;
-
-    panel.querySelector('#st-enabled').addEventListener('change', (e) => {
-      this.settings.enabled = e.target.checked;
-      this.saveSettings();
-      if (e.target.checked) {
-        this.createSkillTreeButton();
-      } else {
-        this.removeSkillTreeButton();
-        this.closeSkillTreeModal();
-      }
+    // Attach event listeners to upgrade buttons
+    this.skillTreeModal.querySelectorAll('.skilltree-upgrade-btn').forEach((btn) => {
+      btn.onclick = (e) => {
+        const skillId = e.target.getAttribute('data-skill-id');
+        if (skillId && this.unlockOrUpgradeSkill(skillId)) {
+          this.showSkillTreeModal(); // Refresh modal (scroll position will be preserved)
+        }
+      };
     });
 
-    return panel;
+    // Attach event listeners to max buttons
+    this.skillTreeModal.querySelectorAll('.skilltree-max-btn').forEach((btn) => {
+      btn.onclick = (e) => {
+        const skillId = e.target.getAttribute('data-skill-id');
+        if (skillId && this.maxUpgradeSkill(skillId)) {
+          this.showSkillTreeModal(); // Refresh modal (scroll position will be preserved)
+        }
+      };
+    });
+  }
+
+  /**
+   * Render skill tree HTML
+   * @returns {string} - HTML string for skill tree modal
+   */
+  renderSkillTree() {
+    const soloData = this.getSoloLevelingData();
+    let html = `
+      <div class="skilltree-header">
+        <h2>Solo Leveling Skill Tree</h2>
+        <div class="skilltree-header-info">
+          <div class="skilltree-stat">
+            <span>Available SP:</span>
+            <span class="skilltree-stat-value">${this.settings.skillPoints}</span>
+        </div>
+          ${soloData ? `
+          <div class="skilltree-stat">
+            <span>Level:</span>
+            <span class="skilltree-stat-value">${soloData.level}</span>
+      </div>
+          ` : ''}
+        </div>
+      </div>
+      <div class="skilltree-modal-content">
+    `;
+
+    // Render each tier
+    Object.entries(this.skillTree).forEach(([tierKey, tier]) => {
+      if (!tier.skills) return;
+
+      html += `<div class="skilltree-tier">`;
+      html += `<div class="skilltree-tier-header">
+        <span>${tier.name}</span>
+        <span class="skilltree-tier-badge">Tier ${tier.tier}</span>
+      </div>`;
+
+      tier.skills.forEach((skill) => {
+        const level = this.getSkillLevel(skill.id);
+        const maxLevel = tier.maxLevel || 10;
+        const canUpgrade = this.canUnlockSkill(skill, tier);
+        const nextCost = this.getNextUpgradeCost(skill, tier);
+        const effect = this.getSkillEffect(skill, tier);
+
+        // Check if max upgrade is possible
+        const canMaxUpgrade = level < maxLevel && this.settings.skillPoints > 0 &&
+          (skill.requirement.level ? (soloData && soloData.level >= skill.requirement.level) : true);
+
+        html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${level >= maxLevel ? 'max-level' : ''}">`;
+        html += `<div class="skilltree-skill-name">${skill.name}</div>`;
+        html += `<div class="skilltree-skill-desc">${skill.desc}</div>`;
+        if (skill.lore) {
+          html += `<div class="skilltree-skill-lore">${skill.lore}</div>`;
+        }
+
+        if (level > 0) {
+          html += `<div class="skilltree-skill-level">Level ${level}/${maxLevel}</div>`;
+          if (effect) {
+            const effectText = [];
+            if (effect.xpBonus) effectText.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
+            if (effect.critBonus) effectText.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
+            if (effect.longMsgBonus) effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
+            if (effect.questBonus) effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
+            if (effect.allStatBonus) effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
+            html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(' • ')}</div>`;
+          }
+        }
+
+        if (level < maxLevel) {
+          html += `<div class="skilltree-skill-cost">Cost: ${nextCost || 'N/A'} SP</div>`;
+          html += `<div class="skilltree-btn-group">`;
+          html += `<button class="skilltree-upgrade-btn" ${!canUpgrade ? 'disabled' : ''} data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
+          html += `<button class="skilltree-max-btn" ${!canMaxUpgrade ? 'disabled' : ''} data-skill-id="${skill.id}">Max</button>`;
+          html += `</div>`;
+      } else {
+          html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
+        }
+
+        html += `</div>`;
+      });
+
+      html += `</div>`;
+    });
+
+    html += `</div>`;
+    return html;
+  }
+
+  setupChannelWatcher() {
+    // Use MutationObserver for URL changes (more efficient than polling)
+    let lastUrl = window.location.href;
+
+    // Watch for URL changes via popstate and pushState/replaceState
+    const handleUrlChange = () => {
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        // Small delay to ensure DOM is ready
+        setTimeout(() => {
+          this.createSkillTreeButton();
+        }, 500);
+      }
+    };
+
+    // Listen to browser navigation events
+    window.addEventListener('popstate', handleUrlChange);
+
+    // Override pushState and replaceState to detect programmatic navigation
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function(...args) {
+      originalPushState.apply(history, args);
+      handleUrlChange();
+    };
+
+    history.replaceState = function(...args) {
+      originalReplaceState.apply(history, args);
+      handleUrlChange();
+    };
+
+    // Store cleanup functions
+    this._urlChangeCleanup = () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+    };
   }
 };
