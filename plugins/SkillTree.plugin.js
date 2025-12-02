@@ -1,6 +1,6 @@
 /**
  * @name SkillTree
- * @author BlueFlashXS
+ * @author BlueFlashX1
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
  * @version 2.0.0
  */

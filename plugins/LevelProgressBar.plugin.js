@@ -2,7 +2,7 @@
  * @name LevelProgressBar
  * @author BlueFlashX1
  * @description Always-visible level progress bar for Solo Leveling Stats
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 module.exports = class LevelProgressBar {

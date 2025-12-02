@@ -1,8 +1,8 @@
 /**
  * @name SoloLevelingStats
- * @author BlueFlashXS
+ * @author BlueFlashX1
  * @description Solo Leveling-inspired stats system that tracks Discord activity and rewards progression through levels, stats, achievements, and daily quests
- * @version 1.0.0
+ * @version 1.0.1
  * @authorId
  * @authorLink
  * @website
@@ -2379,7 +2379,7 @@ module.exports = class SoloLevelingStats {
         // Add metadata for debugging
         _metadata: {
           lastSave: new Date().toISOString(),
-          version: '1.0.0',
+          version: '1.0.1',
         },
       };
 

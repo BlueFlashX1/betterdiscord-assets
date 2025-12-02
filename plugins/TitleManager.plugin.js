@@ -1,6 +1,6 @@
 /**
  * @name SoloLevelingTitleManager
- * @author BlueFlashXS
+ * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
  * @version 1.0.1
  */

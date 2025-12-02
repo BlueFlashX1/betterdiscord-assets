@@ -1,6 +1,6 @@
 /**
  * @name ShadowAriseAnimation
- * @author BlueFlashXS
+ * @author BlueFlashX1
  * @description Solo Leveling Shadow ARISE animation when a shadow is extracted (integrates with ShadowArmy)
  * @version 1.0.0
  */

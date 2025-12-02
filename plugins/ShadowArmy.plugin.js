@@ -1,6 +1,6 @@
 /**
  * @name ShadowArmy
- * @author BlueFlashXS
+ * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
  * @version 1.0.0
  */
