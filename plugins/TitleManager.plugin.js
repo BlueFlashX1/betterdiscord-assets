@@ -489,7 +489,7 @@ module.exports = class SoloLevelingTitleManager {
     modal.innerHTML = `
       <div class="tm-modal-content">
         <div class="tm-modal-header">
-          <h2>👑 Titles</h2>
+          <h2> Titles</h2>
           <button class="tm-close-button" onclick="this.closest('.tm-title-modal').remove()">×</button>
         </div>
         <div class="tm-modal-body">
@@ -528,7 +528,7 @@ module.exports = class SoloLevelingTitleManager {
             <h3 class="tm-section-title">Available Titles (${titles.length})</h3>
             ${titles.length === 0 ? `
               <div class="tm-empty-state">
-                <div class="tm-empty-icon">📜</div>
+                <div class="tm-empty-icon"></div>
                 <div class="tm-empty-text">No titles unlocked yet</div>
                 <div class="tm-empty-hint">Complete achievements to unlock titles!</div>
               </div>
@@ -557,7 +557,7 @@ module.exports = class SoloLevelingTitleManager {
                     }
                     return `
                       <div class="tm-title-card ${isActive ? 'active' : ''}">
-                        <div class="tm-title-icon">👑</div>
+                        <div class="tm-title-icon"></div>
                         <div class="tm-title-name">${this.escapeHtml(title)}</div>
                         ${buffs.length > 0 ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>` : ''}
                         ${isActive ? `

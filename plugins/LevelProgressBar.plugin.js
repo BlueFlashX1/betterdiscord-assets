@@ -802,7 +802,7 @@ module.exports = class LevelProgressBar {
     this.eventUnsubscribers.push(unsubscribeRank);
 
     // Log successful subscription (always log, not just debug)
-    console.log('[LevelProgressBar] ✅ Event-based updates enabled - progress bar will update in real-time');
+    console.log('[LevelProgressBar]  Event-based updates enabled - progress bar will update in real-time');
 
     this.debugLog('SUBSCRIBE_EVENTS', 'Successfully subscribed to events', {
       listenersCount: this.eventUnsubscribers.length,

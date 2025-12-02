@@ -2,10 +2,13 @@
  * @name LevelUpAnimation
  * @author BlueFlashX1
  * @description Floating "LEVEL UP!" animation when you level up in Solo Leveling Stats
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 module.exports = class LevelUpAnimation {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -22,6 +25,16 @@ module.exports = class LevelUpAnimation {
     this.patcher = null;
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
+  /**
+   * Initialize plugin on start
+   * Operations:
+   * 1. Load saved settings from storage
+   * 2. Inject CSS styles for animations
+   * 3. Hook into SoloLevelingStats plugin for level up events
+   */
   start() {
     this.loadSettings();
     this.injectCSS();
@@ -29,6 +42,13 @@ module.exports = class LevelUpAnimation {
     this.debugLog('Plugin started');
   }
 
+  /**
+   * Cleanup plugin on stop
+   * Operations:
+   * 1. Unhook from SoloLevelingStats plugin
+   * 2. Remove all active animations from DOM
+   * 3. Remove injected CSS styles
+   */
   stop() {
     this.unhookIntoSoloLeveling();
     this.removeAllAnimations();
@@ -36,6 +56,16 @@ module.exports = class LevelUpAnimation {
     this.debugLog('Plugin stopped');
   }
 
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+  /**
+   * Load settings from BetterDiscord storage
+   * Operations:
+   * 1. Attempt to load saved settings
+   * 2. Merge with default settings if found
+   * 3. Fall back to defaults on error
+   */
   loadSettings() {
     try {
       const saved = BdApi.Data.load('LevelUpAnimation', 'settings');
@@ -48,6 +78,13 @@ module.exports = class LevelUpAnimation {
     }
   }
 
+  /**
+   * Save current settings to BetterDiscord storage
+   * Operations:
+   * 1. Serialize settings object
+   * 2. Save to persistent storage
+   * 3. Handle save errors gracefully
+   */
   saveSettings() {
     try {
       BdApi.Data.save('LevelUpAnimation', 'settings', this.settings);
@@ -57,6 +94,13 @@ module.exports = class LevelUpAnimation {
     }
   }
 
+  /**
+   * Generate settings panel UI for BetterDiscord settings
+   * Operations:
+   * 1. Create DOM structure for settings panel
+   * 2. Bind event listeners to settings controls
+   * 3. Return panel element for BetterDiscord to display
+   */
   getSettingsPanel() {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
@@ -115,6 +159,17 @@ module.exports = class LevelUpAnimation {
     return panel;
   }
 
+  // ============================================================================
+  // CSS MANAGEMENT
+  // ============================================================================
+  /**
+   * Inject CSS styles for level up animations
+   * Operations:
+   * 1. Check if styles already injected (prevent duplicates)
+   * 2. Create style element with animation keyframes
+   * 3. Append to document head
+   * 4. Define animations: float-up, glow-pulse, particle-fade
+   */
   injectCSS() {
     const styleId = 'level-up-animation-css';
     if (document.getElementById(styleId)) return;
@@ -140,7 +195,14 @@ module.exports = class LevelUpAnimation {
         white-space: nowrap;
         user-select: none;
         pointer-events: none;
-        animation: lu-float-up 3s ease-out forwards;
+        animation: lu-float-up var(--lu-duration, 3s) ease-out forwards,
+                   lu-glow-pulse 0.5s ease-in-out infinite;
+        background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 50%, #ffffff 50%, #ffffff 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-shadow: 0 0 20px rgba(139, 92, 246, 0.8),
+                     0 0 40px rgba(255, 255, 255, 0.6);
       }
 
       @keyframes lu-float-up {
@@ -174,17 +236,6 @@ module.exports = class LevelUpAnimation {
         }
       }
 
-      .lu-level-up-text {
-        animation: lu-float-up var(--lu-duration, 3s) ease-out forwards,
-                   lu-glow-pulse 0.5s ease-in-out infinite;
-        background: linear-gradient(135deg, #8b5cf6 0%, #8b5cf6 50%, #ffffff 50%, #ffffff 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-        text-shadow: 0 0 20px rgba(139, 92, 246, 0.8),
-                     0 0 40px rgba(255, 255, 255, 0.6);
-      }
-
       .lu-particle {
         position: absolute;
         width: 4px;
@@ -215,6 +266,17 @@ module.exports = class LevelUpAnimation {
     if (style) style.remove();
   }
 
+  // ============================================================================
+  // ANIMATION CONTAINER MANAGEMENT
+  // ============================================================================
+  /**
+   * Get or create the animation container element
+   * Operations:
+   * 1. Check if container already exists
+   * 2. Create new container div if needed
+   * 3. Append to document body
+   * 4. Return container reference
+   */
   getAnimationContainer() {
     if (!this.animationContainer) {
       this.animationContainer = document.createElement('div');
@@ -225,13 +287,39 @@ module.exports = class LevelUpAnimation {
     return this.animationContainer;
   }
 
+  /**
+   * Remove all animations and cleanup container
+   * Operations:
+   * 1. Remove container element from DOM
+   * 2. Clear container reference
+   * 3. Clear active animations tracking set
+   */
+  removeAllAnimations() {
+    if (this.animationContainer) {
+      this.animationContainer.remove();
+      this.animationContainer = null;
+    }
+    this.activeAnimations.clear();
+  }
+
+  // ============================================================================
+  // POSITION CALCULATION
+  // ============================================================================
+  /**
+   * Calculate optimal position for level up animation
+   * Operations:
+   * 1. Search for Discord chat elements (input, messages, container)
+   * 2. Calculate center position of found element
+   * 3. Fall back to screen center if no element found
+   * 4. Return x, y coordinates for animation placement
+   */
   getMessageAreaPosition() {
     // Try to find the message input area or chat container
     const chatInput = document.querySelector('[class*="channelTextArea"]');
     const messageList = document.querySelector('[class*="messagesWrapper"]');
     const chatContainer = document.querySelector('[class*="chat"]');
 
-    let targetElement = chatInput || messageList || chatContainer;
+    const targetElement = chatInput || messageList || chatContainer;
 
     if (targetElement) {
       const rect = targetElement.getBoundingClientRect();
@@ -248,6 +336,19 @@ module.exports = class LevelUpAnimation {
     };
   }
 
+  // ============================================================================
+  // PARTICLE CREATION
+  // ============================================================================
+  /**
+   * Create particle effects around animation center
+   * Operations:
+   * 1. Get animation container reference
+   * 2. Generate particles in circular pattern around center
+   * 3. Calculate random direction and distance for each particle
+   * 4. Apply CSS custom properties for animation
+   * 5. Append particles to container
+   * 6. Return array of particle elements for cleanup
+   */
   createParticles(startX, startY, count) {
     const container = this.getAnimationContainer();
     const particles = [];
@@ -275,6 +376,21 @@ module.exports = class LevelUpAnimation {
     return particles;
   }
 
+  // ============================================================================
+  // ANIMATION DISPLAY
+  // ============================================================================
+  /**
+   * Display level up animation with text and particles
+   * Operations:
+   * 1. Check if animation is enabled
+   * 2. Calculate optimal display position
+   * 3. Create "LEVEL UP!" text element with styling
+   * 4. Position text at calculated coordinates
+   * 5. Create particle effects around text
+   * 6. Track animation for cleanup
+   * 7. Schedule automatic cleanup after duration
+   * 8. Remove container if no animations remain
+   */
   showLevelUpAnimation(newLevel, oldLevel) {
     if (!this.settings.enabled) {
       this.debugLog('Animation disabled, skipping');
@@ -332,12 +448,23 @@ module.exports = class LevelUpAnimation {
     }
   }
 
+  // ============================================================================
+  // SOLO LEVELING INTEGRATION
+  // ============================================================================
+  /**
+   * Hook into SoloLevelingStats plugin to intercept level up events
+   * Operations:
+   * 1. Get SoloLevelingStats plugin instance
+   * 2. Retry if plugin not loaded yet (with 2s delay)
+   * 3. Patch showLevelUpNotification method using BdApi.Patcher
+   * 4. Call showLevelUpAnimation when level up occurs
+   * 5. Store patcher reference for cleanup
+   */
   hookIntoSoloLeveling() {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin) {
         this.debugLog('SoloLevelingStats plugin not found, will retry...');
-        // Retry after a delay
         setTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
@@ -367,11 +494,16 @@ module.exports = class LevelUpAnimation {
       }
     } catch (error) {
       this.debugError('Failed to hook into SoloLevelingStats', error);
-      // Retry after delay
       setTimeout(() => this.hookIntoSoloLeveling(), 2000);
     }
   }
 
+  /**
+   * Unhook from SoloLevelingStats plugin
+   * Operations:
+   * 1. Remove all patches created by this plugin
+   * 2. Clear patcher reference
+   */
   unhookIntoSoloLeveling() {
     if (this.patcher) {
       BdApi.Patcher.unpatchAll('LevelUpAnimation');
@@ -380,14 +512,16 @@ module.exports = class LevelUpAnimation {
     }
   }
 
-  removeAllAnimations() {
-    if (this.animationContainer) {
-      this.animationContainer.remove();
-      this.animationContainer = null;
-    }
-    this.activeAnimations.clear();
-  }
-
+  // ============================================================================
+  // DEBUG UTILITIES
+  // ============================================================================
+  /**
+   * Log debug information to console
+   * Operations:
+   * 1. Normalize parameters (handle object messages)
+   * 2. Format log message with plugin prefix
+   * 3. Output to console
+   */
   debugLog(operation, message, data = null) {
     if (typeof message === 'object' && data === null) {
       data = message;
@@ -397,6 +531,13 @@ module.exports = class LevelUpAnimation {
     console.log(`[LevelUpAnimation] ${operation}:`, message, data || '');
   }
 
+  /**
+   * Log error information to console
+   * Operations:
+   * 1. Format error message with plugin prefix
+   * 2. Output to console.error
+   * 3. Include optional context data
+   */
   debugError(operation, error, data = null) {
     console.error(`[LevelUpAnimation] ERROR [${operation}]:`, error, data || '');
   }

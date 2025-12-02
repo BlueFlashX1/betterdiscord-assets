@@ -2,17 +2,20 @@
  * @name SoloLevelingToasts
  * @author BlueFlashX1
  * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.0.0
+ * @version 1.0.1
  */
 
 module.exports = class SoloLevelingToasts {
+  // ============================================================================
+  // CONSTRUCTOR & INITIALIZATION
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
       showParticles: true,
       particleCount: 20,
       animationDuration: 500, // Slide-in animation
-      defaultTimeout: 5000, // 5 seconds
+      defaultTimeout: 4000, // 4 seconds (middle of 3-5 range)
       position: 'top-right', // top-right, top-left, bottom-right, bottom-left
       maxToasts: 5, // Maximum number of toasts visible at once
     };
@@ -21,8 +24,25 @@ module.exports = class SoloLevelingToasts {
     this.toastContainer = null;
     this.activeToasts = [];
     this.patcher = null;
+    this.lastToastTime = 0;
+    this.toastCooldown = 300; // Minimum 300ms between toasts
+    this.pendingToasts = new Map(); // Debounce similar toasts
+    this.messageGroups = new Map(); // Group similar messages with counts
+    this.groupWindow = 2000; // 2 second window to group similar messages
+    this.debugMode = false; // Set to true only for debugging
   }
 
+  // ============================================================================
+  // LIFECYCLE METHODS
+  // ============================================================================
+  /**
+   * Initialize plugin on start
+   * Operations:
+   * 1. Load saved settings from storage
+   * 2. Inject CSS styles for toast notifications
+   * 3. Create toast container element
+   * 4. Hook into SoloLevelingStats plugin for notifications
+   */
   start() {
     this.loadSettings();
     this.injectCSS();
@@ -31,14 +51,41 @@ module.exports = class SoloLevelingToasts {
     this.debugLog('Plugin started');
   }
 
+  /**
+   * Cleanup plugin on stop
+   * Operations:
+   * 1. Unhook from SoloLevelingStats plugin
+   * 2. Remove all active toasts from DOM
+   * 3. Remove toast container element
+   * 4. Remove injected CSS styles
+   * 5. Clear pending toast timeouts
+   */
   stop() {
     this.unhookIntoSoloLeveling();
     this.removeAllToasts();
     this.removeToastContainer();
     this.removeCSS();
+    // Clear pending toasts
+    this.pendingToasts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this.pendingToasts.clear();
+    // Clear message groups
+    this.messageGroups.forEach((group) => {
+      if (group.timeoutId) clearTimeout(group.timeoutId);
+    });
+    this.messageGroups.clear();
     this.debugLog('Plugin stopped');
   }
 
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
+  /**
+   * Load settings from BetterDiscord storage
+   * Operations:
+   * 1. Attempt to load saved settings
+   * 2. Merge with default settings if found
+   * 3. Fall back to defaults on error
+   */
   loadSettings() {
     try {
       const saved = BdApi.Data.load('SoloLevelingToasts', 'settings');
@@ -51,6 +98,13 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  /**
+   * Save current settings to BetterDiscord storage
+   * Operations:
+   * 1. Serialize settings object
+   * 2. Save to persistent storage
+   * 3. Handle save errors gracefully
+   */
   saveSettings() {
     try {
       BdApi.Data.save('SoloLevelingToasts', 'settings', this.settings);
@@ -60,6 +114,13 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  /**
+   * Generate settings panel UI for BetterDiscord settings
+   * Operations:
+   * 1. Create DOM structure for settings panel
+   * 2. Bind event listeners to settings controls
+   * 3. Return panel element for BetterDiscord to display
+   */
   getSettingsPanel() {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
@@ -80,7 +141,7 @@ module.exports = class SoloLevelingToasts {
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Default Timeout (ms):</span>
-          <input type="number" id="toast-timeout" value="${this.settings.defaultTimeout}" min="1000" max="10000" step="500" style="width: 100%; padding: 5px;">
+          <input type="number" id="toast-timeout" value="${this.settings.defaultTimeout}" min="3000" max="5000" step="500" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Position:</span>
@@ -133,6 +194,17 @@ module.exports = class SoloLevelingToasts {
     return panel;
   }
 
+  // ============================================================================
+  // CSS MANAGEMENT
+  // ============================================================================
+  /**
+   * Inject CSS styles for toast notifications
+   * Operations:
+   * 1. Check if styles already injected (prevent duplicates)
+   * 2. Create style element with toast animations
+   * 3. Define styles for container, toast, particles, progress bar
+   * 4. Append to document head
+   */
   injectCSS() {
     const styleId = 'solo-leveling-toasts-css';
     if (document.getElementById(styleId)) {
@@ -178,9 +250,9 @@ module.exports = class SoloLevelingToasts {
 
       .sl-toast {
         position: relative;
-        min-width: 300px;
-        max-width: 400px;
-        padding: 16px 20px;
+        min-width: 280px;
+        max-width: 360px;
+        padding: 14px 18px;
         background: rgba(10, 10, 15, 0.95);
         border: 1px solid rgba(139, 92, 246, 0.3);
         border-radius: 8px;
@@ -260,9 +332,9 @@ module.exports = class SoloLevelingToasts {
 
       .sl-toast-title {
         font-family: 'Press Start 2P', monospace;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: bold;
-        margin-bottom: 8px;
+        margin-bottom: 6px;
         background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 30%, #6d28d9 60%, #000000 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -272,12 +344,13 @@ module.exports = class SoloLevelingToasts {
                      0 0 9px rgba(109, 40, 217, 0.3);
         text-transform: uppercase;
         letter-spacing: 1px;
+        line-height: 1.3;
       }
 
       .sl-toast-message {
         color: rgba(255, 255, 255, 0.9);
-        font-size: 14px;
-        line-height: 1.5;
+        font-size: 13px;
+        line-height: 1.4;
         white-space: pre-wrap;
         word-wrap: break-word;
       }
@@ -322,6 +395,22 @@ module.exports = class SoloLevelingToasts {
           width: 0%;
         }
       }
+
+      @keyframes sl-toast-fade-out {
+        from {
+          opacity: 1;
+          transform: translateX(0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translateX(0) scale(0.95);
+        }
+      }
+
+      .sl-toast.fading-out {
+        animation: sl-toast-fade-out 2s ease-out forwards !important;
+        pointer-events: none;
+      }
     `;
     document.head.appendChild(style);
     this.debugLog('INJECT_CSS', 'CSS injected successfully', {
@@ -335,6 +424,17 @@ module.exports = class SoloLevelingToasts {
     if (style) style.remove();
   }
 
+  // ============================================================================
+  // TOAST CONTAINER MANAGEMENT
+  // ============================================================================
+  /**
+   * Create toast container element for displaying notifications
+   * Operations:
+   * 1. Check if container already exists
+   * 2. Create container div with position class
+   * 3. Append to document body
+   * 4. Store reference for future use
+   */
   createToastContainer() {
     if (this.toastContainer) {
       this.debugLog('CREATE_CONTAINER', 'Container already exists');
@@ -351,6 +451,12 @@ module.exports = class SoloLevelingToasts {
     });
   }
 
+  /**
+   * Remove toast container from DOM
+   * Operations:
+   * 1. Remove container element
+   * 2. Clear container reference
+   */
   removeToastContainer() {
     if (this.toastContainer) {
       this.toastContainer.remove();
@@ -358,12 +464,121 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  /**
+   * Update container position class when settings change
+   * Operations:
+   * 1. Update className with new position
+   * 2. CSS handles repositioning automatically
+   */
   updateContainerPosition() {
     if (this.toastContainer) {
       this.toastContainer.className = `sl-toast-container ${this.settings.position}`;
     }
   }
 
+  // ============================================================================
+  // MESSAGE FORMATTING & PROCESSING
+  // ============================================================================
+  /**
+   * Format numbers in messages for display
+   * Operations:
+   * 1. Format large numbers (4+ digits) with toLocaleString (e.g., 1234 → 1,234)
+   * 2. Format percentages with toFixed(1) for consistent display
+   * 3. Format stat changes (e.g., "10 → 15") with proper number formatting
+   * 4. Return formatted message string
+   */
+  formatNumbersInMessage(message) {
+    if (!message || typeof message !== 'string') return message;
+
+    // Format large numbers (XP, stat points, etc.) - match patterns like "1234" or "+1234"
+    message = message.replace(/([+\-]?)(\d{4,})/g, (match, sign, num) => {
+      const number = parseInt(num, 10);
+      if (!isNaN(number)) {
+        return sign + number.toLocaleString();
+      }
+      return match;
+    });
+
+    // Format percentages - ensure consistent decimal places
+    message = message.replace(/(\d+\.\d+)\s*%/g, (match, num) => {
+      const number = parseFloat(num);
+      if (!isNaN(number)) {
+        // Round to 1 decimal place for percentages
+        return `${number.toFixed(1)}%`;
+      }
+      return match;
+    });
+
+    // Format stat changes like "10 → 15" to be more compact
+    message = message.replace(/(\d+)\s*→\s*(\d+)/g, (match, oldVal, newVal) => {
+      const oldNum = parseInt(oldVal, 10);
+      const newNum = parseInt(newVal, 10);
+      if (!isNaN(oldNum) && !isNaN(newNum)) {
+        return `${oldNum.toLocaleString()} → ${newNum.toLocaleString()}`;
+      }
+      return match;
+    });
+
+    return message;
+  }
+
+  /**
+   * Summarize and condense notification messages for brief display
+   * Operations:
+   * 1. Remove excessive emojis (keep max 1-2)
+   * 2. Condense common patterns (LEVEL UP, Quest Complete, etc.)
+   * 3. Shorten stat names and level notation
+   * 4. Remove redundant whitespace
+   * 5. Truncate messages over 120 characters
+   * 6. Return summarized message
+   */
+  summarizeMessage(message) {
+    if (!message || typeof message !== 'string') return message;
+
+    // Remove excessive emojis (keep max 1-2) - emojis already removed
+    let summarized = message;
+
+    // Condense common patterns
+    summarized = summarized
+      // Level up messages
+      .replace(/LEVEL UP!?\s*/gi, '')
+      .replace(/Level\s*(\d+)\s*→\s*(\d+)/gi, 'Lv.$1→$2')
+      // Stat changes
+      .replace(/(Strength|Agility|Intelligence|Vitality|Perception|Luck):\s*/gi, '$1: ')
+      .replace(/\+\s*(\d+)\s*([A-Z]+)\s*\(/gi, '+$1 $2 (')
+      // Quest completion
+      .replace(/QUEST COMPLETE!?\s*/gi, 'Quest: ')
+      .replace(/\[QUEST COMPLETE\]\s*/gi, '')
+      // Achievement
+      .replace(/ACHIEVEMENT UNLOCKED!?\s*/gi, 'Achievement: ')
+      .replace(/\s*Retroactive Natural Growth Applied!?\s*/gi, 'Retro Growth')
+      .replace(/\s*Natural Growth!?\s*/gi, 'Natural Growth')
+      // Rank promotion
+      .replace(/Rank Promotion!?\s*/gi, 'Rank: ')
+      .replace(/([A-Z])\s*→\s*([A-Z])/g, '$1→$2')
+      // Remove redundant text
+      .replace(/\n{2,}/g, '\n')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+
+    // Limit message length - truncate if too long
+    if (summarized.length > 120) {
+      summarized = summarized.substring(0, 117) + '...';
+    }
+
+    return summarized;
+  }
+
+  /**
+   * Detect toast type based on message content and type parameter
+   * Operations:
+   * 1. Convert message to lowercase for matching
+   * 2. Check for level-up keywords
+   * 3. Check for achievement keywords
+   * 4. Check for quest keywords
+   * 5. Check for error type
+   * 6. Return appropriate CSS class name
+   */
   detectToastType(message, type) {
     const msg = message.toLowerCase();
 
@@ -383,6 +598,19 @@ module.exports = class SoloLevelingToasts {
     return 'info';
   }
 
+  // ============================================================================
+  // PARTICLE EFFECTS
+  // ============================================================================
+  /**
+   * Create particle effects around toast notification
+   * Operations:
+   * 1. Get toast element bounding rect for center position
+   * 2. Generate particles in circular pattern
+   * 3. Calculate random direction and distance for each particle
+   * 4. Apply CSS custom properties for animation
+   * 5. Append particles to document body
+   * 6. Auto-remove particles after animation duration
+   */
   createParticles(toastElement, count) {
     if (!this.settings.showParticles) return;
 
@@ -412,7 +640,280 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  // ============================================================================
+  // MESSAGE GROUPING & SPAM HANDLING
+  // ============================================================================
+  /**
+   * Generate a grouping key for similar messages
+   * Operations:
+   * 1. Extract message text (handle objects)
+   * 2. Normalize message (remove numbers, emojis, whitespace)
+   * 3. Create key from normalized message + type
+   * 4. Return key for grouping
+   */
+  getMessageGroupKey(message, type) {
+    let messageText = message;
+    if (message && typeof message === 'object' && message.message) {
+      messageText = message.message;
+    } else if (message && typeof message === 'object' && message.text) {
+      messageText = message.text;
+    }
+    if (typeof messageText !== 'string') {
+      messageText = String(messageText);
+    }
+
+    // Normalize: remove numbers, extra whitespace (emojis already removed)
+    const normalized = messageText
+      .replace(/\d+/g, 'N')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .toLowerCase()
+      .substring(0, 100);
+
+    return `${normalized}_${type}`;
+  }
+
+  /**
+   * Combine multiple similar messages into one notification
+   * Operations:
+   * 1. Extract key information from messages
+   * 2. Count occurrences
+   * 3. Combine numbers/values if applicable
+   * 4. Create summary message
+   */
+  combineMessages(messages) {
+    if (messages.length === 1) {
+      return messages[0].message;
+    }
+
+    const firstMsg = messages[0].message;
+    const count = messages.length;
+
+    // Try to extract and combine numbers
+    const numbers = [];
+    messages.forEach((msg) => {
+      const matches = msg.message.match(/(\+?\d+(?:,\d{3})*(?:\.\d+)?)/g);
+      if (matches) {
+        numbers.push(...matches.map((m) => m.replace(/,/g, '')));
+      }
+    });
+
+    // Detect message type and format accordingly
+    const msgLower = firstMsg.toLowerCase();
+
+    if (msgLower.includes('quest') || msgLower.includes('complete')) {
+      const totalXP = numbers
+        .filter((n) => !isNaN(parseInt(n)))
+        .reduce((sum, n) => sum + parseInt(n), 0);
+      return `Quest Complete x${count}${totalXP > 0 ? `\n+${totalXP.toLocaleString()} XP` : ''}`;
+    }
+
+    if (msgLower.includes('achievement') || msgLower.includes('unlocked')) {
+      return `Achievements Unlocked x${count}`;
+    }
+
+    if (msgLower.includes('stat') || msgLower.includes('strength') || msgLower.includes('agility') ||
+        msgLower.includes('intelligence') || msgLower.includes('vitality') || msgLower.includes('perception')) {
+      const statMatches = firstMsg.match(/(\w+):\s*(\d+)\s*→\s*(\d+)/i);
+      if (statMatches) {
+        const statName = statMatches[1];
+        const finalValue = statMatches[3];
+        return `${statName}: +${count} → ${finalValue}`;
+      }
+      return `Stat Increases x${count}`;
+    }
+
+    if (msgLower.includes('xp') || msgLower.includes('experience')) {
+      const totalXP = numbers
+        .filter((n) => !isNaN(parseInt(n)))
+        .reduce((sum, n) => sum + parseInt(n), 0);
+      if (totalXP > 0) {
+        return `XP Gained x${count}\n+${totalXP.toLocaleString()} XP`;
+      }
+      return `XP Events x${count}`;
+    }
+
+    if (msgLower.includes('level')) {
+      const levelMatches = firstMsg.match(/Lv\.?(\d+)/i);
+      if (levelMatches) {
+        return `Level Up x${count}\nLv.${levelMatches[1]}`;
+      }
+      return `Level Events x${count}`;
+    }
+
+    // Generic grouping
+    return `${firstMsg.substring(0, 50)}... x${count}`;
+  }
+
+  // ============================================================================
+  // TOAST DISPLAY
+  // ============================================================================
+  /**
+   * Show toast notification with cooldown, debouncing, and message grouping
+   * Operations:
+   * 1. Generate grouping key for message
+   * 2. Check if similar message exists in grouping window
+   * 3. Add to group or create new group
+   * 4. Schedule grouped message display
+   * 5. Handle cooldown for rapid messages
+   */
   showToast(message, type = 'info', timeout = null) {
+    const groupKey = this.getMessageGroupKey(message, type);
+    const now = Date.now();
+
+    // Check if we have an existing group for this message
+    if (this.messageGroups.has(groupKey)) {
+      const group = this.messageGroups.get(groupKey);
+
+      // Add to existing group
+      group.messages.push({
+        message: typeof message === 'string' ? message : (message.message || message.text || String(message)),
+        timestamp: now,
+      });
+      group.count++;
+      group.lastSeen = now;
+
+      // Reset timeout - wait for more messages
+      if (group.timeoutId) {
+        clearTimeout(group.timeoutId);
+      }
+
+      // Update existing toast if visible
+      const existingToast = this.findToastByKey(groupKey);
+      if (existingToast) {
+        this.updateToastCount(existingToast, group.count);
+        // Reset fade-out timer
+        this.resetToastFadeOut(existingToast, timeout || this.settings.defaultTimeout);
+        // Don't schedule new toast - we're updating existing one
+        return;
+      }
+
+      // Schedule display after grouping window
+      group.timeoutId = setTimeout(() => {
+        this.messageGroups.delete(groupKey);
+        const combinedMessage = this.combineMessages(group.messages);
+        this._showToastInternal(combinedMessage, type, timeout);
+      }, this.groupWindow);
+
+      return;
+    }
+
+    // Create new group
+    const group = {
+      messages: [{
+        message: typeof message === 'string' ? message : (message.message || message.text || String(message)),
+        timestamp: now,
+      }],
+      count: 1,
+      lastSeen: now,
+      timeoutId: null,
+    };
+
+    // Schedule display after grouping window
+    group.timeoutId = setTimeout(() => {
+      this.messageGroups.delete(groupKey);
+      const combinedMessage = this.combineMessages(group.messages);
+      this._showToastInternal(combinedMessage, type, timeout);
+    }, this.groupWindow);
+
+    this.messageGroups.set(groupKey, group);
+  }
+
+  /**
+   * Find existing toast by grouping key
+   * Operations:
+   * 1. Check active toasts for matching content
+   * 2. Return toast element if found
+   */
+  findToastByKey(groupKey) {
+    // Extract normalized message from key
+    const normalized = groupKey.split('_')[0];
+    for (const toast of this.activeToasts) {
+      const toastText = toast.textContent.toLowerCase().replace(/\d+/g, 'N').replace(/\s+/g, ' ').trim();
+      if (toastText.includes(normalized.substring(0, 30))) {
+        return toast;
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Update toast with new count
+   * Operations:
+   * 1. Find count indicator in toast
+   * 2. Update count display
+   * 3. Refresh toast appearance
+   */
+  updateToastCount(toast, count) {
+    if (!toast) return;
+
+    const titleEl = toast.querySelector('.sl-toast-title');
+    const messageEl = toast.querySelector('.sl-toast-message');
+
+    if (titleEl) {
+      // Update title to show count
+      let titleText = titleEl.textContent;
+      const countMatch = titleText.match(/x(\d+)/);
+      if (countMatch) {
+        titleText = titleText.replace(/x\d+/, `x${count}`);
+      } else {
+        titleText = `${titleText} x${count}`;
+      }
+      titleEl.textContent = titleText;
+    }
+
+    // Reset fade-out animation
+    toast.classList.remove('fading-out');
+    toast.style.animation = '';
+  }
+
+  /**
+   * Reset toast fade-out timer
+   * Operations:
+   * 1. Remove fading-out class
+   * 2. Clear existing fade-out timeout
+   * 3. Schedule new fade-out
+   */
+  resetToastFadeOut(toast, timeout) {
+    if (!toast) return;
+
+    // Remove fade-out class
+    toast.classList.remove('fading-out');
+
+    // Clear any existing fade-out timeout (stored in data attribute)
+    const existingTimeout = toast.dataset.fadeTimeout;
+    if (existingTimeout) {
+      clearTimeout(parseInt(existingTimeout));
+    }
+
+    // Schedule new fade-out
+    const fadeOutDelay = Math.max(0, timeout - 2000);
+    const timeoutId = setTimeout(() => {
+      this.startFadeOut(toast);
+      setTimeout(() => {
+        this.removeToast(toast, true);
+      }, 2000);
+    }, fadeOutDelay);
+
+    toast.dataset.fadeTimeout = timeoutId.toString();
+  }
+
+  /**
+   * Internal method to create and display toast notification
+   * Operations:
+   * 1. Check if plugin is enabled
+   * 2. Limit number of visible toasts (remove oldest if needed)
+   * 3. Detect toast type for styling
+   * 4. Format numbers and summarize message
+   * 5. Create toast DOM element with title and message
+   * 6. Add progress bar animation
+   * 7. Add click handler for dismissal
+   * 8. Create particle effects
+   * 9. Schedule auto-dismiss after timeout
+   */
+  _showToastInternal(message, type = 'info', timeout = null) {
+    this.lastToastTime = Date.now();
+
     this.debugLog('SHOW_TOAST', 'Toast request received', {
       message: message?.substring(0, 100),
       type,
@@ -423,7 +924,6 @@ module.exports = class SoloLevelingToasts {
 
     if (!this.settings.enabled) {
       this.debugLog('SHOW_TOAST', 'Plugin disabled, using fallback toast');
-      // Fallback to default toast
       if (BdApi && typeof BdApi.showToast === 'function') {
         BdApi.showToast(message, { type, timeout: timeout || this.settings.defaultTimeout });
       }
@@ -434,27 +934,31 @@ module.exports = class SoloLevelingToasts {
       // Limit number of toasts
       if (this.activeToasts.length >= this.settings.maxToasts) {
         const oldestToast = this.activeToasts.shift();
-        this.debugLog('SHOW_TOAST', 'Max toasts reached, removing oldest', {
-          maxToasts: this.settings.maxToasts,
-        });
-        this.removeToast(oldestToast);
+        if (oldestToast && oldestToast.parentElement) {
+          oldestToast.remove();
+          const index = this.activeToasts.indexOf(oldestToast);
+          if (index > -1) {
+            this.activeToasts.splice(index, 1);
+          }
+        }
       }
 
       const toastType = this.detectToastType(message, type);
       const toastTimeout = timeout || this.settings.defaultTimeout;
 
-      this.debugLog('SHOW_TOAST', 'Creating toast', {
-        toastType,
-        toastTimeout,
-        messageLength: message?.length,
-      });
+      // Process message: format numbers and summarize
+      let processedMessage = message;
+      if (typeof processedMessage === 'string') {
+        processedMessage = this.formatNumbersInMessage(processedMessage);
+        processedMessage = this.summarizeMessage(processedMessage);
+      }
 
       const toast = document.createElement('div');
       toast.className = `sl-toast ${toastType}`;
       toast.style.setProperty('--sl-toast-timeout', `${toastTimeout}ms`);
 
       // Extract title and message
-      const lines = message.split('\n');
+      const lines = processedMessage.split('\n');
       const title = lines[0] || 'Notification';
       const body = lines.slice(1).join('\n') || '';
 
@@ -474,9 +978,13 @@ module.exports = class SoloLevelingToasts {
       progressBar.style.animation = `sl-toast-progress ${toastTimeout}ms linear forwards`;
       toast.appendChild(progressBar);
 
-      // Click to dismiss
+      // Click to dismiss - start fade out immediately
       toast.addEventListener('click', () => {
-        this.removeToast(toast);
+        this.startFadeOut(toast);
+        // Remove from DOM after fade completes
+        setTimeout(() => {
+          this.removeToast(toast, true);
+        }, 2000);
       });
 
       this.toastContainer.appendChild(toast);
@@ -487,10 +995,18 @@ module.exports = class SoloLevelingToasts {
         this.createParticles(toast, this.settings.particleCount);
       }, 50);
 
-      // Auto-dismiss
-      setTimeout(() => {
-        this.removeToast(toast);
-      }, toastTimeout);
+      // Auto-dismiss - start fade out 2 seconds before timeout ends
+      const fadeOutDelay = Math.max(0, toastTimeout - 2000);
+      const timeoutId = setTimeout(() => {
+        this.startFadeOut(toast);
+        // Remove from DOM after fade completes
+        setTimeout(() => {
+          this.removeToast(toast, true);
+        }, 2000);
+      }, fadeOutDelay);
+
+      // Store timeout ID for potential reset
+      toast.dataset.fadeTimeout = timeoutId.toString();
 
       this.debugLog('SHOW_TOAST', 'Toast created and displayed', {
         toastType,
@@ -512,7 +1028,31 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
-  removeToast(toast) {
+  /**
+   * Start smooth fade-out animation for toast
+   * Operations:
+   * 1. Add fading-out class to trigger CSS animation
+   * 2. Disable pointer events during fade
+   */
+  startFadeOut(toast) {
+    if (!toast || !toast.parentElement) {
+      return;
+    }
+    toast.classList.add('fading-out');
+    this.debugLog('START_FADE_OUT', 'Fade out started', {
+      activeToasts: this.activeToasts.length,
+    });
+  }
+
+  /**
+   * Remove toast notification from display
+   * Operations:
+   * 1. Validate toast element exists
+   * 2. Fast removal (no animation) for performance if requested
+   * 3. Remove from DOM
+   * 4. Remove from active toasts array
+   */
+  removeToast(toast, fast = false) {
     if (!toast || !toast.parentElement) {
       this.debugLog('REMOVE_TOAST', 'Toast already removed or invalid', {
         toastExists: !!toast,
@@ -523,37 +1063,27 @@ module.exports = class SoloLevelingToasts {
 
     this.debugLog('REMOVE_TOAST', 'Removing toast', {
       activeToasts: this.activeToasts.length,
+      fast,
     });
 
-    toast.style.animation = 'sl-toast-slide-out 0.3s ease-in forwards';
-
-    // Add slide-out animation
-    if (!document.getElementById('sl-toast-slide-out-animation')) {
-      const style = document.createElement('style');
-      style.id = 'sl-toast-slide-out-animation';
-      style.textContent = `
-        @keyframes sl-toast-slide-out {
-          to {
-            opacity: 0;
-            transform: translateX(100%) scale(0.8);
-          }
-        }
-      `;
-      document.head.appendChild(style);
+    // Remove from DOM
+    toast.remove();
+    const index = this.activeToasts.indexOf(toast);
+    if (index > -1) {
+      this.activeToasts.splice(index, 1);
     }
 
-    setTimeout(() => {
-      toast.remove();
-      const index = this.activeToasts.indexOf(toast);
-      if (index > -1) {
-        this.activeToasts.splice(index, 1);
-      }
-      this.debugLog('REMOVE_TOAST', 'Toast removed', {
-        remainingToasts: this.activeToasts.length,
-      });
-    }, 300);
+    this.debugLog('REMOVE_TOAST', 'Toast removed', {
+      remainingToasts: this.activeToasts.length,
+    });
   }
 
+  /**
+   * Remove all active toasts immediately
+   * Operations:
+   * 1. Remove each toast from DOM
+   * 2. Clear active toasts array
+   */
   removeAllToasts() {
     this.activeToasts.forEach((toast) => {
       toast.remove();
@@ -561,12 +1091,33 @@ module.exports = class SoloLevelingToasts {
     this.activeToasts = [];
   }
 
+  /**
+   * Escape HTML to prevent XSS attacks
+   * Operations:
+   * 1. Create temporary div element
+   * 2. Set text content (browser escapes HTML)
+   * 3. Return innerHTML (safe HTML string)
+   */
   escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
   }
 
+  // ============================================================================
+  // SOLO LEVELING INTEGRATION
+  // ============================================================================
+  /**
+   * Hook into SoloLevelingStats plugin to intercept notifications
+   * Operations:
+   * 1. Get SoloLevelingStats plugin instance
+   * 2. Retry if plugin not loaded yet (with 2s delay)
+   * 3. Patch showNotification method using BdApi.Patcher
+   * 4. Extract message text from object if needed
+   * 5. Filter out natural growth notifications (too frequent/spammy)
+   * 6. Call showToast for filtered notifications
+   * 7. Store patcher reference for cleanup
+   */
   hookIntoSoloLeveling() {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -591,6 +1142,41 @@ module.exports = class SoloLevelingToasts {
           'showNotification',
           (_, args) => {
             const [message, type, timeout] = args;
+
+            // Extract message text from object if needed
+            let messageText = message;
+            if (message && typeof message === 'object' && message.message) {
+              messageText = message.message;
+            } else if (message && typeof message === 'object' && message.text) {
+              messageText = message.text;
+            }
+
+            // Filter out natural growth notifications
+            if (messageText && typeof messageText === 'string') {
+              const msgClean = messageText.replace(/\s+/g, ' ').trim();
+              const msgLower = msgClean.toLowerCase();
+
+              const hasNatural = msgLower.includes('natural');
+              const hasGrowth = msgLower.includes('growth');
+
+              const isNaturalGrowth =
+                (hasNatural && hasGrowth) ||
+                msgLower.includes('natural stat growth') ||
+                msgLower.includes('retroactive natural growth') ||
+                msgLower.includes('natural strength growth') ||
+                msgLower.includes('natural agility growth') ||
+                msgLower.includes('natural intelligence growth') ||
+                msgLower.includes('natural vitality growth') ||
+                msgLower.includes('natural luck growth');
+
+              if (isNaturalGrowth) {
+                this.debugLog('HOOK_INTERCEPT', 'Skipping natural growth notification', {
+                  originalMessage: messageText?.substring(0, 100),
+                });
+                return;
+              }
+            }
+
             this.debugLog('HOOK_INTERCEPT', 'Intercepted showNotification call', {
               message: message?.substring(0, 100),
               type,
@@ -615,6 +1201,12 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  /**
+   * Unhook from SoloLevelingStats plugin
+   * Operations:
+   * 1. Remove all patches created by this plugin
+   * 2. Clear patcher reference
+   */
   unhookIntoSoloLeveling() {
     if (this.patcher) {
       BdApi.Patcher.unpatchAll('SoloLevelingToasts');
@@ -623,7 +1215,20 @@ module.exports = class SoloLevelingToasts {
     }
   }
 
+  // ============================================================================
+  // DEBUG UTILITIES
+  // ============================================================================
+  /**
+   * Log debug information to console (only if debug mode enabled)
+   * Operations:
+   * 1. Check if debug mode is enabled
+   * 2. Normalize parameters (handle object messages)
+   * 3. Format log message with plugin prefix
+   * 4. Output to console
+   */
   debugLog(operation, message, data = null) {
+    if (!this.debugMode) return;
+
     if (typeof message === 'object' && data === null) {
       data = message;
       message = operation;
@@ -634,6 +1239,13 @@ module.exports = class SoloLevelingToasts {
     console.log(`[SoloLevelingToasts] ${operation}:`, logMessage, logData);
   }
 
+  /**
+   * Log error information to console
+   * Operations:
+   * 1. Format error message with plugin prefix
+   * 2. Output to console.error
+   * 3. Include optional context data
+   */
   debugError(operation, error, data = null) {
     console.error(`[SoloLevelingToasts] ERROR [${operation}]:`, error, data || '');
   }

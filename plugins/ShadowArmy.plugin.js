@@ -933,7 +933,7 @@ module.exports = class ShadowArmy {
           <div class="shadow-list-item">
             <button class="${starClass}"
               onclick="try { const p = BdApi.Plugins.get('ShadowArmy'); (p.instance || p).toggleFavorite('${shadow.id}'); } catch (e) { console.error(e); }">
-              ★
+              
             </button>
             <div class="shadow-list-main">
               <div class="shadow-list-header">

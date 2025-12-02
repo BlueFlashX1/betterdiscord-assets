@@ -687,7 +687,7 @@ module.exports = class SoloLevelingStats {
     return `
       <div class="sls-chat-header">
         <div class="sls-chat-title">Solo Leveling</div>
-        <button class="sls-chat-toggle" id="sls-chat-toggle">▼</button>
+        <button class="sls-chat-toggle" id="sls-chat-toggle"></button>
       </div>
       <div class="sls-chat-content" id="sls-chat-content">
         <!-- Level & XP -->
@@ -766,7 +766,7 @@ module.exports = class SoloLevelingStats {
         <!-- Collapsible Sections -->
         <div class="sls-chat-section-toggle" data-section="activity">
           <span class="sls-chat-section-title">Activity Summary</span>
-          <span class="sls-chat-section-arrow">▼</span>
+          <span class="sls-chat-section-arrow"></span>
         </div>
         <div class="sls-chat-section" id="sls-chat-activity" style="display: none;">
           ${this.renderChatActivity()}
@@ -774,7 +774,7 @@ module.exports = class SoloLevelingStats {
 
         <div class="sls-chat-section-toggle" data-section="quests">
           <span class="sls-chat-section-title">Daily Quests</span>
-          <span class="sls-chat-section-arrow">▼</span>
+          <span class="sls-chat-section-arrow"></span>
         </div>
         <div class="sls-chat-section" id="sls-chat-quests" style="display: none;">
           ${this.renderChatQuests()}
@@ -784,7 +784,7 @@ module.exports = class SoloLevelingStats {
           <span class="sls-chat-section-title">Achievements (${
             this.settings.achievements.unlocked.length
           } unlocked)</span>
-          <span class="sls-chat-section-arrow">▼</span>
+          <span class="sls-chat-section-arrow"></span>
         </div>
         <div class="sls-chat-section" id="sls-chat-achievements" style="display: none;">
           ${this.renderChatAchievements()}
@@ -1075,7 +1075,7 @@ module.exports = class SoloLevelingStats {
           window.getComputedStyle(content).display !== 'none');
 
       // Set initial arrow state
-      toggleBtn.textContent = isCurrentlyExpanded ? '▼' : '▲';
+      toggleBtn.textContent = isCurrentlyExpanded ? '' : '';
 
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -1089,7 +1089,7 @@ module.exports = class SoloLevelingStats {
             window.getComputedStyle(content).display !== 'none');
 
         content.style.display = isExpanded ? 'none' : 'block';
-        toggleBtn.textContent = isExpanded ? '▲' : '▼';
+        toggleBtn.textContent = isExpanded ? '' : '';
 
         // OPTIMIZED: Removed verbose logging for GUI toggle (happens frequently)
         // this.debugLog('CHAT_GUI', 'Chat GUI toggled', { wasExpanded: isExpanded, nowExpanded: !isExpanded });
@@ -1106,7 +1106,7 @@ module.exports = class SoloLevelingStats {
         if (section) {
           const isExpanded = section.style.display !== 'none';
           section.style.display = isExpanded ? 'none' : 'block';
-          if (arrow) arrow.textContent = isExpanded ? '▼' : '▲';
+          if (arrow) arrow.textContent = isExpanded ? '' : '';
         }
       });
     });
@@ -3773,7 +3773,7 @@ module.exports = class SoloLevelingStats {
             critMultiplier = 999; // 1000x total
             isMegaCrit = true;
             this.showNotification(
-              `💥💥💥 MEGA CRITICAL HIT! 💥💥💥\n` +
+              ` MEGA CRITICAL HIT! \n` +
                 `Dagger Throw Master activated!\n` +
                 `1000x XP Multiplier!`,
               'success',
@@ -4890,7 +4890,7 @@ module.exports = class SoloLevelingStats {
 
           // Show notification
           this.showNotification(
-            `✨ Retroactive Natural Growth Applied! ✨\n+${statsAdded} total stat points based on your level ${level} and ${messagesSent.toLocaleString()} messages!`,
+            ` Retroactive Natural Growth Applied! \n+${statsAdded} total stat points based on your level ${level} and ${messagesSent.toLocaleString()} messages!`,
             'success',
             5000
           );
@@ -5132,11 +5132,11 @@ module.exports = class SoloLevelingStats {
       // Show notification
       const statsSummary = statNames.map((s) => `${s.toUpperCase()}: ${baseStats[s]}`).join(', ');
       const activeTitleMsg = this.settings.achievements?.activeTitle
-        ? `\n👑 Active Title: ${this.settings.achievements.activeTitle}`
+        ? `\n Active Title: ${this.settings.achievements.activeTitle}`
         : '';
 
       this.showNotification(
-        `🔄 Level Reset Complete! 🔄\n` +
+        ` Level Reset Complete! \n` +
           `Level: ${oldLevel} → ${targetLevel}\n` +
           `Total XP: ${oldTotalXP.toLocaleString()} → ${this.settings.totalXP.toLocaleString()}\n` +
           `Rank: ${oldRank} → ${correctRank}\n` +
@@ -5238,11 +5238,11 @@ module.exports = class SoloLevelingStats {
                 `${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} (${s.oldValue}→${s.newValue})`
             )
             .join(', ');
-          this.showNotification(`✨ Natural Growth! ✨\n${statsList}`, 'success', 4000);
+          this.showNotification(` Natural Growth! \n${statsList}`, 'success', 4000);
         } else if (statsGrown.length === 1) {
           const s = statsGrown[0];
           this.showNotification(
-            `✨ Natural ${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} Growth! ✨\n${
+            ` Natural ${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} Growth! \n${
               s.oldValue
             } → ${s.newValue}`,
             'success',
@@ -6129,7 +6129,7 @@ module.exports = class SoloLevelingStats {
     const message =
       `[SYSTEM] Achievement unlocked: ${achievement.name}\n` +
       `${achievement.description}\n` +
-      (achievement.title ? `👑 Title acquired: ${achievement.title}` : '');
+      (achievement.title ? ` Title acquired: ${achievement.title}` : '');
 
     this.showNotification(message, 'success', 5000);
 
@@ -6410,7 +6410,7 @@ module.exports = class SoloLevelingStats {
 
     const message =
       `[QUEST COMPLETE] ${questNames[questId]}\n` +
-      `💰 +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
+      ` +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
 
     this.showNotification(message, 'success', 4000);
 
@@ -6438,14 +6438,14 @@ module.exports = class SoloLevelingStats {
       celebration.className = 'sls-quest-celebration';
       celebration.innerHTML = `
         <div class="sls-quest-celebration-content">
-          <div class="sls-quest-celebration-icon">🎉</div>
+          <div class="sls-quest-celebration-icon"></div>
           <div class="sls-quest-celebration-text">QUEST COMPLETE!</div>
           <div class="sls-quest-celebration-name">${this.escapeHtml(questName)}</div>
           <div class="sls-quest-celebration-rewards">
-            <div class="sls-quest-reward-item">💰 +${xpReward} XP</div>
+            <div class="sls-quest-reward-item"> +${xpReward} XP</div>
             ${
               statPoints > 0
-                ? `<div class="sls-quest-reward-item">⭐ +${statPoints} Stat Point${
+                ? `<div class="sls-quest-reward-item"> +${statPoints} Stat Point${
                     statPoints > 1 ? 's' : ''
                   }</div>`
                 : ''
@@ -6618,7 +6618,7 @@ module.exports = class SoloLevelingStats {
         <div class="sls-progress-bar">
           <div class="sls-progress-fill" style="width: ${percentageText}%"></div>
         </div>
-        ${isComplete ? '<div class="sls-quest-complete-badge">✓ Complete</div>' : ''}
+        ${isComplete ? '<div class="sls-quest-complete-badge"> Complete</div>' : ''}
       </div>
     `;
   }
@@ -6632,7 +6632,7 @@ module.exports = class SoloLevelingStats {
         <div class="sls-achievement-item ${
           isUnlocked ? 'sls-achievement-unlocked' : 'sls-achievement-locked'
         }">
-          <div class="sls-achievement-icon">${isUnlocked ? '✓' : '🔒'}</div>
+          <div class="sls-achievement-icon">${isUnlocked ? '' : ''}</div>
           <div class="sls-achievement-name">${achievement.name}</div>
           <div class="sls-achievement-desc">${achievement.description}</div>
         </div>

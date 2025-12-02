@@ -355,7 +355,7 @@ module.exports = class SkillTree {
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
 
-    console.log('SkillTree: ✅ Event-based level up detection enabled - no polling needed');
+    console.log('SkillTree:  Event-based level up detection enabled - no polling needed');
 
     // Initial check on startup
     this.checkForLevelUp();
@@ -1536,7 +1536,7 @@ module.exports = class SkillTree {
 
     // Add close button
     const closeBtn = document.createElement('button');
-    closeBtn.textContent = '✕';
+    closeBtn.textContent = '';
     closeBtn.className = 'skilltree-close-btn';
     closeBtn.onclick = () => {
       if (this.skillTreeModal) {
