@@ -1,95 +1,140 @@
 /**
  * @name Solo Leveling (ClearVision Base)
- * @author Matthew
+ * @author BlueFlashXS
  * @version 1.0.0
  * @description Dark purple Solo Leveling theme based on ClearVision v7
  * @source https://github.com/ClearVision/ClearVision-v7
  * @authorId
+ *
+ * ORGANIZATION GUIDE:
+ * This theme is organized by Discord UI sections for easy customization.
+ * Each major section has a header indicating which Discord area it affects.
+ *
+ * SECTIONS:
+ * 1. IMPORTS & SETUP - External resources and CSS variables
+ * 2. BACKGROUND & ANIMATIONS - Main app background (animated GIF overlay)
+ * 3. SERVER LIST - Left sidebar server icons
+ * 4. CHANNEL LIST - Left sidebar channel list
+ * 5. CHAT AREA - Main message area
+ * 6. MESSAGE INPUT - Bottom text input area
+ * 7. USER POPOUTS - User profile popups
+ * 8. MODALS - Settings and other modal dialogs
+ * 9. TYPOGRAPHY - Fonts and text styling
+ * 10. REACTIONS - Message reaction buttons
+ * 11. EMBEDS - Rich embed cards in messages
+ * 12. STATUS INDICATORS - Online/offline/idle status dots
+ * 13. TOOLTIPS & CONTEXT MENUS - Hover tooltips and right-click menus
+ * 14. SCROLLBARS - Custom scrollbar styling
+ * 15. LOADING SCREENS - Loading spinners and overlays
+ * 16. ANIMATIONS - Keyframe animations
  */
 
-/* IMPORT CSS */
+/* ========================================
+   SECTION 1: IMPORTS & SETUP
+   ======================================== */
+/* This section imports external CSS and sets up CSS variables */
+
+/* Import ClearVision base theme */
 @import url('https://clearvision.github.io/ClearVision-v7/main.css');
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
-/* Import Orbitron font - Single font for both Solo Leveling theme and Critical Hit */
+
+/* Import Orbitron font - Used throughout theme for Solo Leveling aesthetic */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
-/* Import Nova Flat font for Critical Hit gradient text */
+
+/* Import Nova Flat font - Used for Critical Hit plugin gradient text */
 @import url('https://fonts.googleapis.com/css2?family=Nova+Flat&display=swap');
 
-/* SETTINGS */
+/* ========================================
+   SECTION 2: CSS VARIABLES (ROOT SETTINGS)
+   ======================================== */
+/* These variables control colors and settings throughout the theme */
+/* Edit these to change the overall color scheme */
+
 :root {
   /* ACCENT COLORS - Solo Leveling Purple Palette */
-  --main-color: #8a2be2; /* Blue Violet - Primary accent */
-  --hover-color: #ba55d3; /* Medium Orchid - Hover state */
-  --success-color: #00ff88; /* Success green */
-  --danger-color: #ff4444; /* Error red */
+  /* These colors appear in highlights, glows, and selected elements */
+  --main-color: #8a2be2; /* Blue Violet - Primary accent color */
+  --hover-color: #ba55d3; /* Medium Orchid - Hover state color */
+  --success-color: #00ff88; /* Success green (e.g., online status) */
+  --danger-color: #ff4444; /* Error red (e.g., DND status) */
 
-  /* STATUS COLORS */
-  --online-color: #00ff88; /* Green for online */
-  --idle-color: #ffaa00; /* Orange for idle */
-  --dnd-color: #ff0000; /* Red for do not disturb */
-  --streaming-color: #8a2be2; /* Purple for streaming */
-  --offline-color: #8b7fa8; /* Muted purple for offline */
+  /* STATUS COLORS - User status indicators */
+  /* These control the colors of online/offline/idle status dots */
+  --online-color: #00ff88; /* Green for online status */
+  --idle-color: #ffaa00; /* Orange for idle status */
+  --dnd-color: #ff0000; /* Red for do not disturb status */
+  --streaming-color: #8a2be2; /* Purple for streaming status */
+  --offline-color: #8b7fa8; /* Muted purple for offline status */
 
-  /* APP BACKGROUND - Dark Purple Gradient */
+  /* APP BACKGROUND - Main Discord window background */
+  /* Controls the background image/gradient for the entire app */
   --background-shading-percent: 100%; /* Full background shading */
-  --background-image: none; /* No background image, use gradient */
+  --background-image: none; /* No background image, use animated GIF instead */
   --background-position: center;
   --background-size: cover;
   --background-attachment: fixed;
   --background-filter: saturate(calc(var(--saturation-factor, 1) * 1));
 
-  /* USER POPOUT BACKGROUND */
+  /* USER POPOUT BACKGROUND - User profile popup backgrounds */
+  /* Controls the background when you click on a user's profile */
   --user-popout-image: var(--background-image);
   --user-popout-position: var(--background-position);
   --user-popout-size: var(--background-size);
   --user-popout-attachment: var(--background-attachment);
   --user-popout-filter: var(--background-filter);
 
-  /* USER MODAL BACKGROUND */
+  /* USER MODAL BACKGROUND - Full user profile modal backgrounds */
+  /* Controls the background of the full-screen user profile modal */
   --user-modal-image: var(--background-image);
   --user-modal-position: var(--background-position);
   --user-modal-size: var(--background-size);
   --user-modal-attachment: var(--background-attachment);
   --user-modal-filter: var(--background-filter);
 
-  /* HOME ICON */
+  /* HOME ICON - Discord home button icon */
   --home-icon: url(https://clearvision.github.io/icons/discord.svg);
   --home-size: cover;
 
-  /* FONTS - Solo Leveling Typography (Single font: Orbitron for consistency with Critical Hit) */
-  --main-font: 'Orbitron', sans-serif;
-  --code-font: 'Orbitron', monospace;
-  --heading-font: 'Orbitron', sans-serif;
+  /* FONTS - Typography settings */
+  /* Orbitron font used throughout for futuristic Solo Leveling aesthetic */
+  --main-font: 'Orbitron', sans-serif; /* Main text font */
+  --code-font: 'Orbitron', monospace; /* Code block font */
+  --heading-font: 'Orbitron', sans-serif; /* Heading font */
 
-  /* CHANNEL COLORS */
-  --channel-normal: var(--interactive-normal);
-  --channel-muted: var(--interactive-muted);
-  --channel-hover: var(--interactive-hover);
-  --channel-selected: var(--interactive-active);
-  --channel-selected-bg: var(--main-color);
-  --channel-unread: var(--main-color);
-  --channel-unread-hover: var(--hover-color);
+  /* CHANNEL COLORS - Channel list text colors */
+  /* Controls text colors in the channel list sidebar */
+  --channel-normal: var(--interactive-normal); /* Normal channel text */
+  --channel-muted: var(--interactive-muted); /* Muted channel text */
+  --channel-hover: var(--interactive-hover); /* Channel hover text */
+  --channel-selected: var(--interactive-active); /* Selected channel text */
+  --channel-selected-bg: var(--main-color); /* Selected channel background */
+  --channel-unread: var(--main-color); /* Unread channel indicator */
+  --channel-unread-hover: var(--hover-color); /* Unread channel hover */
 
-  /* ACCESSIBILITY */
-  --focus-color: var(--main-color);
+  /* ACCESSIBILITY - Focus indicators */
+  --focus-color: var(--main-color); /* Focus outline color */
 }
 
-/* THEME SPECIFIC SHADING - Solo Leveling Dark Purple */
-/* Override background-shading to be transparent for bright animated background */
-/* LIGHT THEME */
+/* ========================================
+   SECTION 3: THEME SHADING VARIABLES
+   ======================================== */
+/* These control transparency/shading for different theme modes */
+/* Edit opacity values to adjust background darkness */
+
+/* LIGHT THEME - Light mode settings */
 :is(.theme-light, .theme-dark .theme-light) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
-  --card-shading: rgba(10, 10, 15, 0.2);
-  --popout-shading: rgba(10, 10, 15, 0.7);
-  --modal-shading: rgba(10, 10, 15, 0.5);
-  --input-shading: rgba(138, 43, 226, 0.1);
-  --normal-text: #e0d0ff;
-  --muted-text: #b894e6;
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light overlay */
+  --card-shading: rgba(10, 10, 15, 0.2); /* Card background shading */
+  --popout-shading: rgba(10, 10, 15, 0.7); /* Popup background shading */
+  --modal-shading: rgba(10, 10, 15, 0.5); /* Modal background shading */
+  --input-shading: rgba(138, 43, 226, 0.1); /* Input field shading */
+  --normal-text: #e0d0ff; /* Normal text color */
+  --muted-text: #b894e6; /* Muted text color */
 }
 
-/* ASH THEME */
+/* ASH THEME - Medium dark mode */
 :is(.theme-dark, .theme-light .theme-dark) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
+  --background-shading: rgba(10, 10, 15, 0.05) !important;
   --card-shading: rgba(10, 10, 15, 0.4);
   --popout-shading: rgba(10, 10, 15, 0.8);
   --modal-shading: rgba(10, 10, 15, 0.6);
@@ -98,9 +143,9 @@
   --muted-text: #b894e6;
 }
 
-/* DARK THEME */
+/* DARK THEME - Dark mode */
 :is(.theme-darker, .theme-light .theme-darker) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light for bright background */
+  --background-shading: rgba(10, 10, 15, 0.05) !important;
   --card-shading: rgba(10, 10, 15, 0.5);
   --popout-shading: rgba(10, 10, 15, 0.9);
   --modal-shading: rgba(10, 10, 15, 0.7);
@@ -109,9 +154,9 @@
   --muted-text: #b894e6;
 }
 
-/* ONYX THEME */
+/* ONYX THEME - Darkest mode */
 :is(.theme-midnight, .theme-light .theme-midnight) {
-  --background-shading: rgba(5, 5, 10, 0.05) !important; /* Very light for bright background */
+  --background-shading: rgba(5, 5, 10, 0.05) !important;
   --card-shading: rgba(5, 5, 10, 0.6);
   --popout-shading: rgba(5, 5, 10, 0.95);
   --modal-shading: rgba(5, 5, 10, 0.8);
@@ -121,48 +166,69 @@
 }
 
 /* ========================================
-   SOLO LEVELING CUSTOM STYLES
+   SECTION 4: BACKGROUND & ANIMATIONS
+   AFFECTS: Entire Discord window background
    ======================================== */
+/* This section controls the animated Solo Leveling background GIF */
 
-/* Background - Video/GIF Animated Solo Leveling */
+/* Main body background - Make transparent to show animated background */
+/* This makes the body element transparent so the animated GIF background can show through */
+/* The !important flag ensures this overrides any other background styles */
 body {
-  background: transparent !important;
-  background-attachment: fixed !important;
-  position: relative !important;
+  background: transparent !important; /* Transparent background to show animated GIF */
+  background-attachment: fixed !important; /* Keeps background fixed when scrolling */
+  position: relative !important; /* Allows pseudo-elements (::before, ::after) to position relative to body */
 }
 
-/* Video Background - Solo Leveling Shadow Army Animated GIF */
+/* Animated GIF Background - Solo Leveling Shadow Army */
+/* This creates the animated background using a hosted GIF */
+/* The ::before pseudo-element creates a layer behind all content */
+/* To change the background: Update the URL in the url() function below */
 body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  content: ''; /* Required for pseudo-element to render */
+  position: fixed; /* Fixed position so it stays in place when scrolling */
+  top: 0; /* Start from top of viewport */
+  left: 0; /* Start from left of viewport */
+  width: 100%; /* Full width of viewport */
+  height: 100%; /* Full height of viewport */
   background:
-    /* GitHub hosted GIF - Update after pushing to GitHub */ url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/shadows-army-solo-leveling-imgur.gif')
+    /* GitHub hosted GIF - Update URL after pushing to GitHub */
+    /* To change background: Replace this URL with your own GIF/image URL */ url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/shadows-army-solo-leveling-imgur.gif')
     center center / cover no-repeat;
-  background-attachment: fixed;
-  opacity: 1 !important; /* Maximum brightness */
-  pointer-events: none;
-  z-index: -2;
+  /* center center = position image in center */
+  /* cover = scale image to cover entire area while maintaining aspect ratio */
+  /* no-repeat = don't tile the image */
+  background-attachment: fixed; /* Keep background fixed when scrolling */
+  opacity: 1 !important; /* Maximum brightness - adjust 0.0-1.0 for darker/lighter */
+  pointer-events: none; /* Allow clicks to pass through to elements behind */
+  z-index: -2; /* Behind everything (negative z-index puts it behind content) */
   animation: soloLevelingFade 10s ease-in-out infinite;
+  /* Animation: name duration timing-function iteration-count */
+  /* Currently set to fade animation (though it's static in the keyframes) */
 }
 
-/* Dark overlay for text readability - 0.5 opacity */
+/* Dark Overlay - Improves text readability over animated background */
+/* The ::after pseudo-element creates a dark overlay on top of the animated background */
+/* This makes text more readable by darkening the background slightly */
+/* Adjust opacity (0.5) to make background more/less visible */
 body::after {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  content: ''; /* Required for pseudo-element to render */
+  position: fixed; /* Fixed position so it stays in place when scrolling */
+  top: 0; /* Start from top of viewport */
+  left: 0; /* Start from left of viewport */
+  width: 100%; /* Full width of viewport */
+  height: 100%; /* Full height of viewport */
   background: rgba(10, 10, 15, 0.5) !important;
-  pointer-events: none;
-  z-index: -1;
+  /* rgba(red, green, blue, opacity) */
+  /* 10, 10, 15 = very dark blue-gray color */
+  /* 0.5 = 50% opacity (0.0 = transparent, 1.0 = fully opaque) */
+  /* Increase opacity (e.g., 0.7) for darker overlay, decrease (e.g., 0.3) for lighter */
+  pointer-events: none; /* Allow clicks to pass through to elements behind */
+  z-index: -1; /* Between background (-2) and content (0+) */
 }
 
-/* Override any app background overlays that might darken the animated background */
+/* Override ClearVision background overlays */
+/* Prevents ClearVision from adding its own background overlays */
 [class*='app']::before,
 [class*='app']::after,
 [class*='base']::before,
@@ -176,6 +242,7 @@ body::after {
   background: transparent !important;
 }
 
+/* Background fade animation - Currently static (no fade) */
 @keyframes soloLevelingFade {
   0%,
   100% {
@@ -186,6 +253,7 @@ body::after {
   }
 }
 
+/* Background pulse animation - Unused but available */
 @keyframes soloLevelingPulse {
   0%,
   100% {
@@ -199,36 +267,40 @@ body::after {
 }
 
 /* ========================================
-   TYPOGRAPHY ENHANCEMENTS - Solo Leveling
+   SECTION 5: TYPOGRAPHY
+   AFFECTS: All text throughout Discord
    ======================================== */
+/* This section controls fonts and text styling */
 
-/* Global Font Override - Orbitron (Single font for Solo Leveling theme) */
+/* Global Font Override - Apply Orbitron to everything */
+/* The * selector targets ALL elements on the page */
+/* Excludes critical hit messages (handled by plugin) */
+/* This ensures consistent font throughout Discord */
 * {
   font-family: var(--main-font) !important;
-  font-weight: 400 !important; /* Normal weight - easy to read, NOT bold/thick */
+  /* Uses the --main-font CSS variable defined in :root (Orbitron) */
+  /* !important ensures this overrides Discord's default fonts */
+  font-weight: 400 !important;
+  /* 400 = normal weight (not bold) */
+  /* Other weights: 300 = light, 500 = medium, 600 = semi-bold, 700 = bold */
+  /* Normal weight is easier to read for long text */
 }
 
-/* Explicitly exclude crit hit messages and their children from global font override */
-/* Let plugin handle font for crit hit messages - COMPLETE EXCLUSION */
+/* Critical Hit Messages - Exclude from theme font */
+/* Let CriticalHit plugin handle its own font styling */
 .bd-crit-hit,
 .bd-crit-hit *,
 .bd-crit-hit *::before,
 .bd-crit-hit *::after,
 [class*='message'].bd-crit-hit,
 [class*='message'].bd-crit-hit *,
-[class*='message'].bd-crit-hit *::before,
-[class*='message'].bd-crit-hit *::after,
 [class*='message'] .bd-crit-hit,
 [class*='message'] .bd-crit-hit *,
-[class*='message'] .bd-crit-hit *::before,
-[class*='message'] .bd-crit-hit *::after,
 [class*='message'] [class*='content'].bd-crit-hit,
-[class*='message'] [class*='content'].bd-crit-hit *,
 [class*='message'] [class*='text'].bd-crit-hit,
-[class*='message'] [class*='text'].bd-crit-hit *,
 [class*='messageContent'].bd-crit-hit,
 [class*='messageContent'].bd-crit-hit * {
-  font-family: unset !important; /* Remove theme font completely */
+  font-family: unset !important; /* Remove theme font */
   font-weight: unset !important;
   font-style: unset !important;
   font-variant: unset !important;
@@ -239,7 +311,8 @@ body::after {
   text-transform: unset !important;
 }
 
-/* Headings - Orbitron for Solo Leveling aesthetic */
+/* Headings - Channel/server names, titles */
+/* Applies to h1-h6 and any element with 'title' or 'header' in class */
 h1,
 h2,
 h3,
@@ -250,13 +323,13 @@ h6,
 [class*='header'] [class*='title'],
 [class*='name'][class*='header'] {
   font-family: var(--heading-font) !important;
-  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  font-weight: 500 !important; /* Medium weight */
   letter-spacing: 0.5px !important;
   text-shadow: 0 0 4px rgba(139, 92, 246, 0.3), 0 0 8px rgba(124, 58, 237, 0.2) !important;
 }
 
-/* Message Text - Better Readability */
-/* Exclude crit hit messages from theme text-shadow */
+/* Message Text - Chat message content */
+/* Excludes critical hit messages */
 [class*='message'] [class*='content']:not(.bd-crit-hit):not([class*='bd-crit-hit']),
 [class*='message'] [class*='text']:not(.bd-crit-hit):not([class*='bd-crit-hit']),
 [class*='messageContent']:not(.bd-crit-hit):not([class*='bd-crit-hit']) {
@@ -267,23 +340,19 @@ h6,
   color: rgba(255, 255, 255, 0.95) !important;
 }
 
-/* Critical Hit Messages - Let plugin handle all styling */
-/* First, remove theme text-shadow from crit hit messages */
+/* Critical Hit Messages - Remove theme text-shadow */
+/* Let plugin handle its own glow effects */
 .bd-crit-hit,
 [class*='message'] .bd-crit-hit,
 [class*='message'].bd-crit-hit,
 [class*='message'] [class*='content'].bd-crit-hit,
 [class*='message'] [class*='text'].bd-crit-hit,
-[class*='messageContent'].bd-crit-hit,
-[class*='message'] .bd-crit-hit [class*='content'],
-[class*='message'] .bd-crit-hit [class*='text'],
-[class*='message'].bd-crit-hit [class*='content'],
-[class*='message'].bd-crit-hit [class*='text'] {
+[class*='messageContent'].bd-crit-hit {
   text-shadow: none !important;
-  /* Remove theme text-shadow completely */
 }
 
-/* Apply glow directly via CSS to ensure it works with theme */
+/* Critical Hit Messages - Apply purple glow via CSS */
+/* Ensures glow works even with theme active */
 .bd-crit-hit,
 [class*='message'] .bd-crit-hit [class*='content'],
 [class*='message'] .bd-crit-hit [class*='text'],
@@ -293,20 +362,19 @@ h6,
 [class*='message'] [class*='text'].bd-crit-hit {
   text-shadow: 0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4),
     0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2) !important;
-  /* Apply purple glow directly - matches plugin's glow */
 }
 
-/* Username - Enhanced with subtle glow */
+/* Username - Message author names */
 [class*='message'] [class*='username'],
 [class*='message'] [class*='author'],
 [class*='username'] {
   font-family: var(--main-font) !important;
-  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  font-weight: 500 !important;
   text-shadow: 0 0 3px rgba(139, 92, 246, 0.4), 0 0 6px rgba(124, 58, 237, 0.2) !important;
   color: rgba(255, 255, 255, 0.95) !important;
 }
 
-/* Channel Names - Better visibility */
+/* Channel Names - Channel list text */
 [class*='channel'] [class*='name'],
 [class*='channelName'] {
   font-family: var(--main-font) !important;
@@ -314,17 +382,17 @@ h6,
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
 }
 
-/* Selected Channel Name - Enhanced glow */
+/* Selected Channel Name - Currently selected channel */
 [class*='selected'] [class*='name'],
 [class*='modeSelected'] [class*='name'],
 [class*='channel'][class*='selected'] [class*='name'] {
-  font-weight: 500 !important; /* Medium weight - readable, NOT bold/thick */
+  font-weight: 500 !important;
   text-shadow: 0 0 4px rgba(139, 92, 246, 0.5), 0 0 8px rgba(124, 58, 237, 0.3),
     0 0 12px rgba(109, 40, 217, 0.2) !important;
   color: rgba(255, 255, 255, 1) !important;
 }
 
-/* Code Blocks - Better monospace */
+/* Code Blocks - Inline code and code blocks */
 code,
 [class*='code'],
 [class*='codeBlock'],
@@ -337,130 +405,7 @@ pre {
   box-shadow: 0 0 4px rgba(139, 92, 246, 0.2) !important;
 }
 
-/* Timestamps - Use Discord default (no overrides) */
-
-/* Activity Timestamp Bars - Completely Disabled/Hidden/Transparent */
-/* Target all possible activity timestamp elements */
-[class*='activity'],
-[class*='activityCard'],
-[class*='richPresence'],
-[class*='activityBar'],
-[class*='activityTimestamp'],
-[class*='activityTime'],
-[class*='activityTimeBar'],
-[class*='activityTimeStamp'],
-[class*='activityTimeStampBar'],
-[class*='activity'][class*='time'],
-[class*='activity'][class*='timestamp'],
-[class*='activity'][class*='bar'],
-[class*='richPresence'][class*='time'],
-[class*='richPresence'][class*='timestamp'],
-[class*='richPresence'][class*='bar'],
-[class*='activity'] [class*='time'],
-[class*='activity'] [class*='timestamp'],
-[class*='activity'] [class*='timeBar'],
-[class*='richPresence'] [class*='time'],
-[class*='richPresence'] [class*='timestamp'],
-[class*='richPresence'] [class*='timeBar'],
-[class*='activityCard'] [class*='time'],
-[class*='activityCard'] [class*='timestamp'],
-[class*='activityCard'] [class*='timeBar'],
-[class*='activityPanel'] [class*='timestamp'],
-[class*='activityPanel'] [class*='timestampContainer'],
-[class*='activityPanel'] [class*='bar'],
-[class*='activityPanel'] [class*='time'],
-[class*='activityPanel'] [class*='timeBar'],
-[class*='richPresence'] [class*='timestamp'],
-[class*='richPresence'] [class*='timestampContainer'],
-[class*='richPresence'] [class*='bar'],
-[class*='richPresence'] [class*='time'],
-[class*='richPresence'] [class*='timeBar'] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  height: 0 !important;
-  width: 0 !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  background: transparent !important;
-  background-color: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-
-/* Make activity timestamp backgrounds transparent (if they're still visible) */
-[class*='activityPanel'] [class*='timestamp'],
-[class*='activityPanel'] [class*='timestampContainer'],
-[class*='activityPanel'] [class*='bar'],
-[class*='richPresence'] [class*='timestamp'],
-[class*='richPresence'] [class*='timestampContainer'],
-[class*='richPresence'] [class*='bar'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-
-/* Ensure the text remains visible but without purple background */
-[class*='activityPanel'] [class*='timestamp'] span,
-[class*='activityPanel'] [class*='timestamp'] time,
-[class*='richPresence'] [class*='timestamp'] span,
-[class*='richPresence'] [class*='timestamp'] time {
-  color: var(--text-normal) !important;
-  text-shadow: 0 0 2px rgba(0,0,0,0.5) !important;
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-/* Remove ANY purple/violet backgrounds from activity-related elements */
-[class*='activity'] [style*='background'],
-[class*='richPresence'] [style*='background'],
-[class*='activityCard'] [style*='background'] {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-/* Target any element inside activity cards that might have purple backgrounds */
-[class*='activity'] [class*='bar'],
-[class*='richPresence'] [class*='bar'],
-[class*='activityCard'] [class*='bar'],
-[class*='activity'] [class*='container'],
-[class*='richPresence'] [class*='container'],
-[class*='activityCard'] [class*='container'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* Remove purple highlights from any timestamp-related elements */
-[class*='timestamp'][style*='background'],
-[class*='time'][style*='background'],
-[class*='bar'][style*='background'] {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-/* Remove purple/violet colored backgrounds from activity-related elements only */
-[class*='activity'][style*='#8a2be2'],
-[class*='activity'][style*='#ba55d3'],
-[class*='activity'][style*='#8b7fa8'],
-[class*='richPresence'][style*='#8a2be2'],
-[class*='richPresence'][style*='#ba55d3'],
-[class*='richPresence'][style*='#8b7fa8'],
-[class*='activity'][style*='rgba(138, 43, 226'],
-[class*='activity'][style*='rgba(139, 92, 246'],
-[class*='richPresence'][style*='rgba(138, 43, 226'],
-[class*='richPresence'][style*='rgba(139, 92, 246'] {
-  background: transparent !important;
-  background-color: transparent !important;
-}
-
-/* Input Text - Better readability */
+/* Input Text - Text input fields */
 input,
 textarea,
 [class*='input'],
@@ -472,7 +417,7 @@ textarea,
   color: rgba(255, 255, 255, 0.95) !important;
 }
 
-/* Buttons - Enhanced text */
+/* Buttons - Button text */
 button,
 [class*='button'] {
   font-family: var(--main-font) !important;
@@ -481,42 +426,439 @@ button,
 }
 
 /* ========================================
-   GLOW EFFECTS - Solo Leveling Style
+   SECTION 6: ACTIVITY CARD TIMESTAMP BARS
+   AFFECTS: Activity/Rich Presence timestamp bars in user activity cards
    ======================================== */
+/* This section removes purple backgrounds from timestamp bars in activity cards */
+/* The timestamp text (e.g., "2d ago") remains visible but without purple background */
+/*
+ * IMPORTANT: Discord uses dynamically generated class names that change frequently
+ * The selectors below use attribute selectors [class*='...'] to match partial class names
+ * This ensures the rules work even when Discord updates their class structure
+ */
 
-/* Selected Channel - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+/* AGGRESSIVE PURPLE BACKGROUND REMOVAL - Activity Cards */
+/* Targets ALL elements within activity cards that might have purple backgrounds */
+/* This is a comprehensive approach to catch any purple background regardless of class name */
+/* Note: This is commented out by default as it's very aggressive */
+/* Uncomment if other selectors don't work */
+/*
+[class*='activityCard'] *,
+[class*='activityCard'] *::before,
+[class*='activityCard'] *::after {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+*/
+
+/* Remove purple backgrounds from activity card root elements */
+[class*='activityCard'],
+[class*='activityCard'][class*='wrapper'],
+[class*='activityCard'][class*='container'],
+[class*='activityCard'][class*='content'] {
+  /* Override any CSS variables that might add purple backgrounds */
+  --background-accent: transparent !important;
+  --background-modifier-hover: transparent !important;
+  --background-modifier-active: transparent !important;
+}
+
+/* Activity Card Timestamp Bar - Remove Purple Background */
+/* Targets the horizontal purple bar that appears below game names in activity cards */
+/* This is the bar that shows "✨ 2d ago" or "🎮 2d ago" in activity cards */
+/* Using multiple selector strategies to ensure we catch all variations */
+[class*='activityCard'] [class*='timeBar'],
+[class*='activityCard'] [class*='timestampBar'],
+[class*='activityCard'] [class*='activityBar'],
+[class*='activityCard'] [class*='bar'],
+[class*='activityCard'] [class*='time'],
+[class*='activityCard'] [class*='timestamp'],
+[class*='activityCard'] [class*='activityTimeBar'],
+[class*='activityCard'] [class*='activityTimestampBar'],
+[class*='activityCard'] [class*='richPresence'] [class*='timeBar'],
+[class*='activityCard'] [class*='richPresence'] [class*='timestampBar'],
+[class*='activityCard'] [class*='richPresence'] [class*='bar'],
+[class*='activityCard'] [class*='richPresence'] [class*='time'],
+[class*='activityCard'] [class*='richPresence'] [class*='timestamp'],
+[class*='activityCard'] [class*='activity'] [class*='timeBar'],
+[class*='activityCard'] [class*='activity'] [class*='timestampBar'],
+[class*='activityCard'] [class*='activity'] [class*='bar'],
+[class*='activityCard'] [class*='activity'] [class*='time'],
+[class*='activityCard'] [class*='activity'] [class*='timestamp'],
+/* Additional selectors for common Discord patterns */
+[class*='activityCard'] div[class*='bar'],
+[class*='activityCard'] div[class*='time'],
+[class*='activityCard'] div[class*='timestamp'],
+[class*='activityCard'] span[class*='bar'],
+[class*='activityCard'] span[class*='time'],
+[class*='activityCard'] span[class*='timestamp'],
+[class*='activityCard'] time[class*='bar'],
+[class*='activityCard'] time[class*='time'],
+[class*='activityCard'] time[class*='timestamp'] {
+  /* Use shorthand background to reset all background properties */
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+  /* Override any CSS variables that might set purple backgrounds */
+  --background-accent: transparent !important;
+  --background-modifier-hover: transparent !important;
+  --background-modifier-active: transparent !important;
+}
+
+/* Activity Card Timestamp Container - Remove Purple Background */
+/* Targets containers/wrappers around timestamp bars */
+[class*='activityCard'] [class*='timestampContainer'],
+[class*='activityCard'] [class*='timeContainer'],
+[class*='activityCard'] [class*='barContainer'],
+[class*='activityCard'] [class*='activityContainer'],
+[class*='activityCard'] [class*='richPresence'] [class*='timestampContainer'],
+[class*='activityCard'] [class*='richPresence'] [class*='timeContainer'],
+[class*='activityCard'] [class*='richPresence'] [class*='barContainer'],
+[class*='activityCard'] [class*='activity'] [class*='timestampContainer'],
+[class*='activityCard'] [class*='activity'] [class*='timeContainer'],
+[class*='activityCard'] [class*='activity'] [class*='barContainer'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Activity Card Timestamp Text - Keep Visible, Remove Purple Background */
+/* Ensures the timestamp text (e.g., "2d ago") remains visible but without purple background */
+[class*='activityCard'] [class*='timestamp'] span,
+[class*='activityCard'] [class*='timestamp'] time,
+[class*='activityCard'] [class*='timestamp'] div,
+[class*='activityCard'] [class*='time'] span,
+[class*='activityCard'] [class*='time'] time,
+[class*='activityCard'] [class*='time'] div,
+[class*='activityCard'] [class*='bar'] span,
+[class*='activityCard'] [class*='bar'] time,
+[class*='activityCard'] [class*='bar'] div,
+[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] span,
+[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] time,
+[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] div,
+[class*='activityCard'] [class*='richPresence'] [class*='time'] span,
+[class*='activityCard'] [class*='richPresence'] [class*='time'] time,
+[class*='activityCard'] [class*='richPresence'] [class*='time'] div,
+[class*='activityCard'] [class*='activity'] [class*='timestamp'] span,
+[class*='activityCard'] [class*='activity'] [class*='timestamp'] time,
+[class*='activityCard'] [class*='activity'] [class*='timestamp'] div,
+[class*='activityCard'] [class*='activity'] [class*='time'] span,
+[class*='activityCard'] [class*='activity'] [class*='time'] time,
+[class*='activityCard'] [class*='activity'] [class*='time'] div {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color: var(--text-normal) !important;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Remove Purple Backgrounds from Activity Card Elements with Inline Styles */
+/* Targets activity card elements that have purple backgrounds set via inline styles */
+[class*='activityCard'][style*='background'],
+[class*='activityCard'] [style*='background'],
+[class*='activityCard'][style*='#8a2be2'],
+[class*='activityCard'][style*='#ba55d3'],
+[class*='activityCard'][style*='#8b7fa8'],
+[class*='activityCard'][style*='rgba(138, 43, 226'],
+[class*='activityCard'][style*='rgba(139, 92, 246'],
+[class*='activityCard'] [style*='#8a2be2'],
+[class*='activityCard'] [style*='#ba55d3'],
+[class*='activityCard'] [style*='#8b7fa8'],
+[class*='activityCard'] [style*='rgba(138, 43, 226'],
+[class*='activityCard'] [style*='rgba(139, 92, 246'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Activity Panel Timestamp Bars - Remove Purple Background */
+/* Targets timestamp bars in activity panels (user profile activity section) */
+[class*='activityPanel'] [class*='timestamp'],
+[class*='activityPanel'] [class*='timestampContainer'],
+[class*='activityPanel'] [class*='bar'],
+[class*='activityPanel'] [class*='time'],
+[class*='activityPanel'] [class*='timeBar'],
+[class*='activityPanel'] [class*='timestampBar'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Rich Presence Timestamp Bars - Remove Purple Background */
+/* Targets timestamp bars in rich presence activity displays */
+[class*='richPresence'] [class*='timestamp'],
+[class*='richPresence'] [class*='timestampContainer'],
+[class*='richPresence'] [class*='bar'],
+[class*='richPresence'] [class*='time'],
+[class*='richPresence'] [class*='timeBar'],
+[class*='richPresence'] [class*='timestampBar'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* Ensure Timestamp Text Remains Visible */
+/* Makes sure the timestamp text (e.g., "2d ago") is still readable */
+[class*='activityPanel'] [class*='timestamp'] span,
+[class*='activityPanel'] [class*='timestamp'] time,
+[class*='activityPanel'] [class*='timestamp'] div,
+[class*='richPresence'] [class*='timestamp'] span,
+[class*='richPresence'] [class*='timestamp'] time,
+[class*='richPresence'] [class*='timestamp'] div {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: var(--text-normal) !important;
+  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* Remove Purple Backgrounds from All Activity-Related Elements */
+/* Comprehensive removal of purple backgrounds from any activity-related element */
+/* This section uses multiple selector strategies to catch all possible purple backgrounds */
+
+/* Strategy 1: Target elements with inline style backgrounds */
+[class*='activity'] [style*='background'],
+[class*='richPresence'] [style*='background'],
+[class*='activityCard'] [style*='background'],
+[class*='activity'] [class*='bar'],
+[class*='richPresence'] [class*='bar'],
+[class*='activityCard'] [class*='bar'],
+[class*='activity'] [class*='container'],
+[class*='richPresence'] [class*='container'],
+[class*='activityCard'] [class*='container'],
+[class*='timestamp'][style*='background'],
+[class*='time'][style*='background'],
+[class*='bar'][style*='background'],
+[class*='activity'][style*='#8a2be2'],
+[class*='activity'][style*='#ba55d3'],
+[class*='activity'][style*='#8b7fa8'],
+[class*='richPresence'][style*='#8a2be2'],
+[class*='richPresence'][style*='#ba55d3'],
+[class*='richPresence'][style*='#8b7fa8'],
+[class*='activityCard'][style*='#8a2be2'],
+[class*='activityCard'][style*='#ba55d3'],
+[class*='activityCard'][style*='#8b7fa8'],
+[class*='activity'][style*='rgba(138, 43, 226'],
+[class*='activity'][style*='rgba(139, 92, 246'],
+[class*='richPresence'][style*='rgba(138, 43, 226'],
+[class*='richPresence'][style*='rgba(139, 92, 246'],
+[class*='activityCard'][style*='rgba(138, 43, 226'],
+[class*='activityCard'][style*='rgba(139, 92, 246'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* Strategy 2: Target ALL elements within activity cards that have background-color set */
+/* This catches elements even if they don't match our specific class patterns */
+[class*='activityCard'] [style*='background-color'],
+[class*='activityCard'] [style*='background-color:'],
+[class*='activityCard'] [style*='background:'],
+[class*='activityCard'] [style*='background-color: rgb'],
+[class*='activityCard'] [style*='background-color: rgba'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 3: Target common Discord activity class patterns */
+/* These are common class name patterns Discord uses for activity elements */
+[class*='activityText'],
+[class*='activityDetails'],
+[class*='activityMetadata'],
+[class*='activityInfo'],
+[class*='activityDescription'],
+[class*='activityName'],
+[class*='activityType'],
+[class*='activityStatus'],
+[class*='activityTime'],
+[class*='activityTimestamp'],
+[class*='activityDuration'],
+[class*='activityElapsed'],
+[class*='activityStart'],
+[class*='activityEnd'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 4: Target elements by their computed background color */
+/* This uses a more aggressive approach - targets any element with purple-ish background */
+/* Note: This might affect other purple elements, but should catch the timestamp bars */
+[class*='activityCard'] div[style*='8a2be2'],
+[class*='activityCard'] div[style*='ba55d3'],
+[class*='activityCard'] div[style*='8b7fa8'],
+[class*='activityCard'] span[style*='8a2be2'],
+[class*='activityCard'] span[style*='ba55d3'],
+[class*='activityCard'] span[style*='8b7fa8'],
+[class*='activityCard'] time[style*='8a2be2'],
+[class*='activityCard'] time[style*='ba55d3'],
+[class*='activityCard'] time[style*='8b7fa8'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 5: Target by data attributes or other identifying features */
+/* Some Discord elements use data attributes or specific structures */
+/* Note: [data-*] is not a valid CSS selector, so we target specific common data attributes */
+[class*='activityCard'] [role*='text'],
+[class*='activityCard'] [aria-label*='time'],
+[class*='activityCard'] [aria-label*='timestamp'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 6: Nuclear option - Remove ALL backgrounds from activity card children */
+/* This is the most aggressive approach - removes backgrounds from ALL child elements */
+/* Only use if other strategies don't work */
+/* COMMENTED OUT BY DEFAULT - Uncomment the rules below if needed */
+/*
+[class*='activityCard'] > *,
+[class*='activityCard'] > * > *,
+[class*='activityCard'] > * > * > * {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+*/
+
+/* Strategy 7: Override ClearVision theme variables that might add purple backgrounds */
+/* ClearVision base theme might be adding purple backgrounds via CSS variables */
+[class*='activityCard'] {
+  --background-accent: transparent !important;
+  --background-floating: transparent !important;
+  --background-primary: transparent !important;
+  --background-secondary: transparent !important;
+  --background-tertiary: transparent !important;
+  --background-modifier-hover: transparent !important;
+  --background-modifier-active: transparent !important;
+  --background-modifier-selected: transparent !important;
+}
+
+/* Strategy 8: Universal Purple Background Removal for Activity Cards */
+/* This targets ANY element with a purple background color within activity cards */
+/* Uses attribute selectors to catch inline styles with purple colors */
+[class*='activityCard'] [style*='rgb(138, 43, 226)'],
+[class*='activityCard'] [style*='rgb(139, 92, 246)'],
+[class*='activityCard'] [style*='rgba(138, 43, 226'],
+[class*='activityCard'] [style*='rgba(139, 92, 246'],
+[class*='activityCard'] [style*='#8a2be2'],
+[class*='activityCard'] [style*='#ba55d3'],
+[class*='activityCard'] [style*='#8b7fa8'],
+[class*='activityCard'] [style*='blueviolet'],
+[class*='activityCard'] [style*='mediumorchid'],
+[class*='activityCard'] [style*='slateblue'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 9: Target by element type (time elements, datetime attributes) */
+/* This targets time elements and elements with datetime attributes within activity cards */
+/* Note: :has() selector requires modern browser support */
+[class*='activityCard']:has(time),
+[class*='activityCard']:has([datetime]),
+[class*='activityCard'] time,
+[class*='activityCard'] [datetime] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* Strategy 10: Override any computed styles with !important cascade */
+/* This ensures our transparent backgrounds override any other styles */
+/* Using higher specificity and !important to beat Discord's inline styles */
+[class*='activityCard'] [class*='bar'],
+[class*='activityCard'] [class*='time'],
+[class*='activityCard'] [class*='timestamp'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  /* Force override even if parent has background */
+  background-clip: border-box !important;
+  background-origin: border-box !important;
+  background-size: auto !important;
+  background-position: 0 0 !important;
+  background-repeat: no-repeat !important;
+}
+
+/* DEBUGGING NOTE: If purple background still appears, use Discord DevTools */
+/*
+ * 1. Open Discord
+ * 2. Press Ctrl+Shift+I (Windows) or Cmd+Option+I (Mac) to open DevTools
+ * 3. Click the element selector tool (cursor icon in top-left of DevTools)
+ * 4. Click on the purple timestamp bar
+ * 5. In the Elements panel, find the element and note its class names
+ * 6. Add a new CSS rule targeting those specific class names
+ * 7. Example: If you find class="activityCard_timestampBar_abc123", add:
+ *    .activityCard_timestampBar_abc123 { background: transparent !important; }
+ */
+
+/* ========================================
+   SECTION 7: GLOW EFFECTS
+   AFFECTS: Selected channels, active servers, focused inputs, buttons
+   ======================================== */
+/* Purple glow effects for interactive elements */
+
+/* Selected Channel - Purple glow on selected channel */
+/* Appears in the channel list when a channel is selected */
+/* The [class*='selected'] selector matches any element with "selected" in its class name */
 [class*='selected'][class*='channel'],
 [class*='modeSelected'] [class*='container'],
 [class*='channel'][class*='selected'] {
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
-  /* REMOVED: animation - causes lag */
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important;
+  /* box-shadow: offset-x offset-y blur-radius spread-radius color */
+  /* 0 0 = no offset (centered shadow) */
+  /* 10px = blur radius (larger = more blur) */
+  /* rgba(139, 92, 246, 0.6) = purple color with 60% opacity */
+  /* Adjust blur (10px) for more/less glow, adjust opacity (0.6) for brighter/dimmer */
   border-left: 2px solid rgba(139, 92, 246, 0.6) !important;
+  /* 2px = border thickness, solid = solid line, rgba = purple color */
+  /* This creates the purple left border on selected channels */
 }
 
-/* Active Server - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+/* Active Server - Purple glow on selected server icon */
+/* Appears in the server list when a server is selected */
 [class*='guild'][class*='selected'],
 [class*='server'][class*='selected'],
 [class*='guild'][class*='active'],
 [class*='server'][class*='active'] {
-  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
-  /* REMOVED: animation - causes lag */
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.6) !important;
   border-radius: 50% !important;
 }
 
-/* Focused Input - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+/* Focused Input - Purple glow when typing in text input */
+/* Appears when you click/focus on message input or any text field */
 [class*='input']:focus,
 [class*='textArea']:focus,
 [class*='slateTextArea']:focus,
 [class*='channelTextArea']:focus,
 input:focus,
 textarea:focus {
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6) !important; /* OPTIMIZED: Single shadow */
-  /* REMOVED: animation - causes lag */
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6) !important;
   outline: none !important;
   border-color: rgba(139, 92, 246, 0.5) !important;
 }
 
-/* Send Message Button - Purple Glow on Hover */
+/* Send Message Button - Purple glow on hover */
+/* Appears when hovering over the send message button */
 [class*='sendButton'],
 [class*='button'][class*='send'],
 button[aria-label*='Send'],
@@ -540,7 +882,8 @@ button[aria-label*='send']:hover,
   transition: all 0.2s ease !important;
 }
 
-/* Settings Button - Purple Glow on Hover */
+/* Settings Button - Purple glow on hover */
+/* Appears when hovering over settings/gear buttons */
 [class*='settingsButton'],
 [class*='button'][class*='settings'],
 button[aria-label*='Settings'],
@@ -570,28 +913,23 @@ button[aria-label*='Server Settings']:hover {
   transition: all 0.2s ease !important;
 }
 
-/* Input Focus - Enhanced glow handled in enhanced input section below */
-
-/* Username - Enhanced Glow */
+/* Username Hover - Enhanced glow on hover */
+/* Appears when hovering over usernames in messages */
 [class*='message'] [class*='username']:hover,
 [class*='message'] [class*='author']:hover {
   text-shadow: 0 0 4px rgba(139, 92, 246, 0.5), 0 0 8px rgba(124, 58, 237, 0.3) !important;
   transition: text-shadow 0.2s ease !important;
 }
 
-/* Selected Channel Name - Already enhanced in typography section */
-
-/* Header Title - Enhanced Glow */
+/* Header Title - Enhanced glow */
+/* Appears on channel/server header titles */
 [class*='title'][class*='header'],
 [class*='header'] [class*='title'],
 [class*='header'] [class*='name'] {
   text-shadow: 0 0 4px rgba(139, 92, 246, 0.4), 0 0 8px rgba(124, 58, 237, 0.3) !important;
 }
 
-/* ========================================
-   ADDITIONAL GLOW EFFECTS - Enhanced
-   ======================================== */
-
+/* Additional Glow Effects - General buttons, links, badges */
 /* Buttons - Enhanced glow on hover */
 button:hover,
 [class*='button']:hover:not([class*='selected']) {
@@ -607,6 +945,7 @@ a:hover,
 }
 
 /* Notification Badges - Enhanced glow */
+/* Appears on unread message badges */
 [class*='badge'],
 [class*='notification'],
 [class*='unread'] {
@@ -614,6 +953,7 @@ a:hover,
 }
 
 /* Tooltips - Purple glow */
+/* Appears on hover tooltips */
 [class*='tooltip'],
 [class*='popup'] {
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3),
@@ -622,6 +962,7 @@ a:hover,
 }
 
 /* Context Menu - Enhanced glow */
+/* Appears on right-click context menus */
 [class*='contextMenu'],
 [class*='menu'] {
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3) !important;
@@ -629,21 +970,25 @@ a:hover,
 }
 
 /* Message Hover - Subtle glow */
+/* Appears when hovering over messages (not critical hits) */
 [class*='message']:hover:not([class*='message']:has(.bd-crit-hit)) {
   box-shadow: 0 0 4px rgba(139, 92, 246, 0.2) !important;
   transition: box-shadow 0.2s ease !important;
 }
 
 /* Scrollbar Thumb - Glow on hover */
+/* Appears when hovering over scrollbar */
 ::-webkit-scrollbar-thumb:hover {
   box-shadow: 0 0 6px rgba(139, 92, 246, 0.5), 0 0 10px rgba(124, 58, 237, 0.3) !important;
 }
 
 /* ========================================
-   REACTION POPUPS - Fully Opaque
+   SECTION 8: REACTION POPUPS
+   AFFECTS: Message reaction buttons and reaction tooltips
    ======================================== */
+/* Makes reaction popups fully opaque for better visibility */
 
-/* Reaction Background - Solid, No Transparency, Purple Glow */
+/* Reaction Background - Solid, no transparency */
 [class*='reaction'],
 [class*='reactionBtn'] {
   background: var(--background-tertiary) !important;
@@ -659,6 +1004,7 @@ a:hover,
   backdrop-filter: none !important;
 }
 
+/* Your Own Reactions - Highlighted */
 [class*='reaction'][class*='reactionMe'],
 [class*='reactionBtn'][class*='reactionMe'] {
   background: rgba(138, 43, 226, 0.25) !important;
@@ -715,6 +1061,7 @@ a:hover,
 }
 
 /* Reaction Tooltip/Popup - Fully Opaque with Visible Text */
+/* Shows who reacted when hovering over reaction */
 [class*='reaction'] [class*='tooltip'],
 [class*='reaction'] [class*='popup'],
 [class*='reaction'] [class*='overlay'],
@@ -758,10 +1105,12 @@ a:hover,
 }
 
 /* ========================================
-   TOOLTIPS & POPUPS - Fully Opaque
+   SECTION 9: TOOLTIPS & POPUPS
+   AFFECTS: Hover tooltips and context menus
    ======================================== */
+/* Makes tooltips and context menus fully opaque */
 
-/* Tooltip - Fully Opaque with Visible Text (No Purple Glow) */
+/* Tooltip - Fully Opaque with Visible Text */
 [class*='tooltip'],
 [class*='tooltipContent'],
 [class*='tooltipContentWrapper'],
@@ -784,7 +1133,8 @@ a:hover,
   opacity: 1 !important;
 }
 
-/* Context Menu - Fully Opaque (No Purple Glow) */
+/* Context Menu - Fully Opaque */
+/* Right-click context menus */
 [class*='contextMenu'],
 [class*='menu'],
 [class*='menuContent'],
@@ -797,26 +1147,29 @@ a:hover,
 }
 
 /* ========================================
-   MESSAGE STYLING
+   SECTION 10: MESSAGE STYLING
+   AFFECTS: Chat message containers
    ======================================== */
+/* Styling for individual messages in chat */
 
-/* Message Container - Better Visual Separation (FIXED: Removed padding that broke avatar alignment) */
+/* Message Container - Visual separation */
 [class*='message'] {
   border-left: 2px solid transparent !important;
   transition: border-color 0.2s ease !important;
-  /* REMOVED: padding-left and margin-left that broke avatar alignment */
 }
 
-/* Message Hover Effect - Subtle Purple Glow (OPTIMIZED: Reduced shadow complexity) */
+/* Message Hover Effect - Subtle purple glow */
+/* Appears when hovering over messages (not critical hits) */
 [class*='message']:hover:not(.bd-crit-hit) {
   background: rgba(138, 43, 226, 0.05) !important;
   opacity: 1 !important;
   border-left-color: rgba(138, 43, 226, 0.4) !important;
-  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important; /* OPTIMIZED: Single shadow instead of multiple */
+  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important;
   transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
-/* Crit Hit Messages - No Hover Blur, Keep Original Styling */
+/* Crit Hit Messages - No hover blur */
+/* Critical hit messages keep their original styling on hover */
 [class*='message'].bd-crit-hit:hover {
   background: transparent !important;
   opacity: 1 !important;
@@ -834,13 +1187,13 @@ a:hover,
 }
 
 /* ========================================
-   SERVER LIST - Remove Purple
+   SECTION 11: SERVER LIST
+   AFFECTS: Left sidebar server icons
    ======================================== */
-
-/* Server List - Remove Purple Indicators */
-/* Server list styling handled below with specific selectors */
+/* Removes purple indicators from server list for cleaner look */
 
 /* Selected Server Indicator Bar - Remove Purple */
+/* The vertical bar that appears next to selected server */
 [class*='guild'][class*='selected']::before,
 [class*='server'][class*='selected']::before,
 [class*='guild'][class*='active']::before,
@@ -863,6 +1216,7 @@ a:hover,
 }
 
 /* Server Notification Badge - Hidden */
+/* Hides notification badges on server icons */
 [class*='guild'] [class*='badge'],
 [class*='server'] [class*='badge'],
 [class*='guild'] [class*='unread'],
@@ -895,29 +1249,48 @@ a:hover,
 }
 
 /* ========================================
-   REFINEMENTS & ENHANCEMENTS - Minimal & Clean
+   SECTION 12: SCROLLBARS
+   AFFECTS: All scrollbars throughout Discord
    ======================================== */
+/* Custom purple gradient scrollbar */
 
-/* Custom Scrollbar - Purple Gradient with Glow on Hover */
+/* Scrollbar Track - Transparent background */
+/* ::-webkit-scrollbar targets the scrollbar container */
+/* Note: Only works in WebKit browsers (Chrome, Edge, Safari) */
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 10px; /* Width of vertical scrollbar */
+  height: 10px; /* Height of horizontal scrollbar */
+  /* Adjust these values to make scrollbar thicker/thinner */
 }
 
+/* Scrollbar Track - The area behind the scrollbar thumb */
 ::-webkit-scrollbar-track {
   background: transparent !important;
+  /* Transparent so it blends with the background */
+  /* Change to a color (e.g., rgba(10, 10, 15, 0.5)) for visible track */
 }
 
+/* Scrollbar Thumb - The draggable part of the scrollbar */
+/* Purple gradient creates a nice visual effect */
 ::-webkit-scrollbar-thumb {
   background: linear-gradient(
     135deg,
     rgba(138, 43, 226, 0.3) 0%,
     rgba(139, 92, 246, 0.3) 100%
   ) !important;
-  border-radius: 5px;
+  /* linear-gradient(direction, color1 stop1, color2 stop2) */
+  /* 135deg = diagonal gradient from top-left to bottom-right */
+  /* rgba(138, 43, 226, 0.3) = blue violet at 30% opacity */
+  /* rgba(139, 92, 246, 0.3) = medium slate blue at 30% opacity */
+  /* 0% = start of gradient, 100% = end of gradient */
+  /* Adjust opacity (0.3) for more/less visible scrollbar */
+  border-radius: 5px; /* Rounded corners (half of width/height for fully rounded) */
   transition: all 0.3s ease !important;
+  /* Smooth transition when hover state changes */
+  /* all = all properties, 0.3s = duration, ease = timing function */
 }
 
+/* Scrollbar Thumb Hover - Brighter with glow */
 ::-webkit-scrollbar-thumb:hover {
   background: linear-gradient(
     135deg,
@@ -928,6 +1301,7 @@ a:hover,
 }
 
 /* Notification Badges - Purple Glow */
+/* Unread message badges */
 [class*='unread'],
 [class*='unreadBadge'],
 [class*='badge'],
@@ -940,8 +1314,10 @@ a:hover,
 }
 
 /* ========================================
-   LOADING SCREENS - Solo Leveling Themed
+   SECTION 13: LOADING SCREENS
+   AFFECTS: Loading spinners and loading overlays
    ======================================== */
+/* Solo Leveling themed loading animations */
 
 /* Loading Spinner/Indicator - Shadow Army Particles */
 [class*='loading'],
@@ -1006,6 +1382,12 @@ a:hover,
   pointer-events: none;
 }
 
+/* ========================================
+   SECTION 14: ANIMATIONS
+   AFFECTS: Keyframe animations used throughout theme
+   ======================================== */
+/* Define animations for loading screens and effects */
+
 @keyframes shadowParticlePulse {
   0%,
   100% {
@@ -1038,21 +1420,6 @@ a:hover,
   }
 }
 
-/* ========================================
-   NOTIFICATION TOASTS - Removed (User Request)
-   ======================================== */
-
-/* ========================================
-   DEBUGGING HELPER - Theme Feature Monitoring
-   ======================================== */
-
-/* Add debugging script for theme features */
-/* This will be injected via BetterDiscord's theme system */
-
-/* ========================================
-   ANIMATIONS
-   ======================================== */
-
 @keyframes soloGlow {
   0%,
   100% {
@@ -1074,29 +1441,12 @@ a:hover,
 }
 
 /* ========================================
-   LIMITED GLOW EFFECTS - Only Key Panels
+   SECTION 15: EMBEDS & CARDS
+   AFFECTS: Rich embed cards in messages
    ======================================== */
+/* Styling for Discord embed cards */
 
-/* Selected Channel Panel - Keep Glow */
-/* (Already defined above in GLOW EFFECTS section) */
-
-/* Button Panel - Keep Glow on Hover */
-/* (Already defined above in GLOW EFFECTS section) */
-
-/* Input Panel - Keep Glow on Focus */
-/* (Already defined above in GLOW EFFECTS section) */
-
-/* Username/Header Panel - Keep Glow */
-/* (Already defined above in GLOW EFFECTS section) */
-
-/* Removed: Embed, Code Block, Role Tag, Badge, Pinned Message, Reaction, Status, Scrollbar glows */
-/* These are now without glow effects for a cleaner look */
-
-/* ========================================
-   ENHANCED EMBEDS & CARDS - Solo Leveling Style
-   ======================================== */
-
-/* Embed Containers - Better Visibility (OPTIMIZED: Removed expensive blur) */
+/* Embed Containers - Better Visibility */
 [class*='embed'],
 [class*='embedWrapper'],
 [class*='embedContainer'] {
@@ -1104,10 +1454,10 @@ a:hover,
   border-left: 3px solid rgba(138, 43, 226, 0.5) !important;
   border-radius: 4px !important;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
-  /* REMOVED: backdrop-filter: blur(10px) - too expensive */
 }
 
 /* Solo Leveling Plugin Embed - Enhanced Styling */
+/* Special styling for Solo Leveling plugin embeds */
 [class*='embed'][class*='solo'],
 [class*='embed'] [class*='solo'],
 [class*='embed'] [class*='leveling'],
@@ -1140,22 +1490,24 @@ a:hover,
 }
 
 /* ========================================
-   ENHANCED INPUT AREA - Solo Leveling Style
+   SECTION 16: MESSAGE INPUT AREA
+   AFFECTS: Bottom text input area where you type messages
    ======================================== */
+/* Styling for the message input box */
 
-/* Message Input Container - More Prominent (OPTIMIZED: Removed expensive blur) */
+/* Message Input Container - More Prominent */
 [class*='channelTextArea'],
 [class*='slateTextArea'],
 [class*='textArea'] {
   background: rgba(15, 15, 26, 0.95) !important;
   border: 1px solid rgba(138, 43, 226, 0.3) !important;
   border-radius: 8px !important;
-  /* REMOVED: backdrop-filter: blur(10px) - too expensive */
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
   transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 /* Message Input Focus - Enhanced Glow */
+/* Appears when clicking/focusing on the input */
 [class*='channelTextArea']:focus-within,
 [class*='slateTextArea']:focus-within,
 [class*='textArea']:focus-within {
@@ -1165,35 +1517,39 @@ a:hover,
 }
 
 /* ========================================
-   ENHANCED SIDEBAR - Better Channel Visibility
+   SECTION 17: CHANNEL LIST SIDEBAR
+   AFFECTS: Left sidebar channel list
    ======================================== */
+/* Styling for the channel list sidebar */
 
-/* Channel List Container - Better Background (OPTIMIZED: Removed expensive blur) */
+/* Channel List Container - Better Background */
 [class*='channels'],
 [class*='channelList'],
 [class*='sidebar'] {
   background: rgba(10, 10, 15, 0.7) !important;
-  /* REMOVED: backdrop-filter: blur(5px) - too expensive, causes lag */
 }
 
 /* Channel Item - Better Hover State */
+/* Appears when hovering over channels */
 [class*='channel']:not([class*='selected']):hover {
   background: rgba(138, 43, 226, 0.1) !important;
   border-radius: 4px !important;
   transition: background 0.2s ease !important;
 }
 
-/* Channel Unread Indicator - More Visible (OPTIMIZED: Removed animation to reduce lag) */
+/* Channel Unread Indicator - More Visible */
+/* The dot that appears on unread channels */
 [class*='channel'] [class*='unread'],
 [class*='channel'] [class*='unreadBadge'] {
   background: var(--main-color) !important;
   box-shadow: 0 0 8px rgba(138, 43, 226, 0.8) !important;
-  /* REMOVED: animation - causes lag with many channels */
 }
 
 /* ========================================
-   ENHANCED STATUS INDICATORS - More Visible
+   SECTION 18: STATUS INDICATORS
+   AFFECTS: User status dots (online/offline/idle/DND)
    ======================================== */
+/* Enhanced status indicators with glow effects */
 
 /* Online Status - Enhanced Green Glow */
 [class*='status'][class*='online'],
@@ -1219,25 +1575,25 @@ a:hover,
   border: 2px solid rgba(255, 68, 68, 0.8) !important;
 }
 
-/* Streaming Status - Enhanced Purple Glow (OPTIMIZED: Removed animation to reduce lag) */
+/* Streaming Status - Enhanced Purple Glow */
 [class*='status'][class*='streaming'],
 [class*='statusStreaming'],
 [class*='status'][style*='streaming'] {
-  box-shadow: 0 0 10px rgba(138, 43, 226, 0.8) !important; /* OPTIMIZED: Single shadow */
+  box-shadow: 0 0 10px rgba(138, 43, 226, 0.8) !important;
   border: 2px solid rgba(138, 43, 226, 0.9) !important;
-  /* REMOVED: animation - causes lag */
 }
 
 /* ========================================
-   ENHANCED USER POPOUTS - Better Visibility
+   SECTION 19: USER POPOUTS
+   AFFECTS: User profile popups when clicking on a user
    ======================================== */
+/* Styling for user profile popups */
 
-/* User Popout Container - Enhanced Background (OPTIMIZED: Removed expensive blur) */
+/* User Popout Container - Enhanced Background */
 [class*='userPopout'],
 [class*='userPopoutOuter'],
 [class*='userProfileModal'] {
   background: rgba(15, 15, 26, 0.98) !important;
-  /* REMOVED: backdrop-filter: blur(20px) - very expensive, causes lag */
   border: 1px solid rgba(138, 43, 226, 0.3) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(138, 43, 226, 0.2) !important;
 }
@@ -1255,15 +1611,16 @@ a:hover,
 }
 
 /* ========================================
-   ENHANCED MODALS - Better Visibility
+   SECTION 20: MODALS
+   AFFECTS: Settings modals and other dialog windows
    ======================================== */
+/* Styling for modal dialogs (settings, etc.) */
 
-/* Modal Container - Enhanced (OPTIMIZED: Removed expensive blur) */
+/* Modal Container - Enhanced */
 [class*='modal'],
 [class*='modalRoot'],
 [class*='modalContent'] {
   background: rgba(15, 15, 26, 0.99) !important;
-  /* REMOVED: backdrop-filter: blur(20px) - very expensive, causes lag */
   border: 1px solid rgba(138, 43, 226, 0.3) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6), 0 0 20px rgba(138, 43, 226, 0.2) !important;
 }
@@ -1276,19 +1633,18 @@ a:hover,
 }
 
 /* ========================================
-   SMOOTHER ANIMATIONS - Enhanced Transitions (OPTIMIZED)
+   SECTION 21: TRANSITIONS & ANIMATIONS
+   AFFECTS: Smooth transitions for interactive elements
    ======================================== */
+/* Smooth transitions for buttons and inputs */
 
-/* REMOVED: Global * selector - too expensive, causes lag */
-/* Only apply transitions to specific elements that need them */
-
-/* Button Transitions - Smoother (OPTIMIZED: Only specific properties) */
+/* Button Transitions - Smoother */
 button,
 [class*='button'] {
   transition: background-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
 }
 
-/* Input Transitions - Smoother (OPTIMIZED: Only specific properties) */
+/* Input Transitions - Smoother */
 input,
 textarea,
 [class*='input'] {
@@ -1296,8 +1652,10 @@ textarea,
 }
 
 /* ========================================
-   BETTER CONTRAST - Improved Readability
+   SECTION 22: CONTRAST & READABILITY
+   AFFECTS: Text contrast for better readability
    ======================================== */
+/* Enhanced text contrast for better readability over animated background */
 
 /* Message Text - Better Contrast */
 [class*='message'] [class*='content']:not(.bd-crit-hit) {
