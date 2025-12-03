@@ -108,11 +108,11 @@ class DungeonStorageManager {
 
   async saveDungeon(dungeon) {
     if (!this.db) await this.init();
-    
+
     // CRITICAL: Sanitize dungeon object before saving to prevent DataCloneError
     // Remove any Promise values that can't be serialized to IndexedDB
     const sanitizedDungeon = this.sanitizeDungeonForStorage(dungeon);
-    
+
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
@@ -121,7 +121,7 @@ class DungeonStorageManager {
       request.onerror = () => reject(request.error);
     });
   }
-  
+
   /**
    * Sanitize dungeon object for IndexedDB storage
    * Removes Promises and other non-serializable values
@@ -140,7 +140,7 @@ class DungeonStorageManager {
       }
       return value;
     }));
-    
+
     return sanitized;
   }
 
@@ -2028,8 +2028,8 @@ module.exports = class Dungeons {
    */
   startRegeneration() {
     if (this.regenInterval) return; // Already running
-
-    console.log('[Dungeons] Starting HP/Mana regeneration (1 second interval)');
+    
+    // Start HP/Mana regeneration interval (logging removed)
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
     }, 1000); // Regenerate every 1 second
@@ -2042,7 +2042,7 @@ module.exports = class Dungeons {
     if (this.regenInterval) {
       clearInterval(this.regenInterval);
       this.regenInterval = null;
-      console.log('[Dungeons] Stopped HP/Mana regeneration');
+      // Stopped (logging removed)
     }
   }
 
@@ -2111,17 +2111,14 @@ module.exports = class Dungeons {
         hpChanged = this.settings.userHP !== oldHP;
       }
 
-      // Log regeneration START (first regen cycle only)
+      // Track regeneration state (logging removed - visible in UI)
       if (!this._hpRegenActive) {
         this._hpRegenActive = true;
-        const hpPercent = Math.floor((oldHP / this.settings.userMaxHP) * 100);
-        console.log(`[Dungeons] ❤️  HP Regeneration STARTED: ${oldHP}/${this.settings.userMaxHP} (${hpPercent}%) → Regenerating +${hpRegen} HP/sec`);
       }
-
-      // Log when HP becomes FULL
+      
+      // Reset flag when HP becomes full
       if (this.settings.userHP >= this.settings.userMaxHP && this._hpRegenActive) {
         this._hpRegenActive = false;
-        console.log(`[Dungeons] ❤️  HP Regeneration COMPLETE: ${this.settings.userHP}/${this.settings.userMaxHP} (100% FULL)`);
       }
     } else {
       // HP is already full - reset regen active flag
@@ -2147,17 +2144,14 @@ module.exports = class Dungeons {
         manaChanged = this.settings.userMana !== oldMana;
       }
 
-      // Log regeneration START (first regen cycle only)
+      // Track regeneration state (logging removed - visible in UI)
       if (!this._manaRegenActive) {
         this._manaRegenActive = true;
-        const manaPercent = Math.floor((oldMana / this.settings.userMaxMana) * 100);
-        console.log(`[Dungeons] 💧 Mana Regeneration STARTED: ${oldMana}/${this.settings.userMaxMana} (${manaPercent}%) → Regenerating +${manaRegen} Mana/sec`);
       }
-
-      // Log when Mana becomes FULL
+      
+      // Reset flag when Mana becomes full
       if (this.settings.userMana >= this.settings.userMaxMana && this._manaRegenActive) {
         this._manaRegenActive = false;
-        console.log(`[Dungeons] 💧 Mana Regeneration COMPLETE: ${this.settings.userMana}/${this.settings.userMaxMana} (100% FULL)`);
       }
     } else {
       // Mana is already full - reset regen active flag
@@ -2527,10 +2521,7 @@ module.exports = class Dungeons {
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowHP = dungeon.shadowHP || {}; // Object, not Map
 
-      // Log shadow army composition for this attack wave
-      console.log(
-        `[Dungeons] Shadow Attack Wave - Army composition: ${rankDistribution} (${assignedShadows.length} total)`
-      );
+      // Shadow army composition tracked (logging removed - too frequent)
 
       // Initialize shadow combat data if not exists
       // Each shadow has individual cooldowns and behaviors for chaotic combat
@@ -2541,11 +2532,11 @@ module.exports = class Dungeons {
       for (const shadow of assignedShadows) {
         // Initialize HP OR fix corrupted HP (Promise/NaN values)
         const existingHP = shadowHP[shadow.id];
-        const needsInit = !existingHP || 
-                          typeof existingHP.hp !== 'number' || 
-                          isNaN(existingHP.hp) || 
+        const needsInit = !existingHP ||
+                          typeof existingHP.hp !== 'number' ||
+                          isNaN(existingHP.hp) ||
                           existingHP.hp instanceof Promise;
-        
+
         if (needsInit && !deadShadows.has(shadow.id)) {
           // Get effective stats (base + growth) for accurate HP calculation
           let shadowVitality = shadow.vitality || shadow.strength || 50;
@@ -2564,7 +2555,7 @@ module.exports = class Dungeons {
 
           const maxHP = await this.calculateHP(shadowVitality, shadow.rank || 'E');
           shadowHP[shadow.id] = { hp: maxHP, maxHp: maxHP };
-          
+
           // Log fix if this was a corrupted value
           if (existingHP && existingHP.hp instanceof Promise) {
             console.log(`[Dungeons] FIXED: Shadow ${shadow.name} had Promise HP → Initialized to ${maxHP}`);
@@ -2603,10 +2594,11 @@ module.exports = class Dungeons {
         (s) => !deadShadows.has(s.id) && shadowHP[s.id]?.hp > 0
       ).length;
 
-      // Log combat readiness
-      if (aliveShadowCount < assignedShadows.length * 0.5) {
+      // Log combat readiness (ONCE per critical threshold to prevent spam)
+      if (aliveShadowCount < assignedShadows.length * 0.25 && !dungeon.criticalHPWarningShown) {
+        dungeon.criticalHPWarningShown = true;
         console.warn(
-          `[Dungeons] WARNING: Low shadow HP! Only ${aliveShadowCount}/${assignedShadows.length} shadows combat-ready (${Math.floor(aliveShadowCount / assignedShadows.length * 100)}%)`
+          `[Dungeons] ⚠️ CRITICAL: Only ${aliveShadowCount}/${assignedShadows.length} shadows alive (${Math.floor(aliveShadowCount / assignedShadows.length * 100)}%)!`
         );
       }
 
@@ -3038,10 +3030,8 @@ module.exports = class Dungeons {
             // Remove from alive shadows array for next mob
             const index = aliveShadows.indexOf(targetShadow);
             if (index > -1) aliveShadows.splice(index, 1);
-
-            console.log(
-              `[Dungeons] Mob killed shadow "${targetShadow.name}"! ${aliveShadows.length} shadows remaining`
-            );
+            
+            // Removed spam log: Mob killed shadow (happens too frequently)
           }
         }
       } else if (dungeon.userParticipating) {
@@ -3435,14 +3425,13 @@ module.exports = class Dungeons {
 
     // Check if user has enough mana
     if (this.settings.userMana < manaCost) {
-      console.log(
-        `[Dungeons] RESURRECTION FAILED: Not enough mana for ${shadow.name || 'Shadow'} [${shadowRank}]. Need ${manaCost}, have ${this.settings.userMana}`
-      );
-
-      // Show warning toast if this is the first mana failure in this dungeon
+      // Show warning toast ONCE per dungeon when mana runs out (prevents spam)
       const dungeon = this.activeDungeons.get(channelKey);
       if (dungeon && !dungeon.manaWarningShown) {
         dungeon.manaWarningShown = true;
+        console.warn(
+          `[Dungeons] ⚠️ OUT OF MANA: Shadows can't be resurrected! Need ${manaCost}, have ${this.settings.userMana}`
+        );
         this.showToast(
           `Out of mana! Shadows can't be resurrected.\nMana: ${this.settings.userMana}/${this.settings.userMaxMana}`,
           'error'
@@ -3493,19 +3482,9 @@ module.exports = class Dungeons {
     // Save settings to persist mana change
     this.saveSettings();
 
-    console.log(
-      `[Dungeons] AUTO-RESURRECT SUCCESS: ${shadow.name || 'Shadow'} [${shadowRank}] resurrected!`
-    );
-    console.log(
-      `[Dungeons] ├─ Mana Cost: ${manaCost}`
-    );
-    console.log(
-      `[Dungeons] ├─ Mana Before: ${manaBefore}`
-    );
-    console.log(
-      `[Dungeons] └─ Mana After: ${manaAfter} (${Math.floor(manaAfter / this.settings.userMaxMana * 100)}% remaining)`
-    );
-
+    // Removed verbose resurrection logs - mana changes visible in UI
+    // Resurrection success tracked in dungeon.shadowRevives counter
+    
     return true;
   }
 
