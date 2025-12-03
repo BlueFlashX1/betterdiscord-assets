@@ -895,20 +895,26 @@ module.exports = class ShadowArmy {
       // MAGIC BEAST ROLES - 100% DUNGEON-ONLY EXTRACTION
       // Based on Solo Leveling lore: actual monsters, not humanoid shadows
       // These can ONLY be extracted from dungeon mobs/bosses!
+      // Classified by species/family for biome-specific spawning
       // ========================================================================
+      
+      // INSECT FAMILY - Forest, Cavern biomes
       ant: {
         name: 'Ant',
         description: 'Insect-type beast - High numbers, coordinated attacks',
         buffs: { strength: 0.12, agility: 0.12 },
         effect: 'Swarm Tactics',
         isMagicBeast: true,
+        family: 'insect',
       },
+      // BEAST FAMILY - Forest, Arctic biomes
       bear: {
         name: 'Bear',
         description: 'Beast-type - Raw power and endurance',
         buffs: { strength: 0.18, vitality: 0.12 },
         effect: 'Berserker Rage',
         isMagicBeast: true,
+        family: 'beast',
       },
       wolf: {
         name: 'Wolf',
@@ -916,97 +922,17 @@ module.exports = class ShadowArmy {
         buffs: { agility: 0.15, strength: 0.1 },
         effect: 'Pack Hunter',
         isMagicBeast: true,
+        family: 'beast',
       },
+      
+      // INSECT FAMILY - Forest, Cavern biomes
       spider: {
         name: 'Spider',
         description: 'Arachnid-type - Web traps and venom',
         buffs: { agility: 0.13, intelligence: 0.12 },
         effect: 'Web Trap',
         isMagicBeast: true,
-      },
-      golem: {
-        name: 'Golem',
-        description: 'Stone construct - Extreme defense, slow',
-        buffs: { vitality: 0.25, strength: 0.08 },
-        effect: 'Stone Skin',
-        isMagicBeast: true,
-      },
-      wyvern: {
-        name: 'Wyvern',
-        description: 'Flying beast - Aerial superiority',
-        buffs: { agility: 0.16, strength: 0.14 },
-        effect: 'Aerial Strike',
-        isMagicBeast: true,
-      },
-      serpent: {
-        name: 'Serpent',
-        description: 'Snake-type - Venom and cunning',
-        buffs: { intelligence: 0.14, agility: 0.12 },
-        effect: 'Venom Strike',
-        isMagicBeast: true,
-      },
-      dragon: {
-        name: 'Dragon',
-        description: 'Apex predator - Supreme in all aspects',
-        buffs: { strength: 0.15, intelligence: 0.15, agility: 0.1 },
-        effect: 'Dragon Dominance',
-        isMagicBeast: true,
-      },
-      orc: {
-        name: 'Orc',
-        description: 'Brutal warrior - Savage strength and ferocity',
-        buffs: { strength: 0.16, vitality: 0.1 },
-        effect: 'Savage Fury',
-        isMagicBeast: true,
-      },
-      naga: {
-        name: 'Naga',
-        description: 'Serpent humanoid - Magic and agility',
-        buffs: { intelligence: 0.15, agility: 0.13 },
-        effect: 'Water Magic',
-        isMagicBeast: true,
-      },
-      titan: {
-        name: 'Titan',
-        description: 'Ancient giant - Colossal power and endurance',
-        buffs: { strength: 0.2, vitality: 0.18 },
-        effect: 'Titan Force',
-        isMagicBeast: true,
-      },
-      giant: {
-        name: 'Giant',
-        description: 'Massive humanoid - Overwhelming size and strength',
-        buffs: { strength: 0.17, vitality: 0.14 },
-        effect: 'Giant Slam',
-        isMagicBeast: true,
-      },
-      elf: {
-        name: 'Elf',
-        description: 'Ancient race - Magic mastery and precision',
-        buffs: { intelligence: 0.16, agility: 0.14, luck: 0.1 },
-        effect: 'Ancient Magic',
-        isMagicBeast: true,
-      },
-      demon: {
-        name: 'Demon',
-        description: 'Dark entity - Chaos and destruction',
-        buffs: { strength: 0.16, intelligence: 0.16 },
-        effect: 'Dark Power',
-        isMagicBeast: true,
-      },
-      ghoul: {
-        name: 'Ghoul',
-        description: 'Undead horror - Life drain and regeneration',
-        buffs: { vitality: 0.14, intelligence: 0.11 },
-        effect: 'Life Drain',
-        isMagicBeast: true,
-      },
-      ogre: {
-        name: 'Ogre',
-        description: 'Brute monster - Raw strength, low intelligence',
-        buffs: { strength: 0.19, vitality: 0.13 },
-        effect: 'Crushing Blow',
-        isMagicBeast: true,
+        family: 'insect',
       },
       centipede: {
         name: 'Centipede',
@@ -1014,13 +940,133 @@ module.exports = class ShadowArmy {
         buffs: { agility: 0.15, intelligence: 0.1 },
         effect: 'Poison Sting',
         isMagicBeast: true,
+        family: 'insect',
       },
+      
+      // CONSTRUCT FAMILY - Cavern, Ancient Ruins biomes
+      golem: {
+        name: 'Golem',
+        description: 'Stone construct - Extreme defense, slow',
+        buffs: { vitality: 0.25, strength: 0.08 },
+        effect: 'Stone Skin',
+        isMagicBeast: true,
+        family: 'construct',
+      },
+      
+      // REPTILE FAMILY - Swamp biomes
+      serpent: {
+        name: 'Serpent',
+        description: 'Snake-type - Venom and cunning',
+        buffs: { intelligence: 0.14, agility: 0.12 },
+        effect: 'Venom Strike',
+        isMagicBeast: true,
+        family: 'reptile',
+      },
+      naga: {
+        name: 'Naga',
+        description: 'Serpent humanoid - Magic and agility',
+        buffs: { intelligence: 0.15, agility: 0.13 },
+        effect: 'Water Magic',
+        isMagicBeast: true,
+        family: 'reptile',
+      },
+      
+      // DRAGON FAMILY - Mountains, Volcano, Dark Abyss (NH+ ONLY!)
+      wyvern: {
+        name: 'Wyvern',
+        description: 'Flying beast - Aerial superiority',
+        buffs: { agility: 0.16, strength: 0.14 },
+        effect: 'Aerial Strike',
+        isMagicBeast: true,
+        family: 'dragon',
+        minRank: 'S', // Wyverns start at S-rank
+      },
+      dragon: {
+        name: 'Dragon',
+        description: 'Apex predator - Supreme in all aspects',
+        buffs: { strength: 0.15, intelligence: 0.15, agility: 0.1 },
+        effect: 'Dragon Dominance',
+        isMagicBeast: true,
+        family: 'dragon',
+        minRank: 'NH', // DRAGONS ONLY IN NH+ DUNGEONS!
+      },
+      
+      // GIANT FAMILY - Mountains, Tribal Grounds biomes
+      titan: {
+        name: 'Titan',
+        description: 'Ancient giant - Colossal power and endurance',
+        buffs: { strength: 0.2, vitality: 0.18 },
+        effect: 'Titan Force',
+        isMagicBeast: true,
+        family: 'giant',
+        minRank: 'A', // Titans start at A-rank
+      },
+      giant: {
+        name: 'Giant',
+        description: 'Massive humanoid - Overwhelming size and strength',
+        buffs: { strength: 0.17, vitality: 0.14 },
+        effect: 'Giant Slam',
+        isMagicBeast: true,
+        family: 'giant',
+      },
+      
+      // ANCIENT FAMILY - Ancient Ruins biomes
+      elf: {
+        name: 'Elf',
+        description: 'Ancient race - Magic mastery and precision',
+        buffs: { intelligence: 0.16, agility: 0.14, luck: 0.1 },
+        effect: 'Ancient Magic',
+        isMagicBeast: true,
+        family: 'ancient',
+      },
+      
+      // DEMON FAMILY - Volcano, Dark Abyss biomes
+      demon: {
+        name: 'Demon',
+        description: 'Dark entity - Chaos and destruction',
+        buffs: { strength: 0.16, intelligence: 0.16 },
+        effect: 'Dark Power',
+        isMagicBeast: true,
+        family: 'demon',
+        minRank: 'B', // Demons start at B-rank
+      },
+      
+      // UNDEAD FAMILY - Cavern, Swamp, Ancient Ruins, Dark Abyss biomes
+      ghoul: {
+        name: 'Ghoul',
+        description: 'Undead horror - Life drain and regeneration',
+        buffs: { vitality: 0.14, intelligence: 0.11 },
+        effect: 'Life Drain',
+        isMagicBeast: true,
+        family: 'undead',
+      },
+      
+      // HUMANOID-BEAST FAMILY - Tribal Grounds, Volcano biomes
+      orc: {
+        name: 'Orc',
+        description: 'Brutal warrior - Savage strength and ferocity',
+        buffs: { strength: 0.16, vitality: 0.1 },
+        effect: 'Savage Fury',
+        isMagicBeast: true,
+        family: 'humanoid-beast',
+      },
+      ogre: {
+        name: 'Ogre',
+        description: 'Brute monster - Raw strength, low intelligence',
+        buffs: { strength: 0.19, vitality: 0.13 },
+        effect: 'Crushing Blow',
+        isMagicBeast: true,
+        family: 'humanoid-beast',
+      },
+      
+      // ICE FAMILY - Arctic biomes (exclusive!)
       yeti: {
         name: 'Yeti',
         description: 'Ice beast - Frozen fury and endurance',
         buffs: { strength: 0.15, vitality: 0.15 },
         effect: 'Frost Aura',
         isMagicBeast: true,
+        family: 'ice',
       },
     };
 
@@ -1798,7 +1844,8 @@ module.exports = class ShadowArmy {
     targetStats = null,
     targetStrength = null,
     skipCap = false,
-    fromDungeon = false
+    fromDungeon = false,
+    beastFamilies = null
   ) {
     const intelligence = userStats.intelligence || 0;
     const perception = userStats.perception || 0;
@@ -1823,14 +1870,39 @@ module.exports = class ShadowArmy {
     let shadow;
     if (targetStats && targetStrength != null) {
       // Use provided stats for dungeon mobs
-      // MAGIC BEASTS: 100% from dungeons, 0% from messages!
+      // MAGIC BEASTS: 100% from dungeons (filtered by biome), 0% from messages!
       let roleKey;
       if (fromDungeon) {
         // Select magic beast role (dungeon-only, 100% magic beast)
-        const beastRoles = Object.keys(this.shadowRoles).filter(
+        let availableBeastRoles = Object.keys(this.shadowRoles).filter(
           key => this.shadowRoles[key].isMagicBeast
         );
-        roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
+        
+        // Filter by biome families if provided
+        if (beastFamilies && beastFamilies.length > 0) {
+          availableBeastRoles = availableBeastRoles.filter(key => {
+            const beast = this.shadowRoles[key];
+            return beastFamilies.includes(beast.family);
+          });
+        }
+        
+        // Filter by rank restrictions (e.g., dragons only NH+)
+        const rankIndex = this.shadowRanks.indexOf(targetRank);
+        availableBeastRoles = availableBeastRoles.filter(key => {
+          const beast = this.shadowRoles[key];
+          if (!beast.minRank) return true; // No restriction
+          const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
+          return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
+        });
+        
+        // Fallback: If no beasts available after filtering, use all non-restricted beasts
+        if (availableBeastRoles.length === 0) {
+          availableBeastRoles = Object.keys(this.shadowRoles).filter(
+            key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+          );
+        }
+        
+        roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
       } else {
         // Select humanoid role (message-based extraction only)
         const humanoidRoles = Object.keys(this.shadowRoles).filter(
@@ -1959,7 +2031,8 @@ module.exports = class ShadowArmy {
     userStats,
     mobRank,
     mobStats,
-    mobStrength
+    mobStrength,
+    beastFamilies = null
   ) {
     // Check if can extract from this boss (lore: max 3 attempts per day)
     const canExtract = this.canExtractFromBoss(bossId);
@@ -1981,7 +2054,8 @@ module.exports = class ShadowArmy {
       mobStats,
       mobStrength,
       true, // skipCap = true for dungeons
-      true  // fromDungeon = true (enables magic beast extraction)
+      true, // fromDungeon = true (enables magic beast extraction)
+      beastFamilies // Pass biome families for themed extraction
     );
 
     // Record attempt (counts both success and failure toward limit)
@@ -2271,31 +2345,58 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Use provided shadow rank (determined by probability system)
    * 2. Randomly select shadow role (humanoid or magic beast if from dungeon)
-   * 3. Get exponential rank multiplier for stat scaling
-   * 4. Generate base stats using role weights and exponential rank multiplier
-   * 5. Calculate initial shadow strength from base stats
-   * 6. Create shadow object with id, rank, role, stats, level, XP
-   * 7. Initialize growth stats for level-up progression
-   *
+   * 3. Filter by biome families and rank restrictions
+   * 4. Get exponential rank multiplier for stat scaling
+   * 5. Generate base stats using role weights and exponential rank multiplier
+   * 6. Calculate initial shadow strength from base stats
+   * 7. Create shadow object with id, rank, role, stats, level, XP
+   * 8. Initialize growth stats for level-up progression
+   * 
    * @param {string} shadowRank - Rank of shadow to generate
    * @param {number} userLevel - Current user level
    * @param {object} userStats - User's current stats
    * @param {boolean} fromDungeon - If true, can generate magic beast shadows
+   * @param {Array} beastFamilies - Allowed beast families for this biome
    */
-  generateShadow(shadowRank, userLevel, userStats, fromDungeon = false) {
+  generateShadow(shadowRank, userLevel, userStats, fromDungeon = false, beastFamilies = null) {
     // VALIDATION: Ensure shadow rank is not invalid
     // This is called after determineShadowRank, so it should always be valid
     // But we add this check as a safety measure
 
     // Random role selection
-    // MAGIC BEASTS: 100% from dungeons, 0% from messages!
+    // MAGIC BEASTS: 100% from dungeons (filtered by biome), 0% from messages!
     let roleKey;
     if (fromDungeon) {
       // Select magic beast role (dungeon-only, 100% magic beast)
-      const beastRoles = Object.keys(this.shadowRoles).filter(
+      let availableBeastRoles = Object.keys(this.shadowRoles).filter(
         key => this.shadowRoles[key].isMagicBeast
       );
-      roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
+      
+      // Filter by biome families if provided
+      if (beastFamilies && beastFamilies.length > 0) {
+        availableBeastRoles = availableBeastRoles.filter(key => {
+          const beast = this.shadowRoles[key];
+          return beastFamilies.includes(beast.family);
+        });
+      }
+      
+      // Filter by rank restrictions (e.g., dragons only NH+)
+      const rankIndex = this.shadowRanks.indexOf(shadowRank);
+      availableBeastRoles = availableBeastRoles.filter(key => {
+        const beast = this.shadowRoles[key];
+        if (!beast.minRank) return true; // No restriction
+        const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
+        return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
+      });
+      
+      // Fallback: If no beasts available after filtering, use all beasts
+      if (availableBeastRoles.length === 0) {
+        availableBeastRoles = Object.keys(this.shadowRoles).filter(
+          key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+        );
+      }
+      
+      roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
     } else {
       // Select humanoid role (message-based extraction only)
       const humanoidRoles = Object.keys(this.shadowRoles).filter(

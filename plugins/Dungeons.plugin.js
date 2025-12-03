@@ -291,7 +291,7 @@ module.exports = class Dungeons {
       mobSpawnCount: 50, // Spawn 50 mobs at a time (increased for epic battles)
       shadowReviveCost: 50, // Mana cost to revive a shadow
       // Dungeon ranks including SS, SSS
-      dungeonRanks: ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'],
+      dungeonRanks: ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'],
       userActiveDungeon: null,
       lastSpawnTime: {},
       mobKillNotifications: {},
@@ -873,38 +873,41 @@ module.exports = class Dungeons {
   // ============================================================================
   // DUNGEON NAMES GENERATOR
   // ============================================================================
-  generateDungeonName(rank) {
-    const prefixes = [
-      'Ancient',
-      'Forgotten',
-      'Cursed',
-      'Dark',
-      'Shadow',
-      'Abyssal',
-      'Infernal',
-      'Eternal',
-    ];
-    const suffixes = [
-      'Labyrinth',
-      'Catacombs',
-      'Ruins',
-      'Temple',
-      'Sanctuary',
-      'Fortress',
-      'Tower',
-      'Dungeon',
-    ];
-    const prefix = prefixes[Math.floor(Math.random() * prefixes.length)];
-    const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
-    return `${prefix} ${suffix} of ${rank}-Rank`;
+  generateDungeonName(rank, biome) {
+    // Biome-specific dungeon names
+    const biomeNames = {
+      Forest: ['Verdant Grove', 'Twilight Woods', 'Ancient Forest', 'Insect Hive', 'Beast Den'],
+      Arctic: ['Frozen Tundra', 'Ice Cavern', 'Glacial Peak', 'Frost Realm', 'Blizzard Valley'],
+      Cavern: ['Dark Depths', 'Underground Maze', 'Spider Nest', 'Stone Abyss', 'Cursed Mines'],
+      Swamp: ['Murky Marshland', 'Serpent Bog', 'Dead Waters', 'Toxic Fen', 'Ghoul Swamp'],
+      Mountains: ['Sky Peak', 'Titan Ridge', 'Giant Pass', 'Cloud Fortress', 'Stone Citadel'],
+      Volcano: ['Infernal Crater', 'Demon Forge', 'Magma Chamber', 'Hellfire Pit', 'Ash Realm'],
+      'Ancient Ruins': ['Lost Temple', 'Mystic Shrine', 'Elven Sanctuary', 'Forgotten Palace', 'Ruined City'],
+      'Dark Abyss': ['Void Chasm', 'Shadow Realm', 'Demon Gate', 'Nightmare Pit', 'Chaos Rift'],
+      'Tribal Grounds': ['Savage Camp', 'Orc Stronghold', 'Ogre Lair', 'War Grounds', 'Tribal Ruins'],
+    };
+    
+    const names = biomeNames[biome] || ['Ancient Dungeon'];
+    const name = names[Math.floor(Math.random() * names.length)];
+    return `[${rank}] ${name}`;
   }
 
-  generateBossName(rank) {
-    const titles = ['Lord', 'King', 'Tyrant', 'Overlord', 'Destroyer', 'Conqueror', 'Dominator'];
-    const names = ['Malice', 'Despair', 'Ruin', 'Doom', 'Chaos', 'Void', 'Shadow'];
-    const title = titles[Math.floor(Math.random() * titles.length)];
-    const name = names[Math.floor(Math.random() * names.length)];
-    return `${title} ${name}`;
+  generateBossName(rank, biome) {
+    // Biome-specific boss names
+    const biomeBosses = {
+      Forest: ['Beast King', 'Insect Queen', 'Spider Matriarch', 'Alpha Wolf', 'Ancient Treant'],
+      Arctic: ['Frost Giant', 'Yeti Lord', 'Ice Wyrm', 'Blizzard King', 'Frozen Tyrant'],
+      Cavern: ['Stone Guardian', 'Ghoul Patriarch', 'Spider Queen', 'Underground Horror', 'Golem Lord'],
+      Swamp: ['Serpent King', 'Naga Empress', 'Swamp Horror', 'Ghoul Master', 'Venom Lord'],
+      Mountains: ['Titan King', 'Giant Chieftain', 'Sky Lord', 'Wyvern Sovereign', 'Mountain God'],
+      Volcano: ['Demon Lord', 'Infernal Tyrant', 'Lava Dragon', 'Hell King', 'Flame Emperor'],
+      'Ancient Ruins': ['Elven Patriarch', 'Golem Keeper', 'Ancient Guardian', 'Lost King', 'Ruin Master'],
+      'Dark Abyss': ['Void Dragon', 'Demon Emperor', 'Chaos Incarnate', 'Abyss Lord', 'Shadow King'],
+      'Tribal Grounds': ['Orc Warlord', 'Ogre Chieftain', 'Savage King', 'War Beast', 'Tribal Lord'],
+    };
+    
+    const bosses = biomeBosses[biome] || ['Ancient Boss'];
+    return bosses[Math.floor(Math.random() * bosses.length)];
   }
 
   // ============================================================================
@@ -1266,31 +1269,78 @@ module.exports = class Dungeons {
    */
   async createDungeon(channelKey, channelInfo, rank) {
     const rankIndex = this.settings.dungeonRanks.indexOf(rank);
-    const dungeonName = this.generateDungeonName(rank);
-    const bossName = this.generateBossName(rank);
+    // THEMED BIOME DUNGEONS - Each biome spawns specific magic beast families
+    // Biomes reflect natural habitats for magic beasts
+    const dungeonBiomes = [
+      {
+        name: 'Forest',
+        description: 'Dense woodland teeming with insects and beasts',
+        mobMultiplier: 2.5, // Horde of insects
+        beastFamilies: ['insect', 'beast'], // Ants, spiders, centipedes, bears, wolves
+      },
+      {
+        name: 'Arctic',
+        description: 'Frozen wasteland of ice and snow',
+        mobMultiplier: 1.2, // Fewer but tankier
+        beastFamilies: ['ice', 'beast'], // Yetis, bears, wolves
+      },
+      {
+        name: 'Cavern',
+        description: 'Underground tunnels filled with horrors',
+        mobMultiplier: 2.0, // Many creatures
+        beastFamilies: ['insect', 'undead', 'construct'], // Spiders, centipedes, ghouls, golems
+      },
+      {
+        name: 'Swamp',
+        description: 'Murky marshland of serpents and undead',
+        mobMultiplier: 1.8, // Dense population
+        beastFamilies: ['reptile', 'undead'], // Serpents, nagas, ghouls
+      },
+      {
+        name: 'Mountains',
+        description: 'Rocky peaks inhabited by giants and wyverns',
+        mobMultiplier: 0.8, // Fewer but stronger
+        beastFamilies: ['giant', 'dragon'], // Giants, titans, wyverns, dragons (NH+)
+      },
+      {
+        name: 'Volcano',
+        description: 'Molten hellscape of demons and dragons',
+        mobMultiplier: 1.0, // Balanced
+        beastFamilies: ['demon', 'dragon'], // Demons, ogres, dragons (NH+)
+      },
+      {
+        name: 'Ancient Ruins',
+        description: 'Mystical ruins guarded by constructs and elves',
+        mobMultiplier: 1.2, // Moderate
+        beastFamilies: ['construct', 'ancient', 'undead'], // Golems, elves, ghouls
+      },
+      {
+        name: 'Dark Abyss',
+        description: 'Void realm of demons and horrors',
+        mobMultiplier: 1.5, // Many dark creatures
+        beastFamilies: ['demon', 'undead', 'dragon'], // Demons, ghouls, dragons (NH+)
+      },
+      {
+        name: 'Tribal Grounds',
+        description: 'Savage lands of orcs and ogres',
+        mobMultiplier: 2.0, // Large tribes
+        beastFamilies: ['humanoid-beast', 'giant'], // Orcs, ogres, giants
+      },
+    ];
 
-    // Dungeon types with different characteristics
-    const dungeonTypes = ['Normal', 'Elite', 'Boss Rush', 'Horde', 'Fortress'];
-    const dungeonType = dungeonTypes[Math.floor(Math.random() * dungeonTypes.length)];
-
-    // Calculate mob count: THOUSANDS of mobs for epic battles!
-    // Base: 2000-30000+ mobs depending on rank
-    // Type multipliers: Normal (1x), Elite (0.5x fewer, stronger), Boss Rush (0.3x, multiple bosses),
-    //                   Horde (2x more), Fortress (1.5x, defensive)
-    const typeMultipliers = {
-      Normal: 1.0,
-      Elite: 0.5,
-      'Boss Rush': 0.3,
-      Horde: 2.5, // Increased for more mobs
-      Fortress: 1.5,
-    };
+    const dungeonBiome = dungeonBiomes[Math.floor(Math.random() * dungeonBiomes.length)];
+    const dungeonType = dungeonBiome.name;
+    
+    // Generate themed names based on biome
+    const dungeonName = this.generateDungeonName(rank, dungeonType);
+    const bossName = this.generateBossName(rank, dungeonType);
 
     // MASSIVELY INCREASED MOB COUNTS
-    // E: 2,000 | D: 5,000 | C: 8,000 | B: 12,000 | A: 17,000 | S: 23,000 | SS: 30,000 | SSS: 40,000
+    // E: 2,000 | D: 5,000 | C: 8,000 | B: 12,000 | A: 17,000 | S: 23,000 | SS: 30,000 | SSS: 40,000 | NH: 50,000 | Monarch+: 80,000
     const baseMobCount = 2000 + rankIndex * 3000;
-    const typeMultiplier = typeMultipliers[dungeonType] || 1.0;
+    const biomeMultiplier = dungeonBiome.mobMultiplier || 1.0;
     const totalMobCount = Math.floor(
-      Math.min(100000, Math.max(2000, baseMobCount * typeMultiplier))
+      Math.min(150000, Math.max(2000, baseMobCount * biomeMultiplier))
     );
 
     // Calculate expected shadow allocation for this dungeon
@@ -1321,19 +1371,23 @@ module.exports = class Dungeons {
     // Type modifiers: Elite/Boss Rush have more HP, Horde has less
     const baseBossHP = 500 + rankIndex * 500;
 
-    // Type-based HP multipliers (MASSIVELY INCREASED for chaotic shadow attacks)
+    // Biome-based HP multipliers (MASSIVELY INCREASED for chaotic shadow attacks)
     // Ensures bosses survive extended battles with dynamic shadow attacks
     // Average shadow damage: ~1,000-2,000 per hit with variance
     // Target: Boss survives 15-30 seconds of combat (multiple attack waves)
-    const typeHPMultipliers = {
-      Normal: 5000, // Standard - survive 15-20 waves
-      Elite: 7000, // Tankier boss - survive 20-25 waves
-      'Boss Rush': 9000, // Multiple tough bosses - survive 25-30 waves
-      Horde: 4000, // Weaker boss (focus on mobs) - survive 12-15 waves
-      Fortress: 6000, // Defensive boss - survive 18-22 waves
+    const biomeHPMultipliers = {
+      Forest: 4500, // Many mobs, weaker boss
+      Arctic: 6000, // Ice tank bosses
+      Cavern: 5500, // Underground horrors
+      Swamp: 5000, // Murky predators
+      Mountains: 7000, // Giant/titan bosses
+      Volcano: 8000, // Demon lords, dragons
+      'Ancient Ruins': 6500, // Ancient guardians
+      'Dark Abyss': 9000, // Void horrors, dragons
+      'Tribal Grounds': 5500, // Orc/ogre chieftains
     };
 
-    const hpPerShadow = typeHPMultipliers[dungeonType] || 5000;
+    const hpPerShadow = biomeHPMultipliers[dungeonType] || 5000;
     const shadowScaledHP = baseBossHP + expectedShadowCount * hpPerShadow;
     const finalBossHP = Math.floor(shadowScaledHP);
 
@@ -1348,7 +1402,9 @@ module.exports = class Dungeons {
       channelKey,
       rank,
       name: dungeonName,
-      type: dungeonType, // New: dungeon type
+      type: dungeonType, // Biome name (Forest, Arctic, etc.)
+      biome: dungeonBiome, // Store complete biome data
+      beastFamilies: dungeonBiome.beastFamilies, // Allowed beast families for this biome
       channelName: channelInfo.channelName || `Channel ${channelInfo.channelId}`, // Store channel name
       mobs: {
         total: 0,
@@ -2731,7 +2787,8 @@ module.exports = class Dungeons {
                 userStats,
                 mob.rank,
                 mobStats,
-                mobStrength
+                mobStrength,
+                dungeon.beastFamilies // Pass biome families for themed extraction
               )
               .then((result) => {
                 if (result?.success && result.shadow) {
@@ -2884,7 +2941,8 @@ module.exports = class Dungeons {
                 userStats,
                 targetMob.rank,
                 mobStats,
-                mobStrength
+                mobStrength,
+                dungeon.beastFamilies // Pass biome families for themed extraction
               )
               .then((result) => {
                 if (result?.success && result.shadow) {
@@ -3462,7 +3520,8 @@ module.exports = class Dungeons {
         userStats,
         mobRank,
         mobStats,
-        mobStrength
+        mobStrength,
+        bossData.dungeon.beastFamilies // Pass biome families for themed extraction
       );
 
       if (result.success && result.shadow) {
