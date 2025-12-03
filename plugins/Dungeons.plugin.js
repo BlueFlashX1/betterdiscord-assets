@@ -302,8 +302,8 @@ module.exports = class Dungeons {
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobSpawnInterval: 3000, // Spawn new mobs every 3 seconds (faster for thousands)
-      mobSpawnCount: 50, // Spawn 50 mobs at a time (increased for epic battles)
+      mobSpawnInterval: 500, // Spawn new mobs every 0.5 seconds (ultra fast for epic battles)
+      mobSpawnCount: 150, // Spawn 150 mobs at a time (rapid generation)
       shadowReviveCost: 50, // Mana cost to revive a shadow
       // Dungeon ranks including SS, SSS
       dungeonRanks: [
@@ -1458,6 +1458,14 @@ module.exports = class Dungeons {
     const bossAgility = 30 + rankIndex * 15;
     const bossIntelligence = 40 + rankIndex * 20;
     const bossVitality = 60 + rankIndex * 30;
+    const bossLuck = 50 + rankIndex * 30; // Bosses have higher luck
+
+    // BOSS MAGIC BEAST TYPE (biome-appropriate)
+    const bossBeastType = this.selectMagicBeastType(
+      dungeonBiome.beastFamilies, 
+      rank,
+      this.settings.dungeonRanks
+    );
 
     const dungeon = {
       id: channelKey,
@@ -1481,13 +1489,35 @@ module.exports = class Dungeons {
         hp: finalBossHP,
         maxHp: finalBossHP,
         rank,
+        
+        // MAGIC BEAST IDENTITY (for shadow extraction)
+        beastType: bossBeastType.type,
+        beastName: bossBeastType.name,
+        beastFamily: bossBeastType.family,
+        isMagicBeast: true,
+        
+        // Combat stats (for compatibility)
         strength: bossStrength,
         agility: bossAgility,
         intelligence: bossIntelligence,
         vitality: bossVitality,
+        luck: bossLuck,
+        
+        // SHADOW-COMPATIBLE STATS (for extraction)
+        baseStats: {
+          strength: bossStrength,
+          agility: bossAgility,
+          intelligence: bossIntelligence,
+          vitality: bossVitality,
+          luck: bossLuck,
+        },
+        
         lastAttackTime: 0,
         attackCooldown: 4000, // Boss attacks every 4 seconds
         expectedShadowCount: expectedShadowCount, // Track expected shadow force
+        
+        // Description for display
+        description: `${rank}-rank ${bossBeastType.name} Boss from ${dungeonBiome.name}`,
       },
       startTime: Date.now(),
       channelId: channelInfo.channelId,
@@ -1518,15 +1548,29 @@ module.exports = class Dungeons {
     this.showDungeonIndicator(channelKey, channelInfo);
     this.showToast(`${dungeonName} [${dungeonType}] Spawned!`, 'info');
 
-    // Spawn initial wave of mobs (200 mobs) for immediate combat
-    for (let i = 0; i < 4; i++) {
-      this.spawnMobs(channelKey); // 4 waves × 50 mobs = 200 initial mobs
+    // INITIAL BURST SPAWN: Fill 30% of mob cap immediately for epic battles
+    // This ensures rapid action without performance hit
+    const initialBurstSize = Math.min(5000, Math.floor(totalMobCount * 0.3));
+    const burstWaves = Math.ceil(initialBurstSize / this.settings.mobSpawnCount);
+
+    console.log(`[Dungeons] Initial burst: spawning ${initialBurstSize} mobs (${burstWaves} waves)`);
+    for (let i = 0; i < burstWaves; i++) {
+      this.spawnMobs(channelKey);
+    }
+
+    // Save dungeon after initial burst
+    if (this.storageManager) {
+      try {
+        await this.storageManager.saveDungeon(dungeon);
+      } catch (error) {
+        console.error('[Dungeons] Failed to save dungeon after burst', error);
+      }
     }
 
     // Shadows attack automatically (Solo Leveling lore: shadows sweep dungeons independently)
     this.startShadowAttacks(channelKey);
     this.startMobKillNotifications(channelKey);
-    this.startMobSpawning(channelKey); // Continue spawning more mobs over time
+    this.startMobSpawning(channelKey); // Continue spawning remaining mobs over time
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
 
@@ -1559,6 +1603,76 @@ module.exports = class Dungeons {
     this.mobSpawnTimers.clear();
   }
 
+  /**
+   * Select appropriate magic beast type based on biome families and rank
+   * Returns beast type data compatible with Shadow Army extraction
+   */
+  selectMagicBeastType(allowedFamilies, mobRank, allRanks) {
+    // Magic beast type definitions (matches Shadow Army shadowRoles)
+    const magicBeastTypes = {
+      // Insect family
+      ant: { type: 'ant', name: 'Ant', family: 'insect', minRank: null },
+      spider: { type: 'spider', name: 'Spider', family: 'insect', minRank: null },
+      centipede: { type: 'centipede', name: 'Centipede', family: 'insect', minRank: null },
+      
+      // Beast family
+      bear: { type: 'bear', name: 'Bear', family: 'beast', minRank: null },
+      wolf: { type: 'wolf', name: 'Wolf', family: 'beast', minRank: null },
+      
+      // Reptile family
+      naga: { type: 'naga', name: 'Naga', family: 'reptile', minRank: null },
+      serpent: { type: 'serpent', name: 'Serpent', family: 'reptile', minRank: null },
+      
+      // Ice family
+      yeti: { type: 'yeti', name: 'Yeti', family: 'ice', minRank: null },
+      
+      // Dragon family (NH+ only)
+      dragon: { type: 'dragon', name: 'Dragon', family: 'dragon', minRank: 'NH' },
+      wyvern: { type: 'wyvern', name: 'Wyvern', family: 'dragon', minRank: 'A' },
+      
+      // Giant family
+      giant: { type: 'giant', name: 'Giant', family: 'giant', minRank: null },
+      titan: { type: 'titan', name: 'Titan', family: 'giant', minRank: 'S' },
+      
+      // Demon family
+      demon: { type: 'demon', name: 'Demon', family: 'demon', minRank: null },
+      ogre: { type: 'ogre', name: 'Ogre', family: 'demon', minRank: null },
+      
+      // Undead family
+      ghoul: { type: 'ghoul', name: 'Ghoul', family: 'undead', minRank: null },
+      
+      // Construct family
+      golem: { type: 'golem', name: 'Golem', family: 'construct', minRank: null },
+      
+      // Ancient family
+      elf: { type: 'elf', name: 'Elf', family: 'ancient', minRank: null },
+      
+      // Humanoid-beast family (orcs, etc.)
+      orc: { type: 'orc', name: 'Orc', family: 'humanoid-beast', minRank: null },
+    };
+
+    // Filter beasts by allowed families
+    let availableBeasts = Object.values(magicBeastTypes).filter(beast =>
+      allowedFamilies.includes(beast.family)
+    );
+
+    // Filter by rank restrictions
+    const mobRankIndex = allRanks.indexOf(mobRank);
+    availableBeasts = availableBeasts.filter(beast => {
+      if (!beast.minRank) return true; // No restriction
+      const minRankIndex = allRanks.indexOf(beast.minRank);
+      return mobRankIndex >= minRankIndex; // Only if mob rank meets minimum
+    });
+
+    // Fallback: if no beasts available, return a generic beast
+    if (availableBeasts.length === 0) {
+      return { type: 'beast', name: 'Beast', family: 'beast', minRank: null };
+    }
+
+    // Randomly select from available beasts
+    return availableBeasts[Math.floor(Math.random() * availableBeasts.length)];
+  }
+
   spawnMobs(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || dungeon.completed || dungeon.failed) {
@@ -1575,7 +1689,10 @@ module.exports = class Dungeons {
       const remainingToSpawn = dungeon.mobs.targetCount - dungeon.mobs.total;
       const actualSpawnCount = Math.min(spawnCount, remainingToSpawn);
 
-      // Create mobs with HP and stats
+      // BATCH MOB GENERATION with INDIVIDUAL VARIANCE
+      // Pre-allocate array for performance
+      const newMobs = new Array(actualSpawnCount);
+
       for (let i = 0; i < actualSpawnCount; i++) {
         // Mob rank: dungeon rank ± 1 (can be 1 rank weaker, same, or 1 rank stronger)
         // Example: A rank dungeon → B, A, or S rank mobs
@@ -1586,37 +1703,100 @@ module.exports = class Dungeons {
         );
         const mobRank = this.settings.dungeonRanks[mobRankIndex];
 
-        // ENHANCED MOB STATS: Mobs are tankier but still weaker than bosses
-        // Scaled to survive 2-5 shadow hits depending on rank
-        const mobStrength = 100 + mobRankIndex * 50; // E: 100, S: 350
-        const mobAgility = 80 + mobRankIndex * 40; // E: 80, S: 280
-        const mobIntelligence = 60 + mobRankIndex * 30; // E: 60, S: 210
-        const mobVitality = 150 + mobRankIndex * 100; // E: 150, S: 650
+        // INDIVIDUAL MOB VARIANCE: Each mob is unique (85-115% stat variance)
+        // This creates diversity: some mobs are weak, some are strong, some are fast, some are tanks
+        const strengthVariance = 0.85 + Math.random() * 0.3; // 85-115%
+        const agilityVariance = 0.85 + Math.random() * 0.3; // 85-115%
+        const intelligenceVariance = 0.85 + Math.random() * 0.3; // 85-115%
+        const vitalityVariance = 0.85 + Math.random() * 0.3; // 85-115%
 
-        // ENHANCED MOB HP: Tankier to survive multiple hits
-        // Formula: base + vitality × 20 + rankIndex × 500
-        // E: 1K-2K, S: 15K-20K (survives 2-5 shadow hits)
-        // Still much weaker than bosses (500K-2M+)
+        // BASE STATS scaled by rank
+        const baseStrength = 100 + mobRankIndex * 50; // E: 100, S: 350
+        const baseAgility = 80 + mobRankIndex * 40; // E: 80, S: 280
+        const baseIntelligence = 60 + mobRankIndex * 30; // E: 60, S: 210
+        const baseVitality = 150 + mobRankIndex * 100; // E: 150, S: 650
+
+        // INDIVIDUAL STATS with variance (each mob is unique)
+        const mobStrength = Math.floor(baseStrength * strengthVariance);
+        const mobAgility = Math.floor(baseAgility * agilityVariance);
+        const mobIntelligence = Math.floor(baseIntelligence * intelligenceVariance);
+        const mobVitality = Math.floor(baseVitality * vitalityVariance);
+
+        // HP scaled by vitality with additional variance
         const baseHP = 500 + mobVitality * 20 + mobRankIndex * 500;
-        const mobHP = Math.floor(baseHP * (0.9 + Math.random() * 0.2)); // 90-110% variance
+        const hpVariance = 0.8 + Math.random() * 0.4; // 80-120% HP variance
+        const mobHP = Math.floor(baseHP * hpVariance);
 
-        const mob = {
-          id: `mob_${Date.now()}_${Math.random()}`,
+        // Attack cooldown variance (some mobs attack faster than others)
+        const cooldownVariance = 2000 + Math.random() * 2000; // 2-4 seconds
+
+        // MAGIC BEAST TYPE SELECTION (biome-based)
+        // Select magic beast type from dungeon's allowed beast families
+        const magicBeastType = this.selectMagicBeastType(
+          dungeon.beastFamilies, 
+          mobRank,
+          this.settings.dungeonRanks
+        );
+
+        // SHADOW ARMY COMPATIBLE STRUCTURE
+        // Mobs store full stats compatible with shadow extraction system
+        // When extracted, these stats transfer directly to shadow baseStats
+        newMobs[i] = {
+          // Core mob identity
+          id: `mob_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
+          rank: mobRank,
+          
+          // MAGIC BEAST IDENTITY (for shadow extraction)
+          beastType: magicBeastType.type, // 'ant', 'dragon', 'naga', etc.
+          beastName: magicBeastType.name, // 'Ant', 'Dragon', 'Naga', etc.
+          beastFamily: magicBeastType.family, // 'insect', 'dragon', 'reptile', etc.
+          isMagicBeast: true, // All dungeon mobs are magic beasts
+
+          // Combat stats (current HP)
           hp: mobHP,
           maxHp: mobHP,
-          strength: mobStrength,
-          agility: mobAgility,
-          intelligence: mobIntelligence,
-          vitality: mobVitality,
-          rank: mobRank,
           lastAttackTime: 0,
-          attackCooldown: 3000, // Mobs attack every 3 seconds
-        };
+          attackCooldown: cooldownVariance,
 
-        dungeon.mobs.activeMobs.push(mob);
-        dungeon.mobs.remaining += 1;
-        dungeon.mobs.total += 1;
+          // SHADOW-COMPATIBLE STATS (directly transferable to shadow.baseStats)
+          baseStats: {
+            strength: mobStrength,
+            agility: mobAgility,
+            intelligence: mobIntelligence,
+            vitality: mobVitality,
+            luck: Math.floor(50 + mobRankIndex * 20 * (0.85 + Math.random() * 0.3)), // Luck stat
+          },
+
+          // Calculated strength value (used for extraction chance)
+          strength: mobStrength, // Kept for backward compatibility with combat calculations
+
+          // Individual variance modifiers (preserved during extraction)
+          traits: {
+            strengthMod: strengthVariance,
+            agilityMod: agilityVariance,
+            intelligenceMod: intelligenceVariance,
+            vitalityMod: vitalityVariance,
+            hpMod: hpVariance,
+          },
+
+          // Extraction metadata (used when converting to shadow)
+          extractionData: {
+            dungeonRank: dungeon.rank,
+            dungeonType: dungeon.type,
+            biome: dungeon.biome.name,
+            beastFamilies: dungeon.beastFamilies,
+            spawnedAt: Date.now(),
+          },
+          
+          // Magic beast description (for display/debugging)
+          description: `${mobRank}-rank ${magicBeastType.name} from ${dungeon.biome.name}`,
+        };
       }
+
+      // Batch append to activeMobs array (more efficient than individual pushes)
+      dungeon.mobs.activeMobs.push(...newMobs);
+      dungeon.mobs.remaining += actualSpawnCount;
+      dungeon.mobs.total += actualSpawnCount;
 
       // Log spawned mob ranks
       // Stop spawning if reached target
@@ -3365,19 +3545,32 @@ module.exports = class Dungeons {
         );
       }
 
-      // Delete from IndexedDB and clear logs
+      // COMPREHENSIVE DATABASE CLEANUP
+      // Delete dungeon and all associated mob data from IndexedDB
       if (this.storageManager) {
         try {
+          // Delete dungeon (includes all mob data)
           await this.storageManager.deleteDungeon(channelKey);
+
+          // Clear completed dungeons log
           await this.storageManager.clearCompletedDungeons();
+
+          console.log(`[Dungeons] Database cleanup complete for ${channelKey}: dungeon and ${dungeon.mobs.total} mobs removed`);
         } catch (error) {
           console.error('Dungeons: Failed to delete dungeon from storage', error);
         }
       }
 
+      // Memory cleanup
       this.activeDungeons.delete(channelKey);
       delete this.settings.mobKillNotifications[channelKey];
       this.deadShadows.delete(channelKey);
+
+      // Clear mob references (help garbage collector)
+      if (dungeon.mobs?.activeMobs) {
+        dungeon.mobs.activeMobs.length = 0; // Clear array
+        dungeon.mobs.activeMobs = null;
+      }
     }
 
     this.saveSettings();
@@ -3559,21 +3752,27 @@ module.exports = class Dungeons {
       .toLowerCase()
       .replace(/\s+/g, '_')}`;
 
-    // Boss stats
-    const mobStats = {
+    // SHADOW-COMPATIBLE BOSS STATS
+    // Use baseStats structure if available (for mobs), otherwise construct from boss properties
+    const mobStats = bossData.boss.baseStats || {
       strength: bossData.boss.strength,
       agility: bossData.boss.agility,
       intelligence: bossData.boss.intelligence,
       vitality: bossData.boss.vitality,
+      luck: bossData.boss.luck || 50, // Default luck if not present
     };
-    const mobStrength = bossData.boss.strength;
-    const mobRank = bossData.boss.rank;
+    const mobStrength = mobStats.strength;
+    const mobRank = bossData.boss.rank || bossData.dungeon.rank;
+
+    // Pass biome information for beast family selection
+    const beastFamilies = bossData.dungeon.beastFamilies || null;
 
     // Show extraction attempt message
     this.showToast(`Attempting shadow extraction from ${bossData.boss.name}...`, 'info');
 
     try {
-      // Call ShadowArmy's attemptDungeonExtraction with new API
+      // Call ShadowArmy's attemptDungeonExtraction with complete mob data
+      // The mob's stats will be transferred directly to shadow.baseStats
       const result = await this.shadowArmy.attemptDungeonExtraction(
         bossId,
         userRank,
