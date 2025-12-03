@@ -891,62 +891,135 @@ module.exports = class ShadowArmy {
         buffs: { luck: 0.15, intelligence: 0.1 }, // +15% LUK, +10% INT per shadow
         effect: 'Luck Amplification', // Increases luck-based bonuses
       },
-      // MAGIC BEAST ROLES - Dungeon-Only Extraction
+      // ========================================================================
+      // MAGIC BEAST ROLES - 100% DUNGEON-ONLY EXTRACTION
       // Based on Solo Leveling lore: actual monsters, not humanoid shadows
+      // These can ONLY be extracted from dungeon mobs/bosses!
+      // ========================================================================
       ant: {
         name: 'Ant',
         description: 'Insect-type beast - High numbers, coordinated attacks',
-        buffs: { strength: 0.12, agility: 0.12 }, // Balanced offensive
-        effect: 'Swarm Tactics', // Attack coordination
+        buffs: { strength: 0.12, agility: 0.12 },
+        effect: 'Swarm Tactics',
         isMagicBeast: true,
       },
       bear: {
         name: 'Bear',
         description: 'Beast-type - Raw power and endurance',
-        buffs: { strength: 0.18, vitality: 0.12 }, // High power/HP
-        effect: 'Berserker Rage', // Damage amplification
+        buffs: { strength: 0.18, vitality: 0.12 },
+        effect: 'Berserker Rage',
         isMagicBeast: true,
       },
       wolf: {
         name: 'Wolf',
         description: 'Pack hunter - Speed and coordination',
-        buffs: { agility: 0.15, strength: 0.1 }, // Fast attacker
-        effect: 'Pack Hunter', // Group damage bonus
+        buffs: { agility: 0.15, strength: 0.1 },
+        effect: 'Pack Hunter',
         isMagicBeast: true,
       },
       spider: {
         name: 'Spider',
         description: 'Arachnid-type - Web traps and venom',
-        buffs: { agility: 0.13, intelligence: 0.12 }, // Tactical
-        effect: 'Web Trap', // Crowd control
+        buffs: { agility: 0.13, intelligence: 0.12 },
+        effect: 'Web Trap',
         isMagicBeast: true,
       },
       golem: {
         name: 'Golem',
         description: 'Stone construct - Extreme defense, slow',
-        buffs: { vitality: 0.25, strength: 0.08 }, // Ultra tank
-        effect: 'Stone Skin', // Damage reduction
+        buffs: { vitality: 0.25, strength: 0.08 },
+        effect: 'Stone Skin',
         isMagicBeast: true,
       },
       wyvern: {
         name: 'Wyvern',
         description: 'Flying beast - Aerial superiority',
-        buffs: { agility: 0.16, strength: 0.14 }, // Flying attacker
-        effect: 'Aerial Strike', // Bonus damage
+        buffs: { agility: 0.16, strength: 0.14 },
+        effect: 'Aerial Strike',
         isMagicBeast: true,
       },
       serpent: {
         name: 'Serpent',
         description: 'Snake-type - Venom and cunning',
-        buffs: { intelligence: 0.14, agility: 0.12 }, // Tactical striker
-        effect: 'Venom Strike', // DOT damage
+        buffs: { intelligence: 0.14, agility: 0.12 },
+        effect: 'Venom Strike',
         isMagicBeast: true,
       },
       dragon: {
         name: 'Dragon',
         description: 'Apex predator - Supreme in all aspects',
-        buffs: { strength: 0.15, intelligence: 0.15, agility: 0.1 }, // Powerful all-around
-        effect: 'Dragon Dominance', // All stats boost
+        buffs: { strength: 0.15, intelligence: 0.15, agility: 0.1 },
+        effect: 'Dragon Dominance',
+        isMagicBeast: true,
+      },
+      orc: {
+        name: 'Orc',
+        description: 'Brutal warrior - Savage strength and ferocity',
+        buffs: { strength: 0.16, vitality: 0.1 },
+        effect: 'Savage Fury',
+        isMagicBeast: true,
+      },
+      naga: {
+        name: 'Naga',
+        description: 'Serpent humanoid - Magic and agility',
+        buffs: { intelligence: 0.15, agility: 0.13 },
+        effect: 'Water Magic',
+        isMagicBeast: true,
+      },
+      titan: {
+        name: 'Titan',
+        description: 'Ancient giant - Colossal power and endurance',
+        buffs: { strength: 0.2, vitality: 0.18 },
+        effect: 'Titan Force',
+        isMagicBeast: true,
+      },
+      giant: {
+        name: 'Giant',
+        description: 'Massive humanoid - Overwhelming size and strength',
+        buffs: { strength: 0.17, vitality: 0.14 },
+        effect: 'Giant Slam',
+        isMagicBeast: true,
+      },
+      elf: {
+        name: 'Elf',
+        description: 'Ancient race - Magic mastery and precision',
+        buffs: { intelligence: 0.16, agility: 0.14, luck: 0.1 },
+        effect: 'Ancient Magic',
+        isMagicBeast: true,
+      },
+      demon: {
+        name: 'Demon',
+        description: 'Dark entity - Chaos and destruction',
+        buffs: { strength: 0.16, intelligence: 0.16 },
+        effect: 'Dark Power',
+        isMagicBeast: true,
+      },
+      ghoul: {
+        name: 'Ghoul',
+        description: 'Undead horror - Life drain and regeneration',
+        buffs: { vitality: 0.14, intelligence: 0.11 },
+        effect: 'Life Drain',
+        isMagicBeast: true,
+      },
+      ogre: {
+        name: 'Ogre',
+        description: 'Brute monster - Raw strength, low intelligence',
+        buffs: { strength: 0.19, vitality: 0.13 },
+        effect: 'Crushing Blow',
+        isMagicBeast: true,
+      },
+      centipede: {
+        name: 'Centipede',
+        description: 'Multi-legged horror - Poison and speed',
+        buffs: { agility: 0.15, intelligence: 0.1 },
+        effect: 'Poison Sting',
+        isMagicBeast: true,
+      },
+      yeti: {
+        name: 'Yeti',
+        description: 'Ice beast - Frozen fury and endurance',
+        buffs: { strength: 0.15, vitality: 0.15 },
+        effect: 'Frost Aura',
         isMagicBeast: true,
       },
     };
@@ -1067,6 +1140,76 @@ module.exports = class ShadowArmy {
         intelligence: 1.5, // VERY STRONG (ancient wisdom)
         vitality: 1.6, // EXTREMELY STRONG (dragon scales)
         luck: 1.2, // VERY STRONG (legendary)
+      },
+      orc: {
+        strength: 1.5, // EXTREMELY STRONG (brutal warrior)
+        agility: 0.7, // Below average (heavy build)
+        intelligence: 0.3, // VERY WEAK (savage)
+        vitality: 1.2, // VERY STRONG (tough skin)
+        luck: 0.5, // WEAK
+      },
+      naga: {
+        strength: 0.8, // Above average (serpent tail)
+        agility: 1.3, // VERY STRONG (slithering)
+        intelligence: 1.4, // VERY STRONG (water magic)
+        vitality: 0.9, // Above average (scales)
+        luck: 1.0, // STRONG
+      },
+      titan: {
+        strength: 1.8, // EXTREMELY STRONG (colossal)
+        agility: 0.3, // VERY WEAK (massive size)
+        intelligence: 0.4, // WEAK (ancient but simple)
+        vitality: 1.7, // EXTREMELY STRONG (titan endurance)
+        luck: 0.6, // Below average
+      },
+      giant: {
+        strength: 1.6, // EXTREMELY STRONG (massive)
+        agility: 0.4, // WEAK (large, slow)
+        intelligence: 0.5, // WEAK (brutish)
+        vitality: 1.5, // VERY STRONG (giant constitution)
+        luck: 0.5, // WEAK
+      },
+      elf: {
+        strength: 0.5, // WEAK (elegant, not brutish)
+        agility: 1.5, // EXTREMELY STRONG (graceful)
+        intelligence: 1.6, // EXTREMELY STRONG (ancient magic)
+        vitality: 0.6, // Below average (slender)
+        luck: 1.3, // VERY STRONG (blessed)
+      },
+      demon: {
+        strength: 1.5, // EXTREMELY STRONG (dark power)
+        agility: 1.2, // VERY STRONG (supernatural speed)
+        intelligence: 1.4, // VERY STRONG (dark magic)
+        vitality: 1.1, // STRONG (demonic endurance)
+        luck: 0.8, // Above average (chaos)
+      },
+      ghoul: {
+        strength: 0.9, // Above average (undead strength)
+        agility: 1.1, // STRONG (quick movements)
+        intelligence: 0.8, // Above average (cunning)
+        vitality: 1.3, // VERY STRONG (undead endurance)
+        luck: 0.6, // Below average
+      },
+      ogre: {
+        strength: 1.7, // EXTREMELY STRONG (brutal power)
+        agility: 0.3, // VERY WEAK (clumsy)
+        intelligence: 0.2, // EXTREMELY WEAK (stupid)
+        vitality: 1.4, // VERY STRONG (thick hide)
+        luck: 0.4, // WEAK
+      },
+      centipede: {
+        strength: 1.0, // STRONG (many legs)
+        agility: 1.4, // VERY STRONG (multi-legged)
+        intelligence: 0.5, // WEAK (insect mind)
+        vitality: 1.1, // STRONG (exoskeleton)
+        luck: 0.7, // Below average
+      },
+      yeti: {
+        strength: 1.4, // VERY STRONG (ice beast)
+        agility: 0.8, // Above average (mountain predator)
+        intelligence: 0.6, // Below average (beast)
+        vitality: 1.5, // EXTREMELY STRONG (frost endurance)
+        luck: 0.7, // Below average
       },
     };
 
@@ -1680,16 +1823,16 @@ module.exports = class ShadowArmy {
     let shadow;
     if (targetStats && targetStrength != null) {
       // Use provided stats for dungeon mobs
-      // MAGIC BEASTS: 40% chance if from dungeon, 0% otherwise
+      // MAGIC BEASTS: 100% from dungeons, 0% from messages!
       let roleKey;
-      if (fromDungeon && Math.random() < 0.4) {
-        // Select magic beast role (dungeon-only)
+      if (fromDungeon) {
+        // Select magic beast role (dungeon-only, 100% magic beast)
         const beastRoles = Object.keys(this.shadowRoles).filter(
           key => this.shadowRoles[key].isMagicBeast
         );
         roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
       } else {
-        // Select humanoid role (standard)
+        // Select humanoid role (message-based extraction only)
         const humanoidRoles = Object.keys(this.shadowRoles).filter(
           key => !this.shadowRoles[key].isMagicBeast
         );
@@ -1991,7 +2134,7 @@ module.exports = class ShadowArmy {
    * 6. Save settings (config only, shadows in IndexedDB)
    * 7. Show extraction animation
    * 8. Update UI if needed
-   * 
+   *
    * @param {boolean} fromDungeon - If true, can extract magic beast shadows
    */
   async handleExtractionBurst(userRank, userLevel, userStats, isSpecial, targetRank = null, fromDungeon = false) {
@@ -2133,7 +2276,7 @@ module.exports = class ShadowArmy {
    * 5. Calculate initial shadow strength from base stats
    * 6. Create shadow object with id, rank, role, stats, level, XP
    * 7. Initialize growth stats for level-up progression
-   * 
+   *
    * @param {string} shadowRank - Rank of shadow to generate
    * @param {number} userLevel - Current user level
    * @param {object} userStats - User's current stats
@@ -2145,16 +2288,16 @@ module.exports = class ShadowArmy {
     // But we add this check as a safety measure
 
     // Random role selection
-    // MAGIC BEASTS: Only from dungeons! (40% chance if from dungeon)
+    // MAGIC BEASTS: 100% from dungeons, 0% from messages!
     let roleKey;
-    if (fromDungeon && Math.random() < 0.4) {
-      // Select magic beast role (dungeon-only)
+    if (fromDungeon) {
+      // Select magic beast role (dungeon-only, 100% magic beast)
       const beastRoles = Object.keys(this.shadowRoles).filter(
         key => this.shadowRoles[key].isMagicBeast
       );
       roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
     } else {
-      // Select humanoid role (standard)
+      // Select humanoid role (message-based extraction only)
       const humanoidRoles = Object.keys(this.shadowRoles).filter(
         key => !this.shadowRoles[key].isMagicBeast
       );

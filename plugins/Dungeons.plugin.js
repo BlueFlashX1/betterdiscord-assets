@@ -3862,7 +3862,7 @@ module.exports = class Dungeons {
       }
       return;
     }
-    
+
     // Force recreate boss HP bar when returning to dungeon channel
     // This ensures it shows correctly after guild/channel switches
     const existingBar = this.bossHPBars.get(channelKey);
