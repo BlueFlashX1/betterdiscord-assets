@@ -4051,21 +4051,10 @@ module.exports = class Dungeons {
         bossHpContainer.setAttribute('data-channel-key', channelKey);
 
         // FORCE MAXIMUM VISIBILITY with inline styles (CSS-independent!)
-        // Width calculation: Detect if members list is open
-        const membersList =
-          document.querySelector('[class*="membersWrap"]') ||
-          document.querySelector('[class*="members-"]');
-        const hasMembersList =
-          membersList && window.getComputedStyle(membersList).display !== 'none';
-        const membersListWidth = hasMembersList ? membersList.offsetWidth || 240 : 0;
-
-        // Calculate responsive width: Full width minus members list
-        const containerWidth = hasMembersList ? `calc(100% - ${membersListWidth}px)` : '100%';
-
         bossHpContainer.style.cssText = `
           display: block !important;
           position: relative !important;
-          width: ${containerWidth} !important;
+          width: 100% !important;
           max-width: 100% !important;
           min-height: 70px !important;
           padding: 12px 16px !important;
