@@ -3762,7 +3762,6 @@ module.exports = class CriticalHitMerged {
         // Only log non-matches if verbose (reduces spam)
         if (this.debug.verbose) {
           this.debugLog('CHECK_FOR_RESTORATION', 'No matching crit found in history', {
-            msgId: normalizedMsgId,
             channelId: this.currentChannelId,
           });
         }
@@ -5706,9 +5705,9 @@ module.exports = class CriticalHitMerged {
     // Throttle: Prevent rapid duplicate calls during spam
     // BUT: For verified messages, skip throttling entirely (they're confirmed crits)
     // For non-verified messages, use throttle to prevent spam
+    const now = Date.now();
     if (!isValidDiscordId) {
       const lastCallTime = this._onCritHitThrottle.get(messageId);
-      const now = Date.now();
 
       if (lastCallTime && now - lastCallTime < this._onCritHitThrottleMs) {
         // #region agent log

@@ -697,14 +697,12 @@ module.exports = class Dungeons {
           };
           this._onStatsChangedUnsubscribe = this.soloLevelingStats.on('statsChanged', callback);
         }
-      } else {
       }
 
       // Load ShadowArmy plugin
       const shadowPlugin = BdApi.Plugins.get('ShadowArmy');
       if (shadowPlugin?.instance) {
         this.shadowArmy = shadowPlugin.instance;
-      } else {
       }
 
       // Load SoloLevelingToasts plugin (with detailed checking)
@@ -2188,7 +2186,7 @@ module.exports = class Dungeons {
       assignedShadows.forEach((s) => {
         shadowRankCounts[s.rank] = (shadowRankCounts[s.rank] || 0) + 1;
       });
-      const rankDistribution = Object.entries(shadowRankCounts)
+      const _rankDistribution = Object.entries(shadowRankCounts)
         .map(([rank, count]) => `${rank}:${count}`)
         .join(', ');
 
@@ -2251,7 +2249,7 @@ module.exports = class Dungeons {
       dungeon.shadowHP = shadowHP;
 
       // Count alive shadows for logging (from assigned shadows)
-      const aliveShadowCount = assignedShadows.filter(
+      const _aliveShadowCount = assignedShadows.filter(
         (s) => !deadShadows.has(s.id) && shadowHP[s.id]?.hp > 0
       ).length;
 
@@ -2267,12 +2265,12 @@ module.exports = class Dungeons {
       const aliveMobs = dungeon.mobs.activeMobs.filter((m) => m.hp > 0);
       const bossAlive = dungeon.boss.hp > 0;
 
-      // Combat tracking
-      let totalBossDamage = 0;
-      let totalMobDamage = 0;
-      let shadowsAttackedBoss = 0;
-      let shadowsAttackedMobs = 0;
-      let mobsKilled = 0;
+      // Combat tracking (unused - for future analytics)
+      let _totalBossDamage = 0;
+      let _totalMobDamage = 0;
+      let _shadowsAttackedBoss = 0;
+      let _shadowsAttackedMobs = 0;
+      let _mobsKilled = 0;
       const now = Date.now();
 
       // DYNAMIC CHAOTIC COMBAT: Each shadow independently chooses target (95% mobs, 5% boss)
@@ -2350,16 +2348,16 @@ module.exports = class Dungeons {
         // Apply damage to target
         if (targetType === 'boss') {
           await this.applyDamageToBoss(channelKey, shadowDamage, 'shadow', shadow.id);
-          totalBossDamage += shadowDamage;
-          shadowsAttackedBoss++;
+          _totalBossDamage += shadowDamage;
+          _shadowsAttackedBoss++;
         } else {
           targetEnemy.hp = Math.max(0, targetEnemy.hp - shadowDamage);
-          totalMobDamage += shadowDamage;
-          shadowsAttackedMobs++;
+          _totalMobDamage += shadowDamage;
+          _shadowsAttackedMobs++;
 
           // Track contribution if mob killed
           if (targetEnemy.hp <= 0) {
-            mobsKilled++;
+            _mobsKilled++;
             dungeon.mobs.killed += 1;
             dungeon.mobs.remaining = Math.max(0, dungeon.mobs.remaining - 1);
 
@@ -2406,9 +2404,6 @@ module.exports = class Dungeons {
       // Remove dead mobs
       dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m.hp > 0);
 
-      // Log combat summary
-      if (shadowsAttackedBoss > 0) {
-      }
       // Attack logs removed - check dungeon completion summary for stats
 
       // Process boss attacks on shadows
@@ -2603,6 +2598,7 @@ module.exports = class Dungeons {
           if (resurrected) {
             // Resurrection successful - restore HP
             shadowHPData.hp = shadowHPData.maxHp;
+            // eslint-disable-next-line require-atomic-updates
             shadowHP[targetShadow.id] = shadowHPData;
           } else {
             // Resurrection failed (not enough mana or priority)
@@ -2739,6 +2735,7 @@ module.exports = class Dungeons {
           if (resurrected) {
             // Resurrection successful - restore HP
             shadowHPData.hp = shadowHPData.maxHp;
+            // eslint-disable-next-line require-atomic-updates
             shadowHP[targetShadow.id] = shadowHPData;
           } else {
             // Resurrection failed (not enough mana or priority)
@@ -2785,8 +2782,8 @@ module.exports = class Dungeons {
 
     if (source === 'user') {
       // User attacks mobs
-      const userStats = this.soloLevelingStats?.settings?.stats || {};
-      const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+      const _userStats = this.soloLevelingStats?.settings?.stats || {};
+      const _userRank = this.soloLevelingStats?.settings?.rank || 'E';
 
       for (const mob of dungeon.mobs.activeMobs) {
         if (mob.hp <= 0) continue;

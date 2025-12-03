@@ -172,12 +172,12 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-      // Update last log time
-      this.debug.lastLogTimes[operation] = now;
-    }
+    // Update last log time
+    this.debug.lastLogTimes[operation] = now;
+  }
 
-    const timestamp = new Date().toISOString();
-    console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
+  const _timestamp = new Date().toISOString();
+  console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
 
     // Track operation counts
     this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
@@ -418,7 +418,7 @@ module.exports = class SoloLevelingStats {
 
       // Test plugin registration after a delay
       setTimeout(() => {
-        const plugin = BdApi.Plugins.get('SoloLevelingStats');
+        const _plugin = BdApi.Plugins.get('SoloLevelingStats');
         // OPTIMIZED: Removed verbose debug logs
         // this.debugLog('DEBUG', 'Plugin lookup test', { found: !!plugin });
 
@@ -813,8 +813,8 @@ module.exports = class SoloLevelingStats {
     // We'll use a Proxy to detect changes
     if (shadowArmy.settings && typeof shadowArmy.settings === 'object') {
       try {
-        const originalSettings = shadowArmy.settings;
-        const handler = {
+        const _originalSettings = shadowArmy.settings;
+        const _handler = {
           set: (target, prop, value) => {
             if (prop === 'shadows' || prop === 'favoriteShadowIds') {
               target[prop] = value;
@@ -1247,9 +1247,9 @@ module.exports = class SoloLevelingStats {
           buffDisplayParts.push(`+${(titleBuffPercent * 100).toFixed(0)}% title`);
         }
         if (hasShadowBuff) {
-          buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
-        }
-        const buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
+        buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
+      }
+      const _buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
 
         // Store numeric value without % suffix to avoid double % when building strings
         const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
@@ -1826,7 +1826,7 @@ module.exports = class SoloLevelingStats {
         valueEl.textContent = totalStats[statName] ?? this.settings.stats[statName];
       }
       // Update button state (use base stats for allocation logic)
-      const currentValue = this.settings.stats[statName];
+      const _currentValue = this.settings.stats[statName];
       const canAllocate = this.settings.unallocatedStatPoints > 0;
       btn.disabled = !canAllocate;
       btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
@@ -3260,11 +3260,12 @@ module.exports = class SoloLevelingStats {
                               fiber.memoizedState?.message?.author?.id ||
                               fiber.memoizedProps?.message?.authorId;
                             if (authorId === currentUserId) return true;
-                            fiber = fiber.return;
-                          }
+                          fiber = fiber.return;
                         }
-                      } catch (e) {}
-                      return false;
+                      }
+                      // eslint-disable-next-line no-empty
+                    } catch (e) {}
+                    return false;
                     })();
 
                   const hasExplicitYou = (() => {
@@ -5039,7 +5040,7 @@ module.exports = class SoloLevelingStats {
 
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
-        const statPointsBefore = this.settings.unallocatedStatPoints;
+        const _statPointsBefore = this.settings.unallocatedStatPoints;
         // IMPROVED: Award more stat points per level to ensure user stays ahead of shadows
         // Base: 5 points per level
         // Bonus: +1 point per 10 levels (level 10+ gets 6, level 20+ gets 7, etc.)
@@ -5047,7 +5048,7 @@ module.exports = class SoloLevelingStats {
         const levelBonus = Math.floor(newLevel / 10); // +1 per 10 levels
         const statPointsPerLevel = baseStatPoints + levelBonus;
         this.settings.unallocatedStatPoints += levelsGained * statPointsPerLevel;
-        const statPointsAfter = this.settings.unallocatedStatPoints;
+        const _statPointsAfter = this.settings.unallocatedStatPoints;
 
         // #region agent log
         // #endregion
@@ -5062,11 +5063,11 @@ module.exports = class SoloLevelingStats {
         // Process natural stat growth for each level gained (handles skipped levels)
         // This ensures stats grow naturally even when multiple levels are gained at once
         try {
-          const statsBefore = { ...this.settings.stats };
+          const _statsBefore = { ...this.settings.stats };
           for (let i = 0; i < levelsGained; i++) {
             this.processNaturalStatGrowth();
           }
-          const statsAfter = { ...this.settings.stats };
+          const _statsAfter = { ...this.settings.stats };
 
           // #region agent log
           // #endregion
@@ -5119,7 +5120,7 @@ module.exports = class SoloLevelingStats {
             const {
               oldLevel: finalOldLevel,
               newLevel: finalNewLevel,
-              levelsGained: finalLevelsGained,
+              levelsGained: _finalLevelsGained,
             } = this.pendingLevelUp;
             // #region agent log
             // #endregion
@@ -5329,7 +5330,7 @@ module.exports = class SoloLevelingStats {
     // #region agent log
     // #endregion
 
-    const levelInfo = this.getCurrentLevel();
+    const _levelInfo = this.getCurrentLevel();
     const levelsGained = newLevel - oldLevel;
 
     // Calculate total bonus points for all levels gained
@@ -5583,7 +5584,7 @@ module.exports = class SoloLevelingStats {
 
       const messagesSent = this.settings.activity?.messagesSent || 0;
       const level = this.settings.level || 1;
-      const charactersTyped = this.settings.activity?.charactersTyped || 0;
+      const _charactersTyped = this.settings.activity?.charactersTyped || 0;
 
       // Calculate expected natural stat growth based on activity
       // Formula: Each message has ~0.3% base chance, scaling with stats
@@ -5613,7 +5614,7 @@ module.exports = class SoloLevelingStats {
         const remainder = totalGrowth % statNames.length;
 
         statNames.forEach((statName, index) => {
-          const currentStat = this.settings.stats[statName] || 0;
+          const _currentStat = this.settings.stats[statName] || 0;
           // Add base growth per stat
           let growthToAdd = growthPerStat;
           // Add remainder to first stats
@@ -5630,7 +5631,7 @@ module.exports = class SoloLevelingStats {
               if (!Array.isArray(this.settings.perceptionBuffs)) {
                 this.settings.perceptionBuffs = [];
               }
-              for (let i = 0; i < maxToAdd; i++) {
+              for (let i = 0; i < growthToAdd; i++) {
                 const randomBuff = Math.random() * 6 + 2; // 2% to 8%
                 const roundedBuff = Math.round(randomBuff * 10) / 10;
                 this.settings.perceptionBuffs.push(roundedBuff);
@@ -5675,7 +5676,7 @@ module.exports = class SoloLevelingStats {
     try {
       const oldLevel = this.settings.level || 1;
       const oldTotalXP = this.settings.totalXP || 0;
-      const oldStats = { ...this.settings.stats };
+      const _oldStats = { ...this.settings.stats };
 
       // Calculate total XP required for target level
       // getCurrentLevel() calculates level by summing XP requirements until totalXP is exceeded
@@ -5900,7 +5901,7 @@ module.exports = class SoloLevelingStats {
       });
 
       // Verify final state
-      const finalLevelCheck = this.getCurrentLevel();
+      const _finalLevelCheck = this.getCurrentLevel();
       const finalAchievementsCount = this.settings.achievements?.unlocked?.length || 0;
 
       // Show notification
@@ -7346,7 +7347,7 @@ module.exports = class SoloLevelingStats {
   // Define as prototype method (like CriticalHit) so BetterDiscord can find it
   // Returns the chat GUI instead of settings panel
   getSettingsPanel() {
-    const plugin = this;
+    const _plugin = this;
 
     let container;
     try {

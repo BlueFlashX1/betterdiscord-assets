@@ -2231,7 +2231,7 @@ module.exports = class ShadowArmy {
    */
   async handleExtractionBurst(userRank, userLevel, userStats, isSpecial, targetRank = null, fromDungeon = false) {
     const now = Date.now();
-    const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
+    const _cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
 
     // Decide how many shadows to extract in this burst
     const count = isSpecial ? 3 + Math.floor(Math.random() * 5) : 1; // 3–7 for special, 1 for normal
@@ -3437,7 +3437,6 @@ module.exports = class ShadowArmy {
       5;
 
     // Get baseline for next rank
-    const nextRankIndex = currentRankIndex + 1;
     const baselineForNextRank = this.getRankBaselineStats(nextRank);
     const nextBaseline =
       (baselineForNextRank.strength +
