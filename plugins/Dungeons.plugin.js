@@ -1727,10 +1727,10 @@ module.exports = class Dungeons {
 
       if (capacityPercent < 0.9) {
         // Phase 1: RAPID FILL (0-90% capacity)
-        spawnCount = this.settings.mobSpawnCount; // 500 mobs (ultra fast)
+        spawnCount = this.settings.mobSpawnCount; // 500 mobs (1000 mobs/sec)
       } else {
         // Phase 2: NORMAL REPLENISHMENT (90-100% capacity)
-        spawnCount = Math.floor(this.settings.mobSpawnCount / 5); // 100 mobs (normal speed)
+        spawnCount = 50; // 50 mobs every 0.5s = 100 mobs/sec (normal speed)
       }
 
       // Limit spawn count to not exceed target
@@ -1846,19 +1846,30 @@ module.exports = class Dungeons {
       dungeon.mobs.remaining += actualSpawnCount;
       dungeon.mobs.total += actualSpawnCount;
 
-      // Log spawn rate transition
+      // CRITICAL DEBUG: Log spawn rate transition and capacity milestones
       const newCapacityPercent = dungeon.mobs.total / dungeon.mobs.targetCount;
+      
+      // Log 90% threshold transition (spawn rate change)
       if (capacityPercent < 0.9 && newCapacityPercent >= 0.9) {
         console.log(
-          `[Dungeons] ${dungeon.name}: Reached 90% capacity (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Spawn rate: 1000 mobs/sec → 200 mobs/sec (normal replenishment)`
+          `[Dungeons] 🔥 ${dungeon.name}: 90% CAPACITY (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Spawn: 1000→200 mobs/sec`
+        );
+      }
+      
+      // Log every 10% milestone for debug (not spamming)
+      const oldMilestone = Math.floor(capacityPercent * 10);
+      const newMilestone = Math.floor(newCapacityPercent * 10);
+      if (newMilestone > oldMilestone && newMilestone <= 9) {
+        console.log(
+          `[Dungeons] 📊 ${dungeon.name}: ${newMilestone * 10}% capacity (${dungeon.mobs.total}/${dungeon.mobs.targetCount} mobs)`
         );
       }
 
-      // Stop spawning if reached target
+      // CRITICAL: Stop spawning if reached target (DON'T STOP BEFORE MAX!)
       if (dungeon.mobs.total >= dungeon.mobs.targetCount) {
         this.stopMobSpawning(channelKey);
         console.log(
-          `[Dungeons] ${dungeon.name}: Full capacity reached (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Continuous spawning stopped.`
+          `[Dungeons] ✅ ${dungeon.name}: MAX CAPACITY (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Continuous spawning STOPPED.`
         );
       }
 
@@ -1891,9 +1902,17 @@ module.exports = class Dungeons {
       return;
     }
 
-    // Leave previous dungeon
+    // ENFORCE ONE DUNGEON AT A TIME: Prevent joining if already in another dungeon
     if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
       const prevDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
+      if (prevDungeon && !prevDungeon.completed && !prevDungeon.failed) {
+        this.showToast(
+          `Already in ${prevDungeon.name}!\nYou must complete, be defeated, or leave your current dungeon first.`,
+          'error'
+        );
+        return; // BLOCKED - can't join multiple dungeons
+      }
+      // Previous dungeon is completed/failed, can join new one
       if (prevDungeon) {
         prevDungeon.userParticipating = false;
       }
@@ -2028,7 +2047,7 @@ module.exports = class Dungeons {
    */
   startRegeneration() {
     if (this.regenInterval) return; // Already running
-    
+
     // Start HP/Mana regeneration interval (logging removed)
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
@@ -2115,7 +2134,7 @@ module.exports = class Dungeons {
       if (!this._hpRegenActive) {
         this._hpRegenActive = true;
       }
-      
+
       // Reset flag when HP becomes full
       if (this.settings.userHP >= this.settings.userMaxHP && this._hpRegenActive) {
         this._hpRegenActive = false;
@@ -2148,7 +2167,7 @@ module.exports = class Dungeons {
       if (!this._manaRegenActive) {
         this._manaRegenActive = true;
       }
-      
+
       // Reset flag when Mana becomes full
       if (this.settings.userMana >= this.settings.userMaxMana && this._manaRegenActive) {
         this._manaRegenActive = false;
@@ -2627,7 +2646,7 @@ module.exports = class Dungeons {
       const analytics = dungeon.combatAnalytics;
       const now = Date.now();
 
-      // DYNAMIC CHAOTIC COMBAT: Each shadow independently chooses target (95% mobs, 5% boss)
+      // DYNAMIC CHAOTIC COMBAT: Each shadow independently chooses target (90% mobs, 10% boss)
       for (const shadow of assignedShadows) {
         if (deadShadows.has(shadow.id)) continue;
         const shadowHPData = shadowHP[shadow.id];
@@ -2645,15 +2664,15 @@ module.exports = class Dungeons {
           continue; // Not ready yet, skip this shadow
         }
 
-        // RANDOM TARGET SELECTION: 95% mobs, 5% boss (if both available)
-        // This prevents boss from dying too fast and ending dungeon prematurely
+        // RANDOM TARGET SELECTION: 90% mobs, 10% boss (if both available)
+        // Increased boss targeting for faster clear times
         let targetType = null;
         let targetEnemy = null;
 
         if (bossAlive && aliveMobs.length > 0) {
-          // Both available: random choice (95% mob, 5% boss)
+          // Both available: random choice (90% mob, 10% boss)
           const targetRoll = Math.random();
-          if (targetRoll < 0.95) {
+          if (targetRoll < 0.90) {
             targetType = 'mob';
             targetEnemy = aliveMobs[Math.floor(Math.random() * aliveMobs.length)];
           } else {
@@ -3030,7 +3049,7 @@ module.exports = class Dungeons {
             // Remove from alive shadows array for next mob
             const index = aliveShadows.indexOf(targetShadow);
             if (index > -1) aliveShadows.splice(index, 1);
-            
+
             // Removed spam log: Mob killed shadow (happens too frequently)
           }
         }
@@ -3378,23 +3397,25 @@ module.exports = class Dungeons {
    * Higher rank shadows cost more mana to resurrect
    */
   getResurrectionCost(shadowRank) {
+    // NERFED: Reduced by ~40% for more sustainable resurrections
+    // Still exponential growth but more manageable for large shadow armies
     const rankCosts = {
-      E: 10,
-      D: 20,
-      C: 40,
-      B: 80,
-      A: 160,
-      S: 320,
-      SS: 640,
-      SSS: 1280,
-      'SSS+': 2560,
-      NH: 5120,
-      Monarch: 10240,
-      'Monarch+': 20480,
-      'Shadow Monarch': 40960,
+      E: 6,        // Was 10 (-40%)
+      D: 12,       // Was 20 (-40%)
+      C: 24,       // Was 40 (-40%)
+      B: 48,       // Was 80 (-40%)
+      A: 96,       // Was 160 (-40%)
+      S: 192,      // Was 320 (-40%)
+      SS: 384,     // Was 640 (-40%)
+      SSS: 768,    // Was 1280 (-40%)
+      'SSS+': 1536,   // Was 2560 (-40%)
+      NH: 3072,    // Was 5120 (-40%)
+      Monarch: 6144,      // Was 10240 (-40%)
+      'Monarch+': 12288,  // Was 20480 (-40%)
+      'Shadow Monarch': 24576,  // Was 40960 (-40%)
     };
 
-    return rankCosts[shadowRank] || 50; // Default 50 if rank not found
+    return rankCosts[shadowRank] || 30; // Default 30 if rank not found
   }
 
   // getResurrectionPriority() removed - not needed for current auto-resurrection system
@@ -3484,7 +3505,7 @@ module.exports = class Dungeons {
 
     // Removed verbose resurrection logs - mana changes visible in UI
     // Resurrection success tracked in dungeon.shadowRevives counter
-    
+
     return true;
   }
 
@@ -4213,13 +4234,15 @@ module.exports = class Dungeons {
     const indicator = document.createElement('div');
     indicator.className = 'dungeon-indicator';
     indicator.innerHTML = `
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
-        <path d="M2 17L12 22L22 17"></path>
-        <path d="M2 12L12 17L22 12"></path>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#8b5cf6" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6h16M4 6v12M20 6v12M8 6v12M16 6v12"></path>
+        <path d="M6 10h4M14 10h4"></path>
+        <path d="M12 2v4"></path>
+        <circle cx="10" cy="14" r="1" fill="#8b5cf6"></circle>
+        <circle cx="14" cy="14" r="1" fill="#8b5cf6"></circle>
       </svg>
     `;
-    indicator.title = 'Active Dungeon';
+    indicator.title = 'Active Dungeon - Click to Join';
     indicator.style.cssText = `
       position: absolute;
       right: 8px;
@@ -4235,6 +4258,26 @@ module.exports = class Dungeons {
     if (getComputedStyle(channelElement).position === 'static') {
       channelElement.style.position = 'relative';
     }
+
+    // Make indicator clickable to JOIN dungeon
+    indicator.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      
+      // Check if user is already in a dungeon
+      if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
+        const activeDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
+        const activeDungeonName = activeDungeon?.name || 'Unknown Dungeon';
+        this.showToast(
+          `Already in ${activeDungeonName}!\nDefeat it, leave, or wait for completion to join another.`,
+          'error'
+        );
+        return;
+      }
+      
+      // Join the dungeon
+      await this.selectDungeon(channelKey);
+    });
 
     channelElement.appendChild(indicator);
     this.dungeonIndicators.set(channelKey, indicator);
@@ -4403,15 +4446,55 @@ module.exports = class Dungeons {
     const participationBadge = dungeon.userParticipating
       ? '<span style="color: #10b981; font-weight: 700;">FIGHTING</span>'
       : '<span style="color: #8b5cf6; font-weight: 700;">WATCHING</span>';
+    
+    // JOIN button (only show if NOT participating)
+    const joinButtonHTML = !dungeon.userParticipating ? `
+      <button class="dungeon-join-btn" data-channel-key="${channelKey}" style="
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);
+      " onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(16, 185, 129, 0.6)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(16, 185, 129, 0.4)';">
+        JOIN
+      </button>
+    ` : '';
+    
+    // LEAVE button (only show if IS participating)
+    const leaveButtonHTML = dungeon.userParticipating ? `
+      <button class="dungeon-leave-btn" data-channel-key="${channelKey}" style="
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4);
+      " onmouseover="this.style.transform='scale(1.05)'; this.style.boxShadow='0 4px 12px rgba(239, 68, 68, 0.6)';" onmouseout="this.style.transform='scale(1)'; this.style.boxShadow='0 2px 6px rgba(239, 68, 68, 0.4)';">
+        LEAVE
+      </button>
+    ` : '';
 
     // Multi-line layout to show all info without truncation
     hpBar.innerHTML = `
       <div style="display: flex; flex-direction: column; gap: 6px; width: 100%;">
-        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%;">
-          <div style="color: #a78bfa; font-weight: 700; font-size: 13px; text-shadow: 0 0 8px rgba(139, 92, 246, 0.8);">
-            ${participationBadge} | ${dungeon.name} [${dungeon.rank}]
+        <div style="display: flex; justify-content: space-between; align-items: center; width: 100%; gap: 12px;">
+          <div style="display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0;">
+            <div style="color: #a78bfa; font-weight: 700; font-size: 13px; text-shadow: 0 0 8px rgba(139, 92, 246, 0.8); white-space: nowrap;">
+              ${participationBadge} | ${dungeon.name} [${dungeon.rank}]
+            </div>
+            ${joinButtonHTML}
+            ${leaveButtonHTML}
           </div>
-          <div style="color: #e879f9; font-size: 11px; font-weight: 600;">
+          <div style="color: #e879f9; font-size: 11px; font-weight: 600; flex-shrink: 0;">
             ${dungeon.type}
           </div>
         </div>
@@ -4470,6 +4553,47 @@ module.exports = class Dungeons {
         ">${Math.floor(hpPercent)}%</div>
       </div>
     `;
+    
+    // Add JOIN button click handler
+    const joinBtn = hpBar.querySelector('.dungeon-join-btn');
+    if (joinBtn) {
+      joinBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        // Check if already in another dungeon
+        if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
+          const activeDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
+          this.showToast(
+            `Already in ${activeDungeon?.name || 'another dungeon'}!\nComplete it first.`,
+            'error'
+          );
+          return;
+        }
+        
+        // Join this dungeon
+        await this.selectDungeon(channelKey);
+      });
+    }
+    
+    // Add LEAVE button click handler
+    const leaveBtn = hpBar.querySelector('.dungeon-leave-btn');
+    if (leaveBtn) {
+      leaveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        
+        // Leave the dungeon
+        dungeon.userParticipating = false;
+        this.settings.userActiveDungeon = null;
+        this.saveSettings();
+        
+        // Update HP bar to show WATCHING + JOIN button
+        this.updateBossHPBar(channelKey);
+        
+        this.showToast(`Left ${dungeon.name}. You can now join other dungeons.`, 'info');
+      });
+    }
   }
 
   /**
@@ -4746,7 +4870,13 @@ module.exports = class Dungeons {
       button.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
-        this.openDungeonModal();
+        // Modal removed - use dungeon indicators to join dungeons
+        const activeCount = this.activeDungeons.size;
+        if (activeCount === 0) {
+          this.showToast('No active dungeons.\nDungeons spawn randomly as you chat (10% chance per message).', 'info');
+        } else {
+          this.showToast(`${activeCount} active dungeon(s).\nCheck channels with 🏰 icon and click to JOIN.`, 'info');
+        }
       });
 
       const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
