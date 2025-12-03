@@ -891,6 +891,64 @@ module.exports = class ShadowArmy {
         buffs: { luck: 0.15, intelligence: 0.1 }, // +15% LUK, +10% INT per shadow
         effect: 'Luck Amplification', // Increases luck-based bonuses
       },
+      // MAGIC BEAST ROLES - Dungeon-Only Extraction
+      // Based on Solo Leveling lore: actual monsters, not humanoid shadows
+      ant: {
+        name: 'Ant',
+        description: 'Insect-type beast - High numbers, coordinated attacks',
+        buffs: { strength: 0.12, agility: 0.12 }, // Balanced offensive
+        effect: 'Swarm Tactics', // Attack coordination
+        isMagicBeast: true,
+      },
+      bear: {
+        name: 'Bear',
+        description: 'Beast-type - Raw power and endurance',
+        buffs: { strength: 0.18, vitality: 0.12 }, // High power/HP
+        effect: 'Berserker Rage', // Damage amplification
+        isMagicBeast: true,
+      },
+      wolf: {
+        name: 'Wolf',
+        description: 'Pack hunter - Speed and coordination',
+        buffs: { agility: 0.15, strength: 0.1 }, // Fast attacker
+        effect: 'Pack Hunter', // Group damage bonus
+        isMagicBeast: true,
+      },
+      spider: {
+        name: 'Spider',
+        description: 'Arachnid-type - Web traps and venom',
+        buffs: { agility: 0.13, intelligence: 0.12 }, // Tactical
+        effect: 'Web Trap', // Crowd control
+        isMagicBeast: true,
+      },
+      golem: {
+        name: 'Golem',
+        description: 'Stone construct - Extreme defense, slow',
+        buffs: { vitality: 0.25, strength: 0.08 }, // Ultra tank
+        effect: 'Stone Skin', // Damage reduction
+        isMagicBeast: true,
+      },
+      wyvern: {
+        name: 'Wyvern',
+        description: 'Flying beast - Aerial superiority',
+        buffs: { agility: 0.16, strength: 0.14 }, // Flying attacker
+        effect: 'Aerial Strike', // Bonus damage
+        isMagicBeast: true,
+      },
+      serpent: {
+        name: 'Serpent',
+        description: 'Snake-type - Venom and cunning',
+        buffs: { intelligence: 0.14, agility: 0.12 }, // Tactical striker
+        effect: 'Venom Strike', // DOT damage
+        isMagicBeast: true,
+      },
+      dragon: {
+        name: 'Dragon',
+        description: 'Apex predator - Supreme in all aspects',
+        buffs: { strength: 0.15, intelligence: 0.15, agility: 0.1 }, // Powerful all-around
+        effect: 'Dragon Dominance', // All stats boost
+        isMagicBeast: true,
+      },
     };
 
     // Stat weight templates per role (used to generate per-shadow stats)
@@ -952,6 +1010,63 @@ module.exports = class ShadowArmy {
         intelligence: 1.2, // VERY STRONG (strategy)
         vitality: 0.7, // Below average
         luck: 1.4, // EXTREMELY STRONG (buffs)
+      },
+      // MAGIC BEAST STAT WEIGHTS - Dungeon-Only Shadows
+      ant: {
+        strength: 1.1, // STRONG (powerful mandibles)
+        agility: 1.2, // VERY STRONG (fast insect)
+        intelligence: 0.4, // WEAK (instinct-driven)
+        vitality: 0.9, // Above average (exoskeleton)
+        luck: 0.5, // WEAK
+      },
+      bear: {
+        strength: 1.6, // EXTREMELY STRONG (raw power)
+        agility: 0.4, // WEAK (heavy, slow)
+        intelligence: 0.3, // VERY WEAK (beast)
+        vitality: 1.4, // VERY STRONG (thick hide)
+        luck: 0.4, // WEAK
+      },
+      wolf: {
+        strength: 1.0, // STRONG (predator)
+        agility: 1.5, // EXTREMELY STRONG (pack hunter)
+        intelligence: 0.7, // Below average (pack tactics)
+        vitality: 0.8, // Above average
+        luck: 0.6, // Below average
+      },
+      spider: {
+        strength: 0.6, // Below average
+        agility: 1.4, // VERY STRONG (eight legs)
+        intelligence: 1.1, // STRONG (trap tactics)
+        vitality: 0.5, // WEAK (fragile body)
+        luck: 0.8, // Above average (web luck)
+      },
+      golem: {
+        strength: 1.3, // VERY STRONG (stone fists)
+        agility: 0.2, // EXTREMELY WEAK (slow construct)
+        intelligence: 0.1, // EXTREMELY WEAK (mindless)
+        vitality: 1.9, // EXTREMELY STRONG (stone body)
+        luck: 0.3, // VERY WEAK
+      },
+      wyvern: {
+        strength: 1.4, // VERY STRONG (claws/bite)
+        agility: 1.6, // EXTREMELY STRONG (aerial)
+        intelligence: 0.6, // Below average (beast)
+        vitality: 1.0, // STRONG (dragon scales)
+        luck: 0.7, // Below average
+      },
+      serpent: {
+        strength: 0.8, // Above average (constrictor)
+        agility: 1.3, // VERY STRONG (slithering)
+        intelligence: 1.1, // STRONG (cunning predator)
+        vitality: 0.7, // Below average (reptile)
+        luck: 0.9, // Above average (venom luck)
+      },
+      dragon: {
+        strength: 1.7, // EXTREMELY STRONG (apex)
+        agility: 1.4, // VERY STRONG (flying)
+        intelligence: 1.5, // VERY STRONG (ancient wisdom)
+        vitality: 1.6, // EXTREMELY STRONG (dragon scales)
+        luck: 1.2, // VERY STRONG (legendary)
       },
     };
 
@@ -1539,7 +1654,8 @@ module.exports = class ShadowArmy {
     targetRank,
     targetStats = null,
     targetStrength = null,
-    skipCap = false
+    skipCap = false,
+    fromDungeon = false
   ) {
     const intelligence = userStats.intelligence || 0;
     const perception = userStats.perception || 0;
@@ -1564,8 +1680,21 @@ module.exports = class ShadowArmy {
     let shadow;
     if (targetStats && targetStrength != null) {
       // Use provided stats for dungeon mobs
-      const roleKeys = Object.keys(this.shadowRoles);
-      const roleKey = roleKeys[Math.floor(Math.random() * roleKeys.length)];
+      // MAGIC BEASTS: 40% chance if from dungeon, 0% otherwise
+      let roleKey;
+      if (fromDungeon && Math.random() < 0.4) {
+        // Select magic beast role (dungeon-only)
+        const beastRoles = Object.keys(this.shadowRoles).filter(
+          key => this.shadowRoles[key].isMagicBeast
+        );
+        roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
+      } else {
+        // Select humanoid role (standard)
+        const humanoidRoles = Object.keys(this.shadowRoles).filter(
+          key => !this.shadowRoles[key].isMagicBeast
+        );
+        roleKey = humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
+      }
       const role = this.shadowRoles[roleKey];
 
       shadow = {
@@ -1708,7 +1837,8 @@ module.exports = class ShadowArmy {
       mobRank,
       mobStats,
       mobStrength,
-      true // skipCap = true for dungeons
+      true, // skipCap = true for dungeons
+      true  // fromDungeon = true (enables magic beast extraction)
     );
 
     // Record attempt (counts both success and failure toward limit)
@@ -1861,8 +1991,10 @@ module.exports = class ShadowArmy {
    * 6. Save settings (config only, shadows in IndexedDB)
    * 7. Show extraction animation
    * 8. Update UI if needed
+   * 
+   * @param {boolean} fromDungeon - If true, can extract magic beast shadows
    */
-  async handleExtractionBurst(userRank, userLevel, userStats, isSpecial, targetRank = null) {
+  async handleExtractionBurst(userRank, userLevel, userStats, isSpecial, targetRank = null, fromDungeon = false) {
     const now = Date.now();
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
 
@@ -1890,7 +2022,7 @@ module.exports = class ShadowArmy {
 
     // Generate shadows
     for (let i = 0; i < count; i++) {
-      const shadow = this.generateShadow(rankToUse, userLevel, userStats);
+      const shadow = this.generateShadow(rankToUse, userLevel, userStats, fromDungeon);
 
       // Save to IndexedDB if available, otherwise fallback to localStorage
       if (this.storageManager) {
@@ -1995,21 +2127,39 @@ module.exports = class ShadowArmy {
    * Uses exponential stat scaling - higher rank = exponentially stronger
    * Operations:
    * 1. Use provided shadow rank (determined by probability system)
-   * 2. Randomly select shadow role from available roles
+   * 2. Randomly select shadow role (humanoid or magic beast if from dungeon)
    * 3. Get exponential rank multiplier for stat scaling
    * 4. Generate base stats using role weights and exponential rank multiplier
    * 5. Calculate initial shadow strength from base stats
    * 6. Create shadow object with id, rank, role, stats, level, XP
    * 7. Initialize growth stats for level-up progression
+   * 
+   * @param {string} shadowRank - Rank of shadow to generate
+   * @param {number} userLevel - Current user level
+   * @param {object} userStats - User's current stats
+   * @param {boolean} fromDungeon - If true, can generate magic beast shadows
    */
-  generateShadow(shadowRank, userLevel, userStats) {
+  generateShadow(shadowRank, userLevel, userStats, fromDungeon = false) {
     // VALIDATION: Ensure shadow rank is not invalid
     // This is called after determineShadowRank, so it should always be valid
     // But we add this check as a safety measure
 
     // Random role selection
-    const roleKeys = Object.keys(this.shadowRoles);
-    const roleKey = roleKeys[Math.floor(Math.random() * roleKeys.length)];
+    // MAGIC BEASTS: Only from dungeons! (40% chance if from dungeon)
+    let roleKey;
+    if (fromDungeon && Math.random() < 0.4) {
+      // Select magic beast role (dungeon-only)
+      const beastRoles = Object.keys(this.shadowRoles).filter(
+        key => this.shadowRoles[key].isMagicBeast
+      );
+      roleKey = beastRoles[Math.floor(Math.random() * beastRoles.length)];
+    } else {
+      // Select humanoid role (standard)
+      const humanoidRoles = Object.keys(this.shadowRoles).filter(
+        key => !this.shadowRoles[key].isMagicBeast
+      );
+      roleKey = humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
+    }
     const role = this.shadowRoles[roleKey];
 
     // Get exponential rank multiplier (1.5x per rank)

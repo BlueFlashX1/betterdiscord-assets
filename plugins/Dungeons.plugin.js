@@ -1468,15 +1468,19 @@ module.exports = class Dungeons {
         );
         const mobRank = this.settings.dungeonRanks[mobRankIndex];
 
-        // Stats based on mob's actual rank
-        const mobStrength = 20 + mobRankIndex * 10;
-        const mobAgility = 15 + mobRankIndex * 8;
-        const mobIntelligence = 10 + mobRankIndex * 5;
-        const mobVitality = 30 + mobRankIndex * 15;
+        // ENHANCED MOB STATS: Mobs are tankier but still weaker than bosses
+        // Scaled to survive 2-5 shadow hits depending on rank
+        const mobStrength = 100 + mobRankIndex * 50; // E: 100, S: 350
+        const mobAgility = 80 + mobRankIndex * 40; // E: 80, S: 280
+        const mobIntelligence = 60 + mobRankIndex * 30; // E: 60, S: 210
+        const mobVitality = 150 + mobRankIndex * 100; // E: 150, S: 650
 
-        // Mob HP scales with rank (increased for durability)
-        // Formula: base + vitality × 3 + rankIndex × 20
-        const mobHP = 50 + mobVitality * 3 + mobRankIndex * 20;
+        // ENHANCED MOB HP: Tankier to survive multiple hits
+        // Formula: base + vitality × 20 + rankIndex × 500
+        // E: 1K-2K, S: 15K-20K (survives 2-5 shadow hits)
+        // Still much weaker than bosses (500K-2M+)
+        const baseHP = 500 + mobVitality * 20 + mobRankIndex * 500;
+        const mobHP = Math.floor(baseHP * (0.9 + Math.random() * 0.2)); // 90-110% variance
 
         const mob = {
           id: `mob_${Date.now()}_${Math.random()}`,
@@ -3850,10 +3854,21 @@ module.exports = class Dungeons {
       currentChannelInfo.guildId === dungeon.guildId;
 
     if (!isCurrentChannel) {
-      // Not the current channel, remove HP bar if it exists
-      this.removeBossHPBar(channelKey);
-      this.showChannelHeaderComments(channelKey);
+      // Not the current channel, remove HP bar if it exists (if already created)
+      const existingBar = this.bossHPBars.get(channelKey);
+      if (existingBar) {
+        this.removeBossHPBar(channelKey);
+        this.showChannelHeaderComments(channelKey);
+      }
       return;
+    }
+    
+    // Force recreate boss HP bar when returning to dungeon channel
+    // This ensures it shows correctly after guild/channel switches
+    const existingBar = this.bossHPBars.get(channelKey);
+    if (existingBar && !document.body.contains(existingBar)) {
+      // Bar exists but not in DOM - force recreate
+      this.bossHPBars.delete(channelKey);
     }
 
     // Hide comments in channel header to make room
