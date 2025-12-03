@@ -14,34 +14,6 @@ module.exports = class SoloLevelingStats {
   // CONSTRUCTOR & INITIALIZATION
   // ============================================================================
   // Verification helper - call this from console: BdApi.Plugins.get('SoloLevelingStats').instance.verifyMessageDetection()
-  verifyMessageDetection() {
-    console.log('=== SoloLevelingStats Message Detection Verification ===');
-    console.log('Plugin Enabled:', this.settings.enabled);
-    console.log('Current Level:', this.settings.level);
-    console.log('Current XP:', this.settings.xp);
-    console.log('Total XP:', this.settings.totalXP);
-    console.log('Messages Sent:', this.settings.activity.messagesSent);
-    console.log('Characters Typed:', this.settings.activity.charactersTyped);
-    console.log('');
-    console.log('Message Observer Active:', !!this.messageObserver);
-    console.log('Input Handler Active:', !!this.messageInputHandler);
-    console.log('Input Monitoring Active:', this.inputMonitoringActive);
-    console.log('');
-    console.log('Processed Message IDs:', this.processedMessageIds?.size || 0);
-    console.log('Recent Messages:', this.recentMessages?.size || 0);
-    console.log('');
-    console.log('To test: Send a message in Discord and check if XP increases.');
-    console.log('Enable debug mode in settings to see detailed logs.');
-    return {
-      enabled: this.settings.enabled,
-      level: this.settings.level,
-      xp: this.settings.xp,
-      totalXP: this.settings.totalXP,
-      messagesSent: this.settings.activity.messagesSent,
-      observerActive: !!this.messageObserver,
-      inputHandlerActive: !!this.messageInputHandler,
-    };
-  }
 
   constructor() {
     this.defaultSettings = {
@@ -534,9 +506,6 @@ module.exports = class SoloLevelingStats {
     }
 
     // Log startup to debug
-    console.warn(
-      `[SoloLevelingStats] Plugin initialized - Level ${this.settings.level}, Rank ${this.settings.rank}`
-    );
   }
 
   integrateWithCriticalHit() {
@@ -5180,9 +5149,6 @@ module.exports = class SoloLevelingStats {
           this.settings.stats.vitality = (this.settings.stats.vitality || 0) + bonus;
           this.settings.stats.luck = (this.settings.stats.luck || 0) + bonus;
 
-          console.log(
-            `[Rank Promotion Bonus] +${bonus} to all stats for ${nextRank} rank promotion!`
-          );
 
           // Recalculate HP/Mana after stat bonus (vitality/intelligence increased)
           const vitality = this.settings.stats.vitality || 0;
@@ -5194,9 +5160,6 @@ module.exports = class SoloLevelingStats {
           this.settings.userHP = this.settings.userMaxHP;
           this.settings.userMana = this.settings.userMaxMana;
 
-          console.log(
-            `[Rank Promotion] HP/Mana fully restored: ${this.settings.userMaxHP} HP, ${this.settings.userMaxMana} Mana`
-          );
         }
 
         // Emit rank changed event for real-time progress bar updates
@@ -5259,11 +5222,6 @@ module.exports = class SoloLevelingStats {
 
     this.showNotification(message, 'success', 6000);
 
-    console.log(
-      `Rank Promotion! ${oldRank} → ${newRank} (${rankInfo.name})${
-        statBonus > 0 ? ` +${statBonus} all stats` : ''
-      }`
-    );
   }
 
   showLevelUpNotification(newLevel, oldLevel) {
@@ -5309,9 +5267,6 @@ module.exports = class SoloLevelingStats {
     this.showNotification(message, 'success', 5000);
 
     // Play level up sound/effect (optional)
-    console.log(
-      `LEVEL UP! ${oldLevel} → ${newLevel} (${levelsGained} level(s), Rank: ${this.settings.rank})`
-    );
   }
 
   showNotification(message, type = 'info', timeout = 3000) {
@@ -7283,9 +7238,6 @@ module.exports = class SoloLevelingStats {
   // Define as prototype method (like CriticalHit) so BetterDiscord can find it
   // Returns the chat GUI instead of settings panel
   getSettingsPanel() {
-    console.log(
-      '[SoloLevelingStats] ========== getSettingsPanel() CALLED - Returning Chat GUI =========='
-    );
     const plugin = this;
 
     let container;

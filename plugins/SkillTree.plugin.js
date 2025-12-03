@@ -349,7 +349,6 @@ module.exports = class SkillTree {
     // Retry button creation after delays to ensure Discord UI is ready
     this._retryTimeout1 = setTimeout(() => {
       if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        console.log('[SkillTree] Retrying button creation...');
         this.createSkillTreeButton();
       }
       this._retryTimeout1 = null;
@@ -358,7 +357,6 @@ module.exports = class SkillTree {
     // Additional retry after longer delay (for plugin re-enabling)
     this._retryTimeout2 = setTimeout(() => {
       if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        console.log('[SkillTree] Final retry for button creation...');
         this.createSkillTreeButton();
       }
       this._retryTimeout2 = null;
@@ -376,7 +374,6 @@ module.exports = class SkillTree {
     // Set global instance for button handlers
     window.skillTreeInstance = this;
 
-    console.log('SkillTree: Plugin started');
   }
 
   // ============================================================================
@@ -414,7 +411,6 @@ module.exports = class SkillTree {
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
 
-    console.log('SkillTree:  Event-based level up detection enabled - no polling needed');
 
     // Initial check on startup
     this.checkForLevelUp();
@@ -474,7 +470,6 @@ module.exports = class SkillTree {
       styleElement.remove();
     }
 
-    console.log('SkillTree: Plugin stopped');
   }
 
   // ============================================================================

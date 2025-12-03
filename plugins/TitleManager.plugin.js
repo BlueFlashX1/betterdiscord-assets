@@ -49,7 +49,6 @@ module.exports = class SoloLevelingTitleManager {
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
 
-    console.log('TitleManager: Plugin started');
   }
 
   stop() {

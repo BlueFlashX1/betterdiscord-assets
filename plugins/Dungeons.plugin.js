@@ -583,7 +583,6 @@ module.exports = class Dungeons {
       const shadowArmyBonus = shadowCount * 25;
       this.settings.userMaxHP = baseHP + shadowArmyBonus;
 
-
       if (!this.settings.userHP || this.settings.userHP === null) {
         this.settings.userHP = this.settings.userMaxHP;
       }
@@ -607,7 +606,6 @@ module.exports = class Dungeons {
       const baseMana = 100 + intelligence * 10;
       const shadowArmyBonus = shadowCount * 50;
       this.settings.userMaxMana = baseMana + shadowArmyBonus;
-
 
       if (!this.settings.userMana || this.settings.userMana === null) {
         this.settings.userMana = this.settings.userMaxMana;
@@ -1258,7 +1256,7 @@ module.exports = class Dungeons {
       Normal: 1.0,
       Elite: 0.5,
       'Boss Rush': 0.3,
-      Horde: 2.5,      // Increased for more mobs
+      Horde: 2.5, // Increased for more mobs
       Fortress: 1.5,
     };
 
@@ -1266,7 +1264,9 @@ module.exports = class Dungeons {
     // E: 2,000 | D: 5,000 | C: 8,000 | B: 12,000 | A: 17,000 | S: 23,000 | SS: 30,000 | SSS: 40,000
     const baseMobCount = 2000 + rankIndex * 3000;
     const typeMultiplier = typeMultipliers[dungeonType] || 1.0;
-    const totalMobCount = Math.floor(Math.min(100000, Math.max(2000, baseMobCount * typeMultiplier)));
+    const totalMobCount = Math.floor(
+      Math.min(100000, Math.max(2000, baseMobCount * typeMultiplier))
+    );
 
     // Calculate expected shadow allocation for this dungeon
     // Get current shadow army size
@@ -1311,7 +1311,6 @@ module.exports = class Dungeons {
     const hpPerShadow = typeHPMultipliers[dungeonType] || 5000;
     const shadowScaledHP = baseBossHP + expectedShadowCount * hpPerShadow;
     const finalBossHP = Math.floor(shadowScaledHP);
-
 
     // Calculate boss stats based on rank
     const bossStrength = 50 + rankIndex * 25;
@@ -1610,7 +1609,9 @@ module.exports = class Dungeons {
         this.settings.userMaxMana,
         this.settings.userMana + manaIncrease
       );
-      console.log(`[Dungeons] Mana pool increased: ${oldMaxMana} -> ${this.settings.userMaxMana} (+${manaIncrease} from shadow army growth)`);
+      console.log(
+        `[Dungeons] Mana pool increased: ${oldMaxMana} -> ${this.settings.userMaxMana} (+${manaIncrease} from shadow army growth)`
+      );
     }
 
     this.updateUserHPBar();
@@ -2038,7 +2039,6 @@ module.exports = class Dungeons {
       const rankDistribution = Object.entries(shadowRankCounts)
         .map(([rank, count]) => `${rank}:${count}`)
         .join(', ');
-
 
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowHP = dungeon.shadowHP || {}; // Object, not Map
@@ -2943,17 +2943,17 @@ module.exports = class Dungeons {
    */
   getResurrectionCost(shadowRank) {
     const rankCosts = {
-      'E': 10,
-      'D': 20,
-      'C': 40,
-      'B': 80,
-      'A': 160,
-      'S': 320,
-      'SS': 640,
-      'SSS': 1280,
+      E: 10,
+      D: 20,
+      C: 40,
+      B: 80,
+      A: 160,
+      S: 320,
+      SS: 640,
+      SSS: 1280,
       'SSS+': 2560,
-      'NH': 5120,
-      'Monarch': 10240,
+      NH: 5120,
+      Monarch: 10240,
       'Monarch+': 20480,
       'Shadow Monarch': 40960,
     };
@@ -2966,7 +2966,21 @@ module.exports = class Dungeons {
    * Higher rank = higher priority (resurrected first)
    */
   getResurrectionPriority(shadowRank) {
-    const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'];
+    const ranks = [
+      'E',
+      'D',
+      'C',
+      'B',
+      'A',
+      'S',
+      'SS',
+      'SSS',
+      'SSS+',
+      'NH',
+      'Monarch',
+      'Monarch+',
+      'Shadow Monarch',
+    ];
     return ranks.indexOf(shadowRank);
   }
 
@@ -2998,7 +3012,11 @@ module.exports = class Dungeons {
     // Update user HP bar to show new mana
     this.updateUserHPBar();
 
-    console.log(`[Dungeons] AUTO-RESURRECT: ${shadow.name || 'Shadow'} [${shadowRank}] (-${manaCost} mana, ${this.settings.userMana} remaining)`);
+    console.log(
+      `[Dungeons] AUTO-RESURRECT: ${shadow.name || 'Shadow'} [${shadowRank}] (-${manaCost} mana, ${
+        this.settings.userMana
+      } remaining)`
+    );
 
     return true;
   }
@@ -3552,7 +3570,6 @@ module.exports = class Dungeons {
    * @param {string} channelKey - Channel key
    */
   async cleanupDefeatedBoss(channelKey) {
-
     // Remove ARISE button
     const ariseBtn = document.querySelector(`[data-arise-button="${channelKey}"]`);
     if (ariseBtn) {
@@ -3688,7 +3705,7 @@ module.exports = class Dungeons {
             levelBefore,
             levelAfter,
             name: shadow.name || 'Shadow',
-            rank: shadow.rank
+            rank: shadow.rank,
           });
         }
 
@@ -3778,7 +3795,7 @@ module.exports = class Dungeons {
   updateBossHPBar(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || dungeon.boss.hp <= 0) {
-    this.removeBossHPBar(channelKey);
+      this.removeBossHPBar(channelKey);
       this.showChannelHeaderComments(channelKey);
       return;
     }
@@ -3843,7 +3860,7 @@ module.exports = class Dungeons {
 
       // CRITICAL FIX: Create dedicated container that sits BELOW the header
       // Clean up any existing containers first to prevent duplicates
-      document.querySelectorAll('.dungeon-boss-hp-container').forEach(el => {
+      document.querySelectorAll('.dungeon-boss-hp-container').forEach((el) => {
         if (!el.querySelector('.dungeon-boss-hp-bar')) {
           // Empty container, remove it
           el.remove();
@@ -3860,15 +3877,15 @@ module.exports = class Dungeons {
 
         // FORCE MAXIMUM VISIBILITY with inline styles (CSS-independent!)
         // Width calculation: Detect if members list is open
-        const membersList = document.querySelector('[class*="membersWrap"]') ||
-                           document.querySelector('[class*="members-"]');
-        const hasMembersList = membersList && window.getComputedStyle(membersList).display !== 'none';
-        const membersListWidth = hasMembersList ? (membersList.offsetWidth || 240) : 0;
+        const membersList =
+          document.querySelector('[class*="membersWrap"]') ||
+          document.querySelector('[class*="members-"]');
+        const hasMembersList =
+          membersList && window.getComputedStyle(membersList).display !== 'none';
+        const membersListWidth = hasMembersList ? membersList.offsetWidth || 240 : 0;
 
         // Calculate responsive width: Full width minus members list
-        const containerWidth = hasMembersList
-          ? `calc(100% - ${membersListWidth}px)`
-          : '100%';
+        const containerWidth = hasMembersList ? `calc(100% - ${membersListWidth}px)` : '100%';
 
         bossHpContainer.style.cssText = `
           display: block !important;
@@ -3891,7 +3908,6 @@ module.exports = class Dungeons {
           box-sizing: border-box !important;
         `;
 
-
         // Insert after the channel header (as a sibling)
         if (channelHeader.parentElement) {
           channelHeader.parentElement.insertBefore(bossHpContainer, channelHeader.nextSibling);
@@ -3911,7 +3927,7 @@ module.exports = class Dungeons {
     }
 
     // Calculate mob stats
-    const aliveMobs = dungeon.mobs.activeMobs?.filter(m => m.hp > 0).length || 0;
+    const aliveMobs = dungeon.mobs.activeMobs?.filter((m) => m.hp > 0).length || 0;
     const totalMobs = dungeon.mobs.targetCount || 0;
     const killedMobs = dungeon.mobs.killed || 0;
 
@@ -3935,7 +3951,9 @@ module.exports = class Dungeons {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; color: #c4b5fd;">
           <div>
             <span style="color: #94a3b8;">Boss:</span>
-            <span style="color: #f87171; font-weight: 700;">${Math.floor(dungeon.boss.hp).toLocaleString()}</span>
+            <span style="color: #f87171; font-weight: 700;">${Math.floor(
+              dungeon.boss.hp
+            ).toLocaleString()}</span>
             <span style="color: #64748b;">/</span>
             <span style="color: #fbbf24;">${dungeon.boss.maxHp.toLocaleString()}</span>
           </div>
@@ -4106,7 +4124,10 @@ module.exports = class Dungeons {
       hpBar.parentNode.removeChild(hpBar);
 
       // If container is now empty, remove it too
-      if (container.classList.contains('dungeon-boss-hp-container') && container.children.length === 0) {
+      if (
+        container.classList.contains('dungeon-boss-hp-container') &&
+        container.children.length === 0
+      ) {
         container.parentNode?.removeChild(container);
       }
     }
@@ -4122,7 +4143,10 @@ module.exports = class Dungeons {
         hpBar.parentNode.removeChild(hpBar);
 
         // If container is now empty, remove it too
-        if (container.classList.contains('dungeon-boss-hp-container') && container.children.length === 0) {
+        if (
+          container.classList.contains('dungeon-boss-hp-container') &&
+          container.children.length === 0
+        ) {
           container.parentNode?.removeChild(container);
         }
       }
@@ -4130,7 +4154,7 @@ module.exports = class Dungeons {
     this.bossHPBars.clear();
 
     // Also remove any orphaned containers
-    document.querySelectorAll('.dungeon-boss-hp-container').forEach(container => {
+    document.querySelectorAll('.dungeon-boss-hp-container').forEach((container) => {
       if (container.children.length === 0) {
         container.remove();
       }
