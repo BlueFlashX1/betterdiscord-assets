@@ -362,7 +362,7 @@ module.exports = class Dungeons {
 
     // Retry timeout IDs for cleanup
     this._retryTimeouts = [];
-    
+
     // HP/Mana regeneration timer
     this.regenInterval = null;
 
@@ -461,7 +461,7 @@ module.exports = class Dungeons {
     this.startDungeonCleanupLoop();
     await this.restoreActiveDungeons();
     this.setupChannelWatcher();
-    
+
     // Start HP/Mana regeneration loop (every 1 second)
     this.startRegeneration();
   }
@@ -469,7 +469,7 @@ module.exports = class Dungeons {
   stop() {
     // Set plugin stopped state
     this.started = false;
-    
+
     // Stop HP/Mana regeneration
     this.stopRegeneration();
 
@@ -2001,7 +2001,7 @@ module.exports = class Dungeons {
    */
   startRegeneration() {
     if (this.regenInterval) return; // Already running
-    
+
     console.log('[Dungeons] Starting HP/Mana regeneration (1 second interval)');
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
@@ -2023,7 +2023,7 @@ module.exports = class Dungeons {
    * Regenerate HP and Mana based on user stats
    * HP regen: Based on vitality (1% of max HP per second per 100 vitality)
    * Mana regen: Based on intelligence (1% of max mana per second per 100 intelligence)
-   * 
+   *
    * This function runs every 1 second via setInterval in startRegeneration()
    */
   regenerateHPAndMana() {
@@ -2037,12 +2037,41 @@ module.exports = class Dungeons {
     const vitality = totalStats.vitality || 0;
     const intelligence = totalStats.intelligence || 0;
 
+    // VALIDATION: Ensure HP/Mana values are valid numbers
+    let needsInit = false;
+    
+    if (typeof this.settings.userHP !== 'number' || isNaN(this.settings.userHP)) {
+      this.settings.userHP = this.settings.userMaxHP || 100;
+      needsInit = true;
+    }
+    if (typeof this.settings.userMana !== 'number' || isNaN(this.settings.userMana)) {
+      this.settings.userMana = this.settings.userMaxMana || 100;
+      needsInit = true;
+    }
+    if (typeof this.settings.userMaxHP !== 'number' || isNaN(this.settings.userMaxHP) || this.settings.userMaxHP <= 0) {
+      this.settings.userMaxHP = 100;
+      needsInit = true;
+    }
+    if (typeof this.settings.userMaxMana !== 'number' || isNaN(this.settings.userMaxMana) || this.settings.userMaxMana <= 0) {
+      this.settings.userMaxMana = 100;
+      needsInit = true;
+    }
+    
+    if (needsInit) {
+      console.warn(`[Dungeons] HP/Mana values initialized: HP=${this.settings.userHP}/${this.settings.userMaxHP}, Mana=${this.settings.userMana}/${this.settings.userMaxMana}`);
+    }
+
     // HP regeneration: 1% of max HP per second per 100 vitality
     // Formula: (vitality / 100) * 0.01 * maxHP per second
     let hpChanged = false;
     let manaChanged = false;
+    
+    // DETECTION: Check if regeneration is needed
+    const needsHPRegen = this.settings.userHP < this.settings.userMaxHP;
+    const needsManaRegen = this.settings.userMana < this.settings.userMaxMana;
 
-    if (this.settings.userMaxHP > 0 && this.settings.userHP < this.settings.userMaxHP) {
+    // HP REGENERATION: Execute if HP is below max
+    if (needsHPRegen) {
       const hpRegenRate = (vitality / 100) * 0.01; // 1% per 100 vitality
       const hpRegen = Math.max(1, Math.floor(this.settings.userMaxHP * hpRegenRate));
       const oldHP = this.settings.userHP;
@@ -2051,13 +2080,31 @@ module.exports = class Dungeons {
       // Sync with SoloLevelingStats if available
       if (this.soloLevelingStats?.settings) {
         this.soloLevelingStats.settings.userHP = this.settings.userHP;
+        this.soloLevelingStats.settings.userMaxHP = this.settings.userMaxHP;
         hpChanged = this.settings.userHP !== oldHP;
       }
+      
+      // Log regeneration START (first regen cycle only)
+      if (!this._hpRegenActive) {
+        this._hpRegenActive = true;
+        const hpPercent = Math.floor((oldHP / this.settings.userMaxHP) * 100);
+        console.log(`[Dungeons] ❤️  HP Regeneration STARTED: ${oldHP}/${this.settings.userMaxHP} (${hpPercent}%) → Regenerating +${hpRegen} HP/sec`);
+      }
+      
+      // Log when HP becomes FULL
+      if (this.settings.userHP >= this.settings.userMaxHP && this._hpRegenActive) {
+        this._hpRegenActive = false;
+        console.log(`[Dungeons] ❤️  HP Regeneration COMPLETE: ${this.settings.userHP}/${this.settings.userMaxHP} (100% FULL)`);
+      }
+    } else {
+      // HP is already full - reset regen active flag
+      this._hpRegenActive = false;
     }
 
-    // Mana regeneration: 1% of max mana per second per 100 intelligence
-    // Formula: (intelligence / 100) * 0.01 * maxMana per second
-    if (this.settings.userMaxMana > 0 && this.settings.userMana < this.settings.userMaxMana) {
+    // MANA REGENERATION: Execute if Mana is below max
+    if (needsManaRegen) {
+      // Mana regeneration: 1% of max mana per second per 100 intelligence
+      // Formula: (intelligence / 100) * 0.01 * maxMana per second
       const manaRegenRate = (intelligence / 100) * 0.01; // 1% per 100 intelligence
       const manaRegen = Math.max(1, Math.floor(this.settings.userMaxMana * manaRegenRate));
       const oldMana = this.settings.userMana;
@@ -2072,6 +2119,22 @@ module.exports = class Dungeons {
         this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
         manaChanged = this.settings.userMana !== oldMana;
       }
+      
+      // Log regeneration START (first regen cycle only)
+      if (!this._manaRegenActive) {
+        this._manaRegenActive = true;
+        const manaPercent = Math.floor((oldMana / this.settings.userMaxMana) * 100);
+        console.log(`[Dungeons] 💧 Mana Regeneration STARTED: ${oldMana}/${this.settings.userMaxMana} (${manaPercent}%) → Regenerating +${manaRegen} Mana/sec`);
+      }
+      
+      // Log when Mana becomes FULL
+      if (this.settings.userMana >= this.settings.userMaxMana && this._manaRegenActive) {
+        this._manaRegenActive = false;
+        console.log(`[Dungeons] 💧 Mana Regeneration COMPLETE: ${this.settings.userMana}/${this.settings.userMaxMana} (100% FULL)`);
+      }
+    } else {
+      // Mana is already full - reset regen active flag
+      this._manaRegenActive = false;
     }
 
     // REAL-TIME UI UPDATE: Update HP/Mana bars in SoloLevelingStats
@@ -2083,7 +2146,7 @@ module.exports = class Dungeons {
       } else if (typeof this.soloLevelingStats.updateUI === 'function') {
         this.soloLevelingStats.updateUI();
       }
-      
+
       // Save settings periodically (every 10 regeneration cycles = 10 seconds)
       // This reduces I/O while ensuring data persists
       if (!this._regenCycleCount) this._regenCycleCount = 0;
@@ -3374,7 +3437,7 @@ module.exports = class Dungeons {
     if (this.soloLevelingStats?.settings) {
       this.soloLevelingStats.settings.userMana = this.settings.userMana;
       this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
-      
+
       // Trigger REAL-TIME UI update (verified function name)
       if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
         this.soloLevelingStats.updateHPManaBars();
