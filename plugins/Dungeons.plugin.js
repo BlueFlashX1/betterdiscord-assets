@@ -108,13 +108,40 @@ class DungeonStorageManager {
 
   async saveDungeon(dungeon) {
     if (!this.db) await this.init();
+    
+    // CRITICAL: Sanitize dungeon object before saving to prevent DataCloneError
+    // Remove any Promise values that can't be serialized to IndexedDB
+    const sanitizedDungeon = this.sanitizeDungeonForStorage(dungeon);
+    
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readwrite');
       const store = transaction.objectStore(this.storeName);
-      const request = store.put(dungeon);
+      const request = store.put(sanitizedDungeon);
       request.onsuccess = () => resolve({ success: true });
       request.onerror = () => reject(request.error);
     });
+  }
+  
+  /**
+   * Sanitize dungeon object for IndexedDB storage
+   * Removes Promises and other non-serializable values
+   */
+  sanitizeDungeonForStorage(dungeon) {
+    // Deep clone to avoid modifying original
+    const sanitized = JSON.parse(JSON.stringify(dungeon, (key, value) => {
+      // Skip Promise values
+      if (value instanceof Promise) {
+        console.warn(`[DungeonStorage] Skipping Promise value for key: ${key}`);
+        return undefined;
+      }
+      // Skip function values
+      if (typeof value === 'function') {
+        return undefined;
+      }
+      return value;
+    }));
+    
+    return sanitized;
   }
 
   async getDungeon(channelKey) {
@@ -2039,7 +2066,7 @@ module.exports = class Dungeons {
 
     // VALIDATION: Ensure HP/Mana values are valid numbers
     let needsInit = false;
-    
+
     if (typeof this.settings.userHP !== 'number' || isNaN(this.settings.userHP)) {
       this.settings.userHP = this.settings.userMaxHP || 100;
       needsInit = true;
@@ -2056,7 +2083,7 @@ module.exports = class Dungeons {
       this.settings.userMaxMana = 100;
       needsInit = true;
     }
-    
+
     if (needsInit) {
       console.warn(`[Dungeons] HP/Mana values initialized: HP=${this.settings.userHP}/${this.settings.userMaxHP}, Mana=${this.settings.userMana}/${this.settings.userMaxMana}`);
     }
@@ -2065,7 +2092,7 @@ module.exports = class Dungeons {
     // Formula: (vitality / 100) * 0.01 * maxHP per second
     let hpChanged = false;
     let manaChanged = false;
-    
+
     // DETECTION: Check if regeneration is needed
     const needsHPRegen = this.settings.userHP < this.settings.userMaxHP;
     const needsManaRegen = this.settings.userMana < this.settings.userMaxMana;
@@ -2083,14 +2110,14 @@ module.exports = class Dungeons {
         this.soloLevelingStats.settings.userMaxHP = this.settings.userMaxHP;
         hpChanged = this.settings.userHP !== oldHP;
       }
-      
+
       // Log regeneration START (first regen cycle only)
       if (!this._hpRegenActive) {
         this._hpRegenActive = true;
         const hpPercent = Math.floor((oldHP / this.settings.userMaxHP) * 100);
         console.log(`[Dungeons] ❤️  HP Regeneration STARTED: ${oldHP}/${this.settings.userMaxHP} (${hpPercent}%) → Regenerating +${hpRegen} HP/sec`);
       }
-      
+
       // Log when HP becomes FULL
       if (this.settings.userHP >= this.settings.userMaxHP && this._hpRegenActive) {
         this._hpRegenActive = false;
@@ -2119,14 +2146,14 @@ module.exports = class Dungeons {
         this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
         manaChanged = this.settings.userMana !== oldMana;
       }
-      
+
       // Log regeneration START (first regen cycle only)
       if (!this._manaRegenActive) {
         this._manaRegenActive = true;
         const manaPercent = Math.floor((oldMana / this.settings.userMaxMana) * 100);
         console.log(`[Dungeons] 💧 Mana Regeneration STARTED: ${oldMana}/${this.settings.userMaxMana} (${manaPercent}%) → Regenerating +${manaRegen} Mana/sec`);
       }
-      
+
       // Log when Mana becomes FULL
       if (this.settings.userMana >= this.settings.userMaxMana && this._manaRegenActive) {
         this._manaRegenActive = false;
@@ -2512,8 +2539,14 @@ module.exports = class Dungeons {
       }
 
       for (const shadow of assignedShadows) {
-        // Initialize HP
-        if (!shadowHP[shadow.id] && !deadShadows.has(shadow.id)) {
+        // Initialize HP OR fix corrupted HP (Promise/NaN values)
+        const existingHP = shadowHP[shadow.id];
+        const needsInit = !existingHP || 
+                          typeof existingHP.hp !== 'number' || 
+                          isNaN(existingHP.hp) || 
+                          existingHP.hp instanceof Promise;
+        
+        if (needsInit && !deadShadows.has(shadow.id)) {
           // Get effective stats (base + growth) for accurate HP calculation
           let shadowVitality = shadow.vitality || shadow.strength || 50;
 
@@ -2529,8 +2562,13 @@ module.exports = class Dungeons {
               (baseStats.vitality || 0) + (growthStats.vitality || 0) || shadowVitality;
           }
 
-          const maxHP = this.calculateHP(shadowVitality, shadow.rank || 'E');
+          const maxHP = await this.calculateHP(shadowVitality, shadow.rank || 'E');
           shadowHP[shadow.id] = { hp: maxHP, maxHp: maxHP };
+          
+          // Log fix if this was a corrupted value
+          if (existingHP && existingHP.hp instanceof Promise) {
+            console.log(`[Dungeons] FIXED: Shadow ${shadow.name} had Promise HP → Initialized to ${maxHP}`);
+          }
         }
 
         // Initialize individual combat data for dynamic behavior
