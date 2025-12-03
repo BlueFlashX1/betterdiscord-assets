@@ -63,6 +63,21 @@ module.exports = class SoloLevelingStats {
       // Rank system (E, D, C, B, A, S, SS, SSS, SSS+, NH, Monarch, Monarch+, Shadow Monarch)
       rank: 'E',
       rankHistory: [],
+      ranks: [
+        'E',
+        'D',
+        'C',
+        'B',
+        'A',
+        'S',
+        'SS',
+        'SSS',
+        'SSS+',
+        'NH',
+        'Monarch',
+        'Monarch+',
+        'Shadow Monarch',
+      ],
       // Activity tracking
       activity: {
         messagesSent: 0,
@@ -90,6 +105,11 @@ module.exports = class SoloLevelingStats {
         titles: [],
         activeTitle: null,
       },
+      // HP/Mana (calculated from stats)
+      userHP: null,
+      userMaxHP: null,
+      userMana: null,
+      userMaxMana: null,
     };
 
     this.settings = this.defaultSettings;
@@ -114,7 +134,16 @@ module.exports = class SoloLevelingStats {
       levelChanged: [],
       rankChanged: [],
       statsChanged: [],
+      shadowPowerChanged: [],
     };
+    this.shadowPowerObserver = null;
+    this.shadowPowerInterval = null;
+
+    // HP/Mana bars
+    this.userHPBar = null;
+    this.userHPBarPositionUpdater = null;
+    this.panelWatcher = null;
+    this.shadowPowerUpdateTimeout = null;
 
     // Debug system (OPTIMIZED: Default disabled, better throttling)
     // ============================================================================
@@ -352,6 +381,10 @@ module.exports = class SoloLevelingStats {
     try {
       this.debugLog('START', 'Plugin starting...');
 
+      // Record plugin start time to prevent processing old messages
+      this.pluginStartTime = Date.now();
+      this.debugLog('START', 'Plugin start time recorded', { startTime: this.pluginStartTime });
+
       // Load settings
       this.loadSettings();
       this.debugLog('START', 'Settings loaded', {
@@ -384,6 +417,16 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Plugin started successfully');
 
+      // Initialize shadow power cache and update it
+      this.cachedShadowPower = '0';
+      this.updateShadowPower();
+      // Setup MutationObserver for real-time shadow power updates
+      this.setupShadowPowerObserver();
+      // Fallback: Update shadow power periodically (every 5 seconds) as backup for faster updates
+      this.shadowPowerInterval = setInterval(() => {
+        this.updateShadowPower();
+      }, 5000);
+
       // Verify getSettingsPanel is accessible
       if (typeof this.getSettingsPanel === 'function') {
         // OPTIMIZED: Removed verbose debug logs
@@ -414,6 +457,19 @@ module.exports = class SoloLevelingStats {
       this.settings.xp = levelInfo.xp;
     }
 
+    // Initialize HP/Mana from stats
+    const vitality = this.settings.stats.vitality || 0;
+    const intelligence = this.settings.stats.intelligence || 0;
+    const userRank = this.settings.rank || 'E';
+    if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
+      this.settings.userMaxHP = this.calculateHP(vitality, userRank);
+      this.settings.userHP = this.settings.userMaxHP;
+    }
+    if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
+      this.settings.userMaxMana = this.calculateMana(intelligence);
+      this.settings.userMana = this.settings.userMaxMana;
+    }
+
     // Reset daily quests if new day
     this.checkDailyReset();
 
@@ -442,7 +498,19 @@ module.exports = class SoloLevelingStats {
     this.integrateWithCriticalHit();
 
     // Create in-chat UI panel
-    this.createChatUI();
+    try {
+      this.createChatUI();
+    } catch (error) {
+      this.debugError('CREATE_CHAT_UI', error);
+      // Retry after a delay if initial creation fails
+      setTimeout(() => {
+        try {
+          this.createChatUI();
+        } catch (retryError) {
+          this.debugError('CREATE_CHAT_UI_RETRY', retryError);
+        }
+      }, 2000);
+    }
 
     // OPTIMIZED: Use debugLog instead of direct console.log
     this.debugLog('START', `Started! Level ${this.settings.level}, ${this.settings.xp} XP`);
@@ -578,89 +646,119 @@ module.exports = class SoloLevelingStats {
   }
 
   createChatUI() {
-    // Remove existing UI if present
-    this.removeChatUI();
+    try {
+      this.debugLog('CREATE_CHAT_UI', 'Starting chat UI creation');
 
-    // Inject CSS for chat UI
-    this.injectChatUICSS();
+      // Remove existing UI if present
+      this.removeChatUI();
 
-    // Function to actually create the UI
-    const tryCreateUI = () => {
-      // Find the chat input area or message list container
-      const messageInputArea =
-        document.querySelector('[class*="channelTextArea"]') ||
-        document.querySelector('[class*="textArea"]')?.parentElement ||
-        document.querySelector('[class*="slateTextArea"]')?.parentElement;
+      // Inject CSS for chat UI
+      this.injectChatUICSS();
 
-      if (!messageInputArea || !messageInputArea.parentElement) {
-        return false;
-      }
+      // Function to actually create the UI
+      const tryCreateUI = () => {
+        try {
+          // Find the chat input area or message list container
+          const messageInputArea =
+            document.querySelector('[class*="channelTextArea"]') ||
+            document.querySelector('[class*="textArea"]')?.parentElement ||
+            document.querySelector('[class*="slateTextArea"]')?.parentElement;
 
-      // Check if UI already exists
-      if (document.getElementById('sls-chat-ui')) {
-        return true;
-      }
+          if (!messageInputArea || !messageInputArea.parentElement) {
+            return false;
+          }
 
-      // Create the UI panel
-      const uiPanel = document.createElement('div');
-      uiPanel.id = 'sls-chat-ui';
-      uiPanel.className = 'sls-chat-panel';
-      uiPanel.innerHTML = this.renderChatUI();
+          // Check if UI already exists
+          if (document.getElementById('sls-chat-ui')) {
+            return true;
+          }
 
-      // Insert before the message input area
-      messageInputArea.parentElement.insertBefore(uiPanel, messageInputArea);
+          // Create the UI panel
+          const uiPanel = document.createElement('div');
+          uiPanel.id = 'sls-chat-ui';
+          uiPanel.className = 'sls-chat-panel';
 
-      // Add event listeners
-      this.attachChatUIListeners(uiPanel);
+          // Render chat UI with error handling
+          let chatUIHTML;
+          try {
+            chatUIHTML = this.renderChatUI();
+          } catch (renderError) {
+            this.debugError('RENDER_CHAT_UI', renderError);
+            // Return false to trigger retry
+            return false;
+          }
 
-      // Also attach listeners to stat buttons that were just created
-      setTimeout(() => {
-        this.attachStatButtonListeners(uiPanel);
-      }, 100);
+          uiPanel.innerHTML = chatUIHTML;
 
-      // Update UI periodically
-      if (!this.chatUIUpdateInterval) {
-        this.chatUIUpdateInterval = setInterval(() => {
-          this.updateChatUI();
-        }, 2000); // Update every 2 seconds
-      }
+          // Insert before the message input area
+          messageInputArea.parentElement.insertBefore(uiPanel, messageInputArea);
 
-      this.chatUIPanel = uiPanel;
-      return true;
-    };
+          // Add event listeners
+          this.attachChatUIListeners(uiPanel);
 
-    // Try to create immediately
-    if (!tryCreateUI()) {
-      // Retry after a delay if Discord hasn't loaded yet
-      const retryInterval = setInterval(() => {
-        if (tryCreateUI()) {
-          clearInterval(retryInterval);
+          // Also attach listeners to stat buttons that were just created
+          setTimeout(() => {
+            this.attachStatButtonListeners(uiPanel);
+          }, 100);
+
+          // Update UI periodically
+          if (!this.chatUIUpdateInterval) {
+            this.chatUIUpdateInterval = setInterval(() => {
+              this.updateChatUI();
+            }, 2000); // Update every 2 seconds
+          }
+
+          this.chatUIPanel = uiPanel;
+          return true;
+        } catch (uiError) {
+          this.debugError('TRY_CREATE_UI', uiError);
+          return false;
         }
-      }, 1000);
+      };
 
-      // Stop retrying after 10 seconds
-      setTimeout(() => clearInterval(retryInterval), 10000);
-    }
+      // Try to create immediately
+      if (!tryCreateUI()) {
+        // Retry after a delay if Discord hasn't loaded yet
+        const retryInterval = setInterval(() => {
+          if (tryCreateUI()) {
+            clearInterval(retryInterval);
+          }
+        }, 1000);
 
-    // Watch for DOM changes (channel switches, etc.)
-    if (!this.chatUIObserver) {
-      this.chatUIObserver = new MutationObserver(() => {
-        if (!document.getElementById('sls-chat-ui')) {
-          tryCreateUI();
-        }
-      });
+        // Stop retrying after 10 seconds
+        setTimeout(() => clearInterval(retryInterval), 10000);
+      }
 
-      const chatContainer =
-        document.querySelector('[class*="chat"]') ||
-        document.querySelector('[class*="messagesWrapper"]') ||
-        document.body;
-
-      if (chatContainer) {
-        this.chatUIObserver.observe(chatContainer, {
-          childList: true,
-          subtree: true,
+      // Watch for DOM changes (channel switches, etc.)
+      if (!this.chatUIObserver) {
+        this.chatUIObserver = new MutationObserver(() => {
+          if (!document.getElementById('sls-chat-ui')) {
+            tryCreateUI();
+          }
         });
+
+        const chatContainer =
+          document.querySelector('[class*="chat"]') ||
+          document.querySelector('[class*="messagesWrapper"]') ||
+          document.body;
+
+        if (chatContainer) {
+          this.chatUIObserver.observe(chatContainer, {
+            childList: true,
+            subtree: true,
+          });
+        }
       }
+    } catch (error) {
+      this.debugError('CREATE_CHAT_UI', error);
+      // Retry after delay
+      setTimeout(() => {
+        try {
+          this.createChatUI();
+        } catch (retryError) {
+          this.debugError('CREATE_CHAT_UI_RETRY', retryError);
+        }
+      }, 3000);
     }
   }
 
@@ -679,14 +777,214 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * Get total shadow power from ShadowArmy plugin
+   * @returns {string} Total power of all shadows (formatted)
+   */
+  getTotalShadowPower() {
+    // Return cached value immediately
+    return this.cachedShadowPower;
+  }
+
+  /**
+   * Setup MutationObserver to watch for shadow army changes
+   */
+  setupShadowPowerObserver() {
+    if (this.shadowPowerObserver) {
+      this.shadowPowerObserver.disconnect();
+    }
+
+    // Watch for ShadowArmy plugin settings changes
+    const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+    if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+      return;
+    }
+
+    const shadowArmy = shadowArmyPlugin.instance;
+
+    // Observe ShadowArmy settings object for changes
+    // Since we can't directly observe object properties, we'll observe the plugin's storage
+    // and use a combination of polling (reduced frequency) and event-based updates
+
+    // Watch for DOM changes that might indicate shadow extraction (message elements)
+    // This is a fallback - primary method is event-based
+    this.shadowPowerObserver = new MutationObserver(() => {
+      // Debounce updates
+      if (this.shadowPowerUpdateTimeout) {
+        clearTimeout(this.shadowPowerUpdateTimeout);
+      }
+      this.shadowPowerUpdateTimeout = setTimeout(() => {
+        this.updateShadowPower();
+      }, 100); // Update 100ms after last mutation (faster updates)
+    });
+
+    // Observe message container for new messages (which might trigger shadow extraction)
+    const messageContainer =
+      document.querySelector('[class*="messagesWrapper"]') ||
+      document.querySelector('[class*="messageList"]') ||
+      document.querySelector('[class*="scroller"]');
+
+    if (messageContainer) {
+      this.shadowPowerObserver.observe(messageContainer, {
+        childList: true,
+        subtree: true,
+      });
+    }
+
+    // Also observe ShadowArmy's settings object if possible
+    // We'll use a Proxy to detect changes
+    if (shadowArmy.settings && typeof shadowArmy.settings === 'object') {
+      try {
+        const originalSettings = shadowArmy.settings;
+        const handler = {
+          set: (target, prop, value) => {
+            if (prop === 'shadows' || prop === 'favoriteShadowIds') {
+              target[prop] = value;
+              // Trigger shadow power update
+              setTimeout(() => this.updateShadowPower(), 100);
+              return true;
+            }
+            return Reflect.set(target, prop, value);
+          },
+        };
+        // Note: This is a best-effort approach - BetterDiscord may not allow Proxy wrapping
+      } catch (e) {
+        // Proxy not available or not allowed - fall back to polling
+      }
+    }
+  }
+
+  /**
+   * Update shadow power asynchronously from ShadowArmy plugin
+   */
+  async updateShadowPower() {
+    try {
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+        this.cachedShadowPower = '0';
+        this.updateShadowPowerDisplay();
+        return;
+      }
+
+      const shadowArmy = shadowArmyPlugin.instance;
+      let totalPower = 0;
+
+      // Try to get all shadows from IndexedDB storage (most accurate)
+      if (shadowArmy.storageManager && shadowArmy.storageManager.getShadows) {
+        try {
+          const shadows = await shadowArmy.storageManager.getShadows({}, 0, 100000);
+          if (shadows && Array.isArray(shadows) && shadows.length > 0) {
+            totalPower = shadows.reduce((sum, shadow) => {
+              return sum + (shadow.strength || 0);
+            }, 0);
+            this.cachedShadowPower = totalPower.toLocaleString();
+            this.updateShadowPowerDisplay();
+            return;
+          }
+        } catch (err) {
+          console.warn('SoloLevelingStats: Could not get shadows from IndexedDB', err);
+        }
+      }
+
+      // Fallback to settings (localStorage) - may not have all shadows but shows something
+      if (
+        shadowArmy.settings &&
+        shadowArmy.settings.shadows &&
+        Array.isArray(shadowArmy.settings.shadows)
+      ) {
+        totalPower = shadowArmy.settings.shadows.reduce((sum, shadow) => {
+          return sum + (shadow.strength || 0);
+        }, 0);
+        this.cachedShadowPower = totalPower.toLocaleString();
+        this.updateShadowPowerDisplay();
+        return;
+      }
+
+      this.cachedShadowPower = '0';
+      this.updateShadowPowerDisplay();
+    } catch (error) {
+      console.error('SoloLevelingStats: Error updating shadow power', error);
+      this.cachedShadowPower = '0';
+      this.updateShadowPowerDisplay();
+    }
+  }
+
+  /**
+   * Update shadow power display in UI
+   */
+  updateShadowPowerDisplay() {
+    if (this.chatUIPanel) {
+      const shadowPowerEl = this.chatUIPanel.querySelector('.sls-chat-shadow-power');
+      if (shadowPowerEl) {
+        shadowPowerEl.textContent = `Shadow Power: ${this.cachedShadowPower}`;
+      }
+    }
+    // Emit event for real-time updates in LevelProgressBar
+    this.emit('shadowPowerChanged', {
+      shadowPower: this.cachedShadowPower,
+    });
+  }
+
   renderChatUI() {
     const levelInfo = this.getCurrentLevel();
     const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
     const titleBonus = this.getActiveTitleBonus();
 
+    // Calculate HP/Mana using TOTAL effective stats (including all buffs)
+    const totalStats = this.getTotalEffectiveStats();
+    const vitality = totalStats.vitality || 0;
+    const intelligence = totalStats.intelligence || 0;
+    const userRank = this.settings.rank || 'E';
+    const maxHP = this.calculateHP(vitality, userRank);
+    const maxMana = this.calculateMana(intelligence);
+
+    // Initialize if needed
+    if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
+      this.settings.userMaxHP = maxHP;
+      this.settings.userHP = maxHP;
+    }
+    if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
+      this.settings.userMaxMana = maxMana;
+      this.settings.userMana = maxMana;
+    }
+
+    // Update max if stats increased
+    if (maxHP > this.settings.userMaxHP) {
+      const hpPercent = this.settings.userHP / this.settings.userMaxHP;
+      this.settings.userMaxHP = maxHP;
+      this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
+    }
+    if (maxMana > this.settings.userMaxMana) {
+      const manaPercent = this.settings.userMana / this.settings.userMaxMana;
+      this.settings.userMaxMana = maxMana;
+      this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
+    }
+
+    const hpPercent = (this.settings.userHP / this.settings.userMaxHP) * 100;
+    const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;
+
     return `
       <div class="sls-chat-header">
-        <div class="sls-chat-title">Solo Leveling</div>
+        <div class="sls-chat-hp-mana-display" id="sls-chat-hp-mana-display" style="display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
+            <div style="color: #ec4899; font-size: 11px; font-weight: 600; min-width: 30px; flex-shrink: 0;">HP</div>
+            <div style="flex: 1; height: 12px; background: rgba(20, 20, 30, 0.8); border-radius: 6px; overflow: hidden; position: relative; min-width: 0;">
+              <div id="sls-hp-bar-fill" style="height: 100%; width: ${hpPercent}%; background: linear-gradient(90deg, #a855f7 0%, #9333ea 50%, #7c3aed 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(168, 85, 247, 0.5), inset 0 0 15px rgba(147, 51, 234, 0.3);"></div>
+            </div>
+            <div id="sls-hp-text" style="color: rgba(255, 255, 255, 0.7); font-size: 10px; min-width: 50px; text-align: right; flex-shrink: 0; display: flex;">${Math.floor(
+              this.settings.userHP
+            )}/${this.settings.userMaxHP}</div>
+          </div>
+          <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
+            <div style="color: #3b82f6; font-size: 11px; font-weight: 600; min-width: 30px; flex-shrink: 0;">MP</div>
+            <div id="sls-mp-bar-container" style="flex: 1; height: 12px; background: rgba(20, 20, 30, 0.8); border-radius: 6px; overflow: hidden; position: relative; min-width: 0;">
+              <div id="sls-mp-bar-fill" style="height: 100%; width: ${manaPercent}%; background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(96, 165, 250, 0.5), inset 0 0 15px rgba(59, 130, 246, 0.3);"></div>
+            </div>
+            <div id="sls-mp-text" style="color: rgba(255, 255, 255, 0.7); font-size: 10px; min-width: 50px; text-align: right; flex-shrink: 0; display: flex;">${Math.floor(
+              this.settings.userMana
+            )}/${this.settings.userMaxMana}</div>
+          </div>
+        </div>
         <button class="sls-chat-toggle" id="sls-chat-toggle"></button>
       </div>
       <div class="sls-chat-content" id="sls-chat-content">
@@ -698,6 +996,7 @@ module.exports = class SoloLevelingStats {
             <div class="sls-chat-progress-bar">
               <div class="sls-chat-progress-fill" style="width: ${xpPercent}%"></div>
             </div>
+            <div class="sls-chat-shadow-power">Shadow Power: ${this.getTotalShadowPower()}</div>
           </div>
         </div>
 
@@ -734,7 +1033,7 @@ module.exports = class SoloLevelingStats {
             if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
               buffs.push(`+${titleBonus.vitality} VIT`);
             if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-              buffs.push(`+${titleBonus.luck} LUK`);
+              buffs.push(`+${titleBonus.luck} PER`);
             return buffs.length > 0
               ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
               : '';
@@ -906,11 +1205,12 @@ module.exports = class SoloLevelingStats {
             ? `
         <div class="sls-chat-achievements-list">
           ${unlockedAchievements
+            .filter((a) => a && a.name) // Safety check: filter out invalid achievements
             .map(
               (a) => `
             <div class="sls-chat-achievement-item">
               <span class="sls-chat-achievement-icon">[+]</span>
-              <span class="sls-chat-achievement-name">${a.name}</span>
+              <span class="sls-chat-achievement-name">${a.name || 'Unknown'}</span>
             </div>
           `
             )
@@ -939,34 +1239,72 @@ module.exports = class SoloLevelingStats {
 
     const totalStats = this.getTotalEffectiveStats();
     const titleBonus = this.getActiveTitleBonus();
+    const shadowBuffs = this.getShadowArmyBuffs();
 
     return stats
       .map((stat) => {
         const baseValue = this.settings.stats[stat.key];
         const totalValue = totalStats[stat.key];
+
         // Support both old format (raw) and new format (percentage)
         const statPercentKey = `${stat.key}Percent`;
         const titleBuffPercent =
           titleBonus[statPercentKey] || (titleBonus[stat.key] ? titleBonus[stat.key] / 100 : 0);
         const hasTitleBuff = titleBuffPercent > 0;
+
+        // Get shadow buff for this stat (support both 'luck' and 'perception')
+        // Shadow buffs are percentages (0.1 = 10%), so multiply by 100 for display
+        const shadowBuffKey =
+          stat.key === 'perception'
+            ? shadowBuffs.perception || shadowBuffs.luck || 0
+            : shadowBuffs[stat.key] || 0;
+        const hasShadowBuff = shadowBuffKey > 0;
+        const shadowBuffPercent = shadowBuffKey * 100; // Convert to percentage for display
+
         const canAllocate = this.settings.unallocatedStatPoints > 0;
-        const titleBuffDisplay = hasTitleBuff
-          ? ` +${(titleBuffPercent * 100).toFixed(0)}% from title`
-          : '';
+
+        // Build buff display string
+        let buffDisplayParts = [];
+        if (hasTitleBuff) {
+          buffDisplayParts.push(`+${(titleBuffPercent * 100).toFixed(0)}% title`);
+        }
+        if (hasShadowBuff) {
+          buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
+        }
+        const buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
+
+        // Store numeric value without % suffix to avoid double % when building strings
+        const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
+
+        // Build tooltip showing breakdown
+        let tooltipParts = [`${stat.fullName}: Base ${baseValue}`];
+        if (hasTitleBuff && titleBuffValue !== null) {
+          tooltipParts.push(`+${titleBuffValue}% title`);
+        }
+        if (hasShadowBuff) {
+          tooltipParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
+        }
+        tooltipParts.push(`Total: ${totalValue}`);
+        tooltipParts.push(`${stat.desc} per point`);
+        const tooltip = tooltipParts.join(' | ');
 
         return `
         <button
           class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
           data-stat="${stat.key}"
           ${!canAllocate ? 'disabled' : ''}
-          title="${stat.fullName}: ${baseValue} (Total: ${totalValue}${titleBuffDisplay}) - ${
-          stat.desc
-        } per point"
+          title="${tooltip}"
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
           <div class="sls-chat-stat-btn-value">
             ${totalValue}
-            ${hasTitleBuff ? `<span class="sls-chat-stat-buff">(+${titleBuff})</span>` : ''}
+            ${
+              hasTitleBuff || hasShadowBuff
+                ? `<span class="sls-chat-stat-buff">${
+                    hasTitleBuff && titleBuffValue !== null ? `+${titleBuffValue}%` : ''
+                  }${hasShadowBuff ? `+${shadowBuffPercent.toFixed(0)}%` : ''}</span>`
+                : ''
+            }
           </div>
           ${canAllocate ? '<div class="sls-chat-stat-btn-plus">+</div>' : ''}
         </button>
@@ -976,7 +1314,14 @@ module.exports = class SoloLevelingStats {
   }
 
   /**
-   * Get total effective stats including base stats, natural growth, allocated stats, and title buffs
+   * Get total effective stats including ALL sources:
+   * - Base stats (from settings.stats)
+   * - Natural growth (already included in settings.stats)
+   * - Allocated stats (already included in settings.stats)
+   * - Title buffs (multiplicative percentage bonuses)
+   * - Shadow Army buffs (additive flat bonuses from shadow roles)
+   *
+   * Formula: (baseStats * (1 + titlePercent)) + shadowBuffs
    */
   getTotalEffectiveStats() {
     const baseStats = { ...this.settings.stats };
@@ -1001,16 +1346,88 @@ module.exports = class SoloLevelingStats {
     const perceptionPercent =
       titleBonus.perceptionPercent || (perceptionTitleBonus ? perceptionTitleBonus / 100 : 0);
 
-    // Apply multiplicatively (multiply base stats by title multiplier)
-    return {
+    // Apply title bonuses multiplicatively (multiply base stats by title multiplier)
+    const statsWithTitle = {
       strength: Math.round(baseStats.strength * (1 + strengthPercent)),
       agility: Math.round(baseStats.agility * (1 + agilityPercent)),
       intelligence: Math.round(baseStats.intelligence * (1 + intelligencePercent)),
       vitality: Math.round(baseStats.vitality * (1 + vitalityPercent)),
       perception: Math.round(perceptionStat * (1 + perceptionPercent)),
-      // Keep 'luck' for backward compatibility with title bonuses
-      luck: Math.round(perceptionStat * (1 + perceptionPercent)),
     };
+
+    // Get Shadow Army buffs (percentage-based multipliers, like titles)
+    // Shadow buffs are defined as percentages: 0.1 = 10%, 0.05 = 5%, etc.
+    // Each shadow role gives percentage buffs that stack additively
+    // Example: Tank shadow gives +10% VIT, +5% STR
+    // If you have 100 VIT and 1 Tank shadow: +10 VIT (100 * 0.1)
+    const shadowBuffs = this.getShadowArmyBuffs();
+
+    // Apply shadow buffs multiplicatively (like titles, but they stack additively)
+    // Shadow buffs are percentages that stack: if you have 2 Tank shadows, you get +20% VIT total
+    return {
+      strength: Math.round(statsWithTitle.strength * (1 + (shadowBuffs.strength || 0))),
+      agility: Math.round(statsWithTitle.agility * (1 + (shadowBuffs.agility || 0))),
+      intelligence: Math.round(statsWithTitle.intelligence * (1 + (shadowBuffs.intelligence || 0))),
+      vitality: Math.round(statsWithTitle.vitality * (1 + (shadowBuffs.vitality || 0))),
+      perception: Math.round(
+        statsWithTitle.perception * (1 + (shadowBuffs.perception || shadowBuffs.luck || 0))
+      ),
+    };
+  }
+
+  /**
+   * Get Shadow Army buffs from ShadowArmy plugin
+   * Returns additive flat stat bonuses from shadow roles
+   */
+  getShadowArmyBuffs() {
+    try {
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+        return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      }
+
+      const shadowArmy = shadowArmyPlugin.instance;
+
+      // Use calculateTotalBuffs if available (async method)
+      // For synchronous access, try to get cached buffs or calculate synchronously
+      if (shadowArmy.calculateTotalBuffs) {
+        // Try to get buffs synchronously if there's a cached version
+        // Otherwise return zeros (will be updated asynchronously)
+        if (shadowArmy.cachedBuffs && Date.now() - (shadowArmy.cachedBuffsTime || 0) < 5000) {
+          // Use cached buffs if recent (within 5 seconds)
+          return shadowArmy.cachedBuffs;
+        }
+
+        // Trigger async calculation and cache it
+        shadowArmy
+          .calculateTotalBuffs()
+          .then((buffs) => {
+            shadowArmy.cachedBuffs = buffs;
+            shadowArmy.cachedBuffsTime = Date.now();
+            // Update UI when buffs are calculated
+            this.updateChatUI();
+          })
+          .catch(() => {
+            // Silently fail if ShadowArmy isn't ready
+          });
+
+        // Return zeros for now, will be updated when async calculation completes
+        return (
+          shadowArmy.cachedBuffs || {
+            strength: 0,
+            agility: 0,
+            intelligence: 0,
+            vitality: 0,
+            perception: 0,
+          }
+        );
+      }
+
+      return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+    } catch (error) {
+      // Silently fail if ShadowArmy isn't available
+      return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+    }
   }
 
   renderChatStats() {
@@ -1036,7 +1453,16 @@ module.exports = class SoloLevelingStats {
 
     return Object.entries(baseStats)
       .map(([key, baseValue]) => {
+        // Skip 'luck' key - it's been migrated to 'perception', but may still exist in old data
+        if (key === 'luck') return '';
+
         const def = statDefs[key];
+        // Skip if stat definition doesn't exist (safety check)
+        if (!def) {
+          console.warn(`SoloLevelingStats: Unknown stat key "${key}" in renderChatStats`);
+          return '';
+        }
+
         const totalValue = totalStats[key];
         // Support both old format (raw) and new format (percentage)
         const statPercentKey = `${key}Percent`;
@@ -1058,6 +1484,7 @@ module.exports = class SoloLevelingStats {
         </div>
       `;
       })
+      .filter((html) => html !== '') // Remove empty strings
       .join('');
   }
 
@@ -1077,6 +1504,54 @@ module.exports = class SoloLevelingStats {
       // Set initial arrow state
       toggleBtn.textContent = isCurrentlyExpanded ? '' : '';
 
+      // Set initial HP/MP text visibility and bar styling (show when expanded, hide when collapsed)
+      const hpManaDisplay = panel.querySelector('#sls-chat-hp-mana-display');
+      if (hpManaDisplay) {
+        const hpText = hpManaDisplay.querySelector('#sls-hp-text');
+        const manaText = hpManaDisplay.querySelector('#sls-mp-text');
+        const hpBarContainer = hpManaDisplay.querySelector('#sls-hp-bar-fill')?.parentElement;
+        const manaBarContainer = hpManaDisplay.querySelector('#sls-mp-bar-container');
+
+        // Hide text when collapsed (toggle off), show when expanded (toggle on)
+        if (hpText) {
+          hpText.style.display = isCurrentlyExpanded ? 'flex' : 'none';
+        }
+        if (manaText) {
+          manaText.style.display = isCurrentlyExpanded ? 'flex' : 'none';
+        }
+
+        // Enhance bars when collapsed: make them taller and wider
+        if (hpBarContainer) {
+          hpBarContainer.style.height = isCurrentlyExpanded ? '12px' : '16px';
+          hpBarContainer.style.minHeight = isCurrentlyExpanded ? '12px' : '16px';
+          hpBarContainer.style.minWidth = isCurrentlyExpanded ? '0' : '100px';
+        }
+        if (manaBarContainer) {
+          manaBarContainer.style.height = isCurrentlyExpanded ? '12px' : '16px';
+          manaBarContainer.style.minHeight = isCurrentlyExpanded ? '12px' : '16px';
+          manaBarContainer.style.minWidth = isCurrentlyExpanded ? '0' : '100px';
+        }
+
+        // Increase container width when collapsed
+        const hpContainer = hpManaDisplay.children[0];
+        const manaContainer = hpManaDisplay.children[1];
+        if (hpContainer) {
+          hpContainer.style.minWidth = isCurrentlyExpanded ? '0' : '133px';
+          hpContainer.style.flex = isCurrentlyExpanded ? '1' : '1.3';
+        }
+        if (manaContainer) {
+          manaContainer.style.minWidth = isCurrentlyExpanded ? '0' : '133px';
+          manaContainer.style.flex = isCurrentlyExpanded ? '1' : '1.3';
+        }
+
+        // Add/remove collapsed class for styling
+        if (isCurrentlyExpanded) {
+          hpManaDisplay.classList.remove('sls-hp-mana-collapsed');
+        } else {
+          hpManaDisplay.classList.add('sls-hp-mana-collapsed');
+        }
+      }
+
       toggleBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -1090,6 +1565,56 @@ module.exports = class SoloLevelingStats {
 
         content.style.display = isExpanded ? 'none' : 'block';
         toggleBtn.textContent = isExpanded ? '' : '';
+
+        // Toggle HP/MP text numbers visibility and enhance bars when collapsed
+        const hpManaDisplay = panel.querySelector('#sls-chat-hp-mana-display');
+        if (hpManaDisplay) {
+          const hpText = hpManaDisplay.querySelector('#sls-hp-text');
+          const manaText = hpManaDisplay.querySelector('#sls-mp-text');
+          const hpBarContainer = hpManaDisplay.querySelector('#sls-hp-bar-fill')?.parentElement;
+          const manaBarContainer = hpManaDisplay.querySelector('#sls-mp-bar-container');
+
+          // After toggle: isExpanded is the OLD state, so !isExpanded is the NEW state
+          // Hide text when collapsed (toggle off), show when expanded (toggle on)
+          const newExpandedState = !isExpanded;
+          if (hpText) {
+            hpText.style.display = newExpandedState ? 'flex' : 'none';
+          }
+          if (manaText) {
+            manaText.style.display = newExpandedState ? 'flex' : 'none';
+          }
+
+          // Enhance bars when collapsed: make them taller and wider
+          if (hpBarContainer) {
+            hpBarContainer.style.height = newExpandedState ? '12px' : '16px';
+            hpBarContainer.style.minHeight = newExpandedState ? '12px' : '16px';
+            hpBarContainer.style.minWidth = newExpandedState ? '0' : '100px';
+          }
+          if (manaBarContainer) {
+            manaBarContainer.style.height = newExpandedState ? '12px' : '16px';
+            manaBarContainer.style.minHeight = newExpandedState ? '12px' : '16px';
+            manaBarContainer.style.minWidth = newExpandedState ? '0' : '100px';
+          }
+
+          // Increase container width when collapsed
+          const hpContainer = hpManaDisplay.children[0];
+          const manaContainer = hpManaDisplay.children[1];
+          if (hpContainer) {
+            hpContainer.style.minWidth = newExpandedState ? '0' : '133px';
+            hpContainer.style.flex = newExpandedState ? '1' : '1.3';
+          }
+          if (manaContainer) {
+            manaContainer.style.minWidth = newExpandedState ? '0' : '133px';
+            manaContainer.style.flex = newExpandedState ? '1' : '1.3';
+          }
+
+          // Add/remove compact class for styling
+          if (newExpandedState) {
+            hpManaDisplay.classList.remove('sls-hp-mana-collapsed');
+          } else {
+            hpManaDisplay.classList.add('sls-hp-mana-collapsed');
+          }
+        }
 
         // OPTIMIZED: Removed verbose logging for GUI toggle (happens frequently)
         // this.debugLog('CHAT_GUI', 'Chat GUI toggled', { wasExpanded: isExpanded, nowExpanded: !isExpanded });
@@ -1197,6 +1722,10 @@ module.exports = class SoloLevelingStats {
 
     const levelInfo = this.getCurrentLevel();
     const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+    const totalStats = this.getTotalEffectiveStats();
+
+    // Update HP/Mana bars
+    this.updateHPManaBars();
 
     // Update rank display
     const rankEl = this.chatUIPanel.querySelector('.sls-chat-rank');
@@ -1209,6 +1738,9 @@ module.exports = class SoloLevelingStats {
     // Update progress bar
     const progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
     if (progressFill) progressFill.style.width = `${xpPercent}%`;
+
+    // Update shadow power display using cached value
+    this.updateShadowPowerDisplay();
 
     // Update active title
     const titleDisplay = this.chatUIPanel.querySelector('.sls-chat-title-display');
@@ -1251,7 +1783,7 @@ module.exports = class SoloLevelingStats {
               if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
                 buffs.push(`+${titleBonus.vitality} VIT`);
               if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-                buffs.push(`+${titleBonus.luck} LUK`);
+                buffs.push(`+${titleBonus.luck} PER`);
 
               return buffs.length > 0
                 ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
@@ -1291,7 +1823,7 @@ module.exports = class SoloLevelingStats {
           if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
             buffs.push(`+${titleBonus.vitality} VIT`);
           if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-            buffs.push(`+${titleBonus.luck} LUK`);
+            buffs.push(`+${titleBonus.luck} PER`);
 
           titleBonusEl.textContent = buffs.length > 0 ? buffs.join(', ') : '';
         }
@@ -1300,21 +1832,21 @@ module.exports = class SoloLevelingStats {
       titleDisplay.remove();
     }
 
-    // Update stat values
+    // Update stat values (use total effective stats to stay in sync with renderChatStats)
     this.chatUIPanel.querySelectorAll('.sls-chat-stat-item').forEach((item) => {
       const statName = item.dataset.stat;
       const valueEl = item.querySelector('.sls-chat-stat-value');
-      if (valueEl) valueEl.textContent = this.settings.stats[statName];
+      if (valueEl) valueEl.textContent = totalStats[statName] ?? this.settings.stats[statName];
     });
 
-    // Update stat button values
+    // Update stat button values (keep total values visible, base stats for tooltips)
     this.chatUIPanel.querySelectorAll('.sls-chat-stat-btn').forEach((btn) => {
       const statName = btn.dataset.stat;
       const valueEl = btn.querySelector('.sls-chat-stat-btn-value');
       if (valueEl) {
-        valueEl.textContent = this.settings.stats[statName];
+        valueEl.textContent = totalStats[statName] ?? this.settings.stats[statName];
       }
-      // Update button state
+      // Update button state (use base stats for allocation logic)
       const currentValue = this.settings.stats[statName];
       const canAllocate = this.settings.unallocatedStatPoints > 0;
       btn.disabled = !canAllocate;
@@ -1325,6 +1857,9 @@ module.exports = class SoloLevelingStats {
         plusEl.style.display = canAllocate ? 'block' : 'none';
       }
     });
+
+    // Update HP/Mana bars
+    this.updateHPManaBars();
 
     // Update unallocated points and stat allocation section
     const statAllocationEl = this.chatUIPanel.querySelector('.sls-chat-stat-allocation');
@@ -1404,7 +1939,6 @@ module.exports = class SoloLevelingStats {
                 intelligence: { fullName: 'Intelligence', desc: '+10% Long Msg' },
                 vitality: { fullName: 'Vitality', desc: '+5% Quests' },
                 perception: { fullName: 'Perception', desc: 'Random buff stacks' },
-                luck: { fullName: 'Perception', desc: 'Random buff stacks' }, // Backward compatibility
               };
               const def = statDefs[statName];
               if (def) {
@@ -1473,6 +2007,47 @@ module.exports = class SoloLevelingStats {
         margin-bottom: 10px;
         padding-bottom: 8px;
         border-bottom: 1px solid rgba(138, 43, 226, 0.2);
+        gap: 12px;
+      }
+
+      .sls-chat-hp-mana-display {
+        display: flex !important;
+        align-items: center !important;
+        gap: 12px !important;
+        flex: 1 !important;
+        min-width: 0 !important;
+        overflow: hidden !important;
+        transition: gap 0.3s ease;
+      }
+
+      /* Enhanced styling when collapsed (toggle off) - make bars more prominent */
+      .sls-chat-hp-mana-display.sls-hp-mana-collapsed {
+        gap: 16px !important;
+        min-width: 333px !important;
+      }
+
+      /* Increase horizontal size of HP/MP containers when collapsed */
+      .sls-hp-mana-collapsed > div {
+        flex: 1.3 !important;
+        min-width: 133px !important;
+      }
+
+      .sls-hp-mana-collapsed > div > div:nth-child(2),
+      .sls-hp-mana-collapsed #sls-mp-bar-container {
+        height: 16px !important;
+        min-height: 16px !important;
+        min-width: 100px !important;
+        flex: 1 !important;
+        box-shadow: 0 0 6px rgba(139, 92, 246, 0.4) !important;
+        border: 1px solid rgba(139, 92, 246, 0.2) !important;
+      }
+
+      /* Make bar fills more visible when collapsed */
+      .sls-hp-mana-collapsed #sls-hp-bar-fill {
+        box-shadow: 0 0 10px rgba(168, 85, 247, 0.6), inset 0 0 20px rgba(147, 51, 234, 0.4) !important;
+      }
+      .sls-hp-mana-collapsed #sls-mp-bar-fill {
+        box-shadow: 0 0 10px rgba(96, 165, 250, 0.6), inset 0 0 20px rgba(59, 130, 246, 0.4) !important;
       }
 
       .sls-chat-title {
@@ -1496,6 +2071,8 @@ module.exports = class SoloLevelingStats {
         display: flex;
         align-items: center;
         justify-content: center;
+        flex-shrink: 0;
+        margin-left: 8px;
       }
 
       .sls-chat-toggle:hover {
@@ -1515,6 +2092,20 @@ module.exports = class SoloLevelingStats {
         display: flex;
         flex-direction: row;
         width: 100%;
+      }
+
+      .sls-chat-shadow-power {
+        color: #8b5cf6;
+        font-size: 12px;
+        font-weight: 600;
+        margin-left: 12px;
+        white-space: nowrap;
+        text-shadow: 0 0 4px rgba(139, 92, 246, 0.6);
+        display: flex !important;
+        align-items: center;
+        flex-shrink: 0;
+        visibility: visible !important;
+        opacity: 1 !important;
       }
 
       .sls-chat-level-row {
@@ -2227,6 +2818,16 @@ module.exports = class SoloLevelingStats {
     // Remove chat UI
     this.removeChatUI();
 
+    // Stop shadow power observer/interval
+    if (this.shadowPowerObserver) {
+      this.shadowPowerObserver.disconnect();
+      this.shadowPowerObserver = null;
+    }
+    if (this.shadowPowerInterval) {
+      clearInterval(this.shadowPowerInterval);
+      this.shadowPowerInterval = null;
+    }
+
     // Save before stopping
     this.saveSettings(true);
 
@@ -2634,10 +3235,18 @@ module.exports = class SoloLevelingStats {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === 1) {
             // Element node
+            // Mark when element was added to DOM (for timestamp fallback)
+            node._addedTime = Date.now();
+
             // Check if this is a message element
             const messageElement = node.classList?.contains('message')
               ? node
               : node.querySelector?.('[class*="message"]') || node.closest?.('[class*="message"]');
+
+            // Also mark message element with added time
+            if (messageElement && messageElement !== node) {
+              messageElement._addedTime = Date.now();
+            }
 
             if (messageElement) {
               // Check if this is our own message
@@ -2712,6 +3321,21 @@ module.exports = class SoloLevelingStats {
                     return; // Don't process - too risky
                   }
 
+                  // CRITICAL: Check message timestamp to prevent processing old chat history
+                  const messageTimestamp = self.getMessageTimestamp(messageElement);
+                  const isNewMessage =
+                    messageTimestamp && messageTimestamp >= (self.pluginStartTime || 0);
+
+                  if (!isNewMessage && messageTimestamp) {
+                    self.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
+                      messageId,
+                      messageTimestamp,
+                      pluginStartTime: self.pluginStartTime,
+                      age: Date.now() - messageTimestamp,
+                    });
+                    return; // Don't process old messages
+                  }
+
                   self.processedMessageIds.add(messageId);
 
                   // Get message text
@@ -2729,6 +3353,8 @@ module.exports = class SoloLevelingStats {
                       length: messageText.length,
                       preview: messageText.substring(0, 50),
                       confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
+                      isNewMessage,
+                      messageTimestamp,
                     });
                     setTimeout(() => {
                       self.processMessageSent(messageText);
@@ -2992,6 +3618,61 @@ module.exports = class SoloLevelingStats {
     }
 
     return messageId;
+  }
+
+  /**
+   * Get message timestamp from React props or DOM
+   * Returns timestamp in milliseconds, or null if not found
+   */
+  getMessageTimestamp(messageElement) {
+    try {
+      // Method 1: Try React props (most reliable)
+      const reactKey = Object.keys(messageElement).find(
+        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+      );
+      if (reactKey) {
+        let fiber = messageElement[reactKey];
+        for (let i = 0; i < 20 && fiber; i++) {
+          const timestamp =
+            fiber.memoizedProps?.message?.timestamp ||
+            fiber.memoizedState?.message?.timestamp ||
+            fiber.memoizedProps?.message?.createdTimestamp;
+          if (timestamp) {
+            // Discord timestamps can be in seconds or milliseconds
+            return typeof timestamp === 'string'
+              ? new Date(timestamp).getTime()
+              : timestamp < 1000000000000
+              ? timestamp * 1000
+              : timestamp;
+          }
+          fiber = fiber.return;
+        }
+      }
+
+      // Method 2: Try to find timestamp element in DOM
+      const timestampElement = messageElement.querySelector('[class*="timestamp"]');
+      if (timestampElement) {
+        const timeAttr =
+          timestampElement.getAttribute('datetime') || timestampElement.getAttribute('title');
+        if (timeAttr) {
+          const parsed = new Date(timeAttr).getTime();
+          if (!isNaN(parsed)) return parsed;
+        }
+      }
+
+      // Method 3: Check if message was just added (within last 5 seconds = likely new)
+      // This is a fallback for messages without timestamp data
+      const elementAge = Date.now() - (messageElement._addedTime || Date.now());
+      if (elementAge < 5000) {
+        // Assume it's new if added within last 5 seconds
+        return Date.now();
+      }
+
+      return null;
+    } catch (error) {
+      this.debugError('GET_MESSAGE_TIMESTAMP', error);
+      return null;
+    }
   }
 
   isSystemMessage(messageElement) {
@@ -4166,6 +4847,87 @@ module.exports = class SoloLevelingStats {
     return Math.round(exponentialPart + linearPart);
   }
 
+  /**
+   * Calculate max HP from vitality stat and rank
+   */
+  calculateHP(vitality, rank = 'E') {
+    const rankIndex = Math.max(this.settings.ranks.indexOf(rank), 0);
+    const baseHP = 100;
+    return baseHP + vitality * 10 + rankIndex * 50;
+  }
+
+  /**
+   * Calculate max mana from intelligence stat
+   */
+  calculateMana(intelligence) {
+    const baseMana = 100;
+    return baseMana + intelligence * 10;
+  }
+
+  /**
+   * Update HP/Mana bars in chat UI
+   */
+  updateHPManaBars() {
+    const hpManaDisplay = this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
+    if (!hpManaDisplay) return;
+
+    const totalStats = this.getTotalEffectiveStats();
+    const vitality = totalStats.vitality || 0;
+    const intelligence = totalStats.intelligence || 0;
+    const userRank = this.settings.rank || 'E';
+    const maxHP = this.calculateHP(vitality, userRank);
+    const maxMana = this.calculateMana(intelligence);
+
+    // Initialize if needed
+    if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
+      this.settings.userMaxHP = maxHP;
+      this.settings.userHP = maxHP;
+    }
+    if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
+      this.settings.userMaxMana = maxMana;
+      this.settings.userMana = maxMana;
+    }
+
+    // Update max if stats increased
+    if (maxHP > this.settings.userMaxHP) {
+      const hpPercent = this.settings.userHP / this.settings.userMaxHP;
+      this.settings.userMaxHP = maxHP;
+      this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
+    }
+    if (maxMana > this.settings.userMaxMana) {
+      const manaPercent = this.settings.userMana / this.settings.userMaxMana;
+      this.settings.userMaxMana = maxMana;
+      this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
+    }
+
+    const hpPercent = (this.settings.userHP / this.settings.userMaxHP) * 100;
+    const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;
+
+    // Update HP bar fill and text (use IDs for reliable selection)
+    const hpBarFill = hpManaDisplay.querySelector('#sls-hp-bar-fill');
+    const hpText = hpManaDisplay.querySelector('#sls-hp-text');
+    const manaBarFill = hpManaDisplay.querySelector('#sls-mp-bar-fill');
+    const manaText = hpManaDisplay.querySelector('#sls-mp-text');
+
+    // Update HP bar
+    if (hpBarFill) {
+      hpBarFill.style.width = `${hpPercent}%`;
+    }
+    if (hpText) {
+      hpText.textContent = `${Math.floor(this.settings.userHP)}/${this.settings.userMaxHP}`;
+    }
+
+    // Update Mana bar fill and text
+    if (manaBarFill) {
+      manaBarFill.style.width = `${manaPercent}%`;
+    } else {
+      console.warn('SoloLevelingStats: Mana bar fill not found');
+    }
+    if (manaText) {
+      manaText.textContent = `${Math.floor(this.settings.userMana)}/${this.settings.userMaxMana}`;
+    }
+  }
+
   getCurrentLevel() {
     let level = 1;
     let totalXPNeeded = 0;
@@ -4192,23 +4954,6 @@ module.exports = class SoloLevelingStats {
   checkLevelUp(oldLevel) {
     try {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'SoloLevelingStats.plugin.js:3831',
-          message: 'CHECK_LEVEL_UP - entry',
-          data: {
-            oldLevel,
-            currentLevel: this.settings.level,
-            unallocatedPoints: this.settings.unallocatedStatPoints,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
       // #endregion
 
       this.debugLog('CHECK_LEVEL_UP', 'Checking for level up', { oldLevel });
@@ -4221,51 +4966,21 @@ module.exports = class SoloLevelingStats {
         const levelsGained = newLevel - oldLevel;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'SoloLevelingStats.plugin.js:3840',
-            message: 'LEVEL UP DETECTED',
-            data: {
-              oldLevel,
-              newLevel,
-              levelsGained,
-              unallocatedPointsBefore: this.settings.unallocatedStatPoints,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
         // #endregion
 
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
         const statPointsBefore = this.settings.unallocatedStatPoints;
-        this.settings.unallocatedStatPoints += levelsGained * 5; // Award 5 stat points for each level
+        // IMPROVED: Award more stat points per level to ensure user stays ahead of shadows
+        // Base: 5 points per level
+        // Bonus: +1 point per 10 levels (level 10+ gets 6, level 20+ gets 7, etc.)
+        const baseStatPoints = 5;
+        const levelBonus = Math.floor(newLevel / 10); // +1 per 10 levels
+        const statPointsPerLevel = baseStatPoints + levelBonus;
+        this.settings.unallocatedStatPoints += levelsGained * statPointsPerLevel;
         const statPointsAfter = this.settings.unallocatedStatPoints;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'SoloLevelingStats.plugin.js:3844',
-            message: 'STAT POINTS AWARDED',
-            data: {
-              levelsGained,
-              statPointsBefore,
-              statPointsAfter,
-              statPointsAdded: statPointsAfter - statPointsBefore,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
         // #endregion
 
         this.debugLog('CHECK_LEVEL_UP', 'Level up detected!', {
@@ -4285,19 +5000,6 @@ module.exports = class SoloLevelingStats {
           const statsAfter = { ...this.settings.stats };
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'SoloLevelingStats.plugin.js:3858',
-              message: 'NATURAL STAT GROWTH PROCESSED',
-              data: { levelsGained, statsBefore, statsAfter },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'A',
-            }),
-          }).catch(() => {});
           // #endregion
 
           this.debugLog('CHECK_LEVEL_UP', 'Natural stat growth processed for skipped levels', {
@@ -4327,19 +5029,6 @@ module.exports = class SoloLevelingStats {
           this.pendingLevelUp.levelsGained =
             this.pendingLevelUp.newLevel - this.pendingLevelUp.oldLevel;
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'SoloLevelingStats.plugin.js:3880',
-              message: 'UPDATING PENDING LEVEL UP',
-              data: { pendingLevelUp: this.pendingLevelUp },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'A',
-            }),
-          }).catch(() => {});
           // #endregion
         } else {
           // Create new pending notification
@@ -4349,19 +5038,6 @@ module.exports = class SoloLevelingStats {
             levelsGained,
           };
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'SoloLevelingStats.plugin.js:3888',
-              message: 'CREATING PENDING LEVEL UP',
-              data: { pendingLevelUp: this.pendingLevelUp },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'A',
-            }),
-          }).catch(() => {});
           // #endregion
         }
 
@@ -4377,19 +5053,6 @@ module.exports = class SoloLevelingStats {
               levelsGained: finalLevelsGained,
             } = this.pendingLevelUp;
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'SoloLevelingStats.plugin.js:3897',
-                message: 'SHOWING DEBOUNCED LEVEL UP NOTIFICATION',
-                data: { finalOldLevel, finalNewLevel, finalLevelsGained },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'A',
-              }),
-            }).catch(() => {});
             // #endregion
             this.showLevelUpNotification(finalNewLevel, finalOldLevel);
             this.pendingLevelUp = null;
@@ -4559,24 +5222,6 @@ module.exports = class SoloLevelingStats {
 
   showLevelUpNotification(newLevel, oldLevel) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'SoloLevelingStats.plugin.js:4043',
-        message: 'SHOW_LEVEL_UP_NOTIFICATION',
-        data: {
-          oldLevel,
-          newLevel,
-          levelsGained: newLevel - oldLevel,
-          unallocatedPoints: this.settings.unallocatedStatPoints,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'A',
-      }),
-    }).catch(() => {});
     // #endregion
 
     const levelInfo = this.getCurrentLevel();
@@ -4656,8 +5301,9 @@ module.exports = class SoloLevelingStats {
       agi: 'agility',
       int: 'intelligence',
       vit: 'vitality',
-      luk: 'luck',
-      luck: 'luck',
+      luk: 'perception',
+      luck: 'perception', // Migration: map old 'luck' to 'perception'
+      per: 'perception',
     };
 
     if (statMap[statName]) {
@@ -4694,15 +5340,24 @@ module.exports = class SoloLevelingStats {
     this.settings.stats[statName]++;
     this.settings.unallocatedStatPoints--;
 
+    // Emit stats changed event for real-time updates
+    this.emit('statsChanged', {
+      stats: { ...this.settings.stats },
+      statChanged: statName,
+      oldValue,
+      newValue: this.settings.stats[statName],
+    });
+
     // Special handling for Perception: Generate random buff that stacks
     if (statName === 'perception' || statName === 'luck') {
       // Migration: Use 'perception' as the canonical name
       if (statName === 'luck') {
         statName = 'perception';
+        // Migrate luck value to perception if needed
         if (this.settings.stats.perception === undefined) {
-          this.settings.stats.perception = oldValue;
+          this.settings.stats.perception = this.settings.stats.luck || 0;
         }
-        this.settings.stats.perception++;
+        // Don't double-increment - already incremented above
         delete this.settings.stats.luck;
       }
 
@@ -4839,7 +5494,7 @@ module.exports = class SoloLevelingStats {
       const totalGrowth = messageBasedGrowth + levelBasedGrowth;
 
       if (totalGrowth > 0) {
-        const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+        const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         let statsAdded = 0;
 
         // Distribute growth evenly across all stats
@@ -4859,15 +5514,15 @@ module.exports = class SoloLevelingStats {
             this.settings.stats[statName] += growthToAdd;
             statsAdded += growthToAdd;
 
-            // Special handling for Luck: Generate random buffs
-            if (statName === 'luck') {
-              if (!Array.isArray(this.settings.luckBuffs)) {
-                this.settings.luckBuffs = [];
+            // Special handling for Perception: Generate random buffs
+            if (statName === 'perception') {
+              if (!Array.isArray(this.settings.perceptionBuffs)) {
+                this.settings.perceptionBuffs = [];
               }
               for (let i = 0; i < maxToAdd; i++) {
                 const randomBuff = Math.random() * 6 + 2; // 2% to 8%
                 const roundedBuff = Math.round(randomBuff * 10) / 10;
-                this.settings.luckBuffs.push(roundedBuff);
+                this.settings.perceptionBuffs.push(roundedBuff);
               }
             }
           }
@@ -4947,8 +5602,16 @@ module.exports = class SoloLevelingStats {
       const finalLevelInfo = this.getCurrentLevel();
       this.settings.xp = finalLevelInfo.xp;
 
-      // Reset unallocated stat points (5 per level)
-      this.settings.unallocatedStatPoints = targetLevel * 5;
+      // Reset unallocated stat points using the same formula as level-up
+      // Formula: 5 + Math.floor(level / 10) per level
+      // Sum stat points from level 1 to targetLevel
+      let totalStatPoints = 0;
+      const baseStatPoints = 5;
+      for (let level = 1; level <= targetLevel; level++) {
+        const levelBonus = Math.floor(level / 10);
+        totalStatPoints += baseStatPoints + levelBonus;
+      }
+      this.settings.unallocatedStatPoints = totalStatPoints;
 
       // Calculate natural stat growth for target level
       // Using expected values from the natural growth formula
@@ -5172,37 +5835,69 @@ module.exports = class SoloLevelingStats {
       const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
       let statsGrown = [];
 
+      // Get user level and rank for bonus growth
+      const userLevel = this.settings.level || 1;
+      const userRank = this.settings.rank || 'E';
+      const rankIndex = this.settings.ranks?.indexOf(userRank) || 0;
+
+      // Level-based bonus: +0.1% per level (caps at +10% at level 100)
+      const levelBonus = Math.min(0.1, userLevel * 0.001);
+
+      // Rank-based bonus: +0.05% per rank tier (E=0%, D=0.05%, ..., Shadow Monarch=0.6%)
+      const rankBonus = rankIndex * 0.0005;
+
       statNames.forEach((statName) => {
         const currentStat = this.settings.stats[statName] || 0;
 
-        // Calculate growth chance: base 0.3% + (0.05% per stat point)
-        // This means: 0 STR = 0.3%, 10 STR = 0.8%, 20 STR = 1.3%
-        // Higher stats have better chance to grow further (compounding effect)
-        const baseChance = 0.003; // 0.3% base chance
-        const scalingFactor = 0.0005; // +0.05% per stat point
-        const growthChance = baseChance + currentStat * scalingFactor;
+        // IMPROVED growth chance formula:
+        // Base: 0.5% (increased from 0.3%)
+        // Scaling: +0.1% per stat point (increased from 0.05%)
+        // Level bonus: +0.1% per level (up to +10% at level 100)
+        // Rank bonus: +0.05% per rank tier
+        // This ensures user stats grow faster than shadows
+        const baseChance = 0.005; // 0.5% base chance (increased from 0.3%)
+        const scalingFactor = 0.001; // +0.1% per stat point (increased from 0.05%)
+        const statScaling = currentStat * scalingFactor;
+
+        // Total growth chance with bonuses
+        const growthChance = Math.min(0.5, baseChance + statScaling + levelBonus + rankBonus); // Cap at 50% max
 
         // Roll for natural growth
         const roll = Math.random();
         if (roll < growthChance) {
           // Natural stat growth!
           const oldValue = currentStat;
-          this.settings.stats[statName]++;
+
+          // IMPROVED: Higher chance to grow multiple points at higher stats/levels
+          // At high stats (100+), 20% chance to grow by 2 points
+          // At very high stats (200+), 10% chance to grow by 3 points
+          let growthAmount = 1;
+          if (currentStat >= 200 && Math.random() < 0.1) {
+            growthAmount = 3; // Triple growth!
+          } else if (currentStat >= 100 && Math.random() < 0.2) {
+            growthAmount = 2; // Double growth!
+          }
+
+          this.settings.stats[statName] += growthAmount;
 
           // Special handling for Luck: Generate random buff that stacks
           if (statName === 'luck') {
             if (!Array.isArray(this.settings.luckBuffs)) {
               this.settings.luckBuffs = [];
             }
-            const randomBuff = Math.random() * 6 + 2; // 2% to 8%
-            const roundedBuff = Math.round(randomBuff * 10) / 10;
-            this.settings.luckBuffs.push(roundedBuff);
+            // Generate buffs for each point of growth
+            for (let i = 0; i < growthAmount; i++) {
+              const randomBuff = Math.random() * 6 + 2; // 2% to 8%
+              const roundedBuff = Math.round(randomBuff * 10) / 10;
+              this.settings.luckBuffs.push(roundedBuff);
+            }
           }
 
           statsGrown.push({
             stat: statName,
             oldValue,
             newValue: this.settings.stats[statName],
+            growthAmount,
             chance: (growthChance * 100).toFixed(2) + '%',
           });
 
@@ -5210,7 +5905,10 @@ module.exports = class SoloLevelingStats {
             statName,
             oldValue,
             newValue: this.settings.stats[statName],
+            growthAmount,
             growthChance: (growthChance * 100).toFixed(2) + '%',
+            levelBonus: (levelBonus * 100).toFixed(2) + '%',
+            rankBonus: (rankBonus * 100).toFixed(2) + '%',
             roll: roll.toFixed(4),
           });
         }
@@ -5235,16 +5933,19 @@ module.exports = class SoloLevelingStats {
           const statsList = statsGrown
             .map(
               (s) =>
-                `${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} (${s.oldValue}→${s.newValue})`
+                `${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} (${s.oldValue}→${s.newValue}${
+                  s.growthAmount > 1 ? ` +${s.growthAmount}` : ''
+                })`
             )
             .join(', ');
           this.showNotification(` Natural Growth! \n${statsList}`, 'success', 4000);
         } else if (statsGrown.length === 1) {
           const s = statsGrown[0];
+          const growthText = s.growthAmount > 1 ? ` +${s.growthAmount}` : '';
           this.showNotification(
             ` Natural ${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} Growth! \n${
               s.oldValue
-            } → ${s.newValue}`,
+            } → ${s.newValue}${growthText}`,
             'success',
             3000
           );
@@ -6277,7 +6978,6 @@ module.exports = class SoloLevelingStats {
         agility: 0,
         intelligence: 0,
         vitality: 0,
-        luck: 0,
         perception: 0,
         // New format (percentages) - primary format
         strengthPercent: 0,
@@ -6925,6 +7625,13 @@ module.exports = class SoloLevelingStats {
 
       .sls-stat-allocate:active {
         transform: translateY(0);
+      }
+
+      .sls-chat-hp-mana {
+        padding: 8px;
+        background: rgba(0, 0, 0, 0.3);
+        border-radius: 6px;
+        margin-bottom: 8px;
       }
 
       .sls-stat-maxed-badge {

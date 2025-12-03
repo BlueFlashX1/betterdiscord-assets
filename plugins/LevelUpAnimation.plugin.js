@@ -39,7 +39,7 @@ module.exports = class LevelUpAnimation {
     this.loadSettings();
     this.injectCSS();
     this.hookIntoSoloLeveling();
-    this.debugLog('Plugin started');
+    this.debugLog('START', 'Plugin started');
   }
 
   /**
@@ -53,7 +53,7 @@ module.exports = class LevelUpAnimation {
     this.unhookIntoSoloLeveling();
     this.removeAllAnimations();
     this.removeCSS();
-    this.debugLog('Plugin stopped');
+    this.debugLog('STOP', 'Plugin stopped');
   }
 
   // ============================================================================
@@ -71,7 +71,7 @@ module.exports = class LevelUpAnimation {
       const saved = BdApi.Data.load('LevelUpAnimation', 'settings');
       if (saved) {
         this.settings = { ...this.defaultSettings, ...saved };
-        this.debugLog('Settings loaded', this.settings);
+        this.debugLog('LOAD_SETTINGS', this.settings);
       }
     } catch (error) {
       this.debugError('Failed to load settings', error);
@@ -88,7 +88,7 @@ module.exports = class LevelUpAnimation {
   saveSettings() {
     try {
       BdApi.Data.save('LevelUpAnimation', 'settings', this.settings);
-      this.debugLog('Settings saved');
+      this.debugLog('SAVE_SETTINGS', this.settings);
     } catch (error) {
       this.debugError('Failed to save settings', error);
     }
@@ -113,19 +113,27 @@ module.exports = class LevelUpAnimation {
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Animation Duration (ms):</span>
-          <input type="number" id="lu-duration" value="${this.settings.animationDuration}" min="1000" max="10000" step="500" style="width: 100%; padding: 5px;">
+          <input type="number" id="lu-duration" value="${
+            this.settings.animationDuration
+          }" min="1000" max="10000" step="500" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Float Distance (px):</span>
-          <input type="number" id="lu-distance" value="${this.settings.floatDistance}" min="50" max="500" step="10" style="width: 100%; padding: 5px;">
+          <input type="number" id="lu-distance" value="${
+            this.settings.floatDistance
+          }" min="50" max="500" step="10" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Particle Count:</span>
-          <input type="number" id="lu-particles" value="${this.settings.particleCount}" min="10" max="100" step="5" style="width: 100%; padding: 5px;">
+          <input type="number" id="lu-particles" value="${
+            this.settings.particleCount
+          }" min="10" max="100" step="5" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Font Size (px):</span>
-          <input type="number" id="lu-fontsize" value="${this.settings.fontSize}" min="24" max="96" step="4" style="width: 100%; padding: 5px;">
+          <input type="number" id="lu-fontsize" value="${
+            this.settings.fontSize
+          }" min="24" max="96" step="4" style="width: 100%; padding: 5px;">
         </label>
       </div>
     `;
@@ -258,7 +266,7 @@ module.exports = class LevelUpAnimation {
       }
     `;
     document.head.appendChild(style);
-    this.debugLog('CSS injected');
+    this.debugLog('INIT', 'CSS injected');
   }
 
   removeCSS() {
@@ -282,7 +290,7 @@ module.exports = class LevelUpAnimation {
       this.animationContainer = document.createElement('div');
       this.animationContainer.className = 'lu-animation-container';
       document.body.appendChild(this.animationContainer);
-      this.debugLog('Animation container created');
+      this.debugLog('INIT', 'Animation container created');
     }
     return this.animationContainer;
   }
@@ -393,7 +401,7 @@ module.exports = class LevelUpAnimation {
    */
   showLevelUpAnimation(newLevel, oldLevel) {
     if (!this.settings.enabled) {
-      this.debugLog('Animation disabled, skipping');
+      this.debugLog('ANIMATION', 'Animation disabled, skipping');
       return;
     }
 
@@ -437,7 +445,7 @@ module.exports = class LevelUpAnimation {
         }
       }, this.settings.animationDuration);
 
-      this.debugLog('Level up animation shown', {
+      this.debugLog('ANIMATION', {
         newLevel,
         oldLevel,
         position,
@@ -464,14 +472,14 @@ module.exports = class LevelUpAnimation {
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin) {
-        this.debugLog('SoloLevelingStats plugin not found, will retry...');
+        this.debugLog('HOOK', 'SoloLevelingStats plugin not found, will retry...');
         setTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
 
       const instance = soloPlugin.instance || soloPlugin;
       if (!instance) {
-        this.debugLog('SoloLevelingStats instance not found, will retry...');
+        this.debugLog('HOOK', 'SoloLevelingStats instance not found, will retry...');
         setTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
@@ -487,9 +495,9 @@ module.exports = class LevelUpAnimation {
             this.showLevelUpAnimation(newLevel, oldLevel);
           }
         );
-        this.debugLog('Hooked into SoloLevelingStats.showLevelUpNotification');
+        this.debugLog('HOOK', 'Hooked into SoloLevelingStats.showLevelUpNotification');
       } else {
-        this.debugLog('showLevelUpNotification method not found, will retry...');
+        this.debugLog('HOOK', 'showLevelUpNotification method not found, will retry...');
         setTimeout(() => this.hookIntoSoloLeveling(), 2000);
       }
     } catch (error) {
@@ -508,7 +516,7 @@ module.exports = class LevelUpAnimation {
     if (this.patcher) {
       BdApi.Patcher.unpatchAll('LevelUpAnimation');
       this.patcher = null;
-      this.debugLog('Unhooked from SoloLevelingStats');
+      this.debugLog('HOOK', 'Unhooked from SoloLevelingStats');
     }
   }
 

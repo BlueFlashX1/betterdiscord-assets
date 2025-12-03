@@ -112,7 +112,7 @@ module.exports = class SkillTree {
             id: 'dagger_throw',
             name: 'Dagger Mastery',
             desc: 'Mastery over throwing daggers. Increases crit chance significantly.',
-            lore: 'Passive mastery of Jin-Woo\'s signature combat technique.',
+            lore: "Passive mastery of Jin-Woo's signature combat technique.",
             requirement: { level: 80, agility: 15 },
             baseEffect: { critBonus: 0.02 }, // +2% per level
             perLevelEffect: { critBonus: 0.02 },
@@ -149,7 +149,7 @@ module.exports = class SkillTree {
           },
           {
             id: 'ruler_authority',
-            name: 'Ruler\'s Presence',
+            name: "Ruler's Presence",
             desc: 'Passive aura of absolute authority. Increases all bonuses.',
             lore: 'The passive power to rule over all.',
             requirement: { level: 200, skills: ['arise'] },
@@ -162,12 +162,12 @@ module.exports = class SkillTree {
             desc: 'Mastery over commanding a legion of shadows. Massive XP and quest bonuses.',
             lore: 'Passively build an army of shadows to fight for you.',
             requirement: { level: 250, skills: ['shadow_exchange', 'arise'] },
-            baseEffect: { xpBonus: 0.10, questBonus: 0.06 }, // +10% XP, +6% quest per level
-            perLevelEffect: { xpBonus: 0.10, questBonus: 0.06 },
+            baseEffect: { xpBonus: 0.1, questBonus: 0.06 }, // +10% XP, +6% quest per level
+            perLevelEffect: { xpBonus: 0.1, questBonus: 0.06 },
           },
           {
             id: 'monarch_power',
-            name: 'Monarch\'s Aura',
+            name: "Monarch's Aura",
             desc: 'Passive aura of monarch-level power. Extreme bonuses.',
             lore: 'The power of a Monarch passively flows through you.',
             requirement: { level: 300, strength: 50, agility: 50 },
@@ -188,7 +188,7 @@ module.exports = class SkillTree {
         skills: [
           {
             id: 'shadow_monarch',
-            name: 'Shadow Monarch\'s Presence',
+            name: "Shadow Monarch's Presence",
             desc: 'Passive presence of the Shadow Monarch. Ultimate power over shadows.',
             lore: 'The ultimate form - passive ruler of all shadows.',
             requirement: { level: 500, skills: ['monarch_power', 'shadow_army'] },
@@ -197,12 +197,12 @@ module.exports = class SkillTree {
           },
           {
             id: 'ashborn_legacy',
-            name: 'Ashborn\'s Legacy',
-            desc: 'Passive inheritance of the first Shadow Monarch\'s power. Transcendent bonuses.',
+            name: "Ashborn's Legacy",
+            desc: "Passive inheritance of the first Shadow Monarch's power. Transcendent bonuses.",
             lore: 'The legacy of Ashborn passively flows through you.',
             requirement: { level: 750, skills: ['shadow_monarch'] },
-            baseEffect: { xpBonus: 0.20, allStatBonus: 0.10, critBonus: 0.05, questBonus: 0.08 }, // +20% XP, +10% stats, +5% crit, +8% quest per level
-            perLevelEffect: { xpBonus: 0.20, allStatBonus: 0.10, critBonus: 0.05, questBonus: 0.08 },
+            baseEffect: { xpBonus: 0.2, allStatBonus: 0.1, critBonus: 0.05, questBonus: 0.08 }, // +20% XP, +10% stats, +5% crit, +8% quest per level
+            perLevelEffect: { xpBonus: 0.2, allStatBonus: 0.1, critBonus: 0.05, questBonus: 0.08 },
           },
         ],
       },
@@ -222,8 +222,20 @@ module.exports = class SkillTree {
             desc: 'Passive authority over all existence. Maximum power.',
             lore: 'The ultimate passive authority - rule over everything.',
             requirement: { level: 1000, skills: ['ashborn_legacy'] },
-            baseEffect: { xpBonus: 0.25, allStatBonus: 0.12, critBonus: 0.06, questBonus: 0.10, longMsgBonus: 0.15 }, // +25% XP, +12% stats, +6% crit, +10% quest, +15% long msg per level
-            perLevelEffect: { xpBonus: 0.25, allStatBonus: 0.12, critBonus: 0.06, questBonus: 0.10, longMsgBonus: 0.15 },
+            baseEffect: {
+              xpBonus: 0.25,
+              allStatBonus: 0.12,
+              critBonus: 0.06,
+              questBonus: 0.1,
+              longMsgBonus: 0.15,
+            }, // +25% XP, +12% stats, +6% crit, +10% quest, +15% long msg per level
+            perLevelEffect: {
+              xpBonus: 0.25,
+              allStatBonus: 0.12,
+              critBonus: 0.06,
+              questBonus: 0.1,
+              longMsgBonus: 0.15,
+            },
           },
           {
             id: 'void_mastery',
@@ -231,17 +243,17 @@ module.exports = class SkillTree {
             desc: 'Mastery over the void itself. Transcendent XP and stat bonuses.',
             lore: 'Passive control over the void between dimensions.',
             requirement: { level: 1200, skills: ['absolute_ruler'] },
-            baseEffect: { xpBonus: 0.30, allStatBonus: 0.15, critBonus: 0.08 }, // +30% XP, +15% stats, +8% crit per level
-            perLevelEffect: { xpBonus: 0.30, allStatBonus: 0.15, critBonus: 0.08 },
+            baseEffect: { xpBonus: 0.3, allStatBonus: 0.15, critBonus: 0.08 }, // +30% XP, +15% stats, +8% crit per level
+            perLevelEffect: { xpBonus: 0.3, allStatBonus: 0.15, critBonus: 0.08 },
           },
           {
             id: 'dimension_ruler',
-            name: 'Dimension Ruler\'s Aura',
+            name: "Dimension Ruler's Aura",
             desc: 'Passive aura that rules across all dimensions. Massive bonuses.',
             lore: 'Your presence passively affects all dimensions.',
             requirement: { level: 1400, skills: ['void_mastery'] },
-            baseEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.10, questBonus: 0.12 }, // +35% XP, +18% stats, +10% crit, +12% quest per level
-            perLevelEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.10, questBonus: 0.12 },
+            baseEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.1, questBonus: 0.12 }, // +35% XP, +18% stats, +10% crit, +12% quest per level
+            perLevelEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.1, questBonus: 0.12 },
           },
         ],
       },
@@ -261,26 +273,55 @@ module.exports = class SkillTree {
             desc: 'Passive presence that transcends all limitations. Ultimate bonuses.',
             lore: 'Your very existence passively defies all known limits.',
             requirement: { level: 1500, skills: ['dimension_ruler'] },
-            baseEffect: { xpBonus: 0.40, allStatBonus: 0.20, critBonus: 0.12, questBonus: 0.15, longMsgBonus: 0.20 }, // +40% XP, +20% stats, +12% crit, +15% quest, +20% long msg per level
-            perLevelEffect: { xpBonus: 0.40, allStatBonus: 0.20, critBonus: 0.12, questBonus: 0.15, longMsgBonus: 0.20 },
+            baseEffect: {
+              xpBonus: 0.4,
+              allStatBonus: 0.2,
+              critBonus: 0.12,
+              questBonus: 0.15,
+              longMsgBonus: 0.2,
+            }, // +40% XP, +20% stats, +12% crit, +15% quest, +20% long msg per level
+            perLevelEffect: {
+              xpBonus: 0.4,
+              allStatBonus: 0.2,
+              critBonus: 0.12,
+              questBonus: 0.15,
+              longMsgBonus: 0.2,
+            },
           },
           {
             id: 'eternal_shadow',
-            name: 'Eternal Shadow\'s Embrace',
+            name: "Eternal Shadow's Embrace",
             desc: 'Passive embrace of eternal shadow power. Transcendent bonuses.',
             lore: 'The eternal shadow itself passively flows through you.',
             requirement: { level: 1750, skills: ['omnipotent_presence'] },
             baseEffect: { xpBonus: 0.45, allStatBonus: 0.25, critBonus: 0.15, questBonus: 0.18 }, // +45% XP, +25% stats, +15% crit, +18% quest per level
-            perLevelEffect: { xpBonus: 0.45, allStatBonus: 0.25, critBonus: 0.15, questBonus: 0.18 },
+            perLevelEffect: {
+              xpBonus: 0.45,
+              allStatBonus: 0.25,
+              critBonus: 0.15,
+              questBonus: 0.18,
+            },
           },
           {
             id: 'true_monarch',
-            name: 'True Monarch\'s Dominion',
+            name: "True Monarch's Dominion",
             desc: 'Passive dominion over all reality. Maximum possible power.',
-            lore: 'The true monarch\'s passive dominion extends over all existence.',
+            lore: "The true monarch's passive dominion extends over all existence.",
             requirement: { level: 2000, skills: ['eternal_shadow'] },
-            baseEffect: { xpBonus: 0.50, allStatBonus: 0.30, critBonus: 0.18, questBonus: 0.20, longMsgBonus: 0.25 }, // +50% XP, +30% stats, +18% crit, +20% quest, +25% long msg per level
-            perLevelEffect: { xpBonus: 0.50, allStatBonus: 0.30, critBonus: 0.18, questBonus: 0.20, longMsgBonus: 0.25 },
+            baseEffect: {
+              xpBonus: 0.5,
+              allStatBonus: 0.3,
+              critBonus: 0.18,
+              questBonus: 0.2,
+              longMsgBonus: 0.25,
+            }, // +50% XP, +30% stats, +18% crit, +20% quest, +25% long msg per level
+            perLevelEffect: {
+              xpBonus: 0.5,
+              allStatBonus: 0.3,
+              critBonus: 0.18,
+              questBonus: 0.2,
+              longMsgBonus: 0.25,
+            },
           },
         ],
       },
@@ -292,6 +333,8 @@ module.exports = class SkillTree {
     this.levelCheckInterval = null; // Deprecated - using events instead
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
+    this._retryTimeout1 = null; // Timeout ID for first retry
+    this._retryTimeout2 = null; // Timeout ID for second retry
   }
 
   // ============================================================================
@@ -303,10 +346,28 @@ module.exports = class SkillTree {
     this.createSkillTreeButton();
     this.saveSkillBonuses();
 
+    // Retry button creation after delays to ensure Discord UI is ready
+    this._retryTimeout1 = setTimeout(() => {
+      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+        console.log('[SkillTree] Retrying button creation...');
+        this.createSkillTreeButton();
+      }
+      this._retryTimeout1 = null;
+    }, 2000);
+
+    // Additional retry after longer delay (for plugin re-enabling)
+    this._retryTimeout2 = setTimeout(() => {
+      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+        console.log('[SkillTree] Final retry for button creation...');
+        this.createSkillTreeButton();
+      }
+      this._retryTimeout2 = null;
+    }, 5000);
+
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
 
-    // Watch for level ups from SoloLevelingStats (event-based, no polling)
+    // Watch for level ups from SoloLevelingStats (event-based, will retry if not ready)
     this.setupLevelUpWatcher();
 
     // Recalculate SP on startup based on current level
@@ -325,20 +386,18 @@ module.exports = class SkillTree {
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
     if (!soloPlugin) {
-      console.warn('SkillTree: SoloLevelingStats plugin not found, using fallback polling');
-      // Fallback to polling if events not available
-      this.levelCheckInterval = setInterval(() => {
-        this.checkForLevelUp();
+      // Retry after a delay - SoloLevelingStats might still be loading
+      setTimeout(() => {
+        this.setupLevelUpWatcher();
       }, 2000);
       return;
     }
 
     const instance = soloPlugin.instance || soloPlugin;
     if (!instance || typeof instance.on !== 'function') {
-      console.warn('SkillTree: Event system not available, using fallback polling');
-      // Fallback to polling if events not available
-      this.levelCheckInterval = setInterval(() => {
-        this.checkForLevelUp();
+      // Retry after a delay - Event system might not be ready yet
+      setTimeout(() => {
+        this.setupLevelUpWatcher();
       }, 2000);
       return;
     }
@@ -369,6 +428,16 @@ module.exports = class SkillTree {
     if (this.levelCheckInterval) {
       clearInterval(this.levelCheckInterval);
       this.levelCheckInterval = null;
+    }
+
+    // Clear retry timeouts
+    if (this._retryTimeout1) {
+      clearTimeout(this._retryTimeout1);
+      this._retryTimeout1 = null;
+    }
+    if (this._retryTimeout2) {
+      clearTimeout(this._retryTimeout2);
+      this._retryTimeout2 = null;
     }
 
     // Cleanup URL change watcher
@@ -456,7 +525,7 @@ module.exports = class SkillTree {
     if (BdApi && typeof BdApi.showToast === 'function') {
       BdApi.showToast(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
         type: 'success',
-        timeout: 3000
+        timeout: 3000,
       });
     }
   }
@@ -710,9 +779,10 @@ module.exports = class SkillTree {
     // For level 2+: baseEffect + (perLevelEffect * (level - 1) * growthRate)
     Object.keys(skill.baseEffect || {}).forEach((key) => {
       const baseValue = skill.baseEffect[key] || 0;
-      const perLevelValue = (skill.perLevelEffect && skill.perLevelEffect[key]) ? skill.perLevelEffect[key] : 0;
+      const perLevelValue =
+        skill.perLevelEffect && skill.perLevelEffect[key] ? skill.perLevelEffect[key] : 0;
       // Level 1 gets base effect, each additional level adds perLevelEffect scaled by growth rate
-      effect[key] = baseValue + (perLevelValue * (level - 1) * growthRate);
+      effect[key] = baseValue + perLevelValue * (level - 1) * growthRate;
     });
 
     return effect;
@@ -732,7 +802,7 @@ module.exports = class SkillTree {
         const tierData = this.skillTree[tierKey];
         if (!tierData?.skills) continue;
 
-        const foundSkill = tierData.skills.find(s => s.id === skillId);
+        const foundSkill = tierData.skills.find((s) => s.id === skillId);
         if (foundSkill) {
           return { skill: foundSkill, tier: tierData };
         }
@@ -748,7 +818,7 @@ module.exports = class SkillTree {
    * Unsubscribe from all SoloLevelingStats events
    */
   unsubscribeFromEvents() {
-    this.eventUnsubscribers.forEach(unsubscribe => {
+    this.eventUnsubscribers.forEach((unsubscribe) => {
       try {
         unsubscribe();
       } catch (error) {
@@ -789,7 +859,8 @@ module.exports = class SkillTree {
 
       if (requirement.strength && (stats.strength || 0) < requirement.strength) return false;
       if (requirement.agility && (stats.agility || 0) < requirement.agility) return false;
-      if (requirement.intelligence && (stats.intelligence || 0) < requirement.intelligence) return false;
+      if (requirement.intelligence && (stats.intelligence || 0) < requirement.intelligence)
+        return false;
       if (requirement.vitality && (stats.vitality || 0) < requirement.vitality) return false;
 
       // Support both perception and luck (migration)
@@ -799,8 +870,8 @@ module.exports = class SkillTree {
 
       // Check prerequisite skills
       if (requirement.skills && Array.isArray(requirement.skills)) {
-        const hasAllPrereqs = requirement.skills.every(prereqId =>
-          this.getSkillLevel(prereqId) > 0
+        const hasAllPrereqs = requirement.skills.every(
+          (prereqId) => this.getSkillLevel(prereqId) > 0
         );
         if (!hasAllPrereqs) return false;
       }
@@ -853,13 +924,14 @@ module.exports = class SkillTree {
       // Show notification
       const newLevel = this.getSkillLevel(skillId);
       if (BdApi?.showToast) {
-        const message = currentLevel === 0
-          ? `Skill Unlocked: ${skill.name}`
-          : `${skill.name} upgraded to Level ${newLevel}!`;
+        const message =
+          currentLevel === 0
+            ? `Skill Unlocked: ${skill.name}`
+            : `${skill.name} upgraded to Level ${newLevel}!`;
 
         BdApi.showToast(message, {
           type: 'success',
-          timeout: 3000
+          timeout: 3000,
         });
       }
 
@@ -903,9 +975,10 @@ module.exports = class SkillTree {
 
       while (targetLevel < maxLevel && remainingSP > 0) {
         // Calculate cost for next level
-        const nextCost = targetLevel === 0
-          ? (tier.baseCost || 1) // Unlock cost
-          : Math.ceil((tier.baseCost || 1) * targetLevel * (tier.upgradeCostMultiplier || 1.5)); // Upgrade cost
+        const nextCost =
+          targetLevel === 0
+            ? tier.baseCost || 1 // Unlock cost
+            : Math.ceil((tier.baseCost || 1) * targetLevel * (tier.upgradeCostMultiplier || 1.5)); // Upgrade cost
 
         if (!nextCost || remainingSP < nextCost) {
           break; // Can't afford next upgrade
@@ -938,13 +1011,14 @@ module.exports = class SkillTree {
 
       // Show notification
       if (BdApi?.showToast) {
-        const message = currentLevel === 0
-          ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
-          : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
+        const message =
+          currentLevel === 0
+            ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
+            : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
 
         BdApi.showToast(message, {
           type: 'success',
-          timeout: 3000
+          timeout: 3000,
         });
       }
 
@@ -953,47 +1027,6 @@ module.exports = class SkillTree {
       console.error('SkillTree: Error max upgrading skill', error);
       return false;
     }
-  }
-
-  stop() {
-    // Unsubscribe from events
-    this.unsubscribeFromEvents();
-
-    // Clear intervals
-    if (this.levelCheckInterval) {
-      clearInterval(this.levelCheckInterval);
-      this.levelCheckInterval = null;
-    }
-
-    // Cleanup URL change watcher
-    if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
-    }
-
-    // Remove UI elements
-    if (this.skillTreeButton) {
-      this.skillTreeButton.remove();
-      this.skillTreeButton = null;
-  }
-
-    if (this.skillTreeModal) {
-      this.skillTreeModal.remove();
-      this.skillTreeModal = null;
-    }
-
-    // Clear global instance
-    if (window.skillTreeInstance === this) {
-      window.skillTreeInstance = null;
-    }
-
-    // Remove CSS
-    const styleElement = document.getElementById('skilltree-css');
-    if (styleElement) {
-      styleElement.remove();
-    }
-
-    console.log('SkillTree: Plugin stopped');
   }
 
   // ... (rest of the UI methods remain the same, but need to be updated to show skill levels and upgrade costs)
@@ -1404,7 +1437,7 @@ module.exports = class SkillTree {
   createSkillTreeButton() {
     // Remove any existing buttons first
     const existingButtons = document.querySelectorAll('.st-skill-tree-button');
-    existingButtons.forEach(btn => btn.remove());
+    existingButtons.forEach((btn) => btn.remove());
     this.skillTreeButton = null;
 
     // Find Discord's button row - same method as TitleManager
@@ -1412,22 +1445,32 @@ module.exports = class SkillTree {
       // Method 1: Find by looking for common Discord button classes
       const buttonRow =
         // Look for container with multiple buttons (Discord's toolbar)
-        Array.from(document.querySelectorAll('[class*="button"]')).find(el => {
+        Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
           const siblings = Array.from(el.parentElement?.children || []);
           // Check if this container has multiple button-like elements (Discord's toolbar)
-          return siblings.length >= 4 && siblings.some(s => s.querySelector('[class*="emoji"]') || s.querySelector('[class*="gif"]') || s.querySelector('[class*="attach"]'));
+          return (
+            siblings.length >= 4 &&
+            siblings.some(
+              (s) =>
+                s.querySelector('[class*="emoji"]') ||
+                s.querySelector('[class*="gif"]') ||
+                s.querySelector('[class*="attach"]')
+            )
+          );
         })?.parentElement ||
         // Method 2: Find by text area and traverse up
         (() => {
-          const textArea = document.querySelector('[class*="channelTextArea"]') ||
-                           document.querySelector('[class*="slateTextArea"]') ||
-                           document.querySelector('textarea[placeholder*="Message"]');
+          const textArea =
+            document.querySelector('[class*="channelTextArea"]') ||
+            document.querySelector('[class*="slateTextArea"]') ||
+            document.querySelector('textarea[placeholder*="Message"]');
           if (!textArea) return null;
 
           // Go up to find the input container, then find button row
-          let container = textArea.closest('[class*="container"]') ||
-                          textArea.closest('[class*="wrapper"]') ||
-                          textArea.parentElement?.parentElement?.parentElement;
+          let container =
+            textArea.closest('[class*="container"]') ||
+            textArea.closest('[class*="wrapper"]') ||
+            textArea.parentElement?.parentElement?.parentElement;
 
           // Look for the row that contains multiple buttons
           const buttons = container?.querySelectorAll('[class*="button"]');
@@ -1435,8 +1478,10 @@ module.exports = class SkillTree {
             return buttons[0]?.parentElement;
           }
 
-          return container?.querySelector('[class*="buttons"]') ||
-                 container?.querySelector('[class*="buttonContainer"]');
+          return (
+            container?.querySelector('[class*="buttons"]') ||
+            container?.querySelector('[class*="buttonContainer"]')
+          );
         })();
 
       return buttonRow;
@@ -1463,9 +1508,10 @@ module.exports = class SkillTree {
 
     // Insert button after title button (or before apps button if no title button)
     const titleBtn = toolbar.querySelector('.tm-title-button');
-    const appsButton = Array.from(toolbar.children).find(el =>
-      el.querySelector('[class*="apps"]') ||
-      el.getAttribute('aria-label')?.toLowerCase().includes('app')
+    const appsButton = Array.from(toolbar.children).find(
+      (el) =>
+        el.querySelector('[class*="apps"]') ||
+        el.getAttribute('aria-label')?.toLowerCase().includes('app')
     );
 
     if (titleBtn) {
@@ -1591,12 +1637,16 @@ module.exports = class SkillTree {
             <span>Available SP:</span>
             <span class="skilltree-stat-value">${this.settings.skillPoints}</span>
         </div>
-          ${soloData ? `
+          ${
+            soloData
+              ? `
           <div class="skilltree-stat">
             <span>Level:</span>
             <span class="skilltree-stat-value">${soloData.level}</span>
       </div>
-          ` : ''}
+          `
+              : ''
+          }
         </div>
       </div>
       <div class="skilltree-modal-content">
@@ -1620,10 +1670,14 @@ module.exports = class SkillTree {
         const effect = this.getSkillEffect(skill, tier);
 
         // Check if max upgrade is possible
-        const canMaxUpgrade = level < maxLevel && this.settings.skillPoints > 0 &&
-          (skill.requirement.level ? (soloData && soloData.level >= skill.requirement.level) : true);
+        const canMaxUpgrade =
+          level < maxLevel &&
+          this.settings.skillPoints > 0 &&
+          (skill.requirement.level ? soloData && soloData.level >= skill.requirement.level : true);
 
-        html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${level >= maxLevel ? 'max-level' : ''}">`;
+        html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
+          level >= maxLevel ? 'max-level' : ''
+        }">`;
         html += `<div class="skilltree-skill-name">${skill.name}</div>`;
         html += `<div class="skilltree-skill-desc">${skill.desc}</div>`;
         if (skill.lore) {
@@ -1636,20 +1690,29 @@ module.exports = class SkillTree {
             const effectText = [];
             if (effect.xpBonus) effectText.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
             if (effect.critBonus) effectText.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
-            if (effect.longMsgBonus) effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
-            if (effect.questBonus) effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
-            if (effect.allStatBonus) effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
-            html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(' • ')}</div>`;
+            if (effect.longMsgBonus)
+              effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
+            if (effect.questBonus)
+              effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
+            if (effect.allStatBonus)
+              effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
+            html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(
+              ' • '
+            )}</div>`;
           }
         }
 
         if (level < maxLevel) {
           html += `<div class="skilltree-skill-cost">Cost: ${nextCost || 'N/A'} SP</div>`;
           html += `<div class="skilltree-btn-group">`;
-          html += `<button class="skilltree-upgrade-btn" ${!canUpgrade ? 'disabled' : ''} data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
-          html += `<button class="skilltree-max-btn" ${!canMaxUpgrade ? 'disabled' : ''} data-skill-id="${skill.id}">Max</button>`;
+          html += `<button class="skilltree-upgrade-btn" ${
+            !canUpgrade ? 'disabled' : ''
+          } data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
+          html += `<button class="skilltree-max-btn" ${
+            !canMaxUpgrade ? 'disabled' : ''
+          } data-skill-id="${skill.id}">Max</button>`;
           html += `</div>`;
-      } else {
+        } else {
           html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
         }
 
@@ -1686,12 +1749,12 @@ module.exports = class SkillTree {
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
-    history.pushState = function(...args) {
+    history.pushState = function (...args) {
       originalPushState.apply(history, args);
       handleUrlChange();
     };
 
-    history.replaceState = function(...args) {
+    history.replaceState = function (...args) {
       originalReplaceState.apply(history, args);
       handleUrlChange();
     };

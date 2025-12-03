@@ -15,7 +15,7 @@ module.exports = class CriticalHitMerged {
     // ============================================================================
     this.defaultSettings = {
       enabled: true,
-      critChance: 30, // Base crit chance (can be buffed by Agility/Luck/Skill Tree up to 30% max)
+      critChance: 10, // Base crit chance (can be buffed by Agility/Luck/Skill Tree up to 30% max)
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
       critFont: "'Nova Flat', sans-serif", // Nova Flat - gradient text font
@@ -31,6 +31,7 @@ module.exports = class CriticalHitMerged {
       autoCleanupHistory: true, // Automatically clean up old history
       // Animation settings (from CriticalHitAnimation)
       animationEnabled: true, // Enable animated "CRITICAL HIT!" notifications
+      cssEnabled: true, // Enable CSS injection for crit styling (independent from animations)
       animationDuration: 4000, // 4 seconds - balanced visibility without being intrusive
       floatDistance: 150, // Increased for more visible float
       fontSize: 36,
@@ -72,6 +73,9 @@ module.exports = class CriticalHitMerged {
     this.currentChannelId = null; // Track current channel ID
     this.maxHistorySize = 10000; // Maximum number of messages to store in history
     this.historyCleanupInterval = null; // Interval for periodic history cleanup
+    this._forceNovaInterval = null; // Interval for Nova Flat font enforcement (legacy, now using MutationObserver)
+    this._displayUpdateInterval = null; // Interval for settings panel display updates
+    this.novaFlatObserver = null; // MutationObserver for Nova Flat font enforcement
     // Cache DOM queries
     this._cachedMessageSelectors = null;
     this._cachedMessageSelectorsTimestamp = 0;
@@ -253,6 +257,16 @@ module.exports = class CriticalHitMerged {
         this.debugError('START', error, { phase: 'start_observing' });
       }
 
+      // Inject CSS for crit styling (independent from animation runtime)
+      try {
+        if (this.settings.cssEnabled !== false) {
+          this.injectCritCSS();
+          this.debugLog('START', 'Crit CSS injected');
+        }
+      } catch (error) {
+        this.debugError('START', error, { phase: 'inject_css' });
+      }
+
       // Initialize animation features (merged from CriticalHitAnimation)
       try {
         if (this.settings.animationEnabled !== false) {
@@ -362,6 +376,18 @@ module.exports = class CriticalHitMerged {
     if (this.novaFlatObserver) {
       this.novaFlatObserver.disconnect();
       this.novaFlatObserver = null;
+    }
+
+    // Clean up Nova Flat interval (legacy, should not be used but safety check)
+    if (this._forceNovaInterval) {
+      clearInterval(this._forceNovaInterval);
+      this._forceNovaInterval = null;
+    }
+
+    // Clean up display update interval
+    if (this._displayUpdateInterval) {
+      clearInterval(this._displayUpdateInterval);
+      this._displayUpdateInterval = null;
     }
 
     // Clean up all style observer intervals (legacy cleanup for old code)
@@ -898,40 +924,11 @@ module.exports = class CriticalHitMerged {
   saveMessageHistory() {
     try {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:692',
-          message: 'saveMessageHistory: Entry',
-          data: {
-            historyLength: this.messageHistory.length,
-            stackTrace: new Error().stack?.split('\n').slice(1, 4).join('|'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
       // #endregion
       // Use cached crit history or compute once
       const critHistory = this.getCritHistory();
       const critCount = critHistory.length;
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:695',
-          message: 'saveMessageHistory: Computed crit count',
-          data: { historyLength: this.messageHistory.length, critCount },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
       // #endregion
       const critsByChannel = {};
       // Use for...of loop for better performance
@@ -1204,28 +1201,6 @@ module.exports = class CriticalHitMerged {
 
       // #region agent log
       if (isCrit) {
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:925',
-            message: 'ADD_TO_HISTORY: Adding crit to history',
-            data: {
-              messageId: messageId,
-              channelId: channelId,
-              critSettings: historyEntry.critSettings,
-              messageContent: messageData.messageContent?.substring(0, 50) || null,
-              author: messageData.author || null,
-              cacheInvalidated: true,
-              addedToPendingQueue:
-                isCrit && historyEntry.critSettings && isValidDiscordId && !isHashId && messageId,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'D',
-          }),
-        }).catch(() => {});
       }
       // #endregion
 
@@ -1284,33 +1259,6 @@ module.exports = class CriticalHitMerged {
         const existingIsHashId = String(existingId).startsWith('hash_');
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:920',
-            message: 'ADD_TO_HISTORY: Updating existing entry',
-            data: {
-              messageId: messageData.messageId,
-              existingId,
-              wasCrit,
-              nowCrit: isCrit,
-              existingIndex,
-              channelId: messageData.channelId,
-              isValidDiscordId,
-              isHashId,
-              existingIsHashId,
-              note:
-                existingIsHashId && isValidDiscordId
-                  ? 'Updating hash ID to Discord ID (message sent)'
-                  : 'Updating existing entry',
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'E',
-          }),
-        }).catch(() => {});
         // #endregion
 
         // If updating from hash ID to valid Discord ID, this is a message being sent
@@ -1354,24 +1302,6 @@ module.exports = class CriticalHitMerged {
           this._cachedCritHistory = null;
         }
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:904',
-            message: 'ADD_TO_HISTORY: Added new entry',
-            data: {
-              messageId: messageData.messageId,
-              isCrit,
-              isValidDiscordId,
-              historyLength: this.messageHistory.length,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'E',
-          }),
-        }).catch(() => {});
         // #endregion
         this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
           index: this.messageHistory.length - 1,
@@ -1383,24 +1313,6 @@ module.exports = class CriticalHitMerged {
 
       // Auto-save immediately on crit, periodically for non-crits
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:918',
-          message: 'ADD_TO_HISTORY: Evaluating save conditions',
-          data: {
-            isCrit,
-            historyLength: this.messageHistory.length,
-            isModulo20: this.messageHistory.length % 20 === 0,
-            messageId: messageData.messageId,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
       // #endregion
       if (isCrit) {
         this.debugLog('ADD_TO_HISTORY', 'CRITICAL: Triggering immediate save for crit message', {
@@ -1408,36 +1320,10 @@ module.exports = class CriticalHitMerged {
           channelId: messageData.channelId,
         });
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:924',
-            message: 'ADD_TO_HISTORY: Saving because isCrit=true',
-            data: { messageId: messageData.messageId, channelId: messageData.channelId },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
         // #endregion
         this.saveMessageHistory(); // Save immediately when crit happens
       } else if (this.messageHistory.length % 20 === 0) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:926',
-            message: 'ADD_TO_HISTORY: Saving because modulo 20',
-            data: { messageId: messageData.messageId, historyLength: this.messageHistory.length },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
         // #endregion
         this.saveMessageHistory(); // Save every 20 non-crit messages
       }
@@ -1919,25 +1805,6 @@ module.exports = class CriticalHitMerged {
     try {
       const msgId = this.getMessageIdentifier(messageElement);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:1457',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Entry',
-          data: {
-            messageId: msgId,
-            hasElement: !!messageElement,
-            hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-            hasCritSettings: !!critSettings,
-            useGradient: critSettings?.gradient,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
       // #endregion
       this.debugLog(
         'APPLY_CRIT_STYLE_WITH_SETTINGS',
@@ -2028,30 +1895,6 @@ module.exports = class CriticalHitMerged {
           }
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:1768',
-              message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Gradient applied for restoration',
-              data: {
-                gradient: gradientColors,
-                hasGradientInStyle,
-                hasGradientInComputed,
-                hasWebkitClip,
-                inlineBackgroundImage: content?.style?.backgroundImage,
-                computedBackgroundImage: computedStyles?.backgroundImage,
-                computedWebkitBackgroundClip: computedStyles?.webkitBackgroundClip,
-                computedBackgroundClip: computedStyles?.backgroundClip,
-                computedWebkitTextFillColor: computedStyles?.webkitTextFillColor,
-                computedColor: computedStyles?.color,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'post-fix',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
           // #endregion
 
           this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
@@ -2161,25 +2004,6 @@ module.exports = class CriticalHitMerged {
 
       messageElement.classList.add('bd-crit-hit');
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:1730',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Added bd-crit-hit class',
-          data: {
-            messageId: msgId,
-            hasCritClass: messageElement.classList.contains('bd-crit-hit'),
-            hasContent: !!content,
-            useGradient,
-            contentHasGradient: content?.style?.backgroundImage?.includes('gradient'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
       // #endregion
       this.injectCritCSS();
 
@@ -2194,31 +2018,6 @@ module.exports = class CriticalHitMerged {
         finalComputedStyles?.backgroundClip === 'text';
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:1912',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Final verification after restoration',
-          data: {
-            messageId: finalMsgId,
-            useGradient,
-            hasContent: !!content,
-            finalHasGradient,
-            finalHasWebkitClip,
-            inlineBackgroundImage: content?.style?.backgroundImage,
-            computedBackgroundImage: finalComputedStyles?.backgroundImage,
-            computedWebkitBackgroundClip: finalComputedStyles?.webkitBackgroundClip,
-            computedBackgroundClip: finalComputedStyles?.backgroundClip,
-            elementHasCritClass: messageElement.classList.contains('bd-crit-hit'),
-            contentHasCritClass: content?.classList?.contains('bd-crit-text-content'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
       // #endregion
 
       this.debugLog(
@@ -2279,26 +2078,6 @@ module.exports = class CriticalHitMerged {
               currentComputed?.backgroundClip === 'text';
 
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:2103',
-                message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Event-based gradient check',
-                data: {
-                  messageId: finalMsgId,
-                  hasGradient,
-                  hasWebkitClip,
-                  computedBackgroundImage: currentComputed?.backgroundImage,
-                  isConnected: currentMessageElement.isConnected,
-                  elementReplaced: currentMessageElement !== messageElement,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'H',
-              }),
-            }).catch(() => {});
             // #endregion
 
             if (!hasGradient && useGradient) {
@@ -2322,26 +2101,6 @@ module.exports = class CriticalHitMerged {
               void currentContent.offsetHeight;
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:2150',
-                  message:
-                    'APPLY_CRIT_STYLE_WITH_SETTINGS: Gradient missing, reapplying (event-based)',
-                  data: {
-                    messageId: finalMsgId,
-                    reappliedGradient: window
-                      .getComputedStyle(currentContent)
-                      ?.backgroundImage?.includes('gradient'),
-                    wasFromMutation: true,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'H',
-                }),
-              }).catch(() => {});
               // #endregion
             }
           }
@@ -3312,22 +3071,6 @@ module.exports = class CriticalHitMerged {
             };
 
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:2985',
-                message: 'CHECK_FOR_RESTORATION: Found crit in pending queue',
-                data: {
-                  messageId: normalizedMsgId,
-                  pendingAge: Date.now() - pendingCrit.timestamp,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'F',
-              }),
-            }).catch(() => {});
             // #endregion
           }
         }
@@ -3397,30 +3140,6 @@ module.exports = class CriticalHitMerged {
         }
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:3006',
-            message: 'CHECK_FOR_RESTORATION: Checking history match',
-            data: {
-              messageId: normalizedMsgId,
-              pureMessageId,
-              channelId: this.currentChannelId,
-              channelCritCount: channelCrits.length,
-              foundHistoryEntry: !!historyEntry,
-              historyEntryIsCrit: historyEntry?.isCrit || false,
-              hasCritSettings: !!historyEntry?.critSettings,
-              contentHash,
-              isValidDiscordId,
-              sampleCritIds: channelCrits.slice(0, 5).map((e) => e.messageId),
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'D',
-          }),
-        }).catch(() => {});
         // #endregion
 
         // If not found initially, retry after a delay to handle race condition
@@ -3443,25 +3162,6 @@ module.exports = class CriticalHitMerged {
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:2466',
-                  message: 'CHECK_FOR_RESTORATION: Before restore styling (RAF)',
-                  data: {
-                    messageId: normalizedMsgId,
-                    hasElement: !!messageElement,
-                    hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                    isConnected: messageElement?.isConnected,
-                    hasCritSettings: !!entryToRestore.critSettings,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'post-fix',
-                  hypothesisId: 'C',
-                }),
-              }).catch(() => {});
               // #endregion
 
               // Re-query element right before restoration to handle Discord replacements
@@ -3500,50 +3200,11 @@ module.exports = class CriticalHitMerged {
               const needsRestoration = true;
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:3120',
-                  message: 'CHECK_FOR_RESTORATION: Always restoring crit styling',
-                  data: {
-                    messageId: normalizedMsgId,
-                    hasCritClass,
-                    useGradient,
-                    needsRestoration,
-                    elementReplaced: currentMessageElement !== messageElement,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'E',
-                }),
-              }).catch(() => {});
               // #endregion
 
               if (needsRestoration) {
                 // Restore the crit
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:2792',
-                    message: 'CHECK_FOR_RESTORATION: Restoring crit styling',
-                    data: {
-                      messageId: normalizedMsgId,
-                      hasCritSettings: !!entryToRestore.critSettings,
-                      useGradient,
-                      hadCritClass: hasCritClass,
-                      needsRestoration,
-                      usingCurrentElement: currentMessageElement !== messageElement,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'post-fix',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
                 // #endregion
                 this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
                 this.critMessages.add(currentMessageElement);
@@ -3565,20 +3226,6 @@ module.exports = class CriticalHitMerged {
 
                   if (!retryElement || !retryElement.isConnected) {
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        location: 'CriticalHitMerged.plugin.js:3480',
-                        message:
-                          'CHECK_FOR_RESTORATION: Verification skipped - element disconnected',
-                        data: { messageId: normalizedMsgId },
-                        timestamp: Date.now(),
-                        sessionId: 'debug-session',
-                        runId: 'run1',
-                        hypothesisId: 'MUTATION',
-                      }),
-                    }).catch(() => {});
                     // #endregion
                     return false;
                   }
@@ -3597,27 +3244,6 @@ module.exports = class CriticalHitMerged {
                       computed?.backgroundClip === 'text';
 
                     // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        location: 'CriticalHitMerged.plugin.js:3505',
-                        message: 'CHECK_FOR_RESTORATION: Post-restoration gradient verification',
-                        data: {
-                          messageId: normalizedMsgId,
-                          hasGradient,
-                          hasWebkitClip,
-                          computedBackgroundImage: computed?.backgroundImage,
-                          hasCritClass: retryElement?.classList?.contains('bd-crit-hit'),
-                          isConnected: retryElement?.isConnected,
-                          useGradient,
-                        },
-                        timestamp: Date.now(),
-                        sessionId: 'debug-session',
-                        runId: 'run1',
-                        hypothesisId: 'MUTATION',
-                      }),
-                    }).catch(() => {});
                     // #endregion
 
                     // If gradient is missing, reapply it
@@ -3720,24 +3346,6 @@ module.exports = class CriticalHitMerged {
                         computedStyles?.backgroundClip === 'text';
 
                       // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHitMerged.plugin.js:3510',
-                          message: 'CHECK_FOR_RESTORATION: Verifying gradient before animation',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            hasWebkitClip,
-                            gradientReady: hasGradient && hasWebkitClip,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'SYNC',
-                        }),
-                      }).catch(() => {});
                       // #endregion
 
                       if (!hasGradient || !hasWebkitClip) {
@@ -3809,24 +3417,6 @@ module.exports = class CriticalHitMerged {
 
                     if (isRestoredVerified) {
                       // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHitMerged.plugin.js:3793',
-                          message:
-                            'CHECK_FOR_RESTORATION: Restoring verified crit - triggering animation',
-                          data: {
-                            messageId: restoredMessageId,
-                            normalizedMsgId,
-                            isVerified: true,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'RESTORE_VERIFIED',
-                        }),
-                      }).catch(() => {});
                       // #endregion
 
                       try {
@@ -3836,25 +3426,6 @@ module.exports = class CriticalHitMerged {
                       }
                     } else {
                       // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHitMerged.plugin.js:3810',
-                          message:
-                            'CHECK_FOR_RESTORATION: Skipping animation - restored message not verified',
-                          data: {
-                            messageId: restoredMessageId,
-                            normalizedMsgId,
-                            isVerified: false,
-                            note: 'Animation will trigger when message is verified (has real Discord ID)',
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'RESTORE_QUEUED',
-                        }),
-                      }).catch(() => {});
                       // #endregion
                     }
                   });
@@ -3891,24 +3462,6 @@ module.exports = class CriticalHitMerged {
                       const hasGradient = computed?.backgroundImage?.includes('gradient');
 
                       // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHitMerged.plugin.js:3461',
-                          message: 'CHECK_FOR_RESTORATION: Event-based gradient check',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            computedBackgroundImage: computed?.backgroundImage,
-                            elementReplaced: monitoredElement !== currentMessageElement,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'H',
-                        }),
-                      }).catch(() => {});
                       // #endregion
 
                       if (!hasGradient) {
@@ -4010,24 +3563,6 @@ module.exports = class CriticalHitMerged {
                       const hasGradient = computed?.backgroundImage?.includes('gradient');
 
                       // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHitMerged.plugin.js:3599',
-                          message: 'CHECK_FOR_RESTORATION: Event-based gradient check',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            computedBackgroundImage: computed?.backgroundImage,
-                            elementReplaced: currentMessageElement !== messageElement,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'H',
-                        }),
-                      }).catch(() => {});
                       // #endregion
 
                       if (!hasGradient) {
@@ -4086,25 +3621,6 @@ module.exports = class CriticalHitMerged {
                 }
 
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:3220',
-                    message:
-                      'CHECK_FOR_RESTORATION: Skipping restoration - already has crit styling, but monitoring',
-                    data: {
-                      messageId: normalizedMsgId,
-                      hasCritClass,
-                      useGradient,
-                      monitoringSetup: useGradient && normalizedMsgId,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'E',
-                  }),
-                }).catch(() => {});
                 // #endregion
               }
             });
@@ -4162,23 +3678,6 @@ module.exports = class CriticalHitMerged {
               };
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4050',
-                  message: 'CHECK_FOR_RESTORATION: MutationObserver found crit in pending queue',
-                  data: {
-                    messageId: normalizedMsgId,
-                    pendingAge: Date.now() - pendingCrit.timestamp,
-                    matchedBy: pendingCrit.isHashId ? 'content_hash' : 'message_id',
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'QUEUED',
-                }),
-              }).catch(() => {});
               // #endregion
 
               performRestoration(pendingEntry);
@@ -4200,22 +3699,6 @@ module.exports = class CriticalHitMerged {
 
               if (retryHistoryEntry && retryHistoryEntry.critSettings) {
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:3970',
-                    message: 'CHECK_FOR_RESTORATION: MutationObserver found crit in history',
-                    data: {
-                      messageId: normalizedMsgId,
-                      hasCritSettings: !!retryHistoryEntry.critSettings,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'MUTATION',
-                  }),
-                }).catch(() => {});
                 // #endregion
 
                 performRestoration(retryHistoryEntry);
@@ -4318,24 +3801,6 @@ module.exports = class CriticalHitMerged {
   checkForCrit(messageElement) {
     try {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:2422',
-          message: 'CHECK_FOR_CRIT: Entry',
-          data: {
-            hasElement: !!messageElement,
-            hasOffsetParent: !!messageElement?.offsetParent,
-            hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-            processedSize: this.processedMessages.size,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
       // #endregion
       // Verify element is still valid FIRST
       if (!messageElement || !messageElement.offsetParent) {
@@ -4350,19 +3815,6 @@ module.exports = class CriticalHitMerged {
         verbose: true,
       });
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:2436',
-          message: 'CHECK_FOR_CRIT: Got messageId',
-          data: { messageId, wasProcessed: this.processedMessages.has(messageId) },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
       // #endregion
 
       // Validate message ID is correct (not channel ID)
@@ -4393,26 +3845,6 @@ module.exports = class CriticalHitMerged {
       const isHashId = messageId.startsWith('hash_');
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:2459',
-          message: 'CHECK_FOR_CRIT: Checking if processed',
-          data: {
-            messageId,
-            isValidDiscordId,
-            isHashId,
-            wasProcessed: this.processedMessages.has(messageId),
-            isConnected: messageElement?.isConnected,
-            hasOffsetParent: !!messageElement?.offsetParent,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
       // #endregion
 
       // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
@@ -4459,26 +3891,6 @@ module.exports = class CriticalHitMerged {
               });
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4320',
-                  message:
-                    'CHECK_FOR_CRIT: Queued message detected as crit, added to pending queue',
-                  data: {
-                    hashId: messageId,
-                    contentHash,
-                    channelId,
-                    critRoll,
-                    critChance,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'QUEUED',
-                }),
-              }).catch(() => {});
               // #endregion
             }
           }
@@ -4526,29 +3938,6 @@ module.exports = class CriticalHitMerged {
                 const isActuallyCrit = realRoll <= effectiveCritChance;
 
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:4375',
-                    message:
-                      'CHECK_FOR_CRIT: Found queued message crit in pending queue - verifying',
-                    data: {
-                      messageId,
-                      contentHash,
-                      pendingAge: Date.now() - pendingCrit.timestamp,
-                      wasHashId: pendingCrit.isHashId,
-                      realRoll,
-                      effectiveCritChance,
-                      isActuallyCrit,
-                      wasPendingCrit: true,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'QUEUED',
-                  }),
-                }).catch(() => {});
                 // #endregion
 
                 // Only use pending crit if verification confirms it's actually a crit
@@ -4607,25 +3996,6 @@ module.exports = class CriticalHitMerged {
                         messageElement;
                       if (verifiedElement && verifiedElement.isConnected) {
                         // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            location: 'CriticalHitMerged.plugin.js:4535',
-                            message:
-                              'CHECK_FOR_CRIT: Queued message verified - triggering animation',
-                            data: {
-                              messageId,
-                              contentHash,
-                              wasQueued: true,
-                              nowVerified: true,
-                            },
-                            timestamp: Date.now(),
-                            sessionId: 'debug-session',
-                            runId: 'run1',
-                            hypothesisId: 'QUEUED_VERIFIED',
-                          }),
-                        }).catch(() => {});
                         // #endregion
 
                         try {
@@ -4643,25 +4013,6 @@ module.exports = class CriticalHitMerged {
                   this.pendingCrits.delete(contentHash);
 
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHitMerged.plugin.js:4410',
-                      message:
-                        'CHECK_FOR_CRIT: Queued message was incorrectly detected as crit - removing',
-                      data: {
-                        messageId,
-                        contentHash,
-                        realRoll,
-                        effectiveCritChance,
-                      },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'QUEUED_FIX',
-                    }),
-                  }).catch(() => {});
                   // #endregion
 
                   // Continue processing as non-crit (will reset combo below)
@@ -4679,26 +4030,6 @@ module.exports = class CriticalHitMerged {
         const isCrit = historyEntry.isCrit || false;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:4175',
-            message: 'CHECK_FOR_CRIT: Found in history BEFORE markAsProcessed',
-            data: {
-              messageId,
-              historyMessageId: historyEntry.messageId,
-              isCrit,
-              hasCritSettings: !!historyEntry.critSettings,
-              hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-              isConnected: messageElement?.isConnected,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'RACE',
-          }),
-        }).catch(() => {});
         // #endregion
 
         this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
@@ -4726,27 +4057,6 @@ module.exports = class CriticalHitMerged {
             this.critMessages.add(messageElement);
 
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:4525',
-                message: 'CHECK_FOR_CRIT: Restoring crit styling from history',
-                data: {
-                  messageId,
-                  hadCritClass: messageElement.classList.contains('bd-crit-hit'),
-                  hadGradient:
-                    this.findMessageContentElement(
-                      messageElement
-                    )?.style?.backgroundImage?.includes('gradient'),
-                  needsRestore,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'RESTORE',
-              }),
-            }).catch(() => {});
             // #endregion
           }
 
@@ -4778,40 +4088,12 @@ module.exports = class CriticalHitMerged {
               this.animatedMessages.delete(messageId);
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4769',
-                  message:
-                    'CHECK_FOR_CRIT: Verified message - allowing animation (removed old entry)',
-                  data: { messageId, timeSinceAnimated, isValidDiscordId: true },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'VERIFIED_ALLOW',
-                }),
-              }).catch(() => {});
               // #endregion
             } else if (timeSinceAnimated < 2000) {
               // Non-verified message - use 2-second window
               alreadyAnimated = true;
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4665',
-                  message:
-                    'CHECK_FOR_CRIT: Skipping animation - message ID already animated recently',
-                  data: { messageId, timeSinceAnimated, contentHash },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'DUPLICATE',
-                }),
-              }).catch(() => {});
               // #endregion
             }
           }
@@ -4829,20 +4111,6 @@ module.exports = class CriticalHitMerged {
                   this.animatedMessages.delete(msgId);
 
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHitMerged.plugin.js:4803',
-                      message:
-                        'CHECK_FOR_CRIT: Verified message (by content hash) - allowing animation',
-                      data: { messageId, msgId, timeSinceAnimated, isValidDiscordId: true },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'VERIFIED_ALLOW',
-                    }),
-                  }).catch(() => {});
                   // #endregion
                   // Don't set alreadyAnimated - allow the animation
                   break; // Found matching content hash, processed it
@@ -4852,20 +4120,6 @@ module.exports = class CriticalHitMerged {
                   alreadyAnimated = true;
 
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHitMerged.plugin.js:4685',
-                      message:
-                        'CHECK_FOR_CRIT: Skipping animation - same content animated recently',
-                      data: { messageId, contentHash, timeSinceAnimated, existingMsgId: msgId },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'DUPLICATE',
-                    }),
-                  }).catch(() => {});
                   // #endregion
                   break;
                 }
@@ -4882,24 +4136,6 @@ module.exports = class CriticalHitMerged {
             // This ensures animations only trigger once when confirmed, not during queue phase
             if (isValidDiscordId && messageId) {
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4725',
-                  message: 'CHECK_FOR_CRIT: Restoring verified crit - triggering animation',
-                  data: {
-                    messageId,
-                    isValidDiscordId,
-                    wasInHistory: true,
-                    alreadyAnimated,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'RESTORE_VERIFIED',
-                }),
-              }).catch(() => {});
               // #endregion
 
               // Trigger animation for verified crits restored from history
@@ -4910,24 +4146,6 @@ module.exports = class CriticalHitMerged {
               }
             } else {
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4745',
-                  message: 'CHECK_FOR_CRIT: Skipping animation - restored message not verified',
-                  data: {
-                    messageId,
-                    isValidDiscordId,
-                    wasInHistory: true,
-                    note: 'Animation will trigger when message is verified (has real Discord ID)',
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'RESTORE_QUEUED',
-                }),
-              }).catch(() => {});
               // #endregion
             }
           }
@@ -4938,19 +4156,6 @@ module.exports = class CriticalHitMerged {
           // It's NOT a crit - ensure crit class is removed if present
           if (messageElement.classList.contains('bd-crit-hit')) {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:4220',
-                message: 'CHECK_FOR_CRIT: Non-crit in history but has crit class - removing',
-                data: { messageId, hasCritClass: true },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'RACE',
-              }),
-            }).catch(() => {});
             // #endregion
             messageElement.classList.remove('bd-crit-hit');
             // Remove from critMessages if present
@@ -4967,19 +4172,6 @@ module.exports = class CriticalHitMerged {
               this.updateUserCombo(userId, 0, 0);
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4675',
-                  message: 'CHECK_FOR_CRIT: Non-crit in history - resetting combo',
-                  data: { messageId, userId, wasInHistory: true },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'COMBO_RESET',
-                }),
-              }).catch(() => {});
               // #endregion
             }
           }
@@ -4992,19 +4184,6 @@ module.exports = class CriticalHitMerged {
       // Message not in history - check if already processed (to prevent duplicate processing)
       if (!this.markAsProcessed(messageId)) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:4240',
-            message: 'CHECK_FOR_CRIT: Message already processed (by ID) - skipping',
-            data: { messageId, wasProcessed: true },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'RACE',
-          }),
-        }).catch(() => {});
         // #endregion
         this.debugLog('CHECK_FOR_CRIT', 'Message already processed (by ID)', { messageId });
         return;
@@ -5103,19 +4282,6 @@ module.exports = class CriticalHitMerged {
         // Check if currently processing crit styling for this message (prevent duplicate during spam)
         if (messageId && this._processingCrits.has(messageId)) {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:4320',
-              message: 'CHECK_FOR_CRIT: Already processing crit styling, skipping duplicate',
-              data: { messageId },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'SPAM',
-            }),
-          }).catch(() => {});
           // #endregion
           return; // Already processing, skip duplicate call
         }
@@ -5145,23 +4311,6 @@ module.exports = class CriticalHitMerged {
             hasMessageElement: !!messageElement,
           });
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:2609',
-              message: 'CHECK_FOR_CRIT: Before applyCritStyle',
-              data: {
-                messageId,
-                hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                isConnected: messageElement?.isConnected,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
           // #endregion
 
           // Forcefully apply crit style
@@ -5202,22 +4351,6 @@ module.exports = class CriticalHitMerged {
                 currentContent.classList.add('bd-crit-text-content');
 
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:4840',
-                    message: 'CHECK_FOR_CRIT: Gradient removed, reapplying via MutationObserver',
-                    data: {
-                      messageId,
-                      elementReplaced: currentElement !== messageElement,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'PERSIST',
-                  }),
-                }).catch(() => {});
                 // #endregion
 
                 return false; // Still missing, keep observing
@@ -5270,24 +4403,6 @@ module.exports = class CriticalHitMerged {
           }
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:3569',
-              message: 'CHECK_FOR_CRIT: After forceful applyCritStyle',
-              data: {
-                messageId,
-                hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                isConnected: messageElement?.isConnected,
-                forceApplied: true,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
           // #endregion
 
           this.critMessages.add(messageElement);
@@ -5314,26 +4429,6 @@ module.exports = class CriticalHitMerged {
                     computedStyles?.backgroundClip === 'text';
 
                   // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHitMerged.plugin.js:5095',
-                      message: 'CHECK_FOR_CRIT: Verified crit - triggering animation',
-                      data: {
-                        messageId,
-                        hasGradient,
-                        hasWebkitClip,
-                        gradientReady: hasGradient && hasWebkitClip,
-                        isValidDiscordId,
-                        isVerified: true,
-                      },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'VERIFIED',
-                    }),
-                  }).catch(() => {});
                   // #endregion
 
                   if (hasGradient && hasWebkitClip) {
@@ -5366,24 +4461,6 @@ module.exports = class CriticalHitMerged {
             });
           } else {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:5140',
-                message: 'CHECK_FOR_CRIT: Skipping animation - message not verified yet',
-                data: {
-                  messageId,
-                  isValidDiscordId,
-                  isHashId,
-                  note: 'Animation will trigger when message is verified (has real Discord ID)',
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'QUEUED',
-              }),
-            }).catch(() => {});
             // #endregion
           }
           // Already marked as processed by markAsProcessed above
@@ -5498,23 +4575,6 @@ module.exports = class CriticalHitMerged {
         if (messageId && this.currentChannelId) {
           try {
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:2698',
-                message: 'CHECK_FOR_CRIT: Calling addToHistory for non-crit',
-                data: {
-                  messageId,
-                  channelId: this.currentChannelId,
-                  historyLength: this.messageHistory.length,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'post-fix',
-                hypothesisId: 'A',
-              }),
-            }).catch(() => {});
             // #endregion
             this.addToHistory({
               messageId: messageId,
@@ -5908,23 +4968,6 @@ module.exports = class CriticalHitMerged {
               void content.offsetHeight; // Force another reflow
 
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:4795',
-                  message: 'APPLY_CRIT_STYLE: Reapplied gradient after Discord removal',
-                  data: {
-                    hasGradient: verifyHasGradient,
-                    hasClip: verifyHasClip,
-                    computedBackgroundImage: verifyComputed?.backgroundImage,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'G',
-                }),
-              }).catch(() => {});
               // #endregion
             }
 
@@ -6029,34 +5072,6 @@ module.exports = class CriticalHitMerged {
           computedStyles?.backgroundClip === 'text';
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:3783',
-            message: 'APPLY_CRIT_STYLE: Added bd-crit-hit class',
-            data: {
-              hasCritClass: messageElement.classList.contains('bd-crit-hit'),
-              hasContent: !!content,
-              useGradient,
-              contentHasGradient: hasGradientInStyle,
-              computedHasGradient: hasGradientInComputed,
-              hasWebkitClip,
-              inlineBackgroundImage: content?.style?.backgroundImage,
-              computedBackgroundImage: computedStyles?.backgroundImage,
-              computedWebkitBackgroundClip: computedStyles?.webkitBackgroundClip,
-              computedBackgroundClip: computedStyles?.backgroundClip,
-              computedWebkitTextFillColor: computedStyles?.webkitTextFillColor,
-              computedColor: computedStyles?.color,
-              contentTag: content?.tagName,
-              contentClasses: content ? Array.from(content.classList || []) : [],
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'C',
-          }),
-        }).catch(() => {});
         // #endregion
 
         // If gradient didn't apply correctly, retry with MutationObserver to catch DOM changes
@@ -6085,23 +5100,6 @@ module.exports = class CriticalHitMerged {
                 content.style.setProperty('color', 'transparent', 'important');
 
                 // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHitMerged.plugin.js:3820',
-                    message: 'APPLY_CRIT_STYLE: Retried gradient application',
-                    data: {
-                      retryHasGradient: window
-                        .getComputedStyle(content)
-                        ?.backgroundImage?.includes('gradient'),
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'post-fix',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
                 // #endregion
               }
             }
@@ -6134,6 +5132,12 @@ module.exports = class CriticalHitMerged {
    * Pre-loads Nova Flat font and sets up MutationObserver for font enforcement
    */
   injectCritCSS() {
+    // Early return if CSS injection is disabled
+    // CSS injection is controlled independently from animation runtime
+    if (this.settings.cssEnabled !== true) {
+      return;
+    }
+
     // Check if CSS is already injected
     if (document.getElementById('bd-crit-hit-styles')) {
       return;
@@ -6689,37 +5693,11 @@ module.exports = class CriticalHitMerged {
         this.animatedMessages.delete(messageId);
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:6678',
-            message: 'ON_CRIT_HIT: Verified message - allowing animation (removed old entry)',
-            data: { messageId, isValidDiscordId: true },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'VERIFIED_ALLOW',
-          }),
-        }).catch(() => {});
         // #endregion
         // Continue processing - don't return
       } else {
         // Non-verified message - use deduplication
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:6694',
-            message: 'ON_CRIT_HIT: Already animated, skipping duplicate call',
-            data: { messageId, alreadyAnimated: true, isValidDiscordId: false },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'SPAM',
-          }),
-        }).catch(() => {});
         // #endregion
         return;
       }
@@ -6734,24 +5712,6 @@ module.exports = class CriticalHitMerged {
 
       if (lastCallTime && now - lastCallTime < this._onCritHitThrottleMs) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:6725',
-            message: 'ON_CRIT_HIT: Throttled duplicate call (non-verified message)',
-            data: {
-              messageId,
-              timeSinceLastCall: now - lastCallTime,
-              throttleMs: this._onCritHitThrottleMs,
-              isValidDiscordId: false,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'SPAM',
-          }),
-        }).catch(() => {});
         // #endregion
         return;
       }
@@ -6772,19 +5732,6 @@ module.exports = class CriticalHitMerged {
     // Check if currently processing animation for this message
     if (this._processingAnimations.has(messageId)) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:5975',
-          message: 'ON_CRIT_HIT: Already processing animation, skipping duplicate call',
-          data: { messageId, processingAnimation: true },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'SPAM',
-        }),
-      }).catch(() => {});
       // #endregion
       return;
     }
@@ -6829,25 +5776,6 @@ module.exports = class CriticalHitMerged {
         computedStyles?.backgroundClip === 'text';
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:6285',
-          message: 'ON_CRIT_HIT: Verifying gradient before animation',
-          data: {
-            messageId,
-            hasCritClass,
-            hasGradient,
-            hasWebkitClip,
-            willTrigger: hasGradient && hasWebkitClip,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'MUTATION',
-        }),
-      }).catch(() => {});
       // #endregion
 
       return hasGradient && hasWebkitClip; // Ready if both are present
@@ -6946,19 +5874,6 @@ module.exports = class CriticalHitMerged {
             if (this.animatedMessages.has(finalMessageId)) {
               this._processingAnimations.delete(finalMessageId);
               // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHitMerged.plugin.js:6045',
-                  message: 'ON_CRIT_HIT: Race condition - already animated before trigger',
-                  data: { messageId: finalMessageId, attempt },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'SPAM',
-                }),
-              }).catch(() => {});
               // #endregion
               return;
             }
@@ -6981,25 +5896,6 @@ module.exports = class CriticalHitMerged {
             }
 
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:6070',
-                message: 'ON_CRIT_HIT: Animation triggered after gradient verification',
-                data: {
-                  messageId: finalMessageId,
-                  hasCritClass: finalElement.classList?.contains('bd-crit-hit'),
-                  isConnected: finalElement.isConnected,
-                  animationEnabled: this.settings.animationEnabled !== false,
-                  hasHandler: typeof this.handleCriticalHit === 'function',
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'SYNC',
-              }),
-            }).catch(() => {});
             // #endregion
           } else {
             // Element not valid, remove processing lock
@@ -7184,6 +6080,18 @@ module.exports = class CriticalHitMerged {
     if (style) {
       style.remove();
     }
+
+    // Clean up Nova Flat interval (legacy, should not be used but safety check)
+    if (this._forceNovaInterval) {
+      clearInterval(this._forceNovaInterval);
+      this._forceNovaInterval = null;
+    }
+
+    // Clean up display update interval
+    if (this._displayUpdateInterval) {
+      clearInterval(this._displayUpdateInterval);
+      this._displayUpdateInterval = null;
+    }
   }
 
   // ============================================================================
@@ -7280,7 +6188,7 @@ module.exports = class CriticalHitMerged {
                             })()}
                         </label>
                         <div class="crit-form-description" style="margin-top: 8px;">
-                            Base crit chance is 30% by default. Increase Agility/Luck stats to boost crit chance (capped at 30% to prevent spam).
+                            Base crit chance is 10% by default. Increase Agility/Luck stats to boost crit chance (capped at 30% to prevent spam).
                         </div>
                     </div>
 
@@ -7592,7 +6500,11 @@ module.exports = class CriticalHitMerged {
     // Optimized display updates - only update when settings panel is visible
     // Since this reads from external data storage (BdApi.Data.load), we can't use MutationObserver
     // Instead, we optimize by only updating when the panel is visible
-    let displayUpdateInterval = null;
+    // Clear any existing interval first
+    if (plugin._displayUpdateInterval) {
+      clearInterval(plugin._displayUpdateInterval);
+      plugin._displayUpdateInterval = null;
+    }
 
     // Use IntersectionObserver to detect when settings panel becomes visible
     if (window.IntersectionObserver && container) {
@@ -7603,17 +6515,25 @@ module.exports = class CriticalHitMerged {
               // Panel is visible, update display immediately
               updateCritDisplay();
               // Start periodic updates while visible
-              if (displayUpdateInterval) {
-                clearInterval(displayUpdateInterval);
+              if (plugin._displayUpdateInterval) {
+                clearInterval(plugin._displayUpdateInterval);
               }
-              displayUpdateInterval = setInterval(() => {
+              plugin._displayUpdateInterval = setInterval(() => {
+                // Early return if plugin is disabled
+                if (!plugin.settings.enabled) {
+                  if (plugin._displayUpdateInterval) {
+                    clearInterval(plugin._displayUpdateInterval);
+                    plugin._displayUpdateInterval = null;
+                  }
+                  return;
+                }
                 updateCritDisplay();
               }, 2000);
             } else {
               // Panel is hidden, stop periodic updates
-              if (displayUpdateInterval) {
-                clearInterval(displayUpdateInterval);
-                displayUpdateInterval = null;
+              if (plugin._displayUpdateInterval) {
+                clearInterval(plugin._displayUpdateInterval);
+                plugin._displayUpdateInterval = null;
               }
             }
           });
@@ -7624,7 +6544,17 @@ module.exports = class CriticalHitMerged {
       displayObserver.observe(container);
     } else {
       // Fallback: Update periodically (reduced frequency from 2s to 5s)
-      displayUpdateInterval = setInterval(updateCritDisplay, 5000);
+      plugin._displayUpdateInterval = setInterval(() => {
+        // Early return if plugin is disabled
+        if (!plugin.settings.enabled) {
+          if (plugin._displayUpdateInterval) {
+            clearInterval(plugin._displayUpdateInterval);
+            plugin._displayUpdateInterval = null;
+          }
+          return;
+        }
+        updateCritDisplay();
+      }, 5000);
     }
 
     // Update immediately on load
@@ -8370,46 +7300,12 @@ module.exports = class CriticalHitMerged {
    */
   handleCriticalHit(messageElement) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:8374',
-        message: 'handleCriticalHit: Entry',
-        data: {
-          hasElement: !!messageElement,
-          hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-          isConnected: messageElement?.isConnected,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'D',
-      }),
-    }).catch(() => {});
     // #endregion
     if (!messageElement) return;
 
     // Get message ID and validate
     const messageId = this.getMessageId(messageElement);
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:8397',
-        message: 'handleCriticalHit: Got messageId',
-        data: {
-          messageId,
-          isValid: this.isValidDiscordId(messageId),
-          wasAnimated: this.animatedMessages.has(messageId),
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'D',
-      }),
-    }).catch(() => {});
     // #endregion
     if (!this.isValidDiscordId(messageId)) return;
 
@@ -8466,26 +7362,6 @@ module.exports = class CriticalHitMerged {
           computedStyles?.backgroundClip === 'text';
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:459',
-            message: 'handleCriticalHit: Verifying gradient synchronization',
-            data: {
-              messageId,
-              attempt,
-              hasCritClass,
-              hasGradient,
-              hasWebkitClip,
-              gradientSynced: hasGradient && hasWebkitClip,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'SYNC',
-          }),
-        }).catch(() => {});
         // #endregion
 
         if (!hasGradient || !hasWebkitClip) {
@@ -8500,20 +7376,6 @@ module.exports = class CriticalHitMerged {
           } else {
             // Max attempts reached, proceed anyway but log warning
             // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHitMerged.plugin.js:459',
-                message:
-                  'handleCriticalHit: Gradient not fully synced after max attempts, proceeding anyway',
-                data: { messageId, attempt, hasGradient, hasWebkitClip },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'SYNC',
-              }),
-            }).catch(() => {});
             // #endregion
           }
         }
@@ -8546,19 +7408,6 @@ module.exports = class CriticalHitMerged {
     const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
     const isInDOM = messageElement.isConnected;
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:8550',
-        message: 'handleCriticalHit: Checking crit class and DOM',
-        data: { messageId, hasCritClass, isInDOM, willReturn: !hasCritClass || !isInDOM },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'D',
-      }),
-    }).catch(() => {});
     // #endregion
     if (!hasCritClass || !isInDOM) return;
 
@@ -8626,28 +7475,6 @@ module.exports = class CriticalHitMerged {
       storedCombo = userCombo.comboCount; // Use current combo for animation display
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:8600',
-          message:
-            'handleCriticalHit: Combo already updated for this message, skipping duplicate combo update',
-          data: {
-            messageId,
-            contentHash,
-            alreadyUpdatedById,
-            alreadyUpdatedByHash,
-            userId: userIdForCombo,
-            currentCombo: storedCombo,
-            note: 'Combo already updated (by ID or content hash), but animation will still trigger',
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'COMBO_DEDUP',
-        }),
-      }).catch(() => {});
       // #endregion
     } else {
       // Mark this message as having combo updated (both by ID and content hash if available)
@@ -8691,26 +7518,6 @@ module.exports = class CriticalHitMerged {
       storedCombo = combo; // Use updated combo for animation display
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:425',
-          message: 'handleCriticalHit: Updated combo immediately',
-          data: {
-            messageId,
-            userId: userIdForCombo,
-            combo,
-            previousCombo,
-            timeSinceLastCrit,
-            willIncrement: timeSinceLastCrit <= 5000,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'E',
-        }),
-      }).catch(() => {});
       // #endregion
     }
 
@@ -8765,55 +7572,12 @@ module.exports = class CriticalHitMerged {
         // Final check: ensure we have a valid element
         if (!targetElement || !this.isElementValidForAnimation(targetElement, targetMessageId)) {
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:8416',
-              message: 'handleCriticalHit: Element invalid for animation, skipping',
-              data: {
-                messageId: targetMessageId,
-                hasTargetElement: !!targetElement,
-                isConnected: targetElement?.isConnected,
-                hasCritClass: targetElement?.classList?.contains('bd-crit-hit'),
-                isValid: targetElement
-                  ? this.isElementValidForAnimation(targetElement, targetMessageId)
-                  : false,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'VALIDATION',
-            }),
-          }).catch(() => {});
           // #endregion
           this.markMessageAsRemoved(messageId);
           return;
         }
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:8430',
-            message: 'handleCriticalHit: Calling showAnimation',
-            data: {
-              messageId: targetMessageId,
-              originalMessageId: messageId,
-              combo: storedCombo,
-              storedComboType: typeof storedCombo,
-              storedComboValue: storedCombo,
-              hasTargetElement: !!targetElement,
-              isConnected: targetElement?.isConnected,
-              hasCritClass: targetElement?.classList?.contains('bd-crit-hit'),
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'ANIMATION',
-          }),
-        }).catch(() => {});
         // #endregion
 
         // Pass stored combo to showAnimation (already updated synchronously above)
@@ -8825,23 +7589,6 @@ module.exports = class CriticalHitMerged {
           storedCombo = userCombo.comboCount;
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:8800',
-              message: 'handleCriticalHit: storedCombo was null, using fallback combo',
-              data: {
-                messageId: targetMessageId,
-                fallbackCombo: storedCombo,
-                userId,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'COMBO_FALLBACK',
-            }),
-          }).catch(() => {});
           // #endregion
         }
 
@@ -8897,43 +7644,12 @@ module.exports = class CriticalHitMerged {
       });
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:7818',
-          message: 'getCachedMessages: Retrieved messages from DOM',
-          data: {
-            totalMessages: allMessages.length,
-            filteredMessages: filteredMessages.length,
-            critMessages: filteredMessages.filter((m) => m.classList?.contains('bd-crit-hit'))
-              .length,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'FIX',
-        }),
-      }).catch(() => {});
       // #endregion
 
       return filteredMessages;
     } catch (error) {
       this.debugError('GET_CACHED_MESSAGES', error);
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:7840',
-          message: 'getCachedMessages: Error retrieving messages',
-          data: { error: error?.message || String(error) },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'FIX',
-        }),
-      }).catch(() => {});
       // #endregion
       return [];
     }
@@ -8948,19 +7664,6 @@ module.exports = class CriticalHitMerged {
     try {
       if (!element || !element.getBoundingClientRect) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:7850',
-            message: 'getElementPosition: Element invalid or missing getBoundingClientRect',
-            data: { hasElement: !!element, hasMethod: !!element?.getBoundingClientRect },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'FIX',
-          }),
-        }).catch(() => {});
         // #endregion
         return null;
       }
@@ -8971,40 +7674,11 @@ module.exports = class CriticalHitMerged {
       };
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:7865',
-          message: 'getElementPosition: Position calculated successfully',
-          data: {
-            position,
-            rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'FIX',
-        }),
-      }).catch(() => {});
       // #endregion
 
       return position;
     } catch (error) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:7878',
-          message: 'getElementPosition: Error calculating position',
-          data: { error: error?.message || String(error) },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'FIX',
-        }),
-      }).catch(() => {});
       // #endregion
       return null;
     }
@@ -9137,19 +7811,6 @@ module.exports = class CriticalHitMerged {
       // If same content hash, it's a duplicate
       if (contentHash && existing?.contentHash === contentHash) {
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:8615',
-            message: 'addToAnimatedMessages: Same content already animated, skipping duplicate',
-            data: { messageId, contentHash },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'DUPLICATE',
-          }),
-        }).catch(() => {});
         // #endregion
         return false;
       }
@@ -9218,24 +7879,6 @@ module.exports = class CriticalHitMerged {
           this.animatedMessages.delete(messageId);
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:9050',
-              message: 'showAnimation: Verified message - allowing animation (removed old entry)',
-              data: {
-                messageId,
-                contentHash,
-                timeSinceAnimated,
-                isValidDiscordId: true,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'VERIFIED_ALLOW',
-            }),
-          }).catch(() => {});
           // #endregion
         } else if (
           timeSinceAnimated > 2000 ||
@@ -9246,48 +7889,10 @@ module.exports = class CriticalHitMerged {
           this.animatedMessages.delete(messageId);
 
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:8775',
-              message: 'showAnimation: Same content but element replaced, allowing animation',
-              data: {
-                messageId,
-                contentHash,
-                timeSinceAnimated,
-                originalElementStillConnected,
-                elementReplaced: !originalElementStillConnected,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'REPLACED',
-            }),
-          }).catch(() => {});
           // #endregion
         } else {
           // Same logical message with same element - skip animation
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHitMerged.plugin.js:8800',
-              message: 'showAnimation: Same logical message already animated, skipping duplicate',
-              data: {
-                messageId,
-                contentHash,
-                existingContentHash: existingData.contentHash,
-                timeSinceAnimated,
-                originalElementStillConnected,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'DUPLICATE',
-            }),
-          }).catch(() => {});
           // #endregion
           return;
         }
@@ -9297,74 +7902,22 @@ module.exports = class CriticalHitMerged {
       if (existingData && messageElement?.isConnected) {
         // Element was replaced AND content is different - allow retry for new message
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:8680',
-            message: 'showAnimation: Element replaced with different content, allowing retry',
-            data: {
-              messageId,
-              contentHash,
-              existingContentHash: existingData.contentHash,
-              elementReplaced: true,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'REPLACED',
-          }),
-        }).catch(() => {});
         // #endregion
         // Remove old entry to allow new animation
         this.animatedMessages.delete(messageId);
       } else {
         // Duplicate call with same element, skip
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:8700',
-            message: 'showAnimation: Already animated, skipping duplicate call',
-            data: { messageId },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'SPAM',
-          }),
-        }).catch(() => {});
         // #endregion
         return;
       }
     }
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:8235',
-        message: 'showAnimation: Entry',
-        data: {
-          messageId,
-          hasElement: !!messageElement,
-          isConnected: messageElement?.isConnected,
-          hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-          comboOverride,
-          comboOverrideType: typeof comboOverride,
-          comboOverrideValue: comboOverride,
-          animationEnabled: this.settings.animationEnabled !== false,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'ANIMATION',
-      }),
-    }).catch(() => {});
     // #endregion
 
-    if (!this.settings.enabled) return;
+    // Check animation runtime setting (not overall plugin enabled state)
+    if (this.settings.animationEnabled === false) return;
 
     // Final safety check - be lenient, just need crit class and DOM presence
     if (!messageElement?.classList || !messageElement.isConnected) {
@@ -9406,25 +7959,6 @@ module.exports = class CriticalHitMerged {
       combo = userCombo.comboCount || 1;
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHitMerged.plugin.js:9380',
-          message: 'showAnimation: Using fallback combo (no increment)',
-          data: {
-            messageId,
-            userId,
-            combo,
-            currentComboCount: userCombo.comboCount,
-            note: 'Combo should already be updated by handleCriticalHit - using current value',
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'COMBO_FALLBACK',
-        }),
-      }).catch(() => {});
       // #endregion
     }
 
@@ -9452,19 +7986,6 @@ module.exports = class CriticalHitMerged {
     this.activeAnimations.add(textElement);
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:7912',
-        message: 'showAnimation: Animation element created and added',
-        data: { messageId, combo, position, activeAnimationsCount: this.activeAnimations.size },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'ANIMATION',
-      }),
-    }).catch(() => {});
     // #endregion
 
     // Cleanup after animation completes
@@ -9580,25 +8101,6 @@ module.exports = class CriticalHitMerged {
    */
   createAnimationElement(messageId, combo, position) {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:9563',
-        message: 'createAnimationElement: Creating animation element',
-        data: {
-          messageId,
-          combo,
-          comboType: typeof combo,
-          showCombo: this.settings.showCombo,
-          willShowCombo: combo > 1 && this.settings.showCombo,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'ANIMATION_ELEMENT',
-      }),
-    }).catch(() => {});
     // #endregion
 
     const textElement = document.createElement('div');
@@ -9616,24 +8118,6 @@ module.exports = class CriticalHitMerged {
     textElement.innerHTML = comboText;
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:9580',
-        message: 'createAnimationElement: Set innerHTML',
-        data: {
-          messageId,
-          comboValue,
-          comboText,
-          originalCombo: combo,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'ANIMATION_ELEMENT',
-      }),
-    }).catch(() => {});
     // #endregion
 
     // Set only positioning and layout styles - let CSS class handle animation and opacity
@@ -9749,25 +8233,6 @@ module.exports = class CriticalHitMerged {
     combo.lastCritTime = lastCritTime;
 
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        location: 'CriticalHitMerged.plugin.js:8143',
-        message: 'updateUserCombo: Updating combo',
-        data: {
-          userId: key,
-          previousCombo,
-          newCombo: comboCount,
-          lastCritTime,
-          timeSinceLastCrit: lastCritTime - combo.lastCritTime,
-        },
-        timestamp: Date.now(),
-        sessionId: 'debug-session',
-        runId: 'run1',
-        hypothesisId: 'COMBO',
-      }),
-    }).catch(() => {});
     // #endregion
 
     // Save for SoloLevelingStats
@@ -9789,19 +8254,6 @@ module.exports = class CriticalHitMerged {
         const hadCombo = comboObj.comboCount;
 
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHitMerged.plugin.js:1000',
-            message: 'updateUserCombo: Combo timeout - resetting to 0',
-            data: { userId: key, hadCombo, oldLastCritTime: comboObj.lastCritTime },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'G',
-          }),
-        }).catch(() => {});
         // #endregion
 
         // Reset both comboCount and lastCritTime
@@ -10122,7 +8574,7 @@ module.exports = class CriticalHitMerged {
               type="checkbox"
               id="cha-enabled"
               class="cha-checkbox"
-              ${this.settings.enabled ? 'checked' : ''}
+              ${this.settings.animationEnabled !== false ? 'checked' : ''}
             />
             <span class="cha-checkbox-label">Enable Animations</span>
           </label>
@@ -10420,7 +8872,7 @@ module.exports = class CriticalHitMerged {
     };
 
     container.querySelector('#cha-enabled').addEventListener('change', (e) => {
-      plugin.settings.enabled = e.target.checked;
+      plugin.settings.animationEnabled = e.target.checked;
       plugin.saveSettings();
     });
 

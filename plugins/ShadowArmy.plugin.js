@@ -48,14 +48,21 @@ class ShadowStorageManager {
     this.favoriteCache = new Map(); // Favorite shadows (7 generals)
     this.recentCache = new Map(); // Recently accessed shadows
     this.cacheLimit = 100;
+    this.favoriteLimit = 7; // Limit for favorite cache (7 generals)
+    this.favoriteIds = new Set(); // Track favorite shadow IDs for cache updates
 
     // Aggregation cache (for performance)
     this.aggregatedPowerCache = null;
     this.aggregatedPowerCacheTime = null;
     this.cacheTTL = 60000; // 1 minute
 
-    // Migration flag
-    this.migrationCompleted = false;
+    // Buff cache (for synchronous access by SoloLevelingStats)
+    this.cachedBuffs = null;
+    this.cachedBuffsTime = null;
+
+    // Migration flag - load persisted value from stable storage
+    const persistedMigration = BdApi.Data.load('ShadowArmy', 'migrationCompleted');
+    this.migrationCompleted = persistedMigration === true;
   }
 
   // ============================================================================
@@ -133,12 +140,21 @@ class ShadowStorageManager {
     try {
       // Load old data
       const oldData = BdApi.Data.load('ShadowArmy', 'settings');
-      if (!oldData || !oldData.shadows || !Array.isArray(oldData.shadows) || oldData.shadows.length === 0) {
+      if (
+        !oldData ||
+        !oldData.shadows ||
+        !Array.isArray(oldData.shadows) ||
+        oldData.shadows.length === 0
+      ) {
         this.migrationCompleted = true;
+        // Persist migration flag to stable storage
+        BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
         return { migrated: false, reason: 'No data to migrate' };
       }
 
-      console.log(`ShadowStorageManager: Migrating ${oldData.shadows.length} shadows from localStorage`);
+      console.log(
+        `ShadowStorageManager: Migrating ${oldData.shadows.length} shadows from localStorage`
+      );
 
       // Ensure database is initialized
       if (!this.db) {
@@ -148,8 +164,9 @@ class ShadowStorageManager {
       // Batch save shadows
       const migrated = await this.saveShadowsBatch(oldData.shadows);
 
-      // Mark migration complete
+      // Mark migration complete and persist flag to stable storage
       this.migrationCompleted = true;
+      BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
 
       // Keep localStorage as backup (will be removed in future version)
       console.log('ShadowStorageManager: Migration complete, localStorage kept as backup');
@@ -291,7 +308,13 @@ class ShadowStorageManager {
    * 4. Apply pagination (offset, limit)
    * 5. Return array of shadows
    */
-  async getShadows(filters = {}, offset = 0, limit = 50, sortBy = 'extractedAt', sortOrder = 'desc') {
+  async getShadows(
+    filters = {},
+    offset = 0,
+    limit = 50,
+    sortBy = 'extractedAt',
+    sortOrder = 'desc'
+  ) {
     if (!this.db) {
       await this.init();
     }
@@ -462,16 +485,16 @@ class ShadowStorageManager {
    * 2. Calculate weak rank threshold
    * 3. Query IndexedDB for weak shadows
    * 4. Sum total power
-   * 5. Cache result
-   * 6. Return aggregated data
    */
   async getAggregatedPower(userRank, shadowRanks) {
     // Check cache
-    if (
-      this.aggregatedPowerCache &&
-      Date.now() - this.aggregatedPowerCacheTime < this.cacheTTL
-    ) {
+    if (this.aggregatedPowerCache && Date.now() - this.aggregatedPowerCacheTime < this.cacheTTL) {
       return this.aggregatedPowerCache;
+    }
+
+    // Prevent concurrent execution
+    if (this._aggregatingPower) {
+      return this._aggregatingPower;
     }
 
     if (!this.db) {
@@ -486,7 +509,7 @@ class ShadowStorageManager {
       return { totalPower: 0, totalCount: 0, ranks: [] };
     }
 
-    return new Promise((resolve, reject) => {
+    this._aggregatingPower = new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readonly');
       const store = transaction.objectStore(this.storeName);
       const rankIndex = store.index('rank');
@@ -513,6 +536,7 @@ class ShadowStorageManager {
             };
             this.aggregatedPowerCache = result;
             this.aggregatedPowerCacheTime = Date.now();
+            this._aggregatingPower = null;
             resolve(result);
           }
         };
@@ -527,11 +551,14 @@ class ShadowStorageManager {
             };
             this.aggregatedPowerCache = result;
             this.aggregatedPowerCacheTime = Date.now();
+            this._aggregatingPower = null;
             resolve(result);
           }
         };
       });
     });
+
+    return this._aggregatingPower;
   }
 
   // ============================================================================
@@ -541,23 +568,60 @@ class ShadowStorageManager {
   /**
    * Update memory cache with shadow
    * Operations:
-   * 1. Add to favoriteCache if favorite
+   * 1. Add to favoriteCache if favorite (with limit enforcement)
    * 2. Add to recentCache (LRU eviction)
-   * 3. Limit cache size
+   * 3. Limit cache size separately for each cache
    */
   updateCache(shadow) {
+    // Guard: ensure shadow and shadow.id exist
     if (!shadow || !shadow.id) return;
+
+    // Add to favorite cache if favorite
+    if (this.favoriteIds.has(shadow.id)) {
+      // Update existing favorite or add new one
+      if (this.favoriteCache.has(shadow.id)) {
+        // Update existing favorite (move to end for LRU)
+        this.favoriteCache.delete(shadow.id);
+      } else {
+        // Evict oldest if favorite cache limit reached
+        if (this.favoriteCache.size >= this.favoriteLimit) {
+          const firstKey = this.favoriteCache.keys().next().value;
+          this.favoriteCache.delete(firstKey);
+        }
+      }
+      this.favoriteCache.set(shadow.id, shadow);
+    } else {
+      // Remove from favorite cache if no longer favorite
+      if (this.favoriteCache.has(shadow.id)) {
+        this.favoriteCache.delete(shadow.id);
+      }
+    }
 
     // Add to recent cache (LRU)
     if (this.recentCache.has(shadow.id)) {
+      // Move to end (most recently used)
       this.recentCache.delete(shadow.id);
     }
     this.recentCache.set(shadow.id, shadow);
 
-    // Evict oldest if cache limit reached
+    // Evict oldest if recent cache limit reached
     if (this.recentCache.size > this.cacheLimit) {
       const firstKey = this.recentCache.keys().next().value;
       this.recentCache.delete(firstKey);
+    }
+  }
+
+  /**
+   * Set favorite shadow IDs for cache management
+   * @param {string[]} favoriteIds - Array of favorite shadow IDs
+   */
+  setFavoriteIds(favoriteIds) {
+    this.favoriteIds = new Set(favoriteIds || []);
+    // Clean up favoriteCache to remove non-favorites
+    for (const id of this.favoriteCache.keys()) {
+      if (!this.favoriteIds.has(id)) {
+        this.favoriteCache.delete(id);
+      }
     }
   }
 
@@ -642,7 +706,21 @@ module.exports = class ShadowArmy {
     };
 
     // Shadow ranks (matching Solo Leveling rank system)
-    this.shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'];
+    this.shadowRanks = [
+      'E',
+      'D',
+      'C',
+      'B',
+      'A',
+      'S',
+      'SS',
+      'SSS',
+      'SSS+',
+      'NH',
+      'Monarch',
+      'Monarch+',
+      'Shadow Monarch',
+    ];
 
     // Shadow roles with their abilities and effects
     this.shadowRoles = {
@@ -699,14 +777,14 @@ module.exports = class ShadowArmy {
     // Stat weight templates per role (used to generate per-shadow stats)
     // Higher weight = that role favors that stat more
     this.shadowRoleStatWeights = {
-      tank:        { strength: 0.8, agility: 0.4, intelligence: 0.2, vitality: 1.2, luck: 0.3 },
-      healer:      { strength: 0.3, agility: 0.3, intelligence: 0.9, vitality: 1.1, luck: 0.8 },
-      mage:        { strength: 0.2, agility: 0.5, intelligence: 1.3, vitality: 0.5, luck: 0.5 },
-      assassin:    { strength: 0.7, agility: 1.4, intelligence: 0.4, vitality: 0.4, luck: 0.6 },
-      ranger:      { strength: 0.5, agility: 1.0, intelligence: 0.9, vitality: 0.5, luck: 0.6 },
-      knight:      { strength: 1.0, agility: 0.9, intelligence: 0.5, vitality: 1.0, luck: 0.4 },
-      berserker:   { strength: 1.4, agility: 0.7, intelligence: 0.2, vitality: 0.6, luck: 0.3 },
-      support:     { strength: 0.3, agility: 0.5, intelligence: 1.0, vitality: 0.7, luck: 1.1 },
+      tank: { strength: 0.8, agility: 0.4, intelligence: 0.2, vitality: 1.2, luck: 0.3 },
+      healer: { strength: 0.3, agility: 0.3, intelligence: 0.9, vitality: 1.1, luck: 0.8 },
+      mage: { strength: 0.2, agility: 0.5, intelligence: 1.3, vitality: 0.5, luck: 0.5 },
+      assassin: { strength: 0.7, agility: 1.4, intelligence: 0.4, vitality: 0.4, luck: 0.6 },
+      ranger: { strength: 0.5, agility: 1.0, intelligence: 0.9, vitality: 0.5, luck: 0.6 },
+      knight: { strength: 1.0, agility: 0.9, intelligence: 0.5, vitality: 1.0, luck: 0.4 },
+      berserker: { strength: 1.4, agility: 0.7, intelligence: 0.2, vitality: 0.6, luck: 0.3 },
+      support: { strength: 0.3, agility: 0.5, intelligence: 1.0, vitality: 0.7, luck: 1.1 },
     };
 
     this.settings = this.defaultSettings;
@@ -716,40 +794,61 @@ module.exports = class ShadowArmy {
     this.storageManager = null;
     this.userId = null;
 
+    // UI elements
+    this.shadowArmyButton = null;
+    this.shadowArmyModal = null;
+    this.toolbarObserver = null;
+    this.toolbarCheckInterval = null;
+    this._shadowArmyButtonRetryCount = 0;
+
     // Extraction attempt tracking (Solo Leveling lore: max 3 attempts per target)
     this.extractionAttempts = {}; // { targetId: { count: number, lastAttempt: timestamp } }
 
     // Rank probability multipliers (lower ranks easier, higher ranks exponentially harder)
     this.rankProbabilityMultipliers = {
-      'E': 10.0,      // Very common (10x base chance)
-      'D': 5.0,       // Common (5x base chance)
-      'C': 2.5,       // Uncommon (2.5x base chance)
-      'B': 1.0,       // Normal (1x base chance)
-      'A': 0.5,       // Rare (0.5x base chance)
-      'S': 0.2,       // Very rare (0.2x base chance)
-      'SS': 0.1,      // Extremely rare (0.1x base chance)
-      'SSS': 0.05,    // Ultra rare (0.05x base chance)
-      'SSS+': 0.02,   // Legendary (0.02x base chance)
-      'NH': 0.01,     // Mythic (0.01x base chance)
-      'Monarch': 0.005,    // Near impossible (0.005x base chance)
-      'Monarch+': 0.001,   // Almost never (0.001x base chance)
+      E: 10.0, // Very common (10x base chance)
+      D: 5.0, // Common (5x base chance)
+      C: 2.5, // Uncommon (2.5x base chance)
+      B: 1.0, // Normal (1x base chance)
+      A: 0.5, // Rare (0.5x base chance)
+      S: 0.2, // Very rare (0.2x base chance)
+      SS: 0.1, // Extremely rare (0.1x base chance)
+      SSS: 0.05, // Ultra rare (0.05x base chance)
+      'SSS+': 0.02, // Legendary (0.02x base chance)
+      NH: 0.01, // Mythic (0.01x base chance)
+      Monarch: 0.005, // Near impossible (0.005x base chance)
+      'Monarch+': 0.001, // Almost never (0.001x base chance)
       'Shadow Monarch': 0.0001, // Once in a lifetime (0.0001x base chance)
     };
 
     // Exponential stat multipliers per rank (1.5x per rank)
+    // Each rank is exponentially stronger than the previous:
+    // - E rank: Base (1.0x)
+    // - D rank: 1.5x stronger than E
+    // - C rank: 2.25x stronger than E (1.5^2)
+    // - B rank: 3.375x stronger than E (1.5^3)
+    // - A rank: 5.0625x stronger than E (1.5^4)
+    // - S rank: 7.59375x stronger than E (1.5^5)
+    // - SS rank: 11.390625x stronger than E (1.5^6)
+    // - SSS rank: 17.0859375x stronger than E (1.5^7)
+    // - SSS+ rank: 25.62890625x stronger than E (1.5^8)
+    // - NH rank: 38.443359375x stronger than E (1.5^9)
+    // - Monarch rank: 57.6650390625x stronger than E (1.5^10)
+    // - Monarch+ rank: 86.49755859375x stronger than E (1.5^11)
+    // - Shadow Monarch rank: 129.746337890625x stronger than E (1.5^12)
     this.rankStatMultipliers = {
-      'E': 1.0,           // Base (100%)
-      'D': 1.5,           // 150% (1.5x)
-      'C': 2.25,          // 225% (1.5^2)
-      'B': 3.375,         // 337.5% (1.5^3)
-      'A': 5.0625,        // 506.25% (1.5^4)
-      'S': 7.59375,       // 759.375% (1.5^5)
-      'SS': 11.390625,    // 1139% (1.5^6)
-      'SSS': 17.0859375,  // 1708% (1.5^7)
+      E: 1.0, // Base (100%) - 1.5^0
+      D: 1.5, // 150% (1.5x) - 1.5^1
+      C: 2.25, // 225% (1.5^2)
+      B: 3.375, // 337.5% (1.5^3)
+      A: 5.0625, // 506.25% (1.5^4)
+      S: 7.59375, // 759.375% (1.5^5)
+      SS: 11.390625, // 1139% (1.5^6)
+      SSS: 17.0859375, // 1708% (1.5^7)
       'SSS+': 25.62890625, // 2562% (1.5^8)
-      'NH': 38.443359375,  // 3844% (1.5^9)
-      'Monarch': 57.6650390625,      // 5766% (1.5^10)
-      'Monarch+': 86.49755859375,    // 8649% (1.5^11)
+      NH: 38.443359375, // 3844% (1.5^9)
+      Monarch: 57.6650390625, // 5766% (1.5^10)
+      'Monarch+': 86.49755859375, // 8649% (1.5^11)
       'Shadow Monarch': 129.746337890625, // 12974% (1.5^12)
     };
   }
@@ -784,14 +883,50 @@ module.exports = class ShadowArmy {
         console.log(`ShadowArmy: Migrated ${migrationResult.count} shadows to IndexedDB`);
       }
     } catch (error) {
-      console.warn('ShadowArmy: IndexedDB initialization failed, using localStorage fallback', error);
+      console.warn(
+        'ShadowArmy: IndexedDB initialization failed, using localStorage fallback',
+        error
+      );
       this.storageManager = null;
     }
 
     this.loadSettings();
+
+    // Sync favorite IDs to storage manager for cache management
+    if (this.storageManager) {
+      this.storageManager.setFavoriteIds(this.settings.favoriteShadowIds || []);
+    }
+
     this.injectCSS();
     this.integrateWithSoloLeveling();
     this.setupMessageListener();
+    this.createShadowArmyButton();
+
+    // Retry button creation after delays to ensure Discord UI is ready
+    setTimeout(() => {
+      if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
+        console.log('[ShadowArmy] Retrying button creation...');
+        this.createShadowArmyButton();
+      }
+    }, 2000);
+
+    // Additional retry after longer delay (for plugin re-enabling)
+    setTimeout(() => {
+      if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
+        console.log('[ShadowArmy] Final retry for button creation...');
+        this.createShadowArmyButton();
+      }
+    }, 5000);
+
+    // Recalculate all shadows with new exponential formula (one-time migration)
+    try {
+      await this.recalculateAllShadows();
+    } catch (error) {
+      console.error('ShadowArmy: Error recalculating shadows during startup', error);
+      // Log error but don't prevent plugin from starting
+      // The migration can be retried on next start
+    }
+
     console.log('ShadowArmy: Plugin started');
   }
 
@@ -804,6 +939,14 @@ module.exports = class ShadowArmy {
   stop() {
     this.removeMessageListener();
     this.removeCSS();
+    this.removeShadowArmyButton();
+    this.closeShadowArmyModal();
+
+    // Clear retry timeout if pending
+    if (this._shadowArmyButtonRetryTimeout) {
+      clearTimeout(this._shadowArmyButtonRetryTimeout);
+      this._shadowArmyButtonRetryTimeout = null;
+    }
 
     // Close IndexedDB connection
     if (this.storageManager) {
@@ -831,7 +974,9 @@ module.exports = class ShadowArmy {
       }
 
       // Method 2: Try BetterDiscord Webpack UserStore
-      const UserStore = BdApi.Webpack?.getStore?.('UserStore') || BdApi.Webpack?.getModule?.(m => m?.getCurrentUser);
+      const UserStore =
+        BdApi.Webpack?.getStore?.('UserStore') ||
+        BdApi.Webpack?.getModule?.((m) => m?.getCurrentUser);
       if (UserStore && UserStore.getCurrentUser) {
         const currentUser = UserStore.getCurrentUser();
         if (currentUser && currentUser.id) {
@@ -1073,9 +1218,7 @@ module.exports = class ShadowArmy {
       // Simple rate limiting: cap extractions per minute
       if (!this.extractionTimestamps) this.extractionTimestamps = [];
       const now = Date.now();
-      this.extractionTimestamps = this.extractionTimestamps.filter(
-        (t) => now - t < 60 * 1000
-      );
+      this.extractionTimestamps = this.extractionTimestamps.filter((t) => now - t < 60 * 1000);
       if (this.extractionTimestamps.length >= (cfg.maxExtractionsPerMinute || 20)) {
         return;
       }
@@ -1087,17 +1230,26 @@ module.exports = class ShadowArmy {
       }
 
       // Calculate extraction chance for each rank with stats influence
+      // Also calculate target strength based on rank for more accurate extraction chances
       const rankChances = extractableRanks.map((r) => {
+        // Estimate target strength based on rank (for better extraction calculation)
+        const targetRankIndex = this.shadowRanks.indexOf(r.rank);
+        const estimatedTargetStrength = this.estimateTargetStrengthByRank(
+          r.rank,
+          targetRankIndex,
+          stats
+        );
+
         const chance = this.calculateExtractionChance(
           rank,
           stats,
           r.rank,
-          0, // Target strength (will be calculated during generation)
+          estimatedTargetStrength, // Use estimated target strength instead of 0
           intelligence,
           perception,
           strength
         );
-        return { rank: r.rank, chance, multiplier: r.multiplier };
+        return { rank: r.rank, chance, multiplier: r.multiplier, probability: chance };
       });
 
       // Select target rank based on weighted probabilities
@@ -1111,12 +1263,19 @@ module.exports = class ShadowArmy {
         return; // Max attempts reached for this target
       }
 
-      // Calculate final extraction chance for selected rank
+      // Calculate final extraction chance for selected rank with accurate target strength
+      const selectedRankIndex = this.shadowRanks.indexOf(selectedRank);
+      const estimatedTargetStrength = this.estimateTargetStrengthByRank(
+        selectedRank,
+        selectedRankIndex,
+        stats
+      );
+
       const finalChance = this.calculateExtractionChance(
         rank,
         stats,
         selectedRank,
-        0,
+        estimatedTargetStrength, // Use estimated target strength
         intelligence,
         perception,
         strength
@@ -1142,10 +1301,7 @@ module.exports = class ShadowArmy {
         intelligence * (cfg.specialIntMultiplier || 0.003) +
         perception * (cfg.specialLuckMultiplier || 0.002);
 
-      const specialChance = Math.min(
-        cfg.specialMaxChance || 0.3,
-        specialChanceRaw
-      );
+      const specialChance = Math.min(cfg.specialMaxChance || 0.3, specialChanceRaw);
 
       if (specialChance > 0) {
         if (this.canTriggerSpecialArise() && Math.random() < specialChance) {
@@ -1213,6 +1369,10 @@ module.exports = class ShadowArmy {
       this.settings.lastExtractionTime = now;
       if (!this.extractionTimestamps) this.extractionTimestamps = [];
       this.extractionTimestamps.push(now);
+
+      // Invalidate buff cache when new shadows are added
+      this.cachedBuffs = null;
+      this.cachedBuffsTime = null;
       console.log('ShadowArmy: Shadow extracted!', shadow);
     }
 
@@ -1447,7 +1607,7 @@ module.exports = class ShadowArmy {
 
     // Stats influence
     const intelligence = userStats.intelligence || 0;
-    const statsBoost = 1.0 + (intelligence * 0.01); // +1% per INT point
+    const statsBoost = 1.0 + intelligence * 0.01; // +1% per INT point
 
     for (let i = 0; i <= maxExtractableIndex; i++) {
       const rank = this.shadowRanks[i];
@@ -1457,7 +1617,7 @@ module.exports = class ShadowArmy {
 
     // Normalize probabilities
     const totalMultiplier = extractableRanks.reduce((sum, r) => sum + r.multiplier, 0);
-    extractableRanks.forEach(r => {
+    extractableRanks.forEach((r) => {
       r.probability = r.multiplier / totalMultiplier;
     });
 
@@ -1475,7 +1635,15 @@ module.exports = class ShadowArmy {
    * 6. Apply target strength resistance
    * 7. Return final chance (0-1)
    */
-  calculateExtractionChance(userRank, userStats, targetRank, targetStrength, intelligence, perception, strength) {
+  calculateExtractionChance(
+    userRank,
+    userStats,
+    targetRank,
+    targetStrength,
+    intelligence,
+    perception,
+    strength
+  ) {
     const userRankIndex = this.shadowRanks.indexOf(userRank);
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
 
@@ -1495,12 +1663,12 @@ module.exports = class ShadowArmy {
 
     // Stats multiplier
     const totalStats = Object.values(userStats).reduce((sum, val) => sum + (val || 0), 0);
-    const statsMultiplier = 1.0 + (
-      (intelligence * 0.01) +      // INT: +1% per point
-      (perception * 0.005) +        // PER: +0.5% per point
-      (strength * 0.003) +          // STR: +0.3% per point
-      (totalStats / 1000 * 0.01)    // Total power bonus
-    );
+    const statsMultiplier =
+      1.0 +
+      (intelligence * 0.01 + // INT: +1% per point
+        perception * 0.005 + // PER: +0.5% per point
+        strength * 0.003 + // STR: +0.3% per point
+        (totalStats / 1000) * 0.01); // Total power bonus
 
     // Rank probability multiplier (lower ranks easier)
     const rankMultiplier = this.rankProbabilityMultipliers[targetRank] || 1.0;
@@ -1508,18 +1676,27 @@ module.exports = class ShadowArmy {
     // Rank difference penalty (if target is stronger)
     const rankPenalty = rankDiff > 0 ? Math.pow(0.5, rankDiff) : 1.0; // 50% reduction per rank above
 
-    // Target strength resistance (simplified - use rank as proxy)
+    // Target strength resistance (improved - uses actual target strength if provided)
     const userStrength = this.calculateUserStrength(userStats);
-    const targetResistance = Math.min(0.9, (targetRankIndex + 1) / ((userRankIndex + 1) * 2));
+    let targetResistance;
+
+    if (targetStrength > 0) {
+      // Use actual target strength for more accurate resistance
+      const strengthRatio = Math.min(1.0, targetStrength / Math.max(1, userStrength));
+      targetResistance = Math.min(0.9, strengthRatio * 0.7); // Max 70% resistance from strength difference
+    } else {
+      // Fallback to rank-based resistance
+      targetResistance = Math.min(0.9, (targetRankIndex + 1) / ((userRankIndex + 1) * 2));
+    }
 
     // Final chance
-    const finalChance = Math.max(0, Math.min(1,
-      baseChance *
-      statsMultiplier *
-      rankMultiplier *
-      rankPenalty *
-      (1 - targetResistance)
-    ));
+    const finalChance = Math.max(
+      0,
+      Math.min(
+        1,
+        baseChance * statsMultiplier * rankMultiplier * rankPenalty * (1 - targetResistance)
+      )
+    );
 
     return finalChance;
   }
@@ -1538,7 +1715,7 @@ module.exports = class ShadowArmy {
     let cumulative = 0;
 
     for (const rankChance of rankChances) {
-      cumulative += rankChance.probability || (rankChance.chance || 0);
+      cumulative += rankChance.probability || rankChance.chance || 0;
       if (roll < cumulative) {
         return rankChance.rank;
       }
@@ -1559,6 +1736,37 @@ module.exports = class ShadowArmy {
       (userStats.vitality || 0) +
       (userStats.luck || 0)
     );
+  }
+
+  /**
+   * Estimate target strength based on rank for extraction calculations
+   * This provides a more accurate extraction chance by considering target power
+   * Operations:
+   * 1. Get rank baseline stats (proportionate to expected stats at that rank)
+   * 2. Apply rank multiplier for exponential scaling
+   * 3. Calculate total strength from estimated stats
+   * 4. Return estimated strength value
+   */
+  estimateTargetStrengthByRank(targetRank, targetRankIndex, userStats) {
+    // Get rank baseline stats (similar to shadow generation)
+    const rankBaselines = this.getRankBaselineStats(
+      targetRank,
+      this.rankStatMultipliers[targetRank] || 1.0
+    );
+
+    // Calculate estimated total stats for this rank
+    const estimatedStats = {
+      strength: rankBaselines.strength || 10,
+      agility: rankBaselines.agility || 10,
+      intelligence: rankBaselines.intelligence || 10,
+      vitality: rankBaselines.vitality || 10,
+      luck: rankBaselines.luck || 10,
+    };
+
+    // Calculate strength value (similar to shadow strength calculation)
+    const estimatedStrength = this.calculateShadowStrength(estimatedStats, 1);
+
+    return estimatedStrength;
   }
 
   /**
@@ -1606,14 +1814,94 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Get expected baseline stats for a rank (proportionate to expected user stats at that rank)
+   * These baselines ensure shadows are strong regardless of user's current stats
+   *
+   * Formula: Expected stats scale exponentially with rank
+   * - E rank: ~10-15 per stat (level 1 equivalent)
+   * - D rank: ~15-22 per stat (level 5 equivalent)
+   * - C rank: ~22-33 per stat (level 10 equivalent)
+   * - B rank: ~33-50 per stat (level 15 equivalent)
+   * - A rank: ~50-75 per stat (level 20 equivalent)
+   * - S rank: ~75-112 per stat (level 30 equivalent)
+   * - SS rank: ~112-168 per stat (level 40 equivalent)
+   * - SSS rank: ~168-252 per stat (level 50 equivalent)
+   * - SSS+ rank: ~252-378 per stat (level 60 equivalent)
+   * - NH rank: ~378-567 per stat (level 70 equivalent)
+   * - Monarch rank: ~567-850 per stat (level 80 equivalent)
+   * - Monarch+ rank: ~850-1275 per stat (level 90 equivalent)
+   * - Shadow Monarch rank: ~1275-1912 per stat (level 100 equivalent)
+   */
+  getRankBaselineStats(shadowRank, rankMultiplier) {
+    // Base baseline stats for E rank (level 1 equivalent)
+    const eRankBaseline = {
+      strength: 10,
+      agility: 10,
+      intelligence: 10,
+      vitality: 10,
+      luck: 10,
+    };
+
+    // Scale baselines exponentially with rank multiplier
+    // This ensures each rank has appropriate baseline stats regardless of user stats
+    const baselineStats = {};
+    Object.keys(eRankBaseline).forEach((stat) => {
+      // Exponential scaling: baseline * rankMultiplier^1.2 (slightly steeper than linear)
+      // This ensures higher ranks have significantly higher baselines
+      const baseline = eRankBaseline[stat] * Math.pow(rankMultiplier, 1.2);
+      baselineStats[stat] = Math.max(1, Math.round(baseline));
+    });
+
+    return baselineStats;
+  }
+
+  /**
    * Generate base stats for a new shadow with exponential scaling
+   *
+   * UPDATED FORMULA: Shadows scale relative to user stats, but are always weaker
+   * This ensures shadows are strong but never exceed user power
+   *
+   * EXPONENTIAL SCALING FORMULA:
+   * Each rank is exponentially stronger than the previous rank (1.5x multiplier per rank).
+   *
+   * Formula breakdown:
+   * 1. Calculate shadow stat based on rank baseline and user stats
+   * 2. Apply role weight to distribute stats appropriately
+   * 3. Apply exponential rank multiplier
+   * 4. Add random variance (0-20%)
+   * 5. CAP shadow stat to never exceed user stat (max 80% of user stat)
+   *
+   * This ensures:
+   * - Each rank is exponentially stronger (1.5x per rank)
+   * - Higher ranks have exponentially higher base values
+   * - Shadows scale with user stats but are always weaker
+   * - Final stats scale exponentially with rank
+   * - USER IS ALWAYS STRONGER than shadows
+   *
+   * Shadow strength cap per rank:
+   * - E rank: max 20% of user stat
+   * - D rank: max 30% of user stat
+   * - C rank: max 40% of user stat
+   * - B rank: max 50% of user stat
+   * - A rank: max 60% of user stat
+   * - S rank: max 65% of user stat
+   * - SS rank: max 70% of user stat
+   * - SSS rank: max 75% of user stat
+   * - SSS+ rank: max 78% of user stat
+   * - NH rank: max 80% of user stat
+   * - Monarch rank: max 80% of user stat
+   * - Monarch+ rank: max 80% of user stat
+   * - Shadow Monarch rank: max 80% of user stat
+   *
    * Operations:
-   * 1. Get stat weights for the shadow's role
-   * 2. Calculate total user stats for baseline
+   * 1. Get rank baseline stats (proportionate to expected stats at that rank)
+   * 2. Get stat weights for the shadow's role
    * 3. For each stat (STR, AGI, INT, VIT, LUK):
-   *    - Mix user stat (70%) + total stats (10%) + base (5)
-   *    - Apply role weight and EXPONENTIAL rank multiplier
-   *    - Add random variance (0-20% for higher ranks)
+   *    - Calculate shadow stat from rank baseline and user stat
+   *    - Apply role weight
+   *    - Apply EXPONENTIAL rank multiplier
+   *    - Add random variance (0-20%)
+   *    - CAP to max percentage of user stat (ensures user is always stronger)
    *    - Ensure minimum of 1
    * 4. Return base stats object with exponential scaling
    */
@@ -1621,25 +1909,46 @@ module.exports = class ShadowArmy {
     const weights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
     const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
 
-    // Sum of user stats to give even 0 builds some baseline
-    const totalUserStats =
-      (userStats.strength || 0) +
-      (userStats.agility || 0) +
-      (userStats.intelligence || 0) +
-      (userStats.vitality || 0) +
-      (userStats.luck || 0);
+    // Get rank baseline stats (proportionate to expected stats at that rank)
+    const rankBaselines = this.getRankBaselineStats(shadowRank, rankMultiplier);
+
+    // Calculate max percentage of user stat that shadows can reach (based on rank)
+    // Higher ranks can get closer to user stats, but never exceed
+    const rankIndex = this.shadowRanks.indexOf(shadowRank);
+    const maxUserStatPercent = Math.min(0.8, 0.2 + rankIndex * 0.05); // E=20%, D=25%, ..., SSS=75%, NH+=80%
 
     const baseStats = {};
 
     stats.forEach((stat) => {
-      const userStat = userStats[stat] || 0;
       const w = weights[stat] || 0.5;
+      const userStat = userStats[stat] || 0;
 
-      // Base formula with EXPONENTIAL rank multiplier
-      const baseValue = userStat * 0.7 + totalUserStats * 0.1 + 5;
+      // Start with rank baseline (ensures shadows have minimum strength)
+      const rankBaseline = rankBaselines[stat] || 10;
+
+      // Calculate shadow stat: blend rank baseline with user stat scaling
+      // Use 60% rank baseline + 40% user stat scaling for balance
+      const userStatScaling = userStat * 0.4; // 40% of user stat as base
+      const baseValue = rankBaseline * 0.6 + userStatScaling;
+
+      // Apply exponential rank multiplier to final stat
+      // rankMultiplier is exponential (1.5x per rank): E=1.0, D=1.5, SSS=17.08, Shadow Monarch=129.74
       const variance = Math.random() * 0.2; // 0-20% variance
 
-      const raw = baseValue * w * rankMultiplier * (1 + variance);
+      // Calculate raw shadow stat
+      let raw = baseValue * w * rankMultiplier * (1 + variance);
+
+      // CRITICAL: Cap shadow stat to never exceed max percentage of user stat
+      // This ensures user is ALWAYS stronger than shadows
+      if (userStat > 0) {
+        const maxShadowStat = userStat * maxUserStatPercent;
+        raw = Math.min(raw, maxShadowStat);
+      } else {
+        // When user stat is 0, cap to rank baseline to prevent overpowered shadows
+        const fallbackCap = rankBaseline * maxUserStatPercent;
+        raw = Math.min(raw, fallbackCap);
+      }
+
       baseStats[stat] = Math.max(1, Math.round(raw));
     });
 
@@ -1750,7 +2059,7 @@ module.exports = class ShadowArmy {
       }
     }
     // Fallback to localStorage
-    return (this.settings.shadows || []).filter(s => s.role === role);
+    return (this.settings.shadows || []).filter((s) => s.role === role);
   }
 
   /**
@@ -1769,7 +2078,28 @@ module.exports = class ShadowArmy {
       }
     }
     // Fallback to localStorage
-    return (this.settings.shadows || []).filter(s => s.rank === rank);
+    return (this.settings.shadows || []).filter((s) => s.rank === rank);
+  }
+
+  /**
+   * Get all shadows from storage
+   * Operations:
+   * 1. Attempt to read all shadows from IndexedDB using storageManager.getShadows with large limit
+   * 2. Return result on success
+   * 3. Log error and fallback to localStorage if storageManager is missing or error occurs
+   * 4. Return empty array if no shadows found
+   */
+  async getAllShadows() {
+    if (!this.storageManager) {
+      return this.settings.shadows || [];
+    }
+
+    try {
+      return await this.storageManager.getShadows({}, 0, 100000);
+    } catch (error) {
+      console.error('[ShadowArmy] Failed to get all shadows from IndexedDB', error);
+      return this.settings.shadows || [];
+    }
   }
 
   /**
@@ -1781,7 +2111,10 @@ module.exports = class ShadowArmy {
    * 4. Return array of favorite shadow objects
    */
   async getFavoriteShadows() {
-    if (!Array.isArray(this.settings.favoriteShadowIds) || this.settings.favoriteShadowIds.length === 0) {
+    if (
+      !Array.isArray(this.settings.favoriteShadowIds) ||
+      this.settings.favoriteShadowIds.length === 0
+    ) {
       return [];
     }
 
@@ -1830,6 +2163,15 @@ module.exports = class ShadowArmy {
     }
 
     this.saveSettings();
+
+    // Sync favorite IDs to storage manager for cache management
+    if (this.storageManager) {
+      this.storageManager.setFavoriteIds(this.settings.favoriteShadowIds || []);
+    }
+
+    // Invalidate buff cache when favorites change
+    this.cachedBuffs = null;
+    this.cachedBuffsTime = null;
   }
 
   // ============================================================================
@@ -1839,12 +2181,18 @@ module.exports = class ShadowArmy {
   /**
    * Calculate total buffs from all shadows
    * Favorites (generals) give full buffs, weak shadows (2+ ranks below) are aggregated for performance
+   *
+   * BALANCING: Implements caps and diminishing returns to prevent OP buffs from millions of shadows
+   * - Favorite shadows (up to 7): Full buffs, no cap
+   * - Aggregated weak shadows: Diminishing returns + hard cap
+   * - Total buff cap: Max +50% per stat from all shadows combined
+   *
    * Operations:
    * 1. Initialize buffs object (STR, AGI, INT, VIT, LUK all 0)
-   * 2. Get favorite shadows (full buffs)
+   * 2. Get favorite shadows (full buffs, up to 7)
    * 3. Get user rank for aggregation threshold
-   * 4. Aggregate weak shadows (2+ ranks below) - use total power, preserve individual stats in DB
-   * 5. Apply buffs from favorites and aggregated weak shadows
+   * 4. Aggregate weak shadows (2+ ranks below) with diminishing returns
+   * 5. Apply caps to prevent overpowered buffs
    * 6. Return total buffs object
    */
   async calculateTotalBuffs() {
@@ -1854,9 +2202,10 @@ module.exports = class ShadowArmy {
       intelligence: 0,
       vitality: 0,
       luck: 0,
+      perception: 0, // Add perception for compatibility
     };
 
-    // Get favorite shadows (full buffs)
+    // Get favorite shadows (full buffs, up to 7 generals)
     const favorites = await this.getFavoriteShadows();
     favorites.forEach((shadow) => {
       const role = this.shadowRoles[shadow.role];
@@ -1870,7 +2219,13 @@ module.exports = class ShadowArmy {
 
     // Get user rank for aggregation
     const soloData = this.getSoloLevelingData();
-    if (!soloData) return buffs;
+    if (!soloData) {
+      // Apply caps even if no solo data
+      this.applyBuffCaps(buffs);
+      this.cachedBuffs = buffs;
+      this.cachedBuffsTime = Date.now();
+      return buffs;
+    }
 
     const userRank = soloData.rank;
     const userRankIndex = this.shadowRanks.indexOf(userRank);
@@ -1878,78 +2233,153 @@ module.exports = class ShadowArmy {
 
     // Aggregate weak shadows (2+ ranks below) for performance
     // Individual stats preserved in IndexedDB, but we use aggregated power for buffs
-    if (this.storageManager && weakRankThreshold >= 0) {
+    if (
+      this.storageManager &&
+      weakRankThreshold >= 0 &&
+      typeof this.storageManager.getAggregatedPower === 'function'
+    ) {
       try {
         const aggregated = await this.storageManager.getAggregatedPower(userRank, this.shadowRanks);
 
-        // Apply aggregated buffs (10% effect from non-favorites)
-        // Estimate buff contribution based on total power
-        // This is a simplified calculation - full stats preserved in DB for future use
+        // Apply aggregated buffs with DIMINISHING RETURNS to prevent OP scaling
+        // Formula: sqrt(totalPower / 10000) * 0.01
+        // This means:
+        // - 10,000 power = sqrt(1) * 0.01 = 0.01 (1% buff)
+        // - 100,000 power = sqrt(10) * 0.01 = 0.0316 (3.16% buff)
+        // - 1,000,000 power = sqrt(100) * 0.01 = 0.1 (10% buff)
+        // - 10,000,000 power = sqrt(1000) * 0.01 = 0.316 (31.6% buff, but capped at 50%)
+        // This prevents linear scaling while still rewarding large armies
+
+        const baseAggregatedBuff = Math.sqrt(aggregated.totalPower / 10000) * 0.01;
+
+        // Cap aggregated buffs at 0.4 (40%) to leave room for favorites
+        const cappedAggregatedBuff = Math.min(0.4, baseAggregatedBuff);
+
         const aggregatedBuffs = {
-          strength: aggregated.totalPower * 0.0001, // Small buff per power point
-          agility: aggregated.totalPower * 0.0001,
-          intelligence: aggregated.totalPower * 0.0001,
-          vitality: aggregated.totalPower * 0.0001,
-          luck: aggregated.totalPower * 0.0001,
+          strength: cappedAggregatedBuff,
+          agility: cappedAggregatedBuff,
+          intelligence: cappedAggregatedBuff,
+          vitality: cappedAggregatedBuff,
+          luck: cappedAggregatedBuff,
+          perception: cappedAggregatedBuff,
         };
 
         Object.keys(aggregatedBuffs).forEach((stat) => {
-          buffs[stat] = (buffs[stat] || 0) + aggregatedBuffs[stat] * 0.1; // 10% effect
+          buffs[stat] = (buffs[stat] || 0) + aggregatedBuffs[stat];
         });
       } catch (error) {
         console.error('ShadowArmy: Failed to get aggregated power', error);
       }
     } else {
-      // Fallback: process all shadows from localStorage
+      // Fallback: process non-favorite shadows from localStorage with diminishing returns
+      // (Favorites already processed above)
       const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
       const allShadows = this.settings.shadows || [];
+      let nonFavoriteCount = 0;
+
       allShadows.forEach((shadow) => {
-      const role = this.shadowRoles[shadow.role];
-      if (!role || !role.buffs) return;
+        const role = this.shadowRoles[shadow.role];
+        if (!role || !role.buffs) return;
 
-      const isFavorite = favoriteIds.has(shadow.id);
-      const scale = isFavorite ? 1 : 0.1; // 10% effect from non-favorites
+        const isFavorite = favoriteIds.has(shadow.id);
 
-      Object.keys(role.buffs).forEach((stat) => {
-        const amount = role.buffs[stat] * scale;
-        buffs[stat] = (buffs[stat] || 0) + amount;
+        if (!isFavorite) {
+          nonFavoriteCount++;
+        }
+        // Favorites already processed at start of function
       });
-    });
+
+      // Apply diminishing returns for non-favorites
+      // Formula: sqrt(nonFavoriteCount / 100) * 0.01 per shadow role average
+      // This prevents linear scaling
+      if (nonFavoriteCount > 0) {
+        const diminishingFactor = Math.sqrt(nonFavoriteCount / 100) * 0.01;
+        const cappedFactor = Math.min(0.4, diminishingFactor); // Cap at 40%
+
+        // Estimate average buff per shadow (simplified)
+        const avgBuffPerShadow = 0.1; // Average ~10% per shadow role
+        const totalNonFavoriteBuff = cappedFactor * avgBuffPerShadow;
+
+        Object.keys(buffs).forEach((stat) => {
+          buffs[stat] = (buffs[stat] || 0) + totalNonFavoriteBuff;
+        });
+      }
     }
+
+    // Ensure perception is set (for compatibility)
+    if (!buffs.perception) {
+      buffs.perception = buffs.luck || 0;
+    }
+
+    // Apply hard caps to prevent overpowered buffs
+    this.applyBuffCaps(buffs);
+
+    // Cache buffs for synchronous access by SoloLevelingStats
+    this.cachedBuffs = buffs;
+    this.cachedBuffsTime = Date.now();
 
     return buffs;
   }
 
   /**
-   * Grant XP to shadows (mainly favorites) so they can grow over time
+   * Apply hard caps to shadow buffs to prevent overpowered stats
+   * Max +50% per stat from all shadows combined
+   */
+  applyBuffCaps(buffs) {
+    const maxBuff = 0.5; // Max +50% per stat
+
+    Object.keys(buffs).forEach((stat) => {
+      if (buffs[stat] > maxBuff) {
+        buffs[stat] = maxBuff;
+      }
+    });
+  }
+
+  /**
+   * Grant XP to shadows so they can grow over time
    * Called from message events / dungeons
+   *
+   * NEW: Can grant XP to specific shadows (by ID) or all shadows
+   *
    * Operations:
    * 1. Validate baseAmount > 0
-   * 2. Get favorite shadows (only favorites receive XP)
-   * 3. For each favorite shadow:
+   * 2. If shadowIds provided, grant XP to those specific shadows
+   * 3. Otherwise, get favorite shadows (only favorites receive XP from messages)
+   * 4. For each shadow:
    *    - Add XP to shadow
    *    - Check if XP exceeds level-up requirement
    *    - Level up loop: subtract XP requirement, increment level
    *    - Apply stat growth on level up
    *    - Recalculate shadow strength with new stats
    *    - Save updated shadow to IndexedDB
-   * 4. Save settings (config only)
+   * 5. Save settings (config only)
    */
-  async grantShadowXP(baseAmount, reason = 'message') {
+  async grantShadowXP(baseAmount, reason = 'message', shadowIds = null) {
     if (baseAmount <= 0) return;
 
-    const favorites = await this.getFavoriteShadows();
-    if (!favorites.length) return;
+    let shadowsToGrant = [];
+
+    if (shadowIds && Array.isArray(shadowIds) && shadowIds.length > 0) {
+      // Grant XP to specific shadows (from dungeons)
+      const allShadows = await this.getAllShadows();
+      shadowsToGrant = allShadows.filter((s) => shadowIds.includes(s.id));
+    } else {
+      // Default: grant XP to favorites only (from messages)
+      shadowsToGrant = await this.getFavoriteShadows();
+    }
+
+    if (!shadowsToGrant.length) return;
 
     const perShadow = baseAmount;
 
-    for (const shadow of favorites) {
+    for (const shadow of shadowsToGrant) {
       shadow.xp = (shadow.xp || 0) + perShadow;
       let level = shadow.level || 1;
 
       // Level up loop in case of big XP grants
-      while (shadow.xp >= this.getShadowXpForNextLevel(level)) {
-        shadow.xp -= this.getShadowXpForNextLevel(level);
+      const shadowRank = shadow.rank || 'E';
+      while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank)) {
+        shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
         level += 1;
         shadow.level = level;
         this.applyShadowLevelUpStats(shadow);
@@ -1965,14 +2395,14 @@ module.exports = class ShadowArmy {
         } catch (error) {
           console.error('ShadowArmy: Failed to save shadow XP update', error);
           // Fallback: update in localStorage array if exists
-          const index = (this.settings.shadows || []).findIndex(s => s.id === shadow.id);
+          const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
           if (index !== -1) {
             this.settings.shadows[index] = shadow;
           }
         }
       } else {
         // Fallback: update in localStorage array
-        const index = (this.settings.shadows || []).findIndex(s => s.id === shadow.id);
+        const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
         if (index !== -1) {
           this.settings.shadows[index] = shadow;
         }
@@ -1984,13 +2414,24 @@ module.exports = class ShadowArmy {
 
   /**
    * Calculate XP required for next shadow level
+   * Higher rank shadows require more XP per level (they grow stronger per level)
    * Operations:
-   * 1. Use quadratic formula: 25 + (level * level * 5)
-   * 2. Return XP requirement
+   * 1. Base XP formula: 25 + (level * level * 5)
+   * 2. Scale by rank multiplier (higher ranks need more XP)
+   * 3. Return XP requirement
    */
-  getShadowXpForNextLevel(level) {
-    // Simple curve: grows roughly quadratically
-    return 25 + level * level * 5;
+  getShadowXpForNextLevel(level, shadowRank = 'E') {
+    // Base XP curve: grows roughly quadratically
+    const baseXP = 25 + level * level * 5;
+
+    // Scale by rank multiplier (higher ranks need more XP per level)
+    // E rank: 1.0x multiplier
+    // SSS rank: ~17x multiplier (requires more XP but grows much stronger)
+    // Shadow Monarch: ~130x multiplier
+    const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
+    const rankXPModifier = 1.0 + (rankMultiplier - 1.0) * 0.3; // Scale XP requirement with rank
+
+    return Math.round(baseXP * rankXPModifier);
   }
 
   /**
@@ -2014,21 +2455,49 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Apply stat increases on shadow level up based on its role weights
+   * Apply stat increases on shadow level up based on its role weights and rank
+   * Higher rank shadows grow faster per level
+   * CRITICAL: Shadow stats are capped to never exceed user stats
    * Operations:
    * 1. Get shadow's role and corresponding stat weights
-   * 2. Initialize growthStats if missing
-   * 3. For each stat:
+   * 2. Get shadow's rank multiplier for growth scaling
+   * 3. Get current user stats for capping
+   * 4. Initialize growthStats if missing
+   * 5. For each stat:
    *    - Get weight for that stat
-   *    - Primary stats (w >= 1.1): +3 growth
-   *    - Secondary stats (w >= 0.8): +2 growth
-   *    - Tertiary stats (w > 0): +1 growth
+   *    - Calculate base growth based on weight
+   *    - Scale growth by rank multiplier (higher ranks grow faster)
+   *    - CAP growth to ensure shadow stat never exceeds user stat
+   *    - Primary stats (w >= 1.1): +3 base growth
+   *    - Secondary stats (w >= 0.8): +2 base growth
+   *    - Tertiary stats (w > 0): +1 base growth
    *    - Negative/zero weight: no growth
-   * 4. Update shadow.growthStats
+   * 6. Update shadow.growthStats
    */
   applyShadowLevelUpStats(shadow) {
     const roleKey = shadow.role;
     const weights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
+    const shadowRank = shadow.rank || 'E';
+    const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
+
+    // Get current user stats for capping
+    const soloData = this.getSoloLevelingData();
+    const userStats = soloData?.stats || {
+      strength: 0,
+      agility: 0,
+      intelligence: 0,
+      vitality: 0,
+      luck: 0,
+    };
+
+    // Calculate max percentage of user stat that shadows can reach (based on rank)
+    const rankIndex = this.shadowRanks.indexOf(shadowRank);
+    const maxUserStatPercent = Math.min(0.8, 0.2 + rankIndex * 0.05); // E=20%, D=25%, ..., SSS=75%, NH+=80%
+
+    // Growth multiplier scales with rank (higher ranks grow faster)
+    // Base growth multiplier: 1.0 for E, scales up to ~2.0 for Shadow Monarch
+    const growthMultiplier = 1.0 + (rankMultiplier - 1.0) * 0.1; // E=1.0, Shadow Monarch=13.97
+
     if (!shadow.growthStats) {
       shadow.growthStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
     }
@@ -2037,15 +2506,170 @@ module.exports = class ShadowArmy {
 
     stats.forEach((stat) => {
       const w = weights[stat] || 0.5;
-      // Primary stats (w >= 1.0) grow faster, secondary slightly, others small
-      let delta;
-      if (w >= 1.1) delta = 3;
-      else if (w >= 0.8) delta = 2;
-      else if (w > 0) delta = 1;
-      else delta = 0;
+      // Base growth per level based on role weight
+      let baseDelta;
+      if (w >= 1.1) baseDelta = 3;
+      else if (w >= 0.8) baseDelta = 2;
+      else if (w > 0) baseDelta = 1;
+      else baseDelta = 0;
 
-      shadow.growthStats[stat] = (shadow.growthStats[stat] || 0) + delta;
+      // Scale growth by rank multiplier (higher ranks grow faster)
+      const delta = Math.round(baseDelta * growthMultiplier);
+
+      // Get current effective stat (base + growth)
+      const baseStat = shadow.baseStats?.[stat] || 0;
+      const currentGrowth = shadow.growthStats[stat] || 0;
+      const currentEffectiveStat = baseStat + currentGrowth;
+
+      // Calculate max allowed stat (cap to user stat percentage)
+      const userStat = userStats[stat] || 0;
+      const maxAllowedStat =
+        userStat > 0 ? Math.round(userStat * maxUserStatPercent) : currentEffectiveStat + delta;
+
+      // Only add growth if it won't exceed the cap
+      if (currentEffectiveStat + delta <= maxAllowedStat) {
+        shadow.growthStats[stat] = currentGrowth + delta;
+      } else {
+        // Cap at max allowed stat
+        const maxGrowth = Math.max(0, maxAllowedStat - baseStat);
+        shadow.growthStats[stat] = maxGrowth;
+      }
     });
+  }
+
+  /**
+   * Recalculate all shadows in IndexedDB with new exponential formula
+   * This is a one-time migration to fix existing shadows
+   * Operations:
+   * 1. Get all shadows from IndexedDB
+   * 2. For each shadow:
+   *    - Get rank multiplier
+   *    - Recalculate baseStats using new rank-based baseline formula
+   *    - Recalculate strength
+   *    - Save updated shadow
+   * 3. Also update localStorage shadows if they exist
+   */
+  async recalculateAllShadows() {
+    try {
+      // Check if we've already done this migration
+      const migrationKey = 'shadowArmy_recalculated_v3'; // Updated for user stat capping
+      if (BdApi.Data.load('ShadowArmy', migrationKey)) {
+        return; // Already migrated
+      }
+
+      console.log('[ShadowArmy] Recalculating all shadows with user stat capping formula...');
+
+      let allShadows = [];
+
+      // Get shadows from IndexedDB
+      if (this.storageManager) {
+        try {
+          allShadows = await this.storageManager.getShadows({}, 0, 100000);
+          console.log(`[ShadowArmy] Found ${allShadows.length} shadows in IndexedDB`);
+        } catch (error) {
+          console.error('[ShadowArmy] Error getting shadows from IndexedDB', error);
+        }
+      }
+
+      // Also get shadows from localStorage as fallback
+      if (this.settings.shadows && this.settings.shadows.length > 0) {
+        const localStorageShadows = this.settings.shadows.filter(
+          (s) => !allShadows.find((dbShadow) => dbShadow.id === s.id)
+        );
+        allShadows = allShadows.concat(localStorageShadows);
+        console.log(
+          `[ShadowArmy] Found ${localStorageShadows.length} additional shadows in localStorage`
+        );
+      }
+
+      if (allShadows.length === 0) {
+        console.log('[ShadowArmy] No shadows to recalculate');
+        BdApi.Data.save('ShadowArmy', migrationKey, true);
+        return;
+      }
+
+      let recalculated = 0;
+      const batchSize = 50;
+
+      for (let i = 0; i < allShadows.length; i += batchSize) {
+        const batch = allShadows.slice(i, i + batchSize);
+
+        for (const shadow of batch) {
+          try {
+            const shadowRank = shadow.rank || 'E';
+            const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
+            const roleKey = shadow.role || 'knight';
+
+            // Recalculate baseStats using new formula that caps shadows relative to user stats
+            // Get current user stats for proper capping
+            const soloData = this.getSoloLevelingData();
+            const currentUserStats = soloData?.stats || {
+              strength: 0,
+              agility: 0,
+              intelligence: 0,
+              vitality: 0,
+              luck: 0,
+            };
+            const newBaseStats = this.generateShadowBaseStats(
+              currentUserStats,
+              roleKey,
+              shadowRank,
+              rankMultiplier
+            );
+
+            // Preserve existing growthStats if they exist
+            const existingGrowthStats = shadow.growthStats || {
+              strength: 0,
+              agility: 0,
+              intelligence: 0,
+              vitality: 0,
+              luck: 0,
+            };
+
+            // Update shadow with new baseStats
+            shadow.baseStats = newBaseStats;
+            shadow.growthStats = existingGrowthStats;
+
+            // Recalculate strength
+            const effectiveStats = this.getShadowEffectiveStats(shadow);
+            shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+
+            // Save updated shadow
+            if (this.storageManager) {
+              try {
+                await this.storageManager.saveShadow(shadow);
+              } catch (error) {
+                console.error(`[ShadowArmy] Failed to save shadow ${shadow.id}`, error);
+                // Fallback: update in localStorage
+                const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
+                if (index !== -1) {
+                  this.settings.shadows[index] = shadow;
+                }
+              }
+            } else {
+              // Fallback: update in localStorage
+              const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
+              if (index !== -1) {
+                this.settings.shadows[index] = shadow;
+              }
+            }
+
+            recalculated++;
+          } catch (error) {
+            console.error(`[ShadowArmy] Error recalculating shadow ${shadow.id}`, error);
+          }
+        }
+
+        // Save progress every batch
+        this.saveSettings();
+      }
+
+      // Mark migration as complete
+      BdApi.Data.save('ShadowArmy', migrationKey, true);
+      console.log(`[ShadowArmy] Recalculated ${recalculated} shadows with new exponential formula`);
+    } catch (error) {
+      console.error('[ShadowArmy] Error recalculating shadows', error);
+    }
   }
 
   /**
@@ -2240,6 +2864,37 @@ module.exports = class ShadowArmy {
         font-size: 12px;
         opacity: 0.8;
       }
+
+      .shadow-army-button {
+        width: 32px;
+        height: 32px;
+        background: transparent;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+        color: var(--interactive-normal, #b9bbbe);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        transition: all 0.2s ease;
+        margin: 0 2px;
+        flex-shrink: 0;
+        padding: 6px;
+        box-sizing: border-box;
+      }
+      .shadow-army-button svg {
+        width: 20px;
+        height: 20px;
+        transition: all 0.2s ease;
+        display: block;
+      }
+      .shadow-army-button:hover {
+        background: var(--background-modifier-hover, rgba(4, 4, 5, 0.6));
+        color: var(--interactive-hover, #dcddde);
+      }
+      .shadow-army-button:hover svg {
+        transform: scale(1.1);
+      }
     `;
 
     document.head.appendChild(style);
@@ -2254,6 +2909,532 @@ module.exports = class ShadowArmy {
   removeCSS() {
     const style = document.getElementById('shadow-army-styles');
     if (style) style.remove();
+  }
+
+  // ============================================================================
+  // UI METHODS (CHAT BUTTON & MODAL)
+  // ============================================================================
+
+  /**
+   * Find Discord's toolbar/button container
+   * Operations:
+   * 1. Look for existing TitleManager or SkillTree buttons to find toolbar
+   * 2. Fallback to finding by Discord button classes
+   * 3. Fallback to finding by textarea and traversing DOM
+   */
+  findToolbar() {
+    // Method 1: Look for existing TitleManager or SkillTree buttons to find toolbar
+    const titleBtn = document.querySelector('.tm-title-button');
+    const skillTreeBtn = document.querySelector('.st-skill-tree-button');
+    if (titleBtn && titleBtn.parentElement) {
+      return titleBtn.parentElement;
+    }
+    if (skillTreeBtn && skillTreeBtn.parentElement) {
+      return skillTreeBtn.parentElement;
+    }
+
+    // Method 2: Find by looking for common Discord button classes
+    const buttonRow =
+      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
+        const siblings = Array.from(el.parentElement?.children || []);
+        return (
+          siblings.length >= 4 &&
+          siblings.some(
+            (s) =>
+              s.querySelector('[class*="emoji"]') ||
+              s.querySelector('[class*="gif"]') ||
+              s.querySelector('[class*="attach"]') ||
+              s.classList.contains('tm-title-button') ||
+              s.classList.contains('st-skill-tree-button')
+          )
+        );
+      })?.parentElement ||
+      (() => {
+        const textArea =
+          document.querySelector('[class*="channelTextArea"]') ||
+          document.querySelector('[class*="slateTextArea"]') ||
+          document.querySelector('textarea[placeholder*="Message"]');
+        if (!textArea) return null;
+        let container =
+          textArea.closest('[class*="container"]') ||
+          textArea.closest('[class*="wrapper"]') ||
+          textArea.parentElement?.parentElement?.parentElement;
+        const buttons = container?.querySelectorAll('[class*="button"]');
+        if (buttons && buttons.length >= 4) {
+          return buttons[0]?.parentElement;
+        }
+        return (
+          container?.querySelector('[class*="buttons"]') ||
+          container?.querySelector('[class*="buttonContainer"]') ||
+          container?.querySelector('[class*="toolbar"]')
+        );
+      })();
+    return buttonRow;
+  }
+
+  /**
+   * Create ShadowArmy button in chat toolbar
+   */
+  createShadowArmyButton() {
+    // Remove existing button first to avoid duplicates
+    const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
+    if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
+    this.shadowArmyButton = null;
+
+    const toolbar = this.findToolbar();
+    if (!toolbar) {
+      // Retry with exponential backoff
+      // Clear any existing retry timeout before scheduling a new one
+      if (this._shadowArmyButtonRetryTimeout) {
+        clearTimeout(this._shadowArmyButtonRetryTimeout);
+        this._shadowArmyButtonRetryTimeout = null;
+      }
+      const retryCount = (this._shadowArmyButtonRetryCount || 0) + 1;
+      this._shadowArmyButtonRetryCount = retryCount;
+      const delay = Math.min(1000 * retryCount, 5000);
+      this._shadowArmyButtonRetryTimeout = setTimeout(() => {
+        this._shadowArmyButtonRetryTimeout = null;
+        this.createShadowArmyButton();
+      }, delay);
+      return;
+    }
+    this._shadowArmyButtonRetryCount = 0;
+
+    // Create ShadowArmy button with shadow/skull icon
+    const shadowArmyButton = document.createElement('button');
+    shadowArmyButton.className = 'shadow-army-button';
+    shadowArmyButton.innerHTML = `
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"></path>
+        <circle cx="9" cy="9" r="1.5" fill="currentColor"></circle>
+        <circle cx="15" cy="9" r="1.5" fill="currentColor"></circle>
+        <path d="M8 14c1.5 2 4.5 2 6 0"></path>
+        <path d="M12 18v-2"></path>
+        <path d="M8 10l-2-2M16 10l2-2"></path>
+      </svg>
+    `;
+    shadowArmyButton.title = 'Shadow Army';
+    shadowArmyButton.addEventListener('click', () => this.openShadowArmyUI());
+
+    const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
+    const titleBtn = toolbar.querySelector('.tm-title-button');
+    const appsButton = Array.from(toolbar.children).find(
+      (el) =>
+        el.querySelector('[class*="apps"]') ||
+        el.getAttribute('aria-label')?.toLowerCase().includes('app')
+    );
+
+    // Insert ShadowArmy button after Skill Tree (third position)
+    let inserted = false;
+
+    if (skillTreeBtn && skillTreeBtn.parentElement === toolbar) {
+      // Insert after Skill Tree button
+      toolbar.insertBefore(shadowArmyButton, skillTreeBtn.nextSibling);
+      inserted = true;
+    } else if (titleBtn && titleBtn.parentElement === toolbar) {
+      // Insert after Title button
+      toolbar.insertBefore(shadowArmyButton, titleBtn.nextSibling);
+      inserted = true;
+    } else if (appsButton && appsButton.parentElement === toolbar) {
+      // Insert before apps button
+      toolbar.insertBefore(shadowArmyButton, appsButton);
+      inserted = true;
+    }
+
+    // Fallback: append to end if couldn't find reference buttons
+    if (!inserted) {
+      toolbar.appendChild(shadowArmyButton);
+    }
+
+    // Store reference
+    this.shadowArmyButton = shadowArmyButton;
+
+    // Ensure button is visible
+    shadowArmyButton.style.display = 'flex';
+
+    // Observe toolbar for changes
+    this.observeToolbar(toolbar);
+
+    console.log('[ShadowArmy] Button created:', {
+      shadowArmyButton: !!this.shadowArmyButton,
+      toolbar: !!toolbar,
+    });
+  }
+
+  /**
+   * Observe toolbar for changes and recreate button if needed
+   */
+  observeToolbar(toolbar) {
+    if (this.toolbarObserver) {
+      this.toolbarObserver.disconnect();
+    }
+
+    // Check if button exists in toolbar
+    const checkButton = () => {
+      const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
+
+      if (!shadowBtnExists) {
+        console.log('[ShadowArmy] Button missing, recreating...');
+        this.createShadowArmyButton();
+      }
+    };
+
+    this.toolbarObserver = new MutationObserver(() => {
+      checkButton();
+    });
+
+    this.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
+
+    // Also check periodically as fallback
+    if (this.toolbarCheckInterval) {
+      clearInterval(this.toolbarCheckInterval);
+    }
+    this.toolbarCheckInterval = setInterval(checkButton, 2000);
+  }
+
+  /**
+   * Remove ShadowArmy button from toolbar
+   */
+  removeShadowArmyButton() {
+    if (this.shadowArmyButton) {
+      this.shadowArmyButton.remove();
+      this.shadowArmyButton = null;
+    }
+    if (this.toolbarObserver) {
+      this.toolbarObserver.disconnect();
+      this.toolbarObserver = null;
+    }
+    if (this.toolbarCheckInterval) {
+      clearInterval(this.toolbarCheckInterval);
+      this.toolbarCheckInterval = null;
+    }
+  }
+
+  /**
+   * Open ShadowArmy UI modal
+   */
+  async openShadowArmyUI() {
+    if (this.shadowArmyModal) {
+      this.closeShadowArmyModal();
+      return;
+    }
+
+    try {
+      // Get all shadows from IndexedDB or localStorage
+      let shadows = [];
+      if (this.storageManager && this.storageManager.getShadows) {
+        try {
+          shadows = await this.storageManager.getShadows({}, 0, 10000);
+        } catch (err) {
+          console.warn('ShadowArmy: Could not get shadows from IndexedDB', err);
+          shadows = this.settings.shadows || [];
+        }
+      } else {
+        shadows = this.settings.shadows || [];
+      }
+
+      const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
+      const total = shadows.length;
+
+      // Create modal similar to TitleManager/SkillTree
+      const modal = document.createElement('div');
+      modal.className = 'shadow-army-modal';
+      modal.style.cssText = `
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.85);
+        z-index: 10002;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        backdrop-filter: blur(5px);
+      `;
+
+      // Filter state
+      let currentFilter = 'all'; // all, favorites, rank, role
+      let currentRankFilter = '';
+      let currentRoleFilter = '';
+      let searchQuery = '';
+
+      const renderModal = () => {
+        let filteredShadows = shadows;
+
+        // Apply filters
+        if (currentFilter === 'favorites') {
+          filteredShadows = filteredShadows.filter((s) => favoriteIds.has(s.id));
+        }
+        if (currentRankFilter) {
+          filteredShadows = filteredShadows.filter((s) => s.rank === currentRankFilter);
+        }
+        if (currentRoleFilter) {
+          filteredShadows = filteredShadows.filter(
+            (s) => (s.role || s.roleName) === currentRoleFilter
+          );
+        }
+        if (searchQuery) {
+          const query = searchQuery.toLowerCase();
+          filteredShadows = filteredShadows.filter(
+            (s) =>
+              (s.roleName || s.role || '').toLowerCase().includes(query) ||
+              s.rank.toLowerCase().includes(query) ||
+              s.id.toLowerCase().includes(query)
+          );
+        }
+
+        // Sort shadows by rank (higher to lower)
+        const rankOrder = [
+          'Shadow Monarch',
+          'Monarch+',
+          'Monarch',
+          'NH',
+          'SSS+',
+          'SSS',
+          'SS',
+          'S',
+          'A',
+          'B',
+          'C',
+          'D',
+          'E',
+        ];
+        const getRankIndex = (rank) => {
+          const index = rankOrder.indexOf(rank);
+          return index === -1 ? 999 : index; // Unknown ranks go to end
+        };
+        filteredShadows.sort((a, b) => getRankIndex(a.rank) - getRankIndex(b.rank));
+
+        // Get unique ranks and roles for filters
+        const ranks = [...new Set(shadows.map((s) => s.rank))].sort(
+          (a, b) => getRankIndex(a) - getRankIndex(b)
+        );
+        const roles = [...new Set(shadows.map((s) => s.role || s.roleName).filter(Boolean))].sort();
+
+        modal.innerHTML = `
+          <div style="
+            width: 90%;
+            max-width: 800px;
+            max-height: 90vh;
+            background: #1e1e1e;
+            border: 2px solid #8b5cf6;
+            border-radius: 12px;
+            padding: 20px;
+            overflow-y: auto;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+          ">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army</h2>
+              <button id="close-shadow-army-modal" style="
+                background: transparent;
+                border: none;
+                color: #999;
+                font-size: 24px;
+                cursor: pointer;
+                padding: 0;
+                width: 30px;
+                height: 30px;
+              ">×</button>
+            </div>
+
+            <div style="margin-bottom: 20px;">
+              <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                <button class="sa-filter-btn" data-filter="all" style="
+                  padding: 6px 12px;
+                  background: ${currentFilter === 'all' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'};
+                  border: 1px solid #8b5cf6;
+                  border-radius: 6px;
+                  color: white;
+                  cursor: pointer;
+                ">All (${total})</button>
+                <button class="sa-filter-btn" data-filter="favorites" style="
+                  padding: 6px 12px;
+                  background: ${
+                    currentFilter === 'favorites' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'
+                  };
+                  border: 1px solid #8b5cf6;
+                  border-radius: 6px;
+                  color: white;
+                  cursor: pointer;
+                ">Favorites (${favoriteIds.size})</button>
+                <select id="sa-rank-filter" style="
+                  padding: 6px 12px;
+                  background: rgba(139, 92, 246, 0.2);
+                  border: 1px solid #8b5cf6;
+                  border-radius: 6px;
+                  color: white;
+                  cursor: pointer;
+                ">
+                  <option value="">All Ranks</option>
+                  ${ranks
+                    .map(
+                      (r) =>
+                        `<option value="${r}" ${
+                          currentRankFilter === r ? 'selected' : ''
+                        }>${r}</option>`
+                    )
+                    .join('')}
+                </select>
+                <select id="sa-role-filter" style="
+                  padding: 6px 12px;
+                  background: rgba(139, 92, 246, 0.2);
+                  border: 1px solid #8b5cf6;
+                  border-radius: 6px;
+                  color: white;
+                  cursor: pointer;
+                ">
+                  <option value="">All Roles</option>
+                  ${roles
+                    .map(
+                      (r) =>
+                        `<option value="${r}" ${
+                          currentRoleFilter === r ? 'selected' : ''
+                        }>${r}</option>`
+                    )
+                    .join('')}
+                </select>
+                <input type="text" id="sa-search" placeholder="Search..." value="${searchQuery}" style="
+                  padding: 6px 12px;
+                  background: rgba(139, 92, 246, 0.2);
+                  border: 1px solid #8b5cf6;
+                  border-radius: 6px;
+                  color: white;
+                  flex: 1;
+                  min-width: 150px;
+                ">
+              </div>
+              <div style="color: #999; font-size: 12px;">
+                Showing ${filteredShadows.length} of ${total} shadows
+              </div>
+            </div>
+
+            <div style="max-height: 60vh; overflow-y: auto;">
+              ${
+                filteredShadows.length === 0
+                  ? `
+                <div style="text-align: center; padding: 40px; color: #999;">
+                  No shadows found matching filters
+                </div>
+              `
+                  : filteredShadows
+                      .map((shadow) => {
+                        const isFavorite = favoriteIds.has(shadow.id);
+                        return `
+                  <div class="sa-shadow-item" data-shadow-id="${shadow.id}" style="
+                    background: ${
+                      isFavorite ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.05)'
+                    };
+                    border: 1px solid ${isFavorite ? '#8b5cf6' : '#444'};
+                    border-radius: 8px;
+                    padding: 12px;
+                    margin-bottom: 8px;
+                    display: flex;
+                    align-items: center;
+                    gap: 12px;
+                  ">
+                    <button class="sa-favorite-btn" data-shadow-id="${shadow.id}" style="
+                      background: transparent;
+                      border: none;
+                      color: ${isFavorite ? '#fbbf24' : '#666'};
+                      font-size: 20px;
+                      cursor: pointer;
+                      padding: 0;
+                      width: 24px;
+                      height: 24px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                    ">${isFavorite ? '★' : '☆'}</button>
+                    <div style="flex: 1;">
+                      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
+                        <span style="color: #8b5cf6; font-weight: bold;">${shadow.rank}-Rank</span>
+                        <span style="color: #999;">${
+                          shadow.roleName || shadow.role || 'Unknown'
+                        }</span>
+                        <span style="color: #34d399; margin-left: auto;">Power: ${
+                          shadow.strength || 0
+                        }</span>
+                      </div>
+                      <div style="color: #666; font-size: 12px;">
+                        Level ${shadow.level || 1} • Extracted: ${new Date(
+                          shadow.extractedAt
+                        ).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                `;
+                      })
+                      .join('')
+              }
+            </div>
+          </div>
+        `;
+
+        // Attach event listeners
+        modal.querySelector('#close-shadow-army-modal').addEventListener('click', () => {
+          this.closeShadowArmyModal();
+        });
+
+        modal.querySelectorAll('.sa-filter-btn').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            currentFilter = btn.dataset.filter;
+            renderModal();
+          });
+        });
+
+        modal.querySelector('#sa-rank-filter').addEventListener('change', (e) => {
+          currentRankFilter = e.target.value;
+          renderModal();
+        });
+
+        modal.querySelector('#sa-role-filter').addEventListener('change', (e) => {
+          currentRoleFilter = e.target.value;
+          renderModal();
+        });
+
+        modal.querySelector('#sa-search').addEventListener('input', (e) => {
+          searchQuery = e.target.value;
+          renderModal();
+        });
+
+        modal.querySelectorAll('.sa-favorite-btn').forEach((btn) => {
+          btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const shadowId = btn.dataset.shadowId;
+            if (this.toggleFavorite) {
+              this.toggleFavorite(shadowId);
+              // Refresh modal
+              const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
+              renderModal();
+            }
+          });
+        });
+
+        // Close on backdrop click
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            this.closeShadowArmyModal();
+          }
+        });
+      };
+
+      renderModal();
+      document.body.appendChild(modal);
+      this.shadowArmyModal = modal;
+    } catch (error) {
+      console.error('ShadowArmy: Failed to open UI', error);
+    }
+  }
+
+  /**
+   * Close ShadowArmy UI modal
+   */
+  closeShadowArmyModal() {
+    if (this.shadowArmyModal) {
+      this.shadowArmyModal.remove();
+      this.shadowArmyModal = null;
+    }
   }
 
   /**
@@ -2283,10 +3464,13 @@ module.exports = class ShadowArmy {
         const isFavorite = favoriteIds.has(shadow.id);
         const starClass = isFavorite ? 'shadow-fav-toggle shadow-fav-active' : 'shadow-fav-toggle';
         const extractedDate = new Date(shadow.extractedAt).toLocaleString();
+        // Sanitize shadow ID to prevent XSS (remove quotes and escape)
+        const safeId = String(shadow.id).replace(/['"]/g, '');
         return `
           <div class="shadow-list-item">
             <button class="${starClass}"
-              onclick="try { const p = BdApi.Plugins.get('ShadowArmy'); (p.instance || p).toggleFavorite('${shadow.id}'); } catch (e) { console.error(e); }">
+              data-shadow-id="${safeId}"
+              onclick="try { const p = BdApi.Plugins.get('ShadowArmy'); const btn = event.target.closest('button[data-shadow-id]'); if (btn) { (p.instance || p).toggleFavorite(btn.dataset.shadowId); } } catch (e) { console.error(e); }">
 
             </button>
             <div class="shadow-list-main">
@@ -2318,8 +3502,8 @@ module.exports = class ShadowArmy {
           <div>Total Shadows: ${total}${this.storageManager ? ' (from cache)' : ''}</div>
           <div>Total Extracted: ${this.settings.totalShadowsExtracted}</div>
           <div>Favorite Generals: ${(this.settings.favoriteShadowIds || []).length} / ${
-            this.settings.favoriteLimit || 7
-          }</div>
+      this.settings.favoriteLimit || 7
+    }</div>
         </div>
         <div class="shadow-army-config">
           <h3>Extraction Config</h3>

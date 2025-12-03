@@ -18,6 +18,8 @@ module.exports = class SoloLevelingTitleManager {
     this.titleButton = null;
     this.titleModal = null;
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
+    this._retryTimeout1 = null; // Timeout ID for first retry
+    this._retryTimeout2 = null; // Timeout ID for second retry
   }
 
   // ============================================================================
@@ -27,6 +29,22 @@ module.exports = class SoloLevelingTitleManager {
     this.loadSettings();
     this.injectCSS();
     this.createTitleButton();
+
+    // Retry button creation after delays to ensure Discord UI is ready
+    this._retryTimeout1 = setTimeout(() => {
+      if (!this.titleButton || !document.body.contains(this.titleButton)) {
+        console.log('[TitleManager] Retrying button creation...');
+        this.createTitleButton();
+      }
+    }, 2000);
+
+    // Additional retry after longer delay (for plugin re-enabling)
+    this._retryTimeout2 = setTimeout(() => {
+      if (!this.titleButton || !document.body.contains(this.titleButton)) {
+        console.log('[TitleManager] Final retry for button creation...');
+        this.createTitleButton();
+      }
+    }, 5000);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -38,6 +56,16 @@ module.exports = class SoloLevelingTitleManager {
     this.removeTitleButton();
     this.closeTitleModal();
     this.removeCSS();
+
+    // Clear retry timeouts to prevent memory leaks
+    if (this._retryTimeout1) {
+      clearTimeout(this._retryTimeout1);
+      this._retryTimeout1 = null;
+    }
+    if (this._retryTimeout2) {
+      clearTimeout(this._retryTimeout2);
+      this._retryTimeout2 = null;
+    }
 
     // Cleanup URL change watcher
     if (this._urlChangeCleanup) {
@@ -152,12 +180,12 @@ module.exports = class SoloLevelingTitleManager {
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
-    history.pushState = function(...args) {
+    history.pushState = function (...args) {
       originalPushState.apply(history, args);
       handleUrlChange();
     };
 
-    history.replaceState = function(...args) {
+    history.replaceState = function (...args) {
       originalReplaceState.apply(history, args);
       handleUrlChange();
     };
@@ -263,7 +291,15 @@ module.exports = class SoloLevelingTitleManager {
       const instance = soloPlugin.instance || soloPlugin;
 
       // Check if title exists in unlocked titles and is not in unwanted list
-      const unwantedTitles = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
+      const unwantedTitles = [
+        'Scribe',
+        'Wordsmith',
+        'Author',
+        'Explorer',
+        'Wanderer',
+        'Apprentice',
+        'Message Warrior',
+      ];
       if (unwantedTitles.includes(titleName)) {
         if (BdApi && typeof BdApi.showToast === 'function') {
           BdApi.showToast('This title has been removed', { type: 'error', timeout: 2000 });
@@ -290,20 +326,31 @@ module.exports = class SoloLevelingTitleManager {
               if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
               if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
               // Check for percentage-based stat bonuses (new format)
-              if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-              if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-              if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-              if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-              if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+              if (bonus.strengthPercent > 0)
+                buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+              if (bonus.agilityPercent > 0)
+                buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+              if (bonus.intelligencePercent > 0)
+                buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+              if (bonus.vitalityPercent > 0)
+                buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+              if (bonus.perceptionPercent > 0)
+                buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
               // Support old format (raw numbers) for backward compatibility
-              if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
+              if (bonus.strength > 0 && !bonus.strengthPercent)
+                buffs.push(`+${bonus.strength} STR`);
               if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-              if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
-              if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
+              if (bonus.intelligence > 0 && !bonus.intelligencePercent)
+                buffs.push(`+${bonus.intelligence} INT`);
+              if (bonus.vitality > 0 && !bonus.vitalityPercent)
+                buffs.push(`+${bonus.vitality} VIT`);
               if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
             }
             const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
-            BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, { type: 'success', timeout: 3000 });
+            BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, {
+              type: 'success',
+              timeout: 3000,
+            });
           }
           this.refreshModal();
           return true;
@@ -356,7 +403,7 @@ module.exports = class SoloLevelingTitleManager {
   createTitleButton() {
     // Remove any existing buttons first (prevent duplicates)
     const existingButtons = document.querySelectorAll('.tm-title-button');
-    existingButtons.forEach(btn => btn.remove());
+    existingButtons.forEach((btn) => btn.remove());
     this.titleButton = null;
 
     // Find Discord's button row - look for the container with keyboard, gift, GIF, emoji icons
@@ -364,22 +411,32 @@ module.exports = class SoloLevelingTitleManager {
       // Method 1: Find by looking for common Discord button classes
       const buttonRow =
         // Look for container with multiple buttons (Discord's toolbar)
-        Array.from(document.querySelectorAll('[class*="button"]')).find(el => {
+        Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
           const siblings = Array.from(el.parentElement?.children || []);
           // Check if this container has multiple button-like elements (Discord's toolbar)
-          return siblings.length >= 4 && siblings.some(s => s.querySelector('[class*="emoji"]') || s.querySelector('[class*="gif"]') || s.querySelector('[class*="attach"]'));
+          return (
+            siblings.length >= 4 &&
+            siblings.some(
+              (s) =>
+                s.querySelector('[class*="emoji"]') ||
+                s.querySelector('[class*="gif"]') ||
+                s.querySelector('[class*="attach"]')
+            )
+          );
         })?.parentElement ||
         // Method 2: Find by text area and traverse up
         (() => {
-          const textArea = document.querySelector('[class*="channelTextArea"]') ||
-                           document.querySelector('[class*="slateTextArea"]') ||
-                           document.querySelector('textarea[placeholder*="Message"]');
+          const textArea =
+            document.querySelector('[class*="channelTextArea"]') ||
+            document.querySelector('[class*="slateTextArea"]') ||
+            document.querySelector('textarea[placeholder*="Message"]');
           if (!textArea) return null;
 
           // Go up to find the input container, then find button row
-          let container = textArea.closest('[class*="container"]') ||
-                          textArea.closest('[class*="wrapper"]') ||
-                          textArea.parentElement?.parentElement?.parentElement;
+          let container =
+            textArea.closest('[class*="container"]') ||
+            textArea.closest('[class*="wrapper"]') ||
+            textArea.parentElement?.parentElement?.parentElement;
 
           // Look for the row that contains multiple buttons
           const buttons = container?.querySelectorAll('[class*="button"]');
@@ -387,8 +444,10 @@ module.exports = class SoloLevelingTitleManager {
             return buttons[0]?.parentElement;
           }
 
-          return container?.querySelector('[class*="buttons"]') ||
-                 container?.querySelector('[class*="buttonContainer"]');
+          return (
+            container?.querySelector('[class*="buttons"]') ||
+            container?.querySelector('[class*="buttonContainer"]')
+          );
         })();
 
       return buttonRow;
@@ -413,9 +472,10 @@ module.exports = class SoloLevelingTitleManager {
 
     // Insert button before skill tree button (or before apps button if no skill tree)
     const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
-    const appsButton = Array.from(toolbar.children).find(el =>
-      el.querySelector('[class*="apps"]') ||
-      el.getAttribute('aria-label')?.toLowerCase().includes('app')
+    const appsButton = Array.from(toolbar.children).find(
+      (el) =>
+        el.querySelector('[class*="apps"]') ||
+        el.getAttribute('aria-label')?.toLowerCase().includes('app')
     );
 
     if (skillTreeBtn) {
@@ -468,8 +528,16 @@ module.exports = class SoloLevelingTitleManager {
 
     const soloData = this.getSoloLevelingData();
     // Filter out unwanted titles
-    const unwantedTitles = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
-    let titles = (soloData?.titles || []).filter(title => !unwantedTitles.includes(title));
+    const unwantedTitles = [
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+    ];
+    let titles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
 
     // Sort titles by XP bonus percentage (ascending: lowest to highest)
     titles.sort((titleA, titleB) => {
@@ -480,9 +548,10 @@ module.exports = class SoloLevelingTitleManager {
       return xpA - xpB; // Ascending order
     });
 
-    const activeTitle = soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
-      ? soloData.activeTitle
-      : null;
+    const activeTitle =
+      soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
+        ? soloData.activeTitle
+        : null;
 
     const modal = document.createElement('div');
     modal.className = 'tm-title-modal';
@@ -493,7 +562,9 @@ module.exports = class SoloLevelingTitleManager {
           <button class="tm-close-button" onclick="this.closest('.tm-title-modal').remove()">×</button>
         </div>
         <div class="tm-modal-body">
-          ${activeTitle ? `
+          ${
+            activeTitle
+              ? `
             <div class="tm-active-title">
               <div class="tm-active-label">Active Title:</div>
               <div class="tm-active-name">${this.escapeHtml(activeTitle)}</div>
@@ -502,37 +573,53 @@ module.exports = class SoloLevelingTitleManager {
                 if (!bonus) return '';
                 const buffs = [];
                 if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                if (bonus.critChance > 0)
+                  buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
                 // Check for percentage-based stat bonuses (new format)
-                if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+                if (bonus.strengthPercent > 0)
+                  buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+                if (bonus.agilityPercent > 0)
+                  buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+                if (bonus.intelligencePercent > 0)
+                  buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+                if (bonus.vitalityPercent > 0)
+                  buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+                if (bonus.perceptionPercent > 0)
+                  buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
                 // Support old format (raw numbers) for backward compatibility
-                if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
+                if (bonus.strength > 0 && !bonus.strengthPercent)
+                  buffs.push(`+${bonus.strength} STR`);
                 if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-                if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
-                if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
+                if (bonus.intelligence > 0 && !bonus.intelligencePercent)
+                  buffs.push(`+${bonus.intelligence} INT`);
+                if (bonus.vitality > 0 && !bonus.vitalityPercent)
+                  buffs.push(`+${bonus.vitality} VIT`);
                 if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
-                return buffs.length > 0 ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>` : '';
+                return buffs.length > 0
+                  ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>`
+                  : '';
               })()}
               <button class="tm-unequip-btn" id="tm-unequip-btn">Unequip</button>
             </div>
-          ` : `
+          `
+              : `
             <div class="tm-no-title">
               <div class="tm-no-title-text">No title equipped</div>
             </div>
-          `}
+          `
+          }
           <div class="tm-titles-section">
             <h3 class="tm-section-title">Available Titles (${titles.length})</h3>
-            ${titles.length === 0 ? `
+            ${
+              titles.length === 0
+                ? `
               <div class="tm-empty-state">
                 <div class="tm-empty-icon"></div>
                 <div class="tm-empty-text">No titles unlocked yet</div>
                 <div class="tm-empty-hint">Complete achievements to unlock titles!</div>
               </div>
-            ` : `
+            `
+                : `
               <div class="tm-titles-grid">
                 ${titles
                   .map((title) => {
@@ -541,36 +628,58 @@ module.exports = class SoloLevelingTitleManager {
                     const buffs = [];
                     if (bonus) {
                       if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                      if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                      if (bonus.critChance > 0)
+                        buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
                       // Check for percentage-based stat bonuses (new format)
-                      if (bonus.strengthPercent > 0) buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                      if (bonus.agilityPercent > 0) buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                      if (bonus.intelligencePercent > 0) buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                      if (bonus.vitalityPercent > 0) buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                      if (bonus.perceptionPercent > 0) buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+                      if (bonus.strengthPercent > 0)
+                        buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+                      if (bonus.agilityPercent > 0)
+                        buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+                      if (bonus.intelligencePercent > 0)
+                        buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+                      if (bonus.vitalityPercent > 0)
+                        buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+                      if (bonus.perceptionPercent > 0)
+                        buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
                       // Support old format (raw numbers) for backward compatibility
-                      if (bonus.strength > 0 && !bonus.strengthPercent) buffs.push(`+${bonus.strength} STR`);
-                      if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-                      if (bonus.intelligence > 0 && !bonus.intelligencePercent) buffs.push(`+${bonus.intelligence} INT`);
-                      if (bonus.vitality > 0 && !bonus.vitalityPercent) buffs.push(`+${bonus.vitality} VIT`);
-                      if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
+                      if (bonus.strength > 0 && !bonus.strengthPercent)
+                        buffs.push(`+${bonus.strength} STR`);
+                      if (bonus.agility > 0 && !bonus.agilityPercent)
+                        buffs.push(`+${bonus.agility} AGI`);
+                      if (bonus.intelligence > 0 && !bonus.intelligencePercent)
+                        buffs.push(`+${bonus.intelligence} INT`);
+                      if (bonus.vitality > 0 && !bonus.vitalityPercent)
+                        buffs.push(`+${bonus.vitality} VIT`);
+                      if (bonus.luck > 0 && !bonus.perceptionPercent)
+                        buffs.push(`+${bonus.luck} LUK`);
                     }
                     return `
                       <div class="tm-title-card ${isActive ? 'active' : ''}">
                         <div class="tm-title-icon"></div>
                         <div class="tm-title-name">${this.escapeHtml(title)}</div>
-                        ${buffs.length > 0 ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>` : ''}
-                        ${isActive ? `
+                        ${
+                          buffs.length > 0
+                            ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>`
+                            : ''
+                        }
+                        ${
+                          isActive
+                            ? `
                           <div class="tm-title-status">Equipped</div>
-                        ` : `
-                          <button class="tm-equip-btn" data-title="${this.escapeHtml(title)}">Equip</button>
-                        `}
+                        `
+                            : `
+                          <button class="tm-equip-btn" data-title="${this.escapeHtml(
+                            title
+                          )}">Equip</button>
+                        `
+                        }
                       </div>
                     `;
                   })
                   .join('')}
               </div>
-            `}
+            `
+            }
           </div>
         </div>
       </div>

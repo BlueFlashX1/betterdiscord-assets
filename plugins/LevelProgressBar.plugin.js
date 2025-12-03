@@ -29,6 +29,8 @@ module.exports = class LevelProgressBar {
     this.debugEnabled = false; // OPTIMIZED: Disable debug logging by default
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
+    this.cachedShadowPower = '0'; // Cache shadow power to avoid repeated queries
+    this.shadowPowerUpdateInterval = null; // Interval for updating shadow power
   }
 
   // ============================================================================
@@ -67,6 +69,10 @@ module.exports = class LevelProgressBar {
     this.debugLog('STOP', 'Plugin stopping');
     this.unsubscribeFromEvents();
     this.stopUpdating();
+    if (this.shadowPowerUpdateInterval) {
+      clearInterval(this.shadowPowerUpdateInterval);
+      this.shadowPowerUpdateInterval = null;
+    }
     this.removeProgressBar();
     this.removeCSS();
     this.debugLog('STOP', 'Plugin stopped successfully');
@@ -287,6 +293,20 @@ module.exports = class LevelProgressBar {
         box-shadow: none !important;
         filter: none !important;
         align-self: center;
+        flex-shrink: 0;
+      }
+
+      .lpb-shadow-power {
+        font-size: 12px;
+        font-weight: 600;
+        color: #8b5cf6;
+        text-shadow: 0 0 4px rgba(139, 92, 246, 0.6);
+        white-space: nowrap;
+        display: flex;
+        align-items: center;
+        margin-left: 12px;
+        flex-shrink: 0;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
       }
 
       /* XP glow animation disabled */
@@ -506,6 +526,13 @@ module.exports = class LevelProgressBar {
       progressTrack.appendChild(progressFill);
       bar.appendChild(progressTrack);
 
+      // Shadow power display (to the right of progress bar)
+      const shadowPowerText = document.createElement('div');
+      shadowPowerText.className = 'lpb-shadow-power';
+      shadowPowerText.id = 'lpb-shadow-power';
+      shadowPowerText.textContent = 'Shadow Army Total Power: 0';
+      bar.appendChild(shadowPowerText);
+
       container.appendChild(bar);
       document.body.appendChild(container);
 
@@ -524,6 +551,13 @@ module.exports = class LevelProgressBar {
       this.lastLevel = null;
       this.lastXP = null;
       this.updateProgressBar();
+
+      // Start shadow power updates
+      this.updateShadowPower();
+      // Update shadow power periodically (every 30 seconds)
+      this.shadowPowerUpdateInterval = setInterval(() => {
+        this.updateShadowPower();
+      }, 30000);
 
       // Initialize milestone markers
       setTimeout(() => {
@@ -649,7 +683,12 @@ module.exports = class LevelProgressBar {
       const xpPercent = Math.min((currentXP / xpRequired) * 100, 100); // Cap at 100%
 
       // Skip update if data hasn't changed (but allow initial update)
-      if (this.lastLevel !== null && this.lastXP !== null && currentLevel === this.lastLevel && currentXP === this.lastXP) {
+      if (
+        this.lastLevel !== null &&
+        this.lastXP !== null &&
+        currentLevel === this.lastLevel &&
+        currentXP === this.lastXP
+      ) {
         return;
       }
 
@@ -715,8 +754,85 @@ module.exports = class LevelProgressBar {
   // PROGRESS TEXT UPDATE METHODS
   // ============================================================================
   /**
+   * Get total shadow power from ShadowArmy plugin (synchronous, returns cached value)
+   * @returns {string} Total power of all shadows (formatted)
+   */
+  getTotalShadowPower() {
+    return this.cachedShadowPower;
+  }
+
+  /**
+   * Update shadow power cache asynchronously
+   */
+  async updateShadowPower() {
+    try {
+      // Get shadow power from SoloLevelingStats plugin (it already calculates it correctly)
+      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!soloPlugin || !soloPlugin.instance) {
+        this.cachedShadowPower = '0';
+        this.refreshProgressText();
+        return;
+      }
+
+      const soloStats = soloPlugin.instance;
+
+      // Use the cached shadow power from SoloLevelingStats (it updates it asynchronously)
+      if (typeof soloStats.getTotalShadowPower === 'function') {
+        const shadowPower = soloStats.getTotalShadowPower();
+        if (shadowPower && shadowPower !== '0') {
+          this.cachedShadowPower = shadowPower;
+          this.refreshProgressText();
+          return;
+        }
+      }
+
+      // If SoloLevelingStats hasn't calculated it yet, trigger an update and retry
+      if (typeof soloStats.updateShadowPower === 'function') {
+        await soloStats.updateShadowPower();
+        // Retry getting the value after update
+        if (typeof soloStats.getTotalShadowPower === 'function') {
+          const shadowPower = soloStats.getTotalShadowPower();
+          this.cachedShadowPower = shadowPower || '0';
+          this.refreshProgressText();
+          return;
+        }
+      }
+
+      this.cachedShadowPower = '0';
+      this.refreshProgressText();
+    } catch (error) {
+      this.debugError('UPDATE_SHADOW_POWER', error);
+      this.cachedShadowPower = '0';
+      this.refreshProgressText();
+    }
+  }
+
+  /**
+   * Refresh progress text with current cached shadow power
+   */
+  refreshProgressText() {
+    if (!this.progressBar) return;
+
+    // Update shadow power display
+    const shadowPowerEl = this.progressBar.querySelector('#lpb-shadow-power');
+    if (shadowPowerEl) {
+      shadowPowerEl.textContent = `Shadow Army Total Power: ${this.getTotalShadowPower()}`;
+    }
+
+    // Refresh main progress text
+    const soloData = this.getSoloLevelingData();
+    if (soloData) {
+      const { levelInfo, rank } = soloData;
+      const xp = levelInfo.xp;
+      const xpRequired = levelInfo.xpRequired || 1;
+      this.updateProgressText(rank, levelInfo.level, xp, xpRequired);
+    }
+  }
+
+  /**
    * Update progress text with current rank, level, and XP
    * Format: "Rank: E Lv.1 0/100 XP"
+   * Shadow power is displayed separately to the right of the progress bar
    * @param {string} rank - Current rank
    * @param {number} level - Current level
    * @param {number} xp - Current XP in level
@@ -730,15 +846,22 @@ module.exports = class LevelProgressBar {
         return;
       }
 
-      // Format: "Rank: E Lv.1 0/100 XP"
+      // Format: "Rank: E Lv.1 0/100 XP" (shadow power is separate element)
       const text = `Rank: ${rank} Lv.${level} ${xp}/${xpRequired} XP`;
       progressText.textContent = text;
+
+      // Update shadow power display separately (to the right of progress bar)
+      const shadowPowerEl = this.progressBar?.querySelector('#lpb-shadow-power');
+      if (shadowPowerEl) {
+        shadowPowerEl.textContent = `Shadow Army Total Power: ${this.getTotalShadowPower()}`;
+      }
 
       this.debugLog('UPDATE_TEXT', 'Progress text updated', {
         rank,
         level,
         xp,
         xpRequired,
+        shadowPower: this.getTotalShadowPower(),
         text,
       });
     } catch (error) {
@@ -799,8 +922,24 @@ module.exports = class LevelProgressBar {
     });
     this.eventUnsubscribers.push(unsubscribeRank);
 
+    // Subscribe to shadow power changed events for real-time updates
+    const unsubscribeShadowPower = instance.on('shadowPowerChanged', (data) => {
+      this.debugLog('EVENT_SHADOW_POWER_CHANGED', 'Shadow power changed event received', data);
+      // Update shadow power immediately
+      if (data && data.shadowPower) {
+        this.cachedShadowPower = data.shadowPower;
+        this.refreshProgressText();
+      } else {
+        // Trigger update to get latest value
+        this.updateShadowPower();
+      }
+    });
+    this.eventUnsubscribers.push(unsubscribeShadowPower);
+
     // Log successful subscription (always log, not just debug)
-    console.log('[LevelProgressBar]  Event-based updates enabled - progress bar will update in real-time');
+    console.log(
+      '[LevelProgressBar]  Event-based updates enabled - progress bar will update in real-time'
+    );
 
     this.debugLog('SUBSCRIBE_EVENTS', 'Successfully subscribed to events', {
       listenersCount: this.eventUnsubscribers.length,
@@ -816,7 +955,7 @@ module.exports = class LevelProgressBar {
    * Unsubscribe from all events
    */
   unsubscribeFromEvents() {
-    this.eventUnsubscribers.forEach(unsubscribe => {
+    this.eventUnsubscribers.forEach((unsubscribe) => {
       try {
         unsubscribe();
       } catch (error) {
@@ -899,12 +1038,13 @@ module.exports = class LevelProgressBar {
 
     // Remove existing markers
     const existingMarkers = progressTrack.querySelectorAll('.lpb-milestone');
-    existingMarkers.forEach(m => m.remove());
+    existingMarkers.forEach((m) => m.remove());
 
     // Add markers at 25%, 50%, 75%
     const milestones = [25, 50, 75];
-    milestones.forEach(milestone => {
-      if (xpPercent >= milestone - 1) { // Show if reached or close
+    milestones.forEach((milestone) => {
+      if (xpPercent >= milestone - 1) {
+        // Show if reached or close
         const marker = document.createElement('div');
         marker.className = 'lpb-milestone';
         marker.style.left = `${milestone}%`;

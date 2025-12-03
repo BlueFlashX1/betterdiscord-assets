@@ -74,7 +74,10 @@ module.exports = class SoloLevelingToasts {
     this.pendingToasts.clear();
     // Clear message groups
     this.messageGroups.forEach((group) => {
-      if (group.timeoutId) clearTimeout(group.timeoutId);
+      // Handle sentinel timeoutId (true = RAF pending, don't clear)
+      if (group.timeoutId && group.timeoutId !== true) {
+        clearTimeout(group.timeoutId);
+      }
     });
     this.messageGroups.clear();
     this.debugLog('Plugin stopped');
@@ -136,29 +139,45 @@ module.exports = class SoloLevelingToasts {
           <span style="margin-left: 10px;">Enable Custom Toasts</span>
         </label>
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.showParticles ? 'checked' : ''} id="toast-particles">
+          <input type="checkbox" ${
+            this.settings.showParticles ? 'checked' : ''
+          } id="toast-particles">
           <span style="margin-left: 10px;">Show Particle Effects</span>
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Particle Count:</span>
-          <input type="number" id="toast-particle-count" value="${this.settings.particleCount}" min="5" max="50" step="5" style="width: 100%; padding: 5px;">
+          <input type="number" id="toast-particle-count" value="${
+            this.settings.particleCount
+          }" min="5" max="50" step="5" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Default Timeout (ms):</span>
-          <input type="number" id="toast-timeout" value="${this.settings.defaultTimeout}" min="3000" max="5000" step="500" style="width: 100%; padding: 5px;">
+          <input type="number" id="toast-timeout" value="${
+            this.settings.defaultTimeout
+          }" min="3000" max="5000" step="500" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Position:</span>
           <select id="toast-position" style="width: 100%; padding: 5px;">
-            <option value="top-right" ${this.settings.position === 'top-right' ? 'selected' : ''}>Top Right</option>
-            <option value="top-left" ${this.settings.position === 'top-left' ? 'selected' : ''}>Top Left</option>
-            <option value="bottom-right" ${this.settings.position === 'bottom-right' ? 'selected' : ''}>Bottom Right</option>
-            <option value="bottom-left" ${this.settings.position === 'bottom-left' ? 'selected' : ''}>Bottom Left</option>
+            <option value="top-right" ${
+              this.settings.position === 'top-right' ? 'selected' : ''
+            }>Top Right</option>
+            <option value="top-left" ${
+              this.settings.position === 'top-left' ? 'selected' : ''
+            }>Top Left</option>
+            <option value="bottom-right" ${
+              this.settings.position === 'bottom-right' ? 'selected' : ''
+            }>Bottom Right</option>
+            <option value="bottom-left" ${
+              this.settings.position === 'bottom-left' ? 'selected' : ''
+            }>Bottom Left</option>
           </select>
         </label>
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Max Toasts:</span>
-          <input type="number" id="toast-max" value="${this.settings.maxToasts}" min="1" max="10" step="1" style="width: 100%; padding: 5px;">
+          <input type="number" id="toast-max" value="${
+            this.settings.maxToasts
+          }" min="1" max="10" step="1" style="width: 100%; padding: 5px;">
         </label>
       </div>
     `;
@@ -419,13 +438,36 @@ module.exports = class SoloLevelingToasts {
         }
         to {
           opacity: 0;
-          transform: translateX(0) scale(0.95);
+          transform: translateX(0) scale(0.9);
         }
       }
 
       .sl-toast.fading-out {
-        animation: sl-toast-fade-out 1s ease-out forwards !important;
+        animation: sl-toast-fade-out 0.5s cubic-bezier(0.4, 0, 1, 1) forwards !important;
         pointer-events: none;
+      }
+
+      /* Improved toast ordering with staggered fade */
+      .sl-toast-container .sl-toast {
+        transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+      }
+
+      .sl-toast-container.top-right .sl-toast.fading-out,
+      .sl-toast-container.bottom-right .sl-toast.fading-out {
+        transform: translateX(100%) scale(0.9);
+        margin-bottom: 0 !important;
+        height: 0 !important;
+        padding: 0 !important;
+        overflow: hidden;
+      }
+
+      .sl-toast-container.top-left .sl-toast.fading-out,
+      .sl-toast-container.bottom-left .sl-toast.fading-out {
+        transform: translateX(-100%) scale(0.9);
+        margin-bottom: 0 !important;
+        height: 0 !important;
+        padding: 0 !important;
+        overflow: hidden;
       }
     `;
     document.head.appendChild(style);
@@ -728,8 +770,14 @@ module.exports = class SoloLevelingToasts {
       return `Achievements Unlocked x${count}`;
     }
 
-    if (msgLower.includes('stat') || msgLower.includes('strength') || msgLower.includes('agility') ||
-        msgLower.includes('intelligence') || msgLower.includes('vitality') || msgLower.includes('perception')) {
+    if (
+      msgLower.includes('stat') ||
+      msgLower.includes('strength') ||
+      msgLower.includes('agility') ||
+      msgLower.includes('intelligence') ||
+      msgLower.includes('vitality') ||
+      msgLower.includes('perception')
+    ) {
       const statMatches = firstMsg.match(/(\w+):\s*(\d+)\s*→\s*(\d+)/i);
       if (statMatches) {
         const statName = statMatches[1];
@@ -783,14 +831,18 @@ module.exports = class SoloLevelingToasts {
 
       // Add to existing group
       group.messages.push({
-        message: typeof message === 'string' ? message : (message.message || message.text || String(message)),
+        message:
+          typeof message === 'string'
+            ? message
+            : message.message || message.text || String(message),
         timestamp: now,
       });
       group.count++;
       group.lastSeen = now;
 
       // Reset timeout - wait for more messages (reduced window)
-      if (group.timeoutId) {
+      // Handle sentinel timeoutId (true = RAF pending, don't clear)
+      if (group.timeoutId && group.timeoutId !== true) {
         clearTimeout(group.timeoutId);
       }
 
@@ -804,9 +856,21 @@ module.exports = class SoloLevelingToasts {
         return;
       }
 
+      // If RAF is pending (sentinel timeoutId), don't schedule another timeout
+      // The RAF callback will handle showing the toast
+      if (group.timeoutId === true) {
+        return;
+      }
+
       // Faster grouping window - show after 200ms instead of full window
       const fastGroupDelay = Math.min(200, this.groupWindow);
       group.timeoutId = setTimeout(() => {
+        // Check if RAF already showed this group before showing via timeout
+        if (group.shown === true) {
+          this.messageGroups.delete(groupKey);
+          return;
+        }
+        group.shown = true;
         this.messageGroups.delete(groupKey);
         const combinedMessage = this.combineMessages(group.messages);
         this._showToastInternal(combinedMessage, type, timeout);
@@ -817,10 +881,15 @@ module.exports = class SoloLevelingToasts {
 
     // Create new group
     const group = {
-      messages: [{
-        message: typeof message === 'string' ? message : (message.message || message.text || String(message)),
-        timestamp: now,
-      }],
+      messages: [
+        {
+          message:
+            typeof message === 'string'
+              ? message
+              : message.message || message.text || String(message),
+          timestamp: now,
+        },
+      ],
       count: 1,
       lastSeen: now,
       timeoutId: null,
@@ -830,12 +899,17 @@ module.exports = class SoloLevelingToasts {
     // Set group immediately so subsequent messages can join
     this.messageGroups.set(groupKey, group);
 
+    // Mark RAF as pending with sentinel timeoutId so subsequent messages know not to schedule timeout
+    group.timeoutId = true;
+
     // Show immediately for new messages (no grouping delay for first message)
     // Use requestAnimationFrame for instant, smooth display
     requestAnimationFrame(() => {
       const currentGroup = this.messageGroups.get(groupKey);
       if (currentGroup && !currentGroup.shown) {
         currentGroup.shown = true;
+        // Clear sentinel timeoutId since RAF is executing
+        currentGroup.timeoutId = null;
         const combinedMessage = this.combineMessages(currentGroup.messages);
         this._showToastInternal(combinedMessage, type, timeout);
 
@@ -845,6 +919,9 @@ module.exports = class SoloLevelingToasts {
             this.messageGroups.delete(groupKey);
           }
         }, this.groupWindow);
+      } else if (currentGroup) {
+        // RAF executed but group was already shown, clear sentinel
+        currentGroup.timeoutId = null;
       }
     });
   }
@@ -859,7 +936,11 @@ module.exports = class SoloLevelingToasts {
     // Extract normalized message from key
     const normalized = groupKey.split('_')[0];
     for (const toast of this.activeToasts) {
-      const toastText = toast.textContent.toLowerCase().replace(/\d+/g, 'N').replace(/\s+/g, ' ').trim();
+      const toastText = toast.textContent
+        .toLowerCase()
+        .replace(/\d+/g, 'N')
+        .replace(/\s+/g, ' ')
+        .trim();
       if (toastText.includes(normalized.substring(0, 30))) {
         return toast;
       }
@@ -907,8 +988,10 @@ module.exports = class SoloLevelingToasts {
   resetToastFadeOut(toast, timeout) {
     if (!toast) return;
 
-    // Remove fade-out class
+    // Remove fade-out class and reset animation
     toast.classList.remove('fading-out');
+    toast.style.animation = '';
+    toast.style.pointerEvents = '';
 
     // Clear any existing fade-out timeout (stored in data attribute)
     const existingTimeout = toast.dataset.fadeTimeout;
@@ -917,12 +1000,15 @@ module.exports = class SoloLevelingToasts {
     }
 
     // Schedule new fade-out
-    const fadeOutDelay = Math.max(0, timeout - 1000);
+    // Start fade 500ms before timeout ends (to match animation duration)
+    const fadeAnimationDuration = 500; // Match CSS animation duration
+    const fadeOutDelay = Math.max(0, timeout - fadeAnimationDuration);
     const timeoutId = setTimeout(() => {
       this.startFadeOut(toast);
+      // Remove after animation completes (500ms)
       setTimeout(() => {
-        this.removeToast(toast, true);
-      }, 1000);
+        this.removeToast(toast, false); // Don't use fast removal, let animation complete
+      }, fadeAnimationDuration);
     }, fadeOutDelay);
 
     toast.dataset.fadeTimeout = timeoutId.toString();
@@ -1014,17 +1100,24 @@ module.exports = class SoloLevelingToasts {
       progressBar.style.left = '0';
       progressBar.style.right = '0';
       progressBar.style.height = '2px';
-      progressBar.style.background = 'linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.8), transparent)';
+      progressBar.style.background =
+        'linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.8), transparent)';
       progressBar.style.animation = `sl-toast-progress ${toastTimeout}ms linear forwards`;
       toast.appendChild(progressBar);
 
       // Click to dismiss - start fade out immediately
       toast.addEventListener('click', () => {
+        // Clear any existing fade-out timeout
+        const existingTimeout = toast.dataset.fadeTimeout;
+        if (existingTimeout) {
+          clearTimeout(parseInt(existingTimeout));
+          toast.dataset.fadeTimeout = '';
+        }
         this.startFadeOut(toast);
-        // Remove from DOM after fade completes
+        // Remove from DOM after fade animation completes (500ms)
         setTimeout(() => {
-          this.removeToast(toast, true);
-        }, 1000);
+          this.removeToast(toast, false); // Don't use fast removal, let animation complete
+        }, 500);
       });
 
       // Use requestAnimationFrame for instant, smooth DOM insertion
@@ -1038,14 +1131,15 @@ module.exports = class SoloLevelingToasts {
         });
       });
 
-      // Auto-dismiss - start fade out 1 second before timeout ends
-      const fadeOutDelay = Math.max(0, toastTimeout - 1000);
+      // Auto-dismiss - start fade out before timeout ends
+      const fadeAnimationDuration = 500; // Match CSS animation duration
+      const fadeOutDelay = Math.max(0, toastTimeout - fadeAnimationDuration);
       const timeoutId = setTimeout(() => {
         this.startFadeOut(toast);
-        // Remove from DOM after fade completes
+        // Remove from DOM after fade animation completes
         setTimeout(() => {
-          this.removeToast(toast, true);
-        }, 1000);
+          this.removeToast(toast, false); // Don't use fast removal, let animation complete
+        }, fadeAnimationDuration);
       }, fadeOutDelay);
 
       // Store timeout ID for potential reset
@@ -1074,14 +1168,34 @@ module.exports = class SoloLevelingToasts {
   /**
    * Start smooth fade-out animation for toast
    * Operations:
-   * 1. Add fading-out class to trigger CSS animation
-   * 2. Disable pointer events during fade
+   * 1. Clear any existing animations
+   * 2. Add fading-out class to trigger CSS animation
+   * 3. Disable pointer events during fade
    */
   startFadeOut(toast) {
     if (!toast || !toast.parentElement) {
       return;
     }
+
+    // Clear any existing fade-out timeout
+    const existingTimeout = toast.dataset.fadeTimeout;
+    if (existingTimeout) {
+      clearTimeout(parseInt(existingTimeout));
+      toast.dataset.fadeTimeout = '';
+    }
+
+    // Remove any existing animation styles to ensure clean start
+    toast.style.animation = '';
+
+    // Force reflow to ensure class change is applied
+    void toast.offsetHeight;
+
+    // Add fading-out class to trigger CSS animation
     toast.classList.add('fading-out');
+
+    // Ensure pointer events are disabled
+    toast.style.pointerEvents = 'none';
+
     this.debugLog('START_FADE_OUT', 'Fade out started', {
       activeToasts: this.activeToasts.length,
     });
@@ -1228,9 +1342,13 @@ module.exports = class SoloLevelingToasts {
             this.showToast(message, type, timeout);
           }
         );
-        this.debugLog('HOOK_SUCCESS', 'Successfully hooked into SoloLevelingStats.showNotification', {
-          hasPatcher: !!this.patcher,
-        });
+        this.debugLog(
+          'HOOK_SUCCESS',
+          'Successfully hooked into SoloLevelingStats.showNotification',
+          {
+            hasPatcher: !!this.patcher,
+          }
+        );
       } else {
         this.debugLog('HOOK_RETRY', 'showNotification method not found, will retry...', {
           hasInstance: !!instance,
