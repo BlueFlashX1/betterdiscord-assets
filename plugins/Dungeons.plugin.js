@@ -1683,12 +1683,12 @@ module.exports = class Dungeons {
     // Only spawn mobs if boss is still alive and haven't reached target count
     if (dungeon.boss.hp > 0 && dungeon.mobs.total < dungeon.mobs.targetCount) {
       const dungeonRankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
-      
+
       // DYNAMIC SPAWN RATE based on dungeon capacity
       // Fast spawn (500 mobs) until 90% full, then slow to normal (100 mobs)
       const capacityPercent = dungeon.mobs.total / dungeon.mobs.targetCount;
       let spawnCount;
-      
+
       if (capacityPercent < 0.9) {
         // Phase 1: RAPID FILL (0-90% capacity)
         spawnCount = this.settings.mobSpawnCount; // 500 mobs (ultra fast)
@@ -2394,7 +2394,7 @@ module.exports = class Dungeons {
 
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowHP = dungeon.shadowHP || {}; // Object, not Map
-      
+
       // Log shadow army composition for this attack wave
       console.log(
         `[Dungeons] Shadow Attack Wave - Army composition: ${rankDistribution} (${assignedShadows.length} total)`
@@ -2459,7 +2459,7 @@ module.exports = class Dungeons {
       const aliveShadowCount = assignedShadows.filter(
         (s) => !deadShadows.has(s.id) && shadowHP[s.id]?.hp > 0
       ).length;
-      
+
       // Log combat readiness
       if (aliveShadowCount < assignedShadows.length * 0.5) {
         console.warn(
@@ -3277,14 +3277,72 @@ module.exports = class Dungeons {
 
     const shadowRank = shadow.rank || 'E';
     const manaCost = this.getResurrectionCost(shadowRank);
-
-    // Check if user has enough mana
-    if (this.settings.userMana < manaCost) {
+    
+    // Validate mana cost calculation
+    if (!manaCost || manaCost <= 0) {
+      console.error(`[Dungeons] Invalid resurrection cost for rank ${shadowRank}: ${manaCost}`);
       return false;
     }
 
-    // Consume mana
+    // Ensure current mana is a valid number
+    if (typeof this.settings.userMana !== 'number' || isNaN(this.settings.userMana)) {
+      console.error(`[Dungeons] Invalid userMana value: ${this.settings.userMana}`);
+      this.settings.userMana = this.settings.userMaxMana || 0;
+    }
+
+    // Check if user has enough mana
+    if (this.settings.userMana < manaCost) {
+      console.log(
+        `[Dungeons] RESURRECTION FAILED: Not enough mana for ${shadow.name || 'Shadow'} [${shadowRank}]. Need ${manaCost}, have ${this.settings.userMana}`
+      );
+      
+      // Show warning toast if this is the first mana failure in this dungeon
+      const dungeon = this.activeDungeons.get(channelKey);
+      if (dungeon && !dungeon.manaWarningShown) {
+        dungeon.manaWarningShown = true;
+        this.showToast(
+          `Out of mana! Shadows can't be resurrected.\nMana: ${this.settings.userMana}/${this.settings.userMaxMana}`,
+          'error'
+        );
+      }
+      
+      return false;
+    }
+
+    // Store mana before consumption for verification
+    const manaBefore = this.settings.userMana;
+    
+    // Consume mana from local settings
     this.settings.userMana -= manaCost;
+    
+    // Ensure mana doesn't go negative (safety check)
+    if (this.settings.userMana < 0) {
+      console.error(`[Dungeons] CRITICAL: Mana went negative! Resetting to 0. Before: ${manaBefore}, Cost: ${manaCost}`);
+      this.settings.userMana = 0;
+    }
+
+    // Verify mana was actually deducted
+    const manaAfter = this.settings.userMana;
+    const actualDeduction = manaBefore - manaAfter;
+    if (actualDeduction !== manaCost) {
+      console.warn(`[Dungeons] Mana deduction mismatch! Expected: ${manaCost}, Actual: ${actualDeduction}`);
+    }
+
+    // CRITICAL: Sync mana with SoloLevelingStats plugin (for UI display)
+    if (this.soloLevelingStats?.settings) {
+      this.soloLevelingStats.settings.userMana = this.settings.userMana;
+      this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
+      
+      // Trigger stats update event if available
+      if (typeof this.soloLevelingStats.updateUI === 'function') {
+        this.soloLevelingStats.updateUI();
+      }
+      
+      // Trigger chat UI update to refresh mana display
+      if (typeof this.soloLevelingStats.updateChatHeader === 'function') {
+        this.soloLevelingStats.updateChatHeader();
+      }
+    }
 
     // Track resurrection
     const dungeon = this.activeDungeons.get(channelKey);
@@ -3292,13 +3350,20 @@ module.exports = class Dungeons {
       dungeon.shadowRevives = (dungeon.shadowRevives || 0) + 1;
     }
 
-    // Update user HP bar to show new mana
-    this.updateUserHPBar();
+    // Save settings to persist mana change
+    this.saveSettings();
 
     console.log(
-      `[Dungeons] AUTO-RESURRECT: ${shadow.name || 'Shadow'} [${shadowRank}] (-${manaCost} mana, ${
-        this.settings.userMana
-      } remaining)`
+      `[Dungeons] AUTO-RESURRECT SUCCESS: ${shadow.name || 'Shadow'} [${shadowRank}] resurrected!`
+    );
+    console.log(
+      `[Dungeons] ├─ Mana Cost: ${manaCost}`
+    );
+    console.log(
+      `[Dungeons] ├─ Mana Before: ${manaBefore}`
+    );
+    console.log(
+      `[Dungeons] └─ Mana After: ${manaAfter} (${Math.floor(manaAfter / this.settings.userMaxMana * 100)}% remaining)`
     );
 
     return true;
@@ -3528,15 +3593,15 @@ module.exports = class Dungeons {
       setTimeout(() => {
         const batch25Lines = [];
         batch25Lines.push(`Damage Analytics`);
-        
+
         if (stats.totalBossDamage > 0) {
           batch25Lines.push(`Boss Damage: ${stats.totalBossDamage.toLocaleString()}`);
         }
-        
+
         if (stats.totalMobDamage > 0) {
           batch25Lines.push(`Mob Damage: ${stats.totalMobDamage.toLocaleString()}`);
         }
-        
+
         const totalDamage = stats.totalBossDamage + stats.totalMobDamage;
         if (totalDamage > 0) {
           batch25Lines.push(`Total Damage: ${totalDamage.toLocaleString()}`);
@@ -4454,7 +4519,7 @@ module.exports = class Dungeons {
   // User HP/Mana bars are now displayed by SoloLevelingStats plugin in chat UI header
   // All HP bar creation, positioning, and update code has been removed
   // HP/Mana calculations (calculateHP, calculateMana) are still used by resurrection system
-  
+
   updateUserHPBar() {
     // Stub for compatibility - SoloLevelingStats handles HP/Mana display
     return;
