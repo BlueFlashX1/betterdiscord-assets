@@ -362,6 +362,9 @@ module.exports = class Dungeons {
 
     // Retry timeout IDs for cleanup
     this._retryTimeouts = [];
+    
+    // HP/Mana regeneration timer
+    this.regenInterval = null;
 
     // Plugin running state
     this.started = false;
@@ -458,11 +461,17 @@ module.exports = class Dungeons {
     this.startDungeonCleanupLoop();
     await this.restoreActiveDungeons();
     this.setupChannelWatcher();
+    
+    // Start HP/Mana regeneration loop (every 1 second)
+    this.startRegeneration();
   }
 
   stop() {
     // Set plugin stopped state
     this.started = false;
+    
+    // Stop HP/Mana regeneration
+    this.stopRegeneration();
 
     this.stopMessageObserver();
     this.stopAllShadowAttacks();
@@ -1984,10 +1993,38 @@ module.exports = class Dungeons {
     return totalStats * rankMultiplier;
   }
 
+  // ============================================================================
+  // HP/MANA REGENERATION SYSTEM
+  // ============================================================================
+  /**
+   * Start HP/Mana regeneration interval (runs every 1 second)
+   */
+  startRegeneration() {
+    if (this.regenInterval) return; // Already running
+    
+    console.log('[Dungeons] Starting HP/Mana regeneration (1 second interval)');
+    this.regenInterval = setInterval(() => {
+      this.regenerateHPAndMana();
+    }, 1000); // Regenerate every 1 second
+  }
+
+  /**
+   * Stop HP/Mana regeneration interval
+   */
+  stopRegeneration() {
+    if (this.regenInterval) {
+      clearInterval(this.regenInterval);
+      this.regenInterval = null;
+      console.log('[Dungeons] Stopped HP/Mana regeneration');
+    }
+  }
+
   /**
    * Regenerate HP and Mana based on user stats
    * HP regen: Based on vitality (1% of max HP per second per 100 vitality)
    * Mana regen: Based on intelligence (1% of max mana per second per 100 intelligence)
+   * 
+   * This function runs every 1 second via setInterval in startRegeneration()
    */
   regenerateHPAndMana() {
     if (!this.soloLevelingStats) return;
@@ -2032,26 +2069,31 @@ module.exports = class Dungeons {
       // Sync with SoloLevelingStats if available
       if (this.soloLevelingStats?.settings) {
         this.soloLevelingStats.settings.userMana = this.settings.userMana;
+        this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
         manaChanged = this.settings.userMana !== oldMana;
       }
     }
 
-    // Update HP bar if user is participating in any dungeon
-    if (this.settings.userActiveDungeon) {
-      this.updateUserHPBar();
-    }
-
-    // Trigger stats plugin UI update if HP or Mana changed
+    // REAL-TIME UI UPDATE: Update HP/Mana bars in SoloLevelingStats
+    // This happens GLOBALLY (not just during dungeons)
     if ((hpChanged || manaChanged) && this.soloLevelingStats) {
-      // Force stats plugin to update its display
-      if (typeof this.soloLevelingStats.updateHPManaDisplay === 'function') {
-        this.soloLevelingStats.updateHPManaDisplay();
-      } else if (typeof this.soloLevelingStats.updateDisplay === 'function') {
-        this.soloLevelingStats.updateDisplay();
+      // Call the verified function name from SoloLevelingStats.plugin.js (line 4940)
+      if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
+        this.soloLevelingStats.updateHPManaBars();
+      } else if (typeof this.soloLevelingStats.updateUI === 'function') {
+        this.soloLevelingStats.updateUI();
       }
-      // Save settings to trigger any observers
-      if (typeof this.soloLevelingStats.saveSettings === 'function') {
-        this.soloLevelingStats.saveSettings();
+      
+      // Save settings periodically (every 10 regeneration cycles = 10 seconds)
+      // This reduces I/O while ensuring data persists
+      if (!this._regenCycleCount) this._regenCycleCount = 0;
+      this._regenCycleCount++;
+      if (this._regenCycleCount >= 10) {
+        this.saveSettings();
+        if (typeof this.soloLevelingStats.saveSettings === 'function') {
+          this.soloLevelingStats.saveSettings();
+        }
+        this._regenCycleCount = 0;
       }
     }
   }
@@ -3277,7 +3319,7 @@ module.exports = class Dungeons {
 
     const shadowRank = shadow.rank || 'E';
     const manaCost = this.getResurrectionCost(shadowRank);
-    
+
     // Validate mana cost calculation
     if (!manaCost || manaCost <= 0) {
       console.error(`[Dungeons] Invalid resurrection cost for rank ${shadowRank}: ${manaCost}`);
@@ -3295,7 +3337,7 @@ module.exports = class Dungeons {
       console.log(
         `[Dungeons] RESURRECTION FAILED: Not enough mana for ${shadow.name || 'Shadow'} [${shadowRank}]. Need ${manaCost}, have ${this.settings.userMana}`
       );
-      
+
       // Show warning toast if this is the first mana failure in this dungeon
       const dungeon = this.activeDungeons.get(channelKey);
       if (dungeon && !dungeon.manaWarningShown) {
@@ -3305,16 +3347,16 @@ module.exports = class Dungeons {
           'error'
         );
       }
-      
+
       return false;
     }
 
     // Store mana before consumption for verification
     const manaBefore = this.settings.userMana;
-    
+
     // Consume mana from local settings
     this.settings.userMana -= manaCost;
-    
+
     // Ensure mana doesn't go negative (safety check)
     if (this.settings.userMana < 0) {
       console.error(`[Dungeons] CRITICAL: Mana went negative! Resetting to 0. Before: ${manaBefore}, Cost: ${manaCost}`);
@@ -3333,14 +3375,11 @@ module.exports = class Dungeons {
       this.soloLevelingStats.settings.userMana = this.settings.userMana;
       this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
       
-      // Trigger stats update event if available
-      if (typeof this.soloLevelingStats.updateUI === 'function') {
+      // Trigger REAL-TIME UI update (verified function name)
+      if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
+        this.soloLevelingStats.updateHPManaBars();
+      } else if (typeof this.soloLevelingStats.updateUI === 'function') {
         this.soloLevelingStats.updateUI();
-      }
-      
-      // Trigger chat UI update to refresh mana display
-      if (typeof this.soloLevelingStats.updateChatHeader === 'function') {
-        this.soloLevelingStats.updateChatHeader();
       }
     }
 
