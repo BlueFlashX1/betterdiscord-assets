@@ -1319,9 +1319,9 @@ module.exports = class SoloLevelingStats {
    * - Natural growth (already included in settings.stats)
    * - Allocated stats (already included in settings.stats)
    * - Title buffs (multiplicative percentage bonuses)
-   * - Shadow Army buffs (additive flat bonuses from shadow roles)
+   * - Shadow Army buffs (multiplicative percentage bonuses from shadow roles)
    *
-   * Formula: (baseStats * (1 + titlePercent)) + shadowBuffs
+   * Formula: baseStats * (1 + titlePercent) * (1 + shadowBuffPercent)
    */
   getTotalEffectiveStats() {
     const baseStats = { ...this.settings.stats };
@@ -1377,7 +1377,8 @@ module.exports = class SoloLevelingStats {
 
   /**
    * Get Shadow Army buffs from ShadowArmy plugin
-   * Returns additive flat stat bonuses from shadow roles
+   * Returns percentage-based stat multipliers from shadow roles
+   * Format: { strength: 0.1, agility: 0.05, ... } where 0.1 = 10% buff
    */
   getShadowArmyBuffs() {
     try {
@@ -2987,7 +2988,7 @@ module.exports = class SoloLevelingStats {
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
 
-      // Save with retry logic (synchronous retries)
+      // Save with retry logic (immediate retries, no blocking)
       let saveSuccess = false;
       let lastError = null;
 
@@ -2999,13 +3000,8 @@ module.exports = class SoloLevelingStats {
           break;
         } catch (error) {
           lastError = error;
-          if (attempt < 2) {
-            // Small delay before retry (synchronous)
-            const start = Date.now();
-            while (Date.now() - start < 50 * (attempt + 1)) {
-              // Busy wait for small delay
-            }
-          }
+          // No delay between retries - avoid blocking UI thread
+          // BetterDiscord saves are typically fast; if it fails, retry immediately
         }
       }
 
@@ -5162,6 +5158,47 @@ module.exports = class SoloLevelingStats {
           achievements: this.settings.achievements.unlocked.length,
         });
 
+        // Grant rank promotion bonus stats to ensure user exceeds baseline
+        // This guarantees user is always stronger than baseline for their rank
+        const rankPromotionBonuses = {
+          D: 15, // +15 to all stats (baseline: 25, user will have ~13, bonus → 28)
+          C: 20, // +20 to all stats (baseline: 50, user will have ~35, bonus → 55)
+          B: 25, // +25 to all stats (baseline: 100, user will have ~82, bonus → 107)
+          A: 30, // +30 to all stats (baseline: 200, user will have ~191, bonus → 221)
+          S: 50, // +50 to all stats (baseline: 400, user will have ~442, bonus → 492)
+          SS: 100, // +100 to all stats
+          SSS: 200, // +200 to all stats
+          Monarch: 400, // +400 to all stats
+        };
+
+        const bonus = rankPromotionBonuses[nextRank] || 0;
+        if (bonus > 0) {
+          // Apply bonus to all stats
+          this.settings.stats.strength = (this.settings.stats.strength || 0) + bonus;
+          this.settings.stats.agility = (this.settings.stats.agility || 0) + bonus;
+          this.settings.stats.intelligence = (this.settings.stats.intelligence || 0) + bonus;
+          this.settings.stats.vitality = (this.settings.stats.vitality || 0) + bonus;
+          this.settings.stats.luck = (this.settings.stats.luck || 0) + bonus;
+
+          console.log(
+            `[Rank Promotion Bonus] +${bonus} to all stats for ${nextRank} rank promotion!`
+          );
+
+          // Recalculate HP/Mana after stat bonus (vitality/intelligence increased)
+          const vitality = this.settings.stats.vitality || 0;
+          const intelligence = this.settings.stats.intelligence || 0;
+          this.settings.userMaxHP = this.calculateHP(vitality, nextRank);
+          this.settings.userMaxMana = this.calculateMana(intelligence);
+
+          // Fully restore HP/Mana on rank promotion
+          this.settings.userHP = this.settings.userMaxHP;
+          this.settings.userMana = this.settings.userMaxMana;
+
+          console.log(
+            `[Rank Promotion] HP/Mana fully restored: ${this.settings.userMaxHP} HP, ${this.settings.userMaxMana} Mana`
+          );
+        }
+
         // Emit rank changed event for real-time progress bar updates
         this.emitRankChanged(oldRank, nextRank);
 
@@ -5186,7 +5223,7 @@ module.exports = class SoloLevelingStats {
 
         // Show rank promotion notification
         try {
-          this.showRankPromotionNotification(oldRank, nextRank, nextReq);
+          this.showRankPromotionNotification(oldRank, nextRank, nextReq, bonus);
         } catch (error) {
           this.debugError('CHECK_RANK_PROMOTION', error, { phase: 'show_notification' });
         }
@@ -5206,18 +5243,27 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  showRankPromotionNotification(oldRank, newRank, rankInfo) {
-    const message =
+  showRankPromotionNotification(oldRank, newRank, rankInfo, statBonus = 0) {
+    let message =
       `[SYSTEM] Rank Promotion!\n\n` +
       `Rank Up: ${oldRank} → ${newRank}\n` +
       `New Title: ${rankInfo.name}\n` +
       `Level: ${this.settings.level}\n` +
-      `Achievements: ${this.settings.achievements.unlocked.length}\n` +
-      `XP Multiplier: ${(this.getRankMultiplier() * 100).toFixed(0)}%`;
+      `Achievements: ${this.settings.achievements.unlocked.length}\n`;
+
+    if (statBonus > 0) {
+      message += `BONUS: +${statBonus} to ALL stats!\n`;
+    }
+
+    message += `XP Multiplier: ${(this.getRankMultiplier() * 100).toFixed(0)}%`;
 
     this.showNotification(message, 'success', 6000);
 
-    console.log(`Rank Promotion! ${oldRank} → ${newRank} (${rankInfo.name})`);
+    console.log(
+      `Rank Promotion! ${oldRank} → ${newRank} (${rankInfo.name})${
+        statBonus > 0 ? ` +${statBonus} all stats` : ''
+      }`
+    );
   }
 
   showLevelUpNotification(newLevel, oldLevel) {
@@ -5236,6 +5282,15 @@ module.exports = class SoloLevelingStats {
 
     const rankInfo = this.getRankRequirements()[this.settings.rank];
 
+    // Get current HP/MaxHP (HP is fully restored on level up)
+    const totalStats = this.getTotalEffectiveStats();
+    const vitality = totalStats.vitality || 0;
+    const currentMaxHP = this.calculateHP(vitality, this.settings.rank);
+
+    // Ensure HP is fully restored on level up
+    this.settings.userMaxHP = currentMaxHP;
+    this.settings.userHP = currentMaxHP;
+
     // Build message with correct stats for multiple level ups
     let message = `[SYSTEM] Level up detected. HP fully restored.\n\n`;
 
@@ -5247,7 +5302,7 @@ module.exports = class SoloLevelingStats {
     }
 
     message += `Rank: ${this.settings.rank} - ${rankInfo.name}\n`;
-    message += `HP: ${oldLevel * 10}/${oldLevel * 10} → ${newLevel * 10}/${newLevel * 10}\n`;
+    message += `HP: ${currentMaxHP}/${currentMaxHP} (Fully Restored!)\n`;
     message += `Bonus: +${totalBonusPoints} points!\n`;
     message += `+${levelsGained} stat point(s)! Use settings to allocate stats`;
 
@@ -5400,14 +5455,18 @@ module.exports = class SoloLevelingStats {
       this.saveSettings(true);
       this.updateChatUI();
 
-      this.debugLog('ALLOCATE_STAT', 'Luck stat point allocated with buff', {
-        statName,
-        oldValue,
-        newValue: this.settings.stats[statName],
-        newBuff: roundedBuff,
-        totalStackedBuff: totalLuckBuff,
-        remainingPoints: this.settings.unallocatedStatPoints,
-      });
+      this.debugLog(
+        'ALLOCATE_STAT',
+        `${statName.charAt(0).toUpperCase() + statName.slice(1)} stat point allocated with buff`,
+        {
+          statName,
+          oldValue,
+          newValue: this.settings.stats[statName],
+          newBuff: roundedBuff,
+          totalStackedBuff: totalPerceptionBuff,
+          remainingPoints: this.settings.unallocatedStatPoints,
+        }
+      );
 
       return true;
     }
@@ -5423,11 +5482,7 @@ module.exports = class SoloLevelingStats {
         Math.max(0, (this.settings.stats[statName] - 5) * 2)
       ).toFixed(0)}% bonus XP (long messages)`,
       vitality: `+${(this.settings.stats[statName] * 5).toFixed(0)}% quest rewards`,
-      luck: `+${(this.settings.stats[statName] * 1).toFixed(
-        0
-      )}% random bonus chance (up to ${Math.min(50, this.settings.stats[statName] * 1).toFixed(
-        0
-      )}%)`,
+      perception: `+Random stacked buff per point (2%–8% each)`,
     };
 
     const effectText = statEffects[statName] || 'Effect applied';

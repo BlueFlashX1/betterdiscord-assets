@@ -15,6 +15,7 @@ module.exports = class SoloLevelingToasts {
       showParticles: true,
       particleCount: 20,
       animationDuration: 200, // Faster slide-in animation (reduced from 500ms)
+      fadeAnimationDuration: 500, // Fade-out animation duration (matches CSS animations)
       defaultTimeout: 4000, // 4 seconds (middle of 3-5 range)
       position: 'top-right', // top-right, top-left, bottom-right, bottom-left
       maxToasts: 5, // Maximum number of toasts visible at once
@@ -290,6 +291,11 @@ module.exports = class SoloLevelingToasts {
         backface-visibility: hidden; /* Optimize rendering */
       }
 
+      /* Ensure fade-out animation properly overrides slide-in */
+      .sl-toast.fading-out {
+        animation-fill-mode: forwards !important;
+      }
+
       @keyframes sl-toast-slide-in {
         0% {
           opacity: 0;
@@ -431,20 +437,49 @@ module.exports = class SoloLevelingToasts {
         }
       }
 
-      @keyframes sl-toast-fade-out {
+      /* Fade-out animations for different positions */
+      @keyframes sl-toast-fade-out-right {
         from {
           opacity: 1;
           transform: translateX(0) scale(1);
         }
         to {
           opacity: 0;
-          transform: translateX(0) scale(0.9);
+          transform: translateX(100%) scale(0.9);
         }
       }
 
-      .sl-toast.fading-out {
-        animation: sl-toast-fade-out 0.5s cubic-bezier(0.4, 0, 1, 1) forwards !important;
-        pointer-events: none;
+      @keyframes sl-toast-fade-out-left {
+        from {
+          opacity: 1;
+          transform: translateX(0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translateX(-100%) scale(0.9);
+        }
+      }
+
+      @keyframes sl-toast-fade-out-bottom-right {
+        from {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translate(100%, 100%) scale(0.9);
+        }
+      }
+
+      @keyframes sl-toast-fade-out-bottom-left {
+        from {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        to {
+          opacity: 0;
+          transform: translate(-100%, 100%) scale(0.9);
+        }
       }
 
       /* Improved toast ordering with staggered fade */
@@ -452,22 +487,36 @@ module.exports = class SoloLevelingToasts {
         transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
       }
 
-      .sl-toast-container.top-right .sl-toast.fading-out,
-      .sl-toast-container.bottom-right .sl-toast.fading-out {
-        transform: translateX(100%) scale(0.9);
-        margin-bottom: 0 !important;
-        height: 0 !important;
-        padding: 0 !important;
-        overflow: hidden;
+      /* Fade-out for top-right (slide right) */
+      .sl-toast-container.top-right .sl-toast.fading-out {
+        animation: sl-toast-fade-out-right ${
+          this.settings.fadeAnimationDuration / 1000
+        }s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+        pointer-events: none;
       }
 
-      .sl-toast-container.top-left .sl-toast.fading-out,
+      /* Fade-out for top-left (slide left) */
+      .sl-toast-container.top-left .sl-toast.fading-out {
+        animation: sl-toast-fade-out-left ${
+          this.settings.fadeAnimationDuration / 1000
+        }s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+        pointer-events: none;
+      }
+
+      /* Fade-out for bottom-right (slide down and right) */
+      .sl-toast-container.bottom-right .sl-toast.fading-out {
+        animation: sl-toast-fade-out-bottom-right ${
+          this.settings.fadeAnimationDuration / 1000
+        }s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+        pointer-events: none;
+      }
+
+      /* Fade-out for bottom-left (slide down and left) */
       .sl-toast-container.bottom-left .sl-toast.fading-out {
-        transform: translateX(-100%) scale(0.9);
-        margin-bottom: 0 !important;
-        height: 0 !important;
-        padding: 0 !important;
-        overflow: hidden;
+        animation: sl-toast-fade-out-bottom-left ${
+          this.settings.fadeAnimationDuration / 1000
+        }s cubic-bezier(0.4, 0, 1, 1) forwards !important;
+        pointer-events: none;
       }
     `;
     document.head.appendChild(style);
@@ -1000,12 +1049,12 @@ module.exports = class SoloLevelingToasts {
     }
 
     // Schedule new fade-out
-    // Start fade 500ms before timeout ends (to match animation duration)
-    const fadeAnimationDuration = 500; // Match CSS animation duration
+    // Start fade before timeout ends (to match animation duration)
+    const fadeAnimationDuration = this.settings.fadeAnimationDuration;
     const fadeOutDelay = Math.max(0, timeout - fadeAnimationDuration);
     const timeoutId = setTimeout(() => {
       this.startFadeOut(toast);
-      // Remove after animation completes (500ms)
+      // Remove after animation completes
       setTimeout(() => {
         this.removeToast(toast, false); // Don't use fast removal, let animation complete
       }, fadeAnimationDuration);
@@ -1132,7 +1181,7 @@ module.exports = class SoloLevelingToasts {
       });
 
       // Auto-dismiss - start fade out before timeout ends
-      const fadeAnimationDuration = 500; // Match CSS animation duration
+      const fadeAnimationDuration = this.settings.fadeAnimationDuration;
       const fadeOutDelay = Math.max(0, toastTimeout - fadeAnimationDuration);
       const timeoutId = setTimeout(() => {
         this.startFadeOut(toast);
@@ -1177,6 +1226,11 @@ module.exports = class SoloLevelingToasts {
       return;
     }
 
+    // Don't start fade-out if already fading out
+    if (toast.classList.contains('fading-out')) {
+      return;
+    }
+
     // Clear any existing fade-out timeout
     const existingTimeout = toast.dataset.fadeTimeout;
     if (existingTimeout) {
@@ -1184,13 +1238,33 @@ module.exports = class SoloLevelingToasts {
       toast.dataset.fadeTimeout = '';
     }
 
-    // Remove any existing animation styles to ensure clean start
-    toast.style.animation = '';
+    // Get current computed transform to preserve position
+    const computedStyle = window.getComputedStyle(toast);
+    const currentTransform = computedStyle.transform;
+    const currentOpacity = computedStyle.opacity;
 
-    // Force reflow to ensure class change is applied
+    // Cancel current animation by setting to 'none', then force reflow
+    toast.style.animation = 'none';
+    toast.style.transition = 'none';
+
+    // Force reflow to apply the animation cancellation
     void toast.offsetHeight;
 
-    // Add fading-out class to trigger CSS animation
+    // Preserve current visual state before starting fade-out
+    if (currentTransform && currentTransform !== 'none') {
+      toast.style.transform = currentTransform;
+    }
+    if (currentOpacity) {
+      toast.style.opacity = currentOpacity;
+    }
+
+    // Force another reflow to ensure transform/opacity are set
+    void toast.offsetHeight;
+
+    // Now add the fading-out class which will trigger the CSS animation
+    // Clear inline styles so CSS animation can take over
+    toast.style.animation = '';
+    toast.style.transition = '';
     toast.classList.add('fading-out');
 
     // Ensure pointer events are disabled
@@ -1198,6 +1272,7 @@ module.exports = class SoloLevelingToasts {
 
     this.debugLog('START_FADE_OUT', 'Fade out started', {
       activeToasts: this.activeToasts.length,
+      position: this.settings.position,
     });
   }
 

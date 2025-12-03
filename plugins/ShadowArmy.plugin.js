@@ -40,7 +40,7 @@ class ShadowStorageManager {
   constructor(userId) {
     this.userId = userId || 'default';
     this.dbName = `ShadowArmyDB_${this.userId}`;
-    this.dbVersion = 1;
+    this.dbVersion = 2; // Upgraded for natural growth system
     this.storeName = 'shadows';
     this.db = null;
 
@@ -63,6 +63,9 @@ class ShadowStorageManager {
     // Migration flag - load persisted value from stable storage
     const persistedMigration = BdApi.Data.load('ShadowArmy', 'migrationCompleted');
     this.migrationCompleted = persistedMigration === true;
+
+    // Natural growth tracking
+    this.lastNaturalGrowthTime = Date.now();
   }
 
   // ============================================================================
@@ -100,8 +103,9 @@ class ShadowStorageManager {
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
+        const oldVersion = event.oldVersion;
 
-        // Create object store if it doesn't exist
+        // Create object store if it doesn't exist (v1)
         if (!db.objectStoreNames.contains(this.storeName)) {
           const objectStore = db.createObjectStore(this.storeName, { keyPath: 'id' });
 
@@ -114,6 +118,24 @@ class ShadowStorageManager {
           objectStore.createIndex('rank_role', ['rank', 'role'], { unique: false });
 
           console.log('ShadowStorageManager: Object store and indexes created');
+        }
+
+        // Add new indices for v2 (natural growth system)
+        if (oldVersion < 2) {
+          const transaction = event.target.transaction;
+          const objectStore = transaction.objectStore(this.storeName);
+
+          // Add index for natural growth tracking
+          if (!objectStore.indexNames.contains('lastNaturalGrowth')) {
+            objectStore.createIndex('lastNaturalGrowth', 'lastNaturalGrowth', { unique: false });
+          }
+          if (!objectStore.indexNames.contains('totalCombatTime')) {
+            objectStore.createIndex('totalCombatTime', 'totalCombatTime', { unique: false });
+          }
+
+          console.log(
+            '[ShadowStorageManager] Database upgraded to v2 with natural growth tracking'
+          );
         }
       };
     });
@@ -374,6 +396,94 @@ class ShadowStorageManager {
         console.error('ShadowStorageManager: Failed to get shadows', request.error);
         reject(request.error);
       };
+    });
+  }
+
+  /**
+   * Get army statistics without loading all shadows (efficient for 300+ shadows)
+   * Returns aggregate data: total, by rank, avg level, ready for rank-up, etc.
+   */
+  async getArmyStatistics() {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const request = store.openCursor();
+
+      const stats = {
+        total: 0,
+        byRank: {},
+        byRole: {},
+        avgLevel: 0,
+        totalCombatTime: 0,
+        readyForRankUp: 0,
+        totalPower: 0,
+      };
+      let levelSum = 0;
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor) {
+          const shadow = cursor.value;
+          stats.total++;
+
+          // By rank
+          stats.byRank[shadow.rank] = (stats.byRank[shadow.rank] || 0) + 1;
+
+          // By role
+          const role = shadow.role || shadow.roleName || 'Unknown';
+          stats.byRole[role] = (stats.byRole[role] || 0) + 1;
+
+          // Level sum
+          levelSum += shadow.level || 1;
+
+          // Combat time
+          stats.totalCombatTime += shadow.totalCombatTime || 0;
+
+          // Power
+          stats.totalPower += shadow.strength || 0;
+
+          // Check rank-up readiness (simplified, just check avg stats)
+          const effectiveStats = this.getShadowEffectiveStats(shadow);
+          const avgStats =
+            (effectiveStats.strength +
+              effectiveStats.agility +
+              effectiveStats.intelligence +
+              effectiveStats.vitality +
+              effectiveStats.luck) /
+            5;
+
+          const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
+          const idx = shadowRanks.indexOf(shadow.rank);
+          const nextRank = shadowRanks[idx + 1];
+          const baselineStats = {
+            E: 10,
+            D: 25,
+            C: 50,
+            B: 100,
+            A: 200,
+            S: 400,
+            SS: 800,
+            SSS: 1600,
+            Monarch: 3200,
+          };
+          const nextBaseline = baselineStats[nextRank] || 9999;
+
+          if (nextRank && avgStats >= nextBaseline * 0.8) {
+            stats.readyForRankUp++;
+          }
+
+          cursor.continue();
+        } else {
+          // Calculate averages
+          stats.avgLevel = stats.total > 0 ? Math.floor(levelSum / stats.total) : 0;
+          stats.totalCombatTime = Math.floor(stats.totalCombatTime);
+          resolve(stats);
+        }
+      };
+
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -685,12 +795,12 @@ module.exports = class ShadowArmy {
       shadows: [], // Array of shadow objects
       totalShadowsExtracted: 0,
       lastExtractionTime: null,
-      favoriteShadowIds: [], // Up to 7 "general" shadows (favorites)
-      favoriteLimit: 7,
+      // Note: Generals are now auto-selected based on 7 strongest shadows (no manual selection)
       extractionConfig: {
-        // Base extraction tuning
-        minBaseChance: 0.001, // 0.1% minimum
-        chancePerInt: 0.005, // +0.5% per INT
+        // Base extraction tuning (regular messages)
+        minBaseChance: 0.0005, // 0.05% minimum (reduced from 0.1%)
+        chancePerInt: 0.003, // +0.3% per INT (reduced from 0.5%)
+        maxExtractionChance: 0.05, // 5% hard cap (reduced from 15% to prevent spam)
         maxExtractionsPerMinute: 20, // hard safety cap
         // Special ARISE event tuning
         specialBaseChance: 0.01, // 1% base
@@ -698,6 +808,13 @@ module.exports = class ShadowArmy {
         specialLuckMultiplier: 0.002, // +0.2% per Luck (perception proxy)
         specialMaxChance: 0.3, // 30% hard cap
         specialMaxPerDay: 5, // limit special events per day
+        // Dungeon/Boss extraction limits (Solo Leveling lore: max 3 attempts per corpse)
+        maxBossAttemptsPerDay: 3, // Max extraction attempts per boss per day
+        bossAttemptResetHour: 0, // Reset at midnight (0-23)
+      },
+      dungeonExtractionAttempts: {
+        // Tracks per-boss extraction attempts: { bossId: { count, lastAttempt, lastReset } }
+        // Example: "dungeon_ice_cavern_boss_frost_dragon": { count: 2, lastAttempt: timestamp, lastReset: "2025-12-03" }
       },
       specialArise: {
         lastDate: null,
@@ -776,15 +893,64 @@ module.exports = class ShadowArmy {
 
     // Stat weight templates per role (used to generate per-shadow stats)
     // Higher weight = that role favors that stat more
+    // EXTREME SPECIALIZATION: Strong stats are VERY strong, weak stats are VERY weak
     this.shadowRoleStatWeights = {
-      tank: { strength: 0.8, agility: 0.4, intelligence: 0.2, vitality: 1.2, luck: 0.3 },
-      healer: { strength: 0.3, agility: 0.3, intelligence: 0.9, vitality: 1.1, luck: 0.8 },
-      mage: { strength: 0.2, agility: 0.5, intelligence: 1.3, vitality: 0.5, luck: 0.5 },
-      assassin: { strength: 0.7, agility: 1.4, intelligence: 0.4, vitality: 0.4, luck: 0.6 },
-      ranger: { strength: 0.5, agility: 1.0, intelligence: 0.9, vitality: 0.5, luck: 0.6 },
-      knight: { strength: 1.0, agility: 0.9, intelligence: 0.5, vitality: 1.0, luck: 0.4 },
-      berserker: { strength: 1.4, agility: 0.7, intelligence: 0.2, vitality: 0.6, luck: 0.3 },
-      support: { strength: 0.3, agility: 0.5, intelligence: 1.0, vitality: 0.7, luck: 1.1 },
+      tank: {
+        strength: 0.9, // Above average
+        agility: 0.3, // WEAK (slow, heavy armor)
+        intelligence: 0.2, // VERY WEAK (brute)
+        vitality: 1.5, // VERY STRONG (tank)
+        luck: 0.3, // WEAK
+      },
+      healer: {
+        strength: 0.2, // VERY WEAK (support, not fighter)
+        agility: 0.4, // WEAK
+        intelligence: 1.3, // VERY STRONG (magic knowledge)
+        vitality: 1.1, // STRONG (support endurance)
+        luck: 1.0, // STRONG (healing luck)
+      },
+      mage: {
+        strength: 0.15, // EXTREMELY WEAK (glass cannon)
+        agility: 0.5, // WEAK (not mobile)
+        intelligence: 1.6, // EXTREMELY STRONG (magic power)
+        vitality: 0.4, // WEAK (fragile)
+        luck: 0.6, // Below average
+      },
+      assassin: {
+        strength: 0.7, // Above average (needs damage)
+        agility: 1.7, // EXTREMELY STRONG (speed/stealth)
+        intelligence: 0.5, // WEAK (not thinker)
+        vitality: 0.3, // VERY WEAK (glass cannon)
+        luck: 0.8, // Above average (crit)
+      },
+      ranger: {
+        strength: 0.6, // Below average
+        agility: 1.3, // VERY STRONG (ranged mobility)
+        intelligence: 1.0, // STRONG (tactical)
+        vitality: 0.5, // WEAK (light armor)
+        luck: 0.8, // Above average (accuracy)
+      },
+      knight: {
+        strength: 1.1, // STRONG (balanced warrior)
+        agility: 0.9, // Above average
+        intelligence: 0.6, // Below average
+        vitality: 1.1, // STRONG (armor)
+        luck: 0.5, // WEAK
+      },
+      berserker: {
+        strength: 1.8, // EXTREMELY STRONG (raw power)
+        agility: 0.7, // Below average (heavy weapons)
+        intelligence: 0.15, // EXTREMELY WEAK (brute force)
+        vitality: 0.5, // WEAK (reckless)
+        luck: 0.4, // WEAK
+      },
+      support: {
+        strength: 0.25, // VERY WEAK (non-combatant)
+        agility: 0.6, // Below average
+        intelligence: 1.2, // VERY STRONG (strategy)
+        vitality: 0.7, // Below average
+        luck: 1.4, // EXTREMELY STRONG (buffs)
+      },
     };
 
     this.settings = this.defaultSettings;
@@ -800,9 +966,6 @@ module.exports = class ShadowArmy {
     this.toolbarObserver = null;
     this.toolbarCheckInterval = null;
     this._shadowArmyButtonRetryCount = 0;
-
-    // Extraction attempt tracking (Solo Leveling lore: max 3 attempts per target)
-    this.extractionAttempts = {}; // { targetId: { count: number, lastAttempt: timestamp } }
 
     // Rank probability multipliers (lower ranks easier, higher ranks exponentially harder)
     this.rankProbabilityMultipliers = {
@@ -892,11 +1055,6 @@ module.exports = class ShadowArmy {
 
     this.loadSettings();
 
-    // Sync favorite IDs to storage manager for cache management
-    if (this.storageManager) {
-      this.storageManager.setFavoriteIds(this.settings.favoriteShadowIds || []);
-    }
-
     this.injectCSS();
     this.integrateWithSoloLeveling();
     this.setupMessageListener();
@@ -927,7 +1085,36 @@ module.exports = class ShadowArmy {
       // The migration can be retried on next start
     }
 
-    console.log('ShadowArmy: Plugin started');
+    // Fix shadow base stats to match rank baselines (v4 migration)
+    try {
+      await this.fixShadowBaseStatsToRankBaselines();
+    } catch (error) {
+      console.error('ShadowArmy: Error fixing shadow base stats', error);
+    }
+
+    // Start natural growth processing (runs every hour)
+    this.startNaturalGrowthInterval();
+
+    console.log('ShadowArmy: Plugin started with natural growth system');
+  }
+
+  /**
+   * Start natural growth interval (processes every hour)
+   */
+  startNaturalGrowthInterval() {
+    if (this.naturalGrowthInterval) {
+      clearInterval(this.naturalGrowthInterval);
+    }
+
+    // Process immediately on start
+    this.processNaturalGrowthForAllShadows();
+
+    // Then process every hour
+    this.naturalGrowthInterval = setInterval(() => {
+      this.processNaturalGrowthForAllShadows();
+    }, 60 * 60 * 1000); // 1 hour
+
+    console.log('[ShadowArmy] Natural growth interval started (processes every hour)');
   }
 
   /**
@@ -935,6 +1122,7 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Remove message listener to prevent memory leaks
    * 2. Remove injected CSS styles
+   * 3. Clear natural growth interval
    */
   stop() {
     this.removeMessageListener();
@@ -946,6 +1134,13 @@ module.exports = class ShadowArmy {
     if (this._shadowArmyButtonRetryTimeout) {
       clearTimeout(this._shadowArmyButtonRetryTimeout);
       this._shadowArmyButtonRetryTimeout = null;
+    }
+
+    // Clear natural growth interval
+    if (this.naturalGrowthInterval) {
+      clearInterval(this.naturalGrowthInterval);
+      this.naturalGrowthInterval = null;
+      console.log('[ShadowArmy] Natural growth interval cleared');
     }
 
     // Close IndexedDB connection
@@ -1034,13 +1229,6 @@ module.exports = class ShadowArmy {
         if (!Array.isArray(this.settings.shadows)) {
           this.settings.shadows = [];
         }
-        // Ensure favorites array exists
-        if (!Array.isArray(this.settings.favoriteShadowIds)) {
-          this.settings.favoriteShadowIds = [];
-        }
-        if (typeof this.settings.favoriteLimit !== 'number') {
-          this.settings.favoriteLimit = 7;
-        }
         if (!this.settings.extractionConfig) {
           this.settings.extractionConfig = { ...this.defaultSettings.extractionConfig };
         } else {
@@ -1053,9 +1241,9 @@ module.exports = class ShadowArmy {
         if (!this.settings.specialArise) {
           this.settings.specialArise = { ...this.defaultSettings.specialArise };
         }
-        // Load extraction attempts tracking
-        if (saved.extractionAttempts) {
-          this.extractionAttempts = saved.extractionAttempts;
+        // Initialize dungeon extraction attempts tracking
+        if (!this.settings.dungeonExtractionAttempts) {
+          this.settings.dungeonExtractionAttempts = {};
         }
       }
     } catch (error) {
@@ -1256,39 +1444,20 @@ module.exports = class ShadowArmy {
       const selectedRank = this.selectRankByProbability(rankChances);
       if (!selectedRank) return;
 
-      // Check extraction attempt limit (lore: max 3 attempts per target)
-      // Use message hash or timestamp as target identifier
-      const targetId = `msg_${now}`; // Simplified - could use message hash
-      if (!this.canExtractFromTarget(targetId)) {
-        return; // Max attempts reached for this target
-      }
-
-      // Calculate final extraction chance for selected rank with accurate target strength
-      const selectedRankIndex = this.shadowRanks.indexOf(selectedRank);
-      const estimatedTargetStrength = this.estimateTargetStrengthByRank(
-        selectedRank,
-        selectedRankIndex,
-        stats
-      );
-
-      const finalChance = this.calculateExtractionChance(
+      // Use new retry system: generate shadow first, try extraction up to 3 times
+      const extractedShadow = await this.attemptExtractionWithRetries(
         rank,
+        level,
         stats,
         selectedRank,
-        estimatedTargetStrength, // Use estimated target strength
-        intelligence,
-        perception,
-        strength
+        null, // Will generate stats
+        null, // Will calculate strength
+        false // Use cap for regular messages
       );
 
-      // Roll for extraction
-      const roll = Math.random();
-      if (roll < finalChance) {
-        // Record extraction attempt
-        this.recordExtractionAttempt(targetId);
-
-        // Handle extraction
-        await this.handleExtractionBurst(rank, level, stats, false, selectedRank);
+      if (extractedShadow) {
+        // Show extraction animation
+        this.showExtractionAnimation(extractedShadow);
       }
 
       // Give a tiny amount of XP to favorite shadows per message regardless of extraction
@@ -1310,12 +1479,372 @@ module.exports = class ShadowArmy {
           const boostedRankIndex = Math.min(userRankIndex + 2, this.shadowRanks.length - 1);
           const boostedRank = this.shadowRanks[boostedRankIndex];
 
-          await this.handleExtractionBurst(rank, level, stats, true, boostedRank);
-          this.markSpecialAriseUsed();
+          // Special ARISE: extract 3-7 shadows
+          const count = 3 + Math.floor(Math.random() * 5);
+          const extractedShadows = [];
+
+          for (let i = 0; i < count; i++) {
+            const shadow = await this.attemptExtractionWithRetries(
+              rank,
+              level,
+              stats,
+              boostedRank,
+              null,
+              null,
+              false // Use cap for regular messages
+            );
+            if (shadow) {
+              extractedShadows.push(shadow);
+            }
+          }
+
+          if (extractedShadows.length > 0) {
+            await this.grantShadowXP(10, 'special_arise');
+            this.markSpecialAriseUsed();
+            // Show animation for last shadow
+            this.showExtractionAnimation(extractedShadows[extractedShadows.length - 1]);
+          }
         }
       }
     } catch (error) {
       console.error('ShadowArmy: Error attempting extraction', error);
+    }
+  }
+
+  /**
+   * Attempt extraction with retry logic (up to 3 attempts)
+   * Generates shadow first, then tries to extract it
+   * Only saves to database if successful
+   * Operations:
+   * 1. Generate shadow with target rank and stats
+   * 2. Calculate extraction chance based on shadow stats vs user stats
+   * 3. Try extraction up to 3 times
+   * 4. If successful, save shadow to database
+   * 5. If fails 3 times, discard shadow
+   * @param {string} userRank - User's current rank
+   * @param {number} userLevel - User's current level
+   * @param {Object} userStats - User's stats
+   * @param {string} targetRank - Target shadow rank
+   * @param {Object} targetStats - Target shadow stats (optional, will generate if not provided)
+   * @param {number} targetStrength - Target shadow strength (optional)
+   * @param {boolean} skipCap - Skip extraction cap (for dungeons)
+   * @returns {Object|null} - Extracted shadow or null if failed
+   */
+  async attemptExtractionWithRetries(
+    userRank,
+    userLevel,
+    userStats,
+    targetRank,
+    targetStats = null,
+    targetStrength = null,
+    skipCap = false
+  ) {
+    const intelligence = userStats.intelligence || 0;
+    const perception = userStats.perception || 0;
+    const strength = userStats.strength || 0;
+
+    // RANK VALIDATION: Ensure target rank is not too high
+    const userRankIndex = this.shadowRanks.indexOf(userRank);
+    const targetRankIndex = this.shadowRanks.indexOf(targetRank);
+    const rankDiff = targetRankIndex - userRankIndex;
+
+    // STRICT ENFORCEMENT: Cannot extract more than 1 rank above
+    if (rankDiff > 1) {
+      console.log(
+        `[ShadowArmy] ❌ Extraction blocked: [${targetRank}] is too high for ${userRank}-rank hunter (max: ${
+          this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
+        })`
+      );
+      return null; // Impossible to extract
+    }
+
+    // Generate shadow first (with target stats if provided)
+    let shadow;
+    if (targetStats && targetStrength != null) {
+      // Use provided stats for dungeon mobs
+      const roleKeys = Object.keys(this.shadowRoles);
+      const roleKey = roleKeys[Math.floor(Math.random() * roleKeys.length)];
+      const role = this.shadowRoles[roleKey];
+
+      shadow = {
+        id: `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        rank: targetRank,
+        role: roleKey,
+        roleName: role.name,
+        strength: targetStrength,
+        extractedAt: Date.now(),
+        level: 1,
+        xp: 0,
+        baseStats: targetStats,
+        growthStats: {
+          strength: 0,
+          agility: 0,
+          intelligence: 0,
+          vitality: 0,
+          luck: 0,
+        },
+        naturalGrowthStats: {
+          strength: 0,
+          agility: 0,
+          intelligence: 0,
+          vitality: 0,
+          luck: 0,
+        },
+        totalCombatTime: 0,
+        lastNaturalGrowth: Date.now(),
+        ownerLevelAtExtraction: userLevel,
+      };
+    } else {
+      // Generate shadow normally
+      shadow = this.generateShadow(targetRank, userLevel, userStats);
+      targetStrength = shadow.strength;
+      targetStats = shadow.baseStats;
+    }
+
+    // Try extraction up to 3 times
+    const maxAttempts = 3;
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Calculate extraction chance based on actual shadow stats
+      const extractionChance = this.calculateExtractionChance(
+        userRank,
+        userStats,
+        targetRank,
+        targetStrength,
+        intelligence,
+        perception,
+        strength,
+        skipCap
+      );
+
+      // Roll for extraction
+      const roll = Math.random();
+      if (roll < extractionChance) {
+        // Success! Save shadow to database
+        if (this.storageManager) {
+          try {
+            await this.storageManager.saveShadow(shadow);
+          } catch (error) {
+            console.error('ShadowArmy: Failed to save shadow to IndexedDB', error);
+            // Fallback to localStorage
+            if (!this.settings.shadows) this.settings.shadows = [];
+            this.settings.shadows.push(shadow);
+          }
+        } else {
+          // Fallback to localStorage
+          if (!this.settings.shadows) this.settings.shadows = [];
+          this.settings.shadows.push(shadow);
+        }
+
+        const now = Date.now();
+        this.settings.totalShadowsExtracted++;
+        this.settings.lastExtractionTime = now;
+        if (!this.extractionTimestamps) this.extractionTimestamps = [];
+        this.extractionTimestamps.push(now);
+
+        // Invalidate buff cache
+        this.cachedBuffs = null;
+        this.cachedBuffsTime = null;
+
+        // Grant XP
+        await this.grantShadowXP(2, 'extraction');
+
+        this.saveSettings();
+        this.updateUI();
+
+        return shadow; // Success!
+      }
+    }
+
+    // Failed all 3 attempts - discard shadow
+    return null;
+  }
+
+  /**
+   * Attempt shadow extraction from dungeon boss (with per-boss attempt limits)
+   * Implements Solo Leveling lore: max 3 attempts per corpse (boss) per day
+   * Operations:
+   * 1. Check boss attempt limit (lore: max 3 attempts per corpse)
+   * 2. Generate shadow with mob stats and rank
+   * 3. Try extraction based on factors (no cap)
+   * 4. Record attempt (success or failure counts toward limit)
+   * 5. Return result with attempts remaining
+   *
+   * @param {string} bossId - Unique boss identifier (e.g., "dungeon_ice_cavern_boss_frost_dragon")
+   * @param {string} userRank - User's current rank
+   * @param {number} userLevel - User's current level
+   * @param {Object} userStats - User's stats
+   * @param {string} mobRank - Mob's rank
+   * @param {Object} mobStats - Mob's stats
+   * @param {number} mobStrength - Mob's strength
+   * @returns {Object} - { success: boolean, shadow: Object|null, error: string|null, attemptsRemaining: number }
+   */
+  async attemptDungeonExtraction(
+    bossId,
+    userRank,
+    userLevel,
+    userStats,
+    mobRank,
+    mobStats,
+    mobStrength
+  ) {
+    // Check if can extract from this boss (lore: max 3 attempts per day)
+    const canExtract = this.canExtractFromBoss(bossId);
+    if (!canExtract.allowed) {
+      return {
+        success: false,
+        shadow: null,
+        error: canExtract.reason,
+        attemptsRemaining: canExtract.attemptsRemaining,
+      };
+    }
+
+    // Attempt extraction with retries (internal to this single attempt)
+    const extractedShadow = await this.attemptExtractionWithRetries(
+      userRank,
+      userLevel,
+      userStats,
+      mobRank,
+      mobStats,
+      mobStrength,
+      true // skipCap = true for dungeons
+    );
+
+    // Record attempt (counts both success and failure toward limit)
+    this.recordBossExtractionAttempt(bossId, extractedShadow !== null);
+
+    return {
+      success: extractedShadow !== null,
+      shadow: extractedShadow,
+      error: extractedShadow ? null : 'Extraction failed',
+      attemptsRemaining: this.getBossAttemptsRemaining(bossId),
+    };
+  }
+
+  /**
+   * Check if can extract from boss (Solo Leveling lore: max 3 attempts per corpse per day)
+   * Operations:
+   * 1. Initialize dungeonExtractionAttempts if needed
+   * 2. Check for daily reset
+   * 3. Return true if attempts < limit, false otherwise
+   *
+   * @param {string} bossId - Unique boss identifier
+   * @returns {Object} - { allowed: boolean, reason: string|null, attemptsRemaining: number }
+   */
+  canExtractFromBoss(bossId) {
+    if (!this.settings.dungeonExtractionAttempts) {
+      this.settings.dungeonExtractionAttempts = {};
+    }
+
+    const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
+    const maxAttempts = cfg.maxBossAttemptsPerDay || 3;
+    const today = new Date().toDateString();
+
+    const attempts = this.settings.dungeonExtractionAttempts[bossId];
+
+    // No previous attempts or from different day
+    if (!attempts || attempts.lastReset !== today) {
+      return {
+        allowed: true,
+        reason: null,
+        attemptsRemaining: maxAttempts,
+      };
+    }
+
+    // Check attempt count
+    if (attempts.count >= maxAttempts) {
+      return {
+        allowed: false,
+        reason: `Maximum extraction attempts reached (${maxAttempts}/${maxAttempts}). Boss corpse has degraded. Try again tomorrow.`,
+        attemptsRemaining: 0,
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: null,
+      attemptsRemaining: maxAttempts - attempts.count,
+    };
+  }
+
+  /**
+   * Record boss extraction attempt (counts both success and failure)
+   * Operations:
+   * 1. Initialize tracking if needed
+   * 2. Check for daily reset
+   * 3. Increment attempt count
+   * 4. Update timestamp
+   * 5. Save settings
+   *
+   * @param {string} bossId - Unique boss identifier
+   * @param {boolean} success - Whether extraction succeeded
+   */
+  recordBossExtractionAttempt(bossId, success) {
+    if (!this.settings.dungeonExtractionAttempts) {
+      this.settings.dungeonExtractionAttempts = {};
+    }
+
+    const today = new Date().toDateString();
+    const attempts = this.settings.dungeonExtractionAttempts[bossId];
+
+    // Reset if new day or first attempt
+    if (!attempts || attempts.lastReset !== today) {
+      this.settings.dungeonExtractionAttempts[bossId] = {
+        count: 1,
+        lastAttempt: Date.now(),
+        lastReset: today,
+        lastSuccess: success,
+      };
+    } else {
+      // Increment count
+      attempts.count++;
+      attempts.lastAttempt = Date.now();
+      attempts.lastSuccess = success;
+    }
+
+    // Clean up old entries (older than 7 days) to prevent unbounded growth
+    this.cleanupOldBossAttempts();
+
+    // Save settings
+    this.saveSettings();
+  }
+
+  /**
+   * Get remaining extraction attempts for a boss today
+   *
+   * @param {string} bossId - Unique boss identifier
+   * @returns {number} - Attempts remaining (0-3)
+   */
+  getBossAttemptsRemaining(bossId) {
+    if (!this.settings.dungeonExtractionAttempts) {
+      return this.settings.extractionConfig?.maxBossAttemptsPerDay || 3;
+    }
+
+    const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
+    const maxAttempts = cfg.maxBossAttemptsPerDay || 3;
+    const today = new Date().toDateString();
+    const attempts = this.settings.dungeonExtractionAttempts[bossId];
+
+    if (!attempts || attempts.lastReset !== today) {
+      return maxAttempts;
+    }
+
+    return Math.max(0, maxAttempts - attempts.count);
+  }
+
+  /**
+   * Clean up old boss attempt records (older than 7 days)
+   * Prevents unbounded growth of dungeonExtractionAttempts object
+   */
+  cleanupOldBossAttempts() {
+    if (!this.settings.dungeonExtractionAttempts) return;
+
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    const attempts = this.settings.dungeonExtractionAttempts;
+
+    for (const bossId in attempts) {
+      if (attempts[bossId].lastAttempt < sevenDaysAgo) {
+        delete attempts[bossId];
+      }
     }
   }
 
@@ -1338,8 +1867,23 @@ module.exports = class ShadowArmy {
     // Decide how many shadows to extract in this burst
     const count = isSpecial ? 3 + Math.floor(Math.random() * 5) : 1; // 3–7 for special, 1 for normal
 
-    // Use target rank if provided, otherwise use user rank
-    const rankToUse = targetRank || userRank;
+    // RANK VALIDATION: Ensure target rank is not too high
+    let rankToUse = targetRank || userRank;
+
+    if (targetRank) {
+      const userRankIndex = this.shadowRanks.indexOf(userRank);
+      const targetRankIndex = this.shadowRanks.indexOf(targetRank);
+      const rankDiff = targetRankIndex - userRankIndex;
+
+      // If target rank is more than 1 above user, cap it to user rank + 1
+      if (rankDiff > 1) {
+        rankToUse = this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)];
+        console.log(
+          `[ShadowArmy] Extraction target adjusted: ${targetRank} → ${rankToUse} (user rank: ${userRank})`
+        );
+      }
+    }
+
     const extractedShadows = [];
 
     // Generate shadows
@@ -1454,6 +1998,10 @@ module.exports = class ShadowArmy {
    * 7. Initialize growth stats for level-up progression
    */
   generateShadow(shadowRank, userLevel, userStats) {
+    // VALIDATION: Ensure shadow rank is not invalid
+    // This is called after determineShadowRank, so it should always be valid
+    // But we add this check as a safety measure
+
     // Random role selection
     const roleKeys = Object.keys(this.shadowRoles);
     const roleKey = roleKeys[Math.floor(Math.random() * roleKeys.length)];
@@ -1462,7 +2010,7 @@ module.exports = class ShadowArmy {
     // Get exponential rank multiplier (1.5x per rank)
     const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
 
-    // Generate base stats with exponential scaling
+    // Generate base stats with exponential scaling (NO USER STAT CAPS!)
     const baseStats = this.generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier);
     const baseStrength = this.calculateShadowStrength(baseStats, 1); // use internal stats for power
 
@@ -1475,7 +2023,7 @@ module.exports = class ShadowArmy {
       extractedAt: Date.now(),
       level: 1, // Shadow's own level
       xp: 0, // Shadow XP for growth
-      baseStats,
+      baseStats, // Role-weighted stats based on rank baseline only
       growthStats: {
         strength: 0,
         agility: 0,
@@ -1483,7 +2031,17 @@ module.exports = class ShadowArmy {
         vitality: 0,
         luck: 0,
       },
-      ownerLevelAtExtraction: userLevel,
+      naturalGrowthStats: {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0,
+      },
+      totalCombatTime: 0,
+      lastNaturalGrowth: Date.now(),
+      ownerLevelAtExtraction: userLevel, // For reference only, doesn't affect stats
+      growthVarianceSeed: Math.random(), // Unique growth pattern (0-1, creates 0.8-1.2x variance)
     };
 
     return shadow;
@@ -1521,55 +2079,76 @@ module.exports = class ShadowArmy {
 
   /**
    * Calculate probability distribution for shadow ranks based on user rank
+   * STRICT RULE: Cannot extract shadows ABOVE your rank (Solo Leveling lore)
+   *
+   * Restrictions:
+   * - Your rank: Most common (40-50%)
+   * - 1 rank above: Rare (5-10%) - requires high stats/luck
+   * - 2+ ranks above: IMPOSSIBLE (0%)
+   * - Lower ranks: Decreasing probability
+   *
+   * Example (B-rank user):
+   * - A-rank: 5% (1 above, rare)
+   * - B-rank: 50% (your rank, common)
+   * - C-rank: 25% (1 below, common)
+   * - D-rank: 15% (2 below, uncommon)
+   * - E-rank: 5% (3 below, rare)
+   * - S-rank+: 0% (impossible)
+   *
    * Operations:
    * 1. Initialize probability array (all zeros)
-   * 2. Set probabilities based on user rank tier:
-   *    - E rank: 70% E, 20% D, 10% C
-   *    - D-C rank: Mix of E-D-C-B
-   *    - B-A rank: Mix of C-B-A-S
-   *    - S-SS rank: Mix of B-A-S-SS-SSS
-   *    - SSS+ and above: Mix of A-S-SS-SSS-SSS+
-   * 3. Return probability array for rank selection
+   * 2. Set probabilities centered on user rank
+   * 3. Allow 1 rank above with low chance (5-10%)
+   * 4. Prevent 2+ ranks above (0%)
+   * 5. Return probability array for rank selection
    */
   calculateRankProbabilities(userRankIndex) {
     const probabilities = new Array(this.shadowRanks.length).fill(0);
 
-    // Higher user rank = better shadow distribution
-    // E rank (0): 70% E, 20% D, 10% C
-    // S rank (5): 5% C, 15% B, 30% A, 40% S, 10% SS
-    // Monarch (10+): 10% A, 20% S, 30% SS, 25% SSS, 15% SSS+
+    // STRICT ENFORCEMENT: Cannot extract more than 1 rank above user
+    const maxExtractableIndex = Math.min(userRankIndex + 1, this.shadowRanks.length - 1);
 
-    if (userRankIndex <= 0) {
-      // E rank
-      probabilities[0] = 0.7; // E
-      probabilities[1] = 0.2; // D
-      probabilities[2] = 0.1; // C
-    } else if (userRankIndex <= 2) {
-      // D-C rank
-      probabilities[0] = 0.3; // E
-      probabilities[1] = 0.4; // D
-      probabilities[2] = 0.25; // C
-      probabilities[3] = 0.05; // B
-    } else if (userRankIndex <= 4) {
-      // B-A rank
-      probabilities[2] = 0.1; // C
-      probabilities[3] = 0.3; // B
-      probabilities[4] = 0.4; // A
-      probabilities[5] = 0.2; // S
-    } else if (userRankIndex <= 6) {
-      // S-SS rank
-      probabilities[3] = 0.05; // B
-      probabilities[4] = 0.15; // A
-      probabilities[5] = 0.4; // S
-      probabilities[6] = 0.3; // SS
-      probabilities[7] = 0.1; // SSS
-    } else {
-      // SSS+ and above
-      probabilities[4] = 0.1; // A
-      probabilities[5] = 0.2; // S
-      probabilities[6] = 0.3; // SS
-      probabilities[7] = 0.25; // SSS
-      probabilities[8] = 0.15; // SSS+
+    // Distribution centered on user rank:
+    // - 1 rank above: 5% (rare, requires luck)
+    // - Your rank: 50% (most common)
+    // - 1 rank below: 25%
+    // - 2 ranks below: 15%
+    // - 3 ranks below: 5%
+    // - 4+ ranks below: 0% (too weak to extract)
+
+    if (userRankIndex >= 0) {
+      // 1 rank above (rare - only if high INT/LUK)
+      if (maxExtractableIndex > userRankIndex && maxExtractableIndex < this.shadowRanks.length) {
+        probabilities[maxExtractableIndex] = 0.05; // 5% for 1 rank above
+      }
+
+      // Your rank (most common)
+      probabilities[userRankIndex] = 0.5; // 50%
+
+      // 1 rank below (common)
+      if (userRankIndex - 1 >= 0) {
+        probabilities[userRankIndex - 1] = 0.25; // 25%
+      }
+
+      // 2 ranks below (uncommon)
+      if (userRankIndex - 2 >= 0) {
+        probabilities[userRankIndex - 2] = 0.15; // 15%
+      }
+
+      // 3 ranks below (rare)
+      if (userRankIndex - 3 >= 0) {
+        probabilities[userRankIndex - 3] = 0.05; // 5%
+      }
+
+      // 4+ ranks below: too weak, 0% chance
+    }
+
+    // Normalize probabilities to ensure they sum to 1.0
+    const sum = probabilities.reduce((a, b) => a + b, 0);
+    if (sum > 0) {
+      for (let i = 0; i < probabilities.length; i++) {
+        probabilities[i] = probabilities[i] / sum;
+      }
     }
 
     return probabilities;
@@ -1642,15 +2221,22 @@ module.exports = class ShadowArmy {
     targetStrength,
     intelligence,
     perception,
-    strength
+    strength,
+    skipCap = false
   ) {
     const userRankIndex = this.shadowRanks.indexOf(userRank);
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
 
-    // Lore constraint: Can't extract significantly stronger targets (max 2 ranks above)
+    // STRICT RANK ENFORCEMENT: Cannot extract shadows more than 1 rank above you
+    // B-rank hunter: Can extract up to A-rank (1 above), CANNOT extract S-rank (2 above)
     const rankDiff = targetRankIndex - userRankIndex;
-    if (rankDiff > 2) {
-      return 0; // Target too strong
+    if (rankDiff > 1) {
+      console.log(
+        `[ShadowArmy] ❌ Cannot extract [${targetRank}] shadow - too high! (User rank: ${userRank}, Max: ${
+          this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
+        })`
+      );
+      return 0; // Target too strong - impossible extraction
     }
 
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
@@ -1689,16 +2275,19 @@ module.exports = class ShadowArmy {
       targetResistance = Math.min(0.9, (targetRankIndex + 1) / ((userRankIndex + 1) * 2));
     }
 
-    // Final chance
-    const finalChance = Math.max(
-      0,
-      Math.min(
-        1,
-        baseChance * statsMultiplier * rankMultiplier * rankPenalty * (1 - targetResistance)
-      )
-    );
+    // Calculate raw chance
+    const rawChance =
+      baseChance * statsMultiplier * rankMultiplier * rankPenalty * (1 - targetResistance);
 
-    return finalChance;
+    // Apply hard cap to prevent 100% extraction on every message (skip for dungeons)
+    if (!skipCap) {
+      const maxChance = cfg.maxExtractionChance || 0.15; // Default 15% cap
+      const finalChance = Math.max(0, Math.min(maxChance, rawChance));
+      return finalChance;
+    }
+
+    // For dungeons: no cap, but still ensure it's between 0 and 1
+    return Math.max(0, Math.min(1, rawChance));
   }
 
   /**
@@ -1770,50 +2359,6 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Check if can extract from target (lore: max 3 attempts per target)
-   * Operations:
-   * 1. Check if target has extraction attempts recorded
-   * 2. Return true if attempts < 3, false otherwise
-   */
-  canExtractFromTarget(targetId) {
-    if (!this.extractionAttempts) {
-      this.extractionAttempts = {};
-    }
-
-    const attempts = this.extractionAttempts[targetId];
-    if (!attempts) return true; // No previous attempts
-
-    // Lore: Max 3 attempts per target
-    return attempts.count < 3;
-  }
-
-  /**
-   * Record extraction attempt for target (lore: max 3 attempts)
-   * Operations:
-   * 1. Initialize extractionAttempts if needed
-   * 2. Increment attempt count for target
-   * 3. Update last attempt timestamp
-   * 4. Save settings
-   */
-  recordExtractionAttempt(targetId) {
-    if (!this.extractionAttempts) {
-      this.extractionAttempts = {};
-    }
-
-    const attempts = this.extractionAttempts[targetId] || { count: 0 };
-    attempts.count++;
-    attempts.lastAttempt = Date.now();
-    this.extractionAttempts[targetId] = attempts;
-
-    // Save to settings
-    if (!this.settings.extractionAttempts) {
-      this.settings.extractionAttempts = {};
-    }
-    this.settings.extractionAttempts[targetId] = attempts;
-    this.saveSettings();
-  }
-
-  /**
    * Get expected baseline stats for a rank (proportionate to expected user stats at that rank)
    * These baselines ensure shadows are strong regardless of user's current stats
    *
@@ -1833,77 +2378,73 @@ module.exports = class ShadowArmy {
    * - Shadow Monarch rank: ~1275-1912 per stat (level 100 equivalent)
    */
   getRankBaselineStats(shadowRank, rankMultiplier) {
-    // Base baseline stats for E rank (level 1 equivalent)
-    const eRankBaseline = {
-      strength: 10,
-      agility: 10,
-      intelligence: 10,
-      vitality: 10,
-      luck: 10,
+    // FIXED: Hardcoded rank baselines (exponential 1.5x per rank, properly calculated)
+    // Each rank should be exponentially stronger, not capped by weird formulas
+    const rankBaselinesFixed = {
+      E: 10,
+      D: 22, // 10 × 1.5^1 × 1.5
+      C: 50, // 10 × 1.5^2 × 1.5
+      B: 112, // 10 × 1.5^3 × 1.5
+      A: 252, // 10 × 1.5^4 × 1.5
+      S: 567, // 10 × 1.5^5 × 1.5
+      SS: 1275, // 10 × 1.5^6 × 1.5
+      SSS: 2866, // 10 × 1.5^7 × 1.5 ← CORRECT!
+      'SSS+': 6447,
+      NH: 14505,
+      Monarch: 32636,
+      'Monarch+': 73431,
+      'Shadow Monarch': 165219,
     };
 
-    // Scale baselines exponentially with rank multiplier
-    // This ensures each rank has appropriate baseline stats regardless of user stats
-    const baselineStats = {};
-    Object.keys(eRankBaseline).forEach((stat) => {
-      // Exponential scaling: baseline * rankMultiplier^1.2 (slightly steeper than linear)
-      // This ensures higher ranks have significantly higher baselines
-      const baseline = eRankBaseline[stat] * Math.pow(rankMultiplier, 1.2);
-      baselineStats[stat] = Math.max(1, Math.round(baseline));
-    });
+    const baselineValue = rankBaselinesFixed[shadowRank] || 10;
 
-    return baselineStats;
+    return {
+      strength: baselineValue,
+      agility: baselineValue,
+      intelligence: baselineValue,
+      vitality: baselineValue,
+      luck: baselineValue,
+    };
   }
 
   /**
    * Generate base stats for a new shadow with exponential scaling
    *
-   * UPDATED FORMULA: Shadows scale relative to user stats, but are always weaker
-   * This ensures shadows are strong but never exceed user power
+   * PURE RANK + ROLE FORMULA (NO USER STAT CAPPING!)
+   * Shadows stats are determined ONLY by rank and role, regardless of user level
    *
    * EXPONENTIAL SCALING FORMULA:
-   * Each rank is exponentially stronger than the previous rank (1.5x multiplier per rank).
+   * Each rank is exponentially stronger than the previous rank (1.5x multiplier per rank)
    *
-   * Formula breakdown:
-   * 1. Calculate shadow stat based on rank baseline and user stats
-   * 2. Apply role weight to distribute stats appropriately
-   * 3. Apply exponential rank multiplier
-   * 4. Add random variance (0-20%)
-   * 5. CAP shadow stat to never exceed user stat (max 80% of user stat)
+   * Formula: shadowStat = rankBaseline × roleWeight × variance
+   *
+   * Rank Baselines (per stat):
+   * - E: 10       - D: 22        - C: 50        - B: 112
+   * - A: 252      - S: 567       - SS: 1,275    - SSS: 2,866
+   * - SSS+: 6,447 - NH: 14,505   - Monarch: 32,636
+   *
+   * Role Weights (specialization multipliers):
+   * - Mage: STR 0.15x (WEAK), INT 1.6x (STRONG)
+   * - Assassin: VIT 0.3x (WEAK), AGI 1.7x (STRONG)
+   * - Berserker: INT 0.15x (WEAK), STR 1.8x (STRONG)
+   * - Tank: AGI 0.3x (WEAK), VIT 1.5x (STRONG)
+   *
+   * Example (SSS Mage):
+   * - STR: 2866 × 0.15 × 1.0 = 430 (EXTREMELY WEAK)
+   * - INT: 2866 × 1.6 × 1.0 = 4,586 (EXTREMELY STRONG)
+   * - Total Power: ~9,300
    *
    * This ensures:
-   * - Each rank is exponentially stronger (1.5x per rank)
-   * - Higher ranks have exponentially higher base values
-   * - Shadows scale with user stats but are always weaker
-   * - Final stats scale exponentially with rank
-   * - USER IS ALWAYS STRONGER than shadows
-   *
-   * Shadow strength cap per rank:
-   * - E rank: max 20% of user stat
-   * - D rank: max 30% of user stat
-   * - C rank: max 40% of user stat
-   * - B rank: max 50% of user stat
-   * - A rank: max 60% of user stat
-   * - S rank: max 65% of user stat
-   * - SS rank: max 70% of user stat
-   * - SSS rank: max 75% of user stat
-   * - SSS+ rank: max 78% of user stat
-   * - NH rank: max 80% of user stat
-   * - Monarch rank: max 80% of user stat
-   * - Monarch+ rank: max 80% of user stat
-   * - Shadow Monarch rank: max 80% of user stat
+   * - SSS shadows are ALWAYS strong (14k+ power)
+   * - Role specialization is EXTREME
+   * - User level doesn't affect shadow strength
+   * - Each shadow is unique (90-110% variance)
    *
    * Operations:
-   * 1. Get rank baseline stats (proportionate to expected stats at that rank)
-   * 2. Get stat weights for the shadow's role
-   * 3. For each stat (STR, AGI, INT, VIT, LUK):
-   *    - Calculate shadow stat from rank baseline and user stat
-   *    - Apply role weight
-   *    - Apply EXPONENTIAL rank multiplier
-   *    - Add random variance (0-20%)
-   *    - CAP to max percentage of user stat (ensures user is always stronger)
-   *    - Ensure minimum of 1
-   * 4. Return base stats object with exponential scaling
+   * 1. Get rank baseline stats (exponential per rank)
+   * 2. Get role weights for specialization
+   * 3. For each stat: rankBaseline × roleWeight × variance
+   * 4. Return base stats object
    */
   generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier) {
     const weights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
@@ -1912,44 +2453,23 @@ module.exports = class ShadowArmy {
     // Get rank baseline stats (proportionate to expected stats at that rank)
     const rankBaselines = this.getRankBaselineStats(shadowRank, rankMultiplier);
 
-    // Calculate max percentage of user stat that shadows can reach (based on rank)
-    // Higher ranks can get closer to user stats, but never exceed
-    const rankIndex = this.shadowRanks.indexOf(shadowRank);
-    const maxUserStatPercent = Math.min(0.8, 0.2 + rankIndex * 0.05); // E=20%, D=25%, ..., SSS=75%, NH+=80%
-
     const baseStats = {};
 
     stats.forEach((stat) => {
-      const w = weights[stat] || 0.5;
-      const userStat = userStats[stat] || 0;
-
-      // Start with rank baseline (ensures shadows have minimum strength)
+      const roleWeight = weights[stat] || 1.0;
       const rankBaseline = rankBaselines[stat] || 10;
 
-      // Calculate shadow stat: blend rank baseline with user stat scaling
-      // Use 60% rank baseline + 40% user stat scaling for balance
-      const userStatScaling = userStat * 0.4; // 40% of user stat as base
-      const baseValue = rankBaseline * 0.6 + userStatScaling;
+      // Shadow stat = rank baseline × role weight × variance
+      // This ensures:
+      // 1. SSS shadows are ALWAYS strong (based on SSS baseline)
+      // 2. Mages have HIGH INT, LOW STR (role weights)
+      // 3. Tanks have HIGH VIT, LOW AGI (role weights)
+      // 4. Random variance (90%-110%) for uniqueness
 
-      // Apply exponential rank multiplier to final stat
-      // rankMultiplier is exponential (1.5x per rank): E=1.0, D=1.5, SSS=17.08, Shadow Monarch=129.74
-      const variance = Math.random() * 0.2; // 0-20% variance
+      const variance = 0.9 + Math.random() * 0.2; // 90%-110% variance
+      const shadowStat = rankBaseline * roleWeight * variance;
 
-      // Calculate raw shadow stat
-      let raw = baseValue * w * rankMultiplier * (1 + variance);
-
-      // CRITICAL: Cap shadow stat to never exceed max percentage of user stat
-      // This ensures user is ALWAYS stronger than shadows
-      if (userStat > 0) {
-        const maxShadowStat = userStat * maxUserStatPercent;
-        raw = Math.min(raw, maxShadowStat);
-      } else {
-        // When user stat is 0, cap to rank baseline to prevent overpowered shadows
-        const fallbackCap = rankBaseline * maxUserStatPercent;
-        raw = Math.min(raw, fallbackCap);
-      }
-
-      baseStats[stat] = Math.max(1, Math.round(raw));
+      baseStats[stat] = Math.max(1, Math.round(shadowStat));
     });
 
     return baseStats;
@@ -2103,75 +2623,49 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Get favorite/general shadows (up to favoriteLimit)
+   * Get top 7 generals (strongest shadows by total power)
+   * Automatic selection - no manual favorites!
+   *
    * Operations:
-   * 1. Validate favoriteShadowIds array exists
-   * 2. Use IndexedDB to load favorite shadows if available
-   * 3. Otherwise fallback to localStorage array filter
-   * 4. Return array of favorite shadow objects
+   * 1. Load all shadows from storage
+   * 2. Sort by strength (total power) descending
+   * 3. Return top 7 strongest shadows
+   * 4. These are the "generals" who provide full buffs
    */
-  async getFavoriteShadows() {
-    if (
-      !Array.isArray(this.settings.favoriteShadowIds) ||
-      this.settings.favoriteShadowIds.length === 0
-    ) {
+  async getTopGenerals() {
+    try {
+      let shadows = [];
+
+      if (this.storageManager) {
+        try {
+          // Get all shadows from IndexedDB
+          shadows = await this.storageManager.getShadows({}, 0, 10000);
+        } catch (error) {
+          console.error('ShadowArmy: Failed to get shadows from IndexedDB', error);
+          shadows = this.settings.shadows || [];
+        }
+      } else {
+        shadows = this.settings.shadows || [];
+      }
+
+      // Ensure each shadow has up-to-date strength calculation
+      // (strength = sum of all effective stats: base + growth + natural)
+      shadows.forEach((shadow) => {
+        if (!shadow.strength || shadow.strength === 0) {
+          const effectiveStats = this.getShadowEffectiveStats(shadow);
+          shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+        }
+      });
+
+      // Sort by strength (total power) descending
+      shadows.sort((a, b) => (b.strength || 0) - (a.strength || 0));
+
+      // Return top 7 strongest (generals)
+      return shadows.slice(0, 7);
+    } catch (error) {
+      console.error('ShadowArmy: Error getting top generals', error);
       return [];
     }
-
-    if (this.storageManager) {
-      try {
-        return await this.storageManager.getFavoriteShadows(this.settings.favoriteShadowIds);
-      } catch (error) {
-        console.error('ShadowArmy: Failed to get favorites from IndexedDB', error);
-      }
-    }
-
-    // Fallback to localStorage
-    const idSet = new Set(this.settings.favoriteShadowIds);
-    return (this.settings.shadows || []).filter((shadow) => idSet.has(shadow.id));
-  }
-
-  /**
-   * Toggle a shadow as favorite/general
-   * - Adds if not present (up to favoriteLimit)
-   * - Removes if already favorite
-   * Operations:
-   * 1. Validate shadowId provided
-   * 2. Ensure favoriteShadowIds array exists
-   * 3. Check if shadow is already favorite
-   * 4. If favorite: remove from array
-   * 5. If not favorite: add to array (enforce limit, remove oldest if needed)
-   * 6. Save settings to persist changes
-   */
-  toggleFavorite(shadowId) {
-    if (!shadowId) return;
-    if (!Array.isArray(this.settings.favoriteShadowIds)) {
-      this.settings.favoriteShadowIds = [];
-    }
-
-    const idx = this.settings.favoriteShadowIds.indexOf(shadowId);
-    if (idx !== -1) {
-      // Remove from favorites
-      this.settings.favoriteShadowIds.splice(idx, 1);
-    } else {
-      // Enforce favorite limit (7 generals by default)
-      if (this.settings.favoriteShadowIds.length >= (this.settings.favoriteLimit || 7)) {
-        // Remove the oldest favorite (FIFO) to make room
-        this.settings.favoriteShadowIds.shift();
-      }
-      this.settings.favoriteShadowIds.push(shadowId);
-    }
-
-    this.saveSettings();
-
-    // Sync favorite IDs to storage manager for cache management
-    if (this.storageManager) {
-      this.storageManager.setFavoriteIds(this.settings.favoriteShadowIds || []);
-    }
-
-    // Invalidate buff cache when favorites change
-    this.cachedBuffs = null;
-    this.cachedBuffsTime = null;
   }
 
   // ============================================================================
@@ -2180,16 +2674,16 @@ module.exports = class ShadowArmy {
 
   /**
    * Calculate total buffs from all shadows
-   * Favorites (generals) give full buffs, weak shadows (2+ ranks below) are aggregated for performance
+   * Top 7 strongest shadows (generals) give full buffs, others aggregated for performance
    *
    * BALANCING: Implements caps and diminishing returns to prevent OP buffs from millions of shadows
-   * - Favorite shadows (up to 7): Full buffs, no cap
+   * - Top 7 strongest shadows (GENERALS): Full buffs, no cap
    * - Aggregated weak shadows: Diminishing returns + hard cap
    * - Total buff cap: Max +50% per stat from all shadows combined
    *
    * Operations:
    * 1. Initialize buffs object (STR, AGI, INT, VIT, LUK all 0)
-   * 2. Get favorite shadows (full buffs, up to 7)
+   * 2. Get top 7 generals (strongest by total power) - full buffs
    * 3. Get user rank for aggregation threshold
    * 4. Aggregate weak shadows (2+ ranks below) with diminishing returns
    * 5. Apply caps to prevent overpowered buffs
@@ -2205,17 +2699,21 @@ module.exports = class ShadowArmy {
       perception: 0, // Add perception for compatibility
     };
 
-    // Get favorite shadows (full buffs, up to 7 generals)
-    const favorites = await this.getFavoriteShadows();
-    favorites.forEach((shadow) => {
+    // Get top 7 generals (strongest shadows) - full buffs, no cap
+    const generals = await this.getTopGenerals();
+    generals.forEach((shadow) => {
       const role = this.shadowRoles[shadow.role];
       if (!role || !role.buffs) return;
 
       Object.keys(role.buffs).forEach((stat) => {
-        const amount = role.buffs[stat] * 1.0; // Full buffs for favorites
+        const amount = role.buffs[stat] * 1.0; // Full buffs for top 7 generals
         buffs[stat] = (buffs[stat] || 0) + amount;
       });
     });
+
+    console.log(
+      `[ShadowArmy] Applied full buffs from ${generals.length} generals (top 7 strongest)`
+    );
 
     // Get user rank for aggregation
     const soloData = this.getSoloLevelingData();
@@ -2364,8 +2862,8 @@ module.exports = class ShadowArmy {
       const allShadows = await this.getAllShadows();
       shadowsToGrant = allShadows.filter((s) => shadowIds.includes(s.id));
     } else {
-      // Default: grant XP to favorites only (from messages)
-      shadowsToGrant = await this.getFavoriteShadows();
+      // Default: grant XP to top 7 generals only (from messages)
+      shadowsToGrant = await this.getTopGenerals();
     }
 
     if (!shadowsToGrant.length) return;
@@ -2378,14 +2876,28 @@ module.exports = class ShadowArmy {
 
       // Level up loop in case of big XP grants
       const shadowRank = shadow.rank || 'E';
+      let leveledUp = false;
       while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank)) {
         shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
         level += 1;
         shadow.level = level;
         this.applyShadowLevelUpStats(shadow);
+        leveledUp = true;
         // Recompute strength after level up
         const effectiveStats = this.getShadowEffectiveStats(shadow);
         shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+      }
+
+      // AUTO RANK-UP: Check if shadow qualifies for rank promotion after level-up
+      if (leveledUp) {
+        const rankUpResult = this.attemptAutoRankUp(shadow);
+        if (rankUpResult.success) {
+          console.log(
+            `[ShadowArmy] AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${
+              rankUpResult.oldRank
+            } -> ${rankUpResult.newRank}!`
+          );
+        }
       }
 
       // Save updated shadow to IndexedDB
@@ -2435,106 +2947,454 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Get effective stats for a shadow (base + growth)
+   * Get effective stats for a shadow (base + growth + natural growth)
    * Operations:
    * 1. Get base stats from shadow.baseStats
-   * 2. Get growth stats from shadow.growthStats
-   * 3. Sum base and growth for each stat
-   * 4. Return effective stats object
+   * 2. Get growth stats from shadow.growthStats (level-ups)
+   * 3. Get natural growth stats from shadow.naturalGrowthStats (passive)
+   * 4. Sum all three for each stat
+   * 5. Return effective stats object
    */
   getShadowEffectiveStats(shadow) {
     const base = shadow.baseStats || {};
     const growth = shadow.growthStats || {};
+    const naturalGrowth = shadow.naturalGrowthStats || {};
+
     return {
-      strength: (base.strength || 0) + (growth.strength || 0),
-      agility: (base.agility || 0) + (growth.agility || 0),
-      intelligence: (base.intelligence || 0) + (growth.intelligence || 0),
-      vitality: (base.vitality || 0) + (growth.vitality || 0),
-      luck: (base.luck || 0) + (growth.luck || 0),
+      strength: (base.strength || 0) + (growth.strength || 0) + (naturalGrowth.strength || 0),
+      agility: (base.agility || 0) + (growth.agility || 0) + (naturalGrowth.agility || 0),
+      intelligence:
+        (base.intelligence || 0) + (growth.intelligence || 0) + (naturalGrowth.intelligence || 0),
+      vitality: (base.vitality || 0) + (growth.vitality || 0) + (naturalGrowth.vitality || 0),
+      luck: (base.luck || 0) + (growth.luck || 0) + (naturalGrowth.luck || 0),
     };
   }
 
   /**
-   * Apply stat increases on shadow level up based on its role weights and rank
-   * Higher rank shadows grow faster per level
-   * CRITICAL: Shadow stats are capped to never exceed user stats
-   * Operations:
-   * 1. Get shadow's role and corresponding stat weights
-   * 2. Get shadow's rank multiplier for growth scaling
-   * 3. Get current user stats for capping
-   * 4. Initialize growthStats if missing
-   * 5. For each stat:
-   *    - Get weight for that stat
-   *    - Calculate base growth based on weight
-   *    - Scale growth by rank multiplier (higher ranks grow faster)
-   *    - CAP growth to ensure shadow stat never exceeds user stat
-   *    - Primary stats (w >= 1.1): +3 base growth
-   *    - Secondary stats (w >= 0.8): +2 base growth
-   *    - Tertiary stats (w > 0): +1 base growth
-   *    - Negative/zero weight: no growth
-   * 6. Update shadow.growthStats
+   * Attempt automatic rank-up for shadow
+   * Called after level-up to check if shadow qualifies for promotion
+   * Returns: { success: boolean, oldRank: string, newRank: string }
+   */
+  attemptAutoRankUp(shadow) {
+    if (!shadow || !shadow.rank) {
+      return { success: false };
+    }
+
+    const currentRank = shadow.rank;
+    const shadowRanks = [
+      'E',
+      'D',
+      'C',
+      'B',
+      'A',
+      'S',
+      'SS',
+      'SSS',
+      'SSS+',
+      'NH',
+      'Monarch',
+      'Monarch+',
+      'Shadow Monarch',
+    ];
+    const currentRankIndex = shadowRanks.indexOf(currentRank);
+
+    // Can't rank up if already max rank
+    if (currentRankIndex === -1 || currentRankIndex >= shadowRanks.length - 1) {
+      return { success: false };
+    }
+
+    const nextRank = shadowRanks[currentRankIndex + 1];
+
+    // Get shadow's effective stats (base + growth + natural growth)
+    const effectiveStats = this.getShadowEffectiveStats(shadow);
+
+    // Calculate average stat value
+    const avgStats =
+      (effectiveStats.strength +
+        effectiveStats.agility +
+        effectiveStats.intelligence +
+        effectiveStats.vitality +
+        effectiveStats.luck) /
+      5;
+
+    // Get baseline for next rank
+    const nextRankIndex = currentRankIndex + 1;
+    const baselineForNextRank = this.getRankBaselineStats(nextRank);
+    const nextBaseline =
+      (baselineForNextRank.strength +
+        baselineForNextRank.agility +
+        baselineForNextRank.intelligence +
+        baselineForNextRank.vitality +
+        baselineForNextRank.luck) /
+      5;
+
+    // Check if shadow qualifies (80% of next rank's baseline stats)
+    if (avgStats >= nextBaseline * 0.8) {
+      // PERFORM RANK-UP
+      shadow.rank = nextRank;
+
+      // Reset level to 1 for new rank (fresh start at new tier)
+      shadow.level = 1;
+      shadow.xp = 0;
+
+      // Recalculate strength with new rank
+      const newEffectiveStats = this.getShadowEffectiveStats(shadow);
+      shadow.strength = this.calculateShadowStrength(newEffectiveStats, 1);
+
+      return {
+        success: true,
+        oldRank: currentRank,
+        newRank: nextRank,
+      };
+    }
+
+    return { success: false };
+  }
+
+  /**
+   * Apply natural growth to shadow based on DUNGEON COMBAT time
+   * Shadows grow from fighting in dungeons (combat experience)
+   * ROLE-WEIGHTED: Mages grow INT from combat, Assassins grow AGI
+   * INDIVIDUAL VARIANCE: Each shadow grows uniquely
+   *
+   * Formula: (combat time hours × rank multiplier × role weight × variance)
+   * This creates exponential growth that reflects rank potential AND role specialization
+   */
+  async applyNaturalGrowth(shadow, combatTimeHours = 0) {
+    if (!shadow) return false;
+
+    const shadowRank = shadow.rank || 'E';
+    const roleKey = shadow.role || 'knight';
+    const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
+    const roleWeights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
+
+    // Initialize natural growth stats if not exists
+    if (!shadow.naturalGrowthStats) {
+      shadow.naturalGrowthStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0,
+      };
+    }
+
+    // Initialize tracking fields
+    if (!shadow.totalCombatTime) {
+      shadow.totalCombatTime = 0;
+    }
+    if (!shadow.lastNaturalGrowth) {
+      shadow.lastNaturalGrowth = Date.now();
+    }
+
+    // Initialize individual variance seed if not exists
+    if (!shadow.growthVarianceSeed) {
+      shadow.growthVarianceSeed = Math.random();
+    }
+
+    // Base natural growth per hour (scaled by rank)
+    // Increased significantly to work with dungeons lasting 5-60 minutes
+    const baseGrowthPerHour = rankMultiplier * 10; // E: 10/hr, SSS: 170/hr
+
+    if (combatTimeHours > 0) {
+      // Apply role-weighted growth to each stat
+      const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+
+      stats.forEach((stat) => {
+        const roleWeight = roleWeights[stat] || 1.0;
+
+        // Individual variance (each shadow grows uniquely)
+        const individualVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
+
+        // Calculate growth for this stat
+        // Strong stats grow MORE naturally, weak stats grow LESS
+        const statGrowth = baseGrowthPerHour * combatTimeHours * roleWeight * individualVariance;
+        const roundedGrowth = Math.max(0, Math.round(statGrowth));
+
+        shadow.naturalGrowthStats[stat] += roundedGrowth;
+      });
+
+      shadow.totalCombatTime += combatTimeHours;
+      shadow.lastNaturalGrowth = Date.now();
+
+      // Recalculate shadow strength with new stats
+      const effectiveStats = this.getShadowEffectiveStats(shadow);
+      shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+
+      const totalGrowth = Math.round(baseGrowthPerHour * combatTimeHours);
+
+      // Convert to minutes for better readability
+      const combatMinutes = combatTimeHours * 60;
+      const timeDisplay =
+        combatTimeHours >= 1 ? `${combatTimeHours.toFixed(1)}h` : `${Math.floor(combatMinutes)}min`;
+
+      console.log(
+        `[ShadowArmy] Natural growth applied to ${roleKey} [${shadowRank}]: ~${totalGrowth} role-weighted growth (${timeDisplay} combat)`
+      );
+
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Process natural growth for all shadows based on REAL TIME ELAPSED
+   * Applies retroactively - shadows grow even when you're offline!
+   * Called on plugin start and hourly
+   */
+  async processNaturalGrowthForAllShadows() {
+    // Natural growth is now COMBAT-BASED ONLY (handled by Dungeons plugin)
+    // Shadows grow from fighting in dungeons, not from real-world time
+    // This function is kept for compatibility but does nothing
+  }
+
+  /**
+   * Apply stat increases on shadow level up based on role specialization
+   * ROLE-WEIGHTED GROWTH: Strong stats grow FAST, weak stats grow SLOW
+   * INDIVIDUAL VARIANCE: Each shadow grows uniquely (based on growthVarianceSeed)
+   * NO CAPS: Shadows can grow indefinitely!
+   *
+   * Growth Formula:
+   * 1. Base growth by role weight:
+   *    - roleWeight ≥ 1.5: +5 base (VERY HIGH) - e.g., Berserker STR
+   *    - roleWeight ≥ 1.2: +4 base (HIGH)
+   *    - roleWeight ≥ 0.8: +3 base (MEDIUM)
+   *    - roleWeight ≥ 0.5: +2 base (LOW)
+   *    - roleWeight ≥ 0.3: +1 base (VERY LOW)
+   *    - roleWeight < 0.3:  +0.5 base (MINIMAL) - e.g., Mage STR
+   *
+   * 2. Multiply by rank growth multiplier:
+   *    - E rank: 1.0x, SSS rank: 3.41x, Shadow Monarch: 20.46x
+   *
+   * 3. Apply individual variance (0.8-1.2x per shadow)
+   *
+   * 4. Apply per-level random variance (0.9-1.1x)
+   *
+   * Example (SSS Mage, seed 1.0):
+   * - INT growth: 5 × 3.41 × 1.0 × 1.0 = ~17 per level (MASSIVE!)
+   * - STR growth: 0.5 × 3.41 × 1.0 × 1.0 = ~2 per level (MINIMAL!)
+   *
+   * Result: Each shadow develops unique personality through growth!
    */
   applyShadowLevelUpStats(shadow) {
     const roleKey = shadow.role;
-    const weights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
+    const roleWeights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
     const shadowRank = shadow.rank || 'E';
     const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
 
-    // Get current user stats for capping
-    const soloData = this.getSoloLevelingData();
-    const userStats = soloData?.stats || {
-      strength: 0,
-      agility: 0,
-      intelligence: 0,
-      vitality: 0,
-      luck: 0,
-    };
-
-    // Calculate max percentage of user stat that shadows can reach (based on rank)
-    const rankIndex = this.shadowRanks.indexOf(shadowRank);
-    const maxUserStatPercent = Math.min(0.8, 0.2 + rankIndex * 0.05); // E=20%, D=25%, ..., SSS=75%, NH+=80%
-
-    // Growth multiplier scales with rank (higher ranks grow faster)
-    // Base growth multiplier: 1.0 for E, scales up to ~2.0 for Shadow Monarch
-    const growthMultiplier = 1.0 + (rankMultiplier - 1.0) * 0.1; // E=1.0, Shadow Monarch=13.97
+    // Growth multiplier scales with rank (higher ranks grow MORE per level)
+    // E rank: +1-3 per level, SSS rank: +17-51 per level
+    const rankGrowthMultiplier = 1.0 + (rankMultiplier - 1.0) * 0.15;
 
     if (!shadow.growthStats) {
       shadow.growthStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
     }
 
+    // Initialize individual variance seed if not exists (unique per shadow)
+    if (!shadow.growthVarianceSeed) {
+      shadow.growthVarianceSeed = Math.random(); // 0-1, unique per shadow
+    }
+
     const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
 
     stats.forEach((stat) => {
-      const w = weights[stat] || 0.5;
-      // Base growth per level based on role weight
-      let baseDelta;
-      if (w >= 1.1) baseDelta = 3;
-      else if (w >= 0.8) baseDelta = 2;
-      else if (w > 0) baseDelta = 1;
-      else baseDelta = 0;
+      const roleWeight = roleWeights[stat] || 1.0;
 
-      // Scale growth by rank multiplier (higher ranks grow faster)
-      const delta = Math.round(baseDelta * growthMultiplier);
+      // Base growth per level based on role weight and individual variance
+      // Strong stats (roleWeight > 1.2): Grow FAST
+      // Weak stats (roleWeight < 0.5): Grow SLOW
+      // Medium stats (0.5-1.2): Moderate growth
 
-      // Get current effective stat (base + growth)
-      const baseStat = shadow.baseStats?.[stat] || 0;
-      const currentGrowth = shadow.growthStats[stat] || 0;
-      const currentEffectiveStat = baseStat + currentGrowth;
-
-      // Calculate max allowed stat (cap to user stat percentage)
-      const userStat = userStats[stat] || 0;
-      const maxAllowedStat =
-        userStat > 0 ? Math.round(userStat * maxUserStatPercent) : currentEffectiveStat + delta;
-
-      // Only add growth if it won't exceed the cap
-      if (currentEffectiveStat + delta <= maxAllowedStat) {
-        shadow.growthStats[stat] = currentGrowth + delta;
+      let baseGrowth;
+      if (roleWeight >= 1.5) {
+        baseGrowth = 5; // VERY HIGH growth for strong stats
+      } else if (roleWeight >= 1.2) {
+        baseGrowth = 4; // HIGH growth
+      } else if (roleWeight >= 0.8) {
+        baseGrowth = 3; // MEDIUM growth
+      } else if (roleWeight >= 0.5) {
+        baseGrowth = 2; // LOW growth
+      } else if (roleWeight >= 0.3) {
+        baseGrowth = 1; // VERY LOW growth
       } else {
-        // Cap at max allowed stat
-        const maxGrowth = Math.max(0, maxAllowedStat - baseStat);
-        shadow.growthStats[stat] = maxGrowth;
+        baseGrowth = 0.5; // MINIMAL growth
       }
+
+      // Individual variance (±20% based on shadow's unique seed)
+      // This makes each shadow unique even if same role/rank
+      const seedVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
+
+      // Per-level random variance (±10% per level up)
+      const levelVariance = 0.9 + Math.random() * 0.2; // 0.9-1.1
+
+      // Calculate final growth for this level
+      const growth = baseGrowth * rankGrowthMultiplier * seedVariance * levelVariance;
+      const roundedGrowth = Math.max(1, Math.round(growth));
+
+      // Add growth (NO CAPS - let shadows grow freely!)
+      const currentGrowth = shadow.growthStats[stat] || 0;
+      shadow.growthStats[stat] = currentGrowth + roundedGrowth;
     });
+  }
+
+  /**
+   * Fix shadow base stats to match rank baselines (v4 migration)
+   * CRITICAL FIX: Some shadows were extracted when user was weak, giving them low base stats
+   * This migration ensures ALL shadows have proper base stats for their rank
+   *
+   * Operations:
+   * 1. Check if migration already done
+   * 2. For each shadow:
+   *    - Calculate proper baseline stats based ONLY on rank (not user stats)
+   *    - Keep all progression: level, XP, growthStats, naturalGrowthStats, combat time
+   *    - Recalculate total strength
+   *    - Save updated shadow
+   * 3. Mark migration complete
+   */
+  async fixShadowBaseStatsToRankBaselines() {
+    try {
+      // Check if we've already done this migration
+      const migrationKey = 'shadowArmy_baseStats_v4';
+      if (BdApi.Data.load('ShadowArmy', migrationKey)) {
+        return; // Already migrated
+      }
+
+      console.log('[ShadowArmy] 🔧 Fixing shadow base stats to match rank baselines...');
+
+      let allShadows = [];
+
+      // Get shadows from IndexedDB
+      if (this.storageManager) {
+        try {
+          allShadows = await this.storageManager.getShadows({}, 0, 100000);
+          console.log(`[ShadowArmy] Found ${allShadows.length} shadows to fix`);
+        } catch (error) {
+          console.error('[ShadowArmy] Error getting shadows from IndexedDB', error);
+        }
+      }
+
+      // Also get shadows from localStorage as fallback
+      if (this.settings.shadows && this.settings.shadows.length > 0) {
+        const localStorageShadows = this.settings.shadows.filter(
+          (s) => !allShadows.find((dbShadow) => dbShadow.id === s.id)
+        );
+        allShadows = allShadows.concat(localStorageShadows);
+      }
+
+      if (allShadows.length === 0) {
+        console.log('[ShadowArmy] No shadows to fix');
+        BdApi.Data.save('ShadowArmy', migrationKey, true);
+        return;
+      }
+
+      let fixed = 0;
+      const batchSize = 50;
+
+      for (let i = 0; i < allShadows.length; i += batchSize) {
+        const batch = allShadows.slice(i, i + batchSize);
+
+        for (const shadow of batch) {
+          try {
+            const shadowRank = shadow.rank || 'E';
+            const rankMultiplier = this.rankStatMultipliers[shadowRank] || 1.0;
+            const roleKey = shadow.role || 'knight';
+            const role = this.shadowRoles[roleKey];
+
+            if (!role) continue;
+
+            // Calculate PROPER baseline stats for this rank (not capped by user stats)
+            const rankBaseline = this.getRankBaselineStats(shadowRank, rankMultiplier);
+            const roleWeights =
+              this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
+
+            // Apply role weights to baseline
+            const newBaseStats = {};
+            Object.keys(rankBaseline).forEach((stat) => {
+              const roleWeight = roleWeights[stat] || 1.0;
+              // Base stat = rank baseline × role weight (with slight variance)
+              const variance = 0.9 + Math.random() * 0.2; // 90%-110%
+              newBaseStats[stat] = Math.max(
+                1,
+                Math.round(rankBaseline[stat] * roleWeight * variance)
+              );
+            });
+
+            // Preserve ALL progression data
+            const existingGrowthStats = shadow.growthStats || {
+              strength: 0,
+              agility: 0,
+              intelligence: 0,
+              vitality: 0,
+              luck: 0,
+            };
+
+            const existingNaturalGrowthStats = shadow.naturalGrowthStats || {
+              strength: 0,
+              agility: 0,
+              intelligence: 0,
+              vitality: 0,
+              luck: 0,
+            };
+
+            // Update shadow with new proper base stats
+            shadow.baseStats = newBaseStats;
+            shadow.growthStats = existingGrowthStats;
+            shadow.naturalGrowthStats = existingNaturalGrowthStats;
+
+            // Preserve all other data
+            shadow.level = shadow.level || 1;
+            shadow.xp = shadow.xp || 0;
+            shadow.totalCombatTime = shadow.totalCombatTime || 0;
+            shadow.lastNaturalGrowth = shadow.lastNaturalGrowth || Date.now();
+
+            // Recalculate total strength with all stat layers
+            const effectiveStats = this.getShadowEffectiveStats(shadow);
+            shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+
+            // Save to IndexedDB
+            if (this.storageManager) {
+              await this.storageManager.saveShadow(shadow);
+            }
+
+            // Also update localStorage if it exists
+            const localIndex = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
+            if (localIndex !== -1) {
+              this.settings.shadows[localIndex] = shadow;
+            }
+
+            fixed++;
+          } catch (error) {
+            console.error(`[ShadowArmy] Error fixing shadow ${shadow.id}:`, error);
+          }
+        }
+
+        // Log progress for large batches
+        if (allShadows.length > 100) {
+          console.log(
+            `[ShadowArmy] Fixed ${Math.min(i + batchSize, allShadows.length)}/${
+              allShadows.length
+            } shadows...`
+          );
+        }
+      }
+
+      // Save localStorage changes
+      this.saveSettings();
+
+      // Mark migration complete
+      BdApi.Data.save('ShadowArmy', migrationKey, true);
+
+      console.log(`[ShadowArmy] ✅ Fixed ${fixed} shadows to proper rank baselines!`);
+      console.log('[ShadowArmy] SSS shadows now have SSS-level base stats!');
+
+      // Invalidate buff cache
+      this.cachedBuffs = null;
+      this.cachedBuffsTime = null;
+    } catch (error) {
+      console.error('[ShadowArmy] Error in fixShadowBaseStatsToRankBaselines:', error);
+      throw error;
+    }
   }
 
   /**
@@ -2975,90 +3835,132 @@ module.exports = class ShadowArmy {
   /**
    * Create ShadowArmy button in chat toolbar
    */
-  createShadowArmyButton() {
-    // Remove existing button first to avoid duplicates
-    const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
-    if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
-    this.shadowArmyButton = null;
-
-    const toolbar = this.findToolbar();
-    if (!toolbar) {
-      // Retry with exponential backoff
-      // Clear any existing retry timeout before scheduling a new one
-      if (this._shadowArmyButtonRetryTimeout) {
-        clearTimeout(this._shadowArmyButtonRetryTimeout);
-        this._shadowArmyButtonRetryTimeout = null;
-      }
-      const retryCount = (this._shadowArmyButtonRetryCount || 0) + 1;
-      this._shadowArmyButtonRetryCount = retryCount;
-      const delay = Math.min(1000 * retryCount, 5000);
-      this._shadowArmyButtonRetryTimeout = setTimeout(() => {
-        this._shadowArmyButtonRetryTimeout = null;
-        this.createShadowArmyButton();
-      }, delay);
+  async createShadowArmyButton() {
+    // Re-entrance guard: prevent infinite loops during button creation
+    if (this._creatingShadowArmyButton) {
       return;
     }
-    this._shadowArmyButtonRetryCount = 0;
+    this._creatingShadowArmyButton = true;
 
-    // Create ShadowArmy button with shadow/skull icon
-    const shadowArmyButton = document.createElement('button');
-    shadowArmyButton.className = 'shadow-army-button';
-    shadowArmyButton.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z"></path>
-        <circle cx="9" cy="9" r="1.5" fill="currentColor"></circle>
-        <circle cx="15" cy="9" r="1.5" fill="currentColor"></circle>
-        <path d="M8 14c1.5 2 4.5 2 6 0"></path>
-        <path d="M12 18v-2"></path>
-        <path d="M8 10l-2-2M16 10l2-2"></path>
-      </svg>
+    try {
+      // Remove existing button first to avoid duplicates
+      const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
+      if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
+      this.shadowArmyButton = null;
+
+      const toolbar = this.findToolbar();
+      if (!toolbar) {
+        // Retry with exponential backoff
+        // Clear any existing retry timeout before scheduling a new one
+        if (this._shadowArmyButtonRetryTimeout) {
+          clearTimeout(this._shadowArmyButtonRetryTimeout);
+          this._shadowArmyButtonRetryTimeout = null;
+        }
+        const retryCount = (this._shadowArmyButtonRetryCount || 0) + 1;
+        this._shadowArmyButtonRetryCount = retryCount;
+        const delay = Math.min(1000 * retryCount, 5000);
+        this._shadowArmyButtonRetryTimeout = setTimeout(() => {
+          this._shadowArmyButtonRetryTimeout = null;
+          this._creatingShadowArmyButton = false;
+          this.createShadowArmyButton();
+        }, delay);
+        return;
+      }
+      this._shadowArmyButtonRetryCount = 0;
+
+      // Create ShadowArmy button with shadow/skull icon
+      const shadowArmyButton = document.createElement('button');
+      shadowArmyButton.className = 'shadow-army-button';
+      // Enhanced SVG with dynamic shadow count badge
+      // Get count from IndexedDB if available, otherwise fallback to settings
+      let shadowCount = 0;
+      if (this.storageManager && this.storageManager.getTotalCount) {
+        try {
+          shadowCount = await this.storageManager.getTotalCount();
+        } catch (error) {
+          shadowCount = this.settings.shadows?.length || 0;
+        }
+      } else {
+        shadowCount = this.settings.shadows?.length || 0;
+      }
+
+      shadowArmyButton.innerHTML = `
+      <div style="position: relative;">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+          <circle cx="9" cy="7" r="4"></circle>
+          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+        </svg>
+        ${
+          shadowCount > 0
+            ? `<span style="
+          position: absolute;
+          top: -4px;
+          right: -6px;
+          background: #8b5cf6;
+          color: white;
+          border-radius: 8px;
+          padding: 1px 4px;
+          font-size: 9px;
+          font-weight: bold;
+          min-width: 14px;
+          text-align: center;
+        ">${shadowCount > 999 ? '999+' : shadowCount}</span>`
+            : ''
+        }
+      </div>
     `;
-    shadowArmyButton.title = 'Shadow Army';
-    shadowArmyButton.addEventListener('click', () => this.openShadowArmyUI());
+      shadowArmyButton.title = `Shadow Army (${shadowCount} shadows)`;
+      shadowArmyButton.addEventListener('click', () => this.openShadowArmyUI());
 
-    const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
-    const titleBtn = toolbar.querySelector('.tm-title-button');
-    const appsButton = Array.from(toolbar.children).find(
-      (el) =>
-        el.querySelector('[class*="apps"]') ||
-        el.getAttribute('aria-label')?.toLowerCase().includes('app')
-    );
+      const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
+      const titleBtn = toolbar.querySelector('.tm-title-button');
+      const appsButton = Array.from(toolbar.children).find(
+        (el) =>
+          el.querySelector('[class*="apps"]') ||
+          el.getAttribute('aria-label')?.toLowerCase().includes('app')
+      );
 
-    // Insert ShadowArmy button after Skill Tree (third position)
-    let inserted = false;
+      // Insert ShadowArmy button after Skill Tree (third position)
+      let inserted = false;
 
-    if (skillTreeBtn && skillTreeBtn.parentElement === toolbar) {
-      // Insert after Skill Tree button
-      toolbar.insertBefore(shadowArmyButton, skillTreeBtn.nextSibling);
-      inserted = true;
-    } else if (titleBtn && titleBtn.parentElement === toolbar) {
-      // Insert after Title button
-      toolbar.insertBefore(shadowArmyButton, titleBtn.nextSibling);
-      inserted = true;
-    } else if (appsButton && appsButton.parentElement === toolbar) {
-      // Insert before apps button
-      toolbar.insertBefore(shadowArmyButton, appsButton);
-      inserted = true;
+      if (skillTreeBtn && skillTreeBtn.parentElement === toolbar) {
+        // Insert after Skill Tree button
+        toolbar.insertBefore(shadowArmyButton, skillTreeBtn.nextSibling);
+        inserted = true;
+      } else if (titleBtn && titleBtn.parentElement === toolbar) {
+        // Insert after Title button
+        toolbar.insertBefore(shadowArmyButton, titleBtn.nextSibling);
+        inserted = true;
+      } else if (appsButton && appsButton.parentElement === toolbar) {
+        // Insert before apps button
+        toolbar.insertBefore(shadowArmyButton, appsButton);
+        inserted = true;
+      }
+
+      // Fallback: append to end if couldn't find reference buttons
+      if (!inserted) {
+        toolbar.appendChild(shadowArmyButton);
+      }
+
+      // Store reference
+      this.shadowArmyButton = shadowArmyButton;
+
+      // Ensure button is visible
+      shadowArmyButton.style.display = 'flex';
+
+      // Observe toolbar for changes
+      this.observeToolbar(toolbar);
+
+      console.log('[ShadowArmy] Button created:', {
+        shadowArmyButton: !!this.shadowArmyButton,
+        toolbar: !!toolbar,
+      });
+    } finally {
+      // Always clear the creation flag
+      this._creatingShadowArmyButton = false;
     }
-
-    // Fallback: append to end if couldn't find reference buttons
-    if (!inserted) {
-      toolbar.appendChild(shadowArmyButton);
-    }
-
-    // Store reference
-    this.shadowArmyButton = shadowArmyButton;
-
-    // Ensure button is visible
-    shadowArmyButton.style.display = 'flex';
-
-    // Observe toolbar for changes
-    this.observeToolbar(toolbar);
-
-    console.log('[ShadowArmy] Button created:', {
-      shadowArmyButton: !!this.shadowArmyButton,
-      toolbar: !!toolbar,
-    });
   }
 
   /**
@@ -3069,27 +3971,38 @@ module.exports = class ShadowArmy {
       this.toolbarObserver.disconnect();
     }
 
-    // Check if button exists in toolbar
-    const checkButton = () => {
-      const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
+    // Clear any existing interval check
+    if (this.toolbarCheckInterval) {
+      clearInterval(this.toolbarCheckInterval);
+      this.toolbarCheckInterval = null;
+    }
 
-      if (!shadowBtnExists) {
-        console.log('[ShadowArmy] Button missing, recreating...');
-        this.createShadowArmyButton();
-      }
-    };
+    // Clear any existing timeout
+    if (this._recreateTimeout) {
+      clearTimeout(this._recreateTimeout);
+      this._recreateTimeout = null;
+    }
 
+    // Simple check: if button removed, recreate it immediately
+    // Matches SkillTree's successful pattern
     this.toolbarObserver = new MutationObserver(() => {
-      checkButton();
+      // Clear any pending timeout to debounce rapid changes
+      if (this._recreateTimeout) {
+        clearTimeout(this._recreateTimeout);
+      }
+
+      // Use instance variable so timeout persists
+      this._recreateTimeout = setTimeout(() => {
+        const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
+        if (!shadowBtnExists && !this._creatingShadowArmyButton) {
+          console.log('[ShadowArmy] Button missing, recreating...');
+          this.createShadowArmyButton();
+        }
+        this._recreateTimeout = null;
+      }, 100);
     });
 
     this.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
-
-    // Also check periodically as fallback
-    if (this.toolbarCheckInterval) {
-      clearInterval(this.toolbarCheckInterval);
-    }
-    this.toolbarCheckInterval = setInterval(checkButton, 2000);
   }
 
   /**
@@ -3107,6 +4020,10 @@ module.exports = class ShadowArmy {
     if (this.toolbarCheckInterval) {
       clearInterval(this.toolbarCheckInterval);
       this.toolbarCheckInterval = null;
+    }
+    if (this._recreateTimeout) {
+      clearTimeout(this._recreateTimeout);
+      this._recreateTimeout = null;
     }
   }
 
@@ -3133,7 +4050,6 @@ module.exports = class ShadowArmy {
         shadows = this.settings.shadows || [];
       }
 
-      const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
       const total = shadows.length;
 
       // Create modal similar to TitleManager/SkillTree
@@ -3154,17 +4070,40 @@ module.exports = class ShadowArmy {
       `;
 
       // Filter state
-      let currentFilter = 'all'; // all, favorites, rank, role
+      let currentFilter = 'all'; // all, generals, rank, role
       let currentRankFilter = '';
       let currentRoleFilter = '';
       let searchQuery = '';
 
+      // Baseline stats for rank-up calculations
+      const baselineStats = {
+        E: 10,
+        D: 25,
+        C: 50,
+        B: 100,
+        A: 200,
+        S: 400,
+        SS: 800,
+        SSS: 1600,
+        Monarch: 3200,
+      };
+
       const renderModal = () => {
+        // Calculate generals (top 7 strongest) - DYNAMIC, recalculates on each render
+        shadows.forEach((shadow) => {
+          if (!shadow.strength || shadow.strength === 0) {
+            const effectiveStats = this.getShadowEffectiveStats(shadow);
+            shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+          }
+        });
+        const sortedByPower = [...shadows].sort((a, b) => (b.strength || 0) - (a.strength || 0));
+        const generalIds = new Set(sortedByPower.slice(0, 7).map((s) => s.id));
+
         let filteredShadows = shadows;
 
         // Apply filters
-        if (currentFilter === 'favorites') {
-          filteredShadows = filteredShadows.filter((s) => favoriteIds.has(s.id));
+        if (currentFilter === 'generals') {
+          filteredShadows = filteredShadows.filter((s) => generalIds.has(s.id));
         }
         if (currentRankFilter) {
           filteredShadows = filteredShadows.filter((s) => s.rank === currentRankFilter);
@@ -3248,16 +4187,16 @@ module.exports = class ShadowArmy {
                   color: white;
                   cursor: pointer;
                 ">All (${total})</button>
-                <button class="sa-filter-btn" data-filter="favorites" style="
+                <button class="sa-filter-btn" data-filter="generals" style="
                   padding: 6px 12px;
                   background: ${
-                    currentFilter === 'favorites' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'
+                    currentFilter === 'generals' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'
                   };
                   border: 1px solid #8b5cf6;
                   border-radius: 6px;
                   color: white;
                   cursor: pointer;
-                ">Favorites (${favoriteIds.size})</button>
+                ">👑 Generals (7)</button>
                 <select id="sa-rank-filter" style="
                   padding: 6px 12px;
                   background: rgba(139, 92, 246, 0.2);
@@ -3305,11 +4244,83 @@ module.exports = class ShadowArmy {
                 ">
               </div>
               <div style="color: #999; font-size: 12px;">
-                Showing ${filteredShadows.length} of ${total} shadows
+                Showing ${Math.min(50, filteredShadows.length)} of ${
+          filteredShadows.length
+        } filtered (${total} total)
+              </div>
+            </div>
+
+            <!-- Army Summary Dashboard -->
+            <div style="
+              background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.1));
+              border: 1px solid #8b5cf6;
+              border-radius: 8px;
+              padding: 12px;
+              margin-bottom: 12px;
+            ">
+              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-bottom: 8px;">
+                <div style="text-align: center;">
+                  <div style="color: #8b5cf6; font-size: 20px; font-weight: bold;">${
+                    shadows.length
+                  }</div>
+                  <div style="color: #999; font-size: 11px;">Total Shadows</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="color: #34d399; font-size: 20px; font-weight: bold;">${Math.floor(
+                    shadows.reduce((sum, s) => sum + (s.level || 1), 0) /
+                      Math.max(1, shadows.length)
+                  )}</div>
+                  <div style="color: #999; font-size: 11px;">Avg Level</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="color: #fbbf24; font-size: 20px; font-weight: bold;">${
+                    shadows.filter((s) => {
+                      const stats = this.getShadowEffectiveStats(s);
+                      const avg =
+                        (stats.strength +
+                          stats.agility +
+                          stats.intelligence +
+                          stats.vitality +
+                          stats.luck) /
+                        5;
+                      const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
+                      const idx = shadowRanks.indexOf(s.rank);
+                      const next = shadowRanks[idx + 1];
+                      const baseline = baselineStats[next] || 9999;
+                      return next && avg >= baseline * 0.8;
+                    }).length
+                  }</div>
+                  <div style="color: #999; font-size: 11px;">Ready Rank-Up</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${Math.floor(
+                    shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0)
+                  )}h</div>
+                  <div style="color: #999; font-size: 11px;">Total Combat</div>
+                </div>
+              </div>
+              <div style="font-size: 10px; color: #888; text-align: center;">
+                ${shadows.filter((s) => s.rank === 'SSS').length} SSS |
+                ${shadows.filter((s) => s.rank === 'SS').length} SS |
+                ${shadows.filter((s) => s.rank === 'S').length} S |
+                ${shadows.filter((s) => s.rank === 'A').length} A |
+                ${shadows.filter((s) => s.rank === 'B').length} B |
+                ${shadows.filter((s) => s.rank === 'C').length} C |
+                ${shadows.filter((s) => s.rank === 'D').length} D |
+                ${shadows.filter((s) => s.rank === 'E').length} E
               </div>
             </div>
 
             <div style="max-height: 60vh; overflow-y: auto;">
+              ${
+                filteredShadows.length > 50
+                  ? `
+                <div style="background: rgba(251, 191, 36, 0.2); padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; color: #fbbf24; text-align: center;">
+                  Showing first 50 of ${filteredShadows.length} shadows (use filters to narrow down)
+                </div>
+              `
+                  : ''
+              }
               ${
                 filteredShadows.length === 0
                   ? `
@@ -3318,48 +4329,166 @@ module.exports = class ShadowArmy {
                 </div>
               `
                   : filteredShadows
+                      .slice(0, 50) // Pagination: Show first 50 for performance
                       .map((shadow) => {
-                        const isFavorite = favoriteIds.has(shadow.id);
+                        const isGeneral = generalIds.has(shadow.id);
+
+                        // Calculate effective stats (base + growth + natural)
+                        const effectiveStats = this.getShadowEffectiveStats(shadow);
+                        const avgStats =
+                          (effectiveStats.strength +
+                            effectiveStats.agility +
+                            effectiveStats.intelligence +
+                            effectiveStats.vitality +
+                            effectiveStats.luck) /
+                          5;
+
+                        // XP progress to next level
+                        const xpNeeded = this.getShadowXpForNextLevel(
+                          shadow.level || 1,
+                          shadow.rank
+                        );
+                        const xpProgress = ((shadow.xp || 0) / xpNeeded) * 100;
+
+                        // Rank-up readiness
+                        const baselineStats = {
+                          E: 10,
+                          D: 25,
+                          C: 50,
+                          B: 100,
+                          A: 200,
+                          S: 400,
+                          SS: 800,
+                          SSS: 1600,
+                          Monarch: 3200,
+                        };
+                        const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
+                        const currentRankIndex = shadowRanks.indexOf(shadow.rank);
+                        const nextRank = shadowRanks[currentRankIndex + 1];
+                        const nextBaseline = baselineStats[nextRank] || 9999;
+                        const rankUpProgress = (avgStats / (nextBaseline * 0.8)) * 100;
+                        const canRankUp = nextRank && avgStats >= nextBaseline * 0.8;
+
+                        // Growth indicators
+                        const naturalGrowth = shadow.naturalGrowthStats || {};
+                        const hasNaturalGrowth = (naturalGrowth.strength || 0) > 0;
+                        const combatTime = Math.floor((shadow.totalCombatTime || 0) * 10) / 10;
+
                         return `
                   <div class="sa-shadow-item" data-shadow-id="${shadow.id}" style="
                     background: ${
-                      isFavorite ? 'rgba(139, 92, 246, 0.1)' : 'rgba(255, 255, 255, 0.05)'
+                      isGeneral ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255, 255, 255, 0.05)'
                     };
-                    border: 1px solid ${isFavorite ? '#8b5cf6' : '#444'};
+                    border: 2px solid ${isGeneral ? '#fbbf24' : '#444'};
                     border-radius: 8px;
                     padding: 12px;
-                    margin-bottom: 8px;
-                    display: flex;
-                    align-items: center;
-                    gap: 12px;
+                    margin-bottom: 10px;
+                    ${isGeneral ? 'box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);' : ''}
                   ">
-                    <button class="sa-favorite-btn" data-shadow-id="${shadow.id}" style="
-                      background: transparent;
-                      border: none;
-                      color: ${isFavorite ? '#fbbf24' : '#666'};
-                      font-size: 20px;
-                      cursor: pointer;
-                      padding: 0;
-                      width: 24px;
-                      height: 24px;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                    ">${isFavorite ? '★' : '☆'}</button>
-                    <div style="flex: 1;">
-                      <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 4px;">
-                        <span style="color: #8b5cf6; font-weight: bold;">${shadow.rank}-Rank</span>
-                        <span style="color: #999;">${
-                          shadow.roleName || shadow.role || 'Unknown'
-                        }</span>
-                        <span style="color: #34d399; margin-left: auto;">Power: ${
-                          shadow.strength || 0
-                        }</span>
-                      </div>
-                      <div style="color: #666; font-size: 12px;">
-                        Level ${shadow.level || 1} • Extracted: ${new Date(
-                          shadow.extractedAt
-                        ).toLocaleString()}
+                    <div style="display: flex; align-items: start; gap: 8px;">
+                      ${
+                        isGeneral
+                          ? `
+                        <div style="
+                          background: linear-gradient(135deg, #fbbf24, #f59e0b);
+                          color: #000;
+                          font-size: 16px;
+                          font-weight: bold;
+                          padding: 4px 6px;
+                          border-radius: 6px;
+                          width: 32px;
+                          height: 32px;
+                          display: flex;
+                          align-items: center;
+                          justify-content: center;
+                        ">👑</div>
+                      `
+                          : ''
+                      }
+
+                      <div style="flex: 1;">
+                        <!-- Header -->
+                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
+                          ${
+                            isGeneral
+                              ? '<span style="color: #fbbf24; font-size: 11px; font-weight: bold; background: rgba(251, 191, 36, 0.2); padding: 2px 6px; border-radius: 4px;">GENERAL</span>'
+                              : ''
+                          }
+                          <span style="color: #8b5cf6; font-weight: bold; font-size: 14px;">${
+                            shadow.rank
+                          }</span>
+                          <span style="color: #999; font-size: 13px;">${
+                            shadow.roleName || shadow.role || 'Unknown'
+                          }</span>
+                          ${
+                            canRankUp
+                              ? '<span style="color: #34d399; font-size: 11px; background: rgba(52, 211, 153, 0.2); padding: 2px 6px; border-radius: 4px;">RANK UP!</span>'
+                              : ''
+                          }
+                          <span style="color: #34d399; margin-left: auto; font-size: 13px; font-weight: bold;">⚡ ${
+                            shadow.strength || 0
+                          }</span>
+                        </div>
+
+                        <!-- Level & XP Bar -->
+                        <div style="margin-bottom: 6px;">
+                          <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 2px;">
+                            <span>Level ${shadow.level || 1}</span>
+                            <span>${shadow.xp || 0} / ${xpNeeded} XP</span>
+                          </div>
+                          <div style="background: rgba(0,0,0,0.3); height: 6px; border-radius: 3px; overflow: hidden;">
+                            <div style="background: linear-gradient(90deg, #8b5cf6, #a78bfa); width: ${xpProgress}%; height: 100%; transition: width 0.3s;"></div>
+                          </div>
+                        </div>
+
+                        <!-- Stats Breakdown -->
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 6px; font-size: 10px;">
+                          <div style="text-align: center; background: rgba(239, 68, 68, 0.15); padding: 3px; border-radius: 3px;">
+                            <div style="color: #ef4444; font-weight: bold;">STR</div>
+                            <div style="color: #999;">${effectiveStats.strength || 0}</div>
+                          </div>
+                          <div style="text-align: center; background: rgba(34, 197, 94, 0.15); padding: 3px; border-radius: 3px;">
+                            <div style="color: #22c55e; font-weight: bold;">AGI</div>
+                            <div style="color: #999;">${effectiveStats.agility || 0}</div>
+                          </div>
+                          <div style="text-align: center; background: rgba(59, 130, 246, 0.15); padding: 3px; border-radius: 3px;">
+                            <div style="color: #3b82f6; font-weight: bold;">INT</div>
+                            <div style="color: #999;">${effectiveStats.intelligence || 0}</div>
+                          </div>
+                          <div style="text-align: center; background: rgba(168, 85, 247, 0.15); padding: 3px; border-radius: 3px;">
+                            <div style="color: #a855f7; font-weight: bold;">VIT</div>
+                            <div style="color: #999;">${effectiveStats.vitality || 0}</div>
+                          </div>
+                          <div style="text-align: center; background: rgba(251, 191, 36, 0.15); padding: 3px; border-radius: 3px;">
+                            <div style="color: #fbbf24; font-weight: bold;">LUK</div>
+                            <div style="color: #999;">${effectiveStats.luck || 0}</div>
+                          </div>
+                        </div>
+
+                        <!-- Growth Indicators -->
+                        <div style="display: flex; gap: 8px; font-size: 10px; color: #666;">
+                          ${
+                            combatTime > 0
+                              ? `<span style="color: #34d399;">⏱ ${combatTime}h combat</span>`
+                              : ''
+                          }
+                          ${
+                            hasNaturalGrowth
+                              ? `<span style="color: #fbbf24;">+${
+                                  naturalGrowth.strength || 0
+                                } natural</span>`
+                              : ''
+                          }
+                          ${
+                            canRankUp
+                              ? `<span style="color: #34d399;">→ ${nextRank}</span>`
+                              : nextRank
+                              ? `<span style="color: #666;">${Math.floor(
+                                  rankUpProgress
+                                )}% to ${nextRank}</span>`
+                              : ''
+                          }
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -3398,18 +4527,7 @@ module.exports = class ShadowArmy {
           renderModal();
         });
 
-        modal.querySelectorAll('.sa-favorite-btn').forEach((btn) => {
-          btn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            const shadowId = btn.dataset.shadowId;
-            if (this.toggleFavorite) {
-              this.toggleFavorite(shadowId);
-              // Refresh modal
-              const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
-              renderModal();
-            }
-          });
-        });
+        // Note: No favorite toggle buttons - generals are auto-selected by power
 
         // Close on backdrop click
         modal.addEventListener('click', (e) => {
@@ -3422,6 +4540,26 @@ module.exports = class ShadowArmy {
       renderModal();
       document.body.appendChild(modal);
       this.shadowArmyModal = modal;
+
+      // Real-time updates: Re-fetch and re-render every 3 seconds
+      const autoRefreshInterval = setInterval(async () => {
+        if (!this.shadowArmyModal || !document.body.contains(modal)) {
+          clearInterval(autoRefreshInterval);
+          return;
+        }
+
+        try {
+          // Re-fetch shadows for real-time stats
+          if (this.storageManager && this.storageManager.getShadows) {
+            shadows = await this.storageManager.getShadows({}, 0, 10000);
+            renderModal();
+          }
+        } catch (error) {
+          console.error('[ShadowArmy] Error refreshing UI:', error);
+        }
+      }, 3000); // Refresh every 3 seconds for real-time updates
+
+      console.log('[ShadowArmy] UI opened with real-time updates (3s refresh)');
     } catch (error) {
       console.error('ShadowArmy: Failed to open UI', error);
     }
@@ -3509,6 +4647,9 @@ module.exports = class ShadowArmy {
           <h3>Extraction Config</h3>
           <div>Min Base Chance: ${(cfg.minBaseChance * 100).toFixed(2)}%</div>
           <div>Chance per INT: ${(cfg.chancePerInt * 100).toFixed(2)}% / INT</div>
+          <div>Max Extraction Chance (Hard Cap): ${(
+            (cfg.maxExtractionChance || 0.15) * 100
+          ).toFixed(1)}%</div>
           <div>Max Extractions / Minute: ${cfg.maxExtractionsPerMinute}</div>
           <div>Special ARISE Max Chance: ${(cfg.specialMaxChance * 100).toFixed(1)}%</div>
           <div>Special ARISE Max / Day: ${cfg.specialMaxPerDay}</div>
