@@ -2383,17 +2383,22 @@ module.exports = class Dungeons {
       // Assign top shadows for this dungeon
       const assignedShadows = shadowPool.slice(0, assignedShadowCount);
 
-      // Log shadow rank distribution
+      // Shadow army composition tracking
       const shadowRankCounts = {};
       assignedShadows.forEach((s) => {
         shadowRankCounts[s.rank] = (shadowRankCounts[s.rank] || 0) + 1;
       });
-      const _rankDistribution = Object.entries(shadowRankCounts)
+      const rankDistribution = Object.entries(shadowRankCounts)
         .map(([rank, count]) => `${rank}:${count}`)
         .join(', ');
 
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowHP = dungeon.shadowHP || {}; // Object, not Map
+      
+      // Log shadow army composition for this attack wave
+      console.log(
+        `[Dungeons] Shadow Attack Wave - Army composition: ${rankDistribution} (${assignedShadows.length} total)`
+      );
 
       // Initialize shadow combat data if not exists
       // Each shadow has individual cooldowns and behaviors for chaotic combat
@@ -2450,10 +2455,17 @@ module.exports = class Dungeons {
       }
       dungeon.shadowHP = shadowHP;
 
-      // Count alive shadows for logging (from assigned shadows)
-      const _aliveShadowCount = assignedShadows.filter(
+      // Count alive shadows for combat readiness check
+      const aliveShadowCount = assignedShadows.filter(
         (s) => !deadShadows.has(s.id) && shadowHP[s.id]?.hp > 0
       ).length;
+      
+      // Log combat readiness
+      if (aliveShadowCount < assignedShadows.length * 0.5) {
+        console.warn(
+          `[Dungeons] WARNING: Low shadow HP! Only ${aliveShadowCount}/${assignedShadows.length} shadows combat-ready (${Math.floor(aliveShadowCount / assignedShadows.length * 100)}%)`
+        );
+      }
 
       // Prepare target stats
       const bossStats = {
@@ -2467,12 +2479,17 @@ module.exports = class Dungeons {
       const aliveMobs = dungeon.mobs.activeMobs.filter((m) => m.hp > 0);
       const bossAlive = dungeon.boss.hp > 0;
 
-      // Combat tracking (unused - for future analytics)
-      let _totalBossDamage = 0;
-      let _totalMobDamage = 0;
-      let _shadowsAttackedBoss = 0;
-      let _shadowsAttackedMobs = 0;
-      let _mobsKilled = 0;
+      // Combat tracking (for completion analytics)
+      if (!dungeon.combatAnalytics) {
+        dungeon.combatAnalytics = {
+          totalBossDamage: 0,
+          totalMobDamage: 0,
+          shadowsAttackedBoss: 0,
+          shadowsAttackedMobs: 0,
+          mobsKilledThisWave: 0,
+        };
+      }
+      const analytics = dungeon.combatAnalytics;
       const now = Date.now();
 
       // DYNAMIC CHAOTIC COMBAT: Each shadow independently chooses target (95% mobs, 5% boss)
@@ -2550,16 +2567,16 @@ module.exports = class Dungeons {
         // Apply damage to target
         if (targetType === 'boss') {
           await this.applyDamageToBoss(channelKey, shadowDamage, 'shadow', shadow.id);
-          _totalBossDamage += shadowDamage;
-          _shadowsAttackedBoss++;
+          analytics.totalBossDamage += shadowDamage;
+          analytics.shadowsAttackedBoss++;
         } else {
           targetEnemy.hp = Math.max(0, targetEnemy.hp - shadowDamage);
-          _totalMobDamage += shadowDamage;
-          _shadowsAttackedMobs++;
+          analytics.totalMobDamage += shadowDamage;
+          analytics.shadowsAttackedMobs++;
 
           // Track contribution if mob killed
           if (targetEnemy.hp <= 0) {
-            _mobsKilled++;
+            analytics.mobsKilledThisWave++;
             dungeon.mobs.killed += 1;
             dungeon.mobs.remaining = Math.max(0, dungeon.mobs.remaining - 1);
 
@@ -2644,73 +2661,6 @@ module.exports = class Dungeons {
     return this.baselineStats[rank] || this.baselineStats['E'];
   }
 
-  /**
-   * Check if shadow should rank up based on stats vs baseline
-   * Returns true if shadow's average stats are >= 80% of next rank's baseline
-   */
-  shouldShadowRankUp(shadow) {
-    if (!shadow || !shadow.rank) return false;
-
-    const currentRank = shadow.rank;
-    const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
-    const currentRankIndex = shadowRanks.indexOf(currentRank);
-
-    // Can't rank up if already max rank
-    if (currentRankIndex === -1 || currentRankIndex >= shadowRanks.length - 1) {
-      return false;
-    }
-
-    const nextRank = shadowRanks[currentRankIndex + 1];
-    const nextBaseline = this.getBaselineStats(nextRank);
-
-    // Get shadow's effective stats (base + growth)
-    let shadowStats = {
-      strength: shadow.strength || 0,
-      agility: shadow.agility || 0,
-      intelligence: shadow.intelligence || 0,
-      vitality: shadow.vitality || 0,
-      luck: shadow.luck || 0,
-    };
-
-    if (this.shadowArmy?.getShadowEffectiveStats) {
-      const effectiveStats = this.shadowArmy.getShadowEffectiveStats(shadow);
-      shadowStats = effectiveStats;
-    }
-
-    // Calculate average stat value
-    const avgStat =
-      (shadowStats.strength +
-        shadowStats.agility +
-        shadowStats.intelligence +
-        shadowStats.vitality +
-        shadowStats.luck) /
-      5;
-
-    // Calculate average baseline for next rank
-    const avgBaseline =
-      (nextBaseline.strength +
-        nextBaseline.agility +
-        nextBaseline.intelligence +
-        nextBaseline.vitality +
-        nextBaseline.luck) /
-      5;
-
-    // Should rank up if average stats are >= 80% of next rank's baseline
-    const threshold = avgBaseline * 0.8;
-    const shouldRankUp = avgStat >= threshold;
-
-    if (shouldRankUp) {
-      console.log(
-        `[Dungeons] Shadow ${
-          shadow.name
-        } ready for rank up: ${currentRank} → ${nextRank} (avg stats: ${Math.floor(
-          avgStat
-        )} >= threshold: ${Math.floor(threshold)})`
-      );
-    }
-
-    return shouldRankUp;
-  }
 
   // ============================================================================
   // BOSS & MOB ATTACKS
@@ -2984,9 +2934,6 @@ module.exports = class Dungeons {
 
     if (source === 'user') {
       // User attacks mobs
-      const _userStats = this.soloLevelingStats?.settings?.stats || {};
-      const _userRank = this.soloLevelingStats?.settings?.rank || 'E';
-
       for (const mob of dungeon.mobs.activeMobs) {
         if (mob.hp <= 0) continue;
 
@@ -3317,28 +3264,8 @@ module.exports = class Dungeons {
     return rankCosts[shadowRank] || 50; // Default 50 if rank not found
   }
 
-  /**
-   * Get rank priority for resurrection
-   * Higher rank = higher priority (resurrected first)
-   */
-  getResurrectionPriority(shadowRank) {
-    const ranks = [
-      'E',
-      'D',
-      'C',
-      'B',
-      'A',
-      'S',
-      'SS',
-      'SSS',
-      'SSS+',
-      'NH',
-      'Monarch',
-      'Monarch+',
-      'Shadow Monarch',
-    ];
-    return ranks.indexOf(shadowRank);
-  }
+  // getResurrectionPriority() removed - not needed for current auto-resurrection system
+  // Resurrection happens immediately on death, no priority queue needed
 
   /**
    * Attempt automatic resurrection when shadow dies
@@ -3377,64 +3304,8 @@ module.exports = class Dungeons {
     return true;
   }
 
-  async reviveShadows(channelKey) {
-    const deadShadows = this.deadShadows.get(channelKey);
-    if (!deadShadows || deadShadows.size === 0) {
-      this.showToast('No dead shadows to revive', 'info');
-      return;
-    }
-
-    const reviveCost = deadShadows.size * this.settings.shadowReviveCost;
-    if (this.settings.userMana < reviveCost) {
-      this.showToast(
-        `Not enough mana! Need ${reviveCost}, have ${this.settings.userMana}`,
-        'error'
-      );
-      return;
-    }
-
-    this.settings.userMana -= reviveCost;
-
-    // Restore shadow HP to full
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (dungeon) {
-      // Track revive count for summary
-      dungeon.shadowRevives = (dungeon.shadowRevives || 0) + deadShadows.size;
-
-      const shadowHP = dungeon.shadowHP || {}; // Object, not Map
-      const allShadows = await this.getAllShadows();
-
-      for (const shadowId of deadShadows) {
-        const shadow = allShadows.find((s) => s.id === shadowId);
-        if (shadow) {
-          // Get effective stats (base + growth) for accurate HP calculation
-          let shadowVitality = shadow.vitality || shadow.strength || 50;
-
-          // Use ShadowArmy's getShadowEffectiveStats if available
-          if (this.shadowArmy?.getShadowEffectiveStats) {
-            const effectiveStats = this.shadowArmy.getShadowEffectiveStats(shadow);
-            shadowVitality = effectiveStats.vitality || shadowVitality;
-          } else {
-            // Fallback: calculate effective stats manually
-            const baseStats = shadow.baseStats || {};
-            const growthStats = shadow.growthStats || {};
-            shadowVitality =
-              (baseStats.vitality || 0) + (growthStats.vitality || 0) || shadowVitality;
-          }
-
-          const maxHP = this.calculateHP(shadowVitality, shadow.rank || 'E');
-          shadowHP[shadowId] = { hp: maxHP, maxHp: maxHP };
-        }
-      }
-      dungeon.shadowHP = shadowHP;
-    }
-
-    deadShadows.clear();
-    this.deadShadows.set(channelKey, deadShadows);
-    this.updateUserHPBar();
-    this.saveSettings();
-    this.showToast(`Revived all shadows! (-${reviveCost} mana)`, 'success');
-  }
+  // Manual mass-revive function removed - superseded by automatic resurrection system
+  // Automatic resurrection happens when shadows die (see attemptAutoResurrection)
 
   // ============================================================================
   // DUNGEON COMPLETION
@@ -3447,6 +3318,7 @@ module.exports = class Dungeons {
     dungeon.failed = reason === 'timeout';
 
     // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
+    const combatAnalytics = dungeon.combatAnalytics || {};
     const summaryStats = {
       dungeonName: dungeon.name,
       dungeonRank: dungeon.rank,
@@ -3456,9 +3328,14 @@ module.exports = class Dungeons {
       shadowsLeveledUp: [],
       shadowsRankedUp: [],
       totalMobsKilled: dungeon.mobs.killed || 0,
-      shadowDeaths: this.deadShadows.get(channelKey)?.length || 0,
+      shadowDeaths: this.deadShadows.get(channelKey)?.size || 0,
       shadowRevives: dungeon.shadowRevives || 0,
       reason: reason,
+      // Combat analytics (NEW!)
+      totalBossDamage: combatAnalytics.totalBossDamage || 0,
+      totalMobDamage: combatAnalytics.totalMobDamage || 0,
+      shadowsAttackedBoss: combatAnalytics.shadowsAttackedBoss || 0,
+      shadowsAttackedMobs: combatAnalytics.shadowsAttackedMobs || 0,
     };
 
     // Grant XP to shadows based on their contributions (collects level-up and rank-up data)
@@ -3645,6 +3522,31 @@ module.exports = class Dungeons {
         this.showToast(batch2Lines.join('\n'), 'info');
       }
     }, 500);
+
+    // BATCH 2.5: Damage Analytics (NEW!)
+    if (stats.totalBossDamage > 0 || stats.totalMobDamage > 0) {
+      setTimeout(() => {
+        const batch25Lines = [];
+        batch25Lines.push(`Damage Analytics`);
+        
+        if (stats.totalBossDamage > 0) {
+          batch25Lines.push(`Boss Damage: ${stats.totalBossDamage.toLocaleString()}`);
+        }
+        
+        if (stats.totalMobDamage > 0) {
+          batch25Lines.push(`Mob Damage: ${stats.totalMobDamage.toLocaleString()}`);
+        }
+        
+        const totalDamage = stats.totalBossDamage + stats.totalMobDamage;
+        if (totalDamage > 0) {
+          batch25Lines.push(`Total Damage: ${totalDamage.toLocaleString()}`);
+        }
+
+        if (batch25Lines.length > 1) {
+          this.showToast(batch25Lines.join('\n'), 'info');
+        }
+      }, 750);
+    }
 
     // BATCH 3: Shadow Level-Ups
     if (stats.shadowsLeveledUp && stats.shadowsLeveledUp.length > 0) {
@@ -4546,83 +4448,21 @@ module.exports = class Dungeons {
   // ============================================================================
   // USER HP/MANA BARS
   // ============================================================================
-  createUserHPBar() {
-    // User HP/Mana bars are now displayed in SoloLevelingStats chat UI header
-    // This method is kept for compatibility but does nothing
-    return;
-  }
-
-  setupPanelWatcher() {
-    if (this.panelWatcher) return;
-
-    // Use multiple strategies to find the panel (most stable first)
-    const panel =
-      document.querySelector('section[aria-label="User area"]') ||
-      document.querySelector('section[aria-label*="User"]') ||
-      document.querySelector('[class^="panels_"]') ||
-      document.querySelector('[class*="panels"]');
-
-    // Only instantiate observer after finding panel or fallback to body
-    if (panel || document.body) {
-      // Watch for panel DOM changes and update position if panel moves
-      this.panelWatcher = new MutationObserver(() => {
-        // If HP bar was removed, recreate it
-        if (this.userHPBar && !this.userHPBar.parentNode) {
-          this.userHPBar = null;
-          this.createUserHPBar();
-          return;
-        }
-
-        // Update position if panel moved
-        if (this.userHPBar && this.userHPBarPositionUpdater) {
-          this.userHPBarPositionUpdater();
-        }
-      });
-
-      if (panel) {
-        this.panelWatcher.observe(panel, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['style', 'class'],
-        });
-      }
-
-      // Also observe body for panel changes
-      this.panelWatcher.observe(document.body, { childList: true, subtree: true });
-    }
-  }
-
-  stopPanelWatcher() {
-    if (this.panelWatcher) {
-      this.panelWatcher.disconnect();
-      this.panelWatcher = null;
-    }
-    if (this.userHPBarPositionInterval) {
-      clearInterval(this.userHPBarPositionInterval);
-      this.userHPBarPositionInterval = null;
-    }
-    if (this.userHPBarPositionUpdater) {
-      window.removeEventListener('resize', this.userHPBarPositionUpdater);
-      window.removeEventListener('scroll', this.userHPBarPositionUpdater);
-      this.userHPBarPositionUpdater = null;
-    }
-  }
-
+  // ============================================================================
+  // USER HP/MANA BARS - Legacy Code Removed
+  // ============================================================================
+  // User HP/Mana bars are now displayed by SoloLevelingStats plugin in chat UI header
+  // All HP bar creation, positioning, and update code has been removed
+  // HP/Mana calculations (calculateHP, calculateMana) are still used by resurrection system
+  
   updateUserHPBar() {
-    // User HP/Mana bars are now displayed in SoloLevelingStats chat UI header
-    // This method is kept for compatibility but does nothing
+    // Stub for compatibility - SoloLevelingStats handles HP/Mana display
     return;
   }
 
   removeUserHPBar() {
-    // User HP/Mana bars are now displayed in SoloLevelingStats chat UI header
-    // This method is kept for compatibility but does nothing
-    if (this.userHPBar) {
-      this.userHPBar.remove();
-      this.userHPBar = null;
-    }
-    this.stopPanelWatcher();
+    // Stub for compatibility - SoloLevelingStats handles HP/Mana display
+    return;
   }
 
   // ============================================================================
