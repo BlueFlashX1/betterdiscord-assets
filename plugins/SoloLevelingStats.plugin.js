@@ -2,11 +2,20 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Solo Leveling-inspired stats system that tracks Discord activity and rewards progression through levels, stats, achievements, and daily quests
- * @version 1.0.1
+ * @version 2.0.0
  * @authorId
  * @authorLink
  * @website
  * @source
+ *
+ * @changelog v2.0.0 (2025-12-03)
+ * - Added Shadow XP Share system - ALL shadows gain XP from user activities
+ * - Message XP sharing: 5% of user XP to all shadows
+ * - Quest XP sharing: 10% of user XP to all shadows
+ * - User keeps 100% XP (shadows get bonus XP on top)
+ * - Smart summary notifications (no spam)
+ * - Asynchronous processing (non-blocking)
+ * - Future: Achievement (15%), Dungeon (20%), Milestone (25%) sharing
  */
 
 module.exports = class SoloLevelingStats {
@@ -4628,7 +4637,7 @@ module.exports = class SoloLevelingStats {
       if (totalShadowsLeveled > 0 || totalShadowsRanked > 0) {
         let message = `Shadow Army Growth\n`;
         message += `${shadows.length} shadows gained ${shadowXPGain} XP`;
-        
+
         if (totalShadowsLeveled > 0) {
           message += `\n${totalShadowsLeveled} shadow(s) leveled up`;
         }

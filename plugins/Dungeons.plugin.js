@@ -2,18 +2,33 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 2.0.0
+ * @version 3.0.0
  *
  * Features:
- * - Random dungeon spawns per message (10% chance)
+ * - 9 themed biomes (Forest, Arctic, Volcano, Mountains, etc.)
+ * - Biome-specific magic beast spawns
+ * - Extended ranks: E-SSS, NH, Monarch, Monarch+, Shadow Monarch
  * - One dungeon per channel (across all servers)
  * - User can select which dungeon to participate in
  * - Shadow army attacks ALL dungeons simultaneously
- * - Shadows can die and be revived with mana
- * - Boss HP bars, user HP/Mana bars
- * - Continuous mob spawning
+ * - Shadows auto-resurrect with mana consumption
+ * - Boss HP bars with responsive design
+ * - Massive mob counts (2,000-150,000)
  * - IndexedDB storage for dungeon persistence
- * - Visual dungeon indicators and selection UI
+ * - Dragon restrictions (NH+ only)
+ * - Themed dungeon/boss names per biome
+ *
+ * @changelog v3.0.0 (2025-12-03)
+ * - Added 9 themed biomes with unique characteristics
+ * - Implemented beast family classification (10 families)
+ * - Extended rank system to Shadow Monarch
+ * - Dragon spawn restrictions (NH+ ranks only)
+ * - Themed dungeon/boss name generation
+ * - Massive mob HP scaling improvements (10-45x)
+ * - Boss HP multipliers per biome (4.5K-9K per shadow)
+ * - Responsive CSS for HP bars
+ * - Multi-line HP bar layout
+ * - Improved guild/channel switching
  */
 
 // ================================================================================

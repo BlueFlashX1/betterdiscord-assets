@@ -297,4 +297,3 @@ To adjust share rates, edit the `shareRates` object in `shareShadowXP()` method.
 ---
 
 **Your shadows grow with you! Keep grinding to build the ultimate shadow army!** 👑⚔️✨
-

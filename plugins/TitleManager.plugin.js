@@ -2,7 +2,11 @@
  * @name SoloLevelingTitleManager
  * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.0.1
+ * @version 1.0.2
+ *
+ * @changelog v1.0.2 (2025-12-03)
+ * - Code structure improvements (section headers)
+ * - Console log cleanup (removed verbose logs)
  */
 
 module.exports = class SoloLevelingTitleManager {

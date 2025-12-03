@@ -2,7 +2,11 @@
  * @name SoloLevelingToasts
  * @author BlueFlashX1
  * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.0.3
+ * @version 1.0.4
+ *
+ * @changelog v1.0.4 (2025-12-03)
+ * - Code structure improvements (section headers)
+ * - Performance optimizations
  */
 
 module.exports = class SoloLevelingToasts {

@@ -2,7 +2,12 @@
  * @name SkillTree
  * @author BlueFlashX1
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
- * @version 2.0.0
+ * @version 2.0.1
+ *
+ * @changelog v2.0.1 (2025-12-03)
+ * - Code structure improvements (section headers, better organization)
+ * - Console log cleanup (removed verbose debug logs)
+ * - Performance optimizations
  */
 
 module.exports = class SkillTree {

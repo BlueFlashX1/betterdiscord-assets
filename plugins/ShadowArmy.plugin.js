@@ -2,15 +2,33 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 1.0.2
+ * @version 2.0.0
  *
  * STORAGE: Uses IndexedDB for scalable storage (user-specific, supports 100,000+ shadows)
  * Features:
- * - User-specific storage (per Discord user ID)
- * - Exponential stat scaling between ranks
- * - Stats-influenced extraction probability
- * - Solo Leveling lore constraints (can't extract significantly stronger targets)
- * - Aggregation for performance (weak shadows aggregated, stats preserved)
+ * - 26 total shadow types (8 humanoid + 18 magic beast)
+ * - 100% magic beasts from dungeons, 100% humanoids from messages
+ * - Beast family classification (10 families)
+ * - Biome-specific extraction filtering
+ * - Automatic rank-up system
+ * - Individual shadow progression (level, XP, stats, growth)
+ * - Natural growth (combat-time based)
+ * - Generals system (top 7 strongest)
+ * - Auto-resurrection with mana costs
+ * - Dragon restrictions (NH+ ranks only)
+ * - Extended ranks to Shadow Monarch
+ *
+ * @changelog v2.0.0 (2025-12-03)
+ * - Added 10 new magic beast types (Orc, Naga, Titan, Giant, Elf, Demon, Ghoul, Ogre, Centipede, Yeti)
+ * - Implemented beast family classification system
+ * - 100% magic beast extraction from dungeons
+ * - Added rank restrictions (Dragons NH+, Titans A+, Demons B+, Wyverns S+)
+ * - Biome-based extraction filtering
+ * - Auto-rank-up when stats reach 80% of next rank
+ * - Auto-resurrection with exponential mana costs
+ * - Extended rank system to Shadow Monarch
+ * - Improved natural growth rates (10x base increase)
+ * - Enhanced role specialization for magic beasts
  */
 
 /**
