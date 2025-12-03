@@ -97,7 +97,6 @@ class ShadowStorageManager {
 
       request.onsuccess = () => {
         this.db = request.result;
-        console.log('ShadowStorageManager: Database opened successfully');
         resolve(this.db);
       };
 
@@ -1095,7 +1094,6 @@ module.exports = class ShadowArmy {
     // Start natural growth processing (runs every hour)
     this.startNaturalGrowthInterval();
 
-    console.log('ShadowArmy: Plugin started with natural growth system');
   }
 
   /**
@@ -1114,7 +1112,6 @@ module.exports = class ShadowArmy {
       this.processNaturalGrowthForAllShadows();
     }, 60 * 60 * 1000); // 1 hour
 
-    console.log('[ShadowArmy] Natural growth interval started (processes every hour)');
   }
 
   /**
@@ -1140,7 +1137,6 @@ module.exports = class ShadowArmy {
     if (this.naturalGrowthInterval) {
       clearInterval(this.naturalGrowthInterval);
       this.naturalGrowthInterval = null;
-      console.log('[ShadowArmy] Natural growth interval cleared');
     }
 
     // Close IndexedDB connection
@@ -2711,10 +2707,6 @@ module.exports = class ShadowArmy {
       });
     });
 
-    console.log(
-      `[ShadowArmy] Applied full buffs from ${generals.length} generals (top 7 strongest)`
-    );
-
     // Get user rank for aggregation
     const soloData = this.getSoloLevelingData();
     if (!soloData) {
@@ -3120,17 +3112,6 @@ module.exports = class ShadowArmy {
       // Recalculate shadow strength with new stats
       const effectiveStats = this.getShadowEffectiveStats(shadow);
       shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-
-      const totalGrowth = Math.round(baseGrowthPerHour * combatTimeHours);
-
-      // Convert to minutes for better readability
-      const combatMinutes = combatTimeHours * 60;
-      const timeDisplay =
-        combatTimeHours >= 1 ? `${combatTimeHours.toFixed(1)}h` : `${Math.floor(combatMinutes)}min`;
-
-      console.log(
-        `[ShadowArmy] Natural growth applied to ${roleKey} [${shadowRank}]: ~${totalGrowth} role-weighted growth (${timeDisplay} combat)`
-      );
 
       return true;
     }
@@ -3953,10 +3934,6 @@ module.exports = class ShadowArmy {
       // Observe toolbar for changes
       this.observeToolbar(toolbar);
 
-      console.log('[ShadowArmy] Button created:', {
-        shadowArmyButton: !!this.shadowArmyButton,
-        toolbar: !!toolbar,
-      });
     } finally {
       // Always clear the creation flag
       this._creatingShadowArmyButton = false;
@@ -3995,7 +3972,6 @@ module.exports = class ShadowArmy {
       this._recreateTimeout = setTimeout(() => {
         const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
         if (!shadowBtnExists && !this._creatingShadowArmyButton) {
-          console.log('[ShadowArmy] Button missing, recreating...');
           this.createShadowArmyButton();
         }
         this._recreateTimeout = null;
@@ -4559,7 +4535,6 @@ module.exports = class ShadowArmy {
         }
       }, 3000); // Refresh every 3 seconds for real-time updates
 
-      console.log('[ShadowArmy] UI opened with real-time updates (3s refresh)');
     } catch (error) {
       console.error('ShadowArmy: Failed to open UI', error);
     }

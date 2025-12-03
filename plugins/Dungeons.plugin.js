@@ -537,15 +537,15 @@ module.exports = class Dungeons {
     return 'default';
   }
 
-  loadSettings() {
+  async loadSettings() {
     try {
       const saved = BdApi.Data.load('Dungeons', 'settings');
       if (saved) {
         this.settings = { ...this.defaultSettings, ...saved };
         // Initialize user HP/Mana from stats if not set
-        this.initializeUserStats();
+        await this.initializeUserStats();
       } else {
-        this.initializeUserStats();
+        await this.initializeUserStats();
       }
     } catch (error) {
       console.error('Dungeons: Failed to load settings', error);
@@ -561,7 +561,7 @@ module.exports = class Dungeons {
     }
   }
 
-  initializeUserStats() {
+  async initializeUserStats() {
     // Calculate user HP from TOTAL EFFECTIVE VITALITY (including buffs) + SHADOW ARMY SIZE
     if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
       const totalStats =
@@ -583,7 +583,6 @@ module.exports = class Dungeons {
       const shadowArmyBonus = shadowCount * 25;
       this.settings.userMaxHP = baseHP + shadowArmyBonus;
 
-      console.log(`[Dungeons] User HP: ${baseHP} (VIT+rank) + ${shadowArmyBonus} (${shadowCount} shadows) = ${this.settings.userMaxHP} total`);
 
       if (!this.settings.userHP || this.settings.userHP === null) {
         this.settings.userHP = this.settings.userMaxHP;
@@ -609,7 +608,6 @@ module.exports = class Dungeons {
       const shadowArmyBonus = shadowCount * 50;
       this.settings.userMaxMana = baseMana + shadowArmyBonus;
 
-      console.log(`[Dungeons] User Mana: ${baseMana} (INT) + ${shadowArmyBonus} (${shadowCount} shadows) = ${this.settings.userMaxMana} total`);
 
       if (!this.settings.userMana || this.settings.userMana === null) {
         this.settings.userMana = this.settings.userMaxMana;
@@ -632,14 +630,14 @@ module.exports = class Dungeons {
     return 0;
   }
 
-  loadPluginReferences() {
+  async loadPluginReferences() {
     try {
       // Load SoloLevelingStats plugin
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (soloPlugin?.instance) {
         this.soloLevelingStats = soloPlugin.instance;
         // Initialize user stats after loading plugin reference
-        this.initializeUserStats();
+        await this.initializeUserStats();
 
         // Subscribe to stats changes to update HP/Mana bars
         if (typeof this.soloLevelingStats.on === 'function') {
@@ -1162,7 +1160,6 @@ module.exports = class Dungeons {
   async checkDungeonSpawn(channelKey, channelInfo) {
     // IMPORTANT: Only one dungeon per channel ID (prevents duplicates)
     if (this.activeDungeons.has(channelKey)) {
-      console.log(`[Dungeons] Dungeon already active in channel ${channelKey}, skipping spawn check`);
       return;
     }
 
@@ -1178,8 +1175,6 @@ module.exports = class Dungeons {
     if (roll > spawnChance) return;
 
     // ALLOW MULTIPLE DUNGEONS: Can spawn in different channels simultaneously
-    console.log(`[Dungeons] Spawning dungeon (${this.activeDungeons.size + 1} active total)`);
-
     const dungeonRank = this.calculateDungeonRank();
     await this.createDungeon(channelKey, channelInfo, dungeonRank);
   }
@@ -1317,12 +1312,6 @@ module.exports = class Dungeons {
     const shadowScaledHP = baseBossHP + expectedShadowCount * hpPerShadow;
     const finalBossHP = Math.floor(shadowScaledHP);
 
-    console.log(
-      `[Dungeons] Creating ${rank} [${dungeonType}] dungeon: ${expectedShadowCount} shadows expected (weight: ${thisWeight}/${newTotalWeight})`
-    );
-    console.log(
-      `[Dungeons] Boss HP: ${baseBossHP} (base) + ${expectedShadowCount}×${hpPerShadow} (shadows) = ${finalBossHP} HP`
-    );
 
     // Calculate boss stats based on rank
     const bossStrength = 50 + rankIndex * 25;
@@ -1484,19 +1473,8 @@ module.exports = class Dungeons {
       }
 
       // Log spawned mob ranks
-      const mobRanks = dungeon.mobs.activeMobs
-        .slice(-actualSpawnCount)
-        .map((m) => m.rank)
-        .join(', ');
-      console.log(
-        `[Dungeons] Spawned ${actualSpawnCount} mobs in ${dungeon.rank} [${dungeon.type}] dungeon: [${mobRanks}] (${dungeon.mobs.total}/${dungeon.mobs.targetCount} total)`
-      );
-
       // Stop spawning if reached target
       if (dungeon.mobs.total >= dungeon.mobs.targetCount) {
-        console.log(
-          `[Dungeons] Reached target mob count (${dungeon.mobs.targetCount}), stopping spawns`
-        );
         this.stopMobSpawning(channelKey);
       }
 
@@ -2061,9 +2039,6 @@ module.exports = class Dungeons {
         .map(([rank, count]) => `${rank}:${count}`)
         .join(', ');
 
-      console.log(
-        `[Dungeons] Processing shadow attacks: ${assignedShadows.length}/${allShadows.length} shadows assigned to ${dungeon.name} [${dungeon.rank}] (weight: ${currentDungeonWeight.weight}/${totalWeight}) | Ranks: ${rankDistribution}`
-      );
 
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowHP = dungeon.shadowHP || {}; // Object, not Map
@@ -2281,19 +2256,8 @@ module.exports = class Dungeons {
 
       // Log combat summary
       if (shadowsAttackedBoss > 0) {
-        console.log(
-          `[Dungeons] ${shadowsAttackedBoss} shadows attacked BOSS (5%) for ${Math.floor(
-            totalBossDamage
-          )} damage! Boss HP: ${Math.floor(dungeon.boss.hp)}/${dungeon.boss.maxHp}`
-        );
       }
-      if (shadowsAttackedMobs > 0) {
-        console.log(
-          `[Dungeons] ${shadowsAttackedMobs} shadows attacked MOBS (95%) for ${Math.floor(
-            totalMobDamage
-          )} damage, killed ${mobsKilled}! ${aliveMobs.length - mobsKilled} mobs remaining`
-        );
-      }
+      // Attack logs removed - check dungeon completion summary for stats
 
       // Process boss attacks on shadows
       await this.processBossAttacks(channelKey);
@@ -2488,7 +2452,6 @@ module.exports = class Dungeons {
             // Resurrection successful - restore HP
             shadowHPData.hp = shadowHPData.maxHp;
             shadowHP[targetShadow.id] = shadowHPData;
-            console.log(`[Dungeons] Auto-resurrected ${targetShadow.name || 'Shadow'} [${targetShadow.rank}]`);
           } else {
             // Resurrection failed (not enough mana or priority)
             deadShadows.add(targetShadow.id);
@@ -2625,7 +2588,6 @@ module.exports = class Dungeons {
             // Resurrection successful - restore HP
             shadowHPData.hp = shadowHPData.maxHp;
             shadowHP[targetShadow.id] = shadowHPData;
-            console.log(`[Dungeons] Auto-resurrected ${targetShadow.name || 'Shadow'} [${targetShadow.rank}]`);
           } else {
             // Resurrection failed (not enough mana or priority)
             deadShadows.add(targetShadow.id);
@@ -3021,7 +2983,6 @@ module.exports = class Dungeons {
 
     // Check if user has enough mana
     if (this.settings.userMana < manaCost) {
-      console.log(`[Dungeons] Cannot resurrect ${shadow.name || 'Shadow'} [${shadowRank}]: Not enough mana (need ${manaCost}, have ${this.settings.userMana})`);
       return false;
     }
 
@@ -3099,21 +3060,6 @@ module.exports = class Dungeons {
     this.updateUserHPBar();
     this.saveSettings();
     this.showToast(`Revived all shadows! (-${reviveCost} mana)`, 'success');
-  }
-
-  // ============================================================================
-  // DAMAGE APPLICATION (LEGACY - KEPT FOR COMPATIBILITY)
-  // ============================================================================
-  async applyDamage(channelKey, damage, source, shadowCount = 0) {
-    // Legacy method - redirects to new stat-based system
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (!dungeon) return;
-
-    if (dungeon.boss.hp > 0) {
-      await this.applyDamageToBoss(channelKey, damage, source);
-    } else {
-      await this.attackMobs(channelKey, source);
-    }
   }
 
   // ============================================================================
@@ -3224,9 +3170,6 @@ module.exports = class Dungeons {
     }
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
-    console.log('[Dungeons] 📋 Completion reason:', reason);
-    console.log('[Dungeons] 📊 Summary stats:', JSON.stringify(summaryStats, null, 2));
-
     if (reason !== 'timeout') {
       this.showDungeonCompletionSummary(summaryStats);
     } else {
@@ -3273,8 +3216,6 @@ module.exports = class Dungeons {
    * Includes: user XP, shadow XP, level-ups, rank-ups, mobs killed, deaths/revives
    */
   showDungeonCompletionSummary(stats) {
-    console.log('[Dungeons] Generating completion summary:', stats);
-
     // BATCH 1: Dungeon Status & Rewards
     const batch1Lines = [];
     const status = stats.userParticipated ? 'CLEARED!' : 'SHADOWS CLEARED';
@@ -3339,15 +3280,7 @@ module.exports = class Dungeons {
       }, 1000);
     }
 
-    // Rank-ups logged to console but no notification (happens automatically)
-    if (stats.shadowsRankedUp && stats.shadowsRankedUp.length > 0) {
-      console.log(`[Dungeons] ${stats.shadowsRankedUp.length} shadows auto-promoted:`,
-        stats.shadowsRankedUp.map(s => `${s.name} ${s.oldRank}->${s.newRank}`).join(', ')
-      );
-    }
-
-    const batchCount = 2 + (stats.shadowsLeveledUp?.length > 0 ? 1 : 0);
-    console.log(`[Dungeons] Completion summary displayed in ${batchCount} batches`);
+    // Rank-ups happen automatically (logged individually during XP grant)
   }
 
   /**
@@ -3619,7 +3552,6 @@ module.exports = class Dungeons {
    * @param {string} channelKey - Channel key
    */
   async cleanupDefeatedBoss(channelKey) {
-    console.log(`[Dungeons] Cleaning up defeated boss for ${channelKey}`);
 
     // Remove ARISE button
     const ariseBtn = document.querySelector(`[data-arise-button="${channelKey}"]`);
@@ -3846,8 +3778,7 @@ module.exports = class Dungeons {
   updateBossHPBar(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || dungeon.boss.hp <= 0) {
-      console.log('[Dungeons] ❌ Boss HP bar: No dungeon or boss dead');
-      this.removeBossHPBar(channelKey);
+    this.removeBossHPBar(channelKey);
       this.showChannelHeaderComments(channelKey);
       return;
     }
@@ -3855,7 +3786,6 @@ module.exports = class Dungeons {
     // Get current channel info to check if this is the active channel
     const currentChannelInfo = this.getChannelInfo();
     if (!currentChannelInfo) {
-      console.log('[Dungeons] ⚠️ Boss HP bar: Could not get current channel info, retrying...');
       // Retry after delay
       setTimeout(() => this.updateBossHPBar(channelKey), 500);
       return;
@@ -3866,18 +3796,11 @@ module.exports = class Dungeons {
       currentChannelInfo.guildId === dungeon.guildId;
 
     if (!isCurrentChannel) {
-      console.log('[Dungeons] ❌ Boss HP bar: Not current channel');
       // Not the current channel, remove HP bar if it exists
       this.removeBossHPBar(channelKey);
       this.showChannelHeaderComments(channelKey);
       return;
     }
-
-    // Show boss HP bar for active dungeon (whether participating or not)
-    const participationStatus = dungeon.userParticipating ? '(Participating)' : '(Watching)';
-    console.log(`[Dungeons] ✅ Boss HP bar showing ${participationStatus}`);
-
-    console.log(`[Dungeons] ✅ Updating boss HP bar for ${dungeon.name} (${channelKey})`);
 
     // Hide comments in channel header to make room
     this.hideChannelHeaderComments(channelKey);
@@ -3968,30 +3891,23 @@ module.exports = class Dungeons {
           box-sizing: border-box !important;
         `;
 
-        console.log(`[Dungeons] Boss HP container width: ${containerWidth} (members list: ${hasMembersList ? membersListWidth + 'px' : 'hidden'})`);
 
         // Insert after the channel header (as a sibling)
         if (channelHeader.parentElement) {
           channelHeader.parentElement.insertBefore(bossHpContainer, channelHeader.nextSibling);
-          console.log('[Dungeons] Boss HP container created as sibling after header');
         } else {
           // Fallback: append to channel header itself
           channelHeader.appendChild(bossHpContainer);
-          console.log('[Dungeons] Boss HP container created inside header (fallback)');
         }
       } else {
         // Clear existing content
         bossHpContainer.innerHTML = '';
-        console.log('[Dungeons] Boss HP container already exists, cleared for reuse');
       }
 
       // Now add the HP bar to this dedicated container
       bossHpContainer.appendChild(hpBar);
 
       this.bossHPBars.set(channelKey, hpBar);
-      console.log('[Dungeons] Boss HP bar created and added to container for channel:', channelKey);
-    } else {
-      console.log('[Dungeons] Boss HP bar already exists, updating content');
     }
 
     // Calculate mob stats
@@ -4219,8 +4135,6 @@ module.exports = class Dungeons {
         container.remove();
       }
     });
-
-    console.log('[Dungeons] All boss HP bars and containers removed');
   }
 
   // ============================================================================
@@ -4757,7 +4671,6 @@ module.exports = class Dungeons {
 
       // If channel changed, update all boss HP bars and indicators
       if (currentChannelKey !== lastChannelKey) {
-        console.log(`[Dungeons] Channel switched: ${lastChannelKey || 'none'} -> ${currentChannelKey}`);
         lastChannelKey = currentChannelKey;
 
         // Remove all existing boss HP bars first (clean slate)
@@ -4768,8 +4681,6 @@ module.exports = class Dungeons {
         this.updateUserHPBar();
 
         // Update boss HP bars for all active dungeons
-        // This will show the HP bar for the current channel (if dungeon active there)
-        console.log(`[Dungeons] Updating ${this.activeDungeons.size} active dungeon HP bar(s)`);
         this.activeDungeons.forEach((dungeon, channelKey) => {
           this.updateBossHPBar(channelKey);
         });
@@ -4840,8 +4751,6 @@ module.exports = class Dungeons {
 
     // Also use interval as fallback for more responsive channel detection
     this.channelWatcherInterval = setInterval(checkChannel, 500);
-
-    console.log('[Dungeons] Channel watcher started (checks every 500ms for channel switches)');
   }
 
   stopChannelWatcher() {
@@ -5151,14 +5060,11 @@ module.exports = class Dungeons {
     try {
       // Remove via BdApi
       BdApi.clearCSS(styleId);
-      console.log('[Dungeons] ✅ CSS removed via BdApi.clearCSS');
     } catch (error) {
-      console.warn('[Dungeons] BdApi.clearCSS failed, using fallback:', error);
       // Fallback: manual removal
       const existingStyle = document.getElementById(styleId);
       if (existingStyle) {
         existingStyle.remove();
-        console.log('[Dungeons] ✅ CSS removed via fallback method');
       }
     }
   }
@@ -5362,15 +5268,12 @@ module.exports = class Dungeons {
     try {
       // Method 1: BetterDiscord's native CSS injection
       BdApi.injectCSS(styleId, cssContent);
-      console.log('[Dungeons] ✅ CSS injected via BdApi.injectCSS');
     } catch (error) {
-      console.warn('[Dungeons] BdApi.injectCSS failed, using fallback:', error);
       // Method 2: Fallback to manual injection
       const style = document.createElement('style');
       style.id = styleId;
       style.textContent = cssContent;
       document.head.appendChild(style);
-      console.log('[Dungeons] ✅ CSS injected via fallback method');
     }
   }
 
