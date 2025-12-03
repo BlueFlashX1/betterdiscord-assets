@@ -742,4 +742,3 @@ Beasts: Insects + Beasts (fast attackers)
 ---
 
 **Your dungeons are now thematically rich with biome-specific magic beasts!**
-

@@ -4540,11 +4540,106 @@ module.exports = class SoloLevelingStats {
       } catch (error) {
         this.debugError('AWARD_XP', error, { phase: 'level_rank_check' });
       }
+
+      // Share XP with shadow army (asynchronous, doesn't block UI)
+      try {
+        this.shareShadowXP(xp, 'message');
+      } catch (error) {
+        this.debugError('AWARD_XP', error, { phase: 'shadow_xp_share' });
+      }
     } catch (error) {
       this.debugError('AWARD_XP', error, {
         messageLength,
         messagePreview: messageText?.substring(0, 30),
       });
+    }
+  }
+
+  /**
+   * Share XP with all shadows in the army
+   * Shadows gain a percentage of user XP based on activity source
+   * User keeps 100% of XP (shadows get bonus XP on top)
+   * @param {number} userXP - Amount of XP user gained
+   * @param {string} source - Source of XP (message, quest, achievement, dungeon, milestone)
+   */
+  async shareShadowXP(userXP, source = 'message') {
+    try {
+      // Get ShadowArmy plugin
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+        // Shadow Army plugin not loaded
+        return;
+      }
+
+      const shadowArmy = shadowArmyPlugin.instance;
+      if (typeof shadowArmy.grantShadowXP !== 'function') {
+        // Method not available
+        return;
+      }
+
+      // Define share percentages by source
+      const shareRates = {
+        message: 0.05, // 5% from messages (passive growth)
+        quest: 0.10, // 10% from quests (daily activities)
+        achievement: 0.15, // 15% from achievements (milestones)
+        dungeon: 0.20, // 20% from dungeons (active combat)
+        milestone: 0.25, // 25% from milestones (major events)
+      };
+
+      const sharePercentage = shareRates[source] || 0.05;
+      const shadowXPGain = Math.floor(userXP * sharePercentage);
+
+      if (shadowXPGain <= 0) {
+        return; // No XP to share
+      }
+
+      // Get all shadows
+      const shadows = await shadowArmy.getAllShadows();
+      if (!shadows || shadows.length === 0) {
+        return; // No shadows to share with
+      }
+
+      let totalShadowsLeveled = 0;
+      let totalShadowsRanked = 0;
+
+      // Grant XP to each shadow
+      for (const shadow of shadows) {
+        const result = await shadowArmy.grantShadowXP(
+          shadow.id,
+          shadowXPGain,
+          false, // Don't show individual toasts
+          false  // fromCombat = false (not from dungeon combat)
+        );
+
+        if (result && result.leveledUp) {
+          totalShadowsLeveled++;
+        }
+        if (result && result.rankedUp) {
+          totalShadowsRanked++;
+        }
+      }
+
+      // Log summary
+      console.log(
+        `[SoloLevelingStats] Shadow XP Share: ${shadows.length} shadows gained ${shadowXPGain} XP each from ${source} (${(sharePercentage * 100).toFixed(0)}% of ${userXP} user XP)`
+      );
+
+      // Show notification if significant progress was made
+      if (totalShadowsLeveled > 0 || totalShadowsRanked > 0) {
+        let message = `Shadow Army Growth\n`;
+        message += `${shadows.length} shadows gained ${shadowXPGain} XP`;
+        
+        if (totalShadowsLeveled > 0) {
+          message += `\n${totalShadowsLeveled} shadow(s) leveled up`;
+        }
+        if (totalShadowsRanked > 0) {
+          message += `\n${totalShadowsRanked} shadow(s) ranked up`;
+        }
+
+        this.showNotification(message, 'info', 3000);
+      }
+    } catch (error) {
+      console.error('[SoloLevelingStats] Shadow XP Share error:', error);
     }
   }
 
@@ -7123,6 +7218,13 @@ module.exports = class SoloLevelingStats {
 
     // Quest completion celebration animation
     this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
+
+    // Share XP with shadow army
+    try {
+      this.shareShadowXP(xpReward, 'quest');
+    } catch (error) {
+      console.error('[SoloLevelingStats] Quest shadow XP share error:', error);
+    }
   }
 
   showQuestCompletionCelebration(questName, xpReward, statPoints) {

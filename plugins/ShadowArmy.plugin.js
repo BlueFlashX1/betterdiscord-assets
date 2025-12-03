@@ -897,7 +897,7 @@ module.exports = class ShadowArmy {
       // These can ONLY be extracted from dungeon mobs/bosses!
       // Classified by species/family for biome-specific spawning
       // ========================================================================
-      
+
       // INSECT FAMILY - Forest, Cavern biomes
       ant: {
         name: 'Ant',
@@ -924,7 +924,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'beast',
       },
-      
+
       // INSECT FAMILY - Forest, Cavern biomes
       spider: {
         name: 'Spider',
@@ -942,7 +942,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'insect',
       },
-      
+
       // CONSTRUCT FAMILY - Cavern, Ancient Ruins biomes
       golem: {
         name: 'Golem',
@@ -952,7 +952,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'construct',
       },
-      
+
       // REPTILE FAMILY - Swamp biomes
       serpent: {
         name: 'Serpent',
@@ -970,7 +970,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'reptile',
       },
-      
+
       // DRAGON FAMILY - Mountains, Volcano, Dark Abyss (NH+ ONLY!)
       wyvern: {
         name: 'Wyvern',
@@ -990,7 +990,7 @@ module.exports = class ShadowArmy {
         family: 'dragon',
         minRank: 'NH', // DRAGONS ONLY IN NH+ DUNGEONS!
       },
-      
+
       // GIANT FAMILY - Mountains, Tribal Grounds biomes
       titan: {
         name: 'Titan',
@@ -1009,7 +1009,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'giant',
       },
-      
+
       // ANCIENT FAMILY - Ancient Ruins biomes
       elf: {
         name: 'Elf',
@@ -1019,7 +1019,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'ancient',
       },
-      
+
       // DEMON FAMILY - Volcano, Dark Abyss biomes
       demon: {
         name: 'Demon',
@@ -1030,7 +1030,7 @@ module.exports = class ShadowArmy {
         family: 'demon',
         minRank: 'B', // Demons start at B-rank
       },
-      
+
       // UNDEAD FAMILY - Cavern, Swamp, Ancient Ruins, Dark Abyss biomes
       ghoul: {
         name: 'Ghoul',
@@ -1040,7 +1040,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'undead',
       },
-      
+
       // HUMANOID-BEAST FAMILY - Tribal Grounds, Volcano biomes
       orc: {
         name: 'Orc',
@@ -1058,7 +1058,7 @@ module.exports = class ShadowArmy {
         isMagicBeast: true,
         family: 'humanoid-beast',
       },
-      
+
       // ICE FAMILY - Arctic biomes (exclusive!)
       yeti: {
         name: 'Yeti',
@@ -1877,7 +1877,7 @@ module.exports = class ShadowArmy {
         let availableBeastRoles = Object.keys(this.shadowRoles).filter(
           key => this.shadowRoles[key].isMagicBeast
         );
-        
+
         // Filter by biome families if provided
         if (beastFamilies && beastFamilies.length > 0) {
           availableBeastRoles = availableBeastRoles.filter(key => {
@@ -1885,7 +1885,7 @@ module.exports = class ShadowArmy {
             return beastFamilies.includes(beast.family);
           });
         }
-        
+
         // Filter by rank restrictions (e.g., dragons only NH+)
         const rankIndex = this.shadowRanks.indexOf(targetRank);
         availableBeastRoles = availableBeastRoles.filter(key => {
@@ -1894,14 +1894,14 @@ module.exports = class ShadowArmy {
           const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
           return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
         });
-        
+
         // Fallback: If no beasts available after filtering, use all non-restricted beasts
         if (availableBeastRoles.length === 0) {
           availableBeastRoles = Object.keys(this.shadowRoles).filter(
             key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
           );
         }
-        
+
         roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
       } else {
         // Select humanoid role (message-based extraction only)
@@ -2351,7 +2351,7 @@ module.exports = class ShadowArmy {
    * 6. Calculate initial shadow strength from base stats
    * 7. Create shadow object with id, rank, role, stats, level, XP
    * 8. Initialize growth stats for level-up progression
-   * 
+   *
    * @param {string} shadowRank - Rank of shadow to generate
    * @param {number} userLevel - Current user level
    * @param {object} userStats - User's current stats
@@ -2371,7 +2371,7 @@ module.exports = class ShadowArmy {
       let availableBeastRoles = Object.keys(this.shadowRoles).filter(
         key => this.shadowRoles[key].isMagicBeast
       );
-      
+
       // Filter by biome families if provided
       if (beastFamilies && beastFamilies.length > 0) {
         availableBeastRoles = availableBeastRoles.filter(key => {
@@ -2379,7 +2379,7 @@ module.exports = class ShadowArmy {
           return beastFamilies.includes(beast.family);
         });
       }
-      
+
       // Filter by rank restrictions (e.g., dragons only NH+)
       const rankIndex = this.shadowRanks.indexOf(shadowRank);
       availableBeastRoles = availableBeastRoles.filter(key => {
@@ -2388,14 +2388,14 @@ module.exports = class ShadowArmy {
         const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
         return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
       });
-      
+
       // Fallback: If no beasts available after filtering, use all beasts
       if (availableBeastRoles.length === 0) {
         availableBeastRoles = Object.keys(this.shadowRoles).filter(
           key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
         );
       }
-      
+
       roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
     } else {
       // Select humanoid role (message-based extraction only)

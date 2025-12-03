@@ -291,7 +291,20 @@ module.exports = class Dungeons {
       mobSpawnCount: 50, // Spawn 50 mobs at a time (increased for epic battles)
       shadowReviveCost: 50, // Mana cost to revive a shadow
       // Dungeon ranks including SS, SSS
-      dungeonRanks: ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'],
+      dungeonRanks: [
+        'E',
+        'D',
+        'C',
+        'B',
+        'A',
+        'S',
+        'SS',
+        'SSS',
+        'NH',
+        'Monarch',
+        'Monarch+',
+        'Shadow Monarch',
+      ],
       userActiveDungeon: null,
       lastSpawnTime: {},
       mobKillNotifications: {},
@@ -882,11 +895,23 @@ module.exports = class Dungeons {
       Swamp: ['Murky Marshland', 'Serpent Bog', 'Dead Waters', 'Toxic Fen', 'Ghoul Swamp'],
       Mountains: ['Sky Peak', 'Titan Ridge', 'Giant Pass', 'Cloud Fortress', 'Stone Citadel'],
       Volcano: ['Infernal Crater', 'Demon Forge', 'Magma Chamber', 'Hellfire Pit', 'Ash Realm'],
-      'Ancient Ruins': ['Lost Temple', 'Mystic Shrine', 'Elven Sanctuary', 'Forgotten Palace', 'Ruined City'],
+      'Ancient Ruins': [
+        'Lost Temple',
+        'Mystic Shrine',
+        'Elven Sanctuary',
+        'Forgotten Palace',
+        'Ruined City',
+      ],
       'Dark Abyss': ['Void Chasm', 'Shadow Realm', 'Demon Gate', 'Nightmare Pit', 'Chaos Rift'],
-      'Tribal Grounds': ['Savage Camp', 'Orc Stronghold', 'Ogre Lair', 'War Grounds', 'Tribal Ruins'],
+      'Tribal Grounds': [
+        'Savage Camp',
+        'Orc Stronghold',
+        'Ogre Lair',
+        'War Grounds',
+        'Tribal Ruins',
+      ],
     };
-    
+
     const names = biomeNames[biome] || ['Ancient Dungeon'];
     const name = names[Math.floor(Math.random() * names.length)];
     return `[${rank}] ${name}`;
@@ -897,15 +922,39 @@ module.exports = class Dungeons {
     const biomeBosses = {
       Forest: ['Beast King', 'Insect Queen', 'Spider Matriarch', 'Alpha Wolf', 'Ancient Treant'],
       Arctic: ['Frost Giant', 'Yeti Lord', 'Ice Wyrm', 'Blizzard King', 'Frozen Tyrant'],
-      Cavern: ['Stone Guardian', 'Ghoul Patriarch', 'Spider Queen', 'Underground Horror', 'Golem Lord'],
+      Cavern: [
+        'Stone Guardian',
+        'Ghoul Patriarch',
+        'Spider Queen',
+        'Underground Horror',
+        'Golem Lord',
+      ],
       Swamp: ['Serpent King', 'Naga Empress', 'Swamp Horror', 'Ghoul Master', 'Venom Lord'],
       Mountains: ['Titan King', 'Giant Chieftain', 'Sky Lord', 'Wyvern Sovereign', 'Mountain God'],
       Volcano: ['Demon Lord', 'Infernal Tyrant', 'Lava Dragon', 'Hell King', 'Flame Emperor'],
-      'Ancient Ruins': ['Elven Patriarch', 'Golem Keeper', 'Ancient Guardian', 'Lost King', 'Ruin Master'],
-      'Dark Abyss': ['Void Dragon', 'Demon Emperor', 'Chaos Incarnate', 'Abyss Lord', 'Shadow King'],
-      'Tribal Grounds': ['Orc Warlord', 'Ogre Chieftain', 'Savage King', 'War Beast', 'Tribal Lord'],
+      'Ancient Ruins': [
+        'Elven Patriarch',
+        'Golem Keeper',
+        'Ancient Guardian',
+        'Lost King',
+        'Ruin Master',
+      ],
+      'Dark Abyss': [
+        'Void Dragon',
+        'Demon Emperor',
+        'Chaos Incarnate',
+        'Abyss Lord',
+        'Shadow King',
+      ],
+      'Tribal Grounds': [
+        'Orc Warlord',
+        'Ogre Chieftain',
+        'Savage King',
+        'War Beast',
+        'Tribal Lord',
+      ],
     };
-    
+
     const bosses = biomeBosses[biome] || ['Ancient Boss'];
     return bosses[Math.floor(Math.random() * bosses.length)];
   }
@@ -1330,7 +1379,7 @@ module.exports = class Dungeons {
 
     const dungeonBiome = dungeonBiomes[Math.floor(Math.random() * dungeonBiomes.length)];
     const dungeonType = dungeonBiome.name;
-    
+
     // Generate themed names based on biome
     const dungeonName = this.generateDungeonName(rank, dungeonType);
     const bossName = this.generateBossName(rank, dungeonType);
