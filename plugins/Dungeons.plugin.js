@@ -303,7 +303,7 @@ module.exports = class Dungeons {
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
       mobSpawnInterval: 500, // Spawn new mobs every 0.5 seconds (ultra fast for epic battles)
-      mobSpawnCount: 150, // Spawn 150 mobs at a time (rapid generation)
+      mobSpawnCount: 500, // Spawn 500 mobs at a time (1,000 mobs/sec generation rate)
       shadowReviveCost: 50, // Mana cost to revive a shadow
       // Dungeon ranks including SS, SSS
       dungeonRanks: [
@@ -1462,7 +1462,7 @@ module.exports = class Dungeons {
 
     // BOSS MAGIC BEAST TYPE (biome-appropriate)
     const bossBeastType = this.selectMagicBeastType(
-      dungeonBiome.beastFamilies, 
+      dungeonBiome.beastFamilies,
       rank,
       this.settings.dungeonRanks
     );
@@ -1489,20 +1489,20 @@ module.exports = class Dungeons {
         hp: finalBossHP,
         maxHp: finalBossHP,
         rank,
-        
+
         // MAGIC BEAST IDENTITY (for shadow extraction)
         beastType: bossBeastType.type,
         beastName: bossBeastType.name,
         beastFamily: bossBeastType.family,
         isMagicBeast: true,
-        
+
         // Combat stats (for compatibility)
         strength: bossStrength,
         agility: bossAgility,
         intelligence: bossIntelligence,
         vitality: bossVitality,
         luck: bossLuck,
-        
+
         // SHADOW-COMPATIBLE STATS (for extraction)
         baseStats: {
           strength: bossStrength,
@@ -1511,11 +1511,11 @@ module.exports = class Dungeons {
           vitality: bossVitality,
           luck: bossLuck,
         },
-        
+
         lastAttackTime: 0,
         attackCooldown: 4000, // Boss attacks every 4 seconds
         expectedShadowCount: expectedShadowCount, // Track expected shadow force
-        
+
         // Description for display
         description: `${rank}-rank ${bossBeastType.name} Boss from ${dungeonBiome.name}`,
       },
@@ -1614,39 +1614,39 @@ module.exports = class Dungeons {
       ant: { type: 'ant', name: 'Ant', family: 'insect', minRank: null },
       spider: { type: 'spider', name: 'Spider', family: 'insect', minRank: null },
       centipede: { type: 'centipede', name: 'Centipede', family: 'insect', minRank: null },
-      
+
       // Beast family
       bear: { type: 'bear', name: 'Bear', family: 'beast', minRank: null },
       wolf: { type: 'wolf', name: 'Wolf', family: 'beast', minRank: null },
-      
+
       // Reptile family
       naga: { type: 'naga', name: 'Naga', family: 'reptile', minRank: null },
       serpent: { type: 'serpent', name: 'Serpent', family: 'reptile', minRank: null },
-      
+
       // Ice family
       yeti: { type: 'yeti', name: 'Yeti', family: 'ice', minRank: null },
-      
+
       // Dragon family (NH+ only)
       dragon: { type: 'dragon', name: 'Dragon', family: 'dragon', minRank: 'NH' },
       wyvern: { type: 'wyvern', name: 'Wyvern', family: 'dragon', minRank: 'A' },
-      
+
       // Giant family
       giant: { type: 'giant', name: 'Giant', family: 'giant', minRank: null },
       titan: { type: 'titan', name: 'Titan', family: 'giant', minRank: 'S' },
-      
+
       // Demon family
       demon: { type: 'demon', name: 'Demon', family: 'demon', minRank: null },
       ogre: { type: 'ogre', name: 'Ogre', family: 'demon', minRank: null },
-      
+
       // Undead family
       ghoul: { type: 'ghoul', name: 'Ghoul', family: 'undead', minRank: null },
-      
+
       // Construct family
       golem: { type: 'golem', name: 'Golem', family: 'construct', minRank: null },
-      
+
       // Ancient family
       elf: { type: 'elf', name: 'Elf', family: 'ancient', minRank: null },
-      
+
       // Humanoid-beast family (orcs, etc.)
       orc: { type: 'orc', name: 'Orc', family: 'humanoid-beast', minRank: null },
     };
@@ -1682,8 +1682,20 @@ module.exports = class Dungeons {
 
     // Only spawn mobs if boss is still alive and haven't reached target count
     if (dungeon.boss.hp > 0 && dungeon.mobs.total < dungeon.mobs.targetCount) {
-      const spawnCount = this.settings.mobSpawnCount;
       const dungeonRankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
+      
+      // DYNAMIC SPAWN RATE based on dungeon capacity
+      // Fast spawn (500 mobs) until 90% full, then slow to normal (100 mobs)
+      const capacityPercent = dungeon.mobs.total / dungeon.mobs.targetCount;
+      let spawnCount;
+      
+      if (capacityPercent < 0.9) {
+        // Phase 1: RAPID FILL (0-90% capacity)
+        spawnCount = this.settings.mobSpawnCount; // 500 mobs (ultra fast)
+      } else {
+        // Phase 2: NORMAL REPLENISHMENT (90-100% capacity)
+        spawnCount = Math.floor(this.settings.mobSpawnCount / 5); // 100 mobs (normal speed)
+      }
 
       // Limit spawn count to not exceed target
       const remainingToSpawn = dungeon.mobs.targetCount - dungeon.mobs.total;
@@ -1733,7 +1745,7 @@ module.exports = class Dungeons {
         // MAGIC BEAST TYPE SELECTION (biome-based)
         // Select magic beast type from dungeon's allowed beast families
         const magicBeastType = this.selectMagicBeastType(
-          dungeon.beastFamilies, 
+          dungeon.beastFamilies,
           mobRank,
           this.settings.dungeonRanks
         );
@@ -1745,7 +1757,7 @@ module.exports = class Dungeons {
           // Core mob identity
           id: `mob_${Date.now()}_${i}_${Math.random().toString(36).substr(2, 9)}`,
           rank: mobRank,
-          
+
           // MAGIC BEAST IDENTITY (for shadow extraction)
           beastType: magicBeastType.type, // 'ant', 'dragon', 'naga', etc.
           beastName: magicBeastType.name, // 'Ant', 'Dragon', 'Naga', etc.
@@ -1787,7 +1799,7 @@ module.exports = class Dungeons {
             beastFamilies: dungeon.beastFamilies,
             spawnedAt: Date.now(),
           },
-          
+
           // Magic beast description (for display/debugging)
           description: `${mobRank}-rank ${magicBeastType.name} from ${dungeon.biome.name}`,
         };
@@ -1798,10 +1810,20 @@ module.exports = class Dungeons {
       dungeon.mobs.remaining += actualSpawnCount;
       dungeon.mobs.total += actualSpawnCount;
 
-      // Log spawned mob ranks
+      // Log spawn rate transition
+      const newCapacityPercent = dungeon.mobs.total / dungeon.mobs.targetCount;
+      if (capacityPercent < 0.9 && newCapacityPercent >= 0.9) {
+        console.log(
+          `[Dungeons] ${dungeon.name}: Reached 90% capacity (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Spawn rate: 1000 mobs/sec → 200 mobs/sec (normal replenishment)`
+        );
+      }
+
       // Stop spawning if reached target
       if (dungeon.mobs.total >= dungeon.mobs.targetCount) {
         this.stopMobSpawning(channelKey);
+        console.log(
+          `[Dungeons] ${dungeon.name}: Full capacity reached (${dungeon.mobs.total}/${dungeon.mobs.targetCount}). Continuous spawning stopped.`
+        );
       }
 
       // Update storage
