@@ -16,8 +16,12 @@
  * - Visual dungeon indicators and selection UI
  */
 
+// ================================================================================
+// STORAGE MANAGER - IndexedDB Management
+// ================================================================================
 /**
  * DungeonStorageManager - IndexedDB storage manager for Dungeons plugin
+ * Handles persistent storage of dungeon data across sessions
  */
 class DungeonStorageManager {
   constructor(userId) {
@@ -268,7 +272,13 @@ class DungeonStorageManager {
   }
 }
 
+// ================================================================================
+// MAIN PLUGIN CLASS
+// ================================================================================
 module.exports = class Dungeons {
+  // ============================================================================
+  // CONSTRUCTOR & DEFAULT SETTINGS
+  // ============================================================================
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -351,6 +361,9 @@ module.exports = class Dungeons {
     };
   }
 
+  // ============================================================================
+  // PLUGIN LIFECYCLE - Start & Stop
+  // ============================================================================
   async start() {
     // Set plugin running state
     this.started = true;
@@ -472,6 +485,9 @@ module.exports = class Dungeons {
     }
   }
 
+  // ============================================================================
+  // DATABASE INITIALIZATION & STORAGE
+  // ============================================================================
   async initStorage() {
     try {
       const userId = await this.getUserId();
@@ -537,6 +553,9 @@ module.exports = class Dungeons {
     return 'default';
   }
 
+  // ============================================================================
+  // SETTINGS MANAGEMENT
+  // ============================================================================
   async loadSettings() {
     try {
       const saved = BdApi.Data.load('Dungeons', 'settings');
@@ -561,6 +580,9 @@ module.exports = class Dungeons {
     }
   }
 
+  // ============================================================================
+  // USER STATS & RESOURCES - HP/Mana Scaling
+  // ============================================================================
   async initializeUserStats() {
     // Calculate user HP from TOTAL EFFECTIVE VITALITY (including buffs) + SHADOW ARMY SIZE
     if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
@@ -628,6 +650,9 @@ module.exports = class Dungeons {
     return 0;
   }
 
+  // ============================================================================
+  // PLUGIN INTEGRATION - External Plugin References
+  // ============================================================================
   async loadPluginReferences() {
     try {
       // Load SoloLevelingStats plugin
@@ -1960,6 +1985,9 @@ module.exports = class Dungeons {
     this.mobAttackTimers.clear();
   }
 
+  // ============================================================================
+  // COMBAT SYSTEM - Shadow Attacks (Dynamic & Chaotic)
+  // ============================================================================
   async processShadowAttacks(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || dungeon.completed || dungeon.failed) {
@@ -2937,6 +2965,9 @@ module.exports = class Dungeons {
   // ============================================================================
   // SHADOW REVIVE SYSTEM
   // ============================================================================
+  // ============================================================================
+  // RESURRECTION SYSTEM - Auto-Resurrection with Rank-Based Costs
+  // ============================================================================
   /**
    * Calculate mana cost for resurrecting a shadow based on rank
    * Higher rank shadows cost more mana to resurrect
@@ -3229,6 +3260,9 @@ module.exports = class Dungeons {
     this.saveSettings();
   }
 
+  // ============================================================================
+  // NOTIFICATION SYSTEM - Batched Toast Notifications
+  // ============================================================================
   /**
    * Show comprehensive dungeon completion summary (aggregate toast)
    * Includes: user XP, shadow XP, level-ups, rank-ups, mobs killed, deaths/revives
@@ -3301,6 +3335,9 @@ module.exports = class Dungeons {
     // Rank-ups happen automatically (logged individually during XP grant)
   }
 
+  // ============================================================================
+  // ARISE EXTRACTION SYSTEM - Boss Shadow Extraction
+  // ============================================================================
   /**
    * Show ARISE button for shadow extraction from defeated boss
    * Button appears in channel header and allows user to attempt extraction

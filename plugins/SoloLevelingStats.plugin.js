@@ -5149,7 +5149,6 @@ module.exports = class SoloLevelingStats {
           this.settings.stats.vitality = (this.settings.stats.vitality || 0) + bonus;
           this.settings.stats.luck = (this.settings.stats.luck || 0) + bonus;
 
-
           // Recalculate HP/Mana after stat bonus (vitality/intelligence increased)
           const vitality = this.settings.stats.vitality || 0;
           const intelligence = this.settings.stats.intelligence || 0;
@@ -5159,7 +5158,6 @@ module.exports = class SoloLevelingStats {
           // Fully restore HP/Mana on rank promotion
           this.settings.userHP = this.settings.userMaxHP;
           this.settings.userMana = this.settings.userMaxMana;
-
         }
 
         // Emit rank changed event for real-time progress bar updates
@@ -5221,7 +5219,6 @@ module.exports = class SoloLevelingStats {
     message += `XP Multiplier: ${(this.getRankMultiplier() * 100).toFixed(0)}%`;
 
     this.showNotification(message, 'success', 6000);
-
   }
 
   showLevelUpNotification(newLevel, oldLevel) {

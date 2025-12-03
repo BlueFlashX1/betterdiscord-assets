@@ -373,7 +373,6 @@ module.exports = class SkillTree {
 
     // Set global instance for button handlers
     window.skillTreeInstance = this;
-
   }
 
   // ============================================================================
@@ -410,7 +409,6 @@ module.exports = class SkillTree {
       }
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
-
 
     // Initial check on startup
     this.checkForLevelUp();
@@ -469,7 +467,6 @@ module.exports = class SkillTree {
     if (styleElement) {
       styleElement.remove();
     }
-
   }
 
   // ============================================================================

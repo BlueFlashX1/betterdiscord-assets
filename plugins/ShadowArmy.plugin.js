@@ -774,6 +774,9 @@ class ShadowStorageManager {
   }
 }
 
+// ================================================================================
+// MAIN PLUGIN CLASS - Shadow Army Management
+// ================================================================================
 module.exports = class ShadowArmy {
   // ============================================================================
   // CONSTRUCTOR & INITIALIZATION
@@ -1019,6 +1022,9 @@ module.exports = class ShadowArmy {
   // LIFECYCLE METHODS
   // ============================================================================
 
+  // ============================================================================
+  // PLUGIN LIFECYCLE - Start & Stop Operations
+  // ============================================================================
   /**
    * Start the ShadowArmy plugin
    * Operations:
@@ -1981,6 +1987,9 @@ module.exports = class ShadowArmy {
   // SHADOW GENERATION
   // ============================================================================
 
+  // ============================================================================
+  // SHADOW GENERATION & STATS - Creation & Calculation
+  // ============================================================================
   /**
    * Generate a shadow based on rank, level, and stats
    * Uses exponential stat scaling - higher rank = exponentially stronger
@@ -2825,6 +2834,9 @@ module.exports = class ShadowArmy {
     });
   }
 
+  // ============================================================================
+  // XP & LEVELING SYSTEM - Experience & Growth Management
+  // ============================================================================
   /**
    * Grant XP to shadows so they can grow over time
    * Called from message events / dungeons
@@ -2962,6 +2974,9 @@ module.exports = class ShadowArmy {
     };
   }
 
+  // ============================================================================
+  // AUTO RANK-UP SYSTEM - Automatic Shadow Promotion
+  // ============================================================================
   /**
    * Attempt automatic rank-up for shadow
    * Called after level-up to check if shadow qualifies for promotion
@@ -3043,6 +3058,9 @@ module.exports = class ShadowArmy {
     return { success: false };
   }
 
+  // ============================================================================
+  // NATURAL GROWTH SYSTEM - Combat-Based Stat Growth
+  // ============================================================================
   /**
    * Apply natural growth to shadow based on DUNGEON COMBAT time
    * Shadows grow from fighting in dungeons (combat experience)

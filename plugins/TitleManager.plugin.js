@@ -48,7 +48,6 @@ module.exports = class SoloLevelingTitleManager {
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
-
   }
 
   stop() {
