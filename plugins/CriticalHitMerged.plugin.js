@@ -2,7 +2,14 @@
  * @name CriticalHit (Merged)
  * @author BlueFlashXS
  * @description Messages have a chance to land a critical hit with special purple-black gradient styling, font, and animated "CRITICAL HIT!" notifications with screen shake!
- * @version 2.0.0
+ * @version 2.0.1
+ * 
+ * @changelog v2.0.1 (2025-12-04)
+ * - Removed excessive console logging (spam reduction)
+ * - "Saved X messages to history" now only shows in debug mode
+ * - "Channel loaded" now only shows in debug mode
+ * - "Restoring X crits" now only shows in debug mode
+ * - Console clean for normal users, full logging available via debug mode
  */
 
 module.exports = class CriticalHitMerged {
@@ -980,8 +987,9 @@ module.exports = class CriticalHitMerged {
         verifyCritCount: verifyCritCount,
         saveVerified: verifyCritCount === critCount,
       });
-      console.log(
-        `CriticalHit: Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
+      // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
+      this.debugLog('SAVE_MESSAGE_HISTORY_SUMMARY', 
+        `Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
       );
     } catch (error) {
       this.debugError('SAVE_MESSAGE_HISTORY', error, {
@@ -1443,14 +1451,10 @@ module.exports = class CriticalHitMerged {
         sampleCritIds: channelCrits.slice(0, 5).map((e) => e.messageId),
         allCritIds: channelCrits.map((e) => e.messageId),
       });
-      // Only log restoration attempts if verbose or first attempt
-      if (retryCount === 0 || this.debug.verbose) {
-        console.log(
-          `CriticalHit: Restoring ${channelCrits.length} crits for channel ${channelId} (attempt ${
-            retryCount + 1
-          })`
-        );
-      }
+      // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
+      this.debugLog('RESTORE_CHANNEL_CRITS_START',
+        `Restoring ${channelCrits.length} crits for channel ${channelId} (attempt ${retryCount + 1})`
+      );
 
       // Create a Set of message IDs that should have crits (normalize to strings)
       const critMessageIds = new Set(channelCrits.map((entry) => String(entry.messageId).trim()));
@@ -2461,8 +2465,9 @@ module.exports = class CriticalHitMerged {
 
       if (messageCount > 0 || loadAttempts >= maxLoadAttempts) {
         this.isLoadingChannel = false;
-        console.log(
-          `CriticalHit: Channel loaded (${messageCount} messages), ready to process new messages`
+        // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
+        this.debugLog('CHANNEL_LOADED',
+          `Channel loaded (${messageCount} messages), ready to process new messages`
         );
 
         // Restore crits for this channel from history

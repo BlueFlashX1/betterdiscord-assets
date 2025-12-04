@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.1.0
+ * @version 4.1.1
  *
  * ============================================================================
  * CORE FEATURES
@@ -23,10 +23,31 @@
  * - Event-based extraction verification
  * - Dynamic spawn rate with high variance
  * - Channel lock system (spam protection)
+ * - Real-time HP/Mana sync with Stats plugin
  *
  * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v4.1.1 (2025-12-04) - CRITICAL HP/MANA SYNC FIX
+ * SYNCHRONIZATION FIXES:
+ * - Added bidirectional HP/Mana sync before join validation
+ * - Pulls fresh HP/Mana from Stats plugin before checking requirements
+ * - Regeneration now syncs immediately with Stats plugin UI
+ * - HP bar updates trigger Stats plugin updateHPManaBars()
+ * - Fixed delayed responses (HP/Mana now real-time)
+ * - Added sync logging for debugging
+ *
+ * UI RESPONSIVENESS:
+ * - HP bar update throttle: 250ms (down from 1000ms, 4x faster!)
+ * - Boss HP bar syncs HP/Mana before rendering
+ * - Join button validation uses fresh values (no stale data)
+ *
+ * BUG FIXES:
+ * - Fixed "HP too low" error when HP was actually full
+ * - Fixed laggy HP bar updates
+ * - Fixed delayed mana consumption display
+ * - Fixed stale HP/Mana values in join validation
  *
  * @changelog v4.1.0 (2025-12-04) - EXTRACTION & SPAWN SYSTEM OVERHAUL
  * EXTRACTION SYSTEM:
@@ -2372,7 +2393,28 @@ module.exports = class Dungeons {
       return;
     }
 
-    // Check if user has HP to join
+    // CRITICAL: SYNC HP/MANA FROM STATS PLUGIN IMMEDIATELY BEFORE VALIDATION
+    // Ensures we have the freshest HP/Mana values (regeneration happens in Stats plugin)
+    if (this.soloLevelingStats?.settings) {
+      // Pull latest HP/Mana from SoloLevelingStats (source of truth)
+      if (typeof this.soloLevelingStats.settings.userHP === 'number') {
+        this.settings.userHP = this.soloLevelingStats.settings.userHP;
+        this.settings.userMaxHP = this.soloLevelingStats.settings.userMaxHP;
+      }
+      if (typeof this.soloLevelingStats.settings.userMana === 'number') {
+        this.settings.userMana = this.soloLevelingStats.settings.userMana;
+        this.settings.userMaxMana = this.soloLevelingStats.settings.userMaxMana;
+      }
+
+      // Immediately update UI to show fresh values
+      this.updateUserHPBar();
+
+      console.log(
+        `[Dungeons] HP/Mana synced: ${this.settings.userHP}/${this.settings.userMaxHP} HP, ${this.settings.userMana}/${this.settings.userMaxMana} Mana`
+      );
+    }
+
+    // Check if user has HP to join (using FRESH values)
     if (this.settings.userHP <= 0) {
       this.showToast('You need HP to join a dungeon! Wait for HP to regenerate.', 'error');
       return;
@@ -2600,6 +2642,25 @@ module.exports = class Dungeons {
       return;
     }
 
+    // CRITICAL: SYNC FROM STATS PLUGIN FIRST (pull latest values before regenerating)
+    // SoloLevelingStats may have its own regeneration or HP changes we need to respect
+    if (this.soloLevelingStats?.settings) {
+      if (
+        typeof this.soloLevelingStats.settings.userHP === 'number' &&
+        !isNaN(this.soloLevelingStats.settings.userHP)
+      ) {
+        this.settings.userHP = this.soloLevelingStats.settings.userHP;
+        this.settings.userMaxHP = this.soloLevelingStats.settings.userMaxHP;
+      }
+      if (
+        typeof this.soloLevelingStats.settings.userMana === 'number' &&
+        !isNaN(this.soloLevelingStats.settings.userMana)
+      ) {
+        this.settings.userMana = this.soloLevelingStats.settings.userMana;
+        this.settings.userMaxMana = this.soloLevelingStats.settings.userMaxMana;
+      }
+    }
+
     // Get total effective stats (including buffs) and level
     const totalStats =
       this.soloLevelingStats?.getTotalEffectiveStats?.() ||
@@ -2692,11 +2753,22 @@ module.exports = class Dungeons {
         this._hpRegenCount++;
       }
 
-      // Sync with SoloLevelingStats if available
-      if (this.soloLevelingStats?.settings) {
+      hpChanged = this.settings.userHP !== oldHP;
+
+      // BIDIRECTIONAL SYNC: Push HP changes to SoloLevelingStats immediately
+      if (hpChanged && this.soloLevelingStats?.settings) {
         this.soloLevelingStats.settings.userHP = this.settings.userHP;
         this.soloLevelingStats.settings.userMaxHP = this.settings.userMaxHP;
-        hpChanged = this.settings.userHP !== oldHP;
+
+        // CRITICAL: Trigger real-time UI update in Stats plugin
+        if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
+          this.soloLevelingStats.updateHPManaBars();
+        }
+
+        // Save Stats plugin settings immediately
+        if (typeof this.soloLevelingStats.saveSettings === 'function') {
+          this.soloLevelingStats.saveSettings();
+        }
       }
 
       // Track regeneration state (logging removed - visible in UI)
@@ -2709,13 +2781,9 @@ module.exports = class Dungeons {
         this._hpRegenActive = false;
       }
 
-      // Save settings after HP regeneration
+      // Save Dungeons settings after HP regeneration
       if (hpChanged) {
         this.saveSettings();
-        // Sync with SoloLevelingStats immediately
-        if (this.soloLevelingStats?.settings) {
-          this.soloLevelingStats.saveSettings();
-        }
       }
     } else {
       // HP is already full - reset regen active flag
@@ -2748,11 +2816,22 @@ module.exports = class Dungeons {
         this._manaRegenCount++;
       }
 
-      // Sync with SoloLevelingStats if available
-      if (this.soloLevelingStats?.settings) {
+      manaChanged = this.settings.userMana !== oldMana;
+
+      // BIDIRECTIONAL SYNC: Push Mana changes to SoloLevelingStats immediately
+      if (manaChanged && this.soloLevelingStats?.settings) {
         this.soloLevelingStats.settings.userMana = this.settings.userMana;
         this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
-        manaChanged = this.settings.userMana !== oldMana;
+
+        // CRITICAL: Trigger real-time UI update in Stats plugin
+        if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
+          this.soloLevelingStats.updateHPManaBars();
+        }
+
+        // Save Stats plugin settings immediately
+        if (typeof this.soloLevelingStats.saveSettings === 'function') {
+          this.soloLevelingStats.saveSettings();
+        }
       }
 
       // Track regeneration state (logging removed - visible in UI)
@@ -2765,13 +2844,9 @@ module.exports = class Dungeons {
         this._manaRegenActive = false;
       }
 
-      // Save settings after Mana regeneration
+      // Save Dungeons settings after Mana regeneration
       if (manaChanged) {
         this.saveSettings();
-        // Sync with SoloLevelingStats immediately
-        if (this.soloLevelingStats?.settings) {
-          this.soloLevelingStats.saveSettings();
-        }
       }
     } else {
       // Mana is already full - reset regen active flag
@@ -4839,9 +4914,11 @@ module.exports = class Dungeons {
     this.removeBossHPBar(channelKey);
 
     // SAFETY: Remove any orphaned HP bar containers for this channel
-    document.querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`).forEach((el) => {
-      el.remove();
-    });
+    document
+      .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
+      .forEach((el) => {
+        el.remove();
+      });
 
     // Clear dungeon timeout timer
     if (this.dungeonTimeouts.has(channelKey)) {
@@ -5561,6 +5638,19 @@ module.exports = class Dungeons {
   // BOSS HP BAR (IN CHANNEL HEADER)
   // ============================================================================
   updateBossHPBar(channelKey) {
+    // CRITICAL: SYNC FROM STATS PLUGIN FIRST (get freshest HP/Mana)
+    // Ensures HP bar shows accurate participation status
+    if (this.soloLevelingStats?.settings) {
+      if (typeof this.soloLevelingStats.settings.userHP === 'number') {
+        this.settings.userHP = this.soloLevelingStats.settings.userHP;
+        this.settings.userMaxHP = this.soloLevelingStats.settings.userMaxHP;
+      }
+      if (typeof this.soloLevelingStats.settings.userMana === 'number') {
+        this.settings.userMana = this.soloLevelingStats.settings.userMana;
+        this.settings.userMaxMana = this.soloLevelingStats.settings.userMaxMana;
+      }
+    }
+
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon || dungeon.boss.hp <= 0) {
       this.removeBossHPBar(channelKey);
@@ -6465,8 +6555,9 @@ module.exports = class Dungeons {
     const now = Date.now();
     const lastUpdate = this._lastHPBarUpdate[channelKey] || 0;
 
-    // Throttle to max 1 update per second per channel
-    if (now - lastUpdate < 1000) {
+    // REDUCED THROTTLE: Max 4 updates per second (250ms) for responsive UI
+    // Was 1 second (too laggy), now 250ms (smooth real-time feel)
+    if (now - lastUpdate < 250) {
       // Queue for later
       this._hpBarUpdateQueue.add(channelKey);
     } else {
@@ -6710,6 +6801,14 @@ module.exports = class Dungeons {
   // ============================================================================
   async restoreActiveDungeons() {
     if (!this.storageManager) return;
+    
+    // CRITICAL: Clean up any orphaned HP bars from previous session FIRST
+    // This prevents lingering HP bars from old dungeons
+    document.querySelectorAll('.dungeon-boss-hp-bar, .dungeon-boss-hp-container').forEach((el) => {
+      el.remove();
+    });
+    console.log('[Dungeons] Cleaned up orphaned HP bars from previous session');
+    
     try {
       const savedDungeons = await this.storageManager.getAllDungeons();
 
@@ -6722,6 +6821,7 @@ module.exports = class Dungeons {
           // Clear invalid reference
           this.settings.userActiveDungeon = null;
           this.saveSettings();
+          console.log('[Dungeons] Cleared stale userActiveDungeon reference on restore');
         }
       }
 
@@ -6762,10 +6862,31 @@ module.exports = class Dungeons {
             this.updateUserHPBar();
           }
         } else {
-          // Expired, delete it
+          // Expired or completed/failed - clean up completely
+          console.log(`[Dungeons] Cleaning up expired/old dungeon: ${dungeon.name} [${dungeon.rank}]`);
+          
+          // Remove HP bar if it exists
+          this.removeBossHPBar(dungeon.channelKey);
+          
+          // Remove any HP bar containers
+          document.querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${dungeon.channelKey}"]`).forEach((el) => {
+            el.remove();
+          });
+          
+          // Release channel lock if held
+          if (this.channelLocks.has(dungeon.channelKey)) {
+            this.channelLocks.delete(dungeon.channelKey);
+          }
+          
+          // Delete from IndexedDB
           await this.storageManager.deleteDungeon(dungeon.channelKey);
+          
+          // Clear from memory if somehow still present
+          this.activeDungeons.delete(dungeon.channelKey);
         }
       }
+      
+      console.log(`[Dungeons] Restored ${this.activeDungeons.size} active dungeons`);
     } catch (error) {
       console.error('Dungeons: Failed to restore dungeons', error);
     }
