@@ -6116,6 +6116,14 @@ module.exports = class CriticalHitMerged {
     // Update stats before showing panel
     this.updateStats();
 
+    // HTML escape helper to prevent XSS
+    const escapeHTML = (str) => {
+      if (str == null) return '';
+      const div = document.createElement('div');
+      div.textContent = String(str);
+      return div.innerHTML;
+    };
+
     // Inject settings panel CSS
     this.injectSettingsCSS();
 
@@ -6206,12 +6214,12 @@ module.exports = class CriticalHitMerged {
                             <input
                                 type="color"
                                 id="crit-color"
-                                value="${this.settings.critColor}"
+                                value="${escapeHTML(this.settings.critColor)}"
                                 class="crit-color-picker"
                             />
-                            <div class="crit-color-preview" style="background-color: ${
+                            <div class="crit-color-preview" style="background-color: ${escapeHTML(
                               this.settings.critColor
-                            }"></div>
+                            )}"></div>
                         </div>
                         <div class="crit-form-description">
                             Choose the color for critical hit messages
@@ -6225,7 +6233,7 @@ module.exports = class CriticalHitMerged {
                         <input
                             type="text"
                             id="crit-font"
-                            value="${this.settings.critFont}"
+                            value="${escapeHTML(this.settings.critFont)}"
                             placeholder="'Press Start 2P', monospace"
                             class="crit-text-input"
                         />
@@ -6843,19 +6851,22 @@ module.exports = class CriticalHitMerged {
     // History retention settings
     const retentionInput = container.querySelector('#history-retention');
     const retentionSlider = container.querySelector('#history-retention-slider');
+    const retentionLabel = retentionSlider
+      .closest('.crit-form-item')
+      .querySelector('.crit-label-value');
 
     retentionSlider.addEventListener('input', (e) => {
       retentionInput.value = e.target.value;
       plugin.settings.historyRetentionDays = parseInt(e.target.value);
       plugin.saveSettings();
-      container.querySelector('.crit-label-value').textContent = `${e.target.value}`;
+      if (retentionLabel) retentionLabel.textContent = `${e.target.value}`;
     });
 
     retentionInput.addEventListener('change', (e) => {
       retentionSlider.value = e.target.value;
       plugin.settings.historyRetentionDays = parseInt(e.target.value);
       plugin.saveSettings();
-      container.querySelector('.crit-label-value').textContent = `${e.target.value}`;
+      if (retentionLabel) retentionLabel.textContent = `${e.target.value}`;
     });
 
     // Auto-cleanup history

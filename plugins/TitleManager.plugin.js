@@ -2,7 +2,13 @@
  * @name SoloLevelingTitleManager
  * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.0.2
+ * @version 1.0.3
+ *
+ * @changelog v1.0.3 (2025-12-04)
+ * - Fixed close button using inline onclick that bypassed cleanup
+ * - Close button now routes through central modal click handler
+ * - Ensures proper state cleanup (titleModal, _titleManagerInstances)
+ * - Enhanced memory cleanup (modal instance tracking cleared on stop)
  *
  * @changelog v1.0.2 (2025-12-03)
  * - Code structure improvements (section headers)
@@ -101,6 +107,20 @@ module.exports = class SoloLevelingTitleManager {
       if (this._urlChangeCleanup) {
         this._urlChangeCleanup();
         this._urlChangeCleanup = null;
+      }
+
+      // MEMORY CLEANUP: Clear modal instance tracking
+      if (window._titleManagerInstances) {
+        // Remove any instances belonging to this plugin
+        const instancesToRemove = [];
+        window._titleManagerInstances.forEach((instance, modal) => {
+          if (instance === this) {
+            instancesToRemove.push(modal);
+          }
+        });
+        instancesToRemove.forEach((modal) => {
+          window._titleManagerInstances.delete(modal);
+        });
       }
     }
   }
@@ -624,7 +644,7 @@ module.exports = class SoloLevelingTitleManager {
       <div class="tm-modal-content">
         <div class="tm-modal-header">
           <h2> Titles</h2>
-          <button class="tm-close-button" onclick="this.closest('.tm-title-modal').remove()">×</button>
+          <button class="tm-close-button">×</button>
         </div>
         <div class="tm-modal-body">
           ${
@@ -761,6 +781,12 @@ module.exports = class SoloLevelingTitleManager {
         return;
       }
 
+      // Handle close button clicks
+      if (e.target.classList.contains('tm-close-button') || e.target.closest('.tm-close-button')) {
+        this.closeTitleModal();
+        return;
+      }
+
       // Handle equip button clicks
       if (e.target.classList.contains('tm-equip-btn')) {
         const title = e.target.getAttribute('data-title');
@@ -804,11 +830,7 @@ module.exports = class SoloLevelingTitleManager {
 
   injectCSS() {
     const styleId = 'title-manager-css';
-    if (document.getElementById(styleId)) return;
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
+    const cssContent = `
       .tm-title-button {
         background: transparent;
         border: none;
@@ -1078,12 +1100,27 @@ module.exports = class SoloLevelingTitleManager {
       }
     `;
 
-    document.head.appendChild(style);
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    try {
+      BdApi.DOM.addStyle(styleId, cssContent);
+    } catch (error) {
+      // Fallback to manual injection
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+    }
   }
 
   removeCSS() {
-    const style = document.getElementById('title-manager-css');
-    if (style) style.remove();
+    const styleId = 'title-manager-css';
+    try {
+      BdApi.DOM.removeStyle(styleId);
+    } catch (error) {
+      // Fallback to manual removal
+      const style = document.getElementById(styleId);
+      if (style) style.remove();
+    }
   }
 
   getSettingsPanel() {

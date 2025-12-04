@@ -2,23 +2,70 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 2.0.0
+ * @version 3.0.1
  *
- * STORAGE: Uses IndexedDB for scalable storage (user-specific, supports 100,000+ shadows)
- * Features:
+ * ============================================================================
+ * STORAGE & SCALABILITY
+ * ============================================================================
+ * - Uses IndexedDB for scalable storage (user-specific)
+ * - Supports 100,000+ shadows without performance degradation
+ * - Async operations (non-blocking)
+ * - Pagination and filtering
+ * - Memory caching for aggregation
+ *
+ * ============================================================================
+ * CORE FEATURES
+ * ============================================================================
  * - 26 total shadow types (8 humanoid + 18 magic beast)
  * - 100% magic beasts from dungeons, 100% humanoids from messages
  * - Beast family classification (10 families)
  * - Biome-specific extraction filtering
- * - Automatic rank-up system
+ * - Automatic rank-up system (80% threshold)
  * - Individual shadow progression (level, XP, stats, growth)
- * - Natural growth (combat-time based)
+ * - Natural growth (combat-time based, 10x base rate)
  * - Generals system (top 7 strongest)
- * - Auto-resurrection with mana costs
+ * - Auto-resurrection with exponential mana costs
  * - Dragon restrictions (NH+ ranks only)
  * - Extended ranks to Shadow Monarch
+ * - Member list widget (rank distribution display)
  *
- * @changelog v2.0.0 (2025-12-03)
+ * ============================================================================
+ * VERSION HISTORY
+ * ============================================================================
+ *
+ * @changelog v3.0.1 (2025-12-04) - EXTRACTION OPTIMIZATION
+ * - Added configurable retry system (maxAttempts parameter)
+ * - Mobs now use 1 extraction attempt (prevents queue buildup)
+ * - Bosses still use 3 extraction attempts (important targets)
+ * - Added isBoss parameter to attemptDungeonExtraction
+ * - Enhanced memory cleanup (caches, timestamps, tracking)
+ * - Performance improvements for high-volume extraction
+ *
+ * @changelog v3.0.0 (2025-12-04) - UI SYSTEM OVERHAUL
+ * MAJOR CHANGES:
+ * - Chatbox button UI disabled (cleaner Discord toolbar)
+ * - Member list widget system refactored and stabilized
+ * - Widget persistence fixes (survives channel/guild switching)
+ * - BdApi.DOM migration (injectCSS → DOM.addStyle/removeStyle)
+ * - Duplicate widget prevention system
+ * - Speed optimizations (instant widget injection)
+ * - Removed chatbox shadow display (too cluttered)
+ * - Member list now shows shadow rank distribution
+ *
+ * UI IMPROVEMENTS:
+ * - Single shadow count widget in member list
+ * - Shows total shadows + breakdown by rank
+ * - Auto-updates every 10 seconds
+ * - Clean, non-intrusive design
+ * - Proper CSS injection lifecycle
+ *
+ * BUG FIXES:
+ * - Fixed widget disappearing on channel switch
+ * - Fixed duplicate 999+ badges
+ * - Fixed CSS not persisting properly
+ * - Fixed BdApi compatibility (v1.13.0+)
+ *
+ * @changelog v2.0.0 (2025-12-03) - BEAST FAMILY SYSTEM
  * - Added 10 new magic beast types (Orc, Naga, Titan, Giant, Elf, Demon, Ghoul, Ogre, Centipede, Yeti)
  * - Implemented beast family classification system
  * - 100% magic beast extraction from dungeons
@@ -79,8 +126,13 @@ class ShadowStorageManager {
     this.cachedBuffsTime = null;
 
     // Migration flag - load persisted value from stable storage
-    const persistedMigration = BdApi.Data.load('ShadowArmy', 'migrationCompleted');
-    this.migrationCompleted = persistedMigration === true;
+    try {
+      const persistedMigration = BdApi.Data.load('ShadowArmy', 'migrationCompleted');
+      this.migrationCompleted = persistedMigration === true;
+    } catch (error) {
+      console.warn('[ShadowArmy] Failed to load migration flag from BdApi.Data', error);
+      this.migrationCompleted = false;
+    }
 
     // Natural growth tracking
     this.lastNaturalGrowthTime = Date.now();
@@ -489,6 +541,31 @@ class ShadowStorageManager {
 
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * Get effective stats for a shadow (base + growth + natural growth)
+   * Used internally by ShadowStorageManager for stat calculations.
+   * Operations:
+   * 1. Get base stats from shadow.baseStats
+   * 2. Get growth stats from shadow.growthStats (level-ups)
+   * 3. Get natural growth stats from shadow.naturalGrowthStats (passive)
+   * 4. Sum all three for each stat
+   * 5. Return effective stats object
+   */
+  getShadowEffectiveStats(shadow) {
+    const base = shadow.baseStats || {};
+    const growth = shadow.growthStats || {};
+    const naturalGrowth = shadow.naturalGrowthStats || {};
+
+    return {
+      strength: (base.strength || 0) + (growth.strength || 0) + (naturalGrowth.strength || 0),
+      agility: (base.agility || 0) + (growth.agility || 0) + (naturalGrowth.agility || 0),
+      intelligence:
+        (base.intelligence || 0) + (growth.intelligence || 0) + (naturalGrowth.intelligence || 0),
+      vitality: (base.vitality || 0) + (growth.vitality || 0) + (naturalGrowth.vitality || 0),
+      luck: (base.luck || 0) + (growth.luck || 0) + (naturalGrowth.luck || 0),
+    };
   }
 
   /**
@@ -1374,31 +1451,18 @@ module.exports = class ShadowArmy {
 
     this.loadSettings();
 
-    this.injectCSS();
+    this.injectCSS(); // Keep CSS for extraction animations
+    this.injectWidgetCSS(); // Widget CSS for member list display (DOM injection disabled)
     this.integrateWithSoloLeveling();
     this.setupMessageListener();
-    this.createShadowArmyButton();
+    // Shadow Army button disabled - no chatbox UI
+    // this.createShadowArmyButton();
 
-    // Watch for channel changes and recreate button
+    // Watch for channel changes (button recreation disabled)
     this.setupChannelWatcher();
 
-    // Retry button creation after delays to ensure Discord UI is ready
-    const timeout1 = setTimeout(() => {
-      this._retryTimeouts.delete(timeout1);
-      if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
-        this.createShadowArmyButton();
-      }
-    }, 2000);
-    this._retryTimeouts.add(timeout1);
-
-    // Additional retry after longer delay (for plugin re-enabling)
-    const timeout2 = setTimeout(() => {
-      this._retryTimeouts.delete(timeout2);
-      if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
-        this.createShadowArmyButton();
-      }
-    }, 5000);
-    this._retryTimeouts.add(timeout2);
+    // Button retry disabled - no chatbox UI needed
+    // (Retries commented out to prevent button recreation)
 
     // Recalculate all shadows with new exponential formula (one-time migration)
     try {
@@ -1436,15 +1500,18 @@ module.exports = class ShadowArmy {
       this.processNaturalGrowthForAllShadows();
     }, 60 * 60 * 1000); // 1 hour
 
-    // Inject shadow rank widget into member list
+    // Shadow rank widget for member list display (chatbox button still disabled)
     setTimeout(() => {
       this.injectShadowRankWidget();
-    }, 3000);
+    }, 100);
 
     // Update widget every 30 seconds
     this.widgetUpdateInterval = setInterval(() => {
       this.updateShadowRankWidget();
     }, 30000);
+
+    // Remove chatbox button (if any exists)
+    this.removeShadowArmyButton();
   }
 
   /**
@@ -1491,8 +1558,51 @@ module.exports = class ShadowArmy {
       this.widgetUpdateInterval = null;
     }
 
+    // Clear widget reinjection timeout
+    if (this.widgetReinjectionTimeout) {
+      clearTimeout(this.widgetReinjectionTimeout);
+      this.widgetReinjectionTimeout = null;
+    }
+
+    // COMPREHENSIVE MEMORY CLEANUP
+    // Clear caches
+    if (this.cachedBuffs) this.cachedBuffs = null;
+    this.cachedBuffsTime = null;
+
+    // Clear extraction timestamps
+    if (this.extractionTimestamps) {
+      this.extractionTimestamps.length = 0;
+      this.extractionTimestamps = null;
+    }
+
+    // Clear dungeon extraction attempts tracking
+    if (this.settings.dungeonExtractionAttempts) {
+      this.settings.dungeonExtractionAttempts = null;
+    }
+
+    // Note: StorageManager caches (favoriteCache, recentCache, aggregationCache)
+    // are managed by the storage manager itself and will be cleaned up when
+    // database is closed
+
+    // Clear widget injection timeouts
+    if (this._widgetInjectionTimeouts) {
+      this._widgetInjectionTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+      this._widgetInjectionTimeouts.clear();
+      this._widgetInjectionTimeouts = null;
+    }
+
+    // Disconnect member list observer
+    if (this.memberListObserver) {
+      this.memberListObserver.disconnect();
+      this.memberListObserver = null;
+    }
+
     // Remove shadow rank widget
     this.removeShadowRankWidget();
+
+    // Clear cached buffs
+    this.cachedBuffs = null;
+    this.cachedBuffsTime = null;
 
     // Close IndexedDB connection
     if (this.storageManager) {
@@ -1507,7 +1617,7 @@ module.exports = class ShadowArmy {
 
   /**
    * Setup channel watcher for URL changes (event-based, no polling)
-   * Ensures button persists across guild/channel switches
+   * Ensures button and widget persist across guild/channel switches
    */
   setupChannelWatcher() {
     // Use event-based URL change detection (no polling)
@@ -1521,13 +1631,12 @@ module.exports = class ShadowArmy {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        // Recreate button after channel change
+        // Re-inject widget after channel/guild change (button still disabled)
         const timeoutId = setTimeout(() => {
           this._retryTimeouts.delete(timeoutId);
-          if (!this.shadowArmyButton || !document.contains(this.shadowArmyButton)) {
-            this.createShadowArmyButton();
-          }
-        }, 500);
+          // Widget re-injection on channel change
+          this.injectShadowRankWidget();
+        }, 200);
         this._retryTimeouts.add(timeoutId);
       }
     };
@@ -1549,12 +1658,50 @@ module.exports = class ShadowArmy {
       handleUrlChange();
     };
 
+    // Setup member list watcher for widget persistence
+    this.setupMemberListWatcher();
+
     // Store cleanup functions
     this._urlChangeCleanup = () => {
       window.removeEventListener('popstate', handleUrlChange);
       history.pushState = originalPushState;
       history.replaceState = originalReplaceState;
     };
+  }
+
+  /**
+   * Setup MutationObserver to watch for member list changes
+   * Re-injects widget when member list is re-rendered (channel/guild switch)
+   */
+  setupMemberListWatcher() {
+    // RE-ENABLED: Watch for member list changes to maintain widget
+    // Disconnect existing observer if any
+    if (this.memberListObserver) {
+      this.memberListObserver.disconnect();
+    }
+
+    // Create observer to watch for member list changes
+    this.memberListObserver = new MutationObserver(() => {
+      const widget = document.getElementById('shadow-army-widget');
+      const membersList = document.querySelector('[class*="members"]');
+
+      // If member list exists but widget doesn't, re-inject
+      if (membersList && !widget) {
+        // Fast debounce re-injection (prevent multiple calls)
+        if (this.widgetReinjectionTimeout) {
+          clearTimeout(this.widgetReinjectionTimeout);
+        }
+        this.widgetReinjectionTimeout = setTimeout(() => {
+          this.injectShadowRankWidget();
+        }, 100);
+      }
+    });
+
+    // Start observing the entire document for member list changes
+    this.memberListObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+    });
   }
 
   // ============================================================================
@@ -1620,10 +1767,11 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Attempt to load saved settings using BdApi.Data
    * 2. Merge with default settings to ensure all keys exist
-   * 3. Validate arrays (shadows, favoriteShadowIds)
+   * 3. Validate arrays (shadows)
    * 4. Backfill missing extraction config keys
    * 5. Initialize specialArise tracking if missing
    * 6. Handle errors gracefully with fallback to defaults
+   * Note: Legacy favoriteShadowIds may exist but are no longer used (generals auto-selected)
    */
   loadSettings() {
     try {
@@ -1691,10 +1839,18 @@ module.exports = class ShadowArmy {
    * 3. Log warning if plugin not found
    */
   integrateWithSoloLeveling() {
-    // Get SoloLevelingStats plugin
-    this.soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-    if (!this.soloPlugin) {
-      console.warn('ShadowArmy: SoloLevelingStats plugin not found');
+    try {
+      // Get SoloLevelingStats plugin
+      this.soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+      if (!this.soloPlugin) {
+        console.warn('[ShadowArmy] SoloLevelingStats plugin not found');
+      }
+    } catch (error) {
+      console.warn(
+        '[ShadowArmy] Failed to integrate with SoloLevelingStats via BdApi.Plugins',
+        error
+      );
+      this.soloPlugin = null;
     }
   }
 
@@ -1926,15 +2082,15 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Attempt extraction with retry logic (up to 3 attempts)
+   * Attempt extraction with retry logic (configurable attempts)
    * Generates shadow first, then tries to extract it
    * Only saves to database if successful
    * Operations:
    * 1. Generate shadow with target rank and stats
    * 2. Calculate extraction chance based on shadow stats vs user stats
-   * 3. Try extraction up to 3 times
+   * 3. Try extraction up to maxAttempts times (1 for mobs, 3 for bosses/messages)
    * 4. If successful, save shadow to database
-   * 5. If fails 3 times, discard shadow
+   * 5. If fails all attempts, discard shadow
    * @param {string} userRank - User's current rank
    * @param {number} userLevel - User's current level
    * @param {Object} userStats - User's stats
@@ -1942,6 +2098,9 @@ module.exports = class ShadowArmy {
    * @param {Object} targetStats - Target shadow stats (optional, will generate if not provided)
    * @param {number} targetStrength - Target shadow strength (optional)
    * @param {boolean} skipCap - Skip extraction cap (for dungeons)
+   * @param {boolean} fromDungeon - Is this from a dungeon (for magic beast extraction)
+   * @param {Array} beastFamilies - Allowed beast families (biome-specific)
+   * @param {number} maxAttempts - Maximum extraction attempts (default: 3)
    * @returns {Object|null} - Extracted shadow or null if failed
    */
   async attemptExtractionWithRetries(
@@ -1953,7 +2112,8 @@ module.exports = class ShadowArmy {
     targetStrength = null,
     skipCap = false,
     fromDungeon = false,
-    beastFamilies = null
+    beastFamilies = null,
+    maxAttempts = 3
   ) {
     const intelligence = userStats.intelligence || 0;
     const perception = userStats.perception || 0;
@@ -2051,8 +2211,7 @@ module.exports = class ShadowArmy {
       targetStats = shadow.baseStats;
     }
 
-    // Try extraction up to 3 times
-    const maxAttempts = 3;
+    // Try extraction up to maxAttempts times (1 for mobs, 3 for bosses/messages)
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
       // Calculate extraction chance based on actual shadow stats
       const extractionChance = this.calculateExtractionChance(
@@ -2105,27 +2264,30 @@ module.exports = class ShadowArmy {
       }
     }
 
-    // Failed all 3 attempts - discard shadow
+    // Failed all attempts - discard shadow
     return null;
   }
 
   /**
-   * Attempt shadow extraction from dungeon boss (with per-boss attempt limits)
-   * Implements Solo Leveling lore: max 3 attempts per corpse (boss) per day
+   * Attempt shadow extraction from dungeon mob or boss
+   * Bosses: 3 extraction retries per corpse (more attempts for important targets)
+   * Mobs: 1 extraction attempt only (fast extraction, prevents queue buildup)
    * Operations:
-   * 1. Check boss attempt limit (lore: max 3 attempts per corpse)
+   * 1. Check boss attempt limit if boss (lore: max 3 attempts per corpse per day)
    * 2. Generate shadow with mob stats and rank
-   * 3. Try extraction based on factors (no cap)
-   * 4. Record attempt (success or failure counts toward limit)
+   * 3. Try extraction with appropriate retry count (1 for mobs, 3 for bosses)
+   * 4. Record attempt if boss (success or failure counts toward daily limit)
    * 5. Return result with attempts remaining
    *
-   * @param {string} bossId - Unique boss identifier (e.g., "dungeon_ice_cavern_boss_frost_dragon")
+   * @param {string} bossId - Unique boss identifier (e.g., "dungeon_ice_cavern_boss_frost_dragon" or "dungeon_mob_12345")
    * @param {string} userRank - User's current rank
    * @param {number} userLevel - User's current level
    * @param {Object} userStats - User's stats
    * @param {string} mobRank - Mob's rank
    * @param {Object} mobStats - Mob's stats
    * @param {number} mobStrength - Mob's strength
+   * @param {Array} beastFamilies - Allowed beast families (biome-specific)
+   * @param {boolean} isBoss - Is this a boss (true) or regular mob (false)? Default: true for backwards compatibility
    * @returns {Object} - { success: boolean, shadow: Object|null, error: string|null, attemptsRemaining: number }
    */
   async attemptDungeonExtraction(
@@ -2136,20 +2298,27 @@ module.exports = class ShadowArmy {
     mobRank,
     mobStats,
     mobStrength,
-    beastFamilies = null
+    beastFamilies = null,
+    isBoss = true
   ) {
-    // Check if can extract from this boss (lore: max 3 attempts per day)
-    const canExtract = this.canExtractFromBoss(bossId);
-    if (!canExtract.allowed) {
-      return {
-        success: false,
-        shadow: null,
-        error: canExtract.reason,
-        attemptsRemaining: canExtract.attemptsRemaining,
-      };
+    // Check boss attempt limit ONLY if this is a boss (not regular mobs)
+    if (isBoss) {
+      const canExtract = this.canExtractFromBoss(bossId);
+      if (!canExtract.allowed) {
+        return {
+          success: false,
+          shadow: null,
+          error: canExtract.reason,
+          attemptsRemaining: canExtract.attemptsRemaining,
+        };
+      }
     }
 
-    // Attempt extraction with retries (internal to this single attempt)
+    // Determine retry count: Bosses get 3 attempts, regular mobs get 1 attempt
+    // This prevents queue buildup and improves performance for mass mob extraction
+    const maxAttempts = isBoss ? 3 : 1;
+
+    // Attempt extraction with appropriate retry count
     const extractedShadow = await this.attemptExtractionWithRetries(
       userRank,
       userLevel,
@@ -2159,17 +2328,20 @@ module.exports = class ShadowArmy {
       mobStrength,
       true, // skipCap = true for dungeons
       true, // fromDungeon = true (enables magic beast extraction)
-      beastFamilies // Pass biome families for themed extraction
+      beastFamilies, // Pass biome families for themed extraction
+      maxAttempts // 1 for mobs, 3 for bosses
     );
 
-    // Record attempt (counts both success and failure toward limit)
-    this.recordBossExtractionAttempt(bossId, extractedShadow !== null);
+    // Record boss attempt ONLY if this is a boss (counts toward daily limit)
+    if (isBoss) {
+      this.recordBossExtractionAttempt(bossId, extractedShadow !== null);
+    }
 
     return {
       success: extractedShadow !== null,
       shadow: extractedShadow,
       error: extractedShadow ? null : 'Extraction failed',
-      attemptsRemaining: this.getBossAttemptsRemaining(bossId),
+      attemptsRemaining: isBoss ? this.getBossAttemptsRemaining(bossId) : 0, // Only bosses have attempt tracking
     };
   }
 
@@ -3158,20 +3330,19 @@ module.exports = class ShadowArmy {
         shadows = this.settings.shadows || [];
       }
 
-      // Ensure each shadow has up-to-date strength calculation
+      // Compute strength on the fly without mutating stored shadows
       // (strength = sum of all effective stats: base + growth + natural)
-      shadows.forEach((shadow) => {
-        if (!shadow.strength || shadow.strength === 0) {
-          const effectiveStats = this.getShadowEffectiveStats(shadow);
-          shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-        }
+      const withPower = shadows.map((shadow) => {
+        const effective = this.getShadowEffectiveStats(shadow);
+        const strength = this.calculateShadowStrength(effective, 1);
+        return { shadow, strength };
       });
 
       // Sort by strength (total power) descending
-      shadows.sort((a, b) => (b.strength || 0) - (a.strength || 0));
+      withPower.sort((a, b) => b.strength - a.strength);
 
       // Return top 7 strongest (generals)
-      return shadows.slice(0, 7);
+      return withPower.slice(0, 7).map((x) => x.shadow);
     } catch (error) {
       console.error('ShadowArmy: Error getting top generals', error);
       return [];
@@ -3256,7 +3427,7 @@ module.exports = class ShadowArmy {
 
         const baseAggregatedBuff = Math.sqrt(aggregated.totalPower / 10000) * 0.01;
 
-        // Cap aggregated buffs at 0.4 (40%) to leave room for favorites
+        // Cap aggregated buffs at 0.4 (40%) to leave room for generals
         const cappedAggregatedBuff = Math.min(0.4, baseAggregatedBuff);
 
         const aggregatedBuffs = {
@@ -3275,14 +3446,14 @@ module.exports = class ShadowArmy {
         console.error('ShadowArmy: Failed to get aggregated power', error);
       }
     } else {
-      // Fallback: process non-favorite shadows from localStorage with diminishing returns
-      // (Favorites already processed above)
-      const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
+      // Fallback: process non-general shadows from localStorage with diminishing returns
+      // (Generals already processed above)
+      const generalIds = new Set(generals.map((g) => g.id));
       const allShadows = this.settings.shadows || [];
-      let nonFavoriteCount = 0;
+      let nonGeneralCount = 0;
 
-      // Accumulator for aggregated non-favorite shadow buffs per stat
-      const aggregatedNonFavoriteBuffs = {
+      // Accumulator for aggregated non-general shadow buffs per stat
+      const aggregatedNonGeneralBuffs = {
         strength: 0,
         agility: 0,
         intelligence: 0,
@@ -3295,30 +3466,30 @@ module.exports = class ShadowArmy {
         const role = this.shadowRoles[shadow.role];
         if (!role || !role.buffs) return;
 
-        const isFavorite = favoriteIds.has(shadow.id);
+        const isGeneral = generalIds.has(shadow.id);
 
-        if (!isFavorite) {
-          nonFavoriteCount++;
+        if (!isGeneral) {
+          nonGeneralCount++;
 
-          // Accumulate each non-favorite shadow's role buffs per stat
+          // Accumulate each non-general shadow's role buffs per stat
           Object.keys(role.buffs).forEach((stat) => {
             const amount = role.buffs[stat] || 0;
-            aggregatedNonFavoriteBuffs[stat] = (aggregatedNonFavoriteBuffs[stat] || 0) + amount;
+            aggregatedNonGeneralBuffs[stat] = (aggregatedNonGeneralBuffs[stat] || 0) + amount;
           });
         }
-        // Favorites already processed at start of function
+        // Generals already processed at start of function
       });
 
-      // Apply diminishing returns for non-favorites
-      // Formula: sqrt(nonFavoriteCount / 100) * 0.01
+      // Apply diminishing returns for non-generals
+      // Formula: sqrt(nonGeneralCount / 100) * 0.01
       // This prevents linear scaling
-      if (nonFavoriteCount > 0) {
-        const diminishingFactor = Math.sqrt(nonFavoriteCount / 100) * 0.01;
+      if (nonGeneralCount > 0) {
+        const diminishingFactor = Math.sqrt(nonGeneralCount / 100) * 0.01;
         const cappedFactor = Math.min(0.4, diminishingFactor); // Cap at 40%
 
         // Apply capped diminishing factor to each accumulated stat total
-        Object.keys(aggregatedNonFavoriteBuffs).forEach((stat) => {
-          const diminishedBuff = aggregatedNonFavoriteBuffs[stat] * cappedFactor;
+        Object.keys(aggregatedNonGeneralBuffs).forEach((stat) => {
+          const diminishedBuff = aggregatedNonGeneralBuffs[stat] * cappedFactor;
           buffs[stat] = (buffs[stat] || 0) + diminishedBuff;
         });
       }
@@ -4065,18 +4236,11 @@ module.exports = class ShadowArmy {
 
   /**
    * Inject CSS styles for shadow army UI components
-   * Operations:
-   * 1. Check if styles already injected (prevent duplicates)
-   * 2. Create style element with all CSS rules
-   * 3. Append to document head
+   * Uses BdApi.DOM for persistent CSS injection (v1.8.0+)
    */
   injectCSS() {
     const styleId = 'shadow-army-styles';
-    if (document.getElementById(styleId)) return;
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
+    const cssContent = `
       .shadow-army-extraction-animation {
         position: fixed;
         top: 50%;
@@ -4289,18 +4453,34 @@ module.exports = class ShadowArmy {
       }
     `;
 
-    document.head.appendChild(style);
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    try {
+      BdApi.DOM.addStyle(styleId, cssContent);
+    } catch (error) {
+      // Fallback to manual injection if BdApi.DOM is unavailable
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+      console.warn('[ShadowArmy] BdApi.DOM.addStyle failed, using fallback for main CSS', error);
+    }
   }
 
   /**
-   * Remove injected CSS styles
-   * Operations:
-   * 1. Find style element by ID
-   * 2. Remove from document head if found
+   * Remove injected CSS styles using BdApi.DOM (v1.8.0+)
    */
   removeCSS() {
-    const style = document.getElementById('shadow-army-styles');
-    if (style) style.remove();
+    const styleId = 'shadow-army-styles';
+    try {
+      BdApi.DOM.removeStyle(styleId);
+    } catch (error) {
+      // Fallback to manual removal if BdApi.DOM is unavailable
+      const style = document.getElementById(styleId);
+      if (style && style.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+      console.warn('[ShadowArmy] BdApi.DOM.removeStyle failed, using fallback for main CSS', error);
+    }
   }
 
   // ============================================================================
@@ -4368,6 +4548,17 @@ module.exports = class ShadowArmy {
    * Create ShadowArmy button in chat toolbar
    */
   async createShadowArmyButton() {
+    // DISABLED: Shadow Army button removed from chatbox
+    // All chatbox UI disabled per user request
+
+    // Clean up any existing buttons
+    const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
+    if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
+    this.shadowArmyButton = null;
+
+    return;
+
+    /* DISABLED BUTTON CREATION
     // Re-entrance guard: prevent infinite loops during button creation
     if (this._creatingShadowArmyButton) {
       return;
@@ -4497,12 +4688,17 @@ module.exports = class ShadowArmy {
       // Always clear the creation flag
       this._creatingShadowArmyButton = false;
     }
+    */
   }
 
   /**
    * Observe toolbar for changes and recreate button if needed
    */
   observeToolbar(toolbar) {
+    // DISABLED: Toolbar observer not needed (button system disabled)
+    return;
+
+    /* DISABLED TOOLBAR OBSERVER
     if (this.toolbarObserver) {
       this.toolbarObserver.disconnect();
     }
@@ -4544,42 +4740,15 @@ module.exports = class ShadowArmy {
     });
 
     this.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
+    */
   }
 
   /**
-   * Remove ShadowArmy button from toolbar
-   */
-  removeShadowArmyButton() {
-    if (this.shadowArmyButton) {
-      this.shadowArmyButton.remove();
-      this.shadowArmyButton = null;
-    }
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
-    if (this.toolbarCheckInterval) {
-      clearInterval(this.toolbarCheckInterval);
-      this.toolbarCheckInterval = null;
-    }
-    if (this._recreateTimeout) {
-      clearTimeout(this._recreateTimeout);
-      this._recreateTimeout = null;
-    }
-  }
-
-  /**
-   * Open ShadowArmy UI modal
-   */
-  /**
-   * Inject CSS for shadow rank widget
+   * Inject CSS for shadow rank widget (using BdApi.DOM for persistence)
    */
   injectWidgetCSS() {
-    if (document.getElementById('shadow-army-widget-styles')) return;
-
-    const style = document.createElement('style');
-    style.id = 'shadow-army-widget-styles';
-    style.textContent = `
+    // RE-ENABLED: Widget CSS needed for member list display
+    const cssContent = `
       #shadow-army-widget {
         background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
         border: 1px solid rgba(139, 92, 246, 0.4) !important;
@@ -4595,32 +4764,111 @@ module.exports = class ShadowArmy {
         border-color: rgba(139, 92, 246, 0.6) !important;
         box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 24px rgba(139, 92, 246, 0.25) !important;
       }
+
+      #shadow-army-widget .widget-header {
+        display: flex !important;
+        align-items: center !important;
+        justify-content: space-between !important;
+        margin-bottom: 8px !important;
+      }
+
+      #shadow-army-widget .widget-title {
+        color: #8b5cf6 !important;
+        font-size: 12px !important;
+        font-weight: bold !important;
+        text-shadow: 0 0 8px rgba(139, 92, 246, 0.8) !important;
+      }
+
+      #shadow-army-widget .widget-total {
+        color: #999 !important;
+        font-size: 11px !important;
+      }
+
+      #shadow-army-widget .rank-grid {
+        display: grid !important;
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 6px !important;
+      }
+
+      #shadow-army-widget .rank-box {
+        text-align: center !important;
+        padding: 4px !important;
+        background: rgba(0, 0, 0, 0.4) !important;
+        border-radius: 4px !important;
+        transition: all 0.2s ease !important;
+      }
+
+      #shadow-army-widget .rank-label {
+        font-size: 10px !important;
+        font-weight: bold !important;
+      }
+
+      #shadow-army-widget .rank-count {
+        color: #fff !important;
+        font-size: 14px !important;
+        font-weight: bold !important;
+      }
+
+      #shadow-army-widget .widget-footer {
+        margin-top: 8px !important;
+        padding-top: 8px !important;
+        border-top: 1px solid rgba(139, 92, 246, 0.2) !important;
+        text-align: center !important;
+        color: #888 !important;
+        font-size: 9px !important;
+      }
     `;
-    document.head.appendChild(style);
+
+    try {
+      BdApi.DOM.addStyle('shadow-army-widget-styles', cssContent);
+    } catch (error) {
+      // Fallback to manual injection if BdApi.DOM is unavailable
+      const style = document.createElement('style');
+      style.id = 'shadow-army-widget-styles';
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+      console.warn('[ShadowArmy] BdApi.DOM.addStyle failed, using fallback for widget CSS', error);
+    }
   }
 
   /**
    * Remove widget CSS
    */
   removeWidgetCSS() {
-    const style = document.getElementById('shadow-army-widget-styles');
-    if (style) style.remove();
+    try {
+      BdApi.DOM.removeStyle('shadow-army-widget-styles');
+    } catch (error) {
+      // Fallback to manual removal if BdApi.DOM is unavailable
+      const style = document.getElementById('shadow-army-widget-styles');
+      if (style && style.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+      console.warn(
+        '[ShadowArmy] BdApi.DOM.removeStyle failed, using fallback for widget CSS',
+        error
+      );
+    }
   }
 
   /**
    * Inject shadow rank widget into member list sidebar
+   * Fast injection with smart retry logic
    */
   async injectShadowRankWidget() {
-    // Inject CSS first
-    this.injectWidgetCSS();
+    // RE-ENABLED: Widget needed for member list display
+    // Prevent reinjection after plugin stop
+    if (this._isStopped) return;
 
-    // Wait for member list to load
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
+    // Check for member list immediately (no delay)
     const membersList = document.querySelector('[class*="members"]');
     if (!membersList) {
-      console.log('ShadowArmy: Member list not found, retrying...');
-      setTimeout(() => this.injectShadowRankWidget(), 2000);
+      // Fast retry - check again in 200ms
+      const timeoutId = setTimeout(() => this.injectShadowRankWidget(), 200);
+      // Track timeout for cleanup
+      if (!this._widgetInjectionTimeouts) {
+        this._widgetInjectionTimeouts = new Set();
+      }
+      this._widgetInjectionTimeouts.add(timeoutId);
       return;
     }
 
@@ -4652,6 +4900,10 @@ module.exports = class ShadowArmy {
    * Update shadow rank widget content
    */
   async updateShadowRankWidget() {
+    // RE-ENABLED: Widget update for member list display
+    // Prevent updates after plugin stop
+    if (this._isStopped) return;
+
     const widget = document.getElementById('shadow-army-widget');
     if (!widget) return;
 
@@ -4671,20 +4923,20 @@ module.exports = class ShadowArmy {
       // Count by rank
       const ranks = ['SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
       const rankColors = {
-        'SSS': '#ec4899',
-        'SS': '#ef4444',
-        'S': '#f59e0b',
-        'A': '#8b5cf6',
-        'B': '#3b82f6',
-        'C': '#22c55e',
-        'D': '#a0a0a0',
-        'E': '#999'
+        SSS: '#ec4899',
+        SS: '#ef4444',
+        S: '#f59e0b',
+        A: '#8b5cf6',
+        B: '#3b82f6',
+        C: '#22c55e',
+        D: '#a0a0a0',
+        E: '#999',
       };
 
-      const rankCounts = ranks.map(rank => ({
+      const rankCounts = ranks.map((rank) => ({
         rank,
-        count: shadows.filter(s => s.rank === rank).length,
-        color: rankColors[rank]
+        count: shadows.filter((s) => s.rank === rank).length,
+        color: rankColors[rank],
       }));
 
       // Generate HTML with proper structure
@@ -4698,7 +4950,9 @@ module.exports = class ShadowArmy {
           </div>
         </div>
         <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
-          ${rankCounts.map(({ rank, count, color }) => `
+          ${rankCounts
+            .map(
+              ({ rank, count, color }) => `
             <div class="rank-box" style="
               text-align: center;
               padding: 4px;
@@ -4709,7 +4963,9 @@ module.exports = class ShadowArmy {
               <div class="rank-label" style="color: ${color}; font-size: 10px; font-weight: bold;">${rank}</div>
               <div class="rank-count" style="color: #fff; font-size: 14px; font-weight: bold;">${count}</div>
             </div>
-          `).join('')}
+          `
+            )
+            .join('')}
         </div>
         <div class="widget-footer" style="
           margin-top: 8px;
@@ -4771,29 +5027,31 @@ module.exports = class ShadowArmy {
   generateRankDistribution(shadows) {
     const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
     const rankColors = {
-      'E': '#999',
-      'D': '#a0a0a0',
-      'C': '#22c55e',
-      'B': '#3b82f6',
-      'A': '#8b5cf6',
-      'S': '#f59e0b',
-      'SS': '#ef4444',
-      'SSS': '#ec4899'
+      E: '#999',
+      D: '#a0a0a0',
+      C: '#22c55e',
+      B: '#3b82f6',
+      A: '#8b5cf6',
+      S: '#f59e0b',
+      SS: '#ef4444',
+      SSS: '#ec4899',
     };
 
-    return ranks.map(rank => {
-      const count = shadows.filter(s => s.rank === rank).length;
-      const color = rankColors[rank];
-      const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
+    return ranks
+      .map((rank) => {
+        const count = shadows.filter((s) => s.rank === rank).length;
+        const color = rankColors[rank];
+        const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
 
-      return `
+        return `
         <div style="text-align: center; padding: 6px; background: rgba(0, 0, 0, 0.3); border-radius: 4px; border: 1px solid ${color}40;">
           <div style="color: ${color}; font-size: 14px; font-weight: bold;">${rank}</div>
           <div style="color: #fff; font-size: 16px; font-weight: bold; margin: 2px 0;">${count}</div>
           <div style="color: #888; font-size: 9px;">${percentage}%</div>
         </div>
       `;
-    }).join('');
+      })
+      .join('');
   }
 
   async openShadowArmyUI() {
@@ -4856,14 +5114,14 @@ module.exports = class ShadowArmy {
 
       const renderModal = () => {
         // Calculate generals (top 7 strongest) - DYNAMIC, recalculates on each render
-        shadows.forEach((shadow) => {
-          if (!shadow.strength || shadow.strength === 0) {
-            const effectiveStats = this.getShadowEffectiveStats(shadow);
-            shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-          }
+        // Compute strength on the fly without mutating stored shadows
+        const withPower = shadows.map((shadow) => {
+          const effective = this.getShadowEffectiveStats(shadow);
+          const strength = this.calculateShadowStrength(effective, 1);
+          return { shadow, strength, id: shadow.id };
         });
-        const sortedByPower = [...shadows].sort((a, b) => (b.strength || 0) - (a.strength || 0));
-        const generalIds = new Set(sortedByPower.slice(0, 7).map((s) => s.id));
+        const sortedByPower = withPower.sort((a, b) => b.strength - a.strength);
+        const generalIds = new Set(sortedByPower.slice(0, 7).map((x) => x.id));
 
         let filteredShadows = shadows;
 
@@ -5059,9 +5317,9 @@ module.exports = class ShadowArmy {
                   <div style="color: #999; font-size: 11px;">Ready Rank-Up</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${
-                    this.formatCombatTime(shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0))
-                  }</div>
+                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${this.formatCombatTime(
+                    shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0)
+                  )}</div>
                   <div style="color: #999; font-size: 11px;">Total Combat</div>
                 </div>
               </div>
@@ -5235,14 +5493,16 @@ module.exports = class ShadowArmy {
                         <div style="display: flex; gap: 8px; font-size: 10px; color: #666;">
                           ${
                             combatTime > 0
-                              ? `<span style="color: #34d399;">Combat: ${this.formatCombatTime(combatTime)}</span>`
+                              ? `<span style="color: #34d399;">Combat: ${this.formatCombatTime(
+                                  combatTime
+                                )}</span>`
                               : ''
                           }
                           ${
                             hasNaturalGrowth
-                              ? `<span style="color: #fbbf24;">Growth: +${
-                                  Object.values(naturalGrowth).reduce((sum, v) => sum + v, 0)
-                                }</span>`
+                              ? `<span style="color: #fbbf24;">Growth: +${Object.values(
+                                  naturalGrowth
+                                ).reduce((sum, v) => sum + v, 0)}</span>`
                               : ''
                           }
                           ${
@@ -5375,7 +5635,7 @@ module.exports = class ShadowArmy {
 
     // Cleanup: Remove any orphaned modals (lag protection)
     try {
-      document.querySelectorAll('.shadow-army-modal').forEach(modal => {
+      document.querySelectorAll('.shadow-army-modal').forEach((modal) => {
         if (modal && modal.parentNode) {
           modal.parentNode.removeChild(modal);
         }
@@ -5403,7 +5663,6 @@ module.exports = class ShadowArmy {
   getSettingsPanel() {
     // Note: BetterDiscord settings panels are synchronous, so we use fallback data
     // For full IndexedDB data, the panel will show cached/localStorage data
-    const favoriteIds = new Set(this.settings.favoriteShadowIds || []);
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
 
     // Get shadows from localStorage fallback (for display)
@@ -5412,30 +5671,38 @@ module.exports = class ShadowArmy {
     const total = shadowsForDisplay.length;
     const maxList = 50;
 
+    // Compute strength and sort to identify generals (top 7)
+    const shadowsWithPower = shadowsForDisplay.map((shadow) => {
+      const effective = this.getShadowEffectiveStats(shadow);
+      const strength = this.calculateShadowStrength(effective, 1);
+      return { shadow, strength };
+    });
+    shadowsWithPower.sort((a, b) => b.strength - a.strength);
+    const generalIds = new Set(shadowsWithPower.slice(0, 7).map((x) => x.shadow.id));
+
     const listItems = shadowsForDisplay
       .slice(0, maxList)
       .map((shadow, index) => {
-        const isFavorite = favoriteIds.has(shadow.id);
-        const starClass = isFavorite ? 'shadow-fav-toggle shadow-fav-active' : 'shadow-fav-toggle';
+        const isGeneral = generalIds.has(shadow.id);
+        const generalBadge = isGeneral
+          ? '<span style="background: rgba(139, 92, 246, 0.3); color: #8b5cf6; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">⭐ GENERAL</span>'
+          : '';
         const _extractedDate = new Date(shadow.extractedAt).toLocaleString();
-        // Sanitize shadow ID to prevent XSS (remove quotes and escape)
-        const safeId = String(shadow.id).replace(/['"]/g, '');
         return `
           <div class="shadow-list-item">
-            <button class="${starClass}"
-              data-shadow-id="${safeId}"
-              onclick="try { const p = BdApi.Plugins.get('ShadowArmy'); const btn = event.target.closest('button[data-shadow-id]'); if (btn) { (p.instance || p).toggleFavorite(btn.dataset.shadowId); } } catch (e) { console.error(e); }">
-
-            </button>
             <div class="shadow-list-main">
               <div class="shadow-list-header">
                 <span class="shadow-list-rank">${shadow.rank}-Rank</span>
                 <span class="shadow-list-role">${shadow.roleName || shadow.role}</span>
-                <span class="shadow-list-strength">Power: ${shadow.strength}</span>
+                ${generalBadge}
+                <span class="shadow-list-strength">Power: ${shadow.strength || 0}</span>
               </div>
               <div class="shadow-list-meta">
                 <span>Level ${shadow.level || 1}</span>
-                <span>${shadow.xp || 0} / ${this.getXPForNextLevel(shadow.level || 1)} XP</span>
+                <span>${shadow.xp || 0} / ${this.getShadowXpForNextLevel(
+          shadow.level || 1,
+          shadow.rank || 'E'
+        )} XP</span>
                 <span>${Math.floor(((shadow.level || 1) / 2000) * 100)}% to Monarch</span>
               </div>
             </div>
@@ -5448,6 +5715,9 @@ module.exports = class ShadowArmy {
       ? '<div style="color: #34d399; font-size: 11px; margin-top: 4px;">Using IndexedDB storage (scalable)</div>'
       : '<div style="color: #facc15; font-size: 11px; margin-top: 4px;">Using localStorage (limited to ~5,000 shadows)</div>';
 
+    // Count generals (top 7 strongest)
+    const generalsCount = Math.min(7, shadowsWithPower.length);
+
     return `
       <div class="shadow-army-settings">
         <h2>Shadow Army</h2>
@@ -5455,9 +5725,8 @@ module.exports = class ShadowArmy {
         <div class="shadow-army-stats">
           <div>Total Shadows: ${total}${this.storageManager ? ' (from cache)' : ''}</div>
           <div>Total Extracted: ${this.settings.totalShadowsExtracted}</div>
-          <div>Favorite Generals: ${(this.settings.favoriteShadowIds || []).length} / ${
-      this.settings.favoriteLimit || 7
-    }</div>
+          <div style="color: #8b5cf6; font-weight: bold;">⭐ Generals: ${generalsCount} / 7 (Auto-selected strongest)</div>
+          <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Generals provide full buffs • Other shadows provide diminishing returns</div>
         </div>
         <div class="shadow-army-config">
           <h3>Extraction Config</h3>

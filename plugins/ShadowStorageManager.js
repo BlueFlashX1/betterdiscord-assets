@@ -307,12 +307,14 @@ class ShadowStorageManager {
 
       // Determine best index and key range based on filters
       let index;
+      let indexName = null;
       let keyRange = null;
       let needsInCursorFiltering = false;
 
       // Priority 1: Use composite rank_role index if both are specified
       if (filters.rank && filters.role) {
         index = store.index('rank_role');
+        indexName = 'rank_role';
         keyRange = IDBKeyRange.only([filters.rank, filters.role]);
 
         // Check if we need additional filtering
@@ -321,17 +323,20 @@ class ShadowStorageManager {
       // Priority 2: Use single-value indexes with exact match
       else if (filters.rank) {
         index = store.index('rank');
+        indexName = 'rank';
         keyRange = IDBKeyRange.only(filters.rank);
         needsInCursorFiltering =
           filters.role || filters.minLevel || filters.maxLevel || filters.minStrength;
       } else if (filters.role) {
         index = store.index('role');
+        indexName = 'role';
         keyRange = IDBKeyRange.only(filters.role);
         needsInCursorFiltering = filters.minLevel || filters.maxLevel || filters.minStrength;
       }
       // Priority 3: Use range indexes for min/max bounds
       else if (filters.minLevel || filters.maxLevel) {
         index = store.index('level');
+        indexName = 'level';
         if (filters.minLevel && filters.maxLevel) {
           keyRange = IDBKeyRange.bound(filters.minLevel, filters.maxLevel);
         } else if (filters.minLevel) {
@@ -342,15 +347,18 @@ class ShadowStorageManager {
         needsInCursorFiltering = filters.minStrength;
       } else if (filters.minStrength) {
         index = store.index('strength');
+        indexName = 'strength';
         keyRange = IDBKeyRange.lowerBound(filters.minStrength);
       }
       // Priority 4: Use sortBy index for ordering
       else if (sortBy && ['rank', 'role', 'level', 'strength', 'extractedAt'].includes(sortBy)) {
         index = store.index(sortBy);
+        indexName = sortBy;
       }
       // Fallback: Use primary key
       else {
         index = store;
+        indexName = null;
       }
 
       // Determine cursor direction based on sort order
@@ -359,7 +367,7 @@ class ShadowStorageManager {
       // Open cursor with key range and direction
       const request = index.openCursor(keyRange, direction);
       const results = [];
-      let skipped = false;
+      let skippedCount = 0;
 
       request.onsuccess = (event) => {
         const cursor = event.target.result;
@@ -370,58 +378,43 @@ class ShadowStorageManager {
           return;
         }
 
-        // Skip to offset position (only once)
-        if (!skipped && offset > 0) {
-          skipped = true;
-          cursor.advance(offset);
-          return;
-        }
-
-        // Check if we've collected enough results
-        if (results.length >= limit) {
-          // Stop early - no need to scan remaining records
-          resolve(results);
-          return;
-        }
-
         const shadow = cursor.value;
 
         // Apply in-cursor filtering for conditions not covered by index
+        let matches = true;
         if (needsInCursorFiltering) {
-          let matches = true;
-
           // Only apply filters not already covered by the index
           if (filters.role && !filters.rank && shadow.role !== filters.role) {
             matches = false;
           }
-          if (
-            filters.minLevel &&
-            shadow.level < filters.minLevel &&
-            index !== store.index('level')
-          ) {
+          if (filters.minLevel && shadow.level < filters.minLevel && indexName !== 'level') {
             matches = false;
           }
-          if (
-            filters.maxLevel &&
-            shadow.level > filters.maxLevel &&
-            index !== store.index('level')
-          ) {
+          if (filters.maxLevel && shadow.level > filters.maxLevel && indexName !== 'level') {
             matches = false;
           }
           if (
             filters.minStrength &&
             shadow.strength < filters.minStrength &&
-            index !== store.index('strength')
+            indexName !== 'strength'
           ) {
             matches = false;
           }
+        }
 
-          if (matches) {
+        // Handle pagination with filtered results
+        if (matches) {
+          if (skippedCount < offset) {
+            // Still skipping to reach the offset
+            skippedCount++;
+          } else if (results.length < limit) {
+            // Within the page, collect results
             results.push(shadow);
+          } else {
+            // Page is full, stop
+            resolve(results);
+            return;
           }
-        } else {
-          // No filtering needed, add directly
-          results.push(shadow);
         }
 
         // Continue to next record

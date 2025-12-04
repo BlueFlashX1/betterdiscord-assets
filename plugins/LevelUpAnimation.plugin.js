@@ -180,11 +180,7 @@ module.exports = class LevelUpAnimation {
    */
   injectCSS() {
     const styleId = 'level-up-animation-css';
-    if (document.getElementById(styleId)) return;
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
+    const cssContent = `
       .lu-animation-container {
         position: fixed;
         top: 0;
@@ -265,13 +261,30 @@ module.exports = class LevelUpAnimation {
         }
       }
     `;
-    document.head.appendChild(style);
-    this.debugLog('INIT', 'CSS injected');
+
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    try {
+      BdApi.DOM.addStyle(styleId, cssContent);
+      this.debugLog('INIT', 'CSS injected via BdApi.DOM');
+    } catch (error) {
+      // Fallback to manual injection
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+      this.debugLog('INIT', 'CSS injected via manual method');
+    }
   }
 
   removeCSS() {
-    const style = document.getElementById('level-up-animation-css');
-    if (style) style.remove();
+    const styleId = 'level-up-animation-css';
+    try {
+      BdApi.DOM.removeStyle(styleId);
+    } catch (error) {
+      // Fallback to manual removal
+      const style = document.getElementById(styleId);
+      if (style) style.remove();
+    }
   }
 
   // ============================================================================

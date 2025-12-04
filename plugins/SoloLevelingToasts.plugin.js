@@ -39,6 +39,10 @@ module.exports = class SoloLevelingToasts {
     // Pre-created DOM elements for faster rendering
     this.toastTemplate = null;
     this.particleTemplate = null;
+
+    // Lifecycle management
+    this._isStopped = false;
+    this._hookRetryId = null;
   }
 
   // ============================================================================
@@ -53,6 +57,7 @@ module.exports = class SoloLevelingToasts {
    * 4. Hook into SoloLevelingStats plugin for notifications
    */
   start() {
+    this._isStopped = false;
     this.loadSettings();
     this.injectCSS();
     this.createToastContainer();
@@ -70,6 +75,12 @@ module.exports = class SoloLevelingToasts {
    * 5. Clear pending toast timeouts
    */
   stop() {
+    this._isStopped = true;
+    // Clear hook retry timeout if pending
+    if (this._hookRetryId) {
+      clearTimeout(this._hookRetryId);
+      this._hookRetryId = null;
+    }
     this.unhookIntoSoloLeveling();
     this.removeAllToasts();
     this.removeToastContainer();
@@ -235,14 +246,7 @@ module.exports = class SoloLevelingToasts {
    */
   injectCSS() {
     const styleId = 'solo-leveling-toasts-css';
-    if (document.getElementById(styleId)) {
-      this.debugLog('INJECT_CSS', 'CSS already injected');
-      return;
-    }
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
+    const cssContent = `
       .sl-toast-container {
         position: fixed;
         z-index: 999998;
@@ -523,16 +527,30 @@ module.exports = class SoloLevelingToasts {
         pointer-events: none;
       }
     `;
-    document.head.appendChild(style);
-    this.debugLog('INJECT_CSS', 'CSS injected successfully', {
-      styleId,
-      styleExists: !!document.getElementById(styleId),
-    });
+
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    try {
+      BdApi.DOM.addStyle(styleId, cssContent);
+      this.debugLog('INJECT_CSS', 'CSS injected successfully via BdApi.DOM');
+    } catch (error) {
+      // Fallback to manual injection
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+      this.debugLog('INJECT_CSS', 'CSS injected successfully via manual method');
+    }
   }
 
   removeCSS() {
-    const style = document.getElementById('solo-leveling-toasts-css');
-    if (style) style.remove();
+    const styleId = 'solo-leveling-toasts-css';
+    try {
+      BdApi.DOM.removeStyle(styleId);
+    } catch (error) {
+      // Fallback to manual removal
+      const style = document.getElementById(styleId);
+      if (style) style.remove();
+    }
   }
 
   // ============================================================================
@@ -1355,18 +1373,23 @@ module.exports = class SoloLevelingToasts {
    * 7. Store patcher reference for cleanup
    */
   hookIntoSoloLeveling() {
+    // Check if plugin has been stopped - don't retry if stopped
+    if (this._isStopped) {
+      return;
+    }
+
     try {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin) {
         this.debugLog('SoloLevelingStats plugin not found, will retry...');
-        setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
 
       const instance = soloPlugin.instance || soloPlugin;
       if (!instance) {
         this.debugLog('SoloLevelingStats instance not found, will retry...');
-        setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
 
@@ -1421,6 +1444,11 @@ module.exports = class SoloLevelingToasts {
             this.showToast(message, type, timeout);
           }
         );
+        // Clear retry timeout since we successfully hooked
+        if (this._hookRetryId) {
+          clearTimeout(this._hookRetryId);
+          this._hookRetryId = null;
+        }
         this.debugLog(
           'HOOK_SUCCESS',
           'Successfully hooked into SoloLevelingStats.showNotification',
@@ -1433,11 +1461,11 @@ module.exports = class SoloLevelingToasts {
           hasInstance: !!instance,
           instanceKeys: instance ? Object.keys(instance).slice(0, 10) : [],
         });
-        setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
       }
     } catch (error) {
       this.debugError('Failed to hook into SoloLevelingStats', error);
-      setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+      this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
     }
   }
 

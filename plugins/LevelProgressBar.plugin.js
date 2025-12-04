@@ -1,8 +1,40 @@
 /**
  * @name LevelProgressBar
  * @author BlueFlashX1
- * @description Always-visible level progress bar for Solo Leveling Stats
- * @version 1.0.2
+ * @description Always-visible level progress bar for Solo Leveling Stats with Shadow Army total power display
+ * @version 1.2.0
+ *
+ * ============================================================================
+ * FEATURES
+ * ============================================================================
+ * - Real-time level/XP/rank display
+ * - Shadow Army total power display (read-only)
+ * - Event-driven updates (no polling lag)
+ * - Customizable position (top/bottom)
+ * - Adjustable opacity
+ * - Compact mode option
+ *
+ * ============================================================================
+ * VERSION HISTORY
+ * ============================================================================
+ *
+ * @changelog v1.2.0 (2025-12-04) - REMOVED SHADOW ARMY CLICKER
+ * - Removed Shadow Army click handler (use Shadow Army widget instead)
+ * - Shadow power display is now read-only
+ * - Removed hover/active styles and cursor pointer
+ * - Cleaner UI integration with Shadow Army widget system
+ *
+ * @changelog v1.1.0 (2025-12-04) - SHADOW POWER & ALIGNMENT
+ * - Added Shadow Army total power display
+ * - Fixed height/padding to prevent cutoff at top
+ * - Improved alignment with Discord UI elements
+ * - Reduced top margin to prevent overlap with search box
+ * - Better visual integration with Discord theme
+ *
+ * @changelog v1.0.2 (Previous)
+ * - Event-driven updates for performance
+ * - Removed polling in favor of event listeners
+ * - Better integration with SoloLevelingStats plugin
  */
 
 module.exports = class LevelProgressBar {
@@ -211,14 +243,7 @@ module.exports = class LevelProgressBar {
 
   injectCSS() {
     const styleId = 'level-progress-bar-css';
-    if (document.getElementById(styleId)) {
-      this.debugLog('INJECT_CSS', 'CSS already injected');
-      return;
-    }
-
-    const style = document.createElement('style');
-    style.id = styleId;
-    style.textContent = `
+    const cssContent = `
       .lpb-progress-container {
         position: fixed;
         left: 0;
@@ -240,7 +265,7 @@ module.exports = class LevelProgressBar {
         width: 100%;
         background: rgba(10, 10, 15, 0.95);
         border-bottom: 2px solid rgba(139, 92, 246, 0.5);
-        padding: 8px 20px 8px 80px;
+        padding: 5px 20px 5px 80px;
         display: flex;
         flex-direction: row;
         align-items: center;
@@ -265,7 +290,7 @@ module.exports = class LevelProgressBar {
       }
 
       .lpb-progress-bar.compact {
-        padding: 4px 15px 4px 80px;
+        padding: 3px 15px 3px 80px;
       }
 
       .lpb-progress-text {
@@ -289,7 +314,7 @@ module.exports = class LevelProgressBar {
         border-radius: 6px;
         overflow: visible;
         position: relative;
-        border: none !important; /* Remove border that creates glow */
+        border: none !important;
         box-shadow: none !important;
         filter: none !important;
         align-self: center;
@@ -307,22 +332,7 @@ module.exports = class LevelProgressBar {
         margin-left: 12px;
         flex-shrink: 0;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-        cursor: pointer;
         padding: 6px 12px;
-        border-radius: 6px;
-        transition: all 0.2s ease;
-      }
-
-      .lpb-shadow-power:hover {
-        background: rgba(139, 92, 246, 0.15);
-        color: #a78bfa;
-        text-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
-        transform: scale(1.05);
-      }
-
-      .lpb-shadow-power:active {
-        transform: scale(0.98);
-        background: rgba(139, 92, 246, 0.25);
       }
 
       /* XP glow animation disabled */
@@ -481,16 +491,30 @@ module.exports = class LevelProgressBar {
       }
 
     `;
-    document.head.appendChild(style);
-    this.debugLog('INJECT_CSS', 'CSS injected successfully', {
-      styleId,
-      styleExists: !!document.getElementById(styleId),
-    });
+
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    try {
+      BdApi.DOM.addStyle(styleId, cssContent);
+      this.debugLog('INJECT_CSS', 'CSS injected successfully via BdApi.DOM');
+    } catch (error) {
+      // Fallback to manual injection
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = cssContent;
+      document.head.appendChild(style);
+      this.debugLog('INJECT_CSS', 'CSS injected successfully via manual method');
+    }
   }
 
   removeCSS() {
-    const style = document.getElementById('level-progress-bar-css');
-    if (style) style.remove();
+    const styleId = 'level-progress-bar-css';
+    try {
+      BdApi.DOM.removeStyle(styleId);
+    } catch (error) {
+      // Fallback to manual removal
+      const style = document.getElementById(styleId);
+      if (style) style.remove();
+    }
   }
 
   // ============================================================================
@@ -543,29 +567,12 @@ module.exports = class LevelProgressBar {
       bar.appendChild(progressTrack);
 
       // Shadow Army display (to the right of progress bar)
-      // CLICKABLE: Opens Shadow Army UI when clicked
+      // Display only - use Shadow Army widget to interact
       const shadowPowerText = document.createElement('div');
       shadowPowerText.className = 'lpb-shadow-power';
       shadowPowerText.id = 'lpb-shadow-power';
       shadowPowerText.textContent = 'Shadow Army Power: 0';
-      shadowPowerText.title = 'Click to open Shadow Army UI';
-
-      // Add click handler to open Shadow Army settings
-      shadowPowerText.addEventListener('click', () => {
-        const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
-        if (shadowArmyPlugin?.instance) {
-          // Open Shadow Army settings panel (which is actually the UI)
-          if (typeof shadowArmyPlugin.instance.getSettingsPanel === 'function') {
-            const panel = shadowArmyPlugin.instance.getSettingsPanel();
-            if (panel) {
-              // Use BetterDiscord's native settings display
-              BdApi.showSettingsModal('Shadow Army', panel);
-            }
-          }
-        } else {
-          BdApi.showToast('Shadow Army plugin not found', { type: 'error' });
-        }
-      });
+      shadowPowerText.title = 'Total power of all shadows';
 
       bar.appendChild(shadowPowerText);
 
@@ -599,13 +606,16 @@ module.exports = class LevelProgressBar {
       setTimeout(() => {
         const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
         if (progressTrack) {
-          const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-          if (soloPlugin) {
-            const instance = soloPlugin.instance || soloPlugin;
-            if (instance && instance.getCurrentLevel) {
-              const levelInfo = instance.getCurrentLevel();
-              const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
-              this.updateMilestoneMarkers(progressTrack, xpPercent);
+          // Check if plugin is enabled before accessing
+          if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+            const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+            if (soloPlugin) {
+              const instance = soloPlugin.instance || soloPlugin;
+              if (instance && instance.getCurrentLevel) {
+                const levelInfo = instance.getCurrentLevel();
+                const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+                this.updateMilestoneMarkers(progressTrack, xpPercent);
+              }
             }
           }
         }
@@ -641,6 +651,12 @@ module.exports = class LevelProgressBar {
    */
   getSoloLevelingData() {
     try {
+      // Check if plugin is enabled before accessing
+      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+        this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not enabled');
+        return null;
+      }
+
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin) {
         this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not found');
@@ -802,6 +818,13 @@ module.exports = class LevelProgressBar {
    */
   async updateShadowPower() {
     try {
+      // Check if plugin is enabled before accessing
+      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+        this.cachedShadowPower = '0';
+        await this.refreshProgressText();
+        return;
+      }
+
       // Get shadow power from SoloLevelingStats plugin (it already calculates it correctly)
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin || !soloPlugin.instance) {
@@ -919,6 +942,12 @@ module.exports = class LevelProgressBar {
       return true;
     }
 
+    // Check if plugin is enabled before accessing
+    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+      this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not enabled');
+      return false;
+    }
+
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
     if (!soloPlugin) {
       this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not found');
@@ -959,15 +988,19 @@ module.exports = class LevelProgressBar {
     this.eventUnsubscribers.push(unsubscribeRank);
 
     // Subscribe to shadow power changed events for real-time updates
-    const unsubscribeShadowPower = instance.on('shadowPowerChanged', (data) => {
+    const unsubscribeShadowPower = instance.on('shadowPowerChanged', async (data) => {
       this.debugLog('EVENT_SHADOW_POWER_CHANGED', 'Shadow power changed event received', data);
-      // Update shadow power immediately
-      if (data && data.shadowPower) {
-        this.cachedShadowPower = data.shadowPower;
-        this.refreshProgressText();
-      } else {
-        // Trigger update to get latest value
-        this.updateShadowPower();
+      try {
+        // Update shadow power immediately
+        if (data && data.shadowPower) {
+          this.cachedShadowPower = data.shadowPower;
+          await this.refreshProgressText();
+        } else {
+          // Trigger update to get latest value
+          await this.updateShadowPower();
+        }
+      } catch (error) {
+        this.debugError('EVENT_SHADOW_POWER_CHANGED', error);
       }
     });
     this.eventUnsubscribers.push(unsubscribeShadowPower);

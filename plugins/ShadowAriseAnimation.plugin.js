@@ -115,14 +115,20 @@ module.exports = class ShadowAriseAnimation {
         </label>
         <label style="display:block;margin-bottom:8px;">
           <span style="display:block;margin-bottom:4px;">Animation duration (ms)</span>
-          <input type="number" id="sa-duration" value="${this.settings.animationDuration}" min="800" max="6000" step="200" style="width:100%;padding:4px;">
+          <input type="number" id="sa-duration" value="${
+            this.settings.animationDuration
+          }" min="800" max="6000" step="200" style="width:100%;padding:4px;">
         </label>
         <label style="display:block;margin-bottom:8px;">
           <span style="display:block;margin-bottom:4px;">Scale</span>
-          <input type="number" id="sa-scale" value="${this.settings.scale}" min="0.5" max="2.0" step="0.1" style="width:100%;padding:4px;">
+          <input type="number" id="sa-scale" value="${
+            this.settings.scale
+          }" min="0.5" max="2.0" step="0.1" style="width:100%;padding:4px;">
         </label>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-          <input type="checkbox" id="sa-show-meta" ${this.settings.showRankAndRole ? 'checked' : ''}>
+          <input type="checkbox" id="sa-show-meta" ${
+            this.settings.showRankAndRole ? 'checked' : ''
+          }>
           <span>Show rank and role under ARISE</span>
         </label>
       </div>
@@ -134,7 +140,8 @@ module.exports = class ShadowAriseAnimation {
     });
 
     panel.querySelector('#sa-duration').addEventListener('change', (e) => {
-      this.settings.animationDuration = parseInt(e.target.value, 10) || this.defaultSettings.animationDuration;
+      this.settings.animationDuration =
+        parseInt(e.target.value, 10) || this.defaultSettings.animationDuration;
       this.saveSettings();
     });
 
@@ -225,15 +232,15 @@ module.exports = class ShadowAriseAnimation {
       @keyframes sa-arise-float {
         0% {
           opacity: 0;
-          transform: translate(-50%, -40%) scale(0.6);
+          transform: translate(-50%, -40%) scale(calc(0.6 * var(--sa-scale, 1)));
         }
         15% {
           opacity: 1;
-          transform: translate(-50%, -50%) scale(1.1);
+          transform: translate(-50%, -50%) scale(calc(1.1 * var(--sa-scale, 1)));
         }
         100% {
           opacity: 0;
-          transform: translate(-50%, -70%) scale(0.9);
+          transform: translate(-50%, -70%) scale(calc(0.9 * var(--sa-scale, 1)));
         }
       }
 
@@ -338,7 +345,7 @@ module.exports = class ShadowAriseAnimation {
     wrapper.className = 'sa-arise-wrapper';
     wrapper.style.setProperty('--sa-duration', `${durationMs}ms`);
     const scale = this.settings.scale || 1;
-    wrapper.style.transform = `translate(-50%, -50%) scale(${scale})`;
+    wrapper.style.setProperty('--sa-scale', String(scale));
 
     const title = document.createElement('div');
     title.className = 'sa-arise-text';

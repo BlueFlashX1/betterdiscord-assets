@@ -466,10 +466,15 @@ module.exports = class SkillTree {
       this._retryTimeout2 = null;
     }
 
-    // Cleanup URL change watcher
+    // Cleanup URL change watcher with guaranteed execution
     if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
+      try {
+        this._urlChangeCleanup();
+      } catch (e) {
+        console.error('[SkillTree] Error during URL change watcher cleanup:', e);
+      } finally {
+        this._urlChangeCleanup = null;
+      }
     }
 
     // Remove UI elements
@@ -494,10 +499,15 @@ module.exports = class SkillTree {
       window.skillTreeInstance = null;
     }
 
-    // Remove CSS
-    const styleElement = document.getElementById('skilltree-css');
-    if (styleElement) {
-      styleElement.remove();
+    // Remove CSS using BdApi (with fallback for compatibility)
+    if (BdApi.DOM && BdApi.DOM.removeStyle) {
+      BdApi.DOM.removeStyle('skilltree-css');
+    } else {
+      // Fallback: direct DOM removal if BdApi method unavailable
+      const styleElement = document.getElementById('skilltree-css');
+      if (styleElement) {
+        styleElement.remove();
+      }
     }
   }
 
@@ -1448,11 +1458,17 @@ module.exports = class SkillTree {
       existingStyle.remove();
     }
 
-    // Create and inject style element
-    const style = document.createElement('style');
-    style.id = 'skilltree-css';
-    style.textContent = css;
-    document.head.appendChild(style);
+    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
+    const styleId = 'skilltree-css';
+    try {
+      BdApi.DOM.addStyle(styleId, css);
+    } catch (error) {
+      // Fallback to manual injection
+      const style = document.createElement('style');
+      style.id = styleId;
+      style.textContent = css;
+      document.head.appendChild(style);
+    }
   }
 
   /**
@@ -1693,11 +1709,9 @@ module.exports = class SkillTree {
         const nextCost = this.getNextUpgradeCost(skill, tier);
         const effect = this.getSkillEffect(skill, tier);
 
-        // Check if max upgrade is possible
-        const canMaxUpgrade =
-          level < maxLevel &&
-          this.settings.skillPoints > 0 &&
-          (skill.requirement.level ? soloData && soloData.level >= skill.requirement.level : true);
+        // Check if max upgrade is possible - reuse canUnlockSkill validation
+        // to ensure stat requirements and prerequisites are checked
+        const canMaxUpgrade = level < maxLevel && this.canUnlockSkill(skill, tier);
 
         html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
           level >= maxLevel ? 'max-level' : ''
@@ -1773,28 +1787,56 @@ module.exports = class SkillTree {
       }
     };
 
-    // Listen to browser navigation events
-    window.addEventListener('popstate', handleUrlChange);
+    // Listen to browser back/forward navigation
+    const popstateHandler = () => handleUrlChange();
+    window.addEventListener('popstate', popstateHandler);
 
-    // Override pushState and replaceState to detect programmatic navigation
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    history.pushState = function (...args) {
-      originalPushState.apply(history, args);
+    // Setup MutationObserver to detect DOM changes that indicate navigation
+    // (Discord's SPA updates the title and main content when navigating)
+    const observer = new MutationObserver(() => {
       handleUrlChange();
-    };
+    });
 
-    history.replaceState = function (...args) {
-      originalReplaceState.apply(history, args);
+    // Observe title changes as a proxy for navigation
+    const titleElement = document.querySelector('title');
+    if (titleElement) {
+      observer.observe(titleElement, { childList: true, subtree: true, characterData: true });
+    }
+
+    // Also observe the main app container for structural changes
+    const appContainer = document.querySelector('#app-mount');
+    if (appContainer) {
+      observer.observe(appContainer, { childList: true, subtree: false });
+    }
+
+    // Fallback: Poll for URL changes every 500ms
+    // This ensures we catch navigation even if observers miss it
+    const pollInterval = setInterval(() => {
       handleUrlChange();
-    };
+    }, 500);
 
-    // Store cleanup functions
+    // Store cleanup function with try/finally to guarantee restoration
     this._urlChangeCleanup = () => {
-      window.removeEventListener('popstate', handleUrlChange);
-      history.pushState = originalPushState;
-      history.replaceState = originalReplaceState;
+      try {
+        // Remove popstate listener
+        window.removeEventListener('popstate', popstateHandler);
+      } catch (e) {
+        console.error('[SkillTree] Error removing popstate listener:', e);
+      }
+
+      try {
+        // Disconnect mutation observer
+        observer.disconnect();
+      } catch (e) {
+        console.error('[SkillTree] Error disconnecting observer:', e);
+      }
+
+      try {
+        // Clear polling interval
+        clearInterval(pollInterval);
+      } catch (e) {
+        console.error('[SkillTree] Error clearing poll interval:', e);
+      }
     };
   }
 };

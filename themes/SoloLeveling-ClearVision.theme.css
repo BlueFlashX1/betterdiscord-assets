@@ -75,6 +75,28 @@
   --background-attachment: fixed;
   --background-filter: saturate(calc(var(--saturation-factor, 1) * 1));
 
+  /* ===== ANIMATED BACKGROUND GIF CONFIGURATION ===== */
+  /* CUSTOMIZE THIS: Change the URL to use your own background GIF/image */
+  /*
+   * GITHUB HOSTED SOLUTION (Standard for BetterDiscord):
+   *
+   * WHY EXTERNAL URLs?
+   * - Browser security (CORS) blocks local file:// paths
+   * - This is standard practice for ALL BetterDiscord themes
+   * - External hosting is the only reliable method
+   *
+   * CURRENT: Solo Leveling Shadow Army GIF from GitHub
+   * - Works for all users who install the theme
+   * - Reliable loading via GitHub CDN
+   * - No rate limit issues in practice
+   *
+   * TO CUSTOMIZE:
+   * 1. Upload your GIF to: GitHub, Imgur, Discord CDN, or any image host
+   * 2. Replace the URL below with your hosted image URL
+   * 3. Save and reload Discord
+   */
+  --animated-background-url: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEnding.gif');
+
   /* USER POPOUT BACKGROUND - User profile popup backgrounds */
   /* Controls the background when you click on a user's profile */
   --user-popout-image: var(--background-image);
@@ -123,7 +145,7 @@
 
 /* LIGHT THEME - Light mode settings */
 :is(.theme-light, .theme-dark .theme-light) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important; /* Very light overlay */
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* 5% overlay - Subtle tint */
   --card-shading: rgba(10, 10, 15, 0.2); /* Card background shading */
   --popout-shading: rgba(10, 10, 15, 0.7); /* Popup background shading */
   --modal-shading: rgba(10, 10, 15, 0.5); /* Modal background shading */
@@ -134,7 +156,7 @@
 
 /* ASH THEME - Medium dark mode */
 :is(.theme-dark, .theme-light .theme-dark) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important;
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* 5% overlay - Subtle tint */
   --card-shading: rgba(10, 10, 15, 0.4);
   --popout-shading: rgba(10, 10, 15, 0.8);
   --modal-shading: rgba(10, 10, 15, 0.6);
@@ -145,7 +167,7 @@
 
 /* DARK THEME - Dark mode */
 :is(.theme-darker, .theme-light .theme-darker) {
-  --background-shading: rgba(10, 10, 15, 0.05) !important;
+  --background-shading: rgba(10, 10, 15, 0.05) !important; /* 5% overlay - Subtle tint */
   --card-shading: rgba(10, 10, 15, 0.5);
   --popout-shading: rgba(10, 10, 15, 0.9);
   --modal-shading: rgba(10, 10, 15, 0.7);
@@ -156,7 +178,7 @@
 
 /* ONYX THEME - Darkest mode */
 :is(.theme-midnight, .theme-light .theme-midnight) {
-  --background-shading: rgba(5, 5, 10, 0.05) !important;
+  --background-shading: rgba(5, 5, 10, 0.05) !important; /* 5% overlay - Subtle tint */
   --card-shading: rgba(5, 5, 10, 0.6);
   --popout-shading: rgba(5, 5, 10, 0.95);
   --modal-shading: rgba(5, 5, 10, 0.8);
@@ -183,7 +205,11 @@ body {
 /* Animated GIF Background - Solo Leveling Shadow Army */
 /* This creates the animated background using a hosted GIF */
 /* The ::before pseudo-element creates a layer behind all content */
-/* To change the background: Update the URL in the url() function below */
+/*
+ * TO CUSTOMIZE THE BACKGROUND:
+ * Edit the --animated-background-url variable in :root section (around line 92)
+ * DO NOT edit the url() here - use the CSS variable for easy customization!
+ */
 body::before {
   content: ''; /* Required for pseudo-element to render */
   position: fixed; /* Fixed position so it stays in place when scrolling */
@@ -192,14 +218,17 @@ body::before {
   width: 100%; /* Full width of viewport */
   height: 100%; /* Full height of viewport */
   background:
-    /* GitHub hosted GIF - Update URL after pushing to GitHub */
-    /* To change background: Replace this URL with your own GIF/image URL */ url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/shadows-army-solo-leveling-imgur.gif')
-    center center / cover no-repeat;
-  /* center center = position image in center */
-  /* cover = scale image to cover entire area while maintaining aspect ratio */
+    /* Uses CSS variable for easy customization - Change in :root section! */
+    /* See --animated-background-url (around line 92) to customize */ var(
+      --animated-background-url
+    )
+    center 0% / cover no-repeat;
+  /* center 0% = position image at very top to maximize visibility of Sung Jinwoo and all three figures */
+  /* cover = fill entire area while maintaining aspect ratio for seamless look */
   /* no-repeat = don't tile the image */
   background-attachment: fixed; /* Keep background fixed when scrolling */
   opacity: 1 !important; /* Maximum brightness - adjust 0.0-1.0 for darker/lighter */
+  filter: brightness(1.4) saturate(1.2); /* 40% BRIGHTER + 20% more saturation! (Fine-tuned) */
   pointer-events: none; /* Allow clicks to pass through to elements behind */
   z-index: -2; /* Behind everything (negative z-index puts it behind content) */
   animation: soloLevelingFade 10s ease-in-out infinite;
@@ -272,18 +301,41 @@ body::after {
    ======================================== */
 /* This section controls fonts and text styling */
 
-/* Global Font Override - Apply Orbitron to everything */
-/* The * selector targets ALL elements on the page */
-/* Excludes critical hit messages (handled by plugin) */
-/* This ensures consistent font throughout Discord */
+/* Global Font Override - Apply Orbitron everywhere */
+/* Using both universal and specific selectors for maximum coverage */
+/* Ensures Orbitron font is applied consistently throughout Discord */
 * {
-  font-family: var(--main-font) !important;
-  /* Uses the --main-font CSS variable defined in :root (Orbitron) */
-  /* !important ensures this overrides Discord's default fonts */
-  font-weight: 400 !important;
-  /* 400 = normal weight (not bold) */
-  /* Other weights: 300 = light, 500 = medium, 600 = semi-bold, 700 = bold */
-  /* Normal weight is easier to read for long text */
+  font-family: 'Orbitron', sans-serif !important;
+  /* !important ensures override of Discord's default fonts */
+}
+
+/* Additional specific targeting for Discord containers */
+/* Reinforces font application on main Discord elements */
+.app-3xd6d0,
+.app-2CXKsg,
+.theme-dark,
+.theme-light,
+body,
+div[class*='app-'],
+div[class*='base-'],
+div[class*='sidebar'],
+div[class*='chat'],
+div[class*='content'],
+div[class*='container'],
+div[class*='message'],
+span,
+p,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+button,
+input,
+textarea {
+  font-family: 'Orbitron', sans-serif !important;
+  /* Direct font name with !important for maximum override strength */
 }
 
 /* Critical Hit Messages - Exclude from theme font */
@@ -778,7 +830,7 @@ div[class*='badges'][style*='background'],
 [class*='channelTextArea']:focus,
 input:focus,
 textarea:focus {
-  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6) !important;
+  box-shadow: none !important;
   outline: none !important;
   border-color: rgba(139, 92, 246, 0.5) !important;
 }
@@ -878,21 +930,25 @@ a:hover,
   box-shadow: 0 0 6px rgba(139, 92, 246, 0.5), 0 0 10px rgba(124, 58, 237, 0.3) !important;
 }
 
-/* Tooltips - Purple glow */
+/* Tooltips - Purple glow with smooth fade animation */
 /* Appears on hover tooltips */
 [class*='tooltip'],
 [class*='popup'] {
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3),
     0 0 20px rgba(109, 40, 217, 0.2) !important;
   border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  animation: tooltipFadeIn 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
 
-/* Context Menu - Enhanced glow */
+/* Context Menu - Enhanced glow with smooth fade animation */
 /* Appears on right-click context menus */
 [class*='contextMenu'],
 [class*='menu'] {
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.4), 0 0 16px rgba(124, 58, 237, 0.3) !important;
   border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  animation: tooltipFadeIn 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
 
 /* Message Hover - Subtle glow */
@@ -938,7 +994,7 @@ a:hover,
   backdrop-filter: none !important;
 }
 
-/* Reaction Panel/Container - Fully Opaque */
+/* Reaction Panel/Container - Dark Purple Theme */
 [class*='message'] [class*='reaction'],
 [class*='message'] [class*='reactionButton'],
 [class*='message'] [class*='reactionInner'],
@@ -957,13 +1013,15 @@ a:hover,
 [class*='reactionAddButton'],
 [class*='wrapper'][class*='reaction'],
 [class*='container'][class*='reaction'] {
-  background: #0f0f1a !important;
+  background: linear-gradient(135deg, rgba(20, 10, 35, 0.95), rgba(15, 5, 30, 0.95)) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   opacity: 1 !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.3) !important;
 }
 
-/* Reaction Panel on Hover - Fully Opaque */
+/* Reaction Panel on Hover - Dark Purple Theme */
 [class*='message']:hover [class*='reaction'],
 [class*='message']:hover [class*='reactionButton'],
 [class*='message']:hover [class*='reactionInner'],
@@ -980,10 +1038,12 @@ a:hover,
 [class*='message']:hover [class*='reactionAddButton'],
 [class*='message']:hover [class*='wrapper'][class*='reaction'],
 [class*='message']:hover [class*='container'][class*='reaction'] {
-  background: #0f0f1a !important;
+  background: linear-gradient(135deg, rgba(25, 15, 40, 0.95), rgba(20, 10, 35, 0.95)) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   opacity: 1 !important;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4) !important;
 }
 
 /* Reaction Tooltip/Popup - Fully Opaque with Visible Text */
@@ -1036,7 +1096,7 @@ a:hover,
    ======================================== */
 /* Makes tooltips and context menus fully opaque */
 
-/* Tooltip - Fully Opaque with Visible Text */
+/* Tooltip - Fully Opaque with Visible Text + Smooth Fade Animation */
 [class*='tooltip'],
 [class*='tooltipContent'],
 [class*='tooltipContentWrapper'],
@@ -1049,6 +1109,8 @@ a:hover,
   -webkit-backdrop-filter: none !important;
   opacity: 1 !important;
   color: #e0d0ff !important;
+  animation: tooltipFadeIn 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
 
 [class*='tooltip'] *,
@@ -1059,7 +1121,7 @@ a:hover,
   opacity: 1 !important;
 }
 
-/* Context Menu - Fully Opaque */
+/* Context Menu - Fully Opaque with Smooth Fade Animation */
 /* Right-click context menus */
 [class*='contextMenu'],
 [class*='menu'],
@@ -1070,6 +1132,70 @@ a:hover,
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
   opacity: 1 !important;
+  animation: tooltipFadeIn 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
+}
+
+/* Menu Items - Override Discord's default blue with purple */
+[class*='menuItem'],
+[class*='item'][role='menuitem'],
+[class*='item'][role='menuitemcheckbox'],
+[class*='item'][role='menuitemradio'],
+[class*='contextMenu'] [class*='item'],
+[class*='menu'] [class*='item'] {
+  background: transparent !important;
+  transition: all 0.2s ease !important;
+  color: #e0d0ff !important;
+}
+
+/* Menu Item Hover - Nice purple glow that persists */
+[class*='menuItem']:hover,
+[class*='item'][role='menuitem']:hover,
+[class*='item'][role='menuitemcheckbox']:hover,
+[class*='item'][role='menuitemradio']:hover,
+[class*='contextMenu'] [class*='item']:hover,
+[class*='menu'] [class*='item']:hover {
+  background: rgba(139, 92, 246, 0.25) !important;
+  background-color: rgba(139, 92, 246, 0.25) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.3), inset 0 0 20px rgba(139, 92, 246, 0.15) !important;
+  color: #c4b5fd !important;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.5) !important;
+  transition: all 0.2s ease !important;
+  border-left: 3px solid rgba(139, 92, 246, 0.6) !important;
+}
+
+/* Menu Item Icons - Glow on hover */
+[class*='menuItem']:hover [class*='icon'],
+[class*='item']:hover [class*='icon'],
+[class*='menuItem']:hover svg,
+[class*='item']:hover svg {
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.6)) !important;
+  transition: filter 0.2s ease !important;
+}
+
+/* Override any inline styles that might show Discord blue */
+[class*='menuItem'][style*='background'],
+[class*='item'][style*='background'] {
+  background: transparent !important;
+}
+
+[class*='menuItem']:hover[style*='background'],
+[class*='item']:hover[style*='background'] {
+  background: rgba(139, 92, 246, 0.25) !important;
+  background-color: rgba(139, 92, 246, 0.25) !important;
+}
+
+/* Menu Item Selected/Active - Stronger purple */
+[class*='menuItem'][class*='focused'],
+[class*='menuItem'][class*='selected'],
+[class*='item'][class*='focused'],
+[class*='item'][class*='selected'] {
+  background: rgba(139, 92, 246, 0.35) !important;
+  background-color: rgba(139, 92, 246, 0.35) !important;
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.4), inset 0 0 25px rgba(139, 92, 246, 0.2) !important;
+  color: #c4b5fd !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
+  border-left: 3px solid rgba(139, 92, 246, 0.8) !important;
 }
 
 /* ========================================
@@ -1175,6 +1301,123 @@ a:hover,
 }
 
 /* ========================================
+   PHASE 1: SERVER LIST ENHANCEMENTS
+   Purple theme customizations for server list
+   ======================================== */
+
+/* 0. SERVER LIST CONTAINER - 75% Opacity (maintained on hover) */
+/* All server list containers and wrappers */
+div[class*='guilds'],
+nav[class*='guilds'],
+[class*='guilds'][class*='wrapper'],
+[class*='guilds'][class*='scroller'],
+[class*='guilds'][class*='tree'],
+[class*='guilds'][class*='base'],
+[class*='base'][class*='container']:has([class*='guilds']),
+aside[class*='panels'] {
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+/* Server List Container - Maintain 75% opacity on hover (prevent dimming) */
+div[class*='guilds']:hover,
+nav[class*='guilds']:hover,
+[class*='guilds'][class*='wrapper']:hover,
+[class*='guilds'][class*='scroller']:hover,
+[class*='guilds'][class*='tree']:hover,
+[class*='guilds'][class*='base']:hover,
+[class*='base'][class*='container']:has([class*='guilds']):hover,
+aside[class*='panels']:hover {
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+/* 1. SERVER ICON HOVER GLOW - Icons glow purple on hover */
+div[class*='guilds'] div[class*='listItem']:hover div[class*='wrapper'] {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.6), 0 0 40px rgba(139, 92, 246, 0.3) !important;
+  transform: scale(1.1) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* 2. ACTIVE SERVER PURPLE PILL - Selected server has glowing left pill */
+div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span {
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6), 0 0 20px rgba(139, 92, 246, 0.3) !important;
+}
+
+/* Animate pill appearance */
+div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span[style*='height'] {
+  transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
+}
+
+/* 3. UNREAD/MENTION BADGE GLOW - Notification badges pulse with glow */
+/* Re-enable notification badges (override ClearVision hiding) */
+div[class*='guilds'] [class*='numberBadge'],
+div[class*='guilds'] [class*='iconBadge'],
+div[class*='guilds'] div[class*='upperBadge'] {
+  display: flex !important;
+  visibility: visible !important;
+  opacity: 1 !important;
+  background: linear-gradient(135deg, #ef4444, #dc2626) !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.8), 0 0 20px rgba(239, 68, 68, 0.4) !important;
+  animation: badge-pulse 2s ease-in-out infinite !important;
+  border: none !important;
+}
+
+/* Badge text glow (for number badges) */
+div[class*='guilds'] [class*='numberBadge'] {
+  color: #fff !important;
+  font-weight: bold !important;
+  text-shadow: 0 0 6px rgba(255, 255, 255, 0.8) !important;
+}
+
+@keyframes badge-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 10px rgba(239, 68, 68, 0.8), 0 0 20px rgba(239, 68, 68, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 15px rgba(239, 68, 68, 1), 0 0 30px rgba(239, 68, 68, 0.6);
+  }
+}
+
+/* 4. HOME/DM BUTTON GLOW - Discord home button has purple glow */
+div[class*='guilds'] div[class*='homeIcon'] {
+  color: #8b5cf6 !important;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.6)) !important;
+}
+
+/* Home button hover */
+div[class*='guilds'] div[class*='listItem']:hover div[class*='homeIcon'] {
+  color: #a78bfa !important;
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8)) !important;
+  transform: scale(1.15) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* 5. ADD/EXPLORE BUTTON GLOW - Bottom buttons glow on hover */
+div[class*='guilds'] div[class*='circleIconButton'] {
+  background: rgba(15, 15, 25, 0.8) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+div[class*='guilds'] div[class*='circleIconButton']:hover {
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.6) !important;
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.4) !important;
+  transform: scale(1.1) !important;
+}
+
+/* Plus/explore icon glow on hover */
+div[class*='guilds'] div[class*='circleIconButton']:hover svg {
+  color: #a78bfa !important;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.6)) !important;
+}
+
+/* ========================================
    SECTION 12: SCROLLBARS
    AFFECTS: All scrollbars throughout Discord
    ======================================== */
@@ -1245,7 +1488,7 @@ a:hover,
    ======================================== */
 /* Solo Leveling themed loading animations */
 
-/* Loading Spinner/Indicator - Shadow Army Particles */
+/* Loading Spinner/Indicator - Reduced glow (reasonable size) */
 [class*='loading'],
 [class*='spinner'],
 [class*='loader'],
@@ -1261,7 +1504,7 @@ a:hover,
   position: absolute;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle, rgba(138, 43, 226, 0.6) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(138, 43, 226, 0.3) 0%, transparent 40%);
   animation: shadowParticlePulse 2s ease-in-out infinite;
   border-radius: 50%;
 }
@@ -1274,7 +1517,7 @@ a:hover,
   position: absolute;
   width: 100%;
   height: 100%;
-  background: radial-gradient(circle, rgba(139, 92, 246, 0.4) 0%, transparent 70%);
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 40%);
   animation: shadowParticlePulse 2s ease-in-out infinite 0.5s;
   border-radius: 50%;
 }
@@ -1317,12 +1560,23 @@ a:hover,
 @keyframes shadowParticlePulse {
   0%,
   100% {
-    opacity: 0.3;
-    transform: scale(0.8);
+    opacity: 0.2;
+    transform: scale(0.95);
   }
   50% {
-    opacity: 0.8;
-    transform: scale(1.2);
+    opacity: 0.4;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes tooltipFadeIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-5px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
@@ -1349,20 +1603,20 @@ a:hover,
 @keyframes soloGlow {
   0%,
   100% {
-    box-shadow: 0 0 4px rgba(138, 43, 226, 0.3), 0 0 6px rgba(138, 43, 226, 0.2);
+    box-shadow: 0 0 3px rgba(138, 43, 226, 0.2), 0 0 5px rgba(138, 43, 226, 0.1);
   }
   50% {
-    box-shadow: 0 0 6px rgba(138, 43, 226, 0.5), 0 0 8px rgba(138, 43, 226, 0.3);
+    box-shadow: 0 0 4px rgba(138, 43, 226, 0.3), 0 0 6px rgba(138, 43, 226, 0.2);
   }
 }
 
 @keyframes soloGlowPulse {
   0%,
   100% {
-    box-shadow: 0 0 6px rgba(138, 43, 226, 0.4), 0 0 10px rgba(139, 92, 246, 0.3);
+    box-shadow: 0 0 4px rgba(138, 43, 226, 0.3), 0 0 6px rgba(139, 92, 246, 0.2);
   }
   50% {
-    box-shadow: 0 0 12px rgba(138, 43, 226, 0.7), 0 0 18px rgba(139, 92, 246, 0.5);
+    box-shadow: 0 0 6px rgba(138, 43, 226, 0.4), 0 0 10px rgba(139, 92, 246, 0.3);
   }
 }
 
@@ -1448,11 +1702,31 @@ a:hover,
    ======================================== */
 /* Styling for the channel list sidebar */
 
-/* Channel List Container - Better Background */
+/* Channel List Container - 75% Opacity (maintained on hover) */
+/* All channel list containers and wrappers */
 [class*='channels'],
 [class*='channelList'],
-[class*='sidebar'] {
-  background: rgba(10, 10, 15, 0.7) !important;
+[class*='sidebar'],
+[class*='sidebar'][class*='container'],
+[class*='sidebar'][class*='content'],
+nav[class*='sidebar'],
+div[class*='sidebar'][class*='base'] {
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
+  opacity: 1 !important;
+  transition: none !important;
+}
+
+/* Channel List Container - Maintain 75% opacity on hover (prevent dimming) */
+[class*='channels']:hover,
+[class*='channelList']:hover,
+[class*='sidebar']:hover,
+[class*='sidebar'][class*='container']:hover,
+[class*='sidebar'][class*='content']:hover,
+nav[class*='sidebar']:hover,
+div[class*='sidebar'][class*='base']:hover {
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
+  opacity: 1 !important;
+  transition: none !important;
 }
 
 /* Channel Item - Better Hover State */
@@ -1515,13 +1789,15 @@ a:hover,
    ======================================== */
 /* Styling for user profile popups */
 
-/* User Popout Container - Enhanced Background */
+/* User Popout Container - Enhanced Background with Smooth Fade Animation */
 [class*='userPopout'],
 [class*='userPopoutOuter'],
 [class*='userProfileModal'] {
   background: rgba(15, 15, 26, 0.98) !important;
   border: 1px solid rgba(138, 43, 226, 0.3) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5), 0 0 16px rgba(138, 43, 226, 0.2) !important;
+  animation: tooltipFadeIn 0.15s ease-out !important;
+  transition: opacity 0.15s ease-out !important;
 }
 
 /* User Popout Header - Enhanced */
@@ -1671,4 +1947,649 @@ textarea,
 
 [class*='member']:hover [class*='avatar']:has([class*='statusDnd']) {
   box-shadow: 0 0 16px rgba(240, 71, 71, 0.8) !important;
+}
+
+/* ========================================
+   8. CHATBOX ENHANCEMENTS - SOLO LEVELING
+   Detected via ChatboxInspector plugin
+   ======================================== */
+
+/* ----------------------------------------
+div[class*='scroller']::-webkit-scrollbar {
+  width: 4px !important;
+  opacity: 0.3 !important;
+}
+
+/* Additional method: Hide scrollbar (Firefox/IE/Edge compatibility) */
+div[class*='scroller'] {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+}
+div[class*='scroller'] {
+  scrollbar-width: none !important; /* Firefox */
+  -ms-overflow-style: none !important; /* IE/Edge */
+}
+
+/* ========================================
+   9. SIDEBAR ENHANCEMENTS - PHASE 1
+   Detected via SidebarInspector plugin
+   Essential customizations for Solo Leveling theme
+   ======================================== */
+
+/* ----------------------------------------
+   #10: Server Name Glow
+   Magical glowing server name at top
+   ---------------------------------------- */
+header[class*='header'] h1,
+header[class*='header'] div[class*='name'] {
+  color: #e0d0ff !important;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.5) !important;
+  font-weight: 600 !important;
+}
+
+/* ----------------------------------------
+   #18: Active Channel Highlight
+   Purple glow on selected channel
+   ---------------------------------------- */
+a[class*='channel'][class*='selected'],
+[class*='wrapper'][class*='selected'] {
+  background: rgba(139, 92, 246, 0.2) !important;
+  border-left: 3px solid rgba(139, 92, 246, 0.8) !important;
+  box-shadow: inset 0 0 10px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* ----------------------------------------
+   #19: Channel Hover Glow
+   Subtle glow when hovering over channels
+   ---------------------------------------- */
+a[class*='channel']:hover,
+[class*='wrapper']:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+  box-shadow: inset 0 0 8px rgba(139, 92, 246, 0.15) !important;
+  border-left: 2px solid rgba(139, 92, 246, 0.4) !important;
+  transition: all 0.2s ease !important;
+}
+
+/* ----------------------------------------
+   #24: Avatar Status Glow
+   Your avatar glows based on status
+   ---------------------------------------- */
+[class*='panels'] [class*='avatar'] {
+  transition: box-shadow 0.3s ease !important;
+}
+
+/* Online - Green glow */
+[class*='panels'] [class*='avatar']:has([class*='statusOnline']) {
+  box-shadow: 0 0 12px rgba(67, 181, 129, 0.6) !important;
+}
+
+/* Idle - Yellow glow */
+[class*='panels'] [class*='avatar']:has([class*='statusIdle']) {
+  box-shadow: 0 0 12px rgba(250, 166, 26, 0.6) !important;
+}
+
+/* DND - Red glow */
+[class*='panels'] [class*='avatar']:has([class*='statusDnd']) {
+  box-shadow: 0 0 12px rgba(240, 71, 71, 0.6) !important;
+}
+
+/* Offline - Purple glow */
+[class*='panels'] [class*='avatar']:has([class*='statusOffline']) {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4) !important;
+}
+
+/* ----------------------------------------
+   #28: Unified Dark Purple Background
+   Consistent background across sidebar sections
+   ---------------------------------------- */
+[class*='guilds'],
+[class*='sidebar'],
+[class*='panels'] {
+  background: linear-gradient(135deg, rgba(10, 10, 20, 0.98), rgba(15, 10, 25, 0.98)) !important;
+}
+
+/* Glowing borders separating sections */
+[class*='guilds'] {
+  border-right: 1px solid rgba(139, 92, 246, 0.2) !important;
+}
+
+/* Removed purple horizontal bars from sidebar */
+header[class*='header'] {
+  border-bottom: none !important;
+}
+
+[class*='panels'] {
+  border-top: none !important;
+}
+
+/* ========================================
+   10. SIDEBAR ENHANCEMENTS - PHASE 2
+   Polish & Detail - Makes sidebar less plain
+   ======================================== */
+
+/* ----------------------------------------
+   #1: Server Icon Hover Glow
+   Guild icons glow purple on hover
+   ---------------------------------------- */
+[class*='guilds'] [class*='wrapper'] {
+  transition: all 0.2s ease !important;
+}
+
+[class*='guilds'] [class*='wrapper']:hover {
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.6) !important;
+  transform: scale(1.05) !important;
+}
+
+/* ----------------------------------------
+   #14: Category Text Glow
+   Category headers glow purple
+   ---------------------------------------- */
+[role='button'][class*='container'] h2,
+[class*='containerDefault'] {
+  color: #a78bfa !important;
+  text-shadow: 0 0 8px rgba(167, 139, 250, 0.5) !important;
+  font-weight: 600 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.5px !important;
+}
+
+[role='button'][class*='container']:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+}
+
+/* ----------------------------------------
+   #20: Unread Channel Purple Indicator
+   Unread channels and badges glow purple
+   ---------------------------------------- */
+[class*='channel'][class*='unread'] {
+  color: #a78bfa !important;
+  font-weight: 600 !important;
+}
+
+/* Unread badge/pill */
+[class*='channel'] [class*='unreadPill'],
+[class*='channel'] [class*='unreadBadge'],
+[class*='numberBadge'] {
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.95),
+    rgba(167, 139, 250, 0.95)
+  ) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.8) !important;
+  color: #fff !important;
+  font-weight: bold !important;
+}
+
+/* ----------------------------------------
+   #21: Channel Icon Glow
+   Hashtag and speaker icons glow
+   ---------------------------------------- */
+a[class*='channel'] svg,
+[class*='iconContainer'] svg,
+[class*='iconItem'] svg {
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.3)) !important;
+  transition: filter 0.2s ease !important;
+}
+
+a[class*='channel']:hover svg,
+[class*='iconContainer']:hover svg {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.5)) !important;
+}
+
+/* ----------------------------------------
+   #25: Username Purple Glow
+   Your username glows at bottom
+   ---------------------------------------- */
+[class*='panels'] [class*='nameTag'],
+[class*='panels'] [class*='usernameContainer'] {
+  color: #e0d0ff !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.4) !important;
+  font-weight: 500 !important;
+}
+
+/* ----------------------------------------
+   #26: Settings Button Hover Spin
+   Settings gear rotates on hover
+   ---------------------------------------- */
+[class*='panels'] button[aria-label*='Settings']:hover,
+[class*='panels'] button[aria-label*='settings']:hover {
+  background: rgba(139, 92, 246, 0.2) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4) !important;
+  transform: rotate(90deg) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* ----------------------------------------
+   #27: Mic/Headphone Button Glow
+   Voice control buttons glow on hover
+   ---------------------------------------- */
+[class*='panels'] button:hover {
+  background: rgba(139, 92, 246, 0.15) !important;
+  color: #a78bfa !important;
+  transition: all 0.2s ease !important;
+}
+
+[class*='panels'] button:hover svg {
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.6)) !important;
+}
+
+/* ----------------------------------------
+   #11: Server Header Background
+   Purple-tinted header with shadow (no border)
+   ---------------------------------------- */
+header[class*='header'] {
+  background: rgba(10, 10, 20, 0.6) !important;
+  border-bottom: none !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+/* ----------------------------------------
+   #22: Channel Name Text Shadow
+   All channel names have subtle glow
+   ---------------------------------------- */
+a[class*='channel'] [class*='name'],
+[class*='channelInfo'] {
+  text-shadow: 0 0 4px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* ========================================
+   11. USER SETTINGS MENU - EPIC CUSTOMIZATIONS
+   AFFECTS: User Settings modal (gear icon)
+   All 15 features applied for maximum Solo Leveling theme
+   ======================================== */
+
+/* ----------------------------------------
+   #1: Settings Modal Background
+   Dark purple gradient background
+   ---------------------------------------- */
+/* Settings modal container - Very transparent (10-15% opacity) to show animated background */
+[class*='standardSidebarView'] {
+  background: linear-gradient(
+    135deg,
+    rgba(30, 15, 45, 0.15) 0%,
+    rgba(20, 10, 35, 0.1) 30%,
+    rgba(15, 5, 30, 0.1) 70%,
+    rgba(25, 12, 40, 0.15) 100%
+  ) !important;
+  box-shadow: inset 0 0 100px rgba(139, 92, 246, 0.05) !important;
+}
+
+/* Base layer background - Extremely transparent (10-15%) for animated background */
+[class*='layer'][class*='baseLayer'] {
+  background: rgba(15, 10, 25, 0.1) !important;
+}
+
+/* Content column - Extremely transparent (10-15%) to show background */
+[class*='contentColumn'],
+[class*='contentRegionScroller'] {
+  background: linear-gradient(
+    180deg,
+    rgba(25, 15, 40, 0.15) 0%,
+    rgba(15, 10, 30, 0.1) 50%,
+    rgba(20, 12, 35, 0.15) 100%
+  ) !important;
+}
+
+/* ----------------------------------------
+   #2: Sidebar Background
+   Extremely transparent (10-15%) with purple border
+   ---------------------------------------- */
+[class*='sidebar'][class*='theme-dark'],
+nav[class*='sidebar'],
+[class*='standardSidebarView'] [class*='sidebar'],
+[class*='sidebarRegion'] {
+  background: linear-gradient(
+    180deg,
+    rgba(20, 10, 35, 0.15) 0%,
+    rgba(15, 10, 25, 0.15) 100%
+  ) !important;
+  border-right: 2px solid rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 2px 0 15px rgba(139, 92, 246, 0.2) !important;
+}
+
+/* ----------------------------------------
+   #3: Selected Category Purple Highlight
+   Active category has purple background + border
+   ---------------------------------------- */
+li[class*='selected'][class*='containerDefault'],
+[class*='side'] [class*='selected'],
+[class*='item'][class*='selected'] {
+  background: rgba(139, 92, 246, 0.2) !important;
+  border-left: 3px solid #8b5cf6 !important;
+  box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.15) !important;
+}
+
+/* Category text glow */
+li[class*='selected'] [class*='text'],
+[class*='item'][class*='selected'] span,
+li[class*='selected'][class*='containerDefault'] {
+  color: #a78bfa !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
+}
+
+/* ----------------------------------------
+   #4: Category Hover Glow
+   Categories glow purple on hover
+   ---------------------------------------- */
+li[class*='containerDefault']:hover,
+[class*='side'] [class*='item']:hover {
+  background: rgba(139, 92, 246, 0.1) !important;
+  border-left: 2px solid rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.2) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* ----------------------------------------
+   #5: Close Button Red Glow
+   Close button glows red on hover
+   ---------------------------------------- */
+button[aria-label='Close']:hover {
+  background: rgba(239, 68, 68, 0.2) !important;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.5) !important;
+  border-radius: 4px !important;
+  transition: all 0.3s ease !important;
+}
+
+button[aria-label='Close']:hover svg {
+  color: #ef4444 !important;
+  filter: drop-shadow(0 0 6px rgba(239, 68, 68, 0.6)) !important;
+}
+
+/* ----------------------------------------
+   #6: Content Area Scrollbar
+   Purple-themed scrollbars
+   ---------------------------------------- */
+/* Settings content scrollbar */
+[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar {
+  width: 10px !important;
+}
+
+[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-track {
+  background: rgba(15, 15, 25, 0.4) !important;
+  border-radius: 4px !important;
+}
+
+[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-thumb {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.4), rgba(139, 92, 246, 0.6)) !important;
+  border-radius: 4px !important;
+  transition: all 0.3s ease !important;
+}
+
+[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(135deg, rgba(139, 92, 246, 0.6), rgba(139, 92, 246, 0.8)) !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.4) !important;
+}
+
+/* Sidebar scrollbar */
+nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar {
+  width: 8px !important;
+}
+
+nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-track {
+  background: rgba(10, 10, 20, 0.4) !important;
+}
+
+nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb {
+  background: rgba(139, 92, 246, 0.3) !important;
+  border-radius: 4px !important;
+}
+
+nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 92, 246, 0.5) !important;
+}
+
+/* ----------------------------------------
+   #7: Category Section Headers
+   Section headers glow purple
+   ---------------------------------------- */
+/* Section headers in sidebar (USER SETTINGS, BILLING, etc.) - STRONG glow */
+[class*='standardSidebarView'] h2[class*='header'],
+[class*='standardSidebarView'] [class*='header'][class*='eyebrow'],
+[class*='side'] h2,
+[class*='side'] [class*='header']:not([class*='item']),
+[class*='sidebarRegion'] h2 {
+  color: #c4b5fd !important;
+  text-shadow: 0 0 15px rgba(139, 92, 246, 1), 0 0 25px rgba(139, 92, 246, 0.7),
+    0 0 35px rgba(139, 92, 246, 0.4) !important;
+  text-transform: uppercase !important;
+  letter-spacing: 2px !important;
+  font-weight: bold !important;
+  font-size: 13px !important;
+}
+
+/* Content area headers - STRONG glow */
+[class*='contentRegion'] h1,
+[class*='contentRegion'] h2,
+[class*='contentRegion'] h3,
+[class*='standardSidebarView'] h1 {
+  color: #c4b5fd !important;
+  text-shadow: 0 0 15px rgba(139, 92, 246, 0.9), 0 0 25px rgba(139, 92, 246, 0.6) !important;
+  font-weight: bold !important;
+}
+
+/* ----------------------------------------
+   #8: Content Area Background
+   Extremely transparent (10-15%) to show animated background
+   ---------------------------------------- */
+[class*='contentRegion'],
+[class*='content'][class*='contentColumn'] {
+  background: rgba(20, 20, 30, 0.12) !important;
+}
+
+/* ----------------------------------------
+   #9: Input Fields Purple Border (NO GLOW)
+   Text inputs have single purple border only
+   ---------------------------------------- */
+/* Input fields - single border, no glow, very transparent */
+[class*='standardSidebarView'] input[type='text'],
+[class*='standardSidebarView'] input[type='email'],
+[class*='standardSidebarView'] input[type='password'],
+[class*='standardSidebarView'] textarea {
+  background: rgba(15, 15, 25, 0.25) !important;
+  border: 1px solid rgba(139, 92, 246, 0.4) !important;
+  color: #e4d5ff !important;
+  transition: all 0.3s ease !important;
+  box-shadow: none !important;
+}
+
+/* Input focus - single purple border (no double glow) */
+[class*='standardSidebarView'] input[type='text']:focus,
+[class*='standardSidebarView'] input[type='email']:focus,
+[class*='standardSidebarView'] input[type='password']:focus,
+[class*='standardSidebarView'] textarea:focus {
+  border-color: rgba(139, 92, 246, 0.6) !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+
+/* Remove any inherited glows from parent elements */
+[class*='standardSidebarView'] div:has(> textarea),
+[class*='standardSidebarView'] div:has(> input),
+[class*='standardSidebarView'] [class*='input'][class*='focused'],
+[class*='standardSidebarView'] [class*='input'][class*='error'] {
+  box-shadow: none !important;
+}
+
+/* ----------------------------------------
+   #10: Switch/Toggle Purple
+   Toggle switches are purple when enabled
+   ---------------------------------------- */
+/* Toggle switches */
+[class*='standardSidebarView'] div[class*='switch'][class*='checked'] {
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.5) !important;
+}
+
+/* Toggle handle glow */
+[class*='standardSidebarView'] div[class*='switch'][class*='checked'] div[class*='handle'] {
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
+}
+
+/* ----------------------------------------
+   #11: Button Purple Theme
+   Primary buttons are purple
+   ---------------------------------------- */
+/* Primary buttons */
+[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand'] {
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3) !important;
+}
+
+[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand']:hover {
+  background: linear-gradient(135deg, #a78bfa, #c4b5fd) !important;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.5) !important;
+  transform: translateY(-1px) !important;
+}
+
+/* ----------------------------------------
+   #12: Divider Lines (No Glow)
+   Divider lines - subtle purple only
+   ---------------------------------------- */
+[class*='standardSidebarView'] div[class*='divider'],
+[class*='standardSidebarView'] hr {
+  background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.3), transparent) !important;
+  height: 1px !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* ----------------------------------------
+   #13: Header Section Glow
+   Top header bar has purple glow
+   ---------------------------------------- */
+[class*='standardSidebarView'] header[class*='header'],
+[class*='contentRegion'] header,
+[class*='header'][class*='headerContent'] {
+  background: linear-gradient(135deg, rgba(25, 15, 40, 0.95), rgba(15, 10, 30, 0.95)) !important;
+  border-bottom: 2px solid rgba(139, 92, 246, 0.4) !important;
+  box-shadow: 0 2px 15px rgba(139, 92, 246, 0.3), 0 4px 25px rgba(139, 92, 246, 0.15) !important;
+}
+
+/* Header text glow */
+[class*='standardSidebarView'] header [class*='title'],
+[class*='contentRegion'] header h1 {
+  color: #c4b5fd !important;
+  text-shadow: 0 0 15px rgba(139, 92, 246, 0.8), 0 0 25px rgba(139, 92, 246, 0.5) !important;
+}
+
+/* ----------------------------------------
+   #14: Search Bar Purple
+   BetterDiscord search bar has purple glow
+   ---------------------------------------- */
+/* BetterDiscord search bar */
+input.bd-search {
+  background: rgba(15, 15, 25, 0.8) !important;
+  border: 1px solid rgba(139, 92, 246, 0.3) !important;
+  color: #d4a5ff !important;
+  transition: all 0.3s ease !important;
+}
+
+input.bd-search:focus {
+  border-color: rgba(139, 92, 246, 0.6) !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.4) !important;
+}
+
+/* ----------------------------------------
+   #15: Profile Section (No Glow - Removed)
+   Profile styling removed per user request
+   ---------------------------------------- */
+/* Profile glow removed - looked too strong */
+
+/* ----------------------------------------
+   #16: Tab Bar Customizations (NEW!)
+   Settings tabs look epic with purple theme
+   ---------------------------------------- */
+/* Tab bar container - aligned with content */
+[class*='topSectionNormal'],
+[class*='tabBarContainer'],
+div[class*='top'] > div[role='tablist'],
+div[role='tablist'] {
+  background: rgba(15, 15, 25, 0.8) !important;
+  border-bottom: 2px solid rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 0 2px 10px rgba(139, 92, 246, 0.2) !important;
+  padding: 8px 0 !important;
+  margin: 0 16px 16px 16px !important;
+  border-radius: 8px 8px 0 0 !important;
+}
+
+/* Individual tabs */
+div[role='tab'],
+[class*='topPill'],
+[class*='item'][role='tab'] {
+  background: rgba(20, 20, 30, 0.6) !important;
+  border: 1px solid rgba(139, 92, 246, 0.2) !important;
+  border-radius: 6px !important;
+  padding: 8px 16px !important;
+  margin: 0 4px !important;
+  color: #a78bfa !important;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.4) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Tab hover glow */
+div[role='tab']:hover,
+[class*='topPill']:hover,
+[class*='item'][role='tab']:hover {
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-color: rgba(139, 92, 246, 0.5) !important;
+  box-shadow: 0 0 15px rgba(139, 92, 246, 0.4) !important;
+  transform: translateY(-2px) !important;
+}
+
+/* Selected/Active tab */
+div[role='tab'][aria-selected='true'],
+[class*='topPill'][class*='selected'],
+[class*='item'][role='tab'][aria-selected='true'] {
+  background: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.3),
+    rgba(167, 139, 250, 0.25)
+  ) !important;
+  border-color: rgba(139, 92, 246, 0.8) !important;
+  box-shadow: 0 0 20px rgba(139, 92, 246, 0.6), inset 0 0 20px rgba(139, 92, 246, 0.2) !important;
+  color: #c4b5fd !important;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.8) !important;
+  font-weight: bold !important;
+}
+
+/* Tab indicator line (if exists) */
+[class*='topPill']::after,
+div[role='tab']::after {
+  background: linear-gradient(90deg, transparent, #8b5cf6, transparent) !important;
+  height: 3px !important;
+  box-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
+}
+
+/* Tab text styling */
+div[role='tab'] span,
+[class*='topPill'] span {
+  font-weight: 600 !important;
+  letter-spacing: 0.5px !important;
+}
+
+/* Selected tab text extra glow */
+div[role='tab'][aria-selected='true'] span,
+[class*='topPill'][class*='selected'] span {
+  font-weight: bold !important;
+  text-shadow: 0 0 12px rgba(139, 92, 246, 1) !important;
+}
+
+/* Tab separator (between tabs) */
+[class*='divider'][class*='tab'],
+div[role='tablist'] > div[class*='divider'] {
+  background: rgba(139, 92, 246, 0.2) !important;
+  width: 1px !important;
+  margin: 0 8px !important;
+}
+
+/* Content panels (below tabs) - single border, no glow */
+div[role='tabpanel'],
+[class*='tabBody'] {
+  background: rgba(15, 15, 25, 0.5) !important;
+  border: 1px solid rgba(139, 92, 246, 0.1) !important;
+  border-radius: 8px !important;
+  margin-top: 16px !important;
+  padding: 16px !important;
+  box-shadow: none !important;
 }

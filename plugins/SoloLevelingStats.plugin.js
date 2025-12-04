@@ -2,13 +2,31 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Solo Leveling-inspired stats system that tracks Discord activity and rewards progression through levels, stats, achievements, and daily quests
- * @version 2.0.0
+ * @version 2.1.1
  * @authorId
  * @authorLink
  * @website
  * @source
  *
- * @changelog v2.0.0 (2025-12-03)
+ * ============================================================================
+ * VERSION HISTORY
+ * ============================================================================
+ *
+ * @changelog v2.1.1 (2025-12-04) - UI & MEMORY IMPROVEMENTS
+ * - Quest completion animation now uses darker purple theme
+ * - Changed background gradient to dark purple (matches Solar Eclipse theme)
+ * - Changed border to purple accent (cohesive dark theme)
+ * - Particle colors changed to darker purple spectrum
+ * - Enhanced memory cleanup (quest celebrations cleared on stop)
+ *
+ * @changelog v2.1.0 (2025-12-04) - REAL-TIME MANA SYNC
+ * - Improved mana sync with Dungeons plugin (instant updates)
+ * - Real-time mana consumption tracking
+ * - Better integration with shadow resurrection system
+ * - Mana display updates immediately on consumption
+ * - Fixed delayed mana updates during dungeon combat
+ *
+ * @changelog v2.0.0 (2025-12-03) - SHADOW XP SHARE SYSTEM
  * - Added Shadow XP Share system - ALL shadows gain XP from user activities
  * - Message XP sharing: 5% of user XP to all shadows
  * - Quest XP sharing: 10% of user XP to all shadows
@@ -125,6 +143,9 @@ module.exports = class SoloLevelingStats {
     this.userHPBarPositionUpdater = null;
     this.panelWatcher = null;
     this.shadowPowerUpdateTimeout = null;
+
+    // Activity tracking handlers (for cleanup)
+    this._activityTrackingHandlers = null;
 
     // Debug system (OPTIMIZED: Default disabled, better throttling)
     // ============================================================================
@@ -947,7 +968,7 @@ module.exports = class SoloLevelingStats {
           <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
             <div style="color: #ec4899; font-size: 11px; font-weight: 600; min-width: 30px; flex-shrink: 0;">HP</div>
             <div style="flex: 1; height: 12px; background: rgba(20, 20, 30, 0.8); border-radius: 6px; overflow: hidden; position: relative; min-width: 0;">
-              <div id="sls-hp-bar-fill" style="height: 100%; width: ${hpPercent}%; background: linear-gradient(90deg, #a855f7 0%, #9333ea 50%, #7c3aed 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(168, 85, 247, 0.5), inset 0 0 15px rgba(147, 51, 234, 0.3);"></div>
+              <div id="sls-hp-bar-fill" style="height: 100%; width: ${hpPercent}%; background: linear-gradient(90deg, #a855f7 0%, #9333ea 50%, #7c3aed 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);"></div>
             </div>
             <div id="sls-hp-text" style="color: rgba(255, 255, 255, 0.7); font-size: 10px; min-width: 50px; text-align: right; flex-shrink: 0; display: flex;">${Math.floor(
               this.settings.userHP
@@ -956,7 +977,7 @@ module.exports = class SoloLevelingStats {
           <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
             <div style="color: #3b82f6; font-size: 11px; font-weight: 600; min-width: 30px; flex-shrink: 0;">MP</div>
             <div id="sls-mp-bar-container" style="flex: 1; height: 12px; background: rgba(20, 20, 30, 0.8); border-radius: 6px; overflow: hidden; position: relative; min-width: 0;">
-              <div id="sls-mp-bar-fill" style="height: 100%; width: ${manaPercent}%; background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(96, 165, 250, 0.5), inset 0 0 15px rgba(59, 130, 246, 0.3);"></div>
+              <div id="sls-mp-bar-fill" style="height: 100%; width: ${manaPercent}%; background: linear-gradient(90deg, #60a5fa 0%, #3b82f6 50%, #2563eb 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(96, 165, 250, 0.5);"></div>
             </div>
             <div id="sls-mp-text" style="color: rgba(255, 255, 255, 0.7); font-size: 10px; min-width: 50px; text-align: right; flex-shrink: 0; display: flex;">${Math.floor(
               this.settings.userMana
@@ -1201,6 +1222,49 @@ module.exports = class SoloLevelingStats {
     `;
   }
 
+  /**
+   * Generate the HTML for a stat value with buff badges
+   * @param {number} totalValue - Total stat value to display
+   * @param {string} statKey - Stat key (e.g., 'strength', 'agility')
+   * @param {Object} titleBonus - Title bonus object
+   * @param {Object} shadowBuffs - Shadow buffs object
+   * @returns {string} HTML string with value and buff badges
+   */
+  getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs) {
+    // Support both old format (raw) and new format (percentage)
+    const statPercentKey = `${statKey}Percent`;
+    const titleBuffPercent =
+      titleBonus[statPercentKey] || (titleBonus[statKey] ? titleBonus[statKey] / 100 : 0);
+    const hasTitleBuff = titleBuffPercent > 0;
+
+    // Get shadow buff for this stat (support both 'luck' and 'perception')
+    // Shadow buffs are percentages (0.1 = 10%), so multiply by 100 for display
+    const shadowBuffKey =
+      statKey === 'perception'
+        ? shadowBuffs.perception || shadowBuffs.luck || 0
+        : shadowBuffs[statKey] || 0;
+    const hasShadowBuff = shadowBuffKey > 0;
+    const shadowBuffPercent = shadowBuffKey * 100; // Convert to percentage for display
+
+    // Store numeric value without % suffix to avoid double % when building strings
+    const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
+
+    // Build the HTML
+    let html = totalValue.toString();
+    if (hasTitleBuff || hasShadowBuff) {
+      let buffContent = '';
+      if (hasTitleBuff && titleBuffValue !== null) {
+        buffContent += `+${titleBuffValue}%`;
+      }
+      if (hasShadowBuff) {
+        buffContent += `+${shadowBuffPercent.toFixed(0)}%`;
+      }
+      html += `<span class="sls-chat-stat-buff">${buffContent}</span>`;
+    }
+
+    return html;
+  }
+
   renderChatStatButtons() {
     const stats = [
       { key: 'strength', name: 'STR', fullName: 'Strength', desc: '+5% XP' },
@@ -1241,16 +1305,6 @@ module.exports = class SoloLevelingStats {
 
         const canAllocate = this.settings.unallocatedStatPoints > 0;
 
-        // Build buff display string
-        let buffDisplayParts = [];
-        if (hasTitleBuff) {
-          buffDisplayParts.push(`+${(titleBuffPercent * 100).toFixed(0)}% title`);
-        }
-        if (hasShadowBuff) {
-          buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
-        }
-        const _buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
-
         // Store numeric value without % suffix to avoid double % when building strings
         const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
 
@@ -1266,6 +1320,14 @@ module.exports = class SoloLevelingStats {
         tooltipParts.push(`${stat.desc} per point`);
         const tooltip = tooltipParts.join(' | ');
 
+        // Generate value with buff badges HTML using helper
+        const valueWithBuffsHTML = this.getStatValueWithBuffsHTML(
+          totalValue,
+          stat.key,
+          titleBonus,
+          shadowBuffs
+        );
+
         return `
         <button
           class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
@@ -1275,14 +1337,7 @@ module.exports = class SoloLevelingStats {
         >
           <div class="sls-chat-stat-btn-name">${stat.name}</div>
           <div class="sls-chat-stat-btn-value">
-            ${totalValue}
-            ${
-              hasTitleBuff || hasShadowBuff
-                ? `<span class="sls-chat-stat-buff">${
-                    hasTitleBuff && titleBuffValue !== null ? `+${titleBuffValue}%` : ''
-                  }${hasShadowBuff ? `+${shadowBuffPercent.toFixed(0)}%` : ''}</span>`
-                : ''
-            }
+            ${valueWithBuffsHTML}
           </div>
           ${canAllocate ? '<div class="sls-chat-stat-btn-plus">+</div>' : ''}
         </button>
@@ -1819,11 +1874,21 @@ module.exports = class SoloLevelingStats {
     });
 
     // Update stat button values (keep total values visible, base stats for tooltips)
+    // Get shadow buffs for generating value+buff HTML (titleBonus already declared above)
+    const shadowBuffs = this.getShadowArmyBuffs();
+
     this.chatUIPanel.querySelectorAll('.sls-chat-stat-btn').forEach((btn) => {
       const statName = btn.dataset.stat;
       const valueEl = btn.querySelector('.sls-chat-stat-btn-value');
       if (valueEl) {
-        valueEl.textContent = totalStats[statName] ?? this.settings.stats[statName];
+        // Use helper to generate HTML with buff badges instead of plain textContent
+        const totalValue = totalStats[statName] ?? this.settings.stats[statName];
+        valueEl.innerHTML = this.getStatValueWithBuffsHTML(
+          totalValue,
+          statName,
+          titleBonus,
+          shadowBuffs
+        );
       }
       // Update button state (use base stats for allocation logic)
       const _currentValue = this.settings.stats[statName];
@@ -1973,7 +2038,7 @@ module.exports = class SoloLevelingStats {
         border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 10px;
         padding: 10px 12px;
-        box-shadow: 0 0 8px rgba(138, 43, 226, 0.4), inset 0 0 20px rgba(138, 43, 226, 0.1);
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         z-index: 1000;
         font-family: 'Orbitron', 'Segoe UI', sans-serif;
         backdrop-filter: blur(8px);
@@ -2023,10 +2088,10 @@ module.exports = class SoloLevelingStats {
 
       /* Make bar fills more visible when collapsed */
       .sls-hp-mana-collapsed #sls-hp-bar-fill {
-        box-shadow: 0 0 10px rgba(168, 85, 247, 0.6), inset 0 0 20px rgba(147, 51, 234, 0.4) !important;
+        box-shadow: 0 0 10px rgba(168, 85, 247, 0.6) !important;
       }
       .sls-hp-mana-collapsed #sls-mp-bar-fill {
-        box-shadow: 0 0 10px rgba(96, 165, 250, 0.6), inset 0 0 20px rgba(59, 130, 246, 0.4) !important;
+        box-shadow: 0 0 10px rgba(96, 165, 250, 0.6) !important;
       }
 
       .sls-chat-title {
@@ -2277,8 +2342,8 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-quest-celebration-content {
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.95) 0%, rgba(109, 40, 217, 0.95) 100%);
-        border: 3px solid rgba(255, 255, 255, 0.8);
+        background: linear-gradient(135deg, rgba(75, 40, 130, 0.95) 0%, rgba(55, 25, 95, 0.95) 100%);
+        border: 3px solid rgba(139, 92, 246, 0.6);
         border-radius: 16px;
         padding: 30px 40px;
         text-align: center;
@@ -2806,6 +2871,48 @@ module.exports = class SoloLevelingStats {
       clearInterval(this.shadowPowerInterval);
       this.shadowPowerInterval = null;
     }
+    if (this.shadowPowerUpdateTimeout) {
+      clearTimeout(this.shadowPowerUpdateTimeout);
+      this.shadowPowerUpdateTimeout = null;
+    }
+
+    // Cleanup HP bar position updater
+    if (this.userHPBarPositionUpdater) {
+      clearInterval(this.userHPBarPositionUpdater);
+      this.userHPBarPositionUpdater = null;
+    }
+
+    // Cleanup panel watcher
+    if (this.panelWatcher) {
+      this.panelWatcher.disconnect();
+      this.panelWatcher = null;
+    }
+
+    // Cleanup user HP bar
+    if (this.userHPBar) {
+      this.userHPBar = null;
+    }
+
+    // Remove activity tracking event listeners
+    if (this._activityTrackingHandlers) {
+      document.removeEventListener('mousemove', this._activityTrackingHandlers.mousemove);
+      document.removeEventListener('keydown', this._activityTrackingHandlers.keydown);
+      this._activityTrackingHandlers = null;
+    }
+    if (this._activityTimeout) {
+      clearTimeout(this._activityTimeout);
+      this._activityTimeout = null;
+    }
+
+    // MEMORY CLEANUP: Clear quest celebration particles and animations
+    document.querySelectorAll('.sls-quest-celebration, .sls-quest-particle').forEach((el) => {
+      el.remove();
+    });
+
+    // Clear pending level up data
+    if (this.pendingLevelUp) {
+      this.pendingLevelUp = null;
+    }
 
     // Save before stopping
     this.saveSettings(true);
@@ -3112,13 +3219,21 @@ module.exports = class SoloLevelingStats {
     }, 60000); // Check every minute
 
     // Track mouse/keyboard activity
-    let activityTimeout;
+    this._activityTimeout = null;
     const resetActivityTimeout = () => {
-      clearTimeout(activityTimeout);
+      if (this._activityTimeout) {
+        clearTimeout(this._activityTimeout);
+      }
       this.settings.activity.lastActiveTime = Date.now();
-      activityTimeout = setTimeout(() => {
+      this._activityTimeout = setTimeout(() => {
         // User inactive
       }, 300000); // 5 minutes
+    };
+
+    // Store handlers for cleanup
+    this._activityTrackingHandlers = {
+      mousemove: resetActivityTimeout,
+      keydown: resetActivityTimeout,
     };
 
     document.addEventListener('mousemove', resetActivityTimeout);
@@ -4341,10 +4456,8 @@ module.exports = class SoloLevelingStats {
         }
       }
 
-      // Perception: Apply stacked buffs as additive percentage bonus
-      if (totalPerceptionBuff > 0) {
-        totalPercentageBonus += totalPerceptionBuff;
-      }
+      // Perception buff already applied above (lines 4355-4359) as adjustedPerceptionBuff
+      // No need to add totalPerceptionBuff again - removed to prevent double-counting
 
       // ===== APPLY PERCENTAGE BONUSES (Additive) =====
       // Cap total percentage bonus at 500% (6x multiplier max) to prevent exponential growth
@@ -5128,7 +5241,14 @@ module.exports = class SoloLevelingStats {
             } = this.pendingLevelUp;
             // #region agent log
             // #endregion
-            this.showLevelUpNotification(finalNewLevel, finalOldLevel);
+
+            // Calculate actual stat points gained
+            const baseStatPoints = 5;
+            const levelBonus = Math.floor(finalNewLevel / 10);
+            const statPointsPerLevel = baseStatPoints + levelBonus;
+            const actualStatPointsGained = (finalNewLevel - finalOldLevel) * statPointsPerLevel;
+
+            this.showLevelUpNotification(finalNewLevel, finalOldLevel, actualStatPointsGained);
             this.pendingLevelUp = null;
             this.levelUpDebounceTimeout = null;
           }
@@ -5330,18 +5450,19 @@ module.exports = class SoloLevelingStats {
     this.showNotification(message, 'success', 6000);
   }
 
-  showLevelUpNotification(newLevel, oldLevel) {
+  showLevelUpNotification(newLevel, oldLevel, actualStatPointsGained = null) {
     // #region agent log
     // #endregion
 
     const _levelInfo = this.getCurrentLevel();
     const levelsGained = newLevel - oldLevel;
 
-    // Calculate total bonus points for all levels gained
-    // For multiple level ups: sum of (oldLevel+1)*50 + (oldLevel+2)*50 + ... + newLevel*50
-    let totalBonusPoints = 0;
-    for (let level = oldLevel + 1; level <= newLevel; level++) {
-      totalBonusPoints += level * 50;
+    // Calculate actual stat points gained if not provided
+    if (actualStatPointsGained === null) {
+      const baseStatPoints = 5;
+      const levelBonus = Math.floor(newLevel / 10);
+      const statPointsPerLevel = baseStatPoints + levelBonus;
+      actualStatPointsGained = levelsGained * statPointsPerLevel;
     }
 
     const rankInfo = this.getRankRequirements()[this.settings.rank];
@@ -5367,8 +5488,7 @@ module.exports = class SoloLevelingStats {
 
     message += `Rank: ${this.settings.rank} - ${rankInfo.name}\n`;
     message += `HP: ${currentMaxHP}/${currentMaxHP} (Fully Restored!)\n`;
-    message += `Bonus: +${totalBonusPoints} points!\n`;
-    message += `+${levelsGained} stat point(s)! Use settings to allocate stats`;
+    message += `+${actualStatPointsGained} stat point(s)! Use settings to allocate stats`;
 
     this.showNotification(message, 'success', 5000);
 
@@ -7312,7 +7432,7 @@ module.exports = class SoloLevelingStats {
 
   createQuestParticles(container) {
     const particleCount = 30;
-    const colors = ['#8b5cf6', '#7c3aed', '#6d28d9', '#ffffff', '#00ff88'];
+    const colors = ['#5a3a8f', '#4b2882', '#3d1f6b', '#8b5cf6', '#00ff88'];
 
     for (let i = 0; i < particleCount; i++) {
       const particle = document.createElement('div');
@@ -7490,10 +7610,10 @@ module.exports = class SoloLevelingStats {
 
       @keyframes progressGlow {
         0%, 100% {
-          box-shadow: 0 0 4px rgba(138, 43, 226, 0.6), inset 0 0 4px rgba(138, 43, 226, 0.3);
+          box-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
         }
         50% {
-          box-shadow: 0 0 6px rgba(138, 43, 226, 0.9), inset 0 0 5px rgba(138, 43, 226, 0.5);
+          box-shadow: 0 0 6px rgba(138, 43, 226, 0.9);
         }
       }
 
