@@ -426,322 +426,32 @@ button,
 }
 
 /* ========================================
-   SECTION 6: ACTIVITY CARD TIMESTAMP BARS
-   AFFECTS: Activity/Rich Presence timestamp bars in user activity cards
+   SECTION 6: ACTIVITY CARD STYLING
+   AFFECTS: Activity/Rich Presence cards in user profiles and popouts
    ======================================== */
-/* This section removes purple backgrounds from timestamp bars in activity cards */
-/* The timestamp text (e.g., "2d ago") remains visible but without purple background */
 /*
- * IMPORTANT: Discord uses dynamically generated class names that change frequently
- * The selectors below use attribute selectors [class*='...'] to match partial class names
- * This ensures the rules work even when Discord updates their class structure
+ * ORGANIZATION:
+ * A. CSS Variables & Resets
+ * B. Container Styling (Package 1: System UI Panel Effect)
+ * C. Game/App Title (Package 1: Magical Glow)
+ * D. App Icon (Package 1: Glowing Artifact)
+ * E. Timestamp/Badge Removal (Purple Background Fix)
+ * F. Text Elements & Visibility
+ * G. Inline Style Overrides (Color-Based Detection)
+ *
+ * STRATEGY: Multi-layer resilience for Discord class name changes
+ * - Attribute selectors [class*='partial']
+ * - Context-based targeting
+ * - Color-based detection (ultimate fallback)
  */
 
-/* AGGRESSIVE PURPLE BACKGROUND REMOVAL - Activity Cards */
-/* Targets ALL elements within activity cards that might have purple backgrounds */
-/* This is a comprehensive approach to catch any purple background regardless of class name */
-/* Note: This is commented out by default as it's very aggressive */
-/* Uncomment if other selectors don't work */
-/*
-[class*='activityCard'] *,
-[class*='activityCard'] *::before,
-[class*='activityCard'] *::after {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-*/
-
-/* Remove purple backgrounds from activity card root elements */
+/* ----------------------------------------
+   A. CSS VARIABLES & RESETS
+   ---------------------------------------- */
+/* Reset theme variables that might apply purple backgrounds */
 [class*='activityCard'],
-[class*='activityCard'][class*='wrapper'],
-[class*='activityCard'][class*='container'],
-[class*='activityCard'][class*='content'] {
-  /* Override any CSS variables that might add purple backgrounds */
-  --background-accent: transparent !important;
-  --background-modifier-hover: transparent !important;
-  --background-modifier-active: transparent !important;
-}
-
-/* Activity Card Timestamp Bar - Remove Purple Background */
-/* Targets the horizontal purple bar that appears below game names in activity cards */
-/* This is the bar that shows "✨ 2d ago" or "🎮 2d ago" in activity cards */
-/* Using multiple selector strategies to ensure we catch all variations */
-[class*='activityCard'] [class*='timeBar'],
-[class*='activityCard'] [class*='timestampBar'],
-[class*='activityCard'] [class*='activityBar'],
-[class*='activityCard'] [class*='bar'],
-[class*='activityCard'] [class*='time'],
-[class*='activityCard'] [class*='timestamp'],
-[class*='activityCard'] [class*='activityTimeBar'],
-[class*='activityCard'] [class*='activityTimestampBar'],
-[class*='activityCard'] [class*='richPresence'] [class*='timeBar'],
-[class*='activityCard'] [class*='richPresence'] [class*='timestampBar'],
-[class*='activityCard'] [class*='richPresence'] [class*='bar'],
-[class*='activityCard'] [class*='richPresence'] [class*='time'],
-[class*='activityCard'] [class*='richPresence'] [class*='timestamp'],
-[class*='activityCard'] [class*='activity'] [class*='timeBar'],
-[class*='activityCard'] [class*='activity'] [class*='timestampBar'],
-[class*='activityCard'] [class*='activity'] [class*='bar'],
-[class*='activityCard'] [class*='activity'] [class*='time'],
-[class*='activityCard'] [class*='activity'] [class*='timestamp'],
-/* Additional selectors for common Discord patterns */
-[class*='activityCard'] div[class*='bar'],
-[class*='activityCard'] div[class*='time'],
-[class*='activityCard'] div[class*='timestamp'],
-[class*='activityCard'] span[class*='bar'],
-[class*='activityCard'] span[class*='time'],
-[class*='activityCard'] span[class*='timestamp'],
-[class*='activityCard'] time[class*='bar'],
-[class*='activityCard'] time[class*='time'],
-[class*='activityCard'] time[class*='timestamp'] {
-  /* Use shorthand background to reset all background properties */
-  background: transparent !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
-  border: none !important;
-  border-radius: 0 !important;
-  /* Override any CSS variables that might set purple backgrounds */
-  --background-accent: transparent !important;
-  --background-modifier-hover: transparent !important;
-  --background-modifier-active: transparent !important;
-}
-
-/* Activity Card Timestamp Container - Remove Purple Background */
-/* Targets containers/wrappers around timestamp bars */
-[class*='activityCard'] [class*='timestampContainer'],
-[class*='activityCard'] [class*='timeContainer'],
-[class*='activityCard'] [class*='barContainer'],
-[class*='activityCard'] [class*='activityContainer'],
-[class*='activityCard'] [class*='richPresence'] [class*='timestampContainer'],
-[class*='activityCard'] [class*='richPresence'] [class*='timeContainer'],
-[class*='activityCard'] [class*='richPresence'] [class*='barContainer'],
-[class*='activityCard'] [class*='activity'] [class*='timestampContainer'],
-[class*='activityCard'] [class*='activity'] [class*='timeContainer'],
-[class*='activityCard'] [class*='activity'] [class*='barContainer'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* Activity Card Timestamp Text - Keep Visible, Remove Purple Background */
-/* Ensures the timestamp text (e.g., "2d ago") remains visible but without purple background */
-[class*='activityCard'] [class*='timestamp'] span,
-[class*='activityCard'] [class*='timestamp'] time,
-[class*='activityCard'] [class*='timestamp'] div,
-[class*='activityCard'] [class*='time'] span,
-[class*='activityCard'] [class*='time'] time,
-[class*='activityCard'] [class*='time'] div,
-[class*='activityCard'] [class*='bar'] span,
-[class*='activityCard'] [class*='bar'] time,
-[class*='activityCard'] [class*='bar'] div,
-[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] span,
-[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] time,
-[class*='activityCard'] [class*='richPresence'] [class*='timestamp'] div,
-[class*='activityCard'] [class*='richPresence'] [class*='time'] span,
-[class*='activityCard'] [class*='richPresence'] [class*='time'] time,
-[class*='activityCard'] [class*='richPresence'] [class*='time'] div,
-[class*='activityCard'] [class*='activity'] [class*='timestamp'] span,
-[class*='activityCard'] [class*='activity'] [class*='timestamp'] time,
-[class*='activityCard'] [class*='activity'] [class*='timestamp'] div,
-[class*='activityCard'] [class*='activity'] [class*='time'] span,
-[class*='activityCard'] [class*='activity'] [class*='time'] time,
-[class*='activityCard'] [class*='activity'] [class*='time'] div {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  color: var(--text-normal) !important;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5) !important;
-}
-
-/* Remove Purple Backgrounds from Activity Card Elements with Inline Styles */
-/* Targets activity card elements that have purple backgrounds set via inline styles */
-[class*='activityCard'][style*='background'],
-[class*='activityCard'] [style*='background'],
-[class*='activityCard'][style*='#8a2be2'],
-[class*='activityCard'][style*='#ba55d3'],
-[class*='activityCard'][style*='#8b7fa8'],
-[class*='activityCard'][style*='rgba(138, 43, 226'],
-[class*='activityCard'][style*='rgba(139, 92, 246'],
-[class*='activityCard'] [style*='#8a2be2'],
-[class*='activityCard'] [style*='#ba55d3'],
-[class*='activityCard'] [style*='#8b7fa8'],
-[class*='activityCard'] [style*='rgba(138, 43, 226'],
-[class*='activityCard'] [style*='rgba(139, 92, 246'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Activity Panel Timestamp Bars - Remove Purple Background */
-/* Targets timestamp bars in activity panels (user profile activity section) */
-[class*='activityPanel'] [class*='timestamp'],
-[class*='activityPanel'] [class*='timestampContainer'],
-[class*='activityPanel'] [class*='bar'],
-[class*='activityPanel'] [class*='time'],
-[class*='activityPanel'] [class*='timeBar'],
-[class*='activityPanel'] [class*='timestampBar'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-
-/* Rich Presence Timestamp Bars - Remove Purple Background */
-/* Targets timestamp bars in rich presence activity displays */
-[class*='richPresence'] [class*='timestamp'],
-[class*='richPresence'] [class*='timestampContainer'],
-[class*='richPresence'] [class*='bar'],
-[class*='richPresence'] [class*='time'],
-[class*='richPresence'] [class*='timeBar'],
-[class*='richPresence'] [class*='timestampBar'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  box-shadow: none !important;
-  border: none !important;
-}
-
-/* Ensure Timestamp Text Remains Visible */
-/* Makes sure the timestamp text (e.g., "2d ago") is still readable */
-[class*='activityPanel'] [class*='timestamp'] span,
-[class*='activityPanel'] [class*='timestamp'] time,
-[class*='activityPanel'] [class*='timestamp'] div,
-[class*='richPresence'] [class*='timestamp'] span,
-[class*='richPresence'] [class*='timestamp'] time,
-[class*='richPresence'] [class*='timestamp'] div {
-  background: transparent !important;
-  background-color: transparent !important;
-  color: var(--text-normal) !important;
-  text-shadow: 0 0 2px rgba(0, 0, 0, 0.5) !important;
-}
-
-/* Remove Purple Backgrounds from All Activity-Related Elements */
-/* Comprehensive removal of purple backgrounds from any activity-related element */
-/* This section uses multiple selector strategies to catch all possible purple backgrounds */
-
-/* Strategy 1: Target elements with inline style backgrounds */
-[class*='activity'] [style*='background'],
-[class*='richPresence'] [style*='background'],
-[class*='activityCard'] [style*='background'],
-[class*='activity'] [class*='bar'],
-[class*='richPresence'] [class*='bar'],
-[class*='activityCard'] [class*='bar'],
-[class*='activity'] [class*='container'],
-[class*='richPresence'] [class*='container'],
-[class*='activityCard'] [class*='container'],
-[class*='timestamp'][style*='background'],
-[class*='time'][style*='background'],
-[class*='bar'][style*='background'],
-[class*='activity'][style*='#8a2be2'],
-[class*='activity'][style*='#ba55d3'],
-[class*='activity'][style*='#8b7fa8'],
-[class*='richPresence'][style*='#8a2be2'],
-[class*='richPresence'][style*='#ba55d3'],
-[class*='richPresence'][style*='#8b7fa8'],
-[class*='activityCard'][style*='#8a2be2'],
-[class*='activityCard'][style*='#ba55d3'],
-[class*='activityCard'][style*='#8b7fa8'],
-[class*='activity'][style*='rgba(138, 43, 226'],
-[class*='activity'][style*='rgba(139, 92, 246'],
-[class*='richPresence'][style*='rgba(138, 43, 226'],
-[class*='richPresence'][style*='rgba(139, 92, 246'],
-[class*='activityCard'][style*='rgba(138, 43, 226'],
-[class*='activityCard'][style*='rgba(139, 92, 246'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* Strategy 2: Target ALL elements within activity cards that have background-color set */
-/* This catches elements even if they don't match our specific class patterns */
-[class*='activityCard'] [style*='background-color'],
-[class*='activityCard'] [style*='background-color:'],
-[class*='activityCard'] [style*='background:'],
-[class*='activityCard'] [style*='background-color: rgb'],
-[class*='activityCard'] [style*='background-color: rgba'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Strategy 3: Target common Discord activity class patterns */
-/* These are common class name patterns Discord uses for activity elements */
-[class*='activityText'],
-[class*='activityDetails'],
-[class*='activityMetadata'],
-[class*='activityInfo'],
-[class*='activityDescription'],
-[class*='activityName'],
-[class*='activityType'],
-[class*='activityStatus'],
-[class*='activityTime'],
-[class*='activityTimestamp'],
-[class*='activityDuration'],
-[class*='activityElapsed'],
-[class*='activityStart'],
-[class*='activityEnd'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Strategy 4: Target elements by their computed background color */
-/* This uses a more aggressive approach - targets any element with purple-ish background */
-/* Note: This might affect other purple elements, but should catch the timestamp bars */
-[class*='activityCard'] div[style*='8a2be2'],
-[class*='activityCard'] div[style*='ba55d3'],
-[class*='activityCard'] div[style*='8b7fa8'],
-[class*='activityCard'] span[style*='8a2be2'],
-[class*='activityCard'] span[style*='ba55d3'],
-[class*='activityCard'] span[style*='8b7fa8'],
-[class*='activityCard'] time[style*='8a2be2'],
-[class*='activityCard'] time[style*='ba55d3'],
-[class*='activityCard'] time[style*='8b7fa8'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Strategy 5: Target by data attributes or other identifying features */
-/* Some Discord elements use data attributes or specific structures */
-/* Note: [data-*] is not a valid CSS selector, so we target specific common data attributes */
-[class*='activityCard'] [role*='text'],
-[class*='activityCard'] [aria-label*='time'],
-[class*='activityCard'] [aria-label*='timestamp'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-
-/* Strategy 6: Nuclear option - Remove ALL backgrounds from activity card children */
-/* This is the most aggressive approach - removes backgrounds from ALL child elements */
-/* Only use if other strategies don't work */
-/* COMMENTED OUT BY DEFAULT - Uncomment the rules below if needed */
-/*
-[class*='activityCard'] > *,
-[class*='activityCard'] > * > *,
-[class*='activityCard'] > * > * > * {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-}
-*/
-
-/* Strategy 7: Override ClearVision theme variables that might add purple backgrounds */
-/* ClearVision base theme might be adding purple backgrounds via CSS variables */
-[class*='activityCard'] {
+[class*='activityPanel'],
+[class*='richPresence'] {
   --background-accent: transparent !important;
   --background-floating: transparent !important;
   --background-primary: transparent !important;
@@ -752,63 +462,279 @@ button,
   --background-modifier-selected: transparent !important;
 }
 
-/* Strategy 8: Universal Purple Background Removal for Activity Cards */
-/* This targets ANY element with a purple background color within activity cards */
-/* Uses attribute selectors to catch inline styles with purple colors */
-[class*='activityCard'] [style*='rgb(138, 43, 226)'],
-[class*='activityCard'] [style*='rgb(139, 92, 246)'],
-[class*='activityCard'] [style*='rgba(138, 43, 226'],
-[class*='activityCard'] [style*='rgba(139, 92, 246'],
-[class*='activityCard'] [style*='#8a2be2'],
-[class*='activityCard'] [style*='#ba55d3'],
-[class*='activityCard'] [style*='#8b7fa8'],
-[class*='activityCard'] [style*='blueviolet'],
-[class*='activityCard'] [style*='mediumorchid'],
-[class*='activityCard'] [style*='slateblue'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
+/* ----------------------------------------
+   B. CONTAINER STYLING (PACKAGE 1)
+   Solo Leveling Enhancement - Subtle Glow Only
+   ---------------------------------------- */
+/* Activity card container - Subtle background glow, no border */
+[class*='infoSection'],
+[class*='popoutHeroBody'] {
+  /* Keep Discord's original positioning/margins (don't override) */
+  /* Just add subtle visual enhancements */
+  background: rgba(10, 10, 20, 0.3) !important;
+  border: none !important;
+  border-radius: 8px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), 0 0 15px rgba(139, 92, 246, 0.1) !important;
+  transition: all 0.3s ease !important;
 }
 
-/* Strategy 9: Target by element type (time elements, datetime attributes) */
-/* This targets time elements and elements with datetime attributes within activity cards */
-/* Note: :has() selector requires modern browser support */
-[class*='activityCard']:has(time),
-[class*='activityCard']:has([datetime]),
-[class*='activityCard'] time,
-[class*='activityCard'] [datetime] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
+/* Container hover effect - Intensify glow only */
+[class*='infoSection']:hover,
+[class*='popoutHeroBody']:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.2) !important;
+  background: rgba(10, 10, 20, 0.5) !important;
 }
 
-/* Strategy 10: Override any computed styles with !important cascade */
-/* This ensures our transparent backgrounds override any other styles */
-/* Using higher specificity and !important to beat Discord's inline styles */
+/* ----------------------------------------
+   C. GAME/APP TITLE (PACKAGE 1)
+   Magical Glow Effect
+   ---------------------------------------- */
+/* Game title - Glowing magical text effect */
+[class*='contentTitle'],
+[class*='activityCard'] h3,
+[class*='infoSection'] h3,
+[class*='popout'] [class*='activityName'] {
+  color: #e0d0ff !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.9), 0 0 12px rgba(124, 58, 237, 0.7),
+    0 0 16px rgba(109, 40, 217, 0.5) !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.8px !important;
+  font-size: 15px !important;
+  margin-bottom: 4px !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Game title hover - Intensify glow */
+[class*='contentTitle']:hover,
+[class*='activityCard'] h3:hover,
+[class*='infoSection'] h3:hover {
+  text-shadow: 0 0 12px rgba(139, 92, 246, 1), 0 0 18px rgba(124, 58, 237, 0.9),
+    0 0 24px rgba(109, 40, 217, 0.7) !important;
+  color: #f0e0ff !important;
+}
+
+/* ----------------------------------------
+   D. APP ICON (PACKAGE 1)
+   Glowing Mana Stone Effect
+   ---------------------------------------- */
+/* App icon - Glowing artifact/mana stone effect */
+[class*='contentImage'],
+[class*='imageContainer'] img,
+[class*='popoutThumbnailContainer'] img,
+[class*='activityCard'] img[alt*='icon'],
+[class*='activityCard'] img[alt*='App'] {
+  border-radius: 12px !important;
+  box-shadow: 0 0 16px rgba(139, 92, 246, 0.7), 0 0 24px rgba(124, 58, 237, 0.5),
+    0 4px 8px rgba(0, 0, 0, 0.4) !important;
+  border: 2px solid rgba(139, 92, 246, 0.5) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* App icon hover - Intensify glow and scale */
+[class*='contentImage']:hover,
+[class*='imageContainer'] img:hover,
+[class*='popoutThumbnailContainer'] img:hover {
+  box-shadow: 0 0 20px rgba(139, 92, 246, 1), 0 0 32px rgba(124, 58, 237, 0.8),
+    0 0 40px rgba(109, 40, 217, 0.6) !important;
+  transform: scale(1.08) rotate(2deg) !important;
+  border-color: rgba(139, 92, 246, 0.9) !important;
+}
+
+/* ----------------------------------------
+   E. TIMESTAMP/BADGE REMOVAL
+   Purple Background Fix (Multi-Strategy)
+   ---------------------------------------- */
+
+/* E1. Timestamp Bars - Remove Purple Backgrounds */
 [class*='activityCard'] [class*='bar'],
 [class*='activityCard'] [class*='time'],
-[class*='activityCard'] [class*='timestamp'] {
+[class*='activityCard'] [class*='timestamp'],
+[class*='activityPanel'] [class*='bar'],
+[class*='activityPanel'] [class*='time'],
+[class*='activityPanel'] [class*='timestamp'],
+[class*='richPresence'] [class*='bar'],
+[class*='richPresence'] [class*='time'],
+[class*='richPresence'] [class*='timestamp'] {
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  box-shadow: none !important;
+  border: none !important;
+}
+
+/* E2. Container Elements - Remove Purple Backgrounds */
+[class*='activityCard'] [class*='Container'],
+[class*='activityPanel'] [class*='Container'],
+[class*='richPresence'] [class*='Container'] {
+  background: transparent !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* E3. Content Elements - Remove Purple Backgrounds */
+[class*='activityText'],
+[class*='activityDetails'],
+[class*='activityMetadata'],
+[class*='activityInfo'],
+[class*='activityName'],
+[class*='activityType'],
+[class*='activityStatus'] {
+  background: transparent !important;
+}
+
+/* E4. Semantic Time Elements - Remove Purple Backgrounds */
+[class*='activityCard'] time,
+[class*='activityCard'] [datetime],
+[class*='activityPanel'] time,
+[class*='richPresence'] time {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
-  /* Force override even if parent has background */
-  background-clip: border-box !important;
-  background-origin: border-box !important;
-  background-size: auto !important;
-  background-position: 0 0 !important;
-  background-repeat: no-repeat !important;
 }
 
-/* DEBUGGING NOTE: If purple background still appears, use Discord DevTools */
+/* E5. ARIA Accessibility Elements */
+[class*='activityCard'] [aria-label*='time'],
+[class*='activityCard'] [aria-label*='timestamp'] {
+  background: transparent !important;
+}
+
+/* ----------------------------------------
+   F. TEXT ELEMENTS & VISIBILITY
+   ---------------------------------------- */
+/* Timestamp text - Plain, subtle, NO purple colors or highlights */
+[class*='activityCard'] [class*='timestamp'],
+[class*='activityCard'] [class*='timestamp'] *,
+[class*='activityCard'] [class*='time'],
+[class*='activityCard'] [class*='time'] *,
+[class*='activityCard'] [class*='bar'],
+[class*='activityCard'] [class*='bar'] *,
+[class*='activityPanel'] [class*='timestamp'],
+[class*='activityPanel'] [class*='timestamp'] *,
+[class*='activityPanel'] [class*='time'],
+[class*='activityPanel'] [class*='time'] *,
+[class*='richPresence'] [class*='timestamp'],
+[class*='richPresence'] [class*='timestamp'] *,
+[class*='richPresence'] [class*='time'],
+[class*='richPresence'] [class*='time'] * {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  text-shadow: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 400 !important;
+}
+
+/* ----------------------------------------
+   G. INLINE STYLE OVERRIDES
+   Color-Based Detection (Ultimate Fallback)
+   ---------------------------------------- */
+/* G1. Direct inline style targeting */
+[class*='activityCard'] [style*='background'],
+[class*='activityCard'] [style*='#8a2be2'],
+[class*='activityCard'] [style*='#ba55d3'],
+[class*='activityCard'] [style*='rgba(138, 43, 226'],
+[class*='activityCard'] [style*='rgba(139, 92, 246'],
+[class*='activityPanel'] [style*='background'],
+[class*='richPresence'] [style*='background'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* G2. Badges Container - Primary Target (Detected by Plugin) */
+/* This is the "4d ago" timestamp area - Remove ALL purple styling */
+[class*='badgesContainer'],
+[class*='badgesContainerPopout'],
+[class*='badgesContainerCard'],
+[class*='badges'][class*='Container'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  /* Make timestamp text plain and subtle */
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Timestamp text - Plain, subtle, NO purple */
+[class*='badgesContainer'] *,
+[class*='badgesContainer'] time,
+[class*='badgesContainer'] span,
+[class*='badgesContainer'] div {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+  text-shadow: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 400 !important;
+}
+
+/* G3. Context-Based Badge Targeting */
+[class*='popoutHeroBody'] [class*='badges'],
+[class*='popoutHeroBody'] > div[class*='badges'],
+[class*='popoutContentWrapper'] [class*='hero'] [class*='badges'],
+[class*='hero'] [class*='popoutHeroInner'] [class*='badges'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* Badge icons and text - Plain, no purple */
+[class*='badgesContainer'] img,
+[class*='badgesContainer'] svg,
+[class*='badgesContainer'] [class*='icon'],
+[class*='badges'] img,
+[class*='badges'] svg {
+  filter: grayscale(0.3) opacity(0.6) !important;
+}
+
+/* Timestamp specific - Force plain styling everywhere */
+[class*='userPopout'] time,
+[class*='popout'] time,
+[class*='userPopout'] [datetime],
+[class*='popout'] [datetime],
+[class*='userPopout'] [class*='timestamp'],
+[class*='popout'] [class*='timestamp'] {
+  color: rgba(255, 255, 255, 0.4) !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  text-shadow: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  font-weight: 400 !important;
+}
+
+/* Remove ANY color styling from timestamps */
+[class*='userPopout'] [style*='color'],
+[class*='popout'] [style*='color'] {
+  color: rgba(255, 255, 255, 0.4) !important;
+}
+
+/* G4. Color-Based Detection (Ultimate Fallback) */
+/* Targets ANY purple background regardless of class name */
+[class*='badge'][style*='138, 43, 226'],
+[class*='badge'][style*='139, 92, 246'],
+[class*='Badge'][style*='138, 43, 226'],
+div[class*='badges'][style*='background'],
+[class*='userPopout'] [style*='rgb(138, 43, 226)'],
+[class*='userPopout'] [style*='rgba(138, 43, 226'],
+[class*='popout'] [style*='background-color: rgb(138, 43, 226)'] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
 /*
- * 1. Open Discord
- * 2. Press Ctrl+Shift+I (Windows) or Cmd+Option+I (Mac) to open DevTools
- * 3. Click the element selector tool (cursor icon in top-left of DevTools)
- * 4. Click on the purple timestamp bar
- * 5. In the Elements panel, find the element and note its class names
- * 6. Add a new CSS rule targeting those specific class names
- * 7. Example: If you find class="activityCard_timestampBar_abc123", add:
- *    .activityCard_timestampBar_abc123 { background: transparent !important; }
+ * DEBUGGING TIP: Use ActivityCardInspector plugin
+ * 1. Enable plugin in Discord Settings → Plugins
+ * 2. Open browser console (Cmd+Option+I)
+ * 3. Plugin auto-detects purple backgrounds by color
+ * 4. Copy CSS selector from console output
+ * 5. Add here using [class*='pattern'] format
  */
 
 /* ========================================
@@ -1680,4 +1606,69 @@ textarea,
 [class*='selected'] [class*='name'] {
   color: rgba(255, 255, 255, 1) !important;
   text-shadow: 0 0 6px rgba(139, 92, 246, 0.6), 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+}
+
+/* ========================================
+   7. MEMBER LIST ENHANCEMENTS
+   ======================================== */
+
+/* ----------------------------------------
+   A. MEMBER HOVER EFFECT
+   Subtle purple glow on hover
+   ---------------------------------------- */
+[class*='member']:hover {
+  background: rgba(139, 92, 246, 0.15) !important;
+  border-left: 2px solid rgba(139, 92, 246, 0.5) !important;
+  box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.1) !important;
+  transition: all 0.3s ease !important;
+}
+
+/* ----------------------------------------
+   B. AVATAR GLOW EFFECTS
+   Status-based glowing avatars
+   ---------------------------------------- */
+/* Online - Green glow */
+[class*='member'] [class*='avatar']:has([class*='statusOnline']) {
+  box-shadow: 0 0 12px rgba(67, 181, 129, 0.6) !important;
+  border: 2px solid rgba(67, 181, 129, 0.4) !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Idle - Orange glow */
+[class*='member'] [class*='avatar']:has([class*='statusIdle']) {
+  box-shadow: 0 0 12px rgba(250, 166, 26, 0.6) !important;
+  border: 2px solid rgba(250, 166, 26, 0.4) !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Do Not Disturb - Red glow */
+[class*='member'] [class*='avatar']:has([class*='statusDnd']) {
+  box-shadow: 0 0 12px rgba(240, 71, 71, 0.6) !important;
+  border: 2px solid rgba(240, 71, 71, 0.4) !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Offline/Invisible - Subtle gray glow */
+[class*='member'] [class*='avatar']:has([class*='statusOffline']),
+[class*='member'] [class*='avatar']:has([class*='statusInvisible']) {
+  box-shadow: 0 0 8px rgba(128, 132, 142, 0.4) !important;
+  border: 2px solid rgba(128, 132, 142, 0.3) !important;
+  border-radius: 50% !important;
+  transition: all 0.3s ease !important;
+}
+
+/* Enhanced glow on hover */
+[class*='member']:hover [class*='avatar']:has([class*='statusOnline']) {
+  box-shadow: 0 0 16px rgba(67, 181, 129, 0.8) !important;
+}
+
+[class*='member']:hover [class*='avatar']:has([class*='statusIdle']) {
+  box-shadow: 0 0 16px rgba(250, 166, 26, 0.8) !important;
+}
+
+[class*='member']:hover [class*='avatar']:has([class*='statusDnd']) {
+  box-shadow: 0 0 16px rgba(240, 71, 71, 0.8) !important;
 }
