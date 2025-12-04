@@ -1282,7 +1282,6 @@ module.exports = class CriticalHitMerged {
         });
       } else {
         // Add new entry
-        const isValidDiscordId = /^\d{17,19}$/.test(messageData.messageId);
         const isHashId = messageData.messageId?.startsWith('hash_');
 
         // Only add to history if message has valid Discord ID (actually sent)
@@ -6059,15 +6058,23 @@ module.exports = class CriticalHitMerged {
     const critMessages = document.querySelectorAll('.bd-crit-hit');
     critMessages.forEach((msg) => {
       const content =
+        msg.querySelector('.bd-crit-text-content') ||
         msg.querySelector('[class*="messageContent"]') ||
         msg.querySelector('[class*="content"]') ||
         msg;
       if (content) {
+        content.classList.remove('bd-crit-text-content');
         content.style.color = '';
         content.style.fontFamily = '';
         content.style.fontWeight = '';
         content.style.textShadow = '';
         content.style.animation = '';
+        content.style.background = '';
+        content.style.backgroundImage = '';
+        content.style.webkitBackgroundClip = '';
+        content.style.backgroundClip = '';
+        content.style.webkitTextFillColor = '';
+        content.style.display = '';
       }
       msg.classList.remove('bd-crit-hit');
     });
@@ -6413,6 +6420,233 @@ module.exports = class CriticalHitMerged {
 
                 <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
                     <div class="crit-settings-title" style="margin-bottom: 16px;">
+                        <h3 style="font-size: 16px; margin: 0;">Animation Settings</h3>
+                    </div>
+                    <div class="crit-form-description" style="margin-bottom: 16px;">
+                        Customize the "CRITICAL HIT!" floating animation
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Animation Duration
+                            <span class="crit-label-value">${(
+                              this.settings.animationDuration / 1000
+                            ).toFixed(1)}s</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="animation-duration-slider"
+                                min="1000"
+                                max="10000"
+                                step="500"
+                                value="${this.settings.animationDuration}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="animation-duration"
+                                min="1000"
+                                max="10000"
+                                step="500"
+                                value="${this.settings.animationDuration}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            How long the animation stays visible (1-10 seconds)
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Float Distance
+                            <span class="crit-label-value">${this.settings.floatDistance}px</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="float-distance-slider"
+                                min="50"
+                                max="300"
+                                step="10"
+                                value="${this.settings.floatDistance}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="float-distance"
+                                min="50"
+                                max="300"
+                                step="10"
+                                value="${this.settings.floatDistance}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            How far the animation floats upward
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Animation Font Size
+                            <span class="crit-label-value">${this.settings.fontSize}px</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="animation-fontsize-slider"
+                                min="24"
+                                max="72"
+                                step="2"
+                                value="${this.settings.fontSize}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="animation-fontsize"
+                                min="24"
+                                max="72"
+                                step="2"
+                                value="${this.settings.fontSize}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            Size of the animation text
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item crit-checkbox-group">
+                        <label class="crit-checkbox-label">
+                            <input
+                                type="checkbox"
+                                id="screen-shake"
+                                ${this.settings.screenShake ? 'checked' : ''}
+                                class="crit-checkbox"
+                            />
+                            <span class="crit-checkbox-custom"></span>
+                            <span class="crit-checkbox-text">
+                                Enable Screen Shake
+                            </span>
+                        </label>
+                        <div class="crit-form-description">
+                            Shake the screen when a critical hit occurs
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Shake Intensity
+                            <span class="crit-label-value">${this.settings.shakeIntensity}px</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="shake-intensity-slider"
+                                min="1"
+                                max="10"
+                                step="1"
+                                value="${this.settings.shakeIntensity}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="shake-intensity"
+                                min="1"
+                                max="10"
+                                step="1"
+                                value="${this.settings.shakeIntensity}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            Intensity of the screen shake effect
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Shake Duration
+                            <span class="crit-label-value">${this.settings.shakeDuration}ms</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="shake-duration-slider"
+                                min="100"
+                                max="500"
+                                step="50"
+                                value="${this.settings.shakeDuration}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="shake-duration"
+                                min="100"
+                                max="500"
+                                step="50"
+                                value="${this.settings.shakeDuration}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            How long the screen shake lasts
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item crit-checkbox-group">
+                        <label class="crit-checkbox-label">
+                            <input
+                                type="checkbox"
+                                id="show-combo"
+                                ${this.settings.showCombo ? 'checked' : ''}
+                                class="crit-checkbox"
+                            />
+                            <span class="crit-checkbox-custom"></span>
+                            <span class="crit-checkbox-text">
+                                Show Combo Counter
+                            </span>
+                        </label>
+                        <div class="crit-form-description">
+                            Display combo count in the animation (e.g., "CRITICAL HIT! x5")
+                        </div>
+                    </div>
+
+                    <div class="crit-form-item">
+                        <label class="crit-label">
+                            Max Combo Display
+                            <span class="crit-label-value">${this.settings.maxCombo}</span>
+                        </label>
+                        <div class="crit-input-wrapper">
+                            <input
+                                type="range"
+                                id="max-combo-slider"
+                                min="10"
+                                max="999"
+                                step="10"
+                                value="${this.settings.maxCombo}"
+                                class="crit-slider"
+                            />
+                            <input
+                                type="number"
+                                id="max-combo"
+                                min="10"
+                                max="999"
+                                step="10"
+                                value="${this.settings.maxCombo}"
+                                class="crit-number-input"
+                            />
+                        </div>
+                        <div class="crit-form-description">
+                            Maximum combo count to display
+                        </div>
+                    </div>
+                </div>
+
+                <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
+                    <div class="crit-settings-title" style="margin-bottom: 16px;">
                         <h3 style="font-size: 16px; margin: 0;">Debug & Troubleshooting</h3>
                     </div>
 
@@ -6640,6 +6874,131 @@ module.exports = class CriticalHitMerged {
       plugin.saveSettings();
       // Always log debug mode changes (useful for troubleshooting)
       console.log(`CriticalHit: Debug mode ${e.target.checked ? 'enabled' : 'disabled'}`);
+    });
+
+    // Animation settings
+    const animationDurationInput = container.querySelector('#animation-duration');
+    const animationDurationSlider = container.querySelector('#animation-duration-slider');
+
+    animationDurationSlider.addEventListener('input', (e) => {
+      animationDurationInput.value = e.target.value;
+      plugin.settings.animationDuration = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[8];
+      if (label) label.textContent = `${(parseInt(e.target.value) / 1000).toFixed(1)}s`;
+    });
+
+    animationDurationInput.addEventListener('change', (e) => {
+      animationDurationSlider.value = e.target.value;
+      plugin.settings.animationDuration = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[8];
+      if (label) label.textContent = `${(parseInt(e.target.value) / 1000).toFixed(1)}s`;
+    });
+
+    const floatDistanceInput = container.querySelector('#float-distance');
+    const floatDistanceSlider = container.querySelector('#float-distance-slider');
+
+    floatDistanceSlider.addEventListener('input', (e) => {
+      floatDistanceInput.value = e.target.value;
+      plugin.settings.floatDistance = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[9];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    floatDistanceInput.addEventListener('change', (e) => {
+      floatDistanceSlider.value = e.target.value;
+      plugin.settings.floatDistance = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[9];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    const animationFontsizeInput = container.querySelector('#animation-fontsize');
+    const animationFontsizeSlider = container.querySelector('#animation-fontsize-slider');
+
+    animationFontsizeSlider.addEventListener('input', (e) => {
+      animationFontsizeInput.value = e.target.value;
+      plugin.settings.fontSize = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[10];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    animationFontsizeInput.addEventListener('change', (e) => {
+      animationFontsizeSlider.value = e.target.value;
+      plugin.settings.fontSize = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[10];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    container.querySelector('#screen-shake').addEventListener('change', (e) => {
+      plugin.settings.screenShake = e.target.checked;
+      plugin.saveSettings();
+    });
+
+    const shakeIntensityInput = container.querySelector('#shake-intensity');
+    const shakeIntensitySlider = container.querySelector('#shake-intensity-slider');
+
+    shakeIntensitySlider.addEventListener('input', (e) => {
+      shakeIntensityInput.value = e.target.value;
+      plugin.settings.shakeIntensity = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[11];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    shakeIntensityInput.addEventListener('change', (e) => {
+      shakeIntensitySlider.value = e.target.value;
+      plugin.settings.shakeIntensity = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[11];
+      if (label) label.textContent = `${e.target.value}px`;
+    });
+
+    const shakeDurationInput = container.querySelector('#shake-duration');
+    const shakeDurationSlider = container.querySelector('#shake-duration-slider');
+
+    shakeDurationSlider.addEventListener('input', (e) => {
+      shakeDurationInput.value = e.target.value;
+      plugin.settings.shakeDuration = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[12];
+      if (label) label.textContent = `${e.target.value}ms`;
+    });
+
+    shakeDurationInput.addEventListener('change', (e) => {
+      shakeDurationSlider.value = e.target.value;
+      plugin.settings.shakeDuration = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[12];
+      if (label) label.textContent = `${e.target.value}ms`;
+    });
+
+    container.querySelector('#show-combo').addEventListener('change', (e) => {
+      plugin.settings.showCombo = e.target.checked;
+      plugin.saveSettings();
+    });
+
+    const maxComboInput = container.querySelector('#max-combo');
+    const maxComboSlider = container.querySelector('#max-combo-slider');
+
+    maxComboSlider.addEventListener('input', (e) => {
+      maxComboInput.value = e.target.value;
+      plugin.settings.maxCombo = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[13];
+      if (label) label.textContent = `${e.target.value}`;
+    });
+
+    maxComboInput.addEventListener('change', (e) => {
+      maxComboSlider.value = e.target.value;
+      plugin.settings.maxCombo = parseInt(e.target.value);
+      plugin.saveSettings();
+      const label = container.querySelectorAll('.crit-label-value')[13];
+      if (label) label.textContent = `${e.target.value}`;
     });
 
     return container;
@@ -7267,13 +7626,6 @@ module.exports = class CriticalHitMerged {
     } catch (error) {
       return false;
     }
-  }
-
-  /**
-   * Validate Discord ID format (17-19 digits)
-   */
-  isValidDiscordId(id) {
-    return id && /^\d{17,19}$/.test(String(id).trim());
   }
 
   // ============================================================================
@@ -8440,476 +8792,5 @@ module.exports = class CriticalHitMerged {
       }
     `;
     document.head.appendChild(style);
-  }
-
-  // ============================================================================
-  // SETTINGS PANEL
-  // ============================================================================
-
-  /**
-   * Creates and returns the settings panel UI element
-   * Includes controls for animation duration, screen shake, combo display, etc.
-   * @returns {HTMLElement} Settings panel DOM element
-   */
-  getSettingsPanel() {
-    const plugin = this;
-    const container = document.createElement('div');
-    container.className = 'cha-settings-container';
-    container.innerHTML = `
-      <style>
-        .cha-settings-container {
-          padding: 20px;
-          color: var(--text-normal);
-        }
-        .cha-settings-header {
-          margin-bottom: 24px;
-        }
-        .cha-settings-title {
-          font-size: 20px;
-          font-weight: 600;
-          color: var(--text-normal);
-          margin-bottom: 4px;
-        }
-        .cha-settings-subtitle {
-          font-size: 13px;
-          color: var(--text-muted);
-          opacity: 0.8;
-        }
-        .cha-form-group {
-          margin-bottom: 32px;
-        }
-        .cha-form-item {
-          margin-bottom: 20px;
-        }
-        .cha-label {
-          display: block;
-          font-size: 14px;
-          font-weight: 500;
-          color: var(--text-normal);
-          margin-bottom: 8px;
-        }
-        .cha-label-value {
-          color: var(--text-brand);
-          font-weight: 600;
-          margin-left: 8px;
-        }
-        .cha-checkbox-group {
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          padding: 12px;
-          border-radius: 6px;
-          background: var(--background-modifier-hover);
-          transition: background 0.2s;
-        }
-        .cha-checkbox-group:hover {
-          background: var(--background-modifier-active);
-        }
-        .cha-checkbox {
-          width: 18px;
-          height: 18px;
-          cursor: pointer;
-          accent-color: var(--text-brand);
-        }
-        .cha-checkbox-label {
-          font-size: 14px;
-          color: var(--text-normal);
-          cursor: pointer;
-          user-select: none;
-        }
-        .cha-input-wrapper {
-          display: flex;
-          gap: 12px;
-          align-items: center;
-        }
-        .cha-slider {
-          flex: 1;
-          height: 6px;
-          border-radius: 3px;
-          background: var(--background-modifier-accent);
-          outline: none;
-          -webkit-appearance: none;
-        }
-        .cha-slider::-webkit-slider-thumb {
-          -webkit-appearance: none;
-          appearance: none;
-          width: 16px;
-          height: 16px;
-          border-radius: 50%;
-          background: var(--text-brand);
-          cursor: pointer;
-        }
-        .cha-number-input {
-          width: 80px;
-          padding: 6px 10px;
-          border: 1px solid var(--input-border);
-          border-radius: 4px;
-          background: var(--input-background);
-          color: var(--text-normal);
-          font-size: 14px;
-        }
-        .cha-description {
-          font-size: 12px;
-          color: var(--text-muted);
-          margin-top: 6px;
-          line-height: 1.4;
-        }
-        .cha-divider {
-          height: 1px;
-          background: var(--background-modifier-accent);
-          margin: 24px 0;
-        }
-      </style>
-
-      <div class="cha-settings-header">
-        <div class="cha-settings-title">Critical Hit Animation</div>
-        <div class="cha-settings-subtitle">Customize animation effects and behavior</div>
-      </div>
-
-      <div class="cha-form-group">
-        <div class="cha-form-item">
-          <label class="cha-checkbox-group">
-            <input
-              type="checkbox"
-              id="cha-enabled"
-              class="cha-checkbox"
-              ${this.settings.animationEnabled !== false ? 'checked' : ''}
-            />
-            <span class="cha-checkbox-label">Enable Animations</span>
-          </label>
-          <div class="cha-description">
-            Show animated "CRITICAL HIT!" text when critical hits occur
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Animation Duration
-            <span class="cha-label-value">${(this.settings.animationDuration / 1000).toFixed(
-              1
-            )}s</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-duration-slider"
-              class="cha-slider"
-              min="1000"
-              max="10000"
-              step="500"
-              value="${this.settings.animationDuration}"
-            />
-            <input
-              type="number"
-              id="cha-duration-input"
-              class="cha-number-input"
-              min="1000"
-              max="10000"
-              step="500"
-              value="${this.settings.animationDuration}"
-            />
-          </div>
-          <div class="cha-description">
-            How long the animation stays visible (1-10 seconds)
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Float Distance
-            <span class="cha-label-value">${this.settings.floatDistance}px</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-float-slider"
-              class="cha-slider"
-              min="50"
-              max="300"
-              step="10"
-              value="${this.settings.floatDistance}"
-            />
-            <input
-              type="number"
-              id="cha-float-input"
-              class="cha-number-input"
-              min="50"
-              max="300"
-              step="10"
-              value="${this.settings.floatDistance}"
-            />
-          </div>
-          <div class="cha-description">
-            How far the animation floats upward
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Font Size
-            <span class="cha-label-value">${this.settings.fontSize}px</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-fontsize-slider"
-              class="cha-slider"
-              min="24"
-              max="72"
-              step="2"
-              value="${this.settings.fontSize}"
-            />
-            <input
-              type="number"
-              id="cha-fontsize-input"
-              class="cha-number-input"
-              min="24"
-              max="72"
-              step="2"
-              value="${this.settings.fontSize}"
-            />
-          </div>
-          <div class="cha-description">
-            Size of the animation text
-          </div>
-        </div>
-      </div>
-
-      <div class="cha-divider"></div>
-
-      <div class="cha-form-group">
-        <div class="cha-form-item">
-          <label class="cha-checkbox-group">
-            <input
-              type="checkbox"
-              id="cha-screenshake"
-              class="cha-checkbox"
-              ${this.settings.screenShake ? 'checked' : ''}
-            />
-            <span class="cha-checkbox-label">Screen Shake</span>
-          </label>
-          <div class="cha-description">
-            Shake the screen when a critical hit occurs
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Shake Intensity
-            <span class="cha-label-value">${this.settings.shakeIntensity}px</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-shake-intensity-slider"
-              class="cha-slider"
-              min="1"
-              max="10"
-              step="1"
-              value="${this.settings.shakeIntensity}"
-            />
-            <input
-              type="number"
-              id="cha-shake-intensity-input"
-              class="cha-number-input"
-              min="1"
-              max="10"
-              step="1"
-              value="${this.settings.shakeIntensity}"
-            />
-          </div>
-          <div class="cha-description">
-            Intensity of the screen shake effect
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Shake Duration
-            <span class="cha-label-value">${this.settings.shakeDuration}ms</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-shake-duration-slider"
-              class="cha-slider"
-              min="100"
-              max="500"
-              step="50"
-              value="${this.settings.shakeDuration}"
-            />
-            <input
-              type="number"
-              id="cha-shake-duration-input"
-              class="cha-number-input"
-              min="100"
-              max="500"
-              step="50"
-              value="${this.settings.shakeDuration}"
-            />
-          </div>
-          <div class="cha-description">
-            How long the screen shake lasts
-          </div>
-        </div>
-      </div>
-
-      <div class="cha-divider"></div>
-
-      <div class="cha-form-group">
-        <div class="cha-form-item">
-          <label class="cha-checkbox-group">
-            <input
-              type="checkbox"
-              id="cha-show-combo"
-              class="cha-checkbox"
-              ${this.settings.showCombo ? 'checked' : ''}
-            />
-            <span class="cha-checkbox-label">Show Combo Counter</span>
-          </label>
-          <div class="cha-description">
-            Display combo count in the animation (e.g., "CRITICAL HIT! x5")
-          </div>
-        </div>
-
-        <div class="cha-form-item">
-          <label class="cha-label">
-            Max Combo Display
-            <span class="cha-label-value">${this.settings.maxCombo}</span>
-          </label>
-          <div class="cha-input-wrapper">
-            <input
-              type="range"
-              id="cha-maxcombo-slider"
-              class="cha-slider"
-              min="10"
-              max="999"
-              step="10"
-              value="${this.settings.maxCombo}"
-            />
-            <input
-              type="number"
-              id="cha-maxcombo-input"
-              class="cha-number-input"
-              min="10"
-              max="999"
-              step="10"
-              value="${this.settings.maxCombo}"
-            />
-          </div>
-          <div class="cha-description">
-            Maximum combo count to display
-          </div>
-        </div>
-      </div>
-
-      <div class="cha-divider"></div>
-
-      <div class="cha-form-group">
-        <div class="cha-form-item">
-          <label class="cha-checkbox-group">
-            <input
-              type="checkbox"
-              id="cha-debug-mode"
-              class="cha-checkbox"
-              ${this.settings.debugMode ? 'checked' : ''}
-            />
-            <span class="cha-checkbox-label">Debug Mode</span>
-          </label>
-          <div class="cha-description">
-            Enable detailed debug logging in console (useful for troubleshooting)
-          </div>
-        </div>
-      </div>
-    `;
-
-    // Event listeners
-    const syncSliderInput = (sliderId, inputId, settingKey, min, max) => {
-      const slider = container.querySelector(`#${sliderId}`);
-      const input = container.querySelector(`#${inputId}`);
-
-      slider.addEventListener('input', (e) => {
-        const value = Math.max(min, Math.min(max, parseInt(e.target.value)));
-        input.value = value;
-        plugin.settings[settingKey] = value;
-        plugin.saveSettings();
-        // Update label value
-        const label = slider.closest('.cha-form-item').querySelector('.cha-label-value');
-        if (label) {
-          if (settingKey === 'animationDuration') {
-            label.textContent = `${(value / 1000).toFixed(1)}s`;
-          } else if (settingKey === 'shakeDuration') {
-            label.textContent = `${value}ms`;
-          } else {
-            label.textContent = `${value}${
-              settingKey === 'fontSize' ? 'px' : settingKey === 'maxCombo' ? '' : 'px'
-            }`;
-          }
-        }
-      });
-
-      input.addEventListener('change', (e) => {
-        const value = Math.max(min, Math.min(max, parseInt(e.target.value) || min));
-        slider.value = value;
-        input.value = value;
-        plugin.settings[settingKey] = value;
-        plugin.saveSettings();
-        // Update label value
-        const label = input.closest('.cha-form-item').querySelector('.cha-label-value');
-        if (label) {
-          if (settingKey === 'animationDuration') {
-            label.textContent = `${(value / 1000).toFixed(1)}s`;
-          } else if (settingKey === 'shakeDuration') {
-            label.textContent = `${value}ms`;
-          } else {
-            label.textContent = `${value}${
-              settingKey === 'fontSize' ? 'px' : settingKey === 'maxCombo' ? '' : 'px'
-            }`;
-          }
-        }
-      });
-    };
-
-    container.querySelector('#cha-enabled').addEventListener('change', (e) => {
-      plugin.settings.animationEnabled = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#cha-screenshake').addEventListener('change', (e) => {
-      plugin.settings.screenShake = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#cha-show-combo').addEventListener('change', (e) => {
-      plugin.settings.showCombo = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#cha-debug-mode').addEventListener('change', (e) => {
-      plugin.settings.debugMode = e.target.checked;
-      plugin.saveSettings();
-      console.log(`CriticalHitAnimation: Debug mode ${e.target.checked ? 'enabled' : 'disabled'}`);
-    });
-
-    syncSliderInput('cha-duration-slider', 'cha-duration-input', 'animationDuration', 1000, 10000);
-    syncSliderInput('cha-float-slider', 'cha-float-input', 'floatDistance', 50, 300);
-    syncSliderInput('cha-fontsize-slider', 'cha-fontsize-input', 'fontSize', 24, 72);
-    syncSliderInput(
-      'cha-shake-intensity-slider',
-      'cha-shake-intensity-input',
-      'shakeIntensity',
-      1,
-      10
-    );
-    syncSliderInput(
-      'cha-shake-duration-slider',
-      'cha-shake-duration-input',
-      'shakeDuration',
-      100,
-      500
-    );
-    syncSliderInput('cha-maxcombo-slider', 'cha-maxcombo-input', 'maxCombo', 10, 999);
-
-    return container;
   }
 };

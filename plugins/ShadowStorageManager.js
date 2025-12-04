@@ -119,12 +119,19 @@ class ShadowStorageManager {
     try {
       // Load old data
       const oldData = BdApi.Data.load('ShadowArmy', 'settings');
-      if (!oldData || !oldData.shadows || !Array.isArray(oldData.shadows) || oldData.shadows.length === 0) {
+      if (
+        !oldData ||
+        !oldData.shadows ||
+        !Array.isArray(oldData.shadows) ||
+        oldData.shadows.length === 0
+      ) {
         this.migrationCompleted = true;
         return { migrated: false, reason: 'No data to migrate' };
       }
 
-      console.log(`ShadowStorageManager: Migrating ${oldData.shadows.length} shadows from localStorage`);
+      console.log(
+        `ShadowStorageManager: Migrating ${oldData.shadows.length} shadows from localStorage`
+      );
 
       // Ensure database is initialized
       if (!this.db) {
@@ -249,6 +256,11 @@ class ShadowStorageManager {
       let completed = 0;
       let errors = 0;
 
+      transaction.onabort = () => {
+        console.error('ShadowStorageManager: Batch transaction aborted', transaction.error);
+        reject(transaction.error);
+      };
+
       shadows.forEach((shadow) => {
         const request = store.put(shadow);
         request.onsuccess = () => {
@@ -272,12 +284,19 @@ class ShadowStorageManager {
    * Get shadows with pagination and filters
    * Operations:
    * 1. Open transaction in readonly mode
-   * 2. Apply filters (rank, role, etc.)
-   * 3. Sort by specified field
-   * 4. Apply pagination (offset, limit)
-   * 5. Return array of shadows
+   * 2. Select appropriate index and build IDBKeyRange
+   * 3. Open cursor with direction (prev for desc, next for asc)
+   * 4. Use cursor.advance(offset) to skip to first page item
+   * 5. Collect up to limit results with in-cursor filtering
+   * 6. Stop early to avoid scanning remaining records
    */
-  async getShadows(filters = {}, offset = 0, limit = 50, sortBy = 'extractedAt', sortOrder = 'desc') {
+  async getShadows(
+    filters = {},
+    offset = 0,
+    limit = 50,
+    sortBy = 'extractedAt',
+    sortOrder = 'desc'
+  ) {
     if (!this.db) {
       await this.init();
     }
@@ -285,52 +304,128 @@ class ShadowStorageManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readonly');
       const store = transaction.objectStore(this.storeName);
-      let index = store;
 
-      // Use index if filtering by rank or role
+      // Determine best index and key range based on filters
+      let index;
+      let keyRange = null;
+      let needsInCursorFiltering = false;
+
+      // Priority 1: Use composite rank_role index if both are specified
       if (filters.rank && filters.role) {
         index = store.index('rank_role');
-      } else if (filters.rank) {
+        keyRange = IDBKeyRange.only([filters.rank, filters.role]);
+
+        // Check if we need additional filtering
+        needsInCursorFiltering = filters.minLevel || filters.maxLevel || filters.minStrength;
+      }
+      // Priority 2: Use single-value indexes with exact match
+      else if (filters.rank) {
         index = store.index('rank');
+        keyRange = IDBKeyRange.only(filters.rank);
+        needsInCursorFiltering =
+          filters.role || filters.minLevel || filters.maxLevel || filters.minStrength;
       } else if (filters.role) {
         index = store.index('role');
-      } else if (filters.sortBy) {
-        index = store.index(filters.sortBy);
+        keyRange = IDBKeyRange.only(filters.role);
+        needsInCursorFiltering = filters.minLevel || filters.maxLevel || filters.minStrength;
+      }
+      // Priority 3: Use range indexes for min/max bounds
+      else if (filters.minLevel || filters.maxLevel) {
+        index = store.index('level');
+        if (filters.minLevel && filters.maxLevel) {
+          keyRange = IDBKeyRange.bound(filters.minLevel, filters.maxLevel);
+        } else if (filters.minLevel) {
+          keyRange = IDBKeyRange.lowerBound(filters.minLevel);
+        } else {
+          keyRange = IDBKeyRange.upperBound(filters.maxLevel);
+        }
+        needsInCursorFiltering = filters.minStrength;
+      } else if (filters.minStrength) {
+        index = store.index('strength');
+        keyRange = IDBKeyRange.lowerBound(filters.minStrength);
+      }
+      // Priority 4: Use sortBy index for ordering
+      else if (sortBy && ['rank', 'role', 'level', 'strength', 'extractedAt'].includes(sortBy)) {
+        index = store.index(sortBy);
+      }
+      // Fallback: Use primary key
+      else {
+        index = store;
       }
 
-      const request = index.openCursor();
+      // Determine cursor direction based on sort order
+      const direction = sortOrder === 'desc' ? 'prev' : 'next';
+
+      // Open cursor with key range and direction
+      const request = index.openCursor(keyRange, direction);
       const results = [];
+      let skipped = false;
 
       request.onsuccess = (event) => {
         const cursor = event.target.result;
-        if (cursor) {
-          const shadow = cursor.value;
 
-          // Apply filters
+        if (!cursor) {
+          // No more records, return what we have
+          resolve(results);
+          return;
+        }
+
+        // Skip to offset position (only once)
+        if (!skipped && offset > 0) {
+          skipped = true;
+          cursor.advance(offset);
+          return;
+        }
+
+        // Check if we've collected enough results
+        if (results.length >= limit) {
+          // Stop early - no need to scan remaining records
+          resolve(results);
+          return;
+        }
+
+        const shadow = cursor.value;
+
+        // Apply in-cursor filtering for conditions not covered by index
+        if (needsInCursorFiltering) {
           let matches = true;
-          if (filters.rank && shadow.rank !== filters.rank) matches = false;
-          if (filters.role && shadow.role !== filters.role) matches = false;
-          if (filters.minLevel && shadow.level < filters.minLevel) matches = false;
-          if (filters.maxLevel && shadow.level > filters.maxLevel) matches = false;
-          if (filters.minStrength && shadow.strength < filters.minStrength) matches = false;
+
+          // Only apply filters not already covered by the index
+          if (filters.role && !filters.rank && shadow.role !== filters.role) {
+            matches = false;
+          }
+          if (
+            filters.minLevel &&
+            shadow.level < filters.minLevel &&
+            index !== store.index('level')
+          ) {
+            matches = false;
+          }
+          if (
+            filters.maxLevel &&
+            shadow.level > filters.maxLevel &&
+            index !== store.index('level')
+          ) {
+            matches = false;
+          }
+          if (
+            filters.minStrength &&
+            shadow.strength < filters.minStrength &&
+            index !== store.index('strength')
+          ) {
+            matches = false;
+          }
 
           if (matches) {
             results.push(shadow);
           }
-
-          cursor.continue();
         } else {
-          // Sort results
-          results.sort((a, b) => {
-            const aVal = a[sortBy] || 0;
-            const bVal = b[sortBy] || 0;
-            return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
-          });
-
-          // Apply pagination
-          const paginated = results.slice(offset, offset + limit);
-          resolve(paginated);
+          // No filtering needed, add directly
+          results.push(shadow);
         }
+
+        // Continue to next record
+        cursor.continue();
       };
 
       request.onerror = () => {
@@ -453,10 +548,7 @@ class ShadowStorageManager {
    */
   async getAggregatedPower(userRank, shadowRanks) {
     // Check cache
-    if (
-      this.aggregatedPowerCache &&
-      Date.now() - this.aggregatedPowerCacheTime < this.cacheTTL
-    ) {
+    if (this.aggregatedPowerCache && Date.now() - this.aggregatedPowerCacheTime < this.cacheTTL) {
       return this.aggregatedPowerCache;
     }
 
@@ -489,6 +581,7 @@ class ShadowStorageManager {
             totalPower += shadow.strength || 0;
             totalCount++;
           });
+
           completed++;
           if (completed === weakRanks.length) {
             const result = {
@@ -502,18 +595,22 @@ class ShadowStorageManager {
             resolve(result);
           }
         };
+
         request.onerror = () => {
+          console.error(
+            'ShadowStorageManager: Failed to get shadows for rank aggregation',
+            request.error
+          );
           completed++;
           if (completed === weakRanks.length) {
-            const result = {
+            // Don't cache partial results on error - return without caching
+            resolve({
               totalPower,
               totalCount,
               ranks: weakRanks,
               timestamp: Date.now(),
-            };
-            this.aggregatedPowerCache = result;
-            this.aggregatedPowerCacheTime = Date.now();
-            resolve(result);
+              partial: true,
+            });
           }
         };
       });

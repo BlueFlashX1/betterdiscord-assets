@@ -24,6 +24,10 @@ module.exports = class SkillTree {
       totalEarnedSP: 0, // Total SP earned from level ups (for reset calculation)
     };
 
+    // Track all retry timeouts for proper cleanup
+    this._retryTimeouts = new Set();
+    this._isStopped = false;
+
     // Solo Leveling Lore-Appropriate Skill Tree
     // Skills are organized by tiers: Tier 1 (Low), Tier 2 (Mid), Tier 3 (High), Tier 4 (Master)
     // Higher tiers have higher costs but better growth rates
@@ -346,6 +350,9 @@ module.exports = class SkillTree {
   // LIFECYCLE METHODS
   // ============================================================================
   start() {
+    // Reset stopped flag to allow watchers to recreate
+    this._isStopped = false;
+
     this.loadSettings();
     this.injectCSS();
     this.createSkillTreeButton();
@@ -353,19 +360,23 @@ module.exports = class SkillTree {
 
     // Retry button creation after delays to ensure Discord UI is ready
     this._retryTimeout1 = setTimeout(() => {
+      this._retryTimeouts.delete(this._retryTimeout1);
       if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
         this.createSkillTreeButton();
       }
       this._retryTimeout1 = null;
     }, 2000);
+    this._retryTimeouts.add(this._retryTimeout1);
 
     // Additional retry after longer delay (for plugin re-enabling)
     this._retryTimeout2 = setTimeout(() => {
+      this._retryTimeouts.delete(this._retryTimeout2);
       if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
         this.createSkillTreeButton();
       }
       this._retryTimeout2 = null;
     }, 5000);
+    this._retryTimeouts.add(this._retryTimeout2);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -384,22 +395,31 @@ module.exports = class SkillTree {
   // EVENT HANDLING & WATCHERS
   // ============================================================================
   setupLevelUpWatcher() {
+    // Return early if plugin is stopped to prevent recreating watchers
+    if (this._isStopped) {
+      return;
+    }
+
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
     if (!soloPlugin) {
       // Retry after a delay - SoloLevelingStats might still be loading
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        this._retryTimeouts.delete(timeoutId);
         this.setupLevelUpWatcher();
       }, 2000);
+      this._retryTimeouts.add(timeoutId);
       return;
     }
 
     const instance = soloPlugin.instance || soloPlugin;
     if (!instance || typeof instance.on !== 'function') {
       // Retry after a delay - Event system might not be ready yet
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
+        this._retryTimeouts.delete(timeoutId);
         this.setupLevelUpWatcher();
       }, 2000);
+      this._retryTimeouts.add(timeoutId);
       return;
     }
 
@@ -420,6 +440,9 @@ module.exports = class SkillTree {
   }
 
   stop() {
+    // Set stopped flag to prevent recreating watchers
+    this._isStopped = true;
+
     // Unsubscribe from events
     this.unsubscribeFromEvents();
 
@@ -429,7 +452,11 @@ module.exports = class SkillTree {
       this.levelCheckInterval = null;
     }
 
-    // Clear retry timeouts
+    // Clear all tracked retry timeouts
+    this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._retryTimeouts.clear();
+
+    // Clear legacy retry timeouts (for backwards compatibility)
     if (this._retryTimeout1) {
       clearTimeout(this._retryTimeout1);
       this._retryTimeout1 = null;
@@ -1579,7 +1606,7 @@ module.exports = class SkillTree {
 
     // Add close button
     const closeBtn = document.createElement('button');
-    closeBtn.textContent = '';
+    closeBtn.textContent = '×';
     closeBtn.className = 'skilltree-close-btn';
     closeBtn.onclick = () => {
       if (this.skillTreeModal) {
@@ -1724,18 +1751,25 @@ module.exports = class SkillTree {
   }
 
   setupChannelWatcher() {
-    // Use MutationObserver for URL changes (more efficient than polling)
+    // Use event-based URL change detection (no polling)
     let lastUrl = window.location.href;
 
     // Watch for URL changes via popstate and pushState/replaceState
     const handleUrlChange = () => {
+      // Return early if plugin is stopped
+      if (this._isStopped) return;
+
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         // Small delay to ensure DOM is ready
-        setTimeout(() => {
-          this.createSkillTreeButton();
+        const timeoutId = setTimeout(() => {
+          this._retryTimeouts.delete(timeoutId);
+          if (!this.skillTreeButton || !document.contains(this.skillTreeButton)) {
+            this.createSkillTreeButton();
+          }
         }, 500);
+        this._retryTimeouts.add(timeoutId);
       }
     };
 

@@ -24,58 +24,85 @@ module.exports = class SoloLevelingTitleManager {
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
+
+    // Track all retry timeouts for proper cleanup
+    this._retryTimeouts = new Set();
+    this._isStopped = false;
+
+    // Store original history methods for defensive restoration
+    this._originalPushState = null;
+    this._originalReplaceState = null;
   }
 
   // ============================================================================
   // LIFECYCLE METHODS
   // ============================================================================
   start() {
+    // Reset stopped flag to allow watchers to recreate
+    this._isStopped = false;
+
     this.loadSettings();
     this.injectCSS();
     this.createTitleButton();
 
     // Retry button creation after delays to ensure Discord UI is ready
     this._retryTimeout1 = setTimeout(() => {
+      this._retryTimeouts.delete(this._retryTimeout1);
       if (!this.titleButton || !document.body.contains(this.titleButton)) {
         console.log('[TitleManager] Retrying button creation...');
         this.createTitleButton();
       }
+      this._retryTimeout1 = null;
     }, 2000);
+    this._retryTimeouts.add(this._retryTimeout1);
 
     // Additional retry after longer delay (for plugin re-enabling)
     this._retryTimeout2 = setTimeout(() => {
+      this._retryTimeouts.delete(this._retryTimeout2);
       if (!this.titleButton || !document.body.contains(this.titleButton)) {
         console.log('[TitleManager] Final retry for button creation...');
         this.createTitleButton();
       }
+      this._retryTimeout2 = null;
     }, 5000);
+    this._retryTimeouts.add(this._retryTimeout2);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
   }
 
   stop() {
-    this.removeTitleButton();
-    this.closeTitleModal();
-    this.removeCSS();
+    // Set stopped flag to prevent recreating watchers
+    this._isStopped = true;
 
-    // Clear retry timeouts to prevent memory leaks
-    if (this._retryTimeout1) {
-      clearTimeout(this._retryTimeout1);
-      this._retryTimeout1 = null;
-    }
-    if (this._retryTimeout2) {
-      clearTimeout(this._retryTimeout2);
-      this._retryTimeout2 = null;
-    }
+    try {
+      this.removeTitleButton();
+      this.closeTitleModal();
+      this.removeCSS();
 
-    // Cleanup URL change watcher
-    if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
-    }
+      // Clear all tracked retry timeouts
+      this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+      this._retryTimeouts.clear();
 
-    console.log('TitleManager: Plugin stopped');
+      // Clear legacy retry timeouts (for backwards compatibility)
+      if (this._retryTimeout1) {
+        clearTimeout(this._retryTimeout1);
+        this._retryTimeout1 = null;
+      }
+      if (this._retryTimeout2) {
+        clearTimeout(this._retryTimeout2);
+        this._retryTimeout2 = null;
+      }
+
+      console.log('TitleManager: Plugin stopped');
+    } finally {
+      // Cleanup URL change watcher in finally block to guarantee restoration
+      // even if stop() throws an error
+      if (this._urlChangeCleanup) {
+        this._urlChangeCleanup();
+        this._urlChangeCleanup = null;
+      }
+    }
   }
 
   // ============================================================================
@@ -163,15 +190,20 @@ module.exports = class SoloLevelingTitleManager {
     let lastUrl = window.location.href;
 
     const handleUrlChange = () => {
+      // Return early if plugin is stopped
+      if (this._isStopped) return;
+
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         // Recreate button after channel change
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
+          this._retryTimeouts.delete(timeoutId);
           if (!this.titleButton || !document.contains(this.titleButton)) {
             this.createTitleButton();
           }
         }, 500);
+        this._retryTimeouts.add(timeoutId);
       }
     };
 
@@ -179,24 +211,48 @@ module.exports = class SoloLevelingTitleManager {
     window.addEventListener('popstate', handleUrlChange);
 
     // Override pushState and replaceState to detect programmatic navigation
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
+    // Store originals in private properties for defensive restoration
+    try {
+      this._originalPushState = history.pushState;
+      this._originalReplaceState = history.replaceState;
 
-    history.pushState = function (...args) {
-      originalPushState.apply(history, args);
-      handleUrlChange();
-    };
+      history.pushState = function (...args) {
+        this._originalPushState.apply(history, args);
+        handleUrlChange();
+      }.bind(this);
 
-    history.replaceState = function (...args) {
-      originalReplaceState.apply(history, args);
-      handleUrlChange();
-    };
+      history.replaceState = function (...args) {
+        this._originalReplaceState.apply(history, args);
+        handleUrlChange();
+      }.bind(this);
+    } catch (error) {
+      console.error('[TitleManager] Failed to override history methods:', error);
+    }
 
-    // Store cleanup function
+    // Store idempotent and defensive cleanup function
     this._urlChangeCleanup = () => {
       window.removeEventListener('popstate', handleUrlChange);
-      history.pushState = originalPushState;
-      history.replaceState = originalReplaceState;
+
+      // Defensive restoration: check if methods need restoration before restoring
+      try {
+        if (this._originalPushState && history.pushState !== this._originalPushState) {
+          history.pushState = this._originalPushState;
+        }
+      } catch (error) {
+        console.error('[TitleManager] Failed to restore history.pushState:', error);
+      }
+
+      try {
+        if (this._originalReplaceState && history.replaceState !== this._originalReplaceState) {
+          history.replaceState = this._originalReplaceState;
+        }
+      } catch (error) {
+        console.error('[TitleManager] Failed to restore history.replaceState:', error);
+      }
+
+      // Null out stored originals after successful restore
+      this._originalPushState = null;
+      this._originalReplaceState = null;
     };
   }
 
@@ -457,7 +513,14 @@ module.exports = class SoloLevelingTitleManager {
 
     const toolbar = findToolbar();
     if (!toolbar) {
-      setTimeout(() => this.createTitleButton(), 1000);
+      // Return early if plugin is stopped
+      if (this._isStopped) return;
+
+      const timeoutId = setTimeout(() => {
+        this._retryTimeouts.delete(timeoutId);
+        this.createTitleButton();
+      }, 1000);
+      this._retryTimeouts.add(timeoutId);
       return;
     }
 

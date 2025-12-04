@@ -133,8 +133,6 @@ class ShadowStorageManager {
           objectStore.createIndex('strength', 'strength', { unique: false });
           objectStore.createIndex('extractedAt', 'extractedAt', { unique: false });
           objectStore.createIndex('rank_role', ['rank', 'role'], { unique: false });
-
-          console.log('ShadowStorageManager: Object store and indexes created');
         }
 
         // Add new indices for v2 (natural growth system)
@@ -149,10 +147,6 @@ class ShadowStorageManager {
           if (!objectStore.indexNames.contains('totalCombatTime')) {
             objectStore.createIndex('totalCombatTime', 'totalCombatTime', { unique: false });
           }
-
-          console.log(
-            '[ShadowStorageManager] Database upgraded to v2 with natural growth tracking'
-          );
         }
       };
     });
@@ -191,10 +185,6 @@ class ShadowStorageManager {
         return { migrated: false, reason: 'No data to migrate' };
       }
 
-      console.log(
-        `ShadowStorageManager: Migrating ${oldData.shadows.length} shadows from localStorage`
-      );
-
       // Ensure database is initialized
       if (!this.db) {
         await this.init();
@@ -206,9 +196,6 @@ class ShadowStorageManager {
       // Mark migration complete and persist flag to stable storage
       this.migrationCompleted = true;
       BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
-
-      // Keep localStorage as backup (will be removed in future version)
-      console.log('ShadowStorageManager: Migration complete, localStorage kept as backup');
 
       return {
         migrated: true,
@@ -1338,6 +1325,10 @@ module.exports = class ShadowArmy {
       'Monarch+': 86.49755859375, // 8649% (1.5^11)
       'Shadow Monarch': 129.746337890625, // 12974% (1.5^12)
     };
+
+    // Track all retry timeouts for proper cleanup
+    this._retryTimeouts = new Set();
+    this._isStopped = false;
   }
 
   // ============================================================================
@@ -1359,6 +1350,9 @@ module.exports = class ShadowArmy {
    * 7. Set up message listener for shadow extraction
    */
   async start() {
+    // Reset stopped flag to allow watchers to recreate
+    this._isStopped = false;
+
     // Get user ID for storage isolation
     this.userId = await this.getUserId();
 
@@ -1368,10 +1362,8 @@ module.exports = class ShadowArmy {
       await this.storageManager.init();
 
       // Migrate from localStorage if needed
-      const migrationResult = await this.storageManager.migrateFromLocalStorage();
-      if (migrationResult.migrated) {
-        console.log(`ShadowArmy: Migrated ${migrationResult.count} shadows to IndexedDB`);
-      }
+      const _migrationResult = await this.storageManager.migrateFromLocalStorage();
+      // Migration complete if needed (silent)
     } catch (error) {
       console.warn(
         'ShadowArmy: IndexedDB initialization failed, using localStorage fallback',
@@ -1387,21 +1379,26 @@ module.exports = class ShadowArmy {
     this.setupMessageListener();
     this.createShadowArmyButton();
 
+    // Watch for channel changes and recreate button
+    this.setupChannelWatcher();
+
     // Retry button creation after delays to ensure Discord UI is ready
-    setTimeout(() => {
+    const timeout1 = setTimeout(() => {
+      this._retryTimeouts.delete(timeout1);
       if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
-        console.log('[ShadowArmy] Retrying button creation...');
         this.createShadowArmyButton();
       }
     }, 2000);
+    this._retryTimeouts.add(timeout1);
 
     // Additional retry after longer delay (for plugin re-enabling)
-    setTimeout(() => {
+    const timeout2 = setTimeout(() => {
+      this._retryTimeouts.delete(timeout2);
       if (!this.shadowArmyButton || !document.body.contains(this.shadowArmyButton)) {
-        console.log('[ShadowArmy] Final retry for button creation...');
         this.createShadowArmyButton();
       }
     }, 5000);
+    this._retryTimeouts.add(timeout2);
 
     // Recalculate all shadows with new exponential formula (one-time migration)
     try {
@@ -1421,7 +1418,6 @@ module.exports = class ShadowArmy {
 
     // Start natural growth processing (runs every hour)
     this.startNaturalGrowthInterval();
-
   }
 
   /**
@@ -1440,6 +1436,15 @@ module.exports = class ShadowArmy {
       this.processNaturalGrowthForAllShadows();
     }, 60 * 60 * 1000); // 1 hour
 
+    // Inject shadow rank widget into member list
+    setTimeout(() => {
+      this.injectShadowRankWidget();
+    }, 3000);
+
+    // Update widget every 30 seconds
+    this.widgetUpdateInterval = setInterval(() => {
+      this.updateShadowRankWidget();
+    }, 30000);
   }
 
   /**
@@ -1450,12 +1455,19 @@ module.exports = class ShadowArmy {
    * 3. Clear natural growth interval
    */
   stop() {
+    // Set stopped flag to prevent recreating watchers
+    this._isStopped = true;
+
     this.removeMessageListener();
     this.removeCSS();
     this.removeShadowArmyButton();
     this.closeShadowArmyModal();
 
-    // Clear retry timeout if pending
+    // Clear all tracked retry timeouts
+    this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._retryTimeouts.clear();
+
+    // Clear retry timeout if pending (legacy)
     if (this._shadowArmyButtonRetryTimeout) {
       clearTimeout(this._shadowArmyButtonRetryTimeout);
       this._shadowArmyButtonRetryTimeout = null;
@@ -1467,11 +1479,82 @@ module.exports = class ShadowArmy {
       this.naturalGrowthInterval = null;
     }
 
+    // Cleanup URL change watcher
+    if (this._urlChangeCleanup) {
+      this._urlChangeCleanup();
+      this._urlChangeCleanup = null;
+    }
+
+    // Clear widget update interval
+    if (this.widgetUpdateInterval) {
+      clearInterval(this.widgetUpdateInterval);
+      this.widgetUpdateInterval = null;
+    }
+
+    // Remove shadow rank widget
+    this.removeShadowRankWidget();
+
     // Close IndexedDB connection
     if (this.storageManager) {
       this.storageManager.close();
       this.storageManager = null;
     }
+  }
+
+  // ============================================================================
+  // EVENT HANDLING & WATCHERS
+  // ============================================================================
+
+  /**
+   * Setup channel watcher for URL changes (event-based, no polling)
+   * Ensures button persists across guild/channel switches
+   */
+  setupChannelWatcher() {
+    // Use event-based URL change detection (no polling)
+    let lastUrl = window.location.href;
+
+    // Watch for URL changes via popstate and pushState/replaceState
+    const handleUrlChange = () => {
+      // Return early if plugin is stopped
+      if (this._isStopped) return;
+
+      const currentUrl = window.location.href;
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        // Recreate button after channel change
+        const timeoutId = setTimeout(() => {
+          this._retryTimeouts.delete(timeoutId);
+          if (!this.shadowArmyButton || !document.contains(this.shadowArmyButton)) {
+            this.createShadowArmyButton();
+          }
+        }, 500);
+        this._retryTimeouts.add(timeoutId);
+      }
+    };
+
+    // Listen to browser navigation events
+    window.addEventListener('popstate', handleUrlChange);
+
+    // Override pushState and replaceState to detect programmatic navigation
+    const originalPushState = history.pushState;
+    const originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      originalPushState.apply(history, args);
+      handleUrlChange();
+    };
+
+    history.replaceState = function (...args) {
+      originalReplaceState.apply(history, args);
+      handleUrlChange();
+    };
+
+    // Store cleanup functions
+    this._urlChangeCleanup = () => {
+      window.removeEventListener('popstate', handleUrlChange);
+      history.pushState = originalPushState;
+      history.replaceState = originalReplaceState;
+    };
   }
 
   // ============================================================================
@@ -1663,7 +1746,14 @@ module.exports = class ShadowArmy {
           instance.processMessageSent = (messageText) => {
             const result = this.originalProcessMessage.call(instance, messageText);
             // Attempt shadow extraction after message is processed
-            setTimeout(() => this.attemptShadowExtraction(), 100);
+            // Return early if plugin is stopped
+            if (!this._isStopped) {
+              const timeoutId = setTimeout(() => {
+                this._retryTimeouts.delete(timeoutId);
+                this.attemptShadowExtraction();
+              }, 100);
+              this._retryTimeouts.add(timeoutId);
+            }
             return result;
           };
         }
@@ -1876,11 +1966,7 @@ module.exports = class ShadowArmy {
 
     // STRICT ENFORCEMENT: Cannot extract more than 1 rank above
     if (rankDiff > 1) {
-      console.log(
-        `[ShadowArmy] ❌ Extraction blocked: [${targetRank}] is too high for ${userRank}-rank hunter (max: ${
-          this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
-        })`
-      );
+      // Extraction blocked - target rank too high
       return null; // Impossible to extract
     }
 
@@ -1893,12 +1979,12 @@ module.exports = class ShadowArmy {
       if (fromDungeon) {
         // Select magic beast role (dungeon-only, 100% magic beast)
         let availableBeastRoles = Object.keys(this.shadowRoles).filter(
-          key => this.shadowRoles[key].isMagicBeast
+          (key) => this.shadowRoles[key].isMagicBeast
         );
 
         // Filter by biome families if provided
         if (beastFamilies && beastFamilies.length > 0) {
-          availableBeastRoles = availableBeastRoles.filter(key => {
+          availableBeastRoles = availableBeastRoles.filter((key) => {
             const beast = this.shadowRoles[key];
             return beastFamilies.includes(beast.family);
           });
@@ -1906,7 +1992,7 @@ module.exports = class ShadowArmy {
 
         // Filter by rank restrictions (e.g., dragons only NH+)
         const rankIndex = this.shadowRanks.indexOf(targetRank);
-        availableBeastRoles = availableBeastRoles.filter(key => {
+        availableBeastRoles = availableBeastRoles.filter((key) => {
           const beast = this.shadowRoles[key];
           if (!beast.minRank) return true; // No restriction
           const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
@@ -1916,7 +2002,7 @@ module.exports = class ShadowArmy {
         // Fallback: If no beasts available after filtering, use all non-restricted beasts
         if (availableBeastRoles.length === 0) {
           availableBeastRoles = Object.keys(this.shadowRoles).filter(
-            key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+            (key) => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
           );
         }
 
@@ -1924,7 +2010,7 @@ module.exports = class ShadowArmy {
       } else {
         // Select humanoid role (message-based extraction only)
         const humanoidRoles = Object.keys(this.shadowRoles).filter(
-          key => !this.shadowRoles[key].isMagicBeast
+          (key) => !this.shadowRoles[key].isMagicBeast
         );
         roleKey = humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
       }
@@ -2229,7 +2315,14 @@ module.exports = class ShadowArmy {
    *
    * @param {boolean} fromDungeon - If true, can extract magic beast shadows
    */
-  async handleExtractionBurst(userRank, userLevel, userStats, isSpecial, targetRank = null, fromDungeon = false) {
+  async handleExtractionBurst(
+    userRank,
+    userLevel,
+    userStats,
+    isSpecial,
+    targetRank = null,
+    fromDungeon = false
+  ) {
     const now = Date.now();
     const _cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
 
@@ -2387,12 +2480,12 @@ module.exports = class ShadowArmy {
     if (fromDungeon) {
       // Select magic beast role (dungeon-only, 100% magic beast)
       let availableBeastRoles = Object.keys(this.shadowRoles).filter(
-        key => this.shadowRoles[key].isMagicBeast
+        (key) => this.shadowRoles[key].isMagicBeast
       );
 
       // Filter by biome families if provided
       if (beastFamilies && beastFamilies.length > 0) {
-        availableBeastRoles = availableBeastRoles.filter(key => {
+        availableBeastRoles = availableBeastRoles.filter((key) => {
           const beast = this.shadowRoles[key];
           return beastFamilies.includes(beast.family);
         });
@@ -2400,7 +2493,7 @@ module.exports = class ShadowArmy {
 
       // Filter by rank restrictions (e.g., dragons only NH+)
       const rankIndex = this.shadowRanks.indexOf(shadowRank);
-      availableBeastRoles = availableBeastRoles.filter(key => {
+      availableBeastRoles = availableBeastRoles.filter((key) => {
         const beast = this.shadowRoles[key];
         if (!beast.minRank) return true; // No restriction
         const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
@@ -2410,7 +2503,7 @@ module.exports = class ShadowArmy {
       // Fallback: If no beasts available after filtering, use all beasts
       if (availableBeastRoles.length === 0) {
         availableBeastRoles = Object.keys(this.shadowRoles).filter(
-          key => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+          (key) => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
         );
       }
 
@@ -2418,7 +2511,7 @@ module.exports = class ShadowArmy {
     } else {
       // Select humanoid role (message-based extraction only)
       const humanoidRoles = Object.keys(this.shadowRoles).filter(
-        key => !this.shadowRoles[key].isMagicBeast
+        (key) => !this.shadowRoles[key].isMagicBeast
       );
       roleKey = humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
     }
@@ -3188,6 +3281,16 @@ module.exports = class ShadowArmy {
       const allShadows = this.settings.shadows || [];
       let nonFavoriteCount = 0;
 
+      // Accumulator for aggregated non-favorite shadow buffs per stat
+      const aggregatedNonFavoriteBuffs = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        luck: 0,
+        perception: 0,
+      };
+
       allShadows.forEach((shadow) => {
         const role = this.shadowRoles[shadow.role];
         if (!role || !role.buffs) return;
@@ -3196,23 +3299,27 @@ module.exports = class ShadowArmy {
 
         if (!isFavorite) {
           nonFavoriteCount++;
+
+          // Accumulate each non-favorite shadow's role buffs per stat
+          Object.keys(role.buffs).forEach((stat) => {
+            const amount = role.buffs[stat] || 0;
+            aggregatedNonFavoriteBuffs[stat] = (aggregatedNonFavoriteBuffs[stat] || 0) + amount;
+          });
         }
         // Favorites already processed at start of function
       });
 
       // Apply diminishing returns for non-favorites
-      // Formula: sqrt(nonFavoriteCount / 100) * 0.01 per shadow role average
+      // Formula: sqrt(nonFavoriteCount / 100) * 0.01
       // This prevents linear scaling
       if (nonFavoriteCount > 0) {
         const diminishingFactor = Math.sqrt(nonFavoriteCount / 100) * 0.01;
         const cappedFactor = Math.min(0.4, diminishingFactor); // Cap at 40%
 
-        // Estimate average buff per shadow (simplified)
-        const avgBuffPerShadow = 0.1; // Average ~10% per shadow role
-        const totalNonFavoriteBuff = cappedFactor * avgBuffPerShadow;
-
-        Object.keys(buffs).forEach((stat) => {
-          buffs[stat] = (buffs[stat] || 0) + totalNonFavoriteBuff;
+        // Apply capped diminishing factor to each accumulated stat total
+        Object.keys(aggregatedNonFavoriteBuffs).forEach((stat) => {
+          const diminishedBuff = aggregatedNonFavoriteBuffs[stat] * cappedFactor;
+          buffs[stat] = (buffs[stat] || 0) + diminishedBuff;
         });
       }
     }
@@ -3416,17 +3523,26 @@ module.exports = class ShadowArmy {
       'Shadow Monarch',
     ];
     const currentRankIndex = shadowRanks.indexOf(currentRank);
+    const nextRank = shadowRanks[currentRankIndex + 1];
 
     // Can't rank up if already max rank
-    if (currentRankIndex === -1 || currentRankIndex >= shadowRanks.length - 1) {
+    if (!nextRank) {
       return { success: false };
     }
 
-    const nextRank = shadowRanks[currentRankIndex + 1];
-
-    // Get shadow's effective stats (base + growth + natural growth)
+    // Get shadow's effective stats
     const effectiveStats = this.getShadowEffectiveStats(shadow);
 
+    // Get baseline for next rank
+    const nextRankMultiplier = this.rankStatMultipliers[nextRank] || 1.0;
+    const baselineForNextRank = this.getRankBaselineStats(nextRank, nextRankMultiplier);
+    const nextBaseline =
+      (baselineForNextRank.strength +
+        baselineForNextRank.agility +
+        baselineForNextRank.intelligence +
+        baselineForNextRank.vitality +
+        baselineForNextRank.luck) /
+      5;
     // Calculate average stat value
     const avgStats =
       (effectiveStats.strength +
@@ -3434,16 +3550,6 @@ module.exports = class ShadowArmy {
         effectiveStats.intelligence +
         effectiveStats.vitality +
         effectiveStats.luck) /
-      5;
-
-    // Get baseline for next rank
-    const baselineForNextRank = this.getRankBaselineStats(nextRank);
-    const nextBaseline =
-      (baselineForNextRank.strength +
-        baselineForNextRank.agility +
-        baselineForNextRank.intelligence +
-        baselineForNextRank.vitality +
-        baselineForNextRank.luck) /
       5;
 
     // Check if shadow qualifies (80% of next rank's baseline stats)
@@ -4052,6 +4158,9 @@ module.exports = class ShadowArmy {
       .shadow-army-settings {
         padding: 10px;
         color: #d4a5ff;
+        max-width: 600px;
+        width: 100%;
+        box-sizing: border-box;
       }
 
       .shadow-army-settings h2,
@@ -4078,6 +4187,8 @@ module.exports = class ShadowArmy {
         gap: 6px;
         padding: 4px 0;
         border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+        max-width: 100%;
+        overflow: hidden;
       }
 
       .shadow-fav-toggle {
@@ -4101,6 +4212,8 @@ module.exports = class ShadowArmy {
 
       .shadow-list-main {
         flex: 1;
+        min-width: 0;
+        overflow: hidden;
       }
 
       .shadow-list-header {
@@ -4128,6 +4241,15 @@ module.exports = class ShadowArmy {
         display: flex;
         flex-wrap: wrap;
         gap: 6px;
+        max-width: 100%;
+        overflow: hidden;
+      }
+
+      .shadow-list-meta span {
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
       }
 
       .shadow-list-empty {
@@ -4260,20 +4382,29 @@ module.exports = class ShadowArmy {
 
       const toolbar = this.findToolbar();
       if (!toolbar) {
+        // Return early if plugin is stopped
+        if (this._isStopped) {
+          this._creatingShadowArmyButton = false;
+          return;
+        }
+
         // Retry with exponential backoff
         // Clear any existing retry timeout before scheduling a new one
         if (this._shadowArmyButtonRetryTimeout) {
           clearTimeout(this._shadowArmyButtonRetryTimeout);
+          this._retryTimeouts.delete(this._shadowArmyButtonRetryTimeout);
           this._shadowArmyButtonRetryTimeout = null;
         }
         const retryCount = (this._shadowArmyButtonRetryCount || 0) + 1;
         this._shadowArmyButtonRetryCount = retryCount;
         const delay = Math.min(1000 * retryCount, 5000);
         this._shadowArmyButtonRetryTimeout = setTimeout(() => {
+          this._retryTimeouts.delete(this._shadowArmyButtonRetryTimeout);
           this._shadowArmyButtonRetryTimeout = null;
           this._creatingShadowArmyButton = false;
           this.createShadowArmyButton();
         }, delay);
+        this._retryTimeouts.add(this._shadowArmyButtonRetryTimeout);
         return;
       }
       this._shadowArmyButtonRetryCount = 0;
@@ -4362,7 +4493,6 @@ module.exports = class ShadowArmy {
 
       // Observe toolbar for changes
       this.observeToolbar(toolbar);
-
     } finally {
       // Always clear the creation flag
       this._creatingShadowArmyButton = false;
@@ -4392,19 +4522,25 @@ module.exports = class ShadowArmy {
     // Simple check: if button removed, recreate it immediately
     // Matches SkillTree's successful pattern
     this.toolbarObserver = new MutationObserver(() => {
+      // Return early if plugin is stopped
+      if (this._isStopped) return;
+
       // Clear any pending timeout to debounce rapid changes
       if (this._recreateTimeout) {
         clearTimeout(this._recreateTimeout);
+        this._retryTimeouts.delete(this._recreateTimeout);
       }
 
       // Use instance variable so timeout persists
       this._recreateTimeout = setTimeout(() => {
+        this._retryTimeouts.delete(this._recreateTimeout);
         const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
         if (!shadowBtnExists && !this._creatingShadowArmyButton) {
           this.createShadowArmyButton();
         }
         this._recreateTimeout = null;
       }, 100);
+      this._retryTimeouts.add(this._recreateTimeout);
     });
 
     this.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
@@ -4435,6 +4571,231 @@ module.exports = class ShadowArmy {
   /**
    * Open ShadowArmy UI modal
    */
+  /**
+   * Inject CSS for shadow rank widget
+   */
+  injectWidgetCSS() {
+    if (document.getElementById('shadow-army-widget-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'shadow-army-widget-styles';
+    style.textContent = `
+      #shadow-army-widget {
+        background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
+        border: 1px solid rgba(139, 92, 246, 0.4) !important;
+        border-radius: 8px !important;
+        padding: 12px !important;
+        margin: 12px 8px !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.15) !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+      }
+
+      #shadow-army-widget:hover {
+        border-color: rgba(139, 92, 246, 0.6) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 24px rgba(139, 92, 246, 0.25) !important;
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  /**
+   * Remove widget CSS
+   */
+  removeWidgetCSS() {
+    const style = document.getElementById('shadow-army-widget-styles');
+    if (style) style.remove();
+  }
+
+  /**
+   * Inject shadow rank widget into member list sidebar
+   */
+  async injectShadowRankWidget() {
+    // Inject CSS first
+    this.injectWidgetCSS();
+
+    // Wait for member list to load
+    await new Promise(resolve => setTimeout(resolve, 2000));
+
+    const membersList = document.querySelector('[class*="members"]');
+    if (!membersList) {
+      console.log('ShadowArmy: Member list not found, retrying...');
+      setTimeout(() => this.injectShadowRankWidget(), 2000);
+      return;
+    }
+
+    // Check if widget already exists
+    if (document.getElementById('shadow-army-widget')) return;
+
+    // Create widget container
+    const widget = document.createElement('div');
+    widget.id = 'shadow-army-widget';
+
+    // Click to open Shadow Army modal
+    widget.addEventListener('click', () => {
+      this.openShadowArmyUI();
+    });
+
+    // Insert at the top of member list
+    const membersContent = membersList.querySelector('[class*="content"]');
+    if (membersContent && membersContent.firstChild) {
+      membersContent.insertBefore(widget, membersContent.firstChild);
+    } else if (membersList.firstChild) {
+      membersList.insertBefore(widget, membersList.firstChild);
+    }
+
+    // Initial update
+    this.updateShadowRankWidget();
+  }
+
+  /**
+   * Update shadow rank widget content
+   */
+  async updateShadowRankWidget() {
+    const widget = document.getElementById('shadow-army-widget');
+    if (!widget) return;
+
+    try {
+      // Get all shadows
+      let shadows = [];
+      if (this.storageManager && this.storageManager.getShadows) {
+        try {
+          shadows = await this.storageManager.getShadows({}, 0, 10000);
+        } catch (err) {
+          shadows = this.settings.shadows || [];
+        }
+      } else {
+        shadows = this.settings.shadows || [];
+      }
+
+      // Count by rank
+      const ranks = ['SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+      const rankColors = {
+        'SSS': '#ec4899',
+        'SS': '#ef4444',
+        'S': '#f59e0b',
+        'A': '#8b5cf6',
+        'B': '#3b82f6',
+        'C': '#22c55e',
+        'D': '#a0a0a0',
+        'E': '#999'
+      };
+
+      const rankCounts = ranks.map(rank => ({
+        rank,
+        count: shadows.filter(s => s.rank === rank).length,
+        color: rankColors[rank]
+      }));
+
+      // Generate HTML with proper structure
+      widget.innerHTML = `
+        <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+          <div class="widget-title" style="color: #8b5cf6; font-size: 12px; font-weight: bold; text-shadow: 0 0 8px rgba(139, 92, 246, 0.8);">
+            MY SHADOW ARMY
+          </div>
+          <div class="widget-total" style="color: #999; font-size: 11px;">
+            ${shadows.length} Total
+          </div>
+        </div>
+        <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
+          ${rankCounts.map(({ rank, count, color }) => `
+            <div class="rank-box" style="
+              text-align: center;
+              padding: 4px;
+              background: rgba(0, 0, 0, 0.4);
+              border-radius: 4px;
+              border: 1px solid ${color}40;
+            ">
+              <div class="rank-label" style="color: ${color}; font-size: 10px; font-weight: bold;">${rank}</div>
+              <div class="rank-count" style="color: #fff; font-size: 14px; font-weight: bold;">${count}</div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="widget-footer" style="
+          margin-top: 8px;
+          padding-top: 8px;
+          border-top: 1px solid rgba(139, 92, 246, 0.2);
+          text-align: center;
+          color: #888;
+          font-size: 9px;
+        ">
+          Click to manage shadows
+        </div>
+      `;
+    } catch (error) {
+      console.error('Shadow Army: Error updating widget', error);
+    }
+  }
+
+  /**
+   * Remove shadow rank widget
+   */
+  removeShadowRankWidget() {
+    const widget = document.getElementById('shadow-army-widget');
+    if (widget) {
+      widget.remove();
+    }
+    this.removeWidgetCSS();
+  }
+
+  /**
+   * Format combat time dynamically (seconds, minutes, or hours)
+   * Internal calculations stay in hours, display adapts to magnitude
+   */
+  formatCombatTime(hours) {
+    if (!hours || hours === 0) return '0s';
+
+    const totalSeconds = hours * 3600;
+
+    if (totalSeconds < 60) {
+      // Less than 1 minute - show seconds
+      return `${Math.floor(totalSeconds)}s`;
+    } else if (totalSeconds < 3600) {
+      // Less than 1 hour - show minutes
+      const minutes = Math.floor(totalSeconds / 60);
+      return `${minutes}m`;
+    } else {
+      // 1 hour or more - show hours (with decimal if < 10h)
+      if (hours < 10) {
+        return `${hours.toFixed(1)}h`;
+      } else {
+        return `${Math.floor(hours)}h`;
+      }
+    }
+  }
+
+  /**
+   * Generate rank distribution HTML
+   * Shows count of shadows per rank with color coding
+   */
+  generateRankDistribution(shadows) {
+    const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+    const rankColors = {
+      'E': '#999',
+      'D': '#a0a0a0',
+      'C': '#22c55e',
+      'B': '#3b82f6',
+      'A': '#8b5cf6',
+      'S': '#f59e0b',
+      'SS': '#ef4444',
+      'SSS': '#ec4899'
+    };
+
+    return ranks.map(rank => {
+      const count = shadows.filter(s => s.rank === rank).length;
+      const color = rankColors[rank];
+      const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
+
+      return `
+        <div style="text-align: center; padding: 6px; background: rgba(0, 0, 0, 0.3); border-radius: 4px; border: 1px solid ${color}40;">
+          <div style="color: ${color}; font-size: 14px; font-weight: bold;">${rank}</div>
+          <div style="color: #fff; font-size: 16px; font-weight: bold; margin: 2px 0;">${count}</div>
+          <div style="color: #888; font-size: 9px;">${percentage}%</div>
+        </div>
+      `;
+    }).join('');
+  }
+
   async openShadowArmyUI() {
     if (this.shadowArmyModal) {
       this.closeShadowArmyModal();
@@ -4601,7 +4962,7 @@ module.exports = class ShadowArmy {
                   border-radius: 6px;
                   color: white;
                   cursor: pointer;
-                ">👑 Generals (7)</button>
+                ">Generals (7)</button>
                 <select id="sa-rank-filter" style="
                   padding: 6px 12px;
                   background: rgba(139, 92, 246, 0.2);
@@ -4698,21 +5059,21 @@ module.exports = class ShadowArmy {
                   <div style="color: #999; font-size: 11px;">Ready Rank-Up</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${Math.floor(
-                    shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0)
-                  )}h</div>
+                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${
+                    this.formatCombatTime(shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0))
+                  }</div>
                   <div style="color: #999; font-size: 11px;">Total Combat</div>
                 </div>
               </div>
-              <div style="font-size: 10px; color: #888; text-align: center;">
-                ${shadows.filter((s) => s.rank === 'SSS').length} SSS |
-                ${shadows.filter((s) => s.rank === 'SS').length} SS |
-                ${shadows.filter((s) => s.rank === 'S').length} S |
-                ${shadows.filter((s) => s.rank === 'A').length} A |
-                ${shadows.filter((s) => s.rank === 'B').length} B |
-                ${shadows.filter((s) => s.rank === 'C').length} C |
-                ${shadows.filter((s) => s.rank === 'D').length} D |
-                ${shadows.filter((s) => s.rank === 'E').length} E
+
+              <!-- Shadow Rank Distribution -->
+              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+                <div style="color: #8b5cf6; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+                  Shadow Rank Distribution
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+                  ${this.generateRankDistribution(shadows)}
+                </div>
               </div>
             </div>
 
@@ -4806,7 +5167,7 @@ module.exports = class ShadowArmy {
                           display: flex;
                           align-items: center;
                           justify-content: center;
-                        ">👑</div>
+                        ">★</div>
                       `
                           : ''
                       }
@@ -4830,7 +5191,7 @@ module.exports = class ShadowArmy {
                               ? '<span style="color: #34d399; font-size: 11px; background: rgba(52, 211, 153, 0.2); padding: 2px 6px; border-radius: 4px;">RANK UP!</span>'
                               : ''
                           }
-                          <span style="color: #34d399; margin-left: auto; font-size: 13px; font-weight: bold;">⚡ ${
+                          <span style="color: #34d399; margin-left: auto; font-size: 13px; font-weight: bold;">PWR: ${
                             shadow.strength || 0
                           }</span>
                         </div>
@@ -4874,19 +5235,19 @@ module.exports = class ShadowArmy {
                         <div style="display: flex; gap: 8px; font-size: 10px; color: #666;">
                           ${
                             combatTime > 0
-                              ? `<span style="color: #34d399;">⏱ ${combatTime}h combat</span>`
+                              ? `<span style="color: #34d399;">Combat: ${this.formatCombatTime(combatTime)}</span>`
                               : ''
                           }
                           ${
                             hasNaturalGrowth
-                              ? `<span style="color: #fbbf24;">+${
-                                  naturalGrowth.strength || 0
-                                } natural</span>`
+                              ? `<span style="color: #fbbf24;">Growth: +${
+                                  Object.values(naturalGrowth).reduce((sum, v) => sum + v, 0)
+                                }</span>`
                               : ''
                           }
                           ${
                             canRankUp
-                              ? `<span style="color: #34d399;">→ ${nextRank}</span>`
+                              ? `<span style="color: #34d399;">Ready: ${nextRank}</span>`
                               : nextRank
                               ? `<span style="color: #666;">${Math.floor(
                                   rankUpProgress
@@ -4935,11 +5296,22 @@ module.exports = class ShadowArmy {
         // Note: No favorite toggle buttons - generals are auto-selected by power
 
         // Close on backdrop click
+        // Backdrop click to close
         modal.addEventListener('click', (e) => {
           if (e.target === modal) {
             this.closeShadowArmyModal();
           }
         });
+
+        // Escape key to close (with lag protection)
+        this._modalEscapeHandler = (e) => {
+          if (e.key === 'Escape' && this.shadowArmyModal) {
+            e.preventDefault();
+            e.stopPropagation();
+            this.closeShadowArmyModal();
+          }
+        };
+        document.addEventListener('keydown', this._modalEscapeHandler);
       };
 
       renderModal();
@@ -4947,9 +5319,11 @@ module.exports = class ShadowArmy {
       this.shadowArmyModal = modal;
 
       // Real-time updates: Re-fetch and re-render every 3 seconds
-      const autoRefreshInterval = setInterval(async () => {
+      // Store interval ID for proper cleanup
+      this.autoRefreshInterval = setInterval(async () => {
         if (!this.shadowArmyModal || !document.body.contains(modal)) {
-          clearInterval(autoRefreshInterval);
+          clearInterval(this.autoRefreshInterval);
+          this.autoRefreshInterval = null;
           return;
         }
 
@@ -4963,7 +5337,6 @@ module.exports = class ShadowArmy {
           console.error('[ShadowArmy] Error refreshing UI:', error);
         }
       }, 3000); // Refresh every 3 seconds for real-time updates
-
     } catch (error) {
       console.error('ShadowArmy: Failed to open UI', error);
     }
@@ -4971,11 +5344,50 @@ module.exports = class ShadowArmy {
 
   /**
    * Close ShadowArmy UI modal
+   * Cleans up modal element and auto-refresh interval to prevent memory leaks
    */
   closeShadowArmyModal() {
+    // Clear auto-refresh interval immediately (prevent memory leak)
+    if (this.autoRefreshInterval) {
+      clearInterval(this.autoRefreshInterval);
+      this.autoRefreshInterval = null;
+    }
+
+    // Force remove modal from DOM (robust under lag)
     if (this.shadowArmyModal) {
-      this.shadowArmyModal.remove();
+      try {
+        // Try graceful removal first
+        if (this.shadowArmyModal.parentNode) {
+          this.shadowArmyModal.parentNode.removeChild(this.shadowArmyModal);
+        } else {
+          // Fallback: direct remove
+          this.shadowArmyModal.remove();
+        }
+      } catch (error) {
+        // Under heavy lag, force remove with querySelector
+        const existingModal = document.querySelector('.shadow-army-modal');
+        if (existingModal) {
+          existingModal.remove();
+        }
+      }
       this.shadowArmyModal = null;
+    }
+
+    // Cleanup: Remove any orphaned modals (lag protection)
+    try {
+      document.querySelectorAll('.shadow-army-modal').forEach(modal => {
+        if (modal && modal.parentNode) {
+          modal.parentNode.removeChild(modal);
+        }
+      });
+    } catch (error) {
+      // Ignore cleanup errors
+    }
+
+    // Remove escape key listener
+    if (this._modalEscapeHandler) {
+      document.removeEventListener('keydown', this._modalEscapeHandler);
+      this._modalEscapeHandler = null;
     }
   }
 
@@ -5005,7 +5417,7 @@ module.exports = class ShadowArmy {
       .map((shadow, index) => {
         const isFavorite = favoriteIds.has(shadow.id);
         const starClass = isFavorite ? 'shadow-fav-toggle shadow-fav-active' : 'shadow-fav-toggle';
-        const extractedDate = new Date(shadow.extractedAt).toLocaleString();
+        const _extractedDate = new Date(shadow.extractedAt).toLocaleString();
         // Sanitize shadow ID to prevent XSS (remove quotes and escape)
         const safeId = String(shadow.id).replace(/['"]/g, '');
         return `
@@ -5022,9 +5434,9 @@ module.exports = class ShadowArmy {
                 <span class="shadow-list-strength">Power: ${shadow.strength}</span>
               </div>
               <div class="shadow-list-meta">
-                <span>Shadow Lv. ${shadow.level || 1}</span>
-                <span>Extracted: ${extractedDate}</span>
-                <span>ID: ${shadow.id}</span>
+                <span>Level ${shadow.level || 1}</span>
+                <span>${shadow.xp || 0} / ${this.getXPForNextLevel(shadow.level || 1)} XP</span>
+                <span>${Math.floor(((shadow.level || 1) / 2000) * 100)}% to Monarch</span>
               </div>
             </div>
           </div>

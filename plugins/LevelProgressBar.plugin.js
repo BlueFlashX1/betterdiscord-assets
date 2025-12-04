@@ -307,6 +307,22 @@ module.exports = class LevelProgressBar {
         margin-left: 12px;
         flex-shrink: 0;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        cursor: pointer;
+        padding: 6px 12px;
+        border-radius: 6px;
+        transition: all 0.2s ease;
+      }
+
+      .lpb-shadow-power:hover {
+        background: rgba(139, 92, 246, 0.15);
+        color: #a78bfa;
+        text-shadow: 0 0 8px rgba(139, 92, 246, 0.8);
+        transform: scale(1.05);
+      }
+
+      .lpb-shadow-power:active {
+        transform: scale(0.98);
+        background: rgba(139, 92, 246, 0.25);
       }
 
       /* XP glow animation disabled */
@@ -526,11 +542,31 @@ module.exports = class LevelProgressBar {
       progressTrack.appendChild(progressFill);
       bar.appendChild(progressTrack);
 
-      // Shadow power display (to the right of progress bar)
+      // Shadow Army display (to the right of progress bar)
+      // CLICKABLE: Opens Shadow Army UI when clicked
       const shadowPowerText = document.createElement('div');
       shadowPowerText.className = 'lpb-shadow-power';
       shadowPowerText.id = 'lpb-shadow-power';
-      shadowPowerText.textContent = 'Shadow Army Total Power: 0';
+      shadowPowerText.textContent = 'Shadow Army Power: 0';
+      shadowPowerText.title = 'Click to open Shadow Army UI';
+
+      // Add click handler to open Shadow Army settings
+      shadowPowerText.addEventListener('click', () => {
+        const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+        if (shadowArmyPlugin?.instance) {
+          // Open Shadow Army settings panel (which is actually the UI)
+          if (typeof shadowArmyPlugin.instance.getSettingsPanel === 'function') {
+            const panel = shadowArmyPlugin.instance.getSettingsPanel();
+            if (panel) {
+              // Use BetterDiscord's native settings display
+              BdApi.showSettingsModal('Shadow Army', panel);
+            }
+          }
+        } else {
+          BdApi.showToast('Shadow Army plugin not found', { type: 'error' });
+        }
+      });
+
       bar.appendChild(shadowPowerText);
 
       container.appendChild(bar);
@@ -552,11 +588,11 @@ module.exports = class LevelProgressBar {
       this.lastXP = null;
       this.updateProgressBar();
 
-      // Start shadow power updates
-      this.updateShadowPower();
+      // Start shadow power updates (async for shadow count)
+      this.updateShadowPower().catch(console.error);
       // Update shadow power periodically (every 30 seconds)
       this.shadowPowerUpdateInterval = setInterval(() => {
-        this.updateShadowPower();
+        this.updateShadowPower().catch(console.error);
       }, 30000);
 
       // Initialize milestone markers
@@ -770,7 +806,7 @@ module.exports = class LevelProgressBar {
       const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!soloPlugin || !soloPlugin.instance) {
         this.cachedShadowPower = '0';
-        this.refreshProgressText();
+        await this.refreshProgressText();
         return;
       }
 
@@ -781,7 +817,7 @@ module.exports = class LevelProgressBar {
         const shadowPower = soloStats.getTotalShadowPower();
         if (shadowPower && shadowPower !== '0') {
           this.cachedShadowPower = shadowPower;
-          this.refreshProgressText();
+          await this.refreshProgressText();
           return;
         }
       }
@@ -793,30 +829,33 @@ module.exports = class LevelProgressBar {
         if (typeof soloStats.getTotalShadowPower === 'function') {
           const shadowPower = soloStats.getTotalShadowPower();
           this.cachedShadowPower = shadowPower || '0';
-          this.refreshProgressText();
+          await this.refreshProgressText();
           return;
         }
       }
 
       this.cachedShadowPower = '0';
-      this.refreshProgressText();
+      await this.refreshProgressText();
     } catch (error) {
       this.debugError('UPDATE_SHADOW_POWER', error);
       this.cachedShadowPower = '0';
-      this.refreshProgressText();
+      await this.refreshProgressText();
     }
   }
 
   /**
    * Refresh progress text with current cached shadow power
    */
-  refreshProgressText() {
+  async refreshProgressText() {
     if (!this.progressBar) return;
 
-    // Update shadow power display
+    // Update shadow power display (power only, no count)
     const shadowPowerEl = this.progressBar.querySelector('#lpb-shadow-power');
+
     if (shadowPowerEl) {
-      shadowPowerEl.textContent = `Shadow Army Total Power: ${this.getTotalShadowPower()}`;
+      // Format: "Shadow Army Power: 1,234,567"
+      const shadowPower = this.getTotalShadowPower();
+      shadowPowerEl.textContent = `Shadow Army Power: ${shadowPower}`;
     }
 
     // Refresh main progress text
@@ -850,11 +889,8 @@ module.exports = class LevelProgressBar {
       const text = `Rank: ${rank} Lv.${level} ${xp}/${xpRequired} XP`;
       progressText.textContent = text;
 
-      // Update shadow power display separately (to the right of progress bar)
-      const shadowPowerEl = this.progressBar?.querySelector('#lpb-shadow-power');
-      if (shadowPowerEl) {
-        shadowPowerEl.textContent = `Shadow Army Total Power: ${this.getTotalShadowPower()}`;
-      }
+      // Shadow power display is updated by refreshProgressText() only
+      // DO NOT update shadow power here - it would overwrite the shadow count format
 
       this.debugLog('UPDATE_TEXT', 'Progress text updated', {
         rank,

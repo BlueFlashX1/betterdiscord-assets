@@ -172,12 +172,12 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-    // Update last log time
-    this.debug.lastLogTimes[operation] = now;
-  }
+      // Update last log time
+      this.debug.lastLogTimes[operation] = now;
+    }
 
-  const _timestamp = new Date().toISOString();
-  console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
+    const _timestamp = new Date().toISOString();
+    console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
 
     // Track operation counts
     this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
@@ -1247,9 +1247,9 @@ module.exports = class SoloLevelingStats {
           buffDisplayParts.push(`+${(titleBuffPercent * 100).toFixed(0)}% title`);
         }
         if (hasShadowBuff) {
-        buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
-      }
-      const _buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
+          buffDisplayParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
+        }
+        const _buffDisplay = buffDisplayParts.length > 0 ? ` (${buffDisplayParts.join(', ')})` : '';
 
         // Store numeric value without % suffix to avoid double % when building strings
         const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
@@ -3086,7 +3086,7 @@ module.exports = class SoloLevelingStats {
       this.settings.stats = { ...this.defaultSettings.stats };
       this.settings.activity = { ...this.defaultSettings.activity };
       this.settings.activity.channelsVisited = new Set();
-      this.settings.luckBuffs = [];
+      this.settings.perceptionBuffs = [];
       this.settings.unallocatedStatPoints = 0;
     }
   }
@@ -3260,12 +3260,12 @@ module.exports = class SoloLevelingStats {
                               fiber.memoizedState?.message?.author?.id ||
                               fiber.memoizedProps?.message?.authorId;
                             if (authorId === currentUserId) return true;
-                          fiber = fiber.return;
+                            fiber = fiber.return;
+                          }
                         }
-                      }
-                      // eslint-disable-next-line no-empty
-                    } catch (e) {}
-                    return false;
+                        // eslint-disable-next-line no-empty
+                      } catch (e) {}
+                      return false;
                     })();
 
                   const hasExplicitYou = (() => {
@@ -4590,9 +4590,9 @@ module.exports = class SoloLevelingStats {
       // Define share percentages by source
       const shareRates = {
         message: 0.05, // 5% from messages (passive growth)
-        quest: 0.10, // 10% from quests (daily activities)
+        quest: 0.1, // 10% from quests (daily activities)
         achievement: 0.15, // 15% from achievements (milestones)
-        dungeon: 0.20, // 20% from dungeons (active combat)
+        dungeon: 0.2, // 20% from dungeons (active combat)
         milestone: 0.25, // 25% from milestones (major events)
       };
 
@@ -4618,7 +4618,7 @@ module.exports = class SoloLevelingStats {
           shadow.id,
           shadowXPGain,
           false, // Don't show individual toasts
-          false  // fromCombat = false (not from dungeon combat)
+          false // fromCombat = false (not from dungeon combat)
         );
 
         if (result && result.leveledUp) {
@@ -4631,7 +4631,11 @@ module.exports = class SoloLevelingStats {
 
       // Log summary
       console.log(
-        `[SoloLevelingStats] Shadow XP Share: ${shadows.length} shadows gained ${shadowXPGain} XP each from ${source} (${(sharePercentage * 100).toFixed(0)}% of ${userXP} user XP)`
+        `[SoloLevelingStats] Shadow XP Share: ${
+          shadows.length
+        } shadows gained ${shadowXPGain} XP each from ${source} (${(sharePercentage * 100).toFixed(
+          0
+        )}% of ${userXP} user XP)`
       );
 
       // Show notification if significant progress was made
@@ -5252,7 +5256,7 @@ module.exports = class SoloLevelingStats {
           this.settings.stats.agility = (this.settings.stats.agility || 0) + bonus;
           this.settings.stats.intelligence = (this.settings.stats.intelligence || 0) + bonus;
           this.settings.stats.vitality = (this.settings.stats.vitality || 0) + bonus;
-          this.settings.stats.luck = (this.settings.stats.luck || 0) + bonus;
+          this.settings.stats.perception = (this.settings.stats.perception || 0) + bonus;
 
           // Recalculate HP/Mana after stat bonus (vitality/intelligence increased)
           const vitality = this.settings.stats.vitality || 0;
@@ -5944,7 +5948,7 @@ module.exports = class SoloLevelingStats {
    */
   processNaturalStatGrowth() {
     try {
-      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
       let statsGrown = [];
 
       // Get user level and rank for bonus growth
@@ -5992,16 +5996,16 @@ module.exports = class SoloLevelingStats {
 
           this.settings.stats[statName] += growthAmount;
 
-          // Special handling for Luck: Generate random buff that stacks
-          if (statName === 'luck') {
-            if (!Array.isArray(this.settings.luckBuffs)) {
-              this.settings.luckBuffs = [];
+          // Special handling for Perception: Generate random buff that stacks
+          if (statName === 'perception') {
+            if (!Array.isArray(this.settings.perceptionBuffs)) {
+              this.settings.perceptionBuffs = [];
             }
             // Generate buffs for each point of growth
             for (let i = 0; i < growthAmount; i++) {
               const randomBuff = Math.random() * 6 + 2; // 2% to 8%
               const roundedBuff = Math.round(randomBuff * 10) / 10;
-              this.settings.luckBuffs.push(roundedBuff);
+              this.settings.perceptionBuffs.push(roundedBuff);
             }
           }
 
