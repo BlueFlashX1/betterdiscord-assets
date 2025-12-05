@@ -584,12 +584,13 @@ module.exports = class CriticalHit {
     const hashContent = author
       ? `${author}:${content.substring(0, 100)}:${timestamp}`
       : content.substring(0, 100);
-    let hash = 0;
-    for (let i = 0; i < hashContent.length; i++) {
-      const char = hashContent.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
+
+    const hash = Array.from(hashContent).reduce((hash, char) => {
+      const charCode = char.charCodeAt(0);
+      hash = (hash << 5) - hash + charCode;
+      return hash & hash;
+    }, 0);
+
     return `hash_${Math.abs(hash)}`;
   }
 
@@ -921,14 +922,19 @@ module.exports = class CriticalHit {
       const allElements = messageElement.querySelectorAll(
         '[data-user-id], [data-author-id], [href*="/users/"]'
       );
-      for (const el of allElements) {
+      const foundElement = Array.from(allElements).find((el) => {
         const id =
           el.getAttribute('data-user-id') ||
           el.getAttribute('data-author-id') ||
           el.getAttribute('href')?.match(/users\/(\d{17,19})/)?.[1];
-        if (id && /^\d{17,19}$/.test(id)) {
-          return String(id).trim();
-        }
+        return id && /^\d{17,19}$/.test(id);
+      });
+      if (foundElement) {
+        const id =
+          foundElement.getAttribute('data-user-id') ||
+          foundElement.getAttribute('data-author-id') ||
+          foundElement.getAttribute('href')?.match(/users\/(\d{17,19})/)?.[1];
+        return String(id).trim();
       }
     } catch (error) {
       this.debugError('GET_AUTHOR_ID', error);
@@ -1033,12 +1039,11 @@ module.exports = class CriticalHit {
         this._cachedCritHistory = null;
         const critHistory = this.getCritHistory();
         const critCount = critHistory.length;
-        const critsByChannel = {};
-        // Use for...of loop for better performance
-        for (const entry of critHistory) {
+        const critsByChannel = critHistory.reduce((acc, entry) => {
           const channelId = entry.channelId || 'unknown';
-          critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
-        }
+          acc[channelId] = (acc[channelId] || 0) + 1;
+          return acc;
+        }, {});
 
         this.debugLog('LOAD_MESSAGE_HISTORY', 'SUCCESS: Message history loaded successfully', {
           messageCount: this.messageHistory.length,
@@ -1509,16 +1514,17 @@ module.exports = class CriticalHit {
           '[class*="message"]',
         ];
 
-        for (const selector of selectors) {
+        const foundSelector = selectors.find((selector) => {
           const messages = document.querySelectorAll(selector);
           if (messages.length > 0) {
             allMessages = Array.from(messages);
             // Cache the result
             this._cachedMessageSelectors = allMessages;
             this._cachedMessageSelectorsTimestamp = now;
-            break;
+            return true;
           }
-        }
+          return false;
+        });
       }
 
       // Remove duplicates
@@ -1600,8 +1606,7 @@ module.exports = class CriticalHit {
 
           // Check if this message ID matches any crit
           // Try exact match first, then try pure ID match, then partial match
-          let matchedEntry = null;
-          for (const entry of channelCrits) {
+          const matchedEntry = channelCrits.find((entry) => {
             const entryId = String(entry.messageId).trim();
             const entryPureId = /^\d{17,19}$/.test(entryId)
               ? entryId
@@ -1609,28 +1614,23 @@ module.exports = class CriticalHit {
 
             // Exact match
             if (entryId === normalizedMsgId || entryId === pureMessageId) {
-              matchedEntry = entry;
-              break;
+              return true;
             }
 
             // Pure ID match (if we extracted a pure ID)
             if (pureMessageId !== normalizedMsgId && entryPureId && entryPureId === pureMessageId) {
-              matchedEntry = entry;
-              break;
+              return true;
             }
 
             // Partial match (for composite formats)
-            if (
+            return (
               normalizedMsgId.includes(entryId) ||
               entryId.includes(normalizedMsgId) ||
               (pureMessageId &&
                 entryPureId &&
                 (pureMessageId.includes(entryPureId) || entryPureId.includes(pureMessageId)))
-            ) {
-              matchedEntry = entry;
-              break;
-            }
-          }
+            );
+          });
 
           if (matchedEntry && matchedEntry.critSettings) {
             // Restore crit with original settings
@@ -2293,12 +2293,11 @@ module.exports = class CriticalHit {
    */
   getContentHash(author, content, timestamp) {
     const hashContent = `${author}:${content.substring(0, 100)}:${timestamp || ''}`;
-    let hash = 0;
-    for (let i = 0; i < hashContent.length; i++) {
-      const char = hashContent.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash;
-    }
+    const hash = Array.from(hashContent).reduce((hash, char) => {
+      const charCode = char.charCodeAt(0);
+      hash = (hash << 5) - hash + charCode;
+      return hash & hash;
+    }, 0);
     return `hash_${Math.abs(hash)}`;
   }
 
@@ -2435,7 +2434,7 @@ module.exports = class CriticalHit {
         '[class*="listItem"]',
       ];
 
-      for (const selector of selectors) {
+      const foundSelector = selectors.find((selector) => {
         const element = document.querySelector(selector);
         if (element) {
           // Verify it's actually a message container by checking for message children
@@ -2444,6 +2443,12 @@ module.exports = class CriticalHit {
             return element;
           }
         }
+        return false;
+      });
+
+      if (foundSelector) {
+        const element = document.querySelector(foundSelector);
+        if (element) return element;
       }
 
       // Last resort: find any element with messages
@@ -2591,7 +2596,7 @@ module.exports = class CriticalHit {
       if (!messageElement) {
         // Look for message containers in children
         const potentialMessages = node.querySelectorAll('[class*="message"]');
-        for (const msg of potentialMessages) {
+        messageElement = Array.from(potentialMessages).find((msg) => {
           if (msg.classList) {
             const classes = Array.from(msg.classList);
             const isNotContent = !classes.some(
@@ -2600,12 +2605,10 @@ module.exports = class CriticalHit {
                 c.includes('messageGroup') ||
                 c.includes('messageText')
             );
-            if (isNotContent && msg.offsetParent !== null) {
-              messageElement = msg;
-              break;
-            }
+            return isNotContent && msg.offsetParent !== null;
           }
-        }
+          return false;
+        });
       }
 
       // Get message ID to check against processedMessages (which now uses IDs, not element references)
@@ -3065,12 +3068,11 @@ module.exports = class CriticalHit {
         let contentHash = null;
         if (messageContent && author) {
           const hashContent = `${author}:${messageContent.substring(0, 100)}:${timestamp}`;
-          let hash = 0;
-          for (let i = 0; i < hashContent.length; i++) {
-            const char = hashContent.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash;
-          }
+          const hash = Array.from(hashContent).reduce((hash, char) => {
+            const charCode = char.charCodeAt(0);
+            hash = (hash << 5) - hash + charCode;
+            return hash & hash;
+          }, 0);
           contentHash = `hash_${Math.abs(hash)}`;
         }
 
@@ -3149,12 +3151,11 @@ module.exports = class CriticalHit {
                 const entryContent = entry.messageContent.substring(0, 100);
                 const entryAuthor = entry.author;
                 const entryHashContent = `${entryAuthor}:${entryContent}:${entry.timestamp || ''}`;
-                let entryHash = 0;
-                for (let i = 0; i < entryHashContent.length; i++) {
-                  const char = entryHashContent.charCodeAt(i);
-                  entryHash = (entryHash << 5) - entryHash + char;
-                  entryHash = entryHash & entryHash;
-                }
+                const entryHash = Array.from(entryHashContent).reduce((hash, char) => {
+                  const charCode = char.charCodeAt(0);
+                  hash = (hash << 5) - hash + charCode;
+                  return hash & hash;
+                }, 0);
                 const entryContentHash = `hash_${Math.abs(entryHash)}`;
                 return entryContentHash === contentHash;
               }
@@ -4135,32 +4136,34 @@ module.exports = class CriticalHit {
 
           // Also check by content hash (handles element replacement scenarios)
           if (!alreadyAnimated && contentHash) {
-            for (const [msgId, animData] of this.animatedMessages.entries()) {
-              if (animData?.contentHash === contentHash) {
-                const timeSinceAnimated = Date.now() - animData.timestamp;
+            const matchedEntry = Array.from(this.animatedMessages.entries()).find(
+              ([msgId, animData]) => {
+                if (animData?.contentHash === contentHash) {
+                  const timeSinceAnimated = Date.now() - animData.timestamp;
 
-                // For verified messages, always allow animation (they're confirmed crits)
-                // For non-verified messages, use stricter 2-second window
-                if (isValidDiscordId) {
-                  // Verified message - always allow animation (remove old entry)
-                  this.animatedMessages.delete(msgId);
+                  // For verified messages, always allow animation (they're confirmed crits)
+                  // For non-verified messages, use stricter 2-second window
+                  if (isValidDiscordId) {
+                    // Verified message - always allow animation (remove old entry)
+                    this.animatedMessages.delete(msgId);
+
+                    // #region agent log
+                    // #endregion
+                    // Don't set alreadyAnimated - allow the animation
+                    return true; // Found matching content hash, processed it
+                  } else if (timeSinceAnimated < 2000) {
+                    // Non-verified message - use 2-second window
+                    // Same content animated recently - skip
+                    alreadyAnimated = true;
 
                   // #region agent log
                   // #endregion
-                  // Don't set alreadyAnimated - allow the animation
-                  break; // Found matching content hash, processed it
-                } else if (timeSinceAnimated < 2000) {
-                  // Non-verified message - use 2-second window
-                  // Same content animated recently - skip
-                  alreadyAnimated = true;
-
-                  // #region agent log
-                  // #endregion
-                  break;
+                  return true;
                 }
                 // Content matches but enough time passed - allow retry
               }
-            }
+              return false;
+            });
           }
 
           // Don't trigger animation from restoration - animations should only trigger when verified
@@ -4851,9 +4854,9 @@ module.exports = class CriticalHit {
               totalElements: allTextElements.length,
             });
 
-            for (const textEl of allTextElements) {
+            foundTextElement = Array.from(allTextElements).reduce((best, textEl) => {
               // Skip if it's empty or just whitespace
-              if (!textEl.textContent || textEl.textContent.trim().length === 0) continue;
+              if (!textEl.textContent || textEl.textContent.trim().length === 0) return best;
 
               // Skip if it's in header area
               if (isInHeaderArea(textEl)) {
@@ -4861,7 +4864,7 @@ module.exports = class CriticalHit {
                   elementTag: textEl.tagName,
                   textPreview: textEl.textContent?.substring(0, 30),
                 });
-                continue;
+                return best;
               }
 
               // Skip if it contains username/timestamp
@@ -4876,33 +4879,34 @@ module.exports = class CriticalHit {
                     elementTag: textEl.tagName,
                   }
                 );
-                continue;
+                return best;
               }
 
               // Skip if it's a timestamp pattern
               if (textEl.textContent.trim().match(/^\d{1,2}:\d{2}$/)) {
-                continue;
+                return best;
               }
 
               // Found a good text element - prefer spans over divs, and deeper elements
               if (
-                !foundTextElement ||
-                (textEl.tagName === 'SPAN' && foundTextElement.tagName !== 'SPAN') ||
-                (textEl.children.length === 0 && foundTextElement.children.length > 0)
+                !best ||
+                (textEl.tagName === 'SPAN' && best.tagName !== 'SPAN') ||
+                (textEl.children.length === 0 && best.children.length > 0)
               ) {
-                foundTextElement = textEl;
                 this.debugLog(
                   'APPLY_CRIT_STYLE',
                   'Found specific text element within messageContent',
                   {
-                    elementTag: foundTextElement.tagName,
-                    classes: Array.from(foundTextElement.classList || []),
-                    textPreview: foundTextElement.textContent?.substring(0, 50),
-                    hasChildren: foundTextElement.children.length > 0,
+                    elementTag: textEl.tagName,
+                    classes: Array.from(textEl.classList || []),
+                    textPreview: textEl.textContent?.substring(0, 50),
+                    hasChildren: textEl.children.length > 0,
                   }
                 );
+                return textEl;
               }
-            }
+              return best;
+            }, foundTextElement);
 
             if (foundTextElement) {
               content = foundTextElement;
@@ -5760,11 +5764,9 @@ module.exports = class CriticalHit {
     // Cleanup old throttle entries (older than 5 seconds) to prevent memory leaks
     if (this._onCritHitThrottle.size > 1000) {
       const cutoffTime = now - 5000; // 5 seconds
-      for (const [msgId, callTime] of this._onCritHitThrottle.entries()) {
-        if (callTime < cutoffTime) {
-          this._onCritHitThrottle.delete(msgId);
-        }
-      }
+      Array.from(this._onCritHitThrottle.entries())
+        .filter(([msgId, callTime]) => callTime < cutoffTime)
+        .forEach(([msgId]) => this._onCritHitThrottle.delete(msgId));
     }
 
     // Check if currently processing animation for this message
@@ -6006,7 +6008,7 @@ module.exports = class CriticalHit {
       let particlesCreated = 0;
       let particlesAnimated = 0;
 
-      for (let i = 0; i < particleCount; i++) {
+      Array.from({ length: particleCount }, (_, i) => i).forEach((i) => {
         try {
           const particle = document.createElement('div');
           const angle = (Math.PI * 2 * i) / particleCount;
@@ -7062,12 +7064,11 @@ module.exports = class CriticalHit {
   // Get effective crit chance (base + agility bonus + luck buffs, capped at 30%)
   // Simple hash function for deterministic random number generation
   simpleHash(str) {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = (hash << 5) - hash + char;
-      hash = hash & hash; // Convert to 32bit integer
-    }
+    const hash = Array.from(str).reduce((hash, char) => {
+      const charCode = char.charCodeAt(0);
+      hash = (hash << 5) - hash + charCode;
+      return hash & hash; // Convert to 32bit integer
+    }, 0);
     return Math.abs(hash);
   }
 
@@ -7328,16 +7329,16 @@ module.exports = class CriticalHit {
       // Last resort: find divs that are NOT in header areas
       if (!content) {
         const allDivs = msg.querySelectorAll('div');
-        for (const div of allDivs) {
+        content = Array.from(allDivs).find((div) => {
           if (!isInHeaderArea(div) && div.textContent && div.textContent.trim().length > 0) {
-            content = div;
             this.debugLog('UPDATE_EXISTING_CRITS', 'Found div fallback', {
-              elementTag: content.tagName,
-              classes: Array.from(content.classList || []),
+              elementTag: div.tagName,
+              classes: Array.from(div.classList || []),
             });
-            break;
+            return true;
           }
-        }
+          return false;
+        });
       }
 
       if (!content) {
@@ -7750,18 +7751,12 @@ module.exports = class CriticalHit {
         '[class*="markup"]',
         '[class*="textContainer"]',
       ];
-      let contentElement = null;
-      for (const selector of contentSelectors) {
-        const found = element.querySelector(selector);
-        if (
-          found &&
-          !found.closest('[class*="username"]') &&
-          !found.closest('[class*="timestamp"]')
-        ) {
-          contentElement = found;
-          break;
-        }
-      }
+      const contentElement = contentSelectors
+        .map((selector) => element.querySelector(selector))
+        .find(
+          (found) =>
+            found && !found.closest('[class*="username"]') && !found.closest('[class*="timestamp"]')
+        ) || null;
 
       if (contentElement) {
         const computedStyles = window.getComputedStyle(contentElement);
@@ -8104,26 +8099,25 @@ module.exports = class CriticalHit {
     const tolerance = 100; // pixels
     const allMessages = this.getCachedMessages();
 
-    for (const msg of allMessages) {
+    return allMessages.find((msg) => {
       try {
-        if (!msg.classList?.contains('bd-crit-hit')) continue;
+        if (!msg.classList?.contains('bd-crit-hit')) return false;
 
         const msgPosition = this.getElementPosition(msg);
-        if (!msgPosition) continue;
+        if (!msgPosition) return false;
 
         const positionDiff =
           Math.abs(msgPosition.x - position.x) + Math.abs(msgPosition.y - position.y);
 
         if (positionDiff < tolerance) {
           const msgId = this.getMessageId(msg);
-          if (!originalMessageId || msgId === originalMessageId || !msgId) {
-            return msg;
-          }
+          return !originalMessageId || msgId === originalMessageId || !msgId;
         }
+        return false;
       } catch (error) {
-        continue;
+        return false;
       }
-    }
+    }) || null;
 
     return null;
   }
@@ -8138,25 +8132,23 @@ module.exports = class CriticalHit {
     const tolerance = 100;
     const allMessages = this.getCachedMessages();
 
-    for (const msg of allMessages) {
-      try {
-        if (!msg.classList?.contains('bd-crit-hit') || !msg.isConnected) continue;
+    return (
+      allMessages.find((msg) => {
+        try {
+          if (!msg.classList?.contains('bd-crit-hit') || !msg.isConnected) return false;
 
-        const msgPosition = this.getElementPosition(msg);
-        if (!msgPosition) continue;
+          const msgPosition = this.getElementPosition(msg);
+          if (!msgPosition) return false;
 
-        const positionDiff =
-          Math.abs(msgPosition.x - position.x) + Math.abs(msgPosition.y - position.y);
+          const positionDiff =
+            Math.abs(msgPosition.x - position.x) + Math.abs(msgPosition.y - position.y);
 
-        if (positionDiff < tolerance) {
-          return msg;
+          return positionDiff < tolerance;
+        } catch (error) {
+          return false;
         }
-      } catch (error) {
-        continue;
-      }
-    }
-
-    return null;
+      }) || null
+    );
   }
 
   /**
@@ -8185,14 +8177,14 @@ module.exports = class CriticalHit {
     const timeTolerance = 2000; // ms
     const currentTime = Date.now();
 
-    for (const [trackedMessageId, trackedData] of this.animatedMessages.entries()) {
-      if (!trackedData || typeof trackedData !== 'object' || !trackedData.position) continue;
+    return Array.from(this.animatedMessages.entries()).some(([trackedMessageId, trackedData]) => {
+      if (!trackedData || typeof trackedData !== 'object' || !trackedData.position) return false;
 
       // Clean up old entries
       const timeSinceTracked = currentTime - trackedData.timestamp;
       if (timeSinceTracked > timeTolerance) {
         this.animatedMessages.delete(trackedMessageId);
-        continue;
+        return false;
       }
 
       // Check position and timing
@@ -8201,12 +8193,8 @@ module.exports = class CriticalHit {
         Math.abs(trackedData.position.y - elementPosition.y);
       const timeDiff = elementTimestamp - trackedData.timestamp;
 
-      if (positionDiff < positionTolerance && timeDiff < timeTolerance) {
-        return true; // Duplicate found
-      }
-    }
-
-    return false;
+      return positionDiff < positionTolerance && timeDiff < timeTolerance;
+    });
   }
 
   /**
@@ -8417,10 +8405,10 @@ module.exports = class CriticalHit {
 
     const fadeOutDuration = 300; // 300ms fade out
 
-    for (const existingEl of existingElements) {
+    existingElements.forEach((existingEl) => {
       if (!existingEl.parentNode) {
         this.activeAnimations.delete(existingEl);
-        continue;
+        return;
       }
 
       try {
@@ -8485,8 +8473,8 @@ module.exports = class CriticalHit {
     const timeTolerance = 1000;
     const now = Date.now();
 
-    for (const activeEl of this.activeAnimations) {
-      if (!activeEl.parentNode) continue;
+    return Array.from(this.activeAnimations).some((activeEl) => {
+      if (!activeEl.parentNode) return false;
 
       try {
         const activeRect = activeEl.getBoundingClientRect();
@@ -8498,15 +8486,11 @@ module.exports = class CriticalHit {
           Math.abs(activePosition.x - position.x) + Math.abs(activePosition.y - position.y);
         const timeDiff = now - (activeEl._chaCreatedTime || 0);
 
-        if (positionDiff < positionTolerance && timeDiff < timeTolerance) {
-          return true;
-        }
+        return positionDiff < positionTolerance && timeDiff < timeTolerance;
       } catch (error) {
-        continue;
+        return false;
       }
-    }
-
-    return false;
+    });
   }
 
   /**

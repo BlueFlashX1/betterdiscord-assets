@@ -212,7 +212,7 @@ def categorize_methods_advanced(methods):
         # Observers (includes startObserving and processNode)
         elif any(x in name_lower for x in ['observer', 'observe', 'listener', 'setup', 'startobserving', 'processnode']):
             categories['Observers & Listeners'].append(method_data)
-        
+
         # Event Handlers (dedicated event handling methods)
         elif method_name in ['onCritHit']:
             categories['Event Handlers'].append(method_data)
