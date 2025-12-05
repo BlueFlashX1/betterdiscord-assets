@@ -18,7 +18,7 @@ module.exports = class SkillTree {
     this.defaultSettings = {
       enabled: true,
       debugMode: false, // Debug mode toggle
-      visibleTiers: ['tier1', 'tier2', 'tier3', 'tier4'], // Visible tiers in modal
+      visibleTiers: ['tier1', 'tier2', 'tier3', 'tier4', 'tier5', 'tier6'], // All 6 tiers visible by default
       skillPoints: 0, // Skill points separate from stat points
       unlockedSkills: [], // Array of unlocked skill IDs (legacy support)
       skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
@@ -1708,8 +1708,8 @@ module.exports = class SkillTree {
    */
   renderSkillTree() {
     const soloData = this.getSoloLevelingData();
-    const visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4'];
-    
+      const visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4', 'tier5', 'tier6'];
+
     let html = `
       <div class="skilltree-header">
         <h2>Solo Leveling Skill Tree</h2>
@@ -1739,69 +1739,70 @@ module.exports = class SkillTree {
       .forEach(([tierKey, tier]) => {
         if (!tier.skills) return;
 
-      html += `<div class="skilltree-tier">`;
-      html += `<div class="skilltree-tier-header">
+        html += `<div class="skilltree-tier">`;
+        html += `<div class="skilltree-tier-header">
         <span>${tier.name}</span>
         <span class="skilltree-tier-badge">Tier ${tier.tier}</span>
       </div>`;
 
-      tier.skills.forEach((skill) => {
-        const level = this.getSkillLevel(skill.id);
-        const maxLevel = tier.maxLevel || 10;
-        const canUpgrade = this.canUnlockSkill(skill, tier);
-        const nextCost = this.getNextUpgradeCost(skill, tier);
-        const effect = this.getSkillEffect(skill, tier);
+        tier.skills.forEach((skill) => {
+          const level = this.getSkillLevel(skill.id);
+          const maxLevel = tier.maxLevel || 10;
+          const canUpgrade = this.canUnlockSkill(skill, tier);
+          const nextCost = this.getNextUpgradeCost(skill, tier);
+          const effect = this.getSkillEffect(skill, tier);
 
-        // Check if max upgrade is possible - reuse canUnlockSkill validation
-        // to ensure stat requirements and prerequisites are checked
-        const canMaxUpgrade = level < maxLevel && this.canUnlockSkill(skill, tier);
+          // Check if max upgrade is possible - reuse canUnlockSkill validation
+          // to ensure stat requirements and prerequisites are checked
+          const canMaxUpgrade = level < maxLevel && this.canUnlockSkill(skill, tier);
 
-        html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
-          level >= maxLevel ? 'max-level' : ''
-        }">`;
-        html += `<div class="skilltree-skill-name">${skill.name}</div>`;
-        html += `<div class="skilltree-skill-desc">${skill.desc}</div>`;
-        if (skill.lore) {
-          html += `<div class="skilltree-skill-lore">${skill.lore}</div>`;
-        }
-
-        if (level > 0) {
-          html += `<div class="skilltree-skill-level">Level ${level}/${maxLevel}</div>`;
-          if (effect) {
-            const effectText = [];
-            if (effect.xpBonus) effectText.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
-            if (effect.critBonus) effectText.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
-            if (effect.longMsgBonus)
-              effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
-            if (effect.questBonus)
-              effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
-            if (effect.allStatBonus)
-              effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
-            html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(
-              ' • '
-            )}</div>`;
+          html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
+            level >= maxLevel ? 'max-level' : ''
+          }">`;
+          html += `<div class="skilltree-skill-name">${skill.name}</div>`;
+          html += `<div class="skilltree-skill-desc">${skill.desc}</div>`;
+          if (skill.lore) {
+            html += `<div class="skilltree-skill-lore">${skill.lore}</div>`;
           }
-        }
 
-        if (level < maxLevel) {
-          html += `<div class="skilltree-skill-cost">Cost: ${nextCost || 'N/A'} SP</div>`;
-          html += `<div class="skilltree-btn-group">`;
-          html += `<button class="skilltree-upgrade-btn" ${
-            !canUpgrade ? 'disabled' : ''
-          } data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
-          html += `<button class="skilltree-max-btn" ${
-            !canMaxUpgrade ? 'disabled' : ''
-          } data-skill-id="${skill.id}">Max</button>`;
+          if (level > 0) {
+            html += `<div class="skilltree-skill-level">Level ${level}/${maxLevel}</div>`;
+            if (effect) {
+              const effectText = [];
+              if (effect.xpBonus) effectText.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
+              if (effect.critBonus)
+                effectText.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
+              if (effect.longMsgBonus)
+                effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
+              if (effect.questBonus)
+                effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
+              if (effect.allStatBonus)
+                effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
+              html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(
+                ' • '
+              )}</div>`;
+            }
+          }
+
+          if (level < maxLevel) {
+            html += `<div class="skilltree-skill-cost">Cost: ${nextCost || 'N/A'} SP</div>`;
+            html += `<div class="skilltree-btn-group">`;
+            html += `<button class="skilltree-upgrade-btn" ${
+              !canUpgrade ? 'disabled' : ''
+            } data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
+            html += `<button class="skilltree-max-btn" ${
+              !canMaxUpgrade ? 'disabled' : ''
+            } data-skill-id="${skill.id}">Max</button>`;
+            html += `</div>`;
+          } else {
+            html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
+          }
+
           html += `</div>`;
-        } else {
-          html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
-        }
+        });
 
         html += `</div>`;
       });
-
-      html += `</div>`;
-    });
 
     html += `</div>`;
     return html;
@@ -1886,36 +1887,56 @@ module.exports = class SkillTree {
   // ============================================================================
   // SECTION 4: DEBUGGING & DEVELOPMENT
   // ============================================================================
-  
+
   getSettingsPanel() {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
       <div>
         <h3 style="color: #8b5cf6; margin-bottom: 20px;">Skill Tree Settings</h3>
-        
+
         <div style="margin-bottom: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Visible Tiers</div>
-          <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Visible Tiers (Toggle to Show/Hide)</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
             <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier1') !== false ? 'checked' : ''} data-tier="tier1">
-              <span style="margin-left: 10px;">Tier 1: Basic Abilities</span>
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier1') !== false ? 'checked' : ''
+              } data-tier="tier1">
+              <span style="margin-left: 10px;">Tier 1: Basic</span>
             </label>
             <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier2') !== false ? 'checked' : ''} data-tier="tier2">
-              <span style="margin-left: 10px;">Tier 2: Intermediate Abilities</span>
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier2') !== false ? 'checked' : ''
+              } data-tier="tier2">
+              <span style="margin-left: 10px;">Tier 2: Intermediate</span>
             </label>
             <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier3') !== false ? 'checked' : ''} data-tier="tier3">
-              <span style="margin-left: 10px;">Tier 3: Advanced Abilities</span>
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier3') !== false ? 'checked' : ''
+              } data-tier="tier3">
+              <span style="margin-left: 10px;">Tier 3: Advanced</span>
             </label>
             <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier4') !== false ? 'checked' : ''} data-tier="tier4">
-              <span style="margin-left: 10px;">Tier 4: Master Abilities</span>
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier4') !== false ? 'checked' : ''
+              } data-tier="tier4">
+              <span style="margin-left: 10px;">Tier 4: Master</span>
+            </label>
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier5') !== false ? 'checked' : ''
+              } data-tier="tier5">
+              <span style="margin-left: 10px;">Tier 5: Transcendent</span>
+            </label>
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${
+                this.settings.visibleTiers?.includes('tier6') !== false ? 'checked' : ''
+              } data-tier="tier6">
+              <span style="margin-left: 10px;">Tier 6: Ultimate</span>
             </label>
           </div>
         </div>
-        
+
         <button id="st-reset-skills" style="
           width: 100%;
           padding: 12px;
@@ -1930,12 +1951,12 @@ module.exports = class SkillTree {
         ">
           Reset All Skills & Recalculate SP
         </button>
-        
+
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="st-debug">
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
-        
+
         <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
           <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
@@ -1958,16 +1979,23 @@ module.exports = class SkillTree {
     tierCheckboxes.forEach((checkbox) => {
       checkbox.addEventListener('change', (e) => {
         const tier = e.target.getAttribute('data-tier');
-        this.settings.visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4'];
-        
+        this.settings.visibleTiers = this.settings.visibleTiers || [
+          'tier1',
+          'tier2',
+          'tier3',
+          'tier4',
+          'tier5',
+          'tier6',
+        ];
+
         if (e.target.checked) {
           !this.settings.visibleTiers.includes(tier) && this.settings.visibleTiers.push(tier);
         } else {
           this.settings.visibleTiers = this.settings.visibleTiers.filter((t) => t !== tier);
         }
-        
+
         this.saveSettings();
-        
+
         // Refresh modal if open (SMOOTH - no blink)
         if (this.skillTreeModal) {
           const modalContent = this.skillTreeModal.querySelector('.skilltree-modal-content');
