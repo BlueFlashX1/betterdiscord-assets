@@ -2271,7 +2271,7 @@ module.exports = class SoloLevelingStats {
       // PERIODIC BACKUP SAVE (Every 30 seconds)
       // Safety net to ensure progress is saved even if debounce doesn't trigger
       this.periodicSaveInterval = setInterval(() => {
-        console.log('💾 [PERIODIC] Backup auto-save triggered');
+        this.debugLog('PERIODIC_SAVE', 'Backup auto-save triggered');
         this.saveSettings(); // Direct save (not debounced)
       }, this.saveInterval); // 30 seconds (defined in constructor)
 
@@ -2687,7 +2687,7 @@ module.exports = class SoloLevelingStats {
         this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
       }
 
-      console.log('💾 [SAVE] Current settings before save:', {
+      this.debugLog('SAVE_SETTINGS', 'Current settings before save', {
         level: this.settings.level,
         xp: this.settings.xp,
         totalXP: this.settings.totalXP,
@@ -2718,7 +2718,7 @@ module.exports = class SoloLevelingStats {
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
 
-      console.log('💾 [SAVE] Clean settings to be saved:', {
+      this.debugLog('SAVE_SETTINGS', 'Clean settings to be saved', {
         level: cleanSettings.level,
         xp: cleanSettings.xp,
         totalXP: cleanSettings.totalXP,
@@ -2736,7 +2736,7 @@ module.exports = class SoloLevelingStats {
           BdApi.Data.save('SoloLevelingStats', 'settings', cleanSettings);
           this.lastSaveTime = Date.now();
           saveSuccess = true;
-          console.log('✅ [SAVE] Successfully saved to BdApi.Data', {
+          this.debugLog('SAVE_SETTINGS', 'Successfully saved to BdApi.Data', {
             attempt: attempt + 1,
             level: cleanSettings.level,
             xp: cleanSettings.xp,
