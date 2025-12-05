@@ -4374,10 +4374,11 @@ module.exports = class SoloLevelingStats {
         'E',
       ];
       // Using .find() to search for correct rank
-      correctRank = rankOrder.find(rank => {
-        const req = rankRequirements[rank];
-        return req && targetLevel >= req.level && currentAchievements >= req.achievements;
-      }) || 'E';
+      correctRank =
+        rankOrder.find((rank) => {
+          const req = rankRequirements[rank];
+          return req && targetLevel >= req.level && currentAchievements >= req.achievements;
+        }) || 'E';
 
       // Set the correct rank
       const oldRank = this.settings.rank;
@@ -5297,7 +5298,7 @@ module.exports = class SoloLevelingStats {
 
       // Find the completed quest card
       // Using .find() to search for quest card
-      questCard = Array.from(questCards).find(card => {
+      questCard = Array.from(questCards).find((card) => {
         const cardText = card.textContent || '';
         return cardText.includes(questName) || card.classList.contains('sls-chat-quest-complete');
       });
