@@ -2753,35 +2753,13 @@ module.exports = class CriticalHit {
   shouldFilterMessage(messageElement) {
     // Check if message should be filtered based on settings
 
-    // Filter replies
-    if (this.settings.filterReplies) {
-      if (this.isReplyMessage(messageElement)) {
-        return true;
-      }
-    }
-
-    // Filter system messages
-    if (this.settings.filterSystemMessages) {
-      if (this.isSystemMessage(messageElement)) {
-        return true;
-      }
-    }
-
-    // Filter bot messages
-    if (this.settings.filterBotMessages) {
-      if (this.isBotMessage(messageElement)) {
-        return true;
-      }
-    }
-
-    // Filter empty messages (only embeds/attachments)
-    if (this.settings.filterEmptyMessages) {
-      if (this.isEmptyMessage(messageElement)) {
-        return true;
-      }
-    }
-
-    return false;
+    // Filter replies, system messages, bots, and empty messages
+    return (
+      (this.settings?.filterReplies && this.isReplyMessage(messageElement)) ||
+      (this.settings?.filterSystemMessages && this.isSystemMessage(messageElement)) ||
+      (this.settings?.filterBotMessages && this.isBotMessage(messageElement)) ||
+      (this.settings?.filterEmptyMessages && this.isEmptyMessage(messageElement))
+    );
   }
 
   /**
