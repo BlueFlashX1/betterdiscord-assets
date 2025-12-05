@@ -3695,7 +3695,7 @@ module.exports = class CriticalHit {
               }
             }
 
-            if (pendingCrit && pendingCrit.channelId === this.currentChannelId) {
+            if (pendingCrit?.channelId === this.currentChannelId) {
               // Found in pending queue!
               const pendingEntry = {
                 messageId: normalizedMsgId,
@@ -4022,7 +4022,7 @@ module.exports = class CriticalHit {
                       const verifiedElement =
                         document.querySelector(`[data-message-id="${messageId}"]`) ||
                         messageElement;
-                      if (verifiedElement && verifiedElement.isConnected) {
+                      if (verifiedElement?.isConnected) {
                         // #region agent log
                         // #endregion
 
@@ -4349,7 +4349,7 @@ module.exports = class CriticalHit {
           // Use MutationObserver instead of setTimeout polling to ensure gradient persists
           // Watch for style changes that might remove the gradient, especially after reprocessing
           const content = this.findMessageContentElement(messageElement);
-          if (content && this.settings.critGradient !== false) {
+          if (content && this.settings?.critGradient !== false) {
             const gradientColors =
               'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
 
@@ -4365,7 +4365,7 @@ module.exports = class CriticalHit {
               const computed = window.getComputedStyle(currentContent);
               const hasGradient = computed?.backgroundImage?.includes('gradient');
 
-              if (!hasGradient && currentElement.classList.contains('bd-crit-hit')) {
+              if (!hasGradient && currentElement?.classList?.contains('bd-crit-hit')) {
                 // Gradient was removed - reapply it
                 currentContent.style.setProperty('background-image', gradientColors, 'important');
                 currentContent.style.setProperty('background', gradientColors, 'important');
@@ -4470,7 +4470,7 @@ module.exports = class CriticalHit {
                       const retryElement =
                         document.querySelector(`[data-message-id="${messageId}"]`) ||
                         currentElement;
-                      if (retryElement && retryElement.isConnected) {
+                      if (retryElement?.isConnected) {
                         const retryContent = this.findMessageContentElement(retryElement);
                         if (retryContent) {
                           const retryComputed = window.getComputedStyle(retryContent);
@@ -5114,7 +5114,7 @@ module.exports = class CriticalHit {
 
           // Retry after a short delay to catch DOM updates
           setTimeout(() => {
-            if (content && messageElement.classList.contains('bd-crit-hit')) {
+            if (content && messageElement?.classList?.contains('bd-crit-hit')) {
               const retryComputed = window.getComputedStyle(content);
               const retryHasGradient = retryComputed?.backgroundImage?.includes('gradient');
 
@@ -6208,17 +6208,8 @@ module.exports = class CriticalHit {
                               let agilityBonus = 0;
                               let luckBonus = 0;
                               try {
-                                const agilityData = BdApi.Data.load(
-                                  'SoloLevelingStats',
-                                  'agilityBonus'
-                                );
-                                if (agilityData && agilityData.bonus) {
-                                  agilityBonus = agilityData.bonus * 100;
-                                }
-                                const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-                                if (luckData && luckData.bonus) {
-                                  luckBonus = luckData.bonus * 100;
-                                }
+                                agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
+                                luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
                               } catch (e) {}
 
                               if (totalBonus > 0) {
