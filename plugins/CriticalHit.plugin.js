@@ -1515,17 +1515,14 @@ module.exports = class CriticalHit {
                 (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
               );
               if (reactKey) {
+                // FUNCTIONAL: Fiber traversal (while loop)
                 let fiber = msgElement[reactKey];
-                for (let i = 0; i < 20 && fiber; i++) {
-                  if (fiber.memoizedProps?.message?.id) {
-                    msgId = String(fiber.memoizedProps.message.id);
-                    break;
-                  }
-                  if (fiber.memoizedState?.message?.id) {
-                    msgId = String(fiber.memoizedState.message.id);
-                    break;
-                  }
+                let depth = 0;
+                while (fiber && depth < 20 && !msgId) {
+                  msgId = fiber.memoizedProps?.message?.id || fiber.memoizedState?.message?.id;
+                  msgId && (msgId = String(msgId));
                   fiber = fiber.return;
+                  depth++;
                 }
               }
             } catch (e) {
@@ -2815,16 +2812,18 @@ module.exports = class CriticalHit {
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
       if (reactKey) {
+        // FUNCTIONAL: Fiber traversal (while loop)
         let fiber = messageElement[reactKey];
-        // Walk up the fiber tree to find message data
-        for (let i = 0; i < 10 && fiber; i++) {
-          if (fiber.memoizedProps?.message?.messageReference) {
-            return true; // Has a message reference = it's a reply
-          }
-          if (fiber.memoizedState?.message?.messageReference) {
+        let depth = 0;
+        while (fiber && depth < 10) {
+          if (
+            fiber.memoizedProps?.message?.messageReference ||
+            fiber.memoizedState?.message?.messageReference
+          ) {
             return true;
           }
           fiber = fiber.return;
+          depth++;
         }
       }
     } catch (e) {
@@ -7511,10 +7510,13 @@ module.exports = class CriticalHit {
   traverseFiber(fiber, getter, maxDepth = 50) {
     if (!fiber) return null;
 
-    for (let i = 0; i < maxDepth && fiber; i++) {
+    // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
+    let depth = 0;
+    while (fiber && depth < maxDepth) {
       const value = getter(fiber);
       if (value !== null && value !== undefined) return value;
       fiber = fiber.return;
+      depth++;
     }
 
     return null;
