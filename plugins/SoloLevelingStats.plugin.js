@@ -199,7 +199,7 @@ module.exports = class SoloLevelingStats {
       xp: this.settings.xp,
       rank: this.settings.rank,
       settingsAreDefault: this.settings === this.defaultSettings,
-      isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings)
+      isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings),
     });
     this.messageObserver = null;
     this.activityTracker = null;
@@ -2586,6 +2586,28 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // FUNCTIONAL AUTO-SAVE WRAPPER
+  // Wraps a function that modifies settings and auto-saves after
+  // Usage: this.withAutoSave(() => { modify settings here }, true)
+  withAutoSave(modifyFn, immediate = false) {
+    const executeAndSave = () => {
+      const result = modifyFn();
+      this.saveSettings(immediate);
+      return result;
+    };
+    return executeAndSave();
+  }
+
+  // FUNCTIONAL BATCH AUTO-SAVE
+  // Executes multiple modifications and saves once
+  // Usage: this.batchModify([fn1, fn2, fn3], true)
+  batchModify(modifyFunctions, immediate = false) {
+    const executeAll = (fns) => fns.map(fn => fn());
+    const results = executeAll(modifyFunctions);
+    this.saveSettings(immediate);
+    return results;
+  }
+
   saveSettings(immediate = false) {
     // Prevent saving if settings aren't initialized
     if (!this.settings) {
@@ -2608,9 +2630,9 @@ module.exports = class SoloLevelingStats {
         totalXP: this.settings.totalXP,
         rank: this.settings.rank,
         stats: this.settings.stats,
-        unallocatedPoints: this.settings.unallocatedStatPoints
+        unallocatedPoints: this.settings.unallocatedStatPoints,
       });
-      
+
       // Convert Set to Array for storage and ensure all data is serializable
       const settingsToSave = {
         ...this.settings,
@@ -2632,14 +2654,14 @@ module.exports = class SoloLevelingStats {
 
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
-      
+
       console.log('💾 [SAVE] Clean settings to be saved:', {
         level: cleanSettings.level,
         xp: cleanSettings.xp,
         totalXP: cleanSettings.totalXP,
         rank: cleanSettings.rank,
         stats: cleanSettings.stats,
-        metadata: cleanSettings._metadata
+        metadata: cleanSettings._metadata,
       });
 
       // Save with retry logic (immediate retries, no blocking)
@@ -2655,7 +2677,7 @@ module.exports = class SoloLevelingStats {
             attempt: attempt + 1,
             level: cleanSettings.level,
             xp: cleanSettings.xp,
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
           });
           break;
         } catch (error) {
