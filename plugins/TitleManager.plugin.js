@@ -1028,18 +1028,53 @@ module.exports = class SoloLevelingTitleManager {
           <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="tm-enabled">
           <span style="margin-left: 10px;">Enable Title Manager</span>
         </label>
+        <label style="display: flex; align-items: center; margin-bottom: 10px;">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="tm-debug">
+          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
+        </label>
+        <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Button creation and retries</li>
+              <li>Settings load/save operations</li>
+              <li>Title equip/unequip actions</li>
+              <li>Error tracking and debugging</li>
+            </ul>
+          </div>
+        </div>
       </div>
     `;
 
-    panel.querySelector('#tm-enabled').addEventListener('change', (e) => {
-      this.settings.enabled = e.target.checked;
-      this.saveSettings();
-      if (e.target.checked) {
-        this.createTitleButton();
-      } else {
-        this.removeTitleButton();
-        this.closeTitleModal();
-      }
+    const enabledCheckbox = panel.querySelector('#tm-enabled');
+    const debugCheckbox = panel.querySelector('#tm-debug');
+
+    // FUNCTIONAL: Event mapper pattern (no if-else)
+    const eventMap = {
+      enabled: {
+        element: enabledCheckbox,
+        handler: (e) => {
+          this.settings.enabled = e.target.checked;
+          this.saveSettings();
+          e.target.checked
+            ? this.createTitleButton()
+            : (this.removeTitleButton(), this.closeTitleModal());
+        },
+      },
+      debug: {
+        element: debugCheckbox,
+        handler: (e) => {
+          this.settings.debugMode = e.target.checked;
+          this.saveSettings();
+          this.debugLog('Debug mode toggled', { enabled: e.target.checked });
+        },
+      },
+    };
+
+    // FUNCTIONAL: Apply event listeners using Object.values
+    Object.values(eventMap).forEach(({ element, handler }) => {
+      element?.addEventListener('change', handler);
     });
 
     return panel;
