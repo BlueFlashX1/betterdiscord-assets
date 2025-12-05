@@ -194,6 +194,13 @@ module.exports = class SoloLevelingStats {
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    console.log('🔧 [CONSTRUCTOR] Settings initialized with deep copy', {
+      level: this.settings.level,
+      xp: this.settings.xp,
+      rank: this.settings.rank,
+      settingsAreDefault: this.settings === this.defaultSettings,
+      isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings)
+    });
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
@@ -2595,6 +2602,15 @@ module.exports = class SoloLevelingStats {
         this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
       }
 
+      console.log('💾 [SAVE] Current settings before save:', {
+        level: this.settings.level,
+        xp: this.settings.xp,
+        totalXP: this.settings.totalXP,
+        rank: this.settings.rank,
+        stats: this.settings.stats,
+        unallocatedPoints: this.settings.unallocatedStatPoints
+      });
+      
       // Convert Set to Array for storage and ensure all data is serializable
       const settingsToSave = {
         ...this.settings,
@@ -2616,6 +2632,15 @@ module.exports = class SoloLevelingStats {
 
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
+      
+      console.log('💾 [SAVE] Clean settings to be saved:', {
+        level: cleanSettings.level,
+        xp: cleanSettings.xp,
+        totalXP: cleanSettings.totalXP,
+        rank: cleanSettings.rank,
+        stats: cleanSettings.stats,
+        metadata: cleanSettings._metadata
+      });
 
       // Save with retry logic (immediate retries, no blocking)
       let saveSuccess = false;
@@ -2626,6 +2651,12 @@ module.exports = class SoloLevelingStats {
           BdApi.Data.save('SoloLevelingStats', 'settings', cleanSettings);
           this.lastSaveTime = Date.now();
           saveSuccess = true;
+          console.log('✅ [SAVE] Successfully saved to BdApi.Data', {
+            attempt: attempt + 1,
+            level: cleanSettings.level,
+            xp: cleanSettings.xp,
+            timestamp: new Date().toISOString()
+          });
           break;
         } catch (error) {
           lastError = error;
