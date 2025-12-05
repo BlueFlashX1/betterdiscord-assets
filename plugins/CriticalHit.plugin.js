@@ -338,14 +338,8 @@ module.exports = class CriticalHit {
       let agilityBonus = 0;
       let luckBonus = 0;
       try {
-        const agilityData = BdApi.Data.load('SoloLevelingStats', 'agilityBonus');
-        if (agilityData && agilityData.bonus) {
-          agilityBonus = agilityData.bonus * 100;
-        }
-        const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-        if (luckData && luckData.bonus) {
-          luckBonus = luckData.bonus * 100;
-        }
+        agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
+        luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
       } catch (e) {}
 
       const totalBonus = agilityBonus + luckBonus;
@@ -2177,7 +2171,7 @@ module.exports = class CriticalHit {
         );
 
         // Use MutationObserver instead of setTimeout for restoration retry
-        if (messageElement && messageElement.isConnected && useGradient) {
+        if (messageElement?.isConnected && useGradient) {
           const retryContent = this.findMessageContentElement(messageElement);
           if (retryContent) {
             const checkAndRestoreGradient = () => {
