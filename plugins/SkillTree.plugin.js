@@ -611,7 +611,7 @@ module.exports = class SkillTree {
           // CRITICAL FIX: Deep merge
           const merged = { ...this.defaultSettings, ...saved };
           this.settings = JSON.parse(JSON.stringify(merged));
-          
+
           // FUNCTIONAL: Migrate old unlockedSkills (short-circuit)
           this.settings.unlockedSkills?.length > 0 &&
             (() => {
@@ -1103,25 +1103,49 @@ module.exports = class SkillTree {
         display: block;
       }
 
-      /* Modal Container */
+      /* Modal Container - Enhanced Theme */
       .skilltree-modal {
         position: fixed;
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f0f1e 100%);
-        border-radius: 16px;
+        background: linear-gradient(145deg, #0f0f1e 0%, #1a1a2e 40%, #16213e 70%, #1a1a2e 100%);
+        border-radius: 20px;
         padding: 0;
         max-width: 900px;
         width: 90vw;
         max-height: 85vh;
         overflow: hidden;
         z-index: 10001;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
-                    0 0 100px rgba(102, 126, 234, 0.3),
-                    inset 0 0 100px rgba(118, 75, 162, 0.1);
-        border: 2px solid rgba(102, 126, 234, 0.3);
-        animation: modalFadeIn 0.3s ease-out;
+        box-shadow: 0 25px 80px rgba(0, 0, 0, 0.9),
+                    0 0 120px rgba(139, 92, 246, 0.4),
+                    0 0 200px rgba(102, 126, 234, 0.2),
+                    inset 0 0 120px rgba(139, 92, 246, 0.15);
+        border: 2px solid transparent;
+        background-clip: padding-box;
+        animation: modalFadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+      }
+      .skilltree-modal::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        padding: 2px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.6) 0%, 
+          rgba(102, 126, 234, 0.6) 25%,
+          rgba(59, 130, 246, 0.4) 50%,
+          rgba(139, 92, 246, 0.6) 75%,
+          rgba(102, 126, 234, 0.6) 100%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        z-index: -1;
+        animation: borderGlow 3s ease-in-out infinite;
+      }
+      @keyframes borderGlow {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
       }
       @keyframes modalFadeIn {
         from {
@@ -1142,12 +1166,16 @@ module.exports = class SkillTree {
         background: linear-gradient(180deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 30, 0.98) 100%);
       }
 
-      /* Header */
+      /* Header - Enhanced Theme */
       .skilltree-header {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
-        padding: 25px 30px;
-        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.25) 0%, 
+          rgba(102, 126, 234, 0.25) 50%,
+          rgba(118, 75, 162, 0.25) 100%);
+        padding: 30px;
+        border-bottom: 2px solid rgba(139, 92, 246, 0.4);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5),
+                    0 0 40px rgba(139, 92, 246, 0.2);
         position: relative;
         overflow: hidden;
       }
@@ -1156,27 +1184,38 @@ module.exports = class SkillTree {
         position: absolute;
         top: 0;
         left: -100%;
-        width: 100%;
+        width: 200%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.1), transparent);
-        animation: shimmer 3s infinite;
+        background: linear-gradient(90deg, 
+          transparent, 
+          rgba(139, 92, 246, 0.15), 
+          rgba(102, 126, 234, 0.15),
+          transparent);
+        animation: shimmer 4s ease-in-out infinite;
       }
       @keyframes shimmer {
         0% { left: -100%; }
         100% { left: 100%; }
       }
       .skilltree-header h2 {
-        margin: 0 0 12px 0;
+        margin: 0 0 15px 0;
         color: #fff;
-        font-size: 28px;
-        font-weight: 800;
-        text-shadow: 0 2px 10px rgba(102, 126, 234, 0.8),
-                     0 0 20px rgba(118, 75, 162, 0.6);
-        letter-spacing: 1px;
-        background: linear-gradient(135deg, #fff 0%, #e0e7ff 50%, #c7d2fe 100%);
+        font-size: 32px;
+        font-weight: 900;
+        text-shadow: 0 2px 15px rgba(139, 92, 246, 1),
+                     0 0 30px rgba(102, 126, 234, 0.8),
+                     0 4px 40px rgba(139, 92, 246, 0.6);
+        letter-spacing: 2px;
+        background: linear-gradient(135deg, 
+          #fff 0%, 
+          #e9d5ff 30%,
+          #c4b5fd 60%,
+          #a78bfa 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        position: relative;
+        z-index: 1;
       }
       .skilltree-header-info {
         display: flex;
@@ -1187,11 +1226,16 @@ module.exports = class SkillTree {
       .skilltree-stat {
         display: inline-flex;
         align-items: center;
-        gap: 8px;
-        padding: 8px 16px;
-        background: rgba(102, 126, 234, 0.15);
-        border: 1px solid rgba(102, 126, 234, 0.3);
-        border-radius: 8px;
+        gap: 10px;
+        padding: 10px 20px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.2) 0%,
+          rgba(102, 126, 234, 0.2) 100%);
+        border: 1px solid rgba(139, 92, 246, 0.4);
+        border-radius: 10px;
+        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.2),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        transition: all 0.3s ease;
         color: #e0e7ff;
         font-size: 14px;
         font-weight: 600;
