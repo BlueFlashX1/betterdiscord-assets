@@ -740,14 +740,12 @@ module.exports = class CriticalHit {
       }
 
       // Warn if we got a suspiciously short ID (might be channel ID)
-      if (isSuspicious && this.debug?.enabled) {
-        console.warn('[CriticalHit] WARNING: Suspicious message ID extracted:', {
+      isSuspicious && this.debug?.enabled && console.warn('[CriticalHit] WARNING: Suspicious message ID extracted:', {
           messageId,
           length: messageId.length,
           method: extractionMethod,
           elementId: messageElement.getAttribute('id'),
         });
-      }
     }
 
     return messageId;
@@ -2069,13 +2067,11 @@ module.exports = class CriticalHit {
         });
 
         // Also observe content element directly for style changes
-        if (content) {
-          styleObserver.observe(content, {
+        content && styleObserver.observe(content, {
             attributes: true,
             attributeFilter: ['style', 'class'],
             subtree: false,
           });
-        }
 
         // Store observer for cleanup
         this.styleObservers.set(finalMsgId, styleObserver);
@@ -2272,11 +2268,9 @@ module.exports = class CriticalHit {
         remaining: this.messageHistory.length,
         daysToKeep,
       });
-      if (this.debug?.enabled) {
-        console.log(
+      this.debug?.enabled && console.log(
           `CriticalHit: Cleaned up ${removed} old history entries (${removedCrits} crits)`
         );
-      }
       this.saveMessageHistory();
       this.updateStats(); // Recalculate stats after cleanup
     }
@@ -2581,9 +2575,7 @@ module.exports = class CriticalHit {
    */
   setupChannelChangeListener() {
     // Listen for channel changes by watching URL changes
-    if (this.urlObserver) {
-      this.urlObserver.disconnect();
-    }
+    this.urlObserver?.disconnect();
 
     let lastUrl = window.location.href;
     this.urlObserver = new MutationObserver(() => {
@@ -2591,9 +2583,7 @@ module.exports = class CriticalHit {
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         // Channel changed, re-initialize observer
-        if (this.debug?.enabled) {
-          console.log('CriticalHit: Channel changed, re-initializing...');
-        }
+        this.debug?.enabled && console.log('CriticalHit: Channel changed, re-initializing...');
         // Save current session data before switching
         this.currentChannelId && this.saveMessageHistory();
         // Clear processed messages when channel changes
@@ -3178,7 +3168,7 @@ module.exports = class CriticalHit {
                     const parentContainer = currentMessageElement?.parentElement || document.body;
                     const parentObserver = new MutationObserver((mutations) => {
                       const hasChildMutation = mutations.some((m) => {
-                        if (m.type === 'childList' && m.addedNodes.length > 0) {
+                        if (m.type === 'childList' && m.addedNodes.length) {
                           return Array.from(m.addedNodes).some((node) => {
                             if (node.nodeType !== Node.ELEMENT_NODE) return false;
                             const id = this.getMessageIdentifier(node);
@@ -3399,13 +3389,11 @@ module.exports = class CriticalHit {
                   const currentContentElement =
                     this.findMessageContentElement(currentMessageElement);
 
-                  if (currentContentElement) {
-                    styleObserver.observe(currentContentElement, {
+                  currentContentElement && styleObserver.observe(currentContentElement, {
                       attributes: true,
                       attributeFilter: ['style', 'class'],
                       subtree: false,
                     });
-                  }
 
                   // Store observer for cleanup
                   this.styleObservers.set(normalizedMsgId, styleObserver);
@@ -3514,9 +3502,7 @@ module.exports = class CriticalHit {
           });
         };
 
-        if (historyEntry?.critSettings) {
-          performRestoration(historyEntry);
-        } else if (!historyEntry && isValidDiscordId) {
+        historyEntry?.critSettings && performRestoration(historyEntry); else if (!historyEntry && isValidDiscordId) {
           // Use MutationObserver instead of polling setTimeout
           // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
           const checkForCrit = () => {
@@ -3608,7 +3594,7 @@ module.exports = class CriticalHit {
                 }
               }
               // Check for child additions (element replaced)
-              if (m.type === 'childList' && m.addedNodes.length > 0) {
+              if (m.type === 'childList' && m.addedNodes.length) {
                 return Array.from(m.addedNodes).some((node) => {
                   if (node.nodeType !== Node.ELEMENT_NODE) return false;
                   const id = this.getMessageIdentifier(node);
@@ -4019,7 +4005,7 @@ module.exports = class CriticalHit {
 
           // Don't mark as processed again - already in history
           return;
-        } else {
+        }
           // It's NOT a crit - ensure crit class is removed if present
           if (messageElement?.classList?.contains('bd-crit-hit')) {
             // #region agent log
@@ -4328,9 +4314,7 @@ module.exports = class CriticalHit {
           });
 
           // Remove processing lock after successful styling
-          if (messageId) {
-            this._processingCrits.delete(messageId);
-          }
+          messageId && this._processingCrits.delete(messageId);
 
           // Store in history with full info and save immediately
           if (messageId && this.currentChannelId) {
@@ -4415,9 +4399,7 @@ module.exports = class CriticalHit {
             channelId: this.currentChannelId,
           });
           // Remove processing lock on error
-          if (messageId) {
-            this._processingCrits.delete(messageId);
-          }
+          messageId && this._processingCrits.delete(messageId);
         }
       } else {
         // NOT A CRIT - Already marked as processed by markAsProcessed() at start
@@ -5039,13 +5021,11 @@ module.exports = class CriticalHit {
       this.novaFlatObserver = new MutationObserver((mutations) => {
         mutations.forEach((mutation) => {
           // Handle new nodes added
-          if (mutation.type === 'childList') {
-            mutation.addedNodes.forEach((node) => {
+          mutation.type === 'childList' && mutation.addedNodes.forEach((node) => {
               if (node.nodeType === Node.ELEMENT_NODE) {
                 // Check if the added node is a crit message
                 if (node.classList?.contains('bd-crit-hit')) {
                   applyNovaFlatFont(node);
-                }
                 // Check for crit messages within the added node
                 const critMessages = node.querySelectorAll?.('.bd-crit-hit');
                 critMessages?.forEach((msg) => applyNovaFlatFont(msg));
@@ -5643,7 +5623,7 @@ module.exports = class CriticalHit {
           // Check for style changes (gradient applied)
           if (m.type === 'attributes' && m.attributeName === 'style') return true;
           // Check for child additions (element replaced)
-          if (m.type === 'childList' && m.addedNodes.length > 0) {
+          if (m.type === 'childList' && m.addedNodes.length) {
             return Array.from(m.addedNodes).some((node) => {
               if (node.nodeType !== Node.ELEMENT_NODE) return false;
               const id = this.getMessageIdentifier(node);
@@ -5671,12 +5651,10 @@ module.exports = class CriticalHit {
 
       // Also observe content element directly if available
       const contentElement = this.findMessageContentElement(messageElement);
-      if (contentElement) {
-        gradientVerificationObserver.observe(contentElement, {
+      contentElement && gradientVerificationObserver.observe(contentElement, {
           attributes: true,
           attributeFilter: ['style', 'class'],
         });
-      }
 
       // Cleanup observer after 2 seconds (max wait time)
       setTimeout(() => {
@@ -5875,9 +5853,7 @@ module.exports = class CriticalHit {
       // Remove container after animation
       setTimeout(() => {
         try {
-          if (particleContainer.parentNode) {
-            particleContainer.parentNode.removeChild(particleContainer);
-          }
+          particleContainer.parentNode && particleContainer.parentNode.removeChild(particleContainer);
         } catch (error) {
           this.debugError('CREATE_PARTICLE_BURST', error, { phase: 'cleanup' });
         }
@@ -5926,9 +5902,7 @@ module.exports = class CriticalHit {
 
     // Remove injected CSS
     const style = document.getElementById('bd-crit-hit-styles');
-    if (style) {
-      style.remove();
-    }
+    style && style.remove();
 
     // Clean up Nova Flat interval (legacy, should not be used but safety check)
     if (this._forceNovaInterval) {
@@ -6584,9 +6558,7 @@ module.exports = class CriticalHit {
               // Panel is visible, update display immediately
               updateCritDisplay();
               // Start periodic updates while visible
-              if (plugin._displayUpdateInterval) {
-                clearInterval(plugin._displayUpdateInterval);
-              }
+              plugin._displayUpdateInterval && clearInterval(plugin._displayUpdateInterval);
               plugin._displayUpdateInterval = setInterval(() => {
                 // Early return if plugin is disabled
                 if (!plugin.settings.enabled) {
@@ -6701,9 +6673,7 @@ module.exports = class CriticalHit {
     container.querySelector('#auto-cleanup-history').addEventListener('change', (e) => {
       plugin.settings.autoCleanupHistory = e.target.checked;
       plugin.saveSettings();
-      if (e.target.checked) {
-        plugin.cleanupOldHistory(plugin.settings.historyRetentionDays || 30);
-      }
+      e.target.checked && plugin.cleanupOldHistory(plugin.settings.historyRetentionDays || 30);
     });
 
     // Debug mode toggle
@@ -6952,9 +6922,7 @@ module.exports = class CriticalHit {
         });
       }
     } catch (error) {
-      if (this.debug?.enabled) {
-        console.log('CriticalHit: Toast failed', error);
-      }
+      this.debug?.enabled && console.log('CriticalHit: Toast failed', error);
     }
   }
 
@@ -7165,13 +7133,11 @@ module.exports = class CriticalHit {
             });
 
             // Apply glow effect for gradient
-            if (this.settings.critGlow) {
-              content.style.setProperty(
+            this.settings.critGlow && content.style.setProperty(
                 'text-shadow',
                 '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
                 'important'
-              );
-            } else {
+              ); else {
               content.style.setProperty('text-shadow', 'none', 'important');
             }
           } else {
@@ -7235,26 +7201,20 @@ module.exports = class CriticalHit {
         try {
           BdApi?.showToast?.('Test Critical Hit Applied!', { type: 'success', timeout: 2000 });
         } catch (error) {
-          if (this.debug?.enabled) {
-            console.log('CriticalHit: Test crit applied (toast failed)', error);
-          }
+          this.debug?.enabled && console.log('CriticalHit: Test crit applied (toast failed)', error);
         }
       } else {
         try {
           BdApi?.showToast?.('Message already has crit!', { type: 'info', timeout: 2000 });
         } catch (error) {
-          if (this.debug?.enabled) {
-            console.log('CriticalHit: Message already has crit');
-          }
+          this.debug?.enabled && console.log('CriticalHit: Message already has crit');
         }
       }
     } else if (!lastMessage) {
       try {
         BdApi?.showToast?.('No messages found to test', { type: 'error', timeout: 2000 });
       } catch (error) {
-        if (this.debug?.enabled) {
-          console.log('CriticalHit: No messages found to test');
-        }
+        this.debug?.enabled && console.log('CriticalHit: No messages found to test');
       }
     }
   }
@@ -7377,7 +7337,7 @@ module.exports = class CriticalHit {
           return String(dataId).trim();
         }
         const allMatches = dataId.match(/\d{17,19}/g);
-        if (allMatches?.length > 0) return allMatches[allMatches.length - 1];
+        if (allMatches?.length) return allMatches[allMatches.length - 1];
       }
     } catch (error) {
       // Silently fail - React fiber access may fail on some elements
@@ -7501,12 +7461,10 @@ module.exports = class CriticalHit {
 
       const hasCritClass = element.classList?.contains('bd-crit-hit');
       if (!hasCritClass) {
-        if (attempt < maxAttempts) {
-          setTimeout(
+        attempt < maxAttempts && setTimeout(
             () => verifyGradientSync(element, attempt + 1, maxAttempts),
             50 * (attempt + 1)
           );
-        }
         return false;
       }
 
@@ -7542,7 +7500,7 @@ module.exports = class CriticalHit {
               50 * (attempt + 1)
             );
             return false;
-          } else {
+          }
             // Max attempts reached, proceed anyway but log warning
             // #region agent log
             // #endregion
@@ -7917,7 +7875,7 @@ module.exports = class CriticalHit {
    */
   markMessageAsRemoved(messageId) {
     const existingData = this.animatedMessages.get(messageId);
-    if (existingData && typeof existingData === 'object') {
+    if (existingData?.constructor === Object) {
       existingData.removed = true;
       existingData.removedAt = Date.now();
     }
@@ -8181,9 +8139,7 @@ module.exports = class CriticalHit {
         // Remove element after fade completes - only remove, don't clear other styles
         setTimeout(() => {
           try {
-            if (existingEl.parentNode) {
-              existingEl.remove();
-            }
+            existingEl.parentNode && existingEl.remove();
             this.activeAnimations.delete(existingEl);
           } catch (e) {
             this.activeAnimations.delete(existingEl);
@@ -8192,9 +8148,7 @@ module.exports = class CriticalHit {
       } catch (e) {
         // If fade fails, just remove immediately
         try {
-          if (existingEl.parentNode) {
-            existingEl.remove();
-          }
+          existingEl.parentNode && existingEl.remove();
           this.activeAnimations.delete(existingEl);
         } catch (error2) {
           this.activeAnimations.delete(existingEl);
@@ -8255,9 +8209,7 @@ module.exports = class CriticalHit {
     const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
 
-    if (messageId) {
-      textElement.setAttribute('data-cha-message-id', messageId);
-    }
+    messageId && textElement.setAttribute('data-cha-message-id', messageId);
 
     // Ensure combo is a valid number
     const comboValue = typeof combo === 'number' && combo > 0 ? combo : 1;
@@ -8326,12 +8278,10 @@ module.exports = class CriticalHit {
         // Handle duplicate elements with same messageId
         if (messageId) {
           const allElements = container.querySelectorAll(`[data-cha-message-id="${messageId}"]`);
-          if (allElements.length > 1) {
-            allElements.forEach((el) => {
+          allElements.length > 1 && allElements.forEach((el) => {
               try {
                 if (el.parentNode) {
                   el.remove();
-                }
                 this.activeAnimations.delete(el);
               } catch (e) {
                 this.activeAnimations.delete(el);
@@ -8343,9 +8293,7 @@ module.exports = class CriticalHit {
 
         // Only remove element - don't clear animation styles
         // Animation has completed, CSS fade-out is done, just remove from DOM
-        if (textElement.parentNode) {
-          textElement.remove();
-        }
+        textElement.parentNode && textElement.remove();
         this.activeAnimations.delete(textElement);
       } catch (e) {
         this.activeAnimations.delete(textElement);
