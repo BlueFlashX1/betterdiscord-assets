@@ -2963,14 +2963,11 @@ module.exports = class CriticalHit {
           }
           this._restorationCheckThrottle.set(normalizedId, now);
 
-          // Clean up old throttle entries (older than 1 second)
-          if (this._restorationCheckThrottle.size > 500) {
-            for (const [id, checkTime] of this._restorationCheckThrottle.entries()) {
-              if (now - checkTime > 1000) {
-                this._restorationCheckThrottle.delete(id);
-              }
-            }
-          }
+          // FUNCTIONAL: Clean up old throttle entries (.forEach() + short-circuit)
+          this._restorationCheckThrottle.size > 500 &&
+            Array.from(this._restorationCheckThrottle.entries()).forEach(([id, checkTime]) => {
+              now - checkTime > 1000 && this._restorationCheckThrottle.delete(id);
+            });
         }
       }
     }
