@@ -2630,16 +2630,16 @@ module.exports = class SoloLevelingStats {
       console.log(`🌟 [SHADOW XP] Shared ${xpAmount} XP (${source})`);
       return true;
     };
-    
+
     const logError = (error) => {
       this.debugLog('SHADOW_XP_SHARE', `ShadowArmy integration: ${error.message}`);
       return null;
     };
-    
+
     try {
       const plugin = BdApi.Plugins.get('ShadowArmy');
       const hasShareFunction = typeof plugin?.instance?.shareShadowXP === 'function';
-      
+
       // Functional short-circuit: Only executes shareWithPlugin if hasShareFunction is true
       return hasShareFunction && shareWithPlugin(plugin);
     } catch (error) {
