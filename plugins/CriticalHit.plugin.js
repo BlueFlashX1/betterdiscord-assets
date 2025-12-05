@@ -1174,8 +1174,6 @@ module.exports = class CriticalHit {
       }
 
       // #region agent log
-      if (isCrit) {
-      }
       // #endregion
 
       let existingIndex = this.messageHistory.findIndex(
@@ -1911,8 +1909,7 @@ module.exports = class CriticalHit {
         content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
 
         // Apply glow effect - Purple glow for purple-black gradient
-        if (critSettings.glow !== false && this.settings?.critGlow) {
-          if (useGradient) {
+        if (critSettings.glow !== false && this.settings?.critGlow && useGradient) {
             // Purple glow that enhances the purple-black gradient
             content.style.setProperty(
               'text-shadow',
@@ -4865,8 +4862,7 @@ module.exports = class CriticalHit {
           content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
 
           // Apply glow effect - Purple glow for purple-black gradient
-          if (this.settings.critGlow) {
-            if (this.settings.critGradient !== false) {
+          if (this.settings.critGlow && this.settings.critGradient !== false) {
               // Purple glow that enhances the purple-black gradient
               content.style.setProperty(
                 'text-shadow',
@@ -6560,8 +6556,7 @@ module.exports = class CriticalHit {
               plugin._displayUpdateInterval && clearInterval(plugin._displayUpdateInterval);
               plugin._displayUpdateInterval = setInterval(() => {
                 // Early return if plugin is disabled
-                if (!plugin.settings.enabled) {
-                  if (plugin._displayUpdateInterval) {
+                if (!plugin.settings.enabled && plugin._displayUpdateInterval) {
                     clearInterval(plugin._displayUpdateInterval);
                     plugin._displayUpdateInterval = null;
                   }
@@ -6586,8 +6581,7 @@ module.exports = class CriticalHit {
       // Fallback: Update periodically (reduced frequency from 2s to 5s)
       plugin._displayUpdateInterval = setInterval(() => {
         // Early return if plugin is disabled
-        if (!plugin.settings.enabled) {
-          if (plugin._displayUpdateInterval) {
+        if (!plugin.settings.enabled && plugin._displayUpdateInterval) {
             clearInterval(plugin._displayUpdateInterval);
             plugin._displayUpdateInterval = null;
           }
