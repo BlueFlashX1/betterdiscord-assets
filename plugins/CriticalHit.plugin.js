@@ -2260,6 +2260,10 @@ module.exports = class CriticalHit {
   // CLEANUP & MEMORY MANAGEMENT
   // ============================================================================
 
+  // ──────────────────────────────────────────────────────────────────────────────
+  // History Management
+  // ──────────────────────────────────────────────────────────────────────────────
+
   /**
    * Clean up processedMessages Set when it exceeds max size (LRU-style)
    * Removes oldest entries to prevent unbounded growth
@@ -2404,6 +2408,10 @@ module.exports = class CriticalHit {
   // ============================================================================
   // OBSERVER & MESSAGE PROCESSING
   // ============================================================================
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // Observers & Listeners
+  // ──────────────────────────────────────────────────────────────────────────────
 
   /**
    * Starts MutationObserver to watch for new messages in the DOM
@@ -5690,6 +5698,10 @@ module.exports = class CriticalHit {
   // VISUAL EFFECTS
   // ============================================================================
 
+  // ──────────────────────────────────────────────────────────────────────────────
+  // Event Handlers
+  // ──────────────────────────────────────────────────────────────────────────────
+
   /**
    * Called when a crit is detected - triggers visual effects
    * CriticalHitAnimation plugin hooks into this method for animations
@@ -7199,6 +7211,10 @@ module.exports = class CriticalHit {
     this.updateExistingCrits();
   }
 
+  // ──────────────────────────────────────────────────────────────────────────────
+  // Crit Styling & Application
+  // ──────────────────────────────────────────────────────────────────────────────
+
   updateExistingCrits() {
     const critMessages = document.querySelectorAll('.bd-crit-hit');
     this.debugLog('UPDATE_EXISTING_CRITS', 'Updating existing crits', {
@@ -8445,6 +8461,10 @@ module.exports = class CriticalHit {
       }
     }
   }
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // Validation
+  // ──────────────────────────────────────────────────────────────────────────────
 
   /**
    * Checks for duplicate animations already in the DOM
