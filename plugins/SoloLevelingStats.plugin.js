@@ -4939,17 +4939,8 @@ module.exports = class SoloLevelingStats {
         delete this.settings.stats.luck;
       }
 
-      // Generate random buff between 2% and 8% (can be adjusted)
-      const randomBuff = Math.random() * 6 + 2; // 2% to 8%
-      const roundedBuff = Math.round(randomBuff * 10) / 10; // Round to 1 decimal
-
-      // Initialize perceptionBuffs array if it doesn't exist
-      if (!Array.isArray(this.settings.perceptionBuffs)) {
-        this.settings.perceptionBuffs = [];
-      }
-
-      // Add the new buff to the stack
-      this.settings.perceptionBuffs.push(roundedBuff);
+      // This code block is unreachable (buff generation happens above)
+      // Removed to prevent confusion
 
       // Calculate total stacked buff
       const totalPerceptionBuff =
