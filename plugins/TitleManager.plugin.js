@@ -1025,10 +1025,6 @@ module.exports = class SoloLevelingTitleManager {
       <div>
         <h3 style="color: #8b5cf6;">Title Manager Settings</h3>
         <label style="display: flex; align-items: center; margin-bottom: 10px;">
-          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="tm-enabled">
-          <span style="margin-left: 10px;">Enable Title Manager</span>
-        </label>
-        <label style="display: flex; align-items: center; margin-bottom: 10px;">
           <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="tm-debug">
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
@@ -1047,34 +1043,13 @@ module.exports = class SoloLevelingTitleManager {
       </div>
     `;
 
-    const enabledCheckbox = panel.querySelector('#tm-enabled');
     const debugCheckbox = panel.querySelector('#tm-debug');
 
-    // FUNCTIONAL: Event mapper pattern (no if-else)
-    const eventMap = {
-      enabled: {
-        element: enabledCheckbox,
-        handler: (e) => {
-          this.settings.enabled = e.target.checked;
-          this.saveSettings();
-          e.target.checked
-            ? this.createTitleButton()
-            : (this.removeTitleButton(), this.closeTitleModal());
-        },
-      },
-      debug: {
-        element: debugCheckbox,
-        handler: (e) => {
-          this.settings.debugMode = e.target.checked;
-          this.saveSettings();
-          this.debugLog('Debug mode toggled', { enabled: e.target.checked });
-        },
-      },
-    };
-
-    // FUNCTIONAL: Apply event listeners using Object.values
-    Object.values(eventMap).forEach(({ element, handler }) => {
-      element?.addEventListener('change', handler);
+    // FUNCTIONAL: Optional chaining for event listener
+    debugCheckbox?.addEventListener('change', (e) => {
+      this.settings.debugMode = e.target.checked;
+      this.saveSettings();
+      this.debugLog('Debug mode toggled', { enabled: e.target.checked });
     });
 
     return panel;
