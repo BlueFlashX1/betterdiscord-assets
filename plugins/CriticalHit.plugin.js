@@ -3605,10 +3605,7 @@ module.exports = class CriticalHit {
             if (!pendingCrit && retryElement) {
               const content = this.findMessageContentElement(retryElement);
               const author = this.getAuthorId(retryElement);
-              if (content && author) {
-                const contentText = content.textContent?.trim() || '';
-                contentText && (pendingCrit = this.pendingCrits.get(this.getContentHash(author, contentText)));
-              }
+              content && author && (pendingCrit = this.pendingCrits.get(this.getContentHash(author, content.textContent?.trim() || '')));
             }
 
             if (pendingCrit?.channelId === this.currentChannelId) {
@@ -4009,12 +4006,8 @@ module.exports = class CriticalHit {
           const content = this.findMessageContentElement(messageElement);
           const author = this.getAuthorId(messageElement);
           let contentHash = null;
-          if (content && author) {
-            const contentText = content.textContent?.trim() || '';
-            if (contentText) {
-              contentHash = this.getContentHash(author, contentText);
-            }
-          }
+          const contentText = content?.textContent?.trim();
+          contentHash = (content && author && contentText) ? this.getContentHash(author, contentText) : null;
 
           // Check if this message was already animated
           let alreadyAnimated = false;
