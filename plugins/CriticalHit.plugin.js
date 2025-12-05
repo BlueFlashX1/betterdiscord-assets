@@ -574,9 +574,11 @@ module.exports = class CriticalHit {
         (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
       );
       if (reactKey) {
+        // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
         let fiber = messageElement[reactKey];
-        // Walk up the fiber tree to find message data (increased depth to 50)
-        for (let i = 0; i < 50 && fiber; i++) {
+        let depth = 0;
+        while (fiber && depth < 50) {
+          depth++;
           // FIRST: Try to get the message object itself, then extract ID
           const messageObj =
             fiber.memoizedProps?.message ||
@@ -829,8 +831,11 @@ module.exports = class CriticalHit {
       );
 
       if (reactKey) {
+        // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
         let fiber = messageElement[reactKey];
-        for (let i = 0; i < 30 && fiber; i++) {
+        let depth = 0;
+        while (fiber && depth < 30) {
+          depth++;
           // Try to get author ID from message props
           const authorId =
             fiber.memoizedProps?.message?.author?.id ||
