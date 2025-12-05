@@ -2,7 +2,7 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 3.0.1
+ * @version 3.3.0
  *
  * ============================================================================
  * STORAGE & SCALABILITY
@@ -10,7 +10,7 @@
  * - Uses IndexedDB for scalable storage (user-specific)
  * - Supports 100,000+ shadows without performance degradation
  * - Async operations (non-blocking)
- * - Pagination and filtering
+ * - Role-based statistics and analytics
  * - Memory caching for aggregation
  *
  * ============================================================================
@@ -23,15 +23,52 @@
  * - Automatic rank-up system (80% threshold)
  * - Individual shadow progression (level, XP, stats, growth)
  * - Natural growth (combat-time based, 10x base rate)
- * - Generals system (top 7 strongest)
+ * - Generals system (top 7 strongest) - Elite command view
  * - Auto-resurrection with exponential mana costs
  * - Dragon restrictions (NH+ ranks only)
  * - Extended ranks to Shadow Monarch
  * - Member list widget (rank distribution display)
+ * - Role/class analytics with average stats
  *
  * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v3.3.0 (2025-12-04) - SHADOW ESSENCE SYSTEM
+ * NEW FEATURE: Shadow Essence Conversion
+ * - Automatically converts weakest shadows to essence
+ * - Runs every hour (memory management)
+ * - Bottom 30% by power considered weak (with variance)
+ * - Essence value scales by rank (E=1, Shadow Monarch=7680)
+ * - Variance applied (±20% based on stats)
+ * - Safety: Always keeps minimum 20 shadows
+ * - Essence displayed in Shadow Army modal
+ * - Notification on conversion
+ * - Reduces memory footprint over time
+ *
+ * @changelog v3.2.0 (2025-12-04) - DUNGEON-ONLY EXTRACTION
+ * EXTRACTION SYSTEM REDESIGN:
+ * - REMOVED message-based shadow extraction completely
+ * - Extraction now ONLY happens from dead mobs in dungeons
+ * - Automatic system listens for mob deaths (no manual trigger)
+ * - Separate from ARISE animation (mob extraction vs boss ARISE)
+ * - Cleaner, more focused extraction experience
+ * - No more random chat extractions
+ *
+ * BUG FIXES:
+ * - Fixed removeShadowArmyButton error (function removed in v3.0.0)
+ * - Removed extraction rank spam ("Cannot extract X" → debug mode)
+ *
+ * @changelog v3.1.0 (2025-12-04) - GENERALS UI REDESIGN
+ * UI IMPROVEMENTS:
+ * - Modal shows only 7 generals (elite command view)
+ * - Removed filter system (unnecessary)
+ * - Removed "show all shadows" view
+ * - Added role/class distribution with counts
+ * - Added average stats per role/class
+ * - Magic beasts marked with 🐾
+ * - General ranking badges (#1-#7)
+ * - Enhanced stats display
  *
  * @changelog v3.0.1 (2025-12-04) - EXTRACTION OPTIMIZATION
  * - Added configurable retry system (maxAttempts parameter)
@@ -904,6 +941,30 @@ module.exports = class ShadowArmy {
         lastDate: null,
         countToday: 0,
       },
+      shadowEssence: {
+        enabled: true,
+        essence: 0, // Total essence accumulated
+        lastConversionTime: null,
+        conversionIntervalHours: 1, // Convert weakest shadows every hour
+        weakShadowThreshold: 0.3, // Bottom 30% by power are considered weak
+        minShadowsToKeep: 20, // Always keep at least 20 shadows (safety)
+        essencePerShadow: {
+          // Essence value by rank (higher rank = more essence)
+          E: 1,
+          D: 3,
+          C: 7,
+          B: 15,
+          A: 30,
+          S: 60,
+          SS: 120,
+          SSS: 240,
+          'SSS+': 480,
+          NH: 960,
+          Monarch: 1920,
+          'Monarch+': 3840,
+          'Shadow Monarch': 7680,
+        },
+      },
     };
 
     // Shadow ranks (matching Solo Leveling rank system)
@@ -1495,9 +1556,15 @@ module.exports = class ShadowArmy {
     // Process immediately on start
     this.processNaturalGrowthForAllShadows();
 
+    // Process shadow essence conversion on start (but delayed 10 mins to avoid startup lag)
+    setTimeout(() => {
+      this.processShadowEssenceConversion();
+    }, 600000); // 10 minutes after start
+
     // Then process every hour
     this.naturalGrowthInterval = setInterval(() => {
       this.processNaturalGrowthForAllShadows();
+      this.processShadowEssenceConversion(); // Also convert weak shadows to essence
     }, 60 * 60 * 1000); // 1 hour
 
     // Shadow rank widget for member list display (chatbox button still disabled)
@@ -1510,8 +1577,8 @@ module.exports = class ShadowArmy {
       this.updateShadowRankWidget();
     }, 30000);
 
-    // Remove chatbox button (if any exists)
-    this.removeShadowArmyButton();
+    // Chatbox button disabled - no removal needed
+    // Button UI was removed in v3.0.0
   }
 
   /**
@@ -1527,7 +1594,7 @@ module.exports = class ShadowArmy {
 
     this.removeMessageListener();
     this.removeCSS();
-    this.removeShadowArmyButton();
+    // Chatbox button disabled - no removal needed
     this.closeShadowArmyModal();
 
     // Clear all tracked retry timeouts
@@ -1884,44 +1951,15 @@ module.exports = class ShadowArmy {
   // ============================================================================
 
   /**
-   * Set up message listener to trigger shadow extraction on message send
-   * Operations:
-   * 1. Get SoloLevelingStats plugin instance
-   * 2. Patch processMessageSent method to call extraction after processing
-   * 3. Store original method for restoration on stop
-   * 4. Optionally subscribe to messageSent events if available
+   * DISABLED: Message-based extraction removed
+   * Extraction now happens ONLY from dead mobs in dungeons
+   * This creates a cleaner, dungeon-focused extraction system
    */
   setupMessageListener() {
-    // Hook into SoloLevelingStats processMessageSent
-    if (this.soloPlugin) {
-      const instance = this.soloPlugin.instance || this.soloPlugin;
-      if (instance) {
-        // Patch processMessageSent to call shadow extraction
-        this.originalProcessMessage = instance.processMessageSent;
-        if (this.originalProcessMessage) {
-          instance.processMessageSent = (messageText) => {
-            const result = this.originalProcessMessage.call(instance, messageText);
-            // Attempt shadow extraction after message is processed
-            // Return early if plugin is stopped
-            if (!this._isStopped) {
-              const timeoutId = setTimeout(() => {
-                this._retryTimeouts.delete(timeoutId);
-                this.attemptShadowExtraction();
-              }, 100);
-              this._retryTimeouts.add(timeoutId);
-            }
-            return result;
-          };
-        }
-
-        // Also listen to events if available
-        if (typeof instance.on === 'function') {
-          this.messageUnsubscribe = instance.on('messageSent', () => {
-            this.attemptShadowExtraction();
-          });
-        }
-      }
-    }
+    // MESSAGE-BASED EXTRACTION DISABLED
+    // Shadows are now extracted exclusively from dungeon mobs
+    // No more random extractions from chat messages
+    return;
   }
 
   /**
@@ -1945,140 +1983,14 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Attempt to extract a shadow when sending a message
-   * Chance based on Intelligence stat, stats influence, and Solo Leveling lore constraints
-   * Operations:
-   * 1. Get current Solo Leveling data (rank, level, stats, intelligence)
-   * 2. Apply rate limiting (max extractions per minute)
-   * 3. Determine extractable ranks based on user rank (lore: can't extract significantly stronger)
-   * 4. Calculate extraction chance with stats influence for each extractable rank
-   * 5. Select target rank based on weighted probabilities
-   * 6. Check extraction attempt limit (lore: max 3 attempts per target)
-   * 7. Roll for extraction with final chance
-   * 8. Grant small XP to favorite shadows regardless of extraction
-   * 9. Calculate special ARISE chance (Intelligence + Perception)
-   * 10. Roll for special ARISE event if within daily limits
+   * DISABLED: Message-based extraction removed
+   * Extraction now happens automatically from dead mobs in dungeons only
+   * This function is kept for backwards compatibility but does nothing
    */
   async attemptShadowExtraction() {
-    try {
-      const soloData = this.getSoloLevelingData();
-      if (!soloData) return;
-
-      const intelligence = soloData.intelligence || 0;
-      const perception = soloData.stats?.perception || 0;
-      const strength = soloData.stats?.strength || 0;
-      const rank = soloData.rank;
-      const level = soloData.level;
-      const stats = soloData.stats;
-
-      const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
-
-      // Simple rate limiting: cap extractions per minute
-      if (!this.extractionTimestamps) this.extractionTimestamps = [];
-      const now = Date.now();
-      this.extractionTimestamps = this.extractionTimestamps.filter((t) => now - t < 60 * 1000);
-      if (this.extractionTimestamps.length >= (cfg.maxExtractionsPerMinute || 20)) {
-        return;
-      }
-
-      // Determine extractable ranks (lore: can't extract significantly stronger - max 2 ranks above)
-      const extractableRanks = this.determineExtractableRanks(rank, stats);
-      if (extractableRanks.length === 0) {
-        return; // No extractable ranks
-      }
-
-      // Calculate extraction chance for each rank with stats influence
-      // Also calculate target strength based on rank for more accurate extraction chances
-      const rankChances = extractableRanks.map((r) => {
-        // Estimate target strength based on rank (for better extraction calculation)
-        const targetRankIndex = this.shadowRanks.indexOf(r.rank);
-        const estimatedTargetStrength = this.estimateTargetStrengthByRank(
-          r.rank,
-          targetRankIndex,
-          stats
-        );
-
-        const chance = this.calculateExtractionChance(
-          rank,
-          stats,
-          r.rank,
-          estimatedTargetStrength, // Use estimated target strength instead of 0
-          intelligence,
-          perception,
-          strength
-        );
-        return { rank: r.rank, chance, multiplier: r.multiplier, probability: chance };
-      });
-
-      // Select target rank based on weighted probabilities
-      const selectedRank = this.selectRankByProbability(rankChances);
-      if (!selectedRank) return;
-
-      // Use new retry system: generate shadow first, try extraction up to 3 times
-      const extractedShadow = await this.attemptExtractionWithRetries(
-        rank,
-        level,
-        stats,
-        selectedRank,
-        null, // Will generate stats
-        null, // Will calculate strength
-        false // Use cap for regular messages
-      );
-
-      if (extractedShadow) {
-        // Show extraction animation
-        this.showExtractionAnimation(extractedShadow);
-      }
-
-      // Give a tiny amount of XP to favorite shadows per message regardless of extraction
-      await this.grantShadowXP(1, 'message');
-
-      // Second independent roll: chance for special ARISE event
-      // Perception stat used (renamed from Luck)
-      const specialChanceRaw =
-        (cfg.specialBaseChance || 0.01) +
-        intelligence * (cfg.specialIntMultiplier || 0.003) +
-        perception * (cfg.specialLuckMultiplier || 0.002);
-
-      const specialChance = Math.min(cfg.specialMaxChance || 0.3, specialChanceRaw);
-
-      if (specialChance > 0) {
-        if (this.canTriggerSpecialArise() && Math.random() < specialChance) {
-          // Special ARISE: can extract up to 2 ranks higher
-          const userRankIndex = this.shadowRanks.indexOf(rank);
-          const boostedRankIndex = Math.min(userRankIndex + 2, this.shadowRanks.length - 1);
-          const boostedRank = this.shadowRanks[boostedRankIndex];
-
-          // Special ARISE: extract 3-7 shadows
-          const count = 3 + Math.floor(Math.random() * 5);
-          const extractedShadows = [];
-
-          for (let i = 0; i < count; i++) {
-            const shadow = await this.attemptExtractionWithRetries(
-              rank,
-              level,
-              stats,
-              boostedRank,
-              null,
-              null,
-              false // Use cap for regular messages
-            );
-            if (shadow) {
-              extractedShadows.push(shadow);
-            }
-          }
-
-          if (extractedShadows.length > 0) {
-            await this.grantShadowXP(10, 'special_arise');
-            this.markSpecialAriseUsed();
-            // Show animation for last shadow
-            this.showExtractionAnimation(extractedShadows[extractedShadows.length - 1]);
-          }
-        }
-      }
-    } catch (error) {
-      console.error('ShadowArmy: Error attempting extraction', error);
-    }
+    // MESSAGE-BASED EXTRACTION DISABLED
+    // All extractions now happen automatically from dead mobs in dungeons
+    return;
   }
 
   /**
@@ -2913,8 +2825,11 @@ module.exports = class ShadowArmy {
     // B-rank hunter: Can extract up to A-rank (1 above), CANNOT extract S-rank (2 above)
     const rankDiff = targetRankIndex - userRankIndex;
     if (rankDiff > 1) {
-      console.log(
-        `[ShadowArmy] ❌ Cannot extract [${targetRank}] shadow - too high! (User rank: ${userRank}, Max: ${
+      // Removed spammy console.log - this happens on EVERY message attempt
+      // Only log in debug mode to avoid console spam
+      this.debugLog?.(
+        'EXTRACTION_RANK_CHECK',
+        `Cannot extract [${targetRank}] shadow - too high! (User rank: ${userRank}, Max: ${
           this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
         })`
       );
@@ -4484,6 +4399,146 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
+  // SHADOW ESSENCE SYSTEM - Convert Weak Shadows to Essence
+  // ============================================================================
+  /**
+   * Process shadow essence conversion - convert weakest shadows to essence
+   * Runs periodically (every hour) to manage shadow army size and memory
+   *
+   * Operations:
+   * 1. Get all shadows and calculate total power for each
+   * 2. Sort by power (weakest first)
+   * 3. Identify bottom X% as weak (configurable threshold with variance)
+   * 4. Convert weak shadows to essence based on rank
+   * 5. Delete weak shadows from storage
+   * 6. Save essence total
+   * 7. Show notification
+   */
+  async processShadowEssenceConversion() {
+    try {
+      const config = this.settings.shadowEssence || this.defaultSettings.shadowEssence;
+
+      if (!config.enabled) {
+        return; // Feature disabled
+      }
+
+      // Get all shadows
+      let allShadows = [];
+      if (this.storageManager) {
+        try {
+          allShadows = await this.storageManager.getShadows({}, 0, 100000);
+        } catch (error) {
+          console.error('[ShadowArmy] Essence: Error getting shadows', error);
+          return;
+        }
+      }
+
+      // Safety check: Don't convert if below minimum
+      if (allShadows.length <= (config.minShadowsToKeep || 20)) {
+        console.log(
+          `[ShadowArmy] Essence: Skipping conversion (${allShadows.length} shadows, min ${config.minShadowsToKeep})`
+        );
+        return;
+      }
+
+      // Calculate power for each shadow
+      const shadowsWithPower = allShadows.map((shadow) => {
+        const effective = this.getShadowEffectiveStats(shadow);
+        const power = this.calculateShadowStrength(effective, shadow.level || 1);
+        return { shadow, power };
+      });
+
+      // Sort by power (weakest first)
+      shadowsWithPower.sort((a, b) => a.power - b.power);
+
+      // Calculate threshold with variance (±10% for unpredictability)
+      const baseThreshold = config.weakShadowThreshold || 0.3; // 30%
+      const variance = 0.9 + Math.random() * 0.2; // 90-110%
+      const threshold = baseThreshold * variance;
+
+      // Select weakest X% for conversion
+      const conversionCount = Math.floor(allShadows.length * threshold);
+      const toConvert = shadowsWithPower.slice(0, conversionCount);
+
+      // Safety: Don't convert if would go below minimum
+      const remaining = allShadows.length - conversionCount;
+      if (remaining < (config.minShadowsToKeep || 20)) {
+        console.log(`[ShadowArmy] Essence: Skipping conversion (would drop below minimum)`);
+        return;
+      }
+
+      // Convert shadows to essence
+      let totalEssence = 0;
+      const essenceByRank = {};
+
+      for (const { shadow, power } of toConvert) {
+        const rank = shadow.rank || 'E';
+        const baseEssence = config.essencePerShadow[rank] || 1;
+
+        // Add variance based on power (±20%)
+        const powerVariance = 0.8 + Math.random() * 0.4;
+        const essence = Math.max(1, Math.floor(baseEssence * powerVariance));
+
+        totalEssence += essence;
+        essenceByRank[rank] = (essenceByRank[rank] || 0) + 1;
+
+        // Delete shadow from storage
+        if (this.storageManager) {
+          try {
+            await this.storageManager.deleteShadow(shadow.id);
+          } catch (error) {
+            console.error(`[ShadowArmy] Essence: Error deleting shadow ${shadow.id}`, error);
+          }
+        }
+      }
+
+      // Update essence total
+      if (!this.settings.shadowEssence) {
+        this.settings.shadowEssence = { ...config };
+      }
+      this.settings.shadowEssence.essence =
+        (this.settings.shadowEssence.essence || 0) + totalEssence;
+      this.settings.shadowEssence.lastConversionTime = Date.now();
+      this.saveSettings();
+
+      // Invalidate caches
+      this.cachedBuffs = null;
+      this.cachedBuffsTime = null;
+
+      // Show notification
+      const rankSummary = Object.entries(essenceByRank)
+        .map(([rank, count]) => `${count}×${rank}`)
+        .join(', ');
+
+      console.log(
+        `[ShadowArmy] 💎 Converted ${toConvert.length} weak shadows to ${totalEssence} essence (${rankSummary})`
+      );
+      console.log(
+        `[ShadowArmy] 💎 Total essence: ${this.settings.shadowEssence.essence} | Remaining shadows: ${remaining}`
+      );
+
+      // Show toast if available
+      if (BdApi.showToast) {
+        BdApi.showToast(
+          `💎 Converted ${toConvert.length} weak shadows to ${totalEssence} essence!`,
+          {
+            type: 'info',
+            timeout: 5000,
+          }
+        );
+      }
+
+      // Update UI if modal is open
+      if (this.shadowArmyModal && document.body.contains(this.shadowArmyModal)) {
+        this.closeShadowArmyModal();
+        setTimeout(() => this.openShadowArmyUI(), 100);
+      }
+    } catch (error) {
+      console.error('[ShadowArmy] Essence: Error processing conversion', error);
+    }
+  }
+
+  // ============================================================================
   // UI METHODS (CHAT BUTTON & MODAL)
   // ============================================================================
 
@@ -5093,92 +5148,68 @@ module.exports = class ShadowArmy {
         backdrop-filter: blur(5px);
       `;
 
-      // Filter state
-      let currentFilter = 'all'; // all, generals, rank, role
-      let currentRankFilter = '';
-      let currentRoleFilter = '';
-      let searchQuery = '';
-
-      // Baseline stats for rank-up calculations
-      const baselineStats = {
-        E: 10,
-        D: 25,
-        C: 50,
-        B: 100,
-        A: 200,
-        S: 400,
-        SS: 800,
-        SSS: 1600,
-        Monarch: 3200,
-      };
-
       const renderModal = () => {
-        // Calculate generals (top 7 strongest) - DYNAMIC, recalculates on each render
-        // Compute strength on the fly without mutating stored shadows
+        // Calculate generals (top 7 strongest) - DYNAMIC
         const withPower = shadows.map((shadow) => {
           const effective = this.getShadowEffectiveStats(shadow);
           const strength = this.calculateShadowStrength(effective, 1);
           return { shadow, strength, id: shadow.id };
         });
         const sortedByPower = withPower.sort((a, b) => b.strength - a.strength);
-        const generalIds = new Set(sortedByPower.slice(0, 7).map((x) => x.id));
+        const generals = sortedByPower.slice(0, 7).map((x) => x.shadow);
 
-        let filteredShadows = shadows;
+        // Calculate role/class distribution with average stats
+        const roleStats = {};
+        shadows.forEach((shadow) => {
+          const role = shadow.role || shadow.roleName || 'Unknown';
+          if (!roleStats[role]) {
+            roleStats[role] = {
+              count: 0,
+              totalStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 },
+              totalLevel: 0,
+              isMagicBeast: this.shadowRoles[role]?.isMagicBeast || false,
+            };
+          }
 
-        // Apply filters
-        if (currentFilter === 'generals') {
-          filteredShadows = filteredShadows.filter((s) => generalIds.has(s.id));
-        }
-        if (currentRankFilter) {
-          filteredShadows = filteredShadows.filter((s) => s.rank === currentRankFilter);
-        }
-        if (currentRoleFilter) {
-          filteredShadows = filteredShadows.filter(
-            (s) => (s.role || s.roleName) === currentRoleFilter
+          roleStats[role].count++;
+          const effective = this.getShadowEffectiveStats(shadow);
+          roleStats[role].totalStats.strength += effective.strength;
+          roleStats[role].totalStats.agility += effective.agility;
+          roleStats[role].totalStats.intelligence += effective.intelligence;
+          roleStats[role].totalStats.vitality += effective.vitality;
+          roleStats[role].totalStats.luck += effective.luck;
+          roleStats[role].totalLevel += shadow.level || 1;
+        });
+
+        // Calculate averages
+        Object.keys(roleStats).forEach((role) => {
+          const data = roleStats[role];
+          const count = data.count;
+          data.avgStats = {
+            strength: Math.floor(data.totalStats.strength / count),
+            agility: Math.floor(data.totalStats.agility / count),
+            intelligence: Math.floor(data.totalStats.intelligence / count),
+            vitality: Math.floor(data.totalStats.vitality / count),
+            luck: Math.floor(data.totalStats.luck / count),
+          };
+          data.avgLevel = Math.floor(data.totalLevel / count);
+          data.avgPower = Math.floor(
+            (data.avgStats.strength +
+              data.avgStats.agility +
+              data.avgStats.intelligence +
+              data.avgStats.vitality +
+              data.avgStats.luck) /
+              5
           );
-        }
-        if (searchQuery) {
-          const query = searchQuery.toLowerCase();
-          filteredShadows = filteredShadows.filter(
-            (s) =>
-              (s.roleName || s.role || '').toLowerCase().includes(query) ||
-              s.rank.toLowerCase().includes(query) ||
-              s.id.toLowerCase().includes(query)
-          );
-        }
+        });
 
-        // Sort shadows by rank (higher to lower)
-        const rankOrder = [
-          'Shadow Monarch',
-          'Monarch+',
-          'Monarch',
-          'NH',
-          'SSS+',
-          'SSS',
-          'SS',
-          'S',
-          'A',
-          'B',
-          'C',
-          'D',
-          'E',
-        ];
-        const getRankIndex = (rank) => {
-          const index = rankOrder.indexOf(rank);
-          return index === -1 ? 999 : index; // Unknown ranks go to end
-        };
-        filteredShadows.sort((a, b) => getRankIndex(a.rank) - getRankIndex(b.rank));
-
-        // Get unique ranks and roles for filters
-        const ranks = [...new Set(shadows.map((s) => s.rank))].sort(
-          (a, b) => getRankIndex(a) - getRankIndex(b)
-        );
-        const roles = [...new Set(shadows.map((s) => s.role || s.roleName).filter(Boolean))].sort();
+        // Sort roles by count (descending)
+        const sortedRoles = Object.entries(roleStats).sort((a, b) => b[1].count - a[1].count);
 
         modal.innerHTML = `
           <div style="
             width: 90%;
-            max-width: 800px;
+            max-width: 900px;
             max-height: 90vh;
             background: #1e1e1e;
             border: 2px solid #8b5cf6;
@@ -5188,7 +5219,7 @@ module.exports = class ShadowArmy {
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
           ">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army</h2>
+              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
               <button id="close-shadow-army-modal" style="
                 background: transparent;
                 border: none;
@@ -5201,93 +5232,24 @@ module.exports = class ShadowArmy {
               ">×</button>
             </div>
 
-            <div style="margin-bottom: 20px;">
-              <div style="display: flex; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
-                <button class="sa-filter-btn" data-filter="all" style="
-                  padding: 6px 12px;
-                  background: ${currentFilter === 'all' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'};
-                  border: 1px solid #8b5cf6;
-                  border-radius: 6px;
-                  color: white;
-                  cursor: pointer;
-                ">All (${total})</button>
-                <button class="sa-filter-btn" data-filter="generals" style="
-                  padding: 6px 12px;
-                  background: ${
-                    currentFilter === 'generals' ? '#8b5cf6' : 'rgba(139, 92, 246, 0.2)'
-                  };
-                  border: 1px solid #8b5cf6;
-                  border-radius: 6px;
-                  color: white;
-                  cursor: pointer;
-                ">Generals (7)</button>
-                <select id="sa-rank-filter" style="
-                  padding: 6px 12px;
-                  background: rgba(139, 92, 246, 0.2);
-                  border: 1px solid #8b5cf6;
-                  border-radius: 6px;
-                  color: white;
-                  cursor: pointer;
-                ">
-                  <option value="">All Ranks</option>
-                  ${ranks
-                    .map(
-                      (r) =>
-                        `<option value="${r}" ${
-                          currentRankFilter === r ? 'selected' : ''
-                        }>${r}</option>`
-                    )
-                    .join('')}
-                </select>
-                <select id="sa-role-filter" style="
-                  padding: 6px 12px;
-                  background: rgba(139, 92, 246, 0.2);
-                  border: 1px solid #8b5cf6;
-                  border-radius: 6px;
-                  color: white;
-                  cursor: pointer;
-                ">
-                  <option value="">All Roles</option>
-                  ${roles
-                    .map(
-                      (r) =>
-                        `<option value="${r}" ${
-                          currentRoleFilter === r ? 'selected' : ''
-                        }>${r}</option>`
-                    )
-                    .join('')}
-                </select>
-                <input type="text" id="sa-search" placeholder="Search..." value="${searchQuery}" style="
-                  padding: 6px 12px;
-                  background: rgba(139, 92, 246, 0.2);
-                  border: 1px solid #8b5cf6;
-                  border-radius: 6px;
-                  color: white;
-                  flex: 1;
-                  min-width: 150px;
-                ">
-              </div>
-              <div style="color: #999; font-size: 12px;">
-                Showing ${Math.min(50, filteredShadows.length)} of ${
-          filteredShadows.length
-        } filtered (${total} total)
-              </div>
-            </div>
-
-            <!-- Army Summary Dashboard -->
+            <!-- Army Overview -->
             <div style="
               background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.1));
               border: 1px solid #8b5cf6;
               border-radius: 8px;
               padding: 12px;
-              margin-bottom: 12px;
+              margin-bottom: 16px;
             ">
-              <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); gap: 8px; margin-bottom: 8px;">
+              <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 12px;">
                 <div style="text-align: center;">
                   <div style="color: #8b5cf6; font-size: 20px; font-weight: bold;">${
                     shadows.length
                   }</div>
                   <div style="color: #999; font-size: 11px;">Total Shadows</div>
+                </div>
+                <div style="text-align: center;">
+                  <div style="color: #fbbf24; font-size: 20px; font-weight: bold;">7</div>
+                  <div style="color: #999; font-size: 11px;">Generals</div>
                 </div>
                 <div style="text-align: center;">
                   <div style="color: #34d399; font-size: 20px; font-weight: bold;">${Math.floor(
@@ -5297,223 +5259,201 @@ module.exports = class ShadowArmy {
                   <div style="color: #999; font-size: 11px;">Avg Level</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="color: #fbbf24; font-size: 20px; font-weight: bold;">${
-                    shadows.filter((s) => {
-                      const stats = this.getShadowEffectiveStats(s);
-                      const avg =
-                        (stats.strength +
-                          stats.agility +
-                          stats.intelligence +
-                          stats.vitality +
-                          stats.luck) /
-                        5;
-                      const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
-                      const idx = shadowRanks.indexOf(s.rank);
-                      const next = shadowRanks[idx + 1];
-                      const baseline = baselineStats[next] || 9999;
-                      return next && avg >= baseline * 0.8;
-                    }).length
-                  }</div>
-                  <div style="color: #999; font-size: 11px;">Ready Rank-Up</div>
-                </div>
-                <div style="text-align: center;">
                   <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${this.formatCombatTime(
                     shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0)
                   )}</div>
                   <div style="color: #999; font-size: 11px;">Total Combat</div>
                 </div>
+                <div style="text-align: center;">
+                  <div style="color: #a78bfa; font-size: 20px; font-weight: bold;">💎 ${(
+                    this.settings.shadowEssence?.essence || 0
+                  ).toLocaleString()}</div>
+                  <div style="color: #999; font-size: 11px;">Essence</div>
+                </div>
               </div>
 
               <!-- Shadow Rank Distribution -->
-              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 16px;">
+              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
                 <div style="color: #8b5cf6; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
                   Shadow Rank Distribution
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
                   ${this.generateRankDistribution(shadows)}
+              </div>
+            </div>
+
+              <!-- Shadow Role/Class Distribution -->
+              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px;">
+                <div style="color: #8b5cf6; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+                  Army Composition by Role/Class
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
+                  ${sortedRoles
+                    .map(
+                      ([role, data]) => `
+                    <div style="background: rgba(139, 92, 246, 0.1); border-radius: 6px; padding: 8px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                        <span style="color: ${
+                          data.isMagicBeast ? '#f59e0b' : '#8b5cf6'
+                        }; font-size: 12px; font-weight: bold;">
+                          ${role}${data.isMagicBeast ? ' 🐾' : ''}
+                        </span>
+                        <span style="color: #34d399; font-size: 11px; font-weight: bold;">${
+                          data.count
+                        }</span>
+                </div>
+                      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 9px; color: #999;">
+                        <div>Lvl: <span style="color: #34d399;">${data.avgLevel}</span></div>
+                        <div>Pwr: <span style="color: #8b5cf6;">${data.avgPower}</span></div>
+                        <div>STR: <span style="color: #ef4444;">${
+                          data.avgStats.strength
+                        }</span></div>
+                      </div>
+                    </div>
+                  `
+                    )
+                    .join('')}
                 </div>
               </div>
             </div>
 
-            <div style="max-height: 60vh; overflow-y: auto;">
-              ${
-                filteredShadows.length > 50
-                  ? `
-                <div style="background: rgba(251, 191, 36, 0.2); padding: 8px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; color: #fbbf24; text-align: center;">
-                  Showing first 50 of ${filteredShadows.length} shadows (use filters to narrow down)
-                </div>
-              `
-                  : ''
-              }
-              ${
-                filteredShadows.length === 0
-                  ? `
-                <div style="text-align: center; padding: 40px; color: #999;">
-                  No shadows found matching filters
-                </div>
-              `
-                  : filteredShadows
-                      .slice(0, 50) // Pagination: Show first 50 for performance
-                      .map((shadow) => {
-                        const isGeneral = generalIds.has(shadow.id);
+            <!-- Generals Section -->
+            <div style="margin-bottom: 12px;">
+              <h3 style="color: #fbbf24; font-size: 16px; margin-bottom: 12px; text-align: center; text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);">
+                ⭐ SHADOW GENERALS ⭐
+              </h3>
+            </div>
 
-                        // Calculate effective stats (base + growth + natural)
+            <div style="max-height: 50vh; overflow-y: auto;">
+              ${
+                generals.length === 0
+                  ? `<div style="text-align: center; padding: 40px; color: #999;">
+                      No shadows in army yet. Extract shadows from dungeons!
+                    </div>`
+                  : generals
+                      .map((shadow, index) => {
+                        // General ranking (1-7)
+                        const generalRank = index + 1;
+
+                        // Calculate effective stats
                         const effectiveStats = this.getShadowEffectiveStats(shadow);
-                        const avgStats =
-                          (effectiveStats.strength +
-                            effectiveStats.agility +
-                            effectiveStats.intelligence +
-                            effectiveStats.vitality +
-                            effectiveStats.luck) /
-                          5;
+                        const totalPower = this.calculateShadowStrength(
+                          effectiveStats,
+                          shadow.level || 1
+                        );
 
-                        // XP progress to next level
+                        // XP progress
                         const xpNeeded = this.getShadowXpForNextLevel(
                           shadow.level || 1,
                           shadow.rank
                         );
                         const xpProgress = ((shadow.xp || 0) / xpNeeded) * 100;
 
-                        // Rank-up readiness
-                        const baselineStats = {
-                          E: 10,
-                          D: 25,
-                          C: 50,
-                          B: 100,
-                          A: 200,
-                          S: 400,
-                          SS: 800,
-                          SSS: 1600,
-                          Monarch: 3200,
-                        };
-                        const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
-                        const currentRankIndex = shadowRanks.indexOf(shadow.rank);
-                        const nextRank = shadowRanks[currentRankIndex + 1];
-                        const nextBaseline = baselineStats[nextRank] || 9999;
-                        const rankUpProgress = (avgStats / (nextBaseline * 0.8)) * 100;
-                        const canRankUp = nextRank && avgStats >= nextBaseline * 0.8;
+                        // Combat time
+                        const combatTime = this.formatCombatTime(shadow.totalCombatTime || 0);
 
-                        // Growth indicators
-                        const naturalGrowth = shadow.naturalGrowthStats || {};
-                        const hasNaturalGrowth = (naturalGrowth.strength || 0) > 0;
-                        const combatTime = Math.floor((shadow.totalCombatTime || 0) * 10) / 10;
+                        // Role info
+                        const role = shadow.role || shadow.roleName || 'Unknown';
+                        const isMagicBeast = this.shadowRoles[role]?.isMagicBeast || false;
 
                         return `
-                  <div class="sa-shadow-item" data-shadow-id="${shadow.id}" style="
-                    background: ${
-                      isGeneral ? 'rgba(251, 191, 36, 0.15)' : 'rgba(255, 255, 255, 0.05)'
-                    };
-                    border: 2px solid ${isGeneral ? '#fbbf24' : '#444'};
+                  <div class="sa-general-card" data-shadow-id="${shadow.id}" style="
+                    background: rgba(251, 191, 36, 0.15);
+                    border: 2px solid #fbbf24;
                     border-radius: 8px;
-                    padding: 12px;
-                    margin-bottom: 10px;
-                    ${isGeneral ? 'box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);' : ''}
+                    padding: 14px;
+                    margin-bottom: 12px;
+                    box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
                   ">
-                    <div style="display: flex; align-items: start; gap: 8px;">
-                      ${
-                        isGeneral
-                          ? `
+                    <div style="display: flex; gap: 12px;">
+                      <!-- General Rank Badge -->
                         <div style="
                           background: linear-gradient(135deg, #fbbf24, #f59e0b);
                           color: #000;
-                          font-size: 16px;
+                        font-size: 20px;
                           font-weight: bold;
-                          padding: 4px 6px;
-                          border-radius: 6px;
-                          width: 32px;
-                          height: 32px;
+                        padding: 8px;
+                        border-radius: 8px;
+                        width: 48px;
+                        height: 48px;
                           display: flex;
+                        flex-direction: column;
                           align-items: center;
                           justify-content: center;
-                        ">★</div>
-                      `
-                          : ''
-                      }
+                        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+                      ">
+                        <div style="font-size: 16px;">★</div>
+                        <div style="font-size: 10px;">#${generalRank}</div>
+                      </div>
 
                       <div style="flex: 1;">
                         <!-- Header -->
-                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 6px;">
-                          ${
-                            isGeneral
-                              ? '<span style="color: #fbbf24; font-size: 11px; font-weight: bold; background: rgba(251, 191, 36, 0.2); padding: 2px 6px; border-radius: 4px;">GENERAL</span>'
-                              : ''
-                          }
-                          <span style="color: #8b5cf6; font-weight: bold; font-size: 14px;">${
+                        <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                          <span style="color: #8b5cf6; font-weight: bold; font-size: 14px;">[${
                             shadow.rank
-                          }</span>
-                          <span style="color: #999; font-size: 13px;">${
-                            shadow.roleName || shadow.role || 'Unknown'
-                          }</span>
-                          ${
-                            canRankUp
-                              ? '<span style="color: #34d399; font-size: 11px; background: rgba(52, 211, 153, 0.2); padding: 2px 6px; border-radius: 4px;">RANK UP!</span>'
-                              : ''
-                          }
-                          <span style="color: #34d399; margin-left: auto; font-size: 13px; font-weight: bold;">PWR: ${
-                            shadow.strength || 0
-                          }</span>
+                          }]</span>
+                          <span style="color: ${
+                            isMagicBeast ? '#f59e0b' : '#fff'
+                          }; font-size: 14px; font-weight: bold;">${role}${
+                          isMagicBeast ? ' 🐾' : ''
+                        }</span>
+                          <span style="color: #34d399; margin-left: auto; font-size: 14px; font-weight: bold;">⚡ ${totalPower.toLocaleString()}</span>
                         </div>
 
                         <!-- Level & XP Bar -->
-                        <div style="margin-bottom: 6px;">
+                        <div style="margin-bottom: 8px;">
                           <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 2px;">
                             <span>Level ${shadow.level || 1}</span>
-                            <span>${shadow.xp || 0} / ${xpNeeded} XP</span>
+                            <span>${(
+                              shadow.xp || 0
+                            ).toLocaleString()} / ${xpNeeded.toLocaleString()} XP</span>
                           </div>
                           <div style="background: rgba(0,0,0,0.3); height: 6px; border-radius: 3px; overflow: hidden;">
-                            <div style="background: linear-gradient(90deg, #8b5cf6, #a78bfa); width: ${xpProgress}%; height: 100%; transition: width 0.3s;"></div>
+                            <div style="background: linear-gradient(90deg, #fbbf24, #f59e0b); width: ${xpProgress}%; height: 100%; transition: width 0.3s;"></div>
                           </div>
                         </div>
 
-                        <!-- Stats Breakdown -->
-                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px; margin-bottom: 6px; font-size: 10px;">
-                          <div style="text-align: center; background: rgba(239, 68, 68, 0.15); padding: 3px; border-radius: 3px;">
-                            <div style="color: #ef4444; font-weight: bold;">STR</div>
-                            <div style="color: #999;">${effectiveStats.strength || 0}</div>
+                        <!-- Stats Grid -->
+                        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-bottom: 8px;">
+                          <div style="background: rgba(239, 68, 68, 0.2); border: 1px solid rgba(239, 68, 68, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
+                            <div style="color: #ef4444; font-size: 10px; font-weight: bold;">STR</div>
+                            <div style="color: #fff; font-size: 14px; font-weight: bold;">${
+                              effectiveStats.strength || 0
+                            }</div>
                           </div>
-                          <div style="text-align: center; background: rgba(34, 197, 94, 0.15); padding: 3px; border-radius: 3px;">
-                            <div style="color: #22c55e; font-weight: bold;">AGI</div>
-                            <div style="color: #999;">${effectiveStats.agility || 0}</div>
+                          <div style="background: rgba(34, 197, 94, 0.2); border: 1px solid rgba(34, 197, 94, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
+                            <div style="color: #22c55e; font-size: 10px; font-weight: bold;">AGI</div>
+                            <div style="color: #fff; font-size: 14px; font-weight: bold;">${
+                              effectiveStats.agility || 0
+                            }</div>
                           </div>
-                          <div style="text-align: center; background: rgba(59, 130, 246, 0.15); padding: 3px; border-radius: 3px;">
-                            <div style="color: #3b82f6; font-weight: bold;">INT</div>
-                            <div style="color: #999;">${effectiveStats.intelligence || 0}</div>
+                          <div style="background: rgba(59, 130, 246, 0.2); border: 1px solid rgba(59, 130, 246, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
+                            <div style="color: #3b82f6; font-size: 10px; font-weight: bold;">INT</div>
+                            <div style="color: #fff; font-size: 14px; font-weight: bold;">${
+                              effectiveStats.intelligence || 0
+                            }</div>
                           </div>
-                          <div style="text-align: center; background: rgba(168, 85, 247, 0.15); padding: 3px; border-radius: 3px;">
-                            <div style="color: #a855f7; font-weight: bold;">VIT</div>
-                            <div style="color: #999;">${effectiveStats.vitality || 0}</div>
+                          <div style="background: rgba(168, 85, 247, 0.2); border: 1px solid rgba(168, 85, 247, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
+                            <div style="color: #a855f7; font-size: 10px; font-weight: bold;">VIT</div>
+                            <div style="color: #fff; font-size: 14px; font-weight: bold;">${
+                              effectiveStats.vitality || 0
+                            }</div>
                           </div>
-                          <div style="text-align: center; background: rgba(251, 191, 36, 0.15); padding: 3px; border-radius: 3px;">
-                            <div style="color: #fbbf24; font-weight: bold;">LUK</div>
-                            <div style="color: #999;">${effectiveStats.luck || 0}</div>
+                          <div style="background: rgba(251, 191, 36, 0.2); border: 1px solid rgba(251, 191, 36, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
+                            <div style="color: #fbbf24; font-size: 10px; font-weight: bold;">LUK</div>
+                            <div style="color: #fff; font-size: 14px; font-weight: bold;">${
+                              effectiveStats.luck || 0
+                            }</div>
                           </div>
                         </div>
 
-                        <!-- Growth Indicators -->
-                        <div style="display: flex; gap: 8px; font-size: 10px; color: #666;">
-                          ${
-                            combatTime > 0
-                              ? `<span style="color: #34d399;">Combat: ${this.formatCombatTime(
-                                  combatTime
-                                )}</span>`
-                              : ''
-                          }
-                          ${
-                            hasNaturalGrowth
-                              ? `<span style="color: #fbbf24;">Growth: +${Object.values(
-                                  naturalGrowth
-                                ).reduce((sum, v) => sum + v, 0)}</span>`
-                              : ''
-                          }
-                          ${
-                            canRankUp
-                              ? `<span style="color: #34d399;">Ready: ${nextRank}</span>`
-                              : nextRank
-                              ? `<span style="color: #666;">${Math.floor(
-                                  rankUpProgress
-                                )}% to ${nextRank}</span>`
-                              : ''
-                          }
+                        <!-- Combat Info -->
+                        <div style="display: flex; gap: 12px; font-size: 11px;">
+                          <div style="color: #34d399;">⚔️ ${combatTime} Combat</div>
+                          <div style="color: #8b5cf6;">🎯 Level ${shadow.level || 1}</div>
+                          <div style="color: #fbbf24; margin-left: auto;">ID: ${shadow.id.slice(
+                            -8
+                          )}</div>
                         </div>
                       </div>
                     </div>
@@ -5531,32 +5471,7 @@ module.exports = class ShadowArmy {
           this.closeShadowArmyModal();
         });
 
-        modal.querySelectorAll('.sa-filter-btn').forEach((btn) => {
-          btn.addEventListener('click', () => {
-            currentFilter = btn.dataset.filter;
-            renderModal();
-          });
-        });
-
-        modal.querySelector('#sa-rank-filter').addEventListener('change', (e) => {
-          currentRankFilter = e.target.value;
-          renderModal();
-        });
-
-        modal.querySelector('#sa-role-filter').addEventListener('change', (e) => {
-          currentRoleFilter = e.target.value;
-          renderModal();
-        });
-
-        modal.querySelector('#sa-search').addEventListener('input', (e) => {
-          searchQuery = e.target.value;
-          renderModal();
-        });
-
-        // Note: No favorite toggle buttons - generals are auto-selected by power
-
         // Close on backdrop click
-        // Backdrop click to close
         modal.addEventListener('click', (e) => {
           if (e.target === modal) {
             this.closeShadowArmyModal();

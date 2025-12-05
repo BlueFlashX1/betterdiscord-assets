@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.1.1
+ * @version 4.3.0
  *
  * ============================================================================
  * CORE FEATURES
@@ -28,6 +28,50 @@
  * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v4.3.0 (2025-12-04) - MEMORY OPTIMIZATION & GC SYSTEM
+ * MEMORY OPTIMIZATIONS:
+ * - Reduced mob spawn count: 200 → 100 per wave (50% reduction)
+ * - Increased spawn interval: 5s → 6s base (4-8s with variance)
+ * - Result: 60% fewer mobs per minute (better memory footprint)
+ * - Aggressive cleanup on dungeon complete (all references nullified)
+ * - Boss/mob/combat data all cleared properly
+ * 
+ * GARBAGE COLLECTION SYSTEM (NEW):
+ * - Periodic GC triggers every 5 minutes
+ * - GC on dungeon completion
+ * - Cleans stale caches (allocation, extraction events)
+ * - Removes inactive dungeon tracking data
+ * - Suggests V8 GC when available
+ * 
+ * CONSOLE CLEANUP:
+ * - All channel lock logging → debug mode
+ * - HP/Mana sync logging → debug mode
+ * - Regeneration logging → debug mode
+ * - Capacity warnings → throttled (30s)
+ * 
+ * @changelog v4.2.0 (2025-12-04) - SPAWN CAPACITY SYSTEM
+ * SPAWN LIMITING (NEW):
+ * - Added server-based dungeon capacity system
+ * - Max dungeons: 15% of server's text channels
+ * - Min: 3 dungeons (small servers)
+ * - Max: 20 dungeons (huge servers)
+ * - Prevents spawn spam by checking capacity before spawn
+ * - Stops spawning when server reaches capacity
+ * - Resumes spawning when dungeons complete
+ * - Smart capacity logging (once per 30s, not every message)
+ *
+ * PERFORMANCE:
+ * - Prevents excessive dungeon creation
+ * - Reduces server load during message spam
+ * - Better resource management
+ *
+ * @changelog v4.1.2 (2025-12-04) - CONSOLE SPAM CLEANUP
+ * - Removed channel lock spam (lock/unlock logging → debug mode)
+ * - Removed HP/Mana sync spam (sync logging → debug mode)
+ * - Removed regeneration start spam (logging → debug mode)
+ * - Removed cleanup spam (orphan removal → debug mode only if found)
+ * - Only important events logged (dungeon restoration count)
  *
  * @changelog v4.1.1 (2025-12-04) - CRITICAL HP/MANA SYNC FIX
  * SYNCHRONIZATION FIXES:
@@ -445,6 +489,9 @@ module.exports = class Dungeons {
       debug: false, // Debug mode: enables verbose console logging
       spawnChance: 10, // 10% chance per message
       dungeonDuration: 600000, // 10 minutes
+      maxDungeonsPercentage: 0.15, // Max 15% of server channels can have active dungeons
+      minDungeonsAllowed: 3, // Always allow at least 3 dungeons even in small servers
+      maxDungeonsAllowed: 20, // Cap at 20 dungeons max even in huge servers
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
@@ -663,6 +710,11 @@ module.exports = class Dungeons {
     setInterval(() => {
       this.validateActiveDungeonStatus();
     }, 10000);
+    
+    // GARBAGE COLLECTION: Periodic cleanup every 5 minutes
+    this.gcInterval = setInterval(() => {
+      this.triggerGarbageCollection('periodic');
+    }, 300000); // 5 minutes
   }
 
   stop() {
@@ -689,8 +741,14 @@ module.exports = class Dungeons {
 
     // RELEASE ALL CHANNEL LOCKS: Plugin stopping - free all channels
     if (this.channelLocks) {
-      console.log(`[Dungeons] Releasing ${this.channelLocks.size} channel locks on plugin stop`);
+      this.debugLog(`Releasing ${this.channelLocks.size} channel locks on plugin stop`);
       this.channelLocks.clear();
+    }
+    
+    // Stop garbage collection interval
+    if (this.gcInterval) {
+      clearInterval(this.gcInterval);
+      this.gcInterval = null;
     }
 
     // Clean up fallback toast container
@@ -1543,6 +1601,92 @@ module.exports = class Dungeons {
   }
 
   /**
+   * Get total channel count for a server (for dungeon capacity calculation)
+   */
+  getServerChannelCount(guildId) {
+    if (!guildId || guildId === 'DM') return null;
+
+    try {
+      const ChannelStore =
+        BdApi.Webpack?.getStore?.('ChannelStore') ||
+        BdApi.Webpack?.getModule?.((m) => m?.getGuildChannels);
+
+      if (ChannelStore) {
+        // Method 1: getGuildChannels
+        if (typeof ChannelStore.getGuildChannels === 'function') {
+          const channels = ChannelStore.getGuildChannels(guildId);
+          if (channels) {
+            // Count only text channels (not voice, announcements, etc)
+            const textChannels = Object.values(channels).filter(
+              (c) => c.type === 0 || c.type === 'GUILD_TEXT'
+            );
+            return textChannels.length;
+          }
+        }
+
+        // Method 2: getAllChannels and filter by guild
+        if (typeof ChannelStore.getAllChannels === 'function') {
+          const allChannels = ChannelStore.getAllChannels();
+          if (allChannels) {
+            const guildChannels = Object.values(allChannels).filter(
+              (c) => c.guild_id === guildId && (c.type === 0 || c.type === 'GUILD_TEXT')
+            );
+            return guildChannels.length;
+          }
+        }
+      }
+    } catch (error) {
+      this.debugLog('Error getting server channel count:', error);
+    }
+
+    return null;
+  }
+
+  /**
+   * Get max dungeons allowed for this server based on channel count
+   */
+  getMaxDungeonsForServer(guildId) {
+    const channelCount = this.getServerChannelCount(guildId);
+
+    // Fallback if we can't get channel count
+    if (!channelCount) {
+      return this.settings.minDungeonsAllowed || 3;
+    }
+
+    // Calculate max: 15% of channels (configurable)
+    const percentage = this.settings.maxDungeonsPercentage || 0.15;
+    const calculated = Math.floor(channelCount * percentage);
+
+    // Apply min/max bounds
+    const min = this.settings.minDungeonsAllowed || 3;
+    const max = this.settings.maxDungeonsAllowed || 20;
+
+    return Math.max(min, Math.min(max, calculated));
+  }
+
+  /**
+   * Get count of active dungeons in a specific server
+   */
+  getActiveDungeonCountForServer(guildId) {
+    let count = 0;
+    this.activeDungeons.forEach((dungeon) => {
+      if (dungeon.guildId === guildId && !dungeon.completed && !dungeon.failed) {
+        count++;
+      }
+    });
+    return count;
+  }
+
+  /**
+   * Check if server has reached dungeon capacity
+   */
+  isServerAtCapacity(guildId) {
+    const maxDungeons = this.getMaxDungeonsForServer(guildId);
+    const activeDungeons = this.getActiveDungeonCountForServer(guildId);
+    return activeDungeons >= maxDungeons;
+  }
+
+  /**
    * Calculate dynamic spawn chance based on server member count
    * Lower member count = Higher spawn rate (more active per person)
    * Higher member count = Lower spawn rate (less active per person)
@@ -1587,13 +1731,40 @@ module.exports = class Dungeons {
     // Prevents spam-spawned dungeons from colliding in same channel
     if (this.channelLocks.has(channelKey)) {
       // Channel is locked by another dungeon spawn in progress
-      console.log(`[Dungeons] Channel ${channelKey} is locked - rejecting spawn attempt`);
+      this.debugLog(`Channel ${channelKey} is locked - rejecting spawn attempt`);
       return;
     }
 
     // IMPORTANT: Only one dungeon per channel ID (prevents duplicates)
     if (this.activeDungeons.has(channelKey)) {
       return;
+    }
+
+    // SERVER CAPACITY CHECK: Prevent too many dungeons from spawning in one server
+    // Stops spawn spam by limiting based on server channel count
+    if (this.isServerAtCapacity(channelInfo.guildId)) {
+      const maxDungeons = this.getMaxDungeonsForServer(channelInfo.guildId);
+      const activeDungeons = this.getActiveDungeonCountForServer(channelInfo.guildId);
+      const channelCount = this.getServerChannelCount(channelInfo.guildId) || '?';
+
+      // Log once per server when capacity reached (not every message)
+      if (!this._capacityWarningShown) {
+        this._capacityWarningShown = {};
+      }
+      if (!this._capacityWarningShown[channelInfo.guildId]) {
+        this.debugLog(
+          `Server at capacity: ${activeDungeons}/${maxDungeons} dungeons active (${channelCount} channels total)`
+        );
+        this._capacityWarningShown[channelInfo.guildId] = true;
+
+        // Reset warning after 30 seconds so we can warn again if still spamming
+        setTimeout(() => {
+          if (this._capacityWarningShown) {
+            delete this._capacityWarningShown[channelInfo.guildId];
+          }
+        }, 30000);
+      }
+      return; // Server at capacity - reject spawn
     }
 
     const lastSpawn = this.settings.lastSpawnTime[channelKey] || 0;
@@ -1616,7 +1787,7 @@ module.exports = class Dungeons {
     // LOCK CHANNEL IMMEDIATELY: Prevents race conditions from message spam
     // Lock is acquired BEFORE dungeon creation starts
     this.channelLocks.add(channelKey);
-    console.log(`[Dungeons] Channel ${channelKey} locked for dungeon spawn`);
+    this.debugLog(`Channel ${channelKey} locked for dungeon spawn`);
 
     try {
       // ALLOW MULTIPLE DUNGEONS: Can spawn in different channels simultaneously
@@ -1626,7 +1797,7 @@ module.exports = class Dungeons {
       // CRITICAL: Release lock on error to prevent permanent lock
       console.error(`[Dungeons] Error creating dungeon in ${channelKey}:`, error);
       this.channelLocks.delete(channelKey);
-      console.log(`[Dungeons] Channel ${channelKey} unlocked due to error`);
+      this.debugLog(`Channel ${channelKey} unlocked due to error`);
     }
   }
 
@@ -1696,8 +1867,9 @@ module.exports = class Dungeons {
     // FINAL SAFETY CHECK: Forcefully reject if channel already has active dungeon
     // This catches any race conditions that passed the initial checks
     if (this.activeDungeons.has(channelKey)) {
-      console.warn(
-        `[Dungeons] CONFLICT DETECTED: Channel ${channelKey} already has active dungeon - forcing abort`
+      // Removed spammy log - conflict detection is working silently
+      this.debugLog(
+        `CONFLICT DETECTED: Channel ${channelKey} already has active dungeon - forcing abort`
       );
       this.channelLocks.delete(channelKey); // Release lock
       return; // Abort dungeon creation
@@ -1909,7 +2081,7 @@ module.exports = class Dungeons {
     // RELEASE CHANNEL LOCK: Dungeon successfully created and now in activeDungeons
     // Lock is no longer needed - activeDungeons check will prevent new spawns
     this.channelLocks.delete(channelKey);
-    console.log(`[Dungeons] Channel ${channelKey} unlocked - dungeon active`);
+    this.debugLog(`Channel ${channelKey} unlocked - dungeon active`);
 
     this.settings.lastSpawnTime[channelKey] = Date.now();
     this.settings.mobKillNotifications[channelKey] = { count: 0, lastNotification: Date.now() };
@@ -1970,13 +2142,13 @@ module.exports = class Dungeons {
       // Spawn mobs naturally
       this.spawnMobs(channelKey);
 
-      // REFINED VARIANCE SYSTEM: Wide range for organic feel
-      // Base: 5 seconds, Variance: ±40% (3-7 seconds)
-      // Creates unpredictable spawn rhythm - feels natural, not mechanical
-      const baseInterval = 5000; // 5 seconds (faster than old 10s)
-      const variance = baseInterval * 0.4; // ±2000ms (40% variance)
+      // MEMORY OPTIMIZED SPAWNING: Slower, smaller waves
+      // Base: 6 seconds, Variance: ±33% (4-8 seconds)
+      // Reduces memory footprint while maintaining organic feel
+      const baseInterval = 6000; // 6 seconds (memory optimized)
+      const variance = baseInterval * 0.33; // ±2000ms (33% variance)
       const nextInterval = baseInterval - variance + Math.random() * variance * 2;
-      // Result: 3000-7000ms (3-7 seconds, dynamic and organic!)
+      // Result: 4000-8000ms (4-8 seconds, organic with lower frequency!)
 
       // Schedule next spawn
       const timeoutId = setTimeout(scheduleNextSpawn, nextInterval);
@@ -2156,20 +2328,20 @@ module.exports = class Dungeons {
       let baseSpawnCount;
       let variancePercent;
 
-      // NO CAPACITY LIMIT: Constant spawn rate regardless of mob count
-      // Shadows will naturally control mob population through combat
-      // This creates epic, massive battles without artificial caps
-      baseSpawnCount = 200;
-      variancePercent = 0.3; // 140-260 per wave (high variance for organic feel)
+      // MEMORY OPTIMIZED: Smaller waves reduce memory footprint
+      // Shadows naturally control mob population through combat
+      // Balanced for multiple simultaneous dungeons
+      baseSpawnCount = 100; // Reduced from 200 (50% reduction for memory)
+      variancePercent = 0.3; // 70-130 per wave (maintains organic variance)
 
-      // Apply variance (e.g., 200 ±30% = 140-260)
-      // Higher variance creates more organic, unpredictable spawn waves
+      // Apply variance (e.g., 100 ±30% = 70-130)
+      // Variance creates organic, unpredictable spawn waves
       const variance = baseSpawnCount * variancePercent;
       const actualSpawnCount = Math.floor(baseSpawnCount - variance + Math.random() * variance * 2);
 
-      // Result: Organic gradual growth, natural stabilization around 2000-2500
-      // Balanced for faster spawn rate (3-7s) - smooth, non-overwhelming experience
-      // NO HARD CAPS - system self-balances with soft scaling
+      // Result: Memory-optimized spawning, natural stabilization around 1000-1500
+      // Balanced for multiple dungeons (4-8s) - smooth, memory-efficient experience
+      // Shadows control population - no artificial caps needed
 
       // Spawn wave (silent unless debug mode)
 
@@ -2603,7 +2775,7 @@ module.exports = class Dungeons {
       return; // Already running
     }
 
-    console.log('[Dungeons] ⏰ Starting HP/Mana regeneration interval (every 1 second)');
+    this.debugLog('⏰ Starting HP/Mana regeneration interval (every 1 second)');
     // Start HP/Mana regeneration interval
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
@@ -2672,7 +2844,7 @@ module.exports = class Dungeons {
 
     // Debug logging (first run only)
     if (!this._regenDebugShown) {
-      console.log('[Dungeons] 🔄 Regeneration system active', {
+      this.debugLog('🔄 Regeneration system active', {
         level,
         vitality,
         intelligence,
@@ -2896,7 +3068,7 @@ module.exports = class Dungeons {
     // RELEASE CHANNEL LOCK: User defeated - free the channel
     if (this.channelLocks.has(channelKey)) {
       this.channelLocks.delete(channelKey);
-      console.log(`[Dungeons] Channel ${channelKey} unlocked - user defeated`);
+      this.debugLog(`Channel ${channelKey} unlocked - user defeated`);
     }
 
     // Stop all shadow attacks in ALL dungeons (shadows die when user dies)
@@ -4936,7 +5108,7 @@ module.exports = class Dungeons {
     // Allows new dungeons to spawn in this channel after cooldown
     if (this.channelLocks.has(channelKey)) {
       this.channelLocks.delete(channelKey);
-      console.log(`[Dungeons] Channel ${channelKey} unlocked - dungeon ${reason}`);
+      this.debugLog(`Channel ${channelKey} unlocked - dungeon ${reason}`);
     }
 
     // Calculate user XP based on reason and participation
@@ -5089,6 +5261,45 @@ module.exports = class Dungeons {
       // Clear shadow HP tracking
       if (dungeon.shadowHP) {
         dungeon.shadowHP = null;
+      }
+      
+      // AGGRESSIVE MEMORY CLEANUP: Clear all dungeon references
+      if (dungeon.boss) {
+        dungeon.boss.baseStats = null;
+        dungeon.boss = null;
+      }
+      if (dungeon.combatAnalytics) {
+        dungeon.combatAnalytics = null;
+      }
+      if (dungeon.shadowAttacks) {
+        dungeon.shadowAttacks = null;
+      }
+      if (dungeon.mobs) {
+        if (dungeon.mobs.activeMobs) {
+          dungeon.mobs.activeMobs = null;
+        }
+        dungeon.mobs = null;
+      }
+      
+      // Clear extraction events for this channel
+      if (this.extractionEvents) {
+        const eventsToRemove = [];
+        this.extractionEvents.forEach((value, key) => {
+          if (key.includes(channelKey)) {
+            eventsToRemove.push(key);
+          }
+        });
+        eventsToRemove.forEach(key => this.extractionEvents.delete(key));
+      }
+      
+      // Force garbage collection hint (if available)
+      if (global.gc) {
+        try {
+          global.gc();
+          this.debugLog('Forced garbage collection after dungeon cleanup');
+        } catch (e) {
+          // GC not available, that's okay
+        }
       }
     }
 
@@ -6801,14 +7012,15 @@ module.exports = class Dungeons {
   // ============================================================================
   async restoreActiveDungeons() {
     if (!this.storageManager) return;
-    
+
     // CRITICAL: Clean up any orphaned HP bars from previous session FIRST
     // This prevents lingering HP bars from old dungeons
-    document.querySelectorAll('.dungeon-boss-hp-bar, .dungeon-boss-hp-container').forEach((el) => {
-      el.remove();
-    });
-    console.log('[Dungeons] Cleaned up orphaned HP bars from previous session');
-    
+    const orphans = document.querySelectorAll('.dungeon-boss-hp-bar, .dungeon-boss-hp-container');
+    if (orphans.length > 0) {
+      orphans.forEach((el) => el.remove());
+      this.debugLog(`Cleaned up ${orphans.length} orphaned HP bars from previous session`);
+    }
+
     try {
       const savedDungeons = await this.storageManager.getAllDungeons();
 
@@ -6821,7 +7033,7 @@ module.exports = class Dungeons {
           // Clear invalid reference
           this.settings.userActiveDungeon = null;
           this.saveSettings();
-          console.log('[Dungeons] Cleared stale userActiveDungeon reference on restore');
+          this.debugLog('Cleared stale userActiveDungeon reference on restore');
         }
       }
 
@@ -6863,32 +7075,99 @@ module.exports = class Dungeons {
           }
         } else {
           // Expired or completed/failed - clean up completely
-          console.log(`[Dungeons] Cleaning up expired/old dungeon: ${dungeon.name} [${dungeon.rank}]`);
-          
+          console.log(
+            `[Dungeons] Cleaning up expired/old dungeon: ${dungeon.name} [${dungeon.rank}]`
+          );
+
           // Remove HP bar if it exists
           this.removeBossHPBar(dungeon.channelKey);
-          
+
           // Remove any HP bar containers
-          document.querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${dungeon.channelKey}"]`).forEach((el) => {
-            el.remove();
-          });
-          
+          document
+            .querySelectorAll(
+              `.dungeon-boss-hp-container[data-channel-key="${dungeon.channelKey}"]`
+            )
+            .forEach((el) => {
+              el.remove();
+            });
+
           // Release channel lock if held
           if (this.channelLocks.has(dungeon.channelKey)) {
             this.channelLocks.delete(dungeon.channelKey);
           }
-          
+
           // Delete from IndexedDB
           await this.storageManager.deleteDungeon(dungeon.channelKey);
-          
+
           // Clear from memory if somehow still present
           this.activeDungeons.delete(dungeon.channelKey);
         }
       }
-      
-      console.log(`[Dungeons] Restored ${this.activeDungeons.size} active dungeons`);
+
+      // Only log if dungeons were actually restored
+      if (this.activeDungeons.size > 0) {
+        console.log(`[Dungeons] Restored ${this.activeDungeons.size} active dungeons`);
+      }
     } catch (error) {
       console.error('Dungeons: Failed to restore dungeons', error);
+    }
+  }
+
+  // ============================================================================
+  // GARBAGE COLLECTION & MEMORY MANAGEMENT
+  // ============================================================================
+  /**
+   * Trigger garbage collection and memory cleanup
+   * @param {string} trigger - What triggered the GC (periodic, dungeon_complete, manual)
+   */
+  triggerGarbageCollection(trigger = 'manual') {
+    this.debugLog(`Triggering garbage collection (${trigger})`);
+    
+    // Clean up stale caches
+    const now = Date.now();
+    
+    // Clear expired allocation cache
+    if (this.allocationCacheTime && now - this.allocationCacheTime > this.allocationCacheTTL) {
+      this.allocationCache = null;
+      this.allocationCacheTime = null;
+      this.debugLog('Cleared expired allocation cache');
+    }
+    
+    // Clean up extraction events (keep only recent 500)
+    if (this.extractionEvents && this.extractionEvents.size > 500) {
+      const entries = Array.from(this.extractionEvents.entries());
+      this.extractionEvents.clear();
+      entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
+      this.debugLog(`Trimmed extraction events: ${entries.length} → 500`);
+    }
+    
+    // Clean up shadow army count cache
+    if (this.shadowArmyCountCache && this.shadowArmyCountCache.size > 100) {
+      this.shadowArmyCountCache.clear();
+      this.debugLog('Cleared shadow army count cache');
+    }
+    
+    // Clean up last attack time maps (remove old entries)
+    [this._lastShadowAttackTime, this._lastBossAttackTime, this._lastMobAttackTime].forEach(map => {
+      if (map && map.size > 50) {
+        // Keep only entries for active dungeons
+        const activeDungeonKeys = new Set(this.activeDungeons.keys());
+        map.forEach((value, key) => {
+          if (!activeDungeonKeys.has(key)) {
+            map.delete(key);
+          }
+        });
+      }
+    });
+    
+    // Suggest garbage collection to V8 (if available)
+    if (global.gc) {
+      try {
+        global.gc();
+        this.debugLog('V8 garbage collection executed');
+      } catch (e) {
+        // GC not available (requires --expose-gc flag)
+      }
     }
   }
 

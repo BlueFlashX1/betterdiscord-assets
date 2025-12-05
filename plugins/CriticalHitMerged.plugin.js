@@ -2,7 +2,12 @@
  * @name CriticalHit (Merged)
  * @author BlueFlashXS
  * @description Messages have a chance to land a critical hit with special purple-black gradient styling, font, and animated "CRITICAL HIT!" notifications with screen shake!
- * @version 2.0.1
+ * @version 2.0.2
+ * 
+ * @changelog v2.0.2 (2025-12-04)
+ * - Reduced message history limit: 10,000 → 2,000 messages
+ * - Memory optimization (~80% reduction in history storage)
+ * - Improves renderer process memory footprint
  * 
  * @changelog v2.0.1 (2025-12-04)
  * - Removed excessive console logging (spam reduction)
@@ -78,7 +83,7 @@ module.exports = class CriticalHitMerged {
     this.channelLoadTime = Date.now(); // Track when channel finished loading
     this.isLoadingChannel = false; // Flag to prevent processing during channel load
     this.currentChannelId = null; // Track current channel ID
-    this.maxHistorySize = 10000; // Maximum number of messages to store in history
+    this.maxHistorySize = 2000; // Maximum number of messages to store in history (reduced for memory optimization)
     this.historyCleanupInterval = null; // Interval for periodic history cleanup
     this._forceNovaInterval = null; // Interval for Nova Flat font enforcement (legacy, now using MutationObserver)
     this._displayUpdateInterval = null; // Interval for settings panel display updates
@@ -988,7 +993,7 @@ module.exports = class CriticalHitMerged {
         saveVerified: verifyCritCount === critCount,
       });
       // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
-      this.debugLog('SAVE_MESSAGE_HISTORY_SUMMARY', 
+      this.debugLog('SAVE_MESSAGE_HISTORY_SUMMARY',
         `Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
       );
     } catch (error) {
