@@ -804,12 +804,10 @@ module.exports = class SkillTree {
     const baseCost = tier.baseCost || 1;
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
-    // Cost for level 2, 3, 4, etc.
-    for (let level = 2; level <= targetLevel; level++) {
-      totalCost += Math.ceil(baseCost * (level - 1) * multiplier);
-    }
-
-    return totalCost;
+    // FUNCTIONAL: Cost calculation using Array.from().reduce() (no for-loop)
+    return Array.from({ length: Math.max(0, targetLevel - 1) }, (_, i) =>
+      Math.ceil(baseCost * (i + 1) * multiplier)
+    ).reduce((total, cost) => total + cost, 0);
   }
 
   /**
@@ -872,16 +870,16 @@ module.exports = class SkillTree {
    */
   findSkillAndTier(skillId) {
     try {
-      for (const tierKey in this.skillTree) {
-        const tierData = this.skillTree[tierKey];
-        if (!tierData?.skills) continue;
-
-        const foundSkill = tierData.skills.find((s) => s.id === skillId);
-        if (foundSkill) {
-          return { skill: foundSkill, tier: tierData };
-        }
-      }
-      return null;
+      // FUNCTIONAL: Find skill using Object.values().find() (no for-in loop)
+      const result = Object.values(this.skillTree)
+        .filter((tierData) => tierData?.skills)
+        .map((tierData) => ({
+          skill: tierData.skills.find((s) => s.id === skillId),
+          tier: tierData,
+        }))
+        .find(({ skill }) => skill);
+      
+      return result || null;
     } catch (error) {
       console.error('SkillTree: Error finding skill', error);
       return null;

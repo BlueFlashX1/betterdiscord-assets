@@ -740,7 +740,8 @@ module.exports = class SoloLevelingToasts {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    for (let i = 0; i < count; i++) {
+    // FUNCTIONAL: Create particles using Array.from (no for-loop)
+    Array.from({ length: count }, (_, i) => {
       const particle = document.createElement('div');
       particle.className = 'sl-toast-particle';
 
@@ -759,7 +760,9 @@ module.exports = class SoloLevelingToasts {
       setTimeout(() => {
         particle.remove();
       }, 1500);
-    }
+
+      return particle;
+    });
   }
 
   // ============================================================================
@@ -997,19 +1000,18 @@ module.exports = class SoloLevelingToasts {
    * 2. Return toast element if found
    */
   findToastByKey(groupKey) {
-    // Extract normalized message from key
+    // FUNCTIONAL: Find toast using .find() (no for-loop)
     const normalized = groupKey.split('_')[0];
-    for (const toast of this.activeToasts) {
-      const toastText = toast.textContent
-        .toLowerCase()
-        .replace(/\d+/g, 'N')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (toastText.includes(normalized.substring(0, 30))) {
-        return toast;
-      }
-    }
-    return null;
+    return (
+      this.activeToasts.find((toast) => {
+        const toastText = toast.textContent
+          .toLowerCase()
+          .replace(/\d+/g, 'N')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return toastText.includes(normalized.substring(0, 30));
+      }) || null
+    );
   }
 
   /**
