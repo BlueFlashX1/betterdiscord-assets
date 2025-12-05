@@ -668,16 +668,8 @@ module.exports = class CriticalHit {
 
       if (listItemId) {
         const idStr = String(listItemId).trim();
-        if (this.isValidDiscordId(idStr)) {
-          messageId = idStr;
-          extractionMethod = 'data-list-item-id_pure';
-        } else {
-          const extracted = this.extractDiscordId(idStr);
-          if (extracted) {
-            messageId = extracted;
-            extractionMethod = 'data-list-item-id_extracted';
-          }
-        }
+        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+        extractionMethod = this.isValidDiscordId(idStr) ? 'data-list-item-id_pure' : (messageId ? 'data-list-item-id_extracted' : null);
       }
     }
 
@@ -688,16 +680,8 @@ module.exports = class CriticalHit {
         messageElement.getAttribute('id') || messageElement.closest('[id]')?.getAttribute('id');
       if (idAttr) {
         const idStr = String(idAttr).trim();
-        if (this.isValidDiscordId(idStr)) {
-          messageId = idStr;
-          extractionMethod = 'id_attr_pure';
-        } else {
-          const extracted = this.extractDiscordId(idStr);
-          if (extracted) {
-            messageId = extracted;
-            extractionMethod = 'id_attr_extracted';
-          }
-        }
+        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+        extractionMethod = this.isValidDiscordId(idStr) ? 'id_attr_pure' : (messageId ? 'id_attr_extracted' : null);
       }
     }
 
@@ -709,16 +693,8 @@ module.exports = class CriticalHit {
         messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
       if (dataMsgId) {
         const idStr = String(dataMsgId).trim();
-        if (this.isValidDiscordId(idStr)) {
-          messageId = idStr;
-          extractionMethod = 'data-message-id';
-        } else {
-          const extracted = this.extractDiscordId(idStr);
-          if (extracted) {
-            messageId = extracted;
-            extractionMethod = 'data-message-id_extracted';
-          }
-        }
+        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+        extractionMethod = this.isValidDiscordId(idStr) ? 'data-message-id' : (messageId ? 'data-message-id_extracted' : null);
       }
     }
 
@@ -727,12 +703,8 @@ module.exports = class CriticalHit {
       messageId = String(messageId).trim();
       if (!this.isValidDiscordId(messageId)) {
         const extracted = this.extractDiscordId(messageId);
-        if (extracted) {
-          messageId = extracted;
-          extractionMethod = extractionMethod ? `${extractionMethod}_extracted` : 'regex_extracted';
-        } else {
-          messageId = null; // Invalid format, continue to fallback
-        }
+        messageId = extracted || null;
+        extractionMethod = extracted ? (extractionMethod ? `${extractionMethod}_extracted` : 'regex_extracted') : null;
       }
     }
 
