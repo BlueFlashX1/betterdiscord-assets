@@ -1139,19 +1139,16 @@ module.exports = class CriticalHit {
           const sortedEntries = Array.from(this.pendingCrits.entries()).sort(
             (a, b) => a[1].timestamp - b[1].timestamp
           );
-          const toRemove = Math.floor(this.maxPendingCrits * 0.3); // Remove 30% oldest
-          for (let i = 0; i < toRemove; i++) {
-            this.pendingCrits.delete(sortedEntries[i][0]);
-          }
+          // FUNCTIONAL: Remove oldest entries (.slice() + .forEach() instead of for-loop)
+          const toRemove = Math.floor(this.maxPendingCrits * 0.3);
+          sortedEntries.slice(0, toRemove).forEach(([id]) => this.pendingCrits.delete(id));
         }
 
-        // Remove expired entries (longer timeout for hash IDs since they need time to get real IDs)
-        const maxAge = isHashId ? 5000 : 3000; // 5 seconds for hash IDs, 3 seconds for real IDs
-        for (const [pendingId, pendingData] of this.pendingCrits.entries()) {
-          if (now - pendingData.timestamp > maxAge) {
-            this.pendingCrits.delete(pendingId);
-          }
-        }
+        // FUNCTIONAL: Remove expired entries (.forEach() + short-circuit instead of for-loop)
+        const maxAge = isHashId ? 5000 : 3000;
+        Array.from(this.pendingCrits.entries()).forEach(([pendingId, pendingData]) => {
+          now - pendingData.timestamp > maxAge && this.pendingCrits.delete(pendingId);
+        });
 
         // Create content hash for matching queued messages when they get real IDs
         const contentHash =
