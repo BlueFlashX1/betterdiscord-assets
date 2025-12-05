@@ -29,7 +29,7 @@ module.exports = class SkillTree {
   // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
   // ============================================================================
-  
+
   // 2.1 CONSTRUCTOR & SETTINGS
   // ----------------------------------------------------------------------------
   constructor() {
@@ -369,7 +369,7 @@ module.exports = class SkillTree {
 
   // 2.2 HELPER FUNCTIONS
   // ----------------------------------------------------------------------------
-  
+
   /**
    * Debug logging helper (functional, no if-else)
    */
@@ -381,7 +381,7 @@ module.exports = class SkillTree {
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
-  
+
   // 3.1 PLUGIN LIFECYCLE
   // ----------------------------------------------------------------------------
   start() {
@@ -393,22 +393,20 @@ module.exports = class SkillTree {
     this.createSkillTreeButton();
     this.saveSkillBonuses();
 
-    // Retry button creation after delays to ensure Discord UI is ready
+    // FUNCTIONAL: Retry button creation (no if-else, short-circuit)
     this._retryTimeout1 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout1);
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        this.createSkillTreeButton();
-      }
+      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
+        (this.debugLog('Retrying button creation...'), this.createSkillTreeButton());
       this._retryTimeout1 = null;
     }, 2000);
     this._retryTimeouts.add(this._retryTimeout1);
 
-    // Additional retry after longer delay (for plugin re-enabling)
+    // FUNCTIONAL: Additional retry (no if-else, short-circuit)
     this._retryTimeout2 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout2);
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        this.createSkillTreeButton();
-      }
+      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
+        (this.debugLog('Final retry for button creation...'), this.createSkillTreeButton());
       this._retryTimeout2 = null;
     }, 5000);
     this._retryTimeouts.add(this._retryTimeout2);
@@ -430,15 +428,13 @@ module.exports = class SkillTree {
   // EVENT HANDLING & WATCHERS
   // ============================================================================
   setupLevelUpWatcher() {
-    // Return early if plugin is stopped to prevent recreating watchers
-    if (this._isStopped) {
-      return;
-    }
+    // FUNCTIONAL: Guard clause
+    if (this._isStopped) return;
 
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+    // FUNCTIONAL: Guard clause + retry pattern
     if (!soloPlugin) {
-      // Retry after a delay - SoloLevelingStats might still be loading
       const timeoutId = setTimeout(() => {
         this._retryTimeouts.delete(timeoutId);
         this.setupLevelUpWatcher();
@@ -448,8 +444,8 @@ module.exports = class SkillTree {
     }
 
     const instance = soloPlugin.instance || soloPlugin;
+    // FUNCTIONAL: Guard clause + retry pattern
     if (!instance || typeof instance.on !== 'function') {
-      // Retry after a delay - Event system might not be ready yet
       const timeoutId = setTimeout(() => {
         this._retryTimeouts.delete(timeoutId);
         this.setupLevelUpWatcher();
@@ -460,13 +456,14 @@ module.exports = class SkillTree {
 
     // Subscribe to level changed events
     const unsubscribeLevel = instance.on('levelChanged', (data) => {
-      // data contains: { oldLevel, newLevel, ... }
-      if (data.newLevel > (this.settings.lastLevel || 1)) {
-        const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
-        this.awardSPForLevelUp(levelsGained);
-        this.settings.lastLevel = data.newLevel;
-        this.saveSettings();
-      }
+      // FUNCTIONAL: Short-circuit for level up check (no if-else)
+      data.newLevel > (this.settings.lastLevel || 1) &&
+        (() => {
+          const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
+          this.awardSPForLevelUp(levelsGained);
+          this.settings.lastLevel = data.newLevel;
+          this.saveSettings();
+        })();
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
 
@@ -481,69 +478,40 @@ module.exports = class SkillTree {
     // Unsubscribe from events
     this.unsubscribeFromEvents();
 
-    // Clear intervals
-    if (this.levelCheckInterval) {
-      clearInterval(this.levelCheckInterval);
-      this.levelCheckInterval = null;
-    }
+    // FUNCTIONAL: Clear intervals (short-circuit)
+    this.levelCheckInterval &&
+      (clearInterval(this.levelCheckInterval), (this.levelCheckInterval = null));
 
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this._retryTimeouts.clear();
 
-    // Clear legacy retry timeouts (for backwards compatibility)
-    if (this._retryTimeout1) {
-      clearTimeout(this._retryTimeout1);
-      this._retryTimeout1 = null;
-    }
-    if (this._retryTimeout2) {
-      clearTimeout(this._retryTimeout2);
-      this._retryTimeout2 = null;
-    }
+    // FUNCTIONAL: Clear legacy timeouts (short-circuit)
+    this._retryTimeout1 && (clearTimeout(this._retryTimeout1), (this._retryTimeout1 = null));
+    this._retryTimeout2 && (clearTimeout(this._retryTimeout2), (this._retryTimeout2 = null));
 
-    // Cleanup URL change watcher with guaranteed execution
-    if (this._urlChangeCleanup) {
-      try {
-        this._urlChangeCleanup();
-      } catch (e) {
-        this.debugLog('Error during URL change watcher cleanup', e);
-      } finally {
-        this._urlChangeCleanup = null;
-      }
-    }
+    // FUNCTIONAL: Cleanup URL watcher with try-finally
+    this._urlChangeCleanup &&
+      (() => {
+        try {
+          this._urlChangeCleanup();
+        } catch (e) {
+          this.debugLog('Error during URL change watcher cleanup', e);
+        } finally {
+          this._urlChangeCleanup = null;
+        }
+      })();
 
-    // Remove UI elements
-    if (this.skillTreeButton) {
-      this.skillTreeButton.remove();
-      this.skillTreeButton = null;
-    }
+    // FUNCTIONAL: Remove UI elements (short-circuit)
+    this.skillTreeButton && (this.skillTreeButton.remove(), (this.skillTreeButton = null));
+    this.toolbarObserver && (this.toolbarObserver.disconnect(), (this.toolbarObserver = null));
+    this.skillTreeModal && (this.skillTreeModal.remove(), (this.skillTreeModal = null));
+    window.skillTreeInstance === this && (window.skillTreeInstance = null);
 
-    // Disconnect toolbar observer
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
-
-    if (this.skillTreeModal) {
-      this.skillTreeModal.remove();
-      this.skillTreeModal = null;
-    }
-
-    // Clear global instance
-    if (window.skillTreeInstance === this) {
-      window.skillTreeInstance = null;
-    }
-
-    // Remove CSS using BdApi (with fallback for compatibility)
-    if (BdApi.DOM && BdApi.DOM.removeStyle) {
-      BdApi.DOM.removeStyle('skilltree-css');
-    } else {
-      // Fallback: direct DOM removal if BdApi method unavailable
-      const styleElement = document.getElementById('skilltree-css');
-      if (styleElement) {
-        styleElement.remove();
-      }
-    }
+    // FUNCTIONAL: CSS cleanup (ternary)
+    BdApi.DOM?.removeStyle
+      ? BdApi.DOM.removeStyle('skilltree-css')
+      : document.getElementById('skilltree-css')?.remove();
   }
 
   // ============================================================================
@@ -590,13 +558,11 @@ module.exports = class SkillTree {
     this.settings.totalEarnedSP += spEarned;
     this.saveSettings();
 
-    // Show notification
-    if (BdApi && typeof BdApi.showToast === 'function') {
-      BdApi.showToast(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
-        type: 'success',
-        timeout: 3000,
-      });
-    }
+    // FUNCTIONAL: Show notification (optional chaining)
+    BdApi?.showToast?.(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
+      type: 'success',
+      timeout: 3000,
+    });
   }
 
   /**
@@ -634,31 +600,29 @@ module.exports = class SkillTree {
     }
   }
 
-  // 3.2 SETTINGS MANAGEMENT  
+  // 3.2 SETTINGS MANAGEMENT
   // ----------------------------------------------------------------------------
   loadSettings() {
     try {
       const saved = BdApi.Data.load('SkillTree', 'settings');
-      if (saved) {
-        // CRITICAL FIX: Deep merge to prevent nested object reference sharing
-        // Shallow spread (...) only copies top-level, nested objects are still references!
-        const merged = { ...this.defaultSettings, ...saved };
-        this.settings = JSON.parse(JSON.stringify(merged));
-        // Migrate old unlockedSkills to skillLevels
-        if (this.settings.unlockedSkills && this.settings.unlockedSkills.length > 0) {
-          if (!this.settings.skillLevels) {
-            this.settings.skillLevels = {};
-          }
-          this.settings.unlockedSkills.forEach((skillId) => {
-            if (!this.settings.skillLevels[skillId]) {
-              this.settings.skillLevels[skillId] = 1; // Set to level 1
-            }
-          });
-          // Clear old array
-          this.settings.unlockedSkills = [];
-          this.saveSettings();
-        }
-      }
+      // FUNCTIONAL: Only merge if saved exists
+      saved &&
+        (() => {
+          // CRITICAL FIX: Deep merge
+          const merged = { ...this.defaultSettings, ...saved };
+          this.settings = JSON.parse(JSON.stringify(merged));
+          
+          // FUNCTIONAL: Migrate old unlockedSkills (short-circuit)
+          this.settings.unlockedSkills?.length > 0 &&
+            (() => {
+              this.settings.skillLevels = this.settings.skillLevels || {};
+              this.settings.unlockedSkills.forEach((skillId) => {
+                this.settings.skillLevels[skillId] = this.settings.skillLevels[skillId] || 1;
+              });
+              this.settings.unlockedSkills = [];
+              this.saveSettings();
+            })();
+        })();
     } catch (error) {
       this.debugLog('Error loading settings', error);
     }
@@ -725,7 +689,7 @@ module.exports = class SkillTree {
   // ============================================================================
   // 3.3 DATA ACCESS
   // ----------------------------------------------------------------------------
-  
+
   /**
    * Get SoloLevelingStats data
    * @returns {Object|null} - SoloLevelingStats data or null if unavailable
@@ -750,22 +714,23 @@ module.exports = class SkillTree {
    * @returns {number} - Total SP spent
    */
   getTotalSpentSP() {
-    let totalSpent = 0;
-
-    Object.values(this.skillTree).forEach((tier) => {
-      if (!tier.skills) return;
-
-      tier.skills.forEach((skill) => {
-        const skillLevel = this.getSkillLevel(skill.id);
-        if (skillLevel > 0) {
-          // Calculate SP spent: unlock cost + upgrade costs
-          totalSpent += this.getSkillUnlockCost(skill, tier);
-          totalSpent += this.getSkillUpgradeCost(skill, tier, skillLevel);
-        }
-      });
-    });
-
-    return totalSpent;
+    // FUNCTIONAL: Use reduce instead of forEach with accumulator
+    return Object.values(this.skillTree)
+      .filter((tier) => tier.skills)
+      .reduce((total, tier) => {
+        return (
+          total +
+          tier.skills.reduce((tierTotal, skill) => {
+            const skillLevel = this.getSkillLevel(skill.id);
+            // FUNCTIONAL: Ternary instead of if-else
+            return skillLevel > 0
+              ? tierTotal +
+                  this.getSkillUnlockCost(skill, tier) +
+                  this.getSkillUpgradeCost(skill, tier, skillLevel)
+              : tierTotal;
+          }, 0)
+        );
+      }, 0);
   }
 
   // ============================================================================
@@ -1104,7 +1069,7 @@ module.exports = class SkillTree {
 
   // 3.5 UI METHODS
   // ----------------------------------------------------------------------------
-  
+
   injectCSS() {
     const css = `
       /* Main Button - Matching TitleManager style */
@@ -1512,7 +1477,7 @@ module.exports = class SkillTree {
 
   // 3.6 BUTTON MANAGEMENT
   // ----------------------------------------------------------------------------
-  
+
   /**
    * Create skill tree button in Discord UI (matching TitleManager style and position)
    */
@@ -1645,7 +1610,7 @@ module.exports = class SkillTree {
 
   // 3.7 MODAL MANAGEMENT
   // ----------------------------------------------------------------------------
-  
+
   /**
    * Show skill tree modal with scroll position preservation
    */
@@ -1888,7 +1853,7 @@ module.exports = class SkillTree {
   // ============================================================================
   // SECTION 4: DEBUGGING & DEVELOPMENT
   // ============================================================================
-  
+
   getSettingsPanel() {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
