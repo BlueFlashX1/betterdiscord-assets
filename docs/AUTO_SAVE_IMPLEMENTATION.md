@@ -243,4 +243,3 @@ unlockAchievement(achievement) {
 ---
 
 **Your understanding of cache is correct!** The plugin already uses memory as a cache (fast) and only writes to disk when needed (slow but rare). The debouncing system ensures no lag!
-

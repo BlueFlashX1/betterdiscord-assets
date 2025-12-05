@@ -224,4 +224,3 @@ this.debounced.saveSettings();
 - No lag (rare immediate saves)
 
 **Best of both worlds!** 🎯✨
-

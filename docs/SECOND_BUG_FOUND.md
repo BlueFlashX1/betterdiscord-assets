@@ -105,4 +105,3 @@ Even with the constructor fix, progress doesn't save because:
 4. Gain XP
 5. Reload Discord
 6. **Verify**: Progress saved ✅
-

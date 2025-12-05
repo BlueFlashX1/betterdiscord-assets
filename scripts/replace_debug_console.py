@@ -14,23 +14,23 @@ with open('plugins/SoloLevelingStats.plugin.js', 'r') as f:
 patterns = [
     # Constructor
     (r"console\.log\('🔧 \[CONSTRUCTOR\]'", "this.debugConsole('🔧 [CONSTRUCTOR]'"),
-    
+
     # Load
     (r"console\.log\('💾 \[LOAD\]'", "this.debugConsole('💾 [LOAD]'"),
     (r"console\.log\('🔍 \[LOAD\]'", "this.debugConsole('🔍 [LOAD]'"),
     (r"console\.log\('✅ \[LOAD\]'", "this.debugConsole('✅ [LOAD]'"),
     (r"console\.log\('🎯 \[LOAD\]'", "this.debugConsole('🎯 [LOAD]'"),
-    
+
     # Save
     (r"console\.log\('💾 \[SAVE\]'", "this.debugConsole('💾 [SAVE]'"),
     (r"console\.log\('✅ \[SAVE\]'", "this.debugConsole('✅ [SAVE]'"),
-    
+
     # Periodic
     (r"console\.log\('💾 \[PERIODIC\]'", "this.debugConsole('💾 [PERIODIC]'"),
-    
+
     # Shadow XP
     (r"console\.log\(`🌟 \[SHADOW XP\]", "this.debugConsole('🌟 [SHADOW XP]', `"),
-    
+
     # Stop
     (r"console\.log\('💾 \[STOP\]'", "this.debugConsole('💾 [STOP]'"),
 ]
@@ -45,4 +45,3 @@ with open('plugins/SoloLevelingStats.plugin.js', 'w') as f:
 
 print("✅ Replaced all debug console.log statements!")
 print(f"✅ Total patterns replaced: {len(patterns)}")
-

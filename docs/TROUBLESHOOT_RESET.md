@@ -5,6 +5,7 @@
 ### **Step 1: Check What's Being Saved**
 
 Open console (Ctrl+Shift+I) and look for:
+
 ```
 💾 [SAVE] Clean settings to be saved:
   level: 5
@@ -13,6 +14,7 @@ Open console (Ctrl+Shift+I) and look for:
 ```
 
 **Question**: Is your progress showing in the save messages?
+
 - ✅ **YES** → Save is working, problem is with load
 - ❌ **NO** → Save is broken, progress not being tracked
 
@@ -21,6 +23,7 @@ Open console (Ctrl+Shift+I) and look for:
 ### **Step 2: Check What's Being Loaded**
 
 After reload, look for:
+
 ```
 💾 [LOAD] Raw saved data from storage:
   level: 5
@@ -29,6 +32,7 @@ After reload, look for:
 ```
 
 **Question**: Does loaded data match what was saved?
+
 - ✅ **YES** → Load is working, problem is elsewhere
 - ❌ **NO** → Old corrupted data still in storage!
 
@@ -37,6 +41,7 @@ After reload, look for:
 ### **Step 3: Check Default Settings**
 
 Look for:
+
 ```
 🔍 [LOAD] Default settings before merge:
   level: 1
@@ -45,6 +50,7 @@ Look for:
 ```
 
 **Question**: Are defaults being corrupted?
+
 - ✅ **Should be**: level 1, xp 0
 - ❌ **If NOT**: Deep copy bug still exists!
 
@@ -53,6 +59,7 @@ Look for:
 ### **Step 4: Verify Merge**
 
 Look for:
+
 ```
 ✅ [LOAD] Settings after deep merge:
   level: 5
@@ -66,6 +73,7 @@ Look for:
 ```
 
 **Question**: Do settings match saved data after merge?
+
 - ✅ **YES** → Everything working!
 - ❌ **NO** → Merge is broken!
 
@@ -74,9 +82,11 @@ Look for:
 ## 🚨 **Most Likely Issue: Old Corrupted Data**
 
 ### **Problem:**
+
 Your old save data was corrupted by the shallow copy bugs. Even with fixes, the corrupted data is still in Discord's storage!
 
 ### **Solution:**
+
 **YOU MUST CLEAR THE OLD DATA!**
 
 Open console (Ctrl+Shift+I) and run:
@@ -97,11 +107,13 @@ Then reload Discord (Ctrl+R).
 ## 📊 **Test After Clearing Data:**
 
 ### **1. Fresh Start:**
+
 ```
 Reload Discord → Should start at Level 1
 ```
 
 ### **2. Gain XP:**
+
 ```
 Send 5 messages → XP should increase
 Watch console:
@@ -110,6 +122,7 @@ Watch console:
 ```
 
 ### **3. Reload Again:**
+
 ```
 Reload Discord → Should load Level 1, XP 150
 Watch console:
@@ -119,6 +132,7 @@ Watch console:
 ```
 
 ### **4. Success Check:**
+
 ```
 ✅ XP matches before/after reload
 ✅ Console shows all matches are true
@@ -132,12 +146,14 @@ Watch console:
 ### **Issue 1: Multiple Plugins Interfering**
 
 **Check:**
+
 ```javascript
 // In console, check what's actually saved:
 console.log(BdApi.Data.load('SoloLevelingStats', 'settings'));
 ```
 
 **Look for:**
+
 - Unexpected properties
 - Missing properties
 - Corrupted values
@@ -145,17 +161,20 @@ console.log(BdApi.Data.load('SoloLevelingStats', 'settings'));
 ### **Issue 2: Deep Copy Not Working**
 
 **Console should show:**
+
 ```
 isDeepCopy: true
 ```
 
 **If false:**
+
 - Deep copy fix not applied
 - Settings still sharing reference with defaults
 
 ### **Issue 3: Save Timing**
 
 **Check:**
+
 ```
 When does save happen?
 - After every message? (debounced)
@@ -164,6 +183,7 @@ When does save happen?
 ```
 
 **Should see:**
+
 ```
 💾 [PERIODIC] Backup auto-save triggered (every 30 sec)
 💾 [SAVE] Successfully saved (after changes)
@@ -189,18 +209,22 @@ When does save happen?
 ## 💡 **Common Mistakes:**
 
 ### **Mistake 1: Didn't Clear Old Data**
+
 **Symptom**: Saved data shows old values
 **Fix**: Run delete commands, reload
 
 ### **Mistake 2: Reloading Too Fast**
+
 **Symptom**: Save doesn't finish before reload
 **Fix**: Wait 2 seconds after gaining XP before reloading
 
 ### **Mistake 3: Wrong Branch**
+
 **Symptom**: Fixes not applied
 **Fix**: Verify on `solo-stats-v2.3-testing` branch
 
 ### **Mistake 4: Multiple Instances**
+
 **Symptom**: Two plugins fighting over same data
 **Fix**: Disable one instance
 
@@ -236,6 +260,7 @@ This will help diagnose exactly where the problem is!
 ## ✅ **Expected Behavior:**
 
 **Normal Flow:**
+
 1. Gain XP → Settings updated in memory
 2. After 1 second → Debounced save triggers
 3. Every 30 seconds → Periodic backup save
@@ -245,4 +270,3 @@ This will help diagnose exactly where the problem is!
 7. **Result**: Progress preserved!
 
 If this isn't happening, the console output will show exactly where it breaks!
-

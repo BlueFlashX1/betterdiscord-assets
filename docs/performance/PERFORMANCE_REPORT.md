@@ -1,0 +1,195 @@
+# macOS Performance Analysis Report
+**Generated**: 2025-11-30 10:47  
+**System**: MacBook Pro M4 Pro (12 cores, 24GB RAM)
+
+## 🚨 CRITICAL ISSUES FOUND
+
+### 1. EXTREMELY HIGH LOAD AVERAGE ⚠️
+- **Current**: 200-300 (1m, 5m, 15m averages)
+- **Expected**: < 12 (for 12-core system)
+- **Severity**: CRITICAL - System is severely overloaded
+- **Impact**: Causes system slowdown, unresponsive UI
+
+### 2. EXCESSIVE XCODE COMPILATION PROCESSES
+- **Found**: 10+ `swift-frontend` processes running simultaneously
+- **CPU Usage**: 10-26% each (total ~150%+ CPU usage)
+- **Issue**: Xcode is compiling multiple projects in background
+- **Impact**: Massive CPU drain, system slowdown
+
+### 3. MEMORY PRESSURE
+- **Swap Usage**: 1.75GB / 3GB (58% swap used)
+- **Memory Free**: Only 780MB unused
+- **Issue**: System is swapping to disk (very slow)
+- **Impact**: Severe performance degradation
+
+### 4. HIGH PROCESS COUNT
+- **Running**: 744 processes
+- **Normal**: ~200-400 processes
+- **Issue**: Too many background processes
+- **Impact**: Context switching overhead
+
+## 📊 DETAILED METRICS
+
+### CPU
+- **Cores**: 12 (Apple M4 Pro)
+- **Current Usage**: 31% user, 25% sys, 44% idle
+- **Load Average**: 200-300 (CRITICAL - should be < 12)
+- **Top Consumers**:
+  - WindowServer: 73% CPU
+  - Multiple swift-frontend: 10-26% each
+  - Cursor renderer: 5.6% CPU, 6.1% memory
+
+### Memory
+- **Total**: 24GB
+- **Used**: 22GB (91% used)
+- **Free**: 780MB
+- **Swap Used**: 1.75GB / 3GB
+- **Memory Pressure**: Normal (but swap usage indicates stress)
+
+### Disk
+- **Total**: 926GB
+- **Used**: 11GB (3%)
+- **Available**: 518GB
+- **Status**: ✅ Healthy
+
+### GPU
+- **Model**: Apple M4 Pro (16 cores)
+- **Status**: ✅ Normal
+
+## 🔍 ROOT CAUSES
+
+### Primary Issues:
+1. **Xcode Background Compilation**: 10+ swift-frontend processes compiling simultaneously
+2. **High Process Count**: 744 processes (normal: 200-400)
+3. **Memory Pressure**: System swapping to disk
+4. **Cursor/VS Code**: Multiple renderer processes consuming memory
+
+### Secondary Issues:
+- Large caches (Vivaldi: 1.6GB, pip: 993MB)
+- Multiple Node processes (Cursor extensions)
+- Background services (startup items)
+
+## ⚡ IMMEDIATE ACTIONS REQUIRED
+
+### 1. STOP XCODE COMPILATION (URGENT)
+```bash
+# Kill all swift-frontend processes
+killall swift-frontend
+
+# Or kill specific PIDs
+kill 88544 88913 88542 88645 88862 88909 88698 88774 89015 88775
+```
+
+### 2. CLEAR MEMORY PRESSURE
+```bash
+# Clear system memory
+sudo purge
+
+# Restart system (recommended)
+sudo reboot
+```
+
+### 3. CLOSE UNNECESSARY APPLICATIONS
+- Close Xcode if not actively using
+- Close unused Cursor windows
+- Close browser tabs (Vivaldi)
+
+### 4. CLEAR LARGE CACHES
+```bash
+# Clear Vivaldi cache (1.6GB)
+rm -rf ~/Library/Caches/Vivaldi/*
+
+# Clear pip cache (993MB)
+pip cache purge
+
+# Clear other caches
+rm -rf ~/Library/Caches/highlight-updater/*
+```
+
+## 🛠️ OPTIMIZATION STEPS
+
+### Immediate (Do Now)
+1. ✅ Kill Xcode compilation processes
+2. ✅ Clear system memory (`sudo purge`)
+3. ✅ Close unused applications
+4. ✅ Clear large caches
+
+### Short-term (Today)
+1. Restart system to clear all processes
+2. Review startup items (disable unnecessary ones)
+3. Clean node_modules (657MB in one project)
+4. Monitor Activity Monitor for resource hogs
+
+### Long-term (This Week)
+1. Optimize Xcode build settings
+2. Review and disable unnecessary startup items
+3. Set up regular cache cleanup
+4. Monitor system performance regularly
+
+## 📋 SPECIFIC RECOMMENDATIONS
+
+### Xcode Optimization
+```bash
+# Stop all Xcode builds
+killall Xcode
+killall swift-frontend
+
+# Disable automatic builds
+# Xcode → Preferences → General → Uncheck "Automatically refresh"
+```
+
+### Startup Items to Review
+- `com.user.hangman-bot` (Status: 1 - may be stuck)
+- `com.user.grammar-teacher-bot` (Status: 78 - high CPU)
+- Multiple background services
+
+### Cache Cleanup Script
+```bash
+# Create cleanup script
+cat > ~/cleanup-caches.sh << 'EOF'
+#!/bin/bash
+echo "Clearing caches..."
+rm -rf ~/Library/Caches/Vivaldi/*
+rm -rf ~/Library/Caches/highlight-updater/*
+pip cache purge
+echo "Done!"
+EOF
+chmod +x ~/cleanup-caches.sh
+```
+
+### Process Monitoring
+```bash
+# Monitor top processes
+watch -n 2 'ps aux | sort -rk 3,3 | head -10'
+
+# Monitor memory pressure
+watch -n 5 'memory_pressure'
+```
+
+## 🎯 EXPECTED RESULTS
+
+After optimizations:
+- **Load Average**: Should drop to < 20 (still high but manageable)
+- **Memory**: Swap usage should decrease
+- **CPU**: Should stabilize around 20-40% idle
+- **Response Time**: System should feel more responsive
+
+## ⚠️ WARNING SIGNS TO WATCH
+
+- Load average > 50: System overloaded
+- Swap usage > 1GB: Memory pressure
+- CPU idle < 20%: High CPU usage
+- Process count > 600: Too many processes
+
+## 📞 NEXT STEPS
+
+1. **Immediate**: Kill Xcode processes and clear memory
+2. **Today**: Restart system and clear caches
+3. **This Week**: Review startup items and optimize Xcode
+4. **Ongoing**: Monitor performance weekly
+
+---
+
+**Generated by**: Performance Analysis Script  
+**System**: macOS Sequoia 25.2.0  
+**Hardware**: MacBook Pro M4 Pro (14-inch, 2024)

@@ -75,4 +75,3 @@ this.throttled.updateShadowPowerDisplay = bindIfExists('updateShadowPowerDisplay
 ```
 
 This uses ternary operator (not if-else!) and returns a no-op function if method doesn't exist.
-
