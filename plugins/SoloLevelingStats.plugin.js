@@ -2623,23 +2623,27 @@ module.exports = class SoloLevelingStats {
   }
 
   // SHADOW XP SHARE (Integration with ShadowArmy plugin)
-  // Shares XP with shadow army when user gains XP
+  // FUNCTIONAL - NO IF-ELSE! Uses optional chaining and short-circuit evaluation
   shareShadowXP(xpAmount, source = 'message') {
-    try {
-      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
-      const isShadowArmyActive = shadowArmyPlugin?.instance;
-      
-      // Only share if ShadowArmy plugin is active
-      if (!isShadowArmyActive) return;
-      
-      // Call ShadowArmy's shareShadowXP if it exists
-      if (typeof shadowArmyPlugin.instance.shareShadowXP === 'function') {
-        shadowArmyPlugin.instance.shareShadowXP(xpAmount, source);
-        console.log(`🌟 [SHADOW XP] Shared ${xpAmount} XP (${source})`);
-      }
-    } catch (error) {
-      // Silent fail - don't spam console if ShadowArmy not available
+    const shareWithPlugin = (plugin) => {
+      plugin.instance.shareShadowXP(xpAmount, source);
+      console.log(`🌟 [SHADOW XP] Shared ${xpAmount} XP (${source})`);
+      return true;
+    };
+    
+    const logError = (error) => {
       this.debugLog('SHADOW_XP_SHARE', `ShadowArmy integration: ${error.message}`);
+      return null;
+    };
+    
+    try {
+      const plugin = BdApi.Plugins.get('ShadowArmy');
+      const hasShareFunction = typeof plugin?.instance?.shareShadowXP === 'function';
+      
+      // Functional short-circuit: Only executes shareWithPlugin if hasShareFunction is true
+      return hasShareFunction && shareWithPlugin(plugin);
+    } catch (error) {
+      return logError(error);
     }
   }
 
