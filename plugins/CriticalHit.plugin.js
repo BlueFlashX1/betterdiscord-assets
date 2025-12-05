@@ -1559,9 +1559,7 @@ module.exports = class CriticalHit {
             }
 
             // Pure ID match (if we extracted a pure ID)
-            if (pureMessageId !== normalizedMsgId && entryPureId && entryPureId === pureMessageId) {
-              return true;
-            }
+            if (pureMessageId !== normalizedMsgId && entryPureId === pureMessageId) return true;
 
             // Partial match (for composite formats)
             return (
