@@ -810,39 +810,105 @@ module.exports = class SoloLevelingTitleManager {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(15px);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        animation: fadeIn 0.3s ease;
+        animation: fadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
 
       .tm-modal-content {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
-        border-radius: 16px;
+        background: linear-gradient(145deg, #0f0f1e 0%, #1a1a2e 40%, #16213e 70%, #1a1a2e 100%);
+        border: 2px solid transparent;
+        border-radius: 20px;
         width: 90%;
-        max-width: 800px;
+        max-width: 850px;
         max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+        overflow: hidden;
+        box-shadow: 0 25px 80px rgba(0, 0, 0, 0.9),
+                    0 0 120px rgba(139, 92, 246, 0.5),
+                    0 0 200px rgba(102, 126, 234, 0.3),
+                    inset 0 0 120px rgba(139, 92, 246, 0.15);
+        background-clip: padding-box;
+        position: relative;
+      }
+      .tm-modal-content::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        padding: 2px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.7) 0%, 
+          rgba(102, 126, 234, 0.7) 25%,
+          rgba(59, 130, 246, 0.5) 50%,
+          rgba(139, 92, 246, 0.7) 75%,
+          rgba(102, 126, 234, 0.7) 100%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        z-index: -1;
+        animation: borderGlow 3s ease-in-out infinite;
+      }
+      @keyframes borderGlow {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
       }
 
       .tm-modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 20px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        padding: 30px;
+        border-bottom: 2px solid rgba(139, 92, 246, 0.4);
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.25) 0%, 
+          rgba(102, 126, 234, 0.25) 50%,
+          rgba(118, 75, 162, 0.25) 100%);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        position: relative;
+        overflow: hidden;
       }
-
+      .tm-modal-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 200%;
+        height: 100%;
+        background: linear-gradient(90deg, 
+          transparent, 
+          rgba(139, 92, 246, 0.15), 
+          rgba(102, 126, 234, 0.15),
+          transparent);
+        animation: shimmer 4s ease-in-out infinite;
+      }
+      @keyframes shimmer {
+        0% { left: -100%; }
+        100% { left: 100%; }
+      }
       .tm-modal-header h2 {
         margin: 0;
-        color: #8b5cf6;
+        color: #fff;
         font-family: 'Orbitron', sans-serif;
-        font-size: 24px;
+        font-size: 32px;
+        font-weight: 900;
+        text-shadow: 0 2px 15px rgba(139, 92, 246, 1),
+                     0 0 30px rgba(102, 126, 234, 0.8),
+                     0 4px 40px rgba(139, 92, 246, 0.6);
+        letter-spacing: 2px;
+        background: linear-gradient(135deg, 
+          #fff 0%, 
+          #e9d5ff 30%,
+          #c4b5fd 60%,
+          #a78bfa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        z-index: 1;
       }
 
       .tm-close-button {
