@@ -1209,9 +1209,7 @@ module.exports = class CriticalHit {
         this.pendingCrits.set(messageId, pendingEntry);
 
         // Also store by content hash if available (for matching when ID changes)
-        if (contentHash && isHashId) {
-          this.pendingCrits.set(contentHash, pendingEntry);
-        }
+        contentHash && isHashId && this.pendingCrits.set(contentHash, pendingEntry);
       }
 
       // #region agent log
@@ -3666,10 +3664,7 @@ module.exports = class CriticalHit {
               const author = this.getAuthorId(retryElement);
               if (content && author) {
                 const contentText = content.textContent?.trim() || '';
-                if (contentText) {
-                  const contentHash = this.getContentHash(author, contentText);
-                  pendingCrit = this.pendingCrits.get(contentHash);
-                }
+                contentText && (pendingCrit = this.pendingCrits.get(this.getContentHash(author, contentText)));
               }
             }
 
