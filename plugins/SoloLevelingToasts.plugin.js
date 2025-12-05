@@ -1515,6 +1515,109 @@ module.exports = class SoloLevelingToasts {
    * 3. Include optional context data
    */
   debugError(operation, error, data = null) {
+    if (!this.settings?.debugMode) return;
     console.error(`[SoloLevelingToasts] ERROR [${operation}]:`, error, data || '');
+  }
+
+  getSettingsPanel() {
+    const panel = document.createElement('div');
+    panel.style.padding = '20px';
+    panel.innerHTML = `
+      <div>
+        <h3 style="color: #8b5cf6; margin-bottom: 20px;">Toast Notification Settings</h3>
+        
+        <label style="display: flex; align-items: center; margin-bottom: 15px;">
+          <input type="checkbox" ${this.settings.showParticles ? 'checked' : ''} id="toast-particles">
+          <span style="margin-left: 10px;">Show Particles</span>
+        </label>
+        
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Particle Count: <strong>${this.settings.particleCount}</strong></span>
+          <input type="range" min="5" max="50" value="${this.settings.particleCount}" id="toast-particle-count" style="width: 100%;">
+        </label>
+        
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Max Toasts: <strong>${this.settings.maxToasts}</strong></span>
+          <input type="range" min="1" max="10" value="${this.settings.maxToasts}" id="toast-max-toasts" style="width: 100%;">
+        </label>
+        
+        <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
+          <span style="margin-bottom: 5px;">Position:</span>
+          <select id="toast-position" style="padding: 8px; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; width: 100%;">
+            <option value="top-right" ${this.settings.position === 'top-right' ? 'selected' : ''}>Top Right</option>
+            <option value="top-left" ${this.settings.position === 'top-left' ? 'selected' : ''}>Top Left</option>
+            <option value="bottom-right" ${this.settings.position === 'bottom-right' ? 'selected' : ''}>Bottom Right</option>
+            <option value="bottom-left" ${this.settings.position === 'bottom-left' ? 'selected' : ''}>Bottom Left</option>
+          </select>
+        </label>
+        
+        <label style="display: flex; align-items: center; margin-bottom: 15px;">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="toast-debug">
+          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
+        </label>
+        
+        <div style="margin-top: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Toast creation and rendering</li>
+              <li>Hook into SoloLevelingStats</li>
+              <li>Settings load/save operations</li>
+              <li>CSS injection</li>
+              <li>Container management</li>
+              <li>Error tracking and debugging</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Event listeners
+    const particlesCheckbox = panel.querySelector('#toast-particles');
+    const particleCountSlider = panel.querySelector('#toast-particle-count');
+    const maxToastsSlider = panel.querySelector('#toast-max-toasts');
+    const positionSelect = panel.querySelector('#toast-position');
+    const debugCheckbox = panel.querySelector('#toast-debug');
+
+    particlesCheckbox?.addEventListener('change', (e) => {
+      this.settings.showParticles = e.target.checked;
+      this.saveSettings();
+    });
+
+    particleCountSlider?.addEventListener('input', (e) => {
+      this.settings.particleCount = parseInt(e.target.value);
+      e.target.previousElementSibling.querySelector('strong').textContent = e.target.value;
+    });
+
+    particleCountSlider?.addEventListener('change', () => {
+      this.saveSettings();
+    });
+
+    maxToastsSlider?.addEventListener('input', (e) => {
+      this.settings.maxToasts = parseInt(e.target.value);
+      e.target.previousElementSibling.querySelector('strong').textContent = e.target.value;
+    });
+
+    maxToastsSlider?.addEventListener('change', () => {
+      this.saveSettings();
+    });
+
+    positionSelect?.addEventListener('change', (e) => {
+      this.settings.position = e.target.value;
+      this.saveSettings();
+      if (this.toastContainer) {
+        this.removeToastContainer();
+        this.createToastContainer();
+      }
+    });
+
+    debugCheckbox?.addEventListener('change', (e) => {
+      this.settings.debugMode = e.target.checked;
+      this.saveSettings();
+      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
+    });
+
+    return panel;
   }
 };
