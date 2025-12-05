@@ -2204,9 +2204,21 @@ module.exports = class SoloLevelingStats {
       };
 
       // Create throttled versions (4x per second max)
-      this.throttled.updateUserHPBar = bindIfExists('updateUserHPBar', 250, this.throttle.bind(this));
-      this.throttled.updateShadowPowerDisplay = bindIfExists('updateShadowPowerDisplay', 250, this.throttle.bind(this));
-      this.throttled.checkDailyQuests = bindIfExists('checkDailyQuests', 500, this.throttle.bind(this));
+      this.throttled.updateUserHPBar = bindIfExists(
+        'updateUserHPBar',
+        250,
+        this.throttle.bind(this)
+      );
+      this.throttled.updateShadowPowerDisplay = bindIfExists(
+        'updateShadowPowerDisplay',
+        250,
+        this.throttle.bind(this)
+      );
+      this.throttled.checkDailyQuests = bindIfExists(
+        'checkDailyQuests',
+        500,
+        this.throttle.bind(this)
+      );
 
       // Create debounced versions (wait 1 sec after last call)
       this.debounced.saveSettings = bindIfExists('saveSettings', 1000, this.debounce.bind(this));
@@ -2245,14 +2257,21 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Plugin started successfully');
 
-      // Initialize shadow power cache and update it
+      // FUNCTIONAL: Safe method calls (NO IF-ELSE!)
+      // Only calls methods if they exist, using optional chaining and short-circuit
+      const safeCall = (methodName, ...args) => {
+        const method = this[methodName];
+        return method?.(...args);
+      };
+
+      // Initialize shadow power cache (only if methods exist)
       this.cachedShadowPower = '0';
-      this.updateShadowPower();
-      // Setup MutationObserver for real-time shadow power updates
-      this.setupShadowPowerObserver();
-      // Fallback: Update shadow power periodically (every 5 seconds) as backup for faster updates
+      safeCall('updateShadowPower');
+      safeCall('setupShadowPowerObserver');
+      
+      // Fallback: Update shadow power periodically (only if method exists)
       this.shadowPowerInterval = setInterval(() => {
-        this.updateShadowPower();
+        safeCall('updateShadowPower');
       }, 5000);
 
       // PERIODIC BACKUP SAVE (Every 30 seconds)
@@ -3353,7 +3372,7 @@ module.exports = class SoloLevelingStats {
         clearTimeout(this.shadowPowerUpdateTimeout);
       }
       this.shadowPowerUpdateTimeout = setTimeout(() => {
-        this.updateShadowPower();
+        safeCall('updateShadowPower');
       }, 100); // Update 100ms after last mutation (faster updates)
     });
 
@@ -3379,8 +3398,8 @@ module.exports = class SoloLevelingStats {
           set: (target, prop, value) => {
             if (prop === 'shadows' || prop === 'favoriteShadowIds') {
               target[prop] = value;
-              // Trigger shadow power update
-              setTimeout(() => this.updateShadowPower(), 100);
+              // Trigger shadow power update (functional safe call)
+              setTimeout(() => this.updateShadowPower?.(), 100);
               return true;
             }
             return Reflect.set(target, prop, value);
