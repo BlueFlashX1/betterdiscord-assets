@@ -2560,9 +2560,7 @@ module.exports = class CriticalHit {
             node.querySelector('[class*="content"]') ||
             node.querySelector('[class*="text"]') ||
             (node.textContent?.trim().length ?? 0) > 0;
-          if (hasContent) {
-            messageElement = node;
-          }
+          hasContent && (messageElement = node);
         }
       }
 
