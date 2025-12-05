@@ -2257,21 +2257,14 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Plugin started successfully');
 
-      // FUNCTIONAL: Safe method calls (NO IF-ELSE!)
-      // Only calls methods if they exist, using optional chaining and short-circuit
-      const safeCall = (methodName, ...args) => {
-        const method = this[methodName];
-        return method?.(...args);
-      };
-
-      // Initialize shadow power cache (only if methods exist)
+      // Initialize shadow power cache (safe - uses optional chaining)
       this.cachedShadowPower = '0';
-      safeCall('updateShadowPower');
-      safeCall('setupShadowPowerObserver');
+      this.updateShadowPower?.();
+      this.setupShadowPowerObserver?.();
       
-      // Fallback: Update shadow power periodically (only if method exists)
+      // Fallback: Update shadow power periodically (safe call with optional chaining)
       this.shadowPowerInterval = setInterval(() => {
-        safeCall('updateShadowPower');
+        this.updateShadowPower?.();
       }, 5000);
 
       // PERIODIC BACKUP SAVE (Every 30 seconds)
@@ -3372,7 +3365,7 @@ module.exports = class SoloLevelingStats {
         clearTimeout(this.shadowPowerUpdateTimeout);
       }
       this.shadowPowerUpdateTimeout = setTimeout(() => {
-        safeCall('updateShadowPower');
+        this.updateShadowPower?.();
       }, 100); // Update 100ms after last mutation (faster updates)
     });
 
