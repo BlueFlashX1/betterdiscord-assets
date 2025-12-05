@@ -1436,7 +1436,7 @@ module.exports = class CriticalHit {
       }
 
       const channelCrits = this.getCritHistory(channelId);
-      if (channelCrits.length === 0) {
+      if (!channelCrits.length) {
         this.debugLog(
           'RESTORE_CHANNEL_CRITS',
           'WARNING: No crits found in history for this channel',
@@ -1993,9 +1993,8 @@ module.exports = class CriticalHit {
           content.style.setProperty('text-shadow', 'none', 'important');
         }
 
-        if (critSettings.animation !== false && this.settings?.critAnimation) {
-          content.style.animation = 'critPulse 0.5s ease-in-out';
-        }
+        critSettings.animation !== false && this.settings?.critAnimation &&
+          (content.style.animation = 'critPulse 0.5s ease-in-out');
       }
 
       messageElement.classList.add('bd-crit-hit');
@@ -8331,7 +8330,7 @@ module.exports = class CriticalHit {
     // Find all existing animation elements in DOM (more reliable than just Set)
     const existingElements = container.querySelectorAll('.cha-critical-hit-text');
 
-    if (existingElements.length === 0) return;
+    if (!existingElements.length) return;
 
     const fadeOutDuration = 300; // 300ms fade out
 
