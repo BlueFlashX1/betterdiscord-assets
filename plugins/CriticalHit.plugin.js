@@ -4,6 +4,15 @@
  * @description Critical hit system with visual effects and animations
  * @version 3.0.0
  *
+ * @changelog v3.0.0 (2025-12-05)
+ * - MAJOR REFACTOR: Organized into 4-section structure
+ * - Section 1: Imports & Dependencies
+ * - Section 2: Configuration & Helpers
+ * - Section 3: Major Operations
+ * - Section 4: Debugging & Development
+ * - Ongoing optimization: Replacing for-loops and if-statements with functional alternatives
+ * - Deep copy fixes for settings (prevents save corruption)
+ *
  * @changelog v2.0.2 (2025-12-04)
  * - Reduced message history limit: 10,000 → 2,000 messages
  * - Memory optimization (~80% reduction in history storage)
@@ -17,13 +26,37 @@
  * - Console clean for normal users, full logging available via debug mode
  */
 
+// ============================================
+// SECTION 1: IMPORTS & DEPENDENCIES
+// ============================================
+// No external imports (BetterDiscord plugin)
+
+// ============================================
+// SECTION 2: CONFIGURATION & HELPERS
+// ============================================
+// (Configuration constants and helper methods organized below in class)
+
+// ============================================
+// SECTION 3: MAJOR OPERATIONS
+// ============================================
+// (Core plugin logic organized below in class)
+
+// ============================================
+// SECTION 4: DEBUGGING & DEVELOPMENT
+// ============================================
+// (Debug system organized below in class)
+
 module.exports = class CriticalHit {
+  // ============================================
+  // SECTION 2: CONFIGURATION & HELPERS
+  // ============================================
+
   // ============================================================================
   // CONSTRUCTOR & INITIALIZATION
   // ============================================================================
   constructor() {
     // ============================================================================
-    // MERGED SETTINGS (from both CriticalHit and CriticalHitAnimation)
+    // DEFAULT SETTINGS (Merged from CriticalHit + CriticalHitAnimation)
     // ============================================================================
     this.defaultSettings = {
       enabled: true,
@@ -139,8 +172,12 @@ module.exports = class CriticalHit {
     this._cacheMaxAge = 5000; // 5 seconds cache validity
   }
 
+  // ============================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================
+
   // ============================================================================
-  // DEBUG UTILITIES
+  // DEBUG LOGGING SYSTEM
   // ============================================================================
 
   debugLog(operation, message, data = null) {
@@ -207,6 +244,10 @@ module.exports = class CriticalHit {
       timestamp,
     });
   }
+
+  // ============================================
+  // SECTION 3: MAJOR OPERATIONS
+  // ============================================
 
   // ============================================================================
   // LIFECYCLE METHODS
