@@ -1,7 +1,7 @@
 /**
  * @name LevelProgressBar
  * @author BlueFlashX1
- * @description Always-visible level progress bar for Solo Leveling Stats with Shadow Army total power display
+ * @description Real-time progress bar showing your level, XP, rank, and Shadow Army power
  * @version 1.3.0
  *
  * ============================================================================
@@ -1206,15 +1206,15 @@ module.exports = class LevelProgressBar {
   // ============================================================================
   // SECTION 4: DEBUGGING & DEVELOPMENT
   // ============================================================================
-  
+
   /**
    * 4.1 DEBUG SYSTEM (FUNCTIONAL - NO IF-ELSE!)
-   * 
+   *
    * Debug logging system controlled by settings.debugMode
    * Uses short-circuit evaluation instead of if-else statements
    * OFF by default for clean console in production
    */
-  
+
   // Note: debugLog and debugError are defined in Section 2.2 (Helper Functions)
   // This section is reserved for future debugging utilities
 };

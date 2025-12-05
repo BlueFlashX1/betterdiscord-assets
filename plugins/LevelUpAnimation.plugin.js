@@ -1,7 +1,7 @@
 /**
  * @name LevelUpAnimation
  * @author BlueFlashX1
- * @description Floating "LEVEL UP!" animation when you level up in Solo Leveling Stats
+ * @description Epic "LEVEL UP!" animation with particles when you level up
  * @version 1.1.0
  *
  * ============================================================================

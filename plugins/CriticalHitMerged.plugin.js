@@ -2,13 +2,13 @@
  * @name CriticalHit (Merged)
  * @author BlueFlashXS
  * @description Messages have a chance to land a critical hit with special purple-black gradient styling, font, and animated "CRITICAL HIT!" notifications with screen shake!
- * @version 2.0.2
- * 
+ * @version 2.0.3
+ *
  * @changelog v2.0.2 (2025-12-04)
  * - Reduced message history limit: 10,000 → 2,000 messages
  * - Memory optimization (~80% reduction in history storage)
  * - Improves renderer process memory footprint
- * 
+ *
  * @changelog v2.0.1 (2025-12-04)
  * - Removed excessive console logging (spam reduction)
  * - "Saved X messages to history" now only shows in debug mode
@@ -993,7 +993,8 @@ module.exports = class CriticalHitMerged {
         saveVerified: verifyCritCount === critCount,
       });
       // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
-      this.debugLog('SAVE_MESSAGE_HISTORY_SUMMARY',
+      this.debugLog(
+        'SAVE_MESSAGE_HISTORY_SUMMARY',
         `Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
       );
     } catch (error) {
@@ -1309,6 +1310,17 @@ module.exports = class CriticalHitMerged {
         }
 
         this.messageHistory.push(historyEntry);
+
+        // FIFO QUEUE: If exceeds limit, remove oldest immediately
+        if (this.messageHistory.length > this.maxHistorySize) {
+          const removed = this.messageHistory.shift(); // Remove oldest
+          this.debugLog('ADD_TO_HISTORY', 'Removed oldest message (FIFO queue)', {
+            removedId: removed.messageId,
+            currentSize: this.messageHistory.length,
+            maxSize: this.maxHistorySize,
+          });
+        }
+
         // Invalidate cache when history is modified
         if (isCrit) {
           this._cachedCritHistory = null;
@@ -1457,8 +1469,11 @@ module.exports = class CriticalHitMerged {
         allCritIds: channelCrits.map((e) => e.messageId),
       });
       // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
-      this.debugLog('RESTORE_CHANNEL_CRITS_START',
-        `Restoring ${channelCrits.length} crits for channel ${channelId} (attempt ${retryCount + 1})`
+      this.debugLog(
+        'RESTORE_CHANNEL_CRITS_START',
+        `Restoring ${channelCrits.length} crits for channel ${channelId} (attempt ${
+          retryCount + 1
+        })`
       );
 
       // Create a Set of message IDs that should have crits (normalize to strings)
@@ -2471,7 +2486,8 @@ module.exports = class CriticalHitMerged {
       if (messageCount > 0 || loadAttempts >= maxLoadAttempts) {
         this.isLoadingChannel = false;
         // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
-        this.debugLog('CHANNEL_LOADED',
+        this.debugLog(
+          'CHANNEL_LOADED',
           `Channel loaded (${messageCount} messages), ready to process new messages`
         );
 

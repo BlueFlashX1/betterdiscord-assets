@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.3.0
+ * @version 4.4.0
  *
  * ============================================================================
  * CORE FEATURES
@@ -36,20 +36,20 @@
  * - Result: 60% fewer mobs per minute (better memory footprint)
  * - Aggressive cleanup on dungeon complete (all references nullified)
  * - Boss/mob/combat data all cleared properly
- * 
+ *
  * GARBAGE COLLECTION SYSTEM (NEW):
  * - Periodic GC triggers every 5 minutes
  * - GC on dungeon completion
  * - Cleans stale caches (allocation, extraction events)
  * - Removes inactive dungeon tracking data
  * - Suggests V8 GC when available
- * 
+ *
  * CONSOLE CLEANUP:
  * - All channel lock logging → debug mode
  * - HP/Mana sync logging → debug mode
  * - Regeneration logging → debug mode
  * - Capacity warnings → throttled (30s)
- * 
+ *
  * @changelog v4.2.0 (2025-12-04) - SPAWN CAPACITY SYSTEM
  * SPAWN LIMITING (NEW):
  * - Added server-based dungeon capacity system
@@ -710,7 +710,7 @@ module.exports = class Dungeons {
     setInterval(() => {
       this.validateActiveDungeonStatus();
     }, 10000);
-    
+
     // GARBAGE COLLECTION: Periodic cleanup every 5 minutes
     this.gcInterval = setInterval(() => {
       this.triggerGarbageCollection('periodic');
@@ -744,7 +744,7 @@ module.exports = class Dungeons {
       this.debugLog(`Releasing ${this.channelLocks.size} channel locks on plugin stop`);
       this.channelLocks.clear();
     }
-    
+
     // Stop garbage collection interval
     if (this.gcInterval) {
       clearInterval(this.gcInterval);
@@ -1790,9 +1790,9 @@ module.exports = class Dungeons {
     this.debugLog(`Channel ${channelKey} locked for dungeon spawn`);
 
     try {
-      // ALLOW MULTIPLE DUNGEONS: Can spawn in different channels simultaneously
-      const dungeonRank = this.calculateDungeonRank();
-      await this.createDungeon(channelKey, channelInfo, dungeonRank);
+    // ALLOW MULTIPLE DUNGEONS: Can spawn in different channels simultaneously
+    const dungeonRank = this.calculateDungeonRank();
+    await this.createDungeon(channelKey, channelInfo, dungeonRank);
     } catch (error) {
       // CRITICAL: Release lock on error to prevent permanent lock
       console.error(`[Dungeons] Error creating dungeon in ${channelKey}:`, error);
@@ -3851,13 +3851,20 @@ module.exports = class Dungeons {
   async getAllShadows() {
     if (!this.shadowArmy) return [];
     try {
+      let shadows = [];
       if (this.shadowArmy.storageManager) {
-        return (await this.shadowArmy.storageManager.getShadows({}, 0, 10000)) || [];
+        shadows = (await this.shadowArmy.storageManager.getShadows({}, 0, 10000)) || [];
+      } else if (this.shadowArmy.settings?.shadows) {
+        shadows = this.shadowArmy.settings.shadows || [];
       }
-      if (this.shadowArmy.settings?.shadows) {
-        return this.shadowArmy.settings.shadows || [];
+
+      // HYBRID COMPRESSION SUPPORT: Decompress compressed shadows transparently
+      // This ensures combat calculations work correctly regardless of compression
+      if (shadows.length > 0 && this.shadowArmy.getShadowData) {
+        shadows = shadows.map((s) => this.shadowArmy.getShadowData(s));
       }
-      return [];
+
+      return shadows;
     } catch (error) {
       console.error('Dungeons: Error getting all shadows', error);
       return [];
@@ -5262,7 +5269,7 @@ module.exports = class Dungeons {
       if (dungeon.shadowHP) {
         dungeon.shadowHP = null;
       }
-      
+
       // AGGRESSIVE MEMORY CLEANUP: Clear all dungeon references
       if (dungeon.boss) {
         dungeon.boss.baseStats = null;
@@ -5280,7 +5287,7 @@ module.exports = class Dungeons {
         }
         dungeon.mobs = null;
       }
-      
+
       // Clear extraction events for this channel
       if (this.extractionEvents) {
         const eventsToRemove = [];
@@ -5289,9 +5296,9 @@ module.exports = class Dungeons {
             eventsToRemove.push(key);
           }
         });
-        eventsToRemove.forEach(key => this.extractionEvents.delete(key));
+        eventsToRemove.forEach((key) => this.extractionEvents.delete(key));
       }
-      
+
       // Force garbage collection hint (if available)
       if (global.gc) {
         try {
@@ -7122,17 +7129,17 @@ module.exports = class Dungeons {
    */
   triggerGarbageCollection(trigger = 'manual') {
     this.debugLog(`Triggering garbage collection (${trigger})`);
-    
+
     // Clean up stale caches
     const now = Date.now();
-    
+
     // Clear expired allocation cache
     if (this.allocationCacheTime && now - this.allocationCacheTime > this.allocationCacheTTL) {
       this.allocationCache = null;
       this.allocationCacheTime = null;
       this.debugLog('Cleared expired allocation cache');
     }
-    
+
     // Clean up extraction events (keep only recent 500)
     if (this.extractionEvents && this.extractionEvents.size > 500) {
       const entries = Array.from(this.extractionEvents.entries());
@@ -7140,26 +7147,28 @@ module.exports = class Dungeons {
       entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
       this.debugLog(`Trimmed extraction events: ${entries.length} → 500`);
     }
-    
+
     // Clean up shadow army count cache
     if (this.shadowArmyCountCache && this.shadowArmyCountCache.size > 100) {
       this.shadowArmyCountCache.clear();
       this.debugLog('Cleared shadow army count cache');
     }
-    
+
     // Clean up last attack time maps (remove old entries)
-    [this._lastShadowAttackTime, this._lastBossAttackTime, this._lastMobAttackTime].forEach(map => {
-      if (map && map.size > 50) {
-        // Keep only entries for active dungeons
-        const activeDungeonKeys = new Set(this.activeDungeons.keys());
-        map.forEach((value, key) => {
-          if (!activeDungeonKeys.has(key)) {
-            map.delete(key);
-          }
-        });
+    [this._lastShadowAttackTime, this._lastBossAttackTime, this._lastMobAttackTime].forEach(
+      (map) => {
+        if (map && map.size > 50) {
+          // Keep only entries for active dungeons
+          const activeDungeonKeys = new Set(this.activeDungeons.keys());
+          map.forEach((value, key) => {
+            if (!activeDungeonKeys.has(key)) {
+              map.delete(key);
+            }
+          });
+        }
       }
-    });
-    
+    );
+
     // Suggest garbage collection to V8 (if available)
     if (global.gc) {
       try {

@@ -1,7 +1,7 @@
 /**
  * @name SoloLevelingStats
  * @author BlueFlashX1
- * @description Solo Leveling-inspired stats system that tracks Discord activity and rewards progression through levels, stats, achievements, and daily quests
+ * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
  * @version 2.3.0
  * @authorId
  * @authorLink
