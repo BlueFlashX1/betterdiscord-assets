@@ -171,6 +171,25 @@ module.exports = class CriticalHit {
     this.lastAnimationTime = 0;
     this._comboUpdateLock = new Set(); // Tracks users with in-progress combo updates
 
+    // Performance optimization: Message processing batching
+    this._pendingNodes = new Set(); // Queue of nodes waiting to be processed
+    this._processingBatch = false; // Flag to prevent concurrent batch processing
+    this._batchProcessingTimeout = null; // Timeout for delayed batch processing
+    this._maxBatchSize = 50; // Maximum nodes to process per batch
+    this._batchDelayMs = 16; // Delay before processing batch (one frame at 60fps)
+
+    // Performance optimization: Observer limits
+    this._maxStyleObservers = 50; // Maximum gradient monitoring observers
+    this._observerCleanupInterval = null; // Interval to clean up old observers
+
+    // Performance optimization: History save throttling
+    this._saveHistoryThrottle = null; // Timeout for throttled saves
+    this._saveHistoryPending = false; // Flag for pending save
+    this._lastSaveTime = 0; // Last save timestamp
+    this._minSaveInterval = 1000; // Minimum 1 second between saves
+    this._maxSaveInterval = 5000; // Maximum 5 seconds between saves (force save)
+    this._pendingCritSaves = 0; // Count of pending crit saves
+
     // Cached DOM queries (animation)
     this._cachedChatInput = null;
     this._cachedMessageList = null;
@@ -216,6 +235,26 @@ module.exports = class CriticalHit {
     if (/^\d{17,19}$/.test(normalized)) return normalized;
     const match = normalized.match(/\d{17,19}/);
     return match ? match[0] : null;
+  }
+
+  /**
+   * Alias for extractPureDiscordId() for backward compatibility
+   * @param {string} id - ID that may contain Discord ID
+   * @returns {string|null} Pure Discord ID or null
+   */
+  extractDiscordId(id) {
+    return this.extractPureDiscordId(id);
+  }
+
+  /**
+   * Alias for calculateContentHash() for backward compatibility
+   * @param {string} content - Message content
+   * @param {string} author - Author username (optional)
+   * @param {string|number|null} timestamp - Optional timestamp
+   * @returns {string|null} Content hash or null
+   */
+  createContentHash(content, author = null, timestamp = null) {
+    return this.calculateContentHash(author, content, timestamp);
   }
 
   /**
@@ -364,7 +403,7 @@ module.exports = class CriticalHit {
 
     if (listItemId) {
       const idStr = String(listItemId).trim();
-      messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+      messageId = this.isValidDiscordId(idStr) ? idStr : this.extractPureDiscordId(idStr);
       extractionMethod = this.isValidDiscordId(idStr)
         ? 'data-list-item-id_pure'
         : messageId
@@ -379,7 +418,7 @@ module.exports = class CriticalHit {
         messageElement.getAttribute('id') || messageElement.closest('[id]')?.getAttribute('id');
       if (idAttr) {
         const idStr = String(idAttr).trim();
-        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractPureDiscordId(idStr);
         extractionMethod = this.isValidDiscordId(idStr)
           ? 'id_attr_pure'
           : messageId
@@ -396,7 +435,7 @@ module.exports = class CriticalHit {
         messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
       if (dataMsgId) {
         const idStr = String(dataMsgId).trim();
-        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractDiscordId(idStr);
+        messageId = this.isValidDiscordId(idStr) ? idStr : this.extractPureDiscordId(idStr);
         extractionMethod = this.isValidDiscordId(idStr)
           ? 'data-message-id'
           : messageId
@@ -431,8 +470,8 @@ module.exports = class CriticalHit {
 
       if (content) {
         messageId = author
-          ? this.createContentHash(content, author, timestamp)
-          : this.createContentHash(content);
+          ? this.calculateContentHash(author, content, timestamp)
+          : this.calculateContentHash(null, content, null);
         extractionMethod = author ? 'content_hash' : 'content_only_hash';
       }
     }
@@ -664,6 +703,74 @@ module.exports = class CriticalHit {
   // ============================================================================
 
   /**
+   * Gets the current Discord channel ID from URL or React state
+   * @returns {string|null} Channel ID or null if not found
+   */
+  _getCurrentChannelId() {
+    try {
+      // Method 1: Extract from URL (most reliable)
+      const urlMatch = window.location.href.match(/channels\/\d+\/(\d+)/);
+      if (urlMatch && urlMatch[1]) {
+        return urlMatch[1];
+      }
+
+      // Method 2: Extract from message elements in DOM
+      const messageElement = document.querySelector('[class*="message"]');
+      if (messageElement) {
+        const channelIdAttr = messageElement.getAttribute('data-channel-id');
+        if (channelIdAttr) return channelIdAttr;
+      }
+
+      return null;
+    } catch (error) {
+      this.debugError('GET_CURRENT_CHANNEL_ID', error);
+      return null;
+    }
+  }
+
+  /**
+   * Finds all message elements in the current DOM
+   * Used for restoration of crit styles when channel loads
+   * @returns {Array<HTMLElement>} Array of unique message elements
+   */
+  _findMessagesInDOM() {
+    try {
+      // Find all message elements using common Discord selectors
+      const messageSelectors = ['[class*="message"]', '[data-list-item-id]', '[data-message-id]'];
+
+      const allMessages = [];
+      const seenIds = new Set();
+
+      messageSelectors.forEach((selector) => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach((el) => {
+          // Get message ID to ensure uniqueness
+          const msgId =
+            this.getMessageIdentifier(el) ||
+            el.getAttribute('data-message-id') ||
+            el.getAttribute('data-list-item-id');
+
+          if (msgId && !seenIds.has(msgId)) {
+            seenIds.add(msgId);
+            allMessages.push(el);
+          } else if (!msgId && !allMessages.includes(el)) {
+            // Include elements without IDs but avoid duplicates
+            allMessages.push(el);
+          }
+        });
+      });
+
+      // Remove duplicates by element reference
+      const uniqueMessages = Array.from(new Set(allMessages));
+
+      return uniqueMessages;
+    } catch (error) {
+      this.debugError('FIND_MESSAGES_IN_DOM', error);
+      return [];
+    }
+  }
+
+  /**
    * Sets up listeners for channel navigation changes
    * Restores crit styling when switching channels
    */
@@ -801,51 +908,6 @@ module.exports = class CriticalHit {
   createAnimationElement(messageId, combo, position) {
     const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
-
-    messageId && textElement.setAttribute('data-cha-message-id', messageId);
-
-    // Ensure combo is a valid number
-    const comboValue = typeof combo === 'number' && combo > 0 ? combo : 1;
-    const comboText =
-      comboValue > 1 && this.settings.showCombo ? `CRITICAL HIT! x${comboValue}` : 'CRITICAL HIT!';
-
-    textElement.innerHTML = comboText; // Set only positioning and layout styles - let CSS class handle animation and opacity
-    textElement.style.cssText = `
-      position: absolute;
-      left: ${position.x}px;
-      top: ${position.y}px;
-      font-size: ${this.settings.fontSize}px;
-      font-weight: bold;
-      text-align: center;
-      pointer-events: none;
-      z-index: 999999;
-      white-space: nowrap;
-    `;
-
-    // Set CSS variables for dynamic animation values (like LevelUpAnimation)
-    // Use negative value for float distance (moves up)
-    textElement.style.setProperty('--cha-float-distance', `-${this.settings.floatDistance}px`);
-    textElement.style.setProperty('--cha-duration', `${this.settings.animationDuration}ms`);
-
-    textElement._chaCreatedTime = Date.now();
-    textElement._chaPosition = { x: position.x, y: position.y };
-
-    // Ensure gradient is visible
-    requestAnimationFrame(() => {
-      const computedStyle = window.getComputedStyle(textElement);
-      const textFillColor = computedStyle.webkitTextFillColor || computedStyle.color;
-      const hasGradient = computedStyle.background?.includes('gradient');
-
-      if (
-        (textFillColor === 'transparent' || textFillColor === 'rgba(0, 0, 0, 0)') &&
-        !hasGradient
-      ) {
-        textElement.style.setProperty('-webkit-text-fill-color', '#ff8800', 'important');
-        textElement.style.setProperty('color', '#ff8800', 'important');
-      }
-    });
-
-    return textElement;
   }
 
   // ============================================================================
@@ -1587,8 +1649,8 @@ module.exports = class CriticalHit {
       let idMismatch = 0;
       const foundIds = new Set();
 
-      // Find all messages in DOM (uses caching)
-      const uniqueMessages = this.findMessagesInDOM();
+      // Find all messages in DOM
+      const uniqueMessages = this._findMessagesInDOM();
 
       this.debugLog('RESTORE_CHANNEL_CRITS', 'Found messages in channel', {
         messageCount: uniqueMessages.length,
@@ -2361,8 +2423,8 @@ module.exports = class CriticalHit {
       return;
     }
 
-    // Get current channel ID
-    const channelId = this.getCurrentChannelId();
+    // Get current channel ID from URL or Discord state
+    const channelId = this._getCurrentChannelId();
     if (channelId && channelId !== this.currentChannelId) {
       // Channel changed - save current session data before clearing
       this.currentChannelId && this._throttledSaveHistory(false); // Save any pending history entries (throttled)
@@ -2420,23 +2482,46 @@ module.exports = class CriticalHit {
     // Start loading check after initial delay
     setTimeout(tryLoadChannel, 1000);
 
+    // Ensure _pendingNodes is initialized before creating observer
+    if (!this._pendingNodes) {
+      this._pendingNodes = new Set();
+    }
+
     // Create mutation observer to watch for new messages
     // OPTIMIZED: Batch processing to reduce lag
     this.messageObserver = new MutationObserver((mutations) => {
+      // CRITICAL: Defensive check - Ensure _pendingNodes exists (in case observer fires before constructor completes)
+      // This MUST be checked here because the observer can fire immediately, even before the constructor finishes
+      if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+        this._pendingNodes = new Set();
+      }
+
       // Collect all nodes to process
       const nodesToProcess = [];
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) {
-            // Element node - add to batch
-            nodesToProcess.push(node);
-          }
+      try {
+        mutations.forEach((mutation) => {
+          mutation.addedNodes.forEach((node) => {
+            if (node && node.nodeType === 1) {
+              // Element node - add to batch
+              nodesToProcess.push(node);
+            }
+          });
         });
-      });
 
-      // Batch process nodes to reduce lag
-      if (nodesToProcess.length > 0) {
-        this.batchProcessNodes(nodesToProcess);
+        // Batch process nodes to reduce lag (only if we have nodes and _pendingNodes is valid)
+        if (
+          nodesToProcess.length > 0 &&
+          this._pendingNodes &&
+          typeof this._pendingNodes.add === 'function'
+        ) {
+          this.batchProcessNodes(nodesToProcess);
+        }
+      } catch (err) {
+        // Silently handle errors in observer callback to prevent breaking Discord
+        // Reinitialize _pendingNodes if it got corrupted
+        if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+          this._pendingNodes = new Set();
+        }
       }
     });
 
@@ -2459,8 +2544,46 @@ module.exports = class CriticalHit {
    * @param {Array<Node>} nodes - Array of nodes to process
    */
   batchProcessNodes(nodes) {
-    // Add nodes to pending queue
-    nodes.forEach((node) => this._pendingNodes.add(node));
+    // CRITICAL: Initialize _pendingNodes if not already initialized (defensive programming)
+    // This can happen if observer fires before constructor completes or during hot reload
+    if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+      this._pendingNodes = new Set();
+    }
+
+    // Validate inputs before processing
+    if (!Array.isArray(nodes) || nodes.length === 0) {
+      return; // Nothing to process
+    }
+
+    // Add nodes to pending queue (only if _pendingNodes is valid)
+    // CRITICAL: Double-check _pendingNodes is still valid before forEach loop
+    if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+      this._pendingNodes = new Set();
+    }
+
+    // Only proceed if _pendingNodes is definitely valid
+    if (this._pendingNodes && typeof this._pendingNodes.add === 'function') {
+      nodes.forEach((node) => {
+        // CRITICAL: Re-check _pendingNodes inside loop in case it gets corrupted during iteration
+        if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+          this._pendingNodes = new Set();
+          return; // Skip this node if Set was corrupted
+        }
+
+        if (node && node.nodeType === 1) {
+          // Only process element nodes
+          try {
+            this._pendingNodes.add(node);
+          } catch (err) {
+            // Silently ignore errors adding nodes (Set might be corrupted)
+            // Reinitialize if corrupted
+            if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
+              this._pendingNodes = new Set();
+            }
+          }
+        }
+      });
+    }
 
     // If already processing a batch, don't start another
     if (this._processingBatch) return;
@@ -2479,6 +2602,10 @@ module.exports = class CriticalHit {
    * Limits batch size to prevent lag spikes
    */
   _processBatch() {
+    // Defensive check: Initialize _pendingNodes if not already initialized
+    if (!this._pendingNodes) {
+      this._pendingNodes = new Set();
+    }
     if (this._pendingNodes.size === 0) {
       this._processingBatch = false;
       return;
@@ -2486,9 +2613,20 @@ module.exports = class CriticalHit {
 
     this._processingBatch = true;
 
+    // Defensive check: Ensure _pendingNodes exists before processing
+    if (!this._pendingNodes) {
+      this._pendingNodes = new Set();
+      this._processingBatch = false;
+      return;
+    }
+
     // Take up to maxBatchSize nodes
     const nodesToProcess = Array.from(this._pendingNodes).slice(0, this._maxBatchSize);
-    nodesToProcess.forEach((node) => this._pendingNodes.delete(node));
+    nodesToProcess.forEach((node) => {
+      if (this._pendingNodes) {
+        this._pendingNodes.delete(node);
+      }
+    });
 
     // Process nodes using requestAnimationFrame for smooth execution
     requestAnimationFrame(() => {
@@ -3253,7 +3391,7 @@ module.exports = class CriticalHit {
 
     const content = this.findMessageContentElement(messageElement);
     const author = this.getAuthorId(messageElement);
-    const channelId = this.getCurrentChannelId();
+    const channelId = this._getCurrentChannelId();
 
     if (!content || !author || !channelId) {
       this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (missing data)', { messageId });
@@ -6240,6 +6378,18 @@ module.exports = class CriticalHit {
 
   /**
    * Extracts message ID from a message element
+   * Alias for getMessageIdFromElement() for consistency
+   * @param {HTMLElement} element - The message DOM element
+   * @param {Object} [debugContext] - Optional debug context
+   * @returns {string|null} Message ID or null if not found
+   */
+  getMessageIdentifier(element, debugContext = {}) {
+    // Use the comprehensive getMessageIdFromElement() method
+    return this.getMessageIdFromElement(element, debugContext);
+  }
+
+  /**
+   * Extracts message ID from a message element
    * Wrapper around getMessageIdentifier() for backward compatibility
    * @param {HTMLElement} element - The message DOM element
    * @returns {string|null} Message ID or null if not found
@@ -7344,7 +7494,7 @@ module.exports = class CriticalHit {
 
       // Clean up batch processing
       this._batchProcessingTimeout && clearTimeout(this._batchProcessingTimeout);
-      this._pendingNodes.clear();
+      this._pendingNodes && this._pendingNodes.clear();
       this._processingBatch = false;
 
       // Clean up observer cleanup interval
@@ -7385,13 +7535,13 @@ module.exports = class CriticalHit {
       const fontLink = document.getElementById('bd-crit-hit-nova-flat-font');
       fontLink && fontLink.remove();
 
-      // Clear tracking data
-      this.critMessages.clear();
-      this.processedMessages.clear();
+      // Clear tracking data (with null checks)
+      this.critMessages && this.critMessages.clear();
+      this.processedMessages && this.processedMessages.clear();
       this.processedMessagesOrder = [];
-      this.pendingCrits.clear();
-      this.animatedMessages.clear();
-      this.activeAnimations.clear();
+      this.pendingCrits && this.pendingCrits.clear();
+      this.animatedMessages && this.animatedMessages.clear();
+      this.activeAnimations && this.activeAnimations.clear();
 
       this.debugLog('PLUGIN_STOP', 'SUCCESS: CriticalHit plugin stopped successfully');
     } catch (error) {

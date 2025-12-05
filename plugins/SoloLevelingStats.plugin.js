@@ -1155,6 +1155,13 @@ module.exports = class SoloLevelingStats {
     // This integration would need to be done via a shared data store or event system
     // For now, we'll store the agility bonus in a way CriticalHit can read it
 
+    // Initialize variables at function scope to prevent ReferenceError in catch block
+    let cappedCritBonus = 0;
+    let enhancedAgilityBonus = 0;
+    let baseAgilityBonus = 0;
+    let titleCritBonus = 0;
+    let agilityStat = 0;
+
     try {
       // Validate settings exist
       if (!this.settings || !this.settings.stats) {
@@ -1169,15 +1176,17 @@ module.exports = class SoloLevelingStats {
       // CAPPED AT 30% MAX to prevent XP abuse
       // When crit: 1.5x XP multiplier (not bonus XP, direct multiplier)
 
-      const agilityStat = this.settings.stats.agility || 0;
+      agilityStat = this.settings.stats.agility || 0;
       const perceptionBuffsByStat = this.getPerceptionBuffsByStat();
-      const baseAgilityBonus = agilityStat * 0.02; // 2% per point
+      baseAgilityBonus = agilityStat * 0.02; // 2% per point
       const perceptionAgiBonus = (perceptionBuffsByStat.agility || 0) / 100; // Convert % to decimal
       const titleBonus = this.getActiveTitleBonus();
-      const titleCritBonus = titleBonus.critChance || 0;
+      titleCritBonus = titleBonus.critChance || 0;
 
       // FUNCTIONAL: Sum all crit bonuses, cap at 30% (0.30)
       const totalCritChance = Math.min(baseAgilityBonus + perceptionAgiBonus + titleCritBonus, 0.3);
+      cappedCritBonus = totalCritChance; // Alias for clarity
+      enhancedAgilityBonus = baseAgilityBonus + perceptionAgiBonus; // Combined agility bonus
 
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {
@@ -1185,8 +1194,8 @@ module.exports = class SoloLevelingStats {
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
         titleCritBonus: isNaN(titleCritBonus) ? 0 : Number(titleCritBonus.toFixed(6)),
         agility: agilityStat,
-        perceptionEnhanced: totalPerceptionBuff > 0,
-        capped: totalCritBonus > 0.25, // Indicate if it was capped
+        perceptionEnhanced: perceptionAgiBonus > 0,
+        capped: totalCritChance >= 0.3, // Indicate if it was capped at 30%
       };
 
       // Always save agility bonus (even if 0) so CriticalHit knows current agility
@@ -1215,6 +1224,8 @@ module.exports = class SoloLevelingStats {
 
         if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
           // Sum all stacked perception buffs for crit chance bonus
+          const totalPerceptionBuff =
+            typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
           perceptionCritBonus = totalPerceptionBuff / 100; // Convert % to decimal
         }
 
@@ -2503,8 +2514,25 @@ module.exports = class SoloLevelingStats {
 
     // MEMORY CLEANUP: Clear quest celebration particles and animations
     document.querySelectorAll('.sls-quest-celebration, .sls-quest-particle').forEach((el) => {
+      // Clear any timeouts stored on elements
+      if (el._removeTimeout) {
+        clearTimeout(el._removeTimeout);
+      }
       el.remove();
     });
+
+    // Also cleanup tracked celebrations
+    if (this._questCelebrations) {
+      this._questCelebrations.forEach((celebration) => {
+        if (celebration._removeTimeout) {
+          clearTimeout(celebration._removeTimeout);
+        }
+        if (celebration && celebration.parentNode) {
+          celebration.remove();
+        }
+      });
+      this._questCelebrations.clear();
+    }
 
     // Clear pending level up data
     if (this.pendingLevelUp) {
@@ -2596,10 +2624,16 @@ module.exports = class SoloLevelingStats {
             this.settings.perceptionBuffs = [];
             this.debugLog('LOAD_SETTINGS', 'Initialized perceptionBuffs array', {});
           } else {
-            const totalBuff = this.settings.perceptionBuffs.reduce((sum, buff) => sum + buff, 0);
+            const totalBuff = this.settings.perceptionBuffs.reduce((sum, buff) => {
+              const numBuff = typeof buff === 'number' ? buff : parseFloat(buff) || 0;
+              return sum + numBuff;
+            }, 0);
             this.debugLog('LOAD_SETTINGS', 'Loaded perceptionBuffs', {
               count: this.settings.perceptionBuffs.length,
-              totalBuff: totalBuff.toFixed(1) + '%',
+              totalBuff:
+                typeof totalBuff === 'number' && !isNaN(totalBuff)
+                  ? totalBuff.toFixed(1) + '%'
+                  : '0%',
               buffs: [...this.settings.perceptionBuffs],
             });
           }
@@ -2702,12 +2736,23 @@ module.exports = class SoloLevelingStats {
     }
 
     try {
-      // Save agility and luck bonuses for CriticalHit before saving settings
-      try {
-        this.saveAgilityBonus();
-      } catch (error) {
-        // Don't fail entire save if agility bonus save fails
-        this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
+      // CRITICAL: Validate settings before attempting to save bonuses
+      // This prevents errors from corrupting the save process
+      if (!this.settings || !this.settings.stats) {
+        this.debugError(
+          'SAVE_SETTINGS',
+          new Error('Settings or stats not initialized - cannot save bonuses')
+        );
+        // Continue with main save even if bonus save fails
+      } else {
+        // Save agility and luck bonuses for CriticalHit before saving settings
+        try {
+          this.saveAgilityBonus();
+        } catch (error) {
+          // Don't fail entire save if agility bonus save fails
+          // Log error but continue with main settings save
+          this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
+        }
       }
 
       this.debugLog('SAVE_SETTINGS', 'Current settings before save', {
@@ -2740,6 +2785,33 @@ module.exports = class SoloLevelingStats {
 
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
+
+      // CRITICAL: Validate critical data before saving to prevent level resets
+      // If level is invalid (0, negative, or missing), don't save corrupted data
+      if (
+        !cleanSettings.level ||
+        cleanSettings.level < 1 ||
+        !Number.isInteger(cleanSettings.level)
+      ) {
+        this.debugError(
+          'SAVE_SETTINGS',
+          new Error(
+            `Invalid level detected: ${cleanSettings.level}. Aborting save to prevent data corruption.`
+          )
+        );
+        return; // Don't save corrupted data
+      }
+
+      // Validate XP is a valid number
+      if (typeof cleanSettings.xp !== 'number' || isNaN(cleanSettings.xp) || cleanSettings.xp < 0) {
+        this.debugError(
+          'SAVE_SETTINGS',
+          new Error(
+            `Invalid XP detected: ${cleanSettings.xp}. Aborting save to prevent data corruption.`
+          )
+        );
+        return; // Don't save corrupted data
+      }
 
       this.debugLog('SAVE_SETTINGS', 'Clean settings to be saved', {
         level: cleanSettings.level,
@@ -5524,10 +5596,42 @@ module.exports = class SoloLevelingStats {
       // Create particles
       this.createQuestParticles(celebration);
 
-      // Remove after animation
+      // Auto-close after animation with fade-out
+      // Start fade-out animation after 2.5 seconds (before removal)
       setTimeout(() => {
-        celebration.remove();
+        celebration.style.opacity = '0';
+        celebration.style.transition = 'opacity 0.5s ease-out';
+      }, 2500);
+
+      // Remove after animation completes (3 seconds total)
+      const removeTimeout = setTimeout(() => {
+        if (celebration && celebration.parentNode) {
+          celebration.remove();
+        }
       }, 3000);
+
+      // Store timeout ID on element for manual cleanup if needed
+      celebration._removeTimeout = removeTimeout;
+
+      // Also allow clicking to close immediately
+      celebration.addEventListener('click', () => {
+        if (celebration._removeTimeout) {
+          clearTimeout(celebration._removeTimeout);
+        }
+        celebration.style.opacity = '0';
+        celebration.style.transition = 'opacity 0.3s ease-out';
+        setTimeout(() => {
+          if (celebration && celebration.parentNode) {
+            celebration.remove();
+          }
+        }, 300);
+      });
+
+      // Ensure cleanup on plugin stop
+      if (!this._questCelebrations) {
+        this._questCelebrations = new Set();
+      }
+      this._questCelebrations.add(celebration);
 
       this.debugLog('QUEST_CELEBRATION', 'Quest completion celebration shown', {
         questName,
@@ -7926,8 +8030,10 @@ module.exports = class SoloLevelingStats {
       .sls-quest-celebration {
         position: fixed;
         z-index: 100000;
-        pointer-events: none;
+        pointer-events: auto; /* Allow clicking to close */
+        cursor: pointer; /* Show it's clickable */
         animation: quest-celebration-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+        transition: opacity 0.5s ease-out; /* Smooth fade-out */
       }
 
       .sls-quest-celebration-content {

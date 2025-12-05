@@ -92,7 +92,7 @@ module.exports = class LevelProgressBar {
       showRank: true,
       showXP: true,
       compact: false, // Compact mode (smaller bar)
-      opacity: 1.0, // 100% opacity - fully opaque
+      opacity: 1.0, // 100% opacity - fully opaque (fixed, no config needed)
       updateInterval: 5000, // Fallback polling interval (only used if events unavailable)
     };
 
@@ -227,12 +227,7 @@ module.exports = class LevelProgressBar {
           <input type="checkbox" ${this.settings.compact ? 'checked' : ''} id="lpb-compact">
           <span style="margin-left: 10px;">Compact Mode</span>
         </label>
-        <label style="display: block; margin-bottom: 10px;">
-          <span style="display: block; margin-bottom: 5px;">Opacity (0.1 - 1.0):</span>
-          <input type="number" id="lpb-opacity" value="${
-            this.settings.opacity
-          }" min="0.1" max="1.0" step="0.05" style="width: 100%; padding: 5px;">
-        </label>
+        <!-- Opacity removed - fixed at 100% (1.0) for better visibility -->
         <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(139, 92, 246, 0.3);">
         <h4 style="color: #8b5cf6; margin-bottom: 10px;">Developer Options</h4>
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
@@ -298,14 +293,7 @@ module.exports = class LevelProgressBar {
           this.updateProgressBar();
         },
       },
-      '#lpb-opacity': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.opacity = parseFloat(e.target.value);
-          this.saveSettings();
-          this.progressBar && (this.progressBar.style.opacity = this.settings.opacity);
-        },
-      },
+      // Opacity setting removed - fixed at 100% (1.0)
       '#lpb-debug-mode': {
         event: 'change',
         handler: (e) => {
@@ -623,7 +611,7 @@ module.exports = class LevelProgressBar {
     try {
       const container = document.createElement('div');
       container.className = `lpb-progress-container ${this.settings.position}`;
-      container.style.opacity = this.settings.opacity;
+      container.style.opacity = 1.0; // Fixed at 100% opacity
 
       const bar = document.createElement('div');
       bar.className = `lpb-progress-bar ${this.settings.compact ? 'compact' : ''}`;
