@@ -7669,12 +7669,8 @@ module.exports = class CriticalHit {
     const content = this.findMessageContentElement(messageElement);
     const author = this.getAuthorId(messageElement);
     let contentHash = null;
-    if (content && author) {
-      const contentText = content.textContent?.trim() || '';
-      if (contentText) {
-        contentHash = this.getContentHash(author, contentText);
-      }
-    }
+    const contentText = content?.textContent?.trim();
+    contentHash = (content && author && contentText) ? this.getContentHash(author, contentText) : null;
 
     // Position-based duplicate detection (handles element replacement scenarios)
     if (this.isDuplicateByPosition(messageId, elementPosition, elementTimestamp)) {
@@ -8098,12 +8094,8 @@ module.exports = class CriticalHit {
       const content = this.findMessageContentElement(messageElement);
       const author = this.getAuthorId(messageElement);
       let contentHash = null;
-      if (content && author) {
-        const contentText = content.textContent?.trim() || '';
-        if (contentText) {
-          contentHash = this.getContentHash(author, contentText);
-        }
-      }
+      const contentText = content?.textContent?.trim();
+      contentHash = (content && author && contentText) ? this.getContentHash(author, contentText) : null;
 
       // Check if this is the same logical message (same content hash)
       // BUT allow animation if element was replaced (Discord reprocessed it)
