@@ -7403,9 +7403,8 @@ module.exports = class CriticalHit {
     const messages = document.querySelectorAll(
       '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])'
     );
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (!this.critMessages.has(lastMessage)) {
+    const lastMessage = messages[messages.length - 1];
+    if (lastMessage && !this.critMessages.has(lastMessage)) {
         this.applyCritStyle(lastMessage);
         this.critMessages.add(lastMessage);
         try {
@@ -7424,7 +7423,7 @@ module.exports = class CriticalHit {
           }
         }
       }
-    } else {
+    } else if (!lastMessage) {
       try {
         BdApi?.showToast?.('No messages found to test', { type: 'error', timeout: 2000 });
       } catch (error) {
@@ -8408,9 +8407,8 @@ module.exports = class CriticalHit {
    * @returns {boolean} True if duplicate found
    */
   hasDuplicateInDOM(container, messageId, position) {
-    if (messageId) {
-      const existing = container.querySelectorAll(`[data-cha-message-id="${messageId}"]`);
-      if (existing.length > 0) return true;
+    if (messageId && container.querySelectorAll(`[data-cha-message-id="${messageId}"]`).length > 0) {
+      return true;
     }
 
     // Position-based check for null messageId
