@@ -1131,8 +1131,8 @@ module.exports = class SkillTree {
         inset: 0;
         border-radius: 20px;
         padding: 2px;
-        background: linear-gradient(135deg, 
-          rgba(139, 92, 246, 0.6) 0%, 
+        background: linear-gradient(135deg,
+          rgba(139, 92, 246, 0.6) 0%,
           rgba(102, 126, 234, 0.6) 25%,
           rgba(59, 130, 246, 0.4) 50%,
           rgba(139, 92, 246, 0.6) 75%,
@@ -1168,8 +1168,8 @@ module.exports = class SkillTree {
 
       /* Header - Enhanced Theme */
       .skilltree-header {
-        background: linear-gradient(135deg, 
-          rgba(139, 92, 246, 0.25) 0%, 
+        background: linear-gradient(135deg,
+          rgba(139, 92, 246, 0.25) 0%,
           rgba(102, 126, 234, 0.25) 50%,
           rgba(118, 75, 162, 0.25) 100%);
         padding: 30px;
@@ -1186,9 +1186,9 @@ module.exports = class SkillTree {
         left: -100%;
         width: 200%;
         height: 100%;
-        background: linear-gradient(90deg, 
-          transparent, 
-          rgba(139, 92, 246, 0.15), 
+        background: linear-gradient(90deg,
+          transparent,
+          rgba(139, 92, 246, 0.15),
           rgba(102, 126, 234, 0.15),
           transparent);
         animation: shimmer 4s ease-in-out infinite;
@@ -1206,8 +1206,8 @@ module.exports = class SkillTree {
                      0 0 30px rgba(102, 126, 234, 0.8),
                      0 4px 40px rgba(139, 92, 246, 0.6);
         letter-spacing: 2px;
-        background: linear-gradient(135deg, 
-          #fff 0%, 
+        background: linear-gradient(135deg,
+          #fff 0%,
           #e9d5ff 30%,
           #c4b5fd 60%,
           #a78bfa 100%);
@@ -1228,7 +1228,7 @@ module.exports = class SkillTree {
         align-items: center;
         gap: 10px;
         padding: 10px 20px;
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(139, 92, 246, 0.2) 0%,
           rgba(102, 126, 234, 0.2) 100%);
         border: 1px solid rgba(139, 92, 246, 0.4);
