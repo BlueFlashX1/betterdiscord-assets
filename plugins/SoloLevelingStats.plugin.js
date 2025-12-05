@@ -2489,8 +2489,11 @@ module.exports = class SoloLevelingStats {
 
       if (saved && typeof saved === 'object') {
         try {
-          this.settings = { ...this.defaultSettings, ...saved };
-          this.debugLog('LOAD_SETTINGS', 'Settings merged', {
+          // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+          // Shallow spread (...) only copies top-level, nested objects are still references!
+          const merged = { ...this.defaultSettings, ...saved };
+          this.settings = JSON.parse(JSON.stringify(merged));
+          this.debugLog('LOAD_SETTINGS', 'Settings merged (deep copy)', {
             level: this.settings.level,
             rank: this.settings.rank,
             totalXP: this.settings.totalXP,
