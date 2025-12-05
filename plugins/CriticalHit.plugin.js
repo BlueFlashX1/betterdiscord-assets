@@ -1254,12 +1254,7 @@ module.exports = class CriticalHit {
           if (String(entry.messageId).startsWith('hash_')) return false;
           // Match by content hash
           if (entry.messageContent && entry.author) {
-            const entryContentHash = this.getContentHash(
-              entry.author,
-              entry.messageContent,
-              entry.timestamp
-            );
-            return entryContentHash === contentHash;
+            return this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
           }
           return false;
         });
@@ -1629,10 +1624,10 @@ module.exports = class CriticalHit {
             );
           });
 
-          if (matchedEntry && matchedEntry.critSettings) {
+          if (matchedEntry?.critSettings) {
             // Restore crit with original settings
             // Only log restoration attempts if verbose or first attempt
-            if (retryCount === 0 || this.debug.verbose) {
+            if (retryCount === 0 || this.debug?.verbose) {
               this.debugLog('RESTORE_CHANNEL_CRITS', 'Attempting to restore crit for message', {
                 msgId: normalizedMsgId,
                 matchedEntryId: matchedEntry.messageId,
@@ -1999,7 +1994,7 @@ module.exports = class CriticalHit {
         content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
 
         // Apply glow effect - Purple glow for purple-black gradient
-        if (critSettings.glow !== false && this.settings.critGlow) {
+        if (critSettings.glow !== false && this.settings?.critGlow) {
           if (useGradient) {
             // Purple glow that enhances the purple-black gradient
             content.style.setProperty(
@@ -2019,7 +2014,7 @@ module.exports = class CriticalHit {
           content.style.setProperty('text-shadow', 'none', 'important');
         }
 
-        if (critSettings.animation !== false && this.settings.critAnimation) {
+        if (critSettings.animation !== false && this.settings?.critAnimation) {
           content.style.animation = 'critPulse 0.5s ease-in-out';
         }
       }
@@ -2186,7 +2181,7 @@ module.exports = class CriticalHit {
           const retryContent = this.findMessageContentElement(messageElement);
           if (retryContent) {
             const checkAndRestoreGradient = () => {
-              if (messageElement.classList.contains('bd-crit-hit') && messageElement.isConnected) {
+              if (messageElement?.classList?.contains('bd-crit-hit') && messageElement?.isConnected) {
                 const retryComputed = window.getComputedStyle(retryContent);
                 if (!retryComputed?.backgroundImage?.includes('gradient')) {
                   const gradientColors =
@@ -2582,7 +2577,7 @@ module.exports = class CriticalHit {
           const hasContent =
             node.querySelector('[class*="content"]') ||
             node.querySelector('[class*="text"]') ||
-            node.textContent?.trim().length > 0;
+            (node.textContent?.trim().length ?? 0) > 0;
           if (hasContent) {
             messageElement = node;
           }
