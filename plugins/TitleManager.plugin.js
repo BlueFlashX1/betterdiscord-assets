@@ -20,8 +20,13 @@ module.exports = class SoloLevelingTitleManager {
   // CONSTRUCTOR & INITIALIZATION
   // ============================================================================
   constructor() {
+    // ============================================================================
+    // CONFIGURATION & SETTINGS
+    // ============================================================================
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
+      sortBy: 'xpBonus', // Default sort filter (xpBonus, critBonus, strBonus, etc.)
     };
 
     this.settings = this.defaultSettings;
@@ -604,8 +609,7 @@ module.exports = class SoloLevelingTitleManager {
         (this.getTitleBonus(b)?.strengthPercent || 0) -
         (this.getTitleBonus(a)?.strengthPercent || 0),
       agiBonus: (a, b) =>
-        (this.getTitleBonus(b)?.agilityPercent || 0) -
-        (this.getTitleBonus(a)?.agilityPercent || 0),
+        (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
       intBonus: (a, b) =>
         (this.getTitleBonus(b)?.intelligencePercent || 0) -
         (this.getTitleBonus(a)?.intelligencePercent || 0),
@@ -941,21 +945,24 @@ module.exports = class SoloLevelingTitleManager {
     const modalBody = this.titleModal.querySelector('.tm-modal-body');
     const titlesGrid = this.titleModal.querySelector('.tm-titles-grid');
     const scrollPos = this.titleModal.querySelector('.tm-modal-content')?.scrollTop || 0;
-    
+
     // Fade out
-    modalBody && (modalBody.style.transition = 'opacity 0.15s ease-out', modalBody.style.opacity = '0.5');
-    titlesGrid && (titlesGrid.style.transition = 'opacity 0.15s ease-out', titlesGrid.style.opacity = '0.5');
-    
+    modalBody &&
+      ((modalBody.style.transition = 'opacity 0.15s ease-out'), (modalBody.style.opacity = '0.5'));
+    titlesGrid &&
+      ((titlesGrid.style.transition = 'opacity 0.15s ease-out'),
+      (titlesGrid.style.opacity = '0.5'));
+
     setTimeout(() => {
       this.closeTitleModal();
       this.openTitleModal();
-      
+
       // Restore scroll and fade in
       setTimeout(() => {
         const content = this.titleModal?.querySelector('.tm-modal-content');
         const newModalBody = this.titleModal?.querySelector('.tm-modal-body');
         const newTitlesGrid = this.titleModal?.querySelector('.tm-titles-grid');
-        
+
         content && (content.scrollTop = scrollPos);
         newModalBody && (newModalBody.style.opacity = '1');
         newTitlesGrid && (newTitlesGrid.style.opacity = '1');
