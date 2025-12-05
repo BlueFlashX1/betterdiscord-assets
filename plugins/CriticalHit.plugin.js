@@ -652,9 +652,7 @@ module.exports = class CriticalHit {
       }
     } catch (e) {
       // React access failed, continue to fallback
-      if (debugContext) {
-        this.debugLog('GET_MESSAGE_ID', 'React access failed', { error: e.message });
-      }
+      debugContext && this.debugLog('GET_MESSAGE_ID', 'React access failed', { error: e.message });
     }
 
     // Method 2: Check for data-list-item-id (Discord's message container ID)
@@ -1278,9 +1276,7 @@ module.exports = class CriticalHit {
         }
 
         // Invalidate cache when history is modified
-        if (isCrit) {
-          this._cachedCritHistory = null;
-        }
+        isCrit && (this._cachedCritHistory = null);
         // #region agent log
         // #endregion
         this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
@@ -1359,9 +1355,7 @@ module.exports = class CriticalHit {
       this._cachedCritHistoryTimestamp &&
       now - this._cachedCritHistoryTimestamp < this._cachedCritHistoryMaxAge &&
       this._cachedCritHistory.channelId === cacheKey
-    ) {
-      return this._cachedCritHistory.data;
-    }
+    ) return this._cachedCritHistory.data;
 
     // Compute crit history
     // Use for...of loop for better performance
@@ -1536,9 +1530,7 @@ module.exports = class CriticalHit {
           if (!/^\d{17,19}$/.test(normalizedMsgId)) {
             // Try to extract pure ID from composite format
             const match = normalizedMsgId.match(/\d{17,19}/);
-            if (match) {
-              pureMessageId = match[0];
-            }
+            match && (pureMessageId = match[0]);
           }
 
           // Check if this message ID matches any crit
@@ -1550,9 +1542,7 @@ module.exports = class CriticalHit {
               : entryId.match(/\d{17,19}/)?.[0];
 
             // Exact match
-            if (entryId === normalizedMsgId || entryId === pureMessageId) {
-              return true;
-            }
+            if (entryId === normalizedMsgId || entryId === pureMessageId) return true;
 
             // Pure ID match (if we extracted a pure ID)
             if (pureMessageId !== normalizedMsgId && entryPureId === pureMessageId) return true;
@@ -1584,9 +1574,7 @@ module.exports = class CriticalHit {
             this.applyCritStyleWithSettings(msgElement, matchedEntry.critSettings);
             this.critMessages.add(msgElement);
             // Mark as processed using message ID (not element reference)
-            if (normalizedMsgId) {
-              this.markAsProcessed(normalizedMsgId);
-            }
+            normalizedMsgId && this.markAsProcessed(normalizedMsgId);
             restoredCount++;
 
             // Verify restoration
@@ -2246,9 +2234,7 @@ module.exports = class CriticalHit {
     this.processedMessagesOrder.push(messageId);
 
     // Cleanup if needed
-    if (this.processedMessages.size > this.maxProcessedMessages) {
-      this.cleanupProcessedMessages();
-    }
+    this.processedMessages.size > this.maxProcessedMessages && this.cleanupProcessedMessages();
 
     return true;
   }
@@ -2258,17 +2244,13 @@ module.exports = class CriticalHit {
    */
   startPeriodicCleanup() {
     // Clear any existing interval
-    if (this.historyCleanupInterval) {
-      clearInterval(this.historyCleanupInterval);
-    }
+    this.historyCleanupInterval && clearInterval(this.historyCleanupInterval);
 
     // Run cleanup every 30 minutes (1800000 ms)
     this.historyCleanupInterval = setInterval(() => {
       try {
         this.debugLog('PERIODIC_CLEANUP', 'Running periodic history cleanup');
-        if (this.settings.autoCleanupHistory) {
-          this.cleanupOldHistory(this.settings.historyRetentionDays || 30);
-        }
+        this.settings.autoCleanupHistory && this.cleanupOldHistory(this.settings.historyRetentionDays || 30);
         // Also cleanup processedMessages
         this.cleanupProcessedMessages();
       } catch (error) {
@@ -2381,9 +2363,7 @@ module.exports = class CriticalHit {
 
       // Last resort: find any element with messages
       const msgEl = document.querySelector('[class*="message"]');
-      if (msgEl) {
-        return msgEl.closest('[class*="scroller"]') || msgEl.parentElement?.parentElement;
-      }
+      if (msgEl) return msgEl.closest('[class*="scroller"]') || msgEl.parentElement?.parentElement;
       return null;
     };
 
@@ -2748,9 +2728,7 @@ module.exports = class CriticalHit {
       messageElement.closest('[class*="reply"]') !== null ||
       messageElement.closest('[class*="repliedMessage"]') !== null;
 
-    if (hasReplyWrapper) {
-      return true;
-    }
+    if (hasReplyWrapper) return true;
 
     // Method 3: Check class names on the message element itself
     const classes = Array.from(messageElement.classList || []);
@@ -2773,9 +2751,7 @@ module.exports = class CriticalHit {
           if (
             fiber.memoizedProps?.message?.messageReference ||
             fiber.memoizedState?.message?.messageReference
-          ) {
-            return true;
-          }
+          ) return true;
           fiber = fiber.return;
           depth++;
         }
@@ -2881,9 +2857,7 @@ module.exports = class CriticalHit {
    */
   checkForRestoration(node) {
     // Check if a newly added node is a message that should have a crit restored
-    if (!this.currentChannelId || this.isLoadingChannel) {
-      return;
-    }
+    if (!this.currentChannelId || this.isLoadingChannel) return;
 
     // Throttle restoration checks to prevent spam
     // First check if node is a message element before throttling
@@ -2951,9 +2925,7 @@ module.exports = class CriticalHit {
         let pureMessageId = normalizedMsgId;
         if (!/^\d{17,19}$/.test(normalizedMsgId)) {
           const match = normalizedMsgId.match(/\d{17,19}/);
-          if (match) {
-            pureMessageId = match[0];
-          }
+          match && (pureMessageId = match[0]);
         }
 
         // Also try content-based matching for reprocessed messages
@@ -3146,9 +3118,7 @@ module.exports = class CriticalHit {
                 this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
                 this.critMessages.add(currentMessageElement);
                 // Mark as processed using message ID (not element reference)
-                if (normalizedMsgId) {
-                  this.markAsProcessed(normalizedMsgId);
-                }
+                normalizedMsgId && this.markAsProcessed(normalizedMsgId);
 
                 // Use MutationObserver instead of polling setTimeout
                 // Watch for style changes on content element to detect gradient application/removal
@@ -3578,9 +3548,7 @@ module.exports = class CriticalHit {
                 return id === normalizedMsgId || String(id).includes(normalizedMsgId);
               });
 
-            if (!retryElement || !retryElement.isConnected) {
-              return false;
-            }
+            if (!retryElement || !retryElement.isConnected) return false;
 
             // Check pending queue first (fastest path)
             // Try multiple matching strategies:
@@ -4204,9 +4172,7 @@ module.exports = class CriticalHit {
         }
 
         // Mark as processing crit styling
-        if (messageId) {
-          this._processingCrits.add(messageId);
-        }
+        messageId && this._processingCrits.add(messageId);
 
         this.debugLog('CHECK_FOR_CRIT', 'CRITICAL HIT DETECTED!', {
           messageId: messageId,
@@ -5709,9 +5675,7 @@ module.exports = class CriticalHit {
             }
           }
           // Check for style changes (gradient applied)
-          if (m.type === 'attributes' && m.attributeName === 'style') {
-            return true;
-          }
+          if (m.type === 'attributes' && m.attributeName === 'style') return true;
           // Check for child additions (element replaced)
           if (m.type === 'childList' && m.addedNodes.length > 0) {
             return Array.from(m.addedNodes).some((node) => {
@@ -7447,9 +7411,7 @@ module.exports = class CriticalHit {
           return String(dataId).trim();
         }
         const allMatches = dataId.match(/\d{17,19}/g);
-        if (allMatches?.length > 0) {
-          return allMatches[allMatches.length - 1];
-        }
+        if (allMatches?.length > 0) return allMatches[allMatches.length - 1];
       }
     } catch (error) {
       // Silently fail - React fiber access may fail on some elements
@@ -7495,11 +7457,9 @@ module.exports = class CriticalHit {
           (f) => f.memoizedProps?.message?.timestamp || f.memoizedState?.message?.timestamp,
           30
         );
-        if (timestamp) {
-          return timestamp instanceof Date ? timestamp.getTime() :
+        if (timestamp) return timestamp instanceof Date ? timestamp.getTime() :
                  typeof timestamp === 'string' ? new Date(timestamp).getTime() :
                  typeof timestamp === 'number' ? timestamp : 0;
-        }
       }
     } catch (error) {
       // Silently fail - React fiber access may fail on some elements
@@ -7718,9 +7678,7 @@ module.exports = class CriticalHit {
     } else {
       // Mark this message as having combo updated (both by ID and content hash if available)
       this._comboUpdatedMessages.add(messageId);
-      if (contentHash) {
-        this._comboUpdatedContentHashes.add(contentHash);
-      }
+      contentHash && this._comboUpdatedContentHashes.add(contentHash);
 
       // Cleanup old entries (older than 10 seconds) to prevent memory leaks
       if (this._comboUpdatedMessages.size > 1000) {
