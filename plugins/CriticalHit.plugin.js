@@ -6738,14 +6738,8 @@ module.exports = class CriticalHit {
       let agilityBonus = 0;
       let luckBonus = 0;
       try {
-        const agilityData = BdApi.Data.load('SoloLevelingStats', 'agilityBonus');
-        if (agilityData && agilityData.bonus) {
-          agilityBonus = agilityData.bonus * 100;
-        }
-        const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-        if (luckData && luckData.bonus) {
-          luckBonus = luckData.bonus * 100;
-        }
+        agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
+        luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
       } catch (e) {}
 
       const bonusSpan = container.querySelector('.crit-agility-bonus');
@@ -7061,9 +7055,8 @@ module.exports = class CriticalHit {
     // Get agility bonus from SoloLevelingStats
     try {
       const agilityData = BdApi.Data.load('SoloLevelingStats', 'agilityBonus');
-      if (agilityData && agilityData.bonus) {
-        // Agility bonus is stored as a decimal (e.g., 0.15 for 15%)
-        const agilityBonusPercent = agilityData.bonus * 100;
+      const agilityBonusPercent = (agilityData?.bonus ?? 0) * 100;
+      if (agilityBonusPercent > 0) {
         baseChance += agilityBonusPercent;
       }
     } catch (error) {
@@ -7074,15 +7067,14 @@ module.exports = class CriticalHit {
     // Get Luck buffs from SoloLevelingStats (stacked random buffs)
     try {
       const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-      if (luckData && luckData.bonus) {
-        // Luck bonus is stored as a decimal (e.g., 0.15 for 15%)
-        const luckBonusPercent = luckData.bonus * 100;
+      const luckBonusPercent = (luckData?.bonus ?? 0) * 100;
+      if (luckBonusPercent > 0) {
         baseChance += luckBonusPercent;
 
         this.debugLog('GET_EFFECTIVE_CRIT', 'Luck buffs applied to crit chance', {
           luckBonusPercent: luckBonusPercent.toFixed(1),
-          luckBuffs: luckData.luckBuffs || [],
-          luckStat: luckData.luck || 0,
+          luckBuffs: luckData?.luckBuffs ?? [],
+          luckStat: luckData?.luck ?? 0,
         });
       }
     } catch (error) {
@@ -7093,7 +7085,7 @@ module.exports = class CriticalHit {
     // Get skill tree crit bonus
     try {
       const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
-      if (skillBonuses && skillBonuses.critBonus > 0) {
+      if (skillBonuses?.critBonus > 0) {
         // Skill tree crit bonus is stored as decimal (e.g., 0.05 for 5%)
         const skillCritBonusPercent = skillBonuses.critBonus * 100;
         baseChance += skillCritBonusPercent;
@@ -7131,14 +7123,8 @@ module.exports = class CriticalHit {
         let agilityBonus = 0;
         let luckBonus = 0;
         try {
-          const agilityData = BdApi.Data.load('SoloLevelingStats', 'agilityBonus');
-          if (agilityData && agilityData.bonus) {
-            agilityBonus = agilityData.bonus * 100;
-          }
-          const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-          if (luckData && luckData.bonus) {
-            luckBonus = luckData.bonus * 100;
-          }
+          agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
+          luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
         } catch (e) {}
 
         let toastMessage = `Crit chance set to ${this.settings.critChance}%`;
