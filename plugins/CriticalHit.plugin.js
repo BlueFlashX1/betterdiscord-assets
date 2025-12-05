@@ -3073,7 +3073,7 @@ module.exports = class CriticalHit {
           const pendingCrit =
             this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
 
-          if (pendingCrit && pendingCrit.channelId === this.currentChannelId) {
+          if (pendingCrit?.channelId === this.currentChannelId) {
             // Found in pending queue! Use it immediately
             historyEntry = {
               messageId: normalizedMsgId,
@@ -3376,7 +3376,7 @@ module.exports = class CriticalHit {
                               const retryElement =
                                 document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
                                 restoredElement;
-                              if (retryElement && retryElement.isConnected) {
+                              if (retryElement?.isConnected) {
                                 const retryContent = this.findMessageContentElement(retryElement);
                                 if (retryContent) {
                                   const retryComputed = window.getComputedStyle(retryContent);
