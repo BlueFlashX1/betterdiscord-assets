@@ -125,6 +125,7 @@ module.exports = class SoloLevelingStats {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Toggle debug console logs
       // Stat definitions
       stats: {
         strength: 0, // +2% XP per message per point (additive, with diminishing returns)
@@ -194,7 +195,7 @@ module.exports = class SoloLevelingStats {
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
-    console.log('🔧 [CONSTRUCTOR] Settings initialized with deep copy', {
+    this.debugConsole('🔧 [CONSTRUCTOR]', 'Settings initialized with deep copy', {
       level: this.settings.level,
       xp: this.settings.xp,
       rank: this.settings.rank,
@@ -2261,7 +2262,7 @@ module.exports = class SoloLevelingStats {
       this.cachedShadowPower = '0';
       this.updateShadowPower?.();
       this.setupShadowPowerObserver?.();
-      
+
       // Fallback: Update shadow power periodically (safe call with optional chaining)
       this.shadowPowerInterval = setInterval(() => {
         this.updateShadowPower?.();
@@ -2615,6 +2616,13 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // FUNCTIONAL DEBUG CONSOLE (NO IF-ELSE!)
+  // Only logs if debugMode is enabled, using short-circuit evaluation
+  debugConsole(prefix, message, data = {}) {
+    const log = () => console.log(`${prefix}`, message, data);
+    return this.settings.debugMode && log();
+  }
+
   // FUNCTIONAL AUTO-SAVE WRAPPER
   // Wraps a function that modifies settings and auto-saves after
   // Usage: this.withAutoSave(() => { modify settings here }, true)
@@ -2642,7 +2650,7 @@ module.exports = class SoloLevelingStats {
   shareShadowXP(xpAmount, source = 'message') {
     const shareWithPlugin = (plugin) => {
       plugin.instance.shareShadowXP(xpAmount, source);
-      console.log(`🌟 [SHADOW XP] Shared ${xpAmount} XP (${source})`);
+      this.debugConsole('🌟 [SHADOW XP]', ` Shared ${xpAmount} XP (${source})`);
       return true;
     };
 
@@ -8337,5 +8345,129 @@ module.exports = class SoloLevelingStats {
     `;
 
     document.head.appendChild(style);
+  }
+
+  // ============================================================================
+  // SETTINGS PANEL (BetterDiscord API)
+  // ============================================================================
+
+  // Creates UI for plugin settings with debug mode toggle
+  getSettingsPanel() {
+    const container = document.createElement('div');
+    container.style.cssText = `
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
+      border-radius: 10px;
+      border: 1px solid rgba(138, 43, 226, 0.5);
+      color: #ffffff;
+      font-family: 'Segoe UI', sans-serif;
+    `;
+
+    // Title
+    const title = document.createElement('h2');
+    title.textContent = 'Solo Leveling Stats - Settings';
+    title.style.cssText = `
+      color: #8a2be2;
+      margin-bottom: 20px;
+      font-size: 24px;
+      text-shadow: 0 0 10px rgba(138, 43, 226, 0.6);
+    `;
+    container.appendChild(title);
+
+    // Debug Mode Toggle
+    const debugToggle = this.createToggle(
+      'Debug Mode',
+      'Show detailed console logs for troubleshooting (constructor, save, load, periodic backups)',
+      this.settings.debugMode || false,
+      (value) => this.withAutoSave(() => {
+        this.settings.debugMode = value;
+        console.log('🔧 [SETTINGS] Debug mode:', value ? 'ENABLED ✅' : 'DISABLED ❌');
+        console.log('Reload Discord (Ctrl+R) to see changes in console');
+      }, true)
+    );
+    container.appendChild(debugToggle);
+
+    // Info section
+    const info = document.createElement('div');
+    info.style.cssText = `
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(138, 43, 226, 0.1);
+      border-radius: 8px;
+      border-left: 3px solid #8a2be2;
+    `;
+    info.innerHTML = `
+      <strong style="color: #8a2be2;">Debug Console Logs:</strong><br>
+      <span style="color: #b894e6; font-size: 13px;">
+        When enabled, you'll see detailed logs for:<br>
+        • 🔧 Constructor initialization<br>
+        • 💾 Save operations (current, clean, success)<br>
+        • 💾 Load operations (raw data, merge, verification)<br>
+        • 💾 Periodic backup saves (every 30 seconds)<br>
+        • 🌟 Shadow XP sharing<br>
+        • 🎯 Data verification (matches, deep copy status)
+      </span>
+    `;
+    container.appendChild(info);
+
+    return container;
+  }
+
+  // FUNCTIONAL TOGGLE CREATOR (NO IF-ELSE!)
+  // Creates a styled toggle switch with label and description
+  createToggle(label, description, defaultValue, onChange) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+      margin-bottom: 20px;
+      padding: 15px;
+      background: rgba(138, 43, 226, 0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(138, 43, 226, 0.2);
+    `;
+
+    const toggleContainer = document.createElement('div');
+    toggleContainer.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px;';
+
+    // Toggle switch
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.checked = defaultValue;
+    toggle.style.cssText = `
+      width: 40px;
+      height: 20px;
+      margin-right: 12px;
+      cursor: pointer;
+    `;
+    toggle.addEventListener('change', (e) => onChange(e.target.checked));
+
+    // Label
+    const labelEl = document.createElement('label');
+    labelEl.textContent = label;
+    labelEl.style.cssText = `
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      cursor: pointer;
+    `;
+    labelEl.addEventListener('click', () => {
+      toggle.checked = !toggle.checked;
+      toggle.dispatchEvent(new Event('change'));
+    });
+
+    // Description
+    const desc = document.createElement('div');
+    desc.textContent = description;
+    desc.style.cssText = `
+      font-size: 13px;
+      color: #b894e6;
+      line-height: 1.5;
+    `;
+
+    toggleContainer.appendChild(toggle);
+    toggleContainer.appendChild(labelEl);
+    wrapper.appendChild(toggleContainer);
+    wrapper.appendChild(desc);
+
+    return wrapper;
   }
 };
