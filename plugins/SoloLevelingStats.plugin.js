@@ -128,11 +128,11 @@ module.exports = class SoloLevelingStats {
       debugMode: false, // Toggle debug console logs
       // Stat definitions
       stats: {
-        strength: 0, // +2% XP per message per point (additive, with diminishing returns)
-        agility: 0, // +2% crit chance per point (capped at 25% total), +1% EXP per point during crit hits
-        intelligence: 0, // +5% bonus XP from long messages per point (additive, with diminishing returns)
-        vitality: 0, // +5% daily quest rewards per point
-        perception: 0, // Each point grants a random % buff that stacks (renamed from Luck)
+        strength: 0, // Physical power: +2% XP per point (hits harder in combat)
+        agility: 0, // Reflexes/Speed: +2% chance for 1.5x XP multiplier per point (faster actions = more efficient) CAPPED 30%
+        intelligence: 0, // Mana/Magic: +5% XP from long messages, increases max mana (used in Dungeons)
+        vitality: 0, // HP/Stamina: +5% quest rewards, increases max HP (used in Dungeons for survival)
+        perception: 0, // Senses/Mana sense: Random stat buff per point (perceives opportunities to grow)
       },
       perceptionBuffs: [], // Array of random stat buffs: [{ stat: 'strength', buff: 2.5 }, { stat: 'agility', buff: 3.2 }]
       unallocatedStatPoints: 0,
@@ -1177,10 +1177,7 @@ module.exports = class SoloLevelingStats {
       const titleCritBonus = titleBonus.critChance || 0;
 
       // FUNCTIONAL: Sum all crit bonuses, cap at 30% (0.30)
-      const totalCritChance = Math.min(
-        baseAgilityBonus + perceptionAgiBonus + titleCritBonus,
-        0.30
-      );
+      const totalCritChance = Math.min(baseAgilityBonus + perceptionAgiBonus + titleCritBonus, 0.3);
 
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {

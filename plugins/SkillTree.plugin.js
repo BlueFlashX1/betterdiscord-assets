@@ -878,7 +878,7 @@ module.exports = class SkillTree {
           tier: tierData,
         }))
         .find(({ skill }) => skill);
-      
+
       return result || null;
     } catch (error) {
       console.error('SkillTree: Error finding skill', error);
