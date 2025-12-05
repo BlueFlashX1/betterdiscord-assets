@@ -2,16 +2,75 @@
  * @name LevelUpAnimation
  * @author BlueFlashX1
  * @description Floating "LEVEL UP!" animation when you level up in Solo Leveling Stats
- * @version 1.0.1
+ * @version 1.1.0
+ *
+ * ============================================================================
+ * FILE STRUCTURE & NAVIGATION
+ * ============================================================================
+ *
+ * This file follows a 4-section structure for easy navigation:
+ *
+ * SECTION 1: IMPORTS & DEPENDENCIES (Line 55)
+ * SECTION 2: CONFIGURATION & HELPERS (Line 59)
+ *   2.1 Constructor & Settings
+ *   2.2 Helper Functions (debug)
+ * SECTION 3: MAJOR OPERATIONS (Line 90+)
+ *   3.1 Plugin Lifecycle (start, stop)
+ *   3.2 Settings Management (load, save, panel)
+ *   3.3 CSS Management (inject, remove)
+ *   3.4 Animation Display (show, position)
+ *   3.5 Particle Effects (create)
+ *   3.6 Plugin Integration (hook, unhook)
+ * SECTION 4: DEBUGGING & DEVELOPMENT
+ *
+ * ============================================================================
+ * VERSION HISTORY
+ * ============================================================================
+ *
+ * @changelog v1.1.0 (2025-12-05) - FUNCTIONAL PROGRAMMING OPTIMIZATION
+ * CRITICAL FIXES:
+ * - Deep copy in constructor (prevents save corruption)
+ * - Deep merge in loadSettings (prevents nested object sharing)
+ *
+ * FUNCTIONAL OPTIMIZATIONS:
+ * - For-loop → Array.from() (particle creation)
+ * - Event listeners → functional mapper (5 listeners → 1 forEach)
+ * - debugLog → functional short-circuit (NO IF-ELSE!)
+ *
+ * NEW FEATURES:
+ * - Debug mode toggle in settings panel
+ * - Toggleable debug console logs
+ * - 4-section structure for easy navigation
+ *
+ * RESULT:
+ * - 2 critical bugs fixed
+ * - 1 for-loop eliminated (100% reduction)
+ * - Event listeners DRY
+ * - Clean, maintainable code
+ *
+ * @changelog v1.0.1 (Previous)
+ * - Initial release
+ * - Integration with SoloLevelingStats
  */
 
 module.exports = class LevelUpAnimation {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // SECTION 1: IMPORTS & DEPENDENCIES
   // ============================================================================
+  // Reserved for future external library imports
+  // Currently all functionality is self-contained
+
+  // ============================================================================
+  // SECTION 2: CONFIGURATION & HELPERS
+  // ============================================================================
+
+  /**
+   * 2.1 CONSTRUCTOR & DEFAULT SETTINGS
+   */
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Toggle debug console logs
       animationDuration: 3000, // 3 seconds
       floatDistance: 150, // pixels to float up
       particleCount: 30,
@@ -19,15 +78,26 @@ module.exports = class LevelUpAnimation {
       fontSize: 48,
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.animationContainer = null;
     this.activeAnimations = new Set();
     this.patcher = null;
   }
 
+  /**
+   * 2.2 HELPER FUNCTIONS
+   */
+
+  // Helper functions defined at end of file (debugLog, debugError)
+
   // ============================================================================
-  // LIFECYCLE METHODS
+  // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
+
+  /**
+   * 3.1 PLUGIN LIFECYCLE
+   */
   /**
    * Initialize plugin on start
    * Operations:
@@ -56,9 +126,9 @@ module.exports = class LevelUpAnimation {
     this.debugLog('STOP', 'Plugin stopped');
   }
 
-  // ============================================================================
-  // SETTINGS MANAGEMENT
-  // ============================================================================
+  /**
+   * 3.2 SETTINGS MANAGEMENT
+   */
   /**
    * Load settings from BetterDiscord storage
    * Operations:
@@ -70,7 +140,9 @@ module.exports = class LevelUpAnimation {
     try {
       const saved = BdApi.Data.load('LevelUpAnimation', 'settings');
       if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
+        // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+        const merged = { ...this.defaultSettings, ...saved };
+        this.settings = JSON.parse(JSON.stringify(merged));
         this.debugLog('LOAD_SETTINGS', this.settings);
       }
     } catch (error) {
@@ -135,41 +207,76 @@ module.exports = class LevelUpAnimation {
             this.settings.fontSize
           }" min="24" max="96" step="4" style="width: 100%; padding: 5px;">
         </label>
+        <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(139, 92, 246, 0.3);">
+        <h4 style="color: #8b5cf6; margin-bottom: 10px;">Developer Options</h4>
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="lu-debug-mode">
+          <span style="margin-left: 10px;">Debug Mode</span>
+        </label>
+        <p style="font-size: 12px; color: #888; margin-top: 5px;">
+          Show detailed console logs for troubleshooting. Reload Discord after changing.
+        </p>
       </div>
     `;
 
-    // Event listeners
-    panel.querySelector('#lu-enabled').addEventListener('change', (e) => {
-      this.settings.enabled = e.target.checked;
-      this.saveSettings();
-    });
+    // FUNCTIONAL: Event listener mapper (NO REPETITION!)
+    const eventMap = {
+      '#lu-enabled': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.enabled = e.target.checked;
+          this.saveSettings();
+        },
+      },
+      '#lu-duration': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.animationDuration = parseInt(e.target.value);
+          this.saveSettings();
+        },
+      },
+      '#lu-distance': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.floatDistance = parseInt(e.target.value);
+          this.saveSettings();
+        },
+      },
+      '#lu-particles': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.particleCount = parseInt(e.target.value);
+          this.saveSettings();
+        },
+      },
+      '#lu-fontsize': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.fontSize = parseInt(e.target.value);
+          this.saveSettings();
+        },
+      },
+      '#lu-debug-mode': {
+        event: 'change',
+        handler: (e) => {
+          this.settings.debugMode = e.target.checked;
+          this.saveSettings();
+          console.log('[SETTINGS] Debug mode:', e.target.checked ? 'ENABLED' : 'DISABLED');
+        },
+      },
+    };
 
-    panel.querySelector('#lu-duration').addEventListener('change', (e) => {
-      this.settings.animationDuration = parseInt(e.target.value);
-      this.saveSettings();
-    });
-
-    panel.querySelector('#lu-distance').addEventListener('change', (e) => {
-      this.settings.floatDistance = parseInt(e.target.value);
-      this.saveSettings();
-    });
-
-    panel.querySelector('#lu-particles').addEventListener('change', (e) => {
-      this.settings.particleCount = parseInt(e.target.value);
-      this.saveSettings();
-    });
-
-    panel.querySelector('#lu-fontsize').addEventListener('change', (e) => {
-      this.settings.fontSize = parseInt(e.target.value);
-      this.saveSettings();
+    // Attach all event listeners functionally
+    Object.entries(eventMap).forEach(([selector, { event, handler }]) => {
+      panel.querySelector(selector)?.addEventListener(event, handler);
     });
 
     return panel;
   }
 
-  // ============================================================================
-  // CSS MANAGEMENT
-  // ============================================================================
+  /**
+   * 3.3 CSS MANAGEMENT
+   */
   /**
    * Inject CSS styles for level up animations
    * Operations:
@@ -287,9 +394,9 @@ module.exports = class LevelUpAnimation {
     }
   }
 
-  // ============================================================================
-  // ANIMATION CONTAINER MANAGEMENT
-  // ============================================================================
+  /**
+   * 3.4 ANIMATION CONTAINER MANAGEMENT
+   */
   /**
    * Get or create the animation container element
    * Operations:
@@ -323,9 +430,9 @@ module.exports = class LevelUpAnimation {
     this.activeAnimations.clear();
   }
 
-  // ============================================================================
-  // POSITION CALCULATION
-  // ============================================================================
+  /**
+   * 3.5 POSITION CALCULATION
+   */
   /**
    * Calculate optimal position for level up animation
    * Operations:
@@ -357,9 +464,9 @@ module.exports = class LevelUpAnimation {
     };
   }
 
-  // ============================================================================
-  // PARTICLE CREATION
-  // ============================================================================
+  /**
+   * 3.6 PARTICLE EFFECTS
+   */
   /**
    * Create particle effects around animation center
    * Operations:
@@ -372,9 +479,9 @@ module.exports = class LevelUpAnimation {
    */
   createParticles(startX, startY, count) {
     const container = this.getAnimationContainer();
-    const particles = [];
 
-    for (let i = 0; i < count; i++) {
+    // FUNCTIONAL: Create particles using Array.from (NO FOR-LOOP!)
+    return Array.from({ length: count }, (_, i) => {
       const particle = document.createElement('div');
       particle.className = 'lu-particle';
 
@@ -391,15 +498,13 @@ module.exports = class LevelUpAnimation {
       particle.style.setProperty('--lu-duration', `${this.settings.animationDuration}ms`);
 
       container.appendChild(particle);
-      particles.push(particle);
-    }
-
-    return particles;
+      return particle;
+    });
   }
 
-  // ============================================================================
-  // ANIMATION DISPLAY
-  // ============================================================================
+  /**
+   * 3.7 ANIMATION DISPLAY
+   */
   /**
    * Display level up animation with text and particles
    * Operations:
@@ -469,9 +574,9 @@ module.exports = class LevelUpAnimation {
     }
   }
 
-  // ============================================================================
-  // SOLO LEVELING INTEGRATION
-  // ============================================================================
+  /**
+   * 3.8 PLUGIN INTEGRATION
+   */
   /**
    * Hook into SoloLevelingStats plugin to intercept level up events
    * Operations:
@@ -534,7 +639,7 @@ module.exports = class LevelUpAnimation {
   }
 
   // ============================================================================
-  // DEBUG UTILITIES
+  // SECTION 4: DEBUGGING & DEVELOPMENT
   // ============================================================================
   /**
    * Log debug information to console
@@ -543,13 +648,22 @@ module.exports = class LevelUpAnimation {
    * 2. Format log message with plugin prefix
    * 3. Output to console
    */
+  // FUNCTIONAL DEBUG CONSOLE (NO IF-ELSE!)
+  // Only logs if debugMode is enabled, using short-circuit evaluation
   debugLog(operation, message, data = null) {
-    if (typeof message === 'object' && data === null) {
-      data = message;
-      message = operation;
-      operation = 'GENERAL';
-    }
-    console.log(`[LevelUpAnimation] ${operation}:`, message, data || '');
+    const formatMessage = () => {
+      const msg = typeof message === 'object' && data === null ? operation : message;
+      const op = typeof message === 'object' && data === null ? 'GENERAL' : operation;
+      const logData = typeof message === 'object' && data === null ? message : data;
+      return { op, msg, logData };
+    };
+
+    const log = () => {
+      const { op, msg, logData } = formatMessage();
+      console.log(`[LevelUpAnimation] ${op}:`, msg, logData || '');
+    };
+
+    return this.settings.debugMode && log();
   }
 
   /**
