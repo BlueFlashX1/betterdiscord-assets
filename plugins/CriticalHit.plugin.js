@@ -1238,14 +1238,13 @@ module.exports = class CriticalHit {
 
         // If updating from hash ID to valid Discord ID, this is a message being sent
         // Keep the crit status but update with the real Discord ID
-        if (existingIsHashId && isValidDiscordId && wasCrit && isCrit) {
+        existingIsHashId && isValidDiscordId && wasCrit && isCrit &&
           this.debugLog('ADD_TO_HISTORY', 'Updating hash ID to Discord ID for sent message', {
             oldId: existingId,
             newId: messageData.messageId,
             wasCrit,
             nowCrit: isCrit,
           });
-        }
 
         this.messageHistory[existingIndex] = historyEntry;
         this.debugLog('ADD_TO_HISTORY', 'Updated existing history entry', {
