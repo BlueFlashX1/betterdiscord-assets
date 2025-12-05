@@ -54,8 +54,7 @@ module.exports = class SoloLevelingTitleManager {
     // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
     this._retryTimeout1 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout1);
-      (!this.titleButton || !document.body.contains(this.titleButton)) &&
-        this.createTitleButton();
+      (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
       this._retryTimeout1 = null;
     }, 2000);
     this._retryTimeouts.add(this._retryTimeout1);
@@ -63,8 +62,7 @@ module.exports = class SoloLevelingTitleManager {
     // FUNCTIONAL: Additional retry (short-circuit, no if-else)
     this._retryTimeout2 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout2);
-      (!this.titleButton || !document.body.contains(this.titleButton)) &&
-        this.createTitleButton();
+      (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
       this._retryTimeout2 = null;
     }, 5000);
     this._retryTimeouts.add(this._retryTimeout2);
@@ -375,7 +373,8 @@ module.exports = class SoloLevelingTitleManager {
                 const buffs = [];
                 if (bonus) {
                   if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                  if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                  if (bonus.critChance > 0)
+                    buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
                   if (bonus.strengthPercent > 0)
                     buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
                   if (bonus.agilityPercent > 0)
@@ -388,7 +387,8 @@ module.exports = class SoloLevelingTitleManager {
                     buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
                   if (bonus.strength > 0 && !bonus.strengthPercent)
                     buffs.push(`+${bonus.strength} STR`);
-                  if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
+                  if (bonus.agility > 0 && !bonus.agilityPercent)
+                    buffs.push(`+${bonus.agility} AGI`);
                   if (bonus.intelligence > 0 && !bonus.intelligencePercent)
                     buffs.push(`+${bonus.intelligence} INT`);
                   if (bonus.vitality > 0 && !bonus.vitalityPercent)
@@ -619,13 +619,27 @@ module.exports = class SoloLevelingTitleManager {
         <div class="tm-filter-bar">
           <label class="tm-filter-label">Sort by:</label>
           <select id="tm-sort-select" class="tm-sort-dropdown">
-            <option value="xpBonus" ${this.settings.sortBy === 'xpBonus' ? 'selected' : ''}>XP Gain (Highest)</option>
-            <option value="critBonus" ${this.settings.sortBy === 'critBonus' ? 'selected' : ''}>Crit Chance (Highest)</option>
-            <option value="strBonus" ${this.settings.sortBy === 'strBonus' ? 'selected' : ''}>Strength % (Highest)</option>
-            <option value="agiBonus" ${this.settings.sortBy === 'agiBonus' ? 'selected' : ''}>Agility % (Highest)</option>
-            <option value="intBonus" ${this.settings.sortBy === 'intBonus' ? 'selected' : ''}>Intelligence % (Highest)</option>
-            <option value="vitBonus" ${this.settings.sortBy === 'vitBonus' ? 'selected' : ''}>Vitality % (Highest)</option>
-            <option value="perBonus" ${this.settings.sortBy === 'perBonus' ? 'selected' : ''}>Perception % (Highest)</option>
+            <option value="xpBonus" ${
+              this.settings.sortBy === 'xpBonus' ? 'selected' : ''
+            }>XP Gain (Highest)</option>
+            <option value="critBonus" ${
+              this.settings.sortBy === 'critBonus' ? 'selected' : ''
+            }>Crit Chance (Highest)</option>
+            <option value="strBonus" ${
+              this.settings.sortBy === 'strBonus' ? 'selected' : ''
+            }>Strength % (Highest)</option>
+            <option value="agiBonus" ${
+              this.settings.sortBy === 'agiBonus' ? 'selected' : ''
+            }>Agility % (Highest)</option>
+            <option value="intBonus" ${
+              this.settings.sortBy === 'intBonus' ? 'selected' : ''
+            }>Intelligence % (Highest)</option>
+            <option value="vitBonus" ${
+              this.settings.sortBy === 'vitBonus' ? 'selected' : ''
+            }>Vitality % (Highest)</option>
+            <option value="perBonus" ${
+              this.settings.sortBy === 'perBonus' ? 'selected' : ''
+            }>Perception % (Highest)</option>
           </select>
         </div>
         <div class="tm-modal-body">
@@ -809,7 +823,9 @@ module.exports = class SoloLevelingTitleManager {
         this.saveSettings();
 
         // Re-sort titles without closing modal
-        let sortedTitles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
+        let sortedTitles = (soloData?.titles || []).filter(
+          (title) => !unwantedTitles.includes(title)
+        );
         const sortFunctions = {
           xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
           critBonus: (a, b) =>
@@ -818,7 +834,8 @@ module.exports = class SoloLevelingTitleManager {
             (this.getTitleBonus(b)?.strengthPercent || 0) -
             (this.getTitleBonus(a)?.strengthPercent || 0),
           agiBonus: (a, b) =>
-            (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
+            (this.getTitleBonus(b)?.agilityPercent || 0) -
+            (this.getTitleBonus(a)?.agilityPercent || 0),
           intBonus: (a, b) =>
             (this.getTitleBonus(b)?.intelligencePercent || 0) -
             (this.getTitleBonus(a)?.intelligencePercent || 0),
@@ -866,11 +883,7 @@ module.exports = class SoloLevelingTitleManager {
                 <div class="tm-title-card ${isActive ? 'active' : ''}">
                   <div class="tm-title-icon">⭐</div>
                   <div class="tm-title-name">${this.escapeHtml(title)}</div>
-                  ${
-                    buffs.length > 0
-                      ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>`
-                      : ''
-                  }
+                  ${buffs.length > 0 ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>` : ''}
                   ${
                     isActive
                       ? `<div class="tm-title-status">Equipped</div>`
@@ -990,6 +1003,64 @@ module.exports = class SoloLevelingTitleManager {
         color: #8b5cf6;
         font-family: 'Orbitron', sans-serif;
         font-size: 24px;
+      }
+
+      /* Filter Bar Styling */
+      .tm-filter-bar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+        border-bottom: 2px solid rgba(139, 92, 246, 0.2);
+        backdrop-filter: blur(10px);
+      }
+
+      .tm-filter-label {
+        color: rgba(255, 255, 255, 0.9);
+        font-weight: bold;
+        font-size: 14px;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+        color: #8b5cf6;
+      }
+
+      .tm-sort-dropdown {
+        flex: 1;
+        padding: 10px 16px;
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.6) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.5);
+        border-radius: 8px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 14px;
+        font-weight: 500;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+      }
+
+      .tm-sort-dropdown:hover {
+        border-color: rgba(139, 92, 246, 0.8);
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        transform: translateY(-1px);
+      }
+
+      .tm-sort-dropdown:focus {
+        border-color: #8b5cf6;
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.6);
+      }
+
+      .tm-sort-dropdown option {
+        background: #1a1a2e;
+        color: rgba(255, 255, 255, 0.9);
+        padding: 10px;
+        font-size: 14px;
+      }
+
+      .tm-sort-dropdown option:hover {
+        background: rgba(139, 92, 246, 0.2);
       }
 
       .tm-close-button {
