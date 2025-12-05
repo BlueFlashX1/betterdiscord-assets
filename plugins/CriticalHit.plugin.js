@@ -8276,7 +8276,7 @@ module.exports = class CriticalHit {
     this.fadeOutExistingAnimations();
 
     // Apply screen shake if enabled
-    if (this.settings.screenShake) {
+    if (this.settings?.screenShake) {
       this.applyScreenShake();
     }
 
