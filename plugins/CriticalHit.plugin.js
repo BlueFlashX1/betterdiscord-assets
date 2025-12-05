@@ -7601,9 +7601,9 @@ module.exports = class CriticalHit {
           30
         );
         if (timestamp) {
-          if (timestamp instanceof Date) return timestamp.getTime();
-          if (typeof timestamp === 'string') return new Date(timestamp).getTime();
-          if (typeof timestamp === 'number') return timestamp;
+          return timestamp instanceof Date ? timestamp.getTime() :
+                 typeof timestamp === 'string' ? new Date(timestamp).getTime() :
+                 typeof timestamp === 'number' ? timestamp : 0;
         }
       }
     } catch (error) {
