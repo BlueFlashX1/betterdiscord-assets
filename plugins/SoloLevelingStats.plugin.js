@@ -4464,7 +4464,7 @@ module.exports = class SoloLevelingStats {
         const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         this.settings.perceptionBuffs = Array.from({ length: baseStats.perception }, () => {
           const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-          const randomBuff = Math.random() * 4 + 1; // 1% to 5% (variable, prevents abuse)
+          const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
           const roundedBuff = Math.round(randomBuff * 10) / 10;
           return { stat: randomStat, buff: roundedBuff };
         });
@@ -5087,7 +5087,7 @@ module.exports = class SoloLevelingStats {
               const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
               for (let i = 0; i < growthToAdd; i++) {
                 const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-                const randomBuff = Math.random() * 4 + 1; // 1% to 5% (variable, prevents abuse)
+                const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
                 const roundedBuff = Math.round(randomBuff * 10) / 10;
                 this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
               }
@@ -5182,7 +5182,7 @@ module.exports = class SoloLevelingStats {
             const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
             for (let i = 0; i < growthAmount; i++) {
               const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-              const randomBuff = Math.random() * 4 + 1; // 1% to 5% (variable, prevents abuse)
+              const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
               const roundedBuff = Math.round(randomBuff * 10) / 10;
               this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
             }
