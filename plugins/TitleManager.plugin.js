@@ -613,8 +613,20 @@ module.exports = class SoloLevelingTitleManager {
     modal.innerHTML = `
       <div class="tm-modal-content">
         <div class="tm-modal-header">
-          <h2> Titles</h2>
+          <h2>⭐ Titles</h2>
           <button class="tm-close-button">×</button>
+        </div>
+        <div class="tm-filter-bar">
+          <label class="tm-filter-label">Sort by:</label>
+          <select id="tm-sort-select" class="tm-sort-dropdown">
+            <option value="xpBonus" ${this.settings.sortBy === 'xpBonus' ? 'selected' : ''}>XP Gain (Highest)</option>
+            <option value="critBonus" ${this.settings.sortBy === 'critBonus' ? 'selected' : ''}>Crit Chance (Highest)</option>
+            <option value="strBonus" ${this.settings.sortBy === 'strBonus' ? 'selected' : ''}>Strength % (Highest)</option>
+            <option value="agiBonus" ${this.settings.sortBy === 'agiBonus' ? 'selected' : ''}>Agility % (Highest)</option>
+            <option value="intBonus" ${this.settings.sortBy === 'intBonus' ? 'selected' : ''}>Intelligence % (Highest)</option>
+            <option value="vitBonus" ${this.settings.sortBy === 'vitBonus' ? 'selected' : ''}>Vitality % (Highest)</option>
+            <option value="perBonus" ${this.settings.sortBy === 'perBonus' ? 'selected' : ''}>Perception % (Highest)</option>
+          </select>
         </div>
         <div class="tm-modal-body">
           ${
