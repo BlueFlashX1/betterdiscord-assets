@@ -1335,28 +1335,106 @@ module.exports = class SoloLevelingTitleManager {
 
   getSettingsPanel() {
     const panel = document.createElement('div');
-    panel.style.padding = '20px';
+    panel.style.cssText = `
+      padding: 20px;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      border-radius: 12px;
+      border: 2px solid rgba(139, 92, 246, 0.3);
+      box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
+    `;
+    
     panel.innerHTML = `
       <div>
-        <h3 style="color: #8b5cf6;">Title Manager Settings</h3>
-        <label style="display: flex; align-items: center; margin-bottom: 10px;">
-          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="tm-enabled">
-          <span style="margin-left: 10px;">Enable Title Manager</span>
+        <h3 style="
+          color: #8b5cf6;
+          font-size: 20px;
+          font-weight: bold;
+          margin-bottom: 20px;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+          text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+        ">Title Manager Settings</h3>
+        
+        <div style="
+          margin-bottom: 20px;
+          padding: 15px;
+          background: rgba(139, 92, 246, 0.1);
+          border-radius: 8px;
+          border-left: 3px solid #8b5cf6;
+        ">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Sort Preferences</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Your default sort filter: <span style="color: #8b5cf6; font-weight: bold;">${this.getSortLabel(this.settings.sortBy || 'xpBonus')}</span>
+            <br><br>
+            Change the sort filter in the titles modal by using the dropdown at the top.
+          </div>
+        </div>
+        
+        <label style="
+          display: flex;
+          align-items: center;
+          margin-bottom: 15px;
+          padding: 12px;
+          background: rgba(0, 0, 0, 0.3);
+          border-radius: 8px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        " onmouseover="this.style.background='rgba(139, 92, 246, 0.2)'" onmouseout="this.style.background='rgba(0, 0, 0, 0.3)'">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="tm-debug" style="
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+          ">
+          <span style="margin-left: 10px; color: rgba(255, 255, 255, 0.9); font-weight: 500;">
+            Debug Mode (Show console logs)
+          </span>
         </label>
+        
+        <div style="
+          margin-top: 15px;
+          padding: 15px;
+          background: rgba(139, 92, 246, 0.1);
+          border-radius: 8px;
+          border-left: 3px solid #8b5cf6;
+        ">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px; line-height: 1.6;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 8px 0; padding-left: 20px;">
+              <li>Title equip/unequip operations</li>
+              <li>Settings load/save operations</li>
+              <li>Button creation and retries</li>
+              <li>Modal open/close tracking</li>
+              <li>Filter and sort operations</li>
+            </ul>
+          </div>
+        </div>
       </div>
     `;
 
-    panel.querySelector('#tm-enabled').addEventListener('change', (e) => {
-      this.settings.enabled = e.target.checked;
+    const debugCheckbox = panel.querySelector('#tm-debug');
+    debugCheckbox?.addEventListener('change', (e) => {
+      this.settings.debugMode = e.target.checked;
       this.saveSettings();
-      if (e.target.checked) {
-        this.createTitleButton();
-      } else {
-        this.removeTitleButton();
-        this.closeTitleModal();
-      }
+      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
     });
 
     return panel;
+  }
+
+  /**
+   * Get human-readable sort label
+   */
+  getSortLabel(sortBy) {
+    const labels = {
+      xpBonus: 'XP Gain',
+      critBonus: 'Crit Chance',
+      strBonus: 'Strength %',
+      agiBonus: 'Agility %',
+      intBonus: 'Intelligence %',
+      vitBonus: 'Vitality %',
+      perBonus: 'Perception %',
+    };
+    return labels[sortBy] || 'XP Gain';
   }
 };
