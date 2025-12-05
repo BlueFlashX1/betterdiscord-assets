@@ -1696,11 +1696,7 @@ module.exports = class CriticalHit {
             )
           );
 
-          if (hasNewMessages && this.currentChannelId === channelId) {
-            // New messages added, retry restoration
-            restoreObserver.disconnect();
-            this.restoreChannelCrits(channelId, nextRetry);
-          }
+          hasNewMessages && this.currentChannelId === channelId && (restoreObserver.disconnect(), this.restoreChannelCrits(channelId, nextRetry));
         });
 
         restoreObserver.observe(messageContainer, {
