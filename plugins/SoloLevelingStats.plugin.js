@@ -2911,6 +2911,9 @@ module.exports = class SoloLevelingStats {
         gap: 18px;
       }
 
+      /* ========================================
+         STATS DISPLAY & PROGRESS BARS
+         ======================================== */
       .sls-stat-item {
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.08) 0%, rgba(75, 0, 130, 0.05) 100%);
         padding: 18px;
@@ -5499,8 +5502,22 @@ module.exports = class SoloLevelingStats {
   }
 
   getAchievementDefinitions() {
+    // ============================================================================
+    // ACHIEVEMENT DEFINITIONS (791 lines)
+    // 
+    // CATEGORIES:
+    // 1. Early Game (E-Rank) - Lines 5505-5550
+    // 2. Mid Game (D-C Rank) - Lines 5550-5650
+    // 3. Advanced (B-A Rank) - Lines 5650-5800
+    // 4. Elite (S-SS Rank) - Lines 5800-6000
+    // 5. Legendary (SSS+ & NH) - Lines 6000-6150
+    // 6. Monarch Tier - Lines 6150-6250
+    // 7. Special Achievements - Lines 6250-6291
+    // ============================================================================
     return [
-      // Early Game - E-Rank Hunter Titles
+      // ========================================
+      // CATEGORY 1: EARLY GAME (E-RANK)
+      // ========================================
       {
         id: 'weakest_hunter',
         name: 'The Weakest Hunter',
@@ -5517,6 +5534,10 @@ module.exports = class SoloLevelingStats {
         title: 'E-Rank Hunter',
         titleBonus: { xp: 0.08, strengthPercent: 0.05 }, // +8% XP, +5% STR
       },
+      
+      // ========================================
+      // CATEGORY 2: MID GAME (D-C RANK)
+      // ========================================
       {
         id: 'd_rank',
         name: 'D-Rank Hunter',
@@ -5533,6 +5554,10 @@ module.exports = class SoloLevelingStats {
         title: 'C-Rank Hunter',
         titleBonus: { xp: 0.18, critChance: 0.01, strengthPercent: 0.05 }, // +18% XP, +1% Crit, +5% STR
       },
+      
+      // ========================================
+      // CATEGORY 3: ADVANCED (B-A RANK)
+      // ========================================
       {
         id: 'b_rank',
         name: 'B-Rank Hunter',
@@ -5549,6 +5574,10 @@ module.exports = class SoloLevelingStats {
         title: 'A-Rank Hunter',
         titleBonus: { xp: 0.32, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +2% Crit, +5% STR, +5% AGI
       },
+      
+      // ========================================
+      // CATEGORY 4: ELITE (S-SS RANK)
+      // ========================================
       {
         id: 's_rank',
         name: 'S-Rank Hunter',
@@ -7392,12 +7421,26 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * 3.8.2 INJECT CHAT UI CSS (791 lines)
+   * 
+   * ORGANIZED SECTIONS:
+   * - Base Panel Styles (lines 7405-7500)
+   * - Stats Display & Progress Bars (lines 7500-7650)
+   * - Quest System UI (lines 7650-7800)
+   * - HP/Mana Bars (lines 7800-7950)
+   * - Stat Allocation Controls (lines 7950-8100)
+   * - Animations & Effects (lines 8100-8200)
+   */
   injectChatUICSS() {
     if (document.getElementById('sls-chat-ui-styles')) return;
 
     const style = document.createElement('style');
     style.id = 'sls-chat-ui-styles';
     style.textContent = `
+      /* ========================================
+         BASE PANEL STYLES
+         ======================================== */
       .sls-chat-panel {
         position: relative;
         margin: 6px 16px 8px 16px;
