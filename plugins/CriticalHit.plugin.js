@@ -718,10 +718,10 @@ module.exports = class CriticalHit {
         '';
       const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
 
-      if (content && author) {
-        messageId = this.createContentHash(content, author, timestamp);
-        extractionMethod = 'content_hash';
-      } else if (content) {
+      if (content) {
+        messageId = author ? this.createContentHash(content, author, timestamp) : this.createContentHash(content);
+        extractionMethod = author ? 'content_hash' : 'content_only_hash';
+      } else if (!messageId) {
         messageId = this.createContentHash(content);
         extractionMethod = 'content_only_hash';
       }
