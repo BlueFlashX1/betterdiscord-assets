@@ -12,11 +12,20 @@
 
 module.exports = class SkillTree {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // SECTION 1: IMPORTS & DEPENDENCIES
   // ============================================================================
+  // (No external imports needed for this plugin)
+
+  // ============================================================================
+  // SECTION 2: CONFIGURATION & HELPERS
+  // ============================================================================
+  
+  // 2.1 CONSTRUCTOR & SETTINGS
+  // ----------------------------------------------------------------------------
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
       skillPoints: 0, // Skill points separate from stat points
       unlockedSkills: [], // Array of unlocked skill IDs (legacy support)
       skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
@@ -336,7 +345,9 @@ module.exports = class SkillTree {
       },
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.skillTreeModal = null;
     this.skillTreeButton = null;
     this.levelCheckInterval = null; // Deprecated - using events instead
@@ -346,9 +357,23 @@ module.exports = class SkillTree {
     this._retryTimeout2 = null; // Timeout ID for second retry
   }
 
+  // 2.2 HELPER FUNCTIONS
+  // ----------------------------------------------------------------------------
+  
+  /**
+   * Debug logging helper (functional, no if-else)
+   */
+  debugLog(message, data = null) {
+    const log = () => console.log(`[SkillTree]`, message, data || '');
+    return this.settings?.debugMode === true && log();
+  }
+
   // ============================================================================
-  // LIFECYCLE METHODS
+  // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
+  
+  // 3.1 PLUGIN LIFECYCLE
+  // ----------------------------------------------------------------------------
   start() {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
@@ -599,14 +624,16 @@ module.exports = class SkillTree {
     }
   }
 
-  // ============================================================================
-  // SETTINGS MANAGEMENT
-  // ============================================================================
+  // 3.2 SETTINGS MANAGEMENT
+  // ----------------------------------------------------------------------------
   loadSettings() {
     try {
       const saved = BdApi.Data.load('SkillTree', 'settings');
       if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
+        // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+        // Shallow spread (...) only copies top-level, nested objects are still references!
+        const merged = { ...this.defaultSettings, ...saved };
+        this.settings = JSON.parse(JSON.stringify(merged));
         // Migrate old unlockedSkills to skillLevels
         if (this.settings.unlockedSkills && this.settings.unlockedSkills.length > 0) {
           if (!this.settings.skillLevels) {
@@ -760,16 +787,15 @@ module.exports = class SkillTree {
   getSkillUpgradeCost(skill, tier, targetLevel) {
     if (targetLevel <= 1) return 0;
 
-    let totalCost = 0;
     const baseCost = tier.baseCost || 1;
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
+    // FUNCTIONAL: Use Array.from + reduce instead of for-loop
     // Cost for level 2, 3, 4, etc.
-    for (let level = 2; level <= targetLevel; level++) {
-      totalCost += Math.ceil(baseCost * (level - 1) * multiplier);
-    }
-
-    return totalCost;
+    return Array.from({ length: targetLevel - 1 }, (_, i) => i + 2).reduce(
+      (total, level) => total + Math.ceil(baseCost * (level - 1) * multiplier),
+      0
+    );
   }
 
   /**
@@ -832,16 +858,16 @@ module.exports = class SkillTree {
    */
   findSkillAndTier(skillId) {
     try {
-      for (const tierKey in this.skillTree) {
-        const tierData = this.skillTree[tierKey];
-        if (!tierData?.skills) continue;
+      // FUNCTIONAL: Use Object.values + find instead of for-in loop
+      const result = Object.values(this.skillTree)
+        .filter((tierData) => tierData?.skills)
+        .map((tierData) => ({
+          skill: tierData.skills.find((s) => s.id === skillId),
+          tier: tierData,
+        }))
+        .find(({ skill }) => skill);
 
-        const foundSkill = tierData.skills.find((s) => s.id === skillId);
-        if (foundSkill) {
-          return { skill: foundSkill, tier: tierData };
-        }
-      }
-      return null;
+      return result || null;
     } catch (error) {
       console.error('SkillTree: Error finding skill', error);
       return null;
