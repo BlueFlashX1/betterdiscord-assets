@@ -278,6 +278,8 @@ module.exports = class SoloLevelingToasts {
         position: relative;
         min-width: 280px;
         max-width: 360px;
+        min-height: 50px;
+        max-height: fit-content;
         padding: 14px 18px;
         background: rgba(10, 10, 15, 0.95);
         border: 1px solid rgba(139, 92, 246, 0.3);
@@ -286,11 +288,13 @@ module.exports = class SoloLevelingToasts {
                     0 0 40px rgba(139, 92, 246, 0.2);
         pointer-events: auto;
         cursor: pointer;
-        overflow: hidden;
+        overflow: visible;
         animation: sl-toast-slide-in 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         will-change: transform, opacity;
         transform: translateZ(0); /* Force GPU acceleration */
         backface-visibility: hidden; /* Optimize rendering */
+        word-wrap: break-word;
+        white-space: normal;
       }
 
       /* Ensure fade-out animation properly overrides slide-in */
@@ -382,6 +386,10 @@ module.exports = class SoloLevelingToasts {
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
+        word-wrap: break-word;
+        white-space: normal;
+        overflow-wrap: break-word;
+        max-width: 100%;
         text-shadow: 0 0 3px rgba(139, 92, 246, 0.5),
                      0 0 6px rgba(124, 58, 237, 0.4),
                      0 0 9px rgba(109, 40, 217, 0.3);
@@ -393,9 +401,11 @@ module.exports = class SoloLevelingToasts {
       .sl-toast-message {
         color: rgba(255, 255, 255, 0.9);
         font-size: 13px;
-        line-height: 1.4;
-        white-space: pre-wrap;
+        line-height: 1.5;
+        white-space: normal;
         word-wrap: break-word;
+        overflow-wrap: break-word;
+        max-width: 100%;
       }
 
       .sl-toast-particle {
