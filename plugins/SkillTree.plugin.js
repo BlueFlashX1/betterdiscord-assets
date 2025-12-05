@@ -358,22 +358,20 @@ module.exports = class SkillTree {
     this.createSkillTreeButton();
     this.saveSkillBonuses();
 
-    // Retry button creation after delays to ensure Discord UI is ready
+    // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
     this._retryTimeout1 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout1);
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
         this.createSkillTreeButton();
-      }
       this._retryTimeout1 = null;
     }, 2000);
     this._retryTimeouts.add(this._retryTimeout1);
 
-    // Additional retry after longer delay (for plugin re-enabling)
+    // FUNCTIONAL: Additional retry (short-circuit, no if-else)
     this._retryTimeout2 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout2);
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
         this.createSkillTreeButton();
-      }
       this._retryTimeout2 = null;
     }, 5000);
     this._retryTimeouts.add(this._retryTimeout2);
@@ -425,13 +423,14 @@ module.exports = class SkillTree {
 
     // Subscribe to level changed events
     const unsubscribeLevel = instance.on('levelChanged', (data) => {
-      // data contains: { oldLevel, newLevel, ... }
-      if (data.newLevel > (this.settings.lastLevel || 1)) {
-        const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
-        this.awardSPForLevelUp(levelsGained);
-        this.settings.lastLevel = data.newLevel;
-        this.saveSettings();
-      }
+      // FUNCTIONAL: Short-circuit for level up (no if-else)
+      data.newLevel > (this.settings.lastLevel || 1) &&
+        (() => {
+          const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
+          this.awardSPForLevelUp(levelsGained);
+          this.settings.lastLevel = data.newLevel;
+          this.saveSettings();
+        })();
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
 
@@ -555,13 +554,11 @@ module.exports = class SkillTree {
     this.settings.totalEarnedSP += spEarned;
     this.saveSettings();
 
-    // Show notification
-    if (BdApi && typeof BdApi.showToast === 'function') {
-      BdApi.showToast(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
-        type: 'success',
-        timeout: 3000,
-      });
-    }
+    // FUNCTIONAL: Show notification (optional chaining, no if-else)
+    BdApi?.showToast?.(`Level Up! +${spEarned} Skill Point${spEarned > 1 ? 's' : ''}`, {
+      type: 'success',
+      timeout: 3000,
+    });
   }
 
   /**
@@ -605,23 +602,17 @@ module.exports = class SkillTree {
   loadSettings() {
     try {
       const saved = BdApi.Data.load('SkillTree', 'settings');
-      if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
-        // Migrate old unlockedSkills to skillLevels
-        if (this.settings.unlockedSkills && this.settings.unlockedSkills.length > 0) {
-          if (!this.settings.skillLevels) {
-            this.settings.skillLevels = {};
-          }
-          this.settings.unlockedSkills.forEach((skillId) => {
-            if (!this.settings.skillLevels[skillId]) {
-              this.settings.skillLevels[skillId] = 1; // Set to level 1
-            }
-          });
-          // Clear old array
-          this.settings.unlockedSkills = [];
-          this.saveSettings();
-        }
-      }
+      // FUNCTIONAL: Short-circuit merge and migration (no if-else)
+      saved &&
+        ((this.settings = { ...this.defaultSettings, ...saved }),
+        this.settings.unlockedSkills?.length > 0 &&
+          ((this.settings.skillLevels = this.settings.skillLevels || {}),
+          this.settings.unlockedSkills.forEach(
+            (skillId) =>
+              (this.settings.skillLevels[skillId] = this.settings.skillLevels[skillId] || 1)
+          ),
+          (this.settings.unlockedSkills = []),
+          this.saveSettings()));
     } catch (error) {
       console.error('SkillTree: Error loading settings', error);
     }

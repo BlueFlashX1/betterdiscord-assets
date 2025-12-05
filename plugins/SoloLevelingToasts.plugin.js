@@ -76,11 +76,8 @@ module.exports = class SoloLevelingToasts {
    */
   stop() {
     this._isStopped = true;
-    // Clear hook retry timeout if pending
-    if (this._hookRetryId) {
-      clearTimeout(this._hookRetryId);
-      this._hookRetryId = null;
-    }
+    // FUNCTIONAL: Clear hook retry (short-circuit, no if-else)
+    this._hookRetryId && (clearTimeout(this._hookRetryId), (this._hookRetryId = null));
     this.unhookIntoSoloLeveling();
     this.removeAllToasts();
     this.removeToastContainer();
@@ -88,12 +85,9 @@ module.exports = class SoloLevelingToasts {
     // Clear pending toasts
     this.pendingToasts.forEach((timeoutId) => clearTimeout(timeoutId));
     this.pendingToasts.clear();
-    // Clear message groups
+    // FUNCTIONAL: Clear message groups (short-circuit, no if-else)
     this.messageGroups.forEach((group) => {
-      // Handle sentinel timeoutId (true = RAF pending, don't clear)
-      if (group.timeoutId && group.timeoutId !== true) {
-        clearTimeout(group.timeoutId);
-      }
+      group.timeoutId && group.timeoutId !== true && clearTimeout(group.timeoutId);
     });
     this.messageGroups.clear();
     this.debugLog('Plugin stopped');
@@ -587,10 +581,8 @@ module.exports = class SoloLevelingToasts {
    * 2. Clear container reference
    */
   removeToastContainer() {
-    if (this.toastContainer) {
-      this.toastContainer.remove();
-      this.toastContainer = null;
-    }
+    // FUNCTIONAL: Short-circuit (no if-else)
+    this.toastContainer && (this.toastContainer.remove(), (this.toastContainer = null));
   }
 
   /**
@@ -741,6 +733,7 @@ module.exports = class SoloLevelingToasts {
    * 6. Auto-remove particles after animation duration
    */
   createParticles(toastElement, count) {
+    // FUNCTIONAL: Guard clause (keep for early return)
     if (!this.settings.showParticles) return;
 
     const rect = toastElement.getBoundingClientRect();
