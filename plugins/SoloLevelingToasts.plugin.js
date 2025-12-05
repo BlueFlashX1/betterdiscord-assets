@@ -1416,7 +1416,7 @@ module.exports = class SoloLevelingToasts {
               messageText = message.text;
             }
 
-            // Filter out natural growth notifications
+            // Filter out spammy notifications (natural growth + stat allocation)
             if (messageText && typeof messageText === 'string') {
               const msgClean = messageText.replace(/\s+/g, ' ').trim();
               const msgLower = msgClean.toLowerCase();
@@ -1434,12 +1434,31 @@ module.exports = class SoloLevelingToasts {
                 msgLower.includes('natural vitality growth') ||
                 msgLower.includes('natural luck growth');
 
-              if (isNaturalGrowth) {
-                this.debugLog('HOOK_INTERCEPT', 'Skipping natural growth notification', {
+              // Check for stat allocation notifications (spammy)
+              const isStatAllocation =
+                msgLower.includes('stat point allocated') ||
+                msgLower.includes('allocated to') ||
+                msgLower.includes('point added to') ||
+                (msgLower.includes('strength:') && msgLower.includes('→')) ||
+                (msgLower.includes('agility:') && msgLower.includes('→')) ||
+                (msgLower.includes('intelligence:') && msgLower.includes('→')) ||
+                (msgLower.includes('vitality:') && msgLower.includes('→')) ||
+                (msgLower.includes('perception:') && msgLower.includes('→')) ||
+                (msgLower.includes('luck:') && msgLower.includes('→'));
+
+              // FUNCTIONAL: Short-circuit return (no nested if-else)
+              (isNaturalGrowth || isStatAllocation) &&
+                (this.debugLog('HOOK_INTERCEPT', 'Skipping spammy notification', {
                   originalMessage: messageText?.substring(0, 100),
-                });
-                return;
-              }
+                  isNaturalGrowth,
+                  isStatAllocation,
+                }),
+                true) &&
+                (() => {
+                  return;
+                })();
+
+              if (isNaturalGrowth || isStatAllocation) return;
             }
 
             this.debugLog('HOOK_INTERCEPT', 'Intercepted showNotification call', {
