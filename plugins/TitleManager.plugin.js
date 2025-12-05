@@ -401,7 +401,7 @@ module.exports = class SoloLevelingTitleManager {
                   timeout: 3000,
                 });
               })();
-            result && this.refreshModal();
+            result && this.refreshModalSmooth();
             return result;
           })()
         : false;
@@ -438,7 +438,7 @@ module.exports = class SoloLevelingTitleManager {
         if (BdApi && typeof BdApi.showToast === 'function') {
           BdApi.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
         }
-        this.refreshModal();
+        this.refreshModalSmooth();
         return true;
       }
       return false;
@@ -930,6 +930,37 @@ module.exports = class SoloLevelingTitleManager {
   refreshModal() {
     this.closeTitleModal();
     setTimeout(() => this.openTitleModal(), 100);
+  }
+
+  /**
+   * Smooth refresh without closing modal (no disappear)
+   */
+  refreshModalSmooth() {
+    if (!this.titleModal) return;
+
+    const modalBody = this.titleModal.querySelector('.tm-modal-body');
+    const titlesGrid = this.titleModal.querySelector('.tm-titles-grid');
+    const scrollPos = this.titleModal.querySelector('.tm-modal-content')?.scrollTop || 0;
+    
+    // Fade out
+    modalBody && (modalBody.style.transition = 'opacity 0.15s ease-out', modalBody.style.opacity = '0.5');
+    titlesGrid && (titlesGrid.style.transition = 'opacity 0.15s ease-out', titlesGrid.style.opacity = '0.5');
+    
+    setTimeout(() => {
+      this.closeTitleModal();
+      this.openTitleModal();
+      
+      // Restore scroll and fade in
+      setTimeout(() => {
+        const content = this.titleModal?.querySelector('.tm-modal-content');
+        const newModalBody = this.titleModal?.querySelector('.tm-modal-body');
+        const newTitlesGrid = this.titleModal?.querySelector('.tm-titles-grid');
+        
+        content && (content.scrollTop = scrollPos);
+        newModalBody && (newModalBody.style.opacity = '1');
+        newTitlesGrid && (newTitlesGrid.style.opacity = '1');
+      }, 10);
+    }, 150);
   }
 
   closeTitleModal() {
