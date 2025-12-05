@@ -4461,9 +4461,12 @@ module.exports = class SoloLevelingStats {
         this.settings.perceptionBuffs = [];
         // Generate buffs for perception stat (similar to allocation)
         // Using Array.from() instead of for-loop
+        const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
         this.settings.perceptionBuffs = Array.from({ length: baseStats.perception }, () => {
-          const randomBuff = Math.random() * 6 + 2; // 2% to 8%
-          return Math.round(randomBuff * 10) / 10;
+          const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
+          const randomBuff = Math.random() * 4 + 1; // 1% to 5% (variable, prevents abuse)
+          const roundedBuff = Math.round(randomBuff * 10) / 10;
+          return { stat: randomStat, buff: roundedBuff };
         });
       } else {
         this.settings.perceptionBuffs = [];
