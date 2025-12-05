@@ -134,7 +134,7 @@ module.exports = class SoloLevelingStats {
         vitality: 0, // +5% daily quest rewards per point
         perception: 0, // Each point grants a random % buff that stacks (renamed from Luck)
       },
-      perceptionBuffs: [], // Array of random buff percentages that stack (e.g., [2.5, 4.1, 3.7]) - renamed from luckBuffs
+      perceptionBuffs: [], // Array of random stat buffs: [{ stat: 'strength', buff: 2.5 }, { stat: 'agility', buff: 3.2 }]
       unallocatedStatPoints: 0,
       // Level system
       level: 1,
@@ -774,10 +774,34 @@ module.exports = class SoloLevelingStats {
     const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
     const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
 
+    // NEW: Support both old format (numbers) and new format (objects with stat+buff)
     if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
-      return perceptionBuffs.reduce((sum, buff) => sum + buff, 0);
+      return perceptionBuffs.reduce((sum, buff) => {
+        // Old format: buff is a number
+        // New format: buff is { stat: 'strength', buff: 2.5 }
+        return sum + (typeof buff === 'number' ? buff : buff.buff || 0);
+      }, 0);
     }
     return 0;
+  }
+
+  /**
+   * Get perception buffs grouped by stat (for new system)
+   * Returns: { strength: 10.5, agility: 8.2, intelligence: 12.3, vitality: 6.7, perception: 5.1 }
+   */
+  getPerceptionBuffsByStat() {
+    const perceptionBuffs = this.settings.perceptionBuffs || [];
+    const buffsByStat = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+
+    // FUNCTIONAL: Reduce buffs by stat (additive stacking)
+    perceptionBuffs.forEach((buff) => {
+      // New format: { stat: 'strength', buff: 2.5 }
+      if (buff && typeof buff === 'object' && buff.stat && typeof buff.buff === 'number') {
+        buffsByStat[buff.stat] = (buffsByStat[buff.stat] || 0) + buff.buff;
+      }
+    });
+
+    return buffsByStat;
   }
 
   getRankMultiplier() {
@@ -3994,7 +4018,11 @@ module.exports = class SoloLevelingStats {
       totalPercentageBonus += adjustedPerceptionBuff;
 
       // ===== STAT BONUSES (Additive with Diminishing Returns) =====
+      // Get perception buffs by stat (NEW SYSTEM)
+      const perceptionBuffsByStat = this.getPerceptionBuffsByStat();
+
       // Strength: +2% per point, with diminishing returns after 20 points
+      // PLUS perception buffs for strength (additive)
       const strengthStat = this.settings.stats.strength || 0;
       let strengthBonus = 0;
       if (strengthStat > 0) {
@@ -4008,10 +4036,13 @@ module.exports = class SoloLevelingStats {
         if (this._skillTreeStatMultiplier) {
           strengthBonus *= this._skillTreeStatMultiplier;
         }
+        // ADD perception buffs for strength (additive stacking)
+        strengthBonus += perceptionBuffsByStat.strength || 0;
         totalPercentageBonus += strengthBonus;
       }
 
       // Intelligence: +5% per point for long messages, with diminishing returns after 15 points
+      // PLUS perception buffs for intelligence (additive)
       if (messageLength > 200) {
         const intelligenceStat = this.settings.stats.intelligence || 0;
         let intelligenceBonus = 0;
@@ -4026,6 +4057,8 @@ module.exports = class SoloLevelingStats {
           if (this._skillTreeStatMultiplier) {
             intelligenceBonus *= this._skillTreeStatMultiplier;
           }
+          // ADD perception buffs for intelligence (additive stacking)
+          intelligenceBonus += perceptionBuffsByStat.intelligence || 0;
           totalPercentageBonus += intelligenceBonus;
         }
       }
@@ -5058,10 +5091,12 @@ module.exports = class SoloLevelingStats {
               if (!Array.isArray(this.settings.perceptionBuffs)) {
                 this.settings.perceptionBuffs = [];
               }
+              const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
               for (let i = 0; i < growthToAdd; i++) {
+                const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
                 const randomBuff = Math.random() * 6 + 2; // 2% to 8%
                 const roundedBuff = Math.round(randomBuff * 10) / 10;
-                this.settings.perceptionBuffs.push(roundedBuff);
+                this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
               }
             }
           }
@@ -5150,11 +5185,13 @@ module.exports = class SoloLevelingStats {
             if (!Array.isArray(this.settings.perceptionBuffs)) {
               this.settings.perceptionBuffs = [];
             }
-            // Generate buffs for each point of growth
+            // Generate buffs for each point of growth (random stat per buff)
+            const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
             for (let i = 0; i < growthAmount; i++) {
+              const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
               const randomBuff = Math.random() * 6 + 2; // 2% to 8%
               const roundedBuff = Math.round(randomBuff * 10) / 10;
-              this.settings.perceptionBuffs.push(roundedBuff);
+              this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
             }
           }
 
