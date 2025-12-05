@@ -818,6 +818,93 @@ module.exports = class SoloLevelingTitleManager {
       });
     }
 
+    // Handle sort filter change (SMOOTH - no modal blink)
+    const sortSelect = modal.querySelector('#tm-sort-select');
+    const titlesGrid = modal.querySelector('.tm-titles-grid');
+    if (sortSelect && titlesGrid) {
+      sortSelect.addEventListener('change', (e) => {
+        this.settings.sortBy = e.target.value;
+        this.saveSettings();
+        
+        // Re-sort titles without closing modal
+        let sortedTitles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
+        const sortFunctions = {
+          xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
+          critBonus: (a, b) =>
+            (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
+          strBonus: (a, b) =>
+            (this.getTitleBonus(b)?.strengthPercent || 0) -
+            (this.getTitleBonus(a)?.strengthPercent || 0),
+          agiBonus: (a, b) =>
+            (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
+          intBonus: (a, b) =>
+            (this.getTitleBonus(b)?.intelligencePercent || 0) -
+            (this.getTitleBonus(a)?.intelligencePercent || 0),
+          vitBonus: (a, b) =>
+            (this.getTitleBonus(b)?.vitalityPercent || 0) -
+            (this.getTitleBonus(a)?.vitalityPercent || 0),
+          perBonus: (a, b) =>
+            (this.getTitleBonus(b)?.perceptionPercent || 0) -
+            (this.getTitleBonus(a)?.perceptionPercent || 0),
+        };
+        sortedTitles.sort(sortFunctions[e.target.value] || sortFunctions.xpBonus);
+        
+        // Smooth transition
+        titlesGrid.style.opacity = '0.5';
+        setTimeout(() => {
+          titlesGrid.innerHTML = sortedTitles
+            .map((title) => {
+              const isActive = title === activeTitle;
+              const bonus = this.getTitleBonus(title);
+              const buffs = [];
+              if (bonus) {
+                if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
+                if (bonus.critChance > 0)
+                  buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+                if (bonus.strengthPercent > 0)
+                  buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+                if (bonus.agilityPercent > 0)
+                  buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+                if (bonus.intelligencePercent > 0)
+                  buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+                if (bonus.vitalityPercent > 0)
+                  buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+                if (bonus.perceptionPercent > 0)
+                  buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+                if (bonus.strength > 0 && !bonus.strengthPercent)
+                  buffs.push(`+${bonus.strength} STR`);
+                if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
+                if (bonus.intelligence > 0 && !bonus.intelligencePercent)
+                  buffs.push(`+${bonus.intelligence} INT`);
+                if (bonus.vitality > 0 && !bonus.vitalityPercent)
+                  buffs.push(`+${bonus.vitality} VIT`);
+                if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
+              }
+              return `
+                <div class="tm-title-card ${isActive ? 'active' : ''}">
+                  <div class="tm-title-icon">⭐</div>
+                  <div class="tm-title-name">${this.escapeHtml(title)}</div>
+                  ${
+                    buffs.length > 0
+                      ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>`
+                      : ''
+                  }
+                  ${
+                    isActive
+                      ? `<div class="tm-title-status">Equipped</div>`
+                      : `<button class="tm-equip-btn" data-title="${this.escapeHtml(
+                          title
+                        )}">Equip</button>`
+                  }
+                </div>
+              `;
+            })
+            .join('');
+          titlesGrid.style.opacity = '1';
+        }, 150);
+      });
+    }
+
     document.body.appendChild(modal);
     this.titleModal = modal;
   }
