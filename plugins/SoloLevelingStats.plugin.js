@@ -3942,13 +3942,13 @@ module.exports = class SoloLevelingStats {
         2000: 3.25, // +225% at level 2000
       };
 
-      // Apply highest milestone multiplier reached
-      let milestoneMultiplier = 1.0;
-      for (const [milestone, multiplier] of Object.entries(milestoneMultipliers)) {
-        if (currentLevel >= parseInt(milestone)) {
-          milestoneMultiplier = multiplier;
-        }
-      }
+      // Apply highest milestone multiplier reached (using .reduce() for cleaner code)
+      const milestoneMultiplier = Object.entries(milestoneMultipliers).reduce(
+        (highest, [milestone, multiplier]) => {
+          return currentLevel >= parseInt(milestone) ? multiplier : highest;
+        },
+        1.0
+      );
 
       if (milestoneMultiplier > 1.0) {
         xp = Math.round(xp * milestoneMultiplier);
@@ -4304,11 +4304,11 @@ module.exports = class SoloLevelingStats {
       if (baseStats.perception > 0) {
         this.settings.perceptionBuffs = [];
         // Generate buffs for perception stat (similar to allocation)
-        for (let i = 0; i < baseStats.perception; i++) {
+        // Using Array.from() instead of for-loop
+        this.settings.perceptionBuffs = Array.from({ length: baseStats.perception }, () => {
           const randomBuff = Math.random() * 6 + 2; // 2% to 8%
-          const roundedBuff = Math.round(randomBuff * 10) / 10;
-          this.settings.perceptionBuffs.push(roundedBuff);
-        }
+          return Math.round(randomBuff * 10) / 10;
+        });
       } else {
         this.settings.perceptionBuffs = [];
       }
@@ -4373,13 +4373,11 @@ module.exports = class SoloLevelingStats {
         'D',
         'E',
       ];
-      for (const rank of rankOrder) {
+      // Using .find() to search for correct rank
+      correctRank = rankOrder.find(rank => {
         const req = rankRequirements[rank];
-        if (req && targetLevel >= req.level && currentAchievements >= req.achievements) {
-          correctRank = rank;
-          break;
-        }
-      }
+        return req && targetLevel >= req.level && currentAchievements >= req.achievements;
+      }) || 'E';
 
       // Set the correct rank
       const oldRank = this.settings.rank;
@@ -5298,13 +5296,11 @@ module.exports = class SoloLevelingStats {
       let questCard = null;
 
       // Find the completed quest card
-      for (const card of questCards) {
+      // Using .find() to search for quest card
+      questCard = Array.from(questCards).find(card => {
         const cardText = card.textContent || '';
-        if (cardText.includes(questName) || card.classList.contains('sls-chat-quest-complete')) {
-          questCard = card;
-          break;
-        }
-      }
+        return cardText.includes(questName) || card.classList.contains('sls-chat-quest-complete');
+      });
 
       // Create celebration overlay
       const celebration = document.createElement('div');
