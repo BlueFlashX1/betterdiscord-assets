@@ -372,20 +372,17 @@ module.exports = class CriticalHit {
 
       // Show toast notification (if available)
       try {
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          let toastMessage = `CriticalHit enabled! ${this.settings.critChance}% crit chance`;
-          if (totalBonus > 0) {
-            const bonuses = [];
-            if (agilityBonus > 0) bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
-            if (luckBonus > 0) bonuses.push(`+${luckBonus.toFixed(1)}% LUK`);
-            toastMessage = `CriticalHit enabled! ${this.settings.critChance}% base (${bonuses.join(
-              ' + '
-            )}) = ${effectiveCritChance.toFixed(1)}%`;
-          }
-          BdApi.showToast(toastMessage, {
-            type: 'success',
-            timeout: 3000,
-          });
+        if (BdApi?.showToast) {
+          const bonuses = [
+            agilityBonus > 0 && `+${agilityBonus.toFixed(1)}% AGI`,
+            luckBonus > 0 && `+${luckBonus.toFixed(1)}% LUK`,
+          ].filter(Boolean);
+
+          const toastMessage = totalBonus > 0
+            ? `CriticalHit enabled! ${this.settings.critChance}% base (${bonuses.join(' + ')}) = ${effectiveCritChance.toFixed(1)}%`
+            : `CriticalHit enabled! ${this.settings.critChance}% crit chance`;
+
+          BdApi.showToast(toastMessage, { type: 'success', timeout: 3000 });
           this.debugLog('START', 'Toast notification shown');
         } else {
           this.debugLog('START', 'Toast notification not available (BdApi.showToast not found)');
@@ -774,7 +771,7 @@ module.exports = class CriticalHit {
       const isSuspicious = messageId.length < 17 || messageId.length > 19;
 
       // Always log suspicious IDs or when verbose debugging is enabled
-      if (debugContext && (isSuspicious || debugContext.verbose || !isValidFormat)) {
+      if (debugContext?.verbose || (debugContext && (isSuspicious || !isValidFormat))) {
         this.debugLog('GET_MESSAGE_ID', 'Message ID extracted', {
           messageId: messageId,
           messageIdLength: messageId.length,
@@ -788,7 +785,7 @@ module.exports = class CriticalHit {
       }
 
       // Warn if we got a suspiciously short ID (might be channel ID)
-      if (isSuspicious && this.debug.enabled) {
+      if (isSuspicious && this.debug?.enabled) {
         console.warn('[CriticalHit] WARNING: Suspicious message ID extracted:', {
           messageId,
           length: messageId.length,
@@ -912,7 +909,7 @@ module.exports = class CriticalHit {
 
         if (authorId) {
           const match = authorId.match(/\d{17,19}/);
-          if (match && /^\d{17,19}$/.test(match[0])) {
+          if (match?.[0] && /^\d{17,19}$/.test(match[0])) {
             return match[0];
           }
         }
