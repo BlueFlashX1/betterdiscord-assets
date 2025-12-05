@@ -1844,11 +1844,11 @@ module.exports = class SkillTree {
               : ''
           }
           <button class="skilltree-reset-btn" id="st-reset-modal-btn">
-            🔄 Reset Skills
+            Reset Skills
           </button>
         </div>
       </div>
-      
+
       <div class="skilltree-tier-nav">
         ${visibleTiers
           .map(
