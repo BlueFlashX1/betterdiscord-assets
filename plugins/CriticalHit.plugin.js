@@ -144,10 +144,10 @@ module.exports = class CriticalHit {
   // ============================================================================
 
   debugLog(operation, message, data = null) {
-    // Early return if debug is disabled - no overhead when disabled
+    // FUNCTIONAL: Guard clause (early return - good if-else usage)
     if (!this.debug.enabled) return;
 
-    // Throttle frequent operations to reduce CPU/memory usage
+    // FUNCTIONAL: Throttle frequent operations (Set for O(1) lookup)
     const frequentOps = new Set([
       'GET_MESSAGE_ID',
       'CHECK_FOR_RESTORATION',
@@ -157,21 +157,27 @@ module.exports = class CriticalHit {
       'MUTATION_OBSERVER',
     ]);
 
-    if (frequentOps.has(operation)) {
-      const now = Date.now();
-      const lastLogTimes = this.debug.lastLogTimes || {};
-      const throttleInterval = 10000; // 10 seconds for frequent ops
+    // FUNCTIONAL: Throttling logic (short-circuit)
+    frequentOps.has(operation) &&
+      (() => {
+        const now = Date.now();
+        const lastLogTimes = this.debug.lastLogTimes || {};
+        const throttleInterval = 10000;
 
-      if (lastLogTimes[operation] && now - lastLogTimes[operation] < throttleInterval) {
-        // Skip logging but track count
-        this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
-        return;
-      }
+        // FUNCTIONAL: Skip if throttled (short-circuit return)
+        lastLogTimes[operation] &&
+          now - lastLogTimes[operation] < throttleInterval &&
+          ((this.debug.operationCounts[operation] =
+            (this.debug.operationCounts[operation] || 0) + 1),
+          true) &&
+          (() => {
+            return;
+          })();
 
-      // Initialize lastLogTimes if needed
-      if (!this.debug.lastLogTimes) this.debug.lastLogTimes = {};
-      this.debug.lastLogTimes[operation] = now;
-    }
+        // FUNCTIONAL: Initialize and update (short-circuit)
+        !this.debug.lastLogTimes && (this.debug.lastLogTimes = {});
+        this.debug.lastLogTimes[operation] = now;
+      })();
 
     const timestamp = new Date().toISOString();
     console.warn(`[CriticalHit:${operation}] ${message}`, data || '');
@@ -182,17 +188,16 @@ module.exports = class CriticalHit {
 
   // Error logging helper
   debugError(operation, error, context = {}) {
-    // Always log errors (even when debug disabled) but track only when debug enabled
-    if (this.debug.enabled) {
-      this.debug.errorCount++;
-      this.debug.lastError = {
+    // FUNCTIONAL: Track errors with short-circuit (no if-else)
+    this.debug.enabled &&
+      (this.debug.errorCount++,
+      (this.debug.lastError = {
         operation,
         error: error.message || error,
         stack: error.stack,
         context,
         timestamp: Date.now(),
-      };
-    }
+      }));
 
     const timestamp = new Date().toISOString();
     console.error(`[CriticalHit:ERROR:${operation}]`, {
@@ -237,19 +242,17 @@ module.exports = class CriticalHit {
           critRate: this.stats.critRate.toFixed(2) + '%',
         });
 
-        // Log summary of stored crits by channel
+        // FUNCTIONAL: Log crits by channel (.forEach instead of for-loop)
         const critsByChannel = {};
-        // Use for...of loop for better performance
-        for (const entry of this.getCritHistory()) {
+        this.getCritHistory().forEach((entry) => {
           const channelId = entry.channelId || 'unknown';
           critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
-        }
+        });
         this.debugLog('START', 'Stored crits by channel', critsByChannel);
 
-        // Auto-cleanup old history if enabled
-        if (this.settings.autoCleanupHistory) {
+        // FUNCTIONAL: Auto-cleanup (short-circuit, no if-else)
+        this.settings.autoCleanupHistory &&
           this.cleanupOldHistory(this.settings.historyRetentionDays || 30);
-        }
       } catch (error) {
         this.debugError('START', error, { phase: 'load_history' });
       }
@@ -270,25 +273,20 @@ module.exports = class CriticalHit {
         this.debugError('START', error, { phase: 'start_observing' });
       }
 
-      // Inject CSS for crit styling (independent from animation runtime)
+      // FUNCTIONAL: Inject CSS (short-circuit, no if-else)
       try {
-        if (this.settings.cssEnabled !== false) {
-          this.injectCritCSS();
-          this.debugLog('START', 'Crit CSS injected');
-        }
+        this.settings.cssEnabled !== false &&
+          (this.injectCritCSS(), this.debugLog('START', 'Crit CSS injected'));
       } catch (error) {
         this.debugError('START', error, { phase: 'inject_css' });
       }
 
-      // Initialize animation features (merged from CriticalHitAnimation)
+      // FUNCTIONAL: Initialize animations (short-circuit, no if-else)
       try {
-        if (this.settings.animationEnabled !== false) {
-          this.injectAnimationCSS();
-          setTimeout(() => {
-            this.getCurrentUserId();
-          }, 1000);
-          this.debugLog('START', 'Animation features initialized');
-        }
+        this.settings.animationEnabled !== false &&
+          (this.injectAnimationCSS(),
+          setTimeout(() => this.getCurrentUserId(), 1000),
+          this.debugLog('START', 'Animation features initialized'));
       } catch (error) {
         this.debugError('START', error, { phase: 'init_animations' });
       }
@@ -366,85 +364,56 @@ module.exports = class CriticalHit {
    * Called when plugin is disabled/stopped
    */
   stop() {
-    // Stop observing
-    if (this.messageObserver) {
-      this.messageObserver.disconnect();
-      this.messageObserver = null;
-    }
+    // FUNCTIONAL: Stop observing (short-circuit cleanup)
+    this.messageObserver && (this.messageObserver.disconnect(), (this.messageObserver = null));
+    this.urlObserver && (this.urlObserver.disconnect(), (this.urlObserver = null));
 
-    if (this.urlObserver) {
-      this.urlObserver.disconnect();
-      this.urlObserver = null;
-    }
+    // FUNCTIONAL: Clean up style observers (.forEach instead of for-loop)
+    this.styleObservers &&
+      (this.styleObservers.forEach((observer) => observer.disconnect()),
+      this.styleObservers.clear());
 
-    // Clean up all style observers
-    if (this.styleObservers) {
-      for (const [messageId, observer] of this.styleObservers.entries()) {
-        observer.disconnect();
-      }
-      this.styleObservers.clear();
-    }
+    // FUNCTIONAL: Clean up Nova Flat observer (short-circuit)
+    this.novaFlatObserver && (this.novaFlatObserver.disconnect(), (this.novaFlatObserver = null));
 
-    // Clean up Nova Flat font observer
-    if (this.novaFlatObserver) {
-      this.novaFlatObserver.disconnect();
-      this.novaFlatObserver = null;
-    }
+    // FUNCTIONAL: Clean up Nova Flat interval (short-circuit)
+    this._forceNovaInterval &&
+      (clearInterval(this._forceNovaInterval), (this._forceNovaInterval = null));
 
-    // Clean up Nova Flat interval (legacy, should not be used but safety check)
-    if (this._forceNovaInterval) {
-      clearInterval(this._forceNovaInterval);
-      this._forceNovaInterval = null;
-    }
+    // FUNCTIONAL: Clean up display update interval (short-circuit)
+    this._displayUpdateInterval &&
+      (clearInterval(this._displayUpdateInterval), (this._displayUpdateInterval = null));
 
-    // Clean up display update interval
-    if (this._displayUpdateInterval) {
-      clearInterval(this._displayUpdateInterval);
-      this._displayUpdateInterval = null;
-    }
+    // FUNCTIONAL: Clean up style observer intervals (.forEach instead of for-loop)
+    this.styleObserverIntervals &&
+      (this.styleObserverIntervals.forEach((id) => clearInterval(id)),
+      this.styleObserverIntervals.clear());
 
-    // Clean up all style observer intervals (legacy cleanup for old code)
-    if (this.styleObserverIntervals) {
-      for (const [messageId, intervalId] of this.styleObserverIntervals.entries()) {
-        clearInterval(intervalId);
-      }
-      this.styleObserverIntervals.clear();
-    }
+    // FUNCTIONAL: Restore history methods (short-circuit)
+    this.originalPushState && (history.pushState = this.originalPushState);
+    this.originalReplaceState && (history.replaceState = this.originalReplaceState);
 
-    // Restore original history methods
-    if (this.originalPushState) {
-      history.pushState = this.originalPushState;
-    }
-    if (this.originalReplaceState) {
-      history.replaceState = this.originalReplaceState;
-    }
-
-    // Stop periodic cleanup
-    if (this.historyCleanupInterval) {
-      clearInterval(this.historyCleanupInterval);
-      this.historyCleanupInterval = null;
-    }
+    // FUNCTIONAL: Stop periodic cleanup (short-circuit)
+    this.historyCleanupInterval &&
+      (clearInterval(this.historyCleanupInterval), (this.historyCleanupInterval = null));
 
     // Save message history before stopping
     this.saveMessageHistory();
 
-    // Clean up animation resources (merged from CriticalHitAnimation)
-    if (this.animationContainer) {
-      this.animationContainer.remove();
-      this.animationContainer = null;
-    }
-    this.activeAnimations.clear();
-    this.userCombos.clear();
-    this.animatedMessages.clear();
+    // FUNCTIONAL: Clean up animation resources (short-circuit)
+    this.animationContainer && (this.animationContainer.remove(), (this.animationContainer = null));
+    this.activeAnimations?.clear();
+    this.userCombos?.clear();
+    this.animatedMessages?.clear();
 
-    // Clean up processing locks and throttle maps
-    this._processingCrits.clear();
-    this._processingAnimations.clear();
-    this._onCritHitThrottle.clear();
-    this._comboUpdatedMessages.clear();
-    this._comboUpdatedContentHashes.clear();
+    // FUNCTIONAL: Clean up processing locks (optional chaining)
+    this._processingCrits?.clear();
+    this._processingAnimations?.clear();
+    this._onCritHitThrottle?.clear();
+    this._comboUpdatedMessages?.clear();
+    this._comboUpdatedContentHashes?.clear();
 
-    // Clear cached DOM queries
+    // FUNCTIONAL: Clear cached DOM queries (no if-else)
     this._cachedChatInput = null;
     this._cachedMessageList = null;
     this._cachedMessages = null;
@@ -453,9 +422,8 @@ module.exports = class CriticalHit {
     // Remove all crit styling
     this.removeAllCrits();
 
-    if (this.debug.enabled) {
-      console.log('CriticalHitMerged: Stopped');
-    }
+    // FUNCTIONAL: Debug log (short-circuit)
+    this.debug.enabled && console.log('[CriticalHit] Stopped');
   }
 
   // ============================================================================
