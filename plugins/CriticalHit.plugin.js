@@ -5084,9 +5084,7 @@ module.exports = class CriticalHit {
     if (this.settings?.cssEnabled !== true) return;
 
     // Check if CSS is already injected
-    if (document.getElementById('bd-crit-hit-styles')) {
-      return;
-    }
+    if (document.getElementById('bd-crit-hit-styles')) return;
 
     // Pre-load Nova Flat font
     if (!document.getElementById('bd-crit-hit-nova-flat-font')) {
@@ -5320,9 +5318,7 @@ module.exports = class CriticalHit {
    */
   injectSettingsCSS() {
     // Check if settings CSS is already injected
-    if (document.getElementById('bd-crit-hit-settings-styles')) {
-      return;
-    }
+    if (document.getElementById('bd-crit-hit-settings-styles')) return;
 
     const style = document.createElement('style');
     style.id = 'bd-crit-hit-settings-styles';
