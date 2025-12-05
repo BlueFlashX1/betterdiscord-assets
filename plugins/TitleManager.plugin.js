@@ -17,14 +17,25 @@
 
 module.exports = class SoloLevelingTitleManager {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // SECTION 1: IMPORTS & DEPENDENCIES
   // ============================================================================
+  // (No external imports needed for this plugin)
+
+  // ============================================================================
+  // SECTION 2: CONFIGURATION & HELPERS
+  // ============================================================================
+  
+  // 2.1 CONSTRUCTOR & SETTINGS
+  // ----------------------------------------------------------------------------
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.titleButton = null;
     this.titleModal = null;
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
@@ -40,9 +51,34 @@ module.exports = class SoloLevelingTitleManager {
     this._originalReplaceState = null;
   }
 
+  // 2.2 HELPER FUNCTIONS
+  // ----------------------------------------------------------------------------
+  
+  /**
+   * HTML escaping utility for XSS prevention
+   */
+  escapeHtml(text) {
+    return typeof text !== 'string' ? text : (() => {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    })();
+  }
+
+  /**
+   * Debug logging helper (functional, no if-else)
+   */
+  debugLog(message, data = null) {
+    const log = () => console.log(`[TitleManager]`, message, data || '');
+    return this.settings?.debugMode === true && log();
+  }
+
   // ============================================================================
-  // LIFECYCLE METHODS
+  // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
+  
+  // 3.1 PLUGIN LIFECYCLE
+  // ----------------------------------------------------------------------------
   start() {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
@@ -125,14 +161,16 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // ============================================================================
-  // SETTINGS MANAGEMENT
-  // ============================================================================
+  // 3.2 SETTINGS MANAGEMENT
+  // ----------------------------------------------------------------------------
   loadSettings() {
     try {
       const saved = BdApi.Data.load('TitleManager', 'settings');
       if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
+        // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+        // Shallow spread (...) only copies top-level, nested objects are still references!
+        const merged = { ...this.defaultSettings, ...saved };
+        this.settings = JSON.parse(JSON.stringify(merged));
       }
     } catch (error) {
       console.error('TitleManager: Error loading settings', error);
@@ -147,9 +185,8 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // ============================================================================
-  // DATA ACCESS METHODS
-  // ============================================================================
+  // 3.3 DATA ACCESS
+  // ----------------------------------------------------------------------------
   /**
    * Get SoloLevelingStats data
    * @returns {Object|null} - SoloLevelingStats data or null if unavailable
@@ -196,12 +233,8 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  // ============================================================================
-  // TITLE MANAGEMENT METHODS
-  // ============================================================================
-  // ============================================================================
-  // EVENT HANDLING & WATCHERS
-  // ============================================================================
+  // 3.4 TITLE MANAGEMENT
+  // ----------------------------------------------------------------------------
   /**
    * Setup channel watcher for URL changes (event-based, no polling)
    */
@@ -276,87 +309,8 @@ module.exports = class SoloLevelingTitleManager {
     };
   }
 
-  // ============================================================================
-  // UI METHODS
-  // ============================================================================
-  /**
-   * Create title button in Discord UI
-   */
-  createTitleButton() {
-    this.removeTitleButton();
-    this.closeTitleModal();
-    this.removeCSS();
-
-    // Cleanup URL change watcher
-    if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
-    }
-
-    console.log('TitleManager: Plugin stopped');
-  }
-
-  loadSettings() {
-    try {
-      const saved = BdApi.Data.load('TitleManager', 'settings');
-      if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
-      }
-    } catch (error) {
-      console.error('TitleManager: Error loading settings', error);
-    }
-  }
-
-  saveSettings() {
-    try {
-      BdApi.Data.save('TitleManager', 'settings', this.settings);
-    } catch (error) {
-      console.error('TitleManager: Error saving settings', error);
-    }
-  }
-
-  /**
-   * Get SoloLevelingStats data
-   * @returns {Object|null} - SoloLevelingStats data or null if unavailable
-   */
-  getSoloLevelingData() {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-
-      const instance = soloPlugin.instance || soloPlugin;
-      const achievements = instance.settings?.achievements || {};
-
-      return {
-        titles: achievements.titles || [],
-        activeTitle: achievements.activeTitle || null,
-        achievements: achievements,
-      };
-    } catch (error) {
-      console.error('TitleManager: Error getting SoloLevelingStats data', error);
-      return null;
-    }
-  }
-
-  // Get title bonus info
-  getTitleBonus(titleName) {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-      const instance = soloPlugin.instance || soloPlugin;
-
-      // Find achievement with this title
-      if (instance.getAchievementDefinitions) {
-        const achievements = instance.getAchievementDefinitions();
-        const achievement = achievements.find((a) => a.title === titleName);
-        return achievement?.titleBonus || null;
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
+  // 3.5 EVENT HANDLING & WATCHERS
+  // ----------------------------------------------------------------------------
   /**
    * Equip a title
    * @param {string} titleName - Title name to equip
@@ -828,6 +782,9 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
+  // 3.7 CSS MANAGEMENT
+  // ----------------------------------------------------------------------------
+  
   injectCSS() {
     const styleId = 'title-manager-css';
     const cssContent = `

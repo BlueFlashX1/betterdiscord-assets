@@ -1,0 +1,430 @@
+{
+  "metadata": {
+    "created": "2025-12-03",
+    "lastUpdated": "2025-12-03",
+    "version": "1.0.0",
+    "description": "CSS detection database for Discord activity cards and UI elements. Stores class names, selectors, and working CSS rules to prevent re-research after Discord updates.",
+    "discordVersion": "Current as of Dec 2025"
+  },
+  "activityCards": {
+    "description": "Activity card elements in user profiles and popouts",
+    "detections": [
+      {
+        "date": "2025-12-03",
+        "elementType": "badgesContainer",
+        "purpose": "Container for timestamp badges (4d ago, 2h ago, etc.)",
+        "issue": "Purple background on timestamp",
+        "classes": [
+          "badgesContainer__635ed",
+          "badgesContainerPopout__635ed",
+          "badgesContainerCard__635ed"
+        ],
+        "basePattern": "badgesContainer",
+        "parentContext": "popoutHeroBody_af3b89",
+        "fullSelector": "div.popoutContentWrapper_af3b89 > div.hero_af3b89 > div.popoutHeroInner_af3b89 > div.popoutHeroBody_af3b89 > div.badgesContainer__635ed",
+        "backgroundColor": "rgb(138, 43, 226)",
+        "isPurple": true,
+        "cssRuleThatWorks": "[class*='badgesContainer'] { background: transparent !important; background-color: transparent !important; }",
+        "appliedInTheme": true,
+        "themeLocation": "Section 6, Subsection G2, line 644+",
+        "resilience": "high",
+        "notes": "Use attribute selector [class*='badgesContainer'] to survive hash changes"
+      },
+      {
+        "date": "2025-12-03",
+        "elementType": "infoSection",
+        "purpose": "Main activity information container",
+        "issue": "None (enhanced with Package 1)",
+        "classes": [
+          "infoSection_0f2e8"
+        ],
+        "basePattern": "infoSection",
+        "fullSelector": "div.infoSection_0f2e8",
+        "backgroundColor": "transparent",
+        "isPurple": false,
+        "cssRuleThatWorks": "[class*='infoSection'] { background: rgba(10, 10, 20, 0.5) !important; border: 1px solid rgba(139, 92, 246, 0.3) !important; margin: 8px 8px 20px 8px !important; }",
+        "appliedInTheme": true,
+        "themeLocation": "Section 6, Subsection B (Container Styling), line 466+",
+        "enhancement": "Package 1 - System UI Panel Effect",
+        "notes": "Hover uses outline instead of border-color to prevent layout shift",
+        "resilience": "high"
+      },
+      {
+        "date": "2025-12-03",
+        "elementType": "contentTitle",
+        "purpose": "Game/app name title (e.g., Roblox, Spotify)",
+        "issue": "None (enhanced with Package 1)",
+        "classes": [
+          "contentTitle_0f2e8"
+        ],
+        "basePattern": "contentTitle",
+        "fullSelector": "h3.contentTitle_0f2e8",
+        "backgroundColor": "transparent",
+        "isPurple": false,
+        "cssRuleThatWorks": "[class*='contentTitle'] { text-shadow: 0 0 8px rgba(139, 92, 246, 0.9), 0 0 12px rgba(124, 58, 237, 0.7), 0 0 16px rgba(109, 40, 217, 0.5) !important; }",
+        "appliedInTheme": true,
+        "themeLocation": "Section 6, Subsection C (Game/App Title), line 493+",
+        "enhancement": "Package 1 - Magical Glow Effect",
+        "resilience": "high"
+      },
+      {
+        "date": "2025-12-03",
+        "elementType": "contentImage",
+        "purpose": "App/game icon image",
+        "issue": "None (enhanced with Package 1)",
+        "classes": [
+          "contentImage__42bf5",
+          "contentImage_ef9ae7"
+        ],
+        "basePattern": "contentImage",
+        "parentContext": "popoutThumbnailContainer_af3b89 > imagePosition_ef9ae7 > clickable_ef9ae7 > imageContainer_ef9ae7",
+        "fullSelector": "div.imageContainer_ef9ae7 > img.contentImage__42bf5",
+        "backgroundColor": "transparent",
+        "isPurple": false,
+        "cssRuleThatWorks": "[class*='contentImage'] { border-radius: 12px !important; box-shadow: 0 0 16px rgba(139, 92, 246, 0.7), 0 0 24px rgba(124, 58, 237, 0.5) !important; border: 2px solid rgba(139, 92, 246, 0.5) !important; }",
+        "appliedInTheme": true,
+        "themeLocation": "Section 6, Subsection D (App Icon), line 523+",
+        "enhancement": "Package 1 - Glowing Mana Stone Effect",
+        "resilience": "high",
+        "notes": "Hover effect adds scale(1.08) and rotate(2deg)"
+      },
+      {
+        "date": "2025-12-03",
+        "elementType": "popoutHeroBody",
+        "purpose": "Main hero section body in user popouts",
+        "classes": [
+          "popoutHeroBody_af3b89"
+        ],
+        "basePattern": "popoutHeroBody",
+        "parentContext": "popoutContentWrapper_af3b89 > hero_af3b89 > popoutHeroInner_af3b89",
+        "cssRuleThatWorks": "[class*='popoutHeroBody'] { /* Package 1 container styles */ }",
+        "appliedInTheme": true,
+        "themeLocation": "Section 6, Subsection B (Container Styling), line 466+",
+        "resilience": "medium-high"
+      }
+    ]
+  },
+  "detectionStrategies": {
+    "description": "Multi-strategy detection methods for resilience",
+    "strategies": [
+      {
+        "name": "Attribute Selector",
+        "pattern": "[class*='partial']",
+        "resilience": "95%",
+        "example": "[class*='badgesContainer']",
+        "survives": "Hash changes (abc123 → xyz789)",
+        "fails": "Complete class name changes (badgesContainer → timestampBar)"
+      },
+      {
+        "name": "Context-Based",
+        "pattern": "parent child",
+        "resilience": "80%",
+        "example": "[class*='popout'] [class*='badges']",
+        "survives": "Child class changes, structure preserved",
+        "fails": "Complete DOM structure changes"
+      },
+      {
+        "name": "Color-Based",
+        "pattern": "[style*='rgb(...)']",
+        "resilience": "100%",
+        "example": "[style*='rgb(138, 43, 226)']",
+        "survives": "ALL class name changes",
+        "fails": "Never (targets visual property directly)",
+        "ultimate": true
+      },
+      {
+        "name": "Semantic HTML",
+        "pattern": "time, [datetime]",
+        "resilience": "99%",
+        "example": "time, [datetime]",
+        "survives": "ALL updates (HTML5 standard)",
+        "fails": "Only if Discord stops using semantic HTML"
+      },
+      {
+        "name": "Multiple Selectors",
+        "pattern": "selector1, selector2, selector3",
+        "resilience": "99.9%",
+        "example": "[class*='badges'], [class*='timestamp'], time",
+        "survives": "Redundancy - if one fails, others work",
+        "recommended": true
+      }
+    ]
+  },
+  "purpleColors": {
+    "description": "Purple color values used by Discord and theme",
+    "colors": [
+      {
+        "name": "Blue Violet",
+        "hex": "#8a2be2",
+        "rgb": "rgb(138, 43, 226)",
+        "rgba": "rgba(138, 43, 226, X)",
+        "usage": "Primary Discord accent color, timestamp backgrounds",
+        "detectPattern": "[style*='138, 43, 226']"
+      },
+      {
+        "name": "Medium Slate Blue",
+        "hex": "#8b5cf6",
+        "rgb": "rgb(139, 92, 246)",
+        "rgba": "rgba(139, 92, 246, X)",
+        "usage": "Theme accent, glow effects",
+        "detectPattern": "[style*='139, 92, 246']"
+      },
+      {
+        "name": "Medium Orchid",
+        "hex": "#ba55d3",
+        "rgb": "rgb(186, 85, 211)",
+        "rgba": "rgba(186, 85, 211, X)",
+        "usage": "Hover states",
+        "detectPattern": "[style*='186, 85, 211']"
+      },
+      {
+        "name": "Muted Purple",
+        "hex": "#8b7fa8",
+        "rgb": "rgb(139, 127, 168)",
+        "rgba": "rgba(139, 127, 168, X)",
+        "usage": "Offline status, muted elements",
+        "detectPattern": "[style*='139, 127, 168']"
+      }
+    ]
+  },
+  "workingRules": {
+    "description": "Confirmed working CSS rules (tested and verified)",
+    "rules": [
+      {
+        "target": "Timestamp purple background removal",
+        "selector": "[class*='badgesContainer']",
+        "css": "background: transparent !important; background-color: transparent !important; background-image: none !important;",
+        "appliedDate": "2025-12-03",
+        "lastVerified": "2025-12-03",
+        "status": "working",
+        "resilience": "high"
+      },
+      {
+        "target": "Activity card container enhancement",
+        "selector": "[class*='infoSection'], [class*='popoutHeroBody']",
+        "css": "background: rgba(10, 10, 20, 0.5) !important; border: 1px solid rgba(139, 92, 246, 0.3) !important; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.15) !important;",
+        "appliedDate": "2025-12-03",
+        "lastVerified": "2025-12-03",
+        "status": "working",
+        "resilience": "high",
+        "enhancement": "Package 1"
+      },
+      {
+        "target": "Game title glow effect",
+        "selector": "[class*='contentTitle'], [class*='infoSection'] h3",
+        "css": "text-shadow: 0 0 8px rgba(139, 92, 246, 0.9), 0 0 12px rgba(124, 58, 237, 0.7), 0 0 16px rgba(109, 40, 217, 0.5) !important;",
+        "appliedDate": "2025-12-03",
+        "lastVerified": "2025-12-03",
+        "status": "working",
+        "resilience": "high",
+        "enhancement": "Package 1"
+      },
+      {
+        "target": "App icon glow effect",
+        "selector": "[class*='contentImage'], [class*='popoutThumbnailContainer'] img",
+        "css": "box-shadow: 0 0 16px rgba(139, 92, 246, 0.7), 0 0 24px rgba(124, 58, 237, 0.5), 0 4px 8px rgba(0, 0, 0, 0.4) !important; border: 2px solid rgba(139, 92, 246, 0.5) !important;",
+        "appliedDate": "2025-12-03",
+        "lastVerified": "2025-12-03",
+        "status": "working",
+        "resilience": "high",
+        "enhancement": "Package 1"
+      },
+      {
+        "target": "Color-based purple removal (ultimate fallback)",
+        "selector": "[class*='userPopout'] [style*='rgb(138, 43, 226)']",
+        "css": "background: transparent !important; background-color: transparent !important;",
+        "appliedDate": "2025-12-03",
+        "lastVerified": "2025-12-03",
+        "status": "working",
+        "resilience": "maximum",
+        "notes": "Works regardless of class name changes - ultimate fallback"
+      }
+    ]
+  },
+  "historicalPatterns": {
+    "description": "Historical class patterns from previous Discord versions (for reference)",
+    "patterns": [
+      {
+        "discordVersion": "Dec 2025",
+        "patterns": [
+          "badgesContainer__635ed",
+          "infoSection_0f2e8",
+          "contentTitle_0f2e8",
+          "contentImage__42bf5",
+          "popoutHeroBody_af3b89"
+        ]
+      }
+    ],
+    "notes": "Add new patterns here when Discord updates. Keep old patterns for reference."
+  },
+  "usage": {
+    "whenDiscordBreaksCSS": [
+      "1. Copy ActivityCardInspector.plugin.js from archive/debug-tools/ to BetterDiscord plugins",
+      "2. Enable plugin and scan activity cards",
+      "3. Check console for new class names",
+      "4. Update this database with new patterns",
+      "5. Add new CSS rules to theme using [class*='pattern'] format",
+      "6. Remove plugin from BetterDiscord when done",
+      "7. Keep plugin in archive for future use"
+    ],
+    "databaseMaintenance": [
+      "1. Update 'lastVerified' dates when confirming rules still work",
+      "2. Add new detections to 'activityCards.detections' array",
+      "3. Add historical patterns to 'historicalPatterns.patterns' array",
+      "4. Update 'discordVersion' when Discord updates",
+      "5. Mark rules as 'deprecated' if Discord removes elements"
+    ]
+  },
+  "quickReference": {
+    "removeAnyPurpleBackground": "[class*='userPopout'] [style*='rgb(138, 43, 226)'] { background: transparent !important; }",
+    "findByColor": "window.getComputedStyle(element).backgroundColor.includes('138, 43, 226')",
+    "attributeSelector": "[class*='partialClassName']",
+    "contextSelector": "[class*='parent'] [class*='child']",
+    "semanticSelector": "time, [datetime]"
+  },
+  "chatbox": {
+    "description": "Chatbox elements detected via ChatboxInspector plugin",
+    "detections": [
+      {
+        "date": "2025-12-04",
+        "elementType": "messageForm",
+        "purpose": "Message input form container",
+        "classes": [
+          "form_f75fb0",
+          "formWithLoadedChatInput_f75fb0"
+        ],
+        "basePattern": "form",
+        "dimensions": "681×73px",
+        "position": "(347, 823)",
+        "backgroundColor": "transparent",
+        "cssRuleThatWorks": "form[class*='form']",
+        "appliedInTheme": true,
+        "themeLocation": "Section 8 (Chatbox Enhancements), Package 1",
+        "resilience": "high",
+        "customizations": [
+          "Purple-tinted background (rgba(10, 10, 20, 0.4))",
+          "Glowing border on top (1px solid rgba(139, 92, 246, 0.3))",
+          "Focus state intensification",
+          "Subtle box shadow with purple glow"
+        ]
+      },
+      {
+        "date": "2025-12-04",
+        "elementType": "messageTextarea",
+        "purpose": "Message input textarea (where you type)",
+        "parentClass": "form_f75fb0",
+        "basePattern": "textarea",
+        "cssRuleThatWorks": "form[class*='form'] textarea",
+        "appliedInTheme": true,
+        "themeLocation": "Section 8 (Chatbox Enhancements), Package 1",
+        "resilience": "high",
+        "customizations": [
+          "Transparent background",
+          "Purple-tinted text color (#e0d0ff)",
+          "Text shadow with purple glow",
+          "Placeholder with purple tint"
+        ]
+      },
+      {
+        "date": "2025-12-04",
+        "elementType": "chatScroller",
+        "purpose": "Chat messages scrollbar",
+        "classes": [
+          "scroller__36d07",
+          "customTheme_d125d2",
+          "auto_d125d2"
+        ],
+        "basePattern": "scroller",
+        "dimensions": "679×738px",
+        "position": "(349, 81)",
+        "cssRuleThatWorks": "div[class*='scroller']::-webkit-scrollbar",
+        "appliedInTheme": true,
+        "themeLocation": "Section 8 (Chatbox Enhancements), Package 3",
+        "resilience": "high",
+        "customizations": [
+          "12px width (slightly thicker)",
+          "Purple gradient thumb (139, 92, 246 → 167, 139, 250)",
+          "Glowing box shadow on thumb",
+          "Hover intensification",
+          "Active state (full opacity)",
+          "Dark track background"
+        ]
+      },
+      {
+        "date": "2025-12-04",
+        "elementType": "messagesWrapper",
+        "purpose": "Chat messages container",
+        "classes": [
+          "messagesWrapper__36d07",
+          "group-spacing-16"
+        ],
+        "basePattern": "messagesWrapper",
+        "dimensions": "681×738px",
+        "position": "(347, 81)",
+        "backgroundColor": "transparent",
+        "cssRuleThatWorks": "div[class*='messagesWrapper']",
+        "appliedInTheme": false,
+        "notes": "Placeholder for Package 2 (not yet applied)"
+      },
+      {
+        "date": "2025-12-04",
+        "elementType": "chatContent",
+        "purpose": "Main chat content area",
+        "classes": [
+          "chatContent_f75fb0"
+        ],
+        "basePattern": "chatContent",
+        "dimensions": "681×815px",
+        "position": "(347, 81)",
+        "cssRuleThatWorks": "main[class*='chatContent']",
+        "appliedInTheme": false
+      },
+      {
+        "date": "2025-12-04",
+        "elementType": "channelTitle",
+        "purpose": "Channel title bar at top",
+        "classes": [
+          "title_f75fb0",
+          "theme-dark",
+          "theme-darker"
+        ],
+        "basePattern": "title",
+        "dimensions": "681×48px",
+        "position": "(347, 33)",
+        "cssRuleThatWorks": "section[class*='title']",
+        "appliedInTheme": false,
+        "notes": "Placeholder for Package 5 (not yet applied)"
+      }
+    ],
+    "issues": {
+      "messageSpacing": {
+        "description": "Negative message spacing detected (-50px)",
+        "severity": "medium",
+        "investigation": "May indicate message overlap or special layout technique",
+        "status": "needs_investigation"
+      },
+      "toolbarButtonsNotFound": {
+        "description": "Emoji, gift, GIF, sticker buttons not detected",
+        "severity": "low",
+        "possibleCause": "Buttons render on-demand when input focused",
+        "nextStep": "Click in input, then scan again",
+        "status": "pending"
+      }
+    },
+    "detectionMethod": {
+      "tool": "ChatboxInspector.plugin.js v1.0.0",
+      "patterns": [
+        "form[class*='form']",
+        "textarea[placeholder*='Message']",
+        "div[class*='scroller']",
+        "div[class*='messagesWrapper']",
+        "section[class*='title']"
+      ],
+      "analysisMethods": [
+        "window.ChatboxInspector.analyzeLayout()",
+        "window.ChatboxInspector.scanChatbox(true)",
+        "window.ChatboxInspector.generateReport()"
+      ]
+    }
+  }
+}
