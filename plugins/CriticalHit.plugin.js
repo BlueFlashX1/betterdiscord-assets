@@ -721,9 +721,6 @@ module.exports = class CriticalHit {
       if (content) {
         messageId = author ? this.createContentHash(content, author, timestamp) : this.createContentHash(content);
         extractionMethod = author ? 'content_hash' : 'content_only_hash';
-      } else if (!messageId) {
-        messageId = this.createContentHash(content);
-        extractionMethod = 'content_only_hash';
       }
     }
 
