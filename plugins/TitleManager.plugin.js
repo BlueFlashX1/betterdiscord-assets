@@ -22,10 +22,12 @@ module.exports = class SoloLevelingTitleManager {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
       sortBy: 'xpBonus', // Default sort by XP bonus
     };
 
-    this.settings = this.defaultSettings;
+    // Deep copy to prevent defaultSettings from being modified
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.titleButton = null;
     this.titleModal = null;
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
@@ -39,6 +41,27 @@ module.exports = class SoloLevelingTitleManager {
     // Store original history methods for defensive restoration
     this._originalPushState = null;
     this._originalReplaceState = null;
+  }
+
+  // Helper Functions
+  // ============================================================================
+  
+  /**
+   * Debug logging helper (toggleable via settings)
+   */
+  debugLog(message, data = null) {
+    if (!this.settings?.debugMode) return;
+    console.log(`[TitleManager] ${message}`, data || '');
+  }
+
+  /**
+   * HTML escaping utility for XSS prevention
+   */
+  escapeHtml(text) {
+    if (typeof text !== 'string') return text;
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // ============================================================================
@@ -56,7 +79,7 @@ module.exports = class SoloLevelingTitleManager {
     this._retryTimeout1 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout1);
       if (!this.titleButton || !document.body.contains(this.titleButton)) {
-        console.log('[TitleManager] Retrying button creation...');
+        this.debugLog('Retrying button creation...');
         this.createTitleButton();
       }
       this._retryTimeout1 = null;
@@ -67,7 +90,7 @@ module.exports = class SoloLevelingTitleManager {
     this._retryTimeout2 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout2);
       if (!this.titleButton || !document.body.contains(this.titleButton)) {
-        console.log('[TitleManager] Final retry for button creation...');
+        this.debugLog('Final retry for button creation...');
         this.createTitleButton();
       }
       this._retryTimeout2 = null;
@@ -101,7 +124,7 @@ module.exports = class SoloLevelingTitleManager {
         this._retryTimeout2 = null;
       }
 
-      console.log('TitleManager: Plugin stopped');
+      this.debugLog('Plugin stopped');
     } finally {
       // Cleanup URL change watcher in finally block to guarantee restoration
       // even if stop() throws an error
@@ -136,7 +159,7 @@ module.exports = class SoloLevelingTitleManager {
         this.settings = { ...this.defaultSettings, ...saved };
       }
     } catch (error) {
-      console.error('TitleManager: Error loading settings', error);
+      this.debugLog('Error loading settings', error);
     }
   }
 
@@ -144,7 +167,7 @@ module.exports = class SoloLevelingTitleManager {
     try {
       BdApi.Data.save('TitleManager', 'settings', this.settings);
     } catch (error) {
-      console.error('TitleManager: Error saving settings', error);
+      this.debugLog('Error saving settings', error);
     }
   }
 
@@ -169,7 +192,7 @@ module.exports = class SoloLevelingTitleManager {
         achievements: achievements,
       };
     } catch (error) {
-      console.error('TitleManager: Error getting SoloLevelingStats data', error);
+      this.debugLog('Error getting SoloLevelingStats data', error);
       return null;
     }
   }
@@ -247,7 +270,7 @@ module.exports = class SoloLevelingTitleManager {
         handleUrlChange();
       }.bind(this);
     } catch (error) {
-      console.error('[TitleManager] Failed to override history methods:', error);
+      this.debugLog('Failed to override history methods', error);
     }
 
     // Store idempotent and defensive cleanup function
@@ -260,7 +283,7 @@ module.exports = class SoloLevelingTitleManager {
           history.pushState = this._originalPushState;
         }
       } catch (error) {
-        console.error('[TitleManager] Failed to restore history.pushState:', error);
+        this.debugLog('Failed to restore history.pushState', error);
       }
 
       try {
@@ -268,7 +291,7 @@ module.exports = class SoloLevelingTitleManager {
           history.replaceState = this._originalReplaceState;
         }
       } catch (error) {
-        console.error('[TitleManager] Failed to restore history.replaceState:', error);
+        this.debugLog('Failed to restore history.replaceState', error);
       }
 
       // Null out stored originals after successful restore
@@ -280,84 +303,6 @@ module.exports = class SoloLevelingTitleManager {
   // ============================================================================
   // UI METHODS
   // ============================================================================
-  /**
-   * Create title button in Discord UI
-   */
-  createTitleButton() {
-    this.removeTitleButton();
-    this.closeTitleModal();
-    this.removeCSS();
-
-    // Cleanup URL change watcher
-    if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
-    }
-
-    console.log('TitleManager: Plugin stopped');
-  }
-
-  loadSettings() {
-    try {
-      const saved = BdApi.Data.load('TitleManager', 'settings');
-      if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
-      }
-    } catch (error) {
-      console.error('TitleManager: Error loading settings', error);
-    }
-  }
-
-  saveSettings() {
-    try {
-      BdApi.Data.save('TitleManager', 'settings', this.settings);
-    } catch (error) {
-      console.error('TitleManager: Error saving settings', error);
-    }
-  }
-
-  /**
-   * Get SoloLevelingStats data
-   * @returns {Object|null} - SoloLevelingStats data or null if unavailable
-   */
-  getSoloLevelingData() {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-
-      const instance = soloPlugin.instance || soloPlugin;
-      const achievements = instance.settings?.achievements || {};
-
-      return {
-        titles: achievements.titles || [],
-        activeTitle: achievements.activeTitle || null,
-        achievements: achievements,
-      };
-    } catch (error) {
-      console.error('TitleManager: Error getting SoloLevelingStats data', error);
-      return null;
-    }
-  }
-
-  // Get title bonus info
-  getTitleBonus(titleName) {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-      const instance = soloPlugin.instance || soloPlugin;
-
-      // Find achievement with this title
-      if (instance.getAchievementDefinitions) {
-        const achievements = instance.getAchievementDefinitions();
-        const achievement = achievements.find((a) => a.title === titleName);
-        return achievement?.titleBonus || null;
-      }
-      return null;
-    } catch (error) {
-      return null;
-    }
-  }
-
   /**
    * Equip a title
    * @param {string} titleName - Title name to equip
@@ -437,7 +382,7 @@ module.exports = class SoloLevelingTitleManager {
       }
       return false;
     } catch (error) {
-      console.error('TitleManager: Error equipping title', error);
+      this.debugLog('Error equipping title', error);
       return false;
     }
   }
@@ -474,7 +419,7 @@ module.exports = class SoloLevelingTitleManager {
       }
       return false;
     } catch (error) {
-      console.error('TitleManager: Error unequipping title', error);
+      this.debugLog('Error unequipping title', error);
       return false;
     }
   }
@@ -632,14 +577,16 @@ module.exports = class SoloLevelingTitleManager {
       critBonus: (a, b) =>
         (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
       strBonus: (a, b) =>
-        (this.getTitleBonus(b)?.strengthPercent || 0) - (this.getTitleBonus(a)?.strengthPercent || 0),
+        (this.getTitleBonus(b)?.strengthPercent || 0) -
+        (this.getTitleBonus(a)?.strengthPercent || 0),
       agiBonus: (a, b) =>
         (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
       intBonus: (a, b) =>
         (this.getTitleBonus(b)?.intelligencePercent || 0) -
         (this.getTitleBonus(a)?.intelligencePercent || 0),
       vitBonus: (a, b) =>
-        (this.getTitleBonus(b)?.vitalityPercent || 0) - (this.getTitleBonus(a)?.vitalityPercent || 0),
+        (this.getTitleBonus(b)?.vitalityPercent || 0) -
+        (this.getTitleBonus(a)?.vitalityPercent || 0),
       perBonus: (a, b) =>
         (this.getTitleBonus(b)?.perceptionPercent || 0) -
         (this.getTitleBonus(a)?.perceptionPercent || 0),
@@ -662,13 +609,27 @@ module.exports = class SoloLevelingTitleManager {
         <div class="tm-filter-bar">
           <label class="tm-filter-label">Sort by:</label>
           <select id="tm-sort-select" class="tm-sort-dropdown">
-            <option value="xpBonus" ${this.settings.sortBy === 'xpBonus' ? 'selected' : ''}>📈 XP Gain (Highest)</option>
-            <option value="critBonus" ${this.settings.sortBy === 'critBonus' ? 'selected' : ''}>⚡ Crit Chance (Highest)</option>
-            <option value="strBonus" ${this.settings.sortBy === 'strBonus' ? 'selected' : ''}>💪 Strength % (Highest)</option>
-            <option value="agiBonus" ${this.settings.sortBy === 'agiBonus' ? 'selected' : ''}>🏃 Agility % (Highest)</option>
-            <option value="intBonus" ${this.settings.sortBy === 'intBonus' ? 'selected' : ''}>🧠 Intelligence % (Highest)</option>
-            <option value="vitBonus" ${this.settings.sortBy === 'vitBonus' ? 'selected' : ''}>❤️ Vitality % (Highest)</option>
-            <option value="perBonus" ${this.settings.sortBy === 'perBonus' ? 'selected' : ''}>👁️ Perception % (Highest)</option>
+            <option value="xpBonus" ${
+              this.settings.sortBy === 'xpBonus' ? 'selected' : ''
+            }>📈 XP Gain (Highest)</option>
+            <option value="critBonus" ${
+              this.settings.sortBy === 'critBonus' ? 'selected' : ''
+            }>⚡ Crit Chance (Highest)</option>
+            <option value="strBonus" ${
+              this.settings.sortBy === 'strBonus' ? 'selected' : ''
+            }>💪 Strength % (Highest)</option>
+            <option value="agiBonus" ${
+              this.settings.sortBy === 'agiBonus' ? 'selected' : ''
+            }>🏃 Agility % (Highest)</option>
+            <option value="intBonus" ${
+              this.settings.sortBy === 'intBonus' ? 'selected' : ''
+            }>🧠 Intelligence % (Highest)</option>
+            <option value="vitBonus" ${
+              this.settings.sortBy === 'vitBonus' ? 'selected' : ''
+            }>❤️ Vitality % (Highest)</option>
+            <option value="perBonus" ${
+              this.settings.sortBy === 'perBonus' ? 'selected' : ''
+            }>👁️ Perception % (Highest)</option>
           </select>
         </div>
         <div class="tm-modal-body">
@@ -936,8 +897,8 @@ module.exports = class SoloLevelingTitleManager {
         inset: 0;
         border-radius: 20px;
         padding: 2px;
-        background: linear-gradient(135deg, 
-          rgba(139, 92, 246, 0.7) 0%, 
+        background: linear-gradient(135deg,
+          rgba(139, 92, 246, 0.7) 0%,
           rgba(102, 126, 234, 0.7) 25%,
           rgba(59, 130, 246, 0.5) 50%,
           rgba(139, 92, 246, 0.7) 75%,
@@ -959,8 +920,8 @@ module.exports = class SoloLevelingTitleManager {
         align-items: center;
         padding: 30px;
         border-bottom: 2px solid rgba(139, 92, 246, 0.4);
-        background: linear-gradient(135deg, 
-          rgba(139, 92, 246, 0.25) 0%, 
+        background: linear-gradient(135deg,
+          rgba(139, 92, 246, 0.25) 0%,
           rgba(102, 126, 234, 0.25) 50%,
           rgba(118, 75, 162, 0.25) 100%);
         box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
@@ -974,9 +935,9 @@ module.exports = class SoloLevelingTitleManager {
         left: -100%;
         width: 200%;
         height: 100%;
-        background: linear-gradient(90deg, 
-          transparent, 
-          rgba(139, 92, 246, 0.15), 
+        background: linear-gradient(90deg,
+          transparent,
+          rgba(139, 92, 246, 0.15),
           rgba(102, 126, 234, 0.15),
           transparent);
         animation: shimmer 4s ease-in-out infinite;
@@ -995,8 +956,8 @@ module.exports = class SoloLevelingTitleManager {
                      0 0 30px rgba(102, 126, 234, 0.8),
                      0 4px 40px rgba(139, 92, 246, 0.6);
         letter-spacing: 2px;
-        background: linear-gradient(135deg, 
-          #fff 0%, 
+        background: linear-gradient(135deg,
+          #fff 0%,
           #e9d5ff 30%,
           #c4b5fd 60%,
           #a78bfa 100%);
@@ -1028,7 +989,7 @@ module.exports = class SoloLevelingTitleManager {
 
       .tm-filter-bar {
         padding: 20px 30px;
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(139, 92, 246, 0.15) 0%,
           rgba(102, 126, 234, 0.15) 100%);
         border-bottom: 1px solid rgba(139, 92, 246, 0.3);
@@ -1051,7 +1012,7 @@ module.exports = class SoloLevelingTitleManager {
         flex: 1;
         max-width: 350px;
         padding: 12px 16px;
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(139, 92, 246, 0.25) 0%,
           rgba(102, 126, 234, 0.25) 100%);
         border: 2px solid rgba(139, 92, 246, 0.4);
@@ -1067,7 +1028,7 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-sort-dropdown:hover {
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(139, 92, 246, 0.35) 0%,
           rgba(102, 126, 234, 0.35) 100%);
         border-color: rgba(139, 92, 246, 0.6);
@@ -1095,7 +1056,7 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-active-title {
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(0, 255, 136, 0.15) 0%,
           rgba(0, 204, 111, 0.15) 100%);
         border: 2px solid rgba(0, 255, 136, 0.6);
@@ -1238,7 +1199,7 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-title-card {
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(20, 20, 30, 0.9) 0%,
           rgba(26, 26, 46, 0.9) 100%);
         border: 2px solid rgba(139, 92, 246, 0.4);
@@ -1256,7 +1217,7 @@ module.exports = class SoloLevelingTitleManager {
         content: '';
         position: absolute;
         inset: 0;
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(139, 92, 246, 0.1) 0%,
           transparent 50%);
         opacity: 0;
@@ -1265,7 +1226,7 @@ module.exports = class SoloLevelingTitleManager {
 
       .tm-title-card.active {
         border-color: rgba(0, 255, 136, 0.7);
-        background: linear-gradient(135deg, 
+        background: linear-gradient(135deg,
           rgba(0, 255, 136, 0.15) 0%,
           rgba(0, 204, 111, 0.15) 100%);
         box-shadow: 0 8px 25px rgba(0, 255, 136, 0.4),
@@ -1364,22 +1325,33 @@ module.exports = class SoloLevelingTitleManager {
       <div>
         <h3 style="color: #8b5cf6;">Title Manager Settings</h3>
         <label style="display: flex; align-items: center; margin-bottom: 10px;">
-          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="tm-enabled">
-          <span style="margin-left: 10px;">Enable Title Manager</span>
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="tm-debug">
+          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
+        <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Button creation and retries</li>
+              <li>Settings load/save operations</li>
+              <li>Title equip/unequip actions</li>
+              <li>Error tracking and debugging</li>
+              <li>History method restoration</li>
+            </ul>
+          </div>
+        </div>
       </div>
     `;
 
-    panel.querySelector('#tm-enabled').addEventListener('change', (e) => {
-      this.settings.enabled = e.target.checked;
-      this.saveSettings();
-      if (e.target.checked) {
-        this.createTitleButton();
-      } else {
-        this.removeTitleButton();
-        this.closeTitleModal();
-      }
-    });
+    const debugCheckbox = panel.querySelector('#tm-debug');
+    if (debugCheckbox) {
+      debugCheckbox.addEventListener('change', (e) => {
+        this.settings.debugMode = e.target.checked;
+        this.saveSettings();
+        this.debugLog('Debug mode toggled', { enabled: e.target.checked });
+      });
+    }
 
     return panel;
   }
