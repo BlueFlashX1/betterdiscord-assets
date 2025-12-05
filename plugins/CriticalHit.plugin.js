@@ -479,12 +479,12 @@ module.exports = class CriticalHit {
         this.debugError('LOAD_SETTINGS', error, { phase: 'data_load' });
       }
 
-      if (saved && typeof saved === 'object') {
+      if (saved?.constructor === Object) {
         try {
           // CRITICAL FIX: Deep copy (no shallow copy bugs)
           this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved }));
           // Update debug.enabled after settings are loaded
-          this.debug?.enabled = this.settings.debugMode === true;
+          this.debug.enabled = this.settings.debugMode === true;
           this.debugLog('LOAD_SETTINGS', 'Settings merged successfully');
 
           // Migrate old font to new pixel font if it's the old default
