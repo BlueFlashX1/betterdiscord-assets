@@ -1342,7 +1342,7 @@ module.exports = class SoloLevelingTitleManager {
       border: 2px solid rgba(139, 92, 246, 0.3);
       box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
     `;
-    
+
     panel.innerHTML = `
       <div>
         <h3 style="
@@ -1354,7 +1354,7 @@ module.exports = class SoloLevelingTitleManager {
           letter-spacing: 1px;
           text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
         ">Title Manager Settings</h3>
-        
+
         <div style="
           margin-bottom: 20px;
           padding: 15px;
@@ -1369,7 +1369,7 @@ module.exports = class SoloLevelingTitleManager {
             Change the sort filter in the titles modal by using the dropdown at the top.
           </div>
         </div>
-        
+
         <label style="
           display: flex;
           align-items: center;
@@ -1389,7 +1389,7 @@ module.exports = class SoloLevelingTitleManager {
             Debug Mode (Show console logs)
           </span>
         </label>
-        
+
         <div style="
           margin-top: 15px;
           padding: 15px;

@@ -1,8 +1,8 @@
 /**
- * @name CriticalHit (Merged)
- * @author BlueFlashXS
- * @description Messages have a chance to land a critical hit with special purple-black gradient styling, font, and animated "CRITICAL HIT!" notifications with screen shake!
- * @version 2.0.3
+ * @name CriticalHit
+ * @author BlueFlashX1
+ * @description Critical hit system with visual effects and animations
+ * @version 3.0.0
  *
  * @changelog v2.0.2 (2025-12-04)
  * - Reduced message history limit: 10,000 → 2,000 messages
@@ -17,7 +17,7 @@
  * - Console clean for normal users, full logging available via debug mode
  */
 
-module.exports = class CriticalHitMerged {
+module.exports = class CriticalHit {
   // ============================================================================
   // CONSTRUCTOR & INITIALIZATION
   // ============================================================================
@@ -58,7 +58,8 @@ module.exports = class CriticalHitMerged {
       debugMode: false, // Debug logging (can be toggled in settings)
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings modification
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.messageObserver = null;
     this.urlObserver = null;
     this.styleObservers = new Map(); // Track MutationObservers for individual messages to catch DOM replacements
@@ -480,7 +481,8 @@ module.exports = class CriticalHitMerged {
 
       if (saved && typeof saved === 'object') {
         try {
-          this.settings = { ...this.defaultSettings, ...saved };
+          // CRITICAL FIX: Deep copy (no shallow copy bugs)
+          this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved }));
           // Update debug.enabled after settings are loaded
           this.debug.enabled = this.settings.debugMode === true;
           this.debugLog('LOAD_SETTINGS', 'Settings merged successfully');
