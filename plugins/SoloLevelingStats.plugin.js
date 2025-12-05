@@ -2252,6 +2252,13 @@ module.exports = class SoloLevelingStats {
         this.updateShadowPower();
       }, 5000);
 
+      // PERIODIC BACKUP SAVE (Every 30 seconds)
+      // Safety net to ensure progress is saved even if debounce doesn't trigger
+      this.periodicSaveInterval = setInterval(() => {
+        console.log('💾 [PERIODIC] Backup auto-save triggered');
+        this.saveSettings(); // Direct save (not debounced)
+      }, this.saveInterval); // 30 seconds (defined in constructor)
+
       // Verify getSettingsPanel is accessible
       if (typeof this.getSettingsPanel === 'function') {
         // OPTIMIZED: Removed verbose debug logs
@@ -2378,6 +2385,13 @@ module.exports = class SoloLevelingStats {
     if (this.activityTracker) {
       clearInterval(this.activityTracker);
       this.activityTracker = null;
+    }
+
+    // Stop periodic save
+    if (this.periodicSaveInterval) {
+      clearInterval(this.periodicSaveInterval);
+      this.periodicSaveInterval = null;
+      console.log('💾 [STOP] Periodic save stopped');
     }
 
     // Stop channel tracking
@@ -2602,10 +2616,31 @@ module.exports = class SoloLevelingStats {
   // Executes multiple modifications and saves once
   // Usage: this.batchModify([fn1, fn2, fn3], true)
   batchModify(modifyFunctions, immediate = false) {
-    const executeAll = (fns) => fns.map(fn => fn());
+    const executeAll = (fns) => fns.map((fn) => fn());
     const results = executeAll(modifyFunctions);
     this.saveSettings(immediate);
     return results;
+  }
+
+  // SHADOW XP SHARE (Integration with ShadowArmy plugin)
+  // Shares XP with shadow army when user gains XP
+  shareShadowXP(xpAmount, source = 'message') {
+    try {
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      const isShadowArmyActive = shadowArmyPlugin?.instance;
+      
+      // Only share if ShadowArmy plugin is active
+      if (!isShadowArmyActive) return;
+      
+      // Call ShadowArmy's shareShadowXP if it exists
+      if (typeof shadowArmyPlugin.instance.shareShadowXP === 'function') {
+        shadowArmyPlugin.instance.shareShadowXP(xpAmount, source);
+        console.log(`🌟 [SHADOW XP] Shared ${xpAmount} XP (${source})`);
+      }
+    } catch (error) {
+      // Silent fail - don't spam console if ShadowArmy not available
+      this.debugLog('SHADOW_XP_SHARE', `ShadowArmy integration: ${error.message}`);
+    }
   }
 
   saveSettings(immediate = false) {
