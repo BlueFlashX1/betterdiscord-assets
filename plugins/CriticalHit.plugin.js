@@ -1247,10 +1247,8 @@ module.exports = class CriticalHit {
           // Skip hash IDs in history
           if (String(entry.messageId).startsWith('hash_')) return false;
           // Match by content hash
-          if (entry.messageContent && entry.author) {
-            return this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
-          }
-          return false;
+          return entry.messageContent && entry.author && 
+            this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
         });
 
         if (existingIndex >= 0) {
@@ -2992,9 +2990,7 @@ module.exports = class CriticalHit {
         if (!normalizedId.startsWith('hash_')) {
           const lastCheck = this._restorationCheckThrottle.get(normalizedId);
           const now = Date.now();
-          if (lastCheck && now - lastCheck < this._restorationCheckThrottleMs) {
-            return; // Skip if checked too recently
-          }
+          if (lastCheck && now - lastCheck < this._restorationCheckThrottleMs) return; // Skip if checked too recently
           this._restorationCheckThrottle.set(normalizedId, now);
 
           // FUNCTIONAL: Clean up old throttle entries (.forEach() + short-circuit)
