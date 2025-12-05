@@ -2786,10 +2786,9 @@ module.exports = class CriticalHit {
       '[class*="replyMessage"]',
     ];
 
-    for (const selector of replySelectors) {
-      if (messageElement.querySelector(selector)) {
-        return true;
-      }
+    // FUNCTIONAL: Check for reply (.some() instead of for-loop)
+    if (replySelectors.some((selector) => messageElement.querySelector(selector))) {
+      return true;
     }
 
     // Method 2: Check for reply wrapper/container
@@ -2850,10 +2849,13 @@ module.exports = class CriticalHit {
       '[class*="boostMessage"]',
     ];
 
-    for (const selector of systemIndicators) {
-      if (messageElement.querySelector(selector) || messageElement.matches(selector)) {
-        return true;
-      }
+    // FUNCTIONAL: Check for system message (.some() instead of for-loop)
+    if (
+      systemIndicators.some(
+        (selector) => messageElement.querySelector(selector) || messageElement.matches(selector)
+      )
+    ) {
+      return true;
     }
 
     // Check if message has system message classes
@@ -4708,19 +4710,18 @@ module.exports = class CriticalHit {
       // Priority: messageContent > markup > textContainer (skip div fallback for performance)
       let content = null;
 
-      // Try messageContent first (most specific and reliable)
-      const allMessageContents = messageElement.querySelectorAll('[class*="messageContent"]');
-      for (const msgContent of allMessageContents) {
-        if (!isInHeaderArea(msgContent)) {
-          content = msgContent;
-          this.debugLog('APPLY_CRIT_STYLE', 'Found messageContent (not in header)', {
-            elementTag: content.tagName,
-            classes: Array.from(content.classList || []),
-            textPreview: content.textContent?.substring(0, 50),
-          });
-          break;
-        }
-      }
+      // FUNCTIONAL: Find message content (.find() instead of for-loop)
+      const allMessageContents = Array.from(
+        messageElement.querySelectorAll('[class*="messageContent"]')
+      );
+      content = allMessageContents.find((msgContent) => !isInHeaderArea(msgContent));
+      
+      content &&
+        this.debugLog('APPLY_CRIT_STYLE', 'Found messageContent (not in header)', {
+          elementTag: content.tagName,
+          classes: Array.from(content.classList || []),
+          textPreview: content.textContent?.substring(0, 50),
+        });
 
       // Fallback to markup if messageContent not found
       if (!content) {
