@@ -5031,9 +5031,7 @@ module.exports = class CriticalHit {
           }
 
           // Add animation if enabled
-          if (this.settings.critAnimation) {
-            content.style.animation = 'critPulse 0.5s ease-in-out';
-          }
+          this.settings?.critAnimation && (content.style.animation = 'critPulse 0.5s ease-in-out');
         }
 
         // Add a class for easier identification
@@ -5111,9 +5109,7 @@ module.exports = class CriticalHit {
   injectCritCSS() {
     // Early return if CSS injection is disabled
     // CSS injection is controlled independently from animation runtime
-    if (this.settings.cssEnabled !== true) {
-      return;
-    }
+    if (this.settings?.cssEnabled !== true) return;
 
     // Check if CSS is already injected
     if (document.getElementById('bd-crit-hit-styles')) {
@@ -8221,7 +8217,7 @@ module.exports = class CriticalHit {
     // #endregion
 
     // Check animation runtime setting (not overall plugin enabled state)
-    if (this.settings.animationEnabled === false) return;
+    if (this.settings?.animationEnabled === false) return;
 
     // Final safety check - be lenient, just need crit class and DOM presence
     if (!messageElement?.classList || !messageElement.isConnected) {
