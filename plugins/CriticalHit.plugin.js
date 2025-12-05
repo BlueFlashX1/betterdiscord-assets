@@ -538,11 +538,7 @@ module.exports = class CriticalHit {
   getCurrentChannelId() {
     // Try to get channel ID from URL
     const urlMatch = window.location.href.match(/channels\/\d+\/(\d+)/);
-    if (urlMatch && urlMatch[1]) {
-      return urlMatch[1];
-    }
-    // Fallback: use URL as identifier
-    return window.location.href;
+    return urlMatch?.[1] ?? window.location.href;
   }
 
   // ============================================================================
