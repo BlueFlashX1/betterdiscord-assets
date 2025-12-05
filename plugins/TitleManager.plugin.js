@@ -36,6 +36,7 @@ module.exports = class SoloLevelingTitleManager {
     this.defaultSettings = {
       enabled: true,
       debugMode: false, // Debug mode toggle
+      sortBy: 'xpBonus', // Default sort by XP bonus
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
@@ -567,14 +568,26 @@ module.exports = class SoloLevelingTitleManager {
     ];
     let titles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
 
-    // Sort titles by XP bonus percentage (ascending: lowest to highest)
-    titles.sort((titleA, titleB) => {
-      const bonusA = this.getTitleBonus(titleA);
-      const bonusB = this.getTitleBonus(titleB);
-      const xpA = bonusA?.xp || 0;
-      const xpB = bonusB?.xp || 0;
-      return xpA - xpB; // Ascending order
-    });
+    // FUNCTIONAL: Sort titles by selected bonus type (highest to lowest)
+    const sortBy = this.settings.sortBy || 'xpBonus';
+    const sortFunctions = {
+      xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
+      critBonus: (a, b) =>
+        (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
+      strBonus: (a, b) =>
+        (this.getTitleBonus(b)?.strengthPercent || 0) - (this.getTitleBonus(a)?.strengthPercent || 0),
+      agiBonus: (a, b) =>
+        (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
+      intBonus: (a, b) =>
+        (this.getTitleBonus(b)?.intelligencePercent || 0) -
+        (this.getTitleBonus(a)?.intelligencePercent || 0),
+      vitBonus: (a, b) =>
+        (this.getTitleBonus(b)?.vitalityPercent || 0) - (this.getTitleBonus(a)?.vitalityPercent || 0),
+      perBonus: (a, b) =>
+        (this.getTitleBonus(b)?.perceptionPercent || 0) -
+        (this.getTitleBonus(a)?.perceptionPercent || 0),
+    };
+    titles.sort(sortFunctions[sortBy] || sortFunctions.xpBonus);
 
     const activeTitle =
       soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
@@ -588,6 +601,29 @@ module.exports = class SoloLevelingTitleManager {
         <div class="tm-modal-header">
           <h2> Titles</h2>
           <button class="tm-close-button">×</button>
+        </div>
+        <div class="tm-filter-bar">
+          <label style="color: rgba(255, 255, 255, 0.8); font-size: 14px; font-weight: 600;">
+            Sort by:
+          </label>
+          <select id="tm-sort-select" style="
+            padding: 8px 12px;
+            background: rgba(139, 92, 246, 0.2);
+            border: 1px solid rgba(139, 92, 246, 0.4);
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+          ">
+            <option value="xpBonus" ${this.settings.sortBy === 'xpBonus' ? 'selected' : ''}>XP Gain (Highest)</option>
+            <option value="critBonus" ${this.settings.sortBy === 'critBonus' ? 'selected' : ''}>Crit Chance (Highest)</option>
+            <option value="strBonus" ${this.settings.sortBy === 'strBonus' ? 'selected' : ''}>Strength % (Highest)</option>
+            <option value="agiBonus" ${this.settings.sortBy === 'agiBonus' ? 'selected' : ''}>Agility % (Highest)</option>
+            <option value="intBonus" ${this.settings.sortBy === 'intBonus' ? 'selected' : ''}>Intelligence % (Highest)</option>
+            <option value="vitBonus" ${this.settings.sortBy === 'vitBonus' ? 'selected' : ''}>Vitality % (Highest)</option>
+            <option value="perBonus" ${this.settings.sortBy === 'perBonus' ? 'selected' : ''}>Perception % (Highest)</option>
+          </select>
         </div>
         <div class="tm-modal-body">
           ${
@@ -691,6 +727,14 @@ module.exports = class SoloLevelingTitleManager {
       if (e.target.id === 'tm-unequip-btn' || e.target.closest('#tm-unequip-btn')) {
         this.unequipTitle();
       }
+    });
+
+    // FUNCTIONAL: Handle sort filter change
+    const sortSelect = modal.querySelector('#tm-sort-select');
+    sortSelect?.addEventListener('change', (e) => {
+      this.settings.sortBy = e.target.value;
+      this.saveSettings();
+      this.refreshModal();
     });
 
     document.body.appendChild(modal);
@@ -818,6 +862,30 @@ module.exports = class SoloLevelingTitleManager {
 
       .tm-close-button:hover {
         background: rgba(139, 92, 246, 0.2);
+      }
+
+      .tm-filter-bar {
+        padding: 15px 20px;
+        background: rgba(139, 92, 246, 0.1);
+        border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+      }
+
+      .tm-filter-bar select {
+        flex: 1;
+        max-width: 300px;
+      }
+
+      .tm-filter-bar select:hover {
+        background: rgba(139, 92, 246, 0.3);
+        border-color: rgba(139, 92, 246, 0.6);
+      }
+
+      .tm-filter-bar select:focus {
+        border-color: rgba(139, 92, 246, 0.8);
+        box-shadow: 0 0 10px rgba(139, 92, 246, 0.4);
       }
 
       .tm-modal-body {
