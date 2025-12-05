@@ -761,7 +761,8 @@ module.exports = class SoloLevelingToasts {
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
 
-    for (let i = 0; i < count; i++) {
+    // FUNCTIONAL: Use Array.from instead of for-loop
+    Array.from({ length: count }, (_, i) => {
       const particle = document.createElement('div');
       particle.className = 'sl-toast-particle';
 
@@ -780,7 +781,7 @@ module.exports = class SoloLevelingToasts {
       setTimeout(() => {
         particle.remove();
       }, 1500);
-    }
+    });
   }
 
   // ============================================================================
@@ -1018,19 +1019,18 @@ module.exports = class SoloLevelingToasts {
    * 2. Return toast element if found
    */
   findToastByKey(groupKey) {
-    // Extract normalized message from key
+    // FUNCTIONAL: Use .find() instead of for-of loop
     const normalized = groupKey.split('_')[0];
-    for (const toast of this.activeToasts) {
-      const toastText = toast.textContent
-        .toLowerCase()
-        .replace(/\d+/g, 'N')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (toastText.includes(normalized.substring(0, 30))) {
-        return toast;
-      }
-    }
-    return null;
+    return (
+      this.activeToasts.find((toast) => {
+        const toastText = toast.textContent
+          .toLowerCase()
+          .replace(/\d+/g, 'N')
+          .replace(/\s+/g, ' ')
+          .trim();
+        return toastText.includes(normalized.substring(0, 30));
+      }) || null
+    );
   }
 
   /**
@@ -1509,7 +1509,7 @@ module.exports = class SoloLevelingToasts {
    * 4. Output to console
    */
   debugLog(operation, message, data = null) {
-    if (!this.debugMode) return;
+    if (!this.settings?.debugMode) return;
 
     if (typeof message === 'object' && data === null) {
       data = message;
@@ -1529,6 +1529,7 @@ module.exports = class SoloLevelingToasts {
    * 3. Include optional context data
    */
   debugError(operation, error, data = null) {
+    if (!this.settings?.debugMode) return;
     console.error(`[SoloLevelingToasts] ERROR [${operation}]:`, error, data || '');
   }
 };
