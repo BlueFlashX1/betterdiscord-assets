@@ -1530,7 +1530,7 @@ module.exports = class CriticalHit {
       uniqueMessages.forEach((msgElement) => {
         try {
           // Skip if already has crit styling
-          if (msgElement.classList.contains('bd-crit-hit')) {
+          if (msgElement?.classList?.contains('bd-crit-hit')) {
             skippedAlreadyStyled++;
             return;
           }
@@ -3698,7 +3698,7 @@ module.exports = class CriticalHit {
             }
 
             // Check if element now has crit class (crit was detected)
-            if (retryElement.classList.contains('bd-crit-hit')) {
+            if (retryElement?.classList?.contains('bd-crit-hit')) {
               // Invalidate cache and check history
               this._cachedCritHistory = null;
               this._cachedCritHistoryTimestamp = null;
@@ -4168,7 +4168,7 @@ module.exports = class CriticalHit {
           return;
         } else {
           // It's NOT a crit - ensure crit class is removed if present
-          if (messageElement.classList.contains('bd-crit-hit')) {
+          if (messageElement?.classList?.contains('bd-crit-hit')) {
             // #region agent log
             // #endregion
             messageElement.classList.remove('bd-crit-hit');
@@ -8271,7 +8271,7 @@ module.exports = class CriticalHit {
     }
 
     // Check for crit class - if missing, try one more time after brief delay
-    if (!messageElement.classList.contains('bd-crit-hit')) {
+    if (!messageElement?.classList?.contains('bd-crit-hit')) {
       // Give it one more frame to get the class
       requestAnimationFrame(() => {
         if (!messageElement.classList?.contains('bd-crit-hit')) {
