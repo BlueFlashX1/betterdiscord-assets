@@ -1044,9 +1044,7 @@ module.exports = class CriticalHit {
         // Extract Discord ID if it's embedded in a composite format
         if (!/^\d{17,19}$/.test(messageId)) {
           const match = messageId.match(/\d{17,19}/);
-          if (match) {
-            messageId = match[0]; // Use extracted Discord ID
-          }
+          match && (messageId = match[0]); // Use extracted Discord ID
         }
       }
 
