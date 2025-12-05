@@ -6526,8 +6526,7 @@ module.exports = class CriticalHit {
       } catch (e) {}
 
       const bonusSpan = container.querySelector('.crit-agility-bonus');
-      if (bonusSpan) {
-        if (totalBonus > 0) {
+      if (bonusSpan && totalBonus > 0) {
           const bonuses = [];
           if (agilityBonus > 0) bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
           if (luckBonus > 0) bonuses.push(`+${luckBonus.toFixed(1)}% LUK`);
@@ -7320,6 +7319,7 @@ module.exports = class CriticalHit {
       // Try React fiber first
       const fiber = this.getReactFiber(element);
       if (fiber) {
+
         const messageObj = this.traverseFiber(
           fiber,
           (f) => f.memoizedProps?.message || f.memoizedState?.message
@@ -7354,6 +7354,7 @@ module.exports = class CriticalHit {
     try {
       const fiber = this.getReactFiber(element);
       if (fiber) {
+
         const authorId = this.traverseFiber(
           fiber,
           (f) => f.memoizedProps?.message?.author?.id || f.memoizedState?.message?.author?.id,
@@ -7378,6 +7379,7 @@ module.exports = class CriticalHit {
     try {
       const fiber = this.getReactFiber(element);
       if (fiber) {
+
         const timestamp = this.traverseFiber(
           fiber,
           (f) => f.memoizedProps?.message?.timestamp || f.memoizedState?.message?.timestamp,
