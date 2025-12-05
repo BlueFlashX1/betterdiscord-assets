@@ -1162,23 +1162,25 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-      // Store agility bonus in BetterDiscord Data for CriticalHit to read
-      // Agility scales: +2% crit chance per point (simplified scaling)
-      // CRIT CHANCE CAPPED AT 25% MAX (user request)
-      // Perception buffs enhance Agility bonus: (base AGI bonus) * (1 + perception multiplier)
-      const agilityStat = this.settings.stats.agility || 0;
-      const baseAgilityBonus = agilityStat * 0.02; // 2% per point
-      const totalPerceptionBuff = this.getTotalPerceptionBuff ? this.getTotalPerceptionBuff() : 0;
-      const perceptionMultiplier = totalPerceptionBuff / 100;
-      const enhancedAgilityBonus = baseAgilityBonus * (1 + perceptionMultiplier); // Perception enhances Agility
+      // NEW AGILITY SYSTEM: Crit chance with 1.5x XP multiplier
+      // Agility: +2% crit chance per point
+      // Perception buffs for AGI: Add to crit chance
+      // Title crit bonus: Add to crit chance
+      // CAPPED AT 30% MAX to prevent XP abuse
+      // When crit: 1.5x XP multiplier (not bonus XP, direct multiplier)
 
-      // Add title crit chance bonus
+      const agilityStat = this.settings.stats.agility || 0;
+      const perceptionBuffsByStat = this.getPerceptionBuffsByStat();
+      const baseAgilityBonus = agilityStat * 0.02; // 2% per point
+      const perceptionAgiBonus = (perceptionBuffsByStat.agility || 0) / 100; // Convert % to decimal
       const titleBonus = this.getActiveTitleBonus();
       const titleCritBonus = titleBonus.critChance || 0;
 
-      // CAP CRIT CHANCE AT 25% (0.25) - includes title bonus
-      const totalCritBonus = enhancedAgilityBonus + titleCritBonus;
-      const cappedCritBonus = Math.min(totalCritBonus, 0.25);
+      // FUNCTIONAL: Sum all crit bonuses, cap at 30% (0.30)
+      const totalCritChance = Math.min(
+        baseAgilityBonus + perceptionAgiBonus + titleCritBonus,
+        0.30
+      );
 
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {
