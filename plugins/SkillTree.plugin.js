@@ -1230,6 +1230,34 @@ module.exports = class SkillTree {
         color: #e0e7ff;
         font-size: 14px;
         font-weight: 600;
+      }
+
+      .skilltree-reset-btn {
+        padding: 10px 20px;
+        background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
+        border: 2px solid rgba(255, 68, 68, 1);
+        border-radius: 8px;
+        color: white;
+        font-size: 14px;
+        font-weight: bold;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(255, 68, 68, 0.3);
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .skilltree-reset-btn:hover {
+        background: linear-gradient(135deg, rgba(255, 68, 68, 1) 0%, rgba(220, 38, 38, 1) 100%);
+        border-color: rgba(255, 100, 100, 1);
+        box-shadow: 0 0 25px rgba(255, 68, 68, 0.6);
+        transform: translateY(-2px);
+      }
+
+      .skilltree-reset-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 0 15px rgba(255, 68, 68, 0.4);
         backdrop-filter: blur(10px);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
       }
@@ -1766,6 +1794,20 @@ module.exports = class SkillTree {
         tierElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       });
     });
+
+    // FUNCTIONAL: Attach reset button event listener
+    const resetBtn = this.skillTreeModal.querySelector('#st-reset-modal-btn');
+    resetBtn?.addEventListener('click', () => {
+      const confirmed = confirm(
+        '⚠️ RESET ALL SKILLS?\n\n' +
+          'This will:\n' +
+          '• Reset ALL unlocked skills\n' +
+          '• Recalculate SP based on your current level\n' +
+          '• Cannot be undone!\n\n' +
+          'Continue?'
+      );
+      confirmed && this.resetSkills();
+    });
   }
 
   /**
@@ -1801,6 +1843,9 @@ module.exports = class SkillTree {
           `
               : ''
           }
+          <button class="skilltree-reset-btn" id="st-reset-modal-btn">
+            🔄 Reset Skills
+          </button>
         </div>
       </div>
       
@@ -1815,7 +1860,7 @@ module.exports = class SkillTree {
           )
           .join('')}
       </div>
-      
+
       <div class="skilltree-modal-content">
     `;
 
