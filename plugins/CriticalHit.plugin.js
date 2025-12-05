@@ -3858,17 +3858,12 @@ module.exports = class CriticalHit {
         if (!historyEntry && isValidDiscordId) {
           const content = this.findMessageContentElement(messageElement);
           const author = this.getAuthorId(messageElement);
-          if (content && author) {
-            const contentText = content.textContent?.trim() || '';
-            if (contentText) {
-              const contentHash = this.getContentHash(author, contentText);
-              const pendingCrit = this.pendingCrits.get(contentHash);
+          const contentText = content?.textContent?.trim();
+          if (content && author && contentText) {
+            const contentHash = this.getContentHash(author, contentText);
+            const pendingCrit = this.pendingCrits.get(contentHash);
 
-              if (
-                pendingCrit &&
-                pendingCrit.channelId === this.currentChannelId &&
-                pendingCrit.isHashId
-              ) {
+            if (pendingCrit?.channelId === this.currentChannelId && pendingCrit?.isHashId) {
                 // Found a queued message that was detected as crit!
                 // BUT: Verify it's actually a crit using the real ID's deterministic roll
                 // This prevents mismatches where queued detection was wrong
@@ -4164,19 +4159,13 @@ module.exports = class CriticalHit {
         // Try content-based seed first (matches queued message detection)
         const content = this.findMessageContentElement(messageElement);
         const author = this.getAuthorId(messageElement);
-        if (content && author) {
-          const contentText = content.textContent?.trim() || '';
-          if (contentText) {
-            // Use same seed as queued messages for consistency
-            const contentHash = this.getContentHash(author, contentText);
-            const seed = `${contentHash}:${this.currentChannelId}`;
-            const hash = this.simpleHash(seed);
-            roll = (hash % 10000) / 100; // Convert to 0-100 range
-          } else {
-            // Fallback to message ID if no content
-            const hash = this.simpleHash(messageId + this.currentChannelId);
-            roll = (hash % 10000) / 100;
-          }
+        const contentText = content?.textContent?.trim();
+        if (content && author && contentText) {
+          // Use same seed as queued messages for consistency
+          const contentHash = this.getContentHash(author, contentText);
+          const seed = `${contentHash}:${this.currentChannelId}`;
+          const hash = this.simpleHash(seed);
+          roll = (hash % 10000) / 100; // Convert to 0-100 range
         } else {
           // Fallback to message ID if can't get content/author
           const hash = this.simpleHash(messageId + this.currentChannelId);
