@@ -1708,6 +1708,8 @@ module.exports = class SkillTree {
    */
   renderSkillTree() {
     const soloData = this.getSoloLevelingData();
+    const visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4'];
+    
     let html = `
       <div class="skilltree-header">
         <h2>Solo Leveling Skill Tree</h2>
@@ -1731,9 +1733,11 @@ module.exports = class SkillTree {
       <div class="skilltree-modal-content">
     `;
 
-    // Render each tier
-    Object.entries(this.skillTree).forEach(([tierKey, tier]) => {
-      if (!tier.skills) return;
+    // FUNCTIONAL: Render only visible tiers (filter before forEach)
+    Object.entries(this.skillTree)
+      .filter(([tierKey]) => visibleTiers.includes(tierKey))
+      .forEach(([tierKey, tier]) => {
+        if (!tier.skills) return;
 
       html += `<div class="skilltree-tier">`;
       html += `<div class="skilltree-tier-header">
