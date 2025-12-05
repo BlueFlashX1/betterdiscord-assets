@@ -360,9 +360,7 @@ module.exports = class CriticalHit {
       }
 
       // Start periodic history cleanup (every 30 minutes)
-      if (this.settings.autoCleanupHistory) {
-        this.startPeriodicCleanup();
-      }
+      this.settings.autoCleanupHistory && this.startPeriodicCleanup();
 
       // Show toast notification (if available)
       try {
