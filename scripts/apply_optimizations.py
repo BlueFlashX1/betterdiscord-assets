@@ -85,6 +85,30 @@ def find_and_replace_patterns(file_path):
     content, n = re.subn(pattern12, replacement12, content)
     changes += n
     
+    # Pattern 13: if (x) { this.styleObservers.get(x).disconnect(); }
+    pattern13 = r'(\s+)if \(this\.styleObservers\.has\(([^)]+)\)\) \{\s*\n\s+this\.styleObservers\.get\(\2\)\.disconnect\(\);\s*\n\s+\}'
+    replacement13 = r'\1this.styleObservers.has(\2) && this.styleObservers.get(\2).disconnect();'
+    content, n = re.subn(pattern13, replacement13, content)
+    changes += n
+    
+    # Pattern 14: Any if (x) { single return; } → if (x) return;
+    pattern14 = r'(\s+)if \(([^)]+)\) \{\s*\n\s+(return[^;]*;)\s*\n\s+\}'
+    replacement14 = r'\1if (\2) \3'
+    content, n = re.subn(pattern14, replacement14, content)
+    changes += n
+    
+    # Pattern 15: if (x) { method.add(y); }
+    pattern15 = r'(\s+)if \((\w+)\) \{\s*\n\s+([^;]+\.(add|set|push)\([^;]+\);)\s*\n\s+\}'
+    replacement15 = r'\1\2 && \3'
+    content, n = re.subn(pattern15, replacement15, content)
+    changes += n
+    
+    # Pattern 16: if (condition) { this.someMethod(); }
+    pattern16 = r'(\s+)if \(([^)]+)\) \{\s*\n\s+(this\.\w+\([^;]*\);)\s*\n\s+\}'
+    replacement16 = r'\1\2 && \3'
+    content, n = re.subn(pattern16, replacement16, content)
+    changes += n
+    
     return content, changes, content != original_content
 
 def main():

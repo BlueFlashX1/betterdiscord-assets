@@ -1208,8 +1208,7 @@ module.exports = class CriticalHit {
             this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
         });
 
-        if (existingIndex >= 0) {
-          this.debugLog(
+        existingIndex >= 0 && this.debugLog(
             'ADD_TO_HISTORY',
             'Found existing entry by content hash (reprocessed message)',
             {
@@ -1218,7 +1217,6 @@ module.exports = class CriticalHit {
               contentHash,
             }
           );
-        }
       }
 
       if (existingIndex >= 0) {
@@ -1560,8 +1558,7 @@ module.exports = class CriticalHit {
           if (matchedEntry?.critSettings) {
             // Restore crit with original settings
             // Only log restoration attempts if verbose or first attempt
-            if (retryCount === 0 || this.debug?.verbose) {
-              this.debugLog('RESTORE_CHANNEL_CRITS', 'Attempting to restore crit for message', {
+            retryCount === 0 || this.debug?.verbose && this.debugLog('RESTORE_CHANNEL_CRITS', 'Attempting to restore crit for message', {
                 msgId: normalizedMsgId,
                 matchedEntryId: matchedEntry.messageId,
                 hasCritSettings: !!matchedEntry.critSettings,
@@ -1569,7 +1566,6 @@ module.exports = class CriticalHit {
                 elementExists: !!msgElement,
                 elementAlreadyStyled: msgElement.classList.contains('bd-crit-hit'),
               });
-            }
 
             this.applyCritStyleWithSettings(msgElement, matchedEntry.critSettings);
             this.critMessages.add(msgElement);
@@ -1659,14 +1655,12 @@ module.exports = class CriticalHit {
       if (restoredCount < channelCrits.length && retryCount < 3) {
         const nextRetry = retryCount + 1;
         // Only log retries if verbose (reduces spam)
-        if (this.debug.verbose) {
-          this.debugLog('RESTORE_CHANNEL_CRITS', 'Not all crits restored, will retry', {
+        this.debug.verbose && this.debugLog('RESTORE_CHANNEL_CRITS', 'Not all crits restored, will retry', {
             restored: restoredCount,
             total: channelCrits.length,
             nextRetry: nextRetry,
             missingCount: channelCrits.length - restoredCount,
           });
-        }
         // Use MutationObserver instead of setTimeout to watch for new messages being added
         // This is more efficient than polling and responds immediately when messages load
         const messageContainer =
@@ -1986,9 +1980,7 @@ module.exports = class CriticalHit {
       // Discord often replaces DOM elements after we style them, causing gradients to disappear
       if (content && useGradient && finalMsgId) {
         // Clean up existing observer for this message if any
-        if (this.styleObservers.has(finalMsgId)) {
-          this.styleObservers.get(finalMsgId).disconnect();
-        }
+        this.styleObservers.has(finalMsgId) && this.styleObservers.get(finalMsgId).disconnect();
 
         // Event-based gradient check - only runs when mutations occur
         // Replaced periodic setInterval with MutationObserver for better performance
@@ -2420,9 +2412,7 @@ module.exports = class CriticalHit {
 
         // Also restore after a longer delay for lazy-loaded messages
         setTimeout(() => {
-          if (this.currentChannelId === channelId) {
-            this.restoreChannelCrits(channelId, 3);
-          }
+          this.currentChannelId === channelId && this.restoreChannelCrits(channelId, 3);
         }, 3000);
       } else {
         // Wait a bit more and try again
@@ -2605,9 +2595,7 @@ module.exports = class CriticalHit {
           console.log('CriticalHit: Channel changed, re-initializing...');
         }
         // Save current session data before switching
-        if (this.currentChannelId) {
-          this.saveMessageHistory();
-        }
+        this.currentChannelId && this.saveMessageHistory();
         // Clear processed messages when channel changes
         this.processedMessages.clear();
         this.processedMessagesOrder = [];
@@ -2949,14 +2937,12 @@ module.exports = class CriticalHit {
         }
 
         // Only log restoration checks if verbose (happens frequently)
-        if (this.debug.verbose) {
-          this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
+        this.debug.verbose && this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
             msgId: normalizedMsgId,
             pureMessageId: pureMessageId !== normalizedMsgId ? pureMessageId : undefined,
             channelId: this.currentChannelId,
             channelCritCount: channelCrits.length,
           });
-        }
 
         // Only match by valid Discord IDs, not hash IDs
         // Hash IDs are for unsent messages and should not be matched
@@ -3034,8 +3020,7 @@ module.exports = class CriticalHit {
               return false;
             });
 
-            if (historyEntry) {
-              this.debugLog(
+            historyEntry && this.debugLog(
                 'CHECK_FOR_RESTORATION',
                 'Found match by content hash (reprocessed message)',
                 {
@@ -3044,7 +3029,6 @@ module.exports = class CriticalHit {
                   contentHash,
                 }
               );
-            }
           }
         }
 
@@ -3341,9 +3325,7 @@ module.exports = class CriticalHit {
                 // Set up monitoring after restoration to catch if Discord removes gradient later
                 if (useGradient && normalizedMsgId) {
                   // Set up MutationObserver to watch for gradient removal
-                  if (this.styleObservers.has(normalizedMsgId)) {
-                    this.styleObservers.get(normalizedMsgId).disconnect();
-                  }
+                  this.styleObservers.has(normalizedMsgId) && this.styleObservers.get(normalizedMsgId).disconnect();
 
                   const checkGradient = () => {
                     // Re-query element in case Discord replaced it
@@ -3439,9 +3421,7 @@ module.exports = class CriticalHit {
                 // Discord might remove it after our check, so we need persistent monitoring
                 if (useGradient && normalizedMsgId) {
                   // Set up MutationObserver to watch for gradient removal
-                  if (this.styleObservers.has(normalizedMsgId)) {
-                    this.styleObservers.get(normalizedMsgId).disconnect();
-                  }
+                  this.styleObservers.has(normalizedMsgId) && this.styleObservers.get(normalizedMsgId).disconnect();
 
                   const checkGradient = () => {
                     // Re-query element in case Discord replaced it
@@ -3659,11 +3639,9 @@ module.exports = class CriticalHit {
         }
       } else {
         // Only log non-matches if verbose (reduces spam)
-        if (this.debug.verbose) {
-          this.debugLog('CHECK_FOR_RESTORATION', 'No matching crit found in history', {
+        this.debug.verbose && this.debugLog('CHECK_FOR_RESTORATION', 'No matching crit found in history', {
             channelId: this.currentChannelId,
           });
-        }
       }
     } else {
       this.debugLog(
@@ -3942,9 +3920,7 @@ module.exports = class CriticalHit {
 
           if (needsRestore) {
             // Use saved critSettings for proper gradient restoration
-            if (historyEntry.critSettings) {
-              this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings);
-            } else {
+            historyEntry.critSettings && this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings); else {
               this.applyCritStyle(messageElement);
             }
             this.critMessages.add(messageElement);
@@ -4332,9 +4308,7 @@ module.exports = class CriticalHit {
                           const retryHasWebkitClip =
                             retryComputed?.webkitBackgroundClip === 'text' ||
                             retryComputed?.backgroundClip === 'text';
-                          if (retryHasGradient && retryHasWebkitClip) {
-                            this.onCritHit(retryElement);
-                          }
+                          retryHasGradient && retryHasWebkitClip && this.onCritHit(retryElement);
                         }
                       }
                     }, 100);
@@ -4538,12 +4512,10 @@ module.exports = class CriticalHit {
         );
 
         if (hasHeaderClass) {
-          if (this.debug?.enabled) {
-            this.debugLog('APPLY_CRIT_STYLE', 'Element has header class', {
+          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element has header class', {
               elementTag: element.tagName,
               classes: classes,
             });
-          }
           return true;
         }
 
@@ -4553,15 +4525,13 @@ module.exports = class CriticalHit {
         const hasAuthorChild = element.querySelector('[class*="author"]') !== null;
 
         if (hasUsernameChild || hasTimestampChild || hasAuthorChild) {
-          if (this.debug?.enabled) {
-            this.debugLog('APPLY_CRIT_STYLE', 'Element contains username/timestamp/author child', {
+          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element contains username/timestamp/author child', {
               elementTag: element.tagName,
               hasUsernameChild,
               hasTimestampChild,
               hasAuthorChild,
               classes: classes,
             });
-          }
           return true;
         }
 
@@ -4577,13 +4547,11 @@ module.exports = class CriticalHit {
           element.closest('[class*="messageGroupWrapper"]');
 
         if (headerParent) {
-          if (this.debug?.enabled) {
-            this.debugLog('APPLY_CRIT_STYLE', 'Element is in header area', {
+          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element is in header area', {
               elementTag: element.tagName,
               headerParentClasses: Array.from(headerParent.classList || []),
               headerParentTag: headerParent.tagName,
             });
-          }
           return true;
         }
 
@@ -4591,12 +4559,10 @@ module.exports = class CriticalHit {
         const text = element.textContent?.trim() || '';
         if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
           // Looks like a timestamp or very short text (likely username)
-          if (this.debug?.enabled) {
-            this.debugLog('APPLY_CRIT_STYLE', 'Element text looks like timestamp/username', {
+          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element text looks like timestamp/username', {
               elementTag: element.tagName,
               text: text,
             });
-          }
           return true;
         }
 
@@ -8162,9 +8128,7 @@ module.exports = class CriticalHit {
     this.fadeOutExistingAnimations();
 
     // Apply screen shake if enabled
-    if (this.settings?.screenShake) {
-      this.applyScreenShake();
-    }
+    this.settings?.screenShake && this.applyScreenShake();
 
     // Create animation element
     const textElement = this.createAnimationElement(messageId, combo, position);
