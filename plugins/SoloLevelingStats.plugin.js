@@ -191,7 +191,9 @@ module.exports = class SoloLevelingStats {
       userMaxMana: null,
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
@@ -5504,7 +5506,7 @@ module.exports = class SoloLevelingStats {
   getAchievementDefinitions() {
     // ============================================================================
     // ACHIEVEMENT DEFINITIONS (791 lines)
-    // 
+    //
     // CATEGORIES:
     // 1. Early Game (E-Rank) - Lines 5505-5550
     // 2. Mid Game (D-C Rank) - Lines 5550-5650
@@ -5534,7 +5536,7 @@ module.exports = class SoloLevelingStats {
         title: 'E-Rank Hunter',
         titleBonus: { xp: 0.08, strengthPercent: 0.05 }, // +8% XP, +5% STR
       },
-      
+
       // ========================================
       // CATEGORY 2: MID GAME (D-C RANK)
       // ========================================
@@ -5554,7 +5556,7 @@ module.exports = class SoloLevelingStats {
         title: 'C-Rank Hunter',
         titleBonus: { xp: 0.18, critChance: 0.01, strengthPercent: 0.05 }, // +18% XP, +1% Crit, +5% STR
       },
-      
+
       // ========================================
       // CATEGORY 3: ADVANCED (B-A RANK)
       // ========================================
@@ -5574,7 +5576,7 @@ module.exports = class SoloLevelingStats {
         title: 'A-Rank Hunter',
         titleBonus: { xp: 0.32, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +2% Crit, +5% STR, +5% AGI
       },
-      
+
       // ========================================
       // CATEGORY 4: ELITE (S-SS RANK)
       // ========================================
@@ -7423,7 +7425,7 @@ module.exports = class SoloLevelingStats {
 
   /**
    * 3.8.2 INJECT CHAT UI CSS (791 lines)
-   * 
+   *
    * ORGANIZED SECTIONS:
    * - Base Panel Styles (lines 7405-7500)
    * - Stats Display & Progress Bars (lines 7500-7650)
