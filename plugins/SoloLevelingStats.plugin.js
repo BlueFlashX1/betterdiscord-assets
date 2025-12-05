@@ -2195,18 +2195,21 @@ module.exports = class SoloLevelingStats {
       // Initialize DOM cache (eliminates 84 querySelector calls per update!)
       this.initDOMCache();
 
-      // Create throttled versions of frequently called functions
-      // These limit execution to max 4x per second (250ms throttle)
-      this.throttled.updateUserHPBar = this.throttle(this.updateUserHPBar.bind(this), 250);
-      this.throttled.updateShadowPowerDisplay = this.throttle(
-        this.updateShadowPowerDisplay.bind(this),
-        250
-      );
-      this.throttled.checkDailyQuests = this.throttle(this.checkDailyQuests.bind(this), 500);
+      // FUNCTIONAL: Safe method binding (NO IF-ELSE!)
+      // Only binds methods that exist, returns no-op for missing methods
+      const bindIfExists = (methodName, wait, throttleOrDebounce) => {
+        const method = this[methodName];
+        const noOp = () => this.debugLog('BIND_SKIP', `Method ${methodName} not found`);
+        return method ? throttleOrDebounce(method.bind(this), wait) : noOp;
+      };
 
-      // Create debounced versions for save operations
-      // These wait 1 second after last call before executing
-      this.debounced.saveSettings = this.debounce(this.saveSettings.bind(this), 1000);
+      // Create throttled versions (4x per second max)
+      this.throttled.updateUserHPBar = bindIfExists('updateUserHPBar', 250, this.throttle.bind(this));
+      this.throttled.updateShadowPowerDisplay = bindIfExists('updateShadowPowerDisplay', 250, this.throttle.bind(this));
+      this.throttled.checkDailyQuests = bindIfExists('checkDailyQuests', 500, this.throttle.bind(this));
+
+      // Create debounced versions (wait 1 sec after last call)
+      this.debounced.saveSettings = bindIfExists('saveSettings', 1000, this.debounce.bind(this));
 
       this.debugLog('START', 'Performance optimizations initialized');
 
