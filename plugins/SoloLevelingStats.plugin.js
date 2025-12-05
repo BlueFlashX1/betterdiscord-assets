@@ -8379,11 +8379,12 @@ module.exports = class SoloLevelingStats {
       'Debug Mode',
       'Show detailed console logs for troubleshooting (constructor, save, load, periodic backups)',
       this.settings.debugMode || false,
-      (value) => this.withAutoSave(() => {
-        this.settings.debugMode = value;
-        console.log('🔧 [SETTINGS] Debug mode:', value ? 'ENABLED ✅' : 'DISABLED ❌');
-        console.log('Reload Discord (Ctrl+R) to see changes in console');
-      }, true)
+      (value) =>
+        this.withAutoSave(() => {
+          this.settings.debugMode = value;
+          console.log('[SETTINGS] Debug mode:', value ? 'ENABLED' : 'DISABLED');
+          console.log('Reload Discord (Ctrl+R) to see changes in console');
+        }, true)
     );
     container.appendChild(debugToggle);
 
@@ -8400,12 +8401,12 @@ module.exports = class SoloLevelingStats {
       <strong style="color: #8a2be2;">Debug Console Logs:</strong><br>
       <span style="color: #b894e6; font-size: 13px;">
         When enabled, you'll see detailed logs for:<br>
-        • 🔧 Constructor initialization<br>
-        • 💾 Save operations (current, clean, success)<br>
-        • 💾 Load operations (raw data, merge, verification)<br>
-        • 💾 Periodic backup saves (every 30 seconds)<br>
-        • 🌟 Shadow XP sharing<br>
-        • 🎯 Data verification (matches, deep copy status)
+        • Constructor initialization<br>
+        • Save operations (current, clean, success)<br>
+        • Load operations (raw data, merge, verification)<br>
+        • Periodic backup saves (every 30 seconds)<br>
+        • Shadow XP sharing<br>
+        • Data verification (matches, deep copy status)
       </span>
     `;
     container.appendChild(info);
