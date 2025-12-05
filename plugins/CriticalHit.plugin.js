@@ -414,10 +414,7 @@ module.exports = class CriticalHit {
     this._displayUpdateInterval &&
       (clearInterval(this._displayUpdateInterval), (this._displayUpdateInterval = null));
 
-    // FUNCTIONAL: Clean up style observer intervals (.forEach instead of for-loop)
-    this.styleObserverIntervals &&
-      (this.styleObserverIntervals.forEach((id) => clearInterval(id)),
-      this.styleObserverIntervals.clear());
+    // Note: styleObserverIntervals removed - using MutationObserver only now
 
     // FUNCTIONAL: Restore history methods (short-circuit)
     this.originalPushState && (history.pushState = this.originalPushState);
@@ -893,6 +890,53 @@ module.exports = class CriticalHit {
     return null;
   }
 
+  /**
+   * Verifies if gradient styling is properly applied to a content element
+   * Checks both inline styles and computed styles for gradient background and text clip
+   * @param {HTMLElement} contentElement - The content DOM element to check
+   * @returns {Object} Object with hasGradient, hasWebkitClip, and hasGradientInStyle flags
+   */
+  verifyGradientApplied(contentElement) {
+    if (!contentElement) {
+      return { hasGradient: false, hasWebkitClip: false, hasGradientInStyle: false };
+    }
+
+    const computedStyles = window.getComputedStyle(contentElement);
+    const hasGradientInStyle = contentElement?.style?.backgroundImage?.includes('gradient');
+    const hasGradientInComputed = computedStyles?.backgroundImage?.includes('gradient');
+    const hasWebkitClip =
+      computedStyles?.webkitBackgroundClip === 'text' || computedStyles?.backgroundClip === 'text';
+
+    return {
+      hasGradient: hasGradientInComputed,
+      hasWebkitClip: hasWebkitClip,
+      hasGradientInStyle: hasGradientInStyle,
+    };
+  }
+
+  /**
+   * Re-queries a message element from the DOM by message ID
+   * Used when Discord replaces DOM elements to get fresh references
+   * @param {string} messageId - The message ID to search for
+   * @param {HTMLElement} fallbackElement - Optional fallback element if not found
+   * @returns {HTMLElement|null} The found message element or null
+   */
+  requeryMessageElement(messageId, fallbackElement = null) {
+    if (!messageId) return fallbackElement;
+
+    // Try direct query first (fastest)
+    const directMatch = document.querySelector(`[data-message-id="${messageId}"]`);
+    if (directMatch) return directMatch;
+
+    // Fallback: Search all message elements
+    const foundElement = Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
+      const id = this.getMessageIdentifier(el);
+      return id === messageId || String(id).includes(messageId);
+    });
+
+    return foundElement || fallbackElement;
+  }
+
   // ============================================================================
   // MESSAGE HISTORY MANAGEMENT
   // ============================================================================
@@ -903,13 +947,9 @@ module.exports = class CriticalHit {
    */
   saveMessageHistory() {
     try {
-      // #region agent log
-      // #endregion
       // Use cached crit history or compute once
       const critHistory = this.getCritHistory();
       const critCount = critHistory.length;
-      // #region agent log
-      // #endregion
       // FUNCTIONAL: Count crits by channel (.forEach() instead of for-loop)
       const critsByChannel = {};
       critHistory.forEach((entry) => {
@@ -1171,12 +1211,7 @@ module.exports = class CriticalHit {
 
         // Also store by content hash if available (for matching when ID changes)
         contentHash && isHashId && this.pendingCrits.set(contentHash, pendingEntry);
-      }
-
-      // #region agent log
-      // #endregion
-
-      let existingIndex = this.messageHistory.findIndex(
+      }      let existingIndex = this.messageHistory.findIndex(
         (entry) =>
           entry.messageId === messageData.messageId && entry.channelId === messageData.channelId
       );
@@ -1219,12 +1254,7 @@ module.exports = class CriticalHit {
         // Update existing entry
         const wasCrit = this.messageHistory[existingIndex].isCrit;
         const existingId = this.messageHistory[existingIndex].messageId;
-        const existingIsHashId = String(existingId).startsWith('hash_');
-
-        // #region agent log
-        // #endregion
-
-        // If updating from hash ID to valid Discord ID, this is a message being sent
+        const existingIsHashId = String(existingId).startsWith('hash_');        // If updating from hash ID to valid Discord ID, this is a message being sent
         // Keep the crit status but update with the real Discord ID
         existingIsHashId && isValidDiscordId && wasCrit && isCrit &&
           this.debugLog('ADD_TO_HISTORY', 'Updating hash ID to Discord ID for sent message', {
@@ -1270,10 +1300,7 @@ module.exports = class CriticalHit {
         }
 
         // Invalidate cache when history is modified
-        isCrit && (this._cachedCritHistory = null);
-        // #region agent log
-        // #endregion
-        this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
+        isCrit && (this._cachedCritHistory = null);        this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
           index: this.messageHistory.length - 1,
           isCrit: isCrit,
           messageId: messageData.messageId,
@@ -1281,21 +1308,12 @@ module.exports = class CriticalHit {
         });
       }
 
-      // Auto-save immediately on crit, periodically for non-crits
-      // #region agent log
-      // #endregion
-      if (isCrit) {
+      // Auto-save immediately on crit, periodically for non-crits      if (isCrit) {
         this.debugLog('ADD_TO_HISTORY', 'CRITICAL: Triggering immediate save for crit message', {
           messageId: messageData.messageId,
           channelId: messageData.channelId,
-        });
-        // #region agent log
-        // #endregion
-        this.saveMessageHistory(); // Save immediately when crit happens
-      } else if (this.messageHistory.length % 20 === 0) {
-        // #region agent log
-        // #endregion
-        this.saveMessageHistory(); // Save every 20 non-crit messages
+        });        this.saveMessageHistory(); // Save immediately when crit happens
+      } else if (this.messageHistory.length % 20 === 0) {        this.saveMessageHistory(); // Save every 20 non-crit messages
       }
 
       // Use cached getCritHistory method
@@ -1735,10 +1753,7 @@ module.exports = class CriticalHit {
    */
   applyCritStyleWithSettings(messageElement, critSettings) {
     try {
-      const msgId = this.getMessageIdentifier(messageElement);
-      // #region agent log
-      // #endregion
-      this.debugLog(
+      const msgId = this.getMessageIdentifier(messageElement);      this.debugLog(
         'APPLY_CRIT_STYLE_WITH_SETTINGS',
         'CRITICAL: Restoring crit style from saved settings',
         {
@@ -1803,12 +1818,10 @@ module.exports = class CriticalHit {
           // Force reflow to ensure styles are applied before checking
           void content.offsetHeight;
 
-          const computedStyles = window.getComputedStyle(content);
-          const hasGradientInStyle = content?.style?.backgroundImage?.includes('gradient');
-          const hasGradientInComputed = computedStyles?.backgroundImage?.includes('gradient');
-          const hasWebkitClip =
-            computedStyles?.webkitBackgroundClip === 'text' ||
-            computedStyles?.backgroundClip === 'text';
+          const gradientCheck = this.verifyGradientApplied(content);
+          const hasGradientInStyle = gradientCheck.hasGradientInStyle;
+          const hasGradientInComputed = gradientCheck.hasGradient;
+          const hasWebkitClip = gradientCheck.hasWebkitClip;
 
           // If gradient is in computed styles but inline style was lost, reapply
           // Discord sometimes removes inline styles even with !important
@@ -1824,12 +1837,7 @@ module.exports = class CriticalHit {
 
             // Force another reflow
             void content.offsetHeight;
-          }
-
-          // #region agent log
-          // #endregion
-
-          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
+          }          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
             gradient: gradientColors,
             hasGradientInComputed,
             hasWebkitClip,
@@ -1932,10 +1940,7 @@ module.exports = class CriticalHit {
           (content.style.animation = 'critPulse 0.5s ease-in-out');
       }
 
-      messageElement.classList.add('bd-crit-hit');
-      // #region agent log
-      // #endregion
-      this.injectCritCSS();
+      messageElement.classList.add('bd-crit-hit');      this.injectCritCSS();
 
       // Re-get message ID for final verification (in case it wasn't available earlier)
       const finalMsgId = this.getMessageIdentifier(messageElement) || msgId;
@@ -1945,12 +1950,7 @@ module.exports = class CriticalHit {
       const finalHasGradient = finalComputedStyles?.backgroundImage?.includes('gradient');
       const finalHasWebkitClip =
         finalComputedStyles?.webkitBackgroundClip === 'text' ||
-        finalComputedStyles?.backgroundClip === 'text';
-
-      // #region agent log
-      // #endregion
-
-      this.debugLog(
+        finalComputedStyles?.backgroundClip === 'text';      this.debugLog(
         'APPLY_CRIT_STYLE_WITH_SETTINGS',
         'SUCCESS: Crit style restored successfully from saved settings',
         {
@@ -1981,12 +1981,7 @@ module.exports = class CriticalHit {
         // Replaced periodic setInterval with MutationObserver for better performance
         const checkGradient = () => {
           // Re-query message element in case Discord replaced it
-          const currentMessageElement =
-            document.querySelector(`[data-message-id="${finalMsgId}"]`) ||
-            Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-              const id = this.getMessageIdentifier(el);
-              return id === finalMsgId || String(id).includes(finalMsgId);
-            });
+          const currentMessageElement = this.requeryMessageElement(finalMsgId);
 
           if (
             !currentMessageElement ||
@@ -2003,12 +1998,7 @@ module.exports = class CriticalHit {
             const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
             const hasWebkitClip =
               currentComputed?.webkitBackgroundClip === 'text' ||
-              currentComputed?.backgroundClip === 'text';
-
-            // #region agent log
-            // #endregion
-
-            if (!hasGradient && useGradient) {
+              currentComputed?.backgroundClip === 'text';            if (!hasGradient && useGradient) {
               // Content element was replaced or gradient was removed - reapply
               const gradientColors =
                 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
@@ -2026,11 +2016,7 @@ module.exports = class CriticalHit {
               currentContent.classList.add('bd-crit-text-content');
 
               // Force reflow
-              void currentContent.offsetHeight;
-
-              // #region agent log
-              // #endregion
-            }
+              void currentContent.offsetHeight;            }
           }
         };
 
@@ -2554,19 +2540,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Checks if an element was newly added to the DOM
-   * Used to avoid reprocessing existing messages
-   * @param {HTMLElement} element - Element to check
-   * @returns {boolean} True if element is newly added
-   */
-  isNewlyAdded(element) {
-    // Check if element was added after observer started
-    // MutationObserver only fires for newly added nodes, so if we're here, it's likely new
-    // But we can also check if it's in the visible viewport near the bottom
-    return true; // MutationObserver only fires for new nodes anyway
-  }
-
-  /**
    * Sets up listeners for channel navigation changes
    * Restores crit styling when switching channels
    */
@@ -2951,11 +2924,7 @@ module.exports = class CriticalHit {
               critSettings: pendingCrit.critSettings,
               messageContent: pendingCrit.messageContent,
               author: pendingCrit.author,
-            };
-
-            // #region agent log
-            // #endregion
-          }
+            };          }
         }
 
         if (isValidDiscordId && !historyEntry) {
@@ -3017,12 +2986,7 @@ module.exports = class CriticalHit {
                 }
               );
           }
-        }
-
-        // #region agent log
-        // #endregion
-
-        // If not found initially, retry after a delay to handle race condition
+        }        // If not found initially, retry after a delay to handle race condition
         // Discord reprocesses messages before checkForCrit finishes adding to history
         const performRestoration = (entryToRestore) => {
           if (!entryToRestore || !entryToRestore.critSettings) return;
@@ -3040,19 +3004,9 @@ module.exports = class CriticalHit {
 
           // Use double RAF for DOM stability, then retry if element is replaced
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              // #region agent log
-              // #endregion
-
-              // Re-query element right before restoration to handle Discord replacements
+            requestAnimationFrame(() => {              // Re-query element right before restoration to handle Discord replacements
               // Discord often replaces elements, so the closure reference might be stale
-              const currentMessageElement =
-                document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-                  const id = this.getMessageIdentifier(el);
-                  return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                }) ||
-                messageElement; // Fallback to original if not found
+              const currentMessageElement = this.requeryMessageElement(normalizedMsgId, messageElement);
 
               // Check if element is still valid and in DOM
               if (!currentMessageElement || !currentMessageElement.isConnected) {
@@ -3077,16 +3031,8 @@ module.exports = class CriticalHit {
 
               // Always restore - don't skip even if gradient appears present
               // Discord's DOM manipulation can cause stale element references or style removal
-              const needsRestoration = true;
-
-              // #region agent log
-              // #endregion
-
-              if (needsRestoration) {
-                // Restore the crit
-                // #region agent log
-                // #endregion
-                this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
+              const needsRestoration = true;              if (needsRestoration) {
+                // Restore the crit                this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
                 this.critMessages.add(currentMessageElement);
                 // Mark as processed using message ID (not element reference)
                 normalizedMsgId && this.markAsProcessed(normalizedMsgId);
@@ -3095,17 +3041,9 @@ module.exports = class CriticalHit {
                 // Watch for style changes on content element to detect gradient application/removal
                 const verifyGradient = () => {
                   // Re-query element in case Discord replaced it
-                  const retryElement =
-                    document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                    Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-                      const id = this.getMessageIdentifier(el);
-                      return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                    });
+                  const retryElement = this.requeryMessageElement(normalizedMsgId);
 
-                  if (!retryElement || !retryElement.isConnected) {
-                    // #region agent log
-                    // #endregion
-                    return false;
+                  if (!retryElement || !retryElement.isConnected) {                    return false;
                   }
 
                   const content = this.findMessageContentElement(retryElement);
@@ -3115,16 +3053,9 @@ module.exports = class CriticalHit {
                   }
 
                   if (useGradient) {
-                    const computed = window.getComputedStyle(content);
-                    const hasGradient = computed?.backgroundImage?.includes('gradient');
-                    const hasWebkitClip =
-                      computed?.webkitBackgroundClip === 'text' ||
-                      computed?.backgroundClip === 'text';
-
-                    // #region agent log
-                    // #endregion
-
-                    // If gradient is missing, reapply it
+                    const gradientCheck = this.verifyGradientApplied(content);
+                    const hasGradient = gradientCheck.hasGradient;
+                    const hasWebkitClip = gradientCheck.hasWebkitClip;                    // If gradient is missing, reapply it
                     if (!hasGradient) {
                       this.applyCritStyleWithSettings(retryElement, entryToRestore.critSettings);
                       return false; // Still missing, keep observing
@@ -3217,16 +3148,9 @@ module.exports = class CriticalHit {
                     const restoredContent = this.findMessageContentElement(restoredElement);
                     if (restoredContent) {
                       void restoredContent.offsetHeight; // Force reflow
-                      const computedStyles = window.getComputedStyle(restoredContent);
-                      const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
-                      const hasWebkitClip =
-                        computedStyles?.webkitBackgroundClip === 'text' ||
-                        computedStyles?.backgroundClip === 'text';
-
-                      // #region agent log
-                      // #endregion
-
-                      if (!hasGradient || !hasWebkitClip) {
+                      const gradientCheck = this.verifyGradientApplied(restoredContent);
+                      const hasGradient = gradientCheck.hasGradient;
+                      const hasWebkitClip = gradientCheck.hasWebkitClip;                      if (!hasGradient || !hasWebkitClip) {
                         // Gradient not ready, use MutationObserver to watch for style changes
                         const contentElement = this.findMessageContentElement(restoredElement);
                         if (contentElement) {
@@ -3238,18 +3162,13 @@ module.exports = class CriticalHit {
                             );
 
                             if (hasStyleMutation) {
-                              const retryElement =
-                                document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                                restoredElement;
+                              const retryElement = this.requeryMessageElement(normalizedMsgId, restoredElement);
                               if (retryElement?.isConnected) {
                                 const retryContent = this.findMessageContentElement(retryElement);
                                 if (retryContent) {
-                                  const retryComputed = window.getComputedStyle(retryContent);
-                                  const retryHasGradient =
-                                    retryComputed?.backgroundImage?.includes('gradient');
-                                  const retryHasWebkitClip =
-                                    retryComputed?.webkitBackgroundClip === 'text' ||
-                                    retryComputed?.backgroundClip === 'text';
+                                  const retryGradientCheck = this.verifyGradientApplied(retryContent);
+                                  const retryHasGradient = retryGradientCheck.hasGradient;
+                                  const retryHasWebkitClip = retryGradientCheck.hasWebkitClip;
 
                                   if (retryHasGradient && retryHasWebkitClip) {
                                     // Only trigger animation if message is verified (has real Discord ID)
@@ -3293,19 +3212,12 @@ module.exports = class CriticalHit {
                     const isRestoredVerified =
                       restoredMessageId && this.isValidDiscordId(restoredMessageId);
 
-                    if (isRestoredVerified) {
-                      // #region agent log
-                      // #endregion
-
-                      try {
+                    if (isRestoredVerified) {                      try {
                         this.onCritHit(restoredElement);
                       } catch (e) {
                         this.debugError('CHECK_FOR_RESTORATION', e, { phase: 'trigger_animation' });
                       }
-                    } else {
-                      // #region agent log
-                      // #endregion
-                    }
+                    } else {                    }
                   });
                 });
 
@@ -3316,12 +3228,7 @@ module.exports = class CriticalHit {
 
                   const checkGradient = () => {
                     // Re-query element in case Discord replaced it
-                    const monitoredElement =
-                      document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                      Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-                        const id = this.getMessageIdentifier(el);
-                        return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                      });
+                    const monitoredElement = this.requeryMessageElement(normalizedMsgId);
 
                     if (
                       !monitoredElement ||
@@ -3334,12 +3241,8 @@ module.exports = class CriticalHit {
                     const currentContent = this.findMessageContentElement(monitoredElement);
 
                     if (currentContent && useGradient) {
-                      const computed = window.getComputedStyle(currentContent);
-                      const hasGradient = computed?.backgroundImage?.includes('gradient');
-
-                      // #region agent log
-                      // #endregion
-
+                      const gradientCheck = this.verifyGradientApplied(currentContent);
+                      const hasGradient = gradientCheck.hasGradient;
                       if (!hasGradient) {
                         // Gradient disappeared! Reapply it
                         this.applyCritStyleWithSettings(
@@ -3410,12 +3313,7 @@ module.exports = class CriticalHit {
 
                   const checkGradient = () => {
                     // Re-query element in case Discord replaced it
-                    const currentMessageElement =
-                      document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                      Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-                        const id = this.getMessageIdentifier(el);
-                        return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                      });
+                    const currentMessageElement = this.requeryMessageElement(normalizedMsgId);
 
                     if (
                       !currentMessageElement ||
@@ -3432,12 +3330,7 @@ module.exports = class CriticalHit {
 
                     if (currentContent && useGradient) {
                       const computed = window.getComputedStyle(currentContent);
-                      const hasGradient = computed?.backgroundImage?.includes('gradient');
-
-                      // #region agent log
-                      // #endregion
-
-                      if (!hasGradient) {
+                      const hasGradient = computed?.backgroundImage?.includes('gradient');                      if (!hasGradient) {
                         // Gradient disappeared! Reapply it
                         this.applyCritStyleWithSettings(
                           currentMessageElement,
@@ -3490,26 +3383,19 @@ module.exports = class CriticalHit {
                     styleObserver.disconnect();
                     this.styleObservers.delete(normalizedMsgId);
                   }, 10000);
-                }
-
-                // #region agent log
-                // #endregion
-              }
+                }              }
             });
           });
         };
 
-        historyEntry?.critSettings && performRestoration(historyEntry); else if (!historyEntry && isValidDiscordId) {
+        if (historyEntry?.critSettings) {
+          performRestoration(historyEntry);
+        } else if (!historyEntry && isValidDiscordId) {
           // Use MutationObserver instead of polling setTimeout
           // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
           const checkForCrit = () => {
             // Re-query element in case Discord replaced it
-            const retryElement =
-              document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-              Array.from(document.querySelectorAll('[class*="message"]')).find((el) => {
-                const id = this.getMessageIdentifier(el);
-                return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-              });
+            const retryElement = this.requeryMessageElement(normalizedMsgId);
 
             if (!retryElement || !retryElement.isConnected) return false;
 
@@ -3537,12 +3423,7 @@ module.exports = class CriticalHit {
                 critSettings: pendingCrit.critSettings,
                 messageContent: pendingCrit.messageContent,
                 author: pendingCrit.author,
-              };
-
-              // #region agent log
-              // #endregion
-
-              performRestoration(pendingEntry);
+              };              performRestoration(pendingEntry);
               return true;
             }
 
@@ -3559,11 +3440,7 @@ module.exports = class CriticalHit {
                 return entryId === normalizedMsgId || entryId === pureMessageId;
               });
 
-              if (retryHistoryEntry?.critSettings) {
-                // #region agent log
-                // #endregion
-
-                performRestoration(retryHistoryEntry);
+              if (retryHistoryEntry?.critSettings) {                performRestoration(retryHistoryEntry);
                 return true;
               }
             }
@@ -3637,16 +3514,6 @@ module.exports = class CriticalHit {
     }
   }
 
-  /**
-   * Checks all existing messages in the DOM for crit restoration
-   * Called on plugin start or channel change
-   */
-  checkExistingMessages() {
-    // This method is no longer used - we only check NEW messages
-    // to prevent applying crits to old messages
-    // Keeping it for potential future use but not calling it
-  }
-
   // ============================================================================
   // CRIT DETECTION & APPLICATION
   // ============================================================================
@@ -3658,10 +3525,7 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} messageElement - The message DOM element
    */
   checkForCrit(messageElement) {
-    try {
-      // #region agent log
-      // #endregion
-      // Verify element is still valid FIRST
+    try {      // Verify element is still valid FIRST
       if (!messageElement || !messageElement.offsetParent) {
         this.debugLog('CHECK_FOR_CRIT', 'Message element invalid, skipping');
         return;
@@ -3672,11 +3536,7 @@ module.exports = class CriticalHit {
       const messageId = this.getMessageIdentifier(messageElement, {
         phase: 'check_for_crit',
         verbose: true,
-      });
-      // #region agent log
-      // #endregion
-
-      // Validate message ID is correct (not channel ID)
+      });      // Validate message ID is correct (not channel ID)
       if (messageId && (!/^\d{17,19}$/.test(messageId) || messageId.length < 17)) {
         this.debugLog('CHECK_FOR_CRIT', 'WARNING: Invalid message ID extracted', {
           messageId,
@@ -3701,12 +3561,7 @@ module.exports = class CriticalHit {
 
       // Define isValidDiscordId and isHashId at the top so they're available throughout the method
       const isValidDiscordId = /^\d{17,19}$/.test(messageId);
-      const isHashId = messageId.startsWith('hash_');
-
-      // #region agent log
-      // #endregion
-
-      // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
+      const isHashId = messageId.startsWith('hash_');      // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
       // When Discord finishes processing and assigns real ID, we'll check pending queue
       if (isHashId) {
         // Check if this queued message should be a crit (for pending queue)
@@ -3747,11 +3602,7 @@ module.exports = class CriticalHit {
                 author: author,
                 contentHash: contentHash,
                 isHashId: true, // Mark as originally queued
-              });
-
-              // #region agent log
-              // #endregion
-            }
+              });            }
           }
         }
 
@@ -3789,12 +3640,7 @@ module.exports = class CriticalHit {
                 const seed = `${contentHash}:${this.currentChannelId}`;
                 const hash = this.simpleHash(seed);
                 const realRoll = (hash % 10000) / 100;
-                const isActuallyCrit = realRoll <= effectiveCritChance;
-
-                // #region agent log
-                // #endregion
-
-                // Only use pending crit if verification confirms it's actually a crit
+                const isActuallyCrit = realRoll <= effectiveCritChance;                // Only use pending crit if verification confirms it's actually a crit
                 if (isActuallyCrit) {
                   // Create a history entry from pending crit
                   historyEntry = {
@@ -3848,11 +3694,7 @@ module.exports = class CriticalHit {
                       const verifiedElement =
                         document.querySelector(`[data-message-id="${messageId}"]`) ||
                         messageElement;
-                      if (verifiedElement?.isConnected) {
-                        // #region agent log
-                        // #endregion
-
-                        try {
+                      if (verifiedElement?.isConnected) {                        try {
                           this.onCritHit(verifiedElement);
                         } catch (error) {
                           this.debugError('CHECK_FOR_CRIT', error, {
@@ -3864,12 +3706,7 @@ module.exports = class CriticalHit {
                   });
                 } else {
                   // Queued detection was wrong - remove from pending queue
-                  this.pendingCrits.delete(contentHash);
-
-                  // #region agent log
-                  // #endregion
-
-                  // Continue processing as non-crit (will reset combo below)
+                  this.pendingCrits.delete(contentHash);                  // Continue processing as non-crit (will reset combo below)
                   historyEntry = null;
                 }
               }
@@ -3881,12 +3718,7 @@ module.exports = class CriticalHit {
       // If message is in history, use saved determination and skip reprocessing
       if (historyEntry) {
         // Message already processed - use saved determination
-        const isCrit = historyEntry.isCrit || false;
-
-        // #region agent log
-        // #endregion
-
-        this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
+        const isCrit = historyEntry.isCrit || false;        this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
           messageId,
           isCrit,
           wasProcessed: true,
@@ -3903,14 +3735,12 @@ module.exports = class CriticalHit {
 
           if (needsRestore) {
             // Use saved critSettings for proper gradient restoration
-            historyEntry.critSettings && this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings); else {
+            if (historyEntry.critSettings) {
+              this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings);
+            } else {
               this.applyCritStyle(messageElement);
             }
-            this.critMessages.add(messageElement);
-
-            // #region agent log
-            // #endregion
-          }
+            this.critMessages.add(messageElement);          }
 
           // Only trigger animation if not already animated (prevent double animation)
           // Check by message ID first, then content hash with time check
@@ -3933,17 +3763,9 @@ module.exports = class CriticalHit {
             if (isValidDiscordId) {
               // Verified message - always allow animation (don't set alreadyAnimated)
               // Remove old entry to allow new animation
-              this.animatedMessages.delete(messageId);
-
-              // #region agent log
-              // #endregion
-            } else if (timeSinceAnimated < 2000) {
+              this.animatedMessages.delete(messageId);            } else if (timeSinceAnimated < 2000) {
               // Non-verified message - use 2-second window
-              alreadyAnimated = true;
-
-              // #region agent log
-              // #endregion
-            }
+              alreadyAnimated = true;            }
           }
 
           // Also check by content hash (handles element replacement scenarios)
@@ -3957,20 +3779,12 @@ module.exports = class CriticalHit {
                   // For non-verified messages, use stricter 2-second window
                   if (isValidDiscordId) {
                     // Verified message - always allow animation (remove old entry)
-                    this.animatedMessages.delete(msgId);
-
-                    // #region agent log
-                    // #endregion
-                    // Don't set alreadyAnimated - allow the animation
+                    this.animatedMessages.delete(msgId);                    // Don't set alreadyAnimated - allow the animation
                     return true; // Found matching content hash, processed it
                   } else if (timeSinceAnimated < 2000) {
                     // Non-verified message - use 2-second window
                     // Same content animated recently - skip
-                    alreadyAnimated = true;
-
-                  // #region agent log
-                  // #endregion
-                  return true;
+                    alreadyAnimated = true;                  return true;
                 }
                 // Content matches but enough time passed - allow retry
               }
@@ -3984,30 +3798,20 @@ module.exports = class CriticalHit {
           if (!alreadyAnimated) {
             // Only trigger animation if message is verified (has real Discord ID)
             // This ensures animations only trigger once when confirmed, not during queue phase
-            if (isValidDiscordId && messageId) {
-              // #region agent log
-              // #endregion
-
-              // Trigger animation for verified crits restored from history
+            if (isValidDiscordId && messageId) {              // Trigger animation for verified crits restored from history
               try {
                 this.onCritHit(messageElement);
               } catch (error) {
                 this.debugError('CHECK_FOR_CRIT', error, { phase: 'restore_animation' });
               }
-            } else {
-              // #region agent log
-              // #endregion
-            }
+            } else {            }
           }
 
           // Don't mark as processed again - already in history
           return;
         }
           // It's NOT a crit - ensure crit class is removed if present
-          if (messageElement?.classList?.contains('bd-crit-hit')) {
-            // #region agent log
-            // #endregion
-            messageElement.classList.remove('bd-crit-hit');
+          if (messageElement?.classList?.contains('bd-crit-hit')) {            messageElement.classList.remove('bd-crit-hit');
             // Remove from critMessages if present
             this.critMessages.delete(messageElement);
           }
@@ -4019,11 +3823,7 @@ module.exports = class CriticalHit {
             // Reset combo immediately for non-crit messages
             const userId = this.getUserId(messageElement) || authorId;
             if (this.isValidDiscordId(userId)) {
-              this.updateUserCombo(userId, 0, 0);
-
-              // #region agent log
-              // #endregion
-            }
+              this.updateUserCombo(userId, 0, 0);            }
           }
 
           // Don't mark as processed again - already in history
@@ -4032,10 +3832,7 @@ module.exports = class CriticalHit {
       }
 
       // Message not in history - check if already processed (to prevent duplicate processing)
-      if (!this.markAsProcessed(messageId)) {
-        // #region agent log
-        // #endregion
-        this.debugLog('CHECK_FOR_CRIT', 'Message already processed (by ID)', { messageId });
+      if (!this.markAsProcessed(messageId)) {        this.debugLog('CHECK_FOR_CRIT', 'Message already processed (by ID)', { messageId });
         return;
       }
 
@@ -4124,10 +3921,7 @@ module.exports = class CriticalHit {
         this.updateStats(); // Recalculate crit rate
 
         // Check if currently processing crit styling for this message (prevent duplicate during spam)
-        if (messageId && this._processingCrits.has(messageId)) {
-          // #region agent log
-          // #endregion
-          return; // Already processing, skip duplicate call
+        if (messageId && this._processingCrits.has(messageId)) {          return; // Already processing, skip duplicate call
         }
 
         // Mark as processing crit styling
@@ -4151,11 +3945,7 @@ module.exports = class CriticalHit {
           this.debugLog('CHECK_FOR_CRIT', 'Step 1: Applying crit style to message', {
             messageId: messageId,
             hasMessageElement: !!messageElement,
-          });
-          // #region agent log
-          // #endregion
-
-          // Forcefully apply crit style
+          });          // Forcefully apply crit style
           this.applyCritStyle(messageElement);
 
           // Use MutationObserver instead of setTimeout polling to ensure gradient persists
@@ -4167,15 +3957,14 @@ module.exports = class CriticalHit {
 
             const ensureGradient = () => {
               // Re-query element in case Discord replaced it
-              const currentElement =
-                document.querySelector(`[data-message-id="${messageId}"]`) || messageElement;
+              const currentElement = this.requeryMessageElement(messageId, messageElement);
               if (!currentElement?.isConnected) return false;
 
               const currentContent = this.findMessageContentElement(currentElement);
               if (!currentContent) return false;
 
-              const computed = window.getComputedStyle(currentContent);
-              const hasGradient = computed?.backgroundImage?.includes('gradient');
+              const gradientCheck = this.verifyGradientApplied(currentContent);
+              const hasGradient = gradientCheck.hasGradient;
 
               if (!hasGradient && currentElement?.classList?.contains('bd-crit-hit')) {
                 // Gradient was removed - reapply it
@@ -4190,12 +3979,7 @@ module.exports = class CriticalHit {
                 );
                 currentContent.style.setProperty('color', 'transparent', 'important');
                 currentContent.style.setProperty('display', 'inline-block', 'important');
-                currentContent.classList.add('bd-crit-text-content');
-
-                // #region agent log
-                // #endregion
-
-                return false; // Still missing, keep observing
+                currentContent.classList.add('bd-crit-text-content');                return false; // Still missing, keep observing
               }
               return true; // Gradient present
             };
@@ -4242,12 +4026,7 @@ module.exports = class CriticalHit {
                 gradientPersistenceObserver.disconnect();
               }, 5000);
             }
-          }
-
-          // #region agent log
-          // #endregion
-
-          this.critMessages.add(messageElement);
+          }          this.critMessages.add(messageElement);
 
           // Only trigger animation when message is verified (has real Discord ID)
           // This ensures animations only trigger once when confirmed, not during queue phase
@@ -4256,32 +4035,22 @@ module.exports = class CriticalHit {
             // Verify gradient before triggering animation
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
-                const currentElement =
-                  document.querySelector(`[data-message-id="${messageId}"]`) || messageElement;
+                const currentElement = this.requeryMessageElement(messageId, messageElement);
 
                 if (!currentElement || !currentElement.isConnected) return;
 
                 const contentElement = this.findMessageContentElement(currentElement);
                 if (contentElement) {
                   void contentElement.offsetHeight; // Force reflow
-                  const computedStyles = window.getComputedStyle(contentElement);
-                  const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
-                  const hasWebkitClip =
-                    computedStyles?.webkitBackgroundClip === 'text' ||
-                    computedStyles?.backgroundClip === 'text';
-
-                  // #region agent log
-                  // #endregion
-
-                  if (hasGradient && hasWebkitClip) {
+                  const gradientCheck = this.verifyGradientApplied(contentElement);
+                  const hasGradient = gradientCheck.hasGradient;
+                  const hasWebkitClip = gradientCheck.hasWebkitClip;                  if (hasGradient && hasWebkitClip) {
                     // Gradient is ready - trigger animation for verified crit
                     this.onCritHit(currentElement);
                   } else {
                     // Gradient not ready yet - retry once after brief delay
                     setTimeout(() => {
-                      const retryElement =
-                        document.querySelector(`[data-message-id="${messageId}"]`) ||
-                        currentElement;
+                      const retryElement = this.requeryMessageElement(messageId, currentElement);
                       if (retryElement?.isConnected) {
                         const retryContent = this.findMessageContentElement(retryElement);
                         if (retryContent) {
@@ -4299,10 +4068,7 @@ module.exports = class CriticalHit {
                 }
               });
             });
-          } else {
-            // #region agent log
-            // #endregion
-          }
+          } else {          }
           // Already marked as processed by markAsProcessed above
           this.debugLog('CHECK_FOR_CRIT', 'Step 1 Complete: Crit style applied', {
             messageId: messageId,
@@ -4409,10 +4175,7 @@ module.exports = class CriticalHit {
 
         // Store in history (non-crit) for tracking - CRITICAL to prevent false positives
         if (messageId && this.currentChannelId) {
-          try {
-            // #region agent log
-            // #endregion
-            this.addToHistory({
+          try {            this.addToHistory({
               messageId: messageId,
               authorId: authorId, // Store author ID for filtering
               channelId: this.currentChannelId,
@@ -4793,11 +4556,7 @@ module.exports = class CriticalHit {
               content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
               content.style.setProperty('color', 'transparent', 'important');
               content.style.setProperty('display', 'inline-block', 'important');
-              void content.offsetHeight; // Force another reflow
-
-              // #region agent log
-              // #endregion
-            }
+              void content.offsetHeight; // Force another reflow            }
 
             // Explicitly exclude username/timestamp elements from gradient
             // Find and reset any username/timestamp elements that might have been affected
@@ -4889,17 +4648,11 @@ module.exports = class CriticalHit {
 
         // Verify gradient was actually applied and get computed styles
         const useGradient = this.settings.critGradient !== false;
-        const computedStyles = content ? window.getComputedStyle(content) : null;
-        const hasGradientInStyle = content?.style?.backgroundImage?.includes('gradient');
-        const hasGradientInComputed = computedStyles?.backgroundImage?.includes('gradient');
-        const hasWebkitClip =
-          computedStyles?.webkitBackgroundClip === 'text' ||
-          computedStyles?.backgroundClip === 'text';
-
-        // #region agent log
-        // #endregion
-
-        // If gradient didn't apply correctly, retry with MutationObserver to catch DOM changes
+        const gradientCheck = this.verifyGradientApplied(content);
+        const hasGradientInStyle = gradientCheck.hasGradientInStyle;
+        const hasGradientInComputed = gradientCheck.hasGradient;
+        const hasWebkitClip = gradientCheck.hasWebkitClip;
+        const computedStyles = content ? window.getComputedStyle(content) : null;        // If gradient didn't apply correctly, retry with MutationObserver to catch DOM changes
         if (content && useGradient && !hasGradientInComputed) {
           this.debugLog('APPLY_CRIT_STYLE', 'WARNING: Gradient not applied correctly, will retry', {
             hasGradientInStyle,
@@ -4922,11 +4675,7 @@ module.exports = class CriticalHit {
                 content.style.setProperty('-webkit-background-clip', 'text', 'important');
                 content.style.setProperty('background-clip', 'text', 'important');
                 content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-                content.style.setProperty('color', 'transparent', 'important');
-
-                // #region agent log
-                // #endregion
-              }
+                content.style.setProperty('color', 'transparent', 'important');              }
             }
           }, 100);
         }
@@ -5511,16 +5260,9 @@ module.exports = class CriticalHit {
     if (this.animatedMessages.has(messageId)) {
       if (isValidDiscordId) {
         // Verified message - always allow animation (remove old entry)
-        this.animatedMessages.delete(messageId);
-
-        // #region agent log
-        // #endregion
-        // Continue processing - don't return
+        this.animatedMessages.delete(messageId);        // Continue processing - don't return
       } else {
-        // Non-verified message - use deduplication
-        // #region agent log
-        // #endregion
-        return;
+        // Non-verified message - use deduplication        return;
       }
     }
 
@@ -5531,10 +5273,7 @@ module.exports = class CriticalHit {
     if (!isValidDiscordId) {
       const lastCallTime = this._onCritHitThrottle.get(messageId);
 
-      if (lastCallTime && now - lastCallTime < this._onCritHitThrottleMs) {
-        // #region agent log
-        // #endregion
-        return;
+      if (lastCallTime && now - lastCallTime < this._onCritHitThrottleMs) {        return;
       }
       this._onCritHitThrottle.set(messageId, now);
     }
@@ -5549,10 +5288,7 @@ module.exports = class CriticalHit {
     }
 
     // Check if currently processing animation for this message
-    if (this._processingAnimations.has(messageId)) {
-      // #region agent log
-      // #endregion
-      return;
+    if (this._processingAnimations.has(messageId)) {      return;
     }
 
     // Mark as processing animation
@@ -5569,8 +5305,7 @@ module.exports = class CriticalHit {
       }
 
       // Re-query element in case it was replaced
-      const currentElement =
-        document.querySelector(`[data-message-id="${messageId}"]`) || messageElement;
+      const currentElement = this.requeryMessageElement(messageId, messageElement);
 
       if (!currentElement || !currentElement.isConnected) {
         return false; // Element not ready
@@ -5588,16 +5323,8 @@ module.exports = class CriticalHit {
         return false; // Content element not found
       }
 
-      const computedStyles = window.getComputedStyle(contentElement);
-      const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
-      const hasWebkitClip =
-        computedStyles?.webkitBackgroundClip === 'text' ||
-        computedStyles?.backgroundClip === 'text';
-
-      // #region agent log
-      // #endregion
-
-      return hasGradient && hasWebkitClip; // Ready if both are present
+      const gradientCheck = this.verifyGradientApplied(contentElement);
+      return gradientCheck.hasGradient && gradientCheck.hasWebkitClip; // Ready if both are present
     };
 
     // Initial check
@@ -5669,8 +5396,7 @@ module.exports = class CriticalHit {
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           // Re-query element one more time before triggering
-          const finalElement =
-            document.querySelector(`[data-message-id="${messageId}"]`) || messageElement;
+          const finalElement = this.requeryMessageElement(messageId, messageElement);
 
           if (
             finalElement &&
@@ -5687,10 +5413,7 @@ module.exports = class CriticalHit {
             // Double-check: Ensure not already animated (race condition protection)
             const finalMessageId = this.getMessageIdentifier(finalElement) || messageId;
             if (this.animatedMessages.has(finalMessageId)) {
-              this._processingAnimations.delete(finalMessageId);
-              // #region agent log
-              // #endregion
-              return;
+              this._processingAnimations.delete(finalMessageId);              return;
             }
 
             // Direct call to animation handler (replaces hook-based approach)
@@ -5708,11 +5431,7 @@ module.exports = class CriticalHit {
             } else {
               // Remove processing lock if animation disabled or handler missing
               this._processingAnimations.delete(finalMessageId);
-            }
-
-            // #region agent log
-            // #endregion
-          } else {
+            }          } else {
             // Element not valid, remove processing lock
             this._processingAnimations.delete(messageId);
           }
@@ -6582,9 +6301,8 @@ module.exports = class CriticalHit {
       plugin._displayUpdateInterval = setInterval(() => {
         // Early return if plugin is disabled
         if (!plugin.settings.enabled && plugin._displayUpdateInterval) {
-            clearInterval(plugin._displayUpdateInterval);
-            plugin._displayUpdateInterval = null;
-          }
+          clearInterval(plugin._displayUpdateInterval);
+          plugin._displayUpdateInterval = null;
           return;
         }
         updateCritDisplay();
@@ -7163,7 +6881,6 @@ module.exports = class CriticalHit {
           content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
           content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
           content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
-          content.style.setProperty('text-stroke', 'none', 'important');
           content.style.setProperty('text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
           content.style.setProperty('font-synthesis', 'none', 'important');
           content.style.setProperty('font-variant', 'normal', 'important');
@@ -7303,40 +7020,14 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Extracts message ID from a message element using React fiber traversal
-   * Falls back to data attributes if React fiber is unavailable
+   * Extracts message ID from a message element
+   * Wrapper around getMessageIdentifier() for backward compatibility
    * @param {HTMLElement} element - The message DOM element
    * @returns {string|null} Message ID or null if not found
    */
   getMessageId(element) {
-    try {
-      // Try React fiber first
-      const fiber = this.getReactFiber(element);
-      if (fiber) {
-
-        const messageObj = this.traverseFiber(
-          fiber,
-          (f) => f.memoizedProps?.message || f.memoizedState?.message
-        );
-        if (messageObj?.id) {
-          const id = String(messageObj.id).trim();
-          if (this.isValidDiscordId(id)) return id;
-        }
-      }
-
-      // Fallback to data attribute
-      const dataId = element.getAttribute('data-message-id');
-      if (dataId) {
-        if (this.isValidDiscordId(dataId)) {
-          return String(dataId).trim();
-        }
-        const allMatches = dataId.match(/\d{17,19}/g);
-        if (allMatches?.length) return allMatches[allMatches.length - 1];
-      }
-    } catch (error) {
-      // Silently fail - React fiber access may fail on some elements
-    }
-    return null;
+    // Use the comprehensive getMessageIdentifier() method
+    return this.getMessageIdentifier(element);
   }
 
   /**
@@ -7429,16 +7120,10 @@ module.exports = class CriticalHit {
    * Validates message, updates combo count, checks cooldown, and triggers animation
    * @param {HTMLElement} messageElement - The message DOM element that crit
    */
-  handleCriticalHit(messageElement) {
-    // #region agent log
-    // #endregion
-    if (!messageElement) return;
+  handleCriticalHit(messageElement) {    if (!messageElement) return;
 
     // Get message ID and validate
-    const messageId = this.getMessageId(messageElement);
-    // #region agent log
-    // #endregion
-    if (!this.isValidDiscordId(messageId)) return;
+    const messageId = this.getMessageId(messageElement);    if (!this.isValidDiscordId(messageId)) return;
 
     // Verify gradient is applied before proceeding with animation
     // This ensures synchronization between CriticalHit and CriticalHitAnimation
@@ -7478,15 +7163,9 @@ module.exports = class CriticalHit {
         ) || null;
 
       if (contentElement) {
-        const computedStyles = window.getComputedStyle(contentElement);
-        const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
-        const hasWebkitClip =
-          computedStyles?.webkitBackgroundClip === 'text' ||
-          computedStyles?.backgroundClip === 'text';
-
-        // #region agent log
-        // #endregion
-
+        const gradientCheck = this.verifyGradientApplied(contentElement);
+        const hasGradient = gradientCheck.hasGradient;
+        const hasWebkitClip = gradientCheck.hasWebkitClip;
         if (!hasGradient || !hasWebkitClip) {
           if (attempt < maxAttempts) {
             // Force reflow and retry
@@ -7497,10 +7176,7 @@ module.exports = class CriticalHit {
             );
             return false;
           }
-            // Max attempts reached, proceed anyway but log warning
-            // #region agent log
-            // #endregion
-          }
+            // Max attempts reached, proceed anyway but log warning          }
         }
       }
 
@@ -7529,10 +7205,7 @@ module.exports = class CriticalHit {
 
     // Verify message has crit class and is in DOM
     const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
-    const isInDOM = messageElement.isConnected;
-    // #region agent log
-    // #endregion
-    if (!hasCritClass || !isInDOM) return;
+    const isInDOM = messageElement.isConnected;    if (!hasCritClass || !isInDOM) return;
 
     // Get content hash for deduplication
     const content = this.findMessageContentElement(messageElement);
@@ -7591,11 +7264,7 @@ module.exports = class CriticalHit {
       // Combo already updated for this message (by ID or content hash) - skip combo update but still allow animation
       // Get current combo for display purposes
       const userCombo = this.getUserCombo(userIdForCombo);
-      storedCombo = userCombo.comboCount; // Use current combo for animation display
-
-      // #region agent log
-      // #endregion
-    } else {
+      storedCombo = userCombo.comboCount; // Use current combo for animation display    } else {
       // Mark this message as having combo updated (both by ID and content hash if available)
       this._comboUpdatedMessages.add(messageId);
       contentHash && this._comboUpdatedContentHashes.add(contentHash);
@@ -7632,11 +7301,7 @@ module.exports = class CriticalHit {
       // Update combo immediately (before async animation and before cooldown check)
       // This is synchronous, so it's atomic - no race conditions possible
       this.updateUserCombo(userIdForCombo, combo, comboNow);
-      storedCombo = combo; // Use updated combo for animation display
-
-      // #region agent log
-      // #endregion
-    }
+      storedCombo = combo; // Use updated combo for animation display    }
 
     // Cooldown check (AFTER combo update so combo always increments)
     const now = Date.now();
@@ -7687,27 +7352,15 @@ module.exports = class CriticalHit {
         }
 
         // Final check: ensure we have a valid element
-        if (!targetElement || !this.isElementValidForAnimation(targetElement, targetMessageId)) {
-          // #region agent log
-          // #endregion
-          this.markMessageAsRemoved(messageId);
+        if (!targetElement || !this.isElementValidForAnimation(targetElement, targetMessageId)) {          this.markMessageAsRemoved(messageId);
           return;
-        }
-
-        // #region agent log
-        // #endregion
-
-        // Pass stored combo to showAnimation (already updated synchronously above)
+        }        // Pass stored combo to showAnimation (already updated synchronously above)
         // CRITICAL: Ensure storedCombo is passed correctly - it should be a number, not null
         if (storedCombo === null || storedCombo === undefined) {
           // Fallback: get current combo if storedCombo wasn't set
           const userId = this.getUserId(targetElement) || userIdForCombo;
           const userCombo = this.getUserCombo(userId);
-          storedCombo = userCombo.comboCount;
-
-          // #region agent log
-          // #endregion
-        }
+          storedCombo = userCombo.comboCount;        }
 
         this.showAnimation(targetElement, targetMessageId, storedCombo);
       });
@@ -7758,17 +7411,9 @@ module.exports = class CriticalHit {
             c.includes('messageContent') || c.includes('messageGroup') || c.includes('messageText')
         );
         return isNotContent && msg.isConnected;
-      });
-
-      // #region agent log
-      // #endregion
-
-      return filteredMessages;
+      });      return filteredMessages;
     } catch (error) {
-      this.debugError('GET_CACHED_MESSAGES', error);
-      // #region agent log
-      // #endregion
-      return [];
+      this.debugError('GET_CACHED_MESSAGES', error);      return [];
     }
   }
 
@@ -7779,25 +7424,14 @@ module.exports = class CriticalHit {
    */
   getElementPosition(element) {
     try {
-      if (!element || !element.getBoundingClientRect) {
-        // #region agent log
-        // #endregion
-        return null;
+      if (!element || !element.getBoundingClientRect) {        return null;
       }
       const rect = element.getBoundingClientRect();
       const position = {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
-      };
-
-      // #region agent log
-      // #endregion
-
-      return position;
-    } catch (error) {
-      // #region agent log
-      // #endregion
-      return null;
+      };      return position;
+    } catch (error) {      return null;
     }
   }
 
@@ -7919,10 +7553,7 @@ module.exports = class CriticalHit {
     if (this.animatedMessages.has(messageId)) {
       const existing = this.animatedMessages.get(messageId);
       // If same content hash, it's a duplicate
-      if (contentHash && existing?.contentHash === contentHash) {
-        // #region agent log
-        // #endregion
-        return false;
+      if (contentHash && existing?.contentHash === contentHash) {        return false;
       }
     }
 
@@ -7982,47 +7613,25 @@ module.exports = class CriticalHit {
         // For non-verified messages, use stricter time-based deduplication
         if (isValidDiscordId) {
           // Verified message - always allow animation (remove old entry to allow new one)
-          this.animatedMessages.delete(messageId);
-
-          // #region agent log
-          // #endregion
-        } else if (
+          this.animatedMessages.delete(messageId);        } else if (
           timeSinceAnimated > 2000 ||
           (!originalElementStillConnected && timeSinceAnimated > 1000)
         ) {
           // Enough time passed or element replaced with enough time - allow animation
           // Remove old entry to allow new animation
-          this.animatedMessages.delete(messageId);
-
-          // #region agent log
-          // #endregion
-        } else {
-          // Same logical message with same element - skip animation
-          // #region agent log
-          // #endregion
-          return;
+          this.animatedMessages.delete(messageId);        } else {
+          // Same logical message with same element - skip animation          return;
         }
       }
 
       // Different content or no content hash - check if element was replaced
       if (existingData && messageElement?.isConnected) {
-        // Element was replaced AND content is different - allow retry for new message
-        // #region agent log
-        // #endregion
-        // Remove old entry to allow new animation
+        // Element was replaced AND content is different - allow retry for new message        // Remove old entry to allow new animation
         this.animatedMessages.delete(messageId);
       } else {
-        // Duplicate call with same element, skip
-        // #region agent log
-        // #endregion
-        return;
+        // Duplicate call with same element, skip        return;
       }
-    }
-
-    // #region agent log
-    // #endregion
-
-    // Check animation runtime setting (not overall plugin enabled state)
+    }    // Check animation runtime setting (not overall plugin enabled state)
     if (this.settings?.animationEnabled === false) return;
 
     // Final safety check - be lenient, just need crit class and DOM presence
@@ -8062,11 +7671,7 @@ module.exports = class CriticalHit {
       const userCombo = this.getUserCombo(userId);
 
       // Use current combo count (don't increment - it should already be updated)
-      combo = userCombo.comboCount || 1;
-
-      // #region agent log
-      // #endregion
-    }
+      combo = userCombo.comboCount || 1;    }
 
     // Get position and container
     const position = this.getMessageAreaPosition();
@@ -8087,12 +7692,7 @@ module.exports = class CriticalHit {
     // Create animation element
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
-    this.activeAnimations.add(textElement);
-
-    // #region agent log
-    // #endregion
-
-    // Cleanup after animation completes
+    this.activeAnimations.add(textElement);    // Cleanup after animation completes
     this.scheduleCleanup(textElement, messageId, container);
   }
 
@@ -8198,11 +7798,7 @@ module.exports = class CriticalHit {
   /**
    * Create animation text element
    */
-  createAnimationElement(messageId, combo, position) {
-    // #region agent log
-    // #endregion
-
-    const textElement = document.createElement('div');
+  createAnimationElement(messageId, combo, position) {    const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
 
     messageId && textElement.setAttribute('data-cha-message-id', messageId);
@@ -8212,12 +7808,7 @@ module.exports = class CriticalHit {
     const comboText =
       comboValue > 1 && this.settings.showCombo ? `CRITICAL HIT! x${comboValue}` : 'CRITICAL HIT!';
 
-    textElement.innerHTML = comboText;
-
-    // #region agent log
-    // #endregion
-
-    // Set only positioning and layout styles - let CSS class handle animation and opacity
+    textElement.innerHTML = comboText;    // Set only positioning and layout styles - let CSS class handle animation and opacity
     textElement.style.cssText = `
       position: absolute;
       left: ${position.x}px;
@@ -8323,12 +7914,7 @@ module.exports = class CriticalHit {
     const combo = this.getUserCombo(key);
     const previousCombo = combo.comboCount;
     combo.comboCount = comboCount;
-    combo.lastCritTime = lastCritTime;
-
-    // #region agent log
-    // #endregion
-
-    // Save for SoloLevelingStats
+    combo.lastCritTime = lastCritTime;    // Save for SoloLevelingStats
     try {
       BdApi.Data.save('CriticalHitAnimation', 'userCombo', {
         userId: key,
@@ -8344,12 +7930,7 @@ module.exports = class CriticalHit {
     combo.timeout = setTimeout(() => {
       if (this.userCombos.has(key)) {
         const comboObj = this.userCombos.get(key);
-        const hadCombo = comboObj.comboCount;
-
-        // #region agent log
-        // #endregion
-
-        // Reset both comboCount and lastCritTime
+        const hadCombo = comboObj.comboCount;        // Reset both comboCount and lastCritTime
         comboObj.comboCount = 0;
         comboObj.lastCritTime = 0; // Reset lastCritTime so next crit calculates timeSince correctly
 
