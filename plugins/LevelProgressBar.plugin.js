@@ -102,7 +102,6 @@ module.exports = class LevelProgressBar {
     this.updateInterval = null;
     this.lastLevel = 0;
     this.lastXP = 0;
-    this.debugEnabled = false; // OPTIMIZED: Disable debug logging by default
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
     this.cachedShadowPower = '0'; // Cache shadow power to avoid repeated queries
@@ -1203,4 +1202,19 @@ module.exports = class LevelProgressBar {
         progressTrack.appendChild(marker);
       });
   }
+
+  // ============================================================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================================================
+  
+  /**
+   * 4.1 DEBUG SYSTEM (FUNCTIONAL - NO IF-ELSE!)
+   * 
+   * Debug logging system controlled by settings.debugMode
+   * Uses short-circuit evaluation instead of if-else statements
+   * OFF by default for clean console in production
+   */
+  
+  // Note: debugLog and debugError are defined in Section 2.2 (Helper Functions)
+  // This section is reserved for future debugging utilities
 };
