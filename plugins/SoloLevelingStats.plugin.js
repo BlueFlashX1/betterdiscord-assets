@@ -125,6 +125,7 @@ module.exports = class SoloLevelingStats {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Toggle debug console logs
       // Stat definitions
       stats: {
         strength: 0, // +2% XP per message per point (additive, with diminishing returns)
@@ -191,7 +192,16 @@ module.exports = class SoloLevelingStats {
       userMaxMana: null,
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.debugConsole('🔧 [CONSTRUCTOR]', 'Settings initialized with deep copy', {
+      level: this.settings.level,
+      xp: this.settings.xp,
+      rank: this.settings.rank,
+      settingsAreDefault: this.settings === this.defaultSettings,
+      isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings),
+    });
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
@@ -2186,18 +2196,33 @@ module.exports = class SoloLevelingStats {
       // Initialize DOM cache (eliminates 84 querySelector calls per update!)
       this.initDOMCache();
 
-      // Create throttled versions of frequently called functions
-      // These limit execution to max 4x per second (250ms throttle)
-      this.throttled.updateUserHPBar = this.throttle(this.updateUserHPBar.bind(this), 250);
-      this.throttled.updateShadowPowerDisplay = this.throttle(
-        this.updateShadowPowerDisplay.bind(this),
-        250
-      );
-      this.throttled.checkDailyQuests = this.throttle(this.checkDailyQuests.bind(this), 500);
+      // FUNCTIONAL: Safe method binding (NO IF-ELSE!)
+      // Only binds methods that exist, returns no-op for missing methods
+      const bindIfExists = (methodName, wait, throttleOrDebounce) => {
+        const method = this[methodName];
+        const noOp = () => this.debugLog('BIND_SKIP', `Method ${methodName} not found`);
+        return method ? throttleOrDebounce(method.bind(this), wait) : noOp;
+      };
 
-      // Create debounced versions for save operations
-      // These wait 1 second after last call before executing
-      this.debounced.saveSettings = this.debounce(this.saveSettings.bind(this), 1000);
+      // Create throttled versions (4x per second max)
+      this.throttled.updateUserHPBar = bindIfExists(
+        'updateUserHPBar',
+        250,
+        this.throttle.bind(this)
+      );
+      this.throttled.updateShadowPowerDisplay = bindIfExists(
+        'updateShadowPowerDisplay',
+        250,
+        this.throttle.bind(this)
+      );
+      this.throttled.checkDailyQuests = bindIfExists(
+        'checkDailyQuests',
+        500,
+        this.throttle.bind(this)
+      );
+
+      // Create debounced versions (wait 1 sec after last call)
+      this.debounced.saveSettings = bindIfExists('saveSettings', 1000, this.debounce.bind(this));
 
       this.debugLog('START', 'Performance optimizations initialized');
 
@@ -2233,15 +2258,22 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Plugin started successfully');
 
-      // Initialize shadow power cache and update it
+      // Initialize shadow power cache (safe - uses optional chaining)
       this.cachedShadowPower = '0';
-      this.updateShadowPower();
-      // Setup MutationObserver for real-time shadow power updates
-      this.setupShadowPowerObserver();
-      // Fallback: Update shadow power periodically (every 5 seconds) as backup for faster updates
+      this.updateShadowPower?.();
+      this.setupShadowPowerObserver?.();
+
+      // Fallback: Update shadow power periodically (safe call with optional chaining)
       this.shadowPowerInterval = setInterval(() => {
-        this.updateShadowPower();
+        this.updateShadowPower?.();
       }, 5000);
+
+      // PERIODIC BACKUP SAVE (Every 30 seconds)
+      // Safety net to ensure progress is saved even if debounce doesn't trigger
+      this.periodicSaveInterval = setInterval(() => {
+        console.log('💾 [PERIODIC] Backup auto-save triggered');
+        this.saveSettings(); // Direct save (not debounced)
+      }, this.saveInterval); // 30 seconds (defined in constructor)
 
       // Verify getSettingsPanel is accessible
       if (typeof this.getSettingsPanel === 'function') {
@@ -2371,6 +2403,13 @@ module.exports = class SoloLevelingStats {
       this.activityTracker = null;
     }
 
+    // Stop periodic save
+    if (this.periodicSaveInterval) {
+      clearInterval(this.periodicSaveInterval);
+      this.periodicSaveInterval = null;
+      console.log('💾 [STOP] Periodic save stopped');
+    }
+
     // Stop channel tracking
     if (this.channelTrackingInterval) {
       clearInterval(this.channelTrackingInterval);
@@ -2487,8 +2526,11 @@ module.exports = class SoloLevelingStats {
 
       if (saved && typeof saved === 'object') {
         try {
-          this.settings = { ...this.defaultSettings, ...saved };
-          this.debugLog('LOAD_SETTINGS', 'Settings merged', {
+          // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+          // Shallow spread (...) only copies top-level, nested objects are still references!
+          const merged = { ...this.defaultSettings, ...saved };
+          this.settings = JSON.parse(JSON.stringify(merged));
+          this.debugLog('LOAD_SETTINGS', 'Settings merged (deep copy)', {
             level: this.settings.level,
             rank: this.settings.rank,
             totalXP: this.settings.totalXP,
@@ -2574,6 +2616,60 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // FUNCTIONAL DEBUG CONSOLE (NO IF-ELSE!)
+  // Only logs if debugMode is enabled, using short-circuit evaluation
+  debugConsole(prefix, message, data = {}) {
+    const log = () => console.log(`${prefix}`, message, data);
+    return this.settings.debugMode && log();
+  }
+
+  // FUNCTIONAL AUTO-SAVE WRAPPER
+  // Wraps a function that modifies settings and auto-saves after
+  // Usage: this.withAutoSave(() => { modify settings here }, true)
+  withAutoSave(modifyFn, immediate = false) {
+    const executeAndSave = () => {
+      const result = modifyFn();
+      this.saveSettings(immediate);
+      return result;
+    };
+    return executeAndSave();
+  }
+
+  // FUNCTIONAL BATCH AUTO-SAVE
+  // Executes multiple modifications and saves once
+  // Usage: this.batchModify([fn1, fn2, fn3], true)
+  batchModify(modifyFunctions, immediate = false) {
+    const executeAll = (fns) => fns.map((fn) => fn());
+    const results = executeAll(modifyFunctions);
+    this.saveSettings(immediate);
+    return results;
+  }
+
+  // SHADOW XP SHARE (Integration with ShadowArmy plugin)
+  // FUNCTIONAL - NO IF-ELSE! Uses optional chaining and short-circuit evaluation
+  shareShadowXP(xpAmount, source = 'message') {
+    const shareWithPlugin = (plugin) => {
+      plugin.instance.shareShadowXP(xpAmount, source);
+      this.debugConsole('🌟 [SHADOW XP]', ` Shared ${xpAmount} XP (${source})`);
+      return true;
+    };
+
+    const logError = (error) => {
+      this.debugLog('SHADOW_XP_SHARE', `ShadowArmy integration: ${error.message}`);
+      return null;
+    };
+
+    try {
+      const plugin = BdApi.Plugins.get('ShadowArmy');
+      const hasShareFunction = typeof plugin?.instance?.shareShadowXP === 'function';
+
+      // Functional short-circuit: Only executes shareWithPlugin if hasShareFunction is true
+      return hasShareFunction && shareWithPlugin(plugin);
+    } catch (error) {
+      return logError(error);
+    }
+  }
+
   saveSettings(immediate = false) {
     // Prevent saving if settings aren't initialized
     if (!this.settings) {
@@ -2589,6 +2685,15 @@ module.exports = class SoloLevelingStats {
         // Don't fail entire save if agility bonus save fails
         this.debugError('SAVE_AGILITY_BONUS_IN_SAVE', error);
       }
+
+      console.log('💾 [SAVE] Current settings before save:', {
+        level: this.settings.level,
+        xp: this.settings.xp,
+        totalXP: this.settings.totalXP,
+        rank: this.settings.rank,
+        stats: this.settings.stats,
+        unallocatedPoints: this.settings.unallocatedStatPoints,
+      });
 
       // Convert Set to Array for storage and ensure all data is serializable
       const settingsToSave = {
@@ -2612,6 +2717,15 @@ module.exports = class SoloLevelingStats {
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
 
+      console.log('💾 [SAVE] Clean settings to be saved:', {
+        level: cleanSettings.level,
+        xp: cleanSettings.xp,
+        totalXP: cleanSettings.totalXP,
+        rank: cleanSettings.rank,
+        stats: cleanSettings.stats,
+        metadata: cleanSettings._metadata,
+      });
+
       // Save with retry logic (immediate retries, no blocking)
       let saveSuccess = false;
       let lastError = null;
@@ -2621,6 +2735,12 @@ module.exports = class SoloLevelingStats {
           BdApi.Data.save('SoloLevelingStats', 'settings', cleanSettings);
           this.lastSaveTime = Date.now();
           saveSuccess = true;
+          console.log('✅ [SAVE] Successfully saved to BdApi.Data', {
+            attempt: attempt + 1,
+            level: cleanSettings.level,
+            xp: cleanSettings.xp,
+            timestamp: new Date().toISOString(),
+          });
           break;
         } catch (error) {
           lastError = error;
@@ -3253,7 +3373,7 @@ module.exports = class SoloLevelingStats {
         clearTimeout(this.shadowPowerUpdateTimeout);
       }
       this.shadowPowerUpdateTimeout = setTimeout(() => {
-        this.updateShadowPower();
+        this.updateShadowPower?.();
       }, 100); // Update 100ms after last mutation (faster updates)
     });
 
@@ -3279,8 +3399,8 @@ module.exports = class SoloLevelingStats {
           set: (target, prop, value) => {
             if (prop === 'shadows' || prop === 'favoriteShadowIds') {
               target[prop] = value;
-              // Trigger shadow power update
-              setTimeout(() => this.updateShadowPower(), 100);
+              // Trigger shadow power update (functional safe call)
+              setTimeout(() => this.updateShadowPower?.(), 100);
               return true;
             }
             return Reflect.set(target, prop, value);
@@ -5504,7 +5624,7 @@ module.exports = class SoloLevelingStats {
   getAchievementDefinitions() {
     // ============================================================================
     // ACHIEVEMENT DEFINITIONS (791 lines)
-    // 
+    //
     // CATEGORIES:
     // 1. Early Game (E-Rank) - Lines 5505-5550
     // 2. Mid Game (D-C Rank) - Lines 5550-5650
@@ -5534,7 +5654,7 @@ module.exports = class SoloLevelingStats {
         title: 'E-Rank Hunter',
         titleBonus: { xp: 0.08, strengthPercent: 0.05 }, // +8% XP, +5% STR
       },
-      
+
       // ========================================
       // CATEGORY 2: MID GAME (D-C RANK)
       // ========================================
@@ -5554,7 +5674,7 @@ module.exports = class SoloLevelingStats {
         title: 'C-Rank Hunter',
         titleBonus: { xp: 0.18, critChance: 0.01, strengthPercent: 0.05 }, // +18% XP, +1% Crit, +5% STR
       },
-      
+
       // ========================================
       // CATEGORY 3: ADVANCED (B-A RANK)
       // ========================================
@@ -5574,7 +5694,7 @@ module.exports = class SoloLevelingStats {
         title: 'A-Rank Hunter',
         titleBonus: { xp: 0.32, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +32% XP, +2% Crit, +5% STR, +5% AGI
       },
-      
+
       // ========================================
       // CATEGORY 4: ELITE (S-SS RANK)
       // ========================================
@@ -7423,7 +7543,7 @@ module.exports = class SoloLevelingStats {
 
   /**
    * 3.8.2 INJECT CHAT UI CSS (791 lines)
-   * 
+   *
    * ORGANIZED SECTIONS:
    * - Base Panel Styles (lines 7405-7500)
    * - Stats Display & Progress Bars (lines 7500-7650)
@@ -8225,5 +8345,130 @@ module.exports = class SoloLevelingStats {
     `;
 
     document.head.appendChild(style);
+  }
+
+  // ============================================================================
+  // SETTINGS PANEL (BetterDiscord API)
+  // ============================================================================
+
+  // Creates UI for plugin settings with debug mode toggle
+  getSettingsPanel() {
+    const container = document.createElement('div');
+    container.style.cssText = `
+      padding: 20px;
+      background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
+      border-radius: 10px;
+      border: 1px solid rgba(138, 43, 226, 0.5);
+      color: #ffffff;
+      font-family: 'Segoe UI', sans-serif;
+    `;
+
+    // Title
+    const title = document.createElement('h2');
+    title.textContent = 'Solo Leveling Stats - Settings';
+    title.style.cssText = `
+      color: #8a2be2;
+      margin-bottom: 20px;
+      font-size: 24px;
+      text-shadow: 0 0 10px rgba(138, 43, 226, 0.6);
+    `;
+    container.appendChild(title);
+
+    // Debug Mode Toggle
+    const debugToggle = this.createToggle(
+      'Debug Mode',
+      'Show detailed console logs for troubleshooting (constructor, save, load, periodic backups)',
+      this.settings.debugMode || false,
+      (value) =>
+        this.withAutoSave(() => {
+          this.settings.debugMode = value;
+          console.log('[SETTINGS] Debug mode:', value ? 'ENABLED' : 'DISABLED');
+          console.log('Reload Discord (Ctrl+R) to see changes in console');
+        }, true)
+    );
+    container.appendChild(debugToggle);
+
+    // Info section
+    const info = document.createElement('div');
+    info.style.cssText = `
+      margin-top: 20px;
+      padding: 15px;
+      background: rgba(138, 43, 226, 0.1);
+      border-radius: 8px;
+      border-left: 3px solid #8a2be2;
+    `;
+    info.innerHTML = `
+      <strong style="color: #8a2be2;">Debug Console Logs:</strong><br>
+      <span style="color: #b894e6; font-size: 13px;">
+        When enabled, you'll see detailed logs for:<br>
+        • Constructor initialization<br>
+        • Save operations (current, clean, success)<br>
+        • Load operations (raw data, merge, verification)<br>
+        • Periodic backup saves (every 30 seconds)<br>
+        • Shadow XP sharing<br>
+        • Data verification (matches, deep copy status)
+      </span>
+    `;
+    container.appendChild(info);
+
+    return container;
+  }
+
+  // FUNCTIONAL TOGGLE CREATOR (NO IF-ELSE!)
+  // Creates a styled toggle switch with label and description
+  createToggle(label, description, defaultValue, onChange) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+      margin-bottom: 20px;
+      padding: 15px;
+      background: rgba(138, 43, 226, 0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(138, 43, 226, 0.2);
+    `;
+
+    const toggleContainer = document.createElement('div');
+    toggleContainer.style.cssText = 'display: flex; align-items: center; margin-bottom: 8px;';
+
+    // Toggle switch
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.checked = defaultValue;
+    toggle.style.cssText = `
+      width: 40px;
+      height: 20px;
+      margin-right: 12px;
+      cursor: pointer;
+    `;
+    toggle.addEventListener('change', (e) => onChange(e.target.checked));
+
+    // Label
+    const labelEl = document.createElement('label');
+    labelEl.textContent = label;
+    labelEl.style.cssText = `
+      font-size: 16px;
+      font-weight: 600;
+      color: #ffffff;
+      cursor: pointer;
+    `;
+    labelEl.addEventListener('click', () => {
+      toggle.checked = !toggle.checked;
+      toggle.dispatchEvent(new Event('change'));
+    });
+
+    // Description
+    const desc = document.createElement('div');
+    desc.textContent = description;
+    desc.style.cssText = `
+      font-size: 13px;
+      color: #b894e6;
+      line-height: 1.5;
+    `;
+
+    toggleContainer.appendChild(toggle);
+    toggleContainer.appendChild(labelEl);
+    wrapper.appendChild(toggleContainer);
+    wrapper.appendChild(desc);
+
+    return wrapper;
   }
 };
