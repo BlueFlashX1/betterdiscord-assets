@@ -800,23 +800,19 @@ module.exports = class CriticalHit {
       '[class*="textContainer"]',
     ];
 
-    // Try specific selectors first
-    for (const selector of selectors) {
-      const element = messageElement.querySelector(selector);
-      if (element && !this.isInHeaderArea(element)) {
-        return element;
-      }
-    }
+    // FUNCTIONAL: Try selectors (.find() instead of for-loop)
+    const matchingElement = selectors
+      .map((selector) => messageElement.querySelector(selector))
+      .find((element) => element && !this.isInHeaderArea(element));
 
-    // Last resort: find divs that are NOT in header areas
-    const allDivs = messageElement.querySelectorAll('div');
-    for (const div of allDivs) {
-      if (!this.isInHeaderArea(div) && div.textContent && div.textContent.trim().length > 0) {
-        return div;
-      }
-    }
+    if (matchingElement) return matchingElement;
 
-    return null;
+    // FUNCTIONAL: Last resort - find divs (.find() instead of for-loop)
+    return (
+      Array.from(messageElement.querySelectorAll('div')).find(
+        (div) => !this.isInHeaderArea(div) && div.textContent && div.textContent.trim().length > 0
+      ) || null
+    );
   }
 
   /**
@@ -912,12 +908,12 @@ module.exports = class CriticalHit {
       const critCount = critHistory.length;
       // #region agent log
       // #endregion
+      // FUNCTIONAL: Count crits by channel (.forEach() instead of for-loop)
       const critsByChannel = {};
-      // Use for...of loop for better performance
-      for (const entry of critHistory) {
+      critHistory.forEach((entry) => {
         const channelId = entry.channelId || 'unknown';
         critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
-      }
+      });
 
       this.debugLog('SAVE_MESSAGE_HISTORY', 'CRITICAL: Saving message history to storage', {
         historySize: this.messageHistory.length,
@@ -4715,7 +4711,7 @@ module.exports = class CriticalHit {
         messageElement.querySelectorAll('[class*="messageContent"]')
       );
       content = allMessageContents.find((msgContent) => !isInHeaderArea(msgContent));
-      
+
       content &&
         this.debugLog('APPLY_CRIT_STYLE', 'Found messageContent (not in header)', {
           elementTag: content.tagName,
