@@ -594,14 +594,29 @@ module.exports = class SoloLevelingTitleManager {
     ];
     let titles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
 
-    // Sort titles by XP bonus percentage (ascending: lowest to highest)
-    titles.sort((titleA, titleB) => {
-      const bonusA = this.getTitleBonus(titleA);
-      const bonusB = this.getTitleBonus(titleB);
-      const xpA = bonusA?.xp || 0;
-      const xpB = bonusB?.xp || 0;
-      return xpA - xpB; // Ascending order
-    });
+    // FUNCTIONAL: Sort by selected filter option (highest to lowest)
+    const sortBy = this.settings.sortBy || 'xpBonus';
+    const sortFunctions = {
+      xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
+      critBonus: (a, b) =>
+        (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
+      strBonus: (a, b) =>
+        (this.getTitleBonus(b)?.strengthPercent || 0) -
+        (this.getTitleBonus(a)?.strengthPercent || 0),
+      agiBonus: (a, b) =>
+        (this.getTitleBonus(b)?.agilityPercent || 0) -
+        (this.getTitleBonus(a)?.agilityPercent || 0),
+      intBonus: (a, b) =>
+        (this.getTitleBonus(b)?.intelligencePercent || 0) -
+        (this.getTitleBonus(a)?.intelligencePercent || 0),
+      vitBonus: (a, b) =>
+        (this.getTitleBonus(b)?.vitalityPercent || 0) -
+        (this.getTitleBonus(a)?.vitalityPercent || 0),
+      perBonus: (a, b) =>
+        (this.getTitleBonus(b)?.perceptionPercent || 0) -
+        (this.getTitleBonus(a)?.perceptionPercent || 0),
+    };
+    titles.sort(sortFunctions[sortBy] || sortFunctions.xpBonus);
 
     const activeTitle =
       soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
