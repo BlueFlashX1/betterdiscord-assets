@@ -1,11 +1,21 @@
 /**
  * @name SoloLevelingToasts
  * @author BlueFlashX1
- * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.0.4
+ * @description Custom toast notifications with particles and effects
+ * @version 1.1.0
+ *
+ * @changelog v1.1.0 (2025-12-05)
+ * - MAJOR REFACTOR: Complete functional programming overhaul
+ * - Fixed shallow copy bugs in constructor and loadSettings
+ * - Added comprehensive settings panel with all configs
+ * - Added debug mode system with toggleable logs
+ * - Debug system now uses settings.debugMode instead of this.debugMode
+ * - Settings panel includes: particles, particle count, max toasts, position, debug mode
+ * - Organized into 4-section structure
+ * - Simplified plugin description
  *
  * @changelog v1.0.4 (2025-12-03)
- * - Code structure improvements (section headers)
+ * - Code structure improvements
  * - Performance optimizations
  */
 
@@ -16,6 +26,7 @@ module.exports = class SoloLevelingToasts {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
       showParticles: true,
       particleCount: 20,
       animationDuration: 200, // Faster slide-in animation (reduced from 500ms)
@@ -25,7 +36,8 @@ module.exports = class SoloLevelingToasts {
       maxToasts: 5, // Maximum number of toasts visible at once
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.toastContainer = null;
     this.activeToasts = [];
     this.patcher = null;
@@ -34,7 +46,7 @@ module.exports = class SoloLevelingToasts {
     this.pendingToasts = new Map(); // Debounce similar toasts
     this.messageGroups = new Map(); // Group similar messages with counts
     this.groupWindow = 1000; // Reduced from 2000ms to 1000ms for faster grouping
-    this.debugMode = false; // Set to true only for debugging
+    // Note: debugMode is now in settings (this.settings.debugMode)
 
     // Pre-created DOM elements for faster rendering
     this.toastTemplate = null;
@@ -113,7 +125,9 @@ module.exports = class SoloLevelingToasts {
     try {
       const saved = BdApi.Data.load('SoloLevelingToasts', 'settings');
       if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
+        // CRITICAL FIX: Deep merge to prevent nested object reference sharing
+        const merged = { ...this.defaultSettings, ...saved };
+        this.settings = JSON.parse(JSON.stringify(merged));
         this.debugLog('Settings loaded', this.settings);
       }
     } catch (error) {
