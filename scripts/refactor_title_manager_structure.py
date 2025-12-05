@@ -15,11 +15,11 @@ def refactor_title_manager():
     # Read the current file
     with open('plugins/TitleManager.plugin.js', 'r', encoding='utf-8') as f:
         content = f.read()
-    
+
     # Extract sections
     header_match = re.search(r'(/\*\*.*?\*/)\s*module\.exports', content, re.DOTALL)
     header = header_match.group(1) if header_match else ''
-    
+
     # Build new structure
     new_content = f'''{header}
 
@@ -32,7 +32,7 @@ module.exports = class SoloLevelingTitleManager {{
   // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
   // ============================================================================
-  
+
   // 2.1 CONSTRUCTOR & SETTINGS
   // ----------------------------------------------------------------------------
   constructor() {{
@@ -57,7 +57,7 @@ module.exports = class SoloLevelingTitleManager {{
 
   // 2.2 HELPER FUNCTIONS
   // ----------------------------------------------------------------------------
-  
+
   /**
    * HTML escaping utility for XSS prevention
    */
@@ -80,7 +80,7 @@ module.exports = class SoloLevelingTitleManager {{
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
-  
+
   // 3.1 PLUGIN LIFECYCLE
   // ----------------------------------------------------------------------------
   start() {{
@@ -223,7 +223,7 @@ module.exports = class SoloLevelingTitleManager {{
 
   // 3.4 TITLE MANAGEMENT
   // ----------------------------------------------------------------------------'''
-    
+
     # Extract equipTitle and unequipTitle functions
     equip_match = re.search(
         r'(equipTitle\(titleName\) \{.*?\n  \})\n\n  /\*\*.*?Unequip',
@@ -234,19 +234,18 @@ module.exports = class SoloLevelingTitleManager {{
         equip_code = equip_match.group(1)
         # Replace if-else with functional alternatives and clean up
         equip_code = equip_code.replace('  equipTitle(titleName) {', '  equipTitle(titleName) {')
-    
+
     unequip_match = re.search(
         r'(unequipTitle\(\) \{.*?\n  \})\n\n  createTitleButton',
         content,
         re.DOTALL
     )
-    
+
     # Continue building the file...
     # For now, let's keep the original functions and just add section headers
-    
+
     print("✅ Analysis complete. Proceeding with manual refactoring...")
     return None
 
 if __name__ == '__main__':
     refactor_title_manager()
-

@@ -29,7 +29,7 @@ module.exports = class SoloLevelingTitleManager {
   // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
   // ============================================================================
-  
+
   // 2.1 CONSTRUCTOR & SETTINGS
   // ----------------------------------------------------------------------------
   constructor() {
@@ -58,16 +58,18 @@ module.exports = class SoloLevelingTitleManager {
 
   // 2.2 HELPER FUNCTIONS
   // ----------------------------------------------------------------------------
-  
+
   /**
    * HTML escaping utility for XSS prevention
    */
   escapeHtml(text) {
-    return typeof text !== 'string' ? text : (() => {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    })();
+    return typeof text !== 'string'
+      ? text
+      : (() => {
+          const div = document.createElement('div');
+          div.textContent = text;
+          return div.innerHTML;
+        })();
   }
 
   /**
@@ -78,10 +80,52 @@ module.exports = class SoloLevelingTitleManager {
     return this.settings?.debugMode === true && log();
   }
 
+  /**
+   * Format title buffs (functional, no if-else)
+   * Returns array of formatted buff strings
+   */
+  formatTitleBuffs(titleName) {
+    const bonus = this.getTitleBonus(titleName);
+    if (!bonus) return [];
+
+    // FUNCTIONAL: Array-based bonus formatting (no if-else)
+    return [
+      { val: bonus.xp, fmt: (v) => `+${(v * 100).toFixed(0)}% XP` },
+      { val: bonus.critChance, fmt: (v) => `+${(v * 100).toFixed(0)}% Crit` },
+      { val: bonus.strengthPercent, fmt: (v) => `+${(v * 100).toFixed(0)}% STR` },
+      { val: bonus.agilityPercent, fmt: (v) => `+${(v * 100).toFixed(0)}% AGI` },
+      { val: bonus.intelligencePercent, fmt: (v) => `+${(v * 100).toFixed(0)}% INT` },
+      { val: bonus.vitalityPercent, fmt: (v) => `+${(v * 100).toFixed(0)}% VIT` },
+      { val: bonus.perceptionPercent, fmt: (v) => `+${(v * 100).toFixed(0)}% PER` },
+      {
+        val: bonus.strength > 0 && !bonus.strengthPercent && bonus.strength,
+        fmt: (v) => `+${v} STR`,
+      },
+      {
+        val: bonus.agility > 0 && !bonus.agilityPercent && bonus.agility,
+        fmt: (v) => `+${v} AGI`,
+      },
+      {
+        val: bonus.intelligence > 0 && !bonus.intelligencePercent && bonus.intelligence,
+        fmt: (v) => `+${v} INT`,
+      },
+      {
+        val: bonus.vitality > 0 && !bonus.vitalityPercent && bonus.vitality,
+        fmt: (v) => `+${v} VIT`,
+      },
+      {
+        val: bonus.luck > 0 && !bonus.perceptionPercent && bonus.luck,
+        fmt: (v) => `+${v} LUK`,
+      },
+    ]
+      .filter(({ val }) => val > 0)
+      .map(({ val, fmt }) => fmt(val));
+  }
+
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
-  
+
   // 3.1 PLUGIN LIFECYCLE
   // ----------------------------------------------------------------------------
   start() {
@@ -95,10 +139,8 @@ module.exports = class SoloLevelingTitleManager {
     // Retry button creation after delays (FUNCTIONAL: no if-else)
     this._retryTimeout1 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout1);
-      (!this.titleButton || !document.body.contains(this.titleButton)) && (
-        this.debugLog('Retrying button creation...'),
-        this.createTitleButton()
-      );
+      (!this.titleButton || !document.body.contains(this.titleButton)) &&
+        (this.debugLog('Retrying button creation...'), this.createTitleButton());
       this._retryTimeout1 = null;
     }, 2000);
     this._retryTimeouts.add(this._retryTimeout1);
@@ -106,10 +148,8 @@ module.exports = class SoloLevelingTitleManager {
     // Additional retry after longer delay (FUNCTIONAL: no if-else)
     this._retryTimeout2 = setTimeout(() => {
       this._retryTimeouts.delete(this._retryTimeout2);
-      (!this.titleButton || !document.body.contains(this.titleButton)) && (
-        this.debugLog('Final retry for button creation...'),
-        this.createTitleButton()
-      );
+      (!this.titleButton || !document.body.contains(this.titleButton)) &&
+        (this.debugLog('Final retry for button creation...'), this.createTitleButton());
       this._retryTimeout2 = null;
     }, 5000);
     this._retryTimeouts.add(this._retryTimeout2);
@@ -132,22 +172,23 @@ module.exports = class SoloLevelingTitleManager {
       this._retryTimeouts.clear();
 
       // Clear legacy retry timeouts (FUNCTIONAL: short-circuit)
-      this._retryTimeout1 && (clearTimeout(this._retryTimeout1), this._retryTimeout1 = null);
-      this._retryTimeout2 && (clearTimeout(this._retryTimeout2), this._retryTimeout2 = null);
+      this._retryTimeout1 && (clearTimeout(this._retryTimeout1), (this._retryTimeout1 = null));
+      this._retryTimeout2 && (clearTimeout(this._retryTimeout2), (this._retryTimeout2 = null));
 
       this.debugLog('Plugin stopped');
     } finally {
       // Cleanup URL change watcher (FUNCTIONAL: short-circuit)
-      this._urlChangeCleanup && (this._urlChangeCleanup(), this._urlChangeCleanup = null);
+      this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
 
       // MEMORY CLEANUP: Clear modal instance tracking (FUNCTIONAL: filter pattern)
-      window._titleManagerInstances && (() => {
-        const instancesToRemove = [];
-        window._titleManagerInstances.forEach((instance, modal) => {
-          instance === this && instancesToRemove.push(modal);
-        });
-        instancesToRemove.forEach((modal) => window._titleManagerInstances.delete(modal));
-      })();
+      window._titleManagerInstances &&
+        (() => {
+          const instancesToRemove = [];
+          window._titleManagerInstances.forEach((instance, modal) => {
+            instance === this && instancesToRemove.push(modal);
+          });
+          instancesToRemove.forEach((modal) => window._titleManagerInstances.delete(modal));
+        })();
     }
   }
 
@@ -157,10 +198,11 @@ module.exports = class SoloLevelingTitleManager {
     try {
       const saved = BdApi.Data.load('TitleManager', 'settings');
       // FUNCTIONAL: Only merge and deep copy if saved exists
-      saved && (() => {
-        const merged = { ...this.defaultSettings, ...saved };
-        this.settings = JSON.parse(JSON.stringify(merged));
-      })();
+      saved &&
+        (() => {
+          const merged = { ...this.defaultSettings, ...saved };
+          this.settings = JSON.parse(JSON.stringify(merged));
+        })();
     } catch (error) {
       this.debugLog('Error loading settings', error);
     }
@@ -232,21 +274,20 @@ module.exports = class SoloLevelingTitleManager {
     let lastUrl = window.location.href;
 
     const handleUrlChange = () => {
-      // Return early if plugin is stopped
+      // FUNCTIONAL: Guard clause + short-circuit
       if (this._isStopped) return;
 
       const currentUrl = window.location.href;
-      if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        // Recreate button after channel change
-        const timeoutId = setTimeout(() => {
-          this._retryTimeouts.delete(timeoutId);
-          if (!this.titleButton || !document.contains(this.titleButton)) {
-            this.createTitleButton();
-          }
-        }, 500);
-        this._retryTimeouts.add(timeoutId);
-      }
+      // FUNCTIONAL: Short-circuit instead of if-else
+      currentUrl !== lastUrl &&
+        (() => {
+          lastUrl = currentUrl;
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
+            (!this.titleButton || !document.contains(this.titleButton)) && this.createTitleButton();
+          }, 500);
+          this._retryTimeouts.add(timeoutId);
+        })();
     };
 
     // Listen to browser navigation events
@@ -275,19 +316,19 @@ module.exports = class SoloLevelingTitleManager {
     this._urlChangeCleanup = () => {
       window.removeEventListener('popstate', handleUrlChange);
 
-      // Defensive restoration: check if methods need restoration before restoring
+      // FUNCTIONAL: Short-circuit for defensive restoration
       try {
-        if (this._originalPushState && history.pushState !== this._originalPushState) {
-          history.pushState = this._originalPushState;
-        }
+        this._originalPushState &&
+          history.pushState !== this._originalPushState &&
+          (history.pushState = this._originalPushState);
       } catch (error) {
         this.debugLog('Failed to restore history.pushState', error);
       }
 
       try {
-        if (this._originalReplaceState && history.replaceState !== this._originalReplaceState) {
-          history.replaceState = this._originalReplaceState;
-        }
+        this._originalReplaceState &&
+          history.replaceState !== this._originalReplaceState &&
+          (history.replaceState = this._originalReplaceState);
       } catch (error) {
         this.debugLog('Failed to restore history.replaceState', error);
       }
@@ -321,63 +362,38 @@ module.exports = class SoloLevelingTitleManager {
         'Apprentice',
         'Message Warrior',
       ];
+      // FUNCTIONAL: Guard clause + short-circuit for toast
       if (unwantedTitles.includes(titleName)) {
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          BdApi.showToast('This title has been removed', { type: 'error', timeout: 2000 });
-        }
+        BdApi?.showToast?.('This title has been removed', { type: 'error', timeout: 2000 });
         return false;
       }
 
       const soloData = this.getSoloLevelingData();
+      // FUNCTIONAL: Guard clause + short-circuit for toast
       if (!soloData || !soloData.titles.includes(titleName)) {
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          BdApi.showToast('Title not unlocked', { type: 'error', timeout: 2000 });
-        }
+        BdApi?.showToast?.('Title not unlocked', { type: 'error', timeout: 2000 });
         return false;
       }
 
-      if (instance.setActiveTitle) {
-        const result = instance.setActiveTitle(titleName);
-        if (result) {
-          // Show notification
-          if (BdApi && typeof BdApi.showToast === 'function') {
-            const bonus = this.getTitleBonus(titleName);
-            const buffs = [];
-            if (bonus) {
-              if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-              if (bonus.critChance > 0) buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-              // Check for percentage-based stat bonuses (new format)
-              if (bonus.strengthPercent > 0)
-                buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-              if (bonus.agilityPercent > 0)
-                buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-              if (bonus.intelligencePercent > 0)
-                buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-              if (bonus.vitalityPercent > 0)
-                buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-              if (bonus.perceptionPercent > 0)
-                buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-              // Support old format (raw numbers) for backward compatibility
-              if (bonus.strength > 0 && !bonus.strengthPercent)
-                buffs.push(`+${bonus.strength} STR`);
-              if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-              if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                buffs.push(`+${bonus.intelligence} INT`);
-              if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                buffs.push(`+${bonus.vitality} VIT`);
-              if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
-            }
-            const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
-            BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, {
-              type: 'success',
-              timeout: 3000,
-            });
-          }
-          this.refreshModal();
-          return true;
-        }
-      }
-      return false;
+      // FUNCTIONAL: Optional chaining instead of if-check
+      (instance.setActiveTitle &&
+        (() => {
+          const result = instance.setActiveTitle(titleName);
+          result &&
+            BdApi?.showToast &&
+            (() => {
+              // FUNCTIONAL: Use helper function (no if-else, no duplication)
+              const buffs = this.formatTitleBuffs(titleName);
+              const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
+              BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, {
+                type: 'success',
+                timeout: 3000,
+              });
+            })();
+          result && (this.refreshModal(), true);
+          return result || false;
+        })()) ||
+        false;
     } catch (error) {
       this.debugLog('Error equipping title', error);
       return false;
@@ -394,27 +410,20 @@ module.exports = class SoloLevelingTitleManager {
       if (!soloPlugin) return false;
       const instance = soloPlugin.instance || soloPlugin;
 
-      // Use setActiveTitle with null to unequip
-      if (instance.setActiveTitle) {
-        // Try setting to null - if that doesn't work, set directly
-        const result = instance.setActiveTitle(null);
-        if (!result && instance.settings) {
-          // Fallback: set directly
-          instance.settings.achievements.activeTitle = null;
-          if (instance.saveSettings) {
-            instance.saveSettings(true);
-          }
-        }
-        if (instance.updateChatUI) {
-          instance.updateChatUI();
-        }
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          BdApi.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
-        }
-        this.refreshModal();
-        return true;
-      }
-      return false;
+      // FUNCTIONAL: Optional chaining for all operations
+      return instance.setActiveTitle
+        ? (() => {
+            const result = instance.setActiveTitle(null);
+            // Fallback: set directly if method failed
+            !result &&
+              instance.settings &&
+              ((instance.settings.achievements.activeTitle = null), instance.saveSettings?.(true));
+            instance.updateChatUI?.();
+            BdApi?.showToast?.('Title Unequipped', { type: 'info', timeout: 2000 });
+            this.refreshModal();
+            return true;
+          })()
+        : false;
     } catch (error) {
       this.debugLog('Error unequipping title', error);
       return false;
@@ -475,15 +484,16 @@ module.exports = class SoloLevelingTitleManager {
     };
 
     const toolbar = findToolbar();
+    // FUNCTIONAL: Guard clause + short-circuit for retry
     if (!toolbar) {
-      // Return early if plugin is stopped
-      if (this._isStopped) return;
-
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
-        this.createTitleButton();
-      }, 1000);
-      this._retryTimeouts.add(timeoutId);
+      !this._isStopped &&
+        (() => {
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
+            this.createTitleButton();
+          }, 1000);
+          this._retryTimeouts.add(timeoutId);
+        })();
       return;
     }
 
@@ -520,15 +530,12 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   observeToolbar(toolbar) {
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-    }
+    // FUNCTIONAL: Short-circuit for cleanup
+    this.toolbarObserver?.disconnect();
 
     this.toolbarObserver = new MutationObserver(() => {
-      if (this.titleButton && !toolbar.contains(this.titleButton)) {
-        // Button was removed, recreate it
-        this.createTitleButton();
-      }
+      // FUNCTIONAL: Short-circuit for recreation check
+      this.titleButton && !toolbar.contains(this.titleButton) && this.createTitleButton();
     });
 
     this.toolbarObserver.observe(toolbar, {
@@ -538,21 +545,14 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   removeTitleButton() {
-    if (this.titleButton) {
-      this.titleButton.remove();
-      this.titleButton = null;
-    }
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
+    // FUNCTIONAL: Short-circuit for cleanup
+    this.titleButton && (this.titleButton.remove(), (this.titleButton = null));
+    this.toolbarObserver && (this.toolbarObserver.disconnect(), (this.toolbarObserver = null));
   }
 
   openTitleModal() {
-    if (this.titleModal) {
-      this.closeTitleModal();
-      return;
-    }
+    // FUNCTIONAL: Guard clause for existing modal
+    if (this.titleModal) return this.closeTitleModal();
 
     const soloData = this.getSoloLevelingData();
     // Filter out unwanted titles
@@ -597,32 +597,8 @@ module.exports = class SoloLevelingTitleManager {
               <div class="tm-active-label">Active Title:</div>
               <div class="tm-active-name">${this.escapeHtml(activeTitle)}</div>
               ${(() => {
-                const bonus = this.getTitleBonus(activeTitle);
-                if (!bonus) return '';
-                const buffs = [];
-                if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                if (bonus.critChance > 0)
-                  buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                // Check for percentage-based stat bonuses (new format)
-                if (bonus.strengthPercent > 0)
-                  buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                if (bonus.agilityPercent > 0)
-                  buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                if (bonus.intelligencePercent > 0)
-                  buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                if (bonus.vitalityPercent > 0)
-                  buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                if (bonus.perceptionPercent > 0)
-                  buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                // Support old format (raw numbers) for backward compatibility
-                if (bonus.strength > 0 && !bonus.strengthPercent)
-                  buffs.push(`+${bonus.strength} STR`);
-                if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-                if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                  buffs.push(`+${bonus.intelligence} INT`);
-                if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                  buffs.push(`+${bonus.vitality} VIT`);
-                if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
+                // FUNCTIONAL: Use helper function (no if-else, no duplication)
+                const buffs = this.formatTitleBuffs(activeTitle);
                 return buffs.length > 0
                   ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>`
                   : '';
@@ -652,35 +628,8 @@ module.exports = class SoloLevelingTitleManager {
                 ${titles
                   .map((title) => {
                     const isActive = title === activeTitle;
-                    const bonus = this.getTitleBonus(title);
-                    const buffs = [];
-                    if (bonus) {
-                      if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                      if (bonus.critChance > 0)
-                        buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                      // Check for percentage-based stat bonuses (new format)
-                      if (bonus.strengthPercent > 0)
-                        buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                      if (bonus.agilityPercent > 0)
-                        buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                      if (bonus.intelligencePercent > 0)
-                        buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                      if (bonus.vitalityPercent > 0)
-                        buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                      if (bonus.perceptionPercent > 0)
-                        buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                      // Support old format (raw numbers) for backward compatibility
-                      if (bonus.strength > 0 && !bonus.strengthPercent)
-                        buffs.push(`+${bonus.strength} STR`);
-                      if (bonus.agility > 0 && !bonus.agilityPercent)
-                        buffs.push(`+${bonus.agility} AGI`);
-                      if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                        buffs.push(`+${bonus.intelligence} INT`);
-                      if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                        buffs.push(`+${bonus.vitality} VIT`);
-                      if (bonus.luck > 0 && !bonus.perceptionPercent)
-                        buffs.push(`+${bonus.luck} LUK`);
-                    }
+                    // FUNCTIONAL: Use helper function (no if-else, no duplication)
+                    const buffs = this.formatTitleBuffs(title);
                     return `
                       <div class="tm-title-card ${isActive ? 'active' : ''}">
                         <div class="tm-title-icon"></div>
@@ -773,7 +722,7 @@ module.exports = class SoloLevelingTitleManager {
 
   // 3.7 CSS MANAGEMENT
   // ----------------------------------------------------------------------------
-  
+
   injectCSS() {
     const styleId = 'title-manager-css';
     const cssContent = `
