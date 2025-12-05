@@ -17,6 +17,8 @@ module.exports = class SkillTree {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
+      visibleTiers: ['tier1', 'tier2', 'tier3', 'tier4'], // Visible tiers in modal
       skillPoints: 0, // Skill points separate from stat points
       unlockedSkills: [], // Array of unlocked skill IDs (legacy support)
       skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
@@ -593,6 +595,52 @@ module.exports = class SkillTree {
       this.saveSettings();
     } catch (error) {
       console.error('SkillTree: Error recalculating SP', error);
+    }
+  }
+
+  /**
+   * Reset all skills and recalculate SP based on current level
+   * Useful when skills were unlocked ahead of level
+   */
+  resetSkills() {
+    try {
+      const soloData = this.getSoloLevelingData();
+      if (!soloData || !soloData.level) {
+        BdApi?.showToast?.('Cannot reset: SoloLevelingStats not available', {
+          type: 'error',
+          timeout: 3000,
+        });
+        return false;
+      }
+
+      // Calculate correct SP for current level
+      const currentLevel = soloData.level;
+      const expectedSP = this.calculateSPForLevel(currentLevel);
+
+      // Reset all skills
+      this.settings.skillLevels = {};
+      this.settings.unlockedSkills = [];
+      this.settings.skillPoints = expectedSP;
+      this.settings.totalEarnedSP = expectedSP;
+      this.settings.lastLevel = currentLevel;
+
+      this.saveSettings();
+      this.saveSkillBonuses();
+
+      BdApi?.showToast?.(`Skills Reset! You have ${expectedSP} SP for level ${currentLevel}`, {
+        type: 'success',
+        timeout: 4000,
+      });
+
+      // Refresh modal if open
+      if (this.skillTreeModal) {
+        this.showSkillTreeModal();
+      }
+
+      return true;
+    } catch (error) {
+      console.error('SkillTree: Error resetting skills', error);
+      return false;
     }
   }
 
@@ -1829,5 +1877,125 @@ module.exports = class SkillTree {
         console.error('[SkillTree] Error clearing poll interval:', e);
       }
     };
+  }
+
+  // ============================================================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================================================
+  
+  getSettingsPanel() {
+    const panel = document.createElement('div');
+    panel.style.padding = '20px';
+    panel.innerHTML = `
+      <div>
+        <h3 style="color: #8b5cf6; margin-bottom: 20px;">Skill Tree Settings</h3>
+        
+        <div style="margin-bottom: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Visible Tiers</div>
+          <div style="display: flex; flex-direction: column; gap: 10px;">
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier1') !== false ? 'checked' : ''} data-tier="tier1">
+              <span style="margin-left: 10px;">Tier 1: Basic Abilities</span>
+            </label>
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier2') !== false ? 'checked' : ''} data-tier="tier2">
+              <span style="margin-left: 10px;">Tier 2: Intermediate Abilities</span>
+            </label>
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier3') !== false ? 'checked' : ''} data-tier="tier3">
+              <span style="margin-left: 10px;">Tier 3: Advanced Abilities</span>
+            </label>
+            <label style="display: flex; align-items: center;">
+              <input type="checkbox" ${this.settings.visibleTiers?.includes('tier4') !== false ? 'checked' : ''} data-tier="tier4">
+              <span style="margin-left: 10px;">Tier 4: Master Abilities</span>
+            </label>
+          </div>
+        </div>
+        
+        <button id="st-reset-skills" style="
+          width: 100%;
+          padding: 12px;
+          background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
+          border: 2px solid rgba(255, 68, 68, 1);
+          border-radius: 8px;
+          color: white;
+          font-weight: bold;
+          cursor: pointer;
+          margin-bottom: 20px;
+          transition: all 0.3s ease;
+        ">
+          Reset All Skills & Recalculate SP
+        </button>
+        
+        <label style="display: flex; align-items: center; margin-bottom: 15px;">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="st-debug">
+          <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
+        </label>
+        
+        <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Level up detection and SP rewards</li>
+              <li>Skill unlock/upgrade operations</li>
+              <li>Settings load/save operations</li>
+              <li>Button creation and retries</li>
+              <li>Event system and watchers</li>
+              <li>Error tracking and debugging</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    `;
+
+    // Event listeners
+    const tierCheckboxes = panel.querySelectorAll('[data-tier]');
+    tierCheckboxes.forEach((checkbox) => {
+      checkbox.addEventListener('change', (e) => {
+        const tier = e.target.getAttribute('data-tier');
+        this.settings.visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4'];
+        
+        if (e.target.checked) {
+          !this.settings.visibleTiers.includes(tier) && this.settings.visibleTiers.push(tier);
+        } else {
+          this.settings.visibleTiers = this.settings.visibleTiers.filter((t) => t !== tier);
+        }
+        
+        this.saveSettings();
+        
+        // Refresh modal if open (SMOOTH - no blink)
+        if (this.skillTreeModal) {
+          const modalContent = this.skillTreeModal.querySelector('.skilltree-modal-content');
+          modalContent && (modalContent.style.opacity = '0.5');
+          setTimeout(() => {
+            this.showSkillTreeModal();
+            const newModalContent = this.skillTreeModal?.querySelector('.skilltree-modal-content');
+            newModalContent && (newModalContent.style.opacity = '1');
+          }, 150);
+        }
+      });
+    });
+
+    const resetButton = panel.querySelector('#st-reset-skills');
+    resetButton?.addEventListener('click', () => {
+      const confirmed = confirm(
+        'Are you sure you want to reset ALL skills?\n\n' +
+          'This will:\n' +
+          '• Reset all unlocked skills\n' +
+          '• Recalculate SP based on your current level\n' +
+          '• Cannot be undone!'
+      );
+      confirmed && this.resetSkills();
+    });
+
+    const debugCheckbox = panel.querySelector('#st-debug');
+    debugCheckbox?.addEventListener('change', (e) => {
+      this.settings.debugMode = e.target.checked;
+      this.saveSettings();
+      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
+    });
+
+    return panel;
   }
 };
