@@ -1167,7 +1167,7 @@ module.exports = class CriticalHit {
       // This allows restoration to find crits even before they're added to history
       // IMPORTANT: Also add hash IDs (queued messages) using content-based matching
       // When Discord finishes processing and assigns real ID, we can match by content
-      if (isCrit && historyEntry.critSettings && messageId && messageData.messageContent) {
+      if (isCrit && historyEntry?.critSettings && messageId && messageData?.messageContent) {
         // Handle spam - limit queue size and clean up aggressively
         const now = Date.now();
 
@@ -1570,9 +1570,7 @@ module.exports = class CriticalHit {
               msgElement.getAttribute('data-list-item-id') ||
               msgElement.getAttribute('id') ||
               msgElement.closest('[data-list-item-id]')?.getAttribute('data-list-item-id');
-            if (altId && !foundIds.has(String(altId))) {
-              foundIds.add(String(altId));
-            }
+            altId && !foundIds.has(String(altId)) && foundIds.add(String(altId));
             return;
           }
 
@@ -1735,15 +1733,13 @@ module.exports = class CriticalHit {
         const messageContainer =
           document.querySelector('[class*="messagesWrapper"]') || document.body;
         const restoreObserver = new MutationObserver((mutations) => {
-          const hasNewMessages = mutations.some((m) => {
-            if (m.type === 'childList' && m.addedNodes.length > 0) {
-              return Array.from(m.addedNodes).some((node) => {
-                if (node.nodeType !== Node.ELEMENT_NODE) return false;
-                return node.querySelector?.('[class*="message"]') !== null;
-              });
-            }
-            return false;
-          });
+          const hasNewMessages = mutations.some((m) =>
+            m.type === 'childList' &&
+            m.addedNodes.length > 0 &&
+            Array.from(m.addedNodes).some(
+              (node) => node.nodeType === Node.ELEMENT_NODE && node.querySelector?.('[class*="message"]') !== null
+            )
+          );
 
           if (hasNewMessages && this.currentChannelId === channelId) {
             // New messages added, retry restoration
@@ -2457,9 +2453,7 @@ module.exports = class CriticalHit {
     const channelId = this.getCurrentChannelId();
     if (channelId && channelId !== this.currentChannelId) {
       // Channel changed - save current session data before clearing
-      if (this.currentChannelId) {
-        this.saveMessageHistory(); // Save any pending history entries
-      }
+      this.currentChannelId && this.saveMessageHistory(); // Save any pending history entries
       this.currentChannelId = channelId;
     }
 
