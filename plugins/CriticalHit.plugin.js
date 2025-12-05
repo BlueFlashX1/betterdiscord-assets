@@ -1376,14 +1376,10 @@ module.exports = class CriticalHit {
 
     // Compute crit history
     // Use for...of loop for better performance
-    const crits = [];
-    for (const entry of this.messageHistory) {
-      if (entry.isCrit) {
-        if (!channelId || entry.channelId === channelId) {
-          crits.push(entry);
-        }
-      }
-    }
+    // FUNCTIONAL: Filter crits (.filter() instead of for-loop with nested if)
+    const crits = this.messageHistory.filter(
+      (entry) => entry.isCrit && (!channelId || entry.channelId === channelId)
+    );
 
     // Cache the result
     this._cachedCritHistory = { data: crits, channelId: cacheKey };
