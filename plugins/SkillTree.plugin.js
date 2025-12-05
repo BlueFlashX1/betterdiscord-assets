@@ -1173,8 +1173,9 @@ module.exports = class SkillTree {
       /* Modal Content */
       .skilltree-modal-content {
         padding: 30px;
+        padding-bottom: 80px;
         overflow-y: auto;
-        max-height: calc(85vh - 60px);
+        max-height: calc(85vh - 200px);
         background: linear-gradient(180deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 30, 0.98) 100%);
       }
 
@@ -1261,6 +1262,116 @@ module.exports = class SkillTree {
         box-shadow: 0 0 15px rgba(255, 68, 68, 0.4);
         backdrop-filter: blur(10px);
         box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+      }
+
+      /* Custom Confirm Dialog */
+      .st-confirm-dialog-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0, 0, 0, 0.8);
+        backdrop-filter: blur(10px);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 10001;
+        animation: fadeIn 0.2s ease;
+      }
+
+      .st-confirm-dialog {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border: 2px solid rgba(255, 68, 68, 0.5);
+        border-radius: 16px;
+        width: 90%;
+        max-width: 500px;
+        box-shadow: 0 0 40px rgba(255, 68, 68, 0.4);
+        animation: bounceIn 0.3s ease;
+      }
+
+      .st-confirm-header {
+        padding: 20px;
+        border-bottom: 2px solid rgba(255, 68, 68, 0.3);
+      }
+
+      .st-confirm-header h3 {
+        margin: 0;
+        color: rgba(255, 68, 68, 1);
+        font-size: 22px;
+        font-weight: bold;
+        text-align: center;
+      }
+
+      .st-confirm-body {
+        padding: 25px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 15px;
+        line-height: 1.6;
+      }
+
+      .st-confirm-body p {
+        margin: 0 0 10px 0;
+      }
+
+      .st-confirm-body ul {
+        margin: 10px 0;
+        padding-left: 25px;
+      }
+
+      .st-confirm-body li {
+        margin: 8px 0;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .st-confirm-actions {
+        display: flex;
+        gap: 12px;
+        padding: 20px;
+        border-top: 2px solid rgba(255, 68, 68, 0.2);
+      }
+
+      .st-confirm-btn {
+        flex: 1;
+        padding: 12px 24px;
+        border-radius: 8px;
+        font-size: 15px;
+        font-weight: bold;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .st-confirm-cancel {
+        background: linear-gradient(135deg, rgba(100, 100, 100, 0.3) 0%, rgba(80, 80, 80, 0.3) 100%);
+        border: 2px solid rgba(150, 150, 150, 0.5);
+        color: rgba(255, 255, 255, 0.9);
+      }
+
+      .st-confirm-cancel:hover {
+        background: linear-gradient(135deg, rgba(120, 120, 120, 0.4) 0%, rgba(100, 100, 100, 0.4) 100%);
+        border-color: rgba(180, 180, 180, 0.7);
+        transform: translateY(-2px);
+        box-shadow: 0 0 20px rgba(150, 150, 150, 0.3);
+      }
+
+      .st-confirm-yes {
+        background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
+        border: 2px solid rgba(255, 68, 68, 1);
+        color: white;
+      }
+
+      .st-confirm-yes:hover {
+        background: linear-gradient(135deg, rgba(255, 68, 68, 1) 0%, rgba(220, 38, 38, 1) 100%);
+        border-color: rgba(255, 100, 100, 1);
+        transform: translateY(-2px);
+        box-shadow: 0 0 25px rgba(255, 68, 68, 0.6);
+      }
+
+      .st-confirm-btn:active {
+        transform: translateY(0);
       }
       .skilltree-stat-value {
         color: #fbbf24;
@@ -1805,18 +1916,10 @@ module.exports = class SkillTree {
       });
     });
 
-    // FUNCTIONAL: Attach reset button event listener
+    // FUNCTIONAL: Attach reset button event listener (custom dialog, not macOS)
     const resetBtn = this.skillTreeModal.querySelector('#st-reset-modal-btn');
     resetBtn?.addEventListener('click', () => {
-      const confirmed = confirm(
-        '⚠️ RESET ALL SKILLS?\n\n' +
-          'This will:\n' +
-          '• Reset ALL unlocked skills\n' +
-          '• Recalculate SP based on your current level\n' +
-          '• Cannot be undone!\n\n' +
-          'Continue?'
-      );
-      confirmed && this.resetSkills();
+      this.showResetConfirmDialog();
     });
   }
 
@@ -1859,7 +1962,7 @@ module.exports = class SkillTree {
           </button>
         </div>
       </div>
-      
+
       <div class="skilltree-tier-nav">
         ${visibleTiers
           .map(
@@ -1873,7 +1976,7 @@ module.exports = class SkillTree {
           )
           .join('')}
       </div>
-      
+
       <div class="skilltree-modal-content">
     `;
 
@@ -2155,14 +2258,7 @@ module.exports = class SkillTree {
 
     const resetButton = panel.querySelector('#st-reset-skills');
     resetButton?.addEventListener('click', () => {
-      const confirmed = confirm(
-        'Are you sure you want to reset ALL skills?\n\n' +
-          'This will:\n' +
-          '• Reset all unlocked skills\n' +
-          '• Recalculate SP based on your current level\n' +
-          '• Cannot be undone!'
-      );
-      confirmed && this.resetSkills();
+      this.showResetConfirmDialog();
     });
 
     const debugCheckbox = panel.querySelector('#st-debug');
