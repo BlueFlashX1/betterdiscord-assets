@@ -334,13 +334,12 @@ module.exports = class SoloLevelingStats {
       perfectStreak: { name: 'Perfect Streak', icon: '🔥', reward: 150 },
     };
 
-    // Debug system (OPTIMIZED: Default disabled, better throttling)
+    // Debug system (UNIFIED: Now uses settings.debugMode instead of this.debug.enabled)
     // ============================================================================
     // EVENT SYSTEM
     // ============================================================================
     this.events = {};
     this.debug = {
-      enabled: false, // OPTIMIZED: Default disabled to reduce CPU/memory usage
       verbose: false, // Set to true for verbose logging (includes frequent operations)
       errorCount: 0,
       lastError: null,
@@ -371,7 +370,8 @@ module.exports = class SoloLevelingStats {
    */
 
   debugLog(operation, message, data = null) {
-    if (!this.debug.enabled) return;
+    // UNIFIED DEBUG SYSTEM: Check settings.debugMode instead of this.debug.enabled
+    if (!this.settings?.debugMode) return;
 
     // Check if this is a frequent operation
     const isFrequent = this.debug.frequentOperations.has(operation);
