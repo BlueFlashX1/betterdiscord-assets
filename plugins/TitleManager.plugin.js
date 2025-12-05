@@ -22,6 +22,7 @@ module.exports = class SoloLevelingTitleManager {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      sortBy: 'xpBonus', // Default sort by XP bonus
     };
 
     this.settings = this.defaultSettings;
@@ -624,14 +625,26 @@ module.exports = class SoloLevelingTitleManager {
     ];
     let titles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
 
-    // Sort titles by XP bonus percentage (ascending: lowest to highest)
-    titles.sort((titleA, titleB) => {
-      const bonusA = this.getTitleBonus(titleA);
-      const bonusB = this.getTitleBonus(titleB);
-      const xpA = bonusA?.xp || 0;
-      const xpB = bonusB?.xp || 0;
-      return xpA - xpB; // Ascending order
-    });
+    // Sort titles by selected bonus type (highest to lowest)
+    const sortBy = this.settings.sortBy || 'xpBonus';
+    const sortFunctions = {
+      xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
+      critBonus: (a, b) =>
+        (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
+      strBonus: (a, b) =>
+        (this.getTitleBonus(b)?.strengthPercent || 0) - (this.getTitleBonus(a)?.strengthPercent || 0),
+      agiBonus: (a, b) =>
+        (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
+      intBonus: (a, b) =>
+        (this.getTitleBonus(b)?.intelligencePercent || 0) -
+        (this.getTitleBonus(a)?.intelligencePercent || 0),
+      vitBonus: (a, b) =>
+        (this.getTitleBonus(b)?.vitalityPercent || 0) - (this.getTitleBonus(a)?.vitalityPercent || 0),
+      perBonus: (a, b) =>
+        (this.getTitleBonus(b)?.perceptionPercent || 0) -
+        (this.getTitleBonus(a)?.perceptionPercent || 0),
+    };
+    titles.sort(sortFunctions[sortBy] || sortFunctions.xpBonus);
 
     const activeTitle =
       soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
@@ -643,8 +656,20 @@ module.exports = class SoloLevelingTitleManager {
     modal.innerHTML = `
       <div class="tm-modal-content">
         <div class="tm-modal-header">
-          <h2> Titles</h2>
+          <h2>⭐ Titles</h2>
           <button class="tm-close-button">×</button>
+        </div>
+        <div class="tm-filter-bar">
+          <label class="tm-filter-label">Sort by:</label>
+          <select id="tm-sort-select" class="tm-sort-dropdown">
+            <option value="xpBonus" ${this.settings.sortBy === 'xpBonus' ? 'selected' : ''}>📈 XP Gain (Highest)</option>
+            <option value="critBonus" ${this.settings.sortBy === 'critBonus' ? 'selected' : ''}>⚡ Crit Chance (Highest)</option>
+            <option value="strBonus" ${this.settings.sortBy === 'strBonus' ? 'selected' : ''}>💪 Strength % (Highest)</option>
+            <option value="agiBonus" ${this.settings.sortBy === 'agiBonus' ? 'selected' : ''}>🏃 Agility % (Highest)</option>
+            <option value="intBonus" ${this.settings.sortBy === 'intBonus' ? 'selected' : ''}>🧠 Intelligence % (Highest)</option>
+            <option value="vitBonus" ${this.settings.sortBy === 'vitBonus' ? 'selected' : ''}>❤️ Vitality % (Highest)</option>
+            <option value="perBonus" ${this.settings.sortBy === 'perBonus' ? 'selected' : ''}>👁️ Perception % (Highest)</option>
+          </select>
         </div>
         <div class="tm-modal-body">
           ${
@@ -801,6 +826,16 @@ module.exports = class SoloLevelingTitleManager {
       }
     });
 
+    // Handle sort filter change
+    const sortSelect = modal.querySelector('#tm-sort-select');
+    if (sortSelect) {
+      sortSelect.addEventListener('change', (e) => {
+        this.settings.sortBy = e.target.value;
+        this.saveSettings();
+        this.refreshModal();
+      });
+    }
+
     document.body.appendChild(modal);
     this.titleModal = modal;
   }
@@ -871,39 +906,105 @@ module.exports = class SoloLevelingTitleManager {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8);
-        backdrop-filter: blur(10px);
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(15px);
         display: flex;
         align-items: center;
         justify-content: center;
         z-index: 10000;
-        animation: fadeIn 0.3s ease;
+        animation: fadeIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
       }
 
       .tm-modal-content {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
-        border-radius: 16px;
+        background: linear-gradient(145deg, #0f0f1e 0%, #1a1a2e 40%, #16213e 70%, #1a1a2e 100%);
+        border: 2px solid transparent;
+        border-radius: 20px;
         width: 90%;
-        max-width: 800px;
+        max-width: 850px;
         max-height: 90vh;
-        overflow-y: auto;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+        overflow: hidden;
+        box-shadow: 0 25px 80px rgba(0, 0, 0, 0.9),
+                    0 0 120px rgba(139, 92, 246, 0.5),
+                    0 0 200px rgba(102, 126, 234, 0.3),
+                    inset 0 0 120px rgba(139, 92, 246, 0.15);
+        background-clip: padding-box;
+        position: relative;
+      }
+      .tm-modal-content::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        border-radius: 20px;
+        padding: 2px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.7) 0%, 
+          rgba(102, 126, 234, 0.7) 25%,
+          rgba(59, 130, 246, 0.5) 50%,
+          rgba(139, 92, 246, 0.7) 75%,
+          rgba(102, 126, 234, 0.7) 100%);
+        -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        z-index: -1;
+        animation: borderGlow 3s ease-in-out infinite;
+      }
+      @keyframes borderGlow {
+        0%, 100% { opacity: 0.6; }
+        50% { opacity: 1; }
       }
 
       .tm-modal-header {
         display: flex;
         justify-content: space-between;
         align-items: center;
-        padding: 20px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        padding: 30px;
+        border-bottom: 2px solid rgba(139, 92, 246, 0.4);
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.25) 0%, 
+          rgba(102, 126, 234, 0.25) 50%,
+          rgba(118, 75, 162, 0.25) 100%);
+        box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
+        position: relative;
+        overflow: hidden;
       }
-
+      .tm-modal-header::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: -100%;
+        width: 200%;
+        height: 100%;
+        background: linear-gradient(90deg, 
+          transparent, 
+          rgba(139, 92, 246, 0.15), 
+          rgba(102, 126, 234, 0.15),
+          transparent);
+        animation: shimmer 4s ease-in-out infinite;
+      }
+      @keyframes shimmer {
+        0% { left: -100%; }
+        100% { left: 100%; }
+      }
       .tm-modal-header h2 {
         margin: 0;
-        color: #8b5cf6;
+        color: #fff;
         font-family: 'Orbitron', sans-serif;
-        font-size: 24px;
+        font-size: 32px;
+        font-weight: 900;
+        text-shadow: 0 2px 15px rgba(139, 92, 246, 1),
+                     0 0 30px rgba(102, 126, 234, 0.8),
+                     0 4px 40px rgba(139, 92, 246, 0.6);
+        letter-spacing: 2px;
+        background: linear-gradient(135deg, 
+          #fff 0%, 
+          #e9d5ff 30%,
+          #c4b5fd 60%,
+          #a78bfa 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        z-index: 1;
       }
 
       .tm-close-button {
@@ -925,37 +1026,138 @@ module.exports = class SoloLevelingTitleManager {
         background: rgba(139, 92, 246, 0.2);
       }
 
+      .tm-filter-bar {
+        padding: 20px 30px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.15) 0%,
+          rgba(102, 126, 234, 0.15) 100%);
+        border-bottom: 1px solid rgba(139, 92, 246, 0.3);
+        display: flex;
+        align-items: center;
+        gap: 15px;
+        box-shadow: 0 2px 15px rgba(0, 0, 0, 0.3);
+      }
+
+      .tm-filter-label {
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 15px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        text-shadow: 0 2px 10px rgba(139, 92, 246, 0.5);
+      }
+
+      .tm-sort-dropdown {
+        flex: 1;
+        max-width: 350px;
+        padding: 12px 16px;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.25) 0%,
+          rgba(102, 126, 234, 0.25) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.4);
+        border-radius: 10px;
+        color: #fff;
+        font-size: 15px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.3s ease;
+        box-shadow: 0 4px 15px rgba(139, 92, 246, 0.2),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+      }
+
+      .tm-sort-dropdown:hover {
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.35) 0%,
+          rgba(102, 126, 234, 0.35) 100%);
+        border-color: rgba(139, 92, 246, 0.6);
+        box-shadow: 0 6px 20px rgba(139, 92, 246, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+        transform: translateY(-2px);
+      }
+
+      .tm-sort-dropdown:focus {
+        border-color: rgba(139, 92, 246, 0.8);
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.6),
+                    0 6px 25px rgba(139, 92, 246, 0.4);
+      }
+
+      .tm-sort-dropdown option {
+        background: #1a1a2e;
+        color: #fff;
+        padding: 10px;
+      }
+
       .tm-modal-body {
-        padding: 20px;
+        padding: 25px 30px;
+        overflow-y: auto;
+        max-height: calc(90vh - 200px);
       }
 
       .tm-active-title {
-        background: rgba(0, 255, 136, 0.1);
-        border: 2px solid rgba(0, 255, 136, 0.5);
-        border-radius: 12px;
-        padding: 20px;
-        margin-bottom: 20px;
+        background: linear-gradient(135deg, 
+          rgba(0, 255, 136, 0.15) 0%,
+          rgba(0, 204, 111, 0.15) 100%);
+        border: 2px solid rgba(0, 255, 136, 0.6);
+        border-radius: 15px;
+        padding: 25px;
+        margin-bottom: 25px;
         text-align: center;
+        box-shadow: 0 8px 25px rgba(0, 255, 136, 0.3),
+                    inset 0 0 40px rgba(0, 255, 136, 0.1);
+        position: relative;
+        overflow: hidden;
+      }
+      .tm-active-title::before {
+        content: '';
+        position: absolute;
+        top: -50%;
+        left: -50%;
+        width: 200%;
+        height: 200%;
+        background: radial-gradient(circle, rgba(0, 255, 136, 0.1) 0%, transparent 70%);
+        animation: pulse 3s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); opacity: 0.5; }
+        50% { transform: scale(1.1); opacity: 0.8; }
       }
 
       .tm-active-label {
-        color: rgba(0, 255, 136, 0.8);
+        color: rgba(0, 255, 136, 0.9);
         font-size: 14px;
-        margin-bottom: 8px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        margin-bottom: 10px;
+        position: relative;
+        z-index: 1;
       }
 
       .tm-active-name {
         color: #00ff88;
-        font-size: 24px;
-        font-weight: bold;
+        font-size: 28px;
+        font-weight: 900;
         font-family: 'Orbitron', sans-serif;
-        margin-bottom: 8px;
+        margin-bottom: 12px;
+        text-shadow: 0 0 20px rgba(0, 255, 136, 0.8),
+                     0 2px 15px rgba(0, 255, 136, 0.6);
+        background: linear-gradient(135deg, #00ff88 0%, #00cc6f 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        position: relative;
+        z-index: 1;
       }
 
       .tm-active-bonus {
-        color: rgba(0, 255, 136, 0.8);
-        font-size: 16px;
-        margin-bottom: 15px;
+        color: rgba(0, 255, 136, 0.9);
+        font-size: 17px;
+        font-weight: 600;
+        margin-bottom: 18px;
+        text-shadow: 0 0 10px rgba(0, 255, 136, 0.5);
+        position: relative;
+        z-index: 1;
       }
 
       .tm-unequip-btn {
@@ -993,12 +1195,18 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-section-title {
-        color: #8b5cf6;
+        color: #fff;
         font-family: 'Orbitron', sans-serif;
-        font-size: 18px;
-        margin-bottom: 15px;
-        padding-bottom: 10px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        font-size: 20px;
+        font-weight: 800;
+        margin-bottom: 20px;
+        padding-bottom: 12px;
+        border-bottom: 2px solid rgba(139, 92, 246, 0.4);
+        text-shadow: 0 2px 10px rgba(139, 92, 246, 0.8);
+        background: linear-gradient(135deg, #fff 0%, #e9d5ff 50%, #c4b5fd 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
       }
 
       .tm-empty-state {
@@ -1030,23 +1238,49 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-title-card {
-        background: rgba(20, 20, 30, 0.8);
-        border: 2px solid rgba(139, 92, 246, 0.3);
-        border-radius: 12px;
-        padding: 20px;
+        background: linear-gradient(135deg, 
+          rgba(20, 20, 30, 0.9) 0%,
+          rgba(26, 26, 46, 0.9) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.4);
+        border-radius: 15px;
+        padding: 25px;
         text-align: center;
-        transition: all 0.3s ease;
+        transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .tm-title-card::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(135deg, 
+          rgba(139, 92, 246, 0.1) 0%,
+          transparent 50%);
+        opacity: 0;
+        transition: opacity 0.3s ease;
       }
 
       .tm-title-card.active {
-        border-color: rgba(0, 255, 136, 0.6);
-        background: rgba(0, 255, 136, 0.1);
+        border-color: rgba(0, 255, 136, 0.7);
+        background: linear-gradient(135deg, 
+          rgba(0, 255, 136, 0.15) 0%,
+          rgba(0, 204, 111, 0.15) 100%);
+        box-shadow: 0 8px 25px rgba(0, 255, 136, 0.4),
+                    inset 0 0 30px rgba(0, 255, 136, 0.1);
       }
 
       .tm-title-card:hover:not(.active) {
-        border-color: rgba(139, 92, 246, 0.8);
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
-        transform: translateY(-2px);
+        border-color: rgba(139, 92, 246, 0.9);
+        box-shadow: 0 8px 30px rgba(139, 92, 246, 0.5),
+                    inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        transform: translateY(-4px) scale(1.02);
+      }
+
+      .tm-title-card:hover::before {
+        opacity: 1;
       }
 
       .tm-title-icon {
