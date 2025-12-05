@@ -1262,12 +1262,69 @@ module.exports = class SkillTree {
       }
 
       /* Tier Section */
+      /* Tier Navigation Bar */
+      .skilltree-tier-nav {
+        display: flex;
+        gap: 8px;
+        padding: 16px 20px;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
+        border-bottom: 2px solid rgba(139, 92, 246, 0.2);
+        backdrop-filter: blur(10px);
+        overflow-x: auto;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(139, 92, 246, 0.5) transparent;
+      }
+
+      .skilltree-tier-nav::-webkit-scrollbar {
+        height: 6px;
+      }
+
+      .skilltree-tier-nav::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .skilltree-tier-nav::-webkit-scrollbar-thumb {
+        background: rgba(139, 92, 246, 0.5);
+        border-radius: 3px;
+      }
+
+      .skilltree-tier-nav-btn {
+        padding: 10px 20px;
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.6) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.5);
+        border-radius: 8px;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        outline: none;
+        transition: all 0.3s ease;
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+        white-space: nowrap;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .skilltree-tier-nav-btn:hover {
+        border-color: rgba(139, 92, 246, 0.8);
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%);
+        box-shadow: 0 0 25px rgba(139, 92, 246, 0.5);
+        transform: translateY(-2px);
+        color: #fff;
+      }
+
+      .skilltree-tier-nav-btn:active {
+        transform: translateY(0);
+        box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+      }
+
       .skilltree-tier {
         margin: 35px 0;
         padding: 25px;
         background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
         border-radius: 12px;
         border: 1px solid rgba(102, 126, 234, 0.2);
+        scroll-margin-top: 20px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
                     inset 0 1px 0 rgba(255, 255, 255, 0.05);
         position: relative;
@@ -1700,6 +1757,15 @@ module.exports = class SkillTree {
         }
       };
     });
+
+    // FUNCTIONAL: Attach tier navigation button event listeners (smooth scroll)
+    this.skillTreeModal.querySelectorAll('.skilltree-tier-nav-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const tierKey = e.target.getAttribute('data-tier');
+        const tierElement = this.skillTreeModal.querySelector(`#st-${tierKey}`);
+        tierElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
   }
 
   /**
@@ -1708,7 +1774,14 @@ module.exports = class SkillTree {
    */
   renderSkillTree() {
     const soloData = this.getSoloLevelingData();
-      const visibleTiers = this.settings.visibleTiers || ['tier1', 'tier2', 'tier3', 'tier4', 'tier5', 'tier6'];
+    const visibleTiers = this.settings.visibleTiers || [
+      'tier1',
+      'tier2',
+      'tier3',
+      'tier4',
+      'tier5',
+      'tier6',
+    ];
 
     let html = `
       <div class="skilltree-header">
@@ -1730,6 +1803,19 @@ module.exports = class SkillTree {
           }
         </div>
       </div>
+      
+      <div class="skilltree-tier-nav">
+        ${visibleTiers
+          .map(
+            (tierKey) => `
+          <button class="skilltree-tier-nav-btn" data-tier="${tierKey}">
+            Tier ${tierKey.replace('tier', '')}
+          </button>
+        `
+          )
+          .join('')}
+      </div>
+      
       <div class="skilltree-modal-content">
     `;
 
@@ -1739,7 +1825,7 @@ module.exports = class SkillTree {
       .forEach(([tierKey, tier]) => {
         if (!tier.skills) return;
 
-        html += `<div class="skilltree-tier">`;
+        html += `<div class="skilltree-tier" id="st-${tierKey}">`;
         html += `<div class="skilltree-tier-header">
         <span>${tier.name}</span>
         <span class="skilltree-tier-badge">Tier ${tier.tier}</span>
