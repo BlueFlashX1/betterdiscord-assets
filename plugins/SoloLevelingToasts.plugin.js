@@ -669,13 +669,18 @@ module.exports = class SoloLevelingToasts {
     // Remove excessive emojis (keep max 1-2) - emojis already removed
     let summarized = message;
 
-    // Condense common patterns
+    // Condense common patterns for brevity
     summarized = summarized
       // Level up messages
       .replace(/LEVEL UP!?\s*/gi, '')
       .replace(/Level\s*(\d+)\s*→\s*(\d+)/gi, 'Lv.$1→$2')
-      // Stat changes
-      .replace(/(Strength|Agility|Intelligence|Vitality|Perception|Luck):\s*/gi, '$1: ')
+      // Stat changes (abbreviated)
+      .replace(/Strength:/gi, 'STR:')
+      .replace(/Agility:/gi, 'AGI:')
+      .replace(/Intelligence:/gi, 'INT:')
+      .replace(/Vitality:/gi, 'VIT:')
+      .replace(/Perception:/gi, 'PER:')
+      .replace(/Luck:/gi, 'LUK:')
       .replace(/\+\s*(\d+)\s*([A-Z]+)\s*\(/gi, '+$1 $2 (')
       // Quest completion
       .replace(/QUEST COMPLETE!?\s*/gi, 'Quest: ')
@@ -683,7 +688,7 @@ module.exports = class SoloLevelingToasts {
       // Achievement
       .replace(/ACHIEVEMENT UNLOCKED!?\s*/gi, 'Achievement: ')
       .replace(/\s*Retroactive Natural Growth Applied!?\s*/gi, 'Retro Growth')
-      .replace(/\s*Natural Growth!?\s*/gi, 'Natural Growth')
+      .replace(/\s*Natural Growth!?\s*/gi, 'Natural')
       // Rank promotion
       .replace(/Rank Promotion!?\s*/gi, 'Rank: ')
       .replace(/([A-Z])\s*→\s*([A-Z])/g, '$1→$2')
@@ -692,11 +697,7 @@ module.exports = class SoloLevelingToasts {
       .replace(/\s{2,}/g, ' ')
       .trim();
 
-    // Limit message length - truncate if too long
-    if (summarized.length > 120) {
-      summarized = summarized.substring(0, 117) + '...';
-    }
-
+    // NO TRUNCATION - Allow toast to expand vertically for edge cases
     return summarized;
   }
 
