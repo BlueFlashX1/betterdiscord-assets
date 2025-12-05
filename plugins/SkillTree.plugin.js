@@ -19,6 +19,7 @@ module.exports = class SkillTree {
       enabled: true,
       debugMode: false, // Debug mode toggle
       visibleTiers: ['tier1', 'tier2', 'tier3', 'tier4', 'tier5', 'tier6'], // All 6 tiers visible by default
+      currentTierPage: 'tier1', // Current tier page being viewed
       skillPoints: 0, // Skill points separate from stat points
       unlockedSkills: [], // Array of unlocked skill IDs (legacy support)
       skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
@@ -1346,6 +1347,14 @@ module.exports = class SkillTree {
         box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
       }
 
+      .skilltree-tier-nav-btn.active {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.5) 0%, rgba(139, 92, 246, 0.4) 100%);
+        border-color: #8b5cf6;
+        box-shadow: 0 0 30px rgba(139, 92, 246, 0.7);
+        color: #fff;
+        font-weight: 700;
+      }
+
       .skilltree-tier {
         margin: 35px 0;
         padding: 25px;
@@ -1786,12 +1795,13 @@ module.exports = class SkillTree {
       };
     });
 
-    // FUNCTIONAL: Attach tier navigation button event listeners (smooth scroll)
+    // FUNCTIONAL: Attach tier navigation button event listeners (PAGE SWITCH - no scroll)
     this.skillTreeModal.querySelectorAll('.skilltree-tier-nav-btn').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const tierKey = e.target.getAttribute('data-tier');
-        const tierElement = this.skillTreeModal.querySelector(`#st-${tierKey}`);
-        tierElement?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        this.settings.currentTierPage = tierKey;
+        this.saveSettings();
+        this.showSkillTreeModal(); // Refresh modal to show new tier page
       });
     });
 
@@ -1824,6 +1834,7 @@ module.exports = class SkillTree {
       'tier5',
       'tier6',
     ];
+    const currentTier = this.settings.currentTierPage || 'tier1';
 
     let html = `
       <div class="skilltree-header">
@@ -1848,28 +1859,29 @@ module.exports = class SkillTree {
           </button>
         </div>
       </div>
-
+      
       <div class="skilltree-tier-nav">
         ${visibleTiers
           .map(
             (tierKey) => `
-          <button class="skilltree-tier-nav-btn" data-tier="${tierKey}">
+          <button class="skilltree-tier-nav-btn ${
+            tierKey === currentTier ? 'active' : ''
+          }" data-tier="${tierKey}">
             Tier ${tierKey.replace('tier', '')}
           </button>
         `
           )
           .join('')}
       </div>
-
+      
       <div class="skilltree-modal-content">
     `;
 
-    // FUNCTIONAL: Render only visible tiers (filter before forEach)
-    Object.entries(this.skillTree)
-      .filter(([tierKey]) => visibleTiers.includes(tierKey))
-      .forEach(([tierKey, tier]) => {
-        if (!tier.skills) return;
-
+    // FUNCTIONAL: Render ONLY the current tier page
+    const tierEntry = Object.entries(this.skillTree).find(([key]) => key === currentTier);
+    if (tierEntry) {
+      const [tierKey, tier] = tierEntry;
+      if (tier.skills) {
         html += `<div class="skilltree-tier" id="st-${tierKey}">`;
         html += `<div class="skilltree-tier-header">
         <span>${tier.name}</span>
@@ -1933,7 +1945,8 @@ module.exports = class SkillTree {
         });
 
         html += `</div>`;
-      });
+      }
+    }
 
     html += `</div>`;
     return html;
