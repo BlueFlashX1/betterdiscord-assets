@@ -7116,7 +7116,7 @@ module.exports = class CriticalHit {
     }
     const effectiveCrit = this.getEffectiveCritChance();
     try {
-      if (BdApi && typeof BdApi.showToast === 'function') {
+      if (BdApi?.showToast) {
         const totalBonus = effectiveCrit - this.settings.critChance;
 
         // Get individual bonuses for toast
@@ -7425,32 +7425,26 @@ module.exports = class CriticalHit {
         this.applyCritStyle(lastMessage);
         this.critMessages.add(lastMessage);
         try {
-          if (BdApi && typeof BdApi.showToast === 'function') {
-            BdApi.showToast('Test Critical Hit Applied!', { type: 'success', timeout: 2000 });
-          }
+          BdApi?.showToast?.('Test Critical Hit Applied!', { type: 'success', timeout: 2000 });
         } catch (error) {
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             console.log('CriticalHit: Test crit applied (toast failed)', error);
           }
         }
       } else {
         try {
-          if (BdApi && typeof BdApi.showToast === 'function') {
-            BdApi.showToast('Message already has crit!', { type: 'info', timeout: 2000 });
-          }
+          BdApi?.showToast?.('Message already has crit!', { type: 'info', timeout: 2000 });
         } catch (error) {
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             console.log('CriticalHit: Message already has crit');
           }
         }
       }
     } else {
       try {
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          BdApi.showToast('No messages found to test', { type: 'error', timeout: 2000 });
-        }
+        BdApi?.showToast?.('No messages found to test', { type: 'error', timeout: 2000 });
       } catch (error) {
-        if (this.debug.enabled) {
+        if (this.debug?.enabled) {
           console.log('CriticalHit: No messages found to test');
         }
       }
@@ -7496,12 +7490,10 @@ module.exports = class CriticalHit {
    * @returns {boolean} True if message belongs to current user
    */
   isOwnMessage(messageElement, userId) {
-    if (this.settings.ownUserId && userId === this.settings.ownUserId) return true;
+    if (this.settings?.ownUserId && userId === this.settings.ownUserId) return true;
     if (this.currentUserId && userId === this.currentUserId) return true;
 
-    if (!this.currentUserId) {
-      this.getCurrentUserId();
-    }
+    this.currentUserId ?? this.getCurrentUserId();
 
     return userId === this.currentUserId;
   }
