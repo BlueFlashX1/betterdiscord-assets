@@ -212,7 +212,7 @@ module.exports = class SoloLevelingTitleManager {
     try {
       BdApi.Data.save('TitleManager', 'settings', this.settings);
     } catch (error) {
-      console.error('TitleManager: Error saving settings', error);
+      this.debugLog('Error saving settings', error);
     }
   }
 
