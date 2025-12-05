@@ -182,7 +182,7 @@ module.exports = class CriticalHit {
 
   debugLog(operation, message, data = null) {
     // FUNCTIONAL: Guard clause (early return - good if-else usage)
-    if (!this.debug.enabled) return;
+    if (!this.debug?.enabled) return;
 
     // FUNCTIONAL: Throttle frequent operations (Set for O(1) lookup)
     const frequentOps = new Set([
@@ -226,7 +226,7 @@ module.exports = class CriticalHit {
   // Error logging helper
   debugError(operation, error, context = {}) {
     // FUNCTIONAL: Track errors with short-circuit (no if-else)
-    this.debug.enabled &&
+    this.debug?.enabled &&
       (this.debug.errorCount++,
       (this.debug.lastError = {
         operation,
@@ -352,7 +352,7 @@ module.exports = class CriticalHit {
             })`
           : '';
 
-      if (this.debug.enabled) {
+      if (this.debug?.enabled) {
         console.log(
           `CriticalHit: Started with ${this.settings.critChance}% base crit chance ${bonusText}!`
         );
@@ -455,7 +455,7 @@ module.exports = class CriticalHit {
     this.removeAllCrits();
 
     // FUNCTIONAL: Debug log (short-circuit)
-    this.debug.enabled && console.log('[CriticalHit] Stopped');
+    this.debug?.enabled && console.log('[CriticalHit] Stopped');
   }
 
   // ============================================================================
@@ -484,7 +484,7 @@ module.exports = class CriticalHit {
           // CRITICAL FIX: Deep copy (no shallow copy bugs)
           this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved }));
           // Update debug.enabled after settings are loaded
-          this.debug.enabled = this.settings.debugMode === true;
+          this.debug?.enabled = this.settings.debugMode === true;
           this.debugLog('LOAD_SETTINGS', 'Settings merged successfully');
 
           // Migrate old font to new pixel font if it's the old default
@@ -505,7 +505,7 @@ module.exports = class CriticalHit {
         // No saved settings, use defaults
         this.settings = { ...this.defaultSettings };
         // Update debug.enabled after settings are loaded
-        this.debug.enabled = this.settings.debugMode === true;
+        this.debug?.enabled = this.settings.debugMode === true;
         this.debugLog('LOAD_SETTINGS', 'No saved settings found, using defaults');
       }
     } catch (error) {
@@ -1247,7 +1247,7 @@ module.exports = class CriticalHit {
           // Skip hash IDs in history
           if (String(entry.messageId).startsWith('hash_')) return false;
           // Match by content hash
-          return entry.messageContent && entry.author && 
+          return entry.messageContent && entry.author &&
             this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
         });
 
@@ -2350,7 +2350,7 @@ module.exports = class CriticalHit {
         remaining: this.messageHistory.length,
         daysToKeep,
       });
-      if (this.debug.enabled) {
+      if (this.debug?.enabled) {
         console.log(
           `CriticalHit: Cleaned up ${removed} old history entries (${removedCrits} crits)`
         );
@@ -2675,7 +2675,7 @@ module.exports = class CriticalHit {
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         // Channel changed, re-initialize observer
-        if (this.debug.enabled) {
+        if (this.debug?.enabled) {
           console.log('CriticalHit: Channel changed, re-initializing...');
         }
         // Save current session data before switching
@@ -4669,7 +4669,7 @@ module.exports = class CriticalHit {
         );
 
         if (hasHeaderClass) {
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             this.debugLog('APPLY_CRIT_STYLE', 'Element has header class', {
               elementTag: element.tagName,
               classes: classes,
@@ -4684,7 +4684,7 @@ module.exports = class CriticalHit {
         const hasAuthorChild = element.querySelector('[class*="author"]') !== null;
 
         if (hasUsernameChild || hasTimestampChild || hasAuthorChild) {
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             this.debugLog('APPLY_CRIT_STYLE', 'Element contains username/timestamp/author child', {
               elementTag: element.tagName,
               hasUsernameChild,
@@ -4708,7 +4708,7 @@ module.exports = class CriticalHit {
           element.closest('[class*="messageGroupWrapper"]');
 
         if (headerParent) {
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             this.debugLog('APPLY_CRIT_STYLE', 'Element is in header area', {
               elementTag: element.tagName,
               headerParentClasses: Array.from(headerParent.classList || []),
@@ -4722,7 +4722,7 @@ module.exports = class CriticalHit {
         const text = element.textContent?.trim() || '';
         if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
           // Looks like a timestamp or very short text (likely username)
-          if (this.debug.enabled) {
+          if (this.debug?.enabled) {
             this.debugLog('APPLY_CRIT_STYLE', 'Element text looks like timestamp/username', {
               elementTag: element.tagName,
               text: text,
@@ -7127,7 +7127,7 @@ module.exports = class CriticalHit {
         });
       }
     } catch (error) {
-      if (this.debug.enabled) {
+      if (this.debug?.enabled) {
         console.log('CriticalHit: Toast failed', error);
       }
     }
