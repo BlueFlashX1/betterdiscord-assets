@@ -776,13 +776,20 @@ module.exports = class SoloLevelingTitleManager {
 
     // Add event listeners (secure, no inline onclick)
     modal.addEventListener('click', (e) => {
+      // Handle background click
       if (e.target === modal) {
         this.closeTitleModal();
         return;
       }
 
-      // Handle close button clicks
-      if (e.target.classList.contains('tm-close-button') || e.target.closest('.tm-close-button')) {
+      // Handle close button clicks (check both the button and its content)
+      if (
+        e.target.classList.contains('tm-close-button') ||
+        e.target.closest('.tm-close-button') ||
+        e.target.parentElement?.classList.contains('tm-close-button')
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
         this.closeTitleModal();
         return;
       }
@@ -800,6 +807,16 @@ module.exports = class SoloLevelingTitleManager {
         this.unequipTitle();
       }
     });
+
+    // Also add direct click handler to close button for reliability
+    const closeButton = modal.querySelector('.tm-close-button');
+    if (closeButton) {
+      closeButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        this.closeTitleModal();
+      });
+    }
 
     document.body.appendChild(modal);
     this.titleModal = modal;
