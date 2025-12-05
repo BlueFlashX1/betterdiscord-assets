@@ -3025,7 +3025,7 @@ module.exports = class CriticalHit {
 
     // messageElement already found above for throttling, reuse it
 
-    if (messageElement && !messageElement.classList.contains('bd-crit-hit')) {
+    if (messageElement && !messageElement?.classList?.contains('bd-crit-hit')) {
       // Get message ID using improved extraction (only log if verbose)
       let msgId = this.getMessageIdentifier(messageElement);
 
@@ -3656,7 +3656,7 @@ module.exports = class CriticalHit {
           });
         };
 
-        if (historyEntry && historyEntry.critSettings) {
+        if (historyEntry?.critSettings) {
           performRestoration(historyEntry);
         } else if (!historyEntry && isValidDiscordId) {
           // Use MutationObserver instead of polling setTimeout
@@ -3726,7 +3726,7 @@ module.exports = class CriticalHit {
                 return entryId === normalizedMsgId || entryId === pureMessageId;
               });
 
-              if (retryHistoryEntry && retryHistoryEntry.critSettings) {
+              if (retryHistoryEntry?.critSettings) {
                 // #region agent log
                 // #endregion
 
