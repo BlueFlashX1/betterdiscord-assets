@@ -1492,16 +1492,13 @@ module.exports = class CriticalHit {
           '[class*="message"]',
         ];
 
-        const foundSelector = selectors.find((selector) => {
+        selectors.find((selector) => {
           const messages = document.querySelectorAll(selector);
-          if (messages.length > 0) {
-            allMessages = Array.from(messages);
-            // Cache the result
-            this._cachedMessageSelectors = allMessages;
-            this._cachedMessageSelectorsTimestamp = now;
-            return true;
-          }
-          return false;
+          const hasMessages = messages.length > 0;
+          hasMessages && (allMessages = Array.from(messages));
+          hasMessages && (this._cachedMessageSelectors = allMessages);
+          hasMessages && (this._cachedMessageSelectorsTimestamp = now);
+          return hasMessages;
         });
       }
 
@@ -7272,7 +7269,7 @@ module.exports = class CriticalHit {
       if (!content) {
         const allDivs = msg.querySelectorAll('div');
         content = Array.from(allDivs).find((div) => {
-          if (!isInHeaderArea(div) && div.textContent && div.textContent.trim().length > 0) {
+          if (!isInHeaderArea(div) && div.textContent?.trim().length > 0) {
             this.debugLog('UPDATE_EXISTING_CRITS', 'Found div fallback', {
               elementTag: div.tagName,
               classes: Array.from(div.classList || []),
