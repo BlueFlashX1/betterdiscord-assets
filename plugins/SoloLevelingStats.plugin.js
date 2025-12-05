@@ -130,7 +130,7 @@ module.exports = class SoloLevelingStats {
       stats: {
         strength: 0, // Physical power: +2% XP per point (hits harder in combat)
         agility: 0, // Reflexes/Speed: +2% chance for 1.5x XP multiplier per point (faster actions = more efficient) CAPPED 30%
-        intelligence: 0, // Mana/Magic: +5% XP from long messages, increases max mana (used in Dungeons)
+        intelligence: 0, // Mana/Magic: Tiered XP (100-200:+3%, 200-400:+7%, 400+:+12% per point), max mana (Dungeons)
         vitality: 0, // HP/Stamina: +5% quest rewards, increases max HP (used in Dungeons for survival)
         perception: 0, // Senses/Mana sense: Random stat buff per point (perceives opportunities to grow)
       },
@@ -4040,27 +4040,55 @@ module.exports = class SoloLevelingStats {
         totalPercentageBonus += strengthBonus;
       }
 
-      // Intelligence: +5% per point for long messages, with diminishing returns after 15 points
+      // Intelligence: TIERED SYSTEM for messages (Mana/Magic efficiency)
+      // TIER 1 (100-200 chars): +3% per INT point
+      // TIER 2 (200-400 chars): +7% per INT point
+      // TIER 3 (400+ chars):    +12% per INT point
       // PLUS perception buffs for intelligence (additive)
-      if (messageLength > 200) {
-        const intelligenceStat = this.settings.stats.intelligence || 0;
-        let intelligenceBonus = 0;
-        if (intelligenceStat > 0) {
-          if (intelligenceStat <= 15) {
-            intelligenceBonus = intelligenceStat * 5; // 5% per point up to 15
-          } else {
-            // Diminishing returns: 75% base + (stat - 15) * 1%
-            intelligenceBonus = 75 + (intelligenceStat - 15) * 1;
-          }
+
+      const intelligenceStat = this.settings.stats.intelligence || 0;
+
+      // FUNCTIONAL: Determine tier bonus (lookup map, no if-else chain)
+      const intTierBonuses = {
+        tier3: { threshold: 400, bonus: 12 }, // Very long messages
+        tier2: { threshold: 200, bonus: 7 }, // Long messages
+        tier1: { threshold: 100, bonus: 3 }, // Medium messages
+      };
+
+      // FUNCTIONAL: Find applicable tier (no if-else)
+      const applicableTier = Object.values(intTierBonuses).find(
+        (tier) => messageLength >= tier.threshold
+      );
+
+      // FUNCTIONAL: Calculate intelligence bonus (short-circuit)
+      applicableTier &&
+        intelligenceStat > 0 &&
+        (() => {
+          const bonusPerPoint = applicableTier.bonus;
+          let intelligenceBonus = 0;
+
+          // Diminishing returns after 15 points (same scaling for all tiers)
+          intelligenceStat <= 15
+            ? (intelligenceBonus = intelligenceStat * bonusPerPoint)
+            : (intelligenceBonus =
+                15 * bonusPerPoint + (intelligenceStat - 15) * (bonusPerPoint / 5));
+
           // Apply Skill Tree allStatBonus multiplier if available
-          if (this._skillTreeStatMultiplier) {
-            intelligenceBonus *= this._skillTreeStatMultiplier;
-          }
+          this._skillTreeStatMultiplier && (intelligenceBonus *= this._skillTreeStatMultiplier);
+
           // ADD perception buffs for intelligence (additive stacking)
           intelligenceBonus += perceptionBuffsByStat.intelligence || 0;
+
           totalPercentageBonus += intelligenceBonus;
-        }
-      }
+
+          this.debugLog('INT_TIER_BONUS', 'Intelligence tier bonus applied', {
+            messageLength,
+            tier: applicableTier.threshold,
+            bonusPerPoint,
+            intelligenceStat,
+            intelligenceBonus: intelligenceBonus.toFixed(1) + '%',
+          });
+        })();
 
       // Perception buff already applied above (lines 4355-4359) as adjustedPerceptionBuff
       // No need to add totalPerceptionBuff again - removed to prevent double-counting
