@@ -245,409 +245,13 @@ module.exports = class CriticalHit {
     });
   }
 
-  // ============================================
-  // SECTION 3: MAJOR OPERATIONS
-  // ============================================
-
   // ============================================================================
-  // LIFECYCLE METHODS
+  // HELPER FUNCTIONS - EXTRACTED FROM LONG FUNCTIONS
   // ============================================================================
 
-  /**
-   * Initializes the plugin: loads settings, history, injects CSS, and starts observers
-   * Called when plugin is enabled/started
-   */
-  start() {
-    try {
-      this.debugLog('START', 'Plugin starting...');
-
-      // Load settings
-      try {
-        this.loadSettings();
-        this.debugLog('START', 'Settings loaded', {
-          critChance: this.settings.critChance,
-          enabled: this.settings.enabled,
-        });
-      } catch (error) {
-        this.debugError('START', error, { phase: 'load_settings' });
-      }
-
-      // Load message history from storage
-      try {
-        this.loadMessageHistory();
-        this.updateStats(); // Calculate stats from loaded history
-        this.debugLog('START', 'Message history loaded', {
-          messageCount: this.messageHistory.length,
-          critCount: this.getCritHistory().length,
-          totalCrits: this.stats.totalCrits,
-          critRate: this.stats.critRate.toFixed(2) + '%',
-        });
-
-        // FUNCTIONAL: Log crits by channel (.forEach instead of for-loop)
-        const critsByChannel = {};
-        this.getCritHistory().forEach((entry) => {
-          const channelId = entry.channelId || 'unknown';
-          critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
-        });
-        this.debugLog('START', 'Stored crits by channel', critsByChannel);
-
-        // FUNCTIONAL: Auto-cleanup (short-circuit, no if-else)
-        this.settings.autoCleanupHistory &&
-          this.cleanupOldHistory(this.settings.historyRetentionDays || 30);
-      } catch (error) {
-        this.debugError('START', error, { phase: 'load_history' });
-      }
-
-      // Set current channel ID
-      try {
-        this.currentChannelId = this.getCurrentChannelId();
-        this.debugLog('START', 'Current channel ID set', { channelId: this.currentChannelId });
-      } catch (error) {
-        this.debugError('START', error, { phase: 'get_channel_id' });
-      }
-
-      // Start observing messages
-      try {
-        this.startObserving();
-        this.debugLog('START', 'Message observer started');
-      } catch (error) {
-        this.debugError('START', error, { phase: 'start_observing' });
-      }
-
-      // FUNCTIONAL: Inject CSS (short-circuit, no if-else)
-      try {
-        this.settings.cssEnabled !== false &&
-          (this.injectCritCSS(), this.debugLog('START', 'Crit CSS injected'));
-      } catch (error) {
-        this.debugError('START', error, { phase: 'inject_css' });
-      }
-
-      // FUNCTIONAL: Initialize animations (short-circuit, no if-else)
-      try {
-        this.settings.animationEnabled !== false &&
-          (this.injectAnimationCSS(),
-          setTimeout(() => this.getCurrentUserId(), 1000),
-          this.debugLog('START', 'Animation features initialized'));
-      } catch (error) {
-        this.debugError('START', error, { phase: 'init_animations' });
-      }
-
-      const effectiveCritChance = this.getEffectiveCritChance();
-
-      // Get individual bonuses for display
-      let agilityBonus = 0;
-      let luckBonus = 0;
-      try {
-        agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
-        luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
-      } catch (e) {}
-
-      const totalBonus = agilityBonus + luckBonus;
-      const bonusText =
-        totalBonus > 0
-          ? `(${effectiveCritChance.toFixed(1)}% effective with ${
-              agilityBonus > 0 ? `+${agilityBonus.toFixed(1)}% AGI` : ''
-            }${agilityBonus > 0 && luckBonus > 0 ? ' + ' : ''}${
-              luckBonus > 0 ? `+${luckBonus.toFixed(1)}% LUK` : ''
-            })`
-          : '';
-
-      if (this.debug?.enabled) {
-        console.log(
-          `CriticalHit: Started with ${this.settings.critChance}% base crit chance ${bonusText}!`
-        );
-        console.log(`CriticalHit: Loaded ${this.messageHistory.length} messages from history`);
-      }
-
-      // Start periodic history cleanup (every 30 minutes)
-      this.settings.autoCleanupHistory && this.startPeriodicCleanup();
-
-      // Show toast notification (if available)
-      try {
-        if (BdApi?.showToast) {
-          const bonuses = [
-            agilityBonus > 0 && `+${agilityBonus.toFixed(1)}% AGI`,
-            luckBonus > 0 && `+${luckBonus.toFixed(1)}% LUK`,
-          ].filter(Boolean);
-
-          const toastMessage = totalBonus > 0
-            ? `CriticalHit enabled! ${this.settings.critChance}% base (${bonuses.join(' + ')}) = ${effectiveCritChance.toFixed(1)}%`
-            : `CriticalHit enabled! ${this.settings.critChance}% crit chance`;
-
-          BdApi.showToast(toastMessage, { type: 'success', timeout: 3000 });
-          this.debugLog('START', 'Toast notification shown');
-        } else {
-          this.debugLog('START', 'Toast notification not available (BdApi.showToast not found)');
-        }
-      } catch (error) {
-        this.debugError('START', error, { phase: 'show_toast' });
-      }
-
-      this.debugLog('START', 'Plugin started successfully');
-    } catch (error) {
-      this.debugError('START', error, { phase: 'initialization' });
-    }
-  }
-
-  /**
-   * Cleans up plugin resources: stops observers, clears intervals, removes styles
-   * Called when plugin is disabled/stopped
-   */
-  stop() {
-    // FUNCTIONAL: Stop observing (short-circuit cleanup)
-    this.messageObserver && (this.messageObserver.disconnect(), (this.messageObserver = null));
-    this.urlObserver && (this.urlObserver.disconnect(), (this.urlObserver = null));
-
-    // FUNCTIONAL: Clean up style observers (.forEach instead of for-loop)
-    this.styleObservers &&
-      (this.styleObservers.forEach((observer) => observer.disconnect()),
-      this.styleObservers.clear());
-
-    // FUNCTIONAL: Clean up Nova Flat observer (short-circuit)
-    this.novaFlatObserver && (this.novaFlatObserver.disconnect(), (this.novaFlatObserver = null));
-
-    // FUNCTIONAL: Clean up Nova Flat interval (short-circuit)
-    this._forceNovaInterval &&
-      (clearInterval(this._forceNovaInterval), (this._forceNovaInterval = null));
-
-    // FUNCTIONAL: Clean up display update interval (short-circuit)
-    this._displayUpdateInterval &&
-      (clearInterval(this._displayUpdateInterval), (this._displayUpdateInterval = null));
-
-    // Note: styleObserverIntervals removed - using MutationObserver only now
-
-    // FUNCTIONAL: Restore history methods (short-circuit)
-    this.originalPushState && (history.pushState = this.originalPushState);
-    this.originalReplaceState && (history.replaceState = this.originalReplaceState);
-
-    // FUNCTIONAL: Stop periodic cleanup (short-circuit)
-    this.historyCleanupInterval &&
-      (clearInterval(this.historyCleanupInterval), (this.historyCleanupInterval = null));
-
-    // Save message history before stopping
-    this.saveMessageHistory();
-
-    // FUNCTIONAL: Clean up animation resources (short-circuit)
-    this.animationContainer && (this.animationContainer.remove(), (this.animationContainer = null));
-    this.activeAnimations?.clear();
-    this.userCombos?.clear();
-    this.animatedMessages?.clear();
-
-    // FUNCTIONAL: Clean up processing locks (optional chaining)
-    this._processingCrits?.clear();
-    this._processingAnimations?.clear();
-    this._onCritHitThrottle?.clear();
-    this._comboUpdatedMessages?.clear();
-    this._comboUpdatedContentHashes?.clear();
-
-    // FUNCTIONAL: Clear cached DOM queries (no if-else)
-    this._cachedChatInput = null;
-    this._cachedMessageList = null;
-    this._cachedMessages = null;
-    this._cacheTimestamp = 0;
-
-    // Remove all crit styling
-    this.removeAllCrits();
-
-    // FUNCTIONAL: Debug log (short-circuit)
-    this.debug?.enabled && console.log('[CriticalHit] Stopped');
-  }
-
   // ============================================================================
-  // SETTINGS MANAGEMENT
+  // MESSAGE HISTORY HELPERS (from addToHistory)
   // ============================================================================
-
-  /**
-   * Loads plugin settings from BetterDiscord storage
-   * Merges saved settings with defaults and migrates old font settings if needed
-   */
-  loadSettings() {
-    try {
-      this.debugLog('LOAD_SETTINGS', 'Attempting to load settings...');
-
-      // Load saved settings or use defaults
-      let saved = null;
-      try {
-        saved = BdApi.Data.load('CriticalHit', 'settings');
-        this.debugLog('LOAD_SETTINGS', 'Settings load attempt', { success: !!saved });
-      } catch (error) {
-        this.debugError('LOAD_SETTINGS', error, { phase: 'data_load' });
-      }
-
-      if (saved?.constructor === Object) {
-        try {
-          // CRITICAL FIX: Deep copy (no shallow copy bugs)
-          this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved }));
-          // Update debug.enabled after settings are loaded
-          this.debug.enabled = this.settings.debugMode === true;
-          this.debugLog('LOAD_SETTINGS', 'Settings merged successfully');
-
-          // Migrate old font to new pixel font if it's the old default
-          if (
-            this.settings.critFont === "Impact, 'Arial Black', sans-serif" ||
-            this.settings.critFont === "Impact, 'Arial Black', sans" ||
-            this.settings.critFont.includes('VT323') ||
-            this.settings.critFont.includes('Silkscreen')
-          ) {
-            this.settings.critFont = this.defaultSettings.critFont;
-            this.saveSettings(); // Save the migrated settings
-          }
-        } catch (error) {
-          this.debugError('LOAD_SETTINGS', error, { phase: 'settings_merge' });
-          throw error;
-        }
-      } else {
-        // No saved settings, use defaults
-        this.settings = { ...this.defaultSettings };
-        // Update debug.enabled after settings are loaded
-        this.debug?.enabled = this.settings.debugMode === true;
-        this.debugLog('LOAD_SETTINGS', 'No saved settings found, using defaults');
-      }
-    } catch (error) {
-      this.debugError('LOAD_SETTINGS', error, { phase: 'load_settings' });
-      console.error('CriticalHit: Error loading settings', error);
-      this.settings = { ...this.defaultSettings };
-    }
-  }
-
-  /**
-   * Saves current plugin settings to BetterDiscord storage
-   */
-  saveSettings() {
-    try {
-      this.debugLog('SAVE_SETTINGS', 'Saving settings...', {
-        critChance: this.settings.critChance,
-        enabled: this.settings.enabled,
-      });
-      BdApi.Data.save('CriticalHit', 'settings', this.settings);
-      this.debugLog('SAVE_SETTINGS', 'Settings saved successfully');
-    } catch (error) {
-      this.debugError('SAVE_SETTINGS', error, { phase: 'save_settings' });
-    }
-  }
-
-  /**
-   * Gets the current Discord channel ID from the URL
-   * @returns {string} Channel ID or URL as fallback
-   */
-  getCurrentChannelId() {
-    // Try to get channel ID from URL
-    const urlMatch = window.location.href.match(/channels\/\d+\/(\d+)/);
-    return urlMatch?.[1] ?? window.location.href;
-  }
-
-  // ============================================================================
-  // MESSAGE IDENTIFICATION & DETECTION
-  // ============================================================================
-
-  /**
-   * Validates if a string is a valid Discord ID (17-19 digits)
-   */
-  isValidDiscordId(id) {
-    return id && /^\d{17,19}$/.test(String(id).trim());
-  }
-
-  /**
-   * Extracts Discord IDs from a string that may contain multiple IDs
-   * Returns the last match (usually the message ID)
-   */
-  extractDiscordId(idStr) {
-    if (!idStr) return null;
-    const matches = String(idStr)
-      .trim()
-      .match(/\d{17,19}/g);
-    return matches && matches.length > 0 ? matches[matches.length - 1] : null;
-  }
-
-  /**
-   * Creates a content hash for fallback message identification
-   */
-  createContentHash(content, author = '', timestamp = '') {
-    const hashContent = author
-      ? `${author}:${content.substring(0, 100)}:${timestamp}`
-      : content.substring(0, 100);
-
-    const hash = Array.from(hashContent).reduce((hash, char) => {
-      const charCode = char.charCodeAt(0);
-      hash = (hash << 5) - hash + charCode;
-      return hash & hash;
-    }, 0);
-
-    return `hash_${Math.abs(hash)}`;
-  }
-
-  /**
-   * Extracts message ID from a message element using multiple fallback methods
-   * Tries React fiber traversal, data attributes, and content-based hashing
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @param {Object} debugContext - Optional debug context for logging
-   * @returns {string|null} Message ID or null if not found
-   */
-  getMessageIdentifier(messageElement, debugContext = null) {
-    // Try multiple methods to get Discord's actual message ID
-    // PRIORITY: Always try to get the pure Discord message ID (17-19 digit number)
-    // This ensures consistency between saving and restoring
-
-    let messageId = null;
-    let extractionMethod = null;
-
-    // Method 1: Try React props FIRST (most reliable for actual Discord message ID)
-    // This gets the actual message ID from Discord's internal data structure
-    try {
-      const reactKey = Object.keys(messageElement).find(
-        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
-      if (reactKey) {
-        // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
-        let fiber = messageElement[reactKey];
-        let depth = 0;
-        while (fiber && depth < 50) {
-          depth++;
-          // FIRST: Try to get the message object itself, then extract ID
-          const messageObj =
-            fiber.memoizedProps?.message ||
-            fiber.memoizedState?.message ||
-            fiber.memoizedProps?.messageProps?.message ||
-            fiber.child?.memoizedProps?.message ||
-            fiber.child?.memoizedState?.message;
-
-          // If we found a message object, get its ID directly (most reliable)
-          if (messageObj?.id) {
-            const msgIdStr = String(messageObj.id).trim();
-            if (this.isValidDiscordId(msgIdStr)) {
-              messageId = msgIdStr;
-              extractionMethod = 'react_message_object';
-              break;
-            }
-          }
-
-          // FALLBACK: Try direct ID access
-          const msgId =
-            fiber.memoizedProps?.message?.id ||
-            fiber.memoizedState?.message?.id ||
-            fiber.memoizedProps?.messageId ||
-            fiber.child?.memoizedProps?.message?.id ||
-            fiber.child?.memoizedState?.message?.id;
-
-          if (msgId) {
-            const idStr = String(msgId).trim();
-            if (this.isValidDiscordId(idStr)) {
-              messageId = idStr;
-              extractionMethod = 'react_props';
-              break;
-            }
-            // If it's a composite format, extract the message ID part
-            const extracted = this.extractDiscordId(idStr);
-            if (extracted) {
-              messageId = extracted;
-              extractionMethod = 'react_props_extracted';
-              break;
-            }
-          }
-          fiber = fiber.return;
-        }
-      }
-    } catch (e) {
       // React access failed, continue to fallback
       debugContext && this.debugLog('GET_MESSAGE_ID', 'React access failed', { error: e.message });
     }
@@ -1065,6 +669,161 @@ module.exports = class CriticalHit {
   }
 
   /**
+   * Normalizes message data IDs to Discord format (17-19 digit numbers)
+   * Extracts Discord IDs from composite formats and validates them
+   * @param {Object} messageData - Raw message data
+   * @returns {Object} Normalized IDs: { messageId, authorId, channelId }
+   */
+  normalizeMessageData(messageData) {
+    // Validate and normalize messageId (must be string, prefer Discord ID format)
+    let messageId = messageData.messageId;
+    if (messageId) {
+      messageId = String(messageId).trim();
+      // Extract Discord ID if it's embedded in a composite format
+      if (!/^\d{17,19}$/.test(messageId)) {
+        const match = messageId.match(/\d{17,19}/);
+        match && (messageId = match[0]); // Use extracted Discord ID
+      }
+    }
+
+    // Validate and normalize authorId (must be string, Discord ID format)
+    let authorId = messageData.authorId;
+    if (authorId) {
+      authorId = String(authorId).trim();
+      // Ensure it's a valid Discord user ID format
+      if (!/^\d{17,19}$/.test(authorId)) {
+        const match = authorId.match(/\d{17,19}/);
+        if (match) {
+          authorId = match[0]; // Use extracted Discord ID
+        } else {
+          authorId = null; // Invalid format, don't store
+        }
+      }
+    }
+
+    // Validate channelId
+    const channelId = messageData.channelId ? String(messageData.channelId).trim() : null;
+
+    return { messageId: messageId || null, authorId: authorId || null, channelId };
+  }
+
+  /**
+   * Updates the pending crits queue with a new crit entry
+   * Handles queue size limits, expiration cleanup, and content-based matching
+   * @param {string} messageId - Normalized message ID
+   * @param {boolean} isHashId - Whether this is a hash ID (temporary)
+   * @param {Object} historyEntry - The history entry being added
+   * @param {Object} messageData - Original message data
+   * @param {string} channelId - Normalized channel ID
+   */
+  updatePendingCritsQueue(messageId, isHashId, historyEntry, messageData, channelId) {
+    if (!historyEntry?.critSettings || !messageId || !messageData?.messageContent) return;
+
+    const now = Date.now();
+
+    // Clean up old pending crits (older than 5 seconds for queued messages) and limit size
+    if (this.pendingCrits.size >= this.maxPendingCrits) {
+      // Remove oldest entries first
+      const sortedEntries = Array.from(this.pendingCrits.entries()).sort(
+        (a, b) => a[1].timestamp - b[1].timestamp
+      );
+      // FUNCTIONAL: Remove oldest entries (.slice() + .forEach() instead of for-loop)
+      const toRemove = Math.floor(this.maxPendingCrits * 0.3);
+      sortedEntries.slice(0, toRemove).forEach(([id]) => this.pendingCrits.delete(id));
+    }
+
+    // FUNCTIONAL: Remove expired entries (.forEach() + short-circuit instead of for-loop)
+    const maxAge = isHashId ? 5000 : 3000;
+    Array.from(this.pendingCrits.entries()).forEach(([pendingId, pendingData]) => {
+      now - pendingData.timestamp > maxAge && this.pendingCrits.delete(pendingId);
+    });
+
+    // Create content hash for matching queued messages when they get real IDs
+    const contentHash =
+      messageData.author && messageData.messageContent
+        ? this.getContentHash(
+            messageData.author,
+            messageData.messageContent,
+            messageData.timestamp
+          )
+        : null;
+
+    // Add new crit with both message ID and content hash for matching
+    const pendingEntry = {
+      critSettings: historyEntry.critSettings,
+      timestamp: now,
+      channelId: channelId,
+      messageContent: messageData.messageContent,
+      author: messageData.author,
+      contentHash: contentHash, // For matching when ID changes from hash to real
+      isHashId: isHashId, // Track if this was originally a hash ID
+    };
+
+    // Store by message ID (works for both hash IDs and real IDs)
+    this.pendingCrits.set(messageId, pendingEntry);
+
+    // Also store by content hash if available (for matching when ID changes)
+    contentHash && isHashId && this.pendingCrits.set(contentHash, pendingEntry);
+  }
+
+  /**
+   * Finds an existing history entry by ID or content hash
+   * Handles both direct ID matching and content-based matching for reprocessed messages
+   * @param {string} messageId - Normalized message ID
+   * @param {string} channelId - Channel ID
+   * @param {boolean} isValidDiscordId - Whether messageId is a valid Discord ID
+   * @param {boolean} isHashId - Whether messageId is a hash ID
+   * @param {Object} messageData - Original message data for content matching
+   * @returns {number} Index of existing entry, or -1 if not found
+   */
+  findExistingHistoryEntry(messageId, channelId, isValidDiscordId, isHashId, messageData) {
+    // Try ID match first
+    let existingIndex = this.messageHistory.findIndex(
+      (entry) => entry.messageId === messageData.messageId && entry.channelId === channelId
+    );
+
+    // If no ID match and we have content, try content-based matching
+    // This handles cases where message was "undone" and retyped with different ID
+    if (
+      existingIndex < 0 &&
+      !isHashId &&
+      isValidDiscordId &&
+      messageData.messageContent &&
+      messageData.author
+    ) {
+      const contentHash = this.getContentHash(
+        messageData.author,
+        messageData.messageContent,
+        messageData.timestamp
+      );
+      existingIndex = this.messageHistory.findIndex((entry) => {
+        if (entry.channelId !== channelId) return false;
+        // Skip hash IDs in history
+        if (String(entry.messageId).startsWith('hash_')) return false;
+        // Match by content hash
+        return (
+          entry.messageContent &&
+          entry.author &&
+          this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash
+        );
+      });
+
+      existingIndex >= 0 &&
+        this.debugLog(
+          'ADD_TO_HISTORY',
+          'Found existing entry by content hash (reprocessed message)',
+          {
+            oldId: this.messageHistory[existingIndex].messageId,
+            newId: messageData.messageId,
+            contentHash,
+          }
+        );
+    }
+
+    return existingIndex;
+  }
+
+  /**
    * Adds a message to history with crit status and settings
    * Handles duplicate detection, content-based matching for reprocessed messages
    * @param {Object} messageData - Message data including ID, author, channel, crit status
@@ -1073,34 +832,8 @@ module.exports = class CriticalHit {
     try {
       const isCrit = messageData.isCrit || false;
 
-      // Validate and normalize messageId (must be string, prefer Discord ID format)
-      let messageId = messageData.messageId;
-      if (messageId) {
-        messageId = String(messageId).trim();
-        // Extract Discord ID if it's embedded in a composite format
-        if (!/^\d{17,19}$/.test(messageId)) {
-          const match = messageId.match(/\d{17,19}/);
-          match && (messageId = match[0]); // Use extracted Discord ID
-        }
-      }
-
-      // Validate and normalize authorId (must be string, Discord ID format)
-      let authorId = messageData.authorId;
-      if (authorId) {
-        authorId = String(authorId).trim();
-        // Ensure it's a valid Discord user ID format
-        if (!/^\d{17,19}$/.test(authorId)) {
-          const match = authorId.match(/\d{17,19}/);
-          if (match) {
-            authorId = match[0]; // Use extracted Discord ID
-          } else {
-            authorId = null; // Invalid format, don't store
-          }
-        }
-      }
-
-      // Validate channelId
-      const channelId = messageData.channelId ? String(messageData.channelId).trim() : null;
+      // Normalize all IDs to Discord format
+      const { messageId, authorId, channelId } = this.normalizeMessageData(messageData);
 
       this.debugLog(
         'ADD_TO_HISTORY',
@@ -1155,100 +888,23 @@ module.exports = class CriticalHit {
       }
 
       // Check if message already exists in history (update if exists)
-      // Try ID match first, then content-based match for reprocessed messages
-      // Use normalized messageId, not messageData.messageId
       const isValidDiscordId = messageId ? /^\d{17,19}$/.test(messageId) : false;
       const isHashId = messageId?.startsWith('hash_');
 
       // Add to pending queue immediately for crits to handle race condition
       // This allows restoration to find crits even before they're added to history
-      // IMPORTANT: Also add hash IDs (queued messages) using content-based matching
-      // When Discord finishes processing and assigns real ID, we can match by content
-      if (isCrit && historyEntry?.critSettings && messageId && messageData?.messageContent) {
-        // Handle spam - limit queue size and clean up aggressively
-        const now = Date.now();
-
-        // Clean up old pending crits (older than 5 seconds for queued messages) and limit size
-        if (this.pendingCrits.size >= this.maxPendingCrits) {
-          // Remove oldest entries first
-          const sortedEntries = Array.from(this.pendingCrits.entries()).sort(
-            (a, b) => a[1].timestamp - b[1].timestamp
-          );
-          // FUNCTIONAL: Remove oldest entries (.slice() + .forEach() instead of for-loop)
-          const toRemove = Math.floor(this.maxPendingCrits * 0.3);
-          sortedEntries.slice(0, toRemove).forEach(([id]) => this.pendingCrits.delete(id));
-        }
-
-        // FUNCTIONAL: Remove expired entries (.forEach() + short-circuit instead of for-loop)
-        const maxAge = isHashId ? 5000 : 3000;
-        Array.from(this.pendingCrits.entries()).forEach(([pendingId, pendingData]) => {
-          now - pendingData.timestamp > maxAge && this.pendingCrits.delete(pendingId);
-        });
-
-        // Create content hash for matching queued messages when they get real IDs
-        const contentHash =
-          messageData.author && messageData.messageContent
-            ? this.getContentHash(
-                messageData.author,
-                messageData.messageContent,
-                messageData.timestamp
-              )
-            : null;
-
-        // Add new crit with both message ID and content hash for matching
-        const pendingEntry = {
-          critSettings: historyEntry.critSettings,
-          timestamp: now,
-          channelId: channelId,
-          messageContent: messageData.messageContent,
-          author: messageData.author,
-          contentHash: contentHash, // For matching when ID changes from hash to real
-          isHashId: isHashId, // Track if this was originally a hash ID
-        };
-
-        // Store by message ID (works for both hash IDs and real IDs)
-        this.pendingCrits.set(messageId, pendingEntry);
-
-        // Also store by content hash if available (for matching when ID changes)
-        contentHash && isHashId && this.pendingCrits.set(contentHash, pendingEntry);
-      }      let existingIndex = this.messageHistory.findIndex(
-        (entry) =>
-          entry.messageId === messageData.messageId && entry.channelId === messageData.channelId
-      );
-
-      // If no ID match and we have content, try content-based matching
-      // This handles cases where message was "undone" and retyped with different ID
-      if (
-        existingIndex < 0 &&
-        !isHashId &&
-        isValidDiscordId &&
-        messageData.messageContent &&
-        messageData.author
-      ) {
-        const contentHash = this.getContentHash(
-          messageData.author,
-          messageData.messageContent,
-          messageData.timestamp
-        );
-        existingIndex = this.messageHistory.findIndex((entry) => {
-          if (entry.channelId !== messageData.channelId) return false;
-          // Skip hash IDs in history
-          if (String(entry.messageId).startsWith('hash_')) return false;
-          // Match by content hash
-          return entry.messageContent && entry.author &&
-            this.getContentHash(entry.author, entry.messageContent, entry.timestamp) === contentHash;
-        });
-
-        existingIndex >= 0 && this.debugLog(
-            'ADD_TO_HISTORY',
-            'Found existing entry by content hash (reprocessed message)',
-            {
-              oldId: this.messageHistory[existingIndex].messageId,
-              newId: messageData.messageId,
-              contentHash,
-            }
-          );
+      if (isCrit) {
+        this.updatePendingCritsQueue(messageId, isHashId, historyEntry, messageData, channelId);
       }
+
+      // Find existing entry by ID or content hash
+      const existingIndex = this.findExistingHistoryEntry(
+        messageId,
+        channelId,
+        isValidDiscordId,
+        isHashId,
+        messageData
+      );
 
       if (existingIndex >= 0) {
         // Update existing entry
@@ -1383,6 +1039,44 @@ module.exports = class CriticalHit {
     return crits;
   }
 
+
+  /**
+   * Sets up a MutationObserver to retry restoration when new messages are added
+   * @param {string} channelId - The channel ID being restored
+   * @param {number} nextRetry - Next retry attempt number
+   */
+  setupRestorationRetryObserver(channelId, nextRetry) {
+    const messageContainer =
+      document.querySelector('[class*="messagesWrapper"]') || document.body;
+    const restoreObserver = new MutationObserver((mutations) => {
+      const hasNewMessages = mutations.some(
+        (m) =>
+          m.type === 'childList' &&
+          m.addedNodes.length > 0 &&
+          Array.from(m.addedNodes).some(
+            (node) =>
+              node.nodeType === Node.ELEMENT_NODE &&
+              node.querySelector?.('[class*="message"]') !== null
+          )
+      );
+
+      if (hasNewMessages && this.currentChannelId === channelId) {
+        restoreObserver.disconnect();
+        this.restoreChannelCrits(channelId, nextRetry);
+      }
+    });
+
+    restoreObserver.observe(messageContainer, {
+      childList: true,
+      subtree: true,
+    });
+
+    // Fallback: Cleanup observer after timeout if no messages load
+    setTimeout(() => {
+      restoreObserver.disconnect();
+    }, nextRetry < 2 ? 2000 : 3000);
+  }
+
   /**
    * Restores crit styling for all crit messages in a channel
    * Called when switching channels or on page load
@@ -1442,45 +1136,8 @@ module.exports = class CriticalHit {
       let idMismatch = 0;
       const foundIds = new Set();
 
-      // Cache DOM queries to avoid repeated querySelectorAll calls
-      const now = Date.now();
-      let allMessages = [];
-
-      // Check cache validity
-      if (
-        this._cachedMessageSelectors &&
-        this._cachedMessageSelectorsTimestamp &&
-        now - this._cachedMessageSelectorsTimestamp < this._cachedMessageSelectorsMaxAge
-      ) {
-        allMessages = this._cachedMessageSelectors;
-      } else {
-        // Find all messages in current channel - use more specific selector
-        // Try multiple selectors to catch all message containers
-        const selectors = [
-          '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])',
-          '[class*="messageListItem"]',
-          '[class*="message"]',
-        ];
-
-        selectors.find((selector) => {
-          const messages = document.querySelectorAll(selector);
-          const hasMessages = messages.length > 0;
-          hasMessages && (allMessages = Array.from(messages));
-          hasMessages && (this._cachedMessageSelectors = allMessages);
-          hasMessages && (this._cachedMessageSelectorsTimestamp = now);
-          return hasMessages;
-        });
-      }
-
-      // Remove duplicates
-      const uniqueMessages = [];
-      const seenElements = new Set();
-      allMessages.forEach((msg) => {
-        if (!seenElements.has(msg)) {
-          seenElements.add(msg);
-          uniqueMessages.push(msg);
-        }
-      });
+      // Find all messages in DOM (uses caching)
+      const uniqueMessages = this.findMessagesInDOM();
 
       this.debugLog('RESTORE_CHANNEL_CRITS', 'Found messages in channel', {
         messageCount: uniqueMessages.length,
@@ -1537,71 +1194,19 @@ module.exports = class CriticalHit {
           const normalizedMsgId = String(msgId).trim();
 
           // Extract pure Discord message ID if msgId is in composite format
-          // e.g., "chat-messages___chat-messages-{channelId}-{messageId}" -> extract {messageId}
           let pureMessageId = normalizedMsgId;
           if (!/^\d{17,19}$/.test(normalizedMsgId)) {
-            // Try to extract pure ID from composite format
             const match = normalizedMsgId.match(/\d{17,19}/);
             match && (pureMessageId = match[0]);
           }
 
-          // Check if this message ID matches any crit
-          // Try exact match first, then try pure ID match, then partial match
-          const matchedEntry = channelCrits.find((entry) => {
-            const entryId = String(entry.messageId).trim();
-            const entryPureId = /^\d{17,19}$/.test(entryId)
-              ? entryId
-              : entryId.match(/\d{17,19}/)?.[0];
-
-            // Exact match
-            if (entryId === normalizedMsgId || entryId === pureMessageId) return true;
-
-            // Pure ID match (if we extracted a pure ID)
-            if (pureMessageId !== normalizedMsgId && entryPureId === pureMessageId) return true;
-
-            // Partial match (for composite formats)
-            return (
-              normalizedMsgId.includes(entryId) ||
-              entryId.includes(normalizedMsgId) ||
-              (pureMessageId &&
-                entryPureId &&
-                (pureMessageId.includes(entryPureId) || entryPureId.includes(pureMessageId)))
-            );
-          });
+          // Match message to crit entry
+          const matchedEntry = this.matchCritToMessage(normalizedMsgId, pureMessageId, channelCrits);
 
           if (matchedEntry?.critSettings) {
-            // Restore crit with original settings
-            // Only log restoration attempts if verbose or first attempt
-            retryCount === 0 || this.debug?.verbose && this.debugLog('RESTORE_CHANNEL_CRITS', 'Attempting to restore crit for message', {
-                msgId: normalizedMsgId,
-                matchedEntryId: matchedEntry.messageId,
-                hasCritSettings: !!matchedEntry.critSettings,
-                critSettings: matchedEntry.critSettings,
-                elementExists: !!msgElement,
-                elementAlreadyStyled: msgElement.classList.contains('bd-crit-hit'),
-              });
-
-            this.applyCritStyleWithSettings(msgElement, matchedEntry.critSettings);
-            this.critMessages.add(msgElement);
-            // Mark as processed using message ID (not element reference)
-            normalizedMsgId && this.markAsProcessed(normalizedMsgId);
-            restoredCount++;
-
-            // Verify restoration
-            const verifyStyled = msgElement.classList.contains('bd-crit-hit');
-            this.debugLog(
-              'RESTORE_CHANNEL_CRITS',
-              verifyStyled
-                ? 'SUCCESS: Successfully restored crit for message'
-                : 'WARNING: Restoration may have failed',
-              {
-                msgId: normalizedMsgId,
-                restoredCount,
-                total: channelCrits.length,
-                elementHasClass: verifyStyled,
-                critMessagesSize: this.critMessages.size,
-              }
-            );
+            // Restore crit using helper function
+            const success = this.restoreSingleCrit(msgElement, matchedEntry, normalizedMsgId, retryCount);
+            if (success) restoredCount++;
           } else {
             idMismatch++;
             // Only log mismatch if we have a pure Discord ID (not hash) to reduce noise
@@ -1675,34 +1280,8 @@ module.exports = class CriticalHit {
             nextRetry: nextRetry,
             missingCount: channelCrits.length - restoredCount,
           });
-        // Use MutationObserver instead of setTimeout to watch for new messages being added
-        // This is more efficient than polling and responds immediately when messages load
-        const messageContainer =
-          document.querySelector('[class*="messagesWrapper"]') || document.body;
-        const restoreObserver = new MutationObserver((mutations) => {
-          const hasNewMessages = mutations.some((m) =>
-            m.type === 'childList' &&
-            m.addedNodes.length > 0 &&
-            Array.from(m.addedNodes).some(
-              (node) => node.nodeType === Node.ELEMENT_NODE && node.querySelector?.('[class*="message"]') !== null
-            )
-          );
-
-          hasNewMessages && this.currentChannelId === channelId && (restoreObserver.disconnect(), this.restoreChannelCrits(channelId, nextRetry));
-        });
-
-        restoreObserver.observe(messageContainer, {
-          childList: true,
-          subtree: true,
-        });
-
-        // Fallback: Cleanup observer after 2 seconds if no messages load
-        setTimeout(
-          () => {
-            restoreObserver.disconnect();
-          },
-          retryCount < 2 ? 2000 : 3000
-        );
+        // Set up MutationObserver to retry when new messages are added
+        this.setupRestorationRetryObserver(channelId, nextRetry);
       } else if (restoredCount < channelCrits.length && retryCount >= 3) {
         // Final warning after max retries
         // Note: Messages not currently visible in the viewport cannot be restored
@@ -1742,6 +1321,307 @@ module.exports = class CriticalHit {
         channelId,
         retryCount,
       });
+    }
+  }
+
+  /**
+   * Applies gradient styles to a content element with retry logic
+   * @param {HTMLElement} content - The content element to style
+   * @param {HTMLElement} messageElement - The parent message element
+   * @returns {boolean} True if gradient was applied successfully
+   */
+  applyGradientStylesWithSettings(content, messageElement) {
+    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+
+    // Apply gradient properties
+    content.style.setProperty('background-image', gradientColors, 'important');
+    content.style.setProperty('background', gradientColors, 'important');
+    content.style.setProperty('-webkit-background-clip', 'text', 'important');
+    content.style.setProperty('background-clip', 'text', 'important');
+    content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+    content.style.setProperty('color', 'transparent', 'important');
+    content.style.setProperty('display', 'inline-block', 'important');
+
+    // Exclude username/timestamp elements from gradient
+    const usernameElements = messageElement.querySelectorAll(
+      '[class*="username"], [class*="timestamp"], [class*="author"]'
+    );
+    usernameElements.forEach((el) => {
+      el.style.setProperty('background', 'unset', 'important');
+      el.style.setProperty('background-image', 'unset', 'important');
+      el.style.setProperty('-webkit-background-clip', 'unset', 'important');
+      el.style.setProperty('background-clip', 'unset', 'important');
+      el.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
+      el.style.setProperty('color', 'unset', 'important');
+    });
+
+    // Force reflow and verify
+    void content.offsetHeight;
+    const gradientCheck = this.verifyGradientApplied(content);
+    const hasGradientInComputed = gradientCheck.hasGradient;
+    const hasGradientInStyle = gradientCheck.hasGradientInStyle;
+    const hasWebkitClip = gradientCheck.hasWebkitClip;
+
+    // Reapply if needed
+    if (hasGradientInComputed && (!hasGradientInStyle || !hasWebkitClip)) {
+      content.style.setProperty('background-image', gradientColors, 'important');
+      content.style.setProperty('background', gradientColors, 'important');
+      content.style.setProperty('-webkit-background-clip', 'text', 'important');
+      content.style.setProperty('background-clip', 'text', 'important');
+      content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+      content.style.setProperty('color', 'transparent', 'important');
+      content.style.setProperty('display', 'inline-block', 'important');
+      void content.offsetHeight;
+    }
+
+    this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
+      gradient: gradientColors,
+      hasGradientInComputed,
+      hasWebkitClip,
+    });
+
+    return hasGradientInComputed;
+  }
+
+  /**
+   * Sets up a MutationObserver to retry gradient application if it fails
+   * @param {HTMLElement} content - The content element
+   */
+  setupGradientRetryObserver(content) {
+    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const gradientRetryObserver = new MutationObserver((mutations) => {
+      const hasStyleMutation = mutations.some(
+        (m) =>
+          m.type === 'attributes' &&
+          (m.attributeName === 'style' || m.attributeName === 'class')
+      );
+
+      if (hasStyleMutation) {
+        const retryComputed = window.getComputedStyle(content);
+        if (!retryComputed?.backgroundImage?.includes('gradient')) {
+          content.style.setProperty('background-image', gradientColors, 'important');
+          content.style.setProperty('background', gradientColors, 'important');
+          content.style.setProperty('-webkit-background-clip', 'text', 'important');
+          content.style.setProperty('background-clip', 'text', 'important');
+          content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+          content.style.setProperty('color', 'transparent', 'important');
+        } else {
+          gradientRetryObserver.disconnect();
+        }
+      }
+    });
+
+    gradientRetryObserver.observe(content, {
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+
+    setTimeout(() => {
+      gradientRetryObserver.disconnect();
+    }, 2000);
+  }
+
+  /**
+   * Applies solid color styles to a content element
+   * @param {HTMLElement} content - The content element to style
+   * @param {HTMLElement} messageElement - The parent message element
+   * @param {string} color - The color to apply
+   */
+  applySolidColorStyles(content, messageElement, color) {
+    content.style.setProperty('color', color, 'important');
+    content.style.setProperty('background', 'none', 'important');
+    content.style.setProperty('-webkit-background-clip', 'unset', 'important');
+    content.style.setProperty('background-clip', 'unset', 'important');
+    content.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
+
+    // Exclude username/timestamp elements from color
+    const usernameElements = messageElement.querySelectorAll(
+      '[class*="username"], [class*="timestamp"], [class*="author"]'
+    );
+    usernameElements.forEach((el) => {
+      el.style.setProperty('color', 'unset', 'important');
+    });
+
+    this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Solid color applied for restoration', {
+      color,
+    });
+  }
+
+  /**
+   * Applies font styles to a content element
+   * @param {HTMLElement} content - The content element to style
+   */
+  applyFontStyles(content) {
+    content.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important');
+    content.style.setProperty('font-weight', 'bold', 'important');
+    content.style.setProperty('font-size', '1.6em', 'important');
+    content.style.setProperty('letter-spacing', '1px', 'important');
+    content.style.setProperty('-webkit-text-stroke', 'none', 'important');
+    content.style.setProperty('text-stroke', 'none', 'important');
+    content.style.setProperty('font-synthesis', 'none', 'important');
+    content.style.setProperty('font-variant', 'normal', 'important');
+    content.style.setProperty('font-style', 'normal', 'important');
+  }
+
+  /**
+   * Applies glow/text-shadow effect to a content element
+   * @param {HTMLElement} content - The content element to style
+   * @param {Object} critSettings - Crit settings object
+   * @param {boolean} useGradient - Whether gradient is being used
+   */
+  applyGlowEffect(content, critSettings, useGradient) {
+    if (critSettings.glow !== false && this.settings?.critGlow) {
+      if (useGradient) {
+        content.style.setProperty(
+          'text-shadow',
+          '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
+          'important'
+        );
+      } else {
+        const color = critSettings.color || this.settings.critColor;
+        content.style.setProperty(
+          'text-shadow',
+          `0 0 2px ${color}, 0 0 3px ${color}`,
+          'important'
+        );
+      }
+    } else {
+      content.style.setProperty('text-shadow', 'none', 'important');
+    }
+  }
+
+  /**
+   * Sets up gradient monitoring with MutationObserver for persistence
+   * @param {HTMLElement} messageElement - The message element
+   * @param {HTMLElement} content - The content element
+   * @param {string} messageId - The message ID
+   * @param {boolean} useGradient - Whether gradient is being used
+   */
+  setupGradientMonitoring(messageElement, content, messageId, useGradient) {
+    if (!content || !useGradient || !messageId) return;
+
+    // Clean up existing observer
+    this.styleObservers.has(messageId) && this.styleObservers.get(messageId).disconnect();
+
+    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const checkGradient = () => {
+      const currentMessageElement = this.requeryMessageElement(messageId);
+      if (
+        !currentMessageElement ||
+        !currentMessageElement.isConnected ||
+        !currentMessageElement.classList.contains('bd-crit-hit')
+      ) {
+        return;
+      }
+
+      const currentContent = this.findMessageContentElement(currentMessageElement);
+      if (currentContent) {
+        const currentComputed = window.getComputedStyle(currentContent);
+        const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
+
+        if (!hasGradient && useGradient) {
+          currentContent.style.setProperty('background-image', gradientColors, 'important');
+          currentContent.style.setProperty('background', gradientColors, 'important');
+          currentContent.style.setProperty('-webkit-background-clip', 'text', 'important');
+          currentContent.style.setProperty('background-clip', 'text', 'important');
+          currentContent.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+          currentContent.style.setProperty('color', 'transparent', 'important');
+          currentContent.style.setProperty('display', 'inline-block', 'important');
+          currentContent.classList.add('bd-crit-text-content');
+          void currentContent.offsetHeight;
+        }
+      }
+    };
+
+    const parentContainer = messageElement?.parentElement || document.body;
+    const styleObserver = new MutationObserver((mutations) => {
+      const hasStyleMutation = mutations.some(
+        (m) =>
+          m.type === 'attributes' &&
+          (m.attributeName === 'style' || m.attributeName === 'class')
+      );
+      const hasChildMutation = mutations.some((m) => m.type === 'childList');
+
+      if (hasStyleMutation || hasChildMutation) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(checkGradient);
+        });
+      }
+    });
+
+    styleObserver.observe(parentContainer, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+    });
+
+    content && styleObserver.observe(content, {
+      attributes: true,
+      attributeFilter: ['style', 'class'],
+      subtree: false,
+    });
+
+    this.styleObservers.set(messageId, styleObserver);
+  }
+
+  /**
+   * Sets up gradient restoration retry observer for failed gradients
+   * @param {HTMLElement} messageElement - The message element
+   * @param {HTMLElement} content - The content element
+   * @param {boolean} useGradient - Whether gradient is being used
+   */
+  setupGradientRestorationRetryObserver(messageElement, content, useGradient) {
+    if (!messageElement?.isConnected || !useGradient) return;
+
+    const retryContent = this.findMessageContentElement(messageElement);
+    if (!retryContent) return;
+
+    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const checkAndRestoreGradient = () => {
+      if (messageElement?.classList?.contains('bd-crit-hit') && messageElement?.isConnected) {
+        const retryComputed = window.getComputedStyle(retryContent);
+        if (!retryComputed?.backgroundImage?.includes('gradient')) {
+          retryContent.style.setProperty('background-image', gradientColors, 'important');
+          retryContent.style.setProperty('background', gradientColors, 'important');
+          retryContent.style.setProperty('-webkit-background-clip', 'text', 'important');
+          retryContent.style.setProperty('background-clip', 'text', 'important');
+          retryContent.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+          retryContent.style.setProperty('color', 'transparent', 'important');
+          retryContent.style.setProperty('display', 'inline-block', 'important');
+          return false;
+        }
+        return true;
+      }
+      return true;
+    };
+
+    if (!checkAndRestoreGradient()) {
+      const restorationRetryObserver = new MutationObserver((mutations) => {
+        const hasStyleMutation = mutations.some(
+          (m) =>
+            m.type === 'attributes' &&
+            (m.attributeName === 'style' || m.attributeName === 'class')
+        );
+
+        if (hasStyleMutation && checkAndRestoreGradient()) {
+          restorationRetryObserver.disconnect();
+        }
+      });
+
+      restorationRetryObserver.observe(retryContent, {
+        attributes: true,
+        attributeFilter: ['style', 'class'],
+      });
+
+      restorationRetryObserver.observe(messageElement, {
+        attributes: true,
+        attributeFilter: ['class'],
+      });
+
+      setTimeout(() => {
+        restorationRetryObserver.disconnect();
+      }, 2000);
     }
   }
 
@@ -1789,152 +1669,18 @@ module.exports = class CriticalHit {
         content.classList.add('bd-crit-text-content');
 
         if (useGradient) {
-          // Purple to black gradient - simplified 3-color gradient
-          const gradientColors =
-            'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
-          // Use setProperty with !important to ensure it applies
-          content.style.setProperty('background-image', gradientColors, 'important');
-          content.style.setProperty('background', gradientColors, 'important');
-          content.style.setProperty('-webkit-background-clip', 'text', 'important');
-          content.style.setProperty('background-clip', 'text', 'important');
-          content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-          content.style.setProperty('color', 'transparent', 'important');
-          content.style.setProperty('display', 'inline-block', 'important');
-
-          // Explicitly exclude username/timestamp elements from gradient
-          const usernameElements = messageElement.querySelectorAll(
-            '[class*="username"], [class*="timestamp"], [class*="author"]'
-          );
-          usernameElements.forEach((el) => {
-            el.style.setProperty('background', 'unset', 'important');
-            el.style.setProperty('background-image', 'unset', 'important');
-            el.style.setProperty('-webkit-background-clip', 'unset', 'important');
-            el.style.setProperty('background-clip', 'unset', 'important');
-            el.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
-            el.style.setProperty('color', 'unset', 'important');
-          });
-
-          // Verify gradient was actually applied and ensure CSS rendering
-          // Force reflow to ensure styles are applied before checking
-          void content.offsetHeight;
-
-          const gradientCheck = this.verifyGradientApplied(content);
-          const hasGradientInStyle = gradientCheck.hasGradientInStyle;
-          const hasGradientInComputed = gradientCheck.hasGradient;
-          const hasWebkitClip = gradientCheck.hasWebkitClip;
-
-          // If gradient is in computed styles but inline style was lost, reapply
-          // Discord sometimes removes inline styles even with !important
-          if (hasGradientInComputed && (!hasGradientInStyle || !hasWebkitClip)) {
-            // Reapply all gradient styles aggressively
-            content.style.setProperty('background-image', gradientColors, 'important');
-            content.style.setProperty('background', gradientColors, 'important');
-            content.style.setProperty('-webkit-background-clip', 'text', 'important');
-            content.style.setProperty('background-clip', 'text', 'important');
-            content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-            content.style.setProperty('color', 'transparent', 'important');
-            content.style.setProperty('display', 'inline-block', 'important');
-
-            // Force another reflow
-            void content.offsetHeight;
-          }          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
-            gradient: gradientColors,
-            hasGradientInComputed,
-            hasWebkitClip,
-          });
-
-          // If gradient didn't apply correctly, use MutationObserver to watch for style changes
+          const hasGradientInComputed = this.applyGradientStylesWithSettings(content, messageElement);
           if (!hasGradientInComputed && content) {
-            const gradientRetryObserver = new MutationObserver((mutations) => {
-              const hasStyleMutation = mutations.some(
-                (m) =>
-                  m.type === 'attributes' &&
-                  (m.attributeName === 'style' || m.attributeName === 'class')
-              );
-
-              if (hasStyleMutation) {
-                const retryComputed = window.getComputedStyle(content);
-                if (!retryComputed?.backgroundImage?.includes('gradient')) {
-                  // Force reapply gradient
-                  content.style.setProperty('background-image', gradientColors, 'important');
-                  content.style.setProperty('background', gradientColors, 'important');
-                  content.style.setProperty('-webkit-background-clip', 'text', 'important');
-                  content.style.setProperty('background-clip', 'text', 'important');
-                  content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-                  content.style.setProperty('color', 'transparent', 'important');
-                } else {
-                  // Gradient is now present, disconnect observer
-                  gradientRetryObserver.disconnect();
-                }
-              }
-            });
-
-            gradientRetryObserver.observe(content, {
-              attributes: true,
-              attributeFilter: ['style', 'class'],
-            });
-
-            // Cleanup after 2 seconds
-            setTimeout(() => {
-              gradientRetryObserver.disconnect();
-            }, 2000);
+            this.setupGradientRetryObserver(content);
           }
         } else {
-          // Use saved color or current setting
           const color = critSettings.color || this.settings.critColor;
-          content.style.setProperty('color', color, 'important');
-          content.style.setProperty('background', 'none', 'important');
-          content.style.setProperty('-webkit-background-clip', 'unset', 'important');
-          content.style.setProperty('background-clip', 'unset', 'important');
-          content.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
-
-          // Explicitly exclude username/timestamp elements from color
-          const usernameElements = messageElement.querySelectorAll(
-            '[class*="username"], [class*="timestamp"], [class*="author"]'
-          );
-          usernameElements.forEach((el) => {
-            el.style.setProperty('color', 'unset', 'important');
-          });
-
-          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Solid color applied for restoration', {
-            color,
-          });
+          this.applySolidColorStyles(content, messageElement, color);
         }
 
-        // Apply font styles with !important to override ALL CSS including Discord's - Force Nova Flat
-        content.style.setProperty(
-          'font-family',
-          "'Nova Flat', sans-serif", // Force Nova Flat, ignore saved font
-          'important'
-        );
-        content.style.setProperty('font-weight', 'bold', 'important'); // Bold for more impact
-        content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
-        content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
-        content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
-        content.style.setProperty('text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
-        content.style.setProperty('font-synthesis', 'none', 'important'); // Prevent font synthesis
-        content.style.setProperty('font-variant', 'normal', 'important'); // Override any font variants
-        content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
-
-        // Apply glow effect - Purple glow for purple-black gradient
-        if (critSettings.glow !== false && this.settings?.critGlow && useGradient) {
-            // Purple glow that enhances the purple-black gradient
-            content.style.setProperty(
-              'text-shadow',
-              '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
-              'important'
-            );
-          } else {
-            const color = critSettings.color || this.settings.critColor;
-            content.style.setProperty(
-              'text-shadow',
-              `0 0 2px ${color}, 0 0 3px ${color}`,
-              'important'
-            );
-          }
-        } else {
-          content.style.setProperty('text-shadow', 'none', 'important');
-        }
+        // Apply font and glow styles
+        this.applyFontStyles(content);
+        this.applyGlowEffect(content, critSettings, useGradient);
 
         critSettings.animation !== false && this.settings?.critAnimation &&
           (content.style.animation = 'critPulse 0.5s ease-in-out');
@@ -1971,94 +1717,8 @@ module.exports = class CriticalHit {
         }
       );
 
-      // Set up MutationObserver to watch for Discord replacing the content element
-      // Discord often replaces DOM elements after we style them, causing gradients to disappear
-      if (content && useGradient && finalMsgId) {
-        // Clean up existing observer for this message if any
-        this.styleObservers.has(finalMsgId) && this.styleObservers.get(finalMsgId).disconnect();
-
-        // Event-based gradient check - only runs when mutations occur
-        // Replaced periodic setInterval with MutationObserver for better performance
-        const checkGradient = () => {
-          // Re-query message element in case Discord replaced it
-          const currentMessageElement = this.requeryMessageElement(finalMsgId);
-
-          if (
-            !currentMessageElement ||
-            !currentMessageElement.isConnected ||
-            !currentMessageElement.classList.contains('bd-crit-hit')
-          ) {
-            return; // Message removed or no longer a crit
-          }
-
-          const currentContent = this.findMessageContentElement(currentMessageElement);
-
-          if (currentContent) {
-            const currentComputed = window.getComputedStyle(currentContent);
-            const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
-            const hasWebkitClip =
-              currentComputed?.webkitBackgroundClip === 'text' ||
-              currentComputed?.backgroundClip === 'text';            if (!hasGradient && useGradient) {
-              // Content element was replaced or gradient was removed - reapply
-              const gradientColors =
-                'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
-              currentContent.style.setProperty('background-image', gradientColors, 'important');
-              currentContent.style.setProperty('background', gradientColors, 'important');
-              currentContent.style.setProperty('-webkit-background-clip', 'text', 'important');
-              currentContent.style.setProperty('background-clip', 'text', 'important');
-              currentContent.style.setProperty(
-                '-webkit-text-fill-color',
-                'transparent',
-                'important'
-              );
-              currentContent.style.setProperty('color', 'transparent', 'important');
-              currentContent.style.setProperty('display', 'inline-block', 'important');
-              currentContent.classList.add('bd-crit-text-content');
-
-              // Force reflow
-              void currentContent.offsetHeight;            }
-          }
-        };
-
-        // Event-based MutationObserver - removed periodic setInterval
-        // Observe parent container AND content element for style attribute changes
-        const parentContainer = messageElement?.parentElement || document.body;
-
-        const styleObserver = new MutationObserver((mutations) => {
-          // Event-based check - only runs when mutations occur
-          const hasStyleMutation = mutations.some(
-            (m) =>
-              m.type === 'attributes' &&
-              (m.attributeName === 'style' || m.attributeName === 'class')
-          );
-          const hasChildMutation = mutations.some((m) => m.type === 'childList');
-
-          if (hasStyleMutation || hasChildMutation) {
-            // Use requestAnimationFrame to batch checks and avoid excessive reflows
-            requestAnimationFrame(() => {
-              requestAnimationFrame(checkGradient);
-            });
-          }
-        });
-
-        // Observe parent for element replacements
-        styleObserver.observe(parentContainer, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['style', 'class'],
-        });
-
-        // Also observe content element directly for style changes
-        content && styleObserver.observe(content, {
-            attributes: true,
-            attributeFilter: ['style', 'class'],
-            subtree: false,
-          });
-
-        // Store observer for cleanup
-        this.styleObservers.set(finalMsgId, styleObserver);
-      }
+      // Set up gradient monitoring for persistence
+      this.setupGradientMonitoring(messageElement, content, finalMsgId, useGradient);
 
       // If gradient still didn't apply, schedule another retry
       if (content && useGradient && !finalHasGradient) {
@@ -2070,70 +1730,7 @@ module.exports = class CriticalHit {
             computedBackgroundImage: finalComputedStyles?.backgroundImage,
           }
         );
-
-        // Use MutationObserver instead of setTimeout for restoration retry
-        if (messageElement?.isConnected && useGradient) {
-          const retryContent = this.findMessageContentElement(messageElement);
-          if (retryContent) {
-            const checkAndRestoreGradient = () => {
-              if (messageElement?.classList?.contains('bd-crit-hit') && messageElement?.isConnected) {
-                const retryComputed = window.getComputedStyle(retryContent);
-                if (!retryComputed?.backgroundImage?.includes('gradient')) {
-                  const gradientColors =
-                    'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
-                  retryContent.style.setProperty('background-image', gradientColors, 'important');
-                  retryContent.style.setProperty('background', gradientColors, 'important');
-                  retryContent.style.setProperty('-webkit-background-clip', 'text', 'important');
-                  retryContent.style.setProperty('background-clip', 'text', 'important');
-                  retryContent.style.setProperty(
-                    '-webkit-text-fill-color',
-                    'transparent',
-                    'important'
-                  );
-                  retryContent.style.setProperty('color', 'transparent', 'important');
-                  retryContent.style.setProperty('display', 'inline-block', 'important');
-                  return false; // Still missing, keep observing
-                }
-                return true; // Gradient present
-              }
-              return true; // Not a crit, stop observing
-            };
-
-            // Initial check
-            if (!checkAndRestoreGradient()) {
-              // Set up MutationObserver to watch for style changes
-              const restorationRetryObserver = new MutationObserver((mutations) => {
-                const hasStyleMutation = mutations.some(
-                  (m) =>
-                    m.type === 'attributes' &&
-                    (m.attributeName === 'style' || m.attributeName === 'class')
-                );
-
-                if (hasStyleMutation) {
-                  if (checkAndRestoreGradient()) {
-                    restorationRetryObserver.disconnect();
-                  }
-                }
-              });
-
-              restorationRetryObserver.observe(retryContent, {
-                attributes: true,
-                attributeFilter: ['style', 'class'],
-              });
-
-              // Also observe message element for class changes
-              restorationRetryObserver.observe(messageElement, {
-                attributes: true,
-                attributeFilter: ['class'],
-              });
-
-              // Cleanup after 2 seconds
-              setTimeout(() => {
-                restorationRetryObserver.disconnect();
-              }, 2000);
-            }
-          }
-        }
+        this.setupGradientRestorationRetryObserver(messageElement, content, useGradient);
       }
     } catch (error) {
       this.debugError('APPLY_CRIT_STYLE_WITH_SETTINGS', error, {
@@ -2799,16 +2396,11 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Checks if a message needs crit styling restoration from history
-   * Handles race conditions with pending crits queue and throttling
+   * Finds message element in a node for restoration checking
    * @param {Node} node - DOM node to check
+   * @returns {HTMLElement|null} Message element or null
    */
-  checkForRestoration(node) {
-    // Check if a newly added node is a message that should have a crit restored
-    if (!this.currentChannelId || this.isLoadingChannel) return;
-
-    // Throttle restoration checks to prevent spam
-    // First check if node is a message element before throttling
+  findMessageElementForRestoration(node) {
     let messageElement = null;
     if (node.classList) {
       const classes = Array.from(node.classList);
@@ -2819,32 +2411,149 @@ module.exports = class CriticalHit {
         messageElement = node;
       }
     }
-
-    // If not, check children
     if (!messageElement) {
       messageElement = node.querySelector(
         '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])'
       );
     }
+    return messageElement;
+  }
 
-    // Only throttle if we have a message element with a valid ID
+  /**
+   * Checks if restoration should be throttled for a message ID
+   * @param {string} normalizedId - Normalized message ID
+   * @returns {boolean} True if should skip (throttled)
+   */
+  shouldThrottleRestorationCheck(normalizedId) {
+    if (normalizedId.startsWith('hash_')) return false;
+    const lastCheck = this._restorationCheckThrottle.get(normalizedId);
+    const now = Date.now();
+    if (lastCheck && now - lastCheck < this._restorationCheckThrottleMs) {
+      return true;
+    }
+    this._restorationCheckThrottle.set(normalizedId, now);
+    // Clean up old throttle entries
+    this._restorationCheckThrottle.size > 500 &&
+      Array.from(this._restorationCheckThrottle.entries()).forEach(([id, checkTime]) => {
+        now - checkTime > 1000 && this._restorationCheckThrottle.delete(id);
+      });
+    return false;
+  }
+
+  /**
+   * Calculates content hash for a message for matching
+   * @param {string} author - Author username
+   * @param {string} messageContent - Message content
+   * @param {string} timestamp - Timestamp
+   * @returns {string|null} Content hash or null
+   */
+  calculateContentHashForRestoration(author, messageContent, timestamp) {
+    if (!messageContent || !author) return null;
+    const hashContent = `${author}:${messageContent.substring(0, 100)}:${timestamp || ''}`;
+    const hash = Array.from(hashContent).reduce((hash, char) => {
+      const charCode = char.charCodeAt(0);
+      hash = (hash << 5) - hash + charCode;
+      return hash & hash;
+    }, 0);
+    return `hash_${Math.abs(hash)}`;
+  }
+
+  /**
+   * Finds history entry for restoration by matching multiple strategies
+   * @param {string} normalizedMsgId - Normalized message ID
+   * @param {string} pureMessageId - Pure Discord ID
+   * @param {Array} channelCrits - Channel crit history
+   * @param {string} contentHash - Content hash for matching
+   * @param {string} messageContent - Message content
+   * @param {string} author - Author username
+   * @returns {Object|null} History entry or null
+   */
+  findHistoryEntryForRestoration(normalizedMsgId, pureMessageId, channelCrits, contentHash, messageContent, author) {
+    const isValidDiscordId = /^\d{17,19}$/.test(normalizedMsgId);
+    if (!isValidDiscordId) return null;
+
+    // Check pending queue first
+    const pendingCrit = this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
+    if (pendingCrit?.channelId === this.currentChannelId) {
+      return {
+        messageId: normalizedMsgId,
+        channelId: this.currentChannelId,
+        isCrit: true,
+        critSettings: pendingCrit.critSettings,
+        messageContent: pendingCrit.messageContent,
+        author: pendingCrit.author,
+      };
+    }
+
+    // Try exact match
+    let historyEntry = channelCrits.find((entry) => {
+      const entryId = String(entry.messageId).trim();
+      if (entryId.startsWith('hash_')) return false;
+      return entryId === normalizedMsgId || entryId === pureMessageId;
+    });
+
+    // Try matching pure IDs
+    if (!historyEntry) {
+      historyEntry = channelCrits.find((entry) => {
+        const entryId = String(entry.messageId).trim();
+        if (entryId.startsWith('hash_')) return false;
+        const entryPureId = /^\d{17,19}$/.test(entryId)
+          ? entryId
+          : entryId.match(/\d{17,19}/)?.[0];
+        return (
+          (pureMessageId && entryPureId && entryPureId === pureMessageId) ||
+          normalizedMsgId.includes(entryId) ||
+          entryId.includes(normalizedMsgId)
+        );
+      });
+    }
+
+    // Try content-based matching
+    if (!historyEntry && contentHash && messageContent && author) {
+      historyEntry = channelCrits.find((entry) => {
+        const entryId = String(entry.messageId).trim();
+        if (entryId.startsWith('hash_')) return false;
+        if (entry.messageContent && entry.author) {
+          const entryContent = entry.messageContent.substring(0, 100);
+          const entryAuthor = entry.author;
+          const entryHashContent = `${entryAuthor}:${entryContent}:${entry.timestamp || ''}`;
+          const entryHash = Array.from(entryHashContent).reduce((hash, char) => {
+            const charCode = char.charCodeAt(0);
+            hash = (hash << 5) - hash + charCode;
+            return hash & hash;
+          }, 0);
+          const entryContentHash = `hash_${Math.abs(entryHash)}`;
+          return entryContentHash === contentHash;
+        }
+        return false;
+      });
+
+      historyEntry &&
+        this.debugLog('CHECK_FOR_RESTORATION', 'Found match by content hash (reprocessed message)', {
+          msgId: normalizedMsgId,
+          matchedId: historyEntry.messageId,
+          contentHash,
+        });
+    }
+
+    return historyEntry;
+  }
+
+  /**
+   * Checks if a message needs crit styling restoration from history
+   * Handles race conditions with pending crits queue and throttling
+   * @param {Node} node - DOM node to check
+   */
+  checkForRestoration(node) {
+    // Check if a newly added node is a message that should have a crit restored
+    if (!this.currentChannelId || this.isLoadingChannel) return;
+
+    // Find message element and throttle
+    const messageElement = this.findMessageElementForRestoration(node);
     if (messageElement) {
       const msgId = this.getMessageIdentifier(messageElement);
-      if (msgId) {
-        const normalizedId = String(msgId).trim();
-        // Skip hash IDs for throttling (they're temporary)
-        if (!normalizedId.startsWith('hash_')) {
-          const lastCheck = this._restorationCheckThrottle.get(normalizedId);
-          const now = Date.now();
-          if (lastCheck && now - lastCheck < this._restorationCheckThrottleMs) return; // Skip if checked too recently
-          this._restorationCheckThrottle.set(normalizedId, now);
-
-          // FUNCTIONAL: Clean up old throttle entries (.forEach() + short-circuit)
-          this._restorationCheckThrottle.size > 500 &&
-            Array.from(this._restorationCheckThrottle.entries()).forEach(([id, checkTime]) => {
-              now - checkTime > 1000 && this._restorationCheckThrottle.delete(id);
-            });
-        }
+      if (msgId && this.shouldThrottleRestorationCheck(String(msgId).trim())) {
+        return;
       }
     }
 
@@ -2876,520 +2585,37 @@ module.exports = class CriticalHit {
           match && (pureMessageId = match[0]);
         }
 
-        // Also try content-based matching for reprocessed messages
-        // When a message is "undone" and retyped, it might get a new messageId
-        // but same content - try to match by content hash as fallback
+        // Calculate content hash for matching
         const messageContent = messageElement.textContent?.trim() || '';
         const author =
           messageElement.querySelector('[class*="username"]')?.textContent?.trim() ||
           messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
           '';
         const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
-        let contentHash = null;
-        if (messageContent && author) {
-          const hashContent = `${author}:${messageContent.substring(0, 100)}:${timestamp}`;
-          const hash = Array.from(hashContent).reduce((hash, char) => {
-            const charCode = char.charCodeAt(0);
-            hash = (hash << 5) - hash + charCode;
-            return hash & hash;
-          }, 0);
-          contentHash = `hash_${Math.abs(hash)}`;
-        }
+        const contentHash = this.calculateContentHashForRestoration(author, messageContent, timestamp);
 
-        // Only log restoration checks if verbose (happens frequently)
-        this.debug.verbose && this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
+        this.debug.verbose &&
+          this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
             msgId: normalizedMsgId,
             pureMessageId: pureMessageId !== normalizedMsgId ? pureMessageId : undefined,
             channelId: this.currentChannelId,
             channelCritCount: channelCrits.length,
           });
 
-        // Only match by valid Discord IDs, not hash IDs
-        // Hash IDs are for unsent messages and should not be matched
-        const isValidDiscordId = /^\d{17,19}$/.test(normalizedMsgId);
-        let historyEntry = null;
+        // Find history entry using helper function
+        const historyEntry = this.findHistoryEntryForRestoration(
+          normalizedMsgId,
+          pureMessageId,
+          channelCrits,
+          contentHash,
+          messageContent,
+          author
+        );
 
-        // Check pending queue first to handle race condition
-        // Crits are added to pending queue immediately, before history
-        if (isValidDiscordId) {
-          const pendingCrit =
-            this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
-
-          if (pendingCrit?.channelId === this.currentChannelId) {
-            // Found in pending queue! Use it immediately
-            historyEntry = {
-              messageId: normalizedMsgId,
-              channelId: this.currentChannelId,
-              isCrit: true,
-              critSettings: pendingCrit.critSettings,
-              messageContent: pendingCrit.messageContent,
-              author: pendingCrit.author,
-            };          }
-        }
-
-        if (isValidDiscordId && !historyEntry) {
-          // Try exact match first, then pure ID match, then partial match
-          historyEntry = channelCrits.find((entry) => {
-            const entryId = String(entry.messageId).trim();
-            // Only match valid Discord IDs, skip hash IDs
-            if (entryId.startsWith('hash_')) return false;
-            return entryId === normalizedMsgId || entryId === pureMessageId;
-          });
-          if (!historyEntry) {
-            // Try matching pure IDs
-            historyEntry = channelCrits.find((entry) => {
-              const entryId = String(entry.messageId).trim();
-              // Skip hash IDs
-              if (entryId.startsWith('hash_')) return false;
-              const entryPureId = /^\d{17,19}$/.test(entryId)
-                ? entryId
-                : entryId.match(/\d{17,19}/)?.[0];
-              return (
-                (pureMessageId && entryPureId && entryPureId === pureMessageId) ||
-                normalizedMsgId.includes(entryId) ||
-                entryId.includes(normalizedMsgId)
-              );
-            });
-          }
-
-          // If no ID match found, try content-based matching for reprocessed messages
-          // This handles cases where message was "undone" and retyped with different ID
-          if (!historyEntry && contentHash && messageContent && author) {
-            // Try to find by content hash (for messages that were reprocessed)
-            historyEntry = channelCrits.find((entry) => {
-              const entryId = String(entry.messageId).trim();
-              // Skip hash IDs in history
-              if (entryId.startsWith('hash_')) return false;
-              // Match by content if available
-              if (entry.messageContent && entry.author) {
-                const entryContent = entry.messageContent.substring(0, 100);
-                const entryAuthor = entry.author;
-                const entryHashContent = `${entryAuthor}:${entryContent}:${entry.timestamp || ''}`;
-                const entryHash = Array.from(entryHashContent).reduce((hash, char) => {
-                  const charCode = char.charCodeAt(0);
-                  hash = (hash << 5) - hash + charCode;
-                  return hash & hash;
-                }, 0);
-                const entryContentHash = `hash_${Math.abs(entryHash)}`;
-                return entryContentHash === contentHash;
-              }
-              return false;
-            });
-
-            historyEntry && this.debugLog(
-                'CHECK_FOR_RESTORATION',
-                'Found match by content hash (reprocessed message)',
-                {
-                  msgId: normalizedMsgId,
-                  matchedId: historyEntry.messageId,
-                  contentHash,
-                }
-              );
-          }
-        }        // If not found initially, retry after a delay to handle race condition
-        // Discord reprocesses messages before checkForCrit finishes adding to history
-        const performRestoration = (entryToRestore) => {
-          if (!entryToRestore || !entryToRestore.critSettings) return;
-
-          this.debugLog(
-            'CHECK_FOR_RESTORATION',
-            'SUCCESS: Found matching crit in history, restoring',
-            {
-              msgId: normalizedMsgId,
-              channelId: this.currentChannelId,
-              hasCritSettings: !!entryToRestore.critSettings,
-              critSettings: entryToRestore.critSettings,
-            }
-          );
-
-          // Use double RAF for DOM stability, then retry if element is replaced
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {              // Re-query element right before restoration to handle Discord replacements
-              // Discord often replaces elements, so the closure reference might be stale
-              const currentMessageElement = this.requeryMessageElement(normalizedMsgId, messageElement);
-
-              // Check if element is still valid and in DOM
-              if (!currentMessageElement || !currentMessageElement.isConnected) {
-                // Element was replaced - log and skip (will be caught by next mutation observer cycle)
-                this.debugLog(
-                  'CHECK_FOR_RESTORATION',
-                  'Element replaced, skipping (will retry on next cycle)',
-                  {
-                    msgId: normalizedMsgId,
-                    hadOriginalElement: !!messageElement,
-                    foundCurrentElement: !!currentMessageElement,
-                  }
-                );
-                return;
-              }
-
-              // Always restore gradient when we find a crit in history
-              // Even if gradient appears present, Discord might replace the element or remove styles
-              // Reapplying ensures it persists correctly
-              const useGradient = entryToRestore.critSettings?.gradient !== false;
-              const hasCritClass = currentMessageElement.classList.contains('bd-crit-hit');
-
-              // Always restore - don't skip even if gradient appears present
-              // Discord's DOM manipulation can cause stale element references or style removal
-              const needsRestoration = true;              if (needsRestoration) {
-                // Restore the crit                this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
-                this.critMessages.add(currentMessageElement);
-                // Mark as processed using message ID (not element reference)
-                normalizedMsgId && this.markAsProcessed(normalizedMsgId);
-
-                // Use MutationObserver instead of polling setTimeout
-                // Watch for style changes on content element to detect gradient application/removal
-                const verifyGradient = () => {
-                  // Re-query element in case Discord replaced it
-                  const retryElement = this.requeryMessageElement(normalizedMsgId);
-
-                  if (!retryElement || !retryElement.isConnected) {                    return false;
-                  }
-
-                  const content = this.findMessageContentElement(retryElement);
-
-                  if (!content) {
-                    return false; // Content not found yet
-                  }
-
-                  if (useGradient) {
-                    const gradientCheck = this.verifyGradientApplied(content);
-                    const hasGradient = gradientCheck.hasGradient;
-                    const hasWebkitClip = gradientCheck.hasWebkitClip;                    // If gradient is missing, reapply it
-                    if (!hasGradient) {
-                      this.applyCritStyleWithSettings(retryElement, entryToRestore.critSettings);
-                      return false; // Still missing, keep observing
-                    }
-                    return true; // Gradient present
-                  }
-
-                  return true; // No gradient needed
-                };
-
-                // Initial check
-                if (verifyGradient()) {
-                  // Gradient already present, no need to observe
-                } else {
-                  // Set up MutationObserver to watch for style changes
-                  const contentElement = this.findMessageContentElement(currentMessageElement);
-                  if (contentElement) {
-                    const gradientObserver = new MutationObserver((mutations) => {
-                      const hasStyleMutation = mutations.some(
-                        (m) =>
-                          m.type === 'attributes' &&
-                          (m.attributeName === 'style' || m.attributeName === 'class')
-                      );
-
-                      if (hasStyleMutation) {
-                        if (verifyGradient()) {
-                          gradientObserver.disconnect();
-                        }
-                      }
-                    });
-
-                    gradientObserver.observe(contentElement, {
-                      attributes: true,
-                      attributeFilter: ['style', 'class'],
-                    });
-
-                    // Also observe parent for element replacement
-                    const parentContainer = currentMessageElement?.parentElement || document.body;
-                    const parentObserver = new MutationObserver((mutations) => {
-                      const hasChildMutation = mutations.some((m) => {
-                        if (m.type === 'childList' && m.addedNodes.length) {
-                          return Array.from(m.addedNodes).some((node) => {
-                            if (node.nodeType !== Node.ELEMENT_NODE) return false;
-                            const id = this.getMessageIdentifier(node);
-                            return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                          });
-                        }
-                        return false;
-                      });
-
-                      if (hasChildMutation) {
-                        if (verifyGradient()) {
-                          parentObserver.disconnect();
-                          gradientObserver.disconnect();
-                        }
-                      }
-                    });
-
-                    parentObserver.observe(parentContainer, {
-                      childList: true,
-                      subtree: true,
-                    });
-
-                    // Cleanup observers after 3 seconds
-                    setTimeout(() => {
-                      gradientObserver.disconnect();
-                      parentObserver.disconnect();
-                    }, 3000);
-                  }
-                }
-
-                // Trigger animation with gradient verification
-                // Use double RAF to ensure gradient is applied before animation
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() => {
-                    // Re-query element to ensure we have latest DOM reference
-                    const restoredElement =
-                      document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
-                      currentMessageElement;
-
-                    if (!restoredElement || !restoredElement.isConnected) {
-                      this.debugLog(
-                        'CHECK_FOR_RESTORATION',
-                        'Element disconnected before animation trigger'
-                      );
-                      return;
-                    }
-
-                    // Verify gradient is applied before triggering animation
-                    const restoredContent = this.findMessageContentElement(restoredElement);
-                    if (restoredContent) {
-                      void restoredContent.offsetHeight; // Force reflow
-                      const gradientCheck = this.verifyGradientApplied(restoredContent);
-                      const hasGradient = gradientCheck.hasGradient;
-                      const hasWebkitClip = gradientCheck.hasWebkitClip;                      if (!hasGradient || !hasWebkitClip) {
-                        // Gradient not ready, use MutationObserver to watch for style changes
-                        const contentElement = this.findMessageContentElement(restoredElement);
-                        if (contentElement) {
-                          const animationRetryObserver = new MutationObserver((mutations) => {
-                            const hasStyleMutation = mutations.some(
-                              (m) =>
-                                m.type === 'attributes' &&
-                                (m.attributeName === 'style' || m.attributeName === 'class')
-                            );
-
-                            if (hasStyleMutation) {
-                              const retryElement = this.requeryMessageElement(normalizedMsgId, restoredElement);
-                              if (retryElement?.isConnected) {
-                                const retryContent = this.findMessageContentElement(retryElement);
-                                if (retryContent) {
-                                  const retryGradientCheck = this.verifyGradientApplied(retryContent);
-                                  const retryHasGradient = retryGradientCheck.hasGradient;
-                                  const retryHasWebkitClip = retryGradientCheck.hasWebkitClip;
-
-                                  if (retryHasGradient && retryHasWebkitClip) {
-                                    // Only trigger animation if message is verified (has real Discord ID)
-                                    const retryMessageId = this.getMessageId(retryElement);
-                                    const isRetryVerified =
-                                      retryMessageId && this.isValidDiscordId(retryMessageId);
-
-                                    if (isRetryVerified) {
-                                      try {
-                                        this.onCritHit(retryElement);
-                                      } catch (e) {
-                                        this.debugError('CHECK_FOR_RESTORATION', e, {
-                                          phase: 'trigger_animation_retry',
-                                        });
-                                      }
-                                    }
-                                    animationRetryObserver.disconnect();
-                                  }
-                                }
-                              }
-                            }
-                          });
-
-                          animationRetryObserver.observe(contentElement, {
-                            attributes: true,
-                            attributeFilter: ['style', 'class'],
-                          });
-
-                          // Cleanup after 1 second
-                          setTimeout(() => {
-                            animationRetryObserver.disconnect();
-                          }, 1000);
-                        }
-                        return;
-                      }
-                    }
-
-                    // Only trigger animation if message is verified (has real Discord ID)
-                    // This ensures animations only trigger when messages are verified, not during queue
-                    const restoredMessageId = this.getMessageId(restoredElement);
-                    const isRestoredVerified =
-                      restoredMessageId && this.isValidDiscordId(restoredMessageId);
-
-                    if (isRestoredVerified) {                      try {
-                        this.onCritHit(restoredElement);
-                      } catch (e) {
-                        this.debugError('CHECK_FOR_RESTORATION', e, { phase: 'trigger_animation' });
-                      }
-                    } else {                    }
-                  });
-                });
-
-                // Set up monitoring after restoration to catch if Discord removes gradient later
-                if (useGradient && normalizedMsgId) {
-                  // Set up MutationObserver to watch for gradient removal
-                  this.styleObservers.has(normalizedMsgId) && this.styleObservers.get(normalizedMsgId).disconnect();
-
-                  const checkGradient = () => {
-                    // Re-query element in case Discord replaced it
-                    const monitoredElement = this.requeryMessageElement(normalizedMsgId);
-
-                    if (
-                      !monitoredElement ||
-                      !monitoredElement.isConnected ||
-                      !monitoredElement.classList.contains('bd-crit-hit')
-                    ) {
-                      return;
-                    }
-
-                    const currentContent = this.findMessageContentElement(monitoredElement);
-
-                    if (currentContent && useGradient) {
-                      const gradientCheck = this.verifyGradientApplied(currentContent);
-                      const hasGradient = gradientCheck.hasGradient;
-                      if (!hasGradient) {
-                        // Gradient disappeared! Reapply it
-                        this.applyCritStyleWithSettings(
-                          monitoredElement,
-                          entryToRestore.critSettings
-                        );
-                      }
-                    }
-                  };
-
-                  // Observe parent container instead of specific element to catch replacements
-                  // If Discord replaces the entire message element, observing the parent will catch it
-                  const parentContainer = currentMessageElement?.parentElement || document.body;
-
-                  const styleObserver = new MutationObserver((mutations) => {
-                    // Event-based check - only runs when mutations occur
-                    // Check if style attribute changed or element was replaced
-                    const hasStyleMutation = mutations.some(
-                      (m) =>
-                        m.type === 'attributes' &&
-                        (m.attributeName === 'style' || m.attributeName === 'class')
-                    );
-                    const hasChildMutation = mutations.some((m) => m.type === 'childList');
-
-                    if (hasStyleMutation || hasChildMutation) {
-                      // Use requestAnimationFrame to batch checks and avoid excessive reflows
-                      requestAnimationFrame(() => {
-                        requestAnimationFrame(checkGradient);
-                      });
-                    }
-                  });
-
-                  styleObserver.observe(parentContainer, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['style', 'class'],
-                  });
-
-                  // Removed periodic setInterval - now using event-based checks only
-                  // MutationObserver will trigger checkGradient when mutations occur
-
-                  // Also observe content element directly for style attribute changes
-                  const currentContentElement =
-                    this.findMessageContentElement(currentMessageElement);
-
-                  currentContentElement && styleObserver.observe(currentContentElement, {
-                      attributes: true,
-                      attributeFilter: ['style', 'class'],
-                      subtree: false,
-                    });
-
-                  // Store observer for cleanup
-                  this.styleObservers.set(normalizedMsgId, styleObserver);
-
-                  // Clean up after 10 seconds
-                  setTimeout(() => {
-                    styleObserver.disconnect();
-                    this.styleObservers.delete(normalizedMsgId);
-                  }, 10000);
-                }
-              } else {
-                // Even if gradient appears present, set up monitoring to catch if it disappears
-                // Discord might remove it after our check, so we need persistent monitoring
-                if (useGradient && normalizedMsgId) {
-                  // Set up MutationObserver to watch for gradient removal
-                  this.styleObservers.has(normalizedMsgId) && this.styleObservers.get(normalizedMsgId).disconnect();
-
-                  const checkGradient = () => {
-                    // Re-query element in case Discord replaced it
-                    const currentMessageElement = this.requeryMessageElement(normalizedMsgId);
-
-                    if (
-                      !currentMessageElement ||
-                      !currentMessageElement.isConnected ||
-                      !currentMessageElement.classList.contains('bd-crit-hit')
-                    ) {
-                      return;
-                    }
-
-                    const currentContent =
-                      currentMessageElement.querySelector('[class*="messageContent"]') ||
-                      currentMessageElement.querySelector('[class*="markup"]') ||
-                      currentMessageElement.querySelector('[class*="textContainer"]');
-
-                    if (currentContent && useGradient) {
-                      const computed = window.getComputedStyle(currentContent);
-                      const hasGradient = computed?.backgroundImage?.includes('gradient');                      if (!hasGradient) {
-                        // Gradient disappeared! Reapply it
-                        this.applyCritStyleWithSettings(
-                          currentMessageElement,
-                          entryToRestore.critSettings
-                        );
-                      }
-                    }
-                  };
-
-                  // Event-based MutationObserver - removed periodic setInterval
-                  const styleObserver = new MutationObserver((mutations) => {
-                    // Event-based check - only runs when mutations occur
-                    const hasStyleMutation = mutations.some(
-                      (m) =>
-                        m.type === 'attributes' &&
-                        (m.attributeName === 'style' || m.attributeName === 'class')
-                    );
-                    const hasChildMutation = mutations.some((m) => m.type === 'childList');
-
-                    if (hasStyleMutation || hasChildMutation) {
-                      // Use requestAnimationFrame to batch checks
-                      requestAnimationFrame(() => {
-                        requestAnimationFrame(checkGradient);
-                      });
-                    }
-                  });
-
-                  // Observe message element and parent for changes
-                  const parentContainer = messageElement?.parentElement || document.body;
-
-                  styleObserver.observe(parentContainer, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['style', 'class'],
-                  });
-
-                  styleObserver.observe(messageElement, {
-                    childList: true,
-                    subtree: true,
-                    attributes: true,
-                    attributeFilter: ['style', 'class'],
-                  });
-
-                  // Store observer for cleanup
-                  this.styleObservers.set(normalizedMsgId, styleObserver);
-
-                  // Clean up after 10 seconds (message should be stable by then)
-                  setTimeout(() => {
-                    styleObserver.disconnect();
-                    this.styleObservers.delete(normalizedMsgId);
-                  }, 10000);
-                }              }
-            });
-          });
-        };
+        const isValidDiscordId = this.isValidDiscordId(normalizedMsgId);
 
         if (historyEntry?.critSettings) {
-          performRestoration(historyEntry);
+          this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
         } else if (!historyEntry && isValidDiscordId) {
           // Use MutationObserver instead of polling setTimeout
           // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
@@ -3423,7 +2649,8 @@ module.exports = class CriticalHit {
                 critSettings: pendingCrit.critSettings,
                 messageContent: pendingCrit.messageContent,
                 author: pendingCrit.author,
-              };              performRestoration(pendingEntry);
+              };
+              this.performCritRestoration(pendingEntry, normalizedMsgId, messageElement);
               return true;
             }
 
@@ -3440,7 +2667,8 @@ module.exports = class CriticalHit {
                 return entryId === normalizedMsgId || entryId === pureMessageId;
               });
 
-              if (retryHistoryEntry?.critSettings) {                performRestoration(retryHistoryEntry);
+              if (retryHistoryEntry?.critSettings) {
+                this.performCritRestoration(retryHistoryEntry, normalizedMsgId, messageElement);
                 return true;
               }
             }
@@ -3519,6 +2747,203 @@ module.exports = class CriticalHit {
   // ============================================================================
 
   /**
+   * Handles queued messages with hash IDs (messages without Discord IDs yet)
+   * Detects if they would be crits and adds them to pending queue
+   * @param {string} messageId - The hash message ID
+   * @param {HTMLElement} messageElement - The message DOM element
+   * @returns {boolean} True if message was handled (should return early)
+   */
+  handleQueuedMessage(messageId, messageElement) {
+    if (!messageId.startsWith('hash_')) return false;
+
+    const content = this.findMessageContentElement(messageElement);
+    const author = this.getAuthorId(messageElement);
+    const channelId = this.getCurrentChannelId();
+
+    if (!content || !author || !channelId) {
+      this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (missing data)', { messageId });
+      return true;
+    }
+
+    const contentText = content.textContent?.trim() || '';
+    if (!contentText) {
+      this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (no content)', { messageId });
+      return true;
+    }
+
+    // Use deterministic randomness based on content (same seed as real IDs will use)
+    const contentHash = this.getContentHash(author, contentText);
+    const seed = `${contentHash}:${channelId}`;
+    const hash = this.simpleHash(seed);
+    const critRoll = (hash % 10000) / 100;
+    const critChance = this.getEffectiveCritChance();
+    const wouldBeCrit = critRoll <= critChance;
+
+    if (wouldBeCrit) {
+      const critSettings = {
+        gradient: this.settings.critGradient !== false,
+        color: this.settings.critColor,
+        font: this.settings.critFont,
+        glow: this.settings.critGlow,
+        animation: this.settings.animationEnabled !== false,
+      };
+
+      this.pendingCrits.set(contentHash, {
+        critSettings: critSettings,
+        timestamp: Date.now(),
+        channelId: channelId,
+        messageContent: contentText,
+        author: author,
+        contentHash: contentHash,
+        isHashId: true,
+      });
+    }
+
+    this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (likely unsent/pending message)', {
+      messageId,
+      note: 'Hash IDs are created for messages without Discord IDs - crits are stored in pending queue and will be applied when real ID is assigned',
+    });
+    return true;
+  }
+
+  /**
+   * Calculates deterministic crit roll for a message
+   * @param {string} messageId - The message ID
+   * @param {HTMLElement} messageElement - The message DOM element
+   * @returns {number} Roll value (0-100)
+   */
+  calculateCritRoll(messageId, messageElement) {
+    if (!messageId) return Math.random() * 100;
+
+    // Try content-based seed first (matches queued message detection)
+    const content = this.findMessageContentElement(messageElement);
+    const author = this.getAuthorId(messageElement);
+    const contentText = content?.textContent?.trim();
+
+    if (content && author && contentText) {
+      const contentHash = this.getContentHash(author, contentText);
+      const seed = `${contentHash}:${this.currentChannelId}`;
+      const hash = this.simpleHash(seed);
+      return (hash % 10000) / 100;
+    }
+
+    // Fallback to message ID
+    const hash = this.simpleHash(messageId + this.currentChannelId);
+    return (hash % 10000) / 100;
+  }
+
+  /**
+   * Processes a new crit detection - applies styling, saves to history, triggers animation
+   * @param {HTMLElement} messageElement - The message DOM element
+   * @param {string} messageId - The message ID
+   * @param {string} authorId - The author ID
+   * @param {string} messageContent - The message content
+   * @param {string} author - The author username
+   * @param {number} roll - The crit roll value
+   * @param {boolean} isValidDiscordId - Whether message has valid Discord ID
+   */
+  processNewCrit(messageElement, messageId, authorId, messageContent, author, roll, isValidDiscordId) {
+    this.stats.totalCrits++;
+    this.updateStats();
+
+    // Check if currently processing
+    if (messageId && this._processingCrits.has(messageId)) {
+      return;
+    }
+
+    messageId && this._processingCrits.add(messageId);
+
+    const effectiveCritChance = this.getEffectiveCritChance();
+    this.debugLog('CHECK_FOR_CRIT', 'CRITICAL HIT DETECTED!', {
+      messageId: messageId,
+      authorId: authorId,
+      channelId: this.currentChannelId,
+      messagePreview: messageContent.substring(0, 50),
+      author: author,
+      roll: roll,
+      baseCritChance: this.settings.critChance,
+      effectiveCritChance: effectiveCritChance,
+      totalCrits: this.stats.totalCrits,
+      critRate: this.stats.critRate.toFixed(2) + '%',
+    });
+
+    try {
+      this.applyCritStyle(messageElement);
+      this.critMessages.add(messageElement);
+
+      // Trigger animation only for verified messages
+      if (isValidDiscordId && messageId) {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            const currentElement = this.requeryMessageElement(messageId, messageElement);
+            if (currentElement?.isConnected) {
+              const contentElement = this.findMessageContentElement(currentElement);
+              if (contentElement) {
+                void contentElement.offsetHeight;
+                const gradientCheck = this.verifyGradientApplied(contentElement);
+                if (gradientCheck.hasGradient && gradientCheck.hasWebkitClip) {
+                  this.onCritHit(currentElement);
+                }
+              }
+            }
+          });
+        });
+      }
+
+      // Save to history
+      if (messageId && this.currentChannelId) {
+        this.addToHistory({
+          messageId: messageId,
+          authorId: authorId,
+          channelId: this.currentChannelId,
+          timestamp: Date.now(),
+          isCrit: true,
+          messageContent: messageContent.substring(0, 200),
+          author: author,
+        });
+      }
+
+      messageId && this._processingCrits.delete(messageId);
+    } catch (error) {
+      this.debugError('CHECK_FOR_CRIT', error, {
+        phase: 'apply_crit',
+        messageId: messageId,
+      });
+      messageId && this._processingCrits.delete(messageId);
+    }
+  }
+
+  /**
+   * Processes a non-crit message - saves to history
+   * @param {string} messageId - The message ID
+   * @param {string} authorId - The author ID
+   * @param {string} messageContent - The message content
+   * @param {string} author - The author username
+   */
+  processNonCrit(messageId, authorId, messageContent, author) {
+    this.debugLog('CHECK_FOR_CRIT', 'Non-crit message detected', {
+      messageId,
+      authorId,
+    });
+
+    if (messageId && this.currentChannelId) {
+      try {
+        this.addToHistory({
+          messageId: messageId,
+          authorId: authorId,
+          channelId: this.currentChannelId,
+          timestamp: Date.now(),
+          isCrit: false,
+          messageContent: messageContent.substring(0, 200),
+          author: author,
+        });
+      } catch (error) {
+        this.debugError('CHECK_FOR_CRIT', error, { phase: 'save_non_crit_history' });
+      }
+    }
+  }
+
+  /**
    * Main crit detection logic: determines if a message should be a crit
    * Uses deterministic randomness based on message/channel ID for consistency
    * Applies styling and adds to history if crit is detected
@@ -3562,54 +2987,7 @@ module.exports = class CriticalHit {
       // Define isValidDiscordId and isHashId at the top so they're available throughout the method
       const isValidDiscordId = /^\d{17,19}$/.test(messageId);
       const isHashId = messageId.startsWith('hash_');      // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
-      // When Discord finishes processing and assigns real ID, we'll check pending queue
-      if (isHashId) {
-        // Check if this queued message should be a crit (for pending queue)
-        const content = this.findMessageContentElement(messageElement);
-        const author = this.getAuthorId(messageElement);
-        const channelId = this.getCurrentChannelId();
-
-        if (content && author && channelId) {
-          const contentText = content.textContent?.trim() || '';
-          if (contentText) {
-            // Use deterministic randomness based on content (same seed as real IDs will use)
-            // This ensures queued messages and real IDs get the same crit determination
-            // Use content-based seed: author + channel + content (same as what real ID will use)
-            const contentHash = this.getContentHash(author, contentText);
-            const seed = `${contentHash}:${channelId}`;
-            const hash = this.simpleHash(seed);
-            const critRoll = (hash % 10000) / 100; // Same range as real IDs (0-100)
-            const critChance = this.getEffectiveCritChance();
-            const wouldBeCrit = critRoll <= critChance;
-
-            if (wouldBeCrit) {
-              // This queued message would be a crit - add to pending queue
-              // Use the contentHash we already calculated above
-              const critSettings = {
-                gradient: this.settings.critGradient !== false,
-                color: this.settings.critColor,
-                font: this.settings.critFont,
-                glow: this.settings.critGlow,
-                animation: this.settings.animationEnabled !== false,
-              };
-
-              // Add to pending queue with content hash for matching when real ID is assigned
-              this.pendingCrits.set(contentHash, {
-                critSettings: critSettings,
-                timestamp: Date.now(),
-                channelId: channelId,
-                messageContent: contentText,
-                author: author,
-                contentHash: contentHash,
-                isHashId: true, // Mark as originally queued
-              });            }
-          }
-        }
-
-        this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (likely unsent/pending message)', {
-          messageId,
-          note: 'Hash IDs are created for messages without Discord IDs - crits are stored in pending queue and will be applied when real ID is assigned',
-        });
+      if (isHashId && this.handleQueuedMessage(messageId, messageElement)) {
         return;
       }
 
@@ -3691,9 +3069,7 @@ module.exports = class CriticalHit {
                   // This ensures animations only trigger when messages are verified, not during queue
                   requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
-                      const verifiedElement =
-                        document.querySelector(`[data-message-id="${messageId}"]`) ||
-                        messageElement;
+                      const verifiedElement = this.requeryMessageElement(messageId, messageElement);
                       if (verifiedElement?.isConnected) {                        try {
                           this.onCritHit(verifiedElement);
                         } catch (error) {
@@ -3861,33 +3237,9 @@ module.exports = class CriticalHit {
         return; // Not a real message
       }
 
-      // Calculate effective crit chance (base + agility bonus, capped at 30%)
+      // Calculate crit roll using helper function
       const effectiveCritChance = this.getEffectiveCritChance();
-
-      // Use deterministic random based on content to ensure same message always gets same result
-      // This prevents the same message from being crit on one check and non-crit on another
-      // IMPORTANT: Use content-based seed to match queued message detection (hash IDs)
-      let roll;
-      if (messageId) {
-        // Try content-based seed first (matches queued message detection)
-        const content = this.findMessageContentElement(messageElement);
-        const author = this.getAuthorId(messageElement);
-        const contentText = content?.textContent?.trim();
-        if (content && author && contentText) {
-          // Use same seed as queued messages for consistency
-          const contentHash = this.getContentHash(author, contentText);
-          const seed = `${contentHash}:${this.currentChannelId}`;
-          const hash = this.simpleHash(seed);
-          roll = (hash % 10000) / 100; // Convert to 0-100 range
-        } else {
-          // Fallback to message ID if can't get content/author
-          const hash = this.simpleHash(messageId + this.currentChannelId);
-          roll = (hash % 10000) / 100;
-        }
-      } else {
-        // Fallback to true random if no message ID (shouldn't happen)
-        roll = Math.random() * 100;
-      }
+      const roll = this.calculateCritRoll(messageId, messageElement);
 
       this.debugLog('CHECK_FOR_CRIT', 'Checking for crit', {
         messageId,
@@ -3916,296 +3268,19 @@ module.exports = class CriticalHit {
       // Already marked as processed by markAsProcessed above (atomic check-and-add)
 
       if (isCrit) {
-        // CRITICAL HIT!
-        this.stats.totalCrits++;
-        this.updateStats(); // Recalculate crit rate
-
-        // Check if currently processing crit styling for this message (prevent duplicate during spam)
-        if (messageId && this._processingCrits.has(messageId)) {          return; // Already processing, skip duplicate call
-        }
-
-        // Mark as processing crit styling
-        messageId && this._processingCrits.add(messageId);
-
-        this.debugLog('CHECK_FOR_CRIT', 'CRITICAL HIT DETECTED!', {
-          messageId: messageId,
-          authorId: authorId,
-          channelId: this.currentChannelId,
-          messagePreview: messageContent.substring(0, 50),
-          author: author,
-          roll: roll,
-          baseCritChance: this.settings.critChance,
-          effectiveCritChance: effectiveCritChance,
-          totalCrits: this.stats.totalCrits,
-          critRate: this.stats.critRate.toFixed(2) + '%',
-        });
-
-        try {
-          // Apply crit style first
-          this.debugLog('CHECK_FOR_CRIT', 'Step 1: Applying crit style to message', {
-            messageId: messageId,
-            hasMessageElement: !!messageElement,
-          });          // Forcefully apply crit style
-          this.applyCritStyle(messageElement);
-
-          // Use MutationObserver instead of setTimeout polling to ensure gradient persists
-          // Watch for style changes that might remove the gradient, especially after reprocessing
-          const content = this.findMessageContentElement(messageElement);
-          if (content && this.settings?.critGradient !== false) {
-            const gradientColors =
-              'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
-
-            const ensureGradient = () => {
-              // Re-query element in case Discord replaced it
-              const currentElement = this.requeryMessageElement(messageId, messageElement);
-              if (!currentElement?.isConnected) return false;
-
-              const currentContent = this.findMessageContentElement(currentElement);
-              if (!currentContent) return false;
-
-              const gradientCheck = this.verifyGradientApplied(currentContent);
-              const hasGradient = gradientCheck.hasGradient;
-
-              if (!hasGradient && currentElement?.classList?.contains('bd-crit-hit')) {
-                // Gradient was removed - reapply it
-                currentContent.style.setProperty('background-image', gradientColors, 'important');
-                currentContent.style.setProperty('background', gradientColors, 'important');
-                currentContent.style.setProperty('-webkit-background-clip', 'text', 'important');
-                currentContent.style.setProperty('background-clip', 'text', 'important');
-                currentContent.style.setProperty(
-                  '-webkit-text-fill-color',
-                  'transparent',
-                  'important'
-                );
-                currentContent.style.setProperty('color', 'transparent', 'important');
-                currentContent.style.setProperty('display', 'inline-block', 'important');
-                currentContent.classList.add('bd-crit-text-content');                return false; // Still missing, keep observing
-              }
-              return true; // Gradient present
-            };
-
-            // Initial check
-            if (!ensureGradient()) {
-              // Set up MutationObserver to watch for style changes
-              const gradientPersistenceObserver = new MutationObserver((mutations) => {
-                const hasStyleMutation = mutations.some(
-                  (m) =>
-                    m.type === 'attributes' &&
-                    (m.attributeName === 'style' || m.attributeName === 'class')
-                );
-                const hasChildMutation = mutations.some((m) => m.type === 'childList');
-
-                if (hasStyleMutation || hasChildMutation) {
-                  if (ensureGradient()) {
-                    gradientPersistenceObserver.disconnect();
-                  }
-                }
-              });
-
-              gradientPersistenceObserver.observe(content, {
-                attributes: true,
-                attributeFilter: ['style', 'class'],
-              });
-
-              // Also observe message element and parent for element replacement
-              const parentContainer = messageElement?.parentElement || document.body;
-              gradientPersistenceObserver.observe(parentContainer, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['class'],
-              });
-
-              gradientPersistenceObserver.observe(messageElement, {
-                attributes: true,
-                attributeFilter: ['class'],
-              });
-
-              // Cleanup after 5 seconds (longer for queued messages that need time to process)
-              setTimeout(() => {
-                gradientPersistenceObserver.disconnect();
-              }, 5000);
-            }
-          }          this.critMessages.add(messageElement);
-
-          // Only trigger animation when message is verified (has real Discord ID)
-          // This ensures animations only trigger once when confirmed, not during queue phase
-          // This makes combo resets more accurate because we know for sure if it's a crit or not
-          if (isValidDiscordId && messageId) {
-            // Verify gradient before triggering animation
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                const currentElement = this.requeryMessageElement(messageId, messageElement);
-
-                if (!currentElement || !currentElement.isConnected) return;
-
-                const contentElement = this.findMessageContentElement(currentElement);
-                if (contentElement) {
-                  void contentElement.offsetHeight; // Force reflow
-                  const gradientCheck = this.verifyGradientApplied(contentElement);
-                  const hasGradient = gradientCheck.hasGradient;
-                  const hasWebkitClip = gradientCheck.hasWebkitClip;                  if (hasGradient && hasWebkitClip) {
-                    // Gradient is ready - trigger animation for verified crit
-                    this.onCritHit(currentElement);
-                  } else {
-                    // Gradient not ready yet - retry once after brief delay
-                    setTimeout(() => {
-                      const retryElement = this.requeryMessageElement(messageId, currentElement);
-                      if (retryElement?.isConnected) {
-                        const retryContent = this.findMessageContentElement(retryElement);
-                        if (retryContent) {
-                          const retryComputed = window.getComputedStyle(retryContent);
-                          const retryHasGradient =
-                            retryComputed?.backgroundImage?.includes('gradient');
-                          const retryHasWebkitClip =
-                            retryComputed?.webkitBackgroundClip === 'text' ||
-                            retryComputed?.backgroundClip === 'text';
-                          retryHasGradient && retryHasWebkitClip && this.onCritHit(retryElement);
-                        }
-                      }
-                    }, 100);
-                  }
-                }
-              });
-            });
-          } else {          }
-          // Already marked as processed by markAsProcessed above
-          this.debugLog('CHECK_FOR_CRIT', 'Step 1 Complete: Crit style applied', {
-            messageId: messageId,
-            elementHasClass: messageElement.classList.contains('bd-crit-hit'),
-            critMessagesSize: this.critMessages.size,
-          });
-
-          // Remove processing lock after successful styling
-          messageId && this._processingCrits.delete(messageId);
-
-          // Store in history with full info and save immediately
-          if (messageId && this.currentChannelId) {
-            try {
-              this.debugLog('CHECK_FOR_CRIT', 'Step 2: Saving crit to history', {
-                messageId: messageId,
-                authorId: authorId,
-                channelId: this.currentChannelId,
-                hasMessageContent: messageContent.length > 0,
-                hasAuthor: author.length > 0,
-              });
-
-              this.addToHistory({
-                messageId: messageId,
-                authorId: authorId, // Store author ID for filtering
-                channelId: this.currentChannelId,
-                timestamp: Date.now(),
-                isCrit: true,
-                messageContent: messageContent.substring(0, 200), // Store first 200 chars
-                author: author, // Author username for display
-              });
-
-              // NOTE: No need to save here - addToHistory() already saves immediately for crits (line 871)
-              // Removing duplicate save to prevent double-saving the same message
-              this.debugLog(
-                'CHECK_FOR_CRIT',
-                'Step 3: History saved by addToHistory (no duplicate save needed)',
-                {
-                  messageId: messageId,
-                  channelId: this.currentChannelId,
-                }
-              );
-
-              // Verify it was saved
-              const verifyLoad = BdApi.Data.load('CriticalHit', 'messageHistory');
-              const verifyEntry = verifyLoad?.find(
-                (e) =>
-                  e.messageId === messageId && e.channelId === this.currentChannelId && e.isCrit
-              );
-
-              this.debugLog(
-                'CHECK_FOR_CRIT',
-                verifyEntry
-                  ? 'SUCCESS: Crit saved and verified in storage'
-                  : 'WARNING: Crit save verification failed',
-                {
-                  messageId: messageId,
-                  channelId: this.currentChannelId,
-                  verifyLoadSuccess: Array.isArray(verifyLoad),
-                  verifyEntryFound: !!verifyEntry,
-                  verifyEntryIsCrit: verifyEntry?.isCrit,
-                  verifyEntryHasSettings: !!verifyEntry?.critSettings,
-                }
-              );
-            } catch (error) {
-              this.debugError('CHECK_FOR_CRIT', error, {
-                phase: 'save_crit_history',
-                messageId: messageId,
-                channelId: this.currentChannelId,
-              });
-            }
-          } else {
-            this.debugLog(
-              'CHECK_FOR_CRIT',
-              'WARNING: Cannot save crit - missing messageId or channelId',
-              {
-                hasMessageId: !!messageId,
-                hasChannelId: !!this.currentChannelId,
-                messageId: messageId,
-                channelId: this.currentChannelId,
-              }
-            );
-          }
-
-          // Animation is already triggered above when message is verified (has real Discord ID)
-          // No need to trigger again here - this prevents double animations
-          // Animations only trigger when messages are verified, making combo resets more accurate
-        } catch (error) {
-          this.debugError('CHECK_FOR_CRIT', error, {
-            phase: 'apply_crit',
-            messageId: messageId,
-            channelId: this.currentChannelId,
-          });
-          // Remove processing lock on error
-          messageId && this._processingCrits.delete(messageId);
-        }
-      } else {
-        // NOT A CRIT - Already marked as processed by markAsProcessed() at start
-        this.debugLog('CHECK_FOR_CRIT', 'Non-crit message detected', {
+        // Process new crit using helper function
+        this.processNewCrit(
+          messageElement,
           messageId,
-          roll: roll.toFixed(2),
-          effectiveCritChance,
           authorId,
-        });
-
-        // Store in history (non-crit) for tracking - CRITICAL to prevent false positives
-        if (messageId && this.currentChannelId) {
-          try {            this.addToHistory({
-              messageId: messageId,
-              authorId: authorId, // Store author ID for filtering
-              channelId: this.currentChannelId,
-              timestamp: Date.now(),
-              isCrit: false, // EXPLICITLY mark as non-crit
-              messageContent: messageContent.substring(0, 200),
-              author: author, // Author username for display
-            });
-
-            // Removed duplicate saveMessageHistory call
-            // addToHistory() already handles periodic saves (every 20 messages)
-            // No need to save immediately for non-crit messages
-
-            this.debugLog('CHECK_FOR_CRIT', 'SUCCESS: Non-crit saved to history', {
-              messageId,
-              channelId: this.currentChannelId,
-            });
-          } catch (error) {
-            this.debugError('CHECK_FOR_CRIT', error, { phase: 'save_non_crit_history' });
-          }
-        } else {
-          this.debugLog(
-            'CHECK_FOR_CRIT',
-            'WARNING: Cannot save non-crit - missing messageId or channelId',
-            {
-              hasMessageId: !!messageId,
-              hasChannelId: !!this.currentChannelId,
-            }
-          );
-        }
+          messageContent,
+          author,
+          roll,
+          isValidDiscordId
+        );
+      } else {
+        // Process non-crit using helper function
+        this.processNonCrit(messageId, authorId, messageContent, author);
       }
     } catch (error) {
       this.debugError('CHECK_FOR_CRIT', error, {
@@ -4224,288 +3299,302 @@ module.exports = class CriticalHit {
    * Finds the message content element and applies styles with persistence monitoring
    * @param {HTMLElement} messageElement - The message DOM element
    */
+  /**
+   * Checks if an element is in the header/username/timestamp area
+   * @param {HTMLElement} element - Element to check
+   * @returns {boolean} True if element is in header area
+   */
+  isInHeaderArea(element) {
+    if (!element) return true;
+
+    // Check element's own classes first
+    const classes = Array.from(element.classList || []);
+    const hasHeaderClass = classes.some(
+      (c) =>
+        c.includes('header') ||
+        c.includes('username') ||
+        c.includes('timestamp') ||
+        c.includes('author') ||
+        c.includes('topSection') ||
+        c.includes('messageHeader') ||
+        c.includes('messageGroup')
+    );
+
+    if (hasHeaderClass) {
+      this.debug?.enabled &&
+        this.debugLog('APPLY_CRIT_STYLE', 'Element has header class', {
+          elementTag: element.tagName,
+          classes: classes,
+        });
+      return true;
+    }
+
+    // Check if element contains username/timestamp elements as children
+    const hasUsernameChild = element.querySelector('[class*="username"]') !== null;
+    const hasTimestampChild = element.querySelector('[class*="timestamp"]') !== null;
+    const hasAuthorChild = element.querySelector('[class*="author"]') !== null;
+
+    if (hasUsernameChild || hasTimestampChild || hasAuthorChild) {
+      this.debug?.enabled &&
+        this.debugLog('APPLY_CRIT_STYLE', 'Element contains username/timestamp/author child', {
+          elementTag: element.tagName,
+          hasUsernameChild,
+          hasTimestampChild,
+          hasAuthorChild,
+          classes: classes,
+        });
+      return true;
+    }
+
+    // Check parent chain
+    const headerParent =
+      element.closest('[class*="header"]') ||
+      element.closest('[class*="username"]') ||
+      element.closest('[class*="timestamp"]') ||
+      element.closest('[class*="author"]') ||
+      element.closest('[class*="topSection"]') ||
+      element.closest('[class*="messageHeader"]') ||
+      element.closest('[class*="messageGroup"]') ||
+      element.closest('[class*="messageGroupWrapper"]');
+
+    if (headerParent) {
+      this.debug?.enabled &&
+        this.debugLog('APPLY_CRIT_STYLE', 'Element is in header area', {
+          elementTag: element.tagName,
+          headerParentClasses: Array.from(headerParent.classList || []),
+          headerParentTag: headerParent.tagName,
+        });
+      return true;
+    }
+
+    // Check if element's text content looks like a username or timestamp
+    const text = element.textContent?.trim() || '';
+    if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
+      this.debug?.enabled &&
+        this.debugLog('APPLY_CRIT_STYLE', 'Element text looks like timestamp/username', {
+          elementTag: element.tagName,
+          text: text,
+        });
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Finds the message content element for styling, avoiding header areas
+   * @param {HTMLElement} messageElement - The message DOM element
+   * @returns {HTMLElement|null} The content element or null if not found
+   */
+  findMessageContentForStyling(messageElement) {
+    // Find message content - simplified selection with fewer fallbacks
+    let content = null;
+
+    // Find message content using .find() instead of for-loop
+    const allMessageContents = Array.from(
+      messageElement.querySelectorAll('[class*="messageContent"]')
+    );
+    content = allMessageContents.find((msgContent) => !this.isInHeaderArea(msgContent));
+
+    content &&
+      this.debugLog('APPLY_CRIT_STYLE', 'Found messageContent (not in header)', {
+        elementTag: content.tagName,
+        classes: Array.from(content.classList || []),
+        textPreview: content.textContent?.substring(0, 50),
+      });
+
+    // Fallback to markup if messageContent not found
+    if (!content) {
+      const markup = messageElement.querySelector('[class*="markup"]');
+      if (markup && !this.isInHeaderArea(markup)) {
+        content = markup;
+        this.debugLog('APPLY_CRIT_STYLE', 'Found markup', {
+          elementTag: content.tagName,
+          classes: Array.from(content.classList || []),
+        });
+      }
+    }
+
+    // Last fallback: textContainer
+    if (!content) {
+      const textContainer = messageElement.querySelector('[class*="textContainer"]');
+      if (textContainer && !this.isInHeaderArea(textContainer)) {
+        content = textContainer;
+        this.debugLog('APPLY_CRIT_STYLE', 'Found textContainer', {
+          elementTag: content.tagName,
+          classes: Array.from(content.classList || []),
+        });
+      }
+    }
+
+    if (!content) {
+      this.debugLog('APPLY_CRIT_STYLE', 'Could not find content element - skipping');
+      return null;
+    }
+
+    // Final check: make sure content doesn't have username/timestamp as siblings
+    const parent = content.parentElement;
+    if (parent) {
+      const hasUsernameInParent =
+        parent.querySelector('[class*="username"]') !== null ||
+        parent.querySelector('[class*="timestamp"]') !== null ||
+        parent.querySelector('[class*="author"]') !== null;
+
+      const siblings = Array.from(parent.children);
+      const hasUsernameSibling = siblings.some((sib) => {
+        const classes = Array.from(sib.classList || []);
+        return classes.some(
+          (c) => c.includes('username') || c.includes('timestamp') || c.includes('author')
+        );
+      });
+
+      if (hasUsernameInParent || hasUsernameSibling) {
+        // Find more specific text elements within content
+        const allTextElements = content.querySelectorAll('span, div, p');
+        let foundTextElement = null;
+
+        foundTextElement = Array.from(allTextElements).reduce((best, textEl) => {
+          if (!textEl.textContent || textEl.textContent.trim().length === 0) return best;
+          if (this.isInHeaderArea(textEl)) return best;
+          if (textEl.querySelector('[class*="username"]') || textEl.querySelector('[class*="timestamp"]')) {
+            return best;
+          }
+          if (textEl.textContent.trim().match(/^\d{1,2}:\d{2}$/)) return best;
+
+          if (
+            !best ||
+            (textEl.tagName === 'SPAN' && best.tagName !== 'SPAN') ||
+            (textEl.children.length === 0 && best.children.length > 0)
+          ) {
+            return textEl;
+          }
+          return best;
+        }, foundTextElement);
+
+        if (foundTextElement) {
+          content = foundTextElement;
+        } else {
+          const markupElement = content.querySelector('[class*="markup"]');
+          if (markupElement && !this.isInHeaderArea(markupElement)) {
+            content = markupElement;
+          }
+        }
+      }
+    }
+
+    return content;
+  }
+
+  /**
+   * Applies gradient styles to content element (used in applyCritStyle)
+   * @param {HTMLElement} content - The content element
+   * @param {HTMLElement} messageElement - The parent message element
+   */
+  applyGradientToContentForStyling(content, messageElement) {
+    const gradientColors =
+      'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
+
+    content.classList.add('bd-crit-text-content');
+    content.style.setProperty('background-image', gradientColors, 'important');
+    content.style.setProperty('background', gradientColors, 'important');
+    content.style.setProperty('-webkit-background-clip', 'text', 'important');
+    content.style.setProperty('background-clip', 'text', 'important');
+    content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+    content.style.setProperty('color', 'transparent', 'important');
+    content.style.setProperty('display', 'inline-block', 'important');
+
+    void content.offsetHeight;
+
+    // Verify and reapply if needed
+    const verifyComputed = window.getComputedStyle(content);
+    const verifyHasGradient = verifyComputed?.backgroundImage?.includes('gradient');
+    const verifyHasClip =
+      verifyComputed?.webkitBackgroundClip === 'text' || verifyComputed?.backgroundClip === 'text';
+
+    if (!verifyHasGradient || !verifyHasClip) {
+      content.style.setProperty('background-image', gradientColors, 'important');
+      content.style.setProperty('background', gradientColors, 'important');
+      content.style.setProperty('-webkit-background-clip', 'text', 'important');
+      content.style.setProperty('background-clip', 'text', 'important');
+      content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+      content.style.setProperty('color', 'transparent', 'important');
+      content.style.setProperty('display', 'inline-block', 'important');
+      void content.offsetHeight;
+    }
+
+    // Exclude username/timestamp elements
+    const usernameElements = messageElement.querySelectorAll(
+      '[class*="username"], [class*="timestamp"], [class*="author"]'
+    );
+    usernameElements.forEach((el) => {
+      el.style.setProperty('background', 'unset', 'important');
+      el.style.setProperty('background-image', 'unset', 'important');
+      el.style.setProperty('-webkit-background-clip', 'unset', 'important');
+      el.style.setProperty('background-clip', 'unset', 'important');
+      el.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
+      el.style.setProperty('color', 'unset', 'important');
+    });
+  }
+
+  /**
+   * Applies solid color styles to content element (used in applyCritStyle)
+   * @param {HTMLElement} content - The content element
+   * @param {HTMLElement} messageElement - The parent message element
+   */
+  applySolidColorToContentForStyling(content, messageElement) {
+    content.classList.add('bd-crit-text-content');
+    content.style.setProperty('color', this.settings.critColor, 'important');
+    content.style.setProperty('background', 'none', 'important');
+    content.style.setProperty('-webkit-background-clip', 'unset', 'important');
+    content.style.setProperty('background-clip', 'unset', 'important');
+    content.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
+
+    const usernameElements = messageElement.querySelectorAll(
+      '[class*="username"], [class*="timestamp"], [class*="author"]'
+    );
+    usernameElements.forEach((el) => {
+      el.style.setProperty('color', 'unset', 'important');
+    });
+  }
+
+  /**
+   * Applies glow effect to content element (used in applyCritStyle)
+   * @param {HTMLElement} content - The content element
+   * @param {boolean} useGradient - Whether gradient is being used
+   */
+  applyGlowToContentForStyling(content, useGradient) {
+    if (this.settings.critGlow) {
+      if (useGradient) {
+        content.style.setProperty(
+          'text-shadow',
+          '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
+          'important'
+        );
+      } else {
+        content.style.setProperty(
+          'text-shadow',
+          `0 0 2px ${this.settings.critColor}, 0 0 3px ${this.settings.critColor}`,
+          'important'
+        );
+      }
+    } else {
+      content.style.setProperty('text-shadow', 'none', 'important');
+    }
+  }
+
   applyCritStyle(messageElement) {
     try {
       this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
-
-      // Find ONLY the message text content container - exclude username, timestamp, etc.
-      // Apply gradient to the entire message text container as one unit
 
       this.debugLog('APPLY_CRIT_STYLE', 'Finding message content element', {
         messageElementClasses: Array.from(messageElement.classList || []),
       });
 
-      // Helper function to check if element is in header/username/timestamp area
-      // Cache class list to avoid repeated Array.from() calls
-      const isInHeaderArea = (element) => {
-        if (!element) return true;
-
-        // Check element's own classes first (fastest check)
-        const classes = Array.from(element.classList || []);
-        const hasHeaderClass = classes.some(
-          (c) =>
-            c.includes('header') ||
-            c.includes('username') ||
-            c.includes('timestamp') ||
-            c.includes('author') ||
-            c.includes('topSection') ||
-            c.includes('messageHeader') ||
-            c.includes('messageGroup')
-        );
-
-        if (hasHeaderClass) {
-          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element has header class', {
-              elementTag: element.tagName,
-              classes: classes,
-            });
-          return true;
-        }
-
-        // Check if element contains username/timestamp elements as children
-        const hasUsernameChild = element.querySelector('[class*="username"]') !== null;
-        const hasTimestampChild = element.querySelector('[class*="timestamp"]') !== null;
-        const hasAuthorChild = element.querySelector('[class*="author"]') !== null;
-
-        if (hasUsernameChild || hasTimestampChild || hasAuthorChild) {
-          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element contains username/timestamp/author child', {
-              elementTag: element.tagName,
-              hasUsernameChild,
-              hasTimestampChild,
-              hasAuthorChild,
-              classes: classes,
-            });
-          return true;
-        }
-
-        // Check parent chain (only if own classes didn't match)
-        const headerParent =
-          element.closest('[class*="header"]') ||
-          element.closest('[class*="username"]') ||
-          element.closest('[class*="timestamp"]') ||
-          element.closest('[class*="author"]') ||
-          element.closest('[class*="topSection"]') ||
-          element.closest('[class*="messageHeader"]') ||
-          element.closest('[class*="messageGroup"]') ||
-          element.closest('[class*="messageGroupWrapper"]');
-
-        if (headerParent) {
-          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element is in header area', {
-              elementTag: element.tagName,
-              headerParentClasses: Array.from(headerParent.classList || []),
-              headerParentTag: headerParent.tagName,
-            });
-          return true;
-        }
-
-        // Check if element's text content looks like a username or timestamp
-        const text = element.textContent?.trim() || '';
-        if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
-          // Looks like a timestamp or very short text (likely username)
-          this.debug?.enabled && this.debugLog('APPLY_CRIT_STYLE', 'Element text looks like timestamp/username', {
-              elementTag: element.tagName,
-              text: text,
-            });
-          return true;
-        }
-
-        return false;
-      };
-
-      // Find message content - simplified selection with fewer fallbacks
-      // Priority: messageContent > markup > textContainer (skip div fallback for performance)
-      let content = null;
-
-      // FUNCTIONAL: Find message content (.find() instead of for-loop)
-      const allMessageContents = Array.from(
-        messageElement.querySelectorAll('[class*="messageContent"]')
-      );
-      content = allMessageContents.find((msgContent) => !isInHeaderArea(msgContent));
-
-      content &&
-        this.debugLog('APPLY_CRIT_STYLE', 'Found messageContent (not in header)', {
-          elementTag: content.tagName,
-          classes: Array.from(content.classList || []),
-          textPreview: content.textContent?.substring(0, 50),
-        });
-
-      // Fallback to markup if messageContent not found
+      // Find message content using helper function
+      const content = this.findMessageContentForStyling(messageElement);
       if (!content) {
-        const markup = messageElement.querySelector('[class*="markup"]');
-        if (markup && !isInHeaderArea(markup)) {
-          content = markup;
-          this.debugLog('APPLY_CRIT_STYLE', 'Found markup', {
-            elementTag: content.tagName,
-            classes: Array.from(content.classList || []),
-          });
-        }
-      }
-
-      // Last fallback: textContainer (skip div scanning for performance)
-      if (!content) {
-        const textContainer = messageElement.querySelector('[class*="textContainer"]');
-        if (textContainer && !isInHeaderArea(textContainer)) {
-          content = textContainer;
-          this.debugLog('APPLY_CRIT_STYLE', 'Found textContainer', {
-            elementTag: content.tagName,
-            classes: Array.from(content.classList || []),
-          });
-        }
-      }
-
-      if (!content) {
-        this.debugLog('APPLY_CRIT_STYLE', 'Could not find content element - skipping');
         return;
       }
-
-      // Final check: make sure content doesn't have username/timestamp as siblings
-      if (content) {
-        const parent = content.parentElement;
-        if (parent) {
-          // Check if parent contains username/timestamp elements (as siblings OR anywhere in parent tree)
-          const hasUsernameInParent =
-            parent.querySelector('[class*="username"]') !== null ||
-            parent.querySelector('[class*="timestamp"]') !== null ||
-            parent.querySelector('[class*="author"]') !== null;
-
-          // Also check direct siblings
-          const siblings = Array.from(parent.children);
-          const hasUsernameSibling = siblings.some((sib) => {
-            const classes = Array.from(sib.classList || []);
-            return classes.some(
-              (c) => c.includes('username') || c.includes('timestamp') || c.includes('author')
-            );
-          });
-
-          if (hasUsernameInParent || hasUsernameSibling) {
-            this.debugLog(
-              'APPLY_CRIT_STYLE',
-              'Content parent contains username/timestamp - finding more specific text elements',
-              {
-                parentTag: parent.tagName,
-                parentClasses: Array.from(parent.classList || []),
-                siblingCount: siblings.length,
-                hasUsernameInParent,
-                hasUsernameSibling,
-              }
-            );
-            this.debugLog(
-              'APPLY_CRIT_STYLE',
-              'Content has username/timestamp sibling - finding more specific text elements',
-              {
-                parentTag: parent.tagName,
-                parentClasses: Array.from(parent.classList || []),
-                siblingCount: siblings.length,
-              }
-            );
-
-            // CRITICAL: If content has username/timestamp siblings, we MUST find text elements within it
-            // Don't style the container - style ONLY the actual text spans inside
-            const allTextElements = content.querySelectorAll('span, div, p');
-            let foundTextElement = null;
-
-            this.debugLog('APPLY_CRIT_STYLE', 'Searching for text elements within messageContent', {
-              totalElements: allTextElements.length,
-            });
-
-            foundTextElement = Array.from(allTextElements).reduce((best, textEl) => {
-              // Skip if it's empty or just whitespace
-              if (!textEl.textContent || textEl.textContent.trim().length === 0) return best;
-
-              // Skip if it's in header area
-              if (isInHeaderArea(textEl)) {
-                this.debugLog('APPLY_CRIT_STYLE', 'Text element rejected (in header)', {
-                  elementTag: textEl.tagName,
-                  textPreview: textEl.textContent?.substring(0, 30),
-                });
-                return best;
-              }
-
-              // Skip if it contains username/timestamp
-              if (
-                textEl.querySelector('[class*="username"]') ||
-                textEl.querySelector('[class*="timestamp"]')
-              ) {
-                this.debugLog(
-                  'APPLY_CRIT_STYLE',
-                  'Text element rejected (contains username/timestamp)',
-                  {
-                    elementTag: textEl.tagName,
-                  }
-                );
-                return best;
-              }
-
-              // Skip if it's a timestamp pattern
-              if (textEl.textContent.trim().match(/^\d{1,2}:\d{2}$/)) {
-                return best;
-              }
-
-              // Found a good text element - prefer spans over divs, and deeper elements
-              if (
-                !best ||
-                (textEl.tagName === 'SPAN' && best.tagName !== 'SPAN') ||
-                (textEl.children.length === 0 && best.children.length > 0)
-              ) {
-                this.debugLog(
-                  'APPLY_CRIT_STYLE',
-                  'Found specific text element within messageContent',
-                  {
-                    elementTag: textEl.tagName,
-                    classes: Array.from(textEl.classList || []),
-                    textPreview: textEl.textContent?.substring(0, 50),
-                    hasChildren: textEl.children.length > 0,
-                  }
-                );
-                return textEl;
-              }
-              return best;
-            }, foundTextElement);
-
-            if (foundTextElement) {
-              content = foundTextElement;
-              this.debugLog(
-                'APPLY_CRIT_STYLE',
-                'Using specific text element instead of container',
-                {
-                  elementTag: content.tagName,
-                  classes: Array.from(content.classList || []),
-                  finalTextPreview: content.textContent?.substring(0, 50),
-                }
-              );
-            } else {
-              // Last resort: try to find markup class specifically
-              const markupElement = content.querySelector('[class*="markup"]');
-              if (markupElement && !isInHeaderArea(markupElement)) {
-                content = markupElement;
-                this.debugLog('APPLY_CRIT_STYLE', 'Using markup element as fallback', {
-                  elementTag: content.tagName,
-                  classes: Array.from(content.classList || []),
-                });
-              } else {
-                this.debugLog(
-                  'APPLY_CRIT_STYLE',
-                  'WARNING: Could not find specific text element!',
-                  {
-                    originalContentTag: content.tagName,
-                    originalContentClasses: Array.from(content.classList || []),
-                    originalTextPreview: content.textContent?.substring(0, 50),
-                  }
-                );
-              }
-            }
-          }
-        }
-      }
-
-      this.debugLog('APPLY_CRIT_STYLE', 'Final content element selected', {
-        tagName: content.tagName,
-        classes: Array.from(content.classList || []),
-        textPreview: content.textContent?.substring(0, 50),
-        parentTag: content.parentElement?.tagName,
-        parentClasses: Array.from(content.parentElement?.classList || []),
-        hasUsernameSibling: content.parentElement?.querySelector('[class*="username"]') !== null,
-        hasTimestampSibling: content.parentElement?.querySelector('[class*="timestamp"]') !== null,
-      });
 
       // Apply critical hit styling to the entire message content container
       try {
@@ -4517,127 +3606,16 @@ module.exports = class CriticalHit {
         // Apply styles to the entire content container (sentence-level, not letter-level)
         {
           // Apply gradient or solid color
-          if (this.settings.critGradient !== false) {
-            // Purple to black gradient - flows left to right across sentence, darker at end
-            const gradientColors =
-              'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
-
-            // Add a specific class to this element so CSS only targets it (not username/timestamp)
-            content.classList.add('bd-crit-text-content');
-
-            // Apply gradient to text using background-clip
-            // Use setProperty with !important to ensure it applies and overrides theme
-            content.style.setProperty('background-image', gradientColors, 'important');
-            content.style.setProperty('background', gradientColors, 'important');
-            content.style.setProperty('-webkit-background-clip', 'text', 'important');
-            content.style.setProperty('background-clip', 'text', 'important');
-            content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-            content.style.setProperty('color', 'transparent', 'important');
-            content.style.setProperty('display', 'inline-block', 'important');
-
-            // Force reflow to ensure styles are applied before verification
-            void content.offsetHeight;
-
-            // Verify and reapply if Discord removed inline styles
-            // Also ensure CSS class-based styling is active as fallback
-            const verifyComputed = window.getComputedStyle(content);
-            const verifyHasGradient = verifyComputed?.backgroundImage?.includes('gradient');
-            const verifyHasClip =
-              verifyComputed?.webkitBackgroundClip === 'text' ||
-              verifyComputed?.backgroundClip === 'text';
-
-            if (!verifyHasGradient || !verifyHasClip) {
-              // Styles were removed, reapply more aggressively using individual setProperty calls
-              // Using setProperty is safer than cssText concatenation which can create invalid CSS
-              content.style.setProperty('background-image', gradientColors, 'important');
-              content.style.setProperty('background', gradientColors, 'important');
-              content.style.setProperty('-webkit-background-clip', 'text', 'important');
-              content.style.setProperty('background-clip', 'text', 'important');
-              content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-              content.style.setProperty('color', 'transparent', 'important');
-              content.style.setProperty('display', 'inline-block', 'important');
-              void content.offsetHeight; // Force another reflow            }
-
-            // Explicitly exclude username/timestamp elements from gradient
-            // Find and reset any username/timestamp elements that might have been affected
-            const usernameElements = messageElement.querySelectorAll(
-              '[class*="username"], [class*="timestamp"], [class*="author"]'
-            );
-            usernameElements.forEach((el) => {
-              el.style.setProperty('background', 'unset', 'important');
-              el.style.setProperty('background-image', 'unset', 'important');
-              el.style.setProperty('-webkit-background-clip', 'unset', 'important');
-              el.style.setProperty('background-clip', 'unset', 'important');
-              el.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
-              el.style.setProperty('color', 'unset', 'important');
-            });
-
-            this.debugLog(
-              'APPLY_CRIT_STYLE',
-              'Excluded username/timestamp elements from gradient',
-              {
-                excludedCount: usernameElements.length,
-              }
-            );
-
-            this.debugLog('APPLY_CRIT_STYLE', 'Gradient applied', {
-              gradient: gradientColors,
-              element: content.tagName,
-            });
+          const useGradient = this.settings.critGradient !== false;
+          if (useGradient) {
+            this.applyGradientToContentForStyling(content, messageElement);
           } else {
-            // Solid color fallback
-            // Add a specific class to this element so CSS only targets it (not username/timestamp)
-            content.classList.add('bd-crit-text-content');
-
-            content.style.setProperty('color', this.settings.critColor, 'important');
-            content.style.setProperty('background', 'none', 'important');
-            content.style.setProperty('-webkit-background-clip', 'unset', 'important');
-            content.style.setProperty('background-clip', 'unset', 'important');
-            content.style.setProperty('-webkit-text-fill-color', 'unset', 'important');
-
-            // Explicitly exclude username/timestamp elements from color
-            const usernameElements = messageElement.querySelectorAll(
-              '[class*="username"], [class*="timestamp"], [class*="author"]'
-            );
-            usernameElements.forEach((el) => {
-              el.style.setProperty('color', 'unset', 'important');
-            });
-
-            this.debugLog('APPLY_CRIT_STYLE', 'Solid color applied', {
-              color: this.settings.critColor,
-              excludedCount: usernameElements.length,
-            });
+            this.applySolidColorToContentForStyling(content, messageElement);
           }
 
-          // Apply font styles with !important to override ALL CSS including Discord's
-          content.style.setProperty('font-family', "'Nova Flat', sans-serif", 'important'); // Force Nova Flat
-          content.style.setProperty('font-weight', 'bold', 'important'); // Bold for more impact
-          content.style.setProperty('font-size', '1.6em', 'important'); // Larger for more impact
-          content.style.setProperty('letter-spacing', '1px', 'important'); // Slight spacing
-          content.style.setProperty('-webkit-text-stroke', 'none', 'important'); // Remove stroke for cleaner gradient
-          content.style.setProperty('text-stroke', 'none', 'important');
-          content.style.setProperty('font-synthesis', 'none', 'important'); // Prevent font synthesis
-          content.style.setProperty('font-variant', 'normal', 'important'); // Override any font variants
-          content.style.setProperty('font-style', 'normal', 'important'); // Override italic/oblique
-
-          // Apply glow effect - Purple glow for purple-black gradient
-          if (this.settings.critGlow && this.settings.critGradient !== false) {
-              // Purple glow that enhances the purple-black gradient
-              content.style.setProperty(
-                'text-shadow',
-                '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
-                'important'
-              );
-            } else {
-              content.style.setProperty(
-                'text-shadow',
-                `0 0 2px ${this.settings.critColor}, 0 0 3px ${this.settings.critColor}`,
-                'important'
-              );
-            }
-          } else {
-            content.style.setProperty('text-shadow', 'none', 'important');
-          }
+          // Apply font and glow styles
+          this.applyFontStyles(content);
+          this.applyGlowToContentForStyling(content, useGradient);
 
           // Add animation if enabled
           this.settings?.critAnimation && (content.style.animation = 'critPulse 0.5s ease-in-out');
@@ -6227,299 +5205,15 @@ module.exports = class CriticalHit {
             </div>
         `;
 
-    // Helper to update crit display with agility and luck bonuses
-    const updateCritDisplay = () => {
-      const effectiveCrit = plugin.getEffectiveCritChance();
-      const totalBonus = effectiveCrit - parseFloat(plugin.settings.critChance);
+    // Set up display update observer
+    this.setupSettingsDisplayObserver(container);
 
-      // Get individual bonuses
-      let agilityBonus = 0;
-      let luckBonus = 0;
-      try {
-        agilityBonus = (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100;
-        luckBonus = (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) * 100;
-      } catch (e) {}
-
-      const bonusSpan = container.querySelector('.crit-agility-bonus');
-      if (bonusSpan && totalBonus > 0) {
-          const bonuses = [];
-          if (agilityBonus > 0) bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
-          if (luckBonus > 0) bonuses.push(`+${luckBonus.toFixed(1)}% LUK`);
-          bonusSpan.textContent = `${bonuses.join(' + ')} = ${effectiveCrit.toFixed(1)}%`;
-          bonusSpan.style.color = '#8b5cf6';
-        } else {
-          bonusSpan.textContent = `(Effective: ${effectiveCrit.toFixed(1)}%, max 30%)`;
-          bonusSpan.style.color = '#666';
-        }
-      }
-    };
-
-    // Optimized display updates - only update when settings panel is visible
-    // Since this reads from external data storage (BdApi.Data.load), we can't use MutationObserver
-    // Instead, we optimize by only updating when the panel is visible
-    // Clear any existing interval first
-    if (plugin._displayUpdateInterval) {
-      clearInterval(plugin._displayUpdateInterval);
-      plugin._displayUpdateInterval = null;
-    }
-
-    // Use IntersectionObserver to detect when settings panel becomes visible
-    if (window.IntersectionObserver && container) {
-      const displayObserver = new IntersectionObserver(
-        (entries) => {
-          entries.forEach((entry) => {
-            if (entry.isIntersecting) {
-              // Panel is visible, update display immediately
-              updateCritDisplay();
-              // Start periodic updates while visible
-              plugin._displayUpdateInterval && clearInterval(plugin._displayUpdateInterval);
-              plugin._displayUpdateInterval = setInterval(() => {
-                // Early return if plugin is disabled
-                if (!plugin.settings.enabled && plugin._displayUpdateInterval) {
-                    clearInterval(plugin._displayUpdateInterval);
-                    plugin._displayUpdateInterval = null;
-                  }
-                  return;
-                }
-                updateCritDisplay();
-              }, 2000);
-            } else {
-              // Panel is hidden, stop periodic updates
-              if (plugin._displayUpdateInterval) {
-                clearInterval(plugin._displayUpdateInterval);
-                plugin._displayUpdateInterval = null;
-              }
-            }
-          });
-        },
-        { threshold: 0.1 }
-      );
-
-      displayObserver.observe(container);
-    } else {
-      // Fallback: Update periodically (reduced frequency from 2s to 5s)
-      plugin._displayUpdateInterval = setInterval(() => {
-        // Early return if plugin is disabled
-        if (!plugin.settings.enabled && plugin._displayUpdateInterval) {
-          clearInterval(plugin._displayUpdateInterval);
-          plugin._displayUpdateInterval = null;
-          return;
-        }
-        updateCritDisplay();
-      }, 5000);
-    }
-
-    // Update immediately on load
-    updateCritDisplay();
-
-    container.querySelector('#crit-color').addEventListener('change', (e) => {
-      plugin.updateCritColor(e.target.value);
-      // Update color preview
-      container.querySelector('.crit-color-preview').style.backgroundColor = e.target.value;
-    });
-
-    container.querySelector('#crit-font').addEventListener('change', (e) => {
-      plugin.updateCritFont(e.target.value);
-    });
-
-    container.querySelector('#crit-animation').addEventListener('change', (e) => {
-      plugin.updateCritAnimation(e.target.checked);
-    });
-
-    container.querySelector('#crit-gradient').addEventListener('change', (e) => {
-      plugin.updateCritGradient(e.target.checked);
-    });
-
-    container.querySelector('#crit-glow').addEventListener('change', (e) => {
-      plugin.updateCritGlow(e.target.checked);
-    });
-
-    container.querySelector('#test-crit-btn').addEventListener('click', () => {
-      plugin.testCrit();
-    });
-
-    // Filter checkboxes
-    container.querySelector('#filter-replies').addEventListener('change', (e) => {
-      plugin.settings.filterReplies = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#filter-system').addEventListener('change', (e) => {
-      plugin.settings.filterSystemMessages = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#filter-bots').addEventListener('change', (e) => {
-      plugin.settings.filterBotMessages = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    container.querySelector('#filter-empty').addEventListener('change', (e) => {
-      plugin.settings.filterEmptyMessages = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    // History retention settings
-    const retentionInput = container.querySelector('#history-retention');
-    const retentionSlider = container.querySelector('#history-retention-slider');
-    const retentionLabel = retentionSlider
-      .closest('.crit-form-item')
-      .querySelector('.crit-label-value');
-
-    retentionSlider.addEventListener('input', (e) => {
-      retentionInput.value = e.target.value;
-      plugin.settings.historyRetentionDays = parseInt(e.target.value);
-      plugin.saveSettings();
-      if (retentionLabel) retentionLabel.textContent = `${e.target.value}`;
-    });
-
-    retentionInput.addEventListener('change', (e) => {
-      retentionSlider.value = e.target.value;
-      plugin.settings.historyRetentionDays = parseInt(e.target.value);
-      plugin.saveSettings();
-      if (retentionLabel) retentionLabel.textContent = `${e.target.value}`;
-    });
-
-    // Auto-cleanup history
-    container.querySelector('#auto-cleanup-history').addEventListener('change', (e) => {
-      plugin.settings.autoCleanupHistory = e.target.checked;
-      plugin.saveSettings();
-      e.target.checked && plugin.cleanupOldHistory(plugin.settings.historyRetentionDays || 30);
-    });
-
-    // Debug mode toggle
-    container.querySelector('#debug-mode').addEventListener('change', (e) => {
-      plugin.settings.debugMode = e.target.checked;
-      plugin.debug.enabled = e.target.checked;
-      plugin.saveSettings();
-      // Always log debug mode changes (useful for troubleshooting)
-      console.log(`CriticalHit: Debug mode ${e.target.checked ? 'enabled' : 'disabled'}`);
-    });
-
-    // Animation settings
-    const animationDurationInput = container.querySelector('#animation-duration');
-    const animationDurationSlider = container.querySelector('#animation-duration-slider');
-
-    animationDurationSlider.addEventListener('input', (e) => {
-      animationDurationInput.value = e.target.value;
-      plugin.settings.animationDuration = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[8];
-      if (label) label.textContent = `${(parseInt(e.target.value) / 1000).toFixed(1)}s`;
-    });
-
-    animationDurationInput.addEventListener('change', (e) => {
-      animationDurationSlider.value = e.target.value;
-      plugin.settings.animationDuration = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[8];
-      if (label) label.textContent = `${(parseInt(e.target.value) / 1000).toFixed(1)}s`;
-    });
-
-    const floatDistanceInput = container.querySelector('#float-distance');
-    const floatDistanceSlider = container.querySelector('#float-distance-slider');
-
-    floatDistanceSlider.addEventListener('input', (e) => {
-      floatDistanceInput.value = e.target.value;
-      plugin.settings.floatDistance = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[9];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    floatDistanceInput.addEventListener('change', (e) => {
-      floatDistanceSlider.value = e.target.value;
-      plugin.settings.floatDistance = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[9];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    const animationFontsizeInput = container.querySelector('#animation-fontsize');
-    const animationFontsizeSlider = container.querySelector('#animation-fontsize-slider');
-
-    animationFontsizeSlider.addEventListener('input', (e) => {
-      animationFontsizeInput.value = e.target.value;
-      plugin.settings.fontSize = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[10];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    animationFontsizeInput.addEventListener('change', (e) => {
-      animationFontsizeSlider.value = e.target.value;
-      plugin.settings.fontSize = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[10];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    container.querySelector('#screen-shake').addEventListener('change', (e) => {
-      plugin.settings.screenShake = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    const shakeIntensityInput = container.querySelector('#shake-intensity');
-    const shakeIntensitySlider = container.querySelector('#shake-intensity-slider');
-
-    shakeIntensitySlider.addEventListener('input', (e) => {
-      shakeIntensityInput.value = e.target.value;
-      plugin.settings.shakeIntensity = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[11];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    shakeIntensityInput.addEventListener('change', (e) => {
-      shakeIntensitySlider.value = e.target.value;
-      plugin.settings.shakeIntensity = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[11];
-      if (label) label.textContent = `${e.target.value}px`;
-    });
-
-    const shakeDurationInput = container.querySelector('#shake-duration');
-    const shakeDurationSlider = container.querySelector('#shake-duration-slider');
-
-    shakeDurationSlider.addEventListener('input', (e) => {
-      shakeDurationInput.value = e.target.value;
-      plugin.settings.shakeDuration = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[12];
-      if (label) label.textContent = `${e.target.value}ms`;
-    });
-
-    shakeDurationInput.addEventListener('change', (e) => {
-      shakeDurationSlider.value = e.target.value;
-      plugin.settings.shakeDuration = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[12];
-      if (label) label.textContent = `${e.target.value}ms`;
-    });
-
-    container.querySelector('#show-combo').addEventListener('change', (e) => {
-      plugin.settings.showCombo = e.target.checked;
-      plugin.saveSettings();
-    });
-
-    const maxComboInput = container.querySelector('#max-combo');
-    const maxComboSlider = container.querySelector('#max-combo-slider');
-
-    maxComboSlider.addEventListener('input', (e) => {
-      maxComboInput.value = e.target.value;
-      plugin.settings.maxCombo = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[13];
-      if (label) label.textContent = `${e.target.value}`;
-    });
-
-    maxComboInput.addEventListener('change', (e) => {
-      maxComboSlider.value = e.target.value;
-      plugin.settings.maxCombo = parseInt(e.target.value);
-      plugin.saveSettings();
-      const label = container.querySelectorAll('.crit-label-value')[13];
-      if (label) label.textContent = `${e.target.value}`;
-    });
+    // Attach all event listeners using helper methods
+    this.attachBasicSettingsListeners(container);
+    this.attachFilterListeners(container);
+    this.attachHistoryListeners(container);
+    this.attachAnimationListeners(container);
+    this.attachDebugListeners(container);
 
     return container;
   }
@@ -7131,9 +5825,7 @@ module.exports = class CriticalHit {
       if (!element || !element.isConnected) {
         if (attempt < maxAttempts) {
           setTimeout(() => {
-            const reQueried = messageId
-              ? document.querySelector(`[data-message-id="${messageId}"]`)
-              : null;
+            const reQueried = messageId ? this.requeryMessageElement(messageId) : null;
             if (reQueried) verifyGradientSync(reQueried, attempt + 1, maxAttempts);
           }, 50 * (attempt + 1));
         }
