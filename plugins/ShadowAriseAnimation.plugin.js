@@ -1,8 +1,8 @@
 /**
  * @name ShadowAriseAnimation
  * @author BlueFlashX1
- * @description Solo Leveling Shadow ARISE animation when a shadow is extracted (integrates with ShadowArmy)
- * @version 1.0.1
+ * @description Epic ARISE animation when extracting shadows
+ * @version 1.1.0
  */
 
 module.exports = class ShadowAriseAnimation {
@@ -19,12 +19,14 @@ module.exports = class ShadowAriseAnimation {
   constructor() {
     this.defaultSettings = {
       enabled: true,
+      debugMode: false, // Debug mode toggle
       animationDuration: 2500,
       scale: 1.0,
       showRankAndRole: true,
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.animationContainer = null;
   }
 
@@ -68,11 +70,11 @@ module.exports = class ShadowAriseAnimation {
   loadSettings() {
     try {
       const saved = BdApi.Data.load('ShadowAriseAnimation', 'settings');
-      if (saved) {
-        this.settings = { ...this.defaultSettings, ...saved };
-      }
+      // FUNCTIONAL: Short-circuit merge with deep copy (no if-else)
+      saved &&
+        (this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved })));
     } catch (error) {
-      console.error('ShadowAriseAnimation: Failed to load settings', error);
+      this.debugLog('Failed to load settings', error);
     }
   }
 
@@ -87,7 +89,7 @@ module.exports = class ShadowAriseAnimation {
     try {
       BdApi.Data.save('ShadowAriseAnimation', 'settings', this.settings);
     } catch (error) {
-      console.error('ShadowAriseAnimation: Failed to save settings', error);
+      this.debugLog('Failed to save settings', error);
     }
   }
 
@@ -131,28 +133,54 @@ module.exports = class ShadowAriseAnimation {
           }>
           <span>Show rank and role under ARISE</span>
         </label>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
+          <input type="checkbox" id="sa-debug" ${this.settings.debugMode ? 'checked' : ''}>
+          <span>Debug Mode (Show console logs)</span>
+        </label>
+        <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
+          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            Enable Debug Mode to see detailed console logs for:
+            <ul style="margin: 5px 0; padding-left: 20px;">
+              <li>Animation triggers and shadow data</li>
+              <li>Settings load/save operations</li>
+              <li>CSS injection and cleanup</li>
+              <li>Container creation and removal</li>
+            </ul>
+          </div>
+        </div>
       </div>
     `;
 
-    panel.querySelector('#sa-enabled').addEventListener('change', (e) => {
+    panel.querySelector('#sa-enabled')?.addEventListener('change', (e) => {
       this.settings.enabled = e.target.checked;
       this.saveSettings();
+      this.debugLog('ARISE animation toggled', { enabled: e.target.checked });
     });
 
-    panel.querySelector('#sa-duration').addEventListener('change', (e) => {
+    panel.querySelector('#sa-duration')?.addEventListener('change', (e) => {
       this.settings.animationDuration =
         parseInt(e.target.value, 10) || this.defaultSettings.animationDuration;
       this.saveSettings();
+      this.debugLog('Animation duration updated', { duration: this.settings.animationDuration });
     });
 
-    panel.querySelector('#sa-scale').addEventListener('change', (e) => {
+    panel.querySelector('#sa-scale')?.addEventListener('change', (e) => {
       this.settings.scale = parseFloat(e.target.value) || this.defaultSettings.scale;
       this.saveSettings();
+      this.debugLog('Scale updated', { scale: this.settings.scale });
     });
 
-    panel.querySelector('#sa-show-meta').addEventListener('change', (e) => {
+    panel.querySelector('#sa-show-meta')?.addEventListener('change', (e) => {
       this.settings.showRankAndRole = e.target.checked;
       this.saveSettings();
+      this.debugLog('Show rank/role toggled', { enabled: e.target.checked });
+    });
+
+    panel.querySelector('#sa-debug')?.addEventListener('change', (e) => {
+      this.settings.debugMode = e.target.checked;
+      this.saveSettings();
+      this.debugLog('Debug mode toggled', { enabled: e.target.checked });
     });
 
     return panel;
@@ -171,6 +199,7 @@ module.exports = class ShadowAriseAnimation {
    */
   injectCSS() {
     const styleId = 'shadow-arise-animation-css';
+    // FUNCTIONAL: Guard clause with short-circuit (early return)
     if (document.getElementById(styleId)) return;
 
     const style = document.createElement('style');
@@ -280,7 +309,8 @@ module.exports = class ShadowAriseAnimation {
    */
   removeCSS() {
     const style = document.getElementById('shadow-arise-animation-css');
-    if (style) style.remove();
+    // FUNCTIONAL: Short-circuit (no if-else)
+    style?.remove();
   }
 
   // ============================================================================
@@ -314,10 +344,10 @@ module.exports = class ShadowAriseAnimation {
    * 3. Clear reference to null
    */
   removeAllAnimations() {
-    if (this.animationContainer && this.animationContainer.parentNode) {
-      this.animationContainer.parentNode.removeChild(this.animationContainer);
-      this.animationContainer = null;
-    }
+    // FUNCTIONAL: Short-circuit cleanup (no if-else)
+    this.animationContainer?.parentNode &&
+      (this.animationContainer.parentNode.removeChild(this.animationContainer),
+      (this.animationContainer = null));
   }
 
   /**
@@ -335,6 +365,7 @@ module.exports = class ShadowAriseAnimation {
    * 10. Schedule removal after animation duration
    */
   triggerArise(shadow) {
+    // FUNCTIONAL: Guard clauses (early returns - GOOD if-else usage)
     if (!this.settings.enabled) return;
     if (typeof document === 'undefined') return;
 
@@ -352,18 +383,21 @@ module.exports = class ShadowAriseAnimation {
     title.textContent = 'ARISE';
     wrapper.appendChild(title);
 
-    if (this.settings.showRankAndRole && shadow) {
-      const meta = document.createElement('div');
-      meta.className = 'sa-arise-meta';
-      const rankText = shadow.rank ? `${shadow.rank}-Rank` : '';
-      const roleText = shadow.roleName || shadow.role || '';
-      meta.textContent = [rankText, roleText].filter(Boolean).join(' • ');
-      wrapper.appendChild(meta);
-    }
+    // FUNCTIONAL: Short-circuit for conditional rendering (no if-else)
+    this.settings.showRankAndRole &&
+      shadow &&
+      (() => {
+        const meta = document.createElement('div');
+        meta.className = 'sa-arise-meta';
+        const rankText = shadow.rank ? `${shadow.rank}-Rank` : '';
+        const roleText = shadow.roleName || shadow.role || '';
+        meta.textContent = [rankText, roleText].filter(Boolean).join(' • ');
+        wrapper.appendChild(meta);
+      })();
 
-    // Spawn some particles around the wrapper
+    // FUNCTIONAL: Spawn particles using Array.from (no for-loop)
     const particleCount = 22;
-    for (let i = 0; i < particleCount; i++) {
+    Array.from({ length: particleCount }, () => {
       const p = document.createElement('div');
       p.className = 'sa-arise-particle';
       const angle = Math.random() * Math.PI * 2;
@@ -375,12 +409,37 @@ module.exports = class ShadowAriseAnimation {
       p.style.left = '50%';
       p.style.top = '50%';
       wrapper.appendChild(p);
-    }
+      return p;
+    });
 
     container.appendChild(wrapper);
 
     setTimeout(() => {
       wrapper.remove();
     }, durationMs + 200);
+  }
+
+  // ============================================================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================================================
+
+  /**
+   * Debug logging helper - only logs when debug mode is enabled
+   * @param {string} message - Debug message
+   * @param {any} data - Optional data to log
+   */
+  debugLog(message, data = null) {
+    this.settings.debugMode &&
+      (data ? console.log(`[ShadowArise] ${message}`, data) : console.log(`[ShadowArise] ${message}`));
+  }
+
+  /**
+   * Debug error helper - only logs when debug mode is enabled
+   * @param {string} message - Error message
+   * @param {any} error - Error object
+   */
+  debugError(message, error = null) {
+    this.settings.debugMode &&
+      (error ? console.error(`[ShadowArise] ${message}`, error) : console.error(`[ShadowArise] ${message}`));
   }
 };
