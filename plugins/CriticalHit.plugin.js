@@ -2,11 +2,25 @@
  * @name CriticalHit
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
- * @version 3.0.0
+ * @version 3.1.0
  *
  * Font Credit:
  * <div>Icons made from <a href="https://www.onlinewebfonts.com/icon">svg icons</a>is licensed by CC BY 4.0</div>
  * Font: "Friend or Foe BB" from OnlineWebFonts.com
+ *
+ * @changelog v3.1.0 (2025-12-06)
+ * - NEW FEATURES: Added Friend or Foe BB font for Solo Leveling theme
+ * - NEW FEATURES: Added Metal Mania font for animation text
+ * - NEW FEATURES: Added screen flash effect option
+ * - NEW FEATURES: Added useLocalFonts setting for font management
+ * - PERFORMANCE: Optimized batch processing (reduced batch size, increased delay)
+ * - PERFORMANCE: Added observer throttling to prevent excessive firing
+ * - IMPROVEMENT: Enhanced React fiber traversal for message ID extraction
+ * - IMPROVEMENT: Improved message ID validation (excludes channel IDs)
+ * - IMPROVEMENT: Better content hash calculation (supports null author)
+ * - FIX: Comprehensive error fixes and quest popup auto-close
+ * - REFACTOR: Reorganized helper functions to Section 2, removed duplicates
+ * - REFACTOR: Continued optimization with functional programming patterns
  *
  * @changelog v3.0.0 (2025-12-05)
  * - MAJOR REFACTOR: Organized into 4-section structure
@@ -1796,6 +1810,15 @@ module.exports = class CriticalHit {
    */
   loadMessageHistory() {
     try {
+      const startTime = (() => {
+        try {
+          return typeof window !== 'undefined' && window.performance && window.performance.now
+            ? window.performance.now()
+            : Date.now();
+        } catch {
+          return Date.now();
+        }
+      })();
       this.debugLog('LOAD_MESSAGE_HISTORY', 'CRITICAL: Loading message history from storage');
       const saved = BdApi.Data.load('CriticalHit', 'messageHistory');
 
@@ -1806,18 +1829,31 @@ module.exports = class CriticalHit {
         const critHistory = this.getCritHistory();
         const critCount = critHistory.length;
         const critsByChannel = this._countCritsByChannel(critHistory);
+        const endTime = (() => {
+          try {
+            return typeof window !== 'undefined' && window.performance && window.performance.now
+              ? window.performance.now()
+              : Date.now();
+          } catch {
+            return Date.now();
+          }
+        })();
+        const loadTime = endTime - startTime;
 
         this.debugLog('LOAD_MESSAGE_HISTORY', 'SUCCESS: Message history loaded successfully', {
           messageCount: this.messageHistory.length,
           critCount: critCount,
           critsByChannel: critsByChannel,
+          loadTimeMs: loadTime.toFixed(2),
           // Use cached getCritHistory method
           sampleCritIds: this.getCritHistory()
             .slice(0, 5)
             .map((e) => ({ messageId: e.messageId, channelId: e.channelId })),
         });
         console.log(
-          `CriticalHit: Loaded ${this.messageHistory.length} messages (${critCount} crits) from history`
+          `CriticalHit: Loaded ${
+            this.messageHistory.length
+          } messages (${critCount} crits) from history in ${loadTime.toFixed(2)}ms`
         );
       } else {
         this.messageHistory = [];
@@ -6134,16 +6170,25 @@ module.exports = class CriticalHit {
    */
   _verifyFontLoaded(fontName, fontsPath) {
     if (document.fonts?.check) {
-      setTimeout(() => {
-        const fontLoaded = document.fonts.check(`16px '${fontName}'`);
-        if (!fontLoaded) {
-          this.debugLog('FONT_LOADER', `Font '${fontName}' may not have loaded correctly`, {
-            fontName,
-            fontsPath,
-            note: 'Check that font files exist in fonts/ folder',
-          });
-        }
-      }, this.FONT_VERIFICATION_DELAY_MS);
+      // Use Font Loading API to wait for fonts to load before verifying
+      document.fonts.ready
+        .then(() => {
+          // Additional delay to ensure font is fully loaded
+          return new Promise((resolve) => setTimeout(resolve, 500));
+        })
+        .then(() => {
+          const fontLoaded = document.fonts.check(`16px '${fontName}'`);
+          if (!fontLoaded) {
+            this.debugLog('FONT_LOADER', `Font '${fontName}' may not have loaded correctly`, {
+              fontName,
+              fontsPath,
+              note: 'Check that font files exist in fonts/ folder',
+            });
+          }
+        })
+        .catch(() => {
+          // Silently ignore font loading errors (font may still work)
+        });
     }
   }
 
@@ -6255,19 +6300,29 @@ module.exports = class CriticalHit {
 
       document.head.appendChild(fontStyle);
 
-      // Verify font loaded (optional check)
+      // Verify font loaded (non-blocking, delayed check)
+      // Use Font Loading API to wait for fonts to load before verifying
       if (document.fonts && document.fonts.check) {
-        // Wait a bit for font to load, then verify
-        setTimeout(() => {
-          const fontLoaded = document.fonts.check(`16px '${fontName}'`);
-          if (!fontLoaded) {
-            this.debugLog('FONT_LOADER', `Font '${fontName}' may not have loaded correctly`, {
-              fontName,
-              fontsPath,
-              note: 'Check that font files exist in fonts/ folder',
-            });
-          }
-        }, 100);
+        // Wait for fonts to be ready, then verify after additional delay
+        document.fonts.ready
+          .then(() => {
+            // Additional delay to ensure font is fully loaded
+            setTimeout(() => {
+              // Check if font is loaded
+              const fontLoaded = document.fonts.check(`16px '${fontName}'`);
+              if (!fontLoaded) {
+                // Only warn if font still not loaded after waiting
+                this.debugLog('FONT_LOADER', `Font '${fontName}' may not have loaded correctly`, {
+                  fontName,
+                  fontsPath,
+                  note: 'Check that font files exist in fonts/ folder',
+                });
+              }
+            }, 500);
+          })
+          .catch(() => {
+            // Silently ignore font loading errors (font may still work)
+          });
       }
 
       return true;
@@ -6606,11 +6661,19 @@ module.exports = class CriticalHit {
           opacity: 0;
           transform: translate(-50%, -50%) translateY(0) scale(0.8);
         }
-        2% {
+        5% {
+          opacity: 0.3;
+          transform: translate(-50%, -50%) translateY(0) scale(0.9);
+        }
+        8% {
+          opacity: 0.7;
+          transform: translate(-50%, -50%) translateY(0) scale(1.05);
+        }
+        12% {
           opacity: 1;
           transform: translate(-50%, -50%) translateY(0) scale(1.1);
         }
-        4% {
+        15% {
           opacity: 1;
           transform: translate(-50%, -50%) translateY(0) scale(1);
         }
