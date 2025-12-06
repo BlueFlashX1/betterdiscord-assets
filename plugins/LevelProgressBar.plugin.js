@@ -2,7 +2,8 @@
  * @name LevelProgressBar
  * @author BlueFlashX1
  * @description Real-time progress bar showing your level, XP, rank, and Shadow Army power
- * @version 1.3.0
+ * @version 1.4.0
+ * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
  * FILE STRUCTURE & NAVIGATION
@@ -83,6 +84,196 @@ module.exports = class LevelProgressBar {
   /**
    * 2.1 CONSTRUCTOR & DEFAULT SETTINGS
    */
+
+  /**
+   * 2.2 WEBPACK MODULE HELPERS
+   */
+
+  /**
+   * Initialize webpack modules for advanced Discord integration
+   * Falls back gracefully if modules are unavailable
+   */
+  initializeWebpackModules() {
+    try {
+      // Try to get UserStore
+      this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
+
+      // Try to get ChannelStore
+      this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
+        (m) => m && (m.getChannel || m.getChannelId)
+      );
+
+      // Check if we have webpack access
+      this.webpackModuleAccess = !!(
+        this.webpackModules.UserStore || this.webpackModules.ChannelStore
+      );
+
+      this.debugLog('WEBPACK_INIT', 'Webpack modules initialized', {
+        hasUserStore: !!this.webpackModules.UserStore,
+        hasChannelStore: !!this.webpackModules.ChannelStore,
+        webpackModuleAccess: this.webpackModuleAccess,
+      });
+    } catch (error) {
+      this.debugError('WEBPACK_INIT', error);
+      this.webpackModuleAccess = false;
+    }
+  }
+
+  /**
+   * Try to inject progress bar via React injection (preferred method)
+   * Falls back to DOM injection if React injection fails
+   */
+  tryReactInjection() {
+    try {
+      // Find Discord's main content area React component
+      // Try multiple search patterns for better compatibility
+      let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
+        defaultExport: false,
+      });
+
+      // Alternative: Search for app content wrapper
+      if (!MainContent) {
+        MainContent = BdApi.Webpack.getByStrings('appMount', {
+          defaultExport: false,
+        });
+      }
+
+      if (!MainContent) {
+        this.debugLog('REACT_INJECTION', 'Main content component not found, using DOM fallback');
+        return false;
+      }
+
+      const pluginInstance = this;
+      const React = BdApi.React;
+
+      // Patch the React component to inject our progress bar
+      BdApi.Patcher.after('LevelProgressBar', MainContent, 'Z', (thisObject, args, returnValue) => {
+        try {
+          // Find body element in React tree
+          const bodyPath = BdApi.Utils.findInTree(
+            returnValue,
+            (prop) =>
+              prop &&
+              prop.props &&
+              (prop.props.className?.includes('app') ||
+                prop.props.id === 'app-mount' ||
+                prop.type === 'body'),
+            { walkable: ['props', 'children'] }
+          );
+
+          if (bodyPath && bodyPath.props) {
+            // Check if progress bar already injected
+            const hasProgressBar = BdApi.Utils.findInTree(
+              returnValue,
+              (prop) => prop && prop.props && prop.props.id === 'lpb-progress-container',
+              { walkable: ['props', 'children'] }
+            );
+
+            if (!hasProgressBar && !pluginInstance.progressBar) {
+              // Create React element for progress bar
+              const progressBarHTML = pluginInstance.renderProgressBarHTML();
+              const progressBarElement = React.createElement('div', {
+                id: 'lpb-progress-container',
+                className: `lpb-progress-container ${pluginInstance.settings.position}`,
+                dangerouslySetInnerHTML: { __html: progressBarHTML },
+              });
+
+              // Inject at the beginning of body children
+              if (Array.isArray(bodyPath.props.children)) {
+                bodyPath.props.children.unshift(progressBarElement);
+              } else if (bodyPath.props.children) {
+                bodyPath.props.children = [progressBarElement, bodyPath.props.children];
+              } else {
+                bodyPath.props.children = progressBarElement;
+              }
+
+              pluginInstance.reactInjectionActive = true;
+              pluginInstance.debugLog('REACT_INJECTION', 'Progress bar injected via React');
+
+              // Set up DOM reference after injection
+              setTimeout(() => {
+                const domElement = document.getElementById('lpb-progress-container');
+                if (domElement) {
+                  pluginInstance.progressBar = domElement;
+                  pluginInstance.initializeProgressBar();
+                }
+              }, 100);
+            }
+          }
+        } catch (error) {
+          pluginInstance.debugError('REACT_INJECTION', error);
+          return returnValue; // Return original on error
+        }
+        return returnValue;
+      });
+
+      this.reactInjectionActive = true;
+      this.debugLog('REACT_INJECTION', 'React injection patch installed');
+      return true;
+    } catch (error) {
+      this.debugError('REACT_INJECTION', error);
+      return false;
+    }
+  }
+
+  /**
+   * Render progress bar HTML (used for both React injection and DOM fallback)
+   */
+  renderProgressBarHTML() {
+    const bar = `
+      <div class="lpb-progress-bar ${this.settings.compact ? 'compact' : ''}">
+        <div class="lpb-progress-bar-content">
+          <div class="lpb-progress-text" id="lpb-progress-text">Rank: E Lv.1 0/100 XP</div>
+        </div>
+        <div class="lpb-progress-track">
+          <div class="lpb-progress-fill" id="lpb-progress-fill" style="width: 0%;"></div>
+        </div>
+        <div class="lpb-shadow-power" id="lpb-shadow-power">Shadow Army Power: 0</div>
+      </div>
+    `;
+    return bar;
+  }
+
+  /**
+   * Initialize progress bar after creation (common setup for both React and DOM)
+   */
+  initializeProgressBar() {
+    if (!this.progressBar) return;
+
+    // Initial update - force update even if data hasn't changed
+    this.lastLevel = null;
+    this.lastXP = null;
+    this.lastXPRequired = null;
+    this.updateProgressBar();
+
+    // Start shadow power updates
+    this.updateShadowPower().catch(console.error);
+    // Update shadow power periodically (every 30 seconds)
+    if (this.shadowPowerUpdateInterval) {
+      clearInterval(this.shadowPowerUpdateInterval);
+    }
+    this.shadowPowerUpdateInterval = setInterval(() => {
+      this.updateShadowPower().catch(console.error);
+    }, 30000);
+
+    // Initialize milestone markers
+    setTimeout(() => {
+      const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
+      if (progressTrack) {
+        if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+          const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+          if (soloPlugin) {
+            const instance = soloPlugin.instance || soloPlugin;
+            if (instance && instance.getCurrentLevel) {
+              const levelInfo = instance.getCurrentLevel();
+              const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+              this.updateMilestoneMarkers(progressTrack, xpPercent);
+            }
+          }
+        }
+      }
+    }, 100);
+  }
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -153,6 +344,25 @@ module.exports = class LevelProgressBar {
       clearInterval(this.shadowPowerUpdateInterval);
       this.shadowPowerUpdateInterval = null;
     }
+
+    // Cleanup webpack patches and React injection
+    if (this.reactInjectionActive) {
+      try {
+        BdApi.Patcher.unpatchAll('LevelProgressBar');
+        this.reactInjectionActive = false;
+        this.debugLog('STOP', 'Webpack patches and React injection removed');
+      } catch (error) {
+        this.debugError('STOP', error, { phase: 'unpatch' });
+      }
+    }
+
+    // Clear webpack module references
+    this.webpackModules = {
+      UserStore: null,
+      ChannelStore: null,
+    };
+    this.webpackModuleAccess = false;
+
     this.removeProgressBar();
     this.removeCSS();
     this.debugLog('STOP', 'Plugin stopped successfully');
@@ -609,53 +819,29 @@ module.exports = class LevelProgressBar {
       return;
     }
 
+    // Try React injection first (preferred method)
+    if (this.tryReactInjection()) {
+      // React injection successful, initialization handled in tryReactInjection
+      this.debugLog('CREATE_BAR', 'Progress bar created via React injection');
+      return;
+    }
+
+    // Fallback to DOM injection if React injection fails
+    this.debugLog('CREATE_BAR', 'React injection failed, using DOM fallback');
+
     try {
       const container = document.createElement('div');
+      container.id = 'lpb-progress-container';
       container.className = `lpb-progress-container ${this.settings.position}`;
       container.style.opacity = 1.0; // Fixed at 100% opacity
 
-      const bar = document.createElement('div');
-      bar.className = `lpb-progress-bar ${this.settings.compact ? 'compact' : ''}`;
+      // Use renderProgressBarHTML for consistency
+      container.innerHTML = this.renderProgressBarHTML();
 
-      // Content wrapper for text
-      const contentWrapper = document.createElement('div');
-      contentWrapper.className = 'lpb-progress-bar-content';
-
-      // Single line format matching SoloLevelingStats chat UI: "Rank: E Lv.1 0/100 XP"
-      const progressText = document.createElement('div');
-      progressText.className = 'lpb-progress-text';
-      progressText.id = 'lpb-progress-text';
-      progressText.textContent = 'Rank: E Lv.1 0/100 XP';
-      contentWrapper.appendChild(progressText);
-      bar.appendChild(contentWrapper);
-
-      // Progress track with animated fill
-      const progressTrack = document.createElement('div');
-      progressTrack.className = 'lpb-progress-track';
-
-      const progressFill = document.createElement('div');
-      progressFill.className = 'lpb-progress-fill';
-      progressFill.id = 'lpb-progress-fill';
-      progressFill.style.width = '0%';
-
-      progressTrack.appendChild(progressFill);
-      bar.appendChild(progressTrack);
-
-      // Shadow Army display (to the right of progress bar)
-      // Display only - use Shadow Army widget to interact
-      const shadowPowerText = document.createElement('div');
-      shadowPowerText.className = 'lpb-shadow-power';
-      shadowPowerText.id = 'lpb-shadow-power';
-      shadowPowerText.textContent = 'Shadow Army Power: 0';
-      shadowPowerText.title = 'Total power of all shadows';
-
-      bar.appendChild(shadowPowerText);
-
-      container.appendChild(bar);
       document.body.appendChild(container);
 
       this.progressBar = container;
-      this.debugLog('CREATE_BAR', 'Progress bar created successfully', {
+      this.debugLog('CREATE_BAR', 'Progress bar created successfully via DOM', {
         position: this.settings.position,
         compact: this.settings.compact,
         containerExists: !!this.progressBar,
@@ -665,37 +851,8 @@ module.exports = class LevelProgressBar {
         showXP: this.settings.showXP,
       });
 
-      // Initial update - force update even if data hasn't changed
-      this.lastLevel = null;
-      this.lastXP = null;
-      this.lastXPRequired = null;
-      this.updateProgressBar();
-
-      // Start shadow power updates (async for shadow count)
-      this.updateShadowPower().catch(console.error);
-      // Update shadow power periodically (every 30 seconds)
-      this.shadowPowerUpdateInterval = setInterval(() => {
-        this.updateShadowPower().catch(console.error);
-      }, 30000);
-
-      // Initialize milestone markers
-      setTimeout(() => {
-        const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
-        if (progressTrack) {
-          // Check if plugin is enabled before accessing
-          if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-            const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-            if (soloPlugin) {
-              const instance = soloPlugin.instance || soloPlugin;
-              if (instance && instance.getCurrentLevel) {
-                const levelInfo = instance.getCurrentLevel();
-                const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
-                this.updateMilestoneMarkers(progressTrack, xpPercent);
-              }
-            }
-          }
-        }
-      }, 100);
+      // Initialize progress bar (common setup)
+      this.initializeProgressBar();
     } catch (error) {
       this.debugError('CREATE_BAR', error);
     }
