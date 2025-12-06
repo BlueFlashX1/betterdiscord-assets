@@ -2,7 +2,7 @@
  * @name CriticalHit
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
- * @version 3.1.0
+ * @version 3.2.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * Font Credit:
@@ -26,6 +26,19 @@
  * for plugins that want to enhance their functionality with critical hit data.
  *
  * ============================================================================
+ *
+ * @changelog v3.2.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION
+ * ADVANCED FEATURES:
+ * - Added MessageStore access for receiving messages (complements sendMessage patch)
+ * - Enhanced React fiber traversal with better error handling
+ * - Improved webpack module management and cleanup
+ * - Better compatibility with multiple React fiber key patterns
+ *
+ * RELIABILITY:
+ * - More reliable message detection (MessageStore patches)
+ * - Better error handling in React fiber traversal (prevents crashes)
+ * - Enhanced error recovery in fiber traversal
+ * - Graceful fallbacks if webpack unavailable
  *
  * @changelog v3.1.0 (2025-12-06)
  * - NEW FEATURES: Added Friend or Foe BB font for Solo Leveling theme
