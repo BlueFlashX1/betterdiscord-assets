@@ -6,6 +6,22 @@
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
+ * ATTRIBUTION & LICENSE
+ * ============================================================================
+ *
+ * Window Focus Detection Pattern:
+ * This plugin uses a window focus/blur detection pattern inspired by
+ * AutoIdleOnAFK plugin by RoguedBear.
+ * - Original plugin: https://github.com/RoguedBear/BetterDiscordPlugin-AutoIdleOnAFK
+ * - Original author: RoguedBear
+ * - Original license: MIT License
+ * - Pattern used: window blur/focus event listeners for button persistence
+ *
+ * This attribution does not imply the entire plugin is derived from AutoIdleOnAFK.
+ * The window focus detection is a small, reusable pattern and this plugin
+ * remains primarily original work by BlueFlashX1.
+ *
+ * ============================================================================
  * FILE STRUCTURE & NAVIGATION
  * ============================================================================
  *
@@ -88,8 +104,10 @@ module.exports = class SoloLevelingTitleManager {
     this.titleModal = null;
     this.toolbarObserver = null;
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
+    this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
+    this._periodicCheckInterval = null; // Periodic button persistence check
 
     // Track all retry timeouts for proper cleanup
     this._retryTimeouts = new Set();
@@ -270,6 +288,9 @@ module.exports = class SoloLevelingTitleManager {
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
 
+    // Watch for window focus/visibility changes (user coming back from another window)
+    this.setupWindowFocusWatcher();
+
     this.debugLog('START', 'Plugin started');
   }
 
@@ -292,6 +313,11 @@ module.exports = class SoloLevelingTitleManager {
     } finally {
       // FUNCTIONAL: Cleanup URL watcher (short-circuit)
       this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
+      // FUNCTIONAL: Cleanup window focus watcher (short-circuit)
+      this._windowFocusCleanup && (this._windowFocusCleanup(), (this._windowFocusCleanup = null));
+      // FUNCTIONAL: Clear periodic check interval
+      this._periodicCheckInterval &&
+        (clearInterval(this._periodicCheckInterval), (this._periodicCheckInterval = null));
 
       // FUNCTIONAL: Memory cleanup (filter pattern)
       window._titleManagerInstances &&
@@ -910,15 +936,23 @@ module.exports = class SoloLevelingTitleManager {
     }
 
     this.toolbarObserver = new MutationObserver(() => {
-      if (this.titleButton && !toolbar.contains(this.titleButton)) {
-        // Button was removed, recreate it
-        this.createTitleButton();
+      // Enhanced check: Verify button still exists and is in DOM
+      if (
+        !this.titleButton ||
+        !document.body.contains(this.titleButton) ||
+        !toolbar.contains(this.titleButton)
+      ) {
+        // Button was removed or moved, recreate it
+        if (!this._isStopped) {
+          this.createTitleButton();
+        }
       }
     });
 
     this.toolbarObserver.observe(toolbar, {
       childList: true,
       subtree: true,
+      attributes: false,
     });
   }
 
@@ -1061,6 +1095,7 @@ module.exports = class SoloLevelingTitleManager {
 
   /**
    * Setup channel watcher for URL changes (event-based, no polling)
+   * Enhanced to persist buttons across guild/channel switches
    */
   setupChannelWatcher() {
     // Use event-based URL change detection (more efficient than polling)
@@ -1075,11 +1110,18 @@ module.exports = class SoloLevelingTitleManager {
       currentUrl !== lastUrl &&
         ((lastUrl = currentUrl),
         (() => {
-          const timeoutId = setTimeout(() => {
-            this._retryTimeouts.delete(timeoutId);
-            (!this.titleButton || !document.contains(this.titleButton)) && this.createTitleButton();
-          }, 500);
-          this._retryTimeouts.add(timeoutId);
+          // Enhanced: Multiple retry attempts with increasing delays
+          const retryDelays = [200, 500, 1000];
+          retryDelays.forEach((delay, index) => {
+            const timeoutId = setTimeout(() => {
+              this._retryTimeouts.delete(timeoutId);
+              // Check if button exists and is in DOM
+              if (!this.titleButton || !document.body.contains(this.titleButton)) {
+                this.createTitleButton();
+              }
+            }, delay * (index + 1));
+            this._retryTimeouts.add(timeoutId);
+          });
         })());
     };
 
@@ -1130,6 +1172,91 @@ module.exports = class SoloLevelingTitleManager {
       this._originalPushState = null;
       this._originalReplaceState = null;
     };
+  }
+
+  /**
+   * Setup window focus/visibility watcher (detects when user returns from another window)
+   * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
+   */
+  setupWindowFocusWatcher() {
+    // Bind handlers to instance (same pattern as AutoIdleOnAFK)
+    this._boundHandleBlur = this._handleWindowBlur.bind(this);
+    this._boundHandleFocus = this._handleWindowFocus.bind(this);
+
+    // Listen for window blur events (Discord window loses focus)
+    window.addEventListener('blur', this._boundHandleBlur);
+
+    // Listen for window focus events (Discord window gains focus - user returns)
+    window.addEventListener('focus', this._boundHandleFocus);
+
+    // Also listen for visibility changes (tab switching within browser)
+    document.addEventListener(
+      'visibilitychange',
+      (this._boundHandleVisibilityChange = () => {
+        if (this._isStopped) return;
+        // User returned to tab (tab is now visible)
+        if (!document.hidden) {
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
+            if (!this.titleButton || !document.body.contains(this.titleButton)) {
+              this.debugLog('VISIBILITY', 'Button missing after visibility change, recreating...');
+              this.createTitleButton();
+            }
+          }, 300);
+          this._retryTimeouts.add(timeoutId);
+        }
+      })
+    );
+
+    // Periodic persistence check as fallback (every 10 seconds)
+    this._periodicCheckInterval = setInterval(() => {
+      if (this._isStopped) return;
+      if (!this.titleButton || !document.body.contains(this.titleButton)) {
+        this.debugLog('PERIODIC_CHECK', 'Button missing, recreating...');
+        this.createTitleButton();
+      }
+    }, 10000); // Check every 10 seconds
+
+    // Store cleanup function
+    this._windowFocusCleanup = () => {
+      window.removeEventListener('blur', this._boundHandleBlur);
+      window.removeEventListener('focus', this._boundHandleFocus);
+      document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
+      if (this._periodicCheckInterval) {
+        clearInterval(this._periodicCheckInterval);
+        this._periodicCheckInterval = null;
+      }
+    };
+  }
+
+  /**
+   * Handle window blur event (Discord window loses focus)
+   * Pattern from AutoIdleOnAFK - fires when user switches to another window/app
+   */
+  _handleWindowBlur() {
+    if (this._isStopped) return;
+    this.debugLog('WINDOW_BLUR', 'Discord window lost focus');
+    // Note: Don't recreate button on blur - wait for focus to return
+  }
+
+  /**
+   * Handle window focus event (Discord window gains focus)
+   * Pattern from AutoIdleOnAFK - fires when user returns to Discord window
+   */
+  _handleWindowFocus() {
+    if (this._isStopped) return;
+    this.debugLog('WINDOW_FOCUS', 'Discord window gained focus - checking button persistence');
+
+    // Small delay to let Discord finish re-rendering after focus
+    const timeoutId = setTimeout(() => {
+      this._retryTimeouts.delete(timeoutId);
+      // Check if button still exists when user returns
+      if (!this.titleButton || !document.body.contains(this.titleButton)) {
+        this.debugLog('WINDOW_FOCUS', 'Button missing after window focus, recreating...');
+        this.createTitleButton();
+      }
+    }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
+    this._retryTimeouts.add(timeoutId);
   }
 
   openTitleModal() {
