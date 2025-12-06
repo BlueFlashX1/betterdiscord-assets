@@ -1905,7 +1905,9 @@ module.exports = class CriticalHit {
         });
         this.debugLog(
           'LOAD_MESSAGE_HISTORY',
-          `Loaded ${this.messageHistory.length} messages (${critCount} crits) from history in ${loadTime.toFixed(2)}ms`
+          `Loaded ${
+            this.messageHistory.length
+          } messages (${critCount} crits) from history in ${loadTime.toFixed(2)}ms`
         );
       } else {
         this.messageHistory = [];

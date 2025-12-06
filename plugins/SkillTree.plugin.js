@@ -3,6 +3,27 @@
  * @author BlueFlashX1
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
  * @version 2.0.1
+ * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ *
+ * ============================================================================
+ * ATTRIBUTION & LICENSE
+ * ============================================================================
+ *
+ * Window Focus Detection Pattern:
+ * This plugin uses a window focus/blur detection pattern inspired by
+ * AutoIdleOnAFK plugin by RoguedBear.
+ * - Original plugin: https://github.com/RoguedBear/BetterDiscordPlugin-AutoIdleOnAFK
+ * - Original author: RoguedBear
+ * - Original license: MIT License
+ * - Pattern used: window blur/focus event listeners for button persistence
+ *
+ * This attribution does not imply the entire plugin is derived from AutoIdleOnAFK.
+ * The window focus detection is a small, reusable pattern and this plugin
+ * remains primarily original work by BlueFlashX1.
+ *
+ * ============================================================================
+ * VERSION HISTORY
+ * ============================================================================
  *
  * @changelog v2.0.1 (2025-12-03)
  * - Code structure improvements (section headers, better organization)
@@ -346,8 +367,10 @@ module.exports = class SkillTree {
     this.levelCheckInterval = null; // Deprecated - using events instead
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
+    this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
+    this._periodicCheckInterval = null; // Periodic button persistence check
   }
 
   // ============================================================================
@@ -387,6 +410,9 @@ module.exports = class SkillTree {
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
+
+    // Watch for window focus/visibility changes (user coming back from another window)
+    this.setupWindowFocusWatcher();
 
     // Watch for level ups from SoloLevelingStats (event-based, will retry if not ready)
     this.setupLevelUpWatcher();
@@ -489,6 +515,17 @@ module.exports = class SkillTree {
         console.error('[SkillTree] Error during URL change watcher cleanup:', e);
       } finally {
         this._urlChangeCleanup = null;
+      }
+    }
+
+    // Cleanup window focus watcher
+    if (this._windowFocusCleanup) {
+      try {
+        this._windowFocusCleanup();
+      } catch (e) {
+        console.error('[SkillTree] Error during window focus watcher cleanup:', e);
+      } finally {
+        this._windowFocusCleanup = null;
       }
     }
 
@@ -1901,15 +1938,23 @@ module.exports = class SkillTree {
     }
 
     this.toolbarObserver = new MutationObserver(() => {
-      if (this.skillTreeButton && !toolbar.contains(this.skillTreeButton)) {
-        // Button was removed, recreate it
-        this.createSkillTreeButton();
+      // Enhanced check: Verify button still exists and is in DOM
+      if (
+        !this.skillTreeButton ||
+        !document.body.contains(this.skillTreeButton) ||
+        !toolbar.contains(this.skillTreeButton)
+      ) {
+        // Button was removed or moved, recreate it
+        if (!this._isStopped) {
+          this.createSkillTreeButton();
+        }
       }
     });
 
     this.toolbarObserver.observe(toolbar, {
       childList: true,
       subtree: true,
+      attributes: false,
     });
   }
 
@@ -2137,6 +2182,10 @@ module.exports = class SkillTree {
     return html;
   }
 
+  /**
+   * Setup channel watcher for URL changes (event-based, no polling)
+   * Enhanced to persist buttons across guild/channel switches
+   */
   setupChannelWatcher() {
     // Use event-based URL change detection (no polling)
     let lastUrl = window.location.href;
@@ -2149,14 +2198,18 @@ module.exports = class SkillTree {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        // Small delay to ensure DOM is ready
-        const timeoutId = setTimeout(() => {
-          this._retryTimeouts.delete(timeoutId);
-          if (!this.skillTreeButton || !document.contains(this.skillTreeButton)) {
-            this.createSkillTreeButton();
-          }
-        }, 500);
-        this._retryTimeouts.add(timeoutId);
+        // Enhanced: Multiple retry attempts with increasing delays
+        const retryDelays = [200, 500, 1000];
+        retryDelays.forEach((delay, index) => {
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
+            // Check if button exists and is in DOM
+            if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+              this.createSkillTreeButton();
+            }
+          }, delay * (index + 1));
+          this._retryTimeouts.add(timeoutId);
+        });
       }
     };
 
@@ -2164,53 +2217,112 @@ module.exports = class SkillTree {
     const popstateHandler = () => handleUrlChange();
     window.addEventListener('popstate', popstateHandler);
 
-    // Setup MutationObserver to detect DOM changes that indicate navigation
-    // (Discord's SPA updates the title and main content when navigating)
-    const observer = new MutationObserver(() => {
+    // Override pushState and replaceState to detect programmatic navigation
+    let originalPushState = history.pushState;
+    let originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      originalPushState.apply(history, args);
       handleUrlChange();
-    });
+    };
 
-    // Observe title changes as a proxy for navigation
-    const titleElement = document.querySelector('title');
-    if (titleElement) {
-      observer.observe(titleElement, { childList: true, subtree: true, characterData: true });
-    }
-
-    // Also observe the main app container for structural changes
-    const appContainer = document.querySelector('#app-mount');
-    if (appContainer) {
-      observer.observe(appContainer, { childList: true, subtree: false });
-    }
-
-    // Fallback: Poll for URL changes every 500ms
-    // This ensures we catch navigation even if observers miss it
-    const pollInterval = setInterval(() => {
+    history.replaceState = function (...args) {
+      originalReplaceState.apply(history, args);
       handleUrlChange();
-    }, 500);
+    };
 
     // Store cleanup function with try/finally to guarantee restoration
     this._urlChangeCleanup = () => {
       try {
         // Remove popstate listener
-        window.removeEventListener('popstate', popstateHandler);
+        window.removeEventListener('popstate', handleUrlChange);
+        // Restore original history methods
+        if (originalPushState) history.pushState = originalPushState;
+        if (originalReplaceState) history.replaceState = originalReplaceState;
       } catch (e) {
-        console.error('[SkillTree] Error removing popstate listener:', e);
-      }
-
-      try {
-        // Disconnect mutation observer
-        observer.disconnect();
-      } catch (e) {
-        console.error('[SkillTree] Error disconnecting observer:', e);
-      }
-
-      try {
-        // Clear polling interval
-        clearInterval(pollInterval);
-      } catch (e) {
-        console.error('[SkillTree] Error clearing poll interval:', e);
+        console.error('[SkillTree] Error during URL watcher cleanup:', e);
       }
     };
+  }
+
+  /**
+   * Setup window focus/visibility watcher (detects when user returns from another window)
+   * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
+   */
+  setupWindowFocusWatcher() {
+    // Bind handlers to instance (same pattern as AutoIdleOnAFK)
+    this._boundHandleBlur = this._handleWindowBlur.bind(this);
+    this._boundHandleFocus = this._handleWindowFocus.bind(this);
+
+    // Listen for window blur events (Discord window loses focus)
+    window.addEventListener('blur', this._boundHandleBlur);
+
+    // Listen for window focus events (Discord window gains focus - user returns)
+    window.addEventListener('focus', this._boundHandleFocus);
+
+    // Also listen for visibility changes (tab switching within browser)
+    document.addEventListener(
+      'visibilitychange',
+      (this._boundHandleVisibilityChange = () => {
+        if (this._isStopped) return;
+        // User returned to tab (tab is now visible)
+        if (!document.hidden) {
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
+            if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+              this.createSkillTreeButton();
+            }
+          }, 300);
+          this._retryTimeouts.add(timeoutId);
+        }
+      })
+    );
+
+    // Periodic persistence check as fallback (every 10 seconds)
+    this._periodicCheckInterval = setInterval(() => {
+      if (this._isStopped) return;
+      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+        this.createSkillTreeButton();
+      }
+    }, 10000); // Check every 10 seconds
+
+    // Store cleanup function
+    this._windowFocusCleanup = () => {
+      window.removeEventListener('blur', this._boundHandleBlur);
+      window.removeEventListener('focus', this._boundHandleFocus);
+      document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
+      if (this._periodicCheckInterval) {
+        clearInterval(this._periodicCheckInterval);
+        this._periodicCheckInterval = null;
+      }
+    };
+  }
+
+  /**
+   * Handle window blur event (Discord window loses focus)
+   * Pattern from AutoIdleOnAFK - fires when user switches to another window/app
+   */
+  _handleWindowBlur() {
+    if (this._isStopped) return;
+    // Note: Don't recreate button on blur - wait for focus to return
+  }
+
+  /**
+   * Handle window focus event (Discord window gains focus)
+   * Pattern from AutoIdleOnAFK - fires when user returns to Discord window
+   */
+  _handleWindowFocus() {
+    if (this._isStopped) return;
+
+    // Small delay to let Discord finish re-rendering after focus
+    const timeoutId = setTimeout(() => {
+      this._retryTimeouts.delete(timeoutId);
+      // Check if button still exists when user returns
+      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+        this.createSkillTreeButton();
+      }
+    }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
+    this._retryTimeouts.add(timeoutId);
   }
 
   // ============================================================================
