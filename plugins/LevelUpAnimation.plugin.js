@@ -19,7 +19,6 @@
  *   3.2 Settings Management (load, save, panel)
  *   3.3 CSS Management (inject, remove)
  *   3.4 Animation Display (show, position)
- *   3.5 Particle Effects (create)
  *   3.6 Plugin Integration (hook, unhook)
  * SECTION 4: DEBUGGING & DEVELOPMENT
  *
@@ -33,7 +32,6 @@
  * - Deep merge in loadSettings (prevents nested object sharing)
  *
  * FUNCTIONAL OPTIMIZATIONS:
- * - For-loop → Array.from() (particle creation)
  * - Event listeners → functional mapper (5 listeners → 1 forEach)
  * - debugLog → functional short-circuit (NO IF-ELSE!)
  *
@@ -73,9 +71,10 @@ module.exports = class LevelUpAnimation {
       debugMode: false, // Toggle debug console logs
       animationDuration: 3000, // 3 seconds
       floatDistance: 150, // pixels to float up
-      particleCount: 30,
       glowIntensity: 1.5,
       fontSize: 48,
+      levelUpFont: "'Friend or Foe BB', sans-serif", // Font for LEVEL UP animation text
+      useLocalFonts: true, // Use local font files (Friend or Foe BB requires local files)
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
@@ -107,6 +106,7 @@ module.exports = class LevelUpAnimation {
    */
   start() {
     this.loadSettings();
+    this.loadLevelUpFont(); // Load font before injecting CSS
     this.injectCSS();
     this.hookIntoSoloLeveling();
     this.debugLog('START', 'Plugin started');
@@ -196,12 +196,6 @@ module.exports = class LevelUpAnimation {
           }" min="50" max="500" step="10" style="width: 100%; padding: 5px;">
         </label>
         <label style="display: block; margin-bottom: 10px;">
-          <span style="display: block; margin-bottom: 5px;">Particle Count:</span>
-          <input type="number" id="lu-particles" value="${
-            this.settings.particleCount
-          }" min="10" max="100" step="5" style="width: 100%; padding: 5px;">
-        </label>
-        <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Font Size (px):</span>
           <input type="number" id="lu-fontsize" value="${
             this.settings.fontSize
@@ -242,13 +236,6 @@ module.exports = class LevelUpAnimation {
           this.saveSettings();
         },
       },
-      '#lu-particles': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.particleCount = parseInt(e.target.value);
-          this.saveSettings();
-        },
-      },
       '#lu-fontsize': {
         event: 'change',
         handler: (e) => {
@@ -278,15 +265,121 @@ module.exports = class LevelUpAnimation {
    * 3.3 CSS MANAGEMENT
    */
   /**
+   * Load font for Level Up animation (Friend or Foe BB)
+   * Uses local files if enabled, otherwise Google Fonts fallback
+   */
+  loadLevelUpFont() {
+    const fontToLoad =
+      this.settings.levelUpFont?.replace(/'/g, '').replace(/"/g, '').split(',')[0].trim() ||
+      'Friend or Foe BB';
+
+    const isFriendOrFoe =
+      fontToLoad.toLowerCase().includes('friend or foe') ||
+      fontToLoad.toLowerCase() === 'friend or foe bb';
+
+    if (isFriendOrFoe && this.settings.useLocalFonts) {
+      const loaded = this.loadLocalFont(fontToLoad);
+      if (loaded) return true;
+    }
+
+    // Fallback to Google Fonts (will fail gracefully for Friend or Foe BB)
+    return this.loadGoogleFont(fontToLoad);
+  }
+
+  /**
+   * Get the fonts folder path for Level Up Animation plugin
+   */
+  getFontsFolderPath() {
+    try {
+      const pluginPath = BdApi.Plugins.folder.replace(/\\/g, '/');
+      if (pluginPath) {
+        const normalizedPath = pluginPath.endsWith('/') ? pluginPath : `${pluginPath}/`;
+        return `${normalizedPath}LevelUpAnimation/fonts/`;
+      }
+    } catch (e) {
+      this.debugError('Failed to get plugin path', e);
+    }
+    return './LevelUpAnimation/fonts/';
+  }
+
+  /**
+   * Load local font file for Level Up animation
+   */
+  loadLocalFont(fontName, fontFamily = null) {
+    if (!fontFamily) {
+      fontFamily = `'${fontName}', sans-serif`;
+    }
+
+    try {
+      const existingStyle = document.getElementById(
+        `lu-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`
+      );
+      if (existingStyle) {
+        return true; // Font already loaded
+      }
+
+      const fontsPath = this.getFontsFolderPath();
+      let fontFileName = fontName.replace(/\s+/g, '');
+      if (fontName.toLowerCase().includes('friend or foe')) {
+        fontFileName = 'FriendorFoeBB';
+      }
+
+      const fontStyle = document.createElement('style');
+      fontStyle.id = `lu-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
+      fontStyle.textContent = `
+        @font-face {
+          font-family: '${fontName}';
+          src: url('${fontsPath}${fontFileName}.woff2') format('woff2'),
+               url('${fontsPath}${fontFileName}.woff') format('woff'),
+               url('${fontsPath}${fontFileName}.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: swap;
+        }
+      `;
+      document.head.appendChild(fontStyle);
+      this.debugLog('Local font loaded', { fontName, fontFileName });
+      return true;
+    } catch (error) {
+      this.debugError('Failed to load local font', error);
+      return false;
+    }
+  }
+
+  /**
+   * Load font from Google Fonts (fallback)
+   */
+  loadGoogleFont(fontName) {
+    try {
+      const fontId = `lu-google-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
+      if (document.getElementById(fontId)) {
+        return true;
+      }
+
+      const fontLink = document.createElement('link');
+      fontLink.id = fontId;
+      fontLink.rel = 'stylesheet';
+      const fontUrlName = fontName.replace(/\s+/g, '+');
+      fontLink.href = `https://fonts.googleapis.com/css2?family=${fontUrlName}&display=swap`;
+      document.head.appendChild(fontLink);
+      return true;
+    } catch (error) {
+      this.debugError('Failed to load Google font', error);
+      return false;
+    }
+  }
+
+  /**
    * Inject CSS styles for level up animations
    * Operations:
    * 1. Check if styles already injected (prevent duplicates)
    * 2. Create style element with animation keyframes
    * 3. Append to document head
-   * 4. Define animations: float-up, glow-pulse, particle-fade
+   * 4. Define animations: float-up, glow-pulse
    */
   injectCSS() {
     const styleId = 'level-up-animation-css';
+    const levelUpFont = this.settings.levelUpFont || "'Friend or Foe BB', sans-serif";
     const cssContent = `
       .lu-animation-container {
         position: fixed;
@@ -300,7 +393,7 @@ module.exports = class LevelUpAnimation {
 
       .lu-level-up-text {
         position: absolute;
-        font-family: 'Press Start 2P', monospace;
+        font-family: ${levelUpFont};
         font-weight: bold;
         text-transform: uppercase;
         white-space: nowrap;
@@ -314,6 +407,10 @@ module.exports = class LevelUpAnimation {
         background-clip: text;
         text-shadow: 0 0 20px rgba(139, 92, 246, 0.8),
                      0 0 40px rgba(255, 255, 255, 0.6);
+        /* Font smoothing for better rendering */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
       }
 
       @keyframes lu-float-up {
@@ -347,26 +444,6 @@ module.exports = class LevelUpAnimation {
         }
       }
 
-      .lu-particle {
-        position: absolute;
-        width: 4px;
-        height: 4px;
-        background: radial-gradient(circle, #8b5cf6 0%, rgba(139, 92, 246, 0) 70%);
-        border-radius: 50%;
-        pointer-events: none;
-        animation: lu-particle-fade var(--lu-duration, 3s) ease-out forwards;
-      }
-
-      @keyframes lu-particle-fade {
-        0% {
-          opacity: 1;
-          transform: translate(0, 0) scale(1);
-        }
-        100% {
-          opacity: 0;
-          transform: translate(var(--lu-particle-x, 0), var(--lu-particle-y, -100px)) scale(0);
-        }
-      }
     `;
 
     // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
@@ -465,57 +542,18 @@ module.exports = class LevelUpAnimation {
   }
 
   /**
-   * 3.6 PARTICLE EFFECTS
+   * 3.6 ANIMATION DISPLAY
    */
   /**
-   * Create particle effects around animation center
-   * Operations:
-   * 1. Get animation container reference
-   * 2. Generate particles in circular pattern around center
-   * 3. Calculate random direction and distance for each particle
-   * 4. Apply CSS custom properties for animation
-   * 5. Append particles to container
-   * 6. Return array of particle elements for cleanup
-   */
-  createParticles(startX, startY, count) {
-    const container = this.getAnimationContainer();
-
-    // FUNCTIONAL: Create particles using Array.from (NO FOR-LOOP!)
-    return Array.from({ length: count }, (_, i) => {
-      const particle = document.createElement('div');
-      particle.className = 'lu-particle';
-
-      // Random direction and distance
-      const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
-      const distance = 50 + Math.random() * 100;
-      const particleX = Math.cos(angle) * distance;
-      const particleY = Math.sin(angle) * distance - 50; // Float up
-
-      particle.style.left = `${startX}px`;
-      particle.style.top = `${startY}px`;
-      particle.style.setProperty('--lu-particle-x', `${particleX}px`);
-      particle.style.setProperty('--lu-particle-y', `${particleY}px`);
-      particle.style.setProperty('--lu-duration', `${this.settings.animationDuration}ms`);
-
-      container.appendChild(particle);
-      return particle;
-    });
-  }
-
-  /**
-   * 3.7 ANIMATION DISPLAY
-   */
-  /**
-   * Display level up animation with text and particles
+   * Display level up animation with text
    * Operations:
    * 1. Check if animation is enabled
    * 2. Calculate optimal display position
    * 3. Create "LEVEL UP!" text element with styling
    * 4. Position text at calculated coordinates
-   * 5. Create particle effects around text
-   * 6. Track animation for cleanup
-   * 7. Schedule automatic cleanup after duration
-   * 8. Remove container if no animations remain
+   * 5. Track animation for cleanup
+   * 6. Schedule automatic cleanup after duration
+   * 7. Remove container if no animations remain
    */
   showLevelUpAnimation(newLevel, oldLevel) {
     if (!this.settings.enabled) {
@@ -543,9 +581,6 @@ module.exports = class LevelUpAnimation {
 
       container.appendChild(textElement);
 
-      // Create particles
-      const particles = this.createParticles(position.x, position.y, this.settings.particleCount);
-
       // Track animation
       const animationId = `lu-${Date.now()}`;
       this.activeAnimations.add(animationId);
@@ -553,7 +588,6 @@ module.exports = class LevelUpAnimation {
       // Clean up after animation
       setTimeout(() => {
         textElement.remove();
-        particles.forEach((p) => p.remove());
         this.activeAnimations.delete(animationId);
 
         // Remove container if no active animations
