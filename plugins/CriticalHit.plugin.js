@@ -144,7 +144,7 @@ module.exports = class CriticalHit {
       maxCombo: 999,
       ownUserId: null,
       // Debug settings
-      debugMode: true, // Debug logging (can be toggled in settings) - ENABLED FOR DEBUGGING
+      debugMode: false, // Debug logging (can be toggled in settings)
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings modification
@@ -602,8 +602,8 @@ module.exports = class CriticalHit {
 
       // Warn only for truly suspicious cases (not content hashes, which are intentional fallbacks)
       // Only warn if debug mode is enabled to reduce console noise
-      if (isSuspicious && this.debug?.enabled) {
-        console.warn('[CriticalHit] WARNING: Suspicious message ID extracted:', {
+      if (isSuspicious) {
+        this.debugLog('GET_MESSAGE_ID', 'WARNING: Suspicious message ID extracted', {
           messageId,
           length: messageId.length,
           method: extractionMethod,
@@ -1307,7 +1307,8 @@ module.exports = class CriticalHit {
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
         // Only log in verbose mode - channel changes are frequent
-        this.debug?.verbose && console.log('CriticalHit: Channel changed, re-initializing...');
+        this.debug?.verbose &&
+          this.debugLog('CHANNEL_CHANGE', 'Channel changed, re-initializing...');
         this._handleChannelChange();
       }
     });
@@ -1902,10 +1903,9 @@ module.exports = class CriticalHit {
             .slice(0, 5)
             .map((e) => ({ messageId: e.messageId, channelId: e.channelId })),
         });
-        console.log(
-          `CriticalHit: Loaded ${
-            this.messageHistory.length
-          } messages (${critCount} crits) from history in ${loadTime.toFixed(2)}ms`
+        this.debugLog(
+          'LOAD_MESSAGE_HISTORY',
+          `Loaded ${this.messageHistory.length} messages (${critCount} crits) from history in ${loadTime.toFixed(2)}ms`
         );
       } else {
         this.messageHistory = [];
@@ -2670,8 +2670,9 @@ module.exports = class CriticalHit {
         );
       } else if (restoredCount > 0) {
         // Brief success log for successful restorations
-        console.log(
-          `CriticalHit: Restored ${restoredCount} of ${channelCrits.length} crits for channel ${channelId}`
+        this.debugLog(
+          'RESTORE_CHANNEL_CRITS',
+          `Restored ${restoredCount} of ${channelCrits.length} crits for channel ${channelId}`
         );
       }
 
@@ -3316,10 +3317,10 @@ module.exports = class CriticalHit {
         remaining: this.messageHistory.length,
         daysToKeep,
       });
-      this.debug?.enabled &&
-        console.log(
-          `CriticalHit: Cleaned up ${removed} old history entries (${removedCrits} crits)`
-        );
+      this.debugLog(
+        'CLEANUP_HISTORY',
+        `Cleaned up ${removed} old history entries (${removedCrits} crits)`
+      );
       this._throttledSaveHistory(false);
       this.updateStats();
     }
@@ -8726,7 +8727,7 @@ module.exports = class CriticalHit {
         });
       }
     } catch (error) {
-      this.debug?.enabled && console.log('CriticalHit: Toast failed', error);
+      this.debugError('SHOW_TOAST', error);
     }
   }
 
@@ -8863,7 +8864,7 @@ module.exports = class CriticalHit {
     try {
       BdApi?.showToast?.(message, { timeout: this.TOAST_TIMEOUT_MS, ...options });
     } catch (error) {
-      this.debug?.enabled && console.log('CriticalHit: Toast failed', error);
+      this.debugError('SHOW_TOAST', error);
     }
   }
 
@@ -10066,7 +10067,7 @@ module.exports = class CriticalHit {
       this.debugLog('PLUGIN_START', 'SUCCESS: CriticalHit plugin started successfully');
     } catch (error) {
       this.debugError('PLUGIN_START', error, { phase: 'initialization' });
-      console.error('CriticalHit: Failed to start plugin', error);
+      this.debugError('START', error);
     }
   }
 
@@ -10220,9 +10221,8 @@ module.exports = class CriticalHit {
         this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
       }
 
-      // Sync debug.enabled with settings.debugMode (force enable for debugging)
-      this.debug.enabled = true; // FORCE ENABLED FOR DEBUGGING
-      this.settings.debugMode = true; // Also force enable in settings
+      // Sync debug.enabled with settings.debugMode
+      this.debug.enabled = this.settings.debugMode === true;
 
       // OPTIMIZED: Update history limits from settings
       this.maxHistorySize = this.settings.maxHistorySize ?? 2000;
@@ -10238,10 +10238,9 @@ module.exports = class CriticalHit {
       });
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error);
-      // Fallback to defaults on error (but still force enable debug)
+      // Fallback to defaults on error
       this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
-      this.settings.debugMode = true; // Force enable even on error
-      this.debug.enabled = true; // Force enable even on error
+      this.debug.enabled = this.settings.debugMode === true;
     }
   }
 
@@ -10251,9 +10250,8 @@ module.exports = class CriticalHit {
    */
   saveSettings() {
     try {
-      // FORCE ENABLE DEBUG MODE FOR DEBUGGING
-      this.settings.debugMode = true;
-      this.debug.enabled = true;
+      // Sync debug.enabled with settings.debugMode before saving
+      this.debug.enabled = this.settings.debugMode === true;
 
       BdApi.Data.save('CriticalHit', 'settings', this.settings);
 
