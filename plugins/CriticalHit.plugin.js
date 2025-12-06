@@ -3,10 +3,29 @@
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
  * @version 3.1.0
+ * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * Font Credit:
  * <div>Icons made from <a href="https://www.onlinewebfonts.com/icon">svg icons</a>is licensed by CC BY 4.0</div>
  * Font: "Friend or Foe BB" from OnlineWebFonts.com
+ *
+ * ============================================================================
+ * PLUGIN INTEROPERABILITY
+ * ============================================================================
+ *
+ * This plugin provides data and functionality for other BetterDiscord plugins:
+ *
+ * - SoloLevelingStats: Provides message history, combo data, and font loading
+ *   - SoloLevelingStats reads: BdApi.Data.load('CriticalHitAnimation', 'userCombo')
+ *   - SoloLevelingStats reads: Message history for critical hit tracking
+ *   - SoloLevelingStats uses: getFontsFolderPath() for font loading
+ *   - SoloLevelingStats writes: BdApi.Data.save('SoloLevelingStats', 'agilityBonus', ...)
+ *   - SoloLevelingStats writes: BdApi.Data.save('SoloLevelingStats', 'luckBonus', ...)
+ *
+ * The plugin is designed to be standalone but provides optional integration points
+ * for plugins that want to enhance their functionality with critical hit data.
+ *
+ * ============================================================================
  *
  * @changelog v3.1.0 (2025-12-06)
  * - NEW FEATURES: Added Friend or Foe BB font for Solo Leveling theme

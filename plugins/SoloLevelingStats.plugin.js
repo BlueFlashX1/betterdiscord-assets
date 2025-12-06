@@ -6,7 +6,27 @@
  * @authorId
  * @authorLink
  * @website
- * @source
+ * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ *
+ * ============================================================================
+ * PLUGIN INTEROPERABILITY
+ * ============================================================================
+ *
+ * This plugin integrates with the CriticalHit plugin for enhanced functionality:
+ *
+ * - Uses CriticalHit's message history to track critical hits for quests
+ * - Reads agility bonus data from CriticalHit for stat calculations
+ * - Shares perception/luck bonus data with CriticalHit (backward compatibility)
+ * - Loads fonts from CriticalHit's font directory if available
+ *
+ * The integration is optional - SoloLevelingStats will function without CriticalHit,
+ * but some features (like critical hit tracking for quests) will be unavailable.
+ *
+ * Integration Points:
+ * - BdApi.Plugins.get('CriticalHit') - Access CriticalHit plugin instance
+ * - BdApi.Data.load('CriticalHitAnimation', 'userCombo') - Read combo data
+ * - BdApi.Data.save('SoloLevelingStats', ...) - Share stat bonus data
+ * - getFontsFolderPath() - Load fonts from CriticalHit's font directory
  *
  * ============================================================================
  * FILE STRUCTURE & NAVIGATION
