@@ -1199,6 +1199,129 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * Attempt to inject chat UI into Discord's React tree
+   * Operations:
+   * 1. Find MainContent component via webpack
+   * 2. Patch component to inject chat UI panel
+   * 3. Use BdApi.Utils.findInTree to locate injection point
+   * 4. Create React element for chat UI
+   * 5. Set reactInjectionActive flag if successful
+   * @returns {boolean} - True if React injection was successful
+   */
+  tryReactInjection() {
+    try {
+      // Check if webpack modules are available
+      if (!this.webpackModuleAccess) {
+        this.debugLog('REACT_INJECTION', 'Webpack modules not available, skipping React injection');
+        return false;
+      }
+
+      // Find Discord's main content area React component
+      // Try multiple search patterns for better compatibility
+      let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
+        searchExports: true,
+      });
+
+      // Alternative: Search for app content wrapper
+      if (!MainContent) {
+        MainContent = BdApi.Webpack.getByStrings('appMount', {
+          searchExports: true,
+        });
+      }
+
+      if (!MainContent) {
+        this.debugLog('REACT_INJECTION', 'Main content component not found, using DOM fallback');
+        return false;
+      }
+
+      const pluginInstance = this;
+      const React = BdApi.React;
+
+      // Patch the React component to inject our chat UI
+      BdApi.Patcher.after(
+        'SoloLevelingStats',
+        MainContent,
+        'Z',
+        (thisObject, args, returnValue) => {
+          try {
+            // Find body element in React tree
+            const bodyPath = BdApi.Utils.findInTree(
+              returnValue,
+              (prop) =>
+                prop &&
+                prop.props &&
+                (prop.props.className?.includes('app') ||
+                  prop.props.id === 'app-mount' ||
+                  prop.type === 'body'),
+              { walkable: ['props', 'children'] }
+            );
+
+            if (bodyPath && bodyPath.props) {
+              // Check if chat UI already injected
+              const hasChatUI = BdApi.Utils.findInTree(
+                returnValue,
+                (prop) => prop && prop.props && prop.props.id === 'sls-chat-ui',
+                { walkable: ['props', 'children'] }
+              );
+
+              if (!hasChatUI && !pluginInstance.chatUIPanel) {
+                // Create React element for chat UI
+                const chatUIHTML = pluginInstance.renderChatUI();
+                const chatUIElement = React.createElement('div', {
+                  id: 'sls-chat-ui',
+                  className: 'sls-chat-panel',
+                  dangerouslySetInnerHTML: { __html: chatUIHTML },
+                });
+
+                // Inject at the beginning of body children
+                if (Array.isArray(bodyPath.props.children)) {
+                  bodyPath.props.children.unshift(chatUIElement);
+                } else if (bodyPath.props.children) {
+                  bodyPath.props.children = [chatUIElement, bodyPath.props.children];
+                } else {
+                  bodyPath.props.children = chatUIElement;
+                }
+
+                pluginInstance.reactInjectionActive = true;
+                pluginInstance.debugLog('REACT_INJECTION', 'Chat UI injected via React');
+
+                // Set up DOM reference after injection
+                setTimeout(() => {
+                  const domElement = document.getElementById('sls-chat-ui');
+                  if (domElement) {
+                    pluginInstance.chatUIPanel = domElement;
+                    pluginInstance.attachChatUIListeners(domElement);
+                    setTimeout(() => {
+                      pluginInstance.attachStatButtonListeners(domElement);
+                    }, 100);
+
+                    // Update UI periodically
+                    if (!pluginInstance.chatUIUpdateInterval) {
+                      pluginInstance.chatUIUpdateInterval = setInterval(() => {
+                        pluginInstance.updateChatUI();
+                      }, 2000);
+                    }
+                  }
+                }, 100);
+              }
+            }
+          } catch (error) {
+            pluginInstance.debugError('REACT_INJECTION', error);
+            return returnValue; // Return original on error
+          }
+        }
+      );
+
+      this.reactInjectionActive = true;
+      this.debugLog('REACT_INJECTION', 'React injection setup complete');
+      return true;
+    } catch (error) {
+      this.debugError('REACT_INJECTION', error, { phase: 'setup' });
+      return false;
+    }
+  }
+
   // ============================================================================
   // UTILITY HELPERS
   // ============================================================================
