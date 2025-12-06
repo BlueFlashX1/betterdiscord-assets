@@ -5039,8 +5039,15 @@ module.exports = class SoloLevelingStats {
         delete this.settings.stats.luck;
       }
 
-      // This code block is unreachable (buff generation happens above)
-      // Removed to prevent confusion
+      // Generate random buff that stacks
+      if (!Array.isArray(this.settings.perceptionBuffs)) {
+        this.settings.perceptionBuffs = [];
+      }
+      const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
+      const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
+      const roundedBuff = Math.round(randomBuff * 10) / 10;
+      this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
 
       // Calculate total stacked buff
       const totalPerceptionBuff =
@@ -5048,6 +5055,7 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('ALLOCATE_STAT_PERCEPTION', 'Random perception buff generated', {
         newBuff: roundedBuff,
+        randomStat: randomStat,
         totalBuffs: this.settings.perceptionBuffs.length,
         allBuffs: [...this.settings.perceptionBuffs],
         totalStackedBuff: totalPerceptionBuff.toFixed(1) + '%',
@@ -5058,9 +5066,9 @@ module.exports = class SoloLevelingStats {
       this.showNotification(
         `+1 Perception! (${oldValue} → ${
           this.settings.stats[statName]
-        })\nRandom Buff: +${roundedBuff.toFixed(1)}% (Total: +${totalPerceptionBuff.toFixed(
+        })\nRandom Buff: +${roundedBuff.toFixed(
           1
-        )}% stacked)`,
+        )}% ${randomStat} (Total: +${totalPerceptionBuff.toFixed(1)}% stacked)`,
         'success',
         5000
       );
@@ -5531,7 +5539,8 @@ module.exports = class SoloLevelingStats {
       `[QUEST COMPLETE] ${questNames[questId]}\n` +
       ` +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
 
-    this.showNotification(message, 'success', 4000);
+    // Show toast notification for quest completion (3 seconds to match animation)
+    this.showNotification(message, 'success', 3000);
 
     // Quest completion celebration animation
     this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
@@ -5582,6 +5591,8 @@ module.exports = class SoloLevelingStats {
       celebration.style.left = '50%';
       celebration.style.top = '50%';
       celebration.style.transform = 'translate(-50%, -50%)';
+      celebration.style.opacity = '1'; // Ensure initial opacity is set
+      celebration.style.transition = 'opacity 1s ease-out'; // Set transition upfront for smooth fade
 
       // Highlight quest card if found (but don't position dialog there)
       if (questCard) {
@@ -5596,14 +5607,16 @@ module.exports = class SoloLevelingStats {
       // Create particles
       this.createQuestParticles(celebration);
 
-      // Auto-close after animation with fade-out
-      // Start fade-out animation after 2.5 seconds (before removal)
+      // Auto-close after 3 seconds with smooth fade-out animation
+      // Start fade-out animation after 2 seconds (1 second fade transition)
+      // Use requestAnimationFrame to ensure DOM is ready before starting fade
       setTimeout(() => {
-        celebration.style.opacity = '0';
-        celebration.style.transition = 'opacity 0.5s ease-out';
-      }, 2500);
+        requestAnimationFrame(() => {
+          celebration.style.opacity = '0';
+        });
+      }, 2000);
 
-      // Remove after animation completes (3 seconds total)
+      // Remove after fade-out completes (3 seconds total: 2s visible + 1s fade)
       const removeTimeout = setTimeout(() => {
         if (celebration && celebration.parentNode) {
           celebration.remove();
@@ -8033,7 +8046,7 @@ module.exports = class SoloLevelingStats {
         pointer-events: auto; /* Allow clicking to close */
         cursor: pointer; /* Show it's clickable */
         animation: quest-celebration-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-        transition: opacity 0.5s ease-out; /* Smooth fade-out */
+        transition: opacity 1s ease-out; /* Smooth fade-out (1s to match JavaScript timing) */
       }
 
       .sls-quest-celebration-content {
@@ -8617,6 +8630,7 @@ module.exports = class SoloLevelingStats {
     `;
     labelEl.addEventListener('click', () => {
       toggle.checked = !toggle.checked;
+      // eslint-disable-next-line no-undef
       toggle.dispatchEvent(new Event('change'));
     });
 

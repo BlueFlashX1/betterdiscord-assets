@@ -23,6 +23,8 @@ module.exports = class ShadowAriseAnimation {
       animationDuration: 2500,
       scale: 1.0,
       showRankAndRole: true,
+      animationFont: 'Speedy Space Goat Oddity', // Font for ARISE animation text
+      useLocalFonts: true, // Use local font files for animation font
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
@@ -42,6 +44,7 @@ module.exports = class ShadowAriseAnimation {
    */
   start() {
     this.loadSettings();
+    this.loadShadowAriseAnimationFont(); // Load animation font before injecting CSS
     this.injectCSS();
   }
 
@@ -71,8 +74,7 @@ module.exports = class ShadowAriseAnimation {
     try {
       const saved = BdApi.Data.load('ShadowAriseAnimation', 'settings');
       // FUNCTIONAL: Short-circuit merge with deep copy (no if-else)
-      saved &&
-        (this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved })));
+      saved && (this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved })));
     } catch (error) {
       this.debugLog('Failed to load settings', error);
     }
@@ -187,6 +189,115 @@ module.exports = class ShadowAriseAnimation {
   }
 
   // ============================================================================
+  // FONT LOADING
+  // ============================================================================
+
+  /**
+   * Get the fonts folder path for Shadow Arise Animation plugin
+   * @returns {string} Path to fonts folder
+   */
+  getFontsFolderPath() {
+    try {
+      const pluginPath = BdApi.Plugins.folder.replace(/\\/g, '/');
+      if (pluginPath) {
+        const normalizedPath = pluginPath.endsWith('/') ? pluginPath : `${pluginPath}/`;
+        return `${normalizedPath}ShadowAriseAnimation/fonts/`;
+      }
+    } catch (e) {
+      this.debugError('Failed to get plugin path', e);
+    }
+    return './ShadowAriseAnimation/fonts/';
+  }
+
+  /**
+   * Load local font file for Shadow Arise animation
+   * @param {string} fontName - Name of the font to load
+   * @param {string} fontFamily - CSS font-family value (optional)
+   * @returns {boolean} True if font was loaded successfully
+   */
+  loadLocalFont(fontName, fontFamily = null) {
+    if (!fontFamily) {
+      fontFamily = `'${fontName}', sans-serif`;
+    }
+
+    try {
+      // Check if font is already loaded
+      const existingStyle = document.getElementById(
+        `sa-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`
+      );
+      if (existingStyle) {
+        return true; // Font already loaded
+      }
+
+      const fontsPath = this.getFontsFolderPath();
+      // Handle special font name cases - map display names to file names
+      let fontFileName = fontName.replace(/\s+/g, ''); // Remove spaces for filename
+      if (fontName.toLowerCase().includes('speedy space goat')) {
+        fontFileName = 'SpeedySpaceGoatOddity'; // Exact filename match
+      }
+
+      // Create @font-face with multiple format support
+      const fontStyle = document.createElement('style');
+      fontStyle.id = `sa-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
+      fontStyle.textContent = `
+        @font-face {
+          font-family: '${fontName}';
+          src: url('${fontsPath}${fontFileName}.woff2') format('woff2'),
+               url('${fontsPath}${fontFileName}.woff') format('woff'),
+               url('${fontsPath}${fontFileName}.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: swap;
+        }
+      `;
+      document.head.appendChild(fontStyle);
+      this.debugLog('Local font loaded', { fontName, fontFileName });
+      return true;
+    } catch (error) {
+      this.debugError('Failed to load local font', error);
+      return false;
+    }
+  }
+
+  /**
+   * Load animation font for Shadow Arise animation (Speedy Space Goat Oddity)
+   * Uses local files if enabled (for Speedy Space Goat Oddity)
+   * @param {string} fontName - Name of the font to load (optional, uses settings if not provided)
+   * @returns {boolean} True if font was loaded
+   */
+  loadShadowAriseAnimationFont(fontName = null) {
+    const fontToLoad = fontName || this.settings.animationFont || 'Speedy Space Goat Oddity';
+
+    // Speedy Space Goat Oddity is not on Google Fonts, so try local first
+    const isSpeedyGoat =
+      fontToLoad.toLowerCase().includes('speedy space goat') ||
+      fontToLoad.toLowerCase().includes('speedy goat');
+
+    if (isSpeedyGoat) {
+      // Try local files first (Speedy Space Goat Oddity needs to be downloaded)
+      if (this.settings.useLocalFonts) {
+        const loaded = this.loadLocalFont(fontToLoad);
+        if (loaded) return true;
+      }
+      // If local fails, warn user
+      this.debugLog(
+        'Speedy Space Goat Oddity requires local font files. Enable useLocalFonts and ensure font is in fonts/ folder.',
+        {
+          fontName: fontToLoad,
+        }
+      );
+      return false; // Can't load from Google Fonts
+    }
+
+    // For other fonts, try local if enabled
+    if (this.settings.useLocalFonts) {
+      return this.loadLocalFont(fontToLoad);
+    }
+
+    return false;
+  }
+
+  // ============================================================================
   // CSS STYLING
   // ============================================================================
 
@@ -204,6 +315,7 @@ module.exports = class ShadowAriseAnimation {
 
     const style = document.createElement('style');
     style.id = styleId;
+    const animationFont = this.settings.animationFont || 'Speedy Space Goat Oddity';
     style.textContent = `
       .sa-animation-container {
         position: fixed;
@@ -225,11 +337,11 @@ module.exports = class ShadowAriseAnimation {
       }
 
       .sa-arise-text {
-        font-family: 'Nova Flat', 'Press Start 2P', system-ui, sans-serif;
+        font-family: '${animationFont}', system-ui, sans-serif;
         font-weight: 700;
         font-size: 42px;
         letter-spacing: 0.12em;
-        text-transform: uppercase;
+        text-transform: none; /* Changed from uppercase to preserve "ARiSe" casing */
         background: linear-gradient(135deg, #020617 0%, #0f172a 35%, #1d4ed8 70%, #38bdf8 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
@@ -239,6 +351,15 @@ module.exports = class ShadowAriseAnimation {
           0 0 18px rgba(37, 99, 235, 0.95),
           0 0 26px rgba(56, 189, 248, 0.75);
         animation: sa-arise-glow 0.7s ease-in-out infinite alternate;
+        /* Font smoothing for smoother edges */
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+      /* Make the "R" in "ARISE" slightly smaller */
+      .sa-arise-text .sa-small-r {
+        font-size: 0.9em !important; /* Make R 10% smaller (slightly, not too small) */
+        display: inline-block !important;
       }
 
       .sa-arise-meta {
@@ -380,7 +501,8 @@ module.exports = class ShadowAriseAnimation {
 
     const title = document.createElement('div');
     title.className = 'sa-arise-text';
-    title.textContent = 'ARISE';
+    // Text should be "ARiSe" (capital A, R, i, S, e) with R slightly smaller
+    title.innerHTML = 'A<span class="sa-small-r">R</span>iSe';
     wrapper.appendChild(title);
 
     // FUNCTIONAL: Short-circuit for conditional rendering (no if-else)
@@ -430,7 +552,9 @@ module.exports = class ShadowAriseAnimation {
    */
   debugLog(message, data = null) {
     this.settings.debugMode &&
-      (data ? console.log(`[ShadowArise] ${message}`, data) : console.log(`[ShadowArise] ${message}`));
+      (data
+        ? console.log(`[ShadowArise] ${message}`, data)
+        : console.log(`[ShadowArise] ${message}`));
   }
 
   /**
@@ -440,6 +564,8 @@ module.exports = class ShadowAriseAnimation {
    */
   debugError(message, error = null) {
     this.settings.debugMode &&
-      (error ? console.error(`[ShadowArise] ${message}`, error) : console.error(`[ShadowArise] ${message}`));
+      (error
+        ? console.error(`[ShadowArise] ${message}`, error)
+        : console.error(`[ShadowArise] ${message}`));
   }
 };

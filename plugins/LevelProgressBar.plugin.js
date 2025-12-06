@@ -102,6 +102,7 @@ module.exports = class LevelProgressBar {
     this.updateInterval = null;
     this.lastLevel = 0;
     this.lastXP = 0;
+    this.lastXPRequired = 0; // Track XP required to detect level changes
     this.eventUnsubscribers = []; // Store unsubscribe functions for event listeners
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
     this.cachedShadowPower = '0'; // Cache shadow power to avoid repeated queries
@@ -667,6 +668,7 @@ module.exports = class LevelProgressBar {
       // Initial update - force update even if data hasn't changed
       this.lastLevel = null;
       this.lastXP = null;
+      this.lastXPRequired = null;
       this.updateProgressBar();
 
       // Start shadow power updates (async for shadow count)
@@ -809,11 +811,14 @@ module.exports = class LevelProgressBar {
       const xpPercent = Math.min((currentXP / xpRequired) * 100, 100); // Cap at 100%
 
       // Skip update if data hasn't changed (but allow initial update)
+      // CRITICAL: Always update if level changed, even if XP appears the same
+      // This ensures progress bar updates correctly when leveling up
       if (
         this.lastLevel !== null &&
         this.lastXP !== null &&
         currentLevel === this.lastLevel &&
-        currentXP === this.lastXP
+        currentXP === this.lastXP &&
+        xpRequired === (this.lastXPRequired || 0)
       ) {
         return;
       }
@@ -1040,6 +1045,13 @@ module.exports = class LevelProgressBar {
     // Subscribe to level changed events
     const unsubscribeLevel = instance.on('levelChanged', (data) => {
       this.debugLog('EVENT_LEVEL_CHANGED', 'Level changed event received', data);
+      // CRITICAL: Force update by resetting cached values when level changes
+      // This ensures progress bar updates correctly even if XP appears unchanged
+      if (data && data.newLevel !== undefined && data.newLevel !== this.lastLevel) {
+        this.lastLevel = null; // Force update
+        this.lastXP = null; // Force update
+        this.lastXPRequired = null; // Force update
+      }
       // Update immediately - no polling needed
       this.updateProgressBar();
     });
@@ -1052,6 +1064,15 @@ module.exports = class LevelProgressBar {
       this.updateProgressBar();
     });
     this.eventUnsubscribers.push(unsubscribeRank);
+
+    // Subscribe to stats changed events (when stats are allocated)
+    const unsubscribeStats = instance.on('statsChanged', (data) => {
+      this.debugLog('EVENT_STATS_CHANGED', 'Stats changed event received', data);
+      // Update immediately to reflect any stat-based changes
+      // Note: Stats don't directly affect progress bar, but update to ensure sync
+      this.updateProgressBar();
+    });
+    this.eventUnsubscribers.push(unsubscribeStats);
 
     // Subscribe to shadow power changed events for real-time updates
     const unsubscribeShadowPower = instance.on('shadowPowerChanged', async (data) => {
