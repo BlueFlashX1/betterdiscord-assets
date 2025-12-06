@@ -25,6 +25,7 @@ module.exports = class SkillTree {
       skillLevels: {}, // Object mapping skill ID to level (e.g., { 'shadow_extraction': 5 })
       lastLevel: 1, // Track last level to detect level ups
       totalEarnedSP: 0, // Total SP earned from level ups (for reset calculation)
+      totalSpentSP: 0, // Total SP spent on skills (for accurate calculations)
     };
 
     // Track all retry timeouts for proper cleanup
@@ -357,6 +358,11 @@ module.exports = class SkillTree {
     this._isStopped = false;
 
     this.loadSettings();
+
+    // Calculate and save spent SP based on existing skill upgrades
+    // This ensures accurate SP calculations if skills were already upgraded
+    this.initializeSpentSP();
+
     this.injectCSS();
     this.createSkillTreeButton();
     this.saveSkillBonuses();
@@ -387,6 +393,13 @@ module.exports = class SkillTree {
 
     // Recalculate SP on startup based on current level
     this.recalculateSPFromLevel();
+
+    // Periodic level check to ensure sync (every 5 seconds)
+    // This ensures level stays up-to-date even if events fail
+    this.levelCheckInterval = setInterval(() => {
+      this.checkForLevelUp();
+      this.recalculateSPFromLevel();
+    }, 5000);
 
     // Set global instance for button handlers
     window.skillTreeInstance = this;
@@ -566,6 +579,7 @@ module.exports = class SkillTree {
 
   /**
    * Recalculate SP based on current level (for reset or initial setup)
+   * Always syncs level and ensures SP matches current level
    */
   recalculateSPFromLevel() {
     try {
@@ -574,26 +588,38 @@ module.exports = class SkillTree {
 
       const currentLevel = soloData.level;
       const expectedSP = this.calculateSPForLevel(currentLevel);
+      const lastLevel = this.settings.lastLevel || 1;
 
-      // Update last level to current level
-      this.settings.lastLevel = currentLevel;
+      // Always update last level to current level (keep in sync)
+      if (currentLevel !== lastLevel) {
+        this.settings.lastLevel = currentLevel;
 
-      // Only update totalEarnedSP if it's less than expected (first time setup)
-      if (this.settings.totalEarnedSP < expectedSP) {
-        const difference = expectedSP - this.settings.totalEarnedSP;
-        this.settings.totalEarnedSP = expectedSP;
-        // Add difference to available SP only if not already spent
-        // SP calculation: totalEarnedSP - spentSP = availableSP
-        const spentSP = this.getTotalSpentSP();
-        const currentAvailable = this.settings.skillPoints;
-        const expectedAvailable = expectedSP - spentSP;
-
-        if (currentAvailable < expectedAvailable) {
-          this.settings.skillPoints = expectedAvailable;
+        // If level increased, award SP for the level difference
+        if (currentLevel > lastLevel) {
+          const levelsGained = currentLevel - lastLevel;
+          this.awardSPForLevelUp(levelsGained);
         }
       }
 
-      this.saveSettings();
+      // Always ensure totalEarnedSP matches expected SP for current level
+      if (this.settings.totalEarnedSP < expectedSP) {
+        this.settings.totalEarnedSP = expectedSP;
+      }
+
+      // SP calculation: totalEarnedSP - spentSP = availableSP
+      // Always recalculate spent SP to ensure accuracy
+      const spentSP = this.getTotalSpentSP(); // This also updates and saves totalSpentSP
+      const currentAvailable = this.settings.skillPoints;
+      const expectedAvailable = expectedSP - spentSP;
+
+      // Ensure available SP matches expected (always accurate)
+      if (currentAvailable !== expectedAvailable) {
+        this.settings.skillPoints = expectedAvailable;
+        this.saveSettings();
+      } else if (currentLevel !== lastLevel) {
+        // Save if level changed
+        this.saveSettings();
+      }
     } catch (error) {
       console.error('SkillTree: Error recalculating SP', error);
     }
@@ -621,6 +647,7 @@ module.exports = class SkillTree {
       // Reset all skills
       this.settings.skillLevels = {};
       this.settings.unlockedSkills = [];
+      this.settings.totalSpentSP = 0; // Reset spent SP
       this.settings.skillPoints = expectedSP;
       this.settings.totalEarnedSP = expectedSP;
       this.settings.lastLevel = currentLevel;
@@ -746,7 +773,49 @@ module.exports = class SkillTree {
   }
 
   /**
+   * Initialize spent SP on startup based on existing skill upgrades
+   * This ensures accurate SP calculations if skills were already upgraded
+   * Operations:
+   * 1. Calculate total spent SP from existing skill levels
+   * 2. Save it to settings
+   * 3. Recalculate available SP to ensure accuracy
+   */
+  initializeSpentSP() {
+    try {
+      // Calculate spent SP from existing skill levels
+      const spentSP = this.getTotalSpentSP(); // This also saves totalSpentSP
+
+      // Recalculate available SP based on earned SP and spent SP
+      const soloData = this.getSoloLevelingData();
+      if (soloData && soloData.level) {
+        const expectedSP = this.calculateSPForLevel(soloData.level);
+        const expectedAvailable = expectedSP - spentSP;
+
+        // Ensure totalEarnedSP matches expected SP
+        if (this.settings.totalEarnedSP < expectedSP) {
+          this.settings.totalEarnedSP = expectedSP;
+        }
+
+        // Update available SP to match expected (ensures accuracy)
+        if (this.settings.skillPoints !== expectedAvailable) {
+          this.settings.skillPoints = expectedAvailable;
+          this.saveSettings();
+        }
+      }
+
+      // If we have spent SP but it wasn't saved, save it now
+      if (spentSP > 0 && this.settings.totalSpentSP !== spentSP) {
+        this.settings.totalSpentSP = spentSP;
+        this.saveSettings();
+      }
+    } catch (error) {
+      console.error('SkillTree: Error initializing spent SP', error);
+    }
+  }
+
+  /**
    * Calculate total SP spent on skills
+   * Also updates and saves the totalSpentSP in settings for persistence
    * @returns {number} - Total SP spent
    */
   getTotalSpentSP() {
@@ -764,6 +833,12 @@ module.exports = class SkillTree {
         }
       });
     });
+
+    // Update and save spent SP in settings for persistence and accuracy
+    if (this.settings.totalSpentSP !== totalSpent) {
+      this.settings.totalSpentSP = totalSpent;
+      this.saveSettings();
+    }
 
     return totalSpent;
   }
@@ -800,7 +875,6 @@ module.exports = class SkillTree {
   getSkillUpgradeCost(skill, tier, targetLevel) {
     if (targetLevel <= 1) return 0;
 
-    let totalCost = 0;
     const baseCost = tier.baseCost || 1;
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
@@ -982,6 +1056,9 @@ module.exports = class SkillTree {
       const currentLevel = this.getSkillLevel(skillId);
       this.settings.skillLevels[skillId] = (currentLevel || 0) + 1;
 
+      // Update total spent SP to keep calculations accurate
+      this.settings.totalSpentSP = this.getTotalSpentSP();
+
       // Legacy support: add to unlockedSkills if not already there
       if (!this.settings.unlockedSkills) {
         this.settings.unlockedSkills = [];
@@ -1069,6 +1146,9 @@ module.exports = class SkillTree {
       // Apply upgrades
       this.settings.skillPoints -= totalCost;
       this.settings.skillLevels[skillId] = targetLevel;
+
+      // Update total spent SP to keep calculations accurate
+      this.settings.totalSpentSP = this.getTotalSpentSP();
 
       // Legacy support
       if (!this.settings.unlockedSkills) {
@@ -1847,6 +1927,10 @@ module.exports = class SkillTree {
    * Show skill tree modal with scroll position preservation
    */
   showSkillTreeModal() {
+    // Always sync level before showing modal to ensure it's up-to-date
+    this.recalculateSPFromLevel();
+    this.checkForLevelUp();
+
     // Save scroll position before refresh
     let scrollPosition = 0;
     if (this.skillTreeModal) {
