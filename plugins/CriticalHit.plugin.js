@@ -171,6 +171,14 @@ module.exports = class CriticalHit {
     this._displayUpdateInterval = null; // Interval for settings panel display updates
     this.novaFlatObserver = null; // MutationObserver for Nova Flat font enforcement
     // Cache DOM queries
+
+    // Webpack modules (for advanced Discord integration)
+    this.webpackModules = {
+      MessageStore: null,
+      UserStore: null,
+      MessageActions: null,
+    };
+    this.messageStorePatch = null; // Track MessageStore patch for cleanup
     this._cachedMessageSelectors = null;
     this._cachedMessageSelectorsTimestamp = 0;
     this._cachedMessageSelectorsMaxAge = 2000; // 2 seconds cache validity
@@ -357,6 +365,7 @@ module.exports = class CriticalHit {
 
   /**
    * Traverse React fiber tree to find a value
+   * Enhanced with better error handling and multiple traversal strategies
    * @param {Object} fiber - React fiber to start from
    * @param {Function} getter - Function to extract value from fiber
    * @param {number} maxDepth - Maximum traversal depth
@@ -365,13 +374,24 @@ module.exports = class CriticalHit {
   traverseFiber(fiber, getter, maxDepth = 50) {
     if (!fiber) return null;
 
-    // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
-    let depth = 0;
-    while (fiber && depth < maxDepth) {
-      const value = getter(fiber);
-      if (value !== null && value !== undefined) return value;
-      fiber = fiber.return;
-      depth++;
+    try {
+      // FUNCTIONAL: Fiber traversal (while loop for tree traversal)
+      let depth = 0;
+      while (fiber && depth < maxDepth) {
+        try {
+          const value = getter(fiber);
+          if (value !== null && value !== undefined) return value;
+        } catch (getterError) {
+          // Continue traversal even if getter throws
+          this.debugError('TRAVERSE_FIBER_GETTER', getterError, { depth });
+        }
+
+        // Try multiple traversal paths for better compatibility
+        fiber = fiber.return || fiber._owner || fiber.return;
+        depth++;
+      }
+    } catch (error) {
+      this.debugError('TRAVERSE_FIBER', error, { maxDepth });
     }
 
     return null;
@@ -3567,6 +3587,92 @@ module.exports = class CriticalHit {
 
     // Re-observe when channel changes (listen for navigation events)
     this.setupChannelChangeListener();
+  }
+
+  /**
+   * Initialize webpack modules for advanced Discord integration
+   * Enhances message tracking with MessageStore access
+   */
+  initializeWebpackModules() {
+    try {
+      // Try to get MessageStore (for receiving messages)
+      this.webpackModules.MessageStore = BdApi.Webpack.getModule(
+        (m) => m && (m.getMessage || m.getMessages || m.receiveMessage)
+      );
+
+      // UserStore already accessed in getCurrentUserId(), but store reference
+      if (!this.webpackModules.UserStore) {
+        this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
+      }
+
+      // MessageActions already accessed in setupMessageSendHook(), but store reference
+      if (!this.webpackModules.MessageActions) {
+        this.webpackModules.MessageActions = BdApi.Webpack.getModule(
+          (m) => m && m.sendMessage && (m.receiveMessage || m.editMessage)
+        );
+      }
+
+      this.debugLog('WEBPACK_INIT', 'Webpack modules initialized', {
+        hasMessageStore: !!this.webpackModules.MessageStore,
+        hasUserStore: !!this.webpackModules.UserStore,
+        hasMessageActions: !!this.webpackModules.MessageActions,
+      });
+    } catch (error) {
+      this.debugError('WEBPACK_INIT', error);
+    }
+  }
+
+  /**
+   * Set up message receive hook (patches MessageStore.receiveMessage)
+   * Provides more reliable message detection than DOM observation
+   */
+  setupMessageReceiveHook() {
+    try {
+      if (!this.webpackModules.MessageStore) {
+        this.debugLog('MESSAGE_RECEIVE_HOOK', 'MessageStore not available, using DOM fallback');
+        return;
+      }
+
+      // Patch MessageStore.receiveMessage to detect received messages
+      if (this.webpackModules.MessageStore.receiveMessage) {
+        const pluginInstance = this;
+        BdApi.Patcher.after(
+          'CriticalHit',
+          this.webpackModules.MessageStore,
+          'receiveMessage',
+          (thisObject, args, returnValue) => {
+            try {
+              // Process received message (more reliable than DOM)
+              if (returnValue && returnValue.id) {
+                // Check if this is our own message (for crit detection)
+                const currentUserId =
+                  pluginInstance.currentUserId || pluginInstance.settings?.ownUserId;
+                if (returnValue.author && returnValue.author.id === currentUserId) {
+                  // This is our sent message - process for crit check
+                  // Wait for DOM to be ready, then process
+                  requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                      const messageElement = document.querySelector(
+                        `[data-message-id="${returnValue.id}"]`
+                      );
+                      if (messageElement) {
+                        pluginInstance.processNode(messageElement);
+                      }
+                    });
+                  });
+                }
+              }
+            } catch (error) {
+              pluginInstance.debugError('MESSAGE_RECEIVE_HOOK', error);
+            }
+          }
+        );
+        this.messageStorePatch = true;
+        this.debugLog('MESSAGE_RECEIVE_HOOK', 'MessageStore receive hook installed');
+      }
+    } catch (error) {
+      this.debugError('MESSAGE_RECEIVE_HOOK', error);
+    }
   }
 
   /**
@@ -9930,8 +10036,14 @@ module.exports = class CriticalHit {
       // Get current user ID before setting up hooks
       this.getCurrentUserId();
 
+      // Initialize webpack modules for advanced integration
+      this.initializeWebpackModules();
+
       // Hook into message send to capture sent messages immediately
       this.setupMessageSendHook();
+
+      // Set up message receive hook (patches MessageStore.receiveMessage) - enhanced tracking
+      this.setupMessageReceiveHook();
 
       // Start periodic cleanup if enabled
       if (this.settings.autoCleanupHistory) {
@@ -10042,12 +10154,20 @@ module.exports = class CriticalHit {
       const fontLink = document.getElementById('bd-crit-hit-nova-flat-font');
       fontLink && fontLink.remove();
 
-      // Unpatch all BetterDiscord patches (including message send hook)
+      // Unpatch all BetterDiscord patches (including message send hook and receive hook)
       try {
         BdApi.Patcher.unpatchAll('CriticalHit');
       } catch (error) {
         this.debugError('PLUGIN_STOP', error, { phase: 'unpatch' });
       }
+
+      // Clear webpack module references
+      if (this.webpackModules) {
+        this.webpackModules.MessageStore = null;
+        this.webpackModules.UserStore = null;
+        this.webpackModules.MessageActions = null;
+      }
+      this.messageStorePatch = null;
 
       // Clear tracking data (with null checks)
       this.clearSessionTracking();

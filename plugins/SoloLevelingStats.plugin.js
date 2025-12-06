@@ -262,6 +262,17 @@ module.exports = class SoloLevelingStats {
     this._statAllocationTimeout = null;
     this._statAllocationDebounceDelay = 1000; // Aggregate allocations within 1 second
 
+    // Webpack modules (for advanced Discord integration)
+    this.webpackModules = {
+      MessageStore: null,
+      UserStore: null,
+      ChannelStore: null,
+      MessageActions: null,
+    };
+    this.webpackModuleAccess = false; // Track if webpack modules are available
+    this.messageStorePatch = null; // Track message store patch for cleanup
+    this.reactInjectionActive = false; // Track if React injection is active
+
     // ============================================================================
     // PERFORMANCE OPTIMIZATION SYSTEM
     // ============================================================================
@@ -983,6 +994,193 @@ module.exports = class SoloLevelingStats {
   }
 
   // ============================================================================
+  // WEBPACK MODULE HELPERS
+  // ============================================================================
+
+  /**
+   * Initialize webpack modules for advanced Discord integration
+   * Falls back to DOM-based approach if modules are unavailable
+   */
+  initializeWebpackModules() {
+    try {
+      // Try to get MessageStore
+      this.webpackModules.MessageStore = BdApi.Webpack.getModule(
+        (m) => m && (m.getMessage || m.getMessages || m.receiveMessage)
+      );
+
+      // Try to get UserStore
+      this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
+
+      // Try to get ChannelStore
+      this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
+        (m) => m && (m.getChannel || m.getChannelId)
+      );
+
+      // Try to get MessageActions (for patching)
+      this.webpackModules.MessageActions = BdApi.Webpack.getModule(
+        (m) => m && m.sendMessage && (m.receiveMessage || m.editMessage)
+      );
+
+      // Check if we have at least MessageStore and UserStore
+      this.webpackModuleAccess = !!(
+        this.webpackModules.MessageStore && this.webpackModules.UserStore
+      );
+
+      this.debugLog('WEBPACK_INIT', 'Webpack modules initialized', {
+        hasMessageStore: !!this.webpackModules.MessageStore,
+        hasUserStore: !!this.webpackModules.UserStore,
+        hasChannelStore: !!this.webpackModules.ChannelStore,
+        hasMessageActions: !!this.webpackModules.MessageActions,
+        webpackModuleAccess: this.webpackModuleAccess,
+      });
+
+      // If we have webpack access, set up patches
+      if (this.webpackModuleAccess) {
+        this.setupWebpackPatches();
+        this.getCurrentUserIdFromStore();
+      } else {
+        this.debugLog('WEBPACK_INIT', 'Webpack modules not available, using DOM fallback');
+      }
+    } catch (error) {
+      this.debugError('WEBPACK_INIT', error);
+      this.webpackModuleAccess = false;
+    }
+  }
+
+  /**
+   * Set up webpack patches for message tracking
+   * Uses MessageStore to detect new messages
+   */
+  setupWebpackPatches() {
+    try {
+      // Patch MessageStore.receiveMessage if available
+      if (this.webpackModules.MessageStore && this.webpackModules.MessageStore.receiveMessage) {
+        BdApi.Patcher.after(
+          'SoloLevelingStats',
+          this.webpackModules.MessageStore,
+          'receiveMessage',
+          (thisObject, args, returnValue) => {
+            try {
+              // Process message from store (more reliable than DOM)
+              if (returnValue && returnValue.id) {
+                this.processMessageFromStore(returnValue);
+              }
+            } catch (error) {
+              this.debugError('MESSAGE_STORE_PATCH', error);
+            }
+          }
+        );
+        this.messageStorePatch = true;
+        this.debugLog('WEBPACK_PATCH', 'MessageStore patch installed');
+      }
+
+      // Also patch MessageActions.sendMessage for sent messages
+      if (this.webpackModules.MessageActions && this.webpackModules.MessageActions.sendMessage) {
+        BdApi.Patcher.after(
+          'SoloLevelingStats',
+          this.webpackModules.MessageActions,
+          'sendMessage',
+          (thisObject, args, returnValue) => {
+            try {
+              // Process sent message
+              if (returnValue && returnValue.id) {
+                this.processMessageFromStore(returnValue);
+              } else if (args && args.length > 0) {
+                // Try to extract message from arguments
+                const message = args[0]?.message || args[0];
+                if (message && message.id) {
+                  this.processMessageFromStore(message);
+                }
+              }
+            } catch (error) {
+              this.debugError('MESSAGE_ACTIONS_PATCH', error);
+            }
+          }
+        );
+        this.debugLog('WEBPACK_PATCH', 'MessageActions patch installed');
+      }
+    } catch (error) {
+      this.debugError('WEBPACK_PATCH_SETUP', error);
+      this.webpackModuleAccess = false;
+    }
+  }
+
+  /**
+   * Get current user ID from UserStore (more reliable than React fiber)
+   */
+  getCurrentUserIdFromStore() {
+    try {
+      if (this.webpackModules.UserStore) {
+        const user = this.webpackModules.UserStore.getCurrentUser();
+        if (user && user.id) {
+          this.currentUserId = user.id;
+          this.settings.ownUserId = user.id;
+          this.debugLog('USER_STORE', 'Current user ID retrieved', { userId: user.id });
+          return user.id;
+        }
+      }
+    } catch (error) {
+      this.debugError('USER_STORE', error);
+    }
+    return null;
+  }
+
+  /**
+   * Process message from MessageStore (webpack-based)
+   * More reliable than DOM observation
+   */
+  processMessageFromStore(message) {
+    try {
+      // Skip if message is too old (before plugin start)
+      if (message.timestamp && message.timestamp < this.pluginStartTime) {
+        return;
+      }
+
+      // Skip if already processed
+      if (this.processedMessageIds.has(message.id)) {
+        return;
+      }
+
+      // Get current user ID
+      const currentUserId = this.getCurrentUserIdFromStore() || this.settings.ownUserId;
+      if (!currentUserId) {
+        // Fallback to React fiber if store unavailable
+        this.getCurrentUserIdFromStore();
+        return;
+      }
+
+      // Check if this is our own message
+      if (message.author && message.author.id === currentUserId) {
+        // Mark as processed
+        this.processedMessageIds.add(message.id);
+
+        // Process message for XP/quest tracking
+        const messageText = message.content || '';
+        const messageLength = messageText.length;
+
+        this.debugLog('MESSAGE_STORE', 'Processing message from store', {
+          messageId: message.id,
+          messageLength,
+          channelId: message.channel_id,
+        });
+
+        // Award XP and update quests
+        this.awardXP(messageLength, messageText, 'message');
+        this.updateQuestProgress('messageMaster', 1);
+        this.updateQuestProgress('characterChampion', messageLength);
+
+        // Track activity
+        if (this.settings.activity) {
+          this.settings.activity.messagesSent++;
+          this.settings.activity.charactersTyped += messageLength;
+        }
+      }
+    } catch (error) {
+      this.debugError('MESSAGE_STORE_PROCESS', error);
+    }
+  }
+
+  // ============================================================================
   // UTILITY HELPERS
   // ============================================================================
 
@@ -1344,29 +1542,53 @@ module.exports = class SoloLevelingStats {
     this.processedMessageIds = this.processedMessageIds || new Set();
 
     // Get current user ID to identify our own messages
+    // PRIORITY: Webpack UserStore > React fiber > DOM fallback
     let currentUserId = null;
     try {
-      // Try to get current user from Discord's state
-      const userElement =
-        document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
-      if (userElement) {
-        // Try to extract user ID from React props
-        const reactKey = Object.keys(userElement).find(
-          (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-        );
-        if (reactKey) {
-          let fiber = userElement[reactKey];
-          for (let i = 0; i < 10 && fiber; i++) {
-            if (fiber.memoizedProps?.user?.id) {
-              currentUserId = fiber.memoizedProps.user.id;
-              break;
+      // Method 1: Try webpack UserStore (most reliable)
+      if (this.webpackModuleAccess && this.webpackModules.UserStore) {
+        currentUserId = this.getCurrentUserIdFromStore();
+      }
+
+      // Method 2: Fallback to React fiber traversal (if webpack unavailable)
+      if (!currentUserId) {
+        const userElement =
+          document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
+        if (userElement) {
+          // Try to extract user ID from React props
+          // Enhanced: Try multiple React fiber key patterns for better compatibility
+          const reactKey = Object.keys(userElement).find(
+            (key) =>
+              key.startsWith('__reactFiber') ||
+              key.startsWith('__reactInternalInstance') ||
+              key.startsWith('__reactContainer')
+          );
+          if (reactKey) {
+            let fiber = userElement[reactKey];
+            for (let i = 0; i < 10 && fiber; i++) {
+              if (fiber.memoizedProps?.user?.id) {
+                currentUserId = fiber.memoizedProps.user.id;
+                break;
+              }
+              fiber = fiber.return;
             }
-            fiber = fiber.return;
           }
         }
       }
+
+      // Method 3: Use stored user ID as final fallback
+      if (!currentUserId && this.settings.ownUserId) {
+        currentUserId = this.settings.ownUserId;
+      }
     } catch (e) {
       this.debugError('GET_USER_ID', e);
+    }
+
+    // Only use DOM observation if webpack modules are not available
+    // Webpack patches handle message tracking more reliably
+    if (this.webpackModuleAccess) {
+      this.debugLog('START_OBSERVING', 'Using webpack patches, DOM observer as fallback only');
+      // Still set up observer as fallback, but it will be less active
     }
 
     const self = this;
@@ -1404,7 +1626,18 @@ module.exports = class SoloLevelingStats {
                   messageId,
                   alreadyProcessed: messageId ? self.processedMessageIds.has(messageId) : false,
                   elementClasses: messageElement.classList?.toString() || '',
+                  usingWebpack: self.webpackModuleAccess,
                 });
+
+                // Skip DOM processing if webpack patches are handling it
+                // DOM observer becomes fallback only
+                if (
+                  self.webpackModuleAccess &&
+                  messageId &&
+                  self.processedMessageIds.has(messageId)
+                ) {
+                  return; // Already processed by webpack patch
+                }
 
                 if (messageId && !self.processedMessageIds.has(messageId)) {
                   // Double-check: Only process if we have strong confirmation
@@ -1413,10 +1646,12 @@ module.exports = class SoloLevelingStats {
                     currentUserId &&
                     (() => {
                       try {
+                        // Enhanced: Try multiple React fiber key patterns for better compatibility
                         const reactKey = Object.keys(messageElement).find(
                           (key) =>
                             key.startsWith('__reactFiber') ||
-                            key.startsWith('__reactInternalInstance')
+                            key.startsWith('__reactInternalInstance') ||
+                            key.startsWith('__reactContainer')
                         );
                         if (reactKey) {
                           let fiber = messageElement[reactKey];
@@ -1722,8 +1957,12 @@ module.exports = class SoloLevelingStats {
     // Try React props (Discord stores message data in React)
     if (!messageId) {
       try {
+        // Enhanced: Try multiple React fiber key patterns for better compatibility
         const reactKey = Object.keys(messageElement).find(
-          (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+          (key) =>
+            key.startsWith('__reactFiber') ||
+            key.startsWith('__reactInternalInstance') ||
+            key.startsWith('__reactContainer')
         );
         if (reactKey) {
           let fiber = messageElement[reactKey];
@@ -2426,6 +2665,27 @@ module.exports = class SoloLevelingStats {
 
     // Remove chat UI
     this.removeChatUI();
+
+    // Cleanup webpack patches
+    if (this.messageStorePatch || this.reactInjectionActive) {
+      try {
+        BdApi.Patcher.unpatchAll('SoloLevelingStats');
+        this.messageStorePatch = null;
+        this.reactInjectionActive = false;
+        this.debugLog('STOP', 'Webpack patches and React injection removed');
+      } catch (error) {
+        this.debugError('STOP', error, { phase: 'unpatch' });
+      }
+    }
+
+    // Clear webpack module references
+    this.webpackModules = {
+      MessageStore: null,
+      UserStore: null,
+      ChannelStore: null,
+      MessageActions: null,
+    };
+    this.webpackModuleAccess = false;
 
     // Stop shadow power observer/interval
     if (this.shadowPowerObserver) {
@@ -7260,6 +7520,33 @@ module.exports = class SoloLevelingStats {
       // Inject CSS for chat UI
       this.injectChatUICSS();
 
+      // Try React injection first (preferred method)
+      if (this.tryReactInjection()) {
+        // React injection successful, also set up DOM listeners
+        setTimeout(() => {
+          const uiPanel = document.getElementById('sls-chat-ui');
+          if (uiPanel) {
+            this.attachChatUIListeners(uiPanel);
+            setTimeout(() => {
+              this.attachStatButtonListeners(uiPanel);
+            }, 100);
+
+            // Update UI periodically
+            if (!this.chatUIUpdateInterval) {
+              this.chatUIUpdateInterval = setInterval(() => {
+                this.updateChatUI();
+              }, 2000); // Update every 2 seconds
+            }
+
+            this.chatUIPanel = uiPanel;
+          }
+        }, 100);
+        return; // React injection successful, skip DOM fallback
+      }
+
+      // Fallback to DOM injection if React injection fails
+      this.debugLog('CREATE_CHAT_UI', 'React injection failed, using DOM fallback');
+
       // Function to actually create the UI
       const tryCreateUI = () => {
         try {
@@ -7368,6 +7655,8 @@ module.exports = class SoloLevelingStats {
   }
 
   removeChatUI() {
+    // If React injection is active, the UI will be removed when patch is removed
+    // But we should also try to remove DOM element if it exists
     if (this.chatUIPanel) {
       this.chatUIPanel.remove();
       this.chatUIPanel = null;
