@@ -6174,7 +6174,9 @@ module.exports = class CriticalHit {
       document.fonts.ready
         .then(() => {
           // Additional delay to ensure font is fully loaded
-          return new Promise((resolve) => setTimeout(resolve, 500));
+          return new Promise((resolve) => {
+            setTimeout(resolve, 500);
+          });
         })
         .then(() => {
           const fontLoaded = document.fonts.check(`16px '${fontName}'`);
@@ -6659,21 +6661,17 @@ module.exports = class CriticalHit {
       @keyframes chaFloatUp {
         0% {
           opacity: 0;
-          transform: translate(-50%, -50%) translateY(0) scale(0.8);
+          transform: translate(-50%, -50%) translateY(0) scale(1);
         }
-        5% {
+        1% {
           opacity: 0.3;
-          transform: translate(-50%, -50%) translateY(0) scale(0.9);
+          transform: translate(-50%, -50%) translateY(0) scale(1);
         }
-        8% {
+        2% {
           opacity: 0.7;
-          transform: translate(-50%, -50%) translateY(0) scale(1.05);
+          transform: translate(-50%, -50%) translateY(0) scale(1);
         }
-        12% {
-          opacity: 1;
-          transform: translate(-50%, -50%) translateY(0) scale(1.1);
-        }
-        15% {
+        3% {
           opacity: 1;
           transform: translate(-50%, -50%) translateY(0) scale(1);
         }
@@ -9433,13 +9431,22 @@ module.exports = class CriticalHit {
     // Fade out existing animations before starting new one
     this.fadeOutExistingAnimations();
 
-    // Apply screen shake if enabled
-    this.settings?.screenShake && this.applyScreenShake();
-
     // Create animation element
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
+
+    // Apply screen shake if enabled - delay to sync with animation becoming visible
+    // Animation fades in quickly: 0% (invisible) → 3% (fully visible) = 120ms for 4000ms duration
+    // Delay shake to trigger when animation becomes fully visible (3% = 120ms)
+    if (this.settings?.screenShake) {
+      const animationDuration = this.settings.animationDuration || 4000;
+      const shakeDelay = animationDuration * 0.03; // 3% = when animation becomes fully visible (120ms)
+      setTimeout(() => {
+        this.applyScreenShake();
+      }, shakeDelay);
+    }
+
     // Cleanup after animation completes
     this.scheduleCleanup(textElement, messageId, container);
   }
