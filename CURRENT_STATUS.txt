@@ -1,4 +1,0 @@
-570 → 513 if-statements (-57, 10%)
-22 → 0 for-loops (-22, 100%) ✅
-8859 → 8680 lines (-179, 2%)
-47 commits
