@@ -28,6 +28,29 @@
  * VERSION HISTORY
  * ============================================================================
  *
+ * @changelog v1.4.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION
+ * ADVANCED FEATURES:
+ * - Added Webpack module access (UserStore, ChannelStore) for better Discord integration
+ * - Implemented React injection for progress bar UI (prevents disappearing on Discord updates)
+ * - Enhanced error handling and fallback mechanisms
+ * - Improved compatibility with Discord updates
+ * - Added @source URL to betterdiscord-assets repository
+ *
+ * PERFORMANCE IMPROVEMENTS:
+ * - Better UI integration with Discord's React tree
+ * - More reliable DOM updates via React injection
+ * - Progress bar persists through Discord UI updates (React injection)
+ * - Graceful fallbacks if webpack/React unavailable
+ *
+ * RELIABILITY:
+ * - More stable UI positioning (React injection prevents removal)
+ * - Better error handling in React fiber traversal
+ * - All existing functionality preserved (backward compatible)
+ *
+ * KEY BENEFIT:
+ * - React injection solves the critical issue of progress bar disappearing when Discord
+ *   updates its UI. The progress bar now persists automatically through Discord updates.
+ *
  * @changelog v1.3.0 (2025-12-05) - FUNCTIONAL PROGRAMMING OPTIMIZATION
  * CRITICAL FIXES:
  * - Deep copy in constructor (prevents save corruption)
