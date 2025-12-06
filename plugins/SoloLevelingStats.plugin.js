@@ -237,6 +237,11 @@ module.exports = class SoloLevelingStats {
     // Activity tracking handlers (for cleanup)
     this._activityTrackingHandlers = null;
 
+    // Stat allocation aggregation (prevents spammy notifications)
+    this._statAllocationQueue = [];
+    this._statAllocationTimeout = null;
+    this._statAllocationDebounceDelay = 1000; // Aggregate allocations within 1 second
+
     // ============================================================================
     // PERFORMANCE OPTIMIZATION SYSTEM
     // ============================================================================
@@ -362,83 +367,11 @@ module.exports = class SoloLevelingStats {
   }
 
   // ============================================================================
-  // SECTION 4: DEBUGGING & DEVELOPMENT (OFF BY DEFAULT)
+  // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
 
-  /**
-   * 4.1 DEBUG LOGGING
-   */
-
-  debugLog(operation, message, data = null) {
-    // UNIFIED DEBUG SYSTEM: Check settings.debugMode instead of this.debug.enabled
-    if (!this.settings?.debugMode) return;
-
-    // Check if this is a frequent operation
-    const isFrequent = this.debug.frequentOperations.has(operation);
-
-    if (isFrequent && !this.debug.verbose) {
-      // Throttle frequent operations - only log once per throttleInterval
-      const now = Date.now();
-      const lastLogTime = this.debug.lastLogTimes[operation] || 0;
-
-      if (now - lastLogTime < this.debug.throttleInterval) {
-        // Skip logging, but still track count
-        this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
-        return;
-      }
-
-      // Update last log time
-      this.debug.lastLogTimes[operation] = now;
-    }
-
-    const _timestamp = new Date().toISOString();
-    console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
-
-    // Track operation counts
-    this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
-  }
-
-  debugError(operation, error, context = {}) {
-    this.debug.errorCount++;
-
-    // Extract error message properly
-    let errorMessage = 'Unknown error';
-    let errorStack = null;
-
-    if (error instanceof Error) {
-      errorMessage = error.message || String(error);
-      errorStack = error.stack;
-    } else if (typeof error === 'string') {
-      errorMessage = error;
-    } else if (error && typeof error === 'object') {
-      // Try to extract meaningful info from error object
-      errorMessage = error.message || error.toString() || JSON.stringify(error).substring(0, 200);
-      errorStack = error.stack;
-    } else {
-      errorMessage = String(error);
-    }
-
-    this.debug.lastError = {
-      operation,
-      error: errorMessage,
-      stack: errorStack,
-      context,
-      timestamp: Date.now(),
-    };
-
-    const timestamp = new Date().toISOString();
-    console.error(`[SoloLevelingStats:ERROR:${operation}]`, errorMessage, {
-      stack: errorStack,
-      context,
-      timestamp,
-    });
-
-    // Also log to debug file
-    console.warn(`[SoloLevelingStats:ERROR:${operation}] ${errorMessage}`, context);
-  }
-
   // ============================================================================
-  // 2.4 HELPER FUNCTIONS
+  // HELPER FUNCTIONS - EXTRACTED FROM LONG FUNCTIONS
   // ============================================================================
 
   /**
@@ -518,9 +451,9 @@ module.exports = class SoloLevelingStats {
     this.domCache.valid = false;
   }
 
-  /**
-   * 2.4.2 LOOKUP HELPERS
-   */
+  // ============================================================================
+  // LOOKUP MAP HELPERS (O(1) Performance)
+  // ============================================================================
 
   getRankColor(rank) {
     return this.rankData.colors[rank] || '#808080';
@@ -538,9 +471,9 @@ module.exports = class SoloLevelingStats {
     return this.questData[questType] || {};
   }
 
-  /**
-   * 2.4.3 CALCULATION HELPERS
-   */
+  // ============================================================================
+  // CALCULATION HELPERS
+  // ============================================================================
 
   calculateQualityBonus(messageText, messageLength) {
     let bonus = 0;
@@ -924,9 +857,9 @@ module.exports = class SoloLevelingStats {
     return this.cachedShadowPower;
   }
 
-  /**
-   * 2.4.7 EVENT HELPERS
-   */
+  // ============================================================================
+  // EVENT SYSTEM HELPERS
+  // ============================================================================
 
   on(eventName, callback) {
     if (!this.eventListeners[eventName]) {
@@ -1029,9 +962,9 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  /**
-   * 2.4.6 UTILITY HELPERS
-   */
+  // ============================================================================
+  // UTILITY HELPERS
+  // ============================================================================
 
   checkDailyReset() {
     const today = new Date().toDateString();
@@ -1972,6 +1905,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // ============================================================================
+  // XP & LEVELING SYSTEM
+  // ============================================================================
+
   processMessageSent(messageText) {
     try {
       this.debugLog('PROCESS_MESSAGE', 'Processing message', {
@@ -2200,6 +2137,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // ============================================================================
+  // FORMATTING HELPERS
+  // ============================================================================
+
   escapeHtml(text) {
     if (typeof text !== 'string') return text;
     const div = document.createElement('div');
@@ -2208,12 +2149,8 @@ module.exports = class SoloLevelingStats {
   }
 
   // ============================================================================
-  // SECTION 3: MAJOR OPERATIONS
+  // PLUGIN LIFECYCLE
   // ============================================================================
-
-  /**
-   * 3.1 PLUGIN LIFECYCLE
-   */
 
   start() {
     try {
@@ -2527,6 +2464,9 @@ module.exports = class SoloLevelingStats {
         if (celebration._removeTimeout) {
           clearTimeout(celebration._removeTimeout);
         }
+        if (celebration._progressInterval) {
+          clearInterval(celebration._progressInterval);
+        }
         if (celebration && celebration.parentNode) {
           celebration.remove();
         }
@@ -2671,14 +2611,6 @@ module.exports = class SoloLevelingStats {
       // Initialize Set for channelsVisited
       this.settings.activity.channelsVisited = new Set();
     }
-  }
-
-  // FUNCTIONAL DEBUG CONSOLE (NO IF-ELSE!)
-  // Only logs if debugMode is enabled, using short-circuit evaluation
-  debugConsole(prefix, message, data = {}) {
-    const log = () => console.log(`${prefix}`, message, data);
-    // Safe check: Only log if settings exist AND debugMode is explicitly true
-    return this.settings?.debugMode === true && log();
   }
 
   // FUNCTIONAL AUTO-SAVE WRAPPER
@@ -3104,6 +3036,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-total-xp {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 13px;
         color: #a78bfa;
         margin-top: 10px;
@@ -3111,6 +3044,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-stat-points {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         margin-top: 16px;
         padding: 12px;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.2) 0%, rgba(75, 0, 130, 0.15) 100%);
@@ -3152,12 +3086,14 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-stat-name {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-weight: 700;
         color: #d4a5ff;
         text-shadow: 0 0 3px rgba(138, 43, 226, 0.6);
       }
 
       .sls-stat-value {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #ba55d3;
         font-weight: 700;
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.7);
@@ -3182,6 +3118,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-stat-desc {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 12px;
         color: #b894e6;
         margin-bottom: 10px;
@@ -3189,6 +3126,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-stat-allocate {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         padding: 8px 16px;
         background: linear-gradient(135deg, #8a2be2 0%, #9370db 100%);
         color: #ffffff;
@@ -3329,18 +3267,21 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-quest-name {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-weight: 700;
         color: #d4a5ff;
         text-shadow: 0 0 3px rgba(138, 43, 226, 0.6);
       }
 
       .sls-quest-progress {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #ba55d3;
         font-weight: 700;
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.7);
       }
 
       .sls-quest-desc {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 12px;
         color: #b894e6;
         margin-bottom: 10px;
@@ -4958,6 +4899,133 @@ module.exports = class SoloLevelingStats {
     });
   }
 
+  // ============================================================================
+  // STATS SYSTEM
+  // ============================================================================
+
+  /**
+   * Aggregate stat allocation notifications to prevent spam
+   * Queues allocations and shows a single notification with total bonuses
+   */
+  _queueStatAllocation(statName, oldValue, newValue, effectText, perceptionBuff = null) {
+    // Add to queue
+    this._statAllocationQueue.push({
+      statName,
+      oldValue,
+      newValue,
+      effectText,
+      perceptionBuff,
+      timestamp: Date.now(),
+    });
+
+    // Clear existing timeout
+    if (this._statAllocationTimeout) {
+      clearTimeout(this._statAllocationTimeout);
+    }
+
+    // Set new timeout to show aggregated notification
+    this._statAllocationTimeout = setTimeout(() => {
+      this._showAggregatedStatNotification();
+    }, this._statAllocationDebounceDelay);
+  }
+
+  /**
+   * Show aggregated stat allocation notification with total bonuses
+   */
+  _showAggregatedStatNotification() {
+    if (this._statAllocationQueue.length === 0) return;
+
+    // Group allocations by stat
+    const statGroups = {};
+    const totalPerceptionBuffs = [];
+
+    this._statAllocationQueue.forEach((allocation) => {
+      const statName = allocation.statName;
+      if (!statGroups[statName]) {
+        statGroups[statName] = {
+          count: 0,
+          oldValue: allocation.oldValue,
+          newValue: allocation.newValue,
+          effectText: allocation.effectText,
+        };
+      }
+      statGroups[statName].count++;
+      statGroups[statName].newValue = allocation.newValue; // Update to latest value
+
+      // Collect perception buffs
+      if (allocation.perceptionBuff) {
+        totalPerceptionBuffs.push(allocation.perceptionBuff);
+      }
+    });
+
+    // Build notification message
+    const statLines = Object.entries(statGroups).map(([statName, data]) => {
+      const statDisplayName = statName.charAt(0).toUpperCase() + statName.slice(1);
+      if (data.count === 1) {
+        return `+1 ${statDisplayName} (${data.oldValue} → ${data.newValue})`;
+      } else {
+        return `+${data.count} ${statDisplayName} (${data.oldValue} → ${data.newValue})`;
+      }
+    });
+
+    // Calculate total bonuses gained from allocations
+    const bonusLines = [];
+
+    // Calculate bonuses for each stat type
+    Object.entries(statGroups).forEach(([statName, data]) => {
+      if (statName === 'perception' && totalPerceptionBuffs.length > 0) {
+        // Group perception buffs by stat
+        const buffStats = {};
+        totalPerceptionBuffs.forEach((buff) => {
+          if (!buffStats[buff.stat]) buffStats[buff.stat] = 0;
+          buffStats[buff.stat] += buff.buff;
+        });
+        const totalBuff = totalPerceptionBuffs.reduce((sum, buff) => sum + buff.buff, 0);
+        const buffList = Object.entries(buffStats)
+          .map(
+            ([stat, value]) =>
+              `+${value.toFixed(1)}% ${stat.charAt(0).toUpperCase() + stat.slice(1)}`
+          )
+          .join(', ');
+        bonusLines.push(`Perception Buffs: ${buffList} (Total: +${totalBuff.toFixed(1)}%)`);
+      } else if (data.effectText && statName !== 'perception') {
+        // Calculate total bonus from allocated points
+        let totalBonus = 0;
+        const statBonusMap = {
+          strength: (count) => count * 5, // +5% XP per point
+          agility: (count) => count * 2, // +2% crit chance per point
+          intelligence: (count) => {
+            // Tiered: 100-200:+3%, 200-400:+7%, 400+:+12% per point
+            // For simplicity, calculate based on final value
+            const finalValue = data.newValue;
+            if (finalValue >= 400) return count * 12;
+            if (finalValue >= 200) return count * 7;
+            if (finalValue >= 100) return count * 3;
+            return count * 1; // Base bonus
+          },
+          vitality: (count) => count * 5, // +5% quest rewards per point
+        };
+
+        if (statBonusMap[statName]) {
+          totalBonus = statBonusMap[statName](data.count);
+          const statDisplayName = statName.charAt(0).toUpperCase() + statName.slice(1);
+          bonusLines.push(`${statDisplayName}: +${totalBonus}% total bonus`);
+        }
+      }
+    });
+
+    const message =
+      statLines.join('\n') +
+      (bonusLines.length > 0 ? '\n\nTotal Bonuses:\n' + bonusLines.join('\n') : '');
+
+    // Show aggregated notification
+    this.showNotification(message, 'success', 6000);
+
+    // Clear queue
+    this._statAllocationQueue = [];
+    this._statAllocationTimeout = null;
+  }
+
   allocateStatPoint(statName) {
     // Normalize stat name (handle case variations)
     if (!statName) {
@@ -5062,15 +5130,13 @@ module.exports = class SoloLevelingStats {
         perceptionStat: this.settings.stats.perception,
       });
 
-      // Show notification with buff info
-      this.showNotification(
-        `+1 Perception! (${oldValue} → ${
-          this.settings.stats[statName]
-        })\nRandom Buff: +${roundedBuff.toFixed(
-          1
-        )}% ${randomStat} (Total: +${totalPerceptionBuff.toFixed(1)}% stacked)`,
-        'success',
-        5000
+      // Queue notification for aggregation (prevents spam)
+      this._queueStatAllocation(
+        statName,
+        oldValue,
+        this.settings.stats[statName],
+        null, // Perception doesn't use standard effect text
+        { stat: randomStat, buff: roundedBuff } // Store buff info
       );
 
       // Save immediately
@@ -5109,13 +5175,13 @@ module.exports = class SoloLevelingStats {
 
     const effectText = statEffects[statName] || 'Effect applied';
 
-    // Show success notification with effect info
-    this.showNotification(
-      `+1 ${statName.charAt(0).toUpperCase() + statName.slice(1)}! (${oldValue} → ${
-        this.settings.stats[statName]
-      })\n${effectText}`,
-      'success',
-      4000
+    // Queue notification for aggregation (prevents spam)
+    this._queueStatAllocation(
+      statName,
+      oldValue,
+      this.settings.stats[statName],
+      effectText,
+      null // No perception buff for non-perception stats
     );
 
     // Save immediately on stat allocation (important change)
@@ -5449,6 +5515,10 @@ module.exports = class SoloLevelingStats {
       .join('');
   }
 
+  // ============================================================================
+  // QUEST SYSTEM
+  // ============================================================================
+
   updateQuestProgress(questId, amount) {
     const quest = this.settings.dailyQuests.quests[questId];
     if (!quest || quest.completed) {
@@ -5539,8 +5609,8 @@ module.exports = class SoloLevelingStats {
       `[QUEST COMPLETE] ${questNames[questId]}\n` +
       ` +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
 
-    // Show toast notification for quest completion (3 seconds to match animation)
-    this.showNotification(message, 'success', 3000);
+    // Show toast notification for quest completion (2.5 seconds to match animation)
+    this.showNotification(message, 'success', 2500);
 
     // Quest completion celebration animation
     this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
@@ -5555,6 +5625,9 @@ module.exports = class SoloLevelingStats {
 
   showQuestCompletionCelebration(questName, xpReward, statPoints) {
     try {
+      // Try to load Friend or Foe BB font (if CriticalHit plugin is available, it may already be loaded)
+      this._loadQuestFont();
+
       // Find quest card in UI
       const questCards = document.querySelectorAll('.sls-chat-quest-item');
       let questCard = null;
@@ -5566,23 +5639,53 @@ module.exports = class SoloLevelingStats {
         return cardText.includes(questName) || card.classList.contains('sls-chat-quest-complete');
       });
 
-      // Create celebration overlay
+      // Create celebration overlay with zoom animation
+      const animationType = 'zoom';
+
+      // Build current progress section with all daily quests
+      const questProgressHTML = Object.entries(this.settings.dailyQuests.quests)
+        .map(([questId, quest]) => {
+          const questInfo = this.questData[questId] || { name: questId, icon: '📋' };
+          const percentage = Math.min((quest.progress / quest.target) * 100, 100);
+          const isComplete = quest.completed;
+          const progressText = isComplete ? quest.target : Math.floor(quest.progress);
+
+          return `
+            <div class="sls-quest-progress-item ${isComplete ? 'completed' : ''}">
+              <div class="sls-quest-progress-checkbox">
+                ${isComplete ? '✓' : '○'}
+              </div>
+              <div class="sls-quest-progress-info">
+                <div class="sls-quest-progress-name">${questInfo.icon} ${questInfo.name}</div>
+                <div class="sls-quest-progress-bar-container">
+                  <div class="sls-quest-progress-bar">
+                    <div class="sls-quest-progress-fill" style="width: ${percentage}%"></div>
+                  </div>
+                  <div class="sls-quest-progress-text">${progressText}/${quest.target}</div>
+                </div>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+
       const celebration = document.createElement('div');
-      celebration.className = 'sls-quest-celebration';
+      celebration.className = `sls-quest-celebration ${animationType}`;
       celebration.innerHTML = `
         <div class="sls-quest-celebration-content">
-          <div class="sls-quest-celebration-icon"></div>
-          <div class="sls-quest-celebration-text">QUEST COMPLETE!</div>
-          <div class="sls-quest-celebration-name">${this.escapeHtml(questName)}</div>
-          <div class="sls-quest-celebration-rewards">
-            <div class="sls-quest-reward-item"> +${xpReward} XP</div>
-            ${
-              statPoints > 0
-                ? `<div class="sls-quest-reward-item"> +${statPoints} Stat Point${
-                    statPoints > 1 ? 's' : ''
-                  }</div>`
-                : ''
-            }
+          <div class="sls-quest-notification-header">
+            <div class="sls-quest-notification-title">Quest Notification [!]</div>
+            <div class="sls-quest-notification-subtitle">Daily Quest Completed</div>
+          </div>
+          <div class="sls-quest-completed-name">${this.escapeHtml(questName)}</div>
+          <div class="sls-quest-current-progress">
+            <div class="sls-quest-progress-title">Current Progress</div>
+            <div class="sls-quest-progress-list">
+              ${questProgressHTML}
+            </div>
+          </div>
+          <div class="sls-quest-confirm-button-container">
+            <button class="sls-quest-confirm-button">Confirm</button>
           </div>
         </div>
       `;
@@ -5591,15 +5694,14 @@ module.exports = class SoloLevelingStats {
       celebration.style.left = '50%';
       celebration.style.top = '50%';
       celebration.style.transform = 'translate(-50%, -50%)';
-      celebration.style.opacity = '1'; // Ensure initial opacity is set
-      celebration.style.transition = 'opacity 1s ease-out'; // Set transition upfront for smooth fade
+      // Opacity starts at 0, CSS animation handles fade-in only (stays visible)
+      celebration.style.opacity = '0';
 
       // Highlight quest card if found (but don't position dialog there)
       if (questCard) {
         questCard.classList.add('sls-quest-celebrating');
-        setTimeout(() => {
-          questCard.classList.remove('sls-quest-celebrating');
-        }, 3000);
+        // Keep highlighting until notification is closed
+        celebration._questCard = questCard;
       }
 
       document.body.appendChild(celebration);
@@ -5607,44 +5709,95 @@ module.exports = class SoloLevelingStats {
       // Create particles
       this.createQuestParticles(celebration);
 
-      // Auto-close after 3 seconds with smooth fade-out animation
-      // Start fade-out animation after 2 seconds (1 second fade transition)
-      // Use requestAnimationFrame to ensure DOM is ready before starting fade
-      setTimeout(() => {
-        requestAnimationFrame(() => {
-          celebration.style.opacity = '0';
-        });
-      }, 2000);
-
-      // Remove after fade-out completes (3 seconds total: 2s visible + 1s fade)
-      const removeTimeout = setTimeout(() => {
-        if (celebration && celebration.parentNode) {
-          celebration.remove();
+      // Function to close notification with fade-out
+      const closeNotification = () => {
+        if (celebration._progressInterval) {
+          clearInterval(celebration._progressInterval);
         }
-      }, 3000);
-
-      // Store timeout ID on element for manual cleanup if needed
-      celebration._removeTimeout = removeTimeout;
-
-      // Also allow clicking to close immediately
-      celebration.addEventListener('click', () => {
-        if (celebration._removeTimeout) {
-          clearTimeout(celebration._removeTimeout);
+        // Remove quest card highlight
+        if (celebration._questCard) {
+          celebration._questCard.classList.remove('sls-quest-celebrating');
         }
-        celebration.style.opacity = '0';
-        celebration.style.transition = 'opacity 0.3s ease-out';
+        // Fast fade-out animation (0.2s)
+        celebration.style.animation = 'quest-celebration-fade-out 0.2s ease-out forwards';
         setTimeout(() => {
           if (celebration && celebration.parentNode) {
             celebration.remove();
           }
-        }, 300);
+        }, 200);
+      };
+
+      // Confirm button click handler
+      const confirmButton = celebration.querySelector('.sls-quest-confirm-button');
+      if (confirmButton) {
+        confirmButton.addEventListener('click', (e) => {
+          e.stopPropagation(); // Prevent event bubbling
+          closeNotification();
+        });
+      }
+
+      // Prevent clicking outside to close (only button closes it)
+      celebration.addEventListener('click', (e) => {
+        // Only close if clicking directly on the celebration background, not on content
+        if (e.target === celebration) {
+          e.stopPropagation();
+        }
       });
+
+      // Update progress in real-time every 500ms
+      const progressUpdateInterval = setInterval(() => {
+        if (!celebration.parentNode) {
+          clearInterval(progressUpdateInterval);
+          return;
+        }
+
+        const progressList = celebration.querySelector('.sls-quest-progress-list');
+        if (progressList) {
+          const updatedProgressHTML = Object.entries(this.settings.dailyQuests.quests)
+            .map(([questId, quest]) => {
+              const questInfo = this.questData[questId] || { name: questId, icon: '📋' };
+              const percentage = Math.min((quest.progress / quest.target) * 100, 100);
+              const isComplete = quest.completed;
+              const progressText = isComplete ? quest.target : Math.floor(quest.progress);
+
+              return `
+                <div class="sls-quest-progress-item ${isComplete ? 'completed' : ''}">
+                  <div class="sls-quest-progress-checkbox">
+                    ${isComplete ? '✓' : '○'}
+                  </div>
+                  <div class="sls-quest-progress-info">
+                    <div class="sls-quest-progress-name">${questInfo.icon} ${questInfo.name}</div>
+                    <div class="sls-quest-progress-bar-container">
+                      <div class="sls-quest-progress-bar">
+                        <div class="sls-quest-progress-fill" style="width: ${percentage}%"></div>
+                      </div>
+                      <div class="sls-quest-progress-text">${progressText}/${quest.target}</div>
+                    </div>
+                  </div>
+                </div>
+              `;
+            })
+            .join('');
+
+          progressList.innerHTML = updatedProgressHTML;
+        }
+      }, 500);
+
+      // Clear interval when celebration is removed
+      celebration._progressInterval = progressUpdateInterval;
 
       // Ensure cleanup on plugin stop
       if (!this._questCelebrations) {
         this._questCelebrations = new Set();
       }
       this._questCelebrations.add(celebration);
+
+      // Store reference for cleanup
+      celebration._cleanup = () => {
+        if (celebration._progressInterval) {
+          clearInterval(celebration._progressInterval);
+        }
+      };
 
       this.debugLog('QUEST_CELEBRATION', 'Quest completion celebration shown', {
         questName,
@@ -5653,6 +5806,98 @@ module.exports = class SoloLevelingStats {
       });
     } catch (error) {
       this.debugError('QUEST_CELEBRATION', error);
+    }
+  }
+
+  /**
+   * Load Friend or Foe BB font for quest notification
+   * Uses same font files as CriticalHit plugin if available
+   */
+  _loadQuestFont() {
+    try {
+      // Check if font is already loaded (by CriticalHit plugin or previous call)
+      const fontName = 'Friend or Foe BB';
+      const existingStyle = document.getElementById('sls-quest-font-friend-or-foe-bb');
+      if (existingStyle) {
+        return; // Font already loaded
+      }
+
+      // Check if CriticalHit plugin has loaded the font
+      if (document.fonts && document.fonts.check) {
+        document.fonts.ready.then(() => {
+          setTimeout(() => {
+            if (document.fonts.check(`16px "${fontName}"`)) {
+              this.debugLog('QUEST_FONT', 'Friend or Foe BB font already available');
+              return; // Font already loaded by another plugin
+            }
+            // Try to load font from CriticalHit's font path
+            this._loadFontFromCriticalHit();
+          }, 100);
+        });
+      } else {
+        // Fallback: Try to load from CriticalHit's font path
+        this._loadFontFromCriticalHit();
+      }
+    } catch (error) {
+      this.debugError('QUEST_FONT_LOAD', error);
+    }
+  }
+
+  /**
+   * Attempt to load font from CriticalHit plugin's font folder
+   */
+  _loadFontFromCriticalHit() {
+    try {
+      // Try to get font path from CriticalHit plugin
+      const critPlugin = BdApi.Plugins.get('CriticalHit');
+      if (critPlugin && critPlugin.instance) {
+        const critInstance = critPlugin.instance;
+        if (typeof critInstance.getFontsFolderPath === 'function') {
+          const fontsPath = critInstance.getFontsFolderPath();
+          const fontFileName = 'FriendorFoeBB';
+
+          // Create @font-face CSS
+          const fontStyle = document.createElement('style');
+          fontStyle.id = 'sls-quest-font-friend-or-foe-bb';
+          fontStyle.textContent = `
+            @font-face {
+              font-family: 'Friend or Foe BB';
+              src: url('${fontsPath}${fontFileName}.woff2') format('woff2'),
+                   url('${fontsPath}${fontFileName}.woff') format('woff'),
+                   url('${fontsPath}${fontFileName}.ttf') format('truetype');
+              font-weight: normal;
+              font-style: normal;
+              font-display: swap;
+            }
+          `;
+          document.head.appendChild(fontStyle);
+          this.debugLog('QUEST_FONT', 'Friend or Foe BB font loaded from CriticalHit path');
+          return;
+        }
+      }
+
+      // If CriticalHit not available, try default BetterDiscord fonts path
+      const defaultFontsPath = BdApi.Plugins.folder + '/../fonts/';
+      const fontFileName = 'FriendorFoeBB';
+
+      const fontStyle = document.createElement('style');
+      fontStyle.id = 'sls-quest-font-friend-or-foe-bb';
+      fontStyle.textContent = `
+        @font-face {
+          font-family: 'Friend or Foe BB';
+          src: url('${defaultFontsPath}${fontFileName}.woff2') format('woff2'),
+               url('${defaultFontsPath}${fontFileName}.woff') format('woff'),
+               url('${defaultFontsPath}${fontFileName}.ttf') format('truetype');
+          font-weight: normal;
+          font-style: normal;
+          font-display: swap;
+        }
+      `;
+      document.head.appendChild(fontStyle);
+      this.debugLog('QUEST_FONT', 'Friend or Foe BB font loaded from default path');
+    } catch (error) {
+      this.debugError('QUEST_FONT_LOAD_CRITICALHIT', error);
+      // Font will fall back to Orbitron or Segoe UI
     }
   }
 
@@ -6916,6 +7161,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // ============================================================================
+  // HP/MANA SYSTEM
+  // ============================================================================
+
   updateHPManaBars() {
     const hpManaDisplay = this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
     if (!hpManaDisplay) return;
@@ -7746,7 +7995,7 @@ module.exports = class SoloLevelingStats {
         padding: 10px 12px;
         box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         z-index: 1000;
-        font-family: 'Orbitron', 'Segoe UI', sans-serif;
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         backdrop-filter: blur(8px);
       }
 
@@ -7845,6 +8094,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-shadow-power {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #8b5cf6;
         font-size: 12px;
         font-weight: 600;
@@ -7869,6 +8119,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-rank {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 11px;
         font-weight: 700;
         color: #ba55d3;
@@ -7886,6 +8137,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-level-number {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 13px;
         font-weight: 800;
         color: #d4a5ff;
@@ -7899,6 +8151,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-xp-text {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 11px;
         color: #b894e6;
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
@@ -8040,25 +8293,254 @@ module.exports = class SoloLevelingStats {
       }
 
       /* Quest celebration styles */
+      /*
+       * ANIMATION TYPES AVAILABLE (change animation property to switch):
+       *
+       * 1. FADE (default): quest-celebration-fade-in + quest-celebration-visible + quest-celebration-fade-out
+       *    - Fast fade-in (0.2s), smooth visible (2.1s), fast fade-out (0.2s)
+       *
+       * 2. SLIDE: quest-celebration-slide-in (slides from top)
+       *
+       * 3. ZOOM: quest-celebration-zoom-in (zooms from center)
+       *
+       * 4. BOUNCE: quest-celebration-bounce (bouncy entrance)
+       *
+       * 5. ROTATE: quest-celebration-rotate-in (rotates while fading)
+       *
+       * 6. ELASTIC: quest-celebration-elastic (elastic spring effect)
+       *
+       * To use alternative animations, replace the animation property with:
+       *   animation: [animation-name] 0.2s ease-out,
+       *              quest-celebration-visible 2.1s ease-out 0.2s,
+       *              quest-celebration-fade-out 0.2s ease-out 2.3s;
+       */
       .sls-quest-celebration {
         position: fixed;
         z-index: 100000;
         pointer-events: auto; /* Allow clicking to close */
         cursor: pointer; /* Show it's clickable */
-        animation: quest-celebration-pop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-        transition: opacity 1s ease-out; /* Smooth fade-out (1s to match JavaScript timing) */
+        /* Fast fade-in: 0-200ms, visible: 200ms-2300ms, fast fade-out: 2300ms-2500ms */
+        animation: quest-celebration-fade-in 0.2s ease-out,
+                   quest-celebration-visible 2.1s ease-out 0.2s,
+                   quest-celebration-fade-out 0.2s ease-out 2.3s;
+        opacity: 0; /* Start hidden, animation will make it visible */
+      }
+
+      /* Alternative animation classes (add to celebration element to use) */
+      .sls-quest-celebration.slide {
+        animation: quest-celebration-slide-in 0.2s ease-out,
+                   quest-celebration-visible 2.1s ease-out 0.2s,
+                   quest-celebration-fade-out 0.2s ease-out 2.3s;
+      }
+
+      .sls-quest-celebration.zoom {
+        animation: quest-celebration-zoom-in 0.2s ease-out forwards;
+      }
+
+      .sls-quest-celebration.bounce {
+        animation: quest-celebration-bounce 0.4s ease-out,
+                   quest-celebration-visible 1.9s ease-out 0.4s,
+                   quest-celebration-fade-out 0.2s ease-out 2.3s;
+      }
+
+      .sls-quest-celebration.rotate {
+        animation: quest-celebration-rotate-in 0.2s ease-out,
+                   quest-celebration-visible 2.1s ease-out 0.2s,
+                   quest-celebration-fade-out 0.2s ease-out 2.3s;
+      }
+
+      .sls-quest-celebration.elastic {
+        animation: quest-celebration-elastic 0.5s ease-out,
+                   quest-celebration-visible 1.8s ease-out 0.5s,
+                   quest-celebration-fade-out 0.2s ease-out 2.3s;
       }
 
       .sls-quest-celebration-content {
-        background: linear-gradient(135deg, rgba(75, 40, 130, 0.95) 0%, rgba(55, 25, 95, 0.95) 100%);
-        border: 3px solid rgba(139, 92, 246, 0.6);
-        border-radius: 16px;
-        padding: 30px 40px;
-        text-align: center;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.8),
-                    0 0 60px rgba(139, 92, 246, 0.5),
-                    inset 0 0 20px rgba(255, 255, 255, 0.2);
-        backdrop-filter: blur(10px);
+        background: linear-gradient(135deg, rgba(5, 5, 10, 0.98) 0%, rgba(10, 5, 15, 0.98) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.3);
+        border-radius: 12px;
+        padding: 24px 32px;
+        text-align: left;
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.2),
+                    0 0 40px rgba(75, 0, 130, 0.15),
+                    inset 0 0 30px rgba(139, 92, 246, 0.1);
+        backdrop-filter: blur(8px);
+        min-width: 400px;
+        max-width: 500px;
+      }
+
+      .sls-quest-notification-header {
+        margin-bottom: 16px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+      }
+
+      .sls-quest-notification-title {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
+        font-size: 18px;
+        font-weight: 700;
+        color: rgba(139, 92, 246, 0.9);
+        text-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+        margin-bottom: 6px;
+        letter-spacing: 0.5px;
+      }
+
+      .sls-quest-notification-subtitle {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
+        font-size: 14px;
+        color: rgba(200, 180, 255, 0.8);
+        font-weight: 600;
+      }
+
+      .sls-quest-completed-name {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
+        font-size: 16px;
+        color: rgba(255, 255, 255, 0.95);
+        font-weight: 600;
+        margin-bottom: 20px;
+        padding: 10px;
+        background: rgba(139, 92, 246, 0.1);
+        border-left: 3px solid rgba(139, 92, 246, 0.5);
+        border-radius: 4px;
+      }
+
+      .sls-quest-current-progress {
+        margin-top: 20px;
+      }
+
+      .sls-quest-progress-title {
+        font-size: 14px;
+        font-weight: 700;
+        color: rgba(139, 92, 246, 0.8);
+        margin-bottom: 12px;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .sls-quest-progress-list {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+
+      .sls-quest-progress-item {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding: 8px;
+        background: rgba(10, 5, 15, 0.6);
+        border-radius: 6px;
+        border: 1px solid rgba(139, 92, 246, 0.15);
+        transition: all 0.2s ease;
+      }
+
+      .sls-quest-progress-item.completed {
+        background: rgba(139, 92, 246, 0.1);
+        border-color: rgba(139, 92, 246, 0.3);
+      }
+
+      .sls-quest-progress-checkbox {
+        width: 20px;
+        height: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 14px;
+        color: rgba(139, 92, 246, 0.6);
+        flex-shrink: 0;
+      }
+
+      .sls-quest-progress-item.completed .sls-quest-progress-checkbox {
+        color: rgba(139, 92, 246, 0.9);
+        text-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+      }
+
+      .sls-quest-progress-info {
+        flex: 1;
+        min-width: 0;
+      }
+
+      .sls-quest-progress-name {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.85);
+        font-weight: 600;
+        margin-bottom: 6px;
+      }
+
+      .sls-quest-progress-item.completed .sls-quest-progress-name {
+        color: rgba(200, 180, 255, 0.9);
+      }
+
+      .sls-quest-progress-bar-container {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .sls-quest-progress-bar {
+        flex: 1;
+        height: 6px;
+        background: rgba(20, 10, 30, 0.8);
+        border-radius: 3px;
+        overflow: hidden;
+        border: 1px solid rgba(139, 92, 246, 0.2);
+      }
+
+      .sls-quest-progress-fill {
+        height: 100%;
+        background: linear-gradient(90deg, rgba(139, 92, 246, 0.6) 0%, rgba(139, 92, 246, 0.4) 100%);
+        transition: width 0.3s ease;
+        border-radius: 3px;
+      }
+
+      .sls-quest-progress-item.completed .sls-quest-progress-fill {
+        background: linear-gradient(90deg, rgba(139, 92, 246, 0.8) 0%, rgba(139, 92, 246, 0.6) 100%);
+      }
+
+      .sls-quest-progress-text {
+        font-size: 11px;
+        color: rgba(200, 180, 255, 0.7);
+        font-weight: 600;
+        min-width: 50px;
+        text-align: right;
+      }
+
+      .sls-quest-confirm-button-container {
+        display: flex;
+        justify-content: center;
+        margin-top: 24px;
+        padding-top: 20px;
+        border-top: 1px solid rgba(139, 92, 246, 0.2);
+      }
+
+      .sls-quest-confirm-button {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(75, 0, 130, 0.3) 100%);
+        border: 2px solid rgba(139, 92, 246, 0.5);
+        border-radius: 8px;
+        padding: 12px 32px;
+        color: rgba(200, 180, 255, 0.95);
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        text-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+      }
+
+      .sls-quest-confirm-button:hover {
+        background: linear-gradient(135deg, rgba(139, 92, 246, 0.4) 0%, rgba(75, 0, 130, 0.4) 100%);
+        border-color: rgba(139, 92, 246, 0.7);
+        color: rgba(255, 255, 255, 1);
+        box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+        transform: translateY(-2px);
+      }
+
+      .sls-quest-confirm-button:active {
+        transform: translateY(0);
+        box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
       }
 
       .sls-quest-celebration-icon {
@@ -8113,13 +8595,108 @@ module.exports = class SoloLevelingStats {
         box-shadow: 0 0 20px rgba(139, 92, 246, 0.8) !important;
       }
 
-      @keyframes quest-celebration-pop {
+      /* Fast fade-in animation (0-200ms) */
+      @keyframes quest-celebration-fade-in {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.8);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      /* Visible state (200ms-2300ms) - subtle scale bounce for engagement */
+      @keyframes quest-celebration-visible {
+        0%, 100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        50% {
+          transform: translate(-50%, -50%) scale(1.02);
+        }
+      }
+
+      /* Fast fade-out animation (2300ms-2500ms) */
+      @keyframes quest-celebration-fade-out {
+        0% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.95);
+        }
+      }
+
+      /* Alternative animation: Slide from top */
+      @keyframes quest-celebration-slide-in {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -60%) scale(0.9);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      /* Alternative animation: Zoom in */
+      @keyframes quest-celebration-zoom-in {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.5);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      /* Alternative animation: Bounce */
+      @keyframes quest-celebration-bounce {
         0% {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.3);
         }
         50% {
-          transform: translate(-50%, -50%) scale(1.1);
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1.15);
+        }
+        70% {
+          transform: translate(-50%, -50%) scale(0.95);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1);
+        }
+      }
+
+      /* Alternative animation: Rotate + fade */
+      @keyframes quest-celebration-rotate-in {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.8) rotate(-10deg);
+        }
+        100% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1) rotate(0deg);
+        }
+      }
+
+      /* Alternative animation: Elastic */
+      @keyframes quest-celebration-elastic {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -50%) scale(0.3);
+        }
+        50% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(1.2);
+        }
+        75% {
+          transform: translate(-50%, -50%) scale(0.9);
         }
         100% {
           opacity: 1;
@@ -8217,6 +8794,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-stat-points {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         background: rgba(138, 43, 226, 0.2);
         border: 1px solid rgba(138, 43, 226, 0.4);
         border-radius: 6px;
@@ -8244,6 +8822,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-stat-btn {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         position: relative;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.15) 0%, rgba(75, 0, 130, 0.1) 100%);
         border: 1px solid rgba(138, 43, 226, 0.3);
@@ -8286,6 +8865,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-stat-btn-name {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #b894e6;
         font-size: 10px;
         font-weight: 600;
@@ -8294,6 +8874,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-stat-btn-value {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #d4a5ff;
         font-size: 14px;
         font-weight: 700;
@@ -8335,12 +8916,14 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-title-label {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #b894e6;
         font-size: 11px;
         font-weight: 600;
       }
 
       .sls-chat-title-name {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #d4a5ff;
         font-weight: 700;
         font-size: 12px;
@@ -8348,6 +8931,7 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-chat-title-bonus {
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         color: #ba55d3;
         font-size: 10px;
         font-weight: 600;
@@ -8649,5 +9233,97 @@ module.exports = class SoloLevelingStats {
     wrapper.appendChild(desc);
 
     return wrapper;
+  }
+
+  // ============================================================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================================================
+
+  /**
+   * Debug logging system (only logs when debugMode is enabled)
+   * Throttles frequent operations to prevent console spam
+   */
+  debugLog(operation, message, data = null) {
+    // UNIFIED DEBUG SYSTEM: Check settings.debugMode instead of this.debug.enabled
+    if (!this.settings?.debugMode) return;
+
+    // Check if this is a frequent operation
+    const isFrequent = this.debug.frequentOperations.has(operation);
+
+    if (isFrequent && !this.debug.verbose) {
+      // Throttle frequent operations - only log once per throttleInterval
+      const now = Date.now();
+      const lastLogTime = this.debug.lastLogTimes[operation] || 0;
+
+      if (now - lastLogTime < this.debug.throttleInterval) {
+        // Skip logging, but still track count
+        this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
+        return;
+      }
+
+      // Update last log time
+      this.debug.lastLogTimes[operation] = now;
+    }
+
+    const _timestamp = new Date().toISOString();
+    console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
+
+    // Track operation counts
+    this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
+  }
+
+  /**
+   /**
+    * Error logging with context and stack traces
+    */
+  debugError(operation, error, context = {}) {
+    if (!this.debug) this.debug = {};
+    if (typeof this.debug.errorCount !== 'number') this.debug.errorCount = 0;
+    this.debug.errorCount++;
+
+    // Extract error message properly
+    let errorMessage = 'Unknown error';
+    let errorStack = null;
+
+    if (error instanceof Error) {
+      errorMessage = error.message || String(error);
+      errorStack = error.stack;
+    } else if (typeof error === 'string') {
+      errorMessage = error;
+    } else if (error && typeof error === 'object') {
+      // Try to extract meaningful info from error object
+      errorMessage = error.message || error.toString() || JSON.stringify(error).substring(0, 200);
+      errorStack = error.stack;
+    } else {
+      errorMessage = String(error);
+    }
+
+    this.debug.lastError = {
+      operation,
+      error: errorMessage,
+      stack: errorStack,
+      context,
+      timestamp: Date.now(),
+    };
+
+    const timestamp = new Date().toISOString();
+    console.error(`[SoloLevelingStats:ERROR:${operation}]`, errorMessage, {
+      stack: errorStack,
+      context,
+      timestamp,
+    });
+
+    // Also log to debug file
+    console.warn(`[SoloLevelingStats:ERROR:${operation}] ${errorMessage}`, context);
+  }
+
+  /**
+   * Debug console logging (for constructor and critical operations)
+   * Only logs when debugMode is enabled
+   */
+  debugConsole(prefix, message, data = {}) {
+    const log = () => console.log(`${prefix}`, message, data);
+    // Safe check: Only log if settings exist AND debugMode is explicitly true
+    return this.settings?.debugMode === true && log();
   }
 };
