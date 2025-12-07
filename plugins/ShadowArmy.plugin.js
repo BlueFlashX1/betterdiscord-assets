@@ -3,6 +3,7 @@
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
  * @version 3.3.0
+ * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
  * STORAGE & SCALABILITY
@@ -133,10 +134,16 @@
  * - Pagination and filtering
  * - Aggregation for performance
  * - Migration from localStorage
+ *
+ * ============================================================================
+ * CODE STRUCTURE
+ * ============================================================================
+ * STORAGE SECTION 2: CONFIGURATION & HELPERS (constructor, helpers, utilities)
+ * STORAGE SECTION 3: MAJOR OPERATIONS (database, shadows, cache, aggregation)
  */
 class ShadowStorageManager {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // STORAGE SECTION 2: CONFIGURATION & HELPERS
   // ============================================================================
 
   /**
@@ -146,20 +153,27 @@ class ShadowStorageManager {
    * 2. Set database name and version
    * 3. Initialize memory caches
    * 4. Set cache TTL for aggregation
+   * 5. Load migration flag from BdApi.Data
    */
-  constructor(userId) {
+  constructor(userId, debugLogFn = null, debugErrorFn = null) {
+    // Database configuration
     this.userId = userId || 'default';
     this.dbName = `ShadowArmyDB_${this.userId}`;
     this.dbVersion = 2; // Upgraded for natural growth system
     this.storeName = 'shadows';
     this.db = null;
 
+    // Debug logging functions (provided by parent plugin)
+    this.debugLog = debugLogFn || (() => {});
+    this.debugError =
+      debugErrorFn ||
+      ((tag, msg, err) => {
+        console.error(`[ShadowStorageManager:${tag}]`, msg, err);
+      });
+
     // Memory cache
-    this.favoriteCache = new Map(); // Favorite shadows (7 generals)
     this.recentCache = new Map(); // Recently accessed shadows
     this.cacheLimit = 100;
-    this.favoriteLimit = 7; // Limit for favorite cache (7 generals)
-    this.favoriteIds = new Set(); // Track favorite shadow IDs for cache updates
 
     // Aggregation cache (for performance)
     this.aggregatedPowerCache = null;
@@ -174,50 +188,400 @@ class ShadowStorageManager {
     try {
       const persistedMigration = BdApi.Data.load('ShadowArmy', 'migrationCompleted');
       this.migrationCompleted = persistedMigration === true;
+      this.debugLog('STORAGE', 'Migration status loaded', { completed: this.migrationCompleted });
     } catch (error) {
-      console.warn('[ShadowArmy] Failed to load migration flag from BdApi.Data', error);
+      this.debugError('STORAGE', 'Failed to load migration flag from BdApi.Data', error);
       this.migrationCompleted = false;
     }
 
     // Natural growth tracking
     this.lastNaturalGrowthTime = Date.now();
+
+    // Concurrent operation locks
+    this._aggregatingPower = null;
   }
 
   // ============================================================================
-  // DATABASE INITIALIZATION
+  // STORAGE 2.2 SHADOW DATA HELPERS
+  // ============================================================================
+
+  /**
+   * Helper method for accessing shadow data with transparent decompression
+   * Handles both full and compressed shadow formats (regular and ultra-compression)
+   * Operations:
+   * 1. Check if shadow is compressed (_c marker)
+   * 2. Decompress if needed (regular or ultra)
+   * 3. Return full shadow object
+   * @param {Object} shadow - Shadow object (may be compressed)
+   * @returns {Object} - Decompressed shadow object
+   */
+  getShadowData(shadow) {
+    if (!shadow) return null;
+
+    // Check compression markers
+    if (shadow._c === 1) {
+      // Regular compression - delegate to parent plugin's decompressShadow
+      // Note: This method should be provided by parent ShadowArmy class
+      if (typeof this.decompressShadow === 'function') {
+        return this.decompressShadow(shadow);
+      }
+      // Fallback: return as-is if decompression not available
+      return shadow;
+    }
+
+    if (shadow._c === 2) {
+      // Ultra compression - delegate to parent plugin's decompressShadowUltra
+      if (typeof this.decompressShadowUltra === 'function') {
+        return this.decompressShadowUltra(shadow);
+      }
+      // Fallback: return as-is if decompression not available
+      return shadow;
+    }
+
+    // Not compressed - return as-is
+    return shadow;
+  }
+
+  /**
+   * Prepare shadow for saving (handles compression state)
+   * Operations:
+   * 1. Check if shadow is already compressed
+   * 2. Return as-is if compressed, otherwise return full shadow
+   * @param {Object} shadow - Shadow object to prepare
+   * @returns {Object} - Shadow ready for storage
+   */
+  prepareShadowForSave(shadow) {
+    if (!shadow) return null;
+
+    // If already compressed, return as-is
+    if (shadow._c === 1 || shadow._c === 2) {
+      return shadow;
+    }
+
+    // Ensure all required fields are present
+    if (!shadow.baseStats) {
+      shadow.baseStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+    }
+    if (!shadow.growthStats) {
+      shadow.growthStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+    }
+    if (!shadow.naturalGrowthStats) {
+      shadow.naturalGrowthStats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+    }
+
+    return shadow;
+  }
+
+  // ============================================================================
+  // STORAGE 2.3 VALIDATION HELPERS
+  // ============================================================================
+
+  /**
+   * Validate shadow object structure
+   * Operations:
+   * 1. Check required fields (id, rank, role)
+   * 2. Validate stat objects structure
+   * 3. Return validation result with errors
+   * @param {Object} shadow - Shadow object to validate
+   * @returns {Object} - { valid: boolean, errors: string[] }
+   */
+  validateShadow(shadow) {
+    const errors = [];
+
+    if (!shadow) {
+      return { valid: false, errors: ['Shadow object is null or undefined'] };
+    }
+
+    // Required fields
+    if (!shadow.id) errors.push('Missing required field: id');
+    if (!shadow.rank) errors.push('Missing required field: rank');
+    if (!shadow.role && !shadow.roleName) errors.push('Missing required field: role or roleName');
+
+    // Validate stat objects structure
+    const statFields = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const statObjects = ['baseStats', 'growthStats', 'naturalGrowthStats'];
+
+    statObjects.forEach((statObj) => {
+      if (shadow[statObj] && typeof shadow[statObj] === 'object') {
+        statFields.forEach((field) => {
+          if (typeof shadow[statObj][field] !== 'number') {
+            errors.push(`Invalid ${statObj}.${field}: must be a number`);
+          }
+        });
+      }
+    });
+
+    return {
+      valid: errors.length === 0,
+      errors,
+    };
+  }
+
+  /**
+   * Normalize shadow object (ensure all fields are present with defaults)
+   * Operations:
+   * 1. Ensure required fields exist
+   * 2. Add default values for missing optional fields
+   * 3. Normalize stat objects
+   * @param {Object} shadow - Shadow object to normalize
+   * @returns {Object} - Normalized shadow object
+   */
+  normalizeShadow(shadow) {
+    if (!shadow) return null;
+
+    const normalized = { ...shadow };
+
+    // Required fields with defaults
+    normalized.id =
+      normalized.id || `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    normalized.rank = normalized.rank || 'E';
+    normalized.role = normalized.role || 'knight';
+    normalized.level = normalized.level || 1;
+    normalized.xp = normalized.xp || 0;
+    normalized.strength = normalized.strength || 0;
+    normalized.extractedAt = normalized.extractedAt || Date.now();
+
+    // Stat objects with defaults
+    const defaultStats = {
+      strength: 0,
+      agility: 0,
+      intelligence: 0,
+      vitality: 0,
+      perception: 0,
+    };
+
+    normalized.baseStats = normalized.baseStats || { ...defaultStats };
+    normalized.growthStats = normalized.growthStats || { ...defaultStats };
+    normalized.naturalGrowthStats = normalized.naturalGrowthStats || { ...defaultStats };
+
+    // Ensure all stat fields exist
+    Object.keys(defaultStats).forEach((stat) => {
+      normalized.baseStats[stat] = normalized.baseStats[stat] || 0;
+      normalized.growthStats[stat] = normalized.growthStats[stat] || 0;
+      normalized.naturalGrowthStats[stat] = normalized.naturalGrowthStats[stat] || 0;
+    });
+
+    // Optional fields with defaults
+    normalized.totalCombatTime = normalized.totalCombatTime || 0;
+    normalized.lastNaturalGrowth = normalized.lastNaturalGrowth || normalized.extractedAt;
+    normalized.ownerLevelAtExtraction = normalized.ownerLevelAtExtraction || 1;
+    normalized.growthVarianceSeed = normalized.growthVarianceSeed || Math.random();
+
+    return normalized;
+  }
+
+  /**
+   * Check if shadow ID is valid
+   * @param {string} id - Shadow ID to validate
+   * @returns {boolean} - True if valid
+   */
+  isValidShadowId(id) {
+    return id && typeof id === 'string' && id.trim().length > 0;
+  }
+
+  // ============================================================================
+  // STORAGE 2.4 CACHE MANAGEMENT HELPERS
+  // ============================================================================
+
+  /**
+   * Update memory cache with shadow (LRU behavior)
+   * Uses BdAPI patterns: Efficient cache management, size limits
+   * Operations:
+   * 1. Validate shadow input (guard clause)
+   * 2. Add to recentCache (LRU eviction)
+   * 3. Limit cache size to prevent memory issues
+   * @param {Object} shadow - Shadow object to cache
+   */
+  updateCache(shadow) {
+    // Guard clause: Validate input
+    if (!shadow || !shadow.id) {
+      this.debugError('CACHE', 'Cannot update cache: invalid shadow', { shadow });
+      return;
+    }
+
+    // Add to recent cache (LRU)
+    if (this.recentCache.has(shadow.id)) {
+      // Move to end (most recently used)
+      this.recentCache.delete(shadow.id);
+    }
+    this.recentCache.set(shadow.id, shadow);
+
+    // Evict oldest if recent cache limit reached
+    if (this.recentCache.size > this.cacheLimit) {
+      const firstKey = this.recentCache.keys().next().value;
+      this.recentCache.delete(firstKey);
+      this.debugLog('CACHE', 'Evicted oldest from recent cache', { evictedId: firstKey });
+    }
+  }
+
+  /**
+   * Clear all memory caches
+   * Operations:
+   * 1. Clear recent cache
+   * 2. Clear aggregation cache
+   * 3. Reset cache timestamps
+   */
+  clearCache() {
+    this.recentCache.clear();
+    this.aggregatedPowerCache = null;
+    this.aggregatedPowerCacheTime = null;
+    this.debugLog('CACHE', 'All caches cleared');
+  }
+
+  /**
+   * Get cache statistics
+   * @returns {Object} - Cache statistics
+   */
+  getCacheStats() {
+    return {
+      recentCache: {
+        size: this.recentCache.size,
+        limit: this.cacheLimit,
+      },
+      aggregatedPowerCache: {
+        cached: this.aggregatedPowerCache !== null,
+        age: this.aggregatedPowerCacheTime ? Date.now() - this.aggregatedPowerCacheTime : null,
+      },
+    };
+  }
+
+  // ============================================================================
+  // STORAGE 2.5 UTILITY HELPERS
+  // ============================================================================
+
+  /**
+   * Format combat time for display
+   * @param {number} seconds - Combat time in seconds
+   * @returns {string} - Formatted time string
+   */
+  formatCombatTime(seconds) {
+    if (!seconds || seconds < 0) return '0s';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = Math.floor(seconds % 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    }
+    if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    }
+    return `${secs}s`;
+  }
+
+  /**
+   * Calculate shadow power from effective stats
+   * @param {Object} effectiveStats - Effective stats object
+   * @param {number} level - Shadow level (optional multiplier)
+   * @returns {number} - Total power value
+   */
+  calculateShadowPower(effectiveStats, level = 1) {
+    if (!effectiveStats) return 0;
+
+    const totalStats =
+      (effectiveStats.strength || 0) +
+      (effectiveStats.agility || 0) +
+      (effectiveStats.intelligence || 0) +
+      (effectiveStats.vitality || 0) +
+      (effectiveStats.perception || 0);
+
+    return Math.floor(totalStats * level);
+  }
+
+  /**
+   * Check if cache is expired based on TTL
+   * @param {number} cacheTime - Cache timestamp
+   * @param {number} ttl - Time to live in milliseconds
+   * @returns {boolean} - True if expired
+   */
+  isCacheExpired(cacheTime, ttl = this.cacheTTL) {
+    if (!cacheTime) return true;
+    return Date.now() - cacheTime >= ttl;
+  }
+
+  /**
+   * Deep clone shadow object (prevents mutation)
+   * @param {Object} shadow - Shadow object to clone
+   * @returns {Object} - Cloned shadow object
+   */
+  cloneShadow(shadow) {
+    if (!shadow) return null;
+    try {
+      return JSON.parse(JSON.stringify(shadow));
+    } catch (error) {
+      this.debugError('UTILITY', 'Failed to clone shadow', error);
+      // Fallback: shallow clone
+      return { ...shadow };
+    }
+  }
+
+  // ============================================================================
+  // STORAGE SECTION 3: MAJOR OPERATIONS
+  // ============================================================================
+
+  // ============================================================================
+  // STORAGE 3.1 DATABASE INITIALIZATION
   // ============================================================================
 
   /**
    * Initialize IndexedDB database
    * Operations:
-   * 1. Open database with version
-   * 2. Create object store if doesn't exist
-   * 3. Create indexes for fast queries
-   * 4. Handle version upgrades
+   * 1. Check IndexedDB support
+   * 2. Open database with version
+   * 3. Create object store if doesn't exist
+   * 4. Create indexes for fast queries
+   * 5. Handle version upgrades
    */
   async init() {
     return new Promise((resolve, reject) => {
       if (!window.indexedDB) {
-        console.warn('ShadowStorageManager: IndexedDB not supported, falling back to localStorage');
-        reject(new Error('IndexedDB not supported'));
+        const error = new Error('IndexedDB not supported');
+        this.debugError('INIT', 'IndexedDB not supported, falling back to localStorage', error);
+        reject(error);
         return;
       }
+
+      this.debugLog('INIT', 'Opening IndexedDB', { dbName: this.dbName, version: this.dbVersion });
 
       const request = indexedDB.open(this.dbName, this.dbVersion);
 
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to open database', request.error);
+        this.debugError('INIT', 'Failed to open database', request.error);
         reject(request.error);
       };
 
       request.onsuccess = () => {
         this.db = request.result;
+        this.debugLog('INIT', 'Database opened successfully', { dbName: this.dbName });
         resolve(this.db);
       };
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
         const oldVersion = event.oldVersion;
+
+        this.debugLog('INIT', 'Database upgrade needed', {
+          oldVersion,
+          newVersion: this.dbVersion,
+        });
 
         // Create object store if it doesn't exist (v1)
         if (!db.objectStoreNames.contains(this.storeName)) {
@@ -230,6 +594,8 @@ class ShadowStorageManager {
           objectStore.createIndex('strength', 'strength', { unique: false });
           objectStore.createIndex('extractedAt', 'extractedAt', { unique: false });
           objectStore.createIndex('rank_role', ['rank', 'role'], { unique: false });
+
+          this.debugLog('INIT', 'Created object store and indexes', { storeName: this.storeName });
         }
 
         // Add new indices for v2 (natural growth system)
@@ -244,31 +610,37 @@ class ShadowStorageManager {
           if (!objectStore.indexNames.contains('totalCombatTime')) {
             objectStore.createIndex('totalCombatTime', 'totalCombatTime', { unique: false });
           }
+
+          this.debugLog('INIT', 'Added v2 indexes for natural growth', { oldVersion });
         }
       };
     });
   }
 
   // ============================================================================
-  // MIGRATION FROM LOCALSTORAGE
+  // STORAGE 3.2 MIGRATION FROM LOCALSTORAGE
   // ============================================================================
 
   /**
    * Migrate shadows from localStorage to IndexedDB
    * Operations:
-   * 1. Load old data from localStorage
-   * 2. Initialize IndexedDB if not already done
-   * 3. Batch save all shadows to IndexedDB
-   * 4. Mark migration as complete
-   * 5. Keep localStorage as backup for 1 version
+   * 1. Check if migration already completed
+   * 2. Load old data from BdApi.Data
+   * 3. Initialize IndexedDB if not already done
+   * 4. Batch save all shadows to IndexedDB
+   * 5. Mark migration as complete in BdApi.Data
+   * 6. Keep localStorage as backup for 1 version
    */
   async migrateFromLocalStorage() {
     if (this.migrationCompleted) {
+      this.debugLog('MIGRATION', 'Migration already completed, skipping');
       return { migrated: false, reason: 'Already migrated' };
     }
 
     try {
-      // Load old data
+      this.debugLog('MIGRATION', 'Starting migration from localStorage to IndexedDB');
+
+      // Load old data using BdApi.Data
       const oldData = BdApi.Data.load('ShadowArmy', 'settings');
       if (
         !oldData ||
@@ -279,8 +651,11 @@ class ShadowStorageManager {
         this.migrationCompleted = true;
         // Persist migration flag to stable storage
         BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
+        this.debugLog('MIGRATION', 'No data to migrate');
         return { migrated: false, reason: 'No data to migrate' };
       }
+
+      this.debugLog('MIGRATION', 'Found shadows to migrate', { count: oldData.shadows.length });
 
       // Ensure database is initialized
       if (!this.db) {
@@ -294,30 +669,47 @@ class ShadowStorageManager {
       this.migrationCompleted = true;
       BdApi.Data.save('ShadowArmy', 'migrationCompleted', true);
 
+      this.debugLog('MIGRATION', 'Migration completed successfully', {
+        migrated,
+        total: oldData.shadows.length,
+      });
+
       return {
         migrated: true,
         count: migrated,
         shadows: oldData.shadows.length,
       };
     } catch (error) {
-      console.error('ShadowStorageManager: Migration failed', error);
+      this.debugError('MIGRATION', 'Migration failed', error);
       return { migrated: false, error: error.message };
     }
   }
 
   // ============================================================================
-  // SHADOW OPERATIONS
+  // STORAGE 3.3 SHADOW OPERATIONS
   // ============================================================================
 
   /**
    * Save a single shadow to IndexedDB
+   * Uses BdAPI patterns: Input validation, error handling, cache management
    * Operations:
-   * 1. Open transaction in readwrite mode
-   * 2. Add shadow to object store
-   * 3. Update memory cache if favorite or recent
-   * 4. Return success status
+   * 1. Validate shadow object (guard clause)
+   * 2. Ensure database initialized
+   * 3. Open transaction in readwrite mode
+   * 4. Add/update shadow in object store
+   * 5. Update memory cache (favorite/recent)
+   * 6. Handle transaction errors
+   * 7. Return success status with shadow
    */
   async saveShadow(shadow) {
+    // Guard clause: Validate input
+    if (!shadow || !shadow.id) {
+      const error = new Error('Invalid shadow object: missing id');
+      this.debugError('SAVE', 'Cannot save shadow: invalid input', error);
+      throw error;
+    }
+
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -327,14 +719,23 @@ class ShadowStorageManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.put(shadow);
 
+      // Transaction error handler (catches all transaction errors)
+      transaction.onerror = () => {
+        this.debugError('SAVE', 'Transaction failed while saving shadow', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      // Request success handler
       request.onsuccess = () => {
-        // Update cache if favorite or recent
+        // Update cache (recent cache - optimize memory usage)
         this.updateCache(shadow);
+        this.debugLog('SAVE', 'Shadow saved successfully', { id: shadow.id, rank: shadow.rank });
         resolve({ success: true, shadow });
       };
 
+      // Request error handler (fallback)
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to save shadow', request.error);
+        this.debugError('SAVE', 'Failed to save shadow', request.error);
         reject(request.error);
       };
     });
@@ -342,21 +743,28 @@ class ShadowStorageManager {
 
   /**
    * Get a single shadow by ID
+   * Uses BdAPI patterns: Cache-first lookup, proper error handling
    * Operations:
-   * 1. Check memory cache first (fast path)
-   * 2. Query IndexedDB if not in cache
-   * 3. Update cache with result
-   * 4. Return shadow object
+   * 1. Validate ID input (guard clause)
+   * 2. Check memory cache first (fast path - O(1))
+   * 3. Query IndexedDB if not in cache
+   * 4. Update cache with result (LRU behavior)
+   * 5. Return shadow object or null if not found
    */
   async getShadow(id) {
-    // Check cache first
-    if (this.favoriteCache.has(id)) {
-      return this.favoriteCache.get(id);
+    // Guard clause: Validate input
+    if (!id) {
+      this.debugError('GET', 'Cannot get shadow: missing id', null);
+      return null;
     }
+
+    // Fast path: Check cache first (O(1) lookup)
     if (this.recentCache.has(id)) {
+      this.debugLog('GET', 'Shadow found in recent cache', { id });
       return this.recentCache.get(id);
     }
 
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -366,33 +774,52 @@ class ShadowStorageManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.get(id);
 
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('GET', 'Transaction failed while getting shadow', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      // Request success handler
       request.onsuccess = () => {
         const shadow = request.result;
         if (shadow) {
+          // Update cache for future lookups (LRU behavior)
           this.updateCache(shadow);
+          this.debugLog('GET', 'Shadow retrieved from IndexedDB', { id, rank: shadow.rank });
+        } else {
+          this.debugLog('GET', 'Shadow not found in IndexedDB', { id });
         }
         resolve(shadow || null);
       };
 
+      // Request error handler (fallback)
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to get shadow', request.error);
+        this.debugError('GET', 'Failed to get shadow', request.error);
         reject(request.error);
       };
     });
   }
 
   /**
-   * Save multiple shadows in batch (for migration)
+   * Save multiple shadows in batch (optimized for migration)
+   * Uses BdAPI patterns: Batch operations, error aggregation, progress tracking
    * Operations:
-   * 1. Open transaction in readwrite mode
-   * 2. Add all shadows to object store
-   * 3. Return count of saved shadows
+   * 1. Validate input array (guard clause)
+   * 2. Ensure database initialized
+   * 3. Open single transaction for all operations (efficient)
+   * 4. Add all shadows to object store in batch
+   * 5. Track completion and errors
+   * 6. Return count of successfully saved shadows
    */
   async saveShadowsBatch(shadows) {
-    if (!shadows || shadows.length === 0) {
+    // Guard clause: Validate input
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
+      this.debugLog('BATCH_SAVE', 'No shadows to save', { count: 0 });
       return 0;
     }
 
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -402,34 +829,74 @@ class ShadowStorageManager {
       const store = transaction.objectStore(this.storeName);
       let completed = 0;
       let errors = 0;
+      const total = shadows.length;
 
-      shadows.forEach((shadow) => {
+      // Transaction error handler (catches all transaction errors)
+      transaction.onerror = () => {
+        this.debugError('BATCH_SAVE', 'Transaction failed during batch save', transaction.error);
+        reject(transaction.error);
+      };
+
+      // Transaction complete handler (all operations finished)
+      transaction.oncomplete = () => {
+        this.debugLog('BATCH_SAVE', 'Batch save transaction completed', {
+          completed,
+          errors,
+          total,
+          successRate: `${((completed / total) * 100).toFixed(1)}%`,
+        });
+        resolve(completed);
+      };
+
+      // Process each shadow in batch
+      shadows.forEach((shadow, index) => {
+        // Validate shadow before saving
+        if (!shadow || !shadow.id) {
+          errors++;
+          this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index, shadow });
+          if (completed + errors === total) {
+            // All processed, but transaction still running - wait for oncomplete
+          }
+          return;
+        }
+
         const request = store.put(shadow);
+
         request.onsuccess = () => {
           completed++;
-          if (completed + errors === shadows.length) {
-            resolve(completed);
-          }
+          // Don't resolve here - wait for transaction.oncomplete
         };
+
         request.onerror = () => {
           errors++;
-          console.error('ShadowStorageManager: Failed to save shadow in batch', request.error);
-          if (completed + errors === shadows.length) {
-            resolve(completed);
-          }
+          this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, {
+            index,
+            id: shadow.id,
+            error: request.error,
+          });
+          // Don't reject here - continue with other shadows
         };
       });
+
+      // Edge case: If all shadows are invalid, transaction completes immediately
+      if (errors === total) {
+        // Transaction will still fire oncomplete, which will resolve
+      }
     });
   }
 
   /**
-   * Get shadows with pagination and filters
+   * Get shadows with pagination and filters (optimized with indexes)
+   * Uses BdAPI patterns: Indexed queries, efficient filtering, proper error handling
    * Operations:
-   * 1. Open transaction in readonly mode
-   * 2. Apply filters (rank, role, etc.)
-   * 3. Sort by specified field
-   * 4. Apply pagination (offset, limit)
-   * 5. Return array of shadows
+   * 1. Validate input parameters (guard clauses)
+   * 2. Ensure database initialized
+   * 3. Select optimal index based on filters (rank, role, rank_role)
+   * 4. Open cursor on selected index
+   * 5. Apply filters during cursor iteration (efficient)
+   * 6. Sort results in memory (if needed)
+   * 7. Apply pagination (offset, limit)
+   * 8. Return filtered and paginated array
    */
   async getShadows(
     filters = {},
@@ -438,6 +905,15 @@ class ShadowStorageManager {
     sortBy = 'extractedAt',
     sortOrder = 'desc'
   ) {
+    // Guard clause: Validate parameters
+    if (offset < 0) offset = 0;
+    if (limit < 1) limit = 50;
+    if (limit > 10000) {
+      this.debugLog('GET_SHADOWS', 'Limit too large, capping at 10000', { requested: limit });
+      limit = 10000;
+    }
+
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -445,34 +921,55 @@ class ShadowStorageManager {
     return new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readonly');
       const store = transaction.objectStore(this.storeName);
+
+      // Select optimal index based on filters (indexed queries are faster)
       let index = store;
 
-      // Use index if filtering by rank or role
       if (filters.rank && filters.role) {
-        index = store.index('rank_role');
+        // Composite index for rank + role (most specific)
+        try {
+          index = store.index('rank_role');
+        } catch (e) {
+          this.debugError('GET_SHADOWS', 'rank_role index not found, using object store', e);
+        }
       } else if (filters.rank) {
-        index = store.index('rank');
+        // Rank index (common filter)
+        try {
+          index = store.index('rank');
+        } catch (e) {
+          this.debugError('GET_SHADOWS', 'rank index not found, using object store', e);
+        }
       } else if (filters.role) {
-        index = store.index('role');
-      } else if (filters.sortBy) {
-        index = store.index(filters.sortBy);
+        // Role index (common filter)
+        try {
+          index = store.index('role');
+        } catch (e) {
+          this.debugError('GET_SHADOWS', 'role index not found, using object store', e);
+        }
       }
 
       const request = index.openCursor();
       const results = [];
 
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('GET_SHADOWS', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      // Cursor success handler
       request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor) {
           const shadow = cursor.value;
 
-          // Apply filters
+          // Apply filters (early exit for performance)
           let matches = true;
           if (filters.rank && shadow.rank !== filters.rank) matches = false;
           if (filters.role && shadow.role !== filters.role) matches = false;
-          if (filters.minLevel && shadow.level < filters.minLevel) matches = false;
-          if (filters.maxLevel && shadow.level > filters.maxLevel) matches = false;
-          if (filters.minStrength && shadow.strength < filters.minStrength) matches = false;
+          if (filters.minLevel && (shadow.level || 1) < filters.minLevel) matches = false;
+          if (filters.maxLevel && (shadow.level || 1) > filters.maxLevel) matches = false;
+          if (filters.minStrength && (shadow.strength || 0) < filters.minStrength) matches = false;
 
           if (matches) {
             results.push(shadow);
@@ -480,7 +977,7 @@ class ShadowStorageManager {
 
           cursor.continue();
         } else {
-          // Sort results
+          // All shadows processed - sort and paginate
           results.sort((a, b) => {
             const aVal = a[sortBy] || 0;
             const bVal = b[sortBy] || 0;
@@ -489,12 +986,22 @@ class ShadowStorageManager {
 
           // Apply pagination
           const paginated = results.slice(offset, offset + limit);
+
+          this.debugLog('GET_SHADOWS', 'Query completed', {
+            total: results.length,
+            returned: paginated.length,
+            offset,
+            limit,
+            filters,
+          });
+
           resolve(paginated);
         }
       };
 
+      // Request error handler (fallback)
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to get shadows', request.error);
+        this.debugError('GET_SHADOWS', 'Failed to open cursor', request.error);
         reject(request.error);
       };
     });
@@ -552,7 +1059,7 @@ class ShadowStorageManager {
               effectiveStats.agility +
               effectiveStats.intelligence +
               effectiveStats.vitality +
-              effectiveStats.luck) /
+              effectiveStats.perception) /
             5;
 
           const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
@@ -580,11 +1087,25 @@ class ShadowStorageManager {
           // Calculate averages
           stats.avgLevel = stats.total > 0 ? Math.floor(levelSum / stats.total) : 0;
           stats.totalCombatTime = Math.floor(stats.totalCombatTime);
+          this.debugLog('GET_ARMY_STATS', 'Statistics calculated', {
+            total: stats.total,
+            avgLevel: stats.avgLevel,
+          });
           resolve(stats);
         }
       };
 
-      request.onerror = () => reject(request.error);
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('GET_ARMY_STATS', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      // Request error handler
+      request.onerror = () => {
+        this.debugError('GET_ARMY_STATS', 'Failed to get army statistics', request.error);
+        reject(request.error);
+      };
     });
   }
 
@@ -611,18 +1132,22 @@ class ShadowStorageManager {
       intelligence:
         (base.intelligence || 0) + (growth.intelligence || 0) + (naturalGrowth.intelligence || 0),
       vitality: (base.vitality || 0) + (growth.vitality || 0) + (naturalGrowth.vitality || 0),
-      luck: (base.luck || 0) + (growth.luck || 0) + (naturalGrowth.luck || 0),
+      perception:
+        (base.perception || 0) + (growth.perception || 0) + (naturalGrowth.perception || 0),
     };
   }
 
   /**
-   * Get total shadow count
+   * Get total shadow count (optimized with IndexedDB count())
+   * Uses BdAPI patterns: Efficient counting, proper error handling
    * Operations:
-   * 1. Open transaction in readonly mode
-   * 2. Count all records in object store
-   * 3. Return count
+   * 1. Ensure database initialized
+   * 2. Open transaction in readonly mode
+   * 3. Use IndexedDB count() method (O(1) operation, no cursor needed)
+   * 4. Return total count
    */
   async getTotalCount() {
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -632,12 +1157,22 @@ class ShadowStorageManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.count();
 
-      request.onsuccess = () => {
-        resolve(request.result);
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('GET_TOTAL_COUNT', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
       };
 
+      // Request success handler
+      request.onsuccess = () => {
+        const count = request.result;
+        this.debugLog('GET_TOTAL_COUNT', 'Count retrieved', { count });
+        resolve(count);
+      };
+
+      // Request error handler
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to get count', request.error);
+        this.debugError('GET_TOTAL_COUNT', 'Failed to get count', request.error);
         reject(request.error);
       };
     });
@@ -645,13 +1180,24 @@ class ShadowStorageManager {
 
   /**
    * Delete a shadow by ID
+   * Uses BdAPI patterns: Input validation, cache cleanup, proper error handling
    * Operations:
-   * 1. Open transaction in readwrite mode
-   * 2. Delete shadow from object store
-   * 3. Remove from cache
-   * 4. Return success status
+   * 1. Validate ID input (guard clause)
+   * 2. Ensure database initialized
+   * 3. Open transaction in readwrite mode
+   * 4. Delete shadow from object store
+   * 5. Remove from all caches (favorite, recent)
+   * 6. Return success status
    */
   async deleteShadow(id) {
+    // Guard clause: Validate input
+    if (!id) {
+      const error = new Error('Invalid shadow ID: missing id');
+      this.debugError('DELETE', 'Cannot delete shadow: invalid input', error);
+      throw error;
+    }
+
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
@@ -661,92 +1207,272 @@ class ShadowStorageManager {
       const store = transaction.objectStore(this.storeName);
       const request = store.delete(id);
 
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('DELETE', 'Transaction failed while deleting shadow', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      // Request success handler
       request.onsuccess = () => {
-        // Remove from cache
-        this.favoriteCache.delete(id);
+        // Remove from cache (cleanup)
         this.recentCache.delete(id);
+        this.debugLog('DELETE', 'Shadow deleted successfully', { id });
         resolve({ success: true });
       };
 
+      // Request error handler (fallback)
       request.onerror = () => {
-        console.error('ShadowStorageManager: Failed to delete shadow', request.error);
+        this.debugError('DELETE', 'Failed to delete shadow', request.error);
         reject(request.error);
       };
     });
   }
 
   // ============================================================================
-  // FAVORITE SHADOWS
+  // Note: Favorite shadows removed - widgets automatically show top 7 generals by power
+  // ============================================================================
+
+  // ============================================================================
+  // STORAGE 3.3 BATCH OPERATIONS FOR PERFORMANCE
   // ============================================================================
 
   /**
-   * Get favorite shadows (from memory cache)
+   * Batch update shadows (optimized for compression operations)
+   * Uses single transaction for multiple updates (much faster than delete+save)
    * Operations:
-   * 1. Return all shadows in favoriteCache
-   * 2. Cache is updated when shadows are loaded
+   * 1. Validate input array (guard clause)
+   * 2. Ensure database initialized
+   * 3. Open single transaction for all updates
+   * 4. Update all shadows in batch
+   * 5. Track completion and errors
+   * 6. Return count of successfully updated shadows
+   * @param {Array<Object>} shadows - Array of shadow objects to update
+   * @returns {Promise<number>} - Count of successfully updated shadows
    */
-  async getFavoriteShadows(favoriteIds) {
-    if (!favoriteIds || favoriteIds.length === 0) {
-      return [];
+  async updateShadowsBatch(shadows) {
+    // Guard clause: Validate input
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
+      this.debugLog('BATCH_UPDATE', 'No shadows to update', { count: 0 });
+      return 0;
     }
 
-    const favorites = [];
-    const missingIds = [];
-
-    // Get from cache
-    favoriteIds.forEach((id) => {
-      if (this.favoriteCache.has(id)) {
-        favorites.push(this.favoriteCache.get(id));
-      } else {
-        missingIds.push(id);
-      }
-    });
-
-    // Load missing favorites from IndexedDB
-    if (missingIds.length > 0) {
-      const promises = missingIds.map((id) => this.getShadow(id));
-      const loaded = await Promise.all(promises);
-      favorites.push(...loaded.filter(Boolean));
-    }
-
-    return favorites;
-  }
-
-  // ============================================================================
-  // AGGREGATION FOR PERFORMANCE
-  // ============================================================================
-
-  /**
-   * Get aggregated power for weak shadows (2+ ranks below user rank)
-   * Operations:
-   * 1. Check cache first (1 minute TTL)
-   * 2. Calculate weak rank threshold
-   * 3. Query IndexedDB for weak shadows
-   * 4. Sum total power
-   */
-  async getAggregatedPower(userRank, shadowRanks) {
-    // Check cache
-    if (this.aggregatedPowerCache && Date.now() - this.aggregatedPowerCacheTime < this.cacheTTL) {
-      return this.aggregatedPowerCache;
-    }
-
-    // Prevent concurrent execution
-    if (this._aggregatingPower) {
-      return this._aggregatingPower;
-    }
-
+    // Ensure database initialized
     if (!this.db) {
       await this.init();
     }
 
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      let completed = 0;
+      let errors = 0;
+      const total = shadows.length;
+
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError(
+          'BATCH_UPDATE',
+          'Transaction failed during batch update',
+          transaction.error
+        );
+        reject(transaction.error);
+      };
+
+      // Transaction complete handler
+      transaction.oncomplete = () => {
+        this.debugLog('BATCH_UPDATE', 'Batch update transaction completed', {
+          completed,
+          errors,
+          total,
+          successRate: `${((completed / total) * 100).toFixed(1)}%`,
+        });
+        resolve(completed);
+      };
+
+      // Process each shadow in batch
+      shadows.forEach((shadow, index) => {
+        // Guard clause: Validate shadow
+        if (!shadow || !shadow.id) {
+          errors++;
+          this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, { index, shadow });
+          return;
+        }
+
+        const request = store.put(shadow);
+
+        request.onsuccess = () => {
+          completed++;
+          // Remove from cache if exists
+          this.recentCache.delete(shadow.id);
+        };
+
+        request.onerror = () => {
+          errors++;
+          this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
+            index,
+            id: shadow.id,
+            error: request.error,
+          });
+        };
+      });
+    });
+  }
+
+  /**
+   * Batch delete shadows (optimized for essence conversion)
+   * Uses single transaction for multiple deletes (much faster than sequential)
+   * Operations:
+   * 1. Validate input array (guard clause)
+   * 2. Ensure database initialized
+   * 3. Open single transaction for all deletes
+   * 4. Delete all shadows in batch
+   * 5. Track completion and errors
+   * 6. Return count of successfully deleted shadows
+   * @param {Array<string>} shadowIds - Array of shadow IDs to delete
+   * @returns {Promise<number>} - Count of successfully deleted shadows
+   */
+  async deleteShadowsBatch(shadowIds) {
+    // Guard clause: Validate input
+    if (!shadowIds || !Array.isArray(shadowIds) || shadowIds.length === 0) {
+      this.debugLog('BATCH_DELETE', 'No shadows to delete', { count: 0 });
+      return 0;
+    }
+
+    // Ensure database initialized
+    if (!this.db) {
+      await this.init();
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readwrite');
+      const store = transaction.objectStore(this.storeName);
+      let completed = 0;
+      let errors = 0;
+      const total = shadowIds.length;
+
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError(
+          'BATCH_DELETE',
+          'Transaction failed during batch delete',
+          transaction.error
+        );
+        reject(transaction.error);
+      };
+
+      // Transaction complete handler
+      transaction.oncomplete = () => {
+        this.debugLog('BATCH_DELETE', 'Batch delete transaction completed', {
+          completed,
+          errors,
+          total,
+          successRate: `${((completed / total) * 100).toFixed(1)}%`,
+        });
+        resolve(completed);
+      };
+
+      // Process each shadow ID in batch
+      shadowIds.forEach((id, index) => {
+        // Guard clause: Validate ID
+        if (!id) {
+          errors++;
+          this.debugError('BATCH_DELETE', `Invalid shadow ID at index ${index}`, { index, id });
+          return;
+        }
+
+        const request = store.delete(id);
+
+        request.onsuccess = () => {
+          completed++;
+          // Remove from cache
+          this.recentCache.delete(id);
+        };
+
+        request.onerror = () => {
+          errors++;
+          this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
+            index,
+            id,
+            error: request.error,
+          });
+        };
+      });
+    });
+  }
+
+  // ============================================================================
+  // STORAGE 3.4 AGGREGATION FOR PERFORMANCE
+  // ============================================================================
+
+  /**
+   * Get aggregated power for weak shadows (2+ ranks below user rank)
+   * Uses BdAPI patterns: Cache-first with TTL, concurrent execution prevention, indexed queries
+   * Operations:
+   * 1. Validate input parameters (guard clauses)
+   * 2. Check cache first (1 minute TTL) - fast path
+   * 3. Prevent concurrent execution (lock mechanism)
+   * 4. Calculate weak rank threshold (2+ ranks below user)
+   * 5. Query IndexedDB using rank index (batch queries)
+   * 6. Sum total power and count
+   * 7. Update cache and resolve
+   * @param {string} userRank - User's current rank
+   * @param {string[]} shadowRanks - Array of all shadow ranks in order
+   * @returns {Promise<Object>} - { totalPower, totalCount, ranks, timestamp }
+   */
+  async getAggregatedPower(userRank, shadowRanks) {
+    // Guard clause: Validate input
+    if (!userRank || !shadowRanks || !Array.isArray(shadowRanks)) {
+      const error = new Error('Invalid parameters: userRank and shadowRanks required');
+      this.debugError('GET_AGGREGATED_POWER', 'Invalid parameters', error);
+      return { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
+    }
+
+    // Fast path: Check cache first (uses helper from STORAGE SECTION 2.5)
+    if (
+      this.aggregatedPowerCache &&
+      !this.isCacheExpired(this.aggregatedPowerCacheTime, this.cacheTTL)
+    ) {
+      this.debugLog('GET_AGGREGATED_POWER', 'Returning cached aggregated power', {
+        totalPower: this.aggregatedPowerCache.totalPower,
+        totalCount: this.aggregatedPowerCache.totalCount,
+      });
+      return this.aggregatedPowerCache;
+    }
+
+    // Prevent concurrent execution (avoid duplicate queries)
+    if (this._aggregatingPower) {
+      this.debugLog('GET_AGGREGATED_POWER', 'Waiting for concurrent aggregation to complete');
+      return this._aggregatingPower;
+    }
+
+    // Ensure database initialized
+    if (!this.db) {
+      await this.init();
+    }
+
+    // Calculate weak rank threshold (2+ ranks below user rank)
     const userRankIndex = shadowRanks.indexOf(userRank);
+    if (userRankIndex === -1) {
+      this.debugError('GET_AGGREGATED_POWER', 'User rank not found in shadowRanks array', {
+        userRank,
+        shadowRanks,
+      });
+      return { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
+    }
+
     const weakRankThreshold = Math.max(0, userRankIndex - 2);
     const weakRanks = shadowRanks.slice(0, weakRankThreshold + 1);
 
+    // Guard clause: No weak ranks to aggregate
     if (weakRanks.length === 0) {
-      return { totalPower: 0, totalCount: 0, ranks: [] };
+      const result = { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
+      this.aggregatedPowerCache = result;
+      this.aggregatedPowerCacheTime = Date.now();
+      return result;
     }
 
+    // Create aggregation promise (prevents concurrent execution)
     this._aggregatingPower = new Promise((resolve, reject) => {
       const transaction = this.db.transaction([this.storeName], 'readonly');
       const store = transaction.objectStore(this.storeName);
@@ -755,41 +1481,81 @@ class ShadowStorageManager {
       let totalPower = 0;
       let totalCount = 0;
       let completed = 0;
+      let errors = 0;
 
+      // Transaction error handler
+      transaction.onerror = () => {
+        this.debugError('GET_AGGREGATED_POWER', 'Transaction failed', transaction.error);
+        this._aggregatingPower = null;
+        reject(transaction.error);
+      };
+
+      // Process each weak rank in parallel
       weakRanks.forEach((rank) => {
         const request = rankIndex.getAll(rank);
+
         request.onsuccess = () => {
           const shadows = request.result || [];
           shadows.forEach((shadow) => {
             totalPower += shadow.strength || 0;
             totalCount++;
           });
+
           completed++;
-          if (completed === weakRanks.length) {
+
+          // Check if all ranks processed
+          if (completed + errors === weakRanks.length) {
             const result = {
               totalPower,
               totalCount,
               ranks: weakRanks,
               timestamp: Date.now(),
             };
+
+            // Update cache
             this.aggregatedPowerCache = result;
             this.aggregatedPowerCacheTime = Date.now();
             this._aggregatingPower = null;
+
+            this.debugLog('GET_AGGREGATED_POWER', 'Aggregation completed', {
+              totalPower,
+              totalCount,
+              ranksProcessed: weakRanks.length,
+            });
+
             resolve(result);
           }
         };
+
         request.onerror = () => {
-          completed++;
-          if (completed === weakRanks.length) {
+          errors++;
+          this.debugError(
+            'GET_AGGREGATED_POWER',
+            `Failed to get shadows for rank ${rank}`,
+            request.error
+          );
+
+          // Continue with other ranks even if one fails
+          if (completed + errors === weakRanks.length) {
             const result = {
               totalPower,
               totalCount,
               ranks: weakRanks,
               timestamp: Date.now(),
             };
+
+            // Update cache even with partial results
             this.aggregatedPowerCache = result;
             this.aggregatedPowerCacheTime = Date.now();
             this._aggregatingPower = null;
+
+            this.debugLog('GET_AGGREGATED_POWER', 'Aggregation completed with errors', {
+              totalPower,
+              totalCount,
+              errors,
+              ranksProcessed: weakRanks.length,
+            });
+
             resolve(result);
           }
         };
@@ -800,127 +1566,218 @@ class ShadowStorageManager {
   }
 
   // ============================================================================
-  // CACHE MANAGEMENT
+  // 3.5.1 QUERY OPTIMIZATION HELPERS (Indexed Queries)
   // ============================================================================
+  // Note: Cache management helpers are in STORAGE SECTION 2.4
+  // Note: Shadow data helpers are in STORAGE SECTION 2.2
+  // These are optimized query methods that use IndexedDB indexes directly
 
   /**
-   * Update memory cache with shadow
+   * Get shadows by rank using index directly (FAST for millions)
+   * Query optimization: Uses IndexedDB index instead of loading all then filtering
    * Operations:
-   * 1. Add to favoriteCache if favorite (with limit enforcement)
-   * 2. Add to recentCache (LRU eviction)
-   * 3. Limit cache size separately for each cache
-   */
-  updateCache(shadow) {
-    // Guard: ensure shadow and shadow.id exist
-    if (!shadow || !shadow.id) return;
-
-    // Add to favorite cache if favorite
-    if (this.favoriteIds.has(shadow.id)) {
-      // Update existing favorite or add new one
-      if (this.favoriteCache.has(shadow.id)) {
-        // Update existing favorite (move to end for LRU)
-        this.favoriteCache.delete(shadow.id);
-      } else {
-        // Evict oldest if favorite cache limit reached
-        if (this.favoriteCache.size >= this.favoriteLimit) {
-          const firstKey = this.favoriteCache.keys().next().value;
-          this.favoriteCache.delete(firstKey);
-        }
-      }
-      this.favoriteCache.set(shadow.id, shadow);
-    } else {
-      // Remove from favorite cache if no longer favorite
-      if (this.favoriteCache.has(shadow.id)) {
-        this.favoriteCache.delete(shadow.id);
-      }
-    }
-
-    // Add to recent cache (LRU)
-    if (this.recentCache.has(shadow.id)) {
-      // Move to end (most recently used)
-      this.recentCache.delete(shadow.id);
-    }
-    this.recentCache.set(shadow.id, shadow);
-
-    // Evict oldest if recent cache limit reached
-    if (this.recentCache.size > this.cacheLimit) {
-      const firstKey = this.recentCache.keys().next().value;
-      this.recentCache.delete(firstKey);
-    }
-  }
-
-  /**
-   * Set favorite shadow IDs for cache management
-   * @param {string[]} favoriteIds - Array of favorite shadow IDs
-   */
-  setFavoriteIds(favoriteIds) {
-    this.favoriteIds = new Set(favoriteIds || []);
-    // Clean up favoriteCache to remove non-favorites
-    for (const id of this.favoriteCache.keys()) {
-      if (!this.favoriteIds.has(id)) {
-        this.favoriteCache.delete(id);
-      }
-    }
-  }
-
-  /**
-   * Clear all caches
-   */
-  clearCache() {
-    this.favoriteCache.clear();
-    this.recentCache.clear();
-    this.aggregatedPowerCache = null;
-    this.aggregatedPowerCacheTime = null;
-  }
-
-  // ============================================================================
-  // UTILITY METHODS
-  // ============================================================================
-
-  /**
-   * Get shadows by rank
+   * 1. Use rank index for fast lookup
+   * 2. Return all shadows with matching rank
+   * @param {string} rank - Shadow rank to filter by
+   * @returns {Promise<Array>} - Array of shadows with matching rank
    */
   async getShadowsByRank(rank) {
-    return this.getShadows({ rank }, 0, 10000);
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const index = store.index('rank');
+      const request = index.getAll(rank); // Direct index query - FAST!
+
+      transaction.onerror = () => {
+        this.debugError('GET_BY_RANK', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      request.onsuccess = () => {
+        const shadows = request.result || [];
+        this.debugLog('GET_BY_RANK', 'Shadows retrieved by rank', { rank, count: shadows.length });
+        resolve(shadows);
+      };
+
+      request.onerror = () => {
+        this.debugError('GET_BY_RANK', 'Failed to get shadows by rank', request.error);
+        reject(request.error);
+      };
+    });
   }
 
   /**
-   * Get shadows by role
+   * Get top N shadows by power (using strength index)
+   * Query optimization: Uses IndexedDB index with cursor for efficient sorting
+   * Operations:
+   * 1. Use strength index for sorting
+   * 2. Return top N shadows by power
+   * @param {number} limit - Maximum number of shadows to return
+   * @returns {Promise<Array>} - Array of top shadows
+   */
+  async getTopShadowsByPower(limit = 100) {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const index = store.index('strength');
+      const request = index.openCursor(null, 'prev'); // Descending order
+
+      const results = [];
+
+      transaction.onerror = () => {
+        this.debugError('GET_TOP_POWER', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (cursor && results.length < limit) {
+          results.push(cursor.value);
+          cursor.continue();
+        } else {
+          this.debugLog('GET_TOP_POWER', 'Top shadows retrieved', { count: results.length, limit });
+          resolve(results);
+        }
+      };
+
+      request.onerror = () => {
+        this.debugError('GET_TOP_POWER', 'Failed to get top shadows by power', request.error);
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Get shadow count by rank (FAST aggregation)
+   * Query optimization: Uses IndexedDB count() method - very fast
+   * Operations:
+   * 1. Use rank index for fast counting
+   * 2. Return count of shadows with matching rank
+   * @param {string} rank - Shadow rank to count
+   * @returns {Promise<number>} - Count of shadows with matching rank
+   */
+  async getCountByRank(rank) {
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const index = store.index('rank');
+      const request = index.count(rank); // Direct count - VERY FAST!
+
+      transaction.onerror = () => {
+        this.debugError('GET_COUNT_BY_RANK', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      request.onsuccess = () => {
+        const count = request.result || 0;
+        this.debugLog('GET_COUNT_BY_RANK', 'Count retrieved by rank', { rank, count });
+        resolve(count);
+      };
+
+      request.onerror = () => {
+        this.debugError('GET_COUNT_BY_RANK', 'Failed to get count by rank', request.error);
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Get shadows by role using index (optimized query)
+   * Operations:
+   * 1. Use role index for fast lookup
+   * 2. Return all shadows with matching role
+   * @param {string} role - Shadow role to filter by
+   * @returns {Promise<Array>} - Array of shadows with matching role
    */
   async getShadowsByRole(role) {
-    return this.getShadows({ role }, 0, 10000);
+    if (!this.db) await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+      const roleIndex = store.index('role');
+      const request = roleIndex.getAll(role);
+
+      transaction.onerror = () => {
+        this.debugError('GET_BY_ROLE', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      request.onsuccess = () => {
+        const shadows = request.result || [];
+        this.debugLog('GET_BY_ROLE', 'Shadows retrieved by role', { role, count: shadows.length });
+        resolve(shadows);
+      };
+
+      request.onerror = () => {
+        this.debugError('GET_BY_ROLE', 'Failed to get shadows by role', request.error);
+        reject(request.error);
+      };
+    });
   }
 
+  // ============================================================================
+  // STORAGE 3.6 DATABASE CLEANUP
+  // ============================================================================
+
   /**
-   * Close database connection
+   * Close IndexedDB connection and cleanup
+   * Operations:
+   * 1. Close database connection
+   * 2. Clear all caches (via helper in STORAGE SECTION 2.4)
+   * 3. Reset database reference
    */
   close() {
     if (this.db) {
       this.db.close();
       this.db = null;
+      this.debugLog('CLOSE', 'Database connection closed');
     }
-    this.clearCache();
+    this.clearCache(); // Helper method from STORAGE SECTION 2.4
   }
 }
 
 // ================================================================================
 // MAIN PLUGIN CLASS - Shadow Army Management
 // ================================================================================
+
 module.exports = class ShadowArmy {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // SECTION 1: IMPORTS & DEPENDENCIES
+  // ============================================================================
+  // No external imports (BetterDiscord plugin)
+  // Uses: BdApi, IndexedDB, DOM APIs
+
+  // ============================================================================
+  // SECTION 2: CONFIGURATION & HELPERS
+  // ============================================================================
+
+  // ============================================================================
+  // 2.1 CONSTRUCTOR & INITIALIZATION
   // ============================================================================
 
   /**
    * Initialize ShadowArmy plugin with default settings and configuration
+   * Uses BdAPI patterns: Deep copy for settings, proper initialization order
    * Operations:
    * 1. Set up default settings (enabled, shadows array, extraction config)
-   * 2. Define shadow rank system (E through Shadow Monarch)
-   * 3. Define shadow roles with buffs and effects
-   * 4. Define stat weight templates for role-based stat generation
-   * 5. Initialize settings and solo plugin reference
+   * 2. Deep copy settings to prevent mutation (CRITICAL: prevents save corruption)
+   * 3. Define shadow rank system (E through Shadow Monarch)
+   * 4. Define shadow roles with buffs and effects (26 total: 8 humanoid + 18 magic beast)
+   * 5. Define stat weight templates for role-based stat generation
+   * 6. Initialize component references (storage, UI, solo plugin)
+   * 7. Initialize debug logging system (methods in SECTION 4)
    */
   constructor() {
+    // ============================================================================
+    // DEFAULT SETTINGS - Plugin Configuration
+    // ============================================================================
     this.defaultSettings = {
       enabled: true,
       shadows: [], // Array of shadow objects
@@ -936,7 +1793,7 @@ module.exports = class ShadowArmy {
         // Special ARISE event tuning
         specialBaseChance: 0.01, // 1% base
         specialIntMultiplier: 0.003, // +0.3% per INT
-        specialLuckMultiplier: 0.002, // +0.2% per Luck (perception proxy)
+        specialLuckMultiplier: 0.002, // +0.2% per Perception (perception proxy)
         specialMaxChance: 0.3, // 30% hard cap
         specialMaxPerDay: 5, // limit special events per day
         // Dungeon/Boss extraction limits (Solo Leveling lore: max 3 attempts per corpse)
@@ -956,8 +1813,8 @@ module.exports = class ShadowArmy {
         essence: 0, // Total essence accumulated
         lastConversionTime: null,
         conversionIntervalHours: 1, // Convert weakest shadows every hour
-        weakShadowThreshold: 0.3, // Bottom 30% by power are considered weak
-        minShadowsToKeep: 20, // Always keep at least 20 shadows (safety)
+        weakShadowThreshold: 0.1, // Bottom 10% by power are converted (regular cleanup)
+        minShadowsToKeep: 100, // Always keep at least 100 shadows (safety for large armies)
         essencePerShadow: {
           // Essence value by rank (higher rank = more essence)
           E: 1,
@@ -984,7 +1841,17 @@ module.exports = class ShadowArmy {
       },
     };
 
-    // Shadow ranks (matching Solo Leveling rank system)
+    // ============================================================================
+    // SETTINGS INITIALIZATION - Deep Copy to Prevent Mutation
+    // ============================================================================
+    // CRITICAL: Deep copy prevents defaultSettings from being modified by user changes
+    // This ensures defaultSettings always contains the original values for merging
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+
+    // ============================================================================
+    // SHADOW RANK SYSTEM - Solo Leveling Rank Hierarchy
+    // ============================================================================
+    // Shadow ranks matching Solo Leveling rank system (E through Shadow Monarch)
     this.shadowRanks = [
       'E',
       'D',
@@ -1001,7 +1868,12 @@ module.exports = class ShadowArmy {
       'Shadow Monarch',
     ];
 
-    // Shadow roles with their abilities and effects
+    // ============================================================================
+    // SHADOW ROLES SYSTEM - 26 Total Types (8 Humanoid + 18 Magic Beast)
+    // ============================================================================
+    // Shadow roles with their abilities, buffs, and effects
+    // Humanoid roles: Extracted from regular messages (100%)
+    // Magic Beast roles: Extracted from dungeons only (100%)
     this.shadowRoles = {
       tank: {
         name: 'Tank',
@@ -1012,7 +1884,7 @@ module.exports = class ShadowArmy {
       healer: {
         name: 'Healer',
         description: 'Restores HP and provides support',
-        buffs: { vitality: 0.15, luck: 0.1 }, // +15% VIT, +10% LUK per shadow
+        buffs: { vitality: 0.15, perception: 0.1 }, // +15% VIT, +10% PER per shadow
         effect: 'HP Regeneration', // Restores HP over time
       },
       mage: {
@@ -1048,8 +1920,8 @@ module.exports = class ShadowArmy {
       support: {
         name: 'Support',
         description: 'Buffs allies and provides utility',
-        buffs: { luck: 0.15, intelligence: 0.1 }, // +15% LUK, +10% INT per shadow
-        effect: 'Luck Amplification', // Increases luck-based bonuses
+        buffs: { perception: 0.15, intelligence: 0.1 }, // +15% PER, +10% INT per shadow
+        effect: 'Perception Amplification', // Increases perception-based bonuses
       },
       // ========================================================================
       // MAGIC BEAST ROLES - 100% DUNGEON-ONLY EXTRACTION
@@ -1174,7 +2046,7 @@ module.exports = class ShadowArmy {
       elf: {
         name: 'Elf',
         description: 'Ancient race - Magic mastery and precision',
-        buffs: { intelligence: 0.16, agility: 0.14, luck: 0.1 },
+        buffs: { intelligence: 0.16, agility: 0.14, perception: 0.1 },
         effect: 'Ancient Magic',
         isMagicBeast: true,
         family: 'ancient',
@@ -1230,6 +2102,9 @@ module.exports = class ShadowArmy {
       },
     };
 
+    // ============================================================================
+    // STAT WEIGHT TEMPLATES - Role-Based Stat Generation
+    // ============================================================================
     // Stat weight templates per role (used to generate per-shadow stats)
     // Higher weight = that role favors that stat more
     // EXTREME SPECIALIZATION: Strong stats are VERY strong, weak stats are VERY weak
@@ -1239,56 +2114,56 @@ module.exports = class ShadowArmy {
         agility: 0.3, // WEAK (slow, heavy armor)
         intelligence: 0.2, // VERY WEAK (brute)
         vitality: 1.5, // VERY STRONG (tank)
-        luck: 0.3, // WEAK
+        perception: 0.3, // WEAK
       },
       healer: {
         strength: 0.2, // VERY WEAK (support, not fighter)
         agility: 0.4, // WEAK
         intelligence: 1.3, // VERY STRONG (magic knowledge)
         vitality: 1.1, // STRONG (support endurance)
-        luck: 1.0, // STRONG (healing luck)
+        perception: 1.0, // STRONG (healing perception)
       },
       mage: {
         strength: 0.15, // EXTREMELY WEAK (glass cannon)
         agility: 0.5, // WEAK (not mobile)
         intelligence: 1.6, // EXTREMELY STRONG (magic power)
         vitality: 0.4, // WEAK (fragile)
-        luck: 0.6, // Below average
+        perception: 0.6, // Below average
       },
       assassin: {
         strength: 0.7, // Above average (needs damage)
         agility: 1.7, // EXTREMELY STRONG (speed/stealth)
         intelligence: 0.5, // WEAK (not thinker)
         vitality: 0.3, // VERY WEAK (glass cannon)
-        luck: 0.8, // Above average (crit)
+        perception: 0.8, // Above average (crit)
       },
       ranger: {
         strength: 0.6, // Below average
         agility: 1.3, // VERY STRONG (ranged mobility)
         intelligence: 1.0, // STRONG (tactical)
         vitality: 0.5, // WEAK (light armor)
-        luck: 0.8, // Above average (accuracy)
+        perception: 0.8, // Above average (accuracy)
       },
       knight: {
         strength: 1.1, // STRONG (balanced warrior)
         agility: 0.9, // Above average
         intelligence: 0.6, // Below average
         vitality: 1.1, // STRONG (armor)
-        luck: 0.5, // WEAK
+        perception: 0.5, // WEAK
       },
       berserker: {
         strength: 1.8, // EXTREMELY STRONG (raw power)
         agility: 0.7, // Below average (heavy weapons)
         intelligence: 0.15, // EXTREMELY WEAK (brute force)
         vitality: 0.5, // WEAK (reckless)
-        luck: 0.4, // WEAK
+        perception: 0.4, // WEAK
       },
       support: {
         strength: 0.25, // VERY WEAK (non-combatant)
         agility: 0.6, // Below average
         intelligence: 1.2, // VERY STRONG (strategy)
         vitality: 0.7, // Below average
-        luck: 1.4, // EXTREMELY STRONG (buffs)
+        perception: 1.4, // EXTREMELY STRONG (buffs)
       },
       // MAGIC BEAST STAT WEIGHTS - Dungeon-Only Shadows
       ant: {
@@ -1296,144 +2171,134 @@ module.exports = class ShadowArmy {
         agility: 1.2, // VERY STRONG (fast insect)
         intelligence: 0.4, // WEAK (instinct-driven)
         vitality: 0.9, // Above average (exoskeleton)
-        luck: 0.5, // WEAK
+        perception: 0.5, // WEAK
       },
       bear: {
         strength: 1.6, // EXTREMELY STRONG (raw power)
         agility: 0.4, // WEAK (heavy, slow)
         intelligence: 0.3, // VERY WEAK (beast)
         vitality: 1.4, // VERY STRONG (thick hide)
-        luck: 0.4, // WEAK
+        perception: 0.4, // WEAK
       },
       wolf: {
         strength: 1.0, // STRONG (predator)
         agility: 1.5, // EXTREMELY STRONG (pack hunter)
         intelligence: 0.7, // Below average (pack tactics)
         vitality: 0.8, // Above average
-        luck: 0.6, // Below average
+        perception: 0.6, // Below average
       },
       spider: {
         strength: 0.6, // Below average
         agility: 1.4, // VERY STRONG (eight legs)
         intelligence: 1.1, // STRONG (trap tactics)
         vitality: 0.5, // WEAK (fragile body)
-        luck: 0.8, // Above average (web luck)
+        perception: 0.8, // Above average (web perception)
       },
       golem: {
         strength: 1.3, // VERY STRONG (stone fists)
         agility: 0.2, // EXTREMELY WEAK (slow construct)
         intelligence: 0.1, // EXTREMELY WEAK (mindless)
         vitality: 1.9, // EXTREMELY STRONG (stone body)
-        luck: 0.3, // VERY WEAK
+        perception: 0.3, // VERY WEAK
       },
       wyvern: {
         strength: 1.4, // VERY STRONG (claws/bite)
         agility: 1.6, // EXTREMELY STRONG (aerial)
         intelligence: 0.6, // Below average (beast)
         vitality: 1.0, // STRONG (dragon scales)
-        luck: 0.7, // Below average
+        perception: 0.7, // Below average
       },
       serpent: {
         strength: 0.8, // Above average (constrictor)
         agility: 1.3, // VERY STRONG (slithering)
         intelligence: 1.1, // STRONG (cunning predator)
         vitality: 0.7, // Below average (reptile)
-        luck: 0.9, // Above average (venom luck)
+        perception: 0.9, // Above average (venom perception)
       },
       dragon: {
         strength: 1.7, // EXTREMELY STRONG (apex)
         agility: 1.4, // VERY STRONG (flying)
         intelligence: 1.5, // VERY STRONG (ancient wisdom)
         vitality: 1.6, // EXTREMELY STRONG (dragon scales)
-        luck: 1.2, // VERY STRONG (legendary)
+        perception: 1.2, // VERY STRONG (legendary)
       },
       orc: {
         strength: 1.5, // EXTREMELY STRONG (brutal warrior)
         agility: 0.7, // Below average (heavy build)
         intelligence: 0.3, // VERY WEAK (savage)
         vitality: 1.2, // VERY STRONG (tough skin)
-        luck: 0.5, // WEAK
+        perception: 0.5, // WEAK
       },
       naga: {
         strength: 0.8, // Above average (serpent tail)
         agility: 1.3, // VERY STRONG (slithering)
         intelligence: 1.4, // VERY STRONG (water magic)
         vitality: 0.9, // Above average (scales)
-        luck: 1.0, // STRONG
+        perception: 1.0, // STRONG
       },
       titan: {
         strength: 1.8, // EXTREMELY STRONG (colossal)
         agility: 0.3, // VERY WEAK (massive size)
         intelligence: 0.4, // WEAK (ancient but simple)
         vitality: 1.7, // EXTREMELY STRONG (titan endurance)
-        luck: 0.6, // Below average
+        perception: 0.6, // Below average
       },
       giant: {
         strength: 1.6, // EXTREMELY STRONG (massive)
         agility: 0.4, // WEAK (large, slow)
         intelligence: 0.5, // WEAK (brutish)
         vitality: 1.5, // VERY STRONG (giant constitution)
-        luck: 0.5, // WEAK
+        perception: 0.5, // WEAK
       },
       elf: {
         strength: 0.5, // WEAK (elegant, not brutish)
         agility: 1.5, // EXTREMELY STRONG (graceful)
         intelligence: 1.6, // EXTREMELY STRONG (ancient magic)
         vitality: 0.6, // Below average (slender)
-        luck: 1.3, // VERY STRONG (blessed)
+        perception: 1.3, // VERY STRONG (blessed)
       },
       demon: {
         strength: 1.5, // EXTREMELY STRONG (dark power)
         agility: 1.2, // VERY STRONG (supernatural speed)
         intelligence: 1.4, // VERY STRONG (dark magic)
         vitality: 1.1, // STRONG (demonic endurance)
-        luck: 0.8, // Above average (chaos)
+        perception: 0.8, // Above average (chaos)
       },
       ghoul: {
         strength: 0.9, // Above average (undead strength)
         agility: 1.1, // STRONG (quick movements)
         intelligence: 0.8, // Above average (cunning)
         vitality: 1.3, // VERY STRONG (undead endurance)
-        luck: 0.6, // Below average
+        perception: 0.6, // Below average
       },
       ogre: {
         strength: 1.7, // EXTREMELY STRONG (brutal power)
         agility: 0.3, // VERY WEAK (clumsy)
         intelligence: 0.2, // EXTREMELY WEAK (stupid)
         vitality: 1.4, // VERY STRONG (thick hide)
-        luck: 0.4, // WEAK
+        perception: 0.4, // WEAK
       },
       centipede: {
         strength: 1.0, // STRONG (many legs)
         agility: 1.4, // VERY STRONG (multi-legged)
         intelligence: 0.5, // WEAK (insect mind)
         vitality: 1.1, // STRONG (exoskeleton)
-        luck: 0.7, // Below average
+        perception: 0.7, // Below average
       },
       yeti: {
         strength: 1.4, // VERY STRONG (ice beast)
         agility: 0.8, // Above average (mountain predator)
         intelligence: 0.6, // Below average (beast)
         vitality: 1.5, // EXTREMELY STRONG (frost endurance)
-        luck: 0.7, // Below average
+        perception: 0.7, // Below average
       },
     };
 
-    this.settings = this.defaultSettings;
-    this.soloPlugin = null;
-
-    // IndexedDB storage manager
-    this.storageManager = null;
-    this.userId = null;
-
-    // UI elements
-    this.shadowArmyButton = null;
-    this.shadowArmyModal = null;
-    this.toolbarObserver = null;
-    this.toolbarCheckInterval = null;
-    this._shadowArmyButtonRetryCount = 0;
-
-    // Rank probability multipliers (lower ranks easier, higher ranks exponentially harder)
+    // ============================================================================
+    // RANK PROBABILITY MULTIPLIERS - Extraction Chance Scaling
+    // ============================================================================
+    // Lower ranks easier, higher ranks exponentially harder
+    // Used in extraction chance calculations (weighted probability)
     this.rankProbabilityMultipliers = {
       E: 10.0, // Very common (10x base chance)
       D: 5.0, // Common (5x base chance)
@@ -1450,10 +2315,12 @@ module.exports = class ShadowArmy {
       'Shadow Monarch': 0.0001, // Once in a lifetime (0.0001x base chance)
     };
 
-    // Exponential stat multipliers per rank (1.5x per rank)
-    // Each rank is exponentially stronger than the previous:
-    // - E rank: Base (1.0x)
-    // - D rank: 1.5x stronger than E
+    // ============================================================================
+    // RANK STAT MULTIPLIERS - Exponential Power Scaling (1.5x per rank)
+    // ============================================================================
+    // Each rank is exponentially stronger than the previous (1.5^rank_index)
+    // - E rank: Base (1.0x) - 1.5^0
+    // - D rank: 1.5x stronger than E - 1.5^1
     // - C rank: 2.25x stronger than E (1.5^2)
     // - B rank: 3.375x stronger than E (1.5^3)
     // - A rank: 5.0625x stronger than E (1.5^4)
@@ -1481,17 +2348,66 @@ module.exports = class ShadowArmy {
       'Shadow Monarch': 129.746337890625, // 12974% (1.5^12)
     };
 
+    // ============================================================================
+    // COMPONENT REFERENCES - Storage, UI, Integration
+    // ============================================================================
+    // IndexedDB storage manager (initialized in start())
+    this.storageManager = null;
+    this.userId = null;
+
+    // Performance cache for shadow power calculations
+    this._shadowPowerCache = new Map();
+    this._shadowPowerCacheLimit = 1000; // Cache up to 1000 shadow powers
+
+    // CSS management tracking
+    this._injectedStyles = new Set(); // Track all injected CSS styles for cleanup
+
+    // Combat performance tracking
+    this._armyStatsCache = null; // Cached aggregated army stats
+    this._armyStatsCacheTime = null; // Cache timestamp
+    this._combatPerformance = null; // Performance metrics tracker
+
+    // Shadow personality system
+    this._shadowPersonalityCache = new Map(); // Cache shadow personalities
+
+    // Solo Leveling Stats plugin integration
+    this.soloPlugin = null;
+
+    // UI elements (chat button disabled, widgets used instead)
+    this.shadowArmyButton = null;
+    this.shadowArmyModal = null;
+    this.toolbarObserver = null;
+    this.toolbarCheckInterval = null;
+    this._shadowArmyButtonRetryCount = 0;
+
+    // ============================================================================
+    // LIFECYCLE STATE - Cleanup Tracking
+    // ============================================================================
     // Track all retry timeouts for proper cleanup
     this._retryTimeouts = new Set();
     this._isStopped = false;
+
+    // ============================================================================
+    // DEBUG SYSTEM - Property initialization (methods in SECTION 4)
+    // ============================================================================
+    // Debug logging system (default disabled, enabled via settings)
+    // Note: debug.enabled will be synced with settings.debugMode in loadSettings()
+    // Debug methods (debugLog, debugError) are defined in SECTION 4
+    this.debug = {
+      enabled: false, // Will be synced with settings in loadSettings()
+      errorCount: 0,
+      lastError: null,
+      operationCounts: {},
+      lastLogTimes: {}, // Track last log time for throttling frequent operations
+    };
   }
 
   // ============================================================================
-  // LIFECYCLE METHODS
+  // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
 
   // ============================================================================
-  // PLUGIN LIFECYCLE - Start & Stop Operations
+  // 3.1 PLUGIN LIFECYCLE (Start & Stop)
   // ============================================================================
   /**
    * Start the ShadowArmy plugin
@@ -1512,16 +2428,26 @@ module.exports = class ShadowArmy {
     this.userId = await this.getUserId();
 
     // Initialize IndexedDB storage
+    // Note: debugLog and debugError methods are in SECTION 4
     try {
-      this.storageManager = new ShadowStorageManager(this.userId);
+      this.storageManager = new ShadowStorageManager(
+        this.userId,
+        (tag, msg, data) => this.debugLog(tag, msg, data),
+        (tag, msg, err) => this.debugError(tag, msg, err)
+      );
+      // Provide decompression methods to storage manager for transparent decompression
+      this.storageManager.decompressShadow = (shadow) => this.decompressShadow(shadow);
+      this.storageManager.decompressShadowUltra = (shadow) => this.decompressShadowUltra(shadow);
       await this.storageManager.init();
 
       // Migrate from localStorage if needed
       const _migrationResult = await this.storageManager.migrateFromLocalStorage();
       // Migration complete if needed (silent)
     } catch (error) {
-      console.warn(
-        'ShadowArmy: IndexedDB initialization failed, using localStorage fallback',
+      // debugError method is in SECTION 4
+      this.debugError(
+        'STORAGE',
+        'IndexedDB initialization failed, using localStorage fallback',
         error
       );
       this.storageManager = null;
@@ -1546,7 +2472,8 @@ module.exports = class ShadowArmy {
     try {
       await this.recalculateAllShadows();
     } catch (error) {
-      console.error('ShadowArmy: Error recalculating shadows during startup', error);
+      // debugError method is in SECTION 4
+      this.debugError('MIGRATION', 'Error recalculating shadows during startup', error);
       // Log error but don't prevent plugin from starting
       // The migration can be retried on next start
     }
@@ -1555,7 +2482,8 @@ module.exports = class ShadowArmy {
     try {
       await this.fixShadowBaseStatsToRankBaselines();
     } catch (error) {
-      console.error('ShadowArmy: Error fixing shadow base stats', error);
+      // debugError method is in SECTION 4
+      this.debugError('MIGRATION', 'Error fixing shadow base stats', error);
     }
 
     // Start natural growth processing (runs every hour)
@@ -1586,8 +2514,8 @@ module.exports = class ShadowArmy {
     // Then process every hour
     this.naturalGrowthInterval = setInterval(() => {
       this.processNaturalGrowthForAllShadows();
-      this.processShadowCompression(); // Compress weak shadows
-      this.processEmergencyCleanup(); // Emergency cleanup if needed
+      this.processShadowCompression(); // Compress weak shadows (tiered system)
+      this.processShadowEssenceConversion(); // Regular cleanup: Convert weakest shadows to essence
     }, 60 * 60 * 1000); // 1 hour
 
     // Shadow rank widget for member list display (chatbox button still disabled)
@@ -1617,6 +2545,11 @@ module.exports = class ShadowArmy {
 
     this.removeMessageListener();
     this.removeCSS();
+    this.removeWidgetCSS();
+    // Cleanup all CSS (including any dungeon CSS)
+    this.cleanupAllCSS();
+    // Cleanup combat caches
+    this.clearCombatCache();
     // Chatbox button disabled - no removal needed
     this.closeShadowArmyModal();
 
@@ -1670,7 +2603,7 @@ module.exports = class ShadowArmy {
       this.settings.dungeonExtractionAttempts = null;
     }
 
-    // Note: StorageManager caches (favoriteCache, recentCache, aggregationCache)
+    // Note: StorageManager caches (recentCache, aggregationCache)
     // are managed by the storage manager itself and will be cleaned up when
     // database is closed
 
@@ -1702,7 +2635,7 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // EVENT HANDLING & WATCHERS
+  // 3.2 EVENT HANDLING & WATCHERS
   // ============================================================================
 
   /**
@@ -1715,20 +2648,21 @@ module.exports = class ShadowArmy {
 
     // Watch for URL changes via popstate and pushState/replaceState
     const handleUrlChange = () => {
-      // Return early if plugin is stopped
+      // Guard clause: Return early if plugin is stopped
       if (this._isStopped) return;
 
       const currentUrl = window.location.href;
-      if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        // Re-inject widget after channel/guild change (button still disabled)
-        const timeoutId = setTimeout(() => {
-          this._retryTimeouts.delete(timeoutId);
-          // Widget re-injection on channel change
-          this.injectShadowRankWidget();
-        }, 200);
-        this._retryTimeouts.add(timeoutId);
-      }
+      // Guard clause: Only process if URL changed
+      if (currentUrl === lastUrl) return;
+
+      lastUrl = currentUrl;
+      // Re-inject widget after channel/guild change (button still disabled)
+      const timeoutId = setTimeout(() => {
+        this._retryTimeouts.delete(timeoutId);
+        // Widget re-injection on channel change
+        this.injectShadowRankWidget();
+      }, 200);
+      this._retryTimeouts.add(timeoutId);
     };
 
     // Listen to browser navigation events
@@ -1765,7 +2699,7 @@ module.exports = class ShadowArmy {
    */
   setupMemberListWatcher() {
     // RE-ENABLED: Watch for member list changes to maintain widget
-    // Disconnect existing observer if any
+    // Guard clause: Disconnect existing observer if any
     if (this.memberListObserver) {
       this.memberListObserver.disconnect();
     }
@@ -1775,16 +2709,16 @@ module.exports = class ShadowArmy {
       const widget = document.getElementById('shadow-army-widget');
       const membersList = document.querySelector('[class*="members"]');
 
-      // If member list exists but widget doesn't, re-inject
-      if (membersList && !widget) {
-        // Fast debounce re-injection (prevent multiple calls)
-        if (this.widgetReinjectionTimeout) {
-          clearTimeout(this.widgetReinjectionTimeout);
-        }
-        this.widgetReinjectionTimeout = setTimeout(() => {
-          this.injectShadowRankWidget();
-        }, 100);
+      // Guard clause: If member list exists but widget doesn't, re-inject
+      if (!membersList || widget) return;
+
+      // Fast debounce re-injection (prevent multiple calls)
+      if (this.widgetReinjectionTimeout) {
+        clearTimeout(this.widgetReinjectionTimeout);
       }
+      this.widgetReinjectionTimeout = setTimeout(() => {
+        this.injectShadowRankWidget();
+      }, 100);
     });
 
     // Start observing the entire document for member list changes
@@ -1795,61 +2729,90 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // USER ID DETECTION
+  // 3.3 USER ID DETECTION
   // ============================================================================
 
   /**
    * Get Discord user ID for storage isolation
    * Operations:
-   * 1. Try to get user ID from React fiber (similar to SoloLevelingStats)
-   * 2. Try BetterDiscord UserStore module
-   * 3. Fallback to 'default' if unavailable
+   * 1. Try BetterDiscord Webpack UserStore (BdApi - PRIMARY METHOD)
+   * 2. Try window.Discord (fallback)
+   * 3. Try React fiber traversal (fallback)
+   * 4. Fallback to 'default' if unavailable
    */
   async getUserId() {
     try {
-      // Method 1: Try window.Discord (most reliable)
+      // Method 1: Try BetterDiscord Webpack UserStore (BdApi - PRIMARY)
+      // Prefer getStore, fallback to getModule with search
+      const UserStore =
+        (BdApi.Webpack && BdApi.Webpack.getStore && BdApi.Webpack.getStore('UserStore')) ||
+        (BdApi.Webpack &&
+          BdApi.Webpack.getModule &&
+          BdApi.Webpack.getModule((m) => m && typeof m.getCurrentUser === 'function'));
+
+      if (UserStore && typeof UserStore.getCurrentUser === 'function') {
+        try {
+          const currentUser = UserStore.getCurrentUser();
+          if (currentUser && currentUser.id) {
+            // debugLog method is in SECTION 4
+            this.debugLog('USER_ID', 'Got user ID from BdApi.Webpack.UserStore', {
+              userId: currentUser.id,
+            });
+            return currentUser.id;
+          }
+        } catch (webpackError) {
+          // debugError method is in SECTION 4
+          this.debugError('USER_ID', 'Error calling UserStore.getCurrentUser()', webpackError);
+        }
+      }
+
+      // Method 2: Try window.Discord (fallback if BdApi unavailable)
       if (window.Discord && window.Discord.user && window.Discord.user.id) {
+        // debugLog method is in SECTION 4
+        this.debugLog('USER_ID', 'Got user ID from window.Discord (fallback)', {
+          userId: window.Discord.user.id,
+        });
         return window.Discord.user.id;
       }
 
-      // Method 2: Try BetterDiscord Webpack UserStore
-      const UserStore =
-        BdApi.Webpack?.getStore?.('UserStore') ||
-        BdApi.Webpack?.getModule?.((m) => m?.getCurrentUser);
-      if (UserStore && UserStore.getCurrentUser) {
-        const currentUser = UserStore.getCurrentUser();
-        if (currentUser && currentUser.id) {
-          return currentUser.id;
-        }
-      }
-
-      // Method 3: Try React fiber traversal (deprioritized)
-      const userElement =
-        document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
-      if (userElement) {
-        const reactKey = Object.keys(userElement).find(
-          (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-        );
-        if (reactKey) {
-          let fiber = userElement[reactKey];
-          for (let i = 0; i < 10 && fiber; i++) {
-            if (fiber.memoizedProps?.user?.id) {
-              return fiber.memoizedProps.user.id;
+      // Method 3: Try React fiber traversal (fallback)
+      try {
+        const userElement =
+          document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
+        if (userElement) {
+          const reactKey = Object.keys(userElement).find(
+            (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
+          );
+          if (reactKey) {
+            let fiber = userElement[reactKey];
+            for (let i = 0; i < 10 && fiber; i++) {
+              if (fiber.memoizedProps?.user?.id) {
+                // debugLog method is in SECTION 4
+                this.debugLog('USER_ID', 'Got user ID from React fiber (fallback)', {
+                  userId: fiber.memoizedProps.user.id,
+                });
+                return fiber.memoizedProps.user.id;
+              }
+              fiber = fiber.return;
             }
-            fiber = fiber.return;
           }
         }
+      } catch (fiberError) {
+        // debugError method is in SECTION 4
+        this.debugError('USER_ID', 'Error in React fiber traversal', fiberError);
       }
     } catch (error) {
-      console.warn('ShadowArmy: Failed to get user ID', error);
+      this.debugError('USER_ID', 'Failed to get user ID', error);
     }
 
     // Fallback to default
+    // debugLog method is in SECTION 4
+    this.debugLog('USER_ID', 'Using default user ID (fallback)', { reason: 'All methods failed' });
     return 'default';
   }
 
   // ============================================================================
-  // SETTINGS MANAGEMENT
+  // 3.4 SETTINGS MANAGEMENT
   // ============================================================================
 
   /**
@@ -1860,7 +2823,8 @@ module.exports = class ShadowArmy {
    * 3. Validate arrays (shadows)
    * 4. Backfill missing extraction config keys
    * 5. Initialize specialArise tracking if missing
-   * 6. Handle errors gracefully with fallback to defaults
+   * 6. Sync debug mode with settings.debugMode
+   * 7. Handle errors gracefully with fallback to defaults
    * Note: Legacy favoriteShadowIds may exist but are no longer used (generals auto-selected)
    */
   loadSettings() {
@@ -1890,35 +2854,51 @@ module.exports = class ShadowArmy {
         if (!this.settings.dungeonExtractionAttempts) {
           this.settings.dungeonExtractionAttempts = {};
         }
+      } else {
+        // No saved settings, use defaults
+        this.settings = { ...this.defaultSettings };
       }
+
+      // Sync debug mode with settings (after loading)
+      this.debug.enabled = this.settings.debugMode === true;
     } catch (error) {
-      console.error('ShadowArmy: Error loading settings', error);
+      // debugError method is in SECTION 4
+      this.debugError('SETTINGS', 'Error loading settings', error);
       this.settings = { ...this.defaultSettings };
+      // Ensure debug mode is synced even on error
+      this.debug.enabled = this.settings.debugMode === true;
     }
   }
 
   /**
    * Save current settings to localStorage
    * Operations:
-   * 1. Serialize settings object to JSON
-   * 2. Save using BdApi.Data.save()
-   * 3. Handle errors gracefully with console logging
+   * 1. Sync debug mode from this.debug.enabled to settings.debugMode
+   * 2. Serialize settings object to JSON
+   * 3. Save using BdApi.Data.save()
+   * 4. Handle errors gracefully with debug logging (debugError method in SECTION 4)
    *
    * NOTE: For large shadow arrays (5,000+), this can cause UI blocking.
    * Consider implementing IndexedDB storage for better performance.
    */
   saveSettings() {
     try {
+      // Sync debug mode from debug.enabled to settings
+      if (this.settings.debugMode !== this.debug.enabled) {
+        this.settings.debugMode = this.debug.enabled;
+      }
+
       // Use user-specific storage key
       const storageKey = this.userId ? `settings_${this.userId}` : 'settings';
       BdApi.Data.save('ShadowArmy', storageKey, this.settings);
     } catch (error) {
-      console.error('ShadowArmy: Error saving settings', error);
+      // debugError method is in SECTION 4
+      this.debugError('SETTINGS', 'Error saving settings', error);
     }
   }
 
   // ============================================================================
-  // SOLO LEVELING INTEGRATION
+  // 3.5 SOLO LEVELING INTEGRATION
   // ============================================================================
 
   /**
@@ -1930,14 +2910,17 @@ module.exports = class ShadowArmy {
    */
   integrateWithSoloLeveling() {
     try {
-      // Get SoloLevelingStats plugin
+      // Get SoloLevelingStats plugin via BdApi
       this.soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!this.soloPlugin) {
-        console.warn('[ShadowArmy] SoloLevelingStats plugin not found');
+        // debugLog method is in SECTION 4
+        this.debugLog('INTEGRATION', 'SoloLevelingStats plugin not found');
       }
     } catch (error) {
-      console.warn(
-        '[ShadowArmy] Failed to integrate with SoloLevelingStats via BdApi.Plugins',
+      // debugError method is in SECTION 4
+      this.debugError(
+        'INTEGRATION',
+        'Failed to integrate with SoloLevelingStats via BdApi.Plugins',
         error
       );
       this.soloPlugin = null;
@@ -1953,6 +2936,7 @@ module.exports = class ShadowArmy {
    * 4. Return null if plugin unavailable or data missing
    */
   getSoloLevelingData() {
+    // Guard clause: Re-integrate if plugin not loaded
     if (!this.soloPlugin) {
       this.integrateWithSoloLeveling();
     }
@@ -1970,19 +2954,14 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // MESSAGE LISTENING & EXTRACTION
+  // 3.6 SHADOW EXTRACTION OPERATIONS
   // ============================================================================
 
   /**
-   * DISABLED: Message-based extraction removed
-   * Extraction now happens ONLY from dead mobs in dungeons
-   * This creates a cleaner, dungeon-focused extraction system
+   * Message listener setup (disabled - extraction now dungeon-only)
    */
   setupMessageListener() {
-    // MESSAGE-BASED EXTRACTION DISABLED
-    // Shadows are now extracted exclusively from dungeon mobs
-    // No more random extractions from chat messages
-    return;
+    // Feature disabled - extraction is dungeon-only
   }
 
   /**
@@ -1993,10 +2972,11 @@ module.exports = class ShadowArmy {
    * 3. Clean up references to prevent memory leaks
    */
   removeMessageListener() {
+    // Guard clause: Unsubscribe if exists
     if (this.messageUnsubscribe) {
       this.messageUnsubscribe();
     }
-    // Restore original function
+    // Guard clause: Restore original function if exists
     if (this.soloPlugin && this.originalProcessMessage) {
       const instance = this.soloPlugin.instance || this.soloPlugin;
       if (instance && instance.processMessageSent) {
@@ -2006,14 +2986,10 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * DISABLED: Message-based extraction removed
-   * Extraction now happens automatically from dead mobs in dungeons only
-   * This function is kept for backwards compatibility but does nothing
+   * Message-based extraction (disabled - extraction now dungeon-only)
    */
   async attemptShadowExtraction() {
-    // MESSAGE-BASED EXTRACTION DISABLED
-    // All extractions now happen automatically from dead mobs in dungeons
-    return;
+    // Feature disabled - extraction is dungeon-only
   }
 
   /**
@@ -2059,9 +3035,8 @@ module.exports = class ShadowArmy {
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
     const rankDiff = targetRankIndex - userRankIndex;
 
-    // STRICT ENFORCEMENT: Cannot extract more than 1 rank above
+    // Guard clause: STRICT ENFORCEMENT - Cannot extract more than 1 rank above
     if (rankDiff > 1) {
-      // Extraction blocked - target rank too high
       return null; // Impossible to extract
     }
 
@@ -2126,14 +3101,14 @@ module.exports = class ShadowArmy {
           agility: 0,
           intelligence: 0,
           vitality: 0,
-          luck: 0,
+          perception: 0,
         },
         naturalGrowthStats: {
           strength: 0,
           agility: 0,
           intelligence: 0,
           vitality: 0,
-          luck: 0,
+          perception: 0,
         },
         totalCombatTime: 0,
         lastNaturalGrowth: Date.now(),
@@ -2147,7 +3122,9 @@ module.exports = class ShadowArmy {
     }
 
     // Try extraction up to maxAttempts times (1 for mobs, 3 for bosses/messages)
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    // Use Array.from for functional pattern
+    const attempts = Array.from({ length: maxAttempts }, (_, i) => i + 1);
+    for (const _attempt of attempts) {
       // Calculate extraction chance based on actual shadow stats
       const extractionChance = this.calculateExtractionChance(
         userRank,
@@ -2162,13 +3139,15 @@ module.exports = class ShadowArmy {
 
       // Roll for extraction
       const roll = Math.random();
+      // Guard clause: Early return on success
       if (roll < extractionChance) {
         // Success! Save shadow to database
         if (this.storageManager) {
           try {
             await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
           } catch (error) {
-            console.error('ShadowArmy: Failed to save shadow to IndexedDB', error);
+            // debugError method is in SECTION 4
+            this.debugError('STORAGE', 'Failed to save shadow to IndexedDB', error);
             // Fallback to localStorage
             if (!this.settings.shadows) this.settings.shadows = [];
             this.settings.shadows.push(shadow);
@@ -2236,7 +3215,7 @@ module.exports = class ShadowArmy {
     beastFamilies = null,
     isBoss = true
   ) {
-    // Check boss attempt limit ONLY if this is a boss (not regular mobs)
+    // Guard clause: Check boss attempt limit ONLY if this is a boss (not regular mobs)
     if (isBoss) {
       const canExtract = this.canExtractFromBoss(bossId);
       if (!canExtract.allowed) {
@@ -2251,7 +3230,9 @@ module.exports = class ShadowArmy {
 
     // Determine retry count: Bosses get 3 attempts, regular mobs get 1 attempt
     // This prevents queue buildup and improves performance for mass mob extraction
-    const maxAttempts = isBoss ? 3 : 1;
+    // Use lookup map instead of ternary for clarity
+    const attemptMap = { boss: 3, mob: 1 };
+    const maxAttempts = attemptMap[isBoss ? 'boss' : 'mob'];
 
     // Attempt extraction with appropriate retry count
     const extractedShadow = await this.attemptExtractionWithRetries(
@@ -2291,6 +3272,7 @@ module.exports = class ShadowArmy {
    * @returns {Object} - { allowed: boolean, reason: string|null, attemptsRemaining: number }
    */
   canExtractFromBoss(bossId) {
+    // Guard clause: Initialize if missing
     if (!this.settings.dungeonExtractionAttempts) {
       this.settings.dungeonExtractionAttempts = {};
     }
@@ -2298,10 +3280,9 @@ module.exports = class ShadowArmy {
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
     const maxAttempts = cfg.maxBossAttemptsPerDay || 3;
     const today = new Date().toDateString();
-
     const attempts = this.settings.dungeonExtractionAttempts[bossId];
 
-    // No previous attempts or from different day
+    // Guard clause: No previous attempts or from different day
     if (!attempts || attempts.lastReset !== today) {
       return {
         allowed: true,
@@ -2310,7 +3291,7 @@ module.exports = class ShadowArmy {
       };
     }
 
-    // Check attempt count
+    // Guard clause: Check attempt count
     if (attempts.count >= maxAttempts) {
       return {
         allowed: false,
@@ -2339,6 +3320,7 @@ module.exports = class ShadowArmy {
    * @param {boolean} success - Whether extraction succeeded
    */
   recordBossExtractionAttempt(bossId, success) {
+    // Guard clause: Initialize if missing
     if (!this.settings.dungeonExtractionAttempts) {
       this.settings.dungeonExtractionAttempts = {};
     }
@@ -2346,20 +3328,26 @@ module.exports = class ShadowArmy {
     const today = new Date().toDateString();
     const attempts = this.settings.dungeonExtractionAttempts[bossId];
 
-    // Reset if new day or first attempt
-    if (!attempts || attempts.lastReset !== today) {
-      this.settings.dungeonExtractionAttempts[bossId] = {
-        count: 1,
-        lastAttempt: Date.now(),
-        lastReset: today,
-        lastSuccess: success,
-      };
-    } else {
-      // Increment count
-      attempts.count++;
-      attempts.lastAttempt = Date.now();
-      attempts.lastSuccess = success;
-    }
+    // Use dictionary pattern for update vs add operations
+    const attemptHandlers = {
+      update: () => {
+        attempts.count++;
+        attempts.lastAttempt = Date.now();
+        attempts.lastSuccess = success;
+      },
+      add: () => {
+        this.settings.dungeonExtractionAttempts[bossId] = {
+          count: 1,
+          lastAttempt: Date.now(),
+          lastReset: today,
+          lastSuccess: success,
+        };
+      },
+    };
+
+    const handler =
+      attempts && attempts.lastReset === today ? attemptHandlers.update : attemptHandlers.add;
+    handler();
 
     // Clean up old entries (older than 7 days) to prevent unbounded growth
     this.cleanupOldBossAttempts();
@@ -2375,6 +3363,7 @@ module.exports = class ShadowArmy {
    * @returns {number} - Attempts remaining (0-3)
    */
   getBossAttemptsRemaining(bossId) {
+    // Guard clause: Return default if tracking not initialized
     if (!this.settings.dungeonExtractionAttempts) {
       return this.settings.extractionConfig?.maxBossAttemptsPerDay || 3;
     }
@@ -2384,6 +3373,7 @@ module.exports = class ShadowArmy {
     const today = new Date().toDateString();
     const attempts = this.settings.dungeonExtractionAttempts[bossId];
 
+    // Guard clause: No attempts or different day
     if (!attempts || attempts.lastReset !== today) {
       return maxAttempts;
     }
@@ -2401,11 +3391,10 @@ module.exports = class ShadowArmy {
     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
     const attempts = this.settings.dungeonExtractionAttempts;
 
-    for (const bossId in attempts) {
-      if (attempts[bossId].lastAttempt < sevenDaysAgo) {
-        delete attempts[bossId];
-      }
-    }
+    // Use Object.keys with filter for functional pattern
+    Object.keys(attempts)
+      .filter((bossId) => attempts[bossId].lastAttempt < sevenDaysAgo)
+      .forEach((bossId) => delete attempts[bossId]);
   }
 
   /**
@@ -2447,47 +3436,52 @@ module.exports = class ShadowArmy {
       // If target rank is more than 1 above user, cap it to user rank + 1
       if (rankDiff > 1) {
         rankToUse = this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)];
-        console.log(
-          `[ShadowArmy] Extraction target adjusted: ${targetRank} → ${rankToUse} (user rank: ${userRank})`
-        );
+        // debugLog method is in SECTION 4
+        this.debugLog('EXTRACTION', 'Extraction target adjusted', {
+          original: targetRank,
+          adjusted: rankToUse,
+          userRank,
+        });
       }
     }
 
-    const extractedShadows = [];
+    // Generate shadows using Array.from for functional pattern
+    const extractedShadows = await Promise.all(
+      Array.from({ length: count }, async () => {
+        const shadow = this.generateShadow(rankToUse, userLevel, userStats, fromDungeon);
 
-    // Generate shadows
-    for (let i = 0; i < count; i++) {
-      const shadow = this.generateShadow(rankToUse, userLevel, userStats, fromDungeon);
-
-      // Save to IndexedDB if available, otherwise fallback to localStorage
-      if (this.storageManager) {
-        try {
-          await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
-          extractedShadows.push(shadow);
-        } catch (error) {
-          console.error('ShadowArmy: Failed to save shadow to IndexedDB', error);
+        // Save to IndexedDB if available, otherwise fallback to localStorage
+        if (this.storageManager) {
+          try {
+            await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
+          } catch (error) {
+            // debugError method is in SECTION 4
+            this.debugError('STORAGE', 'Failed to save shadow to IndexedDB', error);
+            // Fallback to localStorage
+            if (!this.settings.shadows) this.settings.shadows = [];
+            this.settings.shadows.push(shadow);
+          }
+        } else {
           // Fallback to localStorage
           if (!this.settings.shadows) this.settings.shadows = [];
           this.settings.shadows.push(shadow);
-          extractedShadows.push(shadow);
         }
-      } else {
-        // Fallback to localStorage
-        if (!this.settings.shadows) this.settings.shadows = [];
-        this.settings.shadows.push(shadow);
-        extractedShadows.push(shadow);
-      }
 
-      this.settings.totalShadowsExtracted++;
-      this.settings.lastExtractionTime = now;
-      if (!this.extractionTimestamps) this.extractionTimestamps = [];
-      this.extractionTimestamps.push(now);
+        this.settings.totalShadowsExtracted++;
+        this.settings.lastExtractionTime = now;
+        if (!this.extractionTimestamps) this.extractionTimestamps = [];
+        this.extractionTimestamps.push(now);
 
-      // Invalidate buff cache when new shadows are added
-      this.cachedBuffs = null;
-      this.cachedBuffsTime = null;
-      console.log('ShadowArmy: Shadow extracted!', shadow);
-    }
+        // Invalidate buff cache when new shadows are added
+        this.cachedBuffs = null;
+        this.cachedBuffsTime = null;
+
+        // debugLog method is in SECTION 4
+        this.debugLog('EXTRACTION', 'Shadow extracted', { rank: shadow.rank, role: shadow.role });
+
+        return shadow;
+      })
+    );
 
     // New shadows start with 0 shadow XP; give them a small burst so they can level over time
     if (isSpecial) {
@@ -2499,6 +3493,7 @@ module.exports = class ShadowArmy {
     this.saveSettings();
 
     // Show extraction animation for the last shadow
+    // Guard clause: Only show if shadows were extracted
     if (extractedShadows.length > 0) {
       this.showExtractionAnimation(extractedShadows[extractedShadows.length - 1]);
     }
@@ -2516,11 +3511,12 @@ module.exports = class ShadowArmy {
    */
   canTriggerSpecialArise() {
     const today = new Date().toDateString();
+    // Guard clause: Initialize if missing
     if (!this.settings.specialArise) {
       this.settings.specialArise = { ...this.defaultSettings.specialArise };
     }
+    // Guard clause: Reset counter if new day
     if (this.settings.specialArise.lastDate !== today) {
-      // New day, reset counter
       this.settings.specialArise.lastDate = today;
       this.settings.specialArise.countToday = 0;
     }
@@ -2539,9 +3535,11 @@ module.exports = class ShadowArmy {
    */
   markSpecialAriseUsed() {
     const today = new Date().toDateString();
+    // Guard clause: Initialize if missing
     if (!this.settings.specialArise) {
       this.settings.specialArise = { ...this.defaultSettings.specialArise };
     }
+    // Guard clause: Reset counter if new day
     if (this.settings.specialArise.lastDate !== today) {
       this.settings.specialArise.lastDate = today;
       this.settings.specialArise.countToday = 0;
@@ -2551,11 +3549,7 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // SHADOW GENERATION
-  // ============================================================================
-
-  // ============================================================================
-  // SHADOW GENERATION & STATS - Creation & Calculation
+  // 3.7 SHADOW GENERATION & STATS - Creation & Calculation
   // ============================================================================
   /**
    * Generate a shadow based on rank, level, and stats
@@ -2583,45 +3577,50 @@ module.exports = class ShadowArmy {
 
     // Random role selection
     // MAGIC BEASTS: 100% from dungeons (filtered by biome), 0% from messages!
-    let roleKey;
-    if (fromDungeon) {
-      // Select magic beast role (dungeon-only, 100% magic beast)
-      let availableBeastRoles = Object.keys(this.shadowRoles).filter(
-        (key) => this.shadowRoles[key].isMagicBeast
-      );
+    // Use dictionary pattern for role selection
+    const roleSelectors = {
+      dungeon: () => {
+        // Select magic beast role (dungeon-only, 100% magic beast)
+        let availableBeastRoles = Object.keys(this.shadowRoles).filter(
+          (key) => this.shadowRoles[key].isMagicBeast
+        );
 
-      // Filter by biome families if provided
-      if (beastFamilies && beastFamilies.length > 0) {
+        // Filter by biome families if provided
+        if (beastFamilies && beastFamilies.length > 0) {
+          availableBeastRoles = availableBeastRoles.filter((key) => {
+            const beast = this.shadowRoles[key];
+            return beastFamilies.includes(beast.family);
+          });
+        }
+
+        // Filter by rank restrictions (e.g., dragons only NH+)
+        const rankIndex = this.shadowRanks.indexOf(shadowRank);
         availableBeastRoles = availableBeastRoles.filter((key) => {
           const beast = this.shadowRoles[key];
-          return beastFamilies.includes(beast.family);
+          if (!beast.minRank) return true; // No restriction
+          const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
+          return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
         });
-      }
 
-      // Filter by rank restrictions (e.g., dragons only NH+)
-      const rankIndex = this.shadowRanks.indexOf(shadowRank);
-      availableBeastRoles = availableBeastRoles.filter((key) => {
-        const beast = this.shadowRoles[key];
-        if (!beast.minRank) return true; // No restriction
-        const minRankIndex = this.shadowRanks.indexOf(beast.minRank);
-        return rankIndex >= minRankIndex; // Only if dungeon rank meets minimum
-      });
+        // Guard clause: Fallback if no beasts available after filtering
+        if (availableBeastRoles.length === 0) {
+          availableBeastRoles = Object.keys(this.shadowRoles).filter(
+            (key) => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+          );
+        }
 
-      // Fallback: If no beasts available after filtering, use all beasts
-      if (availableBeastRoles.length === 0) {
-        availableBeastRoles = Object.keys(this.shadowRoles).filter(
-          (key) => this.shadowRoles[key].isMagicBeast && !this.shadowRoles[key].minRank
+        return availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
+      },
+      message: () => {
+        // Select humanoid role (message-based extraction only)
+        const humanoidRoles = Object.keys(this.shadowRoles).filter(
+          (key) => !this.shadowRoles[key].isMagicBeast
         );
-      }
+        return humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
+      },
+    };
 
-      roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
-    } else {
-      // Select humanoid role (message-based extraction only)
-      const humanoidRoles = Object.keys(this.shadowRoles).filter(
-        (key) => !this.shadowRoles[key].isMagicBeast
-      );
-      roleKey = humanoidRoles[Math.floor(Math.random() * humanoidRoles.length)];
-    }
+    const roleKey = roleSelectors[fromDungeon ? 'dungeon' : 'message']();
     const role = this.shadowRoles[roleKey];
 
     // Get exponential rank multiplier (1.5x per rank)
@@ -2646,14 +3645,14 @@ module.exports = class ShadowArmy {
         agility: 0,
         intelligence: 0,
         vitality: 0,
-        luck: 0,
+        perception: 0,
       },
       naturalGrowthStats: {
         strength: 0,
         agility: 0,
         intelligence: 0,
         vitality: 0,
-        luck: 0,
+        perception: 0,
       },
       totalCombatTime: 0,
       lastNaturalGrowth: Date.now(),
@@ -2681,17 +3680,16 @@ module.exports = class ShadowArmy {
 
     const rankProbabilities = this.calculateRankProbabilities(userRankIndex);
     const roll = Math.random();
+
+    // Use Array.from with find for functional pattern
     let cumulative = 0;
-
-    for (let i = 0; i < this.shadowRanks.length; i++) {
+    const selectedRank = this.shadowRanks.find((_, i) => {
       cumulative += rankProbabilities[i];
-      if (roll < cumulative) {
-        return this.shadowRanks[i];
-      }
-    }
+      return roll < cumulative;
+    });
 
-    // Fallback to user's rank
-    return this.shadowRanks[Math.min(userRankIndex, this.shadowRanks.length - 1)];
+    // Guard clause: Fallback to user's rank if no match
+    return selectedRank || this.shadowRanks[Math.min(userRankIndex, this.shadowRanks.length - 1)];
   }
 
   /**
@@ -2700,7 +3698,7 @@ module.exports = class ShadowArmy {
    *
    * Restrictions:
    * - Your rank: Most common (40-50%)
-   * - 1 rank above: Rare (5-10%) - requires high stats/luck
+   * - 1 rank above: Rare (5-10%) - requires high stats/perception
    * - 2+ ranks above: IMPOSSIBLE (0%)
    * - Lower ranks: Decreasing probability
    *
@@ -2722,53 +3720,48 @@ module.exports = class ShadowArmy {
   calculateRankProbabilities(userRankIndex) {
     const probabilities = new Array(this.shadowRanks.length).fill(0);
 
+    // Guard clause: Return zeros if invalid rank index
+    if (userRankIndex < 0) return probabilities;
+
     // STRICT ENFORCEMENT: Cannot extract more than 1 rank above user
     const maxExtractableIndex = Math.min(userRankIndex + 1, this.shadowRanks.length - 1);
 
     // Distribution centered on user rank:
-    // - 1 rank above: 5% (rare, requires luck)
+    // - 1 rank above: 5% (rare, requires perception)
     // - Your rank: 50% (most common)
     // - 1 rank below: 25%
     // - 2 ranks below: 15%
     // - 3 ranks below: 5%
     // - 4+ ranks below: 0% (too weak to extract)
 
-    if (userRankIndex >= 0) {
-      // 1 rank above (rare - only if high INT/LUK)
-      if (maxExtractableIndex > userRankIndex && maxExtractableIndex < this.shadowRanks.length) {
-        probabilities[maxExtractableIndex] = 0.05; // 5% for 1 rank above
+    // Use lookup map for probability distribution
+    const probabilityMap = {
+      above: {
+        index: maxExtractableIndex,
+        value: 0.05,
+        condition: () =>
+          maxExtractableIndex > userRankIndex && maxExtractableIndex < this.shadowRanks.length,
+      },
+      current: { index: userRankIndex, value: 0.5, condition: () => true },
+      below1: { index: userRankIndex - 1, value: 0.25, condition: () => userRankIndex - 1 >= 0 },
+      below2: { index: userRankIndex - 2, value: 0.15, condition: () => userRankIndex - 2 >= 0 },
+      below3: { index: userRankIndex - 3, value: 0.05, condition: () => userRankIndex - 3 >= 0 },
+    };
+
+    // Apply probabilities using dictionary pattern
+    Object.values(probabilityMap).forEach(({ index, value, condition }) => {
+      if (condition()) {
+        probabilities[index] = value;
       }
-
-      // Your rank (most common)
-      probabilities[userRankIndex] = 0.5; // 50%
-
-      // 1 rank below (common)
-      if (userRankIndex - 1 >= 0) {
-        probabilities[userRankIndex - 1] = 0.25; // 25%
-      }
-
-      // 2 ranks below (uncommon)
-      if (userRankIndex - 2 >= 0) {
-        probabilities[userRankIndex - 2] = 0.15; // 15%
-      }
-
-      // 3 ranks below (rare)
-      if (userRankIndex - 3 >= 0) {
-        probabilities[userRankIndex - 3] = 0.05; // 5%
-      }
-
-      // 4+ ranks below: too weak, 0% chance
-    }
+    });
 
     // Normalize probabilities to ensure they sum to 1.0
     const sum = probabilities.reduce((a, b) => a + b, 0);
-    if (sum > 0) {
-      for (let i = 0; i < probabilities.length; i++) {
-        probabilities[i] = probabilities[i] / sum;
-      }
-    }
+    // Guard clause: Only normalize if sum > 0
+    if (sum <= 0) return probabilities;
 
-    return probabilities;
+    // Use map for functional pattern
+    return probabilities.map((prob) => prob / sum);
   }
 
   /**
@@ -2796,28 +3789,37 @@ module.exports = class ShadowArmy {
    */
   determineExtractableRanks(userRank, userStats) {
     const userRankIndex = this.shadowRanks.indexOf(userRank);
-    const extractableRanks = [];
+
+    // Guard clause: Return empty array if invalid rank
+    if (userRankIndex < 0) return [];
 
     // Lore constraint: Can extract up to 2 ranks above user rank
     const maxExtractableIndex = Math.min(userRankIndex + 2, this.shadowRanks.length - 1);
 
+    // Guard clause: Return empty array if no extractable ranks
+    if (maxExtractableIndex < 0) return [];
+
     // Stats influence
-    const intelligence = userStats.intelligence || 0;
+    const intelligence = userStats?.intelligence || 0;
     const statsBoost = 1.0 + intelligence * 0.01; // +1% per INT point
 
-    for (let i = 0; i <= maxExtractableIndex; i++) {
+    // Use Array.from with map for functional pattern
+    const extractableRanks = Array.from({ length: maxExtractableIndex + 1 }, (_, i) => {
       const rank = this.shadowRanks[i];
       const multiplier = (this.rankProbabilityMultipliers[rank] || 1.0) * statsBoost;
-      extractableRanks.push({ rank, multiplier });
-    }
-
-    // Normalize probabilities
-    const totalMultiplier = extractableRanks.reduce((sum, r) => sum + r.multiplier, 0);
-    extractableRanks.forEach((r) => {
-      r.probability = r.multiplier / totalMultiplier;
+      return { rank, multiplier };
     });
 
-    return extractableRanks;
+    // Normalize probabilities using map
+    const totalMultiplier = extractableRanks.reduce((sum, r) => sum + r.multiplier, 0);
+
+    // Guard clause: Return empty array if total multiplier is zero
+    if (totalMultiplier <= 0) return [];
+
+    return extractableRanks.map((r) => ({
+      ...r,
+      probability: r.multiplier / totalMultiplier,
+    }));
   }
 
   /**
@@ -2844,13 +3846,12 @@ module.exports = class ShadowArmy {
     const userRankIndex = this.shadowRanks.indexOf(userRank);
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
 
-    // STRICT RANK ENFORCEMENT: Cannot extract shadows more than 1 rank above you
+    // Guard clause: STRICT RANK ENFORCEMENT - Cannot extract shadows more than 1 rank above you
     // B-rank hunter: Can extract up to A-rank (1 above), CANNOT extract S-rank (2 above)
     const rankDiff = targetRankIndex - userRankIndex;
     if (rankDiff > 1) {
-      // Removed spammy console.log - this happens on EVERY message attempt
-      // Only log in debug mode to avoid console spam
-      this.debugLog?.(
+      // debugLog method is in SECTION 4
+      this.debugLog(
         'EXTRACTION_RANK_CHECK',
         `Cannot extract [${targetRank}] shadow - too high! (User rank: ${userRank}, Max: ${
           this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
@@ -2883,31 +3884,38 @@ module.exports = class ShadowArmy {
     const rankPenalty = rankDiff > 0 ? Math.pow(0.5, rankDiff) : 1.0; // 50% reduction per rank above
 
     // Target strength resistance (improved - uses actual target strength if provided)
+    // Use dictionary pattern for resistance calculation
     const userStrength = this.calculateUserStrength(userStats);
-    let targetResistance;
+    const resistanceCalculators = {
+      strengthBased: () => {
+        const strengthRatio = Math.min(1.0, targetStrength / Math.max(1, userStrength));
+        return Math.min(0.9, strengthRatio * 0.7); // Max 70% resistance from strength difference
+      },
+      rankBased: () => {
+        return Math.min(0.9, (targetRankIndex + 1) / ((userRankIndex + 1) * 2));
+      },
+    };
 
-    if (targetStrength > 0) {
-      // Use actual target strength for more accurate resistance
-      const strengthRatio = Math.min(1.0, targetStrength / Math.max(1, userStrength));
-      targetResistance = Math.min(0.9, strengthRatio * 0.7); // Max 70% resistance from strength difference
-    } else {
-      // Fallback to rank-based resistance
-      targetResistance = Math.min(0.9, (targetRankIndex + 1) / ((userRankIndex + 1) * 2));
-    }
+    const targetResistance =
+      targetStrength > 0
+        ? resistanceCalculators.strengthBased()
+        : resistanceCalculators.rankBased();
 
     // Calculate raw chance
     const rawChance =
       baseChance * statsMultiplier * rankMultiplier * rankPenalty * (1 - targetResistance);
 
     // Apply hard cap to prevent 100% extraction on every message (skip for dungeons)
-    if (!skipCap) {
-      const maxChance = cfg.maxExtractionChance || 0.15; // Default 15% cap
-      const finalChance = Math.max(0, Math.min(maxChance, rawChance));
-      return finalChance;
-    }
+    // Use lookup map for cap values
+    const capMap = {
+      capped: () => {
+        const maxChance = cfg.maxExtractionChance || 0.15; // Default 15% cap
+        return Math.max(0, Math.min(maxChance, rawChance));
+      },
+      uncapped: () => Math.max(0, Math.min(1, rawChance)), // For dungeons: no cap, but ensure 0-1
+    };
 
-    // For dungeons: no cap, but still ensure it's between 0 and 1
-    return Math.max(0, Math.min(1, rawChance));
+    return capMap[skipCap ? 'uncapped' : 'capped']();
   }
 
   /**
@@ -2918,33 +3926,32 @@ module.exports = class ShadowArmy {
    * 3. Return selected rank
    */
   selectRankByProbability(rankChances) {
+    // Guard clause: Return null if invalid input
     if (!rankChances || rankChances.length === 0) return null;
 
     const roll = Math.random();
     let cumulative = 0;
 
-    for (const rankChance of rankChances) {
+    // Use find for functional pattern (early return on match)
+    const selected = rankChances.find((rankChance) => {
       cumulative += rankChance.probability || rankChance.chance || 0;
-      if (roll < cumulative) {
-        return rankChance.rank;
-      }
-    }
+      return roll < cumulative;
+    });
 
-    // Fallback to first rank
-    return rankChances[0].rank;
+    // Guard clause: Fallback to first rank if no match found
+    return selected?.rank || rankChances[0]?.rank || null;
   }
 
   /**
    * Calculate user strength from stats (for resistance calculation)
    */
   calculateUserStrength(userStats) {
-    return (
-      (userStats.strength || 0) +
-      (userStats.agility || 0) +
-      (userStats.intelligence || 0) +
-      (userStats.vitality || 0) +
-      (userStats.luck || 0)
-    );
+    // Guard clause: Return 0 if no stats provided
+    if (!userStats) return 0;
+
+    // Use Object.values with reduce for functional pattern
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    return statKeys.reduce((sum, key) => sum + (userStats[key] || 0), 0);
   }
 
   /**
@@ -2957,25 +3964,28 @@ module.exports = class ShadowArmy {
    * 4. Return estimated strength value
    */
   estimateTargetStrengthByRank(targetRank, targetRankIndex, userStats) {
+    // Guard clause: Return 0 if invalid rank
+    if (!targetRank || targetRankIndex < 0) return 0;
+
     // Get rank baseline stats (similar to shadow generation)
     const rankBaselines = this.getRankBaselineStats(
       targetRank,
       this.rankStatMultipliers[targetRank] || 1.0
     );
 
+    // Guard clause: Return 0 if no baselines
+    if (!rankBaselines) return 0;
+
     // Calculate estimated total stats for this rank
-    const estimatedStats = {
-      strength: rankBaselines.strength || 10,
-      agility: rankBaselines.agility || 10,
-      intelligence: rankBaselines.intelligence || 10,
-      vitality: rankBaselines.vitality || 10,
-      luck: rankBaselines.luck || 10,
-    };
+    // Use reduce for functional pattern
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const estimatedStats = statKeys.reduce((stats, key) => {
+      stats[key] = rankBaselines[key] || 10;
+      return stats;
+    }, {});
 
     // Calculate strength value (similar to shadow strength calculation)
-    const estimatedStrength = this.calculateShadowStrength(estimatedStats, 1);
-
-    return estimatedStrength;
+    return this.calculateShadowStrength(estimatedStats, 1);
   }
 
   /**
@@ -2998,6 +4008,16 @@ module.exports = class ShadowArmy {
    * - Shadow Monarch rank: ~1275-1912 per stat (level 100 equivalent)
    */
   getRankBaselineStats(shadowRank, rankMultiplier) {
+    // Guard clause: Return default baselines if invalid rank
+    if (!shadowRank) {
+      const defaultBaseline = 10;
+      const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      return statKeys.reduce((stats, key) => {
+        stats[key] = defaultBaseline;
+        return stats;
+      }, {});
+    }
+
     // FIXED: Hardcoded rank baselines (exponential 1.5x per rank, properly calculated)
     // Each rank should be exponentially stronger, not capped by weird formulas
     const rankBaselinesFixed = {
@@ -3018,13 +4038,12 @@ module.exports = class ShadowArmy {
 
     const baselineValue = rankBaselinesFixed[shadowRank] || 10;
 
-    return {
-      strength: baselineValue,
-      agility: baselineValue,
-      intelligence: baselineValue,
-      vitality: baselineValue,
-      luck: baselineValue,
-    };
+    // Use reduce for functional pattern to build stats object
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    return statKeys.reduce((stats, key) => {
+      stats[key] = baselineValue;
+      return stats;
+    }, {});
   }
 
   /**
@@ -3067,15 +4086,31 @@ module.exports = class ShadowArmy {
    * 4. Return base stats object
    */
   generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier) {
+    // Guard clause: Return default stats if invalid inputs
+    if (!roleKey || !shadowRank) {
+      const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      return statKeys.reduce((stats, key) => {
+        stats[key] = 10; // Default baseline
+        return stats;
+      }, {});
+    }
+
     const weights = this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
-    const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
 
     // Get rank baseline stats (proportionate to expected stats at that rank)
     const rankBaselines = this.getRankBaselineStats(shadowRank, rankMultiplier);
 
-    const baseStats = {};
+    // Guard clause: Return default stats if no baselines
+    if (!rankBaselines) {
+      return statKeys.reduce((stats, key) => {
+        stats[key] = 10; // Default baseline
+        return stats;
+      }, {});
+    }
 
-    stats.forEach((stat) => {
+    // Use reduce for functional pattern to build baseStats object
+    return statKeys.reduce((baseStats, stat) => {
       const roleWeight = weights[stat] || 1.0;
       const rankBaseline = rankBaselines[stat] || 10;
 
@@ -3090,32 +4125,34 @@ module.exports = class ShadowArmy {
       const shadowStat = rankBaseline * roleWeight * variance;
 
       baseStats[stat] = Math.max(1, Math.round(shadowStat));
-    });
-
-    return baseStats;
+      return baseStats;
+    }, {});
   }
 
   /**
    * Calculate shadow strength based on shadow stats and optional multiplier
    * Operations:
-   * 1. Sum all stat values (STR + AGI + INT + VIT + LUK)
+   * 1. Sum all stat values (STR + AGI + INT + VIT + PER)
    * 2. Multiply by multiplier (default 1)
    * 3. Return floor of result
    */
   calculateShadowStrength(stats, multiplier = 1) {
-    const totalStats =
-      (stats.strength || 0) +
-      (stats.agility || 0) +
-      (stats.intelligence || 0) +
-      (stats.vitality || 0) +
-      (stats.luck || 0);
+    // Guard clause: Return 0 if no stats provided
+    if (!stats) return 0;
+
+    // Guard clause: Return 0 if invalid multiplier
+    if (multiplier <= 0) return 0;
+
+    // Use reduce for functional pattern
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const totalStats = statKeys.reduce((sum, key) => sum + (stats[key] || 0), 0);
 
     // Base strength = total stats * multiplier
     return Math.floor(totalStats * multiplier);
   }
 
   // ============================================================================
-  // ANIMATION & UI
+  // 3.8 SHADOW STORAGE & RETRIEVAL
   // ============================================================================
 
   /**
@@ -3128,16 +4165,21 @@ module.exports = class ShadowArmy {
    * 5. Schedule fade-out and removal after animation duration
    */
   showExtractionAnimation(shadow) {
+    // Guard clause: Return early if no shadow provided
+    if (!shadow) return;
+
     try {
       // Prefer external ShadowAriseAnimation plugin, if present
       const saPlugin = BdApi.Plugins.get('ShadowAriseAnimation');
       const instance = saPlugin && (saPlugin.instance || saPlugin);
+      // Guard clause: Use plugin if available
       if (instance && typeof instance.triggerArise === 'function') {
         instance.triggerArise(shadow);
         return;
       }
     } catch (error) {
-      console.warn('ShadowArmy: Unable to use ShadowAriseAnimation plugin', error);
+      // debugError method is in SECTION 4
+      this.debugError('ANIMATION', 'Unable to use ShadowAriseAnimation plugin', error);
     }
 
     // Fallback: simple inline ARISE animation (minimal, in case plugin is missing)
@@ -3162,7 +4204,7 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // SHADOW QUERY & MANAGEMENT
+  // 3.8.1 SHADOW QUERY & MANAGEMENT
   // ============================================================================
 
   /**
@@ -3172,11 +4214,13 @@ module.exports = class ShadowArmy {
    * 2. Return total count
    */
   async getTotalShadowCount() {
+    // Guard clause: Use IndexedDB if available
     if (this.storageManager) {
       try {
         return await this.storageManager.getTotalCount();
       } catch (error) {
-        console.error('ShadowArmy: Failed to get count from IndexedDB', error);
+        // debugError method is in SECTION 4
+        this.debugError('STORAGE', 'Failed to get count from IndexedDB', error);
       }
     }
     // Fallback to localStorage
@@ -3191,11 +4235,16 @@ module.exports = class ShadowArmy {
    * 3. Return filtered array
    */
   async getShadowsByRole(role) {
+    // Guard clause: Return empty array if no role provided
+    if (!role) return [];
+
+    // Guard clause: Use IndexedDB if available
     if (this.storageManager) {
       try {
         return await this.storageManager.getShadows({ role }, 0, 10000);
       } catch (error) {
-        console.error('ShadowArmy: Failed to get shadows by role from IndexedDB', error);
+        // debugError method is in SECTION 4
+        this.debugError('STORAGE', 'Failed to get shadows by role from IndexedDB', error);
       }
     }
     // Fallback to localStorage
@@ -3210,11 +4259,16 @@ module.exports = class ShadowArmy {
    * 3. Return filtered array
    */
   async getShadowsByRank(rank) {
+    // Guard clause: Return empty array if no rank provided
+    if (!rank) return [];
+
+    // Guard clause: Use IndexedDB if available
     if (this.storageManager) {
       try {
         return await this.storageManager.getShadows({ rank }, 0, 10000);
       } catch (error) {
-        console.error('ShadowArmy: Failed to get shadows by rank from IndexedDB', error);
+        // debugError method is in SECTION 4
+        this.debugError('STORAGE', 'Failed to get shadows by rank from IndexedDB', error);
       }
     }
     // Fallback to localStorage
@@ -3230,6 +4284,7 @@ module.exports = class ShadowArmy {
    * 4. Return empty array if no shadows found
    */
   async getAllShadows() {
+    // Guard clause: Fallback to localStorage if no storage manager
     if (!this.storageManager) {
       return this.settings.shadows || [];
     }
@@ -3240,13 +4295,15 @@ module.exports = class ShadowArmy {
       // HYBRID COMPRESSION: Decompress all shadows transparently
       // This ensures all operations (XP, level-ups, stats) work correctly
       // regardless of compression state in storage
+      // Guard clause: Only map if shadows exist
       if (shadows && shadows.length > 0) {
         shadows = shadows.map((s) => this.getShadowData(s));
       }
 
       return shadows;
     } catch (error) {
-      console.error('[ShadowArmy] Failed to get all shadows from IndexedDB', error);
+      // debugError method is in SECTION 4
+      this.debugError('STORAGE', 'Failed to get all shadows from IndexedDB', error);
       return this.settings.shadows || [];
     }
   }
@@ -3265,17 +4322,22 @@ module.exports = class ShadowArmy {
     try {
       let shadows = [];
 
+      // Guard clause: Use IndexedDB if available, fallback to localStorage
       if (this.storageManager) {
         try {
           // Get all shadows from IndexedDB
           shadows = await this.storageManager.getShadows({}, 0, 10000);
         } catch (error) {
-          console.error('ShadowArmy: Failed to get shadows from IndexedDB', error);
+          // debugError method is in SECTION 4
+          this.debugError('STORAGE', 'Failed to get shadows from IndexedDB', error);
           shadows = this.settings.shadows || [];
         }
       } else {
         shadows = this.settings.shadows || [];
       }
+
+      // Guard clause: Return empty array if no shadows
+      if (!shadows || shadows.length === 0) return [];
 
       // Compute strength on the fly without mutating stored shadows
       // (strength = sum of all effective stats: base + growth + natural)
@@ -3291,13 +4353,1493 @@ module.exports = class ShadowArmy {
       // Return top 7 strongest (generals)
       return withPower.slice(0, 7).map((x) => x.shadow);
     } catch (error) {
-      console.error('ShadowArmy: Error getting top generals', error);
+      // debugError method is in SECTION 4
+      this.debugError('STORAGE', 'Error getting top generals', error);
       return [];
     }
   }
 
   // ============================================================================
-  // SHADOW BUFFS & XP SYSTEM
+  // 3.9 SHADOW PROCESSING HELPERS
+  // ============================================================================
+
+  /**
+   * Calculate shadow power with caching for performance
+   * Caches power calculations to avoid redundant computations
+   * Operations:
+   * 1. Check cache first (fast path)
+   * 2. Decompress shadow if needed
+   * 3. Get effective stats
+   * 4. Calculate power
+   * 5. Cache result
+   * 6. Return power value
+   * @param {Object} shadow - Shadow object
+   * @returns {number} - Shadow power value
+   */
+  calculateShadowPowerCached(shadow) {
+    // Guard clause: Return 0 for invalid shadow
+    if (!shadow || !shadow.id) return 0;
+
+    // Check cache first (fast path)
+    const cacheKey = `power_${shadow.id}`;
+    if (this._shadowPowerCache && this._shadowPowerCache.has(cacheKey)) {
+      return this._shadowPowerCache.get(cacheKey);
+    }
+
+    // Decompress if needed
+    const decompressed = this.getShadowData(shadow);
+    const effective = this.getShadowEffectiveStats(decompressed);
+    const power = this.calculateShadowStrength(effective, decompressed.level || 1);
+
+    // Evict oldest entries if cache is full
+    if (this._shadowPowerCache.size >= this._shadowPowerCacheLimit) {
+      const firstKey = this._shadowPowerCache.keys().next().value;
+      this._shadowPowerCache.delete(firstKey);
+    }
+
+    this._shadowPowerCache.set(cacheKey, power);
+    return power;
+  }
+
+  /**
+   * Process shadows with power calculation (helper for compression/essence operations)
+   * Combines decompression, effective stats, and power calculation in one operation
+   * Operations:
+   * 1. Map shadows to include decompressed data, effective stats, and power
+   * 2. Use cached power calculation when possible
+   * 3. Return array of shadow objects with power metadata
+   * @param {Array<Object>} shadows - Array of shadow objects
+   * @param {boolean} useCache - Whether to use power cache (default: true)
+   * @returns {Array<Object>} - Array of { shadow, decompressed, effective, power }
+   */
+  processShadowsWithPower(shadows, useCache = true) {
+    // Guard clause: Return empty array if no shadows
+    if (!shadows || shadows.length === 0) return [];
+
+    return shadows.map((shadow) => {
+      const decompressed = this.getShadowData(shadow);
+      const effective = this.getShadowEffectiveStats(decompressed);
+      const power = useCache
+        ? this.calculateShadowPowerCached(shadow)
+        : this.calculateShadowStrength(effective, decompressed.level || 1);
+
+      return {
+        shadow,
+        decompressed,
+        effective,
+        power,
+        compressionLevel: shadow._c || 0,
+      };
+    });
+  }
+
+  /**
+   * Clear shadow power cache (call after major operations that change shadow stats)
+   * Operations:
+   * 1. Clear power cache map
+   * 2. Log cache clear for debugging
+   */
+  clearShadowPowerCache() {
+    if (this._shadowPowerCache) {
+      this._shadowPowerCache.clear();
+      this.debugLog('CACHE', 'Shadow power cache cleared');
+    }
+  }
+
+  // ============================================================================
+  // 3.9.5 DUNGEON COMBAT OPTIMIZATION HELPERS
+  // ============================================================================
+
+  /**
+   * Combat Performance Manager - Optimizes combat calculations for millions of shadows
+   * Provides batching, throttling, caching, and aggregation for CPU/memory efficiency
+   */
+
+  /**
+   * Pre-calculate aggregated army stats for combat (avoids individual calculations)
+   * Operations:
+   * 1. Get all shadows (or use cached aggregation)
+   * 2. Group by rank and role
+   * 3. Calculate aggregated stats per group
+   * 4. Cache result for reuse
+   * @param {boolean} forceRecalculate - Force recalculation even if cache exists
+   * @returns {Promise<Object>} - Aggregated army stats
+   */
+  async getAggregatedArmyStats(forceRecalculate = false) {
+    // Check cache first (fast path)
+    const cacheTTL = 30000; // 30 seconds cache
+    const now = Date.now();
+
+    if (
+      !forceRecalculate &&
+      this._armyStatsCache &&
+      this._armyStatsCacheTime &&
+      now - this._armyStatsCacheTime < cacheTTL
+    ) {
+      this.debugLog('COMBAT', 'Returning cached army stats');
+      return this._armyStatsCache;
+    }
+
+    try {
+      // Get all shadows efficiently
+      let allShadows = [];
+      if (this.storageManager) {
+        allShadows = await this.storageManager.getShadows({}, 0, 1000000);
+      } else {
+        allShadows = this.settings.shadows || [];
+      }
+
+      // Guard clause: Return empty stats if no shadows
+      if (!allShadows || allShadows.length === 0) {
+        return {
+          totalShadows: 0,
+          totalPower: 0,
+          totalStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 },
+          byRank: {},
+          byRole: {},
+          avgLevel: 0,
+        };
+      }
+
+      // Use reduce for functional aggregation
+      const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const aggregated = allShadows.reduce(
+        (acc, shadow) => {
+          // Decompress if needed
+          const decompressed = this.getShadowData(shadow);
+          const effective = this.getShadowEffectiveStats(decompressed);
+          const power = this.calculateShadowPowerCached(shadow);
+
+          // Aggregate totals
+          acc.totalShadows++;
+          acc.totalPower += power;
+          acc.totalLevel += decompressed.level || 1;
+
+          // Aggregate stats
+          statKeys.forEach((stat) => {
+            acc.totalStats[stat] += effective[stat] || 0;
+          });
+
+          // Group by rank
+          const rank = decompressed.rank || 'E';
+          if (!acc.byRank[rank]) {
+            acc.byRank[rank] = {
+              count: 0,
+              totalPower: 0,
+              totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+            };
+          }
+          acc.byRank[rank].count++;
+          acc.byRank[rank].totalPower += power;
+          statKeys.forEach((stat) => {
+            acc.byRank[rank].totalStats[stat] += effective[stat] || 0;
+          });
+
+          // Group by role
+          const role = decompressed.role || decompressed.roleName || 'Unknown';
+          if (!acc.byRole[role]) {
+            acc.byRole[role] = {
+              count: 0,
+              totalPower: 0,
+              totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+            };
+          }
+          acc.byRole[role].count++;
+          acc.byRole[role].totalPower += power;
+          statKeys.forEach((stat) => {
+            acc.byRole[role].totalStats[stat] += effective[stat] || 0;
+          });
+
+          return acc;
+        },
+        {
+          totalShadows: 0,
+          totalPower: 0,
+          totalLevel: 0,
+          totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+          byRank: {},
+          byRole: {},
+        }
+      );
+
+      // Calculate averages
+      aggregated.avgLevel =
+        aggregated.totalShadows > 0
+          ? Math.floor(aggregated.totalLevel / aggregated.totalShadows)
+          : 0;
+
+      // Cache result
+      this._armyStatsCache = aggregated;
+      this._armyStatsCacheTime = now;
+
+      this.debugLog('COMBAT', 'Army stats aggregated', {
+        totalShadows: aggregated.totalShadows,
+        totalPower: aggregated.totalPower,
+      });
+
+      return aggregated;
+    } catch (error) {
+      this.debugError('COMBAT', 'Failed to aggregate army stats', error);
+      return {
+        totalShadows: 0,
+        totalPower: 0,
+        totalStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 },
+        byRank: {},
+        byRole: {},
+        avgLevel: 0,
+      };
+    }
+  }
+
+  /**
+   * Calculate army damage output using aggregated stats (O(1) instead of O(n))
+   * Operations:
+   * 1. Get aggregated army stats (cached)
+   * 2. Calculate damage using aggregated power
+   * 3. Apply damage multipliers
+   * 4. Return total damage
+   * @param {Object} options - Combat options
+   * @param {number} options.damageMultiplier - Damage multiplier (default: 1.0)
+   * @param {string} options.targetType - Target type (mob/boss) for different multipliers
+   * @returns {Promise<number>} - Total army damage
+   */
+  async calculateArmyDamage(options = {}) {
+    const { damageMultiplier = 1.0, targetType = 'mob' } = options;
+
+    // Get aggregated stats (uses cache)
+    const armyStats = await this.getAggregatedArmyStats();
+
+    // Guard clause: Return 0 if no army
+    if (armyStats.totalShadows === 0) return 0;
+
+    // Base damage from total power
+    const baseDamage = armyStats.totalPower * 0.1; // 10% of power as base damage
+
+    // Apply target type multipliers
+    const targetMultipliers = {
+      mob: 1.0,
+      boss: 0.5, // Bosses take 50% damage (tankier)
+      elite: 0.75, // Elite mobs take 75% damage
+    };
+    const targetMultiplier = targetMultipliers[targetType] || 1.0;
+
+    // Calculate final damage
+    const totalDamage = baseDamage * damageMultiplier * targetMultiplier;
+
+    return Math.floor(totalDamage);
+  }
+
+  /**
+   * Process combat in batches with throttling (prevents CPU overload)
+   * Operations:
+   * 1. Split shadows into batches
+   * 2. Process each batch with delay
+   * 3. Use requestAnimationFrame for smooth updates
+   * 4. Return combat results
+   * @param {Array<Object>} shadows - Shadows to process
+   * @param {Object} target - Target monster/boss
+   * @param {Object} options - Combat processing options
+   * @param {number} options.batchSize - Shadows per batch (default: 100)
+   * @param {number} options.delayMs - Delay between batches (default: 16ms for 60fps)
+   * @param {Function} options.onBatchComplete - Callback after each batch
+   * @returns {Promise<Object>} - Combat results
+   */
+  async processCombatBatch(shadows, target, options = {}) {
+    const {
+      batchSize = 100,
+      delayMs = 16, // ~60fps
+      onBatchComplete = null,
+    } = options;
+
+    // Guard clause: Return early if no shadows
+    if (!shadows || shadows.length === 0) {
+      return { totalDamage: 0, shadowsProcessed: 0, batches: 0 };
+    }
+
+    // Split into batches
+    const batches = [];
+    for (let i = 0; i < shadows.length; i += batchSize) {
+      batches.push(shadows.slice(i, i + batchSize));
+    }
+
+    let totalDamage = 0;
+    let shadowsProcessed = 0;
+
+    // Process batches with throttling
+    for (let i = 0; i < batches.length; i++) {
+      const batch = batches[i];
+
+      // Process batch (use cached power calculations)
+      const batchResults = batch.map((shadow) => {
+        const power = this.calculateShadowPowerCached(shadow);
+        const damage = power * 0.1; // 10% of power as damage
+        return { shadowId: shadow.id, damage, power };
+      });
+
+      // Aggregate batch damage
+      const batchDamage = batchResults.reduce((sum, result) => sum + result.damage, 0);
+      totalDamage += batchDamage;
+      shadowsProcessed += batch.length;
+
+      // Callback if provided
+      if (onBatchComplete && typeof onBatchComplete === 'function') {
+        onBatchComplete({ batchIndex: i, totalBatches: batches.length, batchDamage, totalDamage });
+      }
+
+      // Throttle: Wait before next batch (except last batch)
+      if (i < batches.length - 1) {
+        await new Promise((resolve) => {
+          if (window.requestAnimationFrame) {
+            requestAnimationFrame(() => setTimeout(resolve, delayMs));
+          } else {
+            setTimeout(resolve, delayMs);
+          }
+        });
+      }
+    }
+
+    return {
+      totalDamage: Math.floor(totalDamage),
+      shadowsProcessed,
+      batches: batches.length,
+      avgDamagePerShadow: shadowsProcessed > 0 ? Math.floor(totalDamage / shadowsProcessed) : 0,
+    };
+  }
+
+  /**
+   * Calculate combat result using aggregated stats (ultra-fast for millions)
+   * Uses pre-calculated army stats instead of individual shadow calculations
+   * Operations:
+   * 1. Get aggregated army stats (cached)
+   * 2. Calculate total damage from aggregated power
+   * 3. Apply combat modifiers
+   * 4. Return combat result
+   * @param {Object} target - Target monster/boss
+   * @param {Object} options - Combat options
+   * @returns {Promise<Object>} - Combat result
+   */
+  async calculateCombatResultAggregated(target, options = {}) {
+    const { damageMultiplier = 1.0 } = options;
+
+    // Get aggregated stats (fast, uses cache)
+    const armyStats = await this.getAggregatedArmyStats();
+
+    // Guard clause: Return early if no army
+    if (armyStats.totalShadows === 0) {
+      return {
+        damage: 0,
+        targetHP: target.hp || 0,
+        targetKilled: false,
+        shadowsUsed: 0,
+      };
+    }
+
+    // Calculate damage from aggregated power
+    const baseDamage = armyStats.totalPower * 0.1; // 10% of power as damage
+    const finalDamage = Math.floor(baseDamage * damageMultiplier);
+
+    // Apply to target
+    const targetHP = target.hp || 0;
+    const newTargetHP = Math.max(0, targetHP - finalDamage);
+    const targetKilled = newTargetHP <= 0;
+
+    return {
+      damage: finalDamage,
+      targetHP: newTargetHP,
+      targetKilled,
+      shadowsUsed: armyStats.totalShadows,
+      armyPower: armyStats.totalPower,
+    };
+  }
+
+  /**
+   * Performance monitor for combat operations
+   * Tracks FPS, CPU usage, and memory to prevent overload
+   * Operations:
+   * 1. Track frame times
+   * 2. Calculate FPS
+   * 3. Monitor memory usage
+   * 4. Return performance metrics
+   * @returns {Object} - Performance metrics
+   */
+  getCombatPerformanceMetrics() {
+    // eslint-disable-next-line no-undef
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const now = perfNow;
+
+    // Initialize performance tracking if needed
+    if (!this._combatPerformance) {
+      this._combatPerformance = {
+        frameTimes: [],
+        lastFrameTime: now,
+        fps: 60,
+        memoryUsage: 0,
+        combatOperations: 0,
+        lastUpdate: now,
+      };
+    }
+
+    const perf = this._combatPerformance;
+
+    // Calculate FPS from frame times
+    const frameTime = now - perf.lastFrameTime;
+    perf.frameTimes.push(frameTime);
+    if (perf.frameTimes.length > 60) {
+      perf.frameTimes.shift(); // Keep last 60 frames
+    }
+
+    const avgFrameTime = perf.frameTimes.reduce((sum, t) => sum + t, 0) / perf.frameTimes.length;
+    perf.fps = avgFrameTime > 0 ? Math.floor(1000 / avgFrameTime) : 60;
+
+    // Get memory usage (if available)
+    // eslint-disable-next-line no-undef
+    if (typeof performance !== 'undefined' && performance.memory) {
+      // eslint-disable-next-line no-undef
+      perf.memoryUsage = Math.floor(performance.memory.usedJSHeapSize / 1024 / 1024); // MB
+    }
+
+    perf.lastFrameTime = now;
+    perf.lastUpdate = now;
+
+    return {
+      fps: perf.fps,
+      memoryMB: perf.memoryUsage,
+      combatOperations: perf.combatOperations,
+      avgFrameTime: Math.floor(avgFrameTime),
+      isHealthy: perf.fps >= 30 && perf.memoryUsage < 500, // Healthy if 30+ FPS and <500MB
+    };
+  }
+
+  /**
+   * Throttle combat operations based on performance metrics
+   * Automatically adjusts batch size and delay based on FPS
+   * Operations:
+   * 1. Get current performance metrics
+   * 2. Adjust batch size based on FPS
+   * 3. Adjust delay based on memory usage
+   * 4. Return optimized combat options
+   * @returns {Object} - Optimized combat options
+   */
+  getOptimizedCombatOptions() {
+    const metrics = this.getCombatPerformanceMetrics();
+
+    // Adjust batch size based on FPS
+    let batchSize = 100; // Default
+    if (metrics.fps < 30) {
+      batchSize = 50; // Smaller batches if FPS is low
+    } else if (metrics.fps >= 60) {
+      batchSize = 200; // Larger batches if FPS is high
+    }
+
+    // Adjust delay based on memory
+    let delayMs = 16; // Default ~60fps
+    if (metrics.memoryMB > 300) {
+      delayMs = 32; // Slower if memory is high
+    } else if (metrics.memoryMB < 100) {
+      delayMs = 8; // Faster if memory is low
+    }
+
+    return {
+      batchSize,
+      delayMs,
+      useAggregation: metrics.combatOperations > 1000, // Use aggregation for large armies
+      throttle: !metrics.isHealthy, // Throttle if performance is poor
+    };
+  }
+
+  /**
+   * Clear combat performance cache
+   * Call after major combat operations to free memory
+   */
+  clearCombatCache() {
+    // Clear army stats cache
+    this._armyStatsCache = null;
+    this._armyStatsCacheTime = null;
+
+    // Clear power cache
+    this.clearShadowPowerCache();
+
+    // Clear personality cache (keep recent entries, clear old)
+    if (this._shadowPersonalityCache && this._shadowPersonalityCache.size > 1000) {
+      // Keep only most recent 1000 personalities
+      const entries = Array.from(this._shadowPersonalityCache.entries());
+      this._shadowPersonalityCache.clear();
+      entries.slice(-1000).forEach(([key, value]) => {
+        this._shadowPersonalityCache.set(key, value);
+      });
+    }
+
+    // Reset performance tracking
+    if (this._combatPerformance) {
+      this._combatPerformance.frameTimes = [];
+      this._combatPerformance.combatOperations = 0;
+    }
+
+    this.debugLog('COMBAT', 'Combat cache cleared');
+  }
+
+  /**
+   * Initialize combat performance tracking
+   * Call at start of combat session
+   */
+  initCombatPerformanceTracking() {
+    // eslint-disable-next-line no-undef
+    const perfNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    this._combatPerformance = {
+      frameTimes: [],
+      lastFrameTime: perfNow,
+      fps: 60,
+      memoryUsage: 0,
+      combatOperations: 0,
+      lastUpdate: perfNow,
+    };
+    this.debugLog('COMBAT', 'Combat performance tracking initialized');
+  }
+
+  /**
+   * Combat queue manager - Processes combat in priority order
+   * Operations:
+   * 1. Queue combat operations with priority
+   * 2. Process queue in batches
+   * 3. Handle high-priority operations first
+   * 4. Throttle based on performance
+   * @param {Array<Object>} combatOperations - Array of { priority, shadow, target, callback }
+   * @param {Object} options - Queue processing options
+   * @returns {Promise<Array>} - Combat results
+   */
+  async processCombatQueue(combatOperations, options = {}) {
+    const { maxConcurrent = 10, priorityThreshold = 5 } = options;
+
+    // Guard clause: Return early if no operations
+    if (!combatOperations || combatOperations.length === 0) {
+      return [];
+    }
+
+    // Sort by priority (higher priority first)
+    const sortedOps = [...combatOperations].sort((a, b) => (b.priority || 0) - (a.priority || 0));
+
+    // Split into high and low priority
+    const highPriority = sortedOps.filter((op) => (op.priority || 0) >= priorityThreshold);
+    const lowPriority = sortedOps.filter((op) => (op.priority || 0) < priorityThreshold);
+
+    const results = [];
+
+    // Process high priority first (synchronous, fast)
+    for (const op of highPriority) {
+      try {
+        const result = await this.processSingleCombat(op.shadow, op.target);
+        if (op.callback) op.callback(result);
+        results.push(result);
+      } catch (error) {
+        this.debugError('COMBAT', 'High priority combat error', error);
+      }
+    }
+
+    // Process low priority in batches (throttled)
+    const batchSize = Math.min(maxConcurrent, lowPriority.length);
+    for (let i = 0; i < lowPriority.length; i += batchSize) {
+      const batch = lowPriority.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (op) => {
+          try {
+            const result = await this.processSingleCombat(op.shadow, op.target);
+            if (op.callback) op.callback(result);
+            return result;
+          } catch (error) {
+            this.debugError('COMBAT', 'Low priority combat error', error);
+            return null;
+          }
+        })
+      );
+      results.push(...batchResults.filter((r) => r !== null));
+
+      // Throttle between batches
+      if (i + batchSize < lowPriority.length) {
+        await new Promise((resolve) => {
+          setTimeout(() => {
+            resolve(undefined);
+          }, 16); // ~60fps
+        });
+      }
+    }
+
+    return results;
+  }
+
+  /**
+   * Process single combat operation (lightweight, cached)
+   * Operations:
+   * 1. Get shadow power (cached)
+   * 2. Calculate damage
+   * 3. Apply to target
+   * 4. Return result
+   * @param {Object} shadow - Shadow object
+   * @param {Object} target - Target monster/boss
+   * @returns {Object} - Combat result
+   */
+  async processSingleCombat(shadow, target) {
+    // Guard clause: Return early if invalid inputs
+    if (!shadow || !target) {
+      return { damage: 0, targetKilled: false };
+    }
+
+    // Use cached power calculation
+    const power = this.calculateShadowPowerCached(shadow);
+    const damage = Math.floor(power * 0.1); // 10% of power as damage
+
+    // Apply damage to target
+    const targetHP = target.hp || 0;
+    const newTargetHP = Math.max(0, targetHP - damage);
+    const targetKilled = newTargetHP <= 0;
+
+    // Update performance counter
+    if (this._combatPerformance) {
+      this._combatPerformance.combatOperations++;
+    }
+
+    return {
+      shadowId: shadow.id,
+      damage,
+      targetHP: newTargetHP,
+      targetKilled,
+      power,
+    };
+  }
+
+  /**
+   * Batch update shadows after combat (efficient database operations)
+   * Operations:
+   * 1. Collect all shadow updates
+   * 2. Batch update in single transaction
+   * 3. Clear caches after update
+   * @param {Array<Object>} shadowUpdates - Array of { shadow, updates }
+   * @returns {Promise<number>} - Count of updated shadows
+   */
+  async batchUpdateShadowsAfterCombat(shadowUpdates) {
+    // Guard clause: Return early if no updates
+    if (!shadowUpdates || shadowUpdates.length === 0) {
+      return 0;
+    }
+
+    try {
+      // Prepare shadows for batch update
+      const shadowsToUpdate = shadowUpdates
+        .map(({ shadow, updates }) => {
+          // Apply updates to shadow
+          const updatedShadow = { ...shadow, ...updates };
+          // Recalculate strength if stats changed
+          if (updates.baseStats || updates.growthStats || updates.naturalGrowthStats) {
+            const effective = this.getShadowEffectiveStats(updatedShadow);
+            updatedShadow.strength = this.calculateShadowStrength(
+              effective,
+              updatedShadow.level || 1
+            );
+          }
+          return this.prepareShadowForSave(updatedShadow);
+        })
+        .filter((shadow) => shadow !== null);
+
+      // Batch update using storage manager
+      if (this.storageManager?.updateShadowsBatch && shadowsToUpdate.length > 0) {
+        const updated = await this.storageManager.updateShadowsBatch(shadowsToUpdate);
+        // Clear caches after update
+        this.clearCombatCache();
+        return updated;
+      }
+
+      return 0;
+    } catch (error) {
+      this.debugError('COMBAT', 'Failed to batch update shadows after combat', error);
+      return 0;
+    }
+  }
+
+  /**
+   * Get combat-ready shadow subset (top performers only)
+   * For millions of shadows, only use top N for combat calculations
+   * Operations:
+   * 1. Get aggregated stats
+   * 2. Calculate top N shadows needed for combat
+   * 3. Return subset of shadows
+   * @param {number} maxShadows - Maximum shadows to use (default: 1000)
+   * @returns {Promise<Array<Object>>} - Combat-ready shadow subset
+   */
+  async getCombatReadyShadows(maxShadows = 1000) {
+    try {
+      // Get all shadows
+      let allShadows = [];
+      if (this.storageManager) {
+        allShadows = await this.storageManager.getShadows({}, 0, maxShadows * 2); // Get 2x for filtering
+      } else {
+        allShadows = this.settings.shadows || [];
+      }
+
+      // Guard clause: Return all if below limit
+      if (allShadows.length <= maxShadows) {
+        return allShadows.map((s) => this.getShadowData(s));
+      }
+
+      // Process with power and sort (use cached calculations)
+      const withPower = this.processShadowsWithPower(allShadows, true);
+
+      // Sort by power (strongest first)
+      withPower.sort((a, b) => b.power - a.power);
+
+      // Return top N shadows
+      return withPower.slice(0, maxShadows).map(({ shadow }) => this.getShadowData(shadow));
+    } catch (error) {
+      this.debugError('COMBAT', 'Failed to get combat-ready shadows', error);
+      return [];
+    }
+  }
+
+  /**
+   * Calculate army effectiveness against target (early exit optimization)
+   * Quickly determines if army can defeat target without full calculation
+   * Operations:
+   * 1. Get aggregated army stats
+   * 2. Calculate total army damage
+   * 3. Compare with target HP
+   * 4. Return effectiveness estimate
+   * @param {Object} target - Target monster/boss
+   * @returns {Promise<Object>} - Effectiveness estimate
+   */
+  async estimateArmyEffectiveness(target) {
+    const targetHP = target.hp || 0;
+
+    // Guard clause: Return early if no target HP
+    if (targetHP <= 0) {
+      return { canDefeat: true, estimatedRounds: 0, confidence: 1.0 };
+    }
+
+    // Get aggregated stats (fast, cached)
+    const armyStats = await this.getAggregatedArmyStats();
+
+    // Guard clause: Return early if no army
+    if (armyStats.totalShadows === 0) {
+      return { canDefeat: false, estimatedRounds: Infinity, confidence: 1.0 };
+    }
+
+    // Calculate damage per round (using aggregated power)
+    const damagePerRound = Math.floor(armyStats.totalPower * 0.1); // 10% of power
+
+    // Guard clause: Early exit if damage is 0
+    if (damagePerRound <= 0) {
+      return { canDefeat: false, estimatedRounds: Infinity, confidence: 1.0 };
+    }
+
+    // Estimate rounds needed
+    const estimatedRounds = Math.ceil(targetHP / damagePerRound);
+
+    // Calculate confidence (based on army size and power)
+    const confidence = Math.min(1.0, armyStats.totalShadows / 1000); // More shadows = higher confidence
+
+    return {
+      canDefeat: true,
+      estimatedRounds,
+      confidence,
+      damagePerRound,
+      armyPower: armyStats.totalPower,
+    };
+  }
+
+  /**
+   * Memory-efficient combat data structure
+   * Stores only essential combat data to minimize memory usage
+   * @param {Object} shadow - Shadow object
+   * @param {Object} target - Target object
+   * @returns {Object} - Minimal combat data
+   */
+  createCombatData(shadow, target) {
+    // Store only essential data (minimal memory footprint)
+    return {
+      s: shadow.id, // Shadow ID (compressed key)
+      t: target.id || 'unknown', // Target ID
+      p: this.calculateShadowPowerCached(shadow), // Power (cached)
+      d: 0, // Damage (calculated)
+      ts: Date.now(), // Timestamp
+    };
+  }
+
+  /**
+   * Debounce combat updates (prevents excessive UI updates)
+   * Operations:
+   * 1. Debounce combat result updates
+   * 2. Batch UI updates
+   * 3. Return debounced update function
+   * @param {Function} updateFn - Update function to debounce
+   * @param {number} delayMs - Debounce delay (default: 100ms)
+   * @returns {Function} - Debounced update function
+   */
+  debounceCombatUpdate(updateFn, delayMs = 100) {
+    let timeoutId = null;
+
+    return (...args) => {
+      // Clear existing timeout
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+
+      // Set new timeout
+      timeoutId = setTimeout(() => {
+        updateFn(...args);
+        timeoutId = null;
+      }, delayMs);
+    };
+  }
+
+  /**
+   * Throttle combat calculations (prevents CPU overload)
+   * Operations:
+   * 1. Throttle function calls
+   * 2. Skip calls if too frequent
+   * 3. Return throttled function
+   * @param {Function} fn - Function to throttle
+   * @param {number} delayMs - Throttle delay (default: 16ms for 60fps)
+   * @returns {Function} - Throttled function
+   */
+  throttleCombatCalculation(fn, delayMs = 16) {
+    let lastCall = 0;
+    let timeoutId = null;
+
+    return (...args) => {
+      const now = Date.now();
+      const timeSinceLastCall = now - lastCall;
+
+      if (timeSinceLastCall >= delayMs) {
+        // Enough time passed, call immediately
+        lastCall = now;
+        fn(...args);
+      } else {
+        // Too soon, schedule for later
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
+        timeoutId = setTimeout(() => {
+          lastCall = Date.now();
+          fn(...args);
+          timeoutId = null;
+        }, delayMs - timeSinceLastCall);
+      }
+    };
+  }
+
+  // ============================================================================
+  // 3.9.6 SHADOW PERSONALITY & BEHAVIOR SYSTEM
+  // ============================================================================
+
+  /**
+   * Shadow Personality System - Individualistic combat behavior
+   * Each shadow has unique personality affecting attack speed, damage, and targeting
+   */
+
+  /**
+   * Shadow personality types with behavior modifiers
+   * Each personality affects attack interval, damage calculation, and targeting
+   * Defined as instance property (not in constructor) for easier access
+   */
+  get shadowPersonalities() {
+    return {
+      aggressive: {
+        name: 'Aggressive',
+        attackIntervalMultiplier: 0.7, // Attacks 30% faster
+        damageMultiplier: 1.2, // 20% more damage
+        targetPreference: 'weakest', // Targets weakest enemies
+        defenseMultiplier: 0.8, // 20% less defense (glass cannon)
+        description: 'Fast, high damage, low defense',
+      },
+      defensive: {
+        name: 'Defensive',
+        attackIntervalMultiplier: 1.3, // Attacks 30% slower
+        damageMultiplier: 0.8, // 20% less damage
+        targetPreference: 'strongest', // Tanks strongest enemies
+        defenseMultiplier: 1.5, // 50% more defense (tank)
+        description: 'Slow, low damage, high defense',
+      },
+      balanced: {
+        name: 'Balanced',
+        attackIntervalMultiplier: 1.0, // Normal speed
+        damageMultiplier: 1.0, // Normal damage
+        targetPreference: 'random', // Random targeting
+        defenseMultiplier: 1.0, // Normal defense
+        description: 'Average in all stats',
+      },
+      berserker: {
+        name: 'Berserker',
+        attackIntervalMultiplier: 0.5, // Attacks 50% faster
+        damageMultiplier: 1.5, // 50% more damage
+        targetPreference: 'nearest', // Attacks nearest
+        defenseMultiplier: 0.5, // 50% less defense (very fragile)
+        description: 'Extremely fast, very high damage, very low defense',
+      },
+      tank: {
+        name: 'Tank',
+        attackIntervalMultiplier: 1.5, // Attacks 50% slower
+        damageMultiplier: 0.6, // 40% less damage
+        targetPreference: 'strongest', // Always tanks
+        defenseMultiplier: 2.0, // 100% more defense (very tanky)
+        description: 'Very slow, low damage, very high defense',
+      },
+      assassin: {
+        name: 'Assassin',
+        attackIntervalMultiplier: 0.8, // Attacks 20% faster
+        damageMultiplier: 1.3, // 30% more damage
+        targetPreference: 'weakest', // Targets weak enemies (cleanup)
+        defenseMultiplier: 0.9, // 10% less defense
+        description: 'Fast, high damage, targets weak enemies',
+      },
+      support: {
+        name: 'Support',
+        attackIntervalMultiplier: 1.2, // Attacks 20% slower
+        damageMultiplier: 0.7, // 30% less damage
+        targetPreference: 'random', // Random targeting
+        defenseMultiplier: 1.2, // 20% more defense
+        description: 'Slower, lower damage, higher defense',
+      },
+    };
+  }
+
+  /**
+   * Get or assign personality to shadow
+   * Operations:
+   * 1. Check if shadow already has personality
+   * 2. If not, assign based on role and stats
+   * 3. Return personality object
+   * @param {Object} shadow - Shadow object
+   * @returns {Object} - Personality object with modifiers
+   */
+  getShadowPersonality(shadow) {
+    // Guard clause: Return default if no shadow
+    if (!shadow) {
+      return this.shadowPersonalities.balanced;
+    }
+
+    // Check cache first (fast path)
+    const cacheKey = `personality_${shadow.id}`;
+    if (this._shadowPersonalityCache && this._shadowPersonalityCache.has(cacheKey)) {
+      const cachedPersonality = this._shadowPersonalityCache.get(cacheKey);
+      if (this.shadowPersonalities[cachedPersonality]) {
+        return this.shadowPersonalities[cachedPersonality];
+      }
+    }
+
+    // Check if shadow already has assigned personality (from storage)
+    if (shadow.personality && this.shadowPersonalities[shadow.personality]) {
+      // Cache it
+      if (this._shadowPersonalityCache) {
+        this._shadowPersonalityCache.set(cacheKey, shadow.personality);
+      }
+      return this.shadowPersonalities[shadow.personality];
+    }
+
+    // Assign personality based on role and stats
+    const role = this.shadowRoles[shadow.role || shadow.roleName];
+    const effective = this.getShadowEffectiveStats(shadow);
+
+    // Calculate stat ratios to determine personality
+    const totalStats =
+      effective.strength +
+      effective.agility +
+      effective.intelligence +
+      effective.vitality +
+      effective.perception;
+    const strengthRatio = totalStats > 0 ? effective.strength / totalStats : 0.2;
+    const agilityRatio = totalStats > 0 ? effective.agility / totalStats : 0.2;
+    const vitalityRatio = totalStats > 0 ? effective.vitality / totalStats : 0.2;
+
+    // Determine personality based on stat distribution
+    let personality = 'balanced'; // Default
+
+    if (strengthRatio > 0.3 && agilityRatio > 0.25) {
+      personality = 'berserker'; // High STR + AGI = berserker
+    } else if (strengthRatio > 0.35) {
+      personality = 'aggressive'; // High STR = aggressive
+    } else if (vitalityRatio > 0.4) {
+      personality = 'tank'; // High VIT = tank
+    } else if (agilityRatio > 0.3 && strengthRatio < 0.2) {
+      personality = 'assassin'; // High AGI, low STR = assassin
+    } else if (vitalityRatio > 0.3 && strengthRatio < 0.25) {
+      personality = 'defensive'; // High VIT, low STR = defensive
+    } else if (strengthRatio < 0.2 && vitalityRatio < 0.2) {
+      personality = 'support'; // Low STR + VIT = support
+    }
+
+    // Role-based personality overrides
+    if (role) {
+      if (
+        role.name?.toLowerCase().includes('tank') ||
+        role.name?.toLowerCase().includes('guardian')
+      ) {
+        personality = 'tank';
+      } else if (
+        role.name?.toLowerCase().includes('assassin') ||
+        role.name?.toLowerCase().includes('rogue')
+      ) {
+        personality = 'assassin';
+      } else if (
+        role.name?.toLowerCase().includes('berserker') ||
+        role.name?.toLowerCase().includes('warrior')
+      ) {
+        personality = 'berserker';
+      }
+    }
+
+    // Cache personality for shadow (don't mutate original)
+    // cacheKey already declared above at line 5322, reuse it
+    if (this._shadowPersonalityCache && !this._shadowPersonalityCache.has(cacheKey)) {
+      this._shadowPersonalityCache.set(cacheKey, personality);
+      // Evict oldest entries if cache is full (limit 5000)
+      if (this._shadowPersonalityCache.size > 5000) {
+        const firstKey = this._shadowPersonalityCache.keys().next().value;
+        this._shadowPersonalityCache.delete(firstKey);
+      }
+    }
+
+    return this.shadowPersonalities[personality] || this.shadowPersonalities.balanced;
+  }
+
+  /**
+   * Calculate individual shadow attack interval based on personality
+   * Operations:
+   * 1. Get shadow personality
+   * 2. Calculate base interval from agility
+   * 3. Apply personality multiplier
+   * 4. Add random variance
+   * @param {Object} shadow - Shadow object
+   * @param {number} baseIntervalMs - Base attack interval in milliseconds
+   * @returns {number} - Individual attack interval in milliseconds
+   */
+  calculateShadowAttackInterval(shadow, baseIntervalMs = 2000) {
+    // Guard clause: Return base if no shadow
+    if (!shadow) return baseIntervalMs;
+
+    const personality = this.getShadowPersonality(shadow);
+    const effective = this.getShadowEffectiveStats(shadow);
+
+    // Base interval from agility (higher agility = faster attacks)
+    const agilityFactor = Math.max(0.5, 1.0 - effective.agility / 1000); // Agility reduces interval
+
+    // Apply personality multiplier
+    const personalityInterval = baseIntervalMs * personality.attackIntervalMultiplier;
+
+    // Apply agility factor
+    const agilityAdjusted = personalityInterval * agilityFactor;
+
+    // Add random variance (±10% for unpredictability)
+    const variance = 0.9 + Math.random() * 0.2; // 90-110%
+
+    return Math.max(100, Math.floor(agilityAdjusted * variance)); // Minimum 100ms
+  }
+
+  /**
+   * Calculate individual shadow damage based on personality
+   * Operations:
+   * 1. Get shadow personality
+   * 2. Calculate base damage from stats
+   * 3. Apply personality damage multiplier
+   * 4. Add random variance
+   * @param {Object} shadow - Shadow object
+   * @param {Object} target - Target monster/boss
+   * @returns {number} - Individual damage value
+   */
+  calculateShadowDamage(shadow, target) {
+    // Guard clause: Return 0 if invalid inputs
+    if (!shadow || !target) return 0;
+
+    const personality = this.getShadowPersonality(shadow);
+    const effective = this.getShadowEffectiveStats(shadow);
+
+    // Base damage from strength (primary stat)
+    const baseDamage = effective.strength * 0.15; // 15% of strength as base damage
+
+    // Apply personality damage multiplier
+    const personalityDamage = baseDamage * personality.damageMultiplier;
+
+    // Apply target type modifiers
+    const targetType = target.type || 'mob';
+    const targetMultipliers = {
+      mob: 1.0,
+      elite: 0.9,
+      boss: 0.7, // Bosses take less damage
+    };
+    const targetMultiplier = targetMultipliers[targetType] || 1.0;
+
+    // Add random variance (±15% for unpredictability)
+    const variance = 0.85 + Math.random() * 0.3; // 85-115%
+
+    return Math.floor(personalityDamage * targetMultiplier * variance);
+  }
+
+  /**
+   * Calculate shadow defense based on personality
+   * Operations:
+   * 1. Get shadow personality
+   * 2. Calculate base defense from vitality
+   * 3. Apply personality defense multiplier
+   * @param {Object} shadow - Shadow object
+   * @returns {number} - Defense value
+   */
+  calculateShadowDefense(shadow) {
+    // Guard clause: Return 0 if no shadow
+    if (!shadow) return 0;
+
+    const personality = this.getShadowPersonality(shadow);
+    const effective = this.getShadowEffectiveStats(shadow);
+
+    // Base defense from vitality
+    const baseDefense = effective.vitality * 0.2; // 20% of vitality as defense
+
+    // Apply personality defense multiplier
+    return Math.floor(baseDefense * personality.defenseMultiplier);
+  }
+
+  /**
+   * Select target for shadow based on personality
+   * Operations:
+   * 1. Get shadow personality
+   * 2. Filter available targets
+   * 3. Select target based on personality preference
+   * @param {Object} shadow - Shadow object
+   * @param {Array<Object>} availableTargets - Array of target monsters/bosses
+   * @returns {Object|null} - Selected target or null
+   */
+  selectTargetForShadow(shadow, availableTargets) {
+    // Guard clause: Return null if no shadow or targets
+    if (!shadow || !availableTargets || availableTargets.length === 0) {
+      return null;
+    }
+
+    const personality = this.getShadowPersonality(shadow);
+    const preference = personality.targetPreference || 'random';
+
+    // Filter out dead targets
+    const aliveTargets = availableTargets.filter((t) => (t.hp || 0) > 0);
+
+    if (aliveTargets.length === 0) return null;
+
+    // Select target based on personality preference
+    const targetSelectors = {
+      weakest: () => {
+        // Target with lowest HP
+        return aliveTargets.reduce((weakest, target) => {
+          return (target.hp || 0) < (weakest.hp || 0) ? target : weakest;
+        }, aliveTargets[0]);
+      },
+      strongest: () => {
+        // Target with highest HP
+        return aliveTargets.reduce((strongest, target) => {
+          return (target.hp || 0) > (strongest.hp || 0) ? target : strongest;
+        }, aliveTargets[0]);
+      },
+      nearest: () => {
+        // Target first in array (nearest)
+        return aliveTargets[0];
+      },
+      random: () => {
+        // Random target
+        return aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
+      },
+    };
+
+    const selector = targetSelectors[preference] || targetSelectors.random;
+    return selector();
+  }
+
+  /**
+   * Select shadow target for mob (mobs attack different shadows)
+   * Operations:
+   * 1. Filter available shadows
+   * 2. Select target based on mob behavior
+   * 3. Return selected shadow
+   * @param {Object} mob - Mob object
+   * @param {Array<Object>} availableShadows - Array of shadow objects
+   * @returns {Object|null} - Selected shadow target or null
+   */
+  selectShadowTargetForMob(mob, availableShadows) {
+    // Guard clause: Return null if no mob or shadows
+    if (!mob || !availableShadows || availableShadows.length === 0) {
+      return null;
+    }
+
+    // Filter out dead shadows (if tracking HP)
+    const aliveShadows = availableShadows.filter((s) => {
+      // If shadow has HP tracking, filter by HP > 0
+      if (s.currentHP !== undefined) {
+        return s.currentHP > 0;
+      }
+      return true; // Assume alive if no HP tracking
+    });
+
+    if (aliveShadows.length === 0) return null;
+
+    // Mob behavior: Different mobs target different shadows
+    const mobType = mob.type || 'normal';
+    const mobBehavior = {
+      aggressive: () => {
+        // Aggressive mobs target weakest shadows
+        return aliveShadows.reduce((weakest, shadow) => {
+          const weakPower = this.calculateShadowPowerCached(weakest);
+          const shadowPower = this.calculateShadowPowerCached(shadow);
+          return shadowPower < weakPower ? shadow : weakest;
+        }, aliveShadows[0]);
+      },
+      defensive: () => {
+        // Defensive mobs target strongest shadows (threat elimination)
+        return aliveShadows.reduce((strongest, shadow) => {
+          const strongPower = this.calculateShadowPowerCached(strongest);
+          const shadowPower = this.calculateShadowPowerCached(shadow);
+          return shadowPower > strongPower ? shadow : strongest;
+        }, aliveShadows[0]);
+      },
+      balanced: () => {
+        // Balanced mobs target random shadows
+        return aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
+      },
+      boss: () => {
+        // Bosses target strongest shadows (generals)
+        return aliveShadows.reduce((strongest, shadow) => {
+          const strongPower = this.calculateShadowPowerCached(strongest);
+          const shadowPower = this.calculateShadowPowerCached(shadow);
+          return shadowPower > strongPower ? shadow : strongest;
+        }, aliveShadows[0]);
+      },
+    };
+
+    // Determine mob behavior based on type
+    let behavior = 'balanced';
+    if (mobType === 'boss' || mob.rank === 'SSS' || mob.rank === 'NH') {
+      behavior = 'boss';
+    } else if (mob.aggressive || mobType === 'aggressive') {
+      behavior = 'aggressive';
+    } else if (mob.defensive || mobType === 'defensive') {
+      behavior = 'defensive';
+    }
+
+    const selector = mobBehavior[behavior] || mobBehavior.balanced;
+    return selector();
+  }
+
+  /**
+   * Process individualistic combat with personality-based behavior
+   * Operations:
+   * 1. Get shadow personality
+   * 2. Calculate individual attack interval
+   * 3. Select target based on personality
+   * 4. Calculate damage with personality modifiers
+   * 5. Return combat result
+   * @param {Object} shadow - Shadow object
+   * @param {Array<Object>} availableTargets - Available targets
+   * @param {number} baseIntervalMs - Base attack interval
+   * @returns {Object} - Combat result with timing
+   */
+  processIndividualisticCombat(shadow, availableTargets, baseIntervalMs = 2000) {
+    // Guard clause: Return early if invalid inputs
+    if (!shadow || !availableTargets || availableTargets.length === 0) {
+      return {
+        shadowId: shadow?.id || null,
+        target: null,
+        damage: 0,
+        attackInterval: baseIntervalMs,
+        personality: 'balanced',
+      };
+    }
+
+    const personality = this.getShadowPersonality(shadow);
+
+    // Calculate individual attack interval
+    const attackInterval = this.calculateShadowAttackInterval(shadow, baseIntervalMs);
+
+    // Select target based on personality
+    const target = this.selectTargetForShadow(shadow, availableTargets);
+
+    if (!target) {
+      return {
+        shadowId: shadow.id,
+        target: null,
+        damage: 0,
+        attackInterval,
+        personality: personality.name,
+      };
+    }
+
+    // Calculate damage with personality modifiers
+    const damage = this.calculateShadowDamage(shadow, target);
+
+    return {
+      shadowId: shadow.id,
+      shadowPersonality: personality.name,
+      target: target.id || 'unknown',
+      targetType: target.type || 'mob',
+      damage,
+      attackInterval,
+      nextAttackTime: Date.now() + attackInterval,
+      defense: this.calculateShadowDefense(shadow),
+    };
+  }
+
+  /**
+   * Process mob attack on shadow (mobs attack different shadows)
+   * Operations:
+   * 1. Select shadow target for mob
+   * 2. Calculate mob damage
+   * 3. Apply shadow defense
+   * 4. Return attack result
+   * @param {Object} mob - Mob object
+   * @param {Array<Object>} availableShadows - Available shadows
+   * @returns {Object} - Attack result
+   */
+  processMobAttackOnShadow(mob, availableShadows) {
+    // Guard clause: Return early if invalid inputs
+    if (!mob || !availableShadows || availableShadows.length === 0) {
+      return {
+        mobId: mob?.id || null,
+        targetShadow: null,
+        damage: 0,
+        shadowKilled: false,
+      };
+    }
+
+    // Select shadow target for mob
+    const targetShadow = this.selectShadowTargetForMob(mob, availableShadows);
+
+    if (!targetShadow) {
+      return {
+        mobId: mob.id,
+        targetShadow: null,
+        damage: 0,
+        shadowKilled: false,
+      };
+    }
+
+    // Calculate mob damage
+    const mobDamage = (mob.strength || 100) * 0.1; // 10% of mob strength as damage
+
+    // Apply shadow defense
+    const shadowDefense = this.calculateShadowDefense(targetShadow);
+    const finalDamage = Math.max(1, Math.floor(mobDamage - shadowDefense * 0.5)); // Defense reduces damage
+
+    // Apply damage to shadow (if tracking HP)
+    let shadowKilled = false;
+    if (targetShadow.currentHP !== undefined) {
+      targetShadow.currentHP = Math.max(0, (targetShadow.currentHP || 100) - finalDamage);
+      shadowKilled = targetShadow.currentHP <= 0;
+    }
+
+    return {
+      mobId: mob.id,
+      mobType: mob.type || 'normal',
+      targetShadow: targetShadow.id,
+      targetShadowPersonality: this.getShadowPersonality(targetShadow).name,
+      damage: finalDamage,
+      shadowKilled,
+      shadowDefense,
+    };
+  }
+
+  /**
+   * Schedule individualistic attacks for shadows
+   * Each shadow attacks at different intervals based on personality
+   * Operations:
+   * 1. Process each shadow with individual timing
+   * 2. Schedule attacks based on personality intervals
+   * 3. Return attack schedule
+   * @param {Array<Object>} shadows - Array of shadows
+   * @param {Array<Object>} targets - Array of targets
+   * @param {number} baseIntervalMs - Base attack interval
+   * @returns {Array<Object>} - Attack schedule with timing
+   */
+  scheduleIndividualisticAttacks(shadows, targets, baseIntervalMs = 2000) {
+    // Guard clause: Return empty array if no shadows or targets
+    if (!shadows || shadows.length === 0 || !targets || targets.length === 0) {
+      return [];
+    }
+
+    const now = Date.now();
+    const attackSchedule = [];
+
+    // Process each shadow with individual timing
+    shadows.forEach((shadow) => {
+      const combatResult = this.processIndividualisticCombat(shadow, targets, baseIntervalMs);
+
+      if (combatResult.target) {
+        attackSchedule.push({
+          ...combatResult,
+          scheduledTime: now + combatResult.attackInterval,
+          shadow,
+        });
+      }
+    });
+
+    // Sort by scheduled time (earliest first)
+    attackSchedule.sort((a, b) => a.scheduledTime - b.scheduledTime);
+
+    return attackSchedule;
+  }
+
+  /**
+   * Process combat round with individualistic behavior
+   * Operations:
+   * 1. Process shadow attacks with individual timing
+   * 2. Process mob attacks on shadows
+   * 3. Return round results
+   * @param {Array<Object>} shadows - Array of shadows
+   * @param {Array<Object>} mobs - Array of mobs
+   * @param {Object} boss - Boss object (optional)
+   * @returns {Object} - Combat round results
+   */
+  async processCombatRound(shadows, mobs, boss = null) {
+    // Guard clause: Return early if no shadows
+    if (!shadows || shadows.length === 0) {
+      return {
+        shadowAttacks: [],
+        mobAttacks: [],
+        bossAttacks: [],
+        totalDamageDealt: 0,
+        totalDamageTaken: 0,
+      };
+    }
+
+    const targets = [];
+    if (boss && (boss.hp || 0) > 0) targets.push(boss);
+    if (mobs && mobs.length > 0) {
+      targets.push(...mobs.filter((m) => (m.hp || 0) > 0));
+    }
+
+    // Process shadow attacks (individualistic)
+    const shadowAttacks = shadows
+      .map((shadow) => this.processIndividualisticCombat(shadow, targets, 2000))
+      .filter((attack) => attack.target !== null);
+
+    // Process mob attacks on shadows (mobs target different shadows)
+    const mobAttacks = [];
+    if (mobs && mobs.length > 0) {
+      mobs.forEach((mob) => {
+        if ((mob.hp || 0) > 0) {
+          const attack = this.processMobAttackOnShadow(mob, shadows);
+          if (attack.targetShadow) {
+            mobAttacks.push(attack);
+          }
+        }
+      });
+    }
+
+    // Calculate totals
+    const totalDamageDealt = shadowAttacks.reduce((sum, attack) => sum + attack.damage, 0);
+    const totalDamageTaken = mobAttacks.reduce((sum, attack) => sum + attack.damage, 0);
+
+    return {
+      shadowAttacks,
+      mobAttacks,
+      bossAttacks: boss ? [] : [], // Boss attacks can be added later
+      totalDamageDealt,
+      totalDamageTaken,
+      shadowsUsed: shadowAttacks.length,
+      mobsActive: mobAttacks.length,
+    };
+  }
+
+  // ============================================================================
+  // 3.10 SHADOW BUFFS & XP SYSTEM
   // ============================================================================
 
   /**
@@ -3310,7 +5852,7 @@ module.exports = class ShadowArmy {
    * - Total buff cap: Max +50% per stat from all shadows combined
    *
    * Operations:
-   * 1. Initialize buffs object (STR, AGI, INT, VIT, LUK all 0)
+   * 1. Initialize buffs object (STR, AGI, INT, VIT, PER all 0)
    * 2. Get top 7 generals (strongest by total power) - full buffs
    * 3. Get user rank for aggregation threshold
    * 4. Aggregate weak shadows (2+ ranks below) with diminishing returns
@@ -3323,26 +5865,32 @@ module.exports = class ShadowArmy {
       agility: 0,
       intelligence: 0,
       vitality: 0,
-      luck: 0,
-      perception: 0, // Add perception for compatibility
+      perception: 0,
     };
 
     // Get top 7 generals (strongest shadows) - full buffs, no cap
     const generals = await this.getTopGenerals();
-    generals.forEach((shadow) => {
-      const role = this.shadowRoles[shadow.role];
-      if (!role || !role.buffs) return;
 
-      Object.keys(role.buffs).forEach((stat) => {
+    // Use reduce for functional pattern to accumulate general buffs
+    generals.reduce((accBuffs, shadow) => {
+      const role = this.shadowRoles[shadow.role];
+      // Guard clause: Skip if no role or buffs
+      if (!role || !role.buffs) return accBuffs;
+
+      // Accumulate buffs using reduce
+      Object.keys(role.buffs).reduce((stats, stat) => {
         const amount = role.buffs[stat] * 1.0; // Full buffs for top 7 generals
-        buffs[stat] = (buffs[stat] || 0) + amount;
-      });
-    });
+        stats[stat] = (stats[stat] || 0) + amount;
+        return stats;
+      }, accBuffs);
+
+      return accBuffs;
+    }, buffs);
 
     // Get user rank for aggregation
     const soloData = this.getSoloLevelingData();
+    // Guard clause: Apply caps and return early if no solo data
     if (!soloData) {
-      // Apply caps even if no solo data
       this.applyBuffCaps(buffs);
       this.cachedBuffs = buffs;
       this.cachedBuffsTime = Date.now();
@@ -3353,7 +5901,7 @@ module.exports = class ShadowArmy {
     const userRankIndex = this.shadowRanks.indexOf(userRank);
     const weakRankThreshold = Math.max(0, userRankIndex - 2);
 
-    // Aggregate weak shadows (2+ ranks below) for performance
+    // Guard clause: Aggregate weak shadows (2+ ranks below) for performance
     // Individual stats preserved in IndexedDB, but we use aggregated power for buffs
     if (
       this.storageManager &&
@@ -3377,74 +5925,77 @@ module.exports = class ShadowArmy {
         // Cap aggregated buffs at 0.4 (40%) to leave room for generals
         const cappedAggregatedBuff = Math.min(0.4, baseAggregatedBuff);
 
-        const aggregatedBuffs = {
-          strength: cappedAggregatedBuff,
-          agility: cappedAggregatedBuff,
-          intelligence: cappedAggregatedBuff,
-          vitality: cappedAggregatedBuff,
-          luck: cappedAggregatedBuff,
-          perception: cappedAggregatedBuff,
-        };
+        // Use reduce for functional pattern to build aggregated buffs object
+        const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const aggregatedBuffs = statKeys.reduce((stats, key) => {
+          stats[key] = cappedAggregatedBuff;
+          return stats;
+        }, {});
 
-        Object.keys(aggregatedBuffs).forEach((stat) => {
-          buffs[stat] = (buffs[stat] || 0) + aggregatedBuffs[stat];
-        });
+        // Accumulate aggregated buffs using reduce
+        Object.keys(aggregatedBuffs).reduce((accBuffs, stat) => {
+          accBuffs[stat] = (accBuffs[stat] || 0) + aggregatedBuffs[stat];
+          return accBuffs;
+        }, buffs);
       } catch (error) {
-        console.error('ShadowArmy: Failed to get aggregated power', error);
+        // debugError method is in SECTION 4
+        this.debugError('STORAGE', 'Failed to get aggregated power', error);
       }
     } else {
       // Fallback: process non-general shadows from localStorage with diminishing returns
       // (Generals already processed above)
       const generalIds = new Set(generals.map((g) => g.id));
       const allShadows = this.settings.shadows || [];
-      let nonGeneralCount = 0;
 
-      // Accumulator for aggregated non-general shadow buffs per stat
-      const aggregatedNonGeneralBuffs = {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        luck: 0,
-        perception: 0,
-      };
+      // Use filter and reduce for functional pattern
+      const nonGeneralShadows = allShadows.filter((shadow) => !generalIds.has(shadow.id));
 
-      allShadows.forEach((shadow) => {
-        const role = this.shadowRoles[shadow.role];
-        if (!role || !role.buffs) return;
+      // Accumulate non-general shadow buffs using reduce
+      const aggregatedNonGeneralBuffs = nonGeneralShadows.reduce(
+        (accBuffs, shadow) => {
+          const role = this.shadowRoles[shadow.role];
+          // Guard clause: Skip if no role or buffs
+          if (!role || !role.buffs) return accBuffs;
 
-        const isGeneral = generalIds.has(shadow.id);
-
-        if (!isGeneral) {
-          nonGeneralCount++;
-
-          // Accumulate each non-general shadow's role buffs per stat
-          Object.keys(role.buffs).forEach((stat) => {
+          // Accumulate buffs per stat
+          Object.keys(role.buffs).reduce((stats, stat) => {
             const amount = role.buffs[stat] || 0;
-            aggregatedNonGeneralBuffs[stat] = (aggregatedNonGeneralBuffs[stat] || 0) + amount;
-          });
-        }
-        // Generals already processed at start of function
-      });
+            stats[stat] = (stats[stat] || 0) + amount;
+            return stats;
+          }, accBuffs);
 
-      // Apply diminishing returns for non-generals
+          return accBuffs;
+        },
+        {
+          strength: 0,
+          agility: 0,
+          intelligence: 0,
+          vitality: 0,
+          perception: 0,
+        }
+      );
+
+      const nonGeneralCount = nonGeneralShadows.length;
+
+      // Guard clause: Apply diminishing returns for non-generals
       // Formula: sqrt(nonGeneralCount / 100) * 0.01
       // This prevents linear scaling
       if (nonGeneralCount > 0) {
         const diminishingFactor = Math.sqrt(nonGeneralCount / 100) * 0.01;
         const cappedFactor = Math.min(0.4, diminishingFactor); // Cap at 40%
 
-        // Apply capped diminishing factor to each accumulated stat total
-        Object.keys(aggregatedNonGeneralBuffs).forEach((stat) => {
+        // Apply capped diminishing factor using reduce
+        Object.keys(aggregatedNonGeneralBuffs).reduce((accBuffs, stat) => {
           const diminishedBuff = aggregatedNonGeneralBuffs[stat] * cappedFactor;
-          buffs[stat] = (buffs[stat] || 0) + diminishedBuff;
-        });
+          accBuffs[stat] = (accBuffs[stat] || 0) + diminishedBuff;
+          return accBuffs;
+        }, buffs);
       }
     }
 
-    // Ensure perception is set (for compatibility)
-    if (!buffs.perception) {
-      buffs.perception = buffs.luck || 0;
+    // Guard clause: Ensure perception is set (for compatibility)
+    if (buffs.perception == null) {
+      buffs.perception = 0;
     }
 
     // Apply hard caps to prevent overpowered buffs
@@ -3462,17 +6013,20 @@ module.exports = class ShadowArmy {
    * Max +50% per stat from all shadows combined
    */
   applyBuffCaps(buffs) {
+    // Guard clause: Return early if no buffs provided
+    if (!buffs) return;
+
     const maxBuff = 0.5; // Max +50% per stat
 
-    Object.keys(buffs).forEach((stat) => {
-      if (buffs[stat] > maxBuff) {
-        buffs[stat] = maxBuff;
-      }
-    });
+    // Use reduce for functional pattern to apply caps
+    Object.keys(buffs).reduce((cappedBuffs, stat) => {
+      cappedBuffs[stat] = Math.min(maxBuff, buffs[stat] || 0);
+      return cappedBuffs;
+    }, buffs);
   }
 
   // ============================================================================
-  // XP & LEVELING SYSTEM - Experience & Growth Management
+  // 3.11 SHADOW GROWTH & LEVELING SYSTEM
   // ============================================================================
   /**
    * Grant XP to shadows so they can grow over time
@@ -3483,7 +6037,7 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Validate baseAmount > 0
    * 2. If shadowIds provided, grant XP to those specific shadows
-   * 3. Otherwise, get favorite shadows (only favorites receive XP from messages)
+   * 3. Otherwise, get top 7 generals (only generals receive XP from messages)
    * 4. For each shadow:
    *    - Add XP to shadow
    *    - Check if XP exceeds level-up requirement
@@ -3494,12 +6048,13 @@ module.exports = class ShadowArmy {
    * 5. Save settings (config only)
    */
   async grantShadowXP(baseAmount, reason = 'message', shadowIds = null) {
+    // Guard clause: Return early if invalid baseAmount
     if (baseAmount <= 0) return;
 
     let shadowsToGrant = [];
 
+    // Guard clause: Grant XP to specific shadows if provided
     if (shadowIds && Array.isArray(shadowIds) && shadowIds.length > 0) {
-      // Grant XP to specific shadows (from dungeons)
       const allShadows = await this.getAllShadows();
       shadowsToGrant = allShadows.filter((s) => shadowIds.includes(s.id));
     } else {
@@ -3507,60 +6062,67 @@ module.exports = class ShadowArmy {
       shadowsToGrant = await this.getTopGenerals();
     }
 
+    // Guard clause: Return early if no shadows to grant XP to
     if (!shadowsToGrant.length) return;
 
     const perShadow = baseAmount;
 
-    for (const shadow of shadowsToGrant) {
-      shadow.xp = (shadow.xp || 0) + perShadow;
-      let level = shadow.level || 1;
+    // Use Promise.all for parallel processing
+    await Promise.all(
+      shadowsToGrant.map(async (shadow) => {
+        shadow.xp = (shadow.xp || 0) + perShadow;
+        let level = shadow.level || 1;
 
-      // Level up loop in case of big XP grants
-      const shadowRank = shadow.rank || 'E';
-      let leveledUp = false;
-      while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank)) {
-        shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
-        level += 1;
-        shadow.level = level;
-        this.applyShadowLevelUpStats(shadow);
-        leveledUp = true;
-        // Recompute strength after level up
-        const effectiveStats = this.getShadowEffectiveStats(shadow);
-        shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-      }
-
-      // AUTO RANK-UP: Check if shadow qualifies for rank promotion after level-up
-      if (leveledUp) {
-        const rankUpResult = this.attemptAutoRankUp(shadow);
-        if (rankUpResult.success) {
-          console.log(
-            `[ShadowArmy] AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${
-              rankUpResult.oldRank
-            } -> ${rankUpResult.newRank}!`
-          );
+        // Level up loop in case of big XP grants
+        const shadowRank = shadow.rank || 'E';
+        let leveledUp = false;
+        while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank)) {
+          shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
+          level += 1;
+          shadow.level = level;
+          this.applyShadowLevelUpStats(shadow);
+          leveledUp = true;
+          // Recompute strength after level up
+          const effectiveStats = this.getShadowEffectiveStats(shadow);
+          shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
         }
-      }
 
-      // Save updated shadow to IndexedDB
-      if (this.storageManager) {
-        try {
-          await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
-        } catch (error) {
-          console.error('ShadowArmy: Failed to save shadow XP update', error);
-          // Fallback: update in localStorage array if exists
+        // AUTO RANK-UP: Check if shadow qualifies for rank promotion after level-up
+        if (leveledUp) {
+          const rankUpResult = this.attemptAutoRankUp(shadow);
+          if (rankUpResult.success) {
+            // debugLog method is in SECTION 4
+            this.debugLog(
+              'RANK_UP',
+              `AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${
+                rankUpResult.newRank
+              }!`
+            );
+          }
+        }
+
+        // Save updated shadow to IndexedDB
+        if (this.storageManager) {
+          try {
+            await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
+          } catch (error) {
+            // debugError method is in SECTION 4
+            this.debugError('STORAGE', 'Failed to save shadow XP update', error);
+            // Fallback: update in localStorage array if exists
+            const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
+            if (index !== -1) {
+              this.settings.shadows[index] = shadow;
+            }
+          }
+        } else {
+          // Fallback: update in localStorage array
           const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
           if (index !== -1) {
             this.settings.shadows[index] = shadow;
           }
         }
-      } else {
-        // Fallback: update in localStorage array
-        const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
-        if (index !== -1) {
-          this.settings.shadows[index] = shadow;
-        }
-      }
-    }
+      })
+    );
 
     this.saveSettings();
   }
@@ -3574,6 +6136,9 @@ module.exports = class ShadowArmy {
    * 3. Return XP requirement
    */
   getShadowXpForNextLevel(level, shadowRank = 'E') {
+    // Guard clause: Return minimum XP for invalid level
+    if (level < 1) return 25;
+
     // Base XP curve: grows roughly quadratically
     const baseXP = 25 + level * level * 5;
 
@@ -3597,24 +6162,33 @@ module.exports = class ShadowArmy {
    * 5. Return effective stats object
    */
   getShadowEffectiveStats(shadow) {
+    // Guard clause: Return zero stats if no shadow provided
+    if (!shadow) {
+      return {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+    }
+
     // HYBRID COMPRESSION: Decompress if needed
     shadow = this.getShadowData(shadow);
     const base = shadow.baseStats || {};
     const growth = shadow.growthStats || {};
     const naturalGrowth = shadow.naturalGrowthStats || {};
 
-    return {
-      strength: (base.strength || 0) + (growth.strength || 0) + (naturalGrowth.strength || 0),
-      agility: (base.agility || 0) + (growth.agility || 0) + (naturalGrowth.agility || 0),
-      intelligence:
-        (base.intelligence || 0) + (growth.intelligence || 0) + (naturalGrowth.intelligence || 0),
-      vitality: (base.vitality || 0) + (growth.vitality || 0) + (naturalGrowth.vitality || 0),
-      luck: (base.luck || 0) + (growth.luck || 0) + (naturalGrowth.luck || 0),
-    };
+    // Use reduce for functional pattern to build effective stats
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    return statKeys.reduce((effective, stat) => {
+      effective[stat] = (base[stat] || 0) + (growth[stat] || 0) + (naturalGrowth[stat] || 0);
+      return effective;
+    }, {});
   }
 
   // ============================================================================
-  // AUTO RANK-UP SYSTEM - Automatic Shadow Promotion
+  // 3.11.1 AUTO RANK-UP SYSTEM - Automatic Shadow Promotion
   // ============================================================================
   /**
    * Attempt automatic rank-up for shadow
@@ -3622,6 +6196,7 @@ module.exports = class ShadowArmy {
    * Returns: { success: boolean, oldRank: string, newRank: string }
    */
   attemptAutoRankUp(shadow) {
+    // Guard clause: Return early if no shadow or rank
     if (!shadow || !shadow.rank) {
       return { success: false };
     }
@@ -3645,7 +6220,7 @@ module.exports = class ShadowArmy {
     const currentRankIndex = shadowRanks.indexOf(currentRank);
     const nextRank = shadowRanks[currentRankIndex + 1];
 
-    // Can't rank up if already max rank
+    // Guard clause: Can't rank up if already max rank
     if (!nextRank) {
       return { success: false };
     }
@@ -3656,23 +6231,15 @@ module.exports = class ShadowArmy {
     // Get baseline for next rank
     const nextRankMultiplier = this.rankStatMultipliers[nextRank] || 1.0;
     const baselineForNextRank = this.getRankBaselineStats(nextRank, nextRankMultiplier);
-    const nextBaseline =
-      (baselineForNextRank.strength +
-        baselineForNextRank.agility +
-        baselineForNextRank.intelligence +
-        baselineForNextRank.vitality +
-        baselineForNextRank.luck) /
-      5;
-    // Calculate average stat value
-    const avgStats =
-      (effectiveStats.strength +
-        effectiveStats.agility +
-        effectiveStats.intelligence +
-        effectiveStats.vitality +
-        effectiveStats.luck) /
-      5;
 
-    // Check if shadow qualifies (80% of next rank's baseline stats)
+    // Use reduce for functional pattern to calculate average
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const nextBaseline =
+      statKeys.reduce((sum, stat) => sum + (baselineForNextRank[stat] || 0), 0) / statKeys.length;
+    const avgStats =
+      statKeys.reduce((sum, stat) => sum + (effectiveStats[stat] || 0), 0) / statKeys.length;
+
+    // Guard clause: Check if shadow qualifies (80% of next rank's baseline stats)
     if (avgStats >= nextBaseline * 0.8) {
       // PERFORM RANK-UP
       shadow.rank = nextRank;
@@ -3696,7 +6263,7 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // NATURAL GROWTH SYSTEM - Combat-Based Stat Growth
+  // 3.12 NATURAL GROWTH SYSTEM
   // ============================================================================
   /**
    * Apply natural growth to shadow based on DUNGEON COMBAT time
@@ -3722,7 +6289,7 @@ module.exports = class ShadowArmy {
         agility: 0,
         intelligence: 0,
         vitality: 0,
-        luck: 0,
+        perception: 0,
       };
     }
 
@@ -3743,35 +6310,33 @@ module.exports = class ShadowArmy {
     // Increased significantly to work with dungeons lasting 5-60 minutes
     const baseGrowthPerHour = rankMultiplier * 10; // E: 10/hr, SSS: 170/hr
 
-    if (combatTimeHours > 0) {
-      // Apply role-weighted growth to each stat
-      const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+    // Guard clause: Return early if no combat time
+    if (combatTimeHours <= 0) return false;
 
-      stats.forEach((stat) => {
-        const roleWeight = roleWeights[stat] || 1.0;
+    // Apply role-weighted growth to each stat using reduce
+    const stats = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const individualVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
 
-        // Individual variance (each shadow grows uniquely)
-        const individualVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
+    stats.reduce((naturalGrowth, stat) => {
+      const roleWeight = roleWeights[stat] || 1.0;
 
-        // Calculate growth for this stat
-        // Strong stats grow MORE naturally, weak stats grow LESS
-        const statGrowth = baseGrowthPerHour * combatTimeHours * roleWeight * individualVariance;
-        const roundedGrowth = Math.max(0, Math.round(statGrowth));
+      // Calculate growth for this stat
+      // Strong stats grow MORE naturally, weak stats grow LESS
+      const statGrowth = baseGrowthPerHour * combatTimeHours * roleWeight * individualVariance;
+      const roundedGrowth = Math.max(0, Math.round(statGrowth));
 
-        shadow.naturalGrowthStats[stat] += roundedGrowth;
-      });
+      naturalGrowth[stat] = (naturalGrowth[stat] || 0) + roundedGrowth;
+      return naturalGrowth;
+    }, shadow.naturalGrowthStats);
 
-      shadow.totalCombatTime += combatTimeHours;
-      shadow.lastNaturalGrowth = Date.now();
+    shadow.totalCombatTime += combatTimeHours;
+    shadow.lastNaturalGrowth = Date.now();
 
-      // Recalculate shadow strength with new stats
-      const effectiveStats = this.getShadowEffectiveStats(shadow);
-      shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
+    // Recalculate shadow strength with new stats
+    const effectiveStats = this.getShadowEffectiveStats(shadow);
+    shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
 
-      return true;
-    }
-
-    return false;
+    return true;
   }
 
   /**
@@ -3824,7 +6389,7 @@ module.exports = class ShadowArmy {
     const rankGrowthMultiplier = 1.0 + (rankMultiplier - 1.0) * 0.15;
 
     if (!shadow.growthStats) {
-      shadow.growthStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
+      shadow.growthStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
     }
 
     // Initialize individual variance seed if not exists (unique per shadow)
@@ -3832,34 +6397,31 @@ module.exports = class ShadowArmy {
       shadow.growthVarianceSeed = Math.random(); // 0-1, unique per shadow
     }
 
-    const stats = ['strength', 'agility', 'intelligence', 'vitality', 'luck'];
+    const stats = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
 
-    stats.forEach((stat) => {
+    // Use dictionary pattern for base growth calculation
+    const baseGrowthMap = [
+      [(w) => w >= 1.5, 5], // VERY HIGH growth for strong stats
+      [(w) => w >= 1.2, 4], // HIGH growth
+      [(w) => w >= 0.8, 3], // MEDIUM growth
+      [(w) => w >= 0.5, 2], // LOW growth
+      [(w) => w >= 0.3, 1], // VERY LOW growth
+      [() => true, 0.5], // MINIMAL growth (default)
+    ];
+
+    const getBaseGrowth = (roleWeight) => {
+      const [, growth] = baseGrowthMap.find(([predicate]) => predicate(roleWeight));
+      return growth;
+    };
+
+    // Individual variance (±20% based on shadow's unique seed)
+    // This makes each shadow unique even if same role/rank
+    const seedVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
+
+    // Use reduce for functional pattern
+    stats.reduce((growthStats, stat) => {
       const roleWeight = roleWeights[stat] || 1.0;
-
-      // Base growth per level based on role weight and individual variance
-      // Strong stats (roleWeight > 1.2): Grow FAST
-      // Weak stats (roleWeight < 0.5): Grow SLOW
-      // Medium stats (0.5-1.2): Moderate growth
-
-      let baseGrowth;
-      if (roleWeight >= 1.5) {
-        baseGrowth = 5; // VERY HIGH growth for strong stats
-      } else if (roleWeight >= 1.2) {
-        baseGrowth = 4; // HIGH growth
-      } else if (roleWeight >= 0.8) {
-        baseGrowth = 3; // MEDIUM growth
-      } else if (roleWeight >= 0.5) {
-        baseGrowth = 2; // LOW growth
-      } else if (roleWeight >= 0.3) {
-        baseGrowth = 1; // VERY LOW growth
-      } else {
-        baseGrowth = 0.5; // MINIMAL growth
-      }
-
-      // Individual variance (±20% based on shadow's unique seed)
-      // This makes each shadow unique even if same role/rank
-      const seedVariance = 0.8 + shadow.growthVarianceSeed * 0.4; // 0.8-1.2
+      const baseGrowth = getBaseGrowth(roleWeight);
 
       // Per-level random variance (±10% per level up)
       const levelVariance = 0.9 + Math.random() * 0.2; // 0.9-1.1
@@ -3869,9 +6431,9 @@ module.exports = class ShadowArmy {
       const roundedGrowth = Math.max(1, Math.round(growth));
 
       // Add growth (NO CAPS - let shadows grow freely!)
-      const currentGrowth = shadow.growthStats[stat] || 0;
-      shadow.growthStats[stat] = currentGrowth + roundedGrowth;
-    });
+      growthStats[stat] = (growthStats[stat] || 0) + roundedGrowth;
+      return growthStats;
+    }, shadow.growthStats);
   }
 
   /**
@@ -3896,7 +6458,8 @@ module.exports = class ShadowArmy {
         return; // Already migrated
       }
 
-      console.log('[ShadowArmy] 🔧 Fixing shadow base stats to match rank baselines...');
+      // debugLog method is in SECTION 4
+      this.debugLog('MIGRATION', 'Fixing shadow base stats to match rank baselines...');
 
       let allShadows = [];
 
@@ -3904,9 +6467,10 @@ module.exports = class ShadowArmy {
       if (this.storageManager) {
         try {
           allShadows = await this.storageManager.getShadows({}, 0, 100000);
-          console.log(`[ShadowArmy] Found ${allShadows.length} shadows to fix`);
+          this.debugLog('MIGRATION', `Found ${allShadows.length} shadows to fix`);
         } catch (error) {
-          console.error('[ShadowArmy] Error getting shadows from IndexedDB', error);
+          // debugError method is in SECTION 4
+          this.debugError('MIGRATION', 'Error getting shadows from IndexedDB', error);
         }
       }
 
@@ -3918,8 +6482,9 @@ module.exports = class ShadowArmy {
         allShadows = allShadows.concat(localStorageShadows);
       }
 
+      // Guard clause: Return early if no shadows to fix
       if (allShadows.length === 0) {
-        console.log('[ShadowArmy] No shadows to fix');
+        this.debugLog('MIGRATION', 'No shadows to fix');
         BdApi.Data.save('ShadowArmy', migrationKey, true);
         return;
       }
@@ -3944,17 +6509,15 @@ module.exports = class ShadowArmy {
             const roleWeights =
               this.shadowRoleStatWeights[roleKey] || this.shadowRoleStatWeights.knight;
 
-            // Apply role weights to baseline
-            const newBaseStats = {};
-            Object.keys(rankBaseline).forEach((stat) => {
+            // Apply role weights to baseline using reduce
+            const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+            const newBaseStats = statKeys.reduce((stats, stat) => {
               const roleWeight = roleWeights[stat] || 1.0;
               // Base stat = rank baseline × role weight (with slight variance)
               const variance = 0.9 + Math.random() * 0.2; // 90%-110%
-              newBaseStats[stat] = Math.max(
-                1,
-                Math.round(rankBaseline[stat] * roleWeight * variance)
-              );
-            });
+              stats[stat] = Math.max(1, Math.round(rankBaseline[stat] * roleWeight * variance));
+              return stats;
+            }, {});
 
             // Preserve ALL progression data
             const existingGrowthStats = shadow.growthStats || {
@@ -3962,7 +6525,7 @@ module.exports = class ShadowArmy {
               agility: 0,
               intelligence: 0,
               vitality: 0,
-              luck: 0,
+              perception: 0,
             };
 
             const existingNaturalGrowthStats = shadow.naturalGrowthStats || {
@@ -3970,7 +6533,7 @@ module.exports = class ShadowArmy {
               agility: 0,
               intelligence: 0,
               vitality: 0,
-              luck: 0,
+              perception: 0,
             };
 
             // Update shadow with new proper base stats
@@ -4001,16 +6564,17 @@ module.exports = class ShadowArmy {
 
             fixed++;
           } catch (error) {
-            console.error(`[ShadowArmy] Error fixing shadow ${shadow.id}:`, error);
+            // debugError method is in SECTION 4
+            this.debugError('MIGRATION', `Error fixing shadow ${shadow.id}`, error);
           }
         }
 
         // Log progress for large batches
         if (allShadows.length > 100) {
-          console.log(
-            `[ShadowArmy] Fixed ${Math.min(i + batchSize, allShadows.length)}/${
-              allShadows.length
-            } shadows...`
+          // debugLog method is in SECTION 4
+          this.debugLog(
+            'MIGRATION',
+            `Fixed ${Math.min(i + batchSize, allShadows.length)}/${allShadows.length} shadows...`
           );
         }
       }
@@ -4021,14 +6585,16 @@ module.exports = class ShadowArmy {
       // Mark migration complete
       BdApi.Data.save('ShadowArmy', migrationKey, true);
 
-      console.log(`[ShadowArmy] ✅ Fixed ${fixed} shadows to proper rank baselines!`);
-      console.log('[ShadowArmy] SSS shadows now have SSS-level base stats!');
+      // debugLog method is in SECTION 4
+      this.debugLog('MIGRATION', `Fixed ${fixed} shadows to proper rank baselines!`);
+      this.debugLog('MIGRATION', 'SSS shadows now have SSS-level base stats!');
 
       // Invalidate buff cache
       this.cachedBuffs = null;
       this.cachedBuffsTime = null;
     } catch (error) {
-      console.error('[ShadowArmy] Error in fixShadowBaseStatsToRankBaselines:', error);
+      // debugError method is in SECTION 4
+      this.debugError('MIGRATION', 'Error in fixShadowBaseStatsToRankBaselines', error);
       throw error;
     }
   }
@@ -4053,7 +6619,8 @@ module.exports = class ShadowArmy {
         return; // Already migrated
       }
 
-      console.log('[ShadowArmy] Recalculating all shadows with user stat capping formula...');
+      // debugLog method is in SECTION 4
+      this.debugLog('MIGRATION', 'Recalculating all shadows with user stat capping formula...');
 
       let allShadows = [];
 
@@ -4061,9 +6628,10 @@ module.exports = class ShadowArmy {
       if (this.storageManager) {
         try {
           allShadows = await this.storageManager.getShadows({}, 0, 100000);
-          console.log(`[ShadowArmy] Found ${allShadows.length} shadows in IndexedDB`);
+          this.debugLog('MIGRATION', `Found ${allShadows.length} shadows in IndexedDB`);
         } catch (error) {
-          console.error('[ShadowArmy] Error getting shadows from IndexedDB', error);
+          // debugError method is in SECTION 4
+          this.debugError('MIGRATION', 'Error getting shadows from IndexedDB', error);
         }
       }
 
@@ -4073,13 +6641,15 @@ module.exports = class ShadowArmy {
           (s) => !allShadows.find((dbShadow) => dbShadow.id === s.id)
         );
         allShadows = allShadows.concat(localStorageShadows);
-        console.log(
-          `[ShadowArmy] Found ${localStorageShadows.length} additional shadows in localStorage`
+        this.debugLog(
+          'MIGRATION',
+          `Found ${localStorageShadows.length} additional shadows in localStorage`
         );
       }
 
+      // Guard clause: Return early if no shadows to recalculate
       if (allShadows.length === 0) {
-        console.log('[ShadowArmy] No shadows to recalculate');
+        this.debugLog('MIGRATION', 'No shadows to recalculate');
         BdApi.Data.save('ShadowArmy', migrationKey, true);
         return;
       }
@@ -4104,7 +6674,7 @@ module.exports = class ShadowArmy {
               agility: 0,
               intelligence: 0,
               vitality: 0,
-              luck: 0,
+              perception: 0,
             };
             const newBaseStats = this.generateShadowBaseStats(
               currentUserStats,
@@ -4119,7 +6689,7 @@ module.exports = class ShadowArmy {
               agility: 0,
               intelligence: 0,
               vitality: 0,
-              luck: 0,
+              perception: 0,
             };
 
             // Update shadow with new baseStats
@@ -4135,7 +6705,8 @@ module.exports = class ShadowArmy {
               try {
                 await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
               } catch (error) {
-                console.error(`[ShadowArmy] Failed to save shadow ${shadow.id}`, error);
+                // debugError method is in SECTION 4
+                this.debugError('MIGRATION', `Failed to save shadow ${shadow.id}`, error);
                 // Fallback: update in localStorage
                 const index = (this.settings.shadows || []).findIndex((s) => s.id === shadow.id);
                 if (index !== -1) {
@@ -4152,7 +6723,8 @@ module.exports = class ShadowArmy {
 
             recalculated++;
           } catch (error) {
-            console.error(`[ShadowArmy] Error recalculating shadow ${shadow.id}`, error);
+            // debugError method is in SECTION 4
+            this.debugError('MIGRATION', `Error recalculating shadow ${shadow.id}`, error);
           }
         }
 
@@ -4162,9 +6734,14 @@ module.exports = class ShadowArmy {
 
       // Mark migration as complete
       BdApi.Data.save('ShadowArmy', migrationKey, true);
-      console.log(`[ShadowArmy] Recalculated ${recalculated} shadows with new exponential formula`);
+      // debugLog method is in SECTION 4
+      this.debugLog(
+        'MIGRATION',
+        `Recalculated ${recalculated} shadows with new exponential formula`
+      );
     } catch (error) {
-      console.error('[ShadowArmy] Error recalculating shadows', error);
+      // debugError method is in SECTION 4
+      this.debugError('MIGRATION', 'Error recalculating shadows', error);
     }
   }
 
@@ -4180,7 +6757,17 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
-  // CSS & UI RENDERING
+  // 3.13 CSS MANAGEMENT SYSTEM - Dynamic CSS & Theme Integration
+  // ============================================================================
+
+  /**
+   * CSS Manager - Centralized CSS injection, updates, and theme integration
+   * Provides helpers for dynamic CSS, theme detection, and conflict management
+   * Used for widget styling, dungeon CSS, and theme-aware styling
+   */
+
+  // ============================================================================
+  // 3.13.1 CSS INJECTION & REMOVAL
   // ============================================================================
 
   /**
@@ -4189,6 +6776,10 @@ module.exports = class ShadowArmy {
    */
   injectCSS() {
     const styleId = 'shadow-army-styles';
+    // Use new CSS management system for tracking
+    if (!this._injectedStyles) {
+      this._injectedStyles = new Set();
+    }
     const cssContent = `
       .shadow-army-extraction-animation {
         position: fixed;
@@ -4411,7 +7002,7 @@ module.exports = class ShadowArmy {
       style.id = styleId;
       style.textContent = cssContent;
       document.head.appendChild(style);
-      console.warn('[ShadowArmy] BdApi.DOM.addStyle failed, using fallback for main CSS', error);
+      this.debugError('CSS', 'BdApi.DOM.addStyle failed, using fallback for main CSS', error);
     }
   }
 
@@ -4420,21 +7011,525 @@ module.exports = class ShadowArmy {
    */
   removeCSS() {
     const styleId = 'shadow-army-styles';
-    try {
-      BdApi.DOM.removeStyle(styleId);
-    } catch (error) {
-      // Fallback to manual removal if BdApi.DOM is unavailable
-      const style = document.getElementById(styleId);
-      if (style && style.parentNode) {
-        style.parentNode.removeChild(style);
-      }
-      console.warn('[ShadowArmy] BdApi.DOM.removeStyle failed, using fallback for main CSS', error);
-    }
+    // Use new CSS management system
+    this.removeCSSById(styleId);
   }
 
   // ============================================================================
-  // HYBRID COMPRESSION SYSTEM - Top 100 Full, Rest Compressed
+  // 3.13.2 CSS MANAGEMENT HELPERS - Theme Integration & Advanced Features
   // ============================================================================
+
+  /**
+   * Inject or update CSS with automatic theme variable integration
+   * Operations:
+   * 1. Check if style already exists
+   * 2. Detect active theme and extract CSS variables
+   * 3. Merge CSS with theme variables
+   * 4. Inject or update style element
+   * 5. Track injected styles for cleanup
+   * @param {string} styleId - Unique identifier for the style
+   * @param {string} cssContent - CSS content (can include CSS variable placeholders)
+   * @param {Object} options - Options for CSS injection
+   * @param {boolean} options.forceUpdate - Force update even if style exists (default: false)
+   * @param {boolean} options.useThemeVars - Auto-detect and inject theme variables (default: true)
+   * @param {number} options.priority - CSS priority (higher = more important, default: 100)
+   * @returns {boolean} - Success status
+   */
+  injectOrUpdateCSS(styleId, cssContent, options = {}) {
+    const { forceUpdate = false, useThemeVars = true, priority = 100 } = options;
+
+    // Guard clause: Validate inputs
+    if (!styleId || !cssContent) {
+      this.debugError('CSS', 'Invalid CSS injection parameters', {
+        styleId,
+        hasContent: !!cssContent,
+      });
+      return false;
+    }
+
+    try {
+      // Check if style already exists
+      const existingStyle = document.getElementById(styleId);
+      if (existingStyle && !forceUpdate) {
+        this.debugLog('CSS', `Style ${styleId} already exists, skipping injection`);
+        return true;
+      }
+
+      // Merge with theme variables if enabled
+      let finalCSS = cssContent;
+      if (useThemeVars) {
+        finalCSS = this.mergeCSSWithThemeVars(cssContent);
+      }
+
+      // Add priority marker for conflict resolution
+      const priorityCSS = `/* Priority: ${priority} */\n${finalCSS}`;
+
+      // Use BdApi.DOM for persistent injection
+      if (BdApi && BdApi.DOM && BdApi.DOM.addStyle) {
+        BdApi.DOM.addStyle(styleId, priorityCSS);
+      } else {
+        // Fallback to manual injection
+        const style = document.createElement('style');
+        style.id = styleId;
+        style.textContent = priorityCSS;
+        style.setAttribute('data-priority', priority);
+        document.head.appendChild(style);
+      }
+
+      // Track injected styles for cleanup
+      if (!this._injectedStyles) {
+        this._injectedStyles = new Set();
+      }
+      this._injectedStyles.add(styleId);
+
+      this.debugLog('CSS', `CSS injected/updated: ${styleId}`, { priority, useThemeVars });
+      return true;
+    } catch (error) {
+      this.debugError('CSS', `Failed to inject CSS: ${styleId}`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Remove CSS by style ID
+   * Operations:
+   * 1. Try BdApi.DOM.removeStyle first
+   * 2. Fallback to manual removal
+   * 3. Remove from tracking set
+   * @param {string} styleId - Style identifier to remove
+   * @returns {boolean} - Success status
+   */
+  removeCSSById(styleId) {
+    // Guard clause: Validate input
+    if (!styleId) {
+      this.debugError('CSS', 'Invalid CSS removal: missing styleId');
+      return false;
+    }
+
+    try {
+      // Try BdApi.DOM first
+      if (BdApi && BdApi.DOM && BdApi.DOM.removeStyle) {
+        BdApi.DOM.removeStyle(styleId);
+      } else {
+        // Fallback to manual removal
+        const style = document.getElementById(styleId);
+        if (style && style.parentNode) {
+          style.parentNode.removeChild(style);
+        }
+      }
+
+      // Remove from tracking
+      if (this._injectedStyles) {
+        this._injectedStyles.delete(styleId);
+      }
+
+      this.debugLog('CSS', `CSS removed: ${styleId}`);
+      return true;
+    } catch (error) {
+      this.debugError('CSS', `Failed to remove CSS: ${styleId}`, error);
+      return false;
+    }
+  }
+
+  /**
+   * Detect active theme and extract CSS variables
+   * Operations:
+   * 1. Check for theme meta tags
+   * 2. Extract CSS variables from :root
+   * 3. Return theme variables object
+   * @returns {Object} - Theme variables object
+   */
+  detectThemeVariables() {
+    try {
+      const root = document.documentElement;
+      const computedStyle = window.getComputedStyle(root);
+      const themeVars = {};
+
+      // Common Discord/BetterDiscord CSS variables
+      const commonVars = [
+        '--background-primary',
+        '--background-secondary',
+        '--background-tertiary',
+        '--background-accent',
+        '--text-normal',
+        '--text-muted',
+        '--text-link',
+        '--interactive-normal',
+        '--interactive-hover',
+        '--interactive-active',
+        '--brand-experiment',
+        '--header-primary',
+        '--header-secondary',
+      ];
+
+      // Extract variables
+      commonVars.forEach((varName) => {
+        const value = computedStyle.getPropertyValue(varName).trim();
+        if (value) {
+          themeVars[varName] = value;
+        }
+      });
+
+      // Check for theme name in meta or class
+      const themeMeta = document.querySelector('meta[name="theme"]');
+      const themeName = themeMeta?.content || root.getAttribute('data-theme') || 'default';
+
+      return {
+        name: themeName,
+        variables: themeVars,
+        hasVariables: Object.keys(themeVars).length > 0,
+      };
+    } catch (error) {
+      this.debugError('CSS', 'Failed to detect theme variables', error);
+      return { name: 'default', variables: {}, hasVariables: false };
+    }
+  }
+
+  /**
+   * Merge CSS content with theme variables
+   * Replaces CSS variable placeholders with actual theme values
+   * Operations:
+   * 1. Detect theme variables
+   * 2. Replace placeholders in CSS
+   * 3. Add fallback values
+   * @param {string} cssContent - CSS content with variable placeholders
+   * @returns {string} - CSS with theme variables merged
+   */
+  mergeCSSWithThemeVars(cssContent) {
+    const theme = this.detectThemeVariables();
+
+    // Guard clause: Return original if no theme variables
+    if (!theme.hasVariables) {
+      return cssContent;
+    }
+
+    // Create variable map with fallbacks
+    const varMap = {
+      '--bg-primary': theme.variables['--background-primary'] || 'rgba(32, 34, 37, 1)',
+      '--bg-secondary': theme.variables['--background-secondary'] || 'rgba(24, 25, 28, 1)',
+      '--bg-tertiary': theme.variables['--background-tertiary'] || 'rgba(18, 19, 22, 1)',
+      '--text-normal': theme.variables['--text-normal'] || 'rgba(220, 221, 222, 1)',
+      '--text-muted': theme.variables['--text-muted'] || 'rgba(142, 146, 151, 1)',
+      '--brand-color': theme.variables['--brand-experiment'] || 'rgba(88, 101, 242, 1)',
+      '--interactive-normal': theme.variables['--interactive-normal'] || 'rgba(185, 187, 190, 1)',
+      '--interactive-hover': theme.variables['--interactive-hover'] || 'rgba(220, 221, 222, 1)',
+    };
+
+    // Replace placeholders in CSS
+    let mergedCSS = cssContent;
+    Object.entries(varMap).forEach(([placeholder, value]) => {
+      const regex = new RegExp(`\\$\\{${placeholder}\\}`, 'g');
+      mergedCSS = mergedCSS.replace(regex, value);
+    });
+
+    // Inject theme variables as CSS custom properties if not already present
+    if (!mergedCSS.includes(':root') && theme.hasVariables) {
+      const themeVarsCSS = `:root {\n  ${Object.entries(varMap)
+        .map(([key, value]) => `${key}: ${value};`)
+        .join('\n  ')}\n}\n\n`;
+      mergedCSS = themeVarsCSS + mergedCSS;
+    }
+
+    return mergedCSS;
+  }
+
+  /**
+   * Update CSS dynamically (for runtime theme changes)
+   * Operations:
+   * 1. Find existing style element
+   * 2. Update content with new theme variables
+   * 3. Trigger reflow for immediate update
+   * @param {string} styleId - Style identifier
+   * @param {string} cssContent - New CSS content
+   * @returns {boolean} - Success status
+   */
+  updateCSS(styleId, cssContent) {
+    return this.injectOrUpdateCSS(styleId, cssContent, { forceUpdate: true, useThemeVars: true });
+  }
+
+  /**
+   * Get CSS template with theme variable placeholders
+   * Helper for creating CSS templates that auto-adapt to themes
+   * @param {string} baseCSS - Base CSS with ${variable} placeholders
+   * @returns {string} - CSS ready for injection
+   */
+  getCSSTemplate(baseCSS) {
+    return this.mergeCSSWithThemeVars(baseCSS);
+  }
+
+  /**
+   * Check for CSS conflicts (duplicate selectors)
+   * Operations:
+   * 1. Parse CSS selectors
+   * 2. Check for conflicts with existing styles
+   * 3. Return conflict report
+   * @param {string} cssContent - CSS to check
+   * @returns {Object} - Conflict report
+   */
+  checkCSSConflicts(cssContent) {
+    try {
+      // Simple selector extraction (basic implementation)
+      const selectorRegex = /([^{]+)\{/g;
+      const selectors = [];
+      let match;
+
+      while ((match = selectorRegex.exec(cssContent)) !== null) {
+        const selector = match[1].trim();
+        if (selector && !selector.startsWith('@')) {
+          selectors.push(selector);
+        }
+      }
+
+      // Check for conflicts in existing styles
+      const conflicts = [];
+      if (this._injectedStyles) {
+        this._injectedStyles.forEach((styleId) => {
+          const style = document.getElementById(styleId);
+          if (style && style.textContent) {
+            selectors.forEach((selector) => {
+              if (style.textContent.includes(selector)) {
+                conflicts.push({ selector, conflictingStyle: styleId });
+              }
+            });
+          }
+        });
+      }
+
+      return {
+        hasConflicts: conflicts.length > 0,
+        conflicts,
+        selectors: selectors.length,
+      };
+    } catch (error) {
+      this.debugError('CSS', 'Failed to check CSS conflicts', error);
+      return { hasConflicts: false, conflicts: [], selectors: 0 };
+    }
+  }
+
+  /**
+   * Cleanup all injected CSS styles
+   * Operations:
+   * 1. Iterate through tracked styles
+   * 2. Remove each style
+   * 3. Clear tracking set
+   */
+  cleanupAllCSS() {
+    if (!this._injectedStyles) return;
+
+    this._injectedStyles.forEach((styleId) => {
+      this.removeCSSById(styleId);
+    });
+
+    this._injectedStyles.clear();
+    this.debugLog('CSS', 'All injected CSS cleaned up');
+  }
+
+  /**
+   * Get list of all injected CSS styles
+   * @returns {Array<string>} - Array of style IDs
+   */
+  getInjectedStyles() {
+    return this._injectedStyles ? Array.from(this._injectedStyles) : [];
+  }
+
+  /**
+   * Generate dungeon CSS template with theme integration
+   * Helper for creating dungeon-specific CSS that adapts to themes
+   * Operations:
+   * 1. Generate base dungeon CSS with theme variable placeholders
+   * 2. Merge with detected theme variables
+   * 3. Return ready-to-inject CSS
+   * @param {Object} options - Dungeon CSS options
+   * @param {string} options.biome - Biome name for biome-specific styling
+   * @param {boolean} options.darkMode - Force dark mode (default: auto-detect)
+   * @param {Object} options.customColors - Custom color overrides
+   * @returns {string} - Complete CSS ready for injection
+   */
+  generateDungeonCSSTemplate(options = {}) {
+    const { biome = 'default', customColors = {} } = options;
+
+    // Base dungeon CSS with theme variable placeholders
+    // Note: CSS variables use ${VAR} syntax which will be replaced by mergeCSSWithThemeVars
+    const bgSecondary = customColors.background || 'var(--bg-secondary)';
+    const brandColor = customColors.border || customColors.bossBorder || 'var(--brand-color)';
+    const textNormal = customColors.text || customColors.title || 'var(--text-normal)';
+    const textMuted = customColors.muted || 'var(--text-muted)';
+    const bgTertiary = customColors.mobBg || 'var(--bg-tertiary)';
+    const interactiveNormal = customColors.mobBorder || 'var(--interactive-normal)';
+    const interactiveHover =
+      customColors.mobHover || customColors.buttonHover || 'var(--interactive-hover)';
+    const buttonBg = customColors.buttonBg || 'var(--brand-color)';
+
+    const baseDungeonCSS = `
+      /* Dungeon UI Styles - Biome: ${biome} */
+      .dungeon-container {
+        background: ${bgSecondary};
+        border: 2px solid ${brandColor};
+        border-radius: 8px;
+        padding: 16px;
+        margin: 12px 0;
+        color: ${textNormal};
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      }
+
+      .dungeon-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid ${brandColor}40;
+      }
+
+      .dungeon-title {
+        font-size: 18px;
+        font-weight: bold;
+        color: ${textNormal};
+      }
+
+      .dungeon-biome {
+        font-size: 12px;
+        color: ${textMuted};
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+
+      .dungeon-hp-bar {
+        width: 100%;
+        height: 24px;
+        background: ${customColors.hpBg || 'rgba(0, 0, 0, 0.3)'};
+        border-radius: 4px;
+        overflow: hidden;
+        margin: 8px 0;
+        border: 1px solid ${brandColor}40;
+      }
+
+      .dungeon-hp-fill {
+        height: 100%;
+        background: linear-gradient(90deg,
+          ${customColors.hpStart || '#ef4444'},
+          ${customColors.hpEnd || '#f59e0b'}
+        );
+        transition: width 0.3s ease;
+        box-shadow: 0 0 8px ${customColors.hpGlow || 'rgba(239, 68, 68, 0.5)'};
+      }
+
+      .dungeon-mob-list {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 8px;
+        margin-top: 12px;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      .dungeon-mob-item {
+        background: ${bgTertiary};
+        border: 1px solid ${interactiveNormal}40;
+        border-radius: 6px;
+        padding: 8px;
+        text-align: center;
+        transition: all 0.2s ease;
+      }
+
+      .dungeon-mob-item:hover {
+        border-color: ${interactiveHover};
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+      }
+
+      .dungeon-boss-container {
+        background: linear-gradient(135deg,
+          ${customColors.bossBgStart || 'rgba(139, 92, 246, 0.2)'},
+          ${customColors.bossBgEnd || 'rgba(168, 85, 247, 0.1)'}
+        );
+        border: 2px solid ${customColors.bossBorder || '#8b5cf6'};
+        border-radius: 12px;
+        padding: 20px;
+        margin: 16px 0;
+        box-shadow: 0 0 20px ${customColors.bossGlow || 'rgba(139, 92, 246, 0.3)'};
+      }
+
+      .dungeon-button {
+        background: ${buttonBg};
+        color: ${customColors.buttonText || '#ffffff'};
+        border: none;
+        border-radius: 4px;
+        padding: 8px 16px;
+        cursor: pointer;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .dungeon-button:hover {
+        background: ${interactiveHover};
+        transform: scale(1.05);
+      }
+
+      .dungeon-button:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+      }
+
+      /* Responsive design */
+      @media (max-width: 768px) {
+        .dungeon-mob-list {
+          grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+        }
+
+        .dungeon-container {
+          padding: 12px;
+        }
+      }
+
+      /* Animation for dungeon events */
+      @keyframes dungeonPulse {
+        0%, 100% {
+          box-shadow: 0 0 20px ${customColors.pulseGlow || 'rgba(139, 92, 246, 0.3)'};
+        }
+        50% {
+          box-shadow: 0 0 30px ${customColors.pulseGlow || 'rgba(139, 92, 246, 0.6)'};
+        }
+      }
+
+      .dungeon-pulse {
+        animation: dungeonPulse 2s ease-in-out infinite;
+      }
+    `;
+
+    // Merge with theme variables
+    return this.mergeCSSWithThemeVars(baseDungeonCSS);
+  }
+
+  /**
+   * Inject dungeon CSS with automatic theme integration
+   * Convenience method for dungeon CSS injection
+   * @param {Object} options - Dungeon CSS options (same as generateDungeonCSSTemplate)
+   * @returns {boolean} - Success status
+   */
+  injectDungeonCSS(options = {}) {
+    const styleId = 'shadow-army-dungeon-styles';
+    const cssContent = this.generateDungeonCSSTemplate(options);
+    return this.injectOrUpdateCSS(styleId, cssContent, {
+      forceUpdate: true,
+      useThemeVars: true,
+      priority: 200, // Higher priority for dungeon CSS
+    });
+  }
+
+  /**
+   * Remove dungeon CSS
+   * @returns {boolean} - Success status
+   */
+  removeDungeonCSS() {
+    return this.removeCSSById('shadow-army-dungeon-styles');
+  }
+
+  // ============================================================================
+  // 3.15 HYBRID COMPRESSION SYSTEM - Top 100 Full, Rest Compressed
+  // ============================================================================
+
   /**
    * Compress shadow data (80% memory reduction per shadow)
    * Used for non-elite shadows (beyond top 100)
@@ -4460,21 +7555,21 @@ module.exports = class ShadowArmy {
         shadow.baseStats?.agility || 0,
         shadow.baseStats?.intelligence || 0,
         shadow.baseStats?.vitality || 0,
-        shadow.baseStats?.luck || 0,
+        shadow.baseStats?.perception || 0,
       ],
       g: [
         shadow.growthStats?.strength || 0,
         shadow.growthStats?.agility || 0,
         shadow.growthStats?.intelligence || 0,
         shadow.growthStats?.vitality || 0,
-        shadow.growthStats?.luck || 0,
+        shadow.growthStats?.perception || 0,
       ],
       n: [
         shadow.naturalGrowthStats?.strength || 0,
         shadow.naturalGrowthStats?.agility || 0,
         shadow.naturalGrowthStats?.intelligence || 0,
         shadow.naturalGrowthStats?.vitality || 0,
-        shadow.naturalGrowthStats?.luck || 0,
+        shadow.naturalGrowthStats?.perception || 0,
       ],
       c: Math.round((shadow.totalCombatTime || 0) * 10) / 10,
       e: shadow.extractedAt,
@@ -4483,12 +7578,109 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Ultra-compress shadow data (95% memory reduction)
+   * Used for shadows beyond top 1,000 (cold data)
+   *
+   * Format: { _c: 2, i, r, p, l, e, s }
+   * - i: Last 8 chars of ID (still unique)
+   * - r: Rank (single char)
+   * - p: Power (strength / 100, scaled)
+   * - l: Level (1-2000)
+   * - e: Days since epoch (extractedAt / 86400000)
+   * - s: Total stats sum / 100 (scaled)
+   */
+  compressShadowUltra(shadow) {
+    // Guard clause: Return null if no shadow provided
+    if (!shadow) return null;
+
+    // Get effective stats for accurate compression
+    const effectiveStats = this.getShadowEffectiveStats(shadow);
+    // Use reduce for functional pattern to calculate total stats
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const totalStats = statKeys.reduce((sum, stat) => sum + (effectiveStats[stat] || 0), 0);
+
+    return {
+      _c: 2, // Ultra-compression marker
+      i: shadow.id.slice(-8), // Last 8 chars (still unique)
+      r: shadow.rank || 'E',
+      p: Math.floor((shadow.strength || 0) / 100), // Power (scaled)
+      l: shadow.level || 1,
+      e: Math.floor((shadow.extractedAt || Date.now()) / 86400000), // Days since epoch
+      s: Math.floor(totalStats / 100), // Total stats (scaled)
+    };
+  }
+
+  /**
+   * Decompress ultra-compressed shadow back to usable format
+   * Note: Some data is approximated (stats are reconstructed)
+   */
+  decompressShadowUltra(compressed) {
+    // Guard clause: Return as-is if already decompressed or invalid
+    if (!compressed || compressed._c !== 2) {
+      return compressed;
+    }
+
+    // Reconstruct shadow with approximated stats
+    const baseStat = Math.floor(compressed.s * 20); // Approximate per stat
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+
+    // Use reduce for functional pattern to build stats objects
+    const baseStats = statKeys.reduce((stats, stat) => {
+      stats[stat] = baseStat;
+      return stats;
+    }, {});
+
+    const zeroStats = statKeys.reduce((stats, stat) => {
+      stats[stat] = 0;
+      return stats;
+    }, {});
+
+    return {
+      id: `shadow_ultra_${compressed.i}`,
+      rank: compressed.r,
+      role: 'unknown', // Not stored in ultra-compressed
+      roleName: 'Unknown',
+      level: compressed.l,
+      xp: 0, // Not stored
+      strength: compressed.p * 100, // Reconstruct power
+      baseStats,
+      growthStats: zeroStats,
+      naturalGrowthStats: zeroStats,
+      totalCombatTime: 0, // Not stored
+      extractedAt: compressed.e * 86400000, // Reconstruct timestamp
+      growthVarianceSeed: 0, // Not stored
+      ownerLevelAtExtraction: 1,
+      lastNaturalGrowth: compressed.e * 86400000,
+      _ultraCompressed: true, // Mark as decompressed from ultra
+    };
+  }
+
+  /**
    * Decompress shadow data back to full format
    */
   decompressShadow(compressed) {
+    // Guard clause: Return as-is if already decompressed or invalid
     if (!compressed || !compressed._c) {
-      return compressed; // Already decompressed or invalid
+      return compressed;
     }
+
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+
+    // Use reduce for functional pattern to build stats objects (index directly from reduce)
+    const baseStats = statKeys.reduce((stats, stat, index) => {
+      stats[stat] = compressed.b[index] || 0;
+      return stats;
+    }, {});
+
+    const growthStats = statKeys.reduce((stats, stat, index) => {
+      stats[stat] = compressed.g[index] || 0;
+      return stats;
+    }, {});
+
+    const naturalGrowthStats = statKeys.reduce((stats, stat, index) => {
+      stats[stat] = compressed.n[index] || 0;
+      return stats;
+    }, {});
 
     return {
       id: `shadow_compressed_${compressed.i}`,
@@ -4497,27 +7689,9 @@ module.exports = class ShadowArmy {
       roleName: this.shadowRoles[compressed.ro]?.name || compressed.ro,
       level: compressed.l,
       xp: compressed.x,
-      baseStats: {
-        strength: compressed.b[0],
-        agility: compressed.b[1],
-        intelligence: compressed.b[2],
-        vitality: compressed.b[3],
-        luck: compressed.b[4],
-      },
-      growthStats: {
-        strength: compressed.g[0],
-        agility: compressed.g[1],
-        intelligence: compressed.g[2],
-        vitality: compressed.g[3],
-        luck: compressed.g[4],
-      },
-      naturalGrowthStats: {
-        strength: compressed.n[0],
-        agility: compressed.n[1],
-        intelligence: compressed.n[2],
-        vitality: compressed.n[3],
-        luck: compressed.n[4],
-      },
+      baseStats,
+      growthStats,
+      naturalGrowthStats,
       totalCombatTime: compressed.c,
       extractedAt: compressed.e,
       growthVarianceSeed: compressed.s,
@@ -4553,73 +7727,122 @@ module.exports = class ShadowArmy {
         return; // Feature disabled
       }
 
-      // Get all shadows
+      // Get all shadows (support up to 1M+)
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 100000);
+          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
         } catch (error) {
-          console.error('[ShadowArmy] Compression: Error getting shadows', error);
+          // debugError method is in SECTION 4
+          this.debugError('COMPRESSION', 'Error getting shadows', error);
           return;
         }
       }
 
-      if (allShadows.length <= config.eliteThreshold) {
-        this.debugLog?.('Compression: Army too small, skipping');
-        return; // Too few shadows to bother compressing
+      // Guard clause: Skip compression if army too small
+      if (allShadows.length <= 1000) {
+        // debugLog method is in SECTION 4
+        this.debugLog('COMPRESSION', 'Army too small, skipping');
+        return;
       }
 
-      // Calculate power for each shadow
-      const shadowsWithPower = allShadows.map((shadow) => {
-        // Decompress if needed for power calculation
-        const decompressed = shadow._c ? this.decompressShadow(shadow) : shadow;
-        const effective = this.getShadowEffectiveStats(decompressed);
-        const power = this.calculateShadowStrength(effective, decompressed.level || 1);
-        return { shadow: decompressed, power, isCompressed: !!shadow._c };
-      });
+      // Calculate power for each shadow using helper (with caching)
+      const shadowsWithPower = this.processShadowsWithPower(allShadows, true).map(
+        ({ shadow, decompressed, power, compressionLevel }) => ({
+          shadow: decompressed,
+          power,
+          isCompressed: compressionLevel > 0,
+          compressionLevel,
+        })
+      );
 
       // Sort by power (strongest first)
       shadowsWithPower.sort((a, b) => b.power - a.power);
 
-      // Top N: Keep uncompressed (elite force)
-      const elites = shadowsWithPower.slice(0, config.eliteThreshold);
-      const weak = shadowsWithPower.slice(config.eliteThreshold);
+      // TIERED COMPRESSION:
+      // Tier 1: Top 1,000 - Full format (Elite Force)
+      // Tier 2: Next 9,000 - Regular compression (80% savings)
+      // Tier 3: Rest - Ultra-compression (95% savings)
+      const eliteThreshold = 1000; // Top 1,000
+      const warmThreshold = 10000; // Top 10,000
 
-      let compressed = 0;
-      let decompressed = 0;
+      const elites = shadowsWithPower.slice(0, eliteThreshold);
+      const warm = shadowsWithPower.slice(eliteThreshold, warmThreshold);
+      const cold = shadowsWithPower.slice(warmThreshold);
 
-      // Compress weak shadows if not already compressed
-      for (const { shadow, isCompressed } of weak) {
-        if (!isCompressed) {
-          const compressedShadow = this.compressShadow(shadow);
-          if (compressedShadow && this.storageManager) {
-            try {
-              // Delete original, save compressed
-              await this.storageManager.deleteShadow(shadow.id);
-              await this.storageManager.saveShadow(compressedShadow);
-              compressed++;
-            } catch (error) {
-              console.error('[ShadowArmy] Compression: Error saving compressed shadow', error);
-            }
-          }
+      // Use shared counter object for thread-safe counting in parallel operations
+      const counters = { compressed: 0, ultraCompressed: 0, decompressed: 0 };
+
+      // Process cold shadows (ultra-compress) - batch update for performance
+      const coldToUpdate = cold
+        .filter(({ compressionLevel }) => compressionLevel !== 2)
+        .map(({ shadow }) => {
+          const ultraCompressedShadow = this.compressShadowUltra(shadow);
+          return ultraCompressedShadow;
+        })
+        .filter((shadow) => shadow !== null);
+
+      let coldUpdated = 0;
+      if (coldToUpdate.length > 0 && this.storageManager?.updateShadowsBatch) {
+        try {
+          coldUpdated = await this.storageManager.updateShadowsBatch(coldToUpdate);
+          // Clear power cache after compression
+          this.clearShadowPowerCache();
+        } catch (error) {
+          // debugError method is in SECTION 4
+          this.debugError('COMPRESSION', 'Ultra-compression: Batch update error', error);
+        }
+      }
+      counters.ultraCompressed = coldUpdated;
+
+      // Process warm shadows (regular compression) - batch update for performance
+      const warmToCompress = warm
+        .filter(({ compressionLevel }) => compressionLevel !== 1)
+        .map(({ shadow, compressionLevel }) => {
+          // Downgrade ultra-compressed or compress uncompressed
+          return compressionLevel === 2
+            ? this.compressShadow(shadow) // Downgrade from ultra to regular
+            : this.compressShadow(shadow); // Compress uncompressed
+        })
+        .filter((shadow) => shadow !== null);
+
+      let warmUpdated = 0;
+      if (warmToCompress.length > 0 && this.storageManager?.updateShadowsBatch) {
+        try {
+          warmUpdated = await this.storageManager.updateShadowsBatch(warmToCompress);
+          // Clear power cache after compression
+          this.clearShadowPowerCache();
+        } catch (error) {
+          // debugError method is in SECTION 4
+          this.debugError('COMPRESSION', 'Compression: Batch update error', error);
         }
       }
 
-      // Decompress elite shadows if they are compressed
-      for (const { shadow, isCompressed } of elites) {
-        if (isCompressed) {
-          // Shadow is now in elite tier, decompress it
-          if (this.storageManager) {
-            try {
-              await this.storageManager.deleteShadow(shadow.id);
-              await this.storageManager.saveShadow(this.prepareShadowForSave(shadow)); // Save decompressed
-              decompressed++;
-            } catch (error) {
-              console.error('[ShadowArmy] Compression: Error decompressing elite shadow', error);
-            }
-          }
+      // Count downgrades (ultra -> regular)
+      const downgradeCount = warm.filter(({ compressionLevel }) => compressionLevel === 2).length;
+      counters.compressed = warmUpdated;
+      counters.ultraCompressed -= downgradeCount; // Subtract downgraded from ultra count
+
+      // Process elite shadows (decompress if needed) - batch update for performance
+      const elitesToDecompress = elites
+        .filter(({ compressionLevel }) => compressionLevel !== 0)
+        .map(({ shadow }) => this.prepareShadowForSave(shadow))
+        .filter((shadow) => shadow !== null);
+
+      let elitesUpdated = 0;
+      if (elitesToDecompress.length > 0 && this.storageManager?.updateShadowsBatch) {
+        try {
+          elitesUpdated = await this.storageManager.updateShadowsBatch(elitesToDecompress);
+          // Clear power cache after decompression
+          this.clearShadowPowerCache();
+        } catch (error) {
+          // debugError method is in SECTION 4
+          this.debugError('COMPRESSION', 'Decompression: Batch update error', error);
         }
       }
+      counters.decompressed = elitesUpdated;
+
+      const { compressed, ultraCompressed, decompressed } = counters;
 
       // Update last compression time
       if (!this.settings.shadowCompression) {
@@ -4628,25 +7851,30 @@ module.exports = class ShadowArmy {
       this.settings.shadowCompression.lastCompressionTime = Date.now();
       this.saveSettings();
 
-      if (compressed > 0 || decompressed > 0) {
-        console.log(
-          `[ShadowArmy] 🗜️ Compression: ${compressed} compressed, ${decompressed} decompressed`
+      // Guard clause: Log results only if changes were made
+      if (compressed > 0 || ultraCompressed > 0 || decompressed > 0) {
+        // debugLog method is in SECTION 4
+        this.debugLog(
+          'COMPRESSION',
+          `Compression: ${compressed} compressed, ${ultraCompressed} ultra-compressed, ${decompressed} decompressed`
         );
-        console.log(
-          `[ShadowArmy] 💾 Elite Force: ${elites.length} (full data) | Legion: ${weak.length} (compressed)`
+        this.debugLog(
+          'COMPRESSION',
+          `Elite: ${elites.length} (full) | Warm: ${warm.length} (compressed) | Cold: ${cold.length} (ultra)`
         );
-        console.log(
-          `[ShadowArmy] 📊 Memory Savings: ~${Math.floor((compressed * 0.8 * 500) / 1024)} KB`
-        );
+        const savings = Math.floor((compressed * 0.8 * 500 + ultraCompressed * 0.95 * 500) / 1024);
+        this.debugLog('COMPRESSION', `Memory Savings: ~${savings} KB`);
       }
     } catch (error) {
-      console.error('[ShadowArmy] Compression: Error processing', error);
+      // debugError method is in SECTION 4
+      this.debugError('COMPRESSION', 'Error processing', error);
     }
   }
 
   /**
-   * LEGACY: Shadow essence conversion (backup cleanup system)
-   * Now used only as emergency cleanup if army grows too large (5,000+)
+   * Regular cleanup: Convert weakest shadows to essence
+   * Runs periodically to keep army size manageable
+   * Converts bottom 10% of shadows (by power) to essence
    */
   async processShadowEssenceConversion() {
     try {
@@ -4656,31 +7884,35 @@ module.exports = class ShadowArmy {
         return; // Feature disabled
       }
 
-      // Get all shadows
+      // Get all shadows (support up to 1M+)
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 100000);
+          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
         } catch (error) {
-          console.error('[ShadowArmy] Essence: Error getting shadows', error);
+          // debugError method is in SECTION 4
+          this.debugError('ESSENCE', 'Error getting shadows', error);
           return;
         }
       }
 
-      // Safety check: Don't convert if below minimum
+      // Guard clause: Don't convert if below minimum
       if (allShadows.length <= (config.minShadowsToKeep || 20)) {
-        console.log(
-          `[ShadowArmy] Essence: Skipping conversion (${allShadows.length} shadows, min ${config.minShadowsToKeep})`
+        // debugLog method is in SECTION 4
+        this.debugLog(
+          'ESSENCE',
+          `Skipping conversion (${allShadows.length} shadows, min ${config.minShadowsToKeep})`
         );
         return;
       }
 
-      // Calculate power for each shadow
-      const shadowsWithPower = allShadows.map((shadow) => {
-        const effective = this.getShadowEffectiveStats(shadow);
-        const power = this.calculateShadowStrength(effective, shadow.level || 1);
-        return { shadow, power };
-      });
+      // Calculate power for each shadow using helper (with caching)
+      const shadowsWithPower = this.processShadowsWithPower(allShadows, true).map(
+        ({ shadow, decompressed, power }) => ({
+          shadow: decompressed,
+          power,
+        })
+      );
 
       // Sort by power (weakest first)
       shadowsWithPower.sort((a, b) => a.power - b.power);
@@ -4694,37 +7926,47 @@ module.exports = class ShadowArmy {
       const conversionCount = Math.floor(allShadows.length * threshold);
       const toConvert = shadowsWithPower.slice(0, conversionCount);
 
-      // Safety: Don't convert if would go below minimum
+      // Guard clause: Don't convert if would go below minimum
       const remaining = allShadows.length - conversionCount;
       if (remaining < (config.minShadowsToKeep || 20)) {
-        console.log(`[ShadowArmy] Essence: Skipping conversion (would drop below minimum)`);
+        // debugLog method is in SECTION 4
+        this.debugLog('ESSENCE', 'Skipping conversion (would drop below minimum)');
         return;
       }
 
-      // Convert shadows to essence
-      let totalEssence = 0;
-      const essenceByRank = {};
+      // Convert shadows to essence - batch delete for performance
+      const shadowIdsToDelete = toConvert.map(({ shadow }) => shadow.id);
 
-      for (const { shadow, power } of toConvert) {
+      if (shadowIdsToDelete.length > 0 && this.storageManager?.deleteShadowsBatch) {
+        try {
+          await this.storageManager.deleteShadowsBatch(shadowIdsToDelete);
+          // Clear power cache after deletion
+          this.clearShadowPowerCache();
+        } catch (error) {
+          // debugError method is in SECTION 4
+          this.debugError('ESSENCE', 'Batch delete error', error);
+        }
+      }
+
+      // Calculate essence for deleted shadows
+      const conversionResult = toConvert.map(({ shadow }) => {
         const rank = shadow.rank || 'E';
         const baseEssence = config.essencePerShadow[rank] || 1;
-
         // Add variance based on power (±20%)
         const powerVariance = 0.8 + Math.random() * 0.4;
         const essence = Math.max(1, Math.floor(baseEssence * powerVariance));
+        return { rank, essence };
+      });
 
-        totalEssence += essence;
-        essenceByRank[rank] = (essenceByRank[rank] || 0) + 1;
-
-        // Delete shadow from storage
-        if (this.storageManager) {
-          try {
-            await this.storageManager.deleteShadow(shadow.id);
-          } catch (error) {
-            console.error(`[ShadowArmy] Essence: Error deleting shadow ${shadow.id}`, error);
-          }
-        }
-      }
+      // Aggregate results using reduce
+      const { totalEssence, essenceByRank } = conversionResult.reduce(
+        (acc, { rank, essence }) => {
+          acc.totalEssence += essence;
+          acc.essenceByRank[rank] = (acc.essenceByRank[rank] || 0) + 1;
+          return acc;
+        },
+        { totalEssence: 0, essenceByRank: {} }
+      );
 
       // Update essence total
       if (!this.settings.shadowEssence) {
@@ -4744,11 +7986,14 @@ module.exports = class ShadowArmy {
         .map(([rank, count]) => `${count}×${rank}`)
         .join(', ');
 
-      console.log(
-        `[ShadowArmy] 💎 Converted ${toConvert.length} weak shadows to ${totalEssence} essence (${rankSummary})`
+      // debugLog method is in SECTION 4
+      this.debugLog(
+        'ESSENCE',
+        `Converted ${toConvert.length} weak shadows to ${totalEssence} essence (${rankSummary})`
       );
-      console.log(
-        `[ShadowArmy] 💎 Total essence: ${this.settings.shadowEssence.essence} | Remaining shadows: ${remaining}`
+      this.debugLog(
+        'ESSENCE',
+        `Total essence: ${this.settings.shadowEssence.essence} | Remaining shadows: ${remaining}`
       );
 
       // Show toast if available
@@ -4768,7 +8013,8 @@ module.exports = class ShadowArmy {
         setTimeout(() => this.openShadowArmyUI(), 100);
       }
     } catch (error) {
-      console.error('[ShadowArmy] Essence: Error processing conversion', error);
+      // debugError method is in SECTION 4
+      this.debugError('ESSENCE', 'Error processing conversion', error);
     }
   }
 
@@ -4783,12 +8029,15 @@ module.exports = class ShadowArmy {
         count = stats?.totalCount || 0;
       }
 
+      // Guard clause: Trigger cleanup only if count exceeds threshold
       if (count > 5000) {
-        console.log(`[ShadowArmy] ⚠️ Emergency cleanup triggered (${count} shadows)`);
+        // debugLog method is in SECTION 4
+        this.debugLog('CLEANUP', `Emergency cleanup triggered (${count} shadows)`);
         await this.processShadowEssenceConversion();
       }
     } catch (error) {
-      console.error('[ShadowArmy] Emergency cleanup error', error);
+      // debugError method is in SECTION 4
+      this.debugError('CLEANUP', 'Emergency cleanup error', error);
     }
   }
 
@@ -4798,7 +8047,19 @@ module.exports = class ShadowArmy {
    */
   getShadowData(shadow) {
     if (!shadow) return null;
-    return shadow._c ? this.decompressShadow(shadow) : shadow;
+
+    // Handle ultra-compression (v2)
+    if (shadow._c === 2) {
+      return this.decompressShadowUltra(shadow);
+    }
+
+    // Handle regular compression (v1)
+    if (shadow._c === 1) {
+      return this.decompressShadow(shadow);
+    }
+
+    // Already decompressed
+    return shadow;
   }
 
   /**
@@ -4807,6 +8068,7 @@ module.exports = class ShadowArmy {
    * Compression system will re-compress weak shadows on next hourly run
    */
   prepareShadowForSave(shadow) {
+    // Guard clause: Return null if no shadow provided
     if (!shadow) return null;
 
     // Clone shadow to avoid mutating original
@@ -4814,29 +8076,25 @@ module.exports = class ShadowArmy {
 
     // Remove compression marker (shadow is now full format)
     delete shadowToSave._compressed;
+    delete shadowToSave._ultraCompressed;
+
+    // Use reduce for functional pattern to build default stats objects
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const defaultStats = statKeys.reduce((stats, key) => {
+      stats[key] = 0;
+      return stats;
+    }, {});
 
     // Ensure all required fields are present
-    if (!shadowToSave.baseStats) {
-      shadowToSave.baseStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
-    }
-    if (!shadowToSave.growthStats) {
-      shadowToSave.growthStats = { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 };
-    }
-    if (!shadowToSave.naturalGrowthStats) {
-      shadowToSave.naturalGrowthStats = {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        luck: 0,
-      };
-    }
+    shadowToSave.baseStats = shadowToSave.baseStats || { ...defaultStats };
+    shadowToSave.growthStats = shadowToSave.growthStats || { ...defaultStats };
+    shadowToSave.naturalGrowthStats = shadowToSave.naturalGrowthStats || { ...defaultStats };
 
     return shadowToSave;
   }
 
   // ============================================================================
-  // UI METHODS (CHAT BUTTON & MODAL)
+  // 3.14 UI METHODS - Chat Button & Modal (Disabled Features)
   // ============================================================================
 
   /**
@@ -4848,251 +8106,103 @@ module.exports = class ShadowArmy {
    */
   findToolbar() {
     // Method 1: Look for existing TitleManager or SkillTree buttons to find toolbar
-    const titleBtn = document.querySelector('.tm-title-button');
-    const skillTreeBtn = document.querySelector('.st-skill-tree-button');
-    if (titleBtn && titleBtn.parentElement) {
-      return titleBtn.parentElement;
-    }
-    if (skillTreeBtn && skillTreeBtn.parentElement) {
-      return skillTreeBtn.parentElement;
+    const referenceButtons = [
+      document.querySelector('.tm-title-button'),
+      document.querySelector('.st-skill-tree-button'),
+    ];
+
+    // Use find for functional pattern
+    const foundButton = referenceButtons.find((btn) => btn && btn.parentElement);
+    if (foundButton?.parentElement) {
+      return foundButton.parentElement;
     }
 
     // Method 2: Find by looking for common Discord button classes
-    const buttonRow =
-      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
-        const siblings = Array.from(el.parentElement?.children || []);
-        return (
-          siblings.length >= 4 &&
-          siblings.some(
-            (s) =>
-              s.querySelector('[class*="emoji"]') ||
-              s.querySelector('[class*="gif"]') ||
-              s.querySelector('[class*="attach"]') ||
-              s.classList.contains('tm-title-button') ||
-              s.classList.contains('st-skill-tree-button')
-          )
-        );
-      })?.parentElement ||
-      (() => {
-        const textArea =
-          document.querySelector('[class*="channelTextArea"]') ||
-          document.querySelector('[class*="slateTextArea"]') ||
-          document.querySelector('textarea[placeholder*="Message"]');
-        if (!textArea) return null;
-        let container =
-          textArea.closest('[class*="container"]') ||
-          textArea.closest('[class*="wrapper"]') ||
-          textArea.parentElement?.parentElement?.parentElement;
-        const buttons = container?.querySelectorAll('[class*="button"]');
-        if (buttons && buttons.length >= 4) {
-          return buttons[0]?.parentElement;
-        }
-        return (
-          container?.querySelector('[class*="buttons"]') ||
-          container?.querySelector('[class*="buttonContainer"]') ||
-          container?.querySelector('[class*="toolbar"]')
-        );
-      })();
-    return buttonRow;
+    const buttonSelectors = ['[class*="button"]'];
+    const buttonElements = Array.from(document.querySelectorAll(buttonSelectors[0]));
+
+    // Use find for functional pattern
+    const toolbarButton = buttonElements.find((el) => {
+      const siblings = Array.from(el.parentElement?.children || []);
+      const hasRequiredSiblings = siblings.length >= 4;
+      const hasToolbarMarkers = siblings.some(
+        (s) =>
+          s.querySelector('[class*="emoji"]') ||
+          s.querySelector('[class*="gif"]') ||
+          s.querySelector('[class*="attach"]') ||
+          s.classList.contains('tm-title-button') ||
+          s.classList.contains('st-skill-tree-button')
+      );
+      return hasRequiredSiblings && hasToolbarMarkers;
+    });
+
+    if (toolbarButton?.parentElement) {
+      return toolbarButton.parentElement;
+    }
+
+    // Method 3: Fallback - find by textarea and traverse DOM
+    const textAreaSelectors = [
+      '[class*="channelTextArea"]',
+      '[class*="slateTextArea"]',
+      'textarea[placeholder*="Message"]',
+    ];
+
+    // Use find for functional pattern
+    const textArea = textAreaSelectors
+      .map((selector) => document.querySelector(selector))
+      .find((el) => el !== null);
+
+    if (!textArea) return null;
+
+    // Use optional chaining and find for container
+    const containerSelectors = [
+      '[class*="container"]',
+      '[class*="wrapper"]',
+      '[class*="buttons"]',
+      '[class*="buttonContainer"]',
+      '[class*="toolbar"]',
+    ];
+
+    let container =
+      textArea.closest(containerSelectors[0]) ||
+      textArea.closest(containerSelectors[1]) ||
+      textArea.parentElement?.parentElement?.parentElement;
+
+    if (!container) return null;
+
+    const buttons = container.querySelectorAll('[class*="button"]');
+    if (buttons && buttons.length >= 4) {
+      return buttons[0]?.parentElement;
+    }
+
+    // Use find for functional pattern to find toolbar container
+    const toolbarContainer = containerSelectors
+      .slice(2)
+      .map((selector) => container.querySelector(selector))
+      .find((el) => el !== null);
+
+    return toolbarContainer || null;
   }
 
   /**
    * Create ShadowArmy button in chat toolbar
    */
+  /**
+   * Cleanup function for shadow army button (disabled feature)
+   * Removed chatbox UI per user request - kept for cleanup only
+   */
   async createShadowArmyButton() {
-    // DISABLED: Shadow Army button removed from chatbox
-    // All chatbox UI disabled per user request
-
-    // Clean up any existing buttons
+    // Clean up any existing buttons (safety cleanup)
     const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
     if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
     this.shadowArmyButton = null;
-
-    return;
-
-    /* DISABLED BUTTON CREATION
-    // Re-entrance guard: prevent infinite loops during button creation
-    if (this._creatingShadowArmyButton) {
-      return;
-    }
-    this._creatingShadowArmyButton = true;
-
-    try {
-      // Remove existing button first to avoid duplicates
-      const existingShadowArmyBtn = document.querySelector('.shadow-army-button');
-      if (existingShadowArmyBtn) existingShadowArmyBtn.remove();
-      this.shadowArmyButton = null;
-
-      const toolbar = this.findToolbar();
-      if (!toolbar) {
-        // Return early if plugin is stopped
-        if (this._isStopped) {
-          this._creatingShadowArmyButton = false;
-          return;
-        }
-
-        // Retry with exponential backoff
-        // Clear any existing retry timeout before scheduling a new one
-        if (this._shadowArmyButtonRetryTimeout) {
-          clearTimeout(this._shadowArmyButtonRetryTimeout);
-          this._retryTimeouts.delete(this._shadowArmyButtonRetryTimeout);
-          this._shadowArmyButtonRetryTimeout = null;
-        }
-        const retryCount = (this._shadowArmyButtonRetryCount || 0) + 1;
-        this._shadowArmyButtonRetryCount = retryCount;
-        const delay = Math.min(1000 * retryCount, 5000);
-        this._shadowArmyButtonRetryTimeout = setTimeout(() => {
-          this._retryTimeouts.delete(this._shadowArmyButtonRetryTimeout);
-          this._shadowArmyButtonRetryTimeout = null;
-          this._creatingShadowArmyButton = false;
-          this.createShadowArmyButton();
-        }, delay);
-        this._retryTimeouts.add(this._shadowArmyButtonRetryTimeout);
-        return;
-      }
-      this._shadowArmyButtonRetryCount = 0;
-
-      // Create ShadowArmy button with shadow/skull icon
-      const shadowArmyButton = document.createElement('button');
-      shadowArmyButton.className = 'shadow-army-button';
-      // Enhanced SVG with dynamic shadow count badge
-      // Get count from IndexedDB if available, otherwise fallback to settings
-      let shadowCount = 0;
-      if (this.storageManager && this.storageManager.getTotalCount) {
-        try {
-          shadowCount = await this.storageManager.getTotalCount();
-        } catch (error) {
-          shadowCount = this.settings.shadows?.length || 0;
-        }
-      } else {
-        shadowCount = this.settings.shadows?.length || 0;
-      }
-
-      shadowArmyButton.innerHTML = `
-      <div style="position: relative;">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
-          <circle cx="9" cy="7" r="4"></circle>
-          <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
-          <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
-        </svg>
-        ${
-          shadowCount > 0
-            ? `<span style="
-          position: absolute;
-          top: -4px;
-          right: -6px;
-          background: #8b5cf6;
-          color: white;
-          border-radius: 8px;
-          padding: 1px 4px;
-          font-size: 9px;
-          font-weight: bold;
-          min-width: 14px;
-          text-align: center;
-        ">${shadowCount > 999 ? '999+' : shadowCount}</span>`
-            : ''
-        }
-      </div>
-    `;
-      shadowArmyButton.title = `Shadow Army (${shadowCount} shadows)`;
-      shadowArmyButton.addEventListener('click', () => this.openShadowArmyUI());
-
-      const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
-      const titleBtn = toolbar.querySelector('.tm-title-button');
-      const appsButton = Array.from(toolbar.children).find(
-        (el) =>
-          el.querySelector('[class*="apps"]') ||
-          el.getAttribute('aria-label')?.toLowerCase().includes('app')
-      );
-
-      // Insert ShadowArmy button after Skill Tree (third position)
-      let inserted = false;
-
-      if (skillTreeBtn && skillTreeBtn.parentElement === toolbar) {
-        // Insert after Skill Tree button
-        toolbar.insertBefore(shadowArmyButton, skillTreeBtn.nextSibling);
-        inserted = true;
-      } else if (titleBtn && titleBtn.parentElement === toolbar) {
-        // Insert after Title button
-        toolbar.insertBefore(shadowArmyButton, titleBtn.nextSibling);
-        inserted = true;
-      } else if (appsButton && appsButton.parentElement === toolbar) {
-        // Insert before apps button
-        toolbar.insertBefore(shadowArmyButton, appsButton);
-        inserted = true;
-      }
-
-      // Fallback: append to end if couldn't find reference buttons
-      if (!inserted) {
-        toolbar.appendChild(shadowArmyButton);
-      }
-
-      // Store reference
-      this.shadowArmyButton = shadowArmyButton;
-
-      // Ensure button is visible
-      shadowArmyButton.style.display = 'flex';
-
-      // Observe toolbar for changes
-      this.observeToolbar(toolbar);
-    } finally {
-      // Always clear the creation flag
-      this._creatingShadowArmyButton = false;
-    }
-    */
   }
 
   /**
-   * Observe toolbar for changes and recreate button if needed
+   * Toolbar observer (disabled feature - kept for cleanup)
    */
   observeToolbar(toolbar) {
-    // DISABLED: Toolbar observer not needed (button system disabled)
-    return;
-
-    /* DISABLED TOOLBAR OBSERVER
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-    }
-
-    // Clear any existing interval check
-    if (this.toolbarCheckInterval) {
-      clearInterval(this.toolbarCheckInterval);
-      this.toolbarCheckInterval = null;
-    }
-
-    // Clear any existing timeout
-    if (this._recreateTimeout) {
-      clearTimeout(this._recreateTimeout);
-      this._recreateTimeout = null;
-    }
-
-    // Simple check: if button removed, recreate it immediately
-    // Matches SkillTree's successful pattern
-    this.toolbarObserver = new MutationObserver(() => {
-      // Return early if plugin is stopped
-      if (this._isStopped) return;
-
-      // Clear any pending timeout to debounce rapid changes
-      if (this._recreateTimeout) {
-        clearTimeout(this._recreateTimeout);
-        this._retryTimeouts.delete(this._recreateTimeout);
-      }
-
-      // Use instance variable so timeout persists
-      this._recreateTimeout = setTimeout(() => {
-        this._retryTimeouts.delete(this._recreateTimeout);
-        const shadowBtnExists = this.shadowArmyButton && toolbar.contains(this.shadowArmyButton);
-        if (!shadowBtnExists && !this._creatingShadowArmyButton) {
-          this.createShadowArmyButton();
-        }
-        this._recreateTimeout = null;
-      }, 100);
-      this._retryTimeouts.add(this._recreateTimeout);
-    });
-
-    this.toolbarObserver.observe(toolbar, { childList: true, subtree: true });
-    */
+    // Feature disabled - no-op
   }
 
   /**
@@ -5171,35 +8281,22 @@ module.exports = class ShadowArmy {
       }
     `;
 
-    try {
-      BdApi.DOM.addStyle('shadow-army-widget-styles', cssContent);
-    } catch (error) {
-      // Fallback to manual injection if BdApi.DOM is unavailable
-      const style = document.createElement('style');
-      style.id = 'shadow-army-widget-styles';
-      style.textContent = cssContent;
-      document.head.appendChild(style);
-      console.warn('[ShadowArmy] BdApi.DOM.addStyle failed, using fallback for widget CSS', error);
-    }
+    // Use new CSS management system
+    const widgetStyleId = 'shadow-army-widget-styles';
+    this.injectOrUpdateCSS(widgetStyleId, cssContent, {
+      forceUpdate: false,
+      useThemeVars: false, // Widget CSS doesn't need theme vars
+      priority: 100,
+    });
   }
 
   /**
    * Remove widget CSS
    */
   removeWidgetCSS() {
-    try {
-      BdApi.DOM.removeStyle('shadow-army-widget-styles');
-    } catch (error) {
-      // Fallback to manual removal if BdApi.DOM is unavailable
-      const style = document.getElementById('shadow-army-widget-styles');
-      if (style && style.parentNode) {
-        style.parentNode.removeChild(style);
-      }
-      console.warn(
-        '[ShadowArmy] BdApi.DOM.removeStyle failed, using fallback for widget CSS',
-        error
-      );
-    }
+    const styleId = 'shadow-army-widget-styles';
+    // Use new CSS management system
+    this.removeCSSById(styleId);
   }
 
   /**
@@ -5208,8 +8305,11 @@ module.exports = class ShadowArmy {
    */
   async injectShadowRankWidget() {
     // RE-ENABLED: Widget needed for member list display
-    // Prevent reinjection after plugin stop
+    // Guard clause: Prevent reinjection after plugin stop
     if (this._isStopped) return;
+
+    // Guard clause: Check if widget already exists
+    if (document.getElementById('shadow-army-widget')) return;
 
     // Check for member list immediately (no delay)
     const membersList = document.querySelector('[class*="members"]');
@@ -5224,28 +8324,33 @@ module.exports = class ShadowArmy {
       return;
     }
 
-    // Check if widget already exists
-    if (document.getElementById('shadow-army-widget')) return;
+    try {
+      // Create widget container
+      const widget = document.createElement('div');
+      widget.id = 'shadow-army-widget';
 
-    // Create widget container
-    const widget = document.createElement('div');
-    widget.id = 'shadow-army-widget';
+      // Click to open Shadow Army modal
+      widget.addEventListener('click', () => {
+        this.openShadowArmyUI();
+      });
 
-    // Click to open Shadow Army modal
-    widget.addEventListener('click', () => {
-      this.openShadowArmyUI();
-    });
+      // Insert at the top of member list
+      const membersContent = membersList.querySelector('[class*="content"]');
+      if (membersContent && membersContent.firstChild) {
+        membersContent.insertBefore(widget, membersContent.firstChild);
+      } else if (membersList.firstChild) {
+        membersList.insertBefore(widget, membersList.firstChild);
+      } else {
+        // Fallback: append to membersList if no firstChild
+        membersList.appendChild(widget);
+      }
 
-    // Insert at the top of member list
-    const membersContent = membersList.querySelector('[class*="content"]');
-    if (membersContent && membersContent.firstChild) {
-      membersContent.insertBefore(widget, membersContent.firstChild);
-    } else if (membersList.firstChild) {
-      membersList.insertBefore(widget, membersList.firstChild);
+      // Initial update
+      this.updateShadowRankWidget();
+    } catch (error) {
+      // debugError method is in SECTION 4
+      this.debugError('WIDGET', 'Error injecting shadow rank widget', error);
     }
-
-    // Initial update
-    this.updateShadowRankWidget();
   }
 
   /**
@@ -5272,7 +8377,19 @@ module.exports = class ShadowArmy {
         shadows = this.settings.shadows || [];
       }
 
-      // Count by rank
+      // Guard clause: Return early if no shadows
+      if (!shadows || shadows.length === 0) {
+        widget.innerHTML = `
+          <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <div class="widget-title" style="color: #8b5cf6; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
+            <div class="widget-total" style="color: #999; font-size: 11px;">0 Total</div>
+          </div>
+          <div style="text-align: center; padding: 20px; color: #999; font-size: 11px;">No shadows yet</div>
+        `;
+        return;
+      }
+
+      // Count by rank using reduce for functional pattern
       const ranks = ['SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
       const rankColors = {
         SSS: '#ec4899',
@@ -5285,10 +8402,17 @@ module.exports = class ShadowArmy {
         E: '#999',
       };
 
+      // Use reduce to count shadows by rank
+      const rankCountsMap = shadows.reduce((counts, shadow) => {
+        const rank = shadow.rank || 'E';
+        counts[rank] = (counts[rank] || 0) + 1;
+        return counts;
+      }, {});
+
       const rankCounts = ranks.map((rank) => ({
         rank,
-        count: shadows.filter((s) => s.rank === rank).length,
-        color: rankColors[rank],
+        count: rankCountsMap[rank] || 0,
+        color: rankColors[rank] || '#999',
       }));
 
       // Generate HTML with proper structure
@@ -5331,7 +8455,8 @@ module.exports = class ShadowArmy {
         </div>
       `;
     } catch (error) {
-      console.error('Shadow Army: Error updating widget', error);
+      // debugError method is in SECTION 4
+      this.debugError('WIDGET', 'Error updating widget', error);
     }
   }
 
@@ -5351,25 +8476,21 @@ module.exports = class ShadowArmy {
    * Internal calculations stay in hours, display adapts to magnitude
    */
   formatCombatTime(hours) {
+    // Guard clause: Return early for invalid hours
     if (!hours || hours === 0) return '0s';
 
     const totalSeconds = hours * 3600;
 
-    if (totalSeconds < 60) {
-      // Less than 1 minute - show seconds
-      return `${Math.floor(totalSeconds)}s`;
-    } else if (totalSeconds < 3600) {
-      // Less than 1 hour - show minutes
-      const minutes = Math.floor(totalSeconds / 60);
-      return `${minutes}m`;
-    } else {
-      // 1 hour or more - show hours (with decimal if < 10h)
-      if (hours < 10) {
-        return `${hours.toFixed(1)}h`;
-      } else {
-        return `${Math.floor(hours)}h`;
-      }
-    }
+    // Use dictionary pattern for time formatting
+    const timeFormatters = [
+      [(s) => s < 60, (s) => `${Math.floor(s)}s`], // Less than 1 minute - show seconds
+      [(s) => s < 3600, (s) => `${Math.floor(s / 60)}m`], // Less than 1 hour - show minutes
+      [(s) => hours < 10, () => `${hours.toFixed(1)}h`], // 1-10 hours - show with decimal
+      [() => true, () => `${Math.floor(hours)}h`], // 10+ hours - show whole hours
+    ];
+
+    const [, formatter] = timeFormatters.find(([predicate]) => predicate(totalSeconds));
+    return formatter(totalSeconds);
   }
 
   /**
@@ -5377,6 +8498,9 @@ module.exports = class ShadowArmy {
    * Shows count of shadows per rank with color coding
    */
   generateRankDistribution(shadows) {
+    // Guard clause: Return empty string if no shadows
+    if (!shadows || shadows.length === 0) return '';
+
     const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
     const rankColors = {
       E: '#999',
@@ -5389,10 +8513,17 @@ module.exports = class ShadowArmy {
       SSS: '#ec4899',
     };
 
+    // Use reduce for functional pattern to count shadows by rank
+    const rankCounts = shadows.reduce((counts, shadow) => {
+      const rank = shadow.rank || 'E';
+      counts[rank] = (counts[rank] || 0) + 1;
+      return counts;
+    }, {});
+
     return ranks
       .map((rank) => {
-        const count = shadows.filter((s) => s.rank === rank).length;
-        const color = rankColors[rank];
+        const count = rankCounts[rank] || 0;
+        const color = rankColors[rank] || '#999';
         const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
 
         return `
@@ -5407,6 +8538,7 @@ module.exports = class ShadowArmy {
   }
 
   async openShadowArmyUI() {
+    // Guard clause: Toggle modal if already open
     if (this.shadowArmyModal) {
       this.closeShadowArmyModal();
       return;
@@ -5419,22 +8551,73 @@ module.exports = class ShadowArmy {
         try {
           shadows = await this.storageManager.getShadows({}, 0, 10000);
         } catch (err) {
-          console.warn('ShadowArmy: Could not get shadows from IndexedDB', err);
+          // debugError method is in SECTION 4
+          this.debugError('UI', 'Could not get shadows from IndexedDB', err);
           shadows = this.settings.shadows || [];
         }
       } else {
         shadows = this.settings.shadows || [];
       }
 
+      // Guard clause: Return early if no shadows
+      if (!shadows || shadows.length === 0) {
+        // Show empty state modal
+        const modal = document.createElement('div');
+        modal.className = 'shadow-army-modal';
+        modal.style.cssText = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0, 0, 0, 0.85);
+          z-index: 10002;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          backdrop-filter: blur(5px);
+        `;
+        modal.innerHTML = `
+          <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
+              <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
+            </div>
+            <div style="text-align: center; padding: 40px; color: #999;">
+              No shadows in army yet. Extract shadows from dungeons!
+            </div>
+          </div>
+        `;
+        modal.querySelector('#close-shadow-army-modal')?.addEventListener('click', () => {
+          this.closeShadowArmyModal();
+        });
+        modal.addEventListener('click', (e) => {
+          if (e.target === modal) {
+            this.closeShadowArmyModal();
+          }
+        });
+        document.body.appendChild(modal);
+        this.shadowArmyModal = modal;
+        return;
+      }
+
       // HYBRID COMPRESSION: Decompress all shadows for UI display
       // Ensures calculations work correctly regardless of compression state
       shadows = shadows.map((s) => this.getShadowData(s));
 
-      const total = shadows.length;
-
-      // Count compressed vs full for stats
-      const compressedCount = shadows.filter((s) => s._compressed).length;
-      const eliteCount = total - compressedCount;
+      // Count compressed vs full for stats using reduce
+      const compressionStats = shadows.reduce(
+        (stats, shadow) => {
+          if (shadow._compressed || shadow._ultraCompressed) {
+            stats.compressed++;
+          } else {
+            stats.elite++;
+          }
+          return stats;
+        },
+        { compressed: 0, elite: 0 }
+      );
+      const { compressed: compressedCount, elite: eliteCount } = compressionStats;
 
       // Create modal similar to TitleManager/SkillTree
       const modal = document.createElement('div');
@@ -5454,62 +8637,82 @@ module.exports = class ShadowArmy {
       `;
 
       const renderModal = () => {
-        // Calculate generals (top 7 strongest) - DYNAMIC
+        // Guard clause: Return early if no shadows
+        if (!shadows || shadows.length === 0) {
+          modal.innerHTML = `
+            <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
+                <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
+              </div>
+              <div style="text-align: center; padding: 40px; color: #999;">
+                No shadows in army yet. Extract shadows from dungeons!
+              </div>
+            </div>
+          `;
+          modal.querySelector('#close-shadow-army-modal')?.addEventListener('click', () => {
+            this.closeShadowArmyModal();
+          });
+          return;
+        }
+
+        // Calculate generals (top 7 strongest) - DYNAMIC using functional patterns
         const withPower = shadows.map((shadow) => {
           const effective = this.getShadowEffectiveStats(shadow);
           const strength = this.calculateShadowStrength(effective, 1);
           return { shadow, strength, id: shadow.id };
         });
-        const sortedByPower = withPower.sort((a, b) => b.strength - a.strength);
+        const sortedByPower = [...withPower].sort((a, b) => b.strength - a.strength);
         const generals = sortedByPower.slice(0, 7).map((x) => x.shadow);
 
-        // Calculate role/class distribution with average stats
-        const roleStats = {};
-        shadows.forEach((shadow) => {
+        // Calculate role/class distribution with average stats using reduce
+        const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const roleStats = shadows.reduce((stats, shadow) => {
           const role = shadow.role || shadow.roleName || 'Unknown';
-          if (!roleStats[role]) {
-            roleStats[role] = {
+          if (!stats[role]) {
+            stats[role] = {
               count: 0,
-              totalStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, luck: 0 },
+              totalStats: statKeys.reduce((acc, key) => {
+                acc[key] = 0;
+                return acc;
+              }, {}),
               totalLevel: 0,
               isMagicBeast: this.shadowRoles[role]?.isMagicBeast || false,
             };
           }
 
-          roleStats[role].count++;
+          stats[role].count++;
           const effective = this.getShadowEffectiveStats(shadow);
-          roleStats[role].totalStats.strength += effective.strength;
-          roleStats[role].totalStats.agility += effective.agility;
-          roleStats[role].totalStats.intelligence += effective.intelligence;
-          roleStats[role].totalStats.vitality += effective.vitality;
-          roleStats[role].totalStats.luck += effective.luck;
-          roleStats[role].totalLevel += shadow.level || 1;
-        });
+          statKeys.reduce((totalStats, key) => {
+            totalStats[key] += effective[key] || 0;
+            return totalStats;
+          }, stats[role].totalStats);
+          stats[role].totalLevel += shadow.level || 1;
+          return stats;
+        }, {});
 
-        // Calculate averages
-        Object.keys(roleStats).forEach((role) => {
-          const data = roleStats[role];
+        // Calculate averages using reduce
+        const roleStatsWithAverages = Object.entries(roleStats).reduce((acc, [role, data]) => {
           const count = data.count;
-          data.avgStats = {
-            strength: Math.floor(data.totalStats.strength / count),
-            agility: Math.floor(data.totalStats.agility / count),
-            intelligence: Math.floor(data.totalStats.intelligence / count),
-            vitality: Math.floor(data.totalStats.vitality / count),
-            luck: Math.floor(data.totalStats.luck / count),
+          acc[role] = {
+            ...data,
+            avgStats: statKeys.reduce((avgStats, key) => {
+              avgStats[key] = Math.floor(data.totalStats[key] / count);
+              return avgStats;
+            }, {}),
+            avgLevel: Math.floor(data.totalLevel / count),
           };
-          data.avgLevel = Math.floor(data.totalLevel / count);
-          data.avgPower = Math.floor(
-            (data.avgStats.strength +
-              data.avgStats.agility +
-              data.avgStats.intelligence +
-              data.avgStats.vitality +
-              data.avgStats.luck) /
-              5
+          // Calculate average power using reduce
+          acc[role].avgPower = Math.floor(
+            statKeys.reduce((sum, key) => sum + acc[role].avgStats[key], 0) / statKeys.length
           );
-        });
+          return acc;
+        }, {});
 
         // Sort roles by count (descending)
-        const sortedRoles = Object.entries(roleStats).sort((a, b) => b[1].count - a[1].count);
+        const sortedRoles = Object.entries(roleStatsWithAverages).sort(
+          (a, b) => b[1].count - a[1].count
+        );
 
         modal.innerHTML = `
           <div style="
@@ -5562,7 +8765,7 @@ module.exports = class ShadowArmy {
                 </div>
                 <div style="text-align: center;">
                   <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${this.formatCombatTime(
-                    shadows.reduce((sum, s) => sum + (s.totalCombatTime || 0), 0)
+                    shadows.reduce((sum, shadow) => sum + (shadow.totalCombatTime || 0), 0)
                   )}</div>
                   <div style="color: #999; font-size: 11px;">Total Combat</div>
                 </div>
@@ -5742,9 +8945,9 @@ module.exports = class ShadowArmy {
                             }</div>
                           </div>
                           <div style="background: rgba(251, 191, 36, 0.2); border: 1px solid rgba(251, 191, 36, 0.4); padding: 6px; border-radius: 6px; text-align: center;">
-                            <div style="color: #fbbf24; font-size: 10px; font-weight: bold;">LUK</div>
+                            <div style="color: #fbbf24; font-size: 10px; font-weight: bold;">PER</div>
                             <div style="color: #fff; font-size: 14px; font-weight: bold;">${
-                              effectiveStats.luck || 0
+                              effectiveStats.perception || 0
                             }</div>
                           </div>
                         </div>
@@ -5798,24 +9001,33 @@ module.exports = class ShadowArmy {
       // Real-time updates: Re-fetch and re-render every 3 seconds
       // Store interval ID for proper cleanup
       this.autoRefreshInterval = setInterval(async () => {
+        // Guard clause: Clear interval if modal no longer exists
         if (!this.shadowArmyModal || !document.body.contains(modal)) {
-          clearInterval(this.autoRefreshInterval);
-          this.autoRefreshInterval = null;
+          if (this.autoRefreshInterval) {
+            clearInterval(this.autoRefreshInterval);
+            this.autoRefreshInterval = null;
+          }
           return;
         }
 
         try {
           // Re-fetch shadows for real-time stats
           if (this.storageManager && this.storageManager.getShadows) {
-            shadows = await this.storageManager.getShadows({}, 0, 10000);
-            renderModal();
+            const freshShadows = await this.storageManager.getShadows({}, 0, 10000);
+            // Guard clause: Only update if we got shadows
+            if (freshShadows && freshShadows.length > 0) {
+              shadows = freshShadows.map((s) => this.getShadowData(s));
+              renderModal();
+            }
           }
         } catch (error) {
-          console.error('[ShadowArmy] Error refreshing UI:', error);
+          // debugError method is in SECTION 4
+          this.debugError('UI', 'Error refreshing UI', error);
         }
       }, 3000); // Refresh every 3 seconds for real-time updates
     } catch (error) {
-      console.error('ShadowArmy: Failed to open UI', error);
+      // debugError method is in SECTION 4
+      this.debugError('UI', 'Failed to open UI', error);
     }
   }
 
@@ -5846,19 +9058,23 @@ module.exports = class ShadowArmy {
         if (existingModal) {
           existingModal.remove();
         }
+        // debugError method is in SECTION 4
+        this.debugError('UI', 'Error removing modal during close', error);
       }
       this.shadowArmyModal = null;
     }
 
-    // Cleanup: Remove any orphaned modals (lag protection)
+    // Cleanup: Remove any orphaned modals (lag protection) using functional pattern
     try {
-      document.querySelectorAll('.shadow-army-modal').forEach((modal) => {
-        if (modal && modal.parentNode) {
+      Array.from(document.querySelectorAll('.shadow-army-modal')).forEach((modal) => {
+        if (modal?.parentNode) {
           modal.parentNode.removeChild(modal);
         }
       });
     } catch (error) {
-      // Ignore cleanup errors
+      // Ignore cleanup errors (non-critical)
+      // debugError method is in SECTION 4
+      this.debugError('UI', 'Error during modal cleanup', error);
     }
 
     // Remove escape key listener
@@ -5868,11 +9084,15 @@ module.exports = class ShadowArmy {
     }
   }
 
+  // ============================================================================
+  // 3.16 SETTINGS PANEL UI
+  // ============================================================================
+
   /**
    * Generate settings panel HTML for BetterDiscord settings UI
    * Operations:
-   * 1. Get total shadow count and favorites
-   * 2. Create Set of favorite IDs for lookup
+   * 1. Get total shadow count and top generals
+   * 2. Identify top 7 generals by power for display
    * 3. Generate list items for first 50 shadows
    * 4. Format extraction config display
    * 5. Return HTML string with stats, config, and shadow list
@@ -5887,6 +9107,19 @@ module.exports = class ShadowArmy {
     const shadowsForDisplay = this.settings.shadows || [];
     const total = shadowsForDisplay.length;
     const maxList = 50;
+
+    // Guard clause: Return early if no shadows
+    if (total === 0) {
+      return `
+        <div class="shadow-army-settings">
+          <h2>Shadow Army</h2>
+          <div class="shadow-army-stats">
+            <div>Total Shadows: 0</div>
+            <div>No shadows extracted yet. Send messages to begin extraction.</div>
+          </div>
+        </div>
+      `;
+    }
 
     // Compute strength and sort to identify generals (top 7)
     const shadowsWithPower = shadowsForDisplay.map((shadow) => {
@@ -5971,5 +9204,76 @@ module.exports = class ShadowArmy {
         </div>
       </div>
     `;
+  }
+
+  // ============================================================================
+  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // ============================================================================
+
+  // ============================================================================
+  // 4.1 DEBUG SYSTEM
+  // ============================================================================
+
+  /**
+   * Debug logging method with throttling and settings check
+   * Operations:
+   * 1. Check if debug mode is enabled
+   * 2. Throttle frequent operations to prevent spam
+   * 3. Format and output debug message
+   * @param {string} tag - Operation tag (e.g., 'STORAGE', 'EXTRACTION')
+   * @param {string} message - Debug message
+   * @param {any} data - Optional data object
+   */
+  debugLog(tag, message, data = null) {
+    if (!this.debug.enabled) return;
+
+    // Throttle frequent operations (e.g., storage queries)
+    const throttleKey = `${tag}:${message}`;
+    const now = Date.now();
+    const lastLogTime = this.debug.lastLogTimes[throttleKey] || 0;
+    const throttleMs = 1000; // 1 second throttle for frequent operations
+
+    if (now - lastLogTime < throttleMs) return;
+
+    this.debug.lastLogTimes[throttleKey] = now;
+
+    // Increment operation counter
+    this.debug.operationCounts[tag] = (this.debug.operationCounts[tag] || 0) + 1;
+
+    // Format debug message
+    const prefix = `[ShadowArmy:${tag}]`;
+    if (data !== null) {
+      console.log(prefix, message, data);
+    } else {
+      console.log(prefix, message);
+    }
+  }
+
+  // ============================================================================
+  // 4.2 DEBUG HELPERS
+  // ============================================================================
+
+  /**
+   * Debug error logging method
+   * Operations:
+   * 1. Always log errors (even if debug disabled for critical errors)
+   * 2. Track error count and last error
+   * 3. Format and output error message
+   * @param {string} tag - Operation tag
+   * @param {string} message - Error message
+   * @param {Error|any} error - Error object or data
+   */
+  debugError(tag, message, error = null) {
+    // Always log errors (even if debug disabled)
+    this.debug.errorCount++;
+    this.debug.lastError = { tag, message, error, timestamp: Date.now() };
+
+    // Format error message
+    const prefix = `[ShadowArmy:${tag}]`;
+    if (error !== null) {
+      console.error(prefix, message, error);
+    } else {
+      console.error(prefix, message);
+    }
   }
 };
