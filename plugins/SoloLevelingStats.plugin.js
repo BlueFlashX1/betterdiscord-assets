@@ -2739,6 +2739,15 @@ module.exports = class SoloLevelingStats {
     // Emit initial XP changed event for progress bar plugins
     this.emitXPChanged();
 
+    // Set up event listener to update UI when XP changes
+    this.on('xpChanged', () => {
+      try {
+        this.updateChatUI();
+      } catch (error) {
+        this.debugError('XP_CHANGED_LISTENER', 'Error updating UI on XP change', error);
+      }
+    });
+
     // Force log to debug file
     try {
       if (BdApi && typeof BdApi.showToast === 'function') {
@@ -8144,33 +8153,61 @@ module.exports = class SoloLevelingStats {
   }
 
   updateChatUI() {
+    // Guard clause: Return early if chat UI panel doesn't exist
     if (!this.chatUIPanel) return;
 
-    const levelInfo = this.getCurrentLevel();
-    const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+    // Get total stats outside try block so it's accessible throughout the function
     const totalStats = this.getTotalEffectiveStats();
+    const titleBonus = this.getActiveTitleBonus();
 
-    // Update HP/Mana bars
-    this.updateHPManaBars();
+    try {
+      const levelInfo = this.getCurrentLevel();
 
-    // Update rank display
-    const rankEl = this.chatUIPanel.querySelector('.sls-chat-rank');
-    if (rankEl) rankEl.textContent = `Rank: ${this.settings.rank}`;
+      // Guard clause: Return early if level info is invalid
+      if (!levelInfo || !levelInfo.xpRequired || levelInfo.xpRequired <= 0) {
+        this.debugLog('UPDATE_CHAT_UI', 'Invalid level info, skipping update');
+        return;
+      }
 
-    // Update level display
-    const levelNumber = this.chatUIPanel.querySelector('.sls-chat-level-number');
-    if (levelNumber) levelNumber.textContent = `Lv.${this.settings.level}`;
+      // Calculate XP percentage with safety checks
+      const xpPercent = Math.min(100, Math.max(0, (levelInfo.xp / levelInfo.xpRequired) * 100));
 
-    // Update progress bar
-    const progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
-    if (progressFill) progressFill.style.width = `${xpPercent}%`;
+      // Guard clause: Skip if percentage is invalid
+      if (isNaN(xpPercent) || !isFinite(xpPercent)) {
+        this.debugLog('UPDATE_CHAT_UI', 'Invalid XP percentage, skipping progress bar update');
+        return;
+      }
+
+      // Update HP/Mana bars
+      this.updateHPManaBars();
+
+      // Update rank display
+      const rankEl = this.chatUIPanel.querySelector('.sls-chat-rank');
+      if (rankEl) rankEl.textContent = `Rank: ${this.settings.rank}`;
+
+      // Update level display
+      const levelNumber = this.chatUIPanel.querySelector('.sls-chat-level-number');
+      if (levelNumber) levelNumber.textContent = `Lv.${this.settings.level}`;
+
+      // Update progress bar with explicit style update
+      const progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
+      if (progressFill) {
+        progressFill.style.width = `${xpPercent.toFixed(2)}%`;
+        // Force a reflow to ensure the update is visible
+        progressFill.offsetHeight;
+      } else {
+        // If progress bar doesn't exist, log for debugging
+        this.debugLog('UPDATE_CHAT_UI', 'Progress bar element not found');
+      }
+    } catch (error) {
+      this.debugError('UPDATE_CHAT_UI', 'Error updating chat UI', error);
+    }
 
     // Update shadow power display using cached value
     this.updateShadowPowerDisplay();
 
     // Update active title
     const titleDisplay = this.chatUIPanel.querySelector('.sls-chat-title-display');
-    const titleBonus = this.getActiveTitleBonus();
     if (this.settings.achievements.activeTitle) {
       if (!titleDisplay) {
         // Re-render title section if it doesn't exist
