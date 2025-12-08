@@ -102,7 +102,8 @@
  * - Widget persistence fixes (survives channel/guild switching)
  * - BdApi.DOM migration (injectCSS → DOM.addStyle/removeStyle)
  * - BdApi.showToast for user notifications (extraction success, essence conversion)
- * - BdApi.Plugins.get for plugin integration (SoloLevelingStats, ShadowAriseAnimation)
+ * - BdApi.Plugins.get for plugin integration (SoloLevelingStats)
+ * - ARISE Animation system integrated (merged from ShadowAriseAnimation plugin)
  * - BdApi.Webpack.getStore/getModule for Discord API access (UserStore)
  * - BdApi.Data.load/save for settings persistence (user-specific storage)
  * - BdApi.DOM.append/remove for DOM manipulation (animations, modals)
@@ -8458,6 +8459,19 @@ module.exports = class ShadowArmy {
     const container = this.getContainer();
     const ariseSettings = this.settings.ariseAnimation;
     const durationMs = ariseSettings.animationDuration || 2500;
+    const fontName = ariseSettings.animationFont || 'Speedy Space Goat Oddity';
+
+    // Debug: Verify font is loaded before creating animation
+    if (this.debug.enabled && document.fonts && document.fonts.check) {
+      const fontLoaded = document.fonts.check(`16px '${fontName}'`);
+      this.debugLog('ARISE_ANIMATION', 'Font verification check', {
+        fontName,
+        fontLoaded,
+        note: fontLoaded
+          ? 'Font is loaded and ready'
+          : 'Font may not be loaded - will use fallback',
+      });
+    }
 
     const wrapper = document.createElement('div');
     wrapper.className = 'sa-arise-wrapper';
@@ -8470,6 +8484,16 @@ module.exports = class ShadowArmy {
     // Text should be "ARiSe" (capital A, R, i, S, e) with R slightly smaller
     title.innerHTML = 'A<span class="sa-small-r">R</span>iSe';
     wrapper.appendChild(title);
+
+    // Debug: Log animation trigger with font info
+    this.debugLog('ARISE_ANIMATION', 'Triggering ARISE animation', {
+      shadowRank: shadow?.rank,
+      shadowRole: shadow?.roleName || shadow?.role,
+      fontName,
+      duration: durationMs,
+      scale,
+      showRankAndRole: ariseSettings.showRankAndRole,
+    });
 
     // FUNCTIONAL: Short-circuit for conditional rendering (no if-else)
     ariseSettings.showRankAndRole &&
@@ -8501,6 +8525,26 @@ module.exports = class ShadowArmy {
     });
 
     container.appendChild(wrapper);
+
+    // Debug: Verify font is actually applied after element is in DOM
+    if (this.debug.enabled) {
+      // Wait for element to be rendered, then check computed font
+      setTimeout(() => {
+        const computedStyle = window.getComputedStyle(title);
+        const appliedFont = computedStyle.fontFamily;
+        const fontLoaded = document.fonts?.check(`16px '${fontName}'`);
+
+        this.debugLog('ARISE_ANIMATION', 'Font verification after render', {
+          fontName,
+          appliedFontFamily: appliedFont,
+          fontLoaded,
+          matchesExpected: appliedFont.includes(fontName),
+          note: appliedFont.includes(fontName)
+            ? 'Font is correctly applied to ARISE animation'
+            : `Font may not be applied - using fallback. Expected: '${fontName}', Got: ${appliedFont}`,
+        });
+      }, 100);
+    }
 
     setTimeout(() => {
       wrapper.remove();
@@ -10885,6 +10929,22 @@ module.exports = class ShadowArmy {
             }>
             <span>Show rank and role under ARISE</span>
           </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
+            <input type="checkbox" id="sa-debug-mode" ${
+              this.settings?.debugMode === true ? 'checked' : ''
+            }>
+            <span>Debug Mode (Console logs for font verification & animation)</span>
+          </label>
+          <div style="margin-top: 8px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.7);">
+            <strong style="color: #8b5cf6;">💡 Debug Mode:</strong> Enable to see detailed console logs for:
+            <ul style="margin: 4px 0; padding-left: 20px;">
+              <li>Font loading status (FONT_LOADER)</li>
+              <li>Font verification when ARISE animation triggers</li>
+              <li>Computed font-family after render</li>
+              <li>Animation container creation</li>
+              <li>Webpack/React injection status</li>
+            </ul>
+          </div>
         </div>
         <div class="shadow-army-list">
           <h3>Shadows (first ${maxList})</h3>
@@ -11074,6 +11134,7 @@ module.exports = class ShadowArmy {
           const ariseDuration = document.getElementById('sa-arise-duration');
           const ariseScale = document.getElementById('sa-arise-scale');
           const ariseShowMeta = document.getElementById('sa-arise-show-meta');
+          const debugMode = document.getElementById('sa-debug-mode');
 
           if (ariseEnabled) {
             ariseEnabled.addEventListener('change', function(e) {
@@ -11123,6 +11184,18 @@ module.exports = class ShadowArmy {
                 }
                 plugin.instance.settings.ariseAnimation.showRankAndRole = e.target.checked;
                 plugin.instance.saveSettings();
+              }
+            });
+          }
+
+          if (debugMode) {
+            debugMode.addEventListener('change', function(e) {
+              const plugin = BdApi.Plugins.get('ShadowArmy');
+              if (plugin && plugin.instance) {
+                plugin.instance.settings.debugMode = e.target.checked;
+                plugin.instance.debug.enabled = e.target.checked;
+                plugin.instance.saveSettings();
+                console.log('[ShadowArmy] Debug mode ' + (e.target.checked ? 'enabled' : 'disabled'));
               }
             });
           }
