@@ -2635,6 +2635,13 @@ module.exports = class SoloLevelingStats {
       this.updateShadowPower?.();
       this.setupShadowPowerObserver?.();
 
+      // Listen for shadow extraction events from ShadowArmy
+      this._shadowExtractedHandler = () => {
+        // Update shadow power when a new shadow is extracted
+        this.updateShadowPower?.();
+      };
+      document.addEventListener('shadowExtracted', this._shadowExtractedHandler);
+
       // Fallback: Update shadow power periodically (safe call with optional chaining)
       this.shadowPowerInterval = setInterval(() => {
         this.updateShadowPower?.();
@@ -2850,6 +2857,12 @@ module.exports = class SoloLevelingStats {
     if (this.shadowPowerUpdateTimeout) {
       clearTimeout(this.shadowPowerUpdateTimeout);
       this.shadowPowerUpdateTimeout = null;
+    }
+
+    // Remove shadow extraction event listener
+    if (this._shadowExtractedHandler) {
+      document.removeEventListener('shadowExtracted', this._shadowExtractedHandler);
+      this._shadowExtractedHandler = null;
     }
 
     // Cleanup HP bar position updater
@@ -6279,15 +6292,35 @@ module.exports = class SoloLevelingStats {
    */
   _loadFontFromCriticalHit() {
     try {
-      // Try to get font path from CriticalHit plugin
+      // Try to load font from CriticalHit plugin using embedded base64 method
       const critPlugin = BdApi.Plugins.get('CriticalHit');
       if (critPlugin && critPlugin.instance) {
         const critInstance = critPlugin.instance;
+        // Use loadLocalFont instead of getFontsFolderPath (which is deprecated)
+        if (typeof critInstance.loadLocalFont === 'function') {
+          const fontLoaded = critInstance.loadLocalFont('Friend or Foe BB');
+          if (fontLoaded) {
+            this.debugLog(
+              'QUEST_FONT',
+              'Friend or Foe BB font loaded via CriticalHit loadLocalFont (base64)'
+            );
+            return;
+          }
+        }
+        // Fallback: Try deprecated getFontsFolderPath (but it now returns null)
         if (typeof critInstance.getFontsFolderPath === 'function') {
           const fontsPath = critInstance.getFontsFolderPath();
+          // If getFontsFolderPath returns null, fonts are embedded - skip file:// URL loading
+          if (!fontsPath) {
+            this.debugLog(
+              'QUEST_FONT',
+              'CriticalHit uses embedded fonts - font should already be loaded'
+            );
+            return;
+          }
           const fontFileName = 'FriendorFoeBB';
 
-          // Create @font-face CSS
+          // Create @font-face CSS (legacy fallback - should not be used)
           const fontStyle = document.createElement('style');
           fontStyle.id = 'sls-quest-font-friend-or-foe-bb';
           fontStyle.textContent = `
@@ -6302,7 +6335,10 @@ module.exports = class SoloLevelingStats {
             }
           `;
           document.head.appendChild(fontStyle);
-          this.debugLog('QUEST_FONT', 'Friend or Foe BB font loaded from CriticalHit path');
+          this.debugLog(
+            'QUEST_FONT',
+            'Friend or Foe BB font loaded from CriticalHit path (legacy)'
+          );
           return;
         }
       }
@@ -7528,15 +7564,154 @@ module.exports = class SoloLevelingStats {
    * 3.8 HP/MANA SYSTEM
    */
 
+  /**
+   * Update shadow power from ShadowArmy plugin
+   * Uses getAggregatedArmyStats to get accurate total power
+   */
+  async updateShadowPower() {
+    try {
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+        this.cachedShadowPower = '0';
+        this.updateShadowPowerDisplay();
+        return;
+      }
+
+      const shadowArmy = shadowArmyPlugin.instance;
+
+      // Use getAggregatedArmyStats to get accurate total power
+      if (typeof shadowArmy.getAggregatedArmyStats === 'function') {
+        try {
+          this.debugLog(
+            'UPDATE_SHADOW_POWER',
+            'Starting total power update - forcing recalculation',
+            {
+              hasShadowArmy: !!shadowArmy,
+              hasStorageManager: !!shadowArmy.storageManager,
+              dbInitialized: !!shadowArmy.storageManager?.db,
+            }
+          );
+
+          // Force recalculation to ensure fresh data after shadow extraction
+          const armyStats = await shadowArmy.getAggregatedArmyStats(true);
+          const totalPower = armyStats?.totalPower || 0;
+
+          this.debugLog('UPDATE_SHADOW_POWER', 'Total power calculation completed', {
+            totalPower,
+            totalShadows: armyStats?.totalShadows || 0,
+            avgPower:
+              armyStats?.totalShadows > 0 ? Math.floor(totalPower / armyStats.totalShadows) : 0,
+            formattedPower: totalPower.toLocaleString(),
+            previousCachedPower: this.cachedShadowPower,
+          });
+
+          this.cachedShadowPower = totalPower.toLocaleString();
+          this.updateShadowPowerDisplay();
+          this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated', {
+            newCachedPower: this.cachedShadowPower,
+          });
+          return;
+        } catch (error) {
+          // If getAggregatedArmyStats fails, fall through to fallback methods
+          this.debugError(
+            'UPDATE_SHADOW_POWER',
+            'getAggregatedArmyStats failed, using fallback',
+            error
+          );
+        }
+      }
+
+      // Fallback: Try to get from storage manager if method not available
+      if (shadowArmy.storageManager && typeof shadowArmy.storageManager.getShadows === 'function') {
+        try {
+          // Ensure storage manager is initialized
+          if (!shadowArmy.storageManager.db) {
+            await shadowArmy.storageManager.init();
+          }
+
+          const shadows = await shadowArmy.storageManager.getShadows({}, 0, 1000000);
+          this.debugLog('UPDATE_SHADOW_POWER', 'Retrieved shadows from storage manager', {
+            shadowCount: shadows?.length || 0,
+            dbInitialized: !!shadowArmy.storageManager.db,
+          });
+
+          if (shadows && shadows.length > 0) {
+            // Calculate total power using calculateShadowPowerCached
+            // This method handles decompression automatically
+            const totalPower = shadows.reduce((sum, shadow) => {
+              // Use calculateShadowPowerCached which handles compressed shadows
+              if (shadowArmy.calculateShadowPowerCached) {
+                const power = shadowArmy.calculateShadowPowerCached(shadow);
+                return sum + (power || 0);
+              }
+              // Fallback: try to get strength directly (may not work for compressed shadows)
+              const decompressed = shadowArmy.getShadowData
+                ? shadowArmy.getShadowData(shadow)
+                : shadow;
+              return sum + (decompressed?.strength || 0);
+            }, 0);
+
+            this.debugLog('UPDATE_SHADOW_POWER', 'Calculated total power from shadows', {
+              totalPower,
+              shadowCount: shadows.length,
+            });
+
+            this.cachedShadowPower = totalPower.toLocaleString();
+            this.updateShadowPowerDisplay();
+            return;
+          } else {
+            this.debugLog('UPDATE_SHADOW_POWER', 'No shadows found in storage manager');
+          }
+        } catch (fallbackError) {
+          this.debugError('UPDATE_SHADOW_POWER', 'Fallback method failed', fallbackError);
+        }
+      }
+
+      // No shadows or method unavailable
+      this.cachedShadowPower = '0';
+      this.updateShadowPowerDisplay();
+    } catch (error) {
+      this.debugError('UPDATE_SHADOW_POWER', error);
+      this.cachedShadowPower = '0';
+      this.updateShadowPowerDisplay();
+    }
+  }
+
   updateShadowPowerDisplay() {
+    this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Updating shadow power display', {
+      cachedShadowPower: this.cachedShadowPower,
+      hasChatUIPanel: !!this.chatUIPanel,
+    });
+
     if (this.chatUIPanel) {
       const shadowPowerEl = this.chatUIPanel.querySelector('.sls-chat-shadow-power');
       if (shadowPowerEl) {
-        shadowPowerEl.textContent = `Shadow Power: ${this.cachedShadowPower}`;
+        const newText = `Shadow Power: ${this.cachedShadowPower}`;
+        shadowPowerEl.textContent = newText;
+        this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Shadow power text updated in progress bar', {
+          elementFound: true,
+          oldText: shadowPowerEl.textContent,
+          newText,
+          cachedShadowPower: this.cachedShadowPower,
+        });
+      } else {
+        this.debugLog(
+          'UPDATE_SHADOW_POWER_DISPLAY',
+          'Shadow power element not found in progress bar',
+          {
+            hasChatUIPanel: !!this.chatUIPanel,
+          }
+        );
       }
+    } else {
+      this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Chat UI panel not available', {});
     }
+
     // Emit event for real-time updates in LevelProgressBar
     this.emit('shadowPowerChanged', {
+      shadowPower: this.cachedShadowPower,
+    });
+    this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Emitted shadowPowerChanged event', {
       shadowPower: this.cachedShadowPower,
     });
   }
@@ -8455,15 +8630,32 @@ module.exports = class SoloLevelingStats {
   }
 
   /**
-   * 3.8.2 INJECT CHAT UI CSS (791 lines)
+   * 3.8.2 INJECT CHAT UI CSS
    *
-   * ORGANIZED SECTIONS:
-   * - Base Panel Styles (lines 7405-7500)
-   * - Stats Display & Progress Bars (lines 7500-7650)
-   * - Quest System UI (lines 7650-7800)
-   * - HP/Mana Bars (lines 7800-7950)
-   * - Stat Allocation Controls (lines 7950-8100)
-   * - Animations & Effects (lines 8100-8200)
+   * Injects comprehensive CSS styles for the Solo Leveling Stats chat UI panel.
+   * Styles are organized into 9 functional sections for easy maintenance.
+   *
+   * CSS STRUCTURE:
+   * 1. BASE PANEL & LAYOUT - Main container, header, content wrapper, toggle button
+   * 2. HP/MANA DISPLAY - Health/mana bars with collapsed state styling
+   * 3. LEVEL & STATS DISPLAY - Level number, rank badge, XP text, shadow power
+   * 4. XP PROGRESS BAR - Progress bar, fill, sparkles, milestone markers
+   * 5. QUEST SYSTEM UI - Quest celebration modal, progress items, notifications
+   * 6. STAT ALLOCATION CONTROLS - Stat items, allocation buttons, stat points
+   * 7. TITLE & ACHIEVEMENTS - Title display, achievement items and list
+   * 8. UTILITY COMPONENTS - Section toggles, activity grid, quest items
+   * 9. ANIMATIONS & KEYFRAMES - All animation definitions for visual effects
+   *
+   * THEME COLORS:
+   * - Primary Purple: rgba(138, 43, 226, ...) - Main theme color
+   * - Accent Purple: #8a2be2, #9370db, #ba55d3 - Gradient accents
+   * - Text Purple: #d4a5ff, #b894e6 - Text colors
+   * - Success Green: #00ff88 - Quest completion, achievements
+   * - Background: rgba(10, 10, 15, 0.95) - Dark gradient background
+   *
+   * FONT FAMILY:
+   * - Primary: 'Friend or Foe BB' (Solo Leveling theme font)
+   * - Fallback: 'Orbitron', 'Segoe UI', sans-serif
    */
   injectChatUICSS() {
     if (document.getElementById('sls-chat-ui-styles')) return;
@@ -8471,9 +8663,19 @@ module.exports = class SoloLevelingStats {
     const style = document.createElement('style');
     style.id = 'sls-chat-ui-styles';
     style.textContent = `
-      /* ========================================
-         BASE PANEL STYLES
-         ======================================== */
+      /* ============================================================================
+         SOLO LEVELING STATS - THEME CSS
+         ============================================================================
+         This CSS file styles the Solo Leveling Stats plugin UI components.
+         Organized by functional area for easy maintenance and navigation.
+         ============================================================================ */
+
+      /* ============================================================================
+         SECTION 1: BASE PANEL & LAYOUT
+         ============================================================================
+         Targets: Main chat panel container, header, content wrapper, toggle button
+         Purpose: Foundation layout and container styling for the entire UI
+         ============================================================================ */
       .sls-chat-panel {
         position: relative;
         margin: 6px 16px 8px 16px;
@@ -8497,6 +8699,12 @@ module.exports = class SoloLevelingStats {
         gap: 12px;
       }
 
+      /* ============================================================================
+         SECTION 2: HP/MANA DISPLAY & COLLAPSED STATES
+         ============================================================================
+         Targets: HP/Mana bar containers, collapsed state styling
+         Purpose: Health and mana bar display with enhanced visibility when collapsed
+         ============================================================================ */
       .sls-chat-hp-mana-display {
         display: flex !important;
         align-items: center !important;
@@ -8574,6 +8782,12 @@ module.exports = class SoloLevelingStats {
         display: block;
       }
 
+      /* ============================================================================
+         SECTION 3: LEVEL & STATS DISPLAY
+         ============================================================================
+         Targets: Level number, rank badge, XP text, shadow power display
+         Purpose: Display user level, rank, XP progress, and shadow army power
+         ============================================================================ */
       .sls-chat-level {
         margin-bottom: 10px;
         display: flex;
@@ -8651,6 +8865,12 @@ module.exports = class SoloLevelingStats {
         align-items: center;
       }
 
+      /* ============================================================================
+         SECTION 4: XP PROGRESS BAR
+         ============================================================================
+         Targets: Progress bar container, fill, sparkle particles, milestone markers
+         Purpose: Visual XP progress indicator with animations and milestone tracking
+         ============================================================================ */
       .sls-chat-progress-bar {
         flex: 1;
         min-width: 80px;
@@ -8732,7 +8952,7 @@ module.exports = class SoloLevelingStats {
         box-shadow: 0 0 6px rgba(186, 85, 211, 0.8);
       }
 
-      /* Milestone markers */
+      /* Progress bar milestone markers - visual indicators for level milestones */
       .sls-chat-progress-bar .sls-milestone-marker {
         position: absolute;
         top: -8px;
@@ -8755,11 +8975,19 @@ module.exports = class SoloLevelingStats {
         box-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
       }
 
+      /* ============================================================================
+         SECTION 9: ANIMATIONS & KEYFRAMES
+         ============================================================================
+         Targets: All animated elements (progress bar, quest celebrations, particles)
+         Purpose: Define animation keyframes for visual effects throughout the UI
+         ============================================================================ */
+      /* Progress bar shimmer effect (currently unused but available) */
       @keyframes shimmer {
         0% { transform: translateX(-100%); }
         100% { transform: translateX(100%); }
       }
 
+      /* Progress bar sparkle effect (currently unused but available) */
       @keyframes sparkle {
         0%, 100% { opacity: 0; }
         50% { opacity: 1; }
@@ -8780,6 +9008,12 @@ module.exports = class SoloLevelingStats {
         }
       }
 
+      /* ============================================================================
+         SECTION 5: QUEST SYSTEM UI
+         ============================================================================
+         Targets: Quest celebration modal, quest progress items, quest notification
+         Purpose: Quest completion animations and quest progress tracking UI
+         ============================================================================ */
       /* Quest celebration styles */
       /*
        * ANIMATION TYPES AVAILABLE (change animation property to switch):
@@ -9391,6 +9625,12 @@ module.exports = class SoloLevelingStats {
         align-items: center;
       }
 
+      /* ============================================================================
+         SECTION 7: TITLE & ACHIEVEMENTS DISPLAY
+         ============================================================================
+         Targets: Title display, title labels, achievement items, achievement list
+         Purpose: Display user titles and achievement progress
+         ============================================================================ */
       .sls-chat-title-display {
         background: rgba(138, 43, 226, 0.15);
         border: 1px solid rgba(138, 43, 226, 0.3);
@@ -9426,6 +9666,12 @@ module.exports = class SoloLevelingStats {
         text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
       }
 
+      /* ============================================================================
+         SECTION 8: UTILITY COMPONENTS
+         ============================================================================
+         Targets: Section toggles, activity grid, quest items in chat panel
+         Purpose: Reusable UI components for collapsible sections and activity display
+         ============================================================================ */
       .sls-chat-section-toggle {
         display: flex;
         justify-content: space-between;
