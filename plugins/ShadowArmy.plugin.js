@@ -2113,6 +2113,15 @@ module.exports = class ShadowArmy {
         lastCompressionTime: null,
         compressionIntervalHours: 1, // Compress shadows every hour
       },
+      // ARISE Animation settings (merged from ShadowAriseAnimation plugin)
+      ariseAnimation: {
+        enabled: true, // Enable epic ARISE animation
+        animationDuration: 2500, // Animation duration in milliseconds
+        scale: 1.0, // Animation scale multiplier
+        showRankAndRole: true, // Show rank and role under ARISE text
+        animationFont: 'Speedy Space Goat Oddity', // Font for ARISE animation text
+        useLocalFonts: true, // Use local font files for animation font
+      },
     };
 
     // ============================================================================
@@ -2657,6 +2666,15 @@ module.exports = class ShadowArmy {
     this.toolbarCheckInterval = null;
     this._shadowArmyButtonRetryCount = 0;
 
+    // ARISE Animation system (merged from ShadowAriseAnimation plugin)
+    this.animationContainer = null; // Animation container element
+    this.webpackModules = {
+      UserStore: null,
+      ChannelStore: null,
+    };
+    this.webpackModuleAccess = false;
+    this.reactInjectionActive = false;
+
     // ============================================================================
     // LIFECYCLE STATE - Cleanup Tracking
     // ============================================================================
@@ -2764,7 +2782,13 @@ module.exports = class ShadowArmy {
 
     this.loadSettings();
 
-    this.injectCSS(); // Keep CSS for extraction animations
+    // Load font for arise animation (Speedy Space Goat Oddity)
+    this.loadAriseAnimationFont();
+
+    // Initialize ARISE animation system (merged from ShadowAriseAnimation plugin)
+    this.initializeAriseAnimationSystem();
+
+    this.injectCSS(); // Keep CSS for extraction animations (includes ARISE animation CSS)
     this.injectWidgetCSS(); // Widget CSS for member list display (DOM injection disabled)
     this.integrateWithSoloLeveling();
     this.setupMessageListener();
@@ -2851,6 +2875,9 @@ module.exports = class ShadowArmy {
   stop() {
     // Set stopped flag to prevent recreating watchers
     this._isStopped = true;
+
+    // Cleanup ARISE animation system (merged from ShadowAriseAnimation plugin)
+    this.cleanupAriseAnimationSystem();
 
     this.removeMessageListener();
     this.removeCSS();
@@ -3162,6 +3189,16 @@ module.exports = class ShadowArmy {
         // Initialize dungeon extraction attempts tracking
         if (!this.settings.dungeonExtractionAttempts) {
           this.settings.dungeonExtractionAttempts = {};
+        }
+        // Initialize ariseAnimation settings if missing
+        if (!this.settings.ariseAnimation) {
+          this.settings.ariseAnimation = { ...this.defaultSettings.ariseAnimation };
+        } else {
+          // Backfill any missing ariseAnimation keys
+          this.settings.ariseAnimation = {
+            ...this.defaultSettings.ariseAnimation,
+            ...this.settings.ariseAnimation,
+          };
         }
       } else {
         // No saved settings, use defaults
@@ -4904,8 +4941,8 @@ module.exports = class ShadowArmy {
   /**
    * Show extraction animation when shadow is extracted
    * Operations:
-   * 1. Try to use ShadowAriseAnimation plugin if available
-   * 2. Fallback to simple inline animation if plugin missing
+   * 1. Use integrated ARISE animation system (merged from ShadowAriseAnimation plugin)
+   * 2. Fallback to simple inline animation if ARISE animation disabled
    * 3. Create animation element with ARISE text and shadow info
    * 4. Append to document body
    * 5. Schedule fade-out and removal after animation duration
@@ -4914,21 +4951,18 @@ module.exports = class ShadowArmy {
     // Guard clause: Return early if no shadow provided
     if (!shadow) return;
 
-    try {
-      // Prefer external ShadowAriseAnimation plugin, if present
-      const saPlugin = BdApi.Plugins.get('ShadowAriseAnimation');
-      const instance = saPlugin && (saPlugin.instance || saPlugin);
-      // Guard clause: Use plugin if available
-      if (instance && typeof instance.triggerArise === 'function') {
-        instance.triggerArise(shadow);
+    // Use integrated ARISE animation if enabled
+    if (this.settings?.ariseAnimation?.enabled) {
+      try {
+        this.triggerArise(shadow);
         return;
+      } catch (error) {
+        this.debugError('ANIMATION', 'Error triggering ARISE animation', error);
+        // Fall through to fallback animation
       }
-    } catch (error) {
-      // debugError method is in SECTION 4
-      this.debugError('ANIMATION', 'Unable to use ShadowAriseAnimation plugin', error);
     }
 
-    // Fallback: simple inline ARISE animation (minimal, in case plugin is missing)
+    // Fallback: simple inline ARISE animation (minimal, in case ARISE animation disabled or fails)
     // Use BdApi.DOM utilities if available for better integration
     const animation = document.createElement('div');
     animation.className = 'shadow-army-extraction-animation';
@@ -7760,9 +7794,59 @@ module.exports = class ShadowArmy {
   // ============================================================================
 
   /**
-   * Inject CSS styles for shadow army UI components
-   * Uses BdApi.DOM for persistent CSS injection (v1.8.0+)
+   * Load font for arise animation (Speedy Space Goat Oddity)
+   * Operations:
+   * 1. Get font name from settings (defaults to 'Speedy Space Goat Oddity')
+   * 2. Check if CriticalHit plugin has already loaded the font
+   * 3. If not, try to use CriticalHit's font loading method if available
+   * 4. If CriticalHit not available, check if font style element already exists
+   * 5. Font will be used by CSS font-family declaration
    */
+  loadAriseAnimationFont() {
+    const fontName = this.settings?.ariseAnimation?.animationFont || 'Speedy Space Goat Oddity';
+    const fontStyleId = `cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`;
+
+    // Check if font is already loaded (by CriticalHit or previous load)
+    if (document.getElementById(fontStyleId)) {
+      this.debugLog('FONT_LOADER', 'Font already loaded (likely by CriticalHit plugin)', {
+        fontName,
+        fontStyleId,
+      });
+      return true;
+    }
+
+    // Try to use CriticalHit's font loading if available
+    try {
+      const criticalHitPlugin = BdApi.Plugins.get('CriticalHit');
+      if (criticalHitPlugin) {
+        const instance = criticalHitPlugin.instance || criticalHitPlugin;
+        if (instance && typeof instance.loadLocalFont === 'function') {
+          const loaded = instance.loadLocalFont(fontName);
+          if (loaded) {
+            this.debugLog('FONT_LOADER', 'Font loaded via CriticalHit plugin', {
+              fontName,
+            });
+            return true;
+          }
+        }
+      }
+    } catch (error) {
+      this.debugLog('FONT_LOADER', 'Could not use CriticalHit font loading', {
+        fontName,
+        error: error?.message,
+        note: 'Font may still work if CriticalHit has it loaded',
+      });
+    }
+
+    // Font not loaded yet - it may be loaded by CriticalHit later
+    // CSS will use fallback font until then
+    this.debugLog('FONT_LOADER', 'Font not yet loaded, will use fallback until available', {
+      fontName,
+      note: 'If CriticalHit plugin is enabled, it will load this font automatically',
+    });
+    return false;
+  }
+
   injectCSS() {
     const styleId = 'shadow-army-styles';
     // Use new CSS management system for tracking
@@ -7790,6 +7874,7 @@ module.exports = class ShadowArmy {
       }
 
       .shadow-extraction-title {
+        font-family: 'Speedy Space Goat Oddity', sans-serif !important;
         font-size: 32px;
         font-weight: 700;
         color: #a78bfa;
@@ -7845,6 +7930,109 @@ module.exports = class ShadowArmy {
         to {
           opacity: 0;
           transform: translate(-50%, -50%) scale(0.8);
+        }
+      }
+
+      /* ARISE Animation CSS (merged from ShadowAriseAnimation plugin) */
+      .sa-animation-container {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 999999;
+      }
+
+      .sa-arise-wrapper {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        text-align: center;
+        animation: sa-arise-float var(--sa-duration, 2.5s) ease-out forwards;
+      }
+
+      .sa-arise-text {
+        font-family: '${
+          this.settings?.ariseAnimation?.animationFont || 'Speedy Space Goat Oddity'
+        }', system-ui, sans-serif;
+        font-weight: 700;
+        font-size: 42px;
+        letter-spacing: 0.12em;
+        text-transform: none; /* Preserve "ARiSe" casing */
+        background: linear-gradient(135deg, #020617 0%, #0f172a 35%, #1d4ed8 70%, #38bdf8 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+        text-shadow:
+          0 0 10px rgba(15, 23, 42, 0.95),
+          0 0 18px rgba(37, 99, 235, 0.95),
+          0 0 26px rgba(56, 189, 248, 0.75);
+        animation: sa-arise-glow 0.7s ease-in-out infinite alternate;
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+        text-rendering: optimizeLegibility;
+      }
+
+      .sa-arise-text .sa-small-r {
+        font-size: 0.9em !important; /* Make R 10% smaller */
+        display: inline-block !important;
+      }
+
+      .sa-arise-meta {
+        margin-top: 6px;
+        font-size: 14px;
+        color: #e5e7eb;
+        text-shadow: 0 0 8px rgba(15, 23, 42, 0.8);
+        opacity: 0.9;
+      }
+
+      .sa-arise-particle {
+        position: absolute;
+        width: 5px;
+        height: 5px;
+        border-radius: 999px;
+        background: radial-gradient(circle, #38bdf8 0%, rgba(15, 23, 42, 0) 70%);
+        animation: sa-arise-particle-fade var(--sa-duration, 2.5s) ease-out forwards;
+      }
+
+      @keyframes sa-arise-float {
+        0% {
+          opacity: 0;
+          transform: translate(-50%, -40%) scale(calc(0.6 * var(--sa-scale, 1)));
+        }
+        15% {
+          opacity: 1;
+          transform: translate(-50%, -50%) scale(calc(1.1 * var(--sa-scale, 1)));
+        }
+        100% {
+          opacity: 0;
+          transform: translate(-50%, -70%) scale(calc(0.9 * var(--sa-scale, 1)));
+        }
+      }
+
+      @keyframes sa-arise-glow {
+        from {
+          filter:
+            drop-shadow(0 0 10px rgba(15, 23, 42, 1))
+            drop-shadow(0 0 18px rgba(37, 99, 235, 0.9));
+        }
+        to {
+          filter:
+            drop-shadow(0 0 16px rgba(30, 64, 175, 1))
+            drop-shadow(0 0 30px rgba(56, 189, 248, 0.95));
+        }
+      }
+
+      @keyframes sa-arise-particle-fade {
+        0% {
+          opacity: 1;
+          transform: translate(0, 0) scale(1);
+        }
+        100% {
+          opacity: 0;
+          transform: translate(var(--sa-particle-x, 0px), var(--sa-particle-y, -140px)) scale(0);
         }
       }
 
@@ -8005,6 +8193,320 @@ module.exports = class ShadowArmy {
   }
 
   // ============================================================================
+  // ============================================================================
+  // 3.13.3 ARISE ANIMATION SYSTEM (Merged from ShadowAriseAnimation plugin)
+  // ============================================================================
+
+  /**
+   * Initialize ARISE animation system
+   * Operations:
+   * 1. Initialize webpack modules for Discord integration
+   * 2. Attempt React injection for stable container
+   * 3. Create fallback DOM container if React injection fails
+   */
+  initializeAriseAnimationSystem() {
+    if (!this.settings?.ariseAnimation?.enabled) {
+      this.debugLog('ARISE_ANIMATION', 'ARISE animation disabled in settings');
+      return;
+    }
+
+    // Initialize webpack modules for better Discord integration
+    this.initializeWebpackModules();
+
+    // Attempt React injection for animation container (more stable)
+    if (this.webpackModuleAccess) {
+      this.tryReactInjection();
+    }
+
+    // Ensure container exists (fallback to DOM if React injection not available)
+    this.getContainer();
+  }
+
+  /**
+   * Cleanup ARISE animation system
+   * Operations:
+   * 1. Cleanup webpack patches and React injection
+   * 2. Remove all active animations from DOM
+   * 3. Clear webpack module references
+   */
+  cleanupAriseAnimationSystem() {
+    // Cleanup webpack patches and React injection
+    if (this.reactInjectionActive) {
+      try {
+        BdApi.Patcher.unpatchAll('ShadowArmy-AriseAnimation');
+        this.reactInjectionActive = false;
+        this.debugLog('ARISE_ANIMATION', 'Webpack patches and React injection removed');
+      } catch (error) {
+        this.debugError('ARISE_ANIMATION', 'Error during cleanup', error);
+      }
+    }
+
+    // Clear webpack module references
+    this.webpackModules = {
+      UserStore: null,
+      ChannelStore: null,
+    };
+    this.webpackModuleAccess = false;
+
+    // Remove all animations
+    this.removeAllAnimations();
+  }
+
+  /**
+   * Initialize Webpack modules for better Discord integration
+   * Operations:
+   * 1. Fetch UserStore and ChannelStore via BdApi.Webpack
+   * 2. Set webpackModuleAccess flag
+   * 3. Attempt React injection if modules available
+   */
+  initializeWebpackModules() {
+    try {
+      // Fetch UserStore and ChannelStore
+      this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
+      this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
+        (m) => m && m.getChannel && m.getChannelId
+      );
+
+      this.webpackModuleAccess = !!(
+        this.webpackModules.UserStore && this.webpackModules.ChannelStore
+      );
+
+      this.debugLog('ARISE_ANIMATION', 'Webpack module access initialized', {
+        hasUserStore: !!this.webpackModules.UserStore,
+        hasChannelStore: !!this.webpackModules.ChannelStore,
+        access: this.webpackModuleAccess,
+      });
+    } catch (error) {
+      this.debugError('ARISE_ANIMATION', 'Webpack initialization error', error);
+      this.webpackModuleAccess = false;
+    }
+  }
+
+  /**
+   * Attempt to inject animation container into Discord's React tree
+   * Operations:
+   * 1. Find MainContent component via webpack
+   * 2. Patch component to inject animation container
+   * 3. Use BdApi.Utils.findInTree to locate injection point
+   * 4. Create React element for container
+   * 5. Set reactInjectionActive flag if successful
+   */
+  tryReactInjection() {
+    try {
+      // Find MainContent component (Discord's main app container)
+      let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
+        searchExports: true,
+      });
+
+      if (!MainContent) {
+        MainContent = BdApi.Webpack.getByStrings('appMount', {
+          searchExports: true,
+        });
+      }
+
+      if (!MainContent) {
+        this.debugLog('ARISE_ANIMATION', 'MainContent component not found, using DOM fallback');
+        return;
+      }
+
+      const React = BdApi.React;
+      const pluginInstance = this;
+
+      // Patch MainContent to inject animation container
+      BdApi.Patcher.after(
+        'ShadowArmy-AriseAnimation',
+        MainContent,
+        'Z',
+        (thisObject, args, returnValue) => {
+          try {
+            // Find body element in React tree
+            const bodyPath = BdApi.Utils.findInTree(
+              returnValue,
+              (node) => node && node.props && node.props.children && node.props.className
+            );
+
+            if (!bodyPath || !bodyPath.props || !bodyPath.props.children) {
+              return;
+            }
+
+            // Check if container already exists
+            const hasContainer = BdApi.Utils.findInTree(
+              bodyPath.props.children,
+              (node) => node && node.props && node.props.className === 'sa-animation-container'
+            );
+
+            if (hasContainer) {
+              return; // Container already injected
+            }
+
+            // Create React element for animation container
+            const containerElement = React.createElement('div', {
+              className: 'sa-animation-container',
+              key: 'sa-animation-container',
+            });
+
+            // Inject into React tree
+            if (Array.isArray(bodyPath.props.children)) {
+              bodyPath.props.children.push(containerElement);
+            } else {
+              bodyPath.props.children = [bodyPath.props.children, containerElement];
+            }
+
+            // Set DOM reference after a short delay (React needs to render first)
+            setTimeout(() => {
+              const domContainer = document.querySelector('.sa-animation-container');
+              if (domContainer) {
+                pluginInstance.animationContainer = domContainer;
+                pluginInstance.debugLog(
+                  'ARISE_ANIMATION',
+                  'Animation container injected successfully'
+                );
+              }
+            }, 100);
+          } catch (error) {
+            pluginInstance.debugError('ARISE_ANIMATION', 'React injection error', error);
+          }
+        }
+      );
+
+      this.reactInjectionActive = true;
+      this.debugLog('ARISE_ANIMATION', 'React injection setup complete');
+    } catch (error) {
+      this.debugError('ARISE_ANIMATION', 'React injection setup error', error);
+      // Fallback to DOM-based injection
+      this.createContainerDOM();
+    }
+  }
+
+  /**
+   * Get or create animation container element
+   * Operations:
+   * 1. Check if container already exists
+   * 2. Try React injection first (if available)
+   * 3. Fallback to DOM-based creation if React injection fails
+   * 4. Store reference for later use
+   * 5. Return container element
+   */
+  getContainer() {
+    if (this.animationContainer) {
+      return this.animationContainer;
+    }
+
+    // Try React injection first (if not already attempted)
+    if (this.webpackModuleAccess && !this.reactInjectionActive) {
+      this.tryReactInjection();
+      // Wait a bit for React injection to complete
+      setTimeout(() => {
+        if (!this.animationContainer) {
+          // React injection failed, use DOM fallback
+          this.createContainerDOM();
+        }
+      }, 200);
+      return this.animationContainer;
+    }
+
+    // DOM fallback
+    this.createContainerDOM();
+    return this.animationContainer;
+  }
+
+  /**
+   * Create animation container using DOM (fallback method)
+   */
+  createContainerDOM() {
+    const container = document.createElement('div');
+    container.className = 'sa-animation-container';
+    document.body.appendChild(container);
+    this.animationContainer = container;
+    this.debugLog('ARISE_ANIMATION', 'Created animation container via DOM fallback');
+  }
+
+  /**
+   * Remove all animations and clean up container
+   * Operations:
+   * 1. Check if container exists and has parent
+   * 2. Remove container from DOM
+   * 3. Clear reference to null
+   */
+  removeAllAnimations() {
+    // FUNCTIONAL: Short-circuit cleanup (no if-else)
+    this.animationContainer?.parentNode &&
+      (this.animationContainer.parentNode.removeChild(this.animationContainer),
+      (this.animationContainer = null));
+  }
+
+  /**
+   * Trigger ARISE animation for a given shadow (merged from ShadowAriseAnimation plugin)
+   * Public API used by showExtractionAnimation
+   * Operations:
+   * 1. Check if animation is enabled
+   * 2. Validate document exists (SSR safety)
+   * 3. Get animation container
+   * 4. Create wrapper element with animation class
+   * 5. Set CSS custom properties (duration, scale)
+   * 6. Create "ARiSe" text element with gradient styling
+   * 7. Optionally create meta element with rank and role
+   * 8. Spawn particle effects (22 particles with random positions)
+   * 9. Append wrapper to container
+   * 10. Schedule removal after animation duration
+   */
+  triggerArise(shadow) {
+    // Guard clauses (early returns)
+    if (!this.settings?.ariseAnimation?.enabled) return;
+    if (typeof document === 'undefined') return;
+
+    const container = this.getContainer();
+    const ariseSettings = this.settings.ariseAnimation;
+    const durationMs = ariseSettings.animationDuration || 2500;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'sa-arise-wrapper';
+    wrapper.style.setProperty('--sa-duration', `${durationMs}ms`);
+    const scale = ariseSettings.scale || 1;
+    wrapper.style.setProperty('--sa-scale', String(scale));
+
+    const title = document.createElement('div');
+    title.className = 'sa-arise-text';
+    // Text should be "ARiSe" (capital A, R, i, S, e) with R slightly smaller
+    title.innerHTML = 'A<span class="sa-small-r">R</span>iSe';
+    wrapper.appendChild(title);
+
+    // FUNCTIONAL: Short-circuit for conditional rendering (no if-else)
+    ariseSettings.showRankAndRole &&
+      shadow &&
+      (() => {
+        const meta = document.createElement('div');
+        meta.className = 'sa-arise-meta';
+        const rankText = shadow.rank ? `${shadow.rank}-Rank` : '';
+        const roleText = shadow.roleName || shadow.role || '';
+        meta.textContent = [rankText, roleText].filter(Boolean).join(' • ');
+        wrapper.appendChild(meta);
+      })();
+
+    // FUNCTIONAL: Spawn particles using Array.from (no for-loop)
+    const particleCount = 22;
+    Array.from({ length: particleCount }, () => {
+      const p = document.createElement('div');
+      p.className = 'sa-arise-particle';
+      const angle = Math.random() * Math.PI * 2;
+      const radius = 40 + Math.random() * 80;
+      const dx = Math.cos(angle) * radius;
+      const dy = -Math.abs(Math.sin(angle) * radius);
+      p.style.setProperty('--sa-particle-x', `${dx}px`);
+      p.style.setProperty('--sa-particle-y', `${dy}px`);
+      p.style.left = '50%';
+      p.style.top = '50%';
+      wrapper.appendChild(p);
+      return p;
+    });
+
+    container.appendChild(wrapper);
+
+    setTimeout(() => {
+      wrapper.remove();
+    }, durationMs + 200);
+  }
+
   // 3.13.2 CSS MANAGEMENT HELPERS - Theme Integration & Advanced Features
   // ============================================================================
 
@@ -10357,6 +10859,33 @@ module.exports = class ShadowArmy {
             <div style="font-size: 11px; opacity: 0.8;">Max 3 extraction attempts per target</div>
           </div>
         </div>
+        <div class="shadow-army-config" style="margin-top: 16px;">
+          <h3>ARISE Animation Settings</h3>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
+            <input type="checkbox" id="sa-arise-enabled" ${
+              this.settings?.ariseAnimation?.enabled !== false ? 'checked' : ''
+            }>
+            <span>Enable epic ARISE animation</span>
+          </label>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="display:block;margin-bottom:4px;">Animation duration (ms)</span>
+            <input type="number" id="sa-arise-duration" value="${
+              this.settings?.ariseAnimation?.animationDuration || 2500
+            }" min="800" max="6000" step="200" style="width:100%;padding:4px;">
+          </label>
+          <label style="display:block;margin-bottom:8px;">
+            <span style="display:block;margin-bottom:4px;">Scale</span>
+            <input type="number" id="sa-arise-scale" value="${
+              this.settings?.ariseAnimation?.scale || 1.0
+            }" min="0.5" max="2.0" step="0.1" style="width:100%;padding:4px;">
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
+            <input type="checkbox" id="sa-arise-show-meta" ${
+              this.settings?.ariseAnimation?.showRankAndRole !== false ? 'checked' : ''
+            }>
+            <span>Show rank and role under ARISE</span>
+          </label>
+        </div>
         <div class="shadow-army-list">
           <h3>Shadows (first ${maxList})</h3>
           ${
@@ -10536,6 +11065,64 @@ module.exports = class ShadowArmy {
                 \`;
               } catch (error) {
                 resultDiv.innerHTML = '<span style="color: #ef4444;">Error: ' + error.message + '</span>';
+              }
+            });
+          }
+
+          // ARISE Animation Settings Event Listeners
+          const ariseEnabled = document.getElementById('sa-arise-enabled');
+          const ariseDuration = document.getElementById('sa-arise-duration');
+          const ariseScale = document.getElementById('sa-arise-scale');
+          const ariseShowMeta = document.getElementById('sa-arise-show-meta');
+
+          if (ariseEnabled) {
+            ariseEnabled.addEventListener('change', function(e) {
+              const plugin = BdApi.Plugins.get('ShadowArmy');
+              if (plugin && plugin.instance) {
+                if (!plugin.instance.settings.ariseAnimation) {
+                  plugin.instance.settings.ariseAnimation = {};
+                }
+                plugin.instance.settings.ariseAnimation.enabled = e.target.checked;
+                plugin.instance.saveSettings();
+              }
+            });
+          }
+
+          if (ariseDuration) {
+            ariseDuration.addEventListener('change', function(e) {
+              const plugin = BdApi.Plugins.get('ShadowArmy');
+              if (plugin && plugin.instance) {
+                if (!plugin.instance.settings.ariseAnimation) {
+                  plugin.instance.settings.ariseAnimation = {};
+                }
+                plugin.instance.settings.ariseAnimation.animationDuration = parseInt(e.target.value, 10) || 2500;
+                plugin.instance.saveSettings();
+              }
+            });
+          }
+
+          if (ariseScale) {
+            ariseScale.addEventListener('change', function(e) {
+              const plugin = BdApi.Plugins.get('ShadowArmy');
+              if (plugin && plugin.instance) {
+                if (!plugin.instance.settings.ariseAnimation) {
+                  plugin.instance.settings.ariseAnimation = {};
+                }
+                plugin.instance.settings.ariseAnimation.scale = parseFloat(e.target.value) || 1.0;
+                plugin.instance.saveSettings();
+              }
+            });
+          }
+
+          if (ariseShowMeta) {
+            ariseShowMeta.addEventListener('change', function(e) {
+              const plugin = BdApi.Plugins.get('ShadowArmy');
+              if (plugin && plugin.instance) {
+                if (!plugin.instance.settings.ariseAnimation) {
+                  plugin.instance.settings.ariseAnimation = {};
+                }
+                plugin.instance.settings.ariseAnimation.showRankAndRole = e.target.checked;
+                plugin.instance.saveSettings();
               }
             });
           }
