@@ -2,8 +2,35 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 3.3.0
+ * @version 3.4.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ *
+ * ============================================================================
+ * PLUGIN DEPENDENCIES & API
+ * ============================================================================
+ * Requires:
+ * - SoloLevelingStats: For user stats, intelligence-based extraction
+ *
+ * Provides:
+ * - Shadow extraction system (dungeons + messages)
+ * - Shadow storage and management
+ * - Shadow combat stats and calculations
+ * - Shadow buffs for user stats
+ *
+ * PUBLIC API FOR OTHER PLUGINS:
+ * - getShadowCount() - Returns Promise<number>
+ * - getAllShadows() - Returns Promise<Array<Shadow>>
+ * - getShadowEffectiveStats(shadow) - Returns Object<stats>
+ * - calculateShadowStrength(stats, multiplier) - Returns number
+ * - attemptDungeonExtraction(bossId, userRank, userLevel, userStats, mobRank, mobStats, mobStrength, beastFamilies, isBoss) - Returns Promise<Object>
+ * - grantShadowXP(amount, reason, shadowIds) - Returns Promise<void>
+ * - getShadowData(shadow) - Returns Object (decompressed shadow)
+ * - calculateShadowAttackInterval(shadow, baseInterval) - Returns number
+ * - calculateShadowDamage(shadow, target) - Returns number
+ * - selectTargetForShadow(shadow, availableTargets) - Returns Object
+ * - getShadowPersonality(shadow) - Returns Object
+ * - processMobAttackOnShadow(mob, shadows) - Returns Object
+ * - Event: Emits 'ShadowArmy:shadowExtracted' when shadow is extracted
  *
  * ============================================================================
  * STORAGE & SCALABILITY
@@ -34,6 +61,18 @@
  * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v3.4.0 (2025-12-08) - EVENT-BASED SYNC & API DOCUMENTATION
+ * SYNC IMPROVEMENTS:
+ * - Added event emission on shadow extraction ('ShadowArmy:shadowExtracted')
+ * - Events notify other plugins (Dungeons) immediately when shadows are extracted
+ * - Supports both BdApi.Events and DOM events (fallback)
+ * - Enables real-time cache invalidation in dependent plugins
+ *
+ * API DOCUMENTATION:
+ * - Added comprehensive API documentation in plugin header
+ * - Documented all public methods for plugin cooperation
+ * - Clear dependency and provider information
  *
  * @changelog v3.3.0 (2025-12-04) - HYBRID COMPRESSION SYSTEM
  * NEW FEATURE: Hybrid Memory Compression
@@ -3785,6 +3824,30 @@ module.exports = class ShadowArmy {
               shadowRank: shadow.rank,
               shadowRole: shadow.role,
             });
+
+            // Emit event for other plugins (event-based sync)
+            // Use BdApi.Events if available, otherwise fallback to DOM events
+            if (typeof BdApi?.Events?.emit === 'function') {
+              BdApi.Events.emit('ShadowArmy:shadowExtracted', {
+                shadowId: shadow.id || shadow.i,
+                shadowCount: newCount,
+                shadowRank: shadow.rank,
+                shadowRole: shadow.role,
+                timestamp: Date.now(),
+              });
+            } else if (typeof document.dispatchEvent === 'function') {
+              // Fallback to DOM events
+              const event = new CustomEvent('shadowExtracted', {
+                detail: {
+                  shadowId: shadow.id || shadow.i,
+                  shadowCount: newCount,
+                  shadowRank: shadow.rank,
+                  shadowRole: shadow.role,
+                  timestamp: Date.now(),
+                },
+              });
+              document.dispatchEvent(event);
+            }
 
             // Show success toast notification using BdApi
             if (BdApi && BdApi.showToast) {

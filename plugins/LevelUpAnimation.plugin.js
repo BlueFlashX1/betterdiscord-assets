@@ -4,6 +4,9 @@
  * @description Epic "LEVEL UP!" animation with particles when you level up
  * @version 1.2.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
+ * @tested Discord Desktop Stable (as of 2025-12-08). If Discord updates
+ *         change the React render key currently patched below (`Z`), update
+ *         the target method in tryReactInjection to match the new property.
  *
  * ============================================================================
  * FILE STRUCTURE & NAVIGATION
@@ -177,63 +180,106 @@ module.exports = class LevelUpAnimation {
 
       const pluginInstance = this;
       const React = BdApi.React;
+      const targetMethod = 'Z';
+      const hasTargetMethod = typeof MainContent?.[targetMethod] === 'function';
+
+      if (!hasTargetMethod) {
+        this.debugError(
+          'REACT_INJECTION',
+          new Error(
+            `MainContent.${targetMethod} is missing. Discord likely changed the render key; update tryReactInjection target.`
+          )
+        );
+        return false;
+      }
 
       // Patch the React component to inject our animation container
-      BdApi.Patcher.after('LevelUpAnimation', MainContent, 'Z', (thisObject, args, returnValue) => {
-        try {
-          // Find body element in React tree
-          const bodyPath = BdApi.Utils.findInTree(
-            returnValue,
-            (prop) =>
-              prop &&
-              prop.props &&
-              (prop.props.className?.includes('app') ||
-                prop.props.id === 'app-mount' ||
-                prop.type === 'body'),
-            { walkable: ['props', 'children'] }
-          );
+      try {
+        BdApi.Patcher.after(
+          'LevelUpAnimation',
+          MainContent,
+          targetMethod,
+          (thisObject, args, returnValue) => {
+            try {
+              // Find body element in React tree
+              const bodyPath = BdApi.Utils.findInTree(
+                returnValue,
+                (prop) =>
+                  prop &&
+                  prop.props &&
+                  (prop.props.className?.includes('app') ||
+                    prop.props.id === 'app-mount' ||
+                    prop.type === 'body'),
+                { walkable: ['props', 'children'] }
+              );
 
-          if (bodyPath && bodyPath.props) {
-            // Check if animation container already injected
-            const hasContainer = BdApi.Utils.findInTree(
-              returnValue,
-              (prop) => prop && prop.props && prop.props.className === 'lu-animation-container',
-              { walkable: ['props', 'children'] }
-            );
-
-            if (!hasContainer && !pluginInstance.animationContainer) {
-              // Create React element for animation container
-              const containerElement = React.createElement('div', {
-                className: 'lu-animation-container',
-              });
-
-              // Inject at the beginning of body children
-              if (Array.isArray(bodyPath.props.children)) {
-                bodyPath.props.children.unshift(containerElement);
-              } else if (bodyPath.props.children) {
-                bodyPath.props.children = [containerElement, bodyPath.props.children];
-              } else {
-                bodyPath.props.children = containerElement;
-              }
-
-              pluginInstance.reactInjectionActive = true;
-              pluginInstance.debugLog('REACT_INJECTION', 'Animation container injected via React');
-
-              // Set up DOM reference after injection
-              setTimeout(() => {
+              if (bodyPath && bodyPath.props) {
+                // Check if animation container already injected
+                const hasContainer = BdApi.Utils.findInTree(
+                  returnValue,
+                  (prop) => prop && prop.props && prop.props.className === 'lu-animation-container',
+                  { walkable: ['props', 'children'] }
+                );
+              // Set up DOM reference after injection with retry
+              const waitForContainer = (retries = 10) => {
                 const domElement = document.querySelector('.lu-animation-container');
                 if (domElement) {
                   pluginInstance.animationContainer = domElement;
+                } else if (retries > 0) {
+                  setTimeout(() => waitForContainer(retries - 1), 100);
+                } else {
+                  pluginInstance.debugError('REACT_INJECTION',
+                    new Error('Container not found after injection'));
                 }
-              }, 100);
+              };
+              setTimeout(waitForContainer, 100);
+
+                  // Inject at the beginning of body children
+                  if (Array.isArray(bodyPath.props.children)) {
+                    bodyPath.props.children.unshift(containerElement);
+                  } else if (bodyPath.props.children) {
+                    bodyPath.props.children = [containerElement, bodyPath.props.children];
+                  } else {
+                    bodyPath.props.children = containerElement;
+                  }
+
+                  pluginInstance.reactInjectionActive = true;
+                  pluginInstance.debugLog(
+                    'REACT_INJECTION',
+                    'Animation container injected via React'
+                  );
+
+                  // Set up DOM reference after injection
+                  setTimeout(() => {
+                    const domElement = document.querySelector('.lu-animation-container');
+                    if (domElement) {
+                      pluginInstance.animationContainer = domElement;
+                    }
+                  }, 100);
+                }
+              }
+            } catch (error) {
+              pluginInstance.debugError('REACT_INJECTION', error);
+              return returnValue; // Return original on error
             }
+            return returnValue;
           }
-        } catch (error) {
-          pluginInstance.debugError('REACT_INJECTION', error);
-          return returnValue; // Return original on error
-        }
-        return returnValue;
-      });
+        );
+      } catch (patchError) {
+        this.debugError('REACT_INJECTION', patchError);
+        return false;
+      }
+
+      const patchApplied = BdApi.Patcher.isPatched('LevelUpAnimation', MainContent, targetMethod);
+      if (!patchApplied) {
+        this.debugError(
+          'REACT_INJECTION',
+          new Error(
+            `Patch not applied to MainContent.${targetMethod}. Discord update may have changed the render key; update tryReactInjection target.`
+          )
+        );
+        return false;
+      }
 
       this.reactInjectionActive = true;
       this.debugLog('REACT_INJECTION', 'React injection patch installed');
@@ -670,29 +716,28 @@ module.exports = class LevelUpAnimation {
    * 6. Return container reference
    */
   getAnimationContainer() {
-    // Try React injection first (preferred method)
-    if (!this.animationContainer && this.tryReactInjection()) {
-      // React injection successful, wait for DOM reference
-      setTimeout(() => {
-        if (!this.animationContainer) {
-          const domElement = document.querySelector('.lu-animation-container');
-          if (domElement) {
-            this.animationContainer = domElement;
-            this.debugLog('INIT', 'Animation container created via React injection');
-          }
-        }
-      }, 100);
-      // Return existing or wait for React injection
-      return this.animationContainer || document.querySelector('.lu-animation-container');
+    if (this.animationContainer?.isConnected) return this.animationContainer;
+
+    const existing = document.querySelector('.lu-animation-container');
+    if (existing) {
+      this.animationContainer = existing;
+      return this.animationContainer;
     }
 
-    // Fallback to DOM injection if React injection fails
-    if (!this.animationContainer) {
-      this.animationContainer = document.createElement('div');
-      this.animationContainer.className = 'lu-animation-container';
-      document.body.appendChild(this.animationContainer);
-      this.debugLog('INIT', 'Animation container created via DOM fallback');
+    const injectedElement = this.tryReactInjection()
+      ? document.querySelector('.lu-animation-container')
+      : null;
+    if (injectedElement) {
+      this.animationContainer = injectedElement;
+      this.debugLog('INIT', 'Animation container created via React injection');
+      return this.animationContainer;
     }
+
+    const container = document.createElement('div');
+    container.className = 'lu-animation-container';
+    (document.body || document.documentElement).appendChild(container);
+    this.animationContainer = container;
+    this.debugLog('INIT', 'Animation container created via DOM fallback');
     return this.animationContainer;
   }
 

@@ -321,6 +321,17 @@ module.exports = class LevelProgressBar {
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
     this.cachedShadowPower = '0'; // Cache shadow power to avoid repeated queries
     this.shadowPowerUpdateInterval = null; // Interval for updating shadow power
+    this.webpackModules = {
+      UserStore: null,
+      ChannelStore: null,
+    };
+    this.webpackModuleAccess = false;
+    this.reactInjectionActive = false;
+  }
+      UserStore: null,
+      ChannelStore: null,
+    };
+    this.webpackModuleAccess = false;
   }
 
   // ============================================================================
@@ -332,6 +343,7 @@ module.exports = class LevelProgressBar {
    */
   start() {
     this.debugLog('START', 'Plugin starting');
+    this.initializeWebpackModules();
     this.loadSettings();
     this.injectCSS();
     this.createProgressBar();
@@ -1368,7 +1380,7 @@ module.exports = class LevelProgressBar {
       sparkle.style.animationDelay = `${i * 0.2}s`;
       progressTrack.appendChild(sparkle);
 
-      setTimeout(() => sparkle.parentElement?.remove(), 2000);
+      setTimeout(() => sparkle.remove(), 2000);
       return sparkle;
     });
   }
