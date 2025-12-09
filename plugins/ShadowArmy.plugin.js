@@ -21,7 +21,8 @@
  * - getShadowCount() - Returns Promise<number>
  * - getAllShadows() - Returns Promise<Array<Shadow>>
  * - getShadowEffectiveStats(shadow) - Returns Object<stats>
- * - calculateShadowStrength(stats, multiplier) - Returns number
+ * - calculateShadowPower(stats, multiplier) - Returns number
+ * - getAggregatedArmyStats(forceRecalculate) - Returns Promise<Object> { totalShadows, totalPower, totalStats, byRank, byRole, avgLevel }
  * - attemptDungeonExtraction(bossId, userRank, userLevel, userStats, mobRank, mobStats, mobStrength, beastFamilies, isBoss) - Returns Promise<Object>
  * - grantShadowXP(amount, reason, shadowIds) - Returns Promise<void>
  * - getShadowData(shadow) - Returns Object (decompressed shadow)
@@ -176,6 +177,8 @@
  * - Improved natural growth rates (10x base increase)
  * - Enhanced role specialization for magic beasts
  */
+/* eslint-env browser */
+/* global CustomEvent */
 
 /**
  * ShadowStorageManager - IndexedDB storage manager for ShadowArmy plugin
@@ -353,14 +356,15 @@ class ShadowStorageManager {
       const shadowId = shadow.id || shadow.i;
 
       if (effective) {
-        shadow.strength = this.calculateShadowStrength(effective, 1);
+        // Use calculateShadowPower (not calculateShadowStrength - that function doesn't exist)
+        shadow.strength = this.calculateShadowPower(effective, 1);
         this.debugLog('PREPARE_SAVE', 'Calculated missing strength', {
           shadowId: shadowId,
           calculatedStrength: shadow.strength,
         });
       } else if (decompressed && decompressed.baseStats) {
         // Fallback: calculate from baseStats if effective stats unavailable
-        shadow.strength = this.calculateShadowStrength(decompressed.baseStats, 1);
+        shadow.strength = this.calculateShadowPower(decompressed.baseStats, 1);
         this.debugLog('PREPARE_SAVE', 'Calculated strength from baseStats', {
           shadowId: shadowId,
           calculatedStrength: shadow.strength,
@@ -763,6 +767,11 @@ class ShadowStorageManager {
           }
           if (!objectStore.indexNames.contains('totalCombatTime')) {
             objectStore.createIndex('totalCombatTime', 'totalCombatTime', { unique: false });
+          }
+
+          // Add index for personality (for fast combat queries)
+          if (!objectStore.indexNames.contains('personality')) {
+            objectStore.createIndex('personality', 'personality', { unique: false });
           }
 
           this.debugLog('INIT', 'Added v2 indexes for natural growth', { oldVersion });
@@ -1330,6 +1339,67 @@ class ShadowStorageManager {
       perception:
         (base.perception || 0) + (growth.perception || 0) + (naturalGrowth.perception || 0),
     };
+  }
+
+  /**
+   * Get shadows by personality using IndexedDB index (fast query)
+   * Operations:
+   * 1. Ensure database initialized
+   * 2. Open transaction in readonly mode
+   * 3. Use personality index for fast filtering
+   * 4. Return matching shadows
+   * @param {string} personality - Personality name (e.g., 'aggressive', 'tank')
+   * @returns {Promise<Array>} - Array of shadows with matching personality
+   */
+  async getShadowsByPersonality(personality) {
+    // Guard clause: Return empty if no personality
+    if (!personality) return [];
+
+    // Ensure database initialized
+    if (!this.db) {
+      await this.init();
+    }
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], 'readonly');
+      const store = transaction.objectStore(this.storeName);
+
+      // Check if personality index exists
+      if (!store.indexNames.contains('personality')) {
+        // Index doesn't exist yet - fallback to manual filter
+        this.getAllShadows()
+          .then((allShadows) => {
+            const filtered = allShadows.filter((s) => {
+              // Get personality (may need to calculate if not stored)
+              const storedPersonality = s.personality;
+              if (storedPersonality) return storedPersonality === personality;
+              // Calculate if not stored (fallback)
+              const personalityObj = this.getShadowPersonality(s);
+              return personalityObj.name?.toLowerCase() === personality;
+            });
+            resolve(filtered);
+          })
+          .catch(reject);
+        return;
+      }
+
+      const index = store.index('personality');
+      const request = index.getAll(personality);
+
+      transaction.onerror = () => {
+        this.debugError('GET_BY_PERSONALITY', 'Transaction failed', transaction.error);
+        reject(transaction.error || request.error);
+      };
+
+      request.onsuccess = () => {
+        const shadows = request.result || [];
+        this.debugLog(
+          'GET_BY_PERSONALITY',
+          `Retrieved ${shadows.length} shadows with personality ${personality}`
+        );
+        resolve(shadows);
+      };
+    });
   }
 
   /**
@@ -2097,6 +2167,8 @@ module.exports = class ShadowArmy {
       shadows: [], // Array of shadow objects
       totalShadowsExtracted: 0,
       lastExtractionTime: null,
+      cachedTotalPower: 0, // Cached total power for SoloLevelingStats progress bar
+      cachedTotalPowerTimestamp: 0, // Timestamp of when power was cached
       // Note: Generals are now auto-selected based on 7 strongest shadows (no manual selection)
       extractionConfig: {
         // Base extraction tuning (regular messages)
@@ -2795,7 +2867,7 @@ module.exports = class ShadowArmy {
         indexedDBShadows: initialCount,
         localStorageShadows: localStorageCount,
         userId: this.userId,
-        dbName: this.storageManager.dbName,
+        dbName: this.storageManager?.dbName || 'unknown',
         migrationCompleted: migrationResult?.migrated > 0,
       });
 
@@ -3240,6 +3312,11 @@ module.exports = class ShadowArmy {
             ...this.settings.ariseAnimation,
           };
         }
+        // Initialize cached total power if missing
+        if (this.settings.cachedTotalPower === undefined) {
+          this.settings.cachedTotalPower = 0;
+          this.settings.cachedTotalPowerTimestamp = 0;
+        }
       } else {
         // No saved settings, use defaults
         this.settings = { ...this.defaultSettings };
@@ -3585,7 +3662,8 @@ module.exports = class ShadowArmy {
     skipCap = false,
     fromDungeon = false,
     beastFamilies = null,
-    maxAttempts = 3
+    maxAttempts = 3,
+    showAnimation = true // Show animation by default (messages and bosses), skip for mobs
   ) {
     // Stats extracted but not used in current extraction logic (reserved for future use)
 
@@ -3653,7 +3731,7 @@ module.exports = class ShadowArmy {
 
       // Calculate strength from stats if not provided
       const calculatedStrength =
-        targetStrength || (targetStats ? this.calculateShadowStrength(targetStats, 1) : 0);
+        targetStrength || (targetStats ? this.calculateShadowPower(targetStats, 1) : 0);
 
       shadow = {
         id: `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -3797,7 +3875,7 @@ module.exports = class ShadowArmy {
               const decompressed = this.getShadowData(shadow);
               const effective = this.getShadowEffectiveStats(decompressed);
               if (effective) {
-                shadow.strength = this.calculateShadowStrength(effective, 1);
+                shadow.strength = this.calculateShadowPower(effective, 1);
                 this.debugLog('EXTRACTION', 'Calculated missing strength before save', {
                   shadowId,
                   calculatedStrength: shadow.strength,
@@ -3815,8 +3893,16 @@ module.exports = class ShadowArmy {
               shadowToSaveStrength: shadowToSave.strength,
             });
 
-            // Verify it was saved by checking count
-            const newCount = await this.storageManager.getTotalCount();
+            // Verify it was saved by checking count (with null check)
+            let newCount = 0;
+            if (this.storageManager && typeof this.storageManager.getTotalCount === 'function') {
+              try {
+                newCount = await this.storageManager.getTotalCount();
+              } catch (countError) {
+                this.debugError('EXTRACTION', 'Failed to get total count after save', countError);
+                // Continue without count - shadow was saved successfully
+              }
+            }
 
             this.debugLog('EXTRACTION', 'Shadow saved successfully', {
               totalCount: newCount,
@@ -3826,27 +3912,38 @@ module.exports = class ShadowArmy {
             });
 
             // Emit event for other plugins (event-based sync)
-            // Use BdApi.Events if available, otherwise fallback to DOM events
+            // Emit both BdApi.Events AND DOM event for maximum compatibility
+            const eventData = {
+              shadowId: shadow.id || shadow.i,
+              shadowCount: newCount,
+              shadowRank: shadow.rank,
+              shadowRole: shadow.role,
+              timestamp: Date.now(),
+            };
+
+            // Emit via BdApi.Events (primary method)
             if (typeof BdApi?.Events?.emit === 'function') {
-              BdApi.Events.emit('ShadowArmy:shadowExtracted', {
-                shadowId: shadow.id || shadow.i,
-                shadowCount: newCount,
-                shadowRank: shadow.rank,
-                shadowRole: shadow.role,
-                timestamp: Date.now(),
-              });
-            } else if (typeof document.dispatchEvent === 'function') {
-              // Fallback to DOM events
-              const event = new CustomEvent('shadowExtracted', {
-                detail: {
-                  shadowId: shadow.id || shadow.i,
-                  shadowCount: newCount,
-                  shadowRank: shadow.rank,
-                  shadowRole: shadow.role,
-                  timestamp: Date.now(),
-                },
-              });
-              document.dispatchEvent(event);
+              try {
+                BdApi.Events.emit('ShadowArmy:shadowExtracted', eventData);
+              } catch (error) {
+                this.debugError('EXTRACTION', 'Failed to emit BdApi event', error);
+              }
+            }
+
+            // ALWAYS emit DOM event for plugins that listen to DOM events (like SoloLevelingStats)
+            // This ensures SoloLevelingStats progress bar updates immediately
+            if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+              try {
+                const domEvent = new CustomEvent('shadowExtracted', {
+                  detail: eventData,
+                  bubbles: true,
+                });
+                window.dispatchEvent(domEvent);
+                // Also dispatch on document for compatibility
+                document.dispatchEvent(domEvent);
+              } catch (error) {
+                this.debugError('EXTRACTION', 'Failed to emit DOM event', error);
+              }
             }
 
             // Show success toast notification using BdApi
@@ -3860,11 +3957,20 @@ module.exports = class ShadowArmy {
               );
             }
 
+            // REAL-TIME WIDGET UPDATE: Update shadow member widget CSS immediately
+            // This ensures the widget reflects the new shadow count in real-time
+            if (typeof this.updateShadowRankWidget === 'function') {
+              try {
+                await this.updateShadowRankWidget();
+              } catch (error) {
+                this.debugError('WIDGET', 'Failed to update widget after extraction', error);
+              }
+            }
+
             // Shadow extraction completed - logged above in EXTRACTION_RETRIES completion log
 
             // Emit shadowExtracted event for Dungeons plugin verification
             try {
-              // eslint-disable-next-line no-undef
               const event = new CustomEvent('shadowExtracted', {
                 detail: {
                   shadow,
@@ -3877,8 +3983,10 @@ module.exports = class ShadowArmy {
               this.debugError('EXTRACTION_RETRIES', 'Failed to emit shadowExtracted event', error);
             }
 
-            // Show extraction animation
-            this.showExtractionAnimation(shadow);
+            // Show extraction animation (only for messages and bosses, not mobs)
+            if (showAnimation) {
+              this.showExtractionAnimation(shadow);
+            }
 
             // Update counters
             const now = Date.now();
@@ -3931,14 +4039,40 @@ module.exports = class ShadowArmy {
             const cachedPower = this._armyStatsCache?.totalPower || 0;
             this._armyStatsCache = null;
             this._armyStatsCacheTime = null;
-            this.debugLog(
-              'TOTAL_POWER_UPDATE',
-              'Invalidated army stats cache after shadow extraction',
-              {
-                hadCache,
-                previousCachedPower: cachedPower,
+
+            // Also invalidate aggregated power cache if it exists
+            if (this.aggregatedPowerCache) {
+              this.aggregatedPowerCache = null;
+              this.aggregatedPowerCacheTime = null;
+            }
+
+            // CRITICAL: Invalidate shadow power cache to force recalculation
+            if (this._shadowPowerCache) {
+              this._shadowPowerCache.clear();
+            }
+
+            this.debugLog('TOTAL_POWER_UPDATE', 'Invalidated all caches after shadow extraction', {
+              hadCache,
+              previousCachedPower: cachedPower,
+              cacheCleared: true,
+              powerCacheCleared: true,
+            });
+
+            // Trigger immediate update for SoloLevelingStats progress bar
+            // Use a small delay to ensure shadow is saved first
+            setTimeout(async () => {
+              try {
+                // Force recalculation of army stats with new shadow
+                await this.getAggregatedArmyStats(true);
+                this.debugLog('TOTAL_POWER_UPDATE', 'Recalculated army stats after extraction');
+              } catch (error) {
+                this.debugError(
+                  'TOTAL_POWER_UPDATE',
+                  'Failed to recalculate after extraction',
+                  error
+                );
               }
-            );
+            }, 100);
 
             this.debugLog(
               'EXTRACTION_RETRIES',
@@ -3977,6 +4111,12 @@ module.exports = class ShadowArmy {
             // Invalidate army stats cache to force recalculation
             this._armyStatsCache = null;
             this._armyStatsCacheTime = null;
+
+            // Also invalidate aggregated power cache if it exists
+            if (this.aggregatedPowerCache) {
+              this.aggregatedPowerCache = null;
+              this.aggregatedPowerCacheTime = null;
+            }
 
             this.updateUI();
 
@@ -4082,6 +4222,7 @@ module.exports = class ShadowArmy {
     const maxAttempts = attemptMap[isBoss ? 'boss' : 'mob'];
 
     // Attempt extraction with appropriate retry count
+    // Mobs: no animation (silent), Bosses: show animation (ARISE button handles it, but keep for consistency)
     const extractedShadow = await this.attemptExtractionWithRetries(
       userRank,
       userLevel,
@@ -4092,7 +4233,8 @@ module.exports = class ShadowArmy {
       true, // skipCap = true for dungeons
       true, // fromDungeon = true (enables magic beast extraction)
       beastFamilies, // Pass biome families for themed extraction
-      maxAttempts // 1 for mobs, 3 for bosses
+      maxAttempts, // 1 for mobs, 3 for bosses
+      isBoss // showAnimation: true for bosses (ARISE), false for mobs (silent)
     );
 
     // Record boss attempt ONLY if this is a boss (counts toward daily limit)
@@ -4475,7 +4617,7 @@ module.exports = class ShadowArmy {
 
     // Generate base stats with exponential scaling (NO USER STAT CAPS!)
     const baseStats = this.generateShadowBaseStats(userStats, roleKey, shadowRank, rankMultiplier);
-    const baseStrength = this.calculateShadowStrength(baseStats, 1); // use internal stats for power
+    const baseStrength = this.calculateShadowPower(baseStats, 1); // use internal stats for power
 
     const shadow = {
       id: `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -5225,6 +5367,25 @@ module.exports = class ShadowArmy {
   // ============================================================================
 
   /**
+   * Calculate shadow power from effective stats
+   * @param {Object} effectiveStats - Effective stats object
+   * @param {number} level - Shadow level (optional multiplier)
+   * @returns {number} - Total power value
+   */
+  calculateShadowPower(effectiveStats, level = 1) {
+    if (!effectiveStats) return 0;
+
+    const totalStats =
+      (effectiveStats.strength || 0) +
+      (effectiveStats.agility || 0) +
+      (effectiveStats.intelligence || 0) +
+      (effectiveStats.vitality || 0) +
+      (effectiveStats.perception || 0);
+
+    return Math.floor(totalStats * level);
+  }
+
+  /**
    * Calculate shadow power with caching for performance
    * Caches power calculations to avoid redundant computations
    * Operations:
@@ -5426,7 +5587,7 @@ module.exports = class ShadowArmy {
         if (this.storageManager) {
           try {
             // Ensure storage manager is initialized
-            if (!this.storageManager.db) {
+            if (!this.storageManager?.db) {
               this.debugLog('COMBAT', 'IndexedDB not initialized, initializing now...');
               await this.storageManager.init();
             }
@@ -5435,8 +5596,8 @@ module.exports = class ShadowArmy {
             const totalCount = await this.storageManager.getTotalCount();
             this.debugLog('COMBAT', 'IndexedDB status check', {
               totalCount,
-              dbName: this.storageManager.dbName,
-              dbInitialized: !!this.storageManager.db,
+              dbName: this.storageManager?.dbName || 'unknown',
+              dbInitialized: !!this.storageManager?.db,
             });
 
             if (totalCount > 0) {
@@ -5445,7 +5606,7 @@ module.exports = class ShadowArmy {
                 shadowCount: allShadows?.length || 0,
                 totalCount,
                 hasStorageManager: !!this.storageManager,
-                dbInitialized: !!this.storageManager.db,
+                dbInitialized: !!this.storageManager?.db,
               });
             } else {
               // IndexedDB is empty, check localStorage fallback
@@ -5484,7 +5645,7 @@ module.exports = class ShadowArmy {
               const count = await this.storageManager.getTotalCount();
               this.debugLog('COMBAT', 'IndexedDB total count check', {
                 totalCount: count,
-                dbName: this.storageManager.dbName,
+                dbName: this.storageManager?.dbName || 'unknown',
               });
             } catch (countError) {
               this.debugError('COMBAT', 'Failed to get total count from IndexedDB', countError);
@@ -5531,29 +5692,152 @@ module.exports = class ShadowArmy {
               return acc; // Skip invalid shadow
             }
 
+            // Try to get effective stats, but don't skip if unavailable (use fallbacks)
             const effective = this.getShadowEffectiveStats(decompressed);
+
+            // If no effective stats, try to use baseStats or strength directly
             if (!effective) {
-              this.debugLog('COMBAT', 'Failed to get effective stats', {
-                shadowId: shadow?.id,
+              this.debugLog('COMBAT', 'Failed to get effective stats, using fallbacks', {
+                shadowId: shadow?.id || shadow?.i,
                 hasDecompressed: !!decompressed,
                 hasBaseStats: !!decompressed?.baseStats,
+                hasStrength: !!decompressed?.strength,
+                strength: decompressed?.strength,
               });
-              return acc; // Skip shadow without effective stats
+
+              // FALLBACK: Use strength if available
+              if (decompressed.strength && decompressed.strength > 0) {
+                acc.totalShadows++;
+                acc.totalPower += decompressed.strength;
+                acc.totalLevel += decompressed.level || 1;
+
+                // Aggregate stats from baseStats if available
+                if (decompressed.baseStats) {
+                  statKeys.forEach((stat) => {
+                    acc.totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+                }
+
+                // Group by rank
+                const rank = decompressed.rank || 'E';
+                if (!acc.byRank[rank]) {
+                  acc.byRank[rank] = {
+                    count: 0,
+                    totalPower: 0,
+                    totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+                  };
+                }
+                acc.byRank[rank].count++;
+                acc.byRank[rank].totalPower += decompressed.strength;
+                if (decompressed.baseStats) {
+                  statKeys.forEach((stat) => {
+                    acc.byRank[rank].totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+                }
+
+                // Group by role
+                const role = decompressed.role || decompressed.roleName || 'Unknown';
+                if (!acc.byRole[role]) {
+                  acc.byRole[role] = {
+                    count: 0,
+                    totalPower: 0,
+                    totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+                  };
+                }
+                acc.byRole[role].count++;
+                acc.byRole[role].totalPower += decompressed.strength;
+                if (decompressed.baseStats) {
+                  statKeys.forEach((stat) => {
+                    acc.byRole[role].totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+                }
+
+                return acc; // Continue with next shadow
+              }
+
+              // FALLBACK: Try calculating from baseStats
+              if (decompressed.baseStats) {
+                const fallbackPower = this.calculateShadowPower(decompressed.baseStats, 1);
+                if (fallbackPower > 0) {
+                  acc.totalShadows++;
+                  acc.totalPower += fallbackPower;
+                  acc.totalLevel += decompressed.level || 1;
+
+                  statKeys.forEach((stat) => {
+                    acc.totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+
+                  // Group by rank and role (same pattern as above)
+                  const rank = decompressed.rank || 'E';
+                  if (!acc.byRank[rank]) {
+                    acc.byRank[rank] = {
+                      count: 0,
+                      totalPower: 0,
+                      totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+                    };
+                  }
+                  acc.byRank[rank].count++;
+                  acc.byRank[rank].totalPower += fallbackPower;
+                  statKeys.forEach((stat) => {
+                    acc.byRank[rank].totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+
+                  const role = decompressed.role || decompressed.roleName || 'Unknown';
+                  if (!acc.byRole[role]) {
+                    acc.byRole[role] = {
+                      count: 0,
+                      totalPower: 0,
+                      totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
+                    };
+                  }
+                  acc.byRole[role].count++;
+                  acc.byRole[role].totalPower += fallbackPower;
+                  statKeys.forEach((stat) => {
+                    acc.byRole[role].totalStats[stat] += decompressed.baseStats[stat] || 0;
+                  });
+
+                  return acc; // Continue with next shadow
+                }
+              }
+
+              // If all fallbacks fail, skip this shadow
+              return acc;
             }
 
-            const power = this.calculateShadowPowerCached(shadow);
+            let power = this.calculateShadowPowerCached(shadow);
+
+            // FALLBACK: If power is 0 but shadow has strength, use strength directly
+            if (power === 0 && decompressed.strength && decompressed.strength > 0) {
+              this.debugLog('COMBAT', 'Power was 0 but shadow has strength, using strength', {
+                shadowId: shadow?.id,
+                strength: decompressed.strength,
+              });
+              power = decompressed.strength;
+            }
+
+            // FALLBACK: If still 0, try calculating from baseStats directly
+            if (power === 0 && decompressed.baseStats) {
+              const fallbackPower = this.calculateShadowPower(decompressed.baseStats, 1);
+              if (fallbackPower > 0) {
+                this.debugLog('COMBAT', 'Calculated power from baseStats as fallback', {
+                  shadowId: shadow?.id,
+                  fallbackPower,
+                });
+                power = fallbackPower;
+              }
+            }
 
             // Debug log for zero power shadows (only log first few to avoid spam)
             if (power === 0 && acc.totalShadows < 3) {
-              this.debugLog('COMBAT', 'Shadow has zero power', {
-                shadowId: shadow?.id,
+              this.debugLog('COMBAT', 'Shadow has zero power after all fallbacks', {
+                shadowId: shadow?.id || shadow?.i,
                 hasStrength: !!shadow?.strength,
                 shadowStrength: shadow?.strength,
+                decompressedStrength: decompressed?.strength,
                 hasBaseStats: !!decompressed?.baseStats,
                 baseStats: decompressed?.baseStats,
                 hasEffective: !!effective,
                 effectiveStats: effective,
-                decompressedStrength: decompressed?.strength,
                 rank: decompressed?.rank,
                 level: decompressed?.level,
                 calculatedPower: power,
@@ -5565,9 +5849,10 @@ module.exports = class ShadowArmy {
             acc.totalPower += power;
             acc.totalLevel += decompressed.level || 1;
 
-            // Aggregate stats
+            // Aggregate stats (use effective if available, otherwise baseStats, otherwise 0)
+            const statsToUse = effective || decompressed.baseStats || {};
             statKeys.forEach((stat) => {
-              acc.totalStats[stat] += effective[stat] || 0;
+              acc.totalStats[stat] += statsToUse[stat] || 0;
             });
 
             // Group by rank
@@ -5581,8 +5866,9 @@ module.exports = class ShadowArmy {
             }
             acc.byRank[rank].count++;
             acc.byRank[rank].totalPower += power;
+            const rankStatsToUse = effective || decompressed.baseStats || {};
             statKeys.forEach((stat) => {
-              acc.byRank[rank].totalStats[stat] += effective[stat] || 0;
+              acc.byRank[rank].totalStats[stat] += rankStatsToUse[stat] || 0;
             });
 
             // Group by role
@@ -5596,8 +5882,9 @@ module.exports = class ShadowArmy {
             }
             acc.byRole[role].count++;
             acc.byRole[role].totalPower += power;
+            const roleStatsToUse = effective || decompressed.baseStats || {};
             statKeys.forEach((stat) => {
-              acc.byRole[role].totalStats[stat] += effective[stat] || 0;
+              acc.byRole[role].totalStats[stat] += roleStatsToUse[stat] || 0;
             });
 
             return acc;
@@ -5618,9 +5905,32 @@ module.exports = class ShadowArmy {
             ? Math.floor(aggregated.totalLevel / aggregated.totalShadows)
             : 0;
 
+        // VALIDATION: Ensure totalPower is a valid number
+        if (typeof aggregated.totalPower !== 'number' || isNaN(aggregated.totalPower)) {
+          this.debugError('GET_AGGREGATED_ARMY_STATS', 'Invalid totalPower calculated', {
+            totalPower: aggregated.totalPower,
+            totalShadows: aggregated.totalShadows,
+            shadowCount: allShadows.length,
+          });
+          aggregated.totalPower = 0;
+        }
+
         // Cache result
         this._armyStatsCache = aggregated;
         this._armyStatsCacheTime = Date.now();
+
+        // PERSISTENT CACHE: Store total power in settings for SoloLevelingStats to read
+        // This ensures the progress bar always has accurate data even if cache is cleared
+        // Always update cached value (even if 0) to ensure SoloLevelingStats has latest data
+        this.settings.cachedTotalPower = aggregated.totalPower;
+        this.settings.cachedTotalPowerTimestamp = Date.now();
+        this.saveSettings(); // Persist immediately
+        this.debugLog('GET_AGGREGATED_ARMY_STATS', 'Saved total power to settings', {
+          totalPower: aggregated.totalPower,
+          totalShadows: aggregated.totalShadows,
+          shadowCount: allShadows.length,
+          savedToSettings: true,
+        });
 
         this.debugLog('GET_AGGREGATED_ARMY_STATS', 'Army stats aggregated successfully', {
           totalShadows: aggregated.totalShadows,
@@ -5637,13 +5947,26 @@ module.exports = class ShadowArmy {
             power: aggregated.byRank[rank].totalPower,
           })),
           cacheUpdated: true,
+          forceRecalculate,
           calculationTime: Date.now() - now,
+          savedToSettings: true,
         });
 
         return aggregated;
       } catch (error) {
         this.debugError('COMBAT', 'Failed to aggregate army stats', error);
-        // Return empty stats on error (prevents "failed to load data" errors)
+
+        // Don't cache empty stats on error - return previous cache if available
+        // This prevents progress bar from showing 0 when there's a temporary error
+        if (this._armyStatsCache && this._armyStatsCache.totalPower > 0) {
+          this.debugLog('COMBAT', 'Returning previous cache due to error', {
+            previousTotalPower: this._armyStatsCache.totalPower,
+            previousTotalShadows: this._armyStatsCache.totalShadows,
+          });
+          return this._armyStatsCache;
+        }
+
+        // Only return empty stats if we have no previous cache
         const emptyStats = {
           totalShadows: 0,
           totalPower: 0,
@@ -5652,9 +5975,7 @@ module.exports = class ShadowArmy {
           byRole: {},
           avgLevel: 0,
         };
-        // Cache empty result to prevent repeated failed attempts
-        this._armyStatsCache = emptyStats;
-        this._armyStatsCacheTime = Date.now();
+        // Don't cache empty result - allow retry on next call
         return emptyStats;
       } finally {
         // Clear aggregation flag
@@ -6226,16 +6547,78 @@ module.exports = class ShadowArmy {
    * @param {Object} target - Target object
    * @returns {Object} - Minimal combat data
    */
-  createCombatData(shadow, target) {
+  /**
+   * Create comprehensive combat data using stored ShadowArmy info
+   * Includes shadow personality, attack interval, and target data (boss/mob)
+   * @param {Object} shadow - Shadow object
+   * @param {Object} target - Target object (boss or mob)
+   * @param {Object} dungeon - Optional dungeon object for context
+   * @returns {Object} - Comprehensive combat data
+   */
+  createCombatData(shadow, target, dungeon = null) {
     // Store only essential data (minimal memory footprint)
     // Get identifier (accept both id and i for compressed shadows)
     const shadowId = shadow.id || shadow.i;
+
+    // Get stored personality (fast lookup)
+    const personality = this.getShadowPersonality(shadow);
+    const personalityName = shadow.personality || personality.name?.toLowerCase() || 'balanced';
+
+    // Get stored base attack interval (fast lookup)
+    const baseInterval =
+      shadow.baseAttackInterval || this.calculateShadowAttackInterval(shadow, 2000);
+
+    // Get effective stats (cached)
+    const effective = this.getShadowEffectiveStats(shadow);
+
+    // Calculate shadow power (cached)
+    const power = this.calculateShadowPowerCached(shadow);
+
+    // Extract target data (boss or mob)
+    const targetData = {
+      id: target.id || target.name || 'unknown',
+      type: target.type || (dungeon?.boss?.id === target.id ? 'boss' : 'mob'),
+      rank: target.rank || 'E',
+      hp: target.hp || 0,
+      maxHp: target.maxHp || target.hp || 0,
+      stats:
+        target.strength !== undefined
+          ? {
+              strength: target.strength || 0,
+              agility: target.agility || 0,
+              intelligence: target.intelligence || 0,
+              vitality: target.vitality || 0,
+            }
+          : null,
+    };
+
+    // Include dungeon context if available
+    const dungeonData = dungeon
+      ? {
+          id: dungeon.channelKey || dungeon.id,
+          rank: dungeon.rank,
+          bossHp: dungeon.boss?.hp || 0,
+          mobCount: dungeon.mobs?.activeMobs?.length || 0,
+        }
+      : null;
+
     return {
       s: shadowId, // Shadow ID (compressed key)
-      t: target.id || 'unknown', // Target ID
-      p: this.calculateShadowPowerCached(shadow), // Power (cached)
+      t: targetData, // Target data (boss/mob)
+      p: power, // Shadow power (cached)
       d: 0, // Damage (calculated)
       ts: Date.now(), // Timestamp
+      // Enhanced combat data from ShadowArmy
+      personality: personalityName, // Stored personality
+      baseAttackInterval: baseInterval, // Stored base attack interval
+      effectiveStats: {
+        strength: effective.strength || 0,
+        agility: effective.agility || 0,
+        intelligence: effective.intelligence || 0,
+        vitality: effective.vitality || 0,
+        perception: effective.perception || 0,
+      },
+      dungeon: dungeonData, // Dungeon context
     };
   }
 
@@ -6479,6 +6862,19 @@ module.exports = class ShadowArmy {
       }
     }
 
+    // PERSISTENT STORAGE: Store personality in shadow object for future use
+    // This eliminates expensive stat ratio calculations on every access
+    if (!shadow.personality || shadow.personality !== personality) {
+      shadow.personality = personality;
+      // Save asynchronously (don't block return)
+      if (this.storageManager?.saveShadow) {
+        const shadowToSave = this.prepareShadowForSave(shadow);
+        this.storageManager.saveShadow(shadowToSave).catch((error) => {
+          this.debugError('PERSONALITY', 'Failed to save personality', error);
+        });
+      }
+    }
+
     return this.shadowPersonalities[personality] || this.shadowPersonalities.balanced;
   }
 
@@ -6497,22 +6893,53 @@ module.exports = class ShadowArmy {
     // Guard clause: Return base if no shadow
     if (!shadow) return baseIntervalMs;
 
-    const personality = this.getShadowPersonality(shadow);
+    // Check if stored base interval exists and agility hasn't changed significantly
     const effective = this.getShadowEffectiveStats(shadow);
+    const currentAgility = effective.agility || 0;
+
+    if (shadow.baseAttackInterval && shadow._lastAgilityForInterval !== undefined) {
+      const agilityChange = Math.abs(currentAgility - shadow._lastAgilityForInterval);
+      const agilityChangePercent =
+        shadow._lastAgilityForInterval > 0
+          ? (agilityChange / shadow._lastAgilityForInterval) * 100
+          : 100;
+
+      // Use stored interval if agility changed less than 5% (minor stat changes)
+      if (agilityChangePercent < 5) {
+        // Apply random variance (±10% for unpredictability)
+        const variance = 0.9 + Math.random() * 0.2; // 90-110%
+        return Math.max(100, Math.floor(shadow.baseAttackInterval * variance));
+      }
+    }
+
+    // Calculate new interval
+    const personality = this.getShadowPersonality(shadow);
 
     // Base interval from agility (higher agility = faster attacks)
-    const agilityFactor = Math.max(0.5, 1.0 - effective.agility / 1000); // Agility reduces interval
+    const agilityFactor = Math.max(0.5, 1.0 - currentAgility / 1000); // Agility reduces interval
 
     // Apply personality multiplier
     const personalityInterval = baseIntervalMs * personality.attackIntervalMultiplier;
 
     // Apply agility factor
-    const agilityAdjusted = personalityInterval * agilityFactor;
+    const baseInterval = personalityInterval * agilityFactor;
+
+    // Store base interval (without variance) for future use
+    shadow.baseAttackInterval = Math.max(100, Math.floor(baseInterval));
+    shadow._lastAgilityForInterval = currentAgility;
+
+    // Save asynchronously (don't block return)
+    if (this.storageManager?.saveShadow) {
+      const shadowToSave = this.prepareShadowForSave(shadow);
+      this.storageManager.saveShadow(shadowToSave).catch((error) => {
+        this.debugError('ATTACK_INTERVAL', 'Failed to save base attack interval', error);
+      });
+    }
 
     // Add random variance (±10% for unpredictability)
     const variance = 0.9 + Math.random() * 0.2; // 90-110%
 
-    return Math.max(100, Math.floor(agilityAdjusted * variance)); // Minimum 100ms
+    return Math.max(100, Math.floor(baseInterval * variance)); // Minimum 100ms
   }
 
   /**
@@ -7211,6 +7638,13 @@ module.exports = class ShadowArmy {
       })
     );
 
+    // Invalidate cache and recalculate total power after XP/level changes
+    // This ensures SoloLevelingStats progress bar shows updated power
+    this._armyStatsCache = null;
+    this._armyStatsCacheTime = null;
+    // Trigger background recalculation (don't wait - async update)
+    this.getAggregatedArmyStats(true).catch(() => {});
+
     this.saveSettings();
   }
 
@@ -7338,6 +7772,13 @@ module.exports = class ShadowArmy {
       // Recalculate strength with new rank
       const newEffectiveStats = this.getShadowEffectiveStats(shadow);
       shadow.strength = this.calculateShadowStrength(newEffectiveStats, 1);
+
+      // Invalidate cache and recalculate total power after rank-up
+      // This ensures SoloLevelingStats progress bar shows updated power
+      this._armyStatsCache = null;
+      this._armyStatsCacheTime = null;
+      // Trigger background recalculation (don't wait - async update)
+      this.getAggregatedArmyStats(true).catch(() => {});
 
       return {
         success: true,
@@ -7880,33 +8321,125 @@ module.exports = class ShadowArmy {
     }
 
     // Try to use CriticalHit's font loading if available
-    try {
-      const criticalHitPlugin = BdApi.Plugins.get('CriticalHit');
-      if (criticalHitPlugin) {
-        const instance = criticalHitPlugin.instance || criticalHitPlugin;
-        if (instance && typeof instance.loadLocalFont === 'function') {
-          const loaded = instance.loadLocalFont(fontName);
-          if (loaded) {
-            this.debugLog('FONT_LOADER', 'Font loaded via CriticalHit plugin', {
+    // Note: BetterDiscord doesn't guarantee plugin load order, so we retry if CriticalHit isn't ready
+    let retryCount = 0;
+    const maxRetries = 3;
+    const retryDelay = 500; // 500ms between retries
+
+    const attemptLoad = () => {
+      try {
+        const criticalHitPlugin = BdApi.Plugins.get('CriticalHit');
+        if (criticalHitPlugin) {
+          const instance = criticalHitPlugin.instance || criticalHitPlugin;
+          if (instance && typeof instance.loadLocalFont === 'function') {
+            // Ensure font name matches CriticalHit's expected format
+            // CriticalHit maps "Speedy Space Goat Oddity" to "SpeedySpaceGoatOddity"
+            const loaded = instance.loadLocalFont(fontName);
+            if (loaded) {
+              // Verify font was actually loaded by checking for style element
+              // Check immediately and after a short delay to allow DOM to update
+              if (document.getElementById(fontStyleId)) {
+                this.debugLog('FONT_LOADER', 'Font loaded via CriticalHit plugin', {
+                  fontName,
+                  fontStyleId,
+                });
+                return true;
+              }
+
+              // If not found immediately, check again after delay
+              setTimeout(() => {
+                if (document.getElementById(fontStyleId)) {
+                  this.debugLog(
+                    'FONT_LOADER',
+                    'Font loaded via CriticalHit plugin (verified after delay)',
+                    {
+                      fontName,
+                      fontStyleId,
+                    }
+                  );
+                } else {
+                  this.debugLog(
+                    'FONT_LOADER',
+                    'CriticalHit.loadLocalFont returned true but font style not found after delay',
+                    {
+                      fontName,
+                      fontStyleId,
+                    }
+                  );
+                }
+              }, 100);
+              return true; // Return true optimistically - font should be loading
+            }
+
+            // Try alternative font name formats if first attempt fails
+            const alternativeNames = [
+              'Speedy Space Goat Oddity',
+              'SpeedySpaceGoatOddity',
+              'speedy space goat oddity',
+            ];
+            for (const altName of alternativeNames) {
+              if (altName !== fontName && instance.loadLocalFont(altName)) {
+                // Verify font was actually loaded
+                const altStyleId = `cha-font-${altName.replace(/\s+/g, '-').toLowerCase()}`;
+                if (document.getElementById(altStyleId) || document.getElementById(fontStyleId)) {
+                  this.debugLog(
+                    'FONT_LOADER',
+                    'Font loaded via CriticalHit with alternative name',
+                    {
+                      originalName: fontName,
+                      loadedName: altName,
+                    }
+                  );
+                  return true;
+                }
+                // If not found immediately, return true optimistically
+                return true;
+              }
+            }
+          } else if (retryCount < maxRetries) {
+            // CriticalHit plugin exists but loadLocalFont not ready yet - retry
+            retryCount++;
+            this.debugLog('FONT_LOADER', 'CriticalHit not ready, retrying...', {
               fontName,
+              retryCount,
+              maxRetries,
             });
-            return true;
+            setTimeout(attemptLoad, retryDelay);
+            return false;
           }
+        } else if (retryCount < maxRetries) {
+          // CriticalHit plugin not found yet - retry
+          retryCount++;
+          this.debugLog('FONT_LOADER', 'CriticalHit plugin not found, retrying...', {
+            fontName,
+            retryCount,
+            maxRetries,
+          });
+          setTimeout(attemptLoad, retryDelay);
+          return false;
         }
+      } catch (error) {
+        this.debugError('FONT_LOADER', 'Error loading font via CriticalHit', {
+          fontName,
+          error: error?.message,
+          retryCount,
+        });
       }
-    } catch (error) {
-      this.debugLog('FONT_LOADER', 'Could not use CriticalHit font loading', {
-        fontName,
-        error: error?.message,
-        note: 'Font may still work if CriticalHit has it loaded',
-      });
+      return false;
+    };
+
+    const loaded = attemptLoad();
+    if (loaded) {
+      return true;
     }
 
     // Font not loaded yet - it may be loaded by CriticalHit later
     // CSS will use fallback font until then
     this.debugLog('FONT_LOADER', 'Font not yet loaded, will use fallback until available', {
       fontName,
-      note: 'If CriticalHit plugin is enabled, it will load this font automatically',
+      fontStyleId,
+      retryCount,
+      note: 'If CriticalHit plugin is enabled, it will load this font automatically. Font may load after CriticalHit initializes.',
     });
     return false;
   }
@@ -8523,6 +9056,12 @@ module.exports = class ShadowArmy {
     const ariseSettings = this.settings.ariseAnimation;
     const durationMs = ariseSettings.animationDuration || 2500;
     const fontName = ariseSettings.animationFont || 'Speedy Space Goat Oddity';
+
+    // Ensure font is loaded before creating animation
+    if (!document.getElementById(`cha-font-${fontName.replace(/\s+/g, '-').toLowerCase()}`)) {
+      // Font not loaded yet - try to load it now
+      this.loadAriseAnimationFont();
+    }
 
     // Debug: Verify font is loaded before creating animation
     if (this.debug.enabled && document.fonts && document.fonts.check) {
@@ -11372,7 +11911,7 @@ module.exports = class ShadowArmy {
 
     // Check storage manager
     if (this.storageManager) {
-      diagnostic.storageManager.dbName = this.storageManager.dbName || 'unknown';
+      diagnostic.storageManager.dbName = this.storageManager?.dbName || 'unknown';
       diagnostic.storageManager.initialized = this.storageManager.db !== null;
       diagnostic.storageManager.dbOpen = this.storageManager.db !== null;
 

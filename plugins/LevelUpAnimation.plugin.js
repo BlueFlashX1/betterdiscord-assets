@@ -220,20 +220,9 @@ module.exports = class LevelUpAnimation {
                   (prop) => prop && prop.props && prop.props.className === 'lu-animation-container',
                   { walkable: ['props', 'children'] }
                 );
-              // Set up DOM reference after injection with retry
-              const waitForContainer = (retries = 10) => {
-                const domElement = document.querySelector('.lu-animation-container');
-                if (domElement) {
-                  pluginInstance.animationContainer = domElement;
-                } else if (retries > 0) {
-                  setTimeout(() => waitForContainer(retries - 1), 100);
-                } else {
-                  pluginInstance.debugError('REACT_INJECTION',
-                    new Error('Container not found after injection'));
-                }
-              };
-              setTimeout(waitForContainer, 100);
 
+                // Only inject if container doesn't exist
+                if (!hasContainer) {
                   // Inject at the beginning of body children
                   if (Array.isArray(bodyPath.props.children)) {
                     bodyPath.props.children.unshift(containerElement);
@@ -248,15 +237,23 @@ module.exports = class LevelUpAnimation {
                     'REACT_INJECTION',
                     'Animation container injected via React'
                   );
-
-                  // Set up DOM reference after injection
-                  setTimeout(() => {
-                    const domElement = document.querySelector('.lu-animation-container');
-                    if (domElement) {
-                      pluginInstance.animationContainer = domElement;
-                    }
-                  }, 100);
                 }
+
+                // Set up DOM reference after injection with retry
+                const waitForContainer = (retries = 10) => {
+                  const domElement = document.querySelector('.lu-animation-container');
+                  if (domElement) {
+                    pluginInstance.animationContainer = domElement;
+                  } else if (retries > 0) {
+                    setTimeout(() => waitForContainer(retries - 1), 100);
+                  } else {
+                    pluginInstance.debugError(
+                      'REACT_INJECTION',
+                      new Error('Container not found after injection')
+                    );
+                  }
+                };
+                setTimeout(waitForContainer, 100);
               }
             } catch (error) {
               pluginInstance.debugError('REACT_INJECTION', error);

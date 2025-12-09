@@ -2630,9 +2630,34 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Plugin started successfully');
 
-      // Initialize shadow power cache (safe - uses optional chaining)
-      this.cachedShadowPower = '0';
-      this.updateShadowPower?.();
+      // Initialize shadow power cache from saved settings or default to '0'
+      // Also check ShadowArmy's cached value as fallback
+      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      const shadowArmyCachedPower = shadowArmyPlugin?.instance?.settings?.cachedTotalPower;
+
+      if (shadowArmyCachedPower !== undefined && shadowArmyCachedPower > 0) {
+        // Use ShadowArmy's cached value if available and valid
+        this.cachedShadowPower = shadowArmyCachedPower.toLocaleString();
+        this.settings.cachedShadowPower = this.cachedShadowPower;
+        this.debugLog('START', 'Loaded shadow power from ShadowArmy cache', {
+          cachedShadowPower: this.cachedShadowPower,
+          source: 'ShadowArmy',
+        });
+      } else {
+        // Fallback to SoloLevelingStats cached value
+        this.cachedShadowPower = this.settings.cachedShadowPower || '0';
+        this.debugLog('START', 'Loaded cached shadow power from settings', {
+          cachedShadowPower: this.cachedShadowPower,
+          source: 'SoloLevelingStats',
+        });
+      }
+
+      // Initialize shadow power immediately on startup (don't wait for interval)
+      if (typeof this.updateShadowPower === 'function') {
+        this.updateShadowPower().catch((error) => {
+          this.debugError('START', 'Failed to initialize shadow power', error);
+        });
+      }
       this.setupShadowPowerObserver?.();
 
       // Listen for shadow extraction events from ShadowArmy
@@ -7579,6 +7604,34 @@ module.exports = class SoloLevelingStats {
 
       const shadowArmy = shadowArmyPlugin.instance;
 
+      // FAST PATH: Check cached total power in ShadowArmy settings first (persistent cache)
+      // This provides instant updates without waiting for recalculation
+      if (shadowArmy.settings?.cachedTotalPower !== undefined) {
+        const cachedPower = shadowArmy.settings.cachedTotalPower || 0;
+        const cacheAge = shadowArmy.settings.cachedTotalPowerTimestamp
+          ? Date.now() - shadowArmy.settings.cachedTotalPowerTimestamp
+          : Infinity;
+
+        // Use cached value if it's recent (less than 5 minutes old) or if we have no shadows
+        if (cacheAge < 300000 || cachedPower === 0) {
+          this.debugLog(
+            'UPDATE_SHADOW_POWER',
+            'Using cached total power from ShadowArmy settings',
+            {
+              cachedPower,
+              cacheAge: Math.floor(cacheAge / 1000) + 's',
+            }
+          );
+          this.cachedShadowPower = cachedPower.toLocaleString();
+          this.settings.cachedShadowPower = this.cachedShadowPower;
+          this.saveSettings();
+          this.updateShadowPowerDisplay();
+          // Still trigger background recalculation for accuracy, but don't wait
+          shadowArmy.getAggregatedArmyStats(true).catch(() => {});
+          return;
+        }
+      }
+
       // Use getAggregatedArmyStats to get accurate total power
       if (typeof shadowArmy.getAggregatedArmyStats === 'function') {
         try {
@@ -7589,12 +7642,50 @@ module.exports = class SoloLevelingStats {
               hasShadowArmy: !!shadowArmy,
               hasStorageManager: !!shadowArmy.storageManager,
               dbInitialized: !!shadowArmy.storageManager?.db,
+              cachedPower: shadowArmy.settings?.cachedTotalPower,
             }
           );
 
           // Force recalculation to ensure fresh data after shadow extraction
+          // Use forceRecalculate = true to bypass cache and get fresh data
           const armyStats = await shadowArmy.getAggregatedArmyStats(true);
-          const totalPower = armyStats?.totalPower || 0;
+
+          // Ensure we get a valid number (handle null/undefined)
+          const totalPower = armyStats?.totalPower ?? 0;
+
+          // Additional validation: if totalPower is 0 but we have shadows, recalculate
+          if (totalPower === 0 && armyStats?.totalShadows > 0) {
+            this.debugLog(
+              'UPDATE_SHADOW_POWER',
+              'Total power is 0 but shadows exist, forcing recalculation',
+              {
+                totalShadows: armyStats.totalShadows,
+                hasStats: !!armyStats.totalStats,
+              }
+            );
+            // Try one more time with fresh calculation
+            const retryStats = await shadowArmy.getAggregatedArmyStats(true);
+            const retryPower = retryStats?.totalPower ?? 0;
+            if (retryPower > 0) {
+              this.debugLog('UPDATE_SHADOW_POWER', 'Retry succeeded, using retry power', {
+                retryPower,
+              });
+              this.cachedShadowPower = retryPower.toLocaleString();
+              this.updateShadowPowerDisplay();
+              return;
+            }
+          }
+
+          this.debugLog('UPDATE_SHADOW_POWER', 'getAggregatedArmyStats result', {
+            armyStats: armyStats
+              ? {
+                  totalPower: armyStats.totalPower,
+                  totalShadows: armyStats.totalShadows,
+                  hasStats: !!armyStats.totalStats,
+                }
+              : null,
+            totalPower,
+          });
 
           this.debugLog('UPDATE_SHADOW_POWER', 'Total power calculation completed', {
             totalPower,
@@ -7606,9 +7697,22 @@ module.exports = class SoloLevelingStats {
           });
 
           this.cachedShadowPower = totalPower.toLocaleString();
+
+          // PERSISTENCE: Save shadow power to settings so it persists after restart
+          this.settings.cachedShadowPower = this.cachedShadowPower;
+          this.saveSettings(); // Save immediately to persist across restarts
+
+          // Also update ShadowArmy's cached value for consistency
+          if (shadowArmy.settings) {
+            shadowArmy.settings.cachedTotalPower = totalPower;
+            shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
+            shadowArmy.saveSettings();
+          }
+
           this.updateShadowPowerDisplay();
-          this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated', {
+          this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated and saved', {
             newCachedPower: this.cachedShadowPower,
+            savedToSettings: true,
           });
           return;
         } catch (error) {
@@ -7657,6 +7761,18 @@ module.exports = class SoloLevelingStats {
             });
 
             this.cachedShadowPower = totalPower.toLocaleString();
+
+            // PERSISTENCE: Save shadow power to settings so it persists after restart
+            this.settings.cachedShadowPower = this.cachedShadowPower;
+            this.saveSettings(); // Save immediately to persist across restarts
+
+            // Also update ShadowArmy's cached value for consistency
+            if (shadowArmy.settings) {
+              shadowArmy.settings.cachedTotalPower = totalPower;
+              shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
+              shadowArmy.saveSettings();
+            }
+
             this.updateShadowPowerDisplay();
             return;
           } else {
@@ -7669,6 +7785,11 @@ module.exports = class SoloLevelingStats {
 
       // No shadows or method unavailable
       this.cachedShadowPower = '0';
+
+      // PERSISTENCE: Save shadow power to settings so it persists after restart
+      this.settings.cachedShadowPower = this.cachedShadowPower;
+      this.saveSettings(); // Save immediately to persist across restarts
+
       this.updateShadowPowerDisplay();
     } catch (error) {
       this.debugError('UPDATE_SHADOW_POWER', error);

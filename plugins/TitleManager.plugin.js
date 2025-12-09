@@ -2,7 +2,7 @@
  * @name SoloLevelingTitleManager
  * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.1.0
+ * @version 1.1.1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -84,9 +84,9 @@ module.exports = class SoloLevelingTitleManager {
   // Reserved for future external library imports
   // Currently all functionality is self-contained
 
-    // ============================================================================
+  // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
-    // ============================================================================
+  // ============================================================================
 
   /**
    * 2.1 CONSTRUCTOR & DEFAULT SETTINGS
@@ -894,7 +894,7 @@ module.exports = class SoloLevelingTitleManager {
       }, 1000);
       this._retryTimeouts.add(timeoutId);
       return;
-  }
+    }
 
     // Create title button with SVG icon
     const button = document.createElement('button');
@@ -960,7 +960,7 @@ module.exports = class SoloLevelingTitleManager {
     if (this.titleButton) {
       this.titleButton.remove();
       this.titleButton = null;
-      }
+    }
     if (this.toolbarObserver) {
       this.toolbarObserver.disconnect();
       this.toolbarObserver = null;
@@ -1166,7 +1166,7 @@ module.exports = class SoloLevelingTitleManager {
           (history.replaceState = this._originalReplaceState);
       } catch (error) {
         this.debugError('WATCHER', 'Failed to restore history.replaceState', error);
-          }
+      }
 
       // Null out stored originals after successful restore
       this._originalPushState = null;
@@ -1193,17 +1193,17 @@ module.exports = class SoloLevelingTitleManager {
     document.addEventListener(
       'visibilitychange',
       (this._boundHandleVisibilityChange = () => {
-      if (this._isStopped) return;
+        if (this._isStopped) return;
         // User returned to tab (tab is now visible)
         if (!document.hidden) {
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
+          const timeoutId = setTimeout(() => {
+            this._retryTimeouts.delete(timeoutId);
             if (!this.titleButton || !document.body.contains(this.titleButton)) {
               this.debugLog('VISIBILITY', 'Button missing after visibility change, recreating...');
-        this.createTitleButton();
+              this.createTitleButton();
             }
           }, 300);
-      this._retryTimeouts.add(timeoutId);
+          this._retryTimeouts.add(timeoutId);
         }
       })
     );
@@ -1651,7 +1651,7 @@ module.exports = class SoloLevelingTitleManager {
       this.titleModal.remove();
       this.titleModal = null;
       this.debugLog('MODAL', 'Title modal closed');
-      }
+    }
   }
 
   // ============================================================================

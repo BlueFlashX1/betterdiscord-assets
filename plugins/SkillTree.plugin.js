@@ -615,6 +615,15 @@ module.exports = class SkillTree {
   }
 
   /**
+   * Debug logging helper (checks debugMode setting)
+   */
+  debugLog(...args) {
+    if (this.settings?.debugMode) {
+      console.log('[SkillTree]', ...args);
+    }
+  }
+
+  /**
    * Recalculate SP based on current level (for reset or initial setup)
    * Always syncs level and ensures SP matches current level
    */
@@ -647,7 +656,27 @@ module.exports = class SkillTree {
       // Always recalculate spent SP to ensure accuracy
       const spentSP = this.getTotalSpentSP(); // This also updates and saves totalSpentSP
       const currentAvailable = this.settings.skillPoints;
-      const expectedAvailable = expectedSP - spentSP;
+      const expectedAvailable = Math.max(0, expectedSP - spentSP); // Prevent negative SP
+
+      // If spentSP exceeds expectedSP, there's a calculation error - reset spentSP
+      if (spentSP > expectedSP) {
+        this.debugLog(
+          `SP calculation error: spent ${spentSP} but only earned ${expectedSP}. Recalculating...`
+        );
+        // Recalculate spentSP from actual skill levels (should be accurate)
+        const recalculatedSpent = this.getTotalSpentSP();
+        if (recalculatedSpent > expectedSP) {
+          // Still too high - there's a bug in cost calculation, cap it
+          this.settings.totalSpentSP = expectedSP;
+          this.settings.skillPoints = 0;
+          this.saveSettings();
+          this.debugLog(`Capped spentSP to ${expectedSP} to prevent negative SP`);
+        } else {
+          this.settings.skillPoints = Math.max(0, expectedSP - recalculatedSpent);
+          this.saveSettings();
+        }
+        return; // Exit early after fixing
+      }
 
       // Ensure available SP matches expected (always accurate)
       if (currentAvailable !== expectedAvailable) {
@@ -916,7 +945,12 @@ module.exports = class SkillTree {
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
     // FUNCTIONAL: Cost calculation using Array.from().reduce() (no for-loop)
-    return Array.from({ length: Math.max(0, targetLevel - 1) }, (_, i) =>
+    // Calculate costs for upgrades from level 1 to targetLevel
+    // Level 1->2: baseCost * 1 * multiplier
+    // Level 2->3: baseCost * 2 * multiplier
+    // Level 3->4: baseCost * 3 * multiplier
+    // etc.
+    return Array.from({ length: targetLevel - 1 }, (_, i) =>
       Math.ceil(baseCost * (i + 1) * multiplier)
     ).reduce((total, cost) => total + cost, 0);
   }

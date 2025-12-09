@@ -328,11 +328,6 @@ module.exports = class LevelProgressBar {
     this.webpackModuleAccess = false;
     this.reactInjectionActive = false;
   }
-      UserStore: null,
-      ChannelStore: null,
-    };
-    this.webpackModuleAccess = false;
-  }
 
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
