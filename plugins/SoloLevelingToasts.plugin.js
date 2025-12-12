@@ -65,9 +65,6 @@ module.exports = class SoloLevelingToasts {
     this.toastContainer = null;
     this.activeToasts = [];
     this.patcher = null;
-    this.lastToastTime = 0;
-    this.toastCooldown = 50; // Reduced from 300ms to 50ms for faster response
-    this.pendingToasts = new Map(); // Debounce similar toasts
     this.messageGroups = new Map(); // Group similar messages with counts
     this.groupWindow = 1000; // Reduced from 2000ms to 1000ms for faster grouping
     this.debugMode = false; // Set to true only for debugging
@@ -82,6 +79,43 @@ module.exports = class SoloLevelingToasts {
     // Lifecycle management
     this._isStopped = false;
     this._hookRetryId = null;
+    this._trackedTimeouts = new Set();
+
+    // Settings panel lifecycle
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+
+    // Performance caches
+    this._cache = {
+      soloPluginInstance: null, // Cache SoloLevelingStats plugin instance
+      soloPluginInstanceTime: 0,
+      soloPluginInstanceTTL: 5000, // 5s - plugin instance doesn't change often
+    };
+  }
+
+  _setTrackedTimeout(callback, delayMs) {
+    const timeoutId = setTimeout(() => {
+      this._trackedTimeouts.delete(timeoutId);
+      !this._isStopped && callback();
+    }, delayMs);
+    this._trackedTimeouts.add(timeoutId);
+    return timeoutId;
+  }
+
+  _clearTrackedTimeouts() {
+    this._trackedTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._trackedTimeouts.clear();
+  }
+
+  detachSoloLevelingToastsSettingsPanelHandlers() {
+    const root = this._settingsPanelRoot;
+    const handlers = this._settingsPanelHandlers;
+    if (root && handlers) {
+      root.removeEventListener('change', handlers.onChange);
+      root.removeEventListener('input', handlers.onInput);
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
   }
 
   // ============================================================================
@@ -428,15 +462,12 @@ module.exports = class SoloLevelingToasts {
 
     // Clear hook retry
     this._hookRetryId && (clearTimeout(this._hookRetryId), (this._hookRetryId = null));
+    this._clearTrackedTimeouts();
 
     this.unhookIntoSoloLeveling();
     this.removeAllToasts();
     this.removeToastContainer();
     this.removeCSS();
-
-    // Clear pending toasts
-    this.pendingToasts.forEach((timeoutId) => clearTimeout(timeoutId));
-    this.pendingToasts.clear();
 
     // Clear message groups
     this.messageGroups.forEach((group) => {
@@ -444,12 +475,20 @@ module.exports = class SoloLevelingToasts {
     });
     this.messageGroups.clear();
 
+    // Clear all caches
+    if (this._cache) {
+      this._cache.soloPluginInstance = null;
+      this._cache.soloPluginInstanceTime = 0;
+    }
+
     // Clear webpack module references
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
     };
     this.webpackModuleAccess = false;
+
+    this.detachSoloLevelingToastsSettingsPanelHandlers();
 
     this.debugLog('PLUGIN_STOP', 'Plugin stopped successfully');
   }
@@ -832,6 +871,7 @@ module.exports = class SoloLevelingToasts {
    * 6. Auto-remove particles after animation duration
    */
   createParticles(toastElement, count) {
+    if (this._isStopped) return;
     if (!this.settings.showParticles) return;
 
     const rect = toastElement.getBoundingClientRect();
@@ -840,7 +880,7 @@ module.exports = class SoloLevelingToasts {
 
     // Batch create particles for better performance
     const fragment = document.createDocumentFragment();
-    const particles = Array.from({ length: count }, (_, i) => {
+    Array.from({ length: count }).forEach((_, i) => {
       const particle = document.createElement('div');
       particle.className = 'sl-toast-particle';
 
@@ -856,12 +896,8 @@ module.exports = class SoloLevelingToasts {
 
       fragment.appendChild(particle);
 
-      // Auto-remove after animation
-      setTimeout(() => {
-        particle.remove();
-      }, 1500);
-
-      return particle;
+      // Auto-remove after animation (stop-safe)
+      this._setTrackedTimeout(() => particle.remove(), 1500);
     });
 
     // Batch append for better performance
@@ -878,6 +914,7 @@ module.exports = class SoloLevelingToasts {
    * 5. Handle cooldown for rapid messages
    */
   showToast(message, type = 'info', timeout = null) {
+    if (this._isStopped) return;
     const groupKey = this.getMessageGroupKey(message, type);
     const now = Date.now();
 
@@ -916,7 +953,7 @@ module.exports = class SoloLevelingToasts {
 
       // Faster grouping window - show after 200ms for immediate feedback
       const fastGroupDelay = Math.min(200, this.groupWindow);
-      group.timeoutId = setTimeout(() => {
+      group.timeoutId = this._setTrackedTimeout(() => {
         if (group.shown === true) {
           this.messageGroups.delete(groupKey);
           return;
@@ -955,6 +992,7 @@ module.exports = class SoloLevelingToasts {
 
     // Show immediately for new messages (no grouping delay for first message)
     requestAnimationFrame(() => {
+      if (this._isStopped) return;
       const currentGroup = this.messageGroups.get(groupKey);
       if (currentGroup && !currentGroup.shown) {
         currentGroup.shown = true;
@@ -963,7 +1001,7 @@ module.exports = class SoloLevelingToasts {
         this._showToastInternal(combinedMessage, type, timeout);
 
         // Schedule deletion after group window to allow combining
-        setTimeout(() => {
+        currentGroup.cleanupTimeoutId = this._setTrackedTimeout(() => {
           if (this.messageGroups.get(groupKey) === currentGroup) {
             this.messageGroups.delete(groupKey);
           }
@@ -1037,16 +1075,15 @@ module.exports = class SoloLevelingToasts {
 
     const existingTimeout = toast.dataset.fadeTimeout;
     if (existingTimeout) {
-      clearTimeout(parseInt(existingTimeout));
+      const id = parseInt(existingTimeout, 10);
+      Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
     }
 
     const fadeAnimationDuration = this.settings.fadeAnimationDuration;
     const fadeOutDelay = Math.max(0, timeout - fadeAnimationDuration);
-    const timeoutId = setTimeout(() => {
+    const timeoutId = this._setTrackedTimeout(() => {
       this.startFadeOut(toast);
-      setTimeout(() => {
-        this.removeToast(toast, false);
-      }, fadeAnimationDuration);
+      this._setTrackedTimeout(() => this.removeToast(toast, false), fadeAnimationDuration);
     }, fadeOutDelay);
 
     toast.dataset.fadeTimeout = timeoutId.toString();
@@ -1066,7 +1103,7 @@ module.exports = class SoloLevelingToasts {
    * 9. Schedule auto-dismiss after timeout
    */
   _showToastInternal(message, type = 'info', timeout = null) {
-    this.lastToastTime = Date.now();
+    if (this._isStopped) return;
 
     this.debugLog('SHOW_TOAST', 'Toast request received', {
       message: message?.substring(0, 100),
@@ -1147,22 +1184,35 @@ module.exports = class SoloLevelingToasts {
       toast.addEventListener('click', () => {
         const existingTimeout = toast.dataset.fadeTimeout;
         if (existingTimeout) {
-          clearTimeout(parseInt(existingTimeout));
+          const id = parseInt(existingTimeout, 10);
+          Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
           toast.dataset.fadeTimeout = '';
         }
         this.startFadeOut(toast);
-        setTimeout(() => {
-          this.removeToast(toast, false);
-        }, this.settings.fadeAnimationDuration);
+        this._setTrackedTimeout(
+          () => this.removeToast(toast, false),
+          this.settings.fadeAnimationDuration
+        );
       });
+
+      // Ensure container exists before appending
+      if (!this.toastContainer) {
+        this.createToastContainer();
+      }
 
       // Use requestAnimationFrame for instant, smooth DOM insertion
       requestAnimationFrame(() => {
+        if (this._isStopped) return;
+        if (!this.toastContainer) {
+          this.debugError('SHOW_TOAST', 'Toast container is null, cannot append toast');
+          return;
+        }
         this.toastContainer.appendChild(toast);
         this.activeToasts.push(toast);
 
         // Create particles immediately
         requestAnimationFrame(() => {
+          if (this._isStopped) return;
           this.createParticles(toast, this.settings.particleCount);
         });
       });
@@ -1170,11 +1220,9 @@ module.exports = class SoloLevelingToasts {
       // Auto-dismiss - start fade out before timeout ends
       const fadeAnimationDuration = this.settings.fadeAnimationDuration;
       const fadeOutDelay = Math.max(0, toastTimeout - fadeAnimationDuration);
-      const timeoutId = setTimeout(() => {
+      const timeoutId = this._setTrackedTimeout(() => {
         this.startFadeOut(toast);
-        setTimeout(() => {
-          this.removeToast(toast, false);
-        }, fadeAnimationDuration);
+        this._setTrackedTimeout(() => this.removeToast(toast, false), fadeAnimationDuration);
       }, fadeOutDelay);
 
       toast.dataset.fadeTimeout = timeoutId.toString();
@@ -1217,7 +1265,8 @@ module.exports = class SoloLevelingToasts {
 
     const existingTimeout = toast.dataset.fadeTimeout;
     if (existingTimeout) {
-      clearTimeout(parseInt(existingTimeout));
+      const id = parseInt(existingTimeout, 10);
+      Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
       toast.dataset.fadeTimeout = '';
     }
 
@@ -1311,17 +1360,33 @@ module.exports = class SoloLevelingToasts {
     }
 
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) {
-        this.debugLog('HOOK_RETRY', 'SoloLevelingStats plugin not found, will retry...');
-        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
-        return;
+      // Check cache first
+      const now = Date.now();
+      let instance = null;
+
+      if (
+        this._cache.soloPluginInstance &&
+        this._cache.soloPluginInstanceTime &&
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+      ) {
+        instance = this._cache.soloPluginInstance;
+      } else {
+        const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+        if (!soloPlugin) {
+          this.debugLog('HOOK_RETRY', 'SoloLevelingStats plugin not found, will retry...');
+          this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
+          return;
+        }
+
+        instance = soloPlugin.instance || soloPlugin;
+        // Cache the instance
+        this._cache.soloPluginInstance = instance;
+        this._cache.soloPluginInstanceTime = now;
       }
 
-      const instance = soloPlugin.instance || soloPlugin;
       if (!instance) {
         this.debugLog('HOOK_RETRY', 'SoloLevelingStats instance not found, will retry...');
-        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
         return;
       }
 
@@ -1407,11 +1472,11 @@ module.exports = class SoloLevelingToasts {
           hasInstance: !!instance,
           instanceKeys: instance ? Object.keys(instance).slice(0, 10) : [],
         });
-        this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
       }
     } catch (error) {
       this.debugError('HOOK_ERROR', error);
-      this._hookRetryId = setTimeout(() => this.hookIntoSoloLeveling(), 2000);
+      this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
     }
   }
 
@@ -1437,6 +1502,7 @@ module.exports = class SoloLevelingToasts {
    * 3. Return panel element for BetterDiscord to display
    */
   getSettingsPanel() {
+    this.detachSoloLevelingToastsSettingsPanelHandlers();
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
@@ -1446,7 +1512,7 @@ module.exports = class SoloLevelingToasts {
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${
             this.settings.showParticles ? 'checked' : ''
-          } id="toast-particles">
+          } id="toast-particles" data-slt-setting="showParticles">
           <span style="margin-left: 10px;">Show Particles</span>
         </label>
 
@@ -1456,7 +1522,7 @@ module.exports = class SoloLevelingToasts {
           }</strong></span>
           <input type="range" min="5" max="50" value="${
             this.settings.particleCount
-          }" id="toast-particle-count" style="width: 100%;">
+          }" id="toast-particle-count" data-slt-setting="particleCount" style="width: 100%;">
         </label>
 
         <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
@@ -1465,12 +1531,12 @@ module.exports = class SoloLevelingToasts {
           }</strong></span>
           <input type="range" min="1" max="10" value="${
             this.settings.maxToasts
-          }" id="toast-max-toasts" style="width: 100%;">
+          }" id="toast-max-toasts" data-slt-setting="maxToasts" style="width: 100%;">
         </label>
 
         <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
           <span style="margin-bottom: 5px;">Position:</span>
-          <select id="toast-position" style="padding: 8px; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; width: 100%;">
+          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; width: 100%;">
             <option value="top-right" ${
               this.settings.position === 'top-right' ? 'selected' : ''
             }>Top Right</option>
@@ -1487,7 +1553,9 @@ module.exports = class SoloLevelingToasts {
         </label>
 
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
-          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="toast-debug">
+          <input type="checkbox" ${
+            this.settings.debugMode ? 'checked' : ''
+          } id="toast-debug" data-slt-setting="debugMode">
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
@@ -1508,51 +1576,73 @@ module.exports = class SoloLevelingToasts {
       </div>
     `;
 
-    // Event listeners
-    const particlesCheckbox = panel.querySelector('#toast-particles');
-    const particleCountSlider = panel.querySelector('#toast-particle-count');
-    const maxToastsSlider = panel.querySelector('#toast-max-toasts');
-    const positionSelect = panel.querySelector('#toast-position');
-    const debugCheckbox = panel.querySelector('#toast-debug');
+    const onInput = (event) => {
+      const target = event.target;
+      const key = target?.getAttribute?.('data-slt-setting');
+      if (!key) return;
 
-    particlesCheckbox?.addEventListener('change', (e) => {
-      this.settings.showParticles = e.target.checked;
-      this.saveSettings();
-    });
+      const handlers = {
+        particleCount: () => {
+          const value = parseInt(target.value, 10);
+          this.settings.particleCount = Number.isFinite(value)
+            ? value
+            : this.settings.particleCount;
+          target.previousElementSibling?.querySelector?.('strong') &&
+            (target.previousElementSibling.querySelector('strong').textContent = target.value);
+        },
+        maxToasts: () => {
+          const value = parseInt(target.value, 10);
+          this.settings.maxToasts = Number.isFinite(value) ? value : this.settings.maxToasts;
+          target.previousElementSibling?.querySelector?.('strong') &&
+            (target.previousElementSibling.querySelector('strong').textContent = target.value);
+        },
+      };
 
-    particleCountSlider?.addEventListener('input', (e) => {
-      this.settings.particleCount = parseInt(e.target.value);
-      e.target.previousElementSibling.querySelector('strong').textContent = e.target.value;
-    });
+      handlers[key]?.();
+    };
 
-    particleCountSlider?.addEventListener('change', () => {
-      this.saveSettings();
-    });
+    const onChange = (event) => {
+      const target = event.target;
+      const key = target?.getAttribute?.('data-slt-setting');
+      if (!key) return;
 
-    maxToastsSlider?.addEventListener('input', (e) => {
-      this.settings.maxToasts = parseInt(e.target.value);
-      e.target.previousElementSibling.querySelector('strong').textContent = e.target.value;
-    });
+      const handlers = {
+        showParticles: () => {
+          this.settings.showParticles = !!target.checked;
+          this.saveSettings();
+        },
+        particleCount: () => {
+          const value = parseInt(target.value, 10);
+          this.settings.particleCount = Number.isFinite(value)
+            ? value
+            : this.settings.particleCount;
+          this.saveSettings();
+        },
+        maxToasts: () => {
+          const value = parseInt(target.value, 10);
+          this.settings.maxToasts = Number.isFinite(value) ? value : this.settings.maxToasts;
+          this.saveSettings();
+        },
+        position: () => {
+          this.settings.position = target.value;
+          this.saveSettings();
+          this.updateContainerPosition();
+        },
+        debugMode: () => {
+          this.settings.debugMode = !!target.checked;
+          this.debugMode = !!target.checked;
+          this.saveSettings();
+          this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: target.checked });
+        },
+      };
 
-    maxToastsSlider?.addEventListener('change', () => {
-      this.saveSettings();
-    });
+      handlers[key]?.();
+    };
 
-    positionSelect?.addEventListener('change', (e) => {
-      this.settings.position = e.target.value;
-      this.saveSettings();
-      if (this.toastContainer) {
-        this.removeToastContainer();
-        this.createToastContainer();
-      }
-    });
-
-    debugCheckbox?.addEventListener('change', (e) => {
-      this.settings.debugMode = e.target.checked;
-      this.debugMode = e.target.checked;
-      this.saveSettings();
-      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
-    });
+    panel.addEventListener('input', onInput);
+    panel.addEventListener('change', onChange);
+    this._settingsPanelRoot = panel;
+    this._settingsPanelHandlers = { onInput, onChange };
 
     return panel;
   }

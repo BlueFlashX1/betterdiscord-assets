@@ -53,6 +53,18 @@ module.exports = class SkillTree {
     this._retryTimeouts = new Set();
     this._isStopped = false;
 
+    // Stop-safe timeout helper usage + UI handler references for cleanup
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+    this._skillTreeModalHandlers = null;
+
+    // Toolbar cache (avoid repeated full-document scans)
+    this._toolbarCache = {
+      element: null,
+      time: 0,
+      ttl: 1500,
+    };
+
     // Solo Leveling Lore-Appropriate Skill Tree
     // Skills are organized by tiers: Tier 1 (Low), Tier 2 (Mid), Tier 3 (High), Tier 4 (Master)
     // Higher tiers have higher costs but better growth rates
@@ -361,7 +373,8 @@ module.exports = class SkillTree {
       },
     };
 
-    this.settings = this.defaultSettings;
+    // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
+    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.skillTreeModal = null;
     this.skillTreeButton = null;
     this.levelCheckInterval = null; // Deprecated - using events instead
@@ -371,6 +384,19 @@ module.exports = class SkillTree {
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
     this._periodicCheckInterval = null; // Periodic button persistence check
+
+    // Performance caches
+    this._cache = {
+      soloLevelingData: null,
+      soloLevelingDataTime: 0,
+      soloLevelingDataTTL: 100, // 100ms - data changes frequently
+      soloPluginInstance: null, // Cache plugin instance to avoid repeated lookups
+      soloPluginInstanceTime: 0,
+      soloPluginInstanceTTL: 5000, // 5s - plugin instance doesn't change often
+      skillBonuses: null, // Cache calculated skill bonuses
+      skillBonusesTime: 0,
+      skillBonusesTTL: 500, // 500ms - bonuses change when skills are upgraded
+    };
   }
 
   // ============================================================================
@@ -391,22 +417,18 @@ module.exports = class SkillTree {
     this.saveSkillBonuses();
 
     // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
-    this._retryTimeout1 = setTimeout(() => {
-      this._retryTimeouts.delete(this._retryTimeout1);
+    this._retryTimeout1 = this._setTrackedTimeout(() => {
       (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
         this.createSkillTreeButton();
       this._retryTimeout1 = null;
     }, 2000);
-    this._retryTimeouts.add(this._retryTimeout1);
 
     // FUNCTIONAL: Additional retry (short-circuit, no if-else)
-    this._retryTimeout2 = setTimeout(() => {
-      this._retryTimeouts.delete(this._retryTimeout2);
+    this._retryTimeout2 = this._setTrackedTimeout(() => {
       (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
         this.createSkillTreeButton();
       this._retryTimeout2 = null;
     }, 5000);
-    this._retryTimeouts.add(this._retryTimeout2);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -420,15 +442,34 @@ module.exports = class SkillTree {
     // Recalculate SP on startup based on current level
     this.recalculateSPFromLevel();
 
-    // Periodic level check to ensure sync (every 5 seconds)
-    // This ensures level stays up-to-date even if events fail
+    // Start fallback polling only if event subscription isn't available.
+    this.startLevelPolling();
+  }
+
+  _setTrackedTimeout(callback, delayMs) {
+    const timeoutId = setTimeout(() => {
+      this._retryTimeouts.delete(timeoutId);
+      !this._isStopped && callback();
+    }, delayMs);
+    this._retryTimeouts.add(timeoutId);
+    return timeoutId;
+  }
+
+  startLevelPolling() {
+    // Only poll when we have no event-based subscriber yet.
+    if (this.eventUnsubscribers.length > 0) return;
+    if (this.levelCheckInterval) return;
     this.levelCheckInterval = setInterval(() => {
+      if (this._isStopped) return;
       this.checkForLevelUp();
       this.recalculateSPFromLevel();
-    }, 5000);
+    }, 15000);
+  }
 
-    // Set global instance for button handlers
-    window.skillTreeInstance = this;
+  stopLevelPolling() {
+    if (!this.levelCheckInterval) return;
+    clearInterval(this.levelCheckInterval);
+    this.levelCheckInterval = null;
   }
 
   // ============================================================================
@@ -444,27 +485,23 @@ module.exports = class SkillTree {
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
     if (!soloPlugin) {
       // Retry after a delay - SoloLevelingStats might still be loading
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
-        this.setupLevelUpWatcher();
-      }, 2000);
-      this._retryTimeouts.add(timeoutId);
+      this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
       return;
     }
 
     const instance = soloPlugin.instance || soloPlugin;
     if (!instance || typeof instance.on !== 'function') {
       // Retry after a delay - Event system might not be ready yet
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
-        this.setupLevelUpWatcher();
-      }, 2000);
-      this._retryTimeouts.add(timeoutId);
+      this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
       return;
     }
 
     // Subscribe to level changed events
     const unsubscribeLevel = instance.on('levelChanged', (data) => {
+      // Invalidate cache since level changed
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+
       // FUNCTIONAL: Short-circuit for level up (no if-else)
       data.newLevel > (this.settings.lastLevel || 1) &&
         (() => {
@@ -475,6 +512,7 @@ module.exports = class SkillTree {
         })();
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
+    this.stopLevelPolling();
 
     // Initial check on startup
     this.checkForLevelUp();
@@ -488,10 +526,7 @@ module.exports = class SkillTree {
     this.unsubscribeFromEvents();
 
     // Clear intervals
-    if (this.levelCheckInterval) {
-      clearInterval(this.levelCheckInterval);
-      this.levelCheckInterval = null;
-    }
+    this.stopLevelPolling();
 
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -535,21 +570,32 @@ module.exports = class SkillTree {
       this.skillTreeButton = null;
     }
 
+    // Clear all caches
+    this._cache.soloLevelingData = null;
+    this._cache.soloLevelingDataTime = 0;
+    this._cache.soloPluginInstance = null;
+    this._cache.soloPluginInstanceTime = 0;
+    this._cache.skillBonuses = null;
+    this._cache.skillBonusesTime = 0;
+
     // Disconnect toolbar observer
     if (this.toolbarObserver) {
       this.toolbarObserver.disconnect();
       this.toolbarObserver = null;
     }
 
+    this.stopPeriodicButtonCheck();
+
     if (this.skillTreeModal) {
+      this.detachSkillTreeModalHandlers();
       this.skillTreeModal.remove();
       this.skillTreeModal = null;
     }
 
-    // Clear global instance
-    if (window.skillTreeInstance === this) {
-      window.skillTreeInstance = null;
-    }
+    document.querySelector('.st-confirm-dialog-overlay')?.remove();
+
+    this.detachSkillTreeSettingsPanelHandlers();
+    this.detachSkillTreeModalHandlers();
 
     // Remove CSS using BdApi (with fallback for compatibility)
     if (BdApi.DOM && BdApi.DOM.removeStyle) {
@@ -561,6 +607,27 @@ module.exports = class SkillTree {
         styleElement.remove();
       }
     }
+  }
+
+  detachSkillTreeSettingsPanelHandlers() {
+    const root = this._settingsPanelRoot;
+    const handlers = this._settingsPanelHandlers;
+    if (root && handlers) {
+      root.removeEventListener('change', handlers.onChange);
+      root.removeEventListener('click', handlers.onClick);
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+  }
+
+  detachSkillTreeModalHandlers() {
+    const modal = this.skillTreeModal;
+    const handlers = this._skillTreeModalHandlers;
+    if (modal && handlers) {
+      modal.removeEventListener('click', handlers.onClick);
+      modal.removeEventListener('change', handlers.onChange);
+    }
+    this._skillTreeModalHandlers = null;
   }
 
   // ============================================================================
@@ -623,6 +690,15 @@ module.exports = class SkillTree {
     }
   }
 
+  escapeHtml(unsafeString) {
+    return String(unsafeString ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#039;');
+  }
+
   /**
    * Recalculate SP based on current level (for reset or initial setup)
    * Always syncs level and ensures SP matches current level
@@ -654,27 +730,33 @@ module.exports = class SkillTree {
 
       // SP calculation: totalEarnedSP - spentSP = availableSP
       // Always recalculate spent SP to ensure accuracy
-      const spentSP = this.getTotalSpentSP(); // This also updates and saves totalSpentSP
+      const spentSP = this.getTotalSpentSP();
       const currentAvailable = this.settings.skillPoints;
       const expectedAvailable = Math.max(0, expectedSP - spentSP); // Prevent negative SP
 
-      // If spentSP exceeds expectedSP, there's a calculation error - reset spentSP
+      // If spentSP exceeds expectedSP, there's a calculation error - reset skills
       if (spentSP > expectedSP) {
         this.debugLog(
-          `SP calculation error: spent ${spentSP} but only earned ${expectedSP}. Recalculating...`
+          `SP calculation error: spent ${spentSP} but only earned ${expectedSP}. Resetting skills...`
         );
-        // Recalculate spentSP from actual skill levels (should be accurate)
-        const recalculatedSpent = this.getTotalSpentSP();
-        if (recalculatedSpent > expectedSP) {
-          // Still too high - there's a bug in cost calculation, cap it
-          this.settings.totalSpentSP = expectedSP;
-          this.settings.skillPoints = 0;
-          this.saveSettings();
-          this.debugLog(`Capped spentSP to ${expectedSP} to prevent negative SP`);
-        } else {
-          this.settings.skillPoints = Math.max(0, expectedSP - recalculatedSpent);
-          this.saveSettings();
-        }
+        // CRITICAL FIX: Instead of just capping, reset all skills to fix data corruption
+        // This prevents infinite loops and ensures data integrity
+        this.settings.skillLevels = {};
+        this.settings.unlockedSkills = [];
+        this.settings.totalSpentSP = 0;
+        this.settings.skillPoints = expectedSP;
+        this.settings.totalEarnedSP = expectedSP;
+        this.saveSettings();
+        this.saveSkillBonuses(); // Clear skill bonuses
+
+        this.debugLog(`Reset all skills due to calculation error. Available SP: ${expectedSP}`);
+
+        // Show toast notification
+        BdApi?.showToast?.(
+          `Skills reset due to calculation error. You have ${expectedSP} SP for level ${currentLevel}`,
+          { type: 'warning', timeout: 5000 }
+        );
+
         return; // Exit early after fixing
       }
 
@@ -789,6 +871,16 @@ module.exports = class SkillTree {
    * @returns {Object} - Object with xpBonus, critBonus, longMsgBonus, questBonus, allStatBonus
    */
   calculateSkillBonuses() {
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.skillBonuses &&
+      this._cache.skillBonusesTime &&
+      now - this._cache.skillBonusesTime < this._cache.skillBonusesTTL
+    ) {
+      return this._cache.skillBonuses;
+    }
+
     const bonuses = {
       xpBonus: 0,
       critBonus: 0,
@@ -813,6 +905,10 @@ module.exports = class SkillTree {
       });
     });
 
+    // Cache the result
+    this._cache.skillBonuses = bonuses;
+    this._cache.skillBonusesTime = now;
+
     return bonuses;
   }
 
@@ -824,16 +920,57 @@ module.exports = class SkillTree {
    * @returns {Object|null} - SoloLevelingStats data or null if unavailable
    */
   getSoloLevelingData() {
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.soloLevelingData &&
+      this._cache.soloLevelingDataTime &&
+      now - this._cache.soloLevelingDataTime < this._cache.soloLevelingDataTTL
+    ) {
+      return this._cache.soloLevelingData;
+    }
+
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-      const instance = soloPlugin.instance || soloPlugin;
-      return {
+      // Cache plugin instance to avoid repeated lookups
+      let soloPlugin = null;
+      let instance = null;
+
+      if (
+        this._cache.soloPluginInstance &&
+        this._cache.soloPluginInstanceTime &&
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+      ) {
+        instance = this._cache.soloPluginInstance;
+      } else {
+        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+        if (!soloPlugin) {
+          this._cache.soloLevelingData = null;
+          this._cache.soloLevelingDataTime = now;
+          this._cache.soloPluginInstance = null;
+          this._cache.soloPluginInstanceTime = 0;
+          return null;
+        }
+
+        instance = soloPlugin.instance || soloPlugin;
+        // Cache the instance
+        this._cache.soloPluginInstance = instance;
+        this._cache.soloPluginInstanceTime = now;
+      }
+
+      const result = {
         stats: instance.settings?.stats || {},
         level: instance.settings?.level || 1,
         totalXP: instance.settings?.totalXP || 0,
       };
+
+      // Cache the result
+      this._cache.soloLevelingData = result;
+      this._cache.soloLevelingDataTime = now;
+
+      return result;
     } catch (error) {
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = now;
       return null;
     }
   }
@@ -849,7 +986,7 @@ module.exports = class SkillTree {
   initializeSpentSP() {
     try {
       // Calculate spent SP from existing skill levels
-      const spentSP = this.getTotalSpentSP(); // This also saves totalSpentSP
+      const spentSP = this.getTotalSpentSP();
 
       // Recalculate available SP based on earned SP and spent SP
       const soloData = this.getSoloLevelingData();
@@ -881,7 +1018,7 @@ module.exports = class SkillTree {
 
   /**
    * Calculate total SP spent on skills
-   * Also updates and saves the totalSpentSP in settings for persistence
+   * Updates the in-memory totalSpentSP in settings
    * @returns {number} - Total SP spent
    */
   getTotalSpentSP() {
@@ -900,11 +1037,8 @@ module.exports = class SkillTree {
       });
     });
 
-    // Update and save spent SP in settings for persistence and accuracy
-    if (this.settings.totalSpentSP !== totalSpent) {
-      this.settings.totalSpentSP = totalSpent;
-      this.saveSettings();
-    }
+    // Update in-memory value; callers decide when to persist to avoid excess writes.
+    this.settings.totalSpentSP = totalSpent;
 
     return totalSpent;
   }
@@ -944,15 +1078,12 @@ module.exports = class SkillTree {
     const baseCost = tier.baseCost || 1;
     const multiplier = tier.upgradeCostMultiplier || 1.5;
 
-    // FUNCTIONAL: Cost calculation using Array.from().reduce() (no for-loop)
-    // Calculate costs for upgrades from level 1 to targetLevel
-    // Level 1->2: baseCost * 1 * multiplier
-    // Level 2->3: baseCost * 2 * multiplier
-    // Level 3->4: baseCost * 3 * multiplier
-    // etc.
-    return Array.from({ length: targetLevel - 1 }, (_, i) =>
-      Math.ceil(baseCost * (i + 1) * multiplier)
-    ).reduce((total, cost) => total + cost, 0);
+    // Avoid per-call allocations in a hot path (exact semantics retained via per-level ceil)
+    let total = 0;
+    for (let i = 1; i <= targetLevel - 1; i++) {
+      total += Math.ceil(baseCost * i * multiplier);
+    }
+    return total;
   }
 
   /**
@@ -1140,6 +1271,10 @@ module.exports = class SkillTree {
 
       this.saveSettings();
       this.updateButtonText();
+
+      // Invalidate skill bonuses cache since skill was upgraded
+      this._cache.skillBonuses = null;
+      this._cache.skillBonusesTime = 0;
 
       // Show notification
       const newLevel = this.getSkillLevel(skillId);
@@ -1430,23 +1565,23 @@ module.exports = class SkillTree {
       }
 
       .st-confirm-dialog {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 2px solid rgba(255, 68, 68, 0.5);
+        background: linear-gradient(135deg, #1e1b2f 0%, #1a102a 100%);
+        border: 2px solid rgba(124, 58, 237, 0.5);
         border-radius: 16px;
         width: 90%;
         max-width: 500px;
-        box-shadow: 0 0 40px rgba(255, 68, 68, 0.4);
+        box-shadow: 0 0 40px rgba(124, 58, 237, 0.35);
         animation: bounceIn 0.3s ease;
       }
 
       .st-confirm-header {
         padding: 20px;
-        border-bottom: 2px solid rgba(255, 68, 68, 0.3);
+        border-bottom: 2px solid rgba(124, 58, 237, 0.35);
       }
 
       .st-confirm-header h3 {
         margin: 0;
-        color: rgba(255, 68, 68, 1);
+        color: #c4b5fd;
         font-size: 22px;
         font-weight: bold;
         text-align: center;
@@ -1454,7 +1589,7 @@ module.exports = class SkillTree {
 
       .st-confirm-body {
         padding: 25px;
-        color: rgba(255, 255, 255, 0.9);
+        color: rgba(236, 233, 255, 0.92);
         font-size: 15px;
         line-height: 1.6;
       }
@@ -1470,14 +1605,14 @@ module.exports = class SkillTree {
 
       .st-confirm-body li {
         margin: 8px 0;
-        color: rgba(255, 255, 255, 0.8);
+        color: rgba(236, 233, 255, 0.8);
       }
 
       .st-confirm-actions {
         display: flex;
         gap: 12px;
         padding: 20px;
-        border-top: 2px solid rgba(255, 68, 68, 0.2);
+        border-top: 2px solid rgba(124, 58, 237, 0.25);
       }
 
       .st-confirm-btn {
@@ -1488,35 +1623,36 @@ module.exports = class SkillTree {
         font-weight: bold;
         cursor: pointer;
         outline: none;
-        transition: all 0.3s ease;
+        transition: all 0.25s ease;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
 
       .st-confirm-cancel {
-        background: linear-gradient(135deg, rgba(100, 100, 100, 0.3) 0%, rgba(80, 80, 80, 0.3) 100%);
-        border: 2px solid rgba(150, 150, 150, 0.5);
-        color: rgba(255, 255, 255, 0.9);
+        background: linear-gradient(135deg, rgba(45, 45, 63, 0.8) 0%, rgba(35, 35, 52, 0.8) 100%);
+        border: 2px solid rgba(124, 58, 237, 0.35);
+        color: rgba(236, 233, 255, 0.9);
       }
 
       .st-confirm-cancel:hover {
-        background: linear-gradient(135deg, rgba(120, 120, 120, 0.4) 0%, rgba(100, 100, 100, 0.4) 100%);
-        border-color: rgba(180, 180, 180, 0.7);
+        background: linear-gradient(135deg, rgba(58, 58, 92, 0.9) 0%, rgba(46, 46, 68, 0.9) 100%);
+        border-color: rgba(167, 139, 250, 0.7);
         transform: translateY(-2px);
-        box-shadow: 0 0 20px rgba(150, 150, 150, 0.3);
+        box-shadow: 0 0 20px rgba(124, 58, 237, 0.35);
       }
 
       .st-confirm-yes {
-        background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
-        border: 2px solid rgba(255, 68, 68, 1);
+        background: linear-gradient(135deg, rgba(124, 58, 237, 0.9) 0%, rgba(109, 40, 217, 0.9) 100%);
+        border: 2px solid rgba(167, 139, 250, 0.9);
         color: white;
+        box-shadow: 0 0 20px rgba(124, 58, 237, 0.4);
       }
 
       .st-confirm-yes:hover {
-        background: linear-gradient(135deg, rgba(255, 68, 68, 1) 0%, rgba(220, 38, 38, 1) 100%);
-        border-color: rgba(255, 100, 100, 1);
+        background: linear-gradient(135deg, rgba(167, 139, 250, 1) 0%, rgba(139, 92, 246, 1) 100%);
+        border-color: rgba(196, 181, 253, 1);
         transform: translateY(-2px);
-        box-shadow: 0 0 25px rgba(255, 68, 68, 0.6);
+        box-shadow: 0 0 25px rgba(167, 139, 250, 0.55);
       }
 
       .st-confirm-btn:active {
@@ -1864,6 +2000,87 @@ module.exports = class SkillTree {
     }
   }
 
+  isValidToolbarContainer(toolbar) {
+    if (!toolbar?.isConnected) return false;
+    const buttons = toolbar.querySelectorAll?.('[class*="button"]');
+    return !!buttons && buttons.length >= 4;
+  }
+
+  getToolbarContainer() {
+    const now = Date.now();
+    const cached = this._toolbarCache?.element;
+    const cacheFresh =
+      cached && this._toolbarCache.time && now - this._toolbarCache.time < this._toolbarCache.ttl;
+    if (cacheFresh && this.isValidToolbarContainer(cached)) {
+      return cached;
+    }
+
+    const buttonRow =
+      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
+        const siblings = Array.from(el.parentElement?.children || []);
+        return (
+          siblings.length >= 4 &&
+          siblings.some(
+            (s) =>
+              s.querySelector('[class*="emoji"]') ||
+              s.querySelector('[class*="gif"]') ||
+              s.querySelector('[class*="attach"]')
+          )
+        );
+      })?.parentElement ||
+      (() => {
+        const textArea =
+          document.querySelector('[class*="channelTextArea"]') ||
+          document.querySelector('[class*="slateTextArea"]') ||
+          document.querySelector('textarea[placeholder*="Message"]');
+        if (!textArea) return null;
+
+        const container =
+          textArea.closest('[class*="container"]') ||
+          textArea.closest('[class*="wrapper"]') ||
+          textArea.parentElement?.parentElement?.parentElement;
+
+        const buttons = container?.querySelectorAll('[class*="button"]');
+        if (buttons && buttons.length >= 4) {
+          return buttons[0]?.parentElement;
+        }
+
+        return (
+          container?.querySelector('[class*="buttons"]') ||
+          container?.querySelector('[class*="buttonContainer"]')
+        );
+      })();
+
+    const toolbar = buttonRow || null;
+    this._toolbarCache.element = toolbar;
+    this._toolbarCache.time = now;
+    return this.isValidToolbarContainer(toolbar) ? toolbar : null;
+  }
+
+  createSkillTreeButtonIconSvg() {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+
+    const p1 = document.createElementNS(svgNS, 'path');
+    p1.setAttribute('d', 'M12 2L2 7L12 12L22 7L12 2Z');
+    const p2 = document.createElementNS(svgNS, 'path');
+    p2.setAttribute('d', 'M2 17L12 22L22 17');
+    const p3 = document.createElementNS(svgNS, 'path');
+    p3.setAttribute('d', 'M2 12L12 17L22 12');
+    svg.appendChild(p1);
+    svg.appendChild(p2);
+    svg.appendChild(p3);
+    return svg;
+  }
+
   /**
    * Create skill tree button in Discord UI (matching TitleManager style and position)
    */
@@ -1873,69 +2090,16 @@ module.exports = class SkillTree {
     existingButtons.forEach((btn) => btn.remove());
     this.skillTreeButton = null;
 
-    // Find Discord's button row - same method as TitleManager
-    const findToolbar = () => {
-      // Method 1: Find by looking for common Discord button classes
-      const buttonRow =
-        // Look for container with multiple buttons (Discord's toolbar)
-        Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
-          const siblings = Array.from(el.parentElement?.children || []);
-          // Check if this container has multiple button-like elements (Discord's toolbar)
-          return (
-            siblings.length >= 4 &&
-            siblings.some(
-              (s) =>
-                s.querySelector('[class*="emoji"]') ||
-                s.querySelector('[class*="gif"]') ||
-                s.querySelector('[class*="attach"]')
-            )
-          );
-        })?.parentElement ||
-        // Method 2: Find by text area and traverse up
-        (() => {
-          const textArea =
-            document.querySelector('[class*="channelTextArea"]') ||
-            document.querySelector('[class*="slateTextArea"]') ||
-            document.querySelector('textarea[placeholder*="Message"]');
-          if (!textArea) return null;
-
-          // Go up to find the input container, then find button row
-          let container =
-            textArea.closest('[class*="container"]') ||
-            textArea.closest('[class*="wrapper"]') ||
-            textArea.parentElement?.parentElement?.parentElement;
-
-          // Look for the row that contains multiple buttons
-          const buttons = container?.querySelectorAll('[class*="button"]');
-          if (buttons && buttons.length >= 4) {
-            return buttons[0]?.parentElement;
-          }
-
-          return (
-            container?.querySelector('[class*="buttons"]') ||
-            container?.querySelector('[class*="buttonContainer"]')
-          );
-        })();
-
-      return buttonRow;
-    };
-
-    const toolbar = findToolbar();
+    const toolbar = this.getToolbarContainer();
     if (!toolbar) {
-      setTimeout(() => this.createSkillTreeButton(), 1000);
+      this._setTrackedTimeout(() => this.createSkillTreeButton(), 1000);
       return;
     }
 
     // Create button with skill tree/layers icon
     const button = document.createElement('button');
     button.className = 'st-skill-tree-button';
-    button.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L2 7L12 12L22 7L12 2Z"></path>
-        <path d="M2 17L12 22L22 17"></path>
-        <path d="M2 12L12 17L22 12"></path>
-      </svg>
-    `;
+    button.replaceChildren(this.createSkillTreeButtonIconSvg());
     button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
     button.addEventListener('click', () => this.showSkillTreeModal());
 
@@ -1990,6 +2154,8 @@ module.exports = class SkillTree {
       subtree: true,
       attributes: false,
     });
+
+    this.stopPeriodicButtonCheck();
   }
 
   /**
@@ -2013,6 +2179,7 @@ module.exports = class SkillTree {
     // Save scroll position before refresh
     let scrollPosition = 0;
     if (this.skillTreeModal) {
+      this.detachSkillTreeModalHandlers();
       const content = this.skillTreeModal.querySelector('.skilltree-modal-content');
       if (content) {
         scrollPosition = content.scrollTop;
@@ -2029,12 +2196,7 @@ module.exports = class SkillTree {
     const closeBtn = document.createElement('button');
     closeBtn.textContent = '×';
     closeBtn.className = 'skilltree-close-btn';
-    closeBtn.onclick = () => {
-      if (this.skillTreeModal) {
-        this.skillTreeModal.remove();
-        this.skillTreeModal = null;
-      }
-    };
+    closeBtn.type = 'button';
     this.skillTreeModal.appendChild(closeBtn);
 
     document.body.appendChild(this.skillTreeModal);
@@ -2047,41 +2209,51 @@ module.exports = class SkillTree {
       }
     }
 
-    // Attach event listeners to upgrade buttons
-    this.skillTreeModal.querySelectorAll('.skilltree-upgrade-btn').forEach((btn) => {
-      btn.onclick = (e) => {
-        const skillId = e.target.getAttribute('data-skill-id');
-        if (skillId && this.unlockOrUpgradeSkill(skillId)) {
-          this.showSkillTreeModal(); // Refresh modal (scroll position will be preserved)
-        }
-      };
-    });
+    const onClick = (event) => {
+      const target = event.target;
 
-    // Attach event listeners to max buttons
-    this.skillTreeModal.querySelectorAll('.skilltree-max-btn').forEach((btn) => {
-      btn.onclick = (e) => {
-        const skillId = e.target.getAttribute('data-skill-id');
-        if (skillId && this.maxUpgradeSkill(skillId)) {
-          this.showSkillTreeModal(); // Refresh modal (scroll position will be preserved)
-        }
-      };
-    });
+      // Backdrop close isn't used here (modal isn't an overlay). Close button only.
+      if (
+        target?.classList?.contains('skilltree-close-btn') ||
+        target?.closest?.('.skilltree-close-btn')
+      ) {
+        this.skillTreeModal?.remove();
+        this.skillTreeModal = null;
+        return;
+      }
 
-    // FUNCTIONAL: Attach tier navigation button event listeners (PAGE SWITCH - no scroll)
-    this.skillTreeModal.querySelectorAll('.skilltree-tier-nav-btn').forEach((btn) => {
-      btn.addEventListener('click', (e) => {
-        const tierKey = e.target.getAttribute('data-tier');
-        this.settings.currentTierPage = tierKey;
-        this.saveSettings();
-        this.showSkillTreeModal(); // Refresh modal to show new tier page
-      });
-    });
+      const resetBtn = target?.closest?.('#st-reset-modal-btn');
+      if (resetBtn) {
+        this.showResetConfirmDialog();
+        return;
+      }
 
-    // FUNCTIONAL: Attach reset button event listener (custom dialog, not macOS)
-    const resetBtn = this.skillTreeModal.querySelector('#st-reset-modal-btn');
-    resetBtn?.addEventListener('click', () => {
-      this.showResetConfirmDialog();
-    });
+      const upgradeBtn = target?.closest?.('.skilltree-upgrade-btn');
+      if (upgradeBtn) {
+        const skillId = upgradeBtn.getAttribute('data-skill-id');
+        skillId && this.unlockOrUpgradeSkill(skillId) && this.showSkillTreeModal();
+        return;
+      }
+
+      const maxBtn = target?.closest?.('.skilltree-max-btn');
+      if (maxBtn) {
+        const skillId = maxBtn.getAttribute('data-skill-id');
+        skillId && this.maxUpgradeSkill(skillId) && this.showSkillTreeModal();
+        return;
+      }
+
+      const tierBtn = target?.closest?.('.skilltree-tier-nav-btn');
+      if (tierBtn) {
+        const tierKey = tierBtn.getAttribute('data-tier');
+        tierKey &&
+          ((this.settings.currentTierPage = tierKey),
+          this.saveSettings(),
+          this.showSkillTreeModal());
+      }
+    };
+
+    this.skillTreeModal.addEventListener('click', onClick);
+    this._skillTreeModalHandlers = { onClick, onChange: null };
   }
 
   /**
@@ -2090,15 +2262,13 @@ module.exports = class SkillTree {
    */
   renderSkillTree() {
     const soloData = this.getSoloLevelingData();
-    const visibleTiers = this.settings.visibleTiers || [
-      'tier1',
-      'tier2',
-      'tier3',
-      'tier4',
-      'tier5',
-      'tier6',
-    ];
-    const currentTier = this.settings.currentTierPage || 'tier1';
+    const allTierKeys = Object.keys(this.skillTree);
+    const visibleTiers = (this.settings.visibleTiers || allTierKeys).filter((tierKey) =>
+      allTierKeys.includes(tierKey)
+    );
+    const currentTier = allTierKeys.includes(this.settings.currentTierPage)
+      ? this.settings.currentTierPage
+      : visibleTiers[0] || 'tier1';
 
     let html = `
       <div class="skilltree-header">
@@ -2148,11 +2318,12 @@ module.exports = class SkillTree {
       if (tier.skills) {
         html += `<div class="skilltree-tier" id="st-${tierKey}">`;
         html += `<div class="skilltree-tier-header">
-        <span>${tier.name}</span>
+        <span>${this.escapeHtml(tier.name)}</span>
         <span class="skilltree-tier-badge">Tier ${tier.tier}</span>
       </div>`;
 
         tier.skills.forEach((skill) => {
+          const safeSkillId = this.escapeHtml(skill.id);
           const level = this.getSkillLevel(skill.id);
           const maxLevel = tier.maxLevel || 10;
           const canUpgrade = this.canUnlockSkill(skill, tier);
@@ -2166,10 +2337,10 @@ module.exports = class SkillTree {
           html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
             level >= maxLevel ? 'max-level' : ''
           }">`;
-          html += `<div class="skilltree-skill-name">${skill.name}</div>`;
-          html += `<div class="skilltree-skill-desc">${skill.desc}</div>`;
+          html += `<div class="skilltree-skill-name">${this.escapeHtml(skill.name)}</div>`;
+          html += `<div class="skilltree-skill-desc">${this.escapeHtml(skill.desc)}</div>`;
           if (skill.lore) {
-            html += `<div class="skilltree-skill-lore">${skill.lore}</div>`;
+            html += `<div class="skilltree-skill-lore">${this.escapeHtml(skill.lore)}</div>`;
           }
 
           if (level > 0) {
@@ -2196,10 +2367,10 @@ module.exports = class SkillTree {
             html += `<div class="skilltree-btn-group">`;
             html += `<button class="skilltree-upgrade-btn" ${
               !canUpgrade ? 'disabled' : ''
-            } data-skill-id="${skill.id}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
+            } data-skill-id="${safeSkillId}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
             html += `<button class="skilltree-max-btn" ${
               !canMaxUpgrade ? 'disabled' : ''
-            } data-skill-id="${skill.id}">Max</button>`;
+            } data-skill-id="${safeSkillId}">Max</button>`;
             html += `</div>`;
           } else {
             html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
@@ -2235,21 +2406,18 @@ module.exports = class SkillTree {
         // Enhanced: Multiple retry attempts with increasing delays
         const retryDelays = [200, 500, 1000];
         retryDelays.forEach((delay, index) => {
-          const timeoutId = setTimeout(() => {
-            this._retryTimeouts.delete(timeoutId);
+          this._setTrackedTimeout(() => {
             // Check if button exists and is in DOM
             if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
               this.createSkillTreeButton();
             }
           }, delay * (index + 1));
-          this._retryTimeouts.add(timeoutId);
         });
       }
     };
 
     // Listen to browser back/forward navigation
-    const popstateHandler = () => handleUrlChange();
-    window.addEventListener('popstate', popstateHandler);
+    window.addEventListener('popstate', handleUrlChange);
 
     // Override pushState and replaceState to detect programmatic navigation
     let originalPushState = history.pushState;
@@ -2301,35 +2469,43 @@ module.exports = class SkillTree {
         if (this._isStopped) return;
         // User returned to tab (tab is now visible)
         if (!document.hidden) {
-          const timeoutId = setTimeout(() => {
-            this._retryTimeouts.delete(timeoutId);
+          this._setTrackedTimeout(() => {
             if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
               this.createSkillTreeButton();
             }
           }, 300);
-          this._retryTimeouts.add(timeoutId);
         }
       })
     );
 
-    // Periodic persistence check as fallback (every 10 seconds)
-    this._periodicCheckInterval = setInterval(() => {
-      if (this._isStopped) return;
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        this.createSkillTreeButton();
-      }
-    }, 10000); // Check every 10 seconds
+    // Periodic persistence check as fallback (only enabled when toolbar observer isn't active)
+    this.startPeriodicButtonCheck();
 
     // Store cleanup function
     this._windowFocusCleanup = () => {
       window.removeEventListener('blur', this._boundHandleBlur);
       window.removeEventListener('focus', this._boundHandleFocus);
       document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
-      if (this._periodicCheckInterval) {
-        clearInterval(this._periodicCheckInterval);
-        this._periodicCheckInterval = null;
-      }
+      this.stopPeriodicButtonCheck();
     };
+  }
+
+  startPeriodicButtonCheck() {
+    if (this._periodicCheckInterval) return;
+    if (this.toolbarObserver) return;
+    this._periodicCheckInterval = setInterval(() => {
+      if (this._isStopped) return;
+      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+        this.createSkillTreeButton();
+      }
+      this.toolbarObserver && this.stopPeriodicButtonCheck();
+    }, 15000);
+  }
+
+  stopPeriodicButtonCheck() {
+    if (!this._periodicCheckInterval) return;
+    clearInterval(this._periodicCheckInterval);
+    this._periodicCheckInterval = null;
   }
 
   /**
@@ -2349,14 +2525,12 @@ module.exports = class SkillTree {
     if (this._isStopped) return;
 
     // Small delay to let Discord finish re-rendering after focus
-    const timeoutId = setTimeout(() => {
-      this._retryTimeouts.delete(timeoutId);
+    this._setTrackedTimeout(() => {
       // Check if button still exists when user returns
       if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
         this.createSkillTreeButton();
       }
     }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
-    this._retryTimeouts.add(timeoutId);
   }
 
   // ============================================================================
@@ -2364,6 +2538,7 @@ module.exports = class SkillTree {
   // ============================================================================
 
   getSettingsPanel() {
+    this.detachSkillTreeSettingsPanelHandlers();
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
@@ -2449,11 +2624,11 @@ module.exports = class SkillTree {
       </div>
     `;
 
-    // Event listeners
-    const tierCheckboxes = panel.querySelectorAll('[data-tier]');
-    tierCheckboxes.forEach((checkbox) => {
-      checkbox.addEventListener('change', (e) => {
-        const tier = e.target.getAttribute('data-tier');
+    const onChange = (event) => {
+      const target = event.target;
+
+      const tier = target?.getAttribute?.('data-tier');
+      if (tier) {
         this.settings.visibleTiers = this.settings.visibleTiers || [
           'tier1',
           'tier2',
@@ -2463,11 +2638,9 @@ module.exports = class SkillTree {
           'tier6',
         ];
 
-        if (e.target.checked) {
-          !this.settings.visibleTiers.includes(tier) && this.settings.visibleTiers.push(tier);
-        } else {
-          this.settings.visibleTiers = this.settings.visibleTiers.filter((t) => t !== tier);
-        }
+        target.checked
+          ? !this.settings.visibleTiers.includes(tier) && this.settings.visibleTiers.push(tier)
+          : (this.settings.visibleTiers = this.settings.visibleTiers.filter((t) => t !== tier));
 
         this.saveSettings();
 
@@ -2475,27 +2648,98 @@ module.exports = class SkillTree {
         if (this.skillTreeModal) {
           const modalContent = this.skillTreeModal.querySelector('.skilltree-modal-content');
           modalContent && (modalContent.style.opacity = '0.5');
-          setTimeout(() => {
+          this._setTrackedTimeout(() => {
             this.showSkillTreeModal();
             const newModalContent = this.skillTreeModal?.querySelector('.skilltree-modal-content');
             newModalContent && (newModalContent.style.opacity = '1');
           }, 150);
         }
-      });
-    });
+        return;
+      }
 
-    const resetButton = panel.querySelector('#st-reset-skills');
-    resetButton?.addEventListener('click', () => {
-      this.showResetConfirmDialog();
-    });
+      if (target?.id === 'st-debug') {
+        this.settings.debugMode = target.checked;
+        this.saveSettings();
+        this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: target.checked });
+      }
+    };
 
-    const debugCheckbox = panel.querySelector('#st-debug');
-    debugCheckbox?.addEventListener('change', (e) => {
-      this.settings.debugMode = e.target.checked;
-      this.saveSettings();
-      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
-    });
+    const onClick = (event) => {
+      const reset = event.target?.closest?.('#st-reset-skills');
+      reset && this.showResetConfirmDialog();
+    };
+
+    panel.addEventListener('change', onChange);
+    panel.addEventListener('click', onClick);
+    this._settingsPanelRoot = panel;
+    this._settingsPanelHandlers = { onChange, onClick };
 
     return panel;
+  }
+
+  /**
+   * Show reset confirmation dialog
+   * Uses Discord's native confirm dialog or custom modal
+   */
+  showResetConfirmDialog() {
+    try {
+      const soloData = this.getSoloLevelingData();
+      if (!soloData || !soloData.level) {
+        BdApi?.showToast?.('Cannot reset: SoloLevelingStats not available', {
+          type: 'error',
+          timeout: 3000,
+        });
+        return;
+      }
+
+      const currentLevel = soloData.level;
+      const expectedSP = this.calculateSPForLevel(currentLevel);
+
+      // Remove any existing dialog to avoid duplicates
+      document.querySelector('.st-confirm-dialog-overlay')?.remove();
+
+      const overlay = document.createElement('div');
+      overlay.className = 'st-confirm-dialog-overlay';
+      overlay.innerHTML = `
+        <div class="st-confirm-dialog">
+          <div class="st-confirm-header">
+            <h3>Reset Skill Tree?</h3>
+          </div>
+          <div class="st-confirm-body">
+            <p>This will reset all skills and refund your skill points.</p>
+            <ul>
+              <li>Reset all skill levels to 0</li>
+              <li>Clear all skill bonuses</li>
+              <li>Refund <strong>${expectedSP}</strong> SP for level <strong>${currentLevel}</strong></li>
+            </ul>
+            <p style="color: rgba(236, 72, 153, 0.85); font-weight: 600;">This action cannot be undone.</p>
+          </div>
+          <div class="st-confirm-actions">
+            <button class="st-confirm-btn st-confirm-cancel" id="st-reset-cancel">Cancel</button>
+            <button class="st-confirm-btn st-confirm-yes" id="st-reset-confirm">Reset</button>
+          </div>
+        </div>
+      `;
+
+      const closeDialog = () => overlay.remove();
+      overlay.addEventListener('click', (e) => {
+        if (e.target === overlay) closeDialog();
+      });
+
+      overlay.querySelector('#st-reset-cancel')?.addEventListener('click', closeDialog);
+      overlay.querySelector('#st-reset-confirm')?.addEventListener('click', () => {
+        const success = this.resetSkills();
+        if (success && this.skillTreeModal) {
+          this.showSkillTreeModal();
+        }
+        closeDialog();
+      });
+
+      document.body.appendChild(overlay);
+    } catch (error) {
+      console.error('SkillTree: Error showing reset dialog', error);
+      // Fallback: try direct reset
+      this.resetSkills();
+    }
   }
 };

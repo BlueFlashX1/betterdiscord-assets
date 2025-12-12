@@ -193,13 +193,14 @@ module.exports = class LevelProgressBar {
             );
 
             if (!hasProgressBar && !pluginInstance.progressBar) {
-              // Create React element for progress bar
-              const progressBarHTML = pluginInstance.renderProgressBarHTML();
-              const progressBarElement = React.createElement('div', {
-                id: 'lpb-progress-container',
-                className: `lpb-progress-container ${pluginInstance.settings.position}`,
-                dangerouslySetInnerHTML: { __html: progressBarHTML },
-              });
+              const progressBarElement = React.createElement(
+                'div',
+                {
+                  id: 'lpb-progress-container',
+                  className: `lpb-progress-container ${pluginInstance.settings.position}`,
+                },
+                pluginInstance.renderProgressBarReactElement(React)
+              );
 
               // Inject at the beginning of body children
               if (Array.isArray(bodyPath.props.children)) {
@@ -214,7 +215,7 @@ module.exports = class LevelProgressBar {
               pluginInstance.debugLog('REACT_INJECTION', 'Progress bar injected via React');
 
               // Set up DOM reference after injection
-              setTimeout(() => {
+              pluginInstance._setTrackedTimeout(() => {
                 const domElement = document.getElementById('lpb-progress-container');
                 if (domElement) {
                   pluginInstance.progressBar = domElement;
@@ -249,12 +250,53 @@ module.exports = class LevelProgressBar {
           <div class="lpb-progress-text" id="lpb-progress-text">Rank: E Lv.1 0/100 XP</div>
         </div>
         <div class="lpb-progress-track">
-          <div class="lpb-progress-fill" id="lpb-progress-fill" style="width: 0%;"></div>
+          <div class="lpb-progress-fill" id="lpb-progress-fill" style="transform: scaleX(0);"></div>
         </div>
         <div class="lpb-shadow-power" id="lpb-shadow-power">Shadow Army Power: 0</div>
       </div>
     `;
     return bar;
+  }
+
+  /**
+   * Render progress bar as React elements (avoids HTML parsing).
+   * Keeps IDs/classes identical to the DOM fallback so the rest of the plugin can query normally.
+   */
+  renderProgressBarReactElement(React) {
+    const noShimmerClass =
+      !this.settings.showShimmer || this.getPrefersReducedMotion() ? 'lpb-no-shimmer' : '';
+
+    return React.createElement(
+      'div',
+      {
+        className: `lpb-progress-bar ${
+          this.settings.compact ? 'compact' : ''
+        } ${noShimmerClass}`.trim(),
+      },
+      React.createElement(
+        'div',
+        { className: 'lpb-progress-bar-content' },
+        React.createElement('div', {
+          className: 'lpb-progress-text',
+          id: 'lpb-progress-text',
+          children: 'Rank: E Lv.1 0/100 XP',
+        })
+      ),
+      React.createElement(
+        'div',
+        { className: 'lpb-progress-track' },
+        React.createElement('div', {
+          className: 'lpb-progress-fill',
+          id: 'lpb-progress-fill',
+          style: { transform: 'scaleX(0)' },
+        })
+      ),
+      React.createElement('div', {
+        className: 'lpb-shadow-power',
+        id: 'lpb-shadow-power',
+        children: 'Shadow Army Power: 0',
+      })
+    );
   }
 
   /**
@@ -269,19 +311,12 @@ module.exports = class LevelProgressBar {
     this.lastXPRequired = null;
     this.updateProgressBar();
 
-    // Start shadow power updates
+    // Start shadow power updates (event-driven preferred; polling only if needed)
     this.updateShadowPower().catch(console.error);
-    // Update shadow power periodically (every 30 seconds)
-    if (this.shadowPowerUpdateInterval) {
-      clearInterval(this.shadowPowerUpdateInterval);
-    }
-    this.shadowPowerUpdateInterval = setInterval(() => {
-      this.updateShadowPower().catch(console.error);
-    }, 30000);
 
     // Initialize milestone markers
-    setTimeout(() => {
-      const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
+    this._setTrackedTimeout(() => {
+      const progressTrack = this.getCachedElement('.lpb-progress-track');
       if (progressTrack) {
         if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
           const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -306,6 +341,8 @@ module.exports = class LevelProgressBar {
       showRank: true,
       showXP: true,
       compact: false, // Compact mode (smaller bar)
+      integratedLevelUpAnimation: true, // Consolidated: show level-up animation from progress bar
+      showShimmer: true, // Visual effect (can be disabled for performance)
       opacity: 1.0, // 100% opacity - fully opaque (fixed, no config needed)
       updateInterval: 5000, // Fallback polling interval (only used if events unavailable)
     };
@@ -321,12 +358,33 @@ module.exports = class LevelProgressBar {
     this.fallbackInterval = null; // Fallback polling if events not available (disabled by default)
     this.cachedShadowPower = '0'; // Cache shadow power to avoid repeated queries
     this.shadowPowerUpdateInterval = null; // Interval for updating shadow power
+    this._isStopped = true;
+    this._trackedTimeouts = new Set();
+    this._updateRafId = null;
+    this._updateQueued = false;
+    this._lastMilestoneMask = null;
+    this._shadowPowerRefreshRafId = null;
+    this._shadowPowerRefreshQueued = false;
+    this._prefersReducedMotion = null;
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
     };
     this.webpackModuleAccess = false;
     this.reactInjectionActive = false;
+
+    // Performance caches
+    this._cache = {
+      soloLevelingData: null,
+      soloLevelingDataTime: 0,
+      soloLevelingDataTTL: 100, // 100ms - data changes frequently
+      soloPluginInstance: null, // Cache plugin instance to avoid repeated lookups
+      soloPluginInstanceTime: 0,
+      soloPluginInstanceTTL: 5000, // 5s - plugin instance doesn't change often
+      domElements: new Map(), // Cache DOM element references
+      domElementsTime: 0,
+      domElementsTTL: 2000, // 2s - DOM structure is relatively stable
+    };
   }
 
   // ============================================================================
@@ -337,6 +395,7 @@ module.exports = class LevelProgressBar {
    * 3.1 PLUGIN LIFECYCLE
    */
   start() {
+    this._isStopped = false;
     this.debugLog('START', 'Plugin starting');
     this.initializeWebpackModules();
     this.loadSettings();
@@ -348,7 +407,7 @@ module.exports = class LevelProgressBar {
 
     // If subscription failed, retry after a short delay (SoloLevelingStats might still be loading)
     if (this.eventUnsubscribers.length === 0) {
-      setTimeout(() => {
+      this._setTrackedTimeout(() => {
         this.subscribeToEvents();
         // If still no events after retry, use fallback polling
         if (this.eventUnsubscribers.length === 0) {
@@ -367,12 +426,25 @@ module.exports = class LevelProgressBar {
   }
 
   stop() {
+    this._isStopped = true;
     this.debugLog('STOP', 'Plugin stopping');
     this.unsubscribeFromEvents();
     this.stopUpdating();
+    this._clearTrackedTimeouts();
+    if (this._updateRafId) {
+      cancelAnimationFrame(this._updateRafId);
+      this._updateRafId = null;
+      this._updateQueued = false;
+    }
+    this.detachLevelProgressBarSettingsPanelHandlers?.();
     if (this.shadowPowerUpdateInterval) {
       clearInterval(this.shadowPowerUpdateInterval);
       this.shadowPowerUpdateInterval = null;
+    }
+    if (this._shadowPowerRefreshRafId) {
+      cancelAnimationFrame(this._shadowPowerRefreshRafId);
+      this._shadowPowerRefreshRafId = null;
+      this._shadowPowerRefreshQueued = false;
     }
 
     // Cleanup webpack patches and React injection
@@ -395,6 +467,15 @@ module.exports = class LevelProgressBar {
 
     this.removeProgressBar();
     this.removeCSS();
+
+    // Clear all caches
+    this._cache.soloLevelingData = null;
+    this._cache.soloLevelingDataTime = 0;
+    this._cache.soloPluginInstance = null;
+    this._cache.soloPluginInstanceTime = 0;
+    this._cache.domElements = new Map();
+    this._cache.domElementsTime = 0;
+
     this.debugLog('STOP', 'Plugin stopped successfully');
   }
 
@@ -433,46 +514,89 @@ module.exports = class LevelProgressBar {
     }
   }
 
+  detachLevelProgressBarSettingsPanelHandlers() {
+    const root = this._settingsPanelRoot;
+    const handlers = this._settingsPanelHandlers;
+    if (root && handlers) {
+      root.removeEventListener('change', handlers.onChange);
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+  }
+
   getSettingsPanel() {
+    this.detachLevelProgressBarSettingsPanelHandlers();
+
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
       <div style="margin-bottom: 20px;">
         <h3 style="color: #8b5cf6; margin-bottom: 10px;">Level Progress Bar Settings</h3>
+
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.enabled ? 'checked' : ''} id="lpb-enabled">
+          <input type="checkbox" ${
+            this.settings.enabled ? 'checked' : ''
+          } data-lpb-setting="enabled">
           <span style="margin-left: 10px;">Enable Progress Bar</span>
         </label>
+
         <label style="display: block; margin-bottom: 10px;">
           <span style="display: block; margin-bottom: 5px;">Position:</span>
-          <select id="lpb-position" style="width: 100%; padding: 5px;">
+          <select data-lpb-setting="position" style="width: 100%; padding: 5px;">
             <option value="top" ${this.settings.position === 'top' ? 'selected' : ''}>Top</option>
             <option value="bottom" ${
               this.settings.position === 'bottom' ? 'selected' : ''
             }>Bottom</option>
           </select>
         </label>
+
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.showLevel ? 'checked' : ''} id="lpb-show-level">
+          <input type="checkbox" ${
+            this.settings.showLevel ? 'checked' : ''
+          } data-lpb-setting="showLevel">
           <span style="margin-left: 10px;">Show Level</span>
         </label>
+
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.showRank ? 'checked' : ''} id="lpb-show-rank">
+          <input type="checkbox" ${
+            this.settings.showRank ? 'checked' : ''
+          } data-lpb-setting="showRank">
           <span style="margin-left: 10px;">Show Rank</span>
         </label>
+
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.showXP ? 'checked' : ''} id="lpb-show-xp">
+          <input type="checkbox" ${this.settings.showXP ? 'checked' : ''} data-lpb-setting="showXP">
           <span style="margin-left: 10px;">Show XP</span>
         </label>
+
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.compact ? 'checked' : ''} id="lpb-compact">
+          <input type="checkbox" ${
+            this.settings.compact ? 'checked' : ''
+          } data-lpb-setting="compact">
           <span style="margin-left: 10px;">Compact Mode</span>
         </label>
+
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${
+            this.settings.integratedLevelUpAnimation ? 'checked' : ''
+          } data-lpb-setting="integratedLevelUpAnimation">
+          <span style="margin-left: 10px;">Integrated Level Up Animation</span>
+        </label>
+
+        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
+          <input type="checkbox" ${
+            this.settings.showShimmer ? 'checked' : ''
+          } data-lpb-setting="showShimmer">
+          <span style="margin-left: 10px;">Shimmer Effect</span>
+        </label>
+
         <!-- Opacity removed - fixed at 100% (1.0) for better visibility -->
         <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(139, 92, 246, 0.3);">
         <h4 style="color: #8b5cf6; margin-bottom: 10px;">Developer Options</h4>
         <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="lpb-debug-mode">
+          <input type="checkbox" ${
+            this.settings.debugMode ? 'checked' : ''
+          } data-lpb-setting="debugMode">
           <span style="margin-left: 10px;">Debug Mode</span>
         </label>
         <p style="font-size: 12px; color: #888; margin-top: 5px;">
@@ -481,74 +605,74 @@ module.exports = class LevelProgressBar {
       </div>
     `;
 
-    // FUNCTIONAL: Event listener mapper (NO REPETITION!)
-    const eventMap = {
-      '#lpb-enabled': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.enabled = e.target.checked;
+    const onChange = (event) => {
+      const target = event.target;
+      const key = target?.getAttribute?.('data-lpb-setting');
+      if (!key) return;
+
+      const nextValue = target.type === 'checkbox' ? target.checked : target.value;
+
+      const handlers = {
+        enabled: (value) => {
+          this.settings.enabled = !!value;
           this.saveSettings();
-          // Functional ternary instead of if-else
-          e.target.checked
-            ? (this.createProgressBar(), this.startUpdating())
-            : (this.removeProgressBar(), this.stopUpdating());
+          value
+            ? (this.createProgressBar(),
+              this.subscribeToEvents() || this.startUpdating(),
+              this.queueProgressBarUpdate())
+            : (this.unsubscribeFromEvents(),
+              this.stopUpdating(),
+              this.removeProgressBar(),
+              this.removeLevelUpOverlay());
         },
-      },
-      '#lpb-position': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.position = e.target.value;
+        position: (value) => {
+          this.settings.position = value;
           this.saveSettings();
           this.updateProgressBarPosition();
+          this.queueProgressBarUpdate();
         },
-      },
-      '#lpb-show-level': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.showLevel = e.target.checked;
+        showLevel: (value) => {
+          this.settings.showLevel = !!value;
           this.saveSettings();
-          this.updateProgressBar();
+          this.queueProgressBarUpdate();
         },
-      },
-      '#lpb-show-rank': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.showRank = e.target.checked;
+        showRank: (value) => {
+          this.settings.showRank = !!value;
           this.saveSettings();
-          this.updateProgressBar();
+          this.queueProgressBarUpdate();
         },
-      },
-      '#lpb-show-xp': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.showXP = e.target.checked;
+        showXP: (value) => {
+          this.settings.showXP = !!value;
           this.saveSettings();
-          this.updateProgressBar();
+          this.queueProgressBarUpdate();
         },
-      },
-      '#lpb-compact': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.compact = e.target.checked;
+        compact: (value) => {
+          this.settings.compact = !!value;
           this.saveSettings();
-          this.updateProgressBar();
+          this.queueProgressBarUpdate();
         },
-      },
-      // Opacity setting removed - fixed at 100% (1.0)
-      '#lpb-debug-mode': {
-        event: 'change',
-        handler: (e) => {
-          this.settings.debugMode = e.target.checked;
+        integratedLevelUpAnimation: (value) => {
+          this.settings.integratedLevelUpAnimation = !!value;
           this.saveSettings();
-          console.log('[SETTINGS] Debug mode:', e.target.checked ? 'ENABLED' : 'DISABLED');
         },
-      },
+        showShimmer: (value) => {
+          this.settings.showShimmer = !!value;
+          this.saveSettings();
+          this.queueProgressBarUpdate();
+        },
+        debugMode: (value) => {
+          this.settings.debugMode = !!value;
+          this.saveSettings();
+          console.log('[LevelProgressBar] Debug mode:', value ? 'ENABLED' : 'DISABLED');
+        },
+      };
+
+      (handlers[key] || (() => {}))(nextValue);
     };
 
-    // Attach all event listeners functionally
-    Object.entries(eventMap).forEach(([selector, { event, handler }]) => {
-      panel.querySelector(selector)?.addEventListener(event, handler);
-    });
+    panel.addEventListener('change', onChange);
+    this._settingsPanelRoot = panel;
+    this._settingsPanelHandlers = { onChange };
 
     return panel;
   }
@@ -627,8 +751,8 @@ module.exports = class LevelProgressBar {
         width: 800px;
         height: 12px;
         background: rgba(20, 20, 30, 0.8);
-        border-radius: 6px;
-        overflow: visible;
+        border-radius: 999px;
+        overflow: hidden;
         position: relative;
         border: none !important;
         box-shadow: none !important;
@@ -651,6 +775,64 @@ module.exports = class LevelProgressBar {
         padding: 6px 12px;
       }
 
+      /* Consolidated level-up animation (owned by LevelProgressBar) */
+      .lpb-levelup-overlay {
+        position: fixed;
+        left: 0;
+        right: 0;
+        pointer-events: none;
+        z-index: 999998;
+      }
+
+      .lpb-levelup-overlay.top {
+        top: 0;
+      }
+
+      .lpb-levelup-overlay.bottom {
+        bottom: 0;
+      }
+
+      .lpb-levelup-banner {
+        position: absolute;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 16px;
+        border-radius: 10px;
+        background: rgba(10, 10, 15, 0.92);
+        border: 1px solid rgba(139, 92, 246, 0.55);
+        color: #a78bfa;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        box-shadow: 0 10px 30px rgba(139, 92, 246, 0.25);
+        text-shadow: 0 0 10px rgba(167, 139, 250, 0.6);
+        animation: lpb-levelup-pop 1200ms ease-out forwards;
+        will-change: transform, opacity;
+      }
+
+      .lpb-levelup-overlay.top .lpb-levelup-banner {
+        top: 38px;
+      }
+
+      .lpb-levelup-overlay.bottom .lpb-levelup-banner {
+        bottom: 38px;
+      }
+
+      @keyframes lpb-levelup-pop {
+        0% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(0) scale(0.75);
+        }
+        15% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0) scale(1.05);
+        }
+        100% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-14px) scale(1);
+        }
+      }
+
       /* XP glow animation disabled */
       .lpb-progress-fill.lpb-xp-gain {
         animation: none !important;
@@ -666,13 +848,16 @@ module.exports = class LevelProgressBar {
       }
 
       .lpb-progress-fill {
+        width: 100%;
         height: 100%;
         background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 50%, #6d28d9 100%);
-        border-radius: 6px;
-        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        border-radius: inherit;
+        transform-origin: left center;
+        transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
         overflow: hidden;
         box-shadow: 0 0 10px rgba(139, 92, 246, 0.5), inset 0 0 20px rgba(167, 139, 250, 0.3);
+        will-change: transform;
       }
 
       /* Shimmer animation overlay */
@@ -680,17 +865,40 @@ module.exports = class LevelProgressBar {
         content: '';
         position: absolute;
         top: 0;
-        left: -100%;
-        width: 100%;
+        left: -140%;
+        width: 140%;
         height: 100%;
         background: linear-gradient(
           90deg,
           transparent 0%,
-          rgba(255, 255, 255, 0.3) 50%,
+          rgba(255, 255, 255, 0.45) 50%,
           transparent 100%
         );
         animation: lpb-shimmer 2s infinite;
         display: block !important;
+        mix-blend-mode: screen;
+      }
+
+      /* Optional shimmer toggle + reduced motion support */
+      .lpb-progress-bar.lpb-no-shimmer .lpb-progress-fill::before {
+        animation: none !important;
+        display: none !important;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .lpb-progress-fill {
+          transition: none !important;
+        }
+        .lpb-progress-fill::before {
+          /* Respect reduced-motion for movement-heavy effects, but keep shimmer available
+             (user preference may still want shimmer). Slow it down instead of disabling. */
+          animation-duration: 4s !important;
+          opacity: 0.25;
+        }
+        .lpb-levelup-banner {
+          animation: none !important;
+          opacity: 0;
+        }
       }
 
       /* XP gain pulse animation */
@@ -883,6 +1091,9 @@ module.exports = class LevelProgressBar {
 
       // Initialize progress bar (common setup)
       this.initializeProgressBar();
+
+      // Invalidate DOM cache since new elements were created
+      this.invalidateDOMCache();
     } catch (error) {
       this.debugError('CREATE_BAR', error);
     }
@@ -893,7 +1104,11 @@ module.exports = class LevelProgressBar {
       this.progressBar.remove();
       this.progressBar = null;
       this.debugLog('REMOVE_BAR', 'Progress bar removed');
+
+      // Invalidate DOM cache since elements were removed
+      this.invalidateDOMCache();
     }
+    this.removeLevelUpOverlay();
   }
 
   /**
@@ -906,6 +1121,8 @@ module.exports = class LevelProgressBar {
         position: this.settings.position,
       });
     }
+    const overlay = document.getElementById('lpb-levelup-overlay');
+    overlay && (overlay.className = `lpb-levelup-overlay ${this.settings.position}`);
   }
 
   /**
@@ -913,25 +1130,59 @@ module.exports = class LevelProgressBar {
    * @returns {Object|null} - Object with instance and levelInfo, or null if unavailable
    */
   getSoloLevelingData() {
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.soloLevelingData &&
+      this._cache.soloLevelingDataTime &&
+      now - this._cache.soloLevelingDataTime < this._cache.soloLevelingDataTTL
+    ) {
+      return this._cache.soloLevelingData;
+    }
+
     try {
       // Check if plugin is enabled before accessing
       if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
         this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not enabled');
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = now;
         return null;
       }
 
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) {
-        this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not found');
-        return null;
+      // Cache plugin instance to avoid repeated lookups
+      let soloPlugin = null;
+      let instance = null;
+
+      if (
+        this._cache.soloPluginInstance &&
+        this._cache.soloPluginInstanceTime &&
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+      ) {
+        instance = this._cache.soloPluginInstance;
+      } else {
+        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+        if (!soloPlugin) {
+          this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not found');
+          this._cache.soloLevelingData = null;
+          this._cache.soloLevelingDataTime = now;
+          this._cache.soloPluginInstance = null;
+          this._cache.soloPluginInstanceTime = 0;
+          return null;
+        }
+
+        instance = soloPlugin.instance || soloPlugin;
+        // Cache the instance
+        this._cache.soloPluginInstance = instance;
+        this._cache.soloPluginInstanceTime = now;
       }
 
-      const instance = soloPlugin.instance || soloPlugin;
       if (!instance?.getCurrentLevel) {
         this.debugLog('GET_SOLO_DATA', 'Instance or method not found', {
           hasInstance: !!instance,
           hasMethod: !!(instance && instance.getCurrentLevel),
         });
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = now;
         return null;
       }
 
@@ -939,6 +1190,8 @@ module.exports = class LevelProgressBar {
       const levelInfo = instance.getCurrentLevel();
       if (!levelInfo) {
         this.debugLog('GET_SOLO_DATA', 'Level info not available');
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = now;
         return null;
       }
 
@@ -954,13 +1207,21 @@ module.exports = class LevelProgressBar {
         totalXP: instance.settings?.totalXP,
       });
 
-      return {
+      const result = {
         instance,
         levelInfo,
         rank: rank,
       };
+
+      // Cache the result
+      this._cache.soloLevelingData = result;
+      this._cache.soloLevelingDataTime = now;
+
+      return result;
     } catch (error) {
       this.debugError('GET_SOLO_DATA', error);
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = now;
       return null;
     }
   }
@@ -968,6 +1229,105 @@ module.exports = class LevelProgressBar {
   // ============================================================================
   // PROGRESS BAR UPDATE METHODS
   // ============================================================================
+
+  /**
+   * Get cached DOM element or query and cache it
+   * @param {string} selector - CSS selector
+   * @param {Element} container - Container to search in (default: this.progressBar)
+   * @returns {Element|null} - Cached or queried element
+   */
+  getCachedElement(selector, container = null) {
+    const now = Date.now();
+    const cacheKey = selector;
+    const targetContainer = container || this.progressBar;
+    const cache = this._cache.domElements;
+
+    // Refresh cache if invalid or older than TTL
+    if (
+      !cache.get(cacheKey) ||
+      !targetContainer ||
+      !targetContainer.contains(cache.get(cacheKey)) ||
+      now - this._cache.domElementsTime > this._cache.domElementsTTL
+    ) {
+      if (!targetContainer) {
+        return null;
+      }
+      const element = targetContainer.querySelector(selector);
+      if (element) {
+        cache.set(cacheKey, element);
+        this._cache.domElementsTime = now;
+      } else {
+        cache.delete(cacheKey);
+      }
+      return element;
+    }
+
+    return cache.get(cacheKey);
+  }
+
+  /**
+   * Invalidate DOM element cache
+   */
+  invalidateDOMCache() {
+    this._cache.domElements = new Map();
+    this._cache.domElementsTime = 0;
+  }
+
+  /**
+   * Track timeouts so they can be cleared on stop() and avoid work-after-stop.
+   */
+  _setTrackedTimeout(callback, delayMs) {
+    const wrapped = () => {
+      this._trackedTimeouts.delete(timeoutId);
+      !this._isStopped && callback();
+    };
+
+    const timeoutId = setTimeout(wrapped, delayMs);
+    this._trackedTimeouts.add(timeoutId);
+    return timeoutId;
+  }
+
+  _clearTrackedTimeouts() {
+    this._trackedTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._trackedTimeouts.clear();
+  }
+
+  /**
+   * Coalesce rapid update bursts (events + DOM) to once-per-frame.
+   */
+  queueProgressBarUpdate() {
+    if (this._isStopped) return;
+    if (this._updateQueued) return;
+    this._updateQueued = true;
+    this._updateRafId = requestAnimationFrame(() => {
+      this._updateQueued = false;
+      this._updateRafId = null;
+      !this._isStopped && this.updateProgressBar();
+    });
+  }
+
+  getPrefersReducedMotion() {
+    if (typeof this._prefersReducedMotion === 'boolean') return this._prefersReducedMotion;
+    try {
+      this._prefersReducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)')
+        ?.matches;
+    } catch (_) {
+      this._prefersReducedMotion = false;
+    }
+    return this._prefersReducedMotion;
+  }
+
+  queueShadowPowerRefresh() {
+    if (this._isStopped) return;
+    if (this._shadowPowerRefreshQueued) return;
+    this._shadowPowerRefreshQueued = true;
+    this._shadowPowerRefreshRafId = requestAnimationFrame(() => {
+      this._shadowPowerRefreshQueued = false;
+      this._shadowPowerRefreshRafId = null;
+      !this._isStopped && this.refreshProgressText();
+    });
+  }
+
   /**
    * Update progress bar with current data
    */
@@ -1019,30 +1379,41 @@ module.exports = class LevelProgressBar {
 
       this.lastLevel = currentLevel;
       this.lastXP = currentXP;
+      this.lastXPRequired = xpRequired;
 
       // Update progress text (single line format matching SoloLevelingStats)
       this.updateProgressText(rank, currentLevel, currentXP, xpRequired);
 
       // Update progress fill animation
-      const progressFill = this.progressBar.querySelector('#lpb-progress-fill');
+      const progressFill = this.getCachedElement('#lpb-progress-fill');
       if (progressFill) {
-        progressFill.style.width = `${xpPercent}%`;
+        progressFill.style.transform = `scaleX(${Math.max(0, Math.min(xpPercent / 100, 1))})`;
         // Add XP gain animation class temporarily
         progressFill.classList.add('lpb-xp-gain');
-        setTimeout(() => {
+        this._setTrackedTimeout(() => {
           progressFill.classList.remove('lpb-xp-gain');
         }, 600);
       }
 
       // Update milestone markers
-      const progressTrack = this.progressBar.querySelector('.lpb-progress-track');
+      const progressTrack = this.getCachedElement('.lpb-progress-track');
       if (progressTrack) {
-        this.updateMilestoneMarkers(progressTrack, xpPercent);
+        const milestones = [25, 50, 75];
+        const mask = milestones.reduce(
+          (acc, milestone, index) => (xpPercent >= milestone - 1 ? acc | (1 << index) : acc),
+          0
+        );
+        if (mask !== this._lastMilestoneMask) {
+          this._lastMilestoneMask = mask;
+          this.updateMilestoneMarkers(progressTrack, xpPercent);
+        }
       }
 
       // FUNCTIONAL: Update compact class using classList.toggle (NO IF-ELSE!)
-      const bar = this.progressBar.querySelector('.lpb-progress-bar');
+      const bar = this.getCachedElement('.lpb-progress-bar');
       bar?.classList.toggle('compact', this.settings.compact);
+      const shouldDisableShimmer = !this.settings.showShimmer || this.getPrefersReducedMotion();
+      bar?.classList.toggle('lpb-no-shimmer', shouldDisableShimmer);
 
       this.debugLog('UPDATE_BAR', 'Progress bar updated successfully', {
         level: currentLevel,
@@ -1060,6 +1431,42 @@ module.exports = class LevelProgressBar {
         enabled: this.settings.enabled,
       });
     }
+  }
+
+  getOrCreateLevelUpOverlay() {
+    const existing = document.getElementById('lpb-levelup-overlay');
+    if (existing) {
+      existing.className = `lpb-levelup-overlay ${this.settings.position}`;
+      return existing;
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'lpb-levelup-overlay';
+    overlay.className = `lpb-levelup-overlay ${this.settings.position}`;
+    (document.body || document.documentElement).appendChild(overlay);
+    return overlay;
+  }
+
+  removeLevelUpOverlay() {
+    const overlay = document.getElementById('lpb-levelup-overlay');
+    overlay?.remove();
+  }
+
+  showIntegratedLevelUpAnimation({ newLevel, oldLevel }) {
+    if (this._isStopped) return;
+    if (!this.settings.integratedLevelUpAnimation) return;
+
+    const overlay = this.getOrCreateLevelUpOverlay();
+
+    // Keep this lightweight: one banner node + one cleanup timeout
+    const banner = document.createElement('div');
+    banner.className = 'lpb-levelup-banner';
+    banner.textContent = `Level Up: Lv.${newLevel}`;
+    overlay.appendChild(banner);
+
+    this._setTrackedTimeout(() => banner.remove(), 1300);
+
+    this.debugLog('LEVEL_UP', 'Integrated animation shown', { newLevel, oldLevel });
   }
 
   /**
@@ -1132,7 +1539,7 @@ module.exports = class LevelProgressBar {
     if (!this.progressBar) return;
 
     // Update shadow power display (power only, no count)
-    const shadowPowerEl = this.progressBar.querySelector('#lpb-shadow-power');
+    const shadowPowerEl = this.getCachedElement('#lpb-shadow-power');
 
     if (shadowPowerEl) {
       // Format: "Shadow Army Power: 1,234,567"
@@ -1161,7 +1568,7 @@ module.exports = class LevelProgressBar {
    */
   updateProgressText(rank, level, xp, xpRequired) {
     try {
-      const progressText = this.progressBar?.querySelector('#lpb-progress-text');
+      const progressText = this.getCachedElement('#lpb-progress-text');
       if (!progressText) {
         this.debugLog('UPDATE_TEXT', 'Progress text element not found');
         return;
@@ -1218,20 +1625,34 @@ module.exports = class LevelProgressBar {
         hasInstance: !!instance,
         hasOnMethod: !!(instance && typeof instance.on === 'function'),
       });
+      // Without events, enable shadow power polling as a fallback.
+      this.startShadowPowerPolling();
+      // Still attach DOM CustomEvent listeners (works even if instance.on is unavailable)
+      this.subscribeToDomEvents();
       return false;
     }
+
+    // Always attach DOM CustomEvent listeners as a redundant path
+    // (prevents “bar not responding” if instance subscription is flaky)
+    this.subscribeToDomEvents();
 
     // Subscribe to XP changed events (fires on any XP change)
     const unsubscribeXP = instance.on('xpChanged', (data) => {
       this.debugLog('EVENT_XP_CHANGED', 'XP changed event received', data);
+      // Invalidate cache since data changed
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
       // Update immediately - no polling needed
-      this.updateProgressBar();
+      this.queueProgressBarUpdate();
     });
     this.eventUnsubscribers.push(unsubscribeXP);
 
     // Subscribe to level changed events
     const unsubscribeLevel = instance.on('levelChanged', (data) => {
       this.debugLog('EVENT_LEVEL_CHANGED', 'Level changed event received', data);
+      // Invalidate cache since level changed
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
       // CRITICAL: Force update by resetting cached values when level changes
       // This ensures progress bar updates correctly even if XP appears unchanged
       if (data && data.newLevel !== undefined && data.newLevel !== this.lastLevel) {
@@ -1240,44 +1661,64 @@ module.exports = class LevelProgressBar {
         this.lastXPRequired = null; // Force update
       }
       // Update immediately - no polling needed
-      this.updateProgressBar();
+      this.queueProgressBarUpdate();
+
+      // Consolidated: show level-up animation here (prevents duplicate work in updateProgressBar)
+      if (
+        this.settings.integratedLevelUpAnimation &&
+        data &&
+        typeof data.newLevel === 'number' &&
+        typeof data.oldLevel === 'number' &&
+        data.newLevel > data.oldLevel
+      ) {
+        this.showIntegratedLevelUpAnimation({ newLevel: data.newLevel, oldLevel: data.oldLevel });
+      }
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
 
     // Subscribe to rank changed events
     const unsubscribeRank = instance.on('rankChanged', (data) => {
       this.debugLog('EVENT_RANK_CHANGED', 'Rank changed event received', data);
+      // Invalidate cache since rank changed
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
       // Update immediately - no polling needed
-      this.updateProgressBar();
+      this.queueProgressBarUpdate();
     });
     this.eventUnsubscribers.push(unsubscribeRank);
 
     // Subscribe to stats changed events (when stats are allocated)
     const unsubscribeStats = instance.on('statsChanged', (data) => {
       this.debugLog('EVENT_STATS_CHANGED', 'Stats changed event received', data);
+      // Invalidate cache since stats changed (might affect calculations)
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
       // Update immediately to reflect any stat-based changes
       // Note: Stats don't directly affect progress bar, but update to ensure sync
-      this.updateProgressBar();
+      this.queueProgressBarUpdate();
     });
     this.eventUnsubscribers.push(unsubscribeStats);
 
     // Subscribe to shadow power changed events for real-time updates
-    const unsubscribeShadowPower = instance.on('shadowPowerChanged', async (data) => {
+    const unsubscribeShadowPower = instance.on('shadowPowerChanged', (data) => {
       this.debugLog('EVENT_SHADOW_POWER_CHANGED', 'Shadow power changed event received', data);
       try {
-        // Update shadow power immediately
+        // Update shadow power immediately (coalesced UI refresh)
         if (data && data.shadowPower) {
           this.cachedShadowPower = data.shadowPower;
-          await this.refreshProgressText();
+          this.queueShadowPowerRefresh();
         } else {
           // Trigger update to get latest value
-          await this.updateShadowPower();
+          this.updateShadowPower();
         }
       } catch (error) {
         this.debugError('EVENT_SHADOW_POWER_CHANGED', error);
       }
     });
     this.eventUnsubscribers.push(unsubscribeShadowPower);
+
+    // If we successfully subscribed to shadow power events, disable polling.
+    this.stopShadowPowerPolling();
 
     // Log successful subscription (always log, not just debug)
     console.log(
@@ -1289,9 +1730,71 @@ module.exports = class LevelProgressBar {
     });
 
     // Initial update
-    this.updateProgressBar();
+    this.queueProgressBarUpdate();
+    this.stopShadowPowerPolling();
 
     return true;
+  }
+
+  subscribeToDomEvents() {
+    // Don't subscribe twice (use same storage as regular event unsubs)
+    if (this._domEventSubscribed) return;
+    this._domEventSubscribed = true;
+
+    const onXp = () => {
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+      this.queueProgressBarUpdate();
+    };
+    const onLevel = (event) => {
+      const data = event?.detail;
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+      if (data && typeof data.newLevel === 'number' && data.newLevel !== this.lastLevel) {
+        this.lastLevel = null;
+        this.lastXP = null;
+        this.lastXPRequired = null;
+      }
+      this.queueProgressBarUpdate();
+    };
+    const onRank = () => {
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+      this.queueProgressBarUpdate();
+    };
+    const onStats = () => {
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+      this.queueProgressBarUpdate();
+    };
+    const onShadowPower = (event) => {
+      const data = event?.detail;
+      try {
+        if (data && data.shadowPower) {
+          this.cachedShadowPower = data.shadowPower;
+          this.queueShadowPowerRefresh();
+        } else {
+          this.updateShadowPower();
+        }
+      } catch (error) {
+        this.debugError('DOM_EVENT_SHADOW_POWER', error);
+      }
+    };
+
+    document.addEventListener('SoloLevelingStats:xpChanged', onXp);
+    document.addEventListener('SoloLevelingStats:levelChanged', onLevel);
+    document.addEventListener('SoloLevelingStats:rankChanged', onRank);
+    document.addEventListener('SoloLevelingStats:statsChanged', onStats);
+    document.addEventListener('SoloLevelingStats:shadowPowerChanged', onShadowPower);
+
+    this.eventUnsubscribers.push(() => {
+      document.removeEventListener('SoloLevelingStats:xpChanged', onXp);
+      document.removeEventListener('SoloLevelingStats:levelChanged', onLevel);
+      document.removeEventListener('SoloLevelingStats:rankChanged', onRank);
+      document.removeEventListener('SoloLevelingStats:statsChanged', onStats);
+      document.removeEventListener('SoloLevelingStats:shadowPowerChanged', onShadowPower);
+      this._domEventSubscribed = false;
+    });
   }
 
   /**
@@ -1322,12 +1825,13 @@ module.exports = class LevelProgressBar {
 
     // Only use polling as fallback - slower interval since events should handle most updates
     this.updateInterval = setInterval(() => {
-      this.updateProgressBar();
+      this.queueProgressBarUpdate();
     }, this.settings.updateInterval || 5000); // Default to 5 seconds for fallback
 
     this.debugLog('START_UPDATE', 'Fallback polling started', {
       interval: this.settings.updateInterval || 5000,
     });
+    this.startShadowPowerPolling();
   }
 
   stopUpdating() {
@@ -1336,6 +1840,21 @@ module.exports = class LevelProgressBar {
       this.updateInterval = null;
       this.debugLog('STOP_UPDATE', 'Update interval stopped');
     }
+  }
+
+  startShadowPowerPolling() {
+    if (this.shadowPowerUpdateInterval) return;
+    this.shadowPowerUpdateInterval = setInterval(() => {
+      this.updateShadowPower().catch(() => {});
+    }, 30000);
+    this.debugLog('SHADOW_POWER_POLL', 'Shadow power polling enabled', { intervalMs: 30000 });
+  }
+
+  stopShadowPowerPolling() {
+    if (!this.shadowPowerUpdateInterval) return;
+    clearInterval(this.shadowPowerUpdateInterval);
+    this.shadowPowerUpdateInterval = null;
+    this.debugLog('SHADOW_POWER_POLL', 'Shadow power polling disabled');
   }
 
   /**
@@ -1375,7 +1894,7 @@ module.exports = class LevelProgressBar {
       sparkle.style.animationDelay = `${i * 0.2}s`;
       progressTrack.appendChild(sparkle);
 
-      setTimeout(() => sparkle.remove(), 2000);
+      this._setTrackedTimeout(() => sparkle.remove(), 2000);
       return sparkle;
     });
   }

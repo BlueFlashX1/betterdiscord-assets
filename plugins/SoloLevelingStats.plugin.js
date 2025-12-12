@@ -264,8 +264,11 @@ module.exports = class SoloLevelingStats {
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
+    this._pendingSendFallback = null;
     this.processedMessageIds = new Set();
-    this.recentMessages = new Set(); // Track recently processed messages to prevent duplicates
+    // Track recently processed messages to prevent duplicates
+    // Must be a Map (hashKey -> timestamp). Some older versions used Set; guard in processMessageSent.
+    this.recentMessages = new Map();
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
@@ -1285,6 +1288,22 @@ module.exports = class SoloLevelingStats {
         this.debugError('EVENT_EMIT', error, { eventName, callback: callback.name || 'anonymous' });
       }
     });
+
+    // Secondary event channel: DOM CustomEvent for cross-plugin reliability
+    // (Some plugins may not have direct access to this instance's on/off methods in all BD environments)
+    try {
+      const CustomEventCtor = typeof window !== 'undefined' ? window.CustomEvent : null;
+      typeof document?.dispatchEvent === 'function' &&
+        typeof CustomEventCtor === 'function' &&
+        document.dispatchEvent(
+          new CustomEventCtor(`SoloLevelingStats:${eventName}`, {
+            detail: data,
+          })
+        );
+    } catch (error) {
+      // Never allow event dispatch to break game loop
+      this.debugError('EVENT_EMIT', error, { eventName, phase: 'custom_event_dispatch' });
+    }
   }
 
   emitXPChanged() {
@@ -1538,6 +1557,15 @@ module.exports = class SoloLevelingStats {
         // Process message for XP/quest tracking
         const messageText = message.content || '';
         const messageLength = messageText.length;
+
+        // Clear pending input fallback if this store message matches
+        const pending = this._pendingSendFallback;
+        if (pending && typeof pending.hash === 'number') {
+          const hash = this.hashString(messageText.substring(0, 2000));
+          hash === pending.hash &&
+            Date.now() - pending.at < 2000 &&
+            (this._pendingSendFallback = null);
+        }
 
         this.debugLog('MESSAGE_STORE', 'Processing message from store', {
           messageId: message.id,
@@ -2391,8 +2419,39 @@ module.exports = class SoloLevelingStats {
 
       const handleKeyDown = (event) => {
         if (event.key === 'Enter' && !event.shiftKey) {
-          // Avoid double-processing when Webpack patches are the source of truth
-          if (this.webpackModuleAccess && this.messageStorePatch) return;
+          // If webpack patches are enabled, prefer store-based processing.
+          // BUT: some Discord builds don't provide full message objects at patch time.
+          // Fallback: if store-based path doesn't confirm within a short window, process via input text.
+          if (this.webpackModuleAccess && this.messageStorePatch) {
+            let messageText = '';
+            try {
+              messageText =
+                (messageInput.textContent && messageInput.textContent.trim()) ||
+                (messageInput.innerText && messageInput.innerText.trim()) ||
+                lastInputValue.trim();
+            } catch (e) {
+              messageText = lastInputValue.trim();
+            }
+
+            if (!messageText) return;
+
+            const hash = this.hashString(messageText.substring(0, 2000));
+            this._pendingSendFallback = { at: Date.now(), hash };
+
+            this._messageProcessTimeouts = this._messageProcessTimeouts || new Set();
+            const fallbackTimeoutId = setTimeout(() => {
+              this._messageProcessTimeouts?.delete(fallbackTimeoutId);
+              if (!this._isRunning) return;
+              const pending = this._pendingSendFallback;
+              if (!pending || pending.hash !== hash) return;
+
+              // No store confirmation observed -> award XP via input path
+              this._pendingSendFallback = null;
+              this.processMessageSent(messageText);
+            }, 350);
+            this._messageProcessTimeouts.add(fallbackTimeoutId);
+            return;
+          }
 
           let messageText = '';
           try {
@@ -2441,12 +2500,19 @@ module.exports = class SoloLevelingStats {
             });
 
             this.debugLog('INPUT_DETECTION', 'Processing message immediately');
-            setTimeout(() => {
+            this._messageProcessTimeouts = this._messageProcessTimeouts || new Set();
+
+            const processSendTimeoutId = setTimeout(() => {
+              this._messageProcessTimeouts?.delete(processSendTimeoutId);
+              if (!this._isRunning) return;
               this.processMessageSent(messageText);
               lastInputValue = '';
             }, 100);
+            this._messageProcessTimeouts.add(processSendTimeoutId);
 
-            setTimeout(() => {
+            const confirmSendTimeoutId = setTimeout(() => {
+              this._messageProcessTimeouts?.delete(confirmSendTimeoutId);
+              if (!this._isRunning) return;
               let currentValue = '';
               if (messageInput.tagName === 'TEXTAREA') {
                 currentValue = messageInput.value || '';
@@ -2459,6 +2525,7 @@ module.exports = class SoloLevelingStats {
                 this.debugLog('INPUT_DETECTION', 'Input still has content, may be editing');
               }
             }, 500);
+            this._messageProcessTimeouts.add(confirmSendTimeoutId);
           }
         }
       };
@@ -2466,7 +2533,15 @@ module.exports = class SoloLevelingStats {
       messageInput.addEventListener('input', handleInput, true);
       messageInput.addEventListener('keydown', handleKeyDown, true);
 
-      const handlePaste = () => setTimeout(handleInput, 50);
+      const handlePaste = () => {
+        this._messageProcessTimeouts = this._messageProcessTimeouts || new Set();
+        const pasteTimeoutId = setTimeout(() => {
+          this._messageProcessTimeouts?.delete(pasteTimeoutId);
+          if (!this._isRunning) return;
+          handleInput();
+        }, 50);
+        this._messageProcessTimeouts.add(pasteTimeoutId);
+      };
       messageInput.addEventListener('paste', handlePaste, true);
 
       const inputObserver = new MutationObserver(() => {
@@ -2761,7 +2836,9 @@ module.exports = class SoloLevelingStats {
       const hashKey = `msg_${this.hashString(messageText.substring(0, 2000))}`;
 
       // Check if we've processed this message recently (within last 2 seconds)
-      if (!this.recentMessages) this.recentMessages = new Map();
+      // Defensive: ensure Map semantics even if an older version left a Set here
+      (!this.recentMessages || typeof this.recentMessages.get !== 'function') &&
+        (this.recentMessages = new Map());
 
       // Prune old entries (keep window bounded)
       if (this.recentMessages.size > 100) {

@@ -113,6 +113,17 @@ module.exports = class SoloLevelingTitleManager {
     this._retryTimeouts = new Set();
     this._isStopped = false;
 
+    // Settings panel binding (delegated) references for cleanup
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+
+    // Toolbar cache (avoid repeated full-document scans)
+    this._toolbarCache = {
+      element: null,
+      time: 0,
+      ttl: 1500,
+    };
+
     // Store original history methods for defensive restoration
     this._originalPushState = null;
     this._originalReplaceState = null;
@@ -124,6 +135,33 @@ module.exports = class SoloLevelingTitleManager {
       ChannelStore: null,
     };
     this.webpackModuleAccess = false;
+
+    // Performance caches
+    this._cache = {
+      soloLevelingData: null,
+      soloLevelingDataTime: 0,
+      soloLevelingDataTTL: 100, // 100ms - data changes frequently
+      soloPluginInstance: null, // Cache plugin instance to avoid repeated lookups
+      soloPluginInstanceTime: 0,
+      soloPluginInstanceTTL: 5000, // 5s - plugin instance doesn't change often
+      achievementDefinitions: null, // Cache achievement definitions (large array)
+      achievementDefinitionsTime: 0,
+      achievementDefinitionsTTL: 2000, // 2s - definitions are static but expensive to fetch
+      titleBonuses: {}, // Cache title bonuses by title name
+      titleBonusesTime: {},
+      titleBonusesTTL: 5000, // 5s - title bonuses are static
+    };
+
+    // Titles that should not be shown/used (kept as a Set to avoid repeated allocations)
+    this._unwantedTitles = new Set([
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+    ]);
   }
 
   /**
@@ -173,24 +211,89 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   /**
+   * Stop-safe timeout helper (prevents work-after-stop + centralizes cleanup).
+   * @param {() => void} callback - Work to run later
+   * @param {number} delayMs - Delay in ms
+   * @returns {number} timeoutId
+   */
+  _setTrackedTimeout(callback, delayMs) {
+    const timeoutId = setTimeout(() => {
+      this._retryTimeouts.delete(timeoutId);
+      !this._isStopped && callback();
+    }, delayMs);
+    this._retryTimeouts.add(timeoutId);
+    return timeoutId;
+  }
+
+  detachTitleManagerSettingsPanelHandlers() {
+    const root = this._settingsPanelRoot;
+    const handlers = this._settingsPanelHandlers;
+    if (root && handlers) {
+      root.removeEventListener('change', handlers.onChange);
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+  }
+
+  /**
    * Get SoloLevelingStats data
    * @returns {Object|null} - SoloLevelingStats data or null if unavailable
    */
   getSoloLevelingData() {
-    try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.soloLevelingData &&
+      this._cache.soloLevelingDataTime &&
+      now - this._cache.soloLevelingDataTime < this._cache.soloLevelingDataTTL
+    ) {
+      return this._cache.soloLevelingData;
+    }
 
-      const instance = soloPlugin.instance || soloPlugin;
+    try {
+      // Cache plugin instance to avoid repeated lookups
+      let soloPlugin = null;
+      let instance = null;
+
+      if (
+        this._cache.soloPluginInstance &&
+        this._cache.soloPluginInstanceTime &&
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+      ) {
+        instance = this._cache.soloPluginInstance;
+      } else {
+        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+        if (!soloPlugin) {
+          this._cache.soloLevelingData = null;
+          this._cache.soloLevelingDataTime = now;
+          this._cache.soloPluginInstance = null;
+          this._cache.soloPluginInstanceTime = 0;
+          return null;
+        }
+
+        instance = soloPlugin.instance || soloPlugin;
+        // Cache the instance
+        this._cache.soloPluginInstance = instance;
+        this._cache.soloPluginInstanceTime = now;
+      }
+
       const achievements = instance.settings?.achievements || {};
 
-      return {
+      const result = {
         titles: achievements.titles || [],
         activeTitle: achievements.activeTitle || null,
         achievements: achievements,
       };
+
+      // Cache the result
+      this._cache.soloLevelingData = result;
+      this._cache.soloLevelingDataTime = now;
+
+      return result;
     } catch (error) {
       this.debugError('DATA', 'Error getting SoloLevelingStats data', error);
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = now;
       return null;
     }
   }
@@ -201,19 +304,74 @@ module.exports = class SoloLevelingTitleManager {
    * @returns {Object|null} - Title bonus object or null
    */
   getTitleBonus(titleName) {
+    if (!titleName) return null;
+
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.titleBonuses[titleName] &&
+      this._cache.titleBonusesTime[titleName] &&
+      now - this._cache.titleBonusesTime[titleName] < this._cache.titleBonusesTTL
+    ) {
+      return this._cache.titleBonuses[titleName];
+    }
+
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return null;
-      const instance = soloPlugin.instance || soloPlugin;
+      // Get or cache plugin instance
+      let instance = null;
+      if (
+        this._cache.soloPluginInstance &&
+        this._cache.soloPluginInstanceTime &&
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+      ) {
+        instance = this._cache.soloPluginInstance;
+      } else {
+        const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+        if (!soloPlugin) {
+          this._cache.titleBonuses[titleName] = null;
+          this._cache.titleBonusesTime[titleName] = now;
+          return null;
+        }
+
+        instance = soloPlugin.instance || soloPlugin;
+        // Cache the instance
+        this._cache.soloPluginInstance = instance;
+        this._cache.soloPluginInstanceTime = now;
+      }
+
+      // Cache achievement definitions (expensive operation)
+      let achievements = null;
+      if (
+        this._cache.achievementDefinitions &&
+        this._cache.achievementDefinitionsTime &&
+        now - this._cache.achievementDefinitionsTime < this._cache.achievementDefinitionsTTL
+      ) {
+        achievements = this._cache.achievementDefinitions;
+      } else {
+        if (instance.getAchievementDefinitions) {
+          achievements = instance.getAchievementDefinitions();
+          // Cache the definitions
+          this._cache.achievementDefinitions = achievements;
+          this._cache.achievementDefinitionsTime = now;
+        } else {
+          this._cache.titleBonuses[titleName] = null;
+          this._cache.titleBonusesTime[titleName] = now;
+          return null;
+        }
+      }
 
       // Find achievement with this title
-      if (instance.getAchievementDefinitions) {
-        const achievements = instance.getAchievementDefinitions();
-        const achievement = achievements.find((a) => a.title === titleName);
-        return achievement?.titleBonus || null;
-      }
-      return null;
+      const achievement = achievements.find((a) => a.title === titleName);
+      const result = achievement?.titleBonus || null;
+
+      // Cache the result
+      this._cache.titleBonuses[titleName] = result;
+      this._cache.titleBonusesTime[titleName] = now;
+
+      return result;
     } catch (error) {
+      this._cache.titleBonuses[titleName] = null;
+      this._cache.titleBonusesTime[titleName] = now;
       return null;
     }
   }
@@ -228,6 +386,97 @@ module.exports = class SoloLevelingTitleManager {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+  }
+
+  /**
+   * Build formatted bonus lines for a title.
+   * Centralized to avoid duplicated logic across equip toast + modal rendering.
+   * @param {any} bonus
+   * @returns {string[]} array of formatted bonus strings
+   */
+  formatTitleBonusLines(bonus) {
+    if (!bonus) return [];
+    const lines = [];
+
+    bonus.xp > 0 && lines.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
+    bonus.critChance > 0 && lines.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+
+    // Percent-based stat bonuses (new format)
+    bonus.strengthPercent > 0 && lines.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
+    bonus.agilityPercent > 0 && lines.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
+    bonus.intelligencePercent > 0 &&
+      lines.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
+    bonus.vitalityPercent > 0 && lines.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+    bonus.perceptionPercent > 0 &&
+      lines.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
+
+    // Raw-number stat bonuses (legacy format)
+    bonus.strength > 0 && !bonus.strengthPercent && lines.push(`+${bonus.strength} STR`);
+    bonus.agility > 0 && !bonus.agilityPercent && lines.push(`+${bonus.agility} AGI`);
+    bonus.intelligence > 0 &&
+      !bonus.intelligencePercent &&
+      lines.push(`+${bonus.intelligence} INT`);
+    bonus.vitality > 0 && !bonus.vitalityPercent && lines.push(`+${bonus.vitality} VIT`);
+    bonus.luck > 0 && !bonus.perceptionPercent && lines.push(`+${bonus.luck} LUK`);
+
+    return lines;
+  }
+
+  /**
+   * Render (or re-render) the title cards grid using DOM nodes (avoids innerHTML churn).
+   * @param {object} params
+   * @param {HTMLElement} params.titlesGrid
+   * @param {string[]} params.titles
+   * @param {string|null} params.activeTitle
+   */
+  renderTitlesGrid({ titlesGrid, titles, activeTitle }) {
+    if (!titlesGrid) return;
+    titlesGrid.replaceChildren();
+
+    const fragment = document.createDocumentFragment();
+    titles.forEach((title) => {
+      const isActive = title === activeTitle;
+      const bonus = this.getTitleBonus(title);
+      const buffs = this.formatTitleBonusLines(bonus);
+
+      const card = document.createElement('div');
+      card.className = `tm-title-card ${isActive ? 'active' : ''}`.trim();
+
+      const icon = document.createElement('div');
+      icon.className = 'tm-title-icon';
+      icon.textContent = '';
+
+      const name = document.createElement('div');
+      name.className = 'tm-title-name';
+      name.textContent = title;
+
+      card.appendChild(icon);
+      card.appendChild(name);
+
+      if (buffs.length > 0) {
+        const bonusEl = document.createElement('div');
+        bonusEl.className = 'tm-title-bonus';
+        bonusEl.textContent = buffs.join(', ');
+        card.appendChild(bonusEl);
+      }
+
+      if (isActive) {
+        const status = document.createElement('div');
+        status.className = 'tm-title-status';
+        status.textContent = 'Equipped';
+        card.appendChild(status);
+      } else {
+        const btn = document.createElement('button');
+        btn.className = 'tm-equip-btn';
+        btn.dataset.title = title;
+        btn.textContent = 'Equip';
+        card.appendChild(btn);
+      }
+
+      fragment.appendChild(card);
+    });
+
+    titlesGrid.appendChild(fragment);
   }
 
   /**
@@ -246,6 +495,114 @@ module.exports = class SoloLevelingTitleManager {
       perBonus: 'Perception %',
     };
     return labels[sortBy] || 'XP Gain';
+  }
+
+  /**
+   * Sort titles by the selected metric while avoiding repeated `getTitleBonus()` calls
+   * inside the comparator (precompute once per render).
+   * @param {object} params
+   * @param {string[]} params.titles
+   * @param {string} params.sortBy
+   * @returns {string[]} sorted titles (same array instance)
+   */
+  getSortedTitles({ titles, sortBy }) {
+    const sortValuePickers = {
+      xpBonus: (bonus) => bonus?.xp || 0,
+      critBonus: (bonus) => bonus?.critChance || 0,
+      strBonus: (bonus) => bonus?.strengthPercent || 0,
+      agiBonus: (bonus) => bonus?.agilityPercent || 0,
+      intBonus: (bonus) => bonus?.intelligencePercent || 0,
+      vitBonus: (bonus) => bonus?.vitalityPercent || 0,
+      perBonus: (bonus) => bonus?.perceptionPercent || 0,
+    };
+    const pickSortValue = sortValuePickers[sortBy] || sortValuePickers.xpBonus;
+
+    const sortValues = titles.reduce((acc, title) => {
+      acc[title] = pickSortValue(this.getTitleBonus(title));
+      return acc;
+    }, {});
+
+    return titles.sort((a, b) => (sortValues[b] || 0) - (sortValues[a] || 0));
+  }
+
+  isValidToolbarContainer(toolbar) {
+    if (!toolbar?.isConnected) return false;
+    const buttons = toolbar.querySelectorAll?.('[class*="button"]');
+    return !!buttons && buttons.length >= 4;
+  }
+
+  getToolbarContainer() {
+    const now = Date.now();
+    const cached = this._toolbarCache?.element;
+    const cacheFresh =
+      cached && this._toolbarCache.time && now - this._toolbarCache.time < this._toolbarCache.ttl;
+    if (cacheFresh && this.isValidToolbarContainer(cached)) {
+      return cached;
+    }
+
+    // Find Discord's button row - look for the container with keyboard, gift, GIF, emoji icons
+    // (same logic as before, but cached).
+    const buttonRow =
+      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
+        const siblings = Array.from(el.parentElement?.children || []);
+        return (
+          siblings.length >= 4 &&
+          siblings.some(
+            (s) =>
+              s.querySelector('[class*="emoji"]') ||
+              s.querySelector('[class*="gif"]') ||
+              s.querySelector('[class*="attach"]')
+          )
+        );
+      })?.parentElement ||
+      (() => {
+        const textArea =
+          document.querySelector('[class*="channelTextArea"]') ||
+          document.querySelector('[class*="slateTextArea"]') ||
+          document.querySelector('textarea[placeholder*="Message"]');
+        if (!textArea) return null;
+
+        const container =
+          textArea.closest('[class*="container"]') ||
+          textArea.closest('[class*="wrapper"]') ||
+          textArea.parentElement?.parentElement?.parentElement;
+
+        const buttons = container?.querySelectorAll('[class*="button"]');
+        if (buttons && buttons.length >= 4) {
+          return buttons[0]?.parentElement;
+        }
+
+        return (
+          container?.querySelector('[class*="buttons"]') ||
+          container?.querySelector('[class*="buttonContainer"]')
+        );
+      })();
+
+    const toolbar = buttonRow || null;
+    this._toolbarCache.element = toolbar;
+    this._toolbarCache.time = now;
+    return this.isValidToolbarContainer(toolbar) ? toolbar : null;
+  }
+
+  createTitleButtonIconSvg() {
+    const svgNS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(svgNS, 'svg');
+    svg.setAttribute('width', '20');
+    svg.setAttribute('height', '20');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('fill', 'none');
+    svg.setAttribute('stroke', 'currentColor');
+    svg.setAttribute('stroke-width', '2');
+    svg.setAttribute('stroke-linecap', 'round');
+    svg.setAttribute('stroke-linejoin', 'round');
+
+    const path = document.createElementNS(svgNS, 'path');
+    path.setAttribute(
+      'd',
+      'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z'
+    );
+    svg.appendChild(path);
+    return svg;
   }
 
   // ============================================================================
@@ -270,20 +627,16 @@ module.exports = class SoloLevelingTitleManager {
     this.createTitleButton();
 
     // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
-    this._retryTimeout1 = setTimeout(() => {
-      this._retryTimeouts.delete(this._retryTimeout1);
+    this._retryTimeout1 = this._setTrackedTimeout(() => {
       (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
       this._retryTimeout1 = null;
     }, 2000);
-    this._retryTimeouts.add(this._retryTimeout1);
 
     // FUNCTIONAL: Additional retry (short-circuit, no if-else)
-    this._retryTimeout2 = setTimeout(() => {
-      this._retryTimeouts.delete(this._retryTimeout2);
+    this._retryTimeout2 = this._setTrackedTimeout(() => {
       (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
       this._retryTimeout2 = null;
     }, 5000);
-    this._retryTimeouts.add(this._retryTimeout2);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -301,6 +654,7 @@ module.exports = class SoloLevelingTitleManager {
     try {
       this.removeTitleButton();
       this.closeTitleModal();
+      this.detachTitleManagerSettingsPanelHandlers();
       this.removeCSS();
 
       // Clear all tracked retry timeouts
@@ -319,17 +673,21 @@ module.exports = class SoloLevelingTitleManager {
       this._periodicCheckInterval &&
         (clearInterval(this._periodicCheckInterval), (this._periodicCheckInterval = null));
 
-      // FUNCTIONAL: Memory cleanup (filter pattern)
-      window._titleManagerInstances &&
-        Array.from(window._titleManagerInstances.entries())
-          .filter(([, instance]) => instance === this)
-          .forEach(([modal]) => window._titleManagerInstances.delete(modal));
-
       // Clear webpack module references
       this.webpackModules = {
         ChannelStore: null,
       };
       this.webpackModuleAccess = false;
+
+      // Clear all caches
+      this._cache.soloLevelingData = null;
+      this._cache.soloLevelingDataTime = 0;
+      this._cache.soloPluginInstance = null;
+      this._cache.soloPluginInstanceTime = 0;
+      this._cache.achievementDefinitions = null;
+      this._cache.achievementDefinitionsTime = 0;
+      this._cache.titleBonuses = {};
+      this._cache.titleBonusesTime = {};
     }
 
     this.debugLog('STOP', 'Plugin stopped');
@@ -357,6 +715,8 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   getSettingsPanel() {
+    this.detachTitleManagerSettingsPanelHandlers();
+
     const panel = document.createElement('div');
     panel.style.cssText = `
       padding: 20px;
@@ -404,8 +764,10 @@ module.exports = class SoloLevelingTitleManager {
           border-radius: 8px;
           cursor: pointer;
           transition: all 0.3s ease;
-        " onmouseover="this.style.background='rgba(139, 92, 246, 0.2)'" onmouseout="this.style.background='rgba(0, 0, 0, 0.3)'">
-          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="tm-debug" style="
+        ">
+          <input type="checkbox" ${
+            this.settings.debugMode ? 'checked' : ''
+          } data-tm-setting="debugMode" style="
             width: 18px;
             height: 18px;
             cursor: pointer;
@@ -437,12 +799,27 @@ module.exports = class SoloLevelingTitleManager {
       </div>
     `;
 
-    const debugCheckbox = panel.querySelector('#tm-debug');
-    debugCheckbox?.addEventListener('change', (e) => {
-      this.settings.debugMode = e.target.checked;
-      this.saveSettings();
-      this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: e.target.checked });
-    });
+    const onChange = (event) => {
+      const target = event.target;
+      const key = target?.getAttribute?.('data-tm-setting');
+      if (!key) return;
+
+      const nextValue = target.type === 'checkbox' ? target.checked : target.value;
+
+      const handlers = {
+        debugMode: (value) => {
+          this.settings.debugMode = !!value;
+          this.saveSettings();
+          this.debugLog('SETTINGS', 'Debug mode toggled', { enabled: !!value });
+        },
+      };
+
+      (handlers[key] || (() => {}))(nextValue);
+    };
+
+    panel.addEventListener('change', onChange);
+    this._settingsPanelRoot = panel;
+    this._settingsPanelHandlers = { onChange };
 
     return panel;
   }
@@ -836,74 +1213,19 @@ module.exports = class SoloLevelingTitleManager {
     existingButtons.forEach((btn) => btn.remove());
     this.titleButton = null;
 
-    // Find Discord's button row - look for the container with keyboard, gift, GIF, emoji icons
-    const findToolbar = () => {
-      // Method 1: Find by looking for common Discord button classes
-      const buttonRow =
-        // Look for container with multiple buttons (Discord's toolbar)
-        Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
-          const siblings = Array.from(el.parentElement?.children || []);
-          // Check if this container has multiple button-like elements (Discord's toolbar)
-          return (
-            siblings.length >= 4 &&
-            siblings.some(
-              (s) =>
-                s.querySelector('[class*="emoji"]') ||
-                s.querySelector('[class*="gif"]') ||
-                s.querySelector('[class*="attach"]')
-            )
-          );
-        })?.parentElement ||
-        // Method 2: Find by text area and traverse up
-        (() => {
-          const textArea =
-            document.querySelector('[class*="channelTextArea"]') ||
-            document.querySelector('[class*="slateTextArea"]') ||
-            document.querySelector('textarea[placeholder*="Message"]');
-          if (!textArea) return null;
-
-          // Go up to find the input container, then find button row
-          let container =
-            textArea.closest('[class*="container"]') ||
-            textArea.closest('[class*="wrapper"]') ||
-            textArea.parentElement?.parentElement?.parentElement;
-
-          // Look for the row that contains multiple buttons
-          const buttons = container?.querySelectorAll('[class*="button"]');
-          if (buttons && buttons.length >= 4) {
-            return buttons[0]?.parentElement;
-          }
-
-          return (
-            container?.querySelector('[class*="buttons"]') ||
-            container?.querySelector('[class*="buttonContainer"]')
-          );
-        })();
-
-      return buttonRow;
-    };
-
-    const toolbar = findToolbar();
+    const toolbar = this.getToolbarContainer();
     if (!toolbar) {
       // Return early if plugin is stopped
       if (this._isStopped) return;
 
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
-        this.createTitleButton();
-      }, 1000);
-      this._retryTimeouts.add(timeoutId);
+      this._setTrackedTimeout(() => this.createTitleButton(), 1000);
       return;
     }
 
     // Create title button with SVG icon
     const button = document.createElement('button');
     button.className = 'tm-title-button';
-    button.innerHTML = `
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-        <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"></path>
-      </svg>
-    `;
+    button.replaceChildren(this.createTitleButtonIconSvg());
     button.title = 'Titles';
     button.addEventListener('click', () => this.openTitleModal());
 
@@ -954,6 +1276,9 @@ module.exports = class SoloLevelingTitleManager {
       subtree: true,
       attributes: false,
     });
+
+    // If observer is active, periodic polling is no longer needed.
+    this.stopPeriodicButtonCheck();
   }
 
   removeTitleButton() {
@@ -983,16 +1308,7 @@ module.exports = class SoloLevelingTitleManager {
       const instance = soloPlugin.instance || soloPlugin;
 
       // FUNCTIONAL: Guard clauses (keep for early returns)
-      const unwantedTitles = [
-        'Scribe',
-        'Wordsmith',
-        'Author',
-        'Explorer',
-        'Wanderer',
-        'Apprentice',
-        'Message Warrior',
-      ];
-      if (unwantedTitles.includes(titleName)) {
+      if (this._unwantedTitles.has(titleName)) {
         BdApi?.showToast?.('This title has been removed', { type: 'error', timeout: 2000 });
         return false;
       }
@@ -1010,32 +1326,12 @@ module.exports = class SoloLevelingTitleManager {
             result &&
               BdApi?.showToast &&
               (() => {
+                // Invalidate cache since title was equipped
+                this._cache.soloLevelingData = null;
+                this._cache.soloLevelingDataTime = 0;
+
                 const bonus = this.getTitleBonus(titleName);
-                const buffs = [];
-                if (bonus) {
-                  if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                  if (bonus.critChance > 0)
-                    buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                  if (bonus.strengthPercent > 0)
-                    buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                  if (bonus.agilityPercent > 0)
-                    buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                  if (bonus.intelligencePercent > 0)
-                    buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                  if (bonus.vitalityPercent > 0)
-                    buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                  if (bonus.perceptionPercent > 0)
-                    buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                  if (bonus.strength > 0 && !bonus.strengthPercent)
-                    buffs.push(`+${bonus.strength} STR`);
-                  if (bonus.agility > 0 && !bonus.agilityPercent)
-                    buffs.push(`+${bonus.agility} AGI`);
-                  if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                    buffs.push(`+${bonus.intelligence} INT`);
-                  if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                    buffs.push(`+${bonus.vitality} VIT`);
-                  if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
-                }
+                const buffs = this.formatTitleBonusLines(bonus);
                 const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
                 BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, {
                   type: 'success',
@@ -1076,6 +1372,10 @@ module.exports = class SoloLevelingTitleManager {
         if (instance.updateChatUI) {
           instance.updateChatUI();
         }
+
+        // Invalidate cache since title was unequipped
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = 0;
         if (BdApi && typeof BdApi.showToast === 'function') {
           BdApi.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
         }
@@ -1113,14 +1413,12 @@ module.exports = class SoloLevelingTitleManager {
           // Enhanced: Multiple retry attempts with increasing delays
           const retryDelays = [200, 500, 1000];
           retryDelays.forEach((delay, index) => {
-            const timeoutId = setTimeout(() => {
-              this._retryTimeouts.delete(timeoutId);
+            this._setTrackedTimeout(() => {
               // Check if button exists and is in DOM
               if (!this.titleButton || !document.body.contains(this.titleButton)) {
                 this.createTitleButton();
               }
             }, delay * (index + 1));
-            this._retryTimeouts.add(timeoutId);
           });
         })());
     };
@@ -1196,37 +1494,48 @@ module.exports = class SoloLevelingTitleManager {
         if (this._isStopped) return;
         // User returned to tab (tab is now visible)
         if (!document.hidden) {
-          const timeoutId = setTimeout(() => {
-            this._retryTimeouts.delete(timeoutId);
+          this._setTrackedTimeout(() => {
             if (!this.titleButton || !document.body.contains(this.titleButton)) {
               this.debugLog('VISIBILITY', 'Button missing after visibility change, recreating...');
               this.createTitleButton();
             }
           }, 300);
-          this._retryTimeouts.add(timeoutId);
         }
       })
     );
 
-    // Periodic persistence check as fallback (every 10 seconds)
-    this._periodicCheckInterval = setInterval(() => {
-      if (this._isStopped) return;
-      if (!this.titleButton || !document.body.contains(this.titleButton)) {
-        this.debugLog('PERIODIC_CHECK', 'Button missing, recreating...');
-        this.createTitleButton();
-      }
-    }, 10000); // Check every 10 seconds
+    // Periodic persistence check as fallback (only enabled when toolbar observer isn't active)
+    this.startPeriodicButtonCheck();
 
     // Store cleanup function
     this._windowFocusCleanup = () => {
       window.removeEventListener('blur', this._boundHandleBlur);
       window.removeEventListener('focus', this._boundHandleFocus);
       document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
-      if (this._periodicCheckInterval) {
-        clearInterval(this._periodicCheckInterval);
-        this._periodicCheckInterval = null;
-      }
+      this.stopPeriodicButtonCheck();
     };
+  }
+
+  startPeriodicButtonCheck() {
+    if (this._periodicCheckInterval) return;
+    // If MutationObserver is active, it will handle persistence without polling.
+    if (this.toolbarObserver) return;
+
+    this._periodicCheckInterval = setInterval(() => {
+      if (this._isStopped) return;
+      if (!this.titleButton || !document.body.contains(this.titleButton)) {
+        this.debugLog('PERIODIC_CHECK', 'Button missing, recreating...');
+        this.createTitleButton();
+      }
+      // Once observer is active, stop polling.
+      this.toolbarObserver && this.stopPeriodicButtonCheck();
+    }, 15000);
+  }
+
+  stopPeriodicButtonCheck() {
+    if (!this._periodicCheckInterval) return;
+    clearInterval(this._periodicCheckInterval);
+    this._periodicCheckInterval = null;
   }
 
   /**
@@ -1248,15 +1557,13 @@ module.exports = class SoloLevelingTitleManager {
     this.debugLog('WINDOW_FOCUS', 'Discord window gained focus - checking button persistence');
 
     // Small delay to let Discord finish re-rendering after focus
-    const timeoutId = setTimeout(() => {
-      this._retryTimeouts.delete(timeoutId);
+    this._setTrackedTimeout(() => {
       // Check if button still exists when user returns
       if (!this.titleButton || !document.body.contains(this.titleButton)) {
         this.debugLog('WINDOW_FOCUS', 'Button missing after window focus, recreating...');
         this.createTitleButton();
       }
     }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
-    this._retryTimeouts.add(timeoutId);
   }
 
   openTitleModal() {
@@ -1267,51 +1574,22 @@ module.exports = class SoloLevelingTitleManager {
 
     const soloData = this.getSoloLevelingData();
     // Filter out unwanted titles
-    const unwantedTitles = [
-      'Scribe',
-      'Wordsmith',
-      'Author',
-      'Explorer',
-      'Wanderer',
-      'Apprentice',
-      'Message Warrior',
-    ];
-    let titles = (soloData?.titles || []).filter((title) => !unwantedTitles.includes(title));
+    const isTitleAllowed = (title) => !this._unwantedTitles.has(title);
+    let titles = (soloData?.titles || []).filter(isTitleAllowed);
 
     // FUNCTIONAL: Sort by selected filter option (highest to lowest)
     const sortBy = this.settings.sortBy || 'xpBonus';
-    const sortFunctions = {
-      xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
-      critBonus: (a, b) =>
-        (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
-      strBonus: (a, b) =>
-        (this.getTitleBonus(b)?.strengthPercent || 0) -
-        (this.getTitleBonus(a)?.strengthPercent || 0),
-      agiBonus: (a, b) =>
-        (this.getTitleBonus(b)?.agilityPercent || 0) - (this.getTitleBonus(a)?.agilityPercent || 0),
-      intBonus: (a, b) =>
-        (this.getTitleBonus(b)?.intelligencePercent || 0) -
-        (this.getTitleBonus(a)?.intelligencePercent || 0),
-      vitBonus: (a, b) =>
-        (this.getTitleBonus(b)?.vitalityPercent || 0) -
-        (this.getTitleBonus(a)?.vitalityPercent || 0),
-      perBonus: (a, b) =>
-        (this.getTitleBonus(b)?.perceptionPercent || 0) -
-        (this.getTitleBonus(a)?.perceptionPercent || 0),
-    };
-    titles.sort(sortFunctions[sortBy] || sortFunctions.xpBonus);
+    this.getSortedTitles({ titles, sortBy });
 
     const activeTitle =
-      soloData?.activeTitle && !unwantedTitles.includes(soloData.activeTitle)
-        ? soloData.activeTitle
-        : null;
+      soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
 
     const modal = document.createElement('div');
     modal.className = 'tm-title-modal';
     modal.innerHTML = `
       <div class="tm-modal-content">
         <div class="tm-modal-header">
-          <h2>⭐ Titles</h2>
+          <h2>Titles</h2>
           <button class="tm-close-button">×</button>
         </div>
         <div class="tm-filter-bar">
@@ -1350,30 +1628,7 @@ module.exports = class SoloLevelingTitleManager {
               ${(() => {
                 const bonus = this.getTitleBonus(activeTitle);
                 if (!bonus) return '';
-                const buffs = [];
-                if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                if (bonus.critChance > 0)
-                  buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                // Check for percentage-based stat bonuses (new format)
-                if (bonus.strengthPercent > 0)
-                  buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                if (bonus.agilityPercent > 0)
-                  buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                if (bonus.intelligencePercent > 0)
-                  buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                if (bonus.vitalityPercent > 0)
-                  buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                if (bonus.perceptionPercent > 0)
-                  buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                // Support old format (raw numbers) for backward compatibility
-                if (bonus.strength > 0 && !bonus.strengthPercent)
-                  buffs.push(`+${bonus.strength} STR`);
-                if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-                if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                  buffs.push(`+${bonus.intelligence} INT`);
-                if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                  buffs.push(`+${bonus.vitality} VIT`);
-                if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
+                const buffs = this.formatTitleBonusLines(bonus);
                 return buffs.length > 0
                   ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>`
                   : '';
@@ -1399,74 +1654,13 @@ module.exports = class SoloLevelingTitleManager {
               </div>
             `
                 : `
-              <div class="tm-titles-grid">
-                ${titles
-                  .map((title) => {
-                    const isActive = title === activeTitle;
-                    const bonus = this.getTitleBonus(title);
-                    const buffs = [];
-                    if (bonus) {
-                      if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                      if (bonus.critChance > 0)
-                        buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                      // Check for percentage-based stat bonuses (new format)
-                      if (bonus.strengthPercent > 0)
-                        buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                      if (bonus.agilityPercent > 0)
-                        buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                      if (bonus.intelligencePercent > 0)
-                        buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                      if (bonus.vitalityPercent > 0)
-                        buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                      if (bonus.perceptionPercent > 0)
-                        buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                      // Support old format (raw numbers) for backward compatibility
-                      if (bonus.strength > 0 && !bonus.strengthPercent)
-                        buffs.push(`+${bonus.strength} STR`);
-                      if (bonus.agility > 0 && !bonus.agilityPercent)
-                        buffs.push(`+${bonus.agility} AGI`);
-                      if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                        buffs.push(`+${bonus.intelligence} INT`);
-                      if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                        buffs.push(`+${bonus.vitality} VIT`);
-                      if (bonus.luck > 0 && !bonus.perceptionPercent)
-                        buffs.push(`+${bonus.luck} LUK`);
-                    }
-                    return `
-                      <div class="tm-title-card ${isActive ? 'active' : ''}">
-                        <div class="tm-title-icon"></div>
-                        <div class="tm-title-name">${this.escapeHtml(title)}</div>
-                        ${
-                          buffs.length > 0
-                            ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>`
-                            : ''
-                        }
-                        ${
-                          isActive
-                            ? `
-                          <div class="tm-title-status">Equipped</div>
-                        `
-                            : `
-                          <button class="tm-equip-btn" data-title="${this.escapeHtml(
-                            title
-                          )}">Equip</button>
-                        `
-                        }
-                      </div>
-                    `;
-                  })
-                  .join('')}
-              </div>
+              <div class="tm-titles-grid"></div>
             `
             }
           </div>
         </div>
       </div>
     `;
-
-    // Store instance reference (namespaced for security)
-    if (!window._titleManagerInstances) window._titleManagerInstances = new WeakMap();
-    window._titleManagerInstances.set(modal, this);
 
     // Add event listeners (secure, no inline onclick)
     modal.addEventListener('click', (e) => {
@@ -1502,101 +1696,28 @@ module.exports = class SoloLevelingTitleManager {
       }
     });
 
-    // Also add direct click handler to close button for reliability
-    const closeButton = modal.querySelector('.tm-close-button');
-    if (closeButton) {
-      closeButton.addEventListener('click', (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        this.closeTitleModal();
-      });
-    }
-
-    // Handle sort filter change (SMOOTH - no modal blink)
-    const sortSelect = modal.querySelector('#tm-sort-select');
+    // Render titles grid via DOM nodes (avoids large innerHTML map/join)
     const titlesGrid = modal.querySelector('.tm-titles-grid');
-    if (sortSelect && titlesGrid) {
-      sortSelect.addEventListener('change', (e) => {
-        this.settings.sortBy = e.target.value;
-        this.saveSettings();
+    titles.length > 0 && titlesGrid && this.renderTitlesGrid({ titlesGrid, titles, activeTitle });
 
-        // Re-sort titles without closing modal
-        let sortedTitles = (soloData?.titles || []).filter(
-          (title) => !unwantedTitles.includes(title)
-        );
-        const sortFunctions = {
-          xpBonus: (a, b) => (this.getTitleBonus(b)?.xp || 0) - (this.getTitleBonus(a)?.xp || 0),
-          critBonus: (a, b) =>
-            (this.getTitleBonus(b)?.critChance || 0) - (this.getTitleBonus(a)?.critChance || 0),
-          strBonus: (a, b) =>
-            (this.getTitleBonus(b)?.strengthPercent || 0) -
-            (this.getTitleBonus(a)?.strengthPercent || 0),
-          agiBonus: (a, b) =>
-            (this.getTitleBonus(b)?.agilityPercent || 0) -
-            (this.getTitleBonus(a)?.agilityPercent || 0),
-          intBonus: (a, b) =>
-            (this.getTitleBonus(b)?.intelligencePercent || 0) -
-            (this.getTitleBonus(a)?.intelligencePercent || 0),
-          vitBonus: (a, b) =>
-            (this.getTitleBonus(b)?.vitalityPercent || 0) -
-            (this.getTitleBonus(a)?.vitalityPercent || 0),
-          perBonus: (a, b) =>
-            (this.getTitleBonus(b)?.perceptionPercent || 0) -
-            (this.getTitleBonus(a)?.perceptionPercent || 0),
-        };
-        sortedTitles.sort(sortFunctions[e.target.value] || sortFunctions.xpBonus);
+    // Handle sort filter change (delegated)
+    const onModalChange = (e) => {
+      if (e.target?.id !== 'tm-sort-select') return;
+      this.settings.sortBy = e.target.value;
+      this.saveSettings();
 
-        // Smooth transition
-        titlesGrid.style.opacity = '0.5';
-        setTimeout(() => {
-          titlesGrid.innerHTML = sortedTitles
-            .map((title) => {
-              const isActive = title === activeTitle;
-              const bonus = this.getTitleBonus(title);
-              const buffs = [];
-              if (bonus) {
-                if (bonus.xp > 0) buffs.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-                if (bonus.critChance > 0)
-                  buffs.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
-                if (bonus.strengthPercent > 0)
-                  buffs.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-                if (bonus.agilityPercent > 0)
-                  buffs.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-                if (bonus.intelligencePercent > 0)
-                  buffs.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-                if (bonus.vitalityPercent > 0)
-                  buffs.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-                if (bonus.perceptionPercent > 0)
-                  buffs.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-                if (bonus.strength > 0 && !bonus.strengthPercent)
-                  buffs.push(`+${bonus.strength} STR`);
-                if (bonus.agility > 0 && !bonus.agilityPercent) buffs.push(`+${bonus.agility} AGI`);
-                if (bonus.intelligence > 0 && !bonus.intelligencePercent)
-                  buffs.push(`+${bonus.intelligence} INT`);
-                if (bonus.vitality > 0 && !bonus.vitalityPercent)
-                  buffs.push(`+${bonus.vitality} VIT`);
-                if (bonus.luck > 0 && !bonus.perceptionPercent) buffs.push(`+${bonus.luck} LUK`);
-              }
-              return `
-                <div class="tm-title-card ${isActive ? 'active' : ''}">
-                  <div class="tm-title-icon">⭐</div>
-                  <div class="tm-title-name">${this.escapeHtml(title)}</div>
-                  ${buffs.length > 0 ? `<div class="tm-title-bonus">${buffs.join(', ')}</div>` : ''}
-                  ${
-                    isActive
-                      ? `<div class="tm-title-status">Equipped</div>`
-                      : `<button class="tm-equip-btn" data-title="${this.escapeHtml(
-                          title
-                        )}">Equip</button>`
-                  }
-                </div>
-              `;
-            })
-            .join('');
-          titlesGrid.style.opacity = '1';
-        }, 150);
-      });
-    }
+      const nextTitles = (soloData?.titles || []).filter(isTitleAllowed);
+      this.getSortedTitles({ titles: nextTitles, sortBy: e.target.value });
+
+      // Smooth transition
+      titlesGrid && (titlesGrid.style.opacity = '0.5');
+      this._setTrackedTimeout(() => {
+        titlesGrid && this.renderTitlesGrid({ titlesGrid, titles: nextTitles, activeTitle });
+        titlesGrid && (titlesGrid.style.opacity = '1');
+      }, 150);
+    };
+    modal.addEventListener('change', onModalChange);
+    this._titleModalHandlers = { onModalChange };
 
     document.body.appendChild(modal);
     this.titleModal = modal;
@@ -1606,7 +1727,7 @@ module.exports = class SoloLevelingTitleManager {
 
   refreshModal() {
     this.closeTitleModal();
-    setTimeout(() => this.openTitleModal(), 100);
+    this._setTrackedTimeout(() => this.openTitleModal(), 100);
   }
 
   /**
@@ -1626,12 +1747,12 @@ module.exports = class SoloLevelingTitleManager {
       ((titlesGrid.style.transition = 'opacity 0.15s ease-out'),
       (titlesGrid.style.opacity = '0.5'));
 
-    setTimeout(() => {
+    this._setTrackedTimeout(() => {
       this.closeTitleModal();
       this.openTitleModal();
 
       // Restore scroll and fade in
-      setTimeout(() => {
+      this._setTrackedTimeout(() => {
         const content = this.titleModal?.querySelector('.tm-modal-content');
         const newModalBody = this.titleModal?.querySelector('.tm-modal-body');
         const newTitlesGrid = this.titleModal?.querySelector('.tm-titles-grid');
@@ -1645,9 +1766,9 @@ module.exports = class SoloLevelingTitleManager {
 
   closeTitleModal() {
     if (this.titleModal) {
-      if (window._titleManagerInstances) {
-        window._titleManagerInstances.delete(this.titleModal);
-      }
+      this._titleModalHandlers?.onModalChange &&
+        this.titleModal.removeEventListener('change', this._titleModalHandlers.onModalChange);
+      this._titleModalHandlers = null;
       this.titleModal.remove();
       this.titleModal = null;
       this.debugLog('MODAL', 'Title modal closed');
