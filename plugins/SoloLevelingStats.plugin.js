@@ -261,6 +261,13 @@ module.exports = class SoloLevelingStats {
     if (UnifiedSaveManager) {
       this.saveManager = new UnifiedSaveManager('SoloLevelingStats');
     }
+    // File-based backup path (survives Bd repair better than BdApi.Data/IndexedDB)
+    try {
+      const pathModule = require('path');
+      this.fileBackupPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+    } catch (_) {
+      this.fileBackupPath = null;
+    }
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
@@ -3533,12 +3540,70 @@ module.exports = class SoloLevelingStats {
    * 3.2 SETTINGS MANAGEMENT
    */
 
+  readFileBackup() {
+    if (!this.fileBackupPath) return null;
+    try {
+      const fs = require('fs');
+      if (!fs.existsSync(this.fileBackupPath)) {
+        return null;
+      }
+      const raw = fs.readFileSync(this.fileBackupPath, 'utf8');
+      return JSON.parse(raw);
+    } catch (error) {
+      this.debugError('LOAD_SETTINGS_FILE', error);
+      return null;
+    }
+  }
+
+  writeFileBackup(data) {
+    if (!this.fileBackupPath) return false;
+    try {
+      const fs = require('fs');
+      fs.writeFileSync(this.fileBackupPath, JSON.stringify(data, null, 2), 'utf8');
+      this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: this.fileBackupPath });
+      return true;
+    } catch (error) {
+      this.debugError('SAVE_SETTINGS_FILE', error);
+      return false;
+    }
+  }
+
+  recomputeHPManaFromStats(totalStatsOverride = null) {
+    const totalStats = totalStatsOverride || this.getTotalEffectiveStats();
+    const vitality = totalStats.vitality || 0;
+    const intelligence = totalStats.intelligence || 0;
+    const userRank = this.settings.rank || 'E';
+    const maxHP = this.calculateHP(vitality, userRank);
+    const maxMana = this.calculateMana(intelligence);
+
+    const prevMaxHP = this.settings.userMaxHP || maxHP;
+    const prevHP = this.settings.userHP ?? prevMaxHP;
+    const hpPercent = prevMaxHP > 0 ? Math.min(prevHP / prevMaxHP, 1) : 1;
+    this.settings.userMaxHP = maxHP;
+    this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
+
+    const prevMaxMana = this.settings.userMaxMana || maxMana;
+    const prevMana = this.settings.userMana ?? prevMaxMana;
+    const manaPercent = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
+    this.settings.userMaxMana = maxMana;
+    this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
+  }
+
   async loadSettings() {
     try {
       this.debugLog('LOAD_SETTINGS', 'Attempting to load settings...');
 
       // Try to load settings - IndexedDB first (crash-resistant), then BdApi.Data
       let saved = null;
+      let loadedFromFile = false;
+
+      // File backup (survives some repair/reinstall cases)
+      const fileSaved = this.readFileBackup();
+      if (fileSaved) {
+        saved = fileSaved;
+        loadedFromFile = true;
+        this.debugLog('LOAD_SETTINGS', 'Loaded from file backup', { path: this.fileBackupPath });
+      }
 
       // Try IndexedDB first (crash-resistant)
       if (this.saveManager) {
@@ -3689,6 +3754,19 @@ module.exports = class SoloLevelingStats {
             this.debugLog('LOAD_SETTINGS', 'Level missing or invalid, initializing from totalXP');
             const levelInfo = this.getCurrentLevel();
             this.settings.level = levelInfo.level || 1;
+          }
+
+          // Ensure HP/Mana align with current stats/rank after any reset/refund
+          this.recomputeHPManaFromStats();
+
+          // If we loaded from file backup, push it back to primary stores for persistence
+          if (loadedFromFile) {
+            try {
+              await this.saveSettings(true);
+              this.debugLog('LOAD_SETTINGS', 'Restored file backup to persistent stores');
+            } catch (saveErr) {
+              this.debugError('LOAD_SETTINGS', 'Failed to push file backup to stores', saveErr);
+            }
           }
 
           // CRITICAL: Ensure totalXP is initialized (prevent progress bar from breaking)
@@ -3898,6 +3976,9 @@ module.exports = class SoloLevelingStats {
         stats: cleanSettings.stats,
         metadata: cleanSettings._metadata,
       });
+
+      // File backup first to survive BdApi.Data/IndexedDB clears
+      this.writeFileBackup(cleanSettings);
 
       // Save to IndexedDB first (crash-resistant, primary storage)
       if (this.saveManager) {
@@ -6246,6 +6327,9 @@ module.exports = class SoloLevelingStats {
       oldValue,
       newValue: this.settings.stats[statName],
     });
+
+    // Recompute HP/Mana after stat changes (handles refunds/resets too)
+    this.recomputeHPManaFromStats();
 
     // Special handling for Perception: Generate random buff that stacks
     if (statName === 'perception' || statName === 'luck') {
@@ -8913,30 +8997,21 @@ module.exports = class SoloLevelingStats {
     const maxHP = this.calculateHP(vitality, userRank);
     const maxMana = this.calculateMana(intelligence);
 
-    // Initialize if needed
-    if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
-      this.settings.userMaxHP = maxHP;
-      this.settings.userHP = maxHP;
-    }
-    if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
-      this.settings.userMaxMana = maxMana;
-      this.settings.userMana = maxMana;
-    }
+    // Preserve current % when stats change (handles decreases after reset)
+    const prevMaxHP = this.settings.userMaxHP || maxHP;
+    const prevHP = this.settings.userHP ?? prevMaxHP;
+    const hpPercent = prevMaxHP > 0 ? Math.min(prevHP / prevMaxHP, 1) : 1;
+    this.settings.userMaxHP = maxHP;
+    this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
 
-    // Update max if stats increased
-    if (maxHP > this.settings.userMaxHP) {
-      const hpPercent = this.settings.userHP / this.settings.userMaxHP;
-      this.settings.userMaxHP = maxHP;
-      this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
-    }
-    if (maxMana > this.settings.userMaxMana) {
-      const manaPercent = this.settings.userMana / this.settings.userMaxMana;
-      this.settings.userMaxMana = maxMana;
-      this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
-    }
+    const prevMaxMana = this.settings.userMaxMana || maxMana;
+    const prevMana = this.settings.userMana ?? prevMaxMana;
+    const manaPercentPrev = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
+    this.settings.userMaxMana = maxMana;
+    this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercentPrev));
 
-    const hpPercent = (this.settings.userHP / this.settings.userMaxHP) * 100;
-    const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;
+    const hpPercentDisplay = (this.settings.userHP / this.settings.userMaxHP) * 100;
+    const manaPercentDisplay = (this.settings.userMana / this.settings.userMaxMana) * 100;
 
     // Update HP bar fill and text (use IDs for reliable selection)
     const cachedHpBarFill = this._chatUIElements?.hpBarFill;
@@ -8973,7 +9048,7 @@ module.exports = class SoloLevelingStats {
 
     // Update HP bar
     if (hpBarFill) {
-      hpBarFill.style.width = `${hpPercent}%`;
+      hpBarFill.style.width = `${hpPercentDisplay}%`;
     }
     if (hpText) {
       hpText.textContent = `${Math.floor(this.settings.userHP)}/${this.settings.userMaxHP}`;
@@ -8981,7 +9056,7 @@ module.exports = class SoloLevelingStats {
 
     // Update Mana bar fill and text
     if (manaBarFill) {
-      manaBarFill.style.width = `${manaPercent}%`;
+      manaBarFill.style.width = `${manaPercentDisplay}%`;
     } else {
       // Avoid console spam on frequent updates
       if (!this._warnedMissingManaBarFill) {
@@ -9229,27 +9304,18 @@ module.exports = class SoloLevelingStats {
     const maxHP = this.calculateHP(vitality, userRank);
     const maxMana = this.calculateMana(intelligence);
 
-    // Initialize if needed
-    if (!this.settings.userMaxHP || this.settings.userMaxHP === null) {
-      this.settings.userMaxHP = maxHP;
-      this.settings.userHP = maxHP;
-    }
-    if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
-      this.settings.userMaxMana = maxMana;
-      this.settings.userMana = maxMana;
-    }
+    // Preserve current % when stats change (handles decreases after reset)
+    const prevMaxHP = this.settings.userMaxHP || maxHP;
+    const prevHP = this.settings.userHP ?? prevMaxHP;
+    const hpPercentCurrent = prevMaxHP > 0 ? Math.min(prevHP / prevMaxHP, 1) : 1;
+    this.settings.userMaxHP = maxHP;
+    this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercentCurrent));
 
-    // Update max if stats increased
-    if (maxHP > this.settings.userMaxHP) {
-      const hpPercent = this.settings.userHP / this.settings.userMaxHP;
-      this.settings.userMaxHP = maxHP;
-      this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
-    }
-    if (maxMana > this.settings.userMaxMana) {
-      const manaPercent = this.settings.userMana / this.settings.userMaxMana;
-      this.settings.userMaxMana = maxMana;
-      this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
-    }
+    const prevMaxMana = this.settings.userMaxMana || maxMana;
+    const prevMana = this.settings.userMana ?? prevMaxMana;
+    const manaPercentCurrent = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
+    this.settings.userMaxMana = maxMana;
+    this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercentCurrent));
 
     const hpPercent = (this.settings.userHP / this.settings.userMaxHP) * 100;
     const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;

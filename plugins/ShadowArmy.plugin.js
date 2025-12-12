@@ -1495,28 +1495,29 @@ class ShadowStorageManager {
       // Process each shadow in batch
       shadows.forEach((shadow, index) => {
         // Guard clause: Validate shadow has identifier
-        // Compressed shadows use 'i', uncompressed use 'id'
+        // IndexedDB store keyPath is `id` (see db.createObjectStore(... { keyPath: 'id' })).
+        // Some compressed records may only have `i`; normalize to always have `id`.
         if (!shadow) {
           errors++;
           this.debugError('BATCH_UPDATE', `Null shadow at index ${index}`, { index });
           return;
         }
 
-        // Check for identifier: compressed shadows need 'i', others need 'id'
-        const isCompressed = shadow._c === 1 || shadow._c === 2;
-        const hasIdentifier = isCompressed ? shadow.i : shadow.id;
-
-        if (!hasIdentifier) {
+        const idForStore = shadow.id || shadow.i;
+        if (!idForStore) {
           errors++;
           this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, {
             index,
-            isCompressed,
+            isCompressed: shadow._c === 1 || shadow._c === 2,
             hasI: !!shadow.i,
             hasId: !!shadow.id,
             shadowKeys: Object.keys(shadow || {}),
           });
           return;
         }
+
+        // Normalize: ensure `id` exists so IndexedDB keyPath resolves.
+        shadow.id || (shadow.id = idForStore);
 
         const request = store.put(shadow);
 
