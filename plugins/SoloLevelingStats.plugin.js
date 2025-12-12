@@ -147,12 +147,26 @@
  * - Future: Achievement (15%), Dungeon (20%), Milestone (25%) sharing
  */
 
+// Load UnifiedSaveManager for crash-resistant IndexedDB storage
+let UnifiedSaveManager;
+try {
+  const fs = require('fs');
+  const path = require('path');
+  const saveManagerPath = path.join(BdApi.Plugins.folder, 'UnifiedSaveManager.js');
+  if (fs.existsSync(saveManagerPath)) {
+    const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
+    eval(saveManagerCode);
+    UnifiedSaveManager = window.UnifiedSaveManager || eval('UnifiedSaveManager');
+  }
+} catch (error) {
+  console.warn('[SoloLevelingStats] Failed to load UnifiedSaveManager:', error);
+}
+
 module.exports = class SoloLevelingStats {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
   // ============================================================================
-  // Reserved for future external library imports
-  // Currently all functionality is self-contained
+  // UnifiedSaveManager loaded above for IndexedDB storage
 
   // ============================================================================
   // SECTION 2: CONFIGURATION & HELPERS
@@ -241,6 +255,12 @@ module.exports = class SoloLevelingStats {
       settingsAreDefault: this.settings === this.defaultSettings,
       isDeepCopy: JSON.stringify(this.settings) === JSON.stringify(this.defaultSettings),
     });
+
+    // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
+    this.saveManager = null;
+    if (UnifiedSaveManager) {
+      this.saveManager = new UnifiedSaveManager('SoloLevelingStats');
+    }
     this.messageObserver = null;
     this.activityTracker = null;
     this.messageInputHandler = null;
@@ -330,6 +350,53 @@ module.exports = class SoloLevelingStats {
     // Throttled function cache
     this.throttled = {};
     this.debounced = {};
+
+    // Performance caches for expensive calculations
+    this._cache = {
+      currentLevel: null,
+      currentLevelTime: 0,
+      currentLevelTTL: 100, // 100ms - level changes frequently
+      totalPerceptionBuff: null,
+      totalPerceptionBuffTime: 0,
+      totalPerceptionBuffTTL: 500, // 500ms - perception buffs don't change often
+      perceptionBuffsByStat: null,
+      perceptionBuffsByStatTime: 0,
+      perceptionBuffsByStatTTL: 500, // 500ms
+      timeBonus: null,
+      timeBonusTime: 0,
+      timeBonusTTL: 60000, // 1 minute - time changes every minute
+      activityStreakBonus: null,
+      activityStreakBonusTime: 0,
+      activityStreakBonusKey: null,
+      activityStreakBonusTTL: 3600000, // 1 hour - streak changes daily
+      channelActivityBonus: null,
+      channelActivityBonusTime: 0,
+      channelActivityBonusTTL: 5000, // 5s - channel activity changes occasionally
+      milestoneMultiplier: null,
+      milestoneMultiplierLevel: null,
+      milestoneMultiplierTTL: 100, // 100ms - level changes frequently
+      skillTreeBonuses: null,
+      skillTreeBonusesTime: 0,
+      skillTreeBonusesTTL: 2000, // 2s - skill tree changes rarely
+      activeTitleBonus: null,
+      activeTitleBonusTime: 0,
+      activeTitleBonusKey: null,
+      activeTitleBonusTTL: 1000, // 1s - title changes rarely
+      shadowArmyBuffs: null,
+      shadowArmyBuffsTime: 0,
+      shadowArmyBuffsTTL: 2000, // 2s - shadow buffs update asynchronously
+      totalEffectiveStats: null,
+      totalEffectiveStatsTime: 0,
+      totalEffectiveStatsKey: null,
+      totalEffectiveStatsTTL: 500, // 500ms - stats change occasionally
+      xpRequiredForLevel: new Map(), // Cache individual level XP requirements
+      achievementDefinitions: null, // Static definitions - cache permanently
+      hpCache: new Map(), // Cache HP calculations: key = `${vitality}_${rank}`
+      manaCache: new Map(), // Cache Mana calculations: key = intelligence
+      criticalHitComboData: null, // Cache CriticalHitAnimation combo info (short TTL)
+      criticalHitComboDataTime: 0,
+      criticalHitComboDataTTL: 500, // 500ms - reduces repeated reads during message bursts
+    };
 
     // Rank lookup maps (replaces if-else chains)
     this.rankData = {
@@ -501,6 +568,70 @@ module.exports = class SoloLevelingStats {
     this.domCache.valid = false;
   }
 
+  /**
+   * Invalidate performance caches when data changes
+   * Call this when XP, level, stats, or settings change
+   */
+  invalidatePerformanceCache(cacheKeys = null) {
+    if (!cacheKeys) {
+      // Invalidate all caches
+      this._cache.currentLevel = null;
+      this._cache.currentLevelTime = 0;
+      this._cache.totalPerceptionBuff = null;
+      this._cache.totalPerceptionBuffTime = 0;
+      this._cache.perceptionBuffsByStat = null;
+      this._cache.perceptionBuffsByStatTime = 0;
+      this._cache.milestoneMultiplier = null;
+      this._cache.milestoneMultiplierLevel = null;
+      this._cache.activeTitleBonus = null;
+      this._cache.activeTitleBonusTime = 0;
+      this._cache.activeTitleBonusKey = null;
+      this._cache.shadowArmyBuffs = null;
+      this._cache.shadowArmyBuffsTime = 0;
+      this._cache.totalEffectiveStats = null;
+      this._cache.totalEffectiveStatsTime = 0;
+      this._cache.totalEffectiveStatsKey = null;
+      return;
+    }
+
+    // Invalidate specific caches
+    if (cacheKeys.includes('currentLevel')) {
+      this._cache.currentLevel = null;
+      this._cache.currentLevelTime = 0;
+      this._cache.milestoneMultiplier = null;
+      this._cache.milestoneMultiplierLevel = null;
+    }
+    if (cacheKeys.includes('perception')) {
+      this._cache.totalPerceptionBuff = null;
+      this._cache.totalPerceptionBuffTime = 0;
+      this._cache.perceptionBuffsByStat = null;
+      this._cache.perceptionBuffsByStatTime = 0;
+    }
+    if (cacheKeys.includes('title')) {
+      this._cache.activeTitleBonus = null;
+      this._cache.activeTitleBonusTime = 0;
+      this._cache.activeTitleBonusKey = null;
+      this._cache.totalEffectiveStats = null;
+      this._cache.totalEffectiveStatsTime = 0;
+      this._cache.totalEffectiveStatsKey = null;
+    }
+    if (cacheKeys.includes('stats')) {
+      this._cache.totalEffectiveStats = null;
+      this._cache.totalEffectiveStatsTime = 0;
+      this._cache.totalEffectiveStatsKey = null;
+      // Clear HP/Mana caches since they depend on stats
+      this._cache.hpCache.clear();
+      this._cache.manaCache.clear();
+    }
+    if (cacheKeys.includes('shadow')) {
+      this._cache.shadowArmyBuffs = null;
+      this._cache.shadowArmyBuffsTime = 0;
+      this._cache.totalEffectiveStats = null;
+      this._cache.totalEffectiveStatsTime = 0;
+      this._cache.totalEffectiveStatsKey = null;
+    }
+  }
+
   // ============================================================================
   // LOOKUP MAP HELPERS (O(1) Performance)
   // ============================================================================
@@ -572,14 +703,28 @@ module.exports = class SoloLevelingStats {
   }
 
   calculateTimeBonus() {
+    const now = Date.now();
+    if (
+      this._cache.timeBonus !== null &&
+      this._cache.timeBonusTime &&
+      now - this._cache.timeBonusTime < this._cache.timeBonusTTL
+    ) {
+      return this._cache.timeBonus;
+    }
+
     const hour = new Date().getHours();
     // Peak hours bonus (evening/night when more active)
+    let result = 0;
     if (hour >= 18 && hour <= 23) {
-      return 5; // Evening bonus
+      result = 5; // Evening bonus
     } else if (hour >= 0 && hour <= 4) {
-      return 8; // Late night bonus (dedicated players)
+      result = 8; // Late night bonus (dedicated players)
     }
-    return 0;
+
+    this._cache.timeBonus = result;
+    this._cache.timeBonusTime = now;
+
+    return result;
   }
 
   calculateChannelActivityBonus() {
@@ -593,10 +738,23 @@ module.exports = class SoloLevelingStats {
   }
 
   calculateActivityStreakBonus() {
+    // Check cache first (streak changes daily)
+    const now = Date.now();
+    const today = new Date().toDateString();
+    const cacheKey = `${today}_${this.settings.activity?.streakDays || 0}`;
+
+    if (
+      this._cache.activityStreakBonus !== null &&
+      this._cache.activityStreakBonusTime &&
+      this._cache.activityStreakBonusKey === cacheKey &&
+      now - this._cache.activityStreakBonusTime < this._cache.activityStreakBonusTTL
+    ) {
+      return this._cache.activityStreakBonus;
+    }
+
     // Reward consistent daily activity to help balance progression at high levels
     // Tracks consecutive days with activity (messages sent)
     try {
-      const today = new Date().toDateString();
       const lastActiveDate = this.settings.activity?.lastActiveDate;
 
       // Initialize streak tracking if needed
@@ -630,6 +788,11 @@ module.exports = class SoloLevelingStats {
       const streakDays = Math.min(this.settings.activity.streakDays || 0, 7);
       const streakBonus = streakDays <= 1 ? streakDays : Math.min(2 + (streakDays - 1) * 2, 12);
 
+      // Cache the result with key
+      this._cache.activityStreakBonus = streakBonus;
+      this._cache.activityStreakBonusTime = now;
+      this._cache.activityStreakBonusKey = cacheKey;
+
       return streakBonus;
     } catch (error) {
       this.debugError('CALCULATE_STREAK_BONUS', error);
@@ -637,31 +800,110 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  getSkillTreeBonuses() {
+    const now = Date.now();
+    if (
+      this._cache.skillTreeBonuses !== null &&
+      this._cache.skillTreeBonusesTime &&
+      now - this._cache.skillTreeBonusesTime < this._cache.skillTreeBonusesTTL
+    ) {
+      return this._cache.skillTreeBonuses;
+    }
+
+    try {
+      const bonuses = BdApi.Data.load('SkillTree', 'bonuses') || null;
+      this._cache.skillTreeBonuses = bonuses;
+      this._cache.skillTreeBonusesTime = now;
+      return bonuses;
+    } catch (_error) {
+      this._cache.skillTreeBonuses = null;
+      this._cache.skillTreeBonusesTime = now;
+      return null;
+    }
+  }
+
+  calculateBaseXpForMessage({ messageText, messageLength }) {
+    // ===== BASE XP CALCULATION (Additive Bonuses) =====
+    // Base XP: 10 per message
+    let baseXP = 10;
+
+    // 1. Character bonus: +0.15 per character (max +75)
+    const charBonus = Math.min(messageLength * 0.15, 75);
+    baseXP += charBonus;
+
+    // 2. Quality bonuses based on message content
+    const qualityBonus = this.calculateQualityBonus(messageText, messageLength);
+    baseXP += qualityBonus;
+
+    // 3. Message type bonuses
+    const typeBonus = this.calculateMessageTypeBonus(messageText);
+    baseXP += typeBonus;
+
+    // 4. Time-based bonus (active during peak hours)
+    const timeBonus = this.calculateTimeBonus();
+    baseXP += timeBonus;
+
+    // 5. Channel activity bonus (more active channels = more XP)
+    const channelBonus = this.calculateChannelActivityBonus();
+    baseXP += channelBonus;
+
+    // 6. Activity streak bonus (reward consistent daily activity)
+    // This helps balance progression at high levels by rewarding regular play
+    const streakBonus = this.calculateActivityStreakBonus();
+    baseXP += streakBonus;
+
+    return baseXP;
+  }
+
   getXPRequiredForLevel(level) {
-    // Balanced exponential scaling: baseXP * (level ^ 1.6) + baseXP * level * 0.25
-    // Reduced steepness to make progression feel more rewarding
-    // No level cap - unlimited progression
-    // Formula breakdown:
-    // - Level 1: ~125 XP
-    // - Level 10: ~1,100 XP
-    // - Level 50: ~13,000 XP
-    // - Level 100: ~45,000 XP
-    // - Level 200: ~130,000 XP
+    // Check cache first (level XP requirements never change)
+    if (this._cache.xpRequiredForLevel.has(level)) {
+      return this._cache.xpRequiredForLevel.get(level);
+    }
+
     const baseXP = 100;
-    const exponentialPart = baseXP * Math.pow(level, 1.6); // Reduced from 1.7 to 1.6
-    const linearPart = baseXP * level * 0.25; // Reduced from 0.3 to 0.25
-    return Math.round(exponentialPart + linearPart);
+    const exponentialPart = baseXP * Math.pow(level, 1.6);
+    const linearPart = baseXP * level * 0.25;
+    const result = Math.round(exponentialPart + linearPart);
+
+    if (this._cache.xpRequiredForLevel.size < 1000) {
+      this._cache.xpRequiredForLevel.set(level, result);
+    }
+
+    return result;
   }
 
   calculateHP(vitality, rank = 'E') {
+    // Check cache first
+    const cacheKey = `${vitality}_${rank}`;
+    if (this._cache.hpCache.has(cacheKey)) {
+      return this._cache.hpCache.get(cacheKey);
+    }
+
     const rankIndex = Math.max(this.settings.ranks.indexOf(rank), 0);
     const baseHP = 100;
-    return baseHP + vitality * 10 + rankIndex * 50;
+    const result = baseHP + vitality * 10 + rankIndex * 50;
+
+    // Cache the result (limit cache size)
+    if (this._cache.hpCache.size < 100) {
+      this._cache.hpCache.set(cacheKey, result);
+    }
+
+    return result;
   }
 
   calculateMana(intelligence) {
+    if (this._cache.manaCache.has(intelligence)) {
+      return this._cache.manaCache.get(intelligence);
+    }
+
     const baseMana = 100;
-    return baseMana + intelligence * 10;
+    const result = baseMana + intelligence * 10;
+    if (this._cache.manaCache.size < 100) {
+      this._cache.manaCache.set(intelligence, result);
+    }
+
+    return result;
   }
 
   getCurrentChannelInfo() {
@@ -747,25 +989,34 @@ module.exports = class SoloLevelingStats {
   }
 
   getCurrentChannelId() {
-    // Legacy method for backward compatibility
     const info = this.getCurrentChannelInfo();
     return info ? info.channelId : null;
   }
 
   getTotalPerceptionBuff() {
-    // Migration: Support both old 'luck' and new 'perception' names
+    const now = Date.now();
+    if (
+      this._cache.totalPerceptionBuff !== null &&
+      this._cache.totalPerceptionBuffTime &&
+      now - this._cache.totalPerceptionBuffTime < this._cache.totalPerceptionBuffTTL
+    ) {
+      return this._cache.totalPerceptionBuff;
+    }
+
     const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
     const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
 
-    // NEW: Support both old format (numbers) and new format (objects with stat+buff)
+    let result = 0;
     if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
-      return perceptionBuffs.reduce((sum, buff) => {
-        // Old format: buff is a number
-        // New format: buff is { stat: 'strength', buff: 2.5 }
+      result = perceptionBuffs.reduce((sum, buff) => {
         return sum + (typeof buff === 'number' ? buff : buff.buff || 0);
       }, 0);
     }
-    return 0;
+
+    this._cache.totalPerceptionBuff = result;
+    this._cache.totalPerceptionBuffTime = now;
+
+    return result;
   }
 
   /**
@@ -773,6 +1024,15 @@ module.exports = class SoloLevelingStats {
    * Returns: { strength: 10.5, agility: 8.2, intelligence: 12.3, vitality: 6.7, perception: 5.1 }
    */
   getPerceptionBuffsByStat() {
+    const now = Date.now();
+    if (
+      this._cache.perceptionBuffsByStat &&
+      this._cache.perceptionBuffsByStatTime &&
+      now - this._cache.perceptionBuffsByStatTime < this._cache.perceptionBuffsByStatTTL
+    ) {
+      return this._cache.perceptionBuffsByStat;
+    }
+
     const perceptionBuffs = this.settings.perceptionBuffs || [];
     const buffsByStat = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
 
@@ -783,6 +1043,10 @@ module.exports = class SoloLevelingStats {
         buffsByStat[buff.stat] = (buffsByStat[buff.stat] || 0) + buff.buff;
       }
     });
+
+    // Cache the result
+    this._cache.perceptionBuffsByStat = buffsByStat;
+    this._cache.perceptionBuffsByStatTime = now;
 
     return buffsByStat;
   }
@@ -809,26 +1073,63 @@ module.exports = class SoloLevelingStats {
   }
 
   getCurrentLevel() {
+    // Check cache first
+    const now = Date.now();
+    if (
+      this._cache.currentLevel &&
+      this._cache.currentLevelTime &&
+      now - this._cache.currentLevelTime < this._cache.currentLevelTTL
+    ) {
+      return this._cache.currentLevel;
+    }
+
+    // CRITICAL: Ensure totalXP is valid (prevent progress bar from breaking)
+    const totalXP =
+      typeof this.settings.totalXP === 'number' &&
+      !isNaN(this.settings.totalXP) &&
+      this.settings.totalXP >= 0
+        ? this.settings.totalXP
+        : 0;
+
     let level = 1;
     let totalXPNeeded = 0;
     let xpForNextLevel = 0;
 
+    // Safety: Prevent infinite loop (max level 10000)
+    const maxLevel = 10000;
+    let iterations = 0;
+
     // Calculate level based on total XP
-    while (true) {
+    while (iterations < maxLevel) {
       xpForNextLevel = this.getXPRequiredForLevel(level);
-      if (totalXPNeeded + xpForNextLevel > this.settings.totalXP) {
+      if (totalXPNeeded + xpForNextLevel > totalXP) {
         break;
       }
       totalXPNeeded += xpForNextLevel;
       level++;
+      iterations++;
     }
 
-    return {
+    // Ensure xpForNextLevel is valid (at least 1)
+    if (xpForNextLevel <= 0) {
+      xpForNextLevel = this.getXPRequiredForLevel(level);
+    }
+
+    // Calculate current XP in level
+    const currentXP = Math.max(0, totalXP - totalXPNeeded);
+
+    const result = {
       level: level,
-      xp: this.settings.totalXP - totalXPNeeded,
+      xp: currentXP,
       xpRequired: xpForNextLevel,
       totalXPNeeded: totalXPNeeded,
     };
+
+    // Cache the result
+    this._cache.currentLevel = result;
+    this._cache.currentLevelTime = now;
+
+    return result;
   }
 
   getRankRequirements() {
@@ -851,7 +1152,45 @@ module.exports = class SoloLevelingStats {
   }
 
   getTotalEffectiveStats() {
-    const baseStats = { ...this.settings.stats };
+    // Check cache first
+    const now = Date.now();
+    // Create cache key from stats and active title (stats change infrequently)
+    const statsKey = JSON.stringify(this.settings.stats || {});
+    const titleKey = this.settings.achievements?.activeTitle || null;
+    const cacheKey = `${statsKey}_${titleKey}`;
+
+    if (
+      this._cache.totalEffectiveStats &&
+      this._cache.totalEffectiveStatsKey === cacheKey &&
+      this._cache.totalEffectiveStatsTime &&
+      now - this._cache.totalEffectiveStatsTime < this._cache.totalEffectiveStatsTTL
+    ) {
+      return this._cache.totalEffectiveStats;
+    }
+
+    // CRITICAL: Ensure stats object exists and has all required properties
+    // If stats are missing or reset, initialize with defaults to prevent all-zero stats
+    if (!this.settings.stats || typeof this.settings.stats !== 'object') {
+      this.settings.stats = {
+        strength: 0,
+        agility: 0,
+        intelligence: 0,
+        vitality: 0,
+        perception: 0,
+      };
+      this.saveSettings(); // Save initialized stats
+      this.debugLog('STATS', 'Stats object was missing, initialized with defaults');
+    }
+
+    // Ensure all stat properties exist (migration safety)
+    const baseStats = {
+      strength: this.settings.stats.strength || 0,
+      agility: this.settings.stats.agility || 0,
+      intelligence: this.settings.stats.intelligence || 0,
+      vitality: this.settings.stats.vitality || 0,
+      perception: this.settings.stats.perception ?? this.settings.stats.luck ?? 0,
+    };
+
     const titleBonus = this.getActiveTitleBonus();
 
     // Migration: Support both 'luck' and 'perception' for backward compatibility
@@ -891,7 +1230,7 @@ module.exports = class SoloLevelingStats {
 
     // Apply shadow buffs multiplicatively (like titles, but they stack additively)
     // Shadow buffs are percentages that stack: if you have 2 Tank shadows, you get +20% VIT total
-    return {
+    const result = {
       strength: Math.round(statsWithTitle.strength * (1 + (shadowBuffs.strength || 0))),
       agility: Math.round(statsWithTitle.agility * (1 + (shadowBuffs.agility || 0))),
       intelligence: Math.round(statsWithTitle.intelligence * (1 + (shadowBuffs.intelligence || 0))),
@@ -900,6 +1239,13 @@ module.exports = class SoloLevelingStats {
         statsWithTitle.perception * (1 + (shadowBuffs.perception || shadowBuffs.luck || 0))
       ),
     };
+
+    // Cache the result
+    this._cache.totalEffectiveStats = result;
+    this._cache.totalEffectiveStatsKey = cacheKey;
+    this._cache.totalEffectiveStatsTime = now;
+
+    return result;
   }
 
   getTotalShadowPower() {
@@ -949,14 +1295,24 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-      this.emit('xpChanged', {
+      const xpData = {
         level: this.settings.level,
         xp: levelInfo.xp,
         xpRequired: levelInfo.xpRequired,
         totalXP: this.settings.totalXP,
         rank: this.settings.rank,
         levelInfo,
-      });
+      };
+
+      this.emit('xpChanged', xpData);
+
+      // CRITICAL: Also trigger UI update immediately after emit
+      // This ensures progress bar updates even if event listeners fail
+      try {
+        this.updateChatUI();
+      } catch (error) {
+        this.debugError('EMIT_XP_CHANGED', error, { phase: 'ui_update_after_emit' });
+      }
     } catch (error) {
       this.debugError('EMIT_XP_CHANGED', error);
     }
@@ -1150,6 +1506,8 @@ module.exports = class SoloLevelingStats {
    */
   processMessageFromStore(message) {
     try {
+      this.processedMessageIds = this.processedMessageIds || new Set();
+
       // Skip if message is too old (before plugin start)
       if (message.timestamp && message.timestamp < this.pluginStartTime) {
         return;
@@ -1171,7 +1529,11 @@ module.exports = class SoloLevelingStats {
       // Check if this is our own message
       if (message.author && message.author.id === currentUserId) {
         // Mark as processed
-        this.processedMessageIds.add(message.id);
+        this.addProcessedMessageId(message.id);
+
+        // Keep context for crit detection (avoid expensive DOM scans)
+        this.lastMessageId = message.id;
+        this.lastMessageElement = null;
 
         // Process message for XP/quest tracking
         const messageText = message.content || '';
@@ -1184,7 +1546,8 @@ module.exports = class SoloLevelingStats {
         });
 
         // Award XP and update quests
-        this.awardXP(messageLength, messageText, 'message');
+        // CRITICAL: awardXP expects (messageText, messageLength) - fix parameter order
+        this.awardXP(messageText, messageLength);
         this.updateQuestProgress('messageMaster', 1);
         this.updateQuestProgress('characterChampion', messageLength);
 
@@ -1197,6 +1560,20 @@ module.exports = class SoloLevelingStats {
     } catch (error) {
       this.debugError('MESSAGE_STORE_PROCESS', error);
     }
+  }
+
+  addProcessedMessageId(messageId) {
+    if (!messageId) return;
+    this.processedMessageIds = this.processedMessageIds || new Set();
+    this.processedMessageIds.add(messageId);
+
+    // Cap growth to avoid unbounded memory usage over long sessions
+    const MAX_PROCESSED_MESSAGE_IDS = 5000;
+    if (this.processedMessageIds.size <= MAX_PROCESSED_MESSAGE_IDS) return;
+
+    const keepCount = Math.floor(MAX_PROCESSED_MESSAGE_IDS * 0.6);
+    const trimmed = Array.from(this.processedMessageIds).slice(-keepCount);
+    this.processedMessageIds = new Set(trimmed);
   }
 
   /**
@@ -1346,39 +1723,67 @@ module.exports = class SoloLevelingStats {
     // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
     // Agility affects EXP multiplier: base 0.25 (25%) + agility bonus
     try {
-      let isCrit = false;
+      const getMessageContainerElement = () => {
+        const cached = this._messageContainerEl;
+        if (cached && cached.isConnected) return cached;
+        const next =
+          document.querySelector('[class*="messagesWrapper"]') ||
+          document.querySelector('[class*="messageList"]') ||
+          document.querySelector('[class*="scroller"]');
+        this._messageContainerEl = next || null;
+        return this._messageContainerEl;
+      };
 
-      if (!this.lastMessageElement) {
-        // Try to find the message element
-        const messageElements = document.querySelectorAll('[class*="message"]');
-        if (messageElements.length > 0) {
-          const lastMsg = Array.from(messageElements).pop();
-          if (lastMsg && lastMsg.classList.contains('bd-crit-hit')) {
-            isCrit = true;
-          }
-        }
-      } else if (this.lastMessageElement.classList.contains('bd-crit-hit')) {
-        isCrit = true;
-      } else if (this.lastMessageId) {
-        // Also check by message ID if CriticalHit plugin stores crit info
-        try {
-          const critPlugin = BdApi.Plugins.get('CriticalHit');
-          if (critPlugin) {
-            const instance = critPlugin.instance || critPlugin;
-            if (instance && instance.critMessages) {
-              // Check if this message is in the crit set (using .find() instead of for-loop)
-              const messageElements = document.querySelectorAll('[class*="message"]');
-              const critMessage = Array.from(messageElements).find((msgEl) => {
-                const msgId = this.getMessageId(msgEl);
-                return msgId === this.lastMessageId && msgEl.classList.contains('bd-crit-hit');
-              });
-              isCrit = !!critMessage;
-            }
-          }
-        } catch (error) {
-          // CriticalHit plugin not available or error accessing
-        }
+      const findMessageElementById = (messageId) => {
+        if (!messageId) return null;
+
+        const cssEscape =
+          typeof window !== 'undefined' && window.CSS && typeof window.CSS.escape === 'function'
+            ? window.CSS.escape
+            : null;
+        const safe = cssEscape
+          ? cssEscape(String(messageId))
+          : String(messageId).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+        const container = getMessageContainerElement() || document;
+
+        // Discord commonly uses data-list-item-id that includes the message id
+        return (
+          container.querySelector?.(`[data-list-item-id*="${safe}"]`) ||
+          container.querySelector?.(`#${safe}`) ||
+          null
+        );
+      };
+
+      const findLatestOwnMessageElement = (limit = 25) => {
+        const container = getMessageContainerElement();
+        if (!container) return null;
+
+        const nodes = Array.from(container.querySelectorAll?.('[class*="message"]') || []);
+        if (!nodes.length) return null;
+
+        const currentUserId = this.currentUserId || this.settings?.ownUserId || null;
+        return nodes
+          .slice(-limit)
+          .reverse()
+          .find((el) => this.isOwnMessage?.(el, currentUserId));
+      };
+
+      const cachedLast = this.lastMessageElement;
+      const lastMessageElement =
+        cachedLast && cachedLast.isConnected
+          ? cachedLast
+          : (this.lastMessageId && findMessageElementById(this.lastMessageId)) ||
+            findLatestOwnMessageElement();
+
+      if (lastMessageElement) {
+        this.lastMessageElement = lastMessageElement;
+        this.lastMessageId = this.lastMessageId || this.getMessageId(lastMessageElement);
       }
+
+      const isCrit = !!(
+        lastMessageElement && lastMessageElement.classList?.contains('bd-crit-hit')
+      );
 
       if (!isCrit) {
         return 0; // No crit bonus
@@ -1397,7 +1802,28 @@ module.exports = class SoloLevelingStats {
       // Check for combo multiplier (from CriticalHitAnimation)
       // Higher combos = exponentially more EXP (scales with combo number itself)
       try {
-        const comboData = BdApi.Data.load('CriticalHitAnimation', 'userCombo');
+        const now = Date.now();
+        const cachedComboData = this._cache?.criticalHitComboData;
+        const cachedComboDataTime = this._cache?.criticalHitComboDataTime || 0;
+        const comboTTL = this._cache?.criticalHitComboDataTTL ?? 500;
+
+        const comboData =
+          now - cachedComboDataTime < comboTTL
+            ? cachedComboData
+            : (() => {
+                try {
+                  const loaded = BdApi.Data.load('CriticalHitAnimation', 'userCombo');
+                  this._cache.criticalHitComboData = loaded;
+                  this._cache.criticalHitComboDataTime = now;
+                  return loaded;
+                } catch (_error) {
+                  // Cache a null for this window to avoid repeated failing reads
+                  this._cache.criticalHitComboData = null;
+                  this._cache.criticalHitComboDataTime = now;
+                  return null;
+                }
+              })();
+
         if (comboData && comboData.comboCount > 1) {
           const comboCount = comboData.comboCount || 1;
 
@@ -1631,12 +2057,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  startObserving() {
-    // Watch for new messages appearing in chat
-    // Better approach: Monitor message input and detect when messages are sent
-    const findMessageInput = () => {
-      // Try multiple selectors - Discord uses different class names
-      const selectors = [
+  getMessageInputElement() {
+    // Cache selector list to avoid allocations on repeated lookups
+    if (!this._messageInputSelectors) {
+      this._messageInputSelectors = [
         'div[contenteditable="true"][role="textbox"]', // Modern Discord uses contenteditable divs
         'div[contenteditable="true"]',
         '[class*="slateTextArea"]',
@@ -1648,252 +2072,254 @@ module.exports = class SoloLevelingStats {
         '[class*="input"]',
         '[data-slate-editor="true"]', // Slate editor
       ];
+    }
 
-      // Try each selector until we find an element
-      for (const selector of selectors) {
-        const element = document.querySelector(selector);
-        if (element) {
-          this.debugLog('FIND_INPUT', 'Found input element', { selector });
-          return element;
+    for (const selector of this._messageInputSelectors) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+    }
+
+    // Also try to find by role attribute
+    const roleInput = document.querySelector('[role="textbox"]');
+    if (roleInput && roleInput.contentEditable === 'true') {
+      this.debugLog('FIND_INPUT', 'Found input by role="textbox"');
+      return roleInput;
+    }
+
+    return null;
+  }
+
+  getMessageContainerElementForObserving() {
+    if (!this._messageContainerSelectors) {
+      this._messageContainerSelectors = [
+        '[class*="messagesWrapper"]',
+        '[class*="scrollerInner"]',
+        '[class*="scroller"]',
+      ];
+    }
+
+    for (const selector of this._messageContainerSelectors) {
+      const el = document.querySelector(selector);
+      if (el) return el;
+    }
+
+    return null;
+  }
+
+  getCurrentUserIdForMessageDetection() {
+    // PRIORITY: Webpack UserStore > React fiber > stored user id
+    try {
+      const now = Date.now();
+      if (
+        this._currentUserIdCacheTime &&
+        now - this._currentUserIdCacheTime < 5000 &&
+        this._currentUserIdCache
+      ) {
+        return this._currentUserIdCache;
+      }
+
+      // Method 1: Try webpack UserStore (most reliable)
+      if (this.webpackModuleAccess && this.webpackModules.UserStore) {
+        const storeUserId = this.getCurrentUserIdFromStore();
+        if (storeUserId) {
+          this._currentUserIdCache = storeUserId;
+          this._currentUserIdCacheTime = now;
+          return storeUserId;
         }
       }
 
-      // Also try to find by role attribute
-      const roleInput = document.querySelector('[role="textbox"]');
-      if (roleInput && roleInput.contentEditable === 'true') {
-        this.debugLog('FIND_INPUT', 'Found input by role="textbox"');
-        return roleInput;
-      }
-
-      return null;
-    };
-
-    // Watch message container for new messages (similar to CriticalHit approach)
-    const messageContainer =
-      document.querySelector('[class*="messagesWrapper"]') ||
-      document.querySelector('[class*="scrollerInner"]') ||
-      document.querySelector('[class*="scroller"]');
-
-    if (!messageContainer) {
-      // Wait and try again
-      setTimeout(() => this.startObserving(), 1000);
-      return;
-    }
-
-    // Track processed messages to avoid duplicates
-    this.processedMessageIds = this.processedMessageIds || new Set();
-
-    // Get current user ID to identify our own messages
-    // PRIORITY: Webpack UserStore > React fiber > DOM fallback
-    let currentUserId = null;
-    try {
-      // Method 1: Try webpack UserStore (most reliable)
-      if (this.webpackModuleAccess && this.webpackModules.UserStore) {
-        currentUserId = this.getCurrentUserIdFromStore();
-      }
-
       // Method 2: Fallback to React fiber traversal (if webpack unavailable)
-      if (!currentUserId) {
-        const userElement =
-          document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
-        if (userElement) {
-          // Try to extract user ID from React props
-          // Enhanced: Try multiple React fiber key patterns for better compatibility
-          const reactKey = Object.keys(userElement).find(
-            (key) =>
-              key.startsWith('__reactFiber') ||
-              key.startsWith('__reactInternalInstance') ||
-              key.startsWith('__reactContainer')
-          );
-          if (reactKey) {
-            let fiber = userElement[reactKey];
-            for (let i = 0; i < 10 && fiber; i++) {
-              if (fiber.memoizedProps?.user?.id) {
-                currentUserId = fiber.memoizedProps.user.id;
-                break;
-              }
-              fiber = fiber.return;
-            }
+      const userElement =
+        document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
+      if (userElement) {
+        const reactKey = Object.keys(userElement).find(
+          (key) =>
+            key.startsWith('__reactFiber') ||
+            key.startsWith('__reactInternalInstance') ||
+            key.startsWith('__reactContainer')
+        );
+        if (reactKey) {
+          let fiber = userElement[reactKey];
+          for (let i = 0; i < 10 && fiber; i++) {
+            if (fiber.memoizedProps?.user?.id) return fiber.memoizedProps.user.id;
+            fiber = fiber.return;
           }
         }
       }
 
       // Method 3: Use stored user ID as final fallback
-      if (!currentUserId && this.settings.ownUserId) {
-        currentUserId = this.settings.ownUserId;
-      }
-    } catch (e) {
-      this.debugError('GET_USER_ID', e);
+      const fallback = this.settings.ownUserId || null;
+      this._currentUserIdCache = fallback;
+      this._currentUserIdCacheTime = now;
+      return fallback;
+    } catch (error) {
+      this.debugError('GET_USER_ID', error);
+      return this.settings.ownUserId || null;
     }
+  }
 
-    // Only use DOM observation if webpack modules are not available
-    // Webpack patches handle message tracking more reliably
-    if (this.webpackModuleAccess) {
-      this.debugLog('START_OBSERVING', 'Using webpack patches, DOM observer as fallback only');
-      // Still set up observer as fallback, but it will be less active
+  setupMessageObserver({ messageContainer, currentUserId }) {
+    if (this.messageObserver) {
+      this.messageObserver.disconnect();
+      this.messageObserver = null;
     }
 
     const self = this;
     this.messageObserver = new MutationObserver((mutations) => {
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) {
-            // Element node
-            // Mark when element was added to DOM (for timestamp fallback)
-            node._addedTime = Date.now();
+          if (node.nodeType !== 1) return;
 
-            // Check if this is a message element
-            const messageElement = node.classList?.contains('message')
-              ? node
-              : node.querySelector?.('[class*="message"]') || node.closest?.('[class*="message"]');
+          // Avoid attaching ad-hoc properties to DOM nodes in hot paths.
+          // Store metadata in a WeakMap so GC can collect nodes naturally.
+          if (!self._domNodeAddedTime) {
+            self._domNodeAddedTime = new WeakMap();
+          }
+          self._domNodeAddedTime.set(node, Date.now());
 
-            // Also mark message element with added time
-            if (messageElement && messageElement !== node) {
-              messageElement._addedTime = Date.now();
+          // Check if this is a message element
+          const messageElement = node.classList?.contains('message')
+            ? node
+            : node.querySelector?.('[class*="message"]') || node.closest?.('[class*="message"]');
+
+          // Also mark message element with added time
+          if (messageElement && messageElement !== node) {
+            self._domNodeAddedTime.set(messageElement, Date.now());
+          }
+
+          if (!messageElement) return;
+
+          // Check if this is our own message
+          const isOwnMessage = this.isOwnMessage(messageElement, currentUserId);
+          self.debugLog('MUTATION_OBSERVER', 'Message element detected', {
+            hasMessageElement: !!messageElement,
+            isOwnMessage,
+            hasCurrentUserId: !!currentUserId,
+          });
+
+          if (!isOwnMessage) return;
+
+          const messageId = self.getMessageId(messageElement);
+          self.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
+            messageId,
+            alreadyProcessed: messageId ? self.processedMessageIds.has(messageId) : false,
+            elementClasses: messageElement.classList?.toString() || '',
+            usingWebpack: self.webpackModuleAccess,
+          });
+
+          // Skip DOM processing if webpack patches are handling it (fallback mode)
+          if (self.webpackModuleAccess && messageId && self.processedMessageIds.has(messageId)) {
+            return;
+          }
+
+          if (!messageId || self.processedMessageIds.has(messageId)) {
+            self.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
+              messageId,
+              hasId: !!messageId,
+            });
+            return;
+          }
+
+          // Double-check: Only process if we have strong confirmation
+          const hasReactProps =
+            currentUserId &&
+            (() => {
+              try {
+                const reactKey = Object.keys(messageElement).find(
+                  (key) =>
+                    key.startsWith('__reactFiber') ||
+                    key.startsWith('__reactInternalInstance') ||
+                    key.startsWith('__reactContainer')
+                );
+                if (reactKey) {
+                  let fiber = messageElement[reactKey];
+                  for (let i = 0; i < 20 && fiber; i++) {
+                    const authorId =
+                      fiber.memoizedProps?.message?.author?.id ||
+                      fiber.memoizedState?.message?.author?.id ||
+                      fiber.memoizedProps?.message?.authorId;
+                    if (authorId === currentUserId) return true;
+                    fiber = fiber.return;
+                  }
+                }
+                // eslint-disable-next-line no-empty
+              } catch (e) {}
+              return false;
+            })();
+
+          const hasExplicitYou = (() => {
+            const usernameElement =
+              messageElement.querySelector('[class*="username"]') ||
+              messageElement.querySelector('[class*="author"]');
+            if (usernameElement) {
+              const usernameText = usernameElement.textContent?.trim() || '';
+              return (
+                usernameText.toLowerCase() === 'you' ||
+                usernameText.toLowerCase().startsWith('you ')
+              );
             }
+            return false;
+          })();
 
-            if (messageElement) {
-              // Check if this is our own message
-              const isOwnMessage = this.isOwnMessage(messageElement, currentUserId);
-
-              self.debugLog('MUTATION_OBSERVER', 'Message element detected', {
-                hasMessageElement: !!messageElement,
-                isOwnMessage,
-                hasCurrentUserId: !!currentUserId,
-              });
-
-              if (isOwnMessage) {
-                const messageId = self.getMessageId(messageElement);
-                self.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
-                  messageId,
-                  alreadyProcessed: messageId ? self.processedMessageIds.has(messageId) : false,
-                  elementClasses: messageElement.classList?.toString() || '',
-                  usingWebpack: self.webpackModuleAccess,
-                });
-
-                // Skip DOM processing if webpack patches are handling it
-                // DOM observer becomes fallback only
-                if (
-                  self.webpackModuleAccess &&
-                  messageId &&
-                  self.processedMessageIds.has(messageId)
-                ) {
-                  return; // Already processed by webpack patch
-                }
-
-                if (messageId && !self.processedMessageIds.has(messageId)) {
-                  // Double-check: Only process if we have strong confirmation
-                  // MutationObserver is fallback - be extra careful
-                  const hasReactProps =
-                    currentUserId &&
-                    (() => {
-                      try {
-                        // Enhanced: Try multiple React fiber key patterns for better compatibility
-                        const reactKey = Object.keys(messageElement).find(
-                          (key) =>
-                            key.startsWith('__reactFiber') ||
-                            key.startsWith('__reactInternalInstance') ||
-                            key.startsWith('__reactContainer')
-                        );
-                        if (reactKey) {
-                          let fiber = messageElement[reactKey];
-                          for (let i = 0; i < 20 && fiber; i++) {
-                            const authorId =
-                              fiber.memoizedProps?.message?.author?.id ||
-                              fiber.memoizedState?.message?.author?.id ||
-                              fiber.memoizedProps?.message?.authorId;
-                            if (authorId === currentUserId) return true;
-                            fiber = fiber.return;
-                          }
-                        }
-                        // eslint-disable-next-line no-empty
-                      } catch (e) {}
-                      return false;
-                    })();
-
-                  const hasExplicitYou = (() => {
-                    const usernameElement =
-                      messageElement.querySelector('[class*="username"]') ||
-                      messageElement.querySelector('[class*="author"]');
-                    if (usernameElement) {
-                      const usernameText = usernameElement.textContent?.trim() || '';
-                      return (
-                        usernameText.toLowerCase() === 'you' ||
-                        usernameText.toLowerCase().startsWith('you ')
-                      );
-                    }
-                    return false;
-                  })();
-
-                  // Only process if we have React props confirmation OR explicit "You" indicator
-                  if (!hasReactProps && !hasExplicitYou) {
-                    self.debugLog(
-                      'MUTATION_OBSERVER',
-                      'Skipping: Insufficient confirmation for MutationObserver detection',
-                      {
-                        hasReactProps,
-                        hasExplicitYou,
-                        messageId,
-                      }
-                    );
-                    return; // Don't process - too risky
-                  }
-
-                  // CRITICAL: Check message timestamp to prevent processing old chat history
-                  const messageTimestamp = self.getMessageTimestamp(messageElement);
-                  const isNewMessage =
-                    messageTimestamp && messageTimestamp >= (self.pluginStartTime || 0);
-
-                  if (!isNewMessage && messageTimestamp) {
-                    self.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
-                      messageId,
-                      messageTimestamp,
-                      pluginStartTime: self.pluginStartTime,
-                      age: Date.now() - messageTimestamp,
-                    });
-                    return; // Don't process old messages
-                  }
-
-                  self.processedMessageIds.add(messageId);
-
-                  // Get message text
-                  const messageText =
-                    messageElement.textContent?.trim() ||
-                    messageElement
-                      .querySelector('[class*="messageContent"]')
-                      ?.textContent?.trim() ||
-                    messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
-                    '';
-
-                  if (messageText.length > 0 && !self.isSystemMessage(messageElement)) {
-                    self.debugLog('MUTATION_OBSERVER', 'Processing own message (confirmed)', {
-                      messageId,
-                      length: messageText.length,
-                      preview: messageText.substring(0, 50),
-                      confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
-                      isNewMessage,
-                      messageTimestamp,
-                    });
-                    setTimeout(() => {
-                      self.processMessageSent(messageText);
-                    }, 100);
-                  } else {
-                    self.debugLog('MUTATION_OBSERVER', 'Message skipped', {
-                      reason: messageText.length === 0 ? 'empty' : 'system_message',
-                    });
-                  }
-                } else {
-                  self.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
-                    messageId,
-                    hasId: !!messageId,
-                  });
-                }
-              } else {
-                self.debugLog('MUTATION_OBSERVER', 'Message is NOT own, skipping', {
-                  hasCurrentUserId: !!currentUserId,
-                });
+          if (!hasReactProps && !hasExplicitYou) {
+            self.debugLog(
+              'MUTATION_OBSERVER',
+              'Skipping: Insufficient confirmation for MutationObserver detection',
+              {
+                hasReactProps,
+                hasExplicitYou,
+                messageId,
               }
+            );
+            return;
+          }
+
+          // Check message timestamp to prevent processing old chat history
+          const messageTimestamp = self.getMessageTimestamp(messageElement);
+          const isNewMessage = messageTimestamp && messageTimestamp >= (self.pluginStartTime || 0);
+          if (!isNewMessage && messageTimestamp) {
+            self.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
+              messageId,
+              messageTimestamp,
+              pluginStartTime: self.pluginStartTime,
+              age: Date.now() - messageTimestamp,
+            });
+            return;
+          }
+
+          self.addProcessedMessageId(messageId);
+          self.lastMessageId = messageId;
+          self.lastMessageElement = messageElement;
+
+          // Get message text
+          const messageText =
+            messageElement.textContent?.trim() ||
+            messageElement.querySelector('[class*="messageContent"]')?.textContent?.trim() ||
+            messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
+            '';
+
+          if (messageText.length > 0 && !self.isSystemMessage(messageElement)) {
+            self.debugLog('MUTATION_OBSERVER', 'Processing own message (confirmed)', {
+              messageId,
+              length: messageText.length,
+              preview: messageText.substring(0, 50),
+              confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
+              isNewMessage,
+              messageTimestamp,
+            });
+            const timeoutId = setTimeout(() => {
+              self._messageProcessTimeouts?.delete(timeoutId);
+              if (!self._isRunning) return;
+              self.processMessageSent(messageText);
+            }, 100);
+            if (!self._messageProcessTimeouts) {
+              self._messageProcessTimeouts = new Set();
             }
+            self._messageProcessTimeouts.add(timeoutId);
+          } else {
+            self.debugLog('MUTATION_OBSERVER', 'Message skipped', {
+              reason: messageText.length === 0 ? 'empty' : 'system_message',
+            });
           }
         });
       });
@@ -1907,15 +2333,15 @@ module.exports = class SoloLevelingStats {
       subtree: true,
     });
 
-    // OPTIMIZED: Removed direct console.warn calls - use debugLog instead
     this.debugLog('SETUP_MESSAGE_DETECTION', 'MutationObserver set up for message detection');
-    this.debugLog('SETUP_MESSAGE_DETECTION', 'Setting up message detection via MutationObserver');
+  }
 
-    // Primary method: Detect message sends via input (most reliable)
+  setupInputMonitoringForMessageSending({ maxRetries = 10 } = {}) {
+    if (this.messageInputHandler?.element?.isConnected) return;
+
     let retryCount = 0;
-    const maxRetries = 10;
-    const setupInputMonitoring = () => {
-      const messageInput = findMessageInput();
+    const attemptSetup = () => {
+      const messageInput = this.getMessageInputElement();
       if (!messageInput) {
         retryCount++;
         if (retryCount < maxRetries) {
@@ -1923,7 +2349,12 @@ module.exports = class SoloLevelingStats {
             'SETUP_INPUT',
             `Message input not found, retrying (${retryCount}/${maxRetries})`
           );
-          setTimeout(setupInputMonitoring, 1000);
+          if (!this._setupInputRetryTimeout) {
+            this._setupInputRetryTimeout = setTimeout(() => {
+              this._setupInputRetryTimeout = null;
+              attemptSetup();
+            }, 1000);
+          }
         } else {
           this.debugLog(
             'SETUP_INPUT',
@@ -1934,18 +2365,16 @@ module.exports = class SoloLevelingStats {
       }
 
       retryCount = 0; // Reset on success
-
       this.debugLog('SETUP_INPUT', 'Found message input, setting up monitoring');
+
       let lastInputValue = '';
       let inputTimeout = null;
 
       const handleInput = () => {
-        // Store current input value - handle both textarea and contenteditable div
         let currentValue = '';
         if (messageInput.tagName === 'TEXTAREA') {
           currentValue = messageInput.value || '';
         } else if (messageInput.contentEditable === 'true') {
-          // For contenteditable divs, get text content
           currentValue =
             messageInput.textContent ||
             messageInput.innerText ||
@@ -1955,22 +2384,18 @@ module.exports = class SoloLevelingStats {
           currentValue =
             messageInput.value || messageInput.textContent || messageInput.innerText || '';
         }
-
         lastInputValue = currentValue;
 
-        // Clear any pending timeout
-        if (inputTimeout) {
-          clearTimeout(inputTimeout);
-        }
+        if (inputTimeout) clearTimeout(inputTimeout);
       };
 
       const handleKeyDown = (event) => {
-        // Check if Enter was pressed (message sent)
         if (event.key === 'Enter' && !event.shiftKey) {
-          // Get actual text content, not HTML
+          // Avoid double-processing when Webpack patches are the source of truth
+          if (this.webpackModuleAccess && this.messageStorePatch) return;
+
           let messageText = '';
           try {
-            // Try to get text from the contenteditable div
             if (messageInput.textContent) {
               messageText = messageInput.textContent.trim();
             } else if (messageInput.innerText) {
@@ -1982,14 +2407,11 @@ module.exports = class SoloLevelingStats {
             messageText = lastInputValue.trim();
           }
 
-          // Sanity check: Discord messages are typically under 2000 characters
-          // If we're getting something huge, it's probably capturing the wrong content
           if (messageText.length > 2000) {
             this.debugLog('INPUT_DETECTION', 'Message too long, likely capturing wrong content', {
               length: messageText.length,
               preview: messageText.substring(0, 100),
             });
-            // Try to extract just the visible text
             const textNodes = [];
             const walker = document.createTreeWalker(
               messageInput,
@@ -2006,12 +2428,8 @@ module.exports = class SoloLevelingStats {
             }
             if (textNodes.length > 0) {
               messageText = textNodes.join(' ').trim();
-              // Still limit to reasonable size
-              if (messageText.length > 2000) {
-                messageText = messageText.substring(0, 2000);
-              }
+              if (messageText.length > 2000) messageText = messageText.substring(0, 2000);
             } else {
-              // Fallback: just take first 2000 chars
               messageText = messageText.substring(0, 2000);
             }
           }
@@ -2022,15 +2440,12 @@ module.exports = class SoloLevelingStats {
               preview: messageText.substring(0, 50),
             });
 
-            // Process immediately - don't wait for input to clear
-            // Discord's contenteditable divs might not clear immediately
             this.debugLog('INPUT_DETECTION', 'Processing message immediately');
             setTimeout(() => {
               this.processMessageSent(messageText);
-              lastInputValue = ''; // Clear after processing
+              lastInputValue = '';
             }, 100);
 
-            // Also check if input was cleared after a delay (verification)
             setTimeout(() => {
               let currentValue = '';
               if (messageInput.tagName === 'TEXTAREA') {
@@ -2038,7 +2453,6 @@ module.exports = class SoloLevelingStats {
               } else {
                 currentValue = messageInput.textContent || messageInput.innerText || '';
               }
-
               if (!currentValue || currentValue.trim().length === 0) {
                 this.debugLog('INPUT_DETECTION', 'Input cleared, message confirmed sent');
               } else {
@@ -2049,37 +2463,23 @@ module.exports = class SoloLevelingStats {
         }
       };
 
-      // Track input changes
       messageInput.addEventListener('input', handleInput, true);
       messageInput.addEventListener('keydown', handleKeyDown, true);
 
-      // Also listen for paste events
-      messageInput.addEventListener(
-        'paste',
-        () => {
-          setTimeout(handleInput, 50);
-        },
-        true
-      );
+      const handlePaste = () => setTimeout(handleInput, 50);
+      messageInput.addEventListener('paste', handlePaste, true);
 
-      // Watch for input value changes via MutationObserver
       const inputObserver = new MutationObserver(() => {
         const currentValue =
           messageInput.value || messageInput.textContent || messageInput.innerText || '';
-        if (currentValue !== lastInputValue) {
-          lastInputValue = currentValue;
-        }
+        if (currentValue !== lastInputValue) lastInputValue = currentValue;
       });
-
-      inputObserver.observe(messageInput, {
-        childList: true,
-        subtree: true,
-        characterData: true,
-      });
+      inputObserver.observe(messageInput, { childList: true, subtree: true, characterData: true });
 
       this.messageInputHandler = {
         handleInput,
         handleKeyDown,
+        handlePaste,
         observer: inputObserver,
         element: messageInput,
       };
@@ -2087,8 +2487,43 @@ module.exports = class SoloLevelingStats {
       this.inputMonitoringActive = true;
     };
 
-    // Start input monitoring
-    setupInputMonitoring();
+    attemptSetup();
+  }
+
+  startObserving() {
+    const messageContainer = this.getMessageContainerElementForObserving();
+
+    if (!messageContainer) {
+      // Wait and try again
+      if (!this._startObservingRetryTimeout) {
+        this._startObservingRetryTimeout = setTimeout(() => {
+          this._startObservingRetryTimeout = null;
+          this.startObserving();
+        }, 1000);
+      }
+      return;
+    }
+
+    // Cache message container for later lookups (crit detection, etc.)
+    this._messageContainerEl = messageContainer;
+
+    // Track processed messages to avoid duplicates
+    this.processedMessageIds = this.processedMessageIds || new Set();
+
+    const currentUserId = this.getCurrentUserIdForMessageDetection();
+
+    // Only use DOM observation if webpack modules are not available
+    // Webpack patches handle message tracking more reliably
+    if (this.webpackModuleAccess) {
+      this.debugLog('START_OBSERVING', 'Using webpack patches, DOM observer as fallback only');
+      // Still set up observer as fallback, but it will be less active
+    }
+
+    // Observer-based fallback (and for crit context)
+    this.setupMessageObserver({ messageContainer, currentUserId });
+
+    // Primary method: Detect message sends via input
+    this.setupInputMonitoringForMessageSending({ maxRetries: 10 });
   }
 
   getMessageId(messageElement) {
@@ -2180,7 +2615,8 @@ module.exports = class SoloLevelingStats {
 
       // Method 3: Check if message was just added (within last 5 seconds = likely new)
       // This is a fallback for messages without timestamp data
-      const elementAge = Date.now() - (messageElement._addedTime || Date.now());
+      const addedTime = this._domNodeAddedTime?.get(messageElement);
+      const elementAge = Date.now() - (addedTime || Date.now());
       if (elementAge < 5000) {
         // Assume it's new if added within last 5 seconds
         return Date.now();
@@ -2312,32 +2748,35 @@ module.exports = class SoloLevelingStats {
 
   processMessageSent(messageText) {
     try {
+      if (!this._isRunning) return;
+
       this.debugLog('PROCESS_MESSAGE', 'Processing message', {
         length: messageText.length,
         preview: messageText.substring(0, 30),
       });
 
       // Prevent duplicate processing
-      const messageHash = `${messageText.substring(0, 50)}:${Date.now()}`;
-      const hashKey = `msg_${this.hashString(messageHash)}`;
+      const now = Date.now();
+      const recentWindowMs = 2000;
+      const hashKey = `msg_${this.hashString(messageText.substring(0, 2000))}`;
 
       // Check if we've processed this message recently (within last 2 seconds)
-      if (!this.recentMessages) {
-        this.recentMessages = new Set();
-      }
+      if (!this.recentMessages) this.recentMessages = new Map();
 
-      // Clean old hashes (older than 2 seconds)
+      // Prune old entries (keep window bounded)
       if (this.recentMessages.size > 100) {
-        this.recentMessages.clear();
-        this.debugLog('PROCESS_MESSAGE', 'Cleaned old message hashes');
+        for (const [k, ts] of this.recentMessages.entries()) {
+          now - ts > recentWindowMs && this.recentMessages.delete(k);
+        }
       }
 
-      if (this.recentMessages.has(hashKey)) {
+      const lastProcessedAt = this.recentMessages.get(hashKey);
+      if (lastProcessedAt && now - lastProcessedAt < recentWindowMs) {
         this.debugLog('PROCESS_MESSAGE', 'Duplicate message detected, skipping');
         return;
       }
 
-      this.recentMessages.add(hashKey);
+      this.recentMessages.set(hashKey, now);
 
       // Sanity check: Limit message length to prevent capturing wrong content
       // Discord's max message length is 2000 characters
@@ -2373,21 +2812,10 @@ module.exports = class SoloLevelingStats {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'track_channel' });
       }
 
-      // Store message info for crit detection
-      try {
-        // Try to find the message element in DOM
-        const messageElements = document.querySelectorAll('[class*="message"]');
-        if (messageElements.length > 0) {
-          // Get the most recent message (last in list)
-          const lastMsg = Array.from(messageElements).pop();
-          if (lastMsg) {
-            this.lastMessageElement = lastMsg;
-            this.lastMessageId = this.getMessageId(lastMsg);
-          }
-        }
-      } catch (error) {
-        // Ignore errors in message tracking
-      }
+      // Message context for crit detection is maintained by:
+      // - Webpack message patches (preferred)
+      // - MutationObserver fallback (when needed)
+      // Avoid scanning the entire message DOM here (expensive + can be incorrect).
 
       // Calculate and award XP (this will save immediately)
       try {
@@ -2467,7 +2895,7 @@ module.exports = class SoloLevelingStats {
         this.debugLog('HANDLE_CHANNEL_CHANGE', 'No channel info after change', {
           currentUrl: window.location.href,
         });
-        return;
+        return lastChannelId;
       }
 
       const { channelId, channelType, serverId, isDM } = channelInfo;
@@ -2487,7 +2915,7 @@ module.exports = class SoloLevelingStats {
         this.trackChannelVisit();
 
         // Update last channel ID
-        lastChannelId = channelId;
+        return channelId;
       } else {
         this.debugLog('HANDLE_CHANNEL_CHANGE', 'Same channel, no change', {
           channelId,
@@ -2498,27 +2926,28 @@ module.exports = class SoloLevelingStats {
         currentUrl: window.location.href,
       });
     }
+
+    return lastChannelId;
   }
 
   startAutoSave() {
-    // Backup save every 30 seconds (safety net)
-    setInterval(() => {
-      this.saveSettings();
-      // OPTIMIZED: Removed verbose logging for periodic saves (happens every 30 seconds)
-      // this.debugLog('PERIODIC_BACKUP', 'Periodic backup save completed');
-    }, this.saveInterval);
+    // Avoid duplicate timers/listeners on reloads
+    if (this._autoSaveHandlers) return;
 
     // Also save on page unload (before Discord closes)
-    window.addEventListener('beforeunload', () => {
+    const beforeUnloadHandler = () => {
       this.saveSettings(true);
-    });
+    };
+    window.addEventListener('beforeunload', beforeUnloadHandler);
 
     // Save on visibility change (when tab loses focus)
-    document.addEventListener('visibilitychange', () => {
-      if (document.hidden) {
-        this.saveSettings(true);
-      }
-    });
+    const visibilityChangeHandler = () => document.hidden && this.saveSettings(true);
+    document.addEventListener('visibilitychange', visibilityChangeHandler);
+
+    this._autoSaveHandlers = {
+      beforeUnloadHandler,
+      visibilityChangeHandler,
+    };
   }
 
   showNotification(message, type = 'info', timeout = 3000) {
@@ -2528,10 +2957,6 @@ module.exports = class SoloLevelingStats {
           type: type,
           timeout: timeout,
         });
-      } else {
-        // Fallback: log to console if showToast is not available
-        // OPTIMIZED: Removed verbose logging for notifications
-        // this.debugLog('NOTIFICATION', `${type.toUpperCase()}: ${message}`);
       }
     } catch (error) {
       this.debugError('NOTIFICATION', error);
@@ -2553,12 +2978,13 @@ module.exports = class SoloLevelingStats {
   // PLUGIN LIFECYCLE
   // ============================================================================
 
-  start() {
+  async start() {
     try {
       this.debugLog('START', 'Plugin starting...');
 
       // Record plugin start time to prevent processing old messages
       this.pluginStartTime = Date.now();
+      this._isRunning = true;
       this.debugLog('START', 'Plugin start time recorded', { startTime: this.pluginStartTime });
 
       // ============================================================================
@@ -2598,8 +3024,19 @@ module.exports = class SoloLevelingStats {
 
       this.debugLog('START', 'Performance optimizations initialized');
 
-      // Load settings
-      this.loadSettings();
+      // Initialize UnifiedSaveManager (IndexedDB)
+      if (this.saveManager) {
+        try {
+          await this.saveManager.init();
+          this.debugLog('START', 'UnifiedSaveManager initialized (IndexedDB)');
+        } catch (error) {
+          this.debugError('START', 'Failed to initialize UnifiedSaveManager', error);
+          this.saveManager = null; // Fallback to BdApi.Data
+        }
+      }
+
+      // Load settings (will use IndexedDB if available, fallback to BdApi.Data)
+      await this.loadSettings();
       this.debugLog('START', 'Settings loaded', {
         level: this.settings.level,
         rank: this.settings.rank,
@@ -2679,30 +3116,13 @@ module.exports = class SoloLevelingStats {
         this.saveSettings(); // Direct save (not debounced)
       }, this.saveInterval); // 30 seconds (defined in constructor)
 
-      // Verify getSettingsPanel is accessible
-      if (typeof this.getSettingsPanel === 'function') {
-        // OPTIMIZED: Removed verbose debug logs
-        // this.debugLog('DEBUG', 'getSettingsPanel() method is accessible');
-      } else {
+      if (typeof this.getSettingsPanel !== 'function') {
         this.debugError('DEBUG', new Error('getSettingsPanel() method NOT FOUND!'));
       }
-
-      // Test plugin registration after a delay
-      setTimeout(() => {
-        const _plugin = BdApi.Plugins.get('SoloLevelingStats');
-        // OPTIMIZED: Removed verbose debug logs
-        // this.debugLog('DEBUG', 'Plugin lookup test', { found: !!plugin });
-
-        // Also try to find by class name
-        // OPTIMIZED: Removed verbose debug logs
-        // const allPlugins = BdApi.Plugins.getAll ? BdApi.Plugins.getAll() : [];
-        // this.debugLog('DEBUG', 'All plugin names', { count: allPlugins.length });
-      }, 2000);
     } catch (error) {
       this.debugError('START', error, { phase: 'initialization' });
     }
 
-    // Initialize level from total XP (in case of data migration)
     const levelInfo = this.getCurrentLevel();
     if (this.settings.level !== levelInfo.level) {
       this.settings.level = levelInfo.level;
@@ -2755,7 +3175,11 @@ module.exports = class SoloLevelingStats {
     } catch (error) {
       this.debugError('CREATE_CHAT_UI', error);
       // Retry after a delay if initial creation fails
-      setTimeout(() => {
+      if (this._createChatUIStartupRetryTimeout) {
+        clearTimeout(this._createChatUIStartupRetryTimeout);
+      }
+      this._createChatUIStartupRetryTimeout = setTimeout(() => {
+        this._createChatUIStartupRetryTimeout = null;
         try {
           this.createChatUI();
         } catch (retryError) {
@@ -2798,6 +3222,8 @@ module.exports = class SoloLevelingStats {
   }
 
   stop() {
+    this._isRunning = false;
+
     // Clean up level up debounce timeout
     if (this.levelUpDebounceTimeout) {
       clearTimeout(this.levelUpDebounceTimeout);
@@ -2810,6 +3236,37 @@ module.exports = class SoloLevelingStats {
       this.messageObserver.disconnect();
       this.messageObserver = null;
     }
+    this._domNodeAddedTime = null;
+    if (this.processedMessageIds) {
+      this.processedMessageIds.clear();
+      this.processedMessageIds = null;
+    }
+    if (this.recentMessages) {
+      // recentMessages may be Map or Set depending on version
+      this.recentMessages.clear?.();
+      this.recentMessages = null;
+    }
+    if (this._startObservingRetryTimeout) {
+      clearTimeout(this._startObservingRetryTimeout);
+      this._startObservingRetryTimeout = null;
+    }
+    if (this._setupInputRetryTimeout) {
+      clearTimeout(this._setupInputRetryTimeout);
+      this._setupInputRetryTimeout = null;
+    }
+    if (this._messageProcessTimeouts) {
+      this._messageProcessTimeouts.forEach((id) => clearTimeout(id));
+      this._messageProcessTimeouts.clear();
+    }
+
+    // Prevent delayed stat allocation notifications after disable
+    if (this._statAllocationTimeout) {
+      clearTimeout(this._statAllocationTimeout);
+      this._statAllocationTimeout = null;
+    }
+    if (this._statAllocationQueue) {
+      this._statAllocationQueue.length = 0;
+    }
 
     if (this.activityTracker) {
       clearInterval(this.activityTracker);
@@ -2820,7 +3277,23 @@ module.exports = class SoloLevelingStats {
     if (this.periodicSaveInterval) {
       clearInterval(this.periodicSaveInterval);
       this.periodicSaveInterval = null;
-      console.log('💾 [STOP] Periodic save stopped');
+      this.debugLog('STOP', 'Periodic save stopped');
+    }
+
+    // Stop legacy auto-save interval (if present)
+    if (this.autoSaveInterval) {
+      clearInterval(this.autoSaveInterval);
+      this.autoSaveInterval = null;
+    }
+
+    // Remove auto-save listeners
+    if (this._autoSaveHandlers) {
+      window.removeEventListener('beforeunload', this._autoSaveHandlers.beforeUnloadHandler);
+      document.removeEventListener(
+        'visibilitychange',
+        this._autoSaveHandlers.visibilityChangeHandler
+      );
+      this._autoSaveHandlers = null;
     }
 
     // Stop channel tracking
@@ -2829,16 +3302,30 @@ module.exports = class SoloLevelingStats {
       this.channelTrackingInterval = null;
       this.debugLog('STOP', 'Channel tracking stopped');
     }
+    if (this._channelTrackingHooks) {
+      window.removeEventListener('popstate', this._channelTrackingHooks.popstateHandler);
+      history.pushState = this._channelTrackingHooks.originalPushState;
+      history.replaceState = this._channelTrackingHooks.originalReplaceState;
+      this._channelTrackingHooks = null;
+      this._channelTrackingState = null;
+      this.debugLog('STOP', 'Channel tracking listeners/hooks restored');
+    }
 
     // Remove event listeners
     if (this.messageInputHandler) {
       const messageInput =
+        this.messageInputHandler.element ||
         document.querySelector('[class*="slateTextArea"]') ||
         document.querySelector('[class*="textArea"]') ||
         document.querySelector('textarea[placeholder*="Message"]');
+
       if (messageInput && this.messageInputHandler.handleKeyDown) {
-        messageInput.removeEventListener('keydown', this.messageInputHandler.handleKeyDown);
-        messageInput.removeEventListener('input', this.messageInputHandler.handleInput);
+        // These listeners were added with capture=true, so they must be removed with capture=true
+        messageInput.removeEventListener('keydown', this.messageInputHandler.handleKeyDown, true);
+        messageInput.removeEventListener('input', this.messageInputHandler.handleInput, true);
+      }
+      if (messageInput && this.messageInputHandler.handlePaste) {
+        messageInput.removeEventListener('paste', this.messageInputHandler.handlePaste, true);
       }
       if (this.messageInputHandler.observer) {
         this.messageInputHandler.observer.disconnect();
@@ -2951,6 +3438,17 @@ module.exports = class SoloLevelingStats {
     // Save before stopping
     this.saveSettings(true);
 
+    // Detach settings panel delegated handler if attached
+    if (this._settingsPanelRoot && this._settingsPanelHandlers?.change) {
+      try {
+        this._settingsPanelRoot.removeEventListener('change', this._settingsPanelHandlers.change);
+      } catch (_) {
+        // Ignore removal errors
+      }
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+
     this.debugLog('STOP', 'Plugin stopped');
   }
 
@@ -2958,29 +3456,84 @@ module.exports = class SoloLevelingStats {
    * 3.2 SETTINGS MANAGEMENT
    */
 
-  loadSettings() {
+  async loadSettings() {
     try {
       this.debugLog('LOAD_SETTINGS', 'Attempting to load settings...');
 
-      // Try to load main settings
+      // Try to load settings - IndexedDB first (crash-resistant), then BdApi.Data
       let saved = null;
-      try {
-        saved = BdApi.Data.load('SoloLevelingStats', 'settings');
-        this.debugLog('LOAD_SETTINGS', 'Main settings load attempt', { success: !!saved });
-      } catch (error) {
-        this.debugError('LOAD_SETTINGS', error, { phase: 'main_load' });
+
+      // Try IndexedDB first (crash-resistant)
+      if (this.saveManager) {
+        try {
+          saved = await this.saveManager.load('settings');
+          if (saved) {
+            this.debugLog('LOAD_SETTINGS', 'Loaded from IndexedDB');
+          }
+        } catch (error) {
+          this.debugError('LOAD_SETTINGS', 'IndexedDB load failed', error);
+        }
       }
 
-      // If main save failed, try backup
+      // Fallback to BdApi.Data
       if (!saved) {
-        this.debugLog('LOAD_SETTINGS', 'Main save not found, trying backup...');
+        try {
+          saved = BdApi.Data.load('SoloLevelingStats', 'settings');
+          if (saved) {
+            this.debugLog('LOAD_SETTINGS', 'Loaded from BdApi.Data (fallback)');
+            // Migrate to IndexedDB
+            if (this.saveManager) {
+              try {
+                await this.saveManager.save('settings', saved);
+                this.debugLog('LOAD_SETTINGS', 'Migrated to IndexedDB');
+              } catch (migrateError) {
+                this.debugError('LOAD_SETTINGS', 'Migration to IndexedDB failed', migrateError);
+              }
+            }
+          }
+        } catch (error) {
+          this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
+        }
+      }
+
+      // Try IndexedDB backup if main failed
+      if (!saved && this.saveManager) {
+        try {
+          const backups = await this.saveManager.getBackups('settings', 1);
+          if (backups.length > 0) {
+            saved = backups[0].data;
+            this.debugLog('LOAD_SETTINGS', 'Loaded from IndexedDB backup');
+            // Restore backup to main
+            try {
+              await this.saveManager.save('settings', saved);
+              this.debugLog('LOAD_SETTINGS', 'Restored backup to main');
+            } catch (restoreError) {
+              this.debugError('LOAD_SETTINGS', 'Failed to restore backup', restoreError);
+            }
+          }
+        } catch (error) {
+          this.debugError('LOAD_SETTINGS', 'IndexedDB backup load failed', error);
+        }
+      }
+
+      // Try BdApi.Data backup as last resort
+      if (!saved) {
         try {
           saved = BdApi.Data.load('SoloLevelingStats', 'settings_backup');
           if (saved) {
-            this.debugLog('LOAD_SETTINGS', 'Successfully loaded from backup');
+            this.debugLog('LOAD_SETTINGS', 'Loaded from BdApi.Data backup');
+            // Migrate to IndexedDB
+            if (this.saveManager) {
+              try {
+                await this.saveManager.save('settings', saved);
+                this.debugLog('LOAD_SETTINGS', 'Migrated backup to IndexedDB');
+              } catch (migrateError) {
+                this.debugError('LOAD_SETTINGS', 'Migration failed', migrateError);
+              }
+            }
           }
         } catch (error) {
-          this.debugError('LOAD_SETTINGS', error, { phase: 'backup_load' });
+          this.debugError('LOAD_SETTINGS', 'BdApi.Data backup load failed', error);
         }
       }
 
@@ -3010,49 +3563,75 @@ module.exports = class SoloLevelingStats {
             this.debugLog('LOAD_SETTINGS', 'Initialized new channelsVisited Set');
           }
 
-          // Migration: Convert luck to perception
-          if (
-            this.settings.stats.luck !== undefined &&
-            this.settings.stats.perception === undefined
-          ) {
-            this.settings.stats.perception = this.settings.stats.luck;
-            delete this.settings.stats.luck;
-            this.debugLog('LOAD_SETTINGS', 'Migrated luck stat to perception');
-          }
-          if (
-            this.settings.luckBuffs !== undefined &&
-            this.settings.perceptionBuffs === undefined
-          ) {
-            this.settings.perceptionBuffs = this.settings.luckBuffs;
-            delete this.settings.luckBuffs;
-            this.debugLog('LOAD_SETTINGS', 'Migrated luckBuffs to perceptionBuffs');
-          }
-
-          // Initialize perceptionBuffs array if it doesn't exist
-          if (!Array.isArray(this.settings.perceptionBuffs)) {
-            this.settings.perceptionBuffs = [];
-            this.debugLog('LOAD_SETTINGS', 'Initialized perceptionBuffs array', {});
+          // CRITICAL: Ensure stats object exists and is properly initialized
+          // If stats are missing or empty, merge with defaults instead of overwriting
+          if (!this.settings.stats || typeof this.settings.stats !== 'object') {
+            this.settings.stats = { ...this.defaultSettings.stats };
+            this.debugLog('LOAD_SETTINGS', 'Stats object was missing, initialized from defaults');
           } else {
-            const totalBuff = this.settings.perceptionBuffs.reduce((sum, buff) => {
-              const numBuff = typeof buff === 'number' ? buff : parseFloat(buff) || 0;
-              return sum + numBuff;
-            }, 0);
-            this.debugLog('LOAD_SETTINGS', 'Loaded perceptionBuffs', {
-              count: this.settings.perceptionBuffs.length,
-              totalBuff:
-                typeof totalBuff === 'number' && !isNaN(totalBuff)
-                  ? totalBuff.toFixed(1) + '%'
-                  : '0%',
-              buffs: [...this.settings.perceptionBuffs],
+            // Merge stats with defaults to ensure all properties exist
+            this.settings.stats = {
+              ...this.defaultSettings.stats,
+              ...this.settings.stats,
+            };
+            // Ensure all stat properties exist (migration safety)
+            this.settings.stats.strength =
+              this.settings.stats.strength ?? this.defaultSettings.stats.strength ?? 0;
+            this.settings.stats.agility =
+              this.settings.stats.agility ?? this.defaultSettings.stats.agility ?? 0;
+            this.settings.stats.intelligence =
+              this.settings.stats.intelligence ?? this.defaultSettings.stats.intelligence ?? 0;
+            this.settings.stats.vitality =
+              this.settings.stats.vitality ?? this.defaultSettings.stats.vitality ?? 0;
+            this.settings.stats.perception =
+              this.settings.stats.perception ??
+              this.settings.stats.luck ??
+              this.defaultSettings.stats.perception ??
+              0;
+            this.debugLog('LOAD_SETTINGS', 'Stats merged with defaults', {
+              strength: this.settings.stats.strength,
+              agility: this.settings.stats.agility,
+              intelligence: this.settings.stats.intelligence,
+              vitality: this.settings.stats.vitality,
+              perception: this.settings.stats.perception,
             });
           }
 
+          // Migration note: luck -> perception conversion happens in migrateData().
+          // Keep only a safety normalization here to avoid crashing on corrupted saves.
+          if (!Array.isArray(this.settings.perceptionBuffs)) {
+            this.settings.perceptionBuffs = [];
+          }
+
           // Verify critical data exists
-          if (!this.settings.level || !this.settings.totalXP) {
-            this.debugLog('LOAD_SETTINGS', 'Critical data missing, initializing defaults');
+          if (
+            !this.settings.level ||
+            typeof this.settings.level !== 'number' ||
+            this.settings.level < 1
+          ) {
+            this.debugLog('LOAD_SETTINGS', 'Level missing or invalid, initializing from totalXP');
             const levelInfo = this.getCurrentLevel();
-            this.settings.level = levelInfo.level;
-            this.settings.totalXP = this.settings.totalXP || 0;
+            this.settings.level = levelInfo.level || 1;
+          }
+
+          // CRITICAL: Ensure totalXP is initialized (prevent progress bar from breaking)
+          if (
+            typeof this.settings.totalXP !== 'number' ||
+            isNaN(this.settings.totalXP) ||
+            this.settings.totalXP < 0
+          ) {
+            // Calculate totalXP from current level and xp
+            const currentLevel = this.settings.level || 1;
+            let totalXPNeeded = 0;
+            for (let l = 1; l < currentLevel; l++) {
+              totalXPNeeded += this.getXPRequiredForLevel(l);
+            }
+            this.settings.totalXP = totalXPNeeded + (this.settings.xp || 0);
+            this.debugLog('LOAD_SETTINGS', 'Initialized missing totalXP', {
+              initializedTotalXP: this.settings.totalXP,
+              level: currentLevel,
+              xp: this.settings.xp,
+            });
           }
 
           this.debugLog('LOAD_SETTINGS', 'Settings loaded successfully', {
@@ -3129,7 +3708,7 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  saveSettings(immediate = false) {
+  async saveSettings(immediate = false) {
     // Prevent saving if settings aren't initialized
     if (!this.settings) {
       this.debugError('SAVE_SETTINGS', new Error('Settings not initialized'));
@@ -3214,6 +3793,26 @@ module.exports = class SoloLevelingStats {
         return; // Don't save corrupted data
       }
 
+      // CRITICAL: Validate totalXP is valid (prevent progress bar from breaking)
+      if (
+        typeof cleanSettings.totalXP !== 'number' ||
+        isNaN(cleanSettings.totalXP) ||
+        cleanSettings.totalXP < 0
+      ) {
+        // Calculate totalXP from level and xp if invalid
+        const currentLevel = cleanSettings.level || 1;
+        let totalXPNeeded = 0;
+        for (let l = 1; l < currentLevel; l++) {
+          totalXPNeeded += this.getXPRequiredForLevel(l);
+        }
+        cleanSettings.totalXP = totalXPNeeded + (cleanSettings.xp || 0);
+        this.debugLog('SAVE_SETTINGS', 'Fixed invalid totalXP before save', {
+          fixedTotalXP: cleanSettings.totalXP,
+          level: currentLevel,
+          xp: cleanSettings.xp,
+        });
+      }
+
       this.debugLog('SAVE_SETTINGS', 'Clean settings to be saved', {
         level: cleanSettings.level,
         xp: cleanSettings.xp,
@@ -3223,7 +3822,22 @@ module.exports = class SoloLevelingStats {
         metadata: cleanSettings._metadata,
       });
 
-      // Save with retry logic (immediate retries, no blocking)
+      // Save to IndexedDB first (crash-resistant, primary storage)
+      if (this.saveManager) {
+        try {
+          await this.saveManager.save('settings', cleanSettings, true); // true = create backup
+          this.lastSaveTime = Date.now();
+          this.debugLog('SAVE_SETTINGS', 'Saved to IndexedDB', {
+            level: cleanSettings.level,
+            xp: cleanSettings.xp,
+            timestamp: new Date().toISOString(),
+          });
+        } catch (error) {
+          this.debugError('SAVE_SETTINGS', 'IndexedDB save failed', error);
+        }
+      }
+
+      // Also save to BdApi.Data (backup/legacy support)
       let saveSuccess = false;
       let lastError = null;
 
@@ -3232,7 +3846,7 @@ module.exports = class SoloLevelingStats {
           BdApi.Data.save('SoloLevelingStats', 'settings', cleanSettings);
           this.lastSaveTime = Date.now();
           saveSuccess = true;
-          this.debugLog('SAVE_SETTINGS', 'Successfully saved to BdApi.Data', {
+          this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data', {
             attempt: attempt + 1,
             level: cleanSettings.level,
             xp: cleanSettings.xp,
@@ -3242,17 +3856,21 @@ module.exports = class SoloLevelingStats {
         } catch (error) {
           lastError = error;
           // No delay between retries - avoid blocking UI thread
-          // BetterDiscord saves are typically fast; if it fails, retry immediately
         }
       }
 
       if (!saveSuccess) {
-        throw lastError || new Error('Failed to save settings after 3 attempts');
+        // Don't throw - IndexedDB save might have succeeded
+        this.debugError('SAVE_SETTINGS', 'BdApi.Data save failed after 3 attempts', lastError);
       }
 
-      if (immediate) {
-        // OPTIMIZED: Removed verbose logging for frequent saves (happens every 5 seconds)
-        // this.debugLog('SAVE_DATA', 'Data saved immediately');
+      // CRITICAL: Always replace backup after successful primary save (maximum persistence)
+      try {
+        BdApi.Data.save('SoloLevelingStats', 'settings_backup', cleanSettings);
+        this.debugLog('SAVE_SETTINGS', 'BdApi.Data backup saved');
+      } catch (backupError) {
+        // Log backup failure but don't fail entire save
+        this.debugError('SAVE_SETTINGS_BACKUP', 'BdApi.Data backup save failed', backupError);
       }
     } catch (error) {
       this.debugError('SAVE_SETTINGS', error);
@@ -3274,55 +3892,41 @@ module.exports = class SoloLevelingStats {
           })
         );
         BdApi.Data.save('SoloLevelingStats', 'settings_backup', backupData);
-        this.debugLog('SAVE_SETTINGS', 'Saved to backup location');
+        this.debugLog('SAVE_SETTINGS', 'Backup replaced (fallback after primary save failure)');
       } catch (backupError) {
         this.debugError('SAVE_SETTINGS_BACKUP', backupError);
       }
     }
   }
 
-  getSettingsPanel() {
-    const _plugin = this;
-
-    let container;
+  createChatUiPreviewPanel() {
     try {
-      // Inject chat UI CSS instead of settings CSS
-      try {
-        this.injectChatUICSS();
-        this.debugLog('INJECT_CSS', 'Chat UI CSS injected successfully');
-      } catch (error) {
-        this.debugError('INJECT_CSS', error);
-      }
+      // Ensure chat UI styles exist for the preview
+      this.injectChatUICSS();
 
-      // Create container with chat UI
-      container = document.createElement('div');
+      const container = document.createElement('div');
       container.className = 'sls-chat-panel';
       container.id = 'sls-settings-chat-ui';
 
-      // Set chat UI HTML
       container.innerHTML = this.renderChatUI();
-
-      // Attach chat UI listeners
       this.attachChatUIListeners(container);
 
-      // Attach stat button listeners
       setTimeout(() => {
         this.attachStatButtonListeners(container);
       }, 100);
 
-      // OPTIMIZED: Removed verbose logging
-      // this.debugLog('GET_SETTINGS_PANEL', 'Returning chat GUI container');
       return container;
     } catch (error) {
-      this.debugError('GET_SETTINGS_PANEL', error);
-      // Return a fallback container with error message
+      this.debugError('CREATE_CHAT_UI_PREVIEW_PANEL', error);
       const fallback = document.createElement('div');
       fallback.className = 'sls-chat-panel';
-      fallback.innerHTML = `<div style="padding: 20px; color: #fff;">Error creating chat GUI: ${error.message}. Check console for details.</div>`;
+      fallback.innerHTML = `<div style="padding: 20px; color: #fff;">Error creating chat UI preview: ${error.message}. Check console for details.</div>`;
       return fallback;
     }
   }
 
+  // DEPRECATED: This settings CSS injector is not used by the current settings UI.
+  // Kept for now to avoid breaking any external references, but safe to delete later.
   injectSettingsCSS() {
     if (document.getElementById('solo-leveling-stats-styles')) {
       return;
@@ -3865,8 +4469,6 @@ module.exports = class SoloLevelingStats {
       return;
     }
 
-    const shadowArmy = shadowArmyPlugin.instance;
-
     // Observe ShadowArmy settings object for changes
     // Since we can't directly observe object properties, we'll observe the plugin's storage
     // and use a combination of polling (reduced frequency) and event-based updates
@@ -3896,27 +4498,9 @@ module.exports = class SoloLevelingStats {
       });
     }
 
-    // Also observe ShadowArmy's settings object if possible
-    // We'll use a Proxy to detect changes
-    if (shadowArmy.settings && typeof shadowArmy.settings === 'object') {
-      try {
-        const _originalSettings = shadowArmy.settings;
-        const _handler = {
-          set: (target, prop, value) => {
-            if (prop === 'shadows' || prop === 'favoriteShadowIds') {
-              target[prop] = value;
-              // Trigger shadow power update (functional safe call)
-              setTimeout(() => this.updateShadowPower?.(), 100);
-              return true;
-            }
-            return Reflect.set(target, prop, value);
-          },
-        };
-        // Note: This is a best-effort approach - BetterDiscord may not allow Proxy wrapping
-      } catch (e) {
-        // Proxy not available or not allowed - fall back to polling
-      }
-    }
+    // Note: Proxy wrapping ShadowArmy's settings is not reliable in BetterDiscord,
+    // and a failed attempt can be harder to reason about than polling/events.
+    // We rely on the ShadowArmy event + the DOM observer debounce above.
   }
 
   renderChatActivity() {
@@ -4060,46 +4644,52 @@ module.exports = class SoloLevelingStats {
     try {
       this.debugLog('START_CHANNEL_TRACKING', 'Starting real-time channel change detection');
 
+      // Avoid duplicate hooks/listeners on reloads
+      if (this._channelTrackingHooks) return;
+
       // Track current URL to detect changes
-      let lastUrl = window.location.href;
-      let lastChannelId = null;
+      const state = {
+        lastUrl: window.location.href,
+        lastChannelId: null,
+      };
 
       // Get initial channel ID
       const initialInfo = this.getCurrentChannelInfo();
       if (initialInfo) {
-        lastChannelId = initialInfo.channelId;
+        state.lastChannelId = initialInfo.channelId;
         this.debugLog('START_CHANNEL_TRACKING', 'Initial channel detected', {
-          channelId: lastChannelId,
+          channelId: state.lastChannelId,
           channelType: initialInfo.channelType,
-          url: lastUrl,
+          url: state.lastUrl,
         });
       }
 
       // Method 1: Monitor URL changes via popstate (back/forward navigation)
-      window.addEventListener('popstate', () => {
+      const popstateHandler = () => {
         const newUrl = window.location.href;
-        if (newUrl !== lastUrl) {
+        if (newUrl !== state.lastUrl) {
           this.debugLog('START_CHANNEL_TRACKING', 'URL changed via popstate', {
-            oldUrl: lastUrl,
+            oldUrl: state.lastUrl,
             newUrl,
           });
-          lastUrl = newUrl;
-          this.handleChannelChange(lastChannelId);
+          state.lastUrl = newUrl;
+          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
-      });
+      };
+      window.addEventListener('popstate', popstateHandler);
 
       // Method 2: Monitor URL changes via pushState/replaceState (Discord's navigation)
       const originalPushState = history.pushState;
       const originalReplaceState = history.replaceState;
 
       const checkUrlChange = (newUrl) => {
-        if (newUrl !== lastUrl) {
+        if (newUrl !== state.lastUrl) {
           this.debugLog('START_CHANNEL_TRACKING', 'URL changed via history API', {
-            oldUrl: lastUrl,
+            oldUrl: state.lastUrl,
             newUrl,
           });
-          lastUrl = newUrl;
-          this.handleChannelChange(lastChannelId);
+          state.lastUrl = newUrl;
+          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
       };
 
@@ -4118,15 +4708,22 @@ module.exports = class SoloLevelingStats {
       // Discord's navigation is usually caught by popstate/history API, so polling is rarely needed
       this.channelTrackingInterval = setInterval(() => {
         const currentUrl = window.location.href;
-        if (currentUrl !== lastUrl) {
+        if (currentUrl !== state.lastUrl) {
           this.debugLog('START_CHANNEL_TRACKING', 'URL changed via polling', {
-            oldUrl: lastUrl,
+            oldUrl: state.lastUrl,
             newUrl: currentUrl,
           });
-          lastUrl = currentUrl;
-          this.handleChannelChange(lastChannelId);
+          state.lastUrl = currentUrl;
+          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
       }, 1000); // Check every 1000ms (reduced from 500ms for better performance)
+
+      this._channelTrackingHooks = {
+        popstateHandler,
+        originalPushState,
+        originalReplaceState,
+      };
+      this._channelTrackingState = state;
 
       this.debugLog('START_CHANNEL_TRACKING', 'Channel tracking started successfully', {
         methods: ['popstate', 'history API', 'polling'],
@@ -4425,34 +5022,7 @@ module.exports = class SoloLevelingStats {
       const levelInfo = this.getCurrentLevel();
       const currentLevel = levelInfo.level;
 
-      // ===== BASE XP CALCULATION (Additive Bonuses) =====
-      // Base XP: 10 per message
-      let baseXP = 10;
-
-      // 1. Character bonus: +0.15 per character (max +75)
-      const charBonus = Math.min(messageLength * 0.15, 75);
-      baseXP += charBonus;
-
-      // 2. Quality bonuses based on message content
-      const qualityBonus = this.calculateQualityBonus(messageText, messageLength);
-      baseXP += qualityBonus;
-
-      // 3. Message type bonuses
-      const typeBonus = this.calculateMessageTypeBonus(messageText);
-      baseXP += typeBonus;
-
-      // 4. Time-based bonus (active during peak hours)
-      const timeBonus = this.calculateTimeBonus();
-      baseXP += timeBonus;
-
-      // 5. Channel activity bonus (more active channels = more XP)
-      const channelBonus = this.calculateChannelActivityBonus();
-      baseXP += channelBonus;
-
-      // 6. Activity streak bonus (reward consistent daily activity)
-      // This helps balance progression at high levels by rewarding regular play
-      const streakBonus = this.calculateActivityStreakBonus();
-      baseXP += streakBonus;
+      const baseXP = this.calculateBaseXpForMessage({ messageText, messageLength });
 
       // ===== PERCENTAGE BONUSES (Additive, Not Multiplicative) =====
       let totalPercentageBonus = 0; // Track all percentage bonuses additively
@@ -4463,26 +5033,16 @@ module.exports = class SoloLevelingStats {
       // Reset stat multiplier for this calculation
       this._skillTreeStatMultiplier = null;
 
-      try {
-        const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
-        if (skillBonuses) {
-          // XP bonus: Additive percentage (adds to percentage pool)
-          if (skillBonuses.xpBonus > 0) {
-            totalPercentageBonus += skillBonuses.xpBonus * 100; // Convert to percentage
-          }
-          // Long message bonus: Additive percentage (adds to percentage pool)
-          if (messageLength > 200 && skillBonuses.longMsgBonus > 0) {
-            totalPercentageBonus += skillBonuses.longMsgBonus * 100; // Convert to percentage
-          }
-          // All stat bonus: Multiplies stat-based bonuses (strength, intelligence, perception)
-          // This is a multiplier for stat bonuses, not a direct percentage bonus
-          if (skillBonuses.allStatBonus > 0) {
-            this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus;
-          }
-        }
-      } catch (error) {
-        // SkillTree not available
-      }
+      const skillBonuses = this.getSkillTreeBonuses();
+      // XP bonus: Additive percentage (adds to percentage pool)
+      skillBonuses?.xpBonus > 0 && (totalPercentageBonus += skillBonuses.xpBonus * 100);
+      // Long message bonus: Additive percentage (adds to percentage pool)
+      messageLength > 200 &&
+        skillBonuses?.longMsgBonus > 0 &&
+        (totalPercentageBonus += skillBonuses.longMsgBonus * 100);
+      // All stat bonus: Multiplies stat-based bonuses (strength, intelligence, perception)
+      skillBonuses?.allStatBonus > 0 &&
+        (this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus);
 
       // Title bonus will be applied multiplicatively after percentage bonuses
       // (stored for later application)
@@ -4609,12 +5169,24 @@ module.exports = class SoloLevelingStats {
       };
 
       // Apply highest milestone multiplier reached (using .reduce() for cleaner code)
-      const milestoneMultiplier = Object.entries(milestoneMultipliers).reduce(
-        (highest, [milestone, multiplier]) => {
-          return currentLevel >= parseInt(milestone) ? multiplier : highest;
-        },
-        1.0
-      );
+      // Cache milestone multiplier based on level
+      let milestoneMultiplier = 1.0;
+      if (
+        this._cache.milestoneMultiplierLevel === currentLevel &&
+        this._cache.milestoneMultiplier !== null
+      ) {
+        milestoneMultiplier = this._cache.milestoneMultiplier;
+      } else {
+        milestoneMultiplier = Object.entries(milestoneMultipliers).reduce(
+          (highest, [milestone, multiplier]) => {
+            return currentLevel >= parseInt(milestone) ? multiplier : highest;
+          },
+          1.0
+        );
+        // Cache the result
+        this._cache.milestoneMultiplier = milestoneMultiplier;
+        this._cache.milestoneMultiplierLevel = currentLevel;
+      }
 
       if (milestoneMultiplier > 1.0) {
         xp = Math.round(xp * milestoneMultiplier);
@@ -4725,11 +5297,34 @@ module.exports = class SoloLevelingStats {
         currentLevel,
       });
 
+      // CRITICAL: Ensure totalXP is initialized (prevent progress bar from breaking)
+      if (
+        typeof this.settings.totalXP !== 'number' ||
+        isNaN(this.settings.totalXP) ||
+        this.settings.totalXP < 0
+      ) {
+        // Initialize totalXP from current level if missing (calculate manually to avoid circular dependency)
+        const currentLevel = this.settings.level || 1;
+        let totalXPNeeded = 0;
+        for (let l = 1; l < currentLevel; l++) {
+          totalXPNeeded += this.getXPRequiredForLevel(l);
+        }
+        this.settings.totalXP = totalXPNeeded + (this.settings.xp || 0);
+        this.debugLog('AWARD_XP', 'Initialized missing totalXP', {
+          initializedTotalXP: this.settings.totalXP,
+          level: currentLevel,
+          xp: this.settings.xp,
+        });
+      }
+
       // Add XP
       const oldLevel = this.settings.level;
       const oldTotalXP = this.settings.totalXP;
       this.settings.xp += xp;
       this.settings.totalXP += xp;
+
+      // Invalidate level cache since XP changed
+      this.invalidatePerformanceCache(['currentLevel']);
 
       // Update level based on new total XP
       const newLevelInfo = this.getCurrentLevel();
@@ -4750,6 +5345,13 @@ module.exports = class SoloLevelingStats {
         xpRequired: newLevelInfo.xpRequired,
       });
 
+      // CRITICAL: Update UI immediately before emitting events (ensures progress bar updates)
+      try {
+        this.updateChatUI();
+      } catch (error) {
+        this.debugError('AWARD_XP', error, { phase: 'update_ui_before_emit' });
+      }
+
       // Emit XP changed event for real-time progress bar updates (must be synchronous)
       this.emitXPChanged();
 
@@ -4764,11 +5366,11 @@ module.exports = class SoloLevelingStats {
         }
       }, 0);
 
-      // Update chat UI
+      // Update chat UI again after emit (double-check)
       try {
         this.updateChatUI();
       } catch (error) {
-        this.debugError('AWARD_XP', error, { phase: 'update_ui' });
+        this.debugError('AWARD_XP', error, { phase: 'update_ui_after_emit' });
       }
 
       // Check for level up and rank promotion
@@ -5011,6 +5613,8 @@ module.exports = class SoloLevelingStats {
           const stillMeetsRequirements = this.checkAchievementCondition(titleAchievement);
           if (!stillMeetsRequirements) {
             this.settings.achievements.activeTitle = null;
+            // Invalidate title cache since active title changed
+            this.invalidatePerformanceCache(['title']);
           }
         }
       }
@@ -5555,6 +6159,9 @@ module.exports = class SoloLevelingStats {
     this.settings.stats[statName]++;
     this.settings.unallocatedStatPoints--;
 
+    // Invalidate caches since stats changed
+    this.invalidatePerformanceCache(['stats', 'perception']);
+
     // Emit stats changed event for real-time updates
     this.emit('statsChanged', {
       stats: { ...this.settings.stats },
@@ -5854,6 +6461,9 @@ module.exports = class SoloLevelingStats {
 
       // If any stats grew, save and update UI
       if (statsGrown.length > 0) {
+        // Invalidate caches since stats changed
+        this.invalidatePerformanceCache(['stats', 'perception']);
+
         // Save immediately (important change)
         this.saveSettings(true);
 
@@ -6034,15 +6644,9 @@ module.exports = class SoloLevelingStats {
     // Get skill tree bonuses
     let skillAllStatBonus = 0;
     let skillQuestBonus = 0;
-    try {
-      const skillBonuses = BdApi.Data.load('SkillTree', 'bonuses');
-      if (skillBonuses) {
-        if (skillBonuses.allStatBonus > 0) skillAllStatBonus = skillBonuses.allStatBonus;
-        if (skillBonuses.questBonus > 0) skillQuestBonus = skillBonuses.questBonus;
-      }
-    } catch (error) {
-      // SkillTree not available
-    }
+    const skillBonuses = this.getSkillTreeBonuses();
+    if (skillBonuses?.allStatBonus > 0) skillAllStatBonus = skillBonuses.allStatBonus;
+    if (skillBonuses?.questBonus > 0) skillQuestBonus = skillBonuses.questBonus;
 
     // Perception and skill tree enhance Vitality: base bonus multiplied by (1 + perception multiplier + skill all-stat bonus)
     const enhancedVitalityBonus =
@@ -6535,6 +7139,11 @@ module.exports = class SoloLevelingStats {
   }
 
   getAchievementDefinitions() {
+    // Check cache first (static definitions never change)
+    if (this._cache.achievementDefinitions) {
+      return this._cache.achievementDefinitions;
+    }
+
     // ============================================================================
     // ACHIEVEMENT DEFINITIONS (791 lines)
     //
@@ -6547,7 +7156,7 @@ module.exports = class SoloLevelingStats {
     // 6. Monarch Tier - Lines 6150-6250
     // 7. Special Achievements - Lines 6250-6291
     // ============================================================================
-    return [
+    const achievements = [
       // ========================================
       // CATEGORY 1: EARLY GAME (E-RANK)
       // ========================================
@@ -7350,6 +7959,10 @@ module.exports = class SoloLevelingStats {
         }, // +48% XP, +5% Crit, +10% STR/AGI/PER
       },
     ];
+
+    // Cache the result (static definitions never change)
+    this._cache.achievementDefinitions = achievements;
+    return achievements;
   }
 
   unlockAchievement(achievement) {
@@ -7373,6 +7986,8 @@ module.exports = class SoloLevelingStats {
     // Set as active title if no title is active
     if (!this.settings.achievements.activeTitle && achievement.title) {
       this.settings.achievements.activeTitle = achievement.title;
+      // Invalidate title cache since active title changed
+      this.invalidatePerformanceCache(['title']);
     }
 
     // Show notification
@@ -7497,6 +8112,20 @@ module.exports = class SoloLevelingStats {
   }
 
   getActiveTitleBonus() {
+    // Check cache first
+    const now = Date.now();
+    const activeTitle = this.settings.achievements?.activeTitle || null;
+    const cacheKey = activeTitle;
+
+    if (
+      this._cache.activeTitleBonus &&
+      this._cache.activeTitleBonusKey === cacheKey &&
+      this._cache.activeTitleBonusTime &&
+      now - this._cache.activeTitleBonusTime < this._cache.activeTitleBonusTTL
+    ) {
+      return this._cache.activeTitleBonus;
+    }
+
     // Filter out unwanted titles
     const unwantedTitles = [
       'Scribe',
@@ -7519,7 +8148,7 @@ module.exports = class SoloLevelingStats {
         this.settings.achievements.activeTitle = null;
         this.saveSettings(true);
       }
-      return {
+      const result = {
         xp: 0,
         critChance: 0,
         // Old format (raw numbers) - for backward compatibility
@@ -7535,6 +8164,11 @@ module.exports = class SoloLevelingStats {
         vitalityPercent: 0,
         perceptionPercent: 0,
       };
+      // Cache the result
+      this._cache.activeTitleBonus = result;
+      this._cache.activeTitleBonusKey = null;
+      this._cache.activeTitleBonusTime = now;
+      return result;
     }
 
     const achievements = this.getAchievementDefinitions();
@@ -7546,7 +8180,7 @@ module.exports = class SoloLevelingStats {
     // Return the raw titleBonus object directly (same as TitleManager)
     // This ensures both plugins see the exact same data structure
     // The display code handles both old format (raw) and new format (percentages)
-    return {
+    const result = {
       ...bonus,
       // Ensure defaults for common properties to avoid undefined issues
       xp: bonus.xp || 0,
@@ -7565,6 +8199,12 @@ module.exports = class SoloLevelingStats {
       vitalityPercent: bonus.vitalityPercent || 0,
       perceptionPercent: bonus.perceptionPercent || 0,
     };
+
+    this._cache.activeTitleBonus = result;
+    this._cache.activeTitleBonusKey = cacheKey;
+    this._cache.activeTitleBonusTime = now;
+
+    return result;
   }
 
   renderAchievements() {
@@ -7595,6 +8235,8 @@ module.exports = class SoloLevelingStats {
    */
   async updateShadowPower() {
     try {
+      if (!this._isRunning) return;
+
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
         this.cachedShadowPower = '0';
@@ -7612,8 +8254,14 @@ module.exports = class SoloLevelingStats {
           ? Date.now() - shadowArmy.settings.cachedTotalPowerTimestamp
           : Infinity;
 
-        // Use cached value if it's recent (less than 5 minutes old) or if we have no shadows
-        if (cacheAge < 300000 || cachedPower === 0) {
+        // CRITICAL FIX: Don't use cached value if it's 0 and cache is old
+        // If cachedPower is 0, we should recalculate to get the actual value
+        // Only use cached 0 if it's very recent (less than 10 seconds) to avoid spam
+        const isRecentCache = cacheAge < 300000; // 5 minutes
+        const isRecentZero = cachedPower === 0 && cacheAge < 10000; // 10 seconds for zero
+
+        // Use cached value only if it's recent AND (it's not zero OR it's a very recent zero)
+        if (isRecentCache && (cachedPower > 0 || isRecentZero)) {
           this.debugLog(
             'UPDATE_SHADOW_POWER',
             'Using cached total power from ShadowArmy settings',
@@ -7627,14 +8275,44 @@ module.exports = class SoloLevelingStats {
           this.saveSettings();
           this.updateShadowPowerDisplay();
           // Still trigger background recalculation for accuracy, but don't wait
-          shadowArmy.getAggregatedArmyStats(true).catch(() => {});
+          // Note: No cache - direct calculations always use fresh data
           return;
+        }
+
+        // If cached value is 0 and cache is old, force recalculation
+        if (cachedPower === 0 && cacheAge >= 10000) {
+          this.debugLog(
+            'UPDATE_SHADOW_POWER',
+            'Cached power is 0 and cache is old, forcing recalculation',
+            {
+              cachedPower,
+              cacheAge: Math.floor(cacheAge / 1000) + 's',
+              reason: 'Cached 0 value is stale, need fresh calculation',
+            }
+          );
+          // Don't return - continue to recalculation below
         }
       }
 
       // Use getAggregatedArmyStats to get accurate total power
       if (typeof shadowArmy.getAggregatedArmyStats === 'function') {
         try {
+          // CRITICAL DIAGNOSTIC: Check IndexedDB directly before calling getAggregatedArmyStats
+          let indexedDBCount = 0;
+          if (shadowArmy.storageManager) {
+            try {
+              indexedDBCount = await shadowArmy.storageManager.getTotalCount();
+              this.debugLog('UPDATE_SHADOW_POWER', 'IndexedDB direct count check', {
+                indexedDBCount,
+                hasStorageManager: !!shadowArmy.storageManager,
+                dbInitialized: !!shadowArmy.storageManager?.db,
+                dbName: shadowArmy.storageManager?.dbName || 'unknown',
+              });
+            } catch (countError) {
+              this.debugError('UPDATE_SHADOW_POWER', 'Failed to get IndexedDB count', countError);
+            }
+          }
+
           this.debugLog(
             'UPDATE_SHADOW_POWER',
             'Starting total power update - forcing recalculation',
@@ -7643,15 +8321,177 @@ module.exports = class SoloLevelingStats {
               hasStorageManager: !!shadowArmy.storageManager,
               dbInitialized: !!shadowArmy.storageManager?.db,
               cachedPower: shadowArmy.settings?.cachedTotalPower,
+              indexedDBCount, // Include direct count check
             }
           );
 
-          // Force recalculation to ensure fresh data after shadow extraction
-          // Use forceRecalculate = true to bypass cache and get fresh data
-          const armyStats = await shadowArmy.getAggregatedArmyStats(true);
+          // CRITICAL FIX: Use direct power calculation (faster, more reliable)
+          // This uses incremental cache and only recalculates if needed
+          let totalPower = 0;
+          if (typeof shadowArmy.getTotalShadowPower === 'function') {
+            try {
+              totalPower = await shadowArmy.getTotalShadowPower(false); // Use cache if valid
+              this.debugLog('UPDATE_SHADOW_POWER', 'Using direct power calculation', {
+                totalPower,
+                indexedDBCount,
+              });
+            } catch (powerError) {
+              this.debugError(
+                'UPDATE_SHADOW_POWER',
+                'Direct power calculation failed, using getAggregatedArmyStats',
+                powerError
+              );
+              // Fallback to getAggregatedArmyStats
+              const armyStats = await shadowArmy.getAggregatedArmyStats();
+              totalPower = armyStats?.totalPower ?? 0;
+            }
+          } else {
+            // Fallback to getAggregatedArmyStats if direct function not available
+            const armyStats = await shadowArmy.getAggregatedArmyStats(true);
+            totalPower = armyStats?.totalPower ?? 0;
+          }
 
-          // Ensure we get a valid number (handle null/undefined)
-          const totalPower = armyStats?.totalPower ?? 0;
+          // For compatibility, still get full army stats for other data
+          const armyStats = await shadowArmy.getAggregatedArmyStats(); // Direct calculation
+
+          // CRITICAL DIAGNOSTIC: Compare IndexedDB count with returned shadows
+          if (indexedDBCount > 0 && armyStats?.totalShadows === 0) {
+            // Try to get shadows directly to verify IndexedDB access
+            let directShadows = [];
+            try {
+              if (shadowArmy.storageManager) {
+                // Get all shadows (up to 10k limit) to manually calculate power
+                directShadows = await shadowArmy.storageManager.getShadows({}, 0, 10000);
+                this.debugLog('UPDATE_SHADOW_POWER', 'Direct shadow retrieval test', {
+                  directShadowCount: directShadows?.length || 0,
+                  firstShadow: directShadows?.[0]
+                    ? {
+                        id: directShadows[0].id || directShadows[0].i,
+                        rank: directShadows[0].rank,
+                        hasStrength: !!directShadows[0].strength,
+                        hasBaseStats: !!directShadows[0].baseStats,
+                        isCompressed: !!(directShadows[0]._c === 1 || directShadows[0]._c === 2),
+                      }
+                    : null,
+                });
+
+                // FALLBACK: If getAggregatedArmyStats failed but we can get shadows directly,
+                // manually calculate the total power
+                if (directShadows && directShadows.length > 0) {
+                  this.debugLog(
+                    'UPDATE_SHADOW_POWER',
+                    'Using fallback: manually calculating power from direct retrieval',
+                    {
+                      shadowCount: directShadows.length,
+                      indexedDBCount,
+                    }
+                  );
+
+                  // Use ShadowArmy's methods to calculate power if available
+                  let fallbackPower = 0;
+                  if (
+                    shadowArmy.getShadowEffectiveStats &&
+                    shadowArmy.calculateShadowPower &&
+                    shadowArmy.getShadowData
+                  ) {
+                    directShadows.forEach((shadow) => {
+                      try {
+                        // Decompress if needed
+                        let decompressed = shadow;
+                        if (
+                          shadowArmy.getShadowData &&
+                          typeof shadowArmy.getShadowData === 'function'
+                        ) {
+                          decompressed = shadowArmy.getShadowData(shadow) || shadow;
+                        }
+
+                        // Get effective stats
+                        const effective = shadowArmy.getShadowEffectiveStats(decompressed);
+                        if (effective) {
+                          // Calculate power
+                          const power = shadowArmy.calculateShadowPower(effective, 1);
+                          if (power > 0) {
+                            fallbackPower += power;
+                          } else if (decompressed.strength > 0) {
+                            // Fallback to stored strength
+                            fallbackPower += decompressed.strength;
+                          }
+                        } else if (decompressed.strength > 0) {
+                          // Fallback to stored strength if effective stats unavailable
+                          fallbackPower += decompressed.strength;
+                        }
+                      } catch (shadowError) {
+                        // Skip this shadow if calculation fails
+                        this.debugLog(
+                          'UPDATE_SHADOW_POWER',
+                          'Failed to calculate power for shadow',
+                          {
+                            shadowId: shadow.id || shadow.i,
+                            error: shadowError?.message,
+                          }
+                        );
+                      }
+                    });
+
+                    if (fallbackPower > 0) {
+                      this.debugLog('UPDATE_SHADOW_POWER', 'Fallback calculation succeeded', {
+                        fallbackPower,
+                        shadowCount: directShadows.length,
+                        avgPower: Math.floor(fallbackPower / directShadows.length),
+                      });
+
+                      // Use fallback power
+                      this.cachedShadowPower = fallbackPower.toLocaleString();
+                      this.settings.cachedShadowPower = this.cachedShadowPower;
+                      this.saveSettings();
+
+                      // Update ShadowArmy's cached value
+                      if (shadowArmy.settings) {
+                        shadowArmy.settings.cachedTotalPower = fallbackPower;
+                        shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
+                        shadowArmy.saveSettings();
+                      }
+
+                      this.updateShadowPowerDisplay();
+                      return; // Exit early with fallback power
+                    }
+                  }
+                }
+              }
+            } catch (directError) {
+              this.debugError('UPDATE_SHADOW_POWER', 'Failed to get shadows directly', directError);
+            }
+
+            this.debugError(
+              'UPDATE_SHADOW_POWER',
+              'CRITICAL: IndexedDB has shadows but getAggregatedArmyStats returned 0!',
+              {
+                indexedDBCount,
+                returnedTotalShadows: armyStats?.totalShadows || 0,
+                returnedTotalPower: armyStats?.totalPower || 0,
+                directShadowCount: directShadows?.length || 0,
+                possibleCauses: [
+                  'getShadows() is returning empty array despite IndexedDB having data',
+                  'Shadows are being filtered out during aggregation',
+                  'Timing issue - IndexedDB not fully initialized',
+                  'Shadows exist but have no stats (all zeros)',
+                ],
+              }
+            );
+          } else if (indexedDBCount === 0) {
+            // IndexedDB is empty - user has no shadows
+            this.debugLog('UPDATE_SHADOW_POWER', 'IndexedDB is empty - no shadows exist', {
+              indexedDBCount,
+              returnedTotalShadows: armyStats?.totalShadows || 0,
+              note: 'This is expected if no shadows have been extracted yet',
+            });
+          }
+
+          // Use totalPower from direct calculation (already set above)
+          // Ensure we have a valid number
+          if (!totalPower || totalPower === 0) {
+            totalPower = armyStats?.totalPower ?? 0;
+          }
 
           // Additional validation: if totalPower is 0 but we have shadows, recalculate
           if (totalPower === 0 && armyStats?.totalShadows > 0) {
@@ -7682,10 +8522,32 @@ module.exports = class SoloLevelingStats {
                   totalPower: armyStats.totalPower,
                   totalShadows: armyStats.totalShadows,
                   hasStats: !!armyStats.totalStats,
+                  totalStatsSum: armyStats.totalStats
+                    ? Object.values(armyStats.totalStats).reduce((sum, val) => sum + (val || 0), 0)
+                    : 0,
                 }
               : null,
             totalPower,
+            cachedPowerInSettings: shadowArmy.settings?.cachedTotalPower,
           });
+
+          // CRITICAL: If we got 0 but ShadowArmy has shadows, log detailed diagnostics
+          if (totalPower === 0 && armyStats?.totalShadows > 0) {
+            this.debugError(
+              'UPDATE_SHADOW_POWER',
+              'WARNING: getAggregatedArmyStats returned 0 power despite having shadows!',
+              {
+                totalShadows: armyStats.totalShadows,
+                totalStats: armyStats.totalStats,
+                totalStatsSum: armyStats.totalStats
+                  ? Object.values(armyStats.totalStats).reduce((sum, val) => sum + (val || 0), 0)
+                  : 0,
+                byRank: armyStats.byRank,
+                hasStorageManager: !!shadowArmy.storageManager,
+                dbInitialized: !!shadowArmy.storageManager?.db,
+              }
+            );
+          }
 
           this.debugLog('UPDATE_SHADOW_POWER', 'Total power calculation completed', {
             totalPower,
@@ -7694,26 +8556,53 @@ module.exports = class SoloLevelingStats {
               armyStats?.totalShadows > 0 ? Math.floor(totalPower / armyStats.totalShadows) : 0,
             formattedPower: totalPower.toLocaleString(),
             previousCachedPower: this.cachedShadowPower,
+            willUpdateDisplay: totalPower > 0 || armyStats?.totalShadows === 0,
           });
 
-          this.cachedShadowPower = totalPower.toLocaleString();
+          // Only update if we got a valid result (power > 0 OR no shadows exist)
+          // Don't update to 0 if shadows exist (data integrity issue)
+          if (totalPower > 0 || (armyStats && armyStats.totalShadows === 0)) {
+            this.cachedShadowPower = totalPower.toLocaleString();
 
-          // PERSISTENCE: Save shadow power to settings so it persists after restart
-          this.settings.cachedShadowPower = this.cachedShadowPower;
-          this.saveSettings(); // Save immediately to persist across restarts
+            // PERSISTENCE: Save shadow power to settings so it persists after restart
+            this.settings.cachedShadowPower = this.cachedShadowPower;
+            this.saveSettings(); // Save immediately to persist across restarts
 
-          // Also update ShadowArmy's cached value for consistency
-          if (shadowArmy.settings) {
-            shadowArmy.settings.cachedTotalPower = totalPower;
-            shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
-            shadowArmy.saveSettings();
+            // Also update ShadowArmy's cached value for consistency
+            if (shadowArmy.settings) {
+              shadowArmy.settings.cachedTotalPower = totalPower;
+              shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
+              shadowArmy.saveSettings();
+            }
+
+            this.updateShadowPowerDisplay();
+
+            this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated and saved', {
+              newCachedPower: this.cachedShadowPower,
+              totalPower,
+              totalShadows: armyStats?.totalShadows || 0,
+              savedToSettings: true,
+            });
+          } else {
+            // Don't update to 0 if we have shadows - this indicates a data issue
+            this.debugError(
+              'UPDATE_SHADOW_POWER',
+              'Not updating to 0 - shadows exist but power is 0 (data integrity issue)',
+              {
+                totalPower,
+                totalShadows: armyStats?.totalShadows || 0,
+                keepingPreviousValue: this.cachedShadowPower,
+                possibleCauses: [
+                  'Shadows have no baseStats in IndexedDB',
+                  'Effective stats calculation returning all zeros',
+                  'Power calculation failing',
+                  'Shadows are compressed incorrectly',
+                ],
+              }
+            );
+            // Still update display with previous value (don't show 0 if we have shadows)
+            this.updateShadowPowerDisplay();
           }
-
-          this.updateShadowPowerDisplay();
-          this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated and saved', {
-            newCachedPower: this.cachedShadowPower,
-            savedToSettings: true,
-          });
           return;
         } catch (error) {
           // If getAggregatedArmyStats fails, fall through to fallback methods
@@ -7799,14 +8688,24 @@ module.exports = class SoloLevelingStats {
   }
 
   updateShadowPowerDisplay() {
+    if (!this._isRunning) return;
+
     this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Updating shadow power display', {
       cachedShadowPower: this.cachedShadowPower,
       hasChatUIPanel: !!this.chatUIPanel,
     });
 
     if (this.chatUIPanel) {
-      const shadowPowerEl = this.chatUIPanel.querySelector('.sls-chat-shadow-power');
+      const cachedShadowPowerEl = this._chatUIElements?.shadowPowerEl;
+      const shadowPowerEl =
+        cachedShadowPowerEl && cachedShadowPowerEl.isConnected
+          ? cachedShadowPowerEl
+          : this.chatUIPanel.querySelector('.sls-chat-shadow-power');
       if (shadowPowerEl) {
+        this._chatUIElements = {
+          ...(this._chatUIElements || {}),
+          shadowPowerEl,
+        };
         const newText = `Shadow Power: ${this.cachedShadowPower}`;
         shadowPowerEl.textContent = newText;
         this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Shadow power text updated in progress bar', {
@@ -7838,10 +8737,23 @@ module.exports = class SoloLevelingStats {
   }
 
   getShadowArmyBuffs() {
+    // Check cache first (avoid repeated plugin lookups)
+    const now = Date.now();
+    if (
+      this._cache.shadowArmyBuffs &&
+      this._cache.shadowArmyBuffsTime &&
+      now - this._cache.shadowArmyBuffsTime < this._cache.shadowArmyBuffsTTL
+    ) {
+      return this._cache.shadowArmyBuffs;
+    }
+
     try {
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
-        return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+        const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+        this._cache.shadowArmyBuffs = result;
+        this._cache.shadowArmyBuffsTime = now;
+        return result;
       }
 
       const shadowArmy = shadowArmyPlugin.instance;
@@ -7853,7 +8765,10 @@ module.exports = class SoloLevelingStats {
         // Otherwise return zeros (will be updated asynchronously)
         if (shadowArmy.cachedBuffs && Date.now() - (shadowArmy.cachedBuffsTime || 0) < 5000) {
           // Use cached buffs if recent (within 5 seconds)
-          return shadowArmy.cachedBuffs;
+          const result = shadowArmy.cachedBuffs;
+          this._cache.shadowArmyBuffs = result;
+          this._cache.shadowArmyBuffsTime = now;
+          return result;
         }
 
         // Trigger async calculation and cache it
@@ -7862,6 +8777,9 @@ module.exports = class SoloLevelingStats {
           .then((buffs) => {
             shadowArmy.cachedBuffs = buffs;
             shadowArmy.cachedBuffsTime = Date.now();
+            // Update our cache too
+            this._cache.shadowArmyBuffs = buffs;
+            this._cache.shadowArmyBuffsTime = Date.now();
             // Update UI when buffs are calculated
             this.updateChatUI();
           })
@@ -7870,21 +8788,28 @@ module.exports = class SoloLevelingStats {
           });
 
         // Return zeros for now, will be updated when async calculation completes
-        return (
-          shadowArmy.cachedBuffs || {
-            strength: 0,
-            agility: 0,
-            intelligence: 0,
-            vitality: 0,
-            perception: 0,
-          }
-        );
+        const result = shadowArmy.cachedBuffs || {
+          strength: 0,
+          agility: 0,
+          intelligence: 0,
+          vitality: 0,
+          perception: 0,
+        };
+        this._cache.shadowArmyBuffs = result;
+        this._cache.shadowArmyBuffsTime = now;
+        return result;
       }
 
-      return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      this._cache.shadowArmyBuffs = result;
+      this._cache.shadowArmyBuffsTime = now;
+      return result;
     } catch (error) {
       // Silently fail if ShadowArmy isn't available
-      return { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      this._cache.shadowArmyBuffs = result;
+      this._cache.shadowArmyBuffsTime = now;
+      return result;
     }
   }
 
@@ -7892,13 +8817,21 @@ module.exports = class SoloLevelingStats {
   // HP/MANA SYSTEM
   // ============================================================================
 
-  updateHPManaBars() {
-    const hpManaDisplay = this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
+  updateHPManaBars(totalStats = null) {
+    const cachedHpManaDisplay = this._chatUIElements?.hpManaDisplay;
+    const hpManaDisplay =
+      cachedHpManaDisplay && cachedHpManaDisplay.isConnected
+        ? cachedHpManaDisplay
+        : this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
     if (!hpManaDisplay) return;
+    this._chatUIElements = {
+      ...(this._chatUIElements || {}),
+      hpManaDisplay,
+    };
 
-    const totalStats = this.getTotalEffectiveStats();
-    const vitality = totalStats.vitality || 0;
-    const intelligence = totalStats.intelligence || 0;
+    const effectiveStats = totalStats || this.getTotalEffectiveStats();
+    const vitality = effectiveStats.vitality || 0;
+    const intelligence = effectiveStats.intelligence || 0;
     const userRank = this.settings.rank || 'E';
     const maxHP = this.calculateHP(vitality, userRank);
     const maxMana = this.calculateMana(intelligence);
@@ -7929,10 +8862,37 @@ module.exports = class SoloLevelingStats {
     const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;
 
     // Update HP bar fill and text (use IDs for reliable selection)
-    const hpBarFill = hpManaDisplay.querySelector('#sls-hp-bar-fill');
-    const hpText = hpManaDisplay.querySelector('#sls-hp-text');
-    const manaBarFill = hpManaDisplay.querySelector('#sls-mp-bar-fill');
-    const manaText = hpManaDisplay.querySelector('#sls-mp-text');
+    const cachedHpBarFill = this._chatUIElements?.hpBarFill;
+    const hpBarFill =
+      cachedHpBarFill && cachedHpBarFill.isConnected
+        ? cachedHpBarFill
+        : hpManaDisplay.querySelector('#sls-hp-bar-fill');
+
+    const cachedHpText = this._chatUIElements?.hpText;
+    const hpText =
+      cachedHpText && cachedHpText.isConnected
+        ? cachedHpText
+        : hpManaDisplay.querySelector('#sls-hp-text');
+
+    const cachedManaBarFill = this._chatUIElements?.manaBarFill;
+    const manaBarFill =
+      cachedManaBarFill && cachedManaBarFill.isConnected
+        ? cachedManaBarFill
+        : hpManaDisplay.querySelector('#sls-mp-bar-fill');
+
+    const cachedManaText = this._chatUIElements?.manaText;
+    const manaText =
+      cachedManaText && cachedManaText.isConnected
+        ? cachedManaText
+        : hpManaDisplay.querySelector('#sls-mp-text');
+
+    this._chatUIElements = {
+      ...(this._chatUIElements || {}),
+      hpBarFill,
+      hpText,
+      manaBarFill,
+      manaText,
+    };
 
     // Update HP bar
     if (hpBarFill) {
@@ -7946,7 +8906,11 @@ module.exports = class SoloLevelingStats {
     if (manaBarFill) {
       manaBarFill.style.width = `${manaPercent}%`;
     } else {
-      console.warn('SoloLevelingStats: Mana bar fill not found');
+      // Avoid console spam on frequent updates
+      if (!this._warnedMissingManaBarFill) {
+        this._warnedMissingManaBarFill = true;
+        this.debugLog('UPDATE_HP_MANA', 'Mana bar fill not found');
+      }
     }
     if (manaText) {
       manaText.textContent = `${Math.floor(this.settings.userMana)}/${this.settings.userMaxMana}`;
@@ -8058,14 +9022,25 @@ module.exports = class SoloLevelingStats {
       // Try to create immediately
       if (!tryCreateUI()) {
         // Retry after a delay if Discord hasn't loaded yet
-        const retryInterval = setInterval(() => {
+        this.chatUICreationRetryInterval = setInterval(() => {
           if (tryCreateUI()) {
-            clearInterval(retryInterval);
+            clearInterval(this.chatUICreationRetryInterval);
+            this.chatUICreationRetryInterval = null;
+            if (this.chatUICreationRetryTimeout) {
+              clearTimeout(this.chatUICreationRetryTimeout);
+              this.chatUICreationRetryTimeout = null;
+            }
           }
         }, 1000);
 
         // Stop retrying after 10 seconds
-        setTimeout(() => clearInterval(retryInterval), 10000);
+        this.chatUICreationRetryTimeout = setTimeout(() => {
+          if (this.chatUICreationRetryInterval) {
+            clearInterval(this.chatUICreationRetryInterval);
+            this.chatUICreationRetryInterval = null;
+          }
+          this.chatUICreationRetryTimeout = null;
+        }, 10000);
       }
 
       // Watch for DOM changes (channel switches, etc.)
@@ -8091,13 +9066,16 @@ module.exports = class SoloLevelingStats {
     } catch (error) {
       this.debugError('CREATE_CHAT_UI', error);
       // Retry after delay
-      setTimeout(() => {
-        try {
-          this.createChatUI();
-        } catch (retryError) {
-          this.debugError('CREATE_CHAT_UI_RETRY', retryError);
-        }
-      }, 3000);
+      if (!this._createChatUIErrorRetryTimeout) {
+        this._createChatUIErrorRetryTimeout = setTimeout(() => {
+          this._createChatUIErrorRetryTimeout = null;
+          try {
+            this.createChatUI();
+          } catch (retryError) {
+            this.debugError('CREATE_CHAT_UI_RETRY', retryError);
+          }
+        }, 3000);
+      }
     }
   }
 
@@ -8112,15 +9090,58 @@ module.exports = class SoloLevelingStats {
       clearInterval(this.chatUIUpdateInterval);
       this.chatUIUpdateInterval = null;
     }
+    if (this._createChatUIStartupRetryTimeout) {
+      clearTimeout(this._createChatUIStartupRetryTimeout);
+      this._createChatUIStartupRetryTimeout = null;
+    }
+    if (this._createChatUIErrorRetryTimeout) {
+      clearTimeout(this._createChatUIErrorRetryTimeout);
+      this._createChatUIErrorRetryTimeout = null;
+    }
+    if (this.chatUICreationRetryInterval) {
+      clearInterval(this.chatUICreationRetryInterval);
+      this.chatUICreationRetryInterval = null;
+    }
+    if (this.chatUICreationRetryTimeout) {
+      clearTimeout(this.chatUICreationRetryTimeout);
+      this.chatUICreationRetryTimeout = null;
+    }
     if (this.chatUIObserver) {
       this.chatUIObserver.disconnect();
       this.chatUIObserver = null;
     }
+
+    // Clear chat UI element cache
+    this._chatUIElements = null;
+    this._lastChatUIUpdateAt = 0;
+    this._warnedMissingManaBarFill = false;
+
+    // Remove injected CSS so it doesn't persist after disable
+    document.getElementById('sls-chat-ui-styles')?.remove();
   }
 
   renderChatUI() {
     const levelInfo = this.getCurrentLevel();
-    const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+
+    // CRITICAL: Ensure levelInfo is valid and calculate XP percentage safely
+    let xpPercent = 0;
+    if (levelInfo && levelInfo.xpRequired && levelInfo.xpRequired > 0) {
+      xpPercent = Math.min(100, Math.max(0, (levelInfo.xp / levelInfo.xpRequired) * 100));
+    } else {
+      // Fallback: Use settings directly if levelInfo is invalid
+      const fallbackXP = this.settings.xp || 0;
+      const fallbackXPRequired = this.getXPRequiredForLevel(this.settings.level || 1);
+      if (fallbackXPRequired > 0) {
+        xpPercent = Math.min(100, Math.max(0, (fallbackXP / fallbackXPRequired) * 100));
+      }
+      this.debugLog('RENDER_CHAT_UI', 'Using fallback XP calculation', {
+        fallbackXP,
+        fallbackXPRequired,
+        xpPercent,
+        level: this.settings.level,
+      });
+    }
+
     const titleBonus = this.getActiveTitleBonus();
 
     // Calculate HP/Mana using TOTAL effective stats (including all buffs)
@@ -8187,7 +9208,10 @@ module.exports = class SoloLevelingStats {
             <div class="sls-chat-rank">Rank: ${this.settings.rank}</div>
             <div class="sls-chat-level-number">Lv.${this.settings.level}</div>
             <div class="sls-chat-progress-bar">
-              <div class="sls-chat-progress-fill" style="width: ${xpPercent}%"></div>
+              <div class="sls-chat-progress-fill" id="sls-xp-progress-fill" style="width: ${Math.min(
+                100,
+                Math.max(0, xpPercent)
+              ).toFixed(2)}%"></div>
             </div>
             <div class="sls-chat-shadow-power">Shadow Power: ${this.getTotalShadowPower()}</div>
           </div>
@@ -8412,9 +9436,6 @@ module.exports = class SoloLevelingStats {
             hpManaDisplay.classList.add('sls-hp-mana-collapsed');
           }
         }
-
-        // OPTIMIZED: Removed verbose logging for GUI toggle (happens frequently)
-        // this.debugLog('CHAT_GUI', 'Chat GUI toggled', { wasExpanded: isExpanded, nowExpanded: !isExpanded });
       });
     }
 
@@ -8451,6 +9472,13 @@ module.exports = class SoloLevelingStats {
   updateChatUI() {
     // Guard clause: Return early if chat UI panel doesn't exist
     if (!this.chatUIPanel) return;
+    if (!this._isRunning) return;
+
+    // Self-throttle to avoid redundant work when multiple events trigger updates
+    const now = Date.now();
+    const lastUpdateAt = this._lastChatUIUpdateAt || 0;
+    if (now - lastUpdateAt < 150) return;
+    this._lastChatUIUpdateAt = now;
 
     // Get total stats outside try block so it's accessible throughout the function
     const totalStats = this.getTotalEffectiveStats();
@@ -8475,25 +9503,109 @@ module.exports = class SoloLevelingStats {
       }
 
       // Update HP/Mana bars
-      this.updateHPManaBars();
+      this.updateHPManaBars(totalStats);
 
       // Update rank display
-      const rankEl = this.chatUIPanel.querySelector('.sls-chat-rank');
+      const cachedRankEl = this._chatUIElements?.rankEl;
+      const rankEl =
+        cachedRankEl && cachedRankEl.isConnected
+          ? cachedRankEl
+          : this.chatUIPanel.querySelector('.sls-chat-rank');
       if (rankEl) rankEl.textContent = `Rank: ${this.settings.rank}`;
+      this._chatUIElements = {
+        ...(this._chatUIElements || {}),
+        rankEl,
+      };
 
       // Update level display
-      const levelNumber = this.chatUIPanel.querySelector('.sls-chat-level-number');
+      const cachedLevelNumber = this._chatUIElements?.levelNumber;
+      const levelNumber =
+        cachedLevelNumber && cachedLevelNumber.isConnected
+          ? cachedLevelNumber
+          : this.chatUIPanel.querySelector('.sls-chat-level-number');
       if (levelNumber) levelNumber.textContent = `Lv.${this.settings.level}`;
+      this._chatUIElements = {
+        ...(this._chatUIElements || {}),
+        levelNumber,
+      };
 
       // Update progress bar with explicit style update
-      const progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
+      // Try multiple selectors to find the progress bar (in order of preference)
+      const cachedProgressFill = this._chatUIElements?.progressFill;
+      let progressFill =
+        cachedProgressFill && cachedProgressFill.isConnected ? cachedProgressFill : null;
+      if (!progressFill) progressFill = this.chatUIPanel.querySelector('#sls-xp-progress-fill');
+
+      // Fallback: Try class selector
+      if (!progressFill) {
+        progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
+      }
+
+      // Fallback: Try finding in level section
+      if (!progressFill) {
+        const levelSection = this.chatUIPanel.querySelector('.sls-chat-level');
+        if (levelSection) {
+          progressFill =
+            levelSection.querySelector('#sls-xp-progress-fill') ||
+            levelSection.querySelector('.sls-chat-progress-fill');
+        }
+      }
+
+      // Fallback: Try finding in progress bar container
+      if (!progressFill) {
+        const progressBar = this.chatUIPanel.querySelector('.sls-chat-progress-bar');
+        if (progressBar) {
+          progressFill =
+            progressBar.querySelector('#sls-xp-progress-fill') ||
+            progressBar.querySelector('.sls-chat-progress-fill');
+        }
+      }
+
       if (progressFill) {
-        progressFill.style.width = `${xpPercent.toFixed(2)}%`;
+        this._chatUIElements = {
+          ...(this._chatUIElements || {}),
+          progressFill,
+        };
+
+        // CRITICAL: Ensure percentage is valid before updating
+        const validPercent = Math.min(100, Math.max(0, xpPercent));
+        const percentString = `${validPercent.toFixed(2)}%`;
+
+        // Update width with transition
+        progressFill.style.width = percentString;
+        progressFill.style.setProperty('width', percentString, 'important');
+
         // Force a reflow to ensure the update is visible
-        progressFill.offsetHeight;
+        void progressFill.offsetHeight;
+
+        // Also update any text that shows XP progress
+        const cachedXpText = this._chatUIElements?.xpText;
+        const xpText =
+          cachedXpText && cachedXpText.isConnected
+            ? cachedXpText
+            : this.chatUIPanel.querySelector('.sls-xp-text');
+        if (xpText) {
+          xpText.textContent = `${Math.floor(levelInfo.xp)}/${levelInfo.xpRequired} XP`;
+          this._chatUIElements = {
+            ...(this._chatUIElements || {}),
+            xpText,
+          };
+        }
+
+        this.debugLog('UPDATE_CHAT_UI', 'Progress bar updated', {
+          xpPercent: validPercent,
+          xp: levelInfo.xp,
+          xpRequired: levelInfo.xpRequired,
+          totalXP: this.settings.totalXP,
+          width: percentString,
+        });
       } else {
-        // If progress bar doesn't exist, log for debugging
-        this.debugLog('UPDATE_CHAT_UI', 'Progress bar element not found');
+        // Progress bar not found - log for debugging
+        this.debugLog('UPDATE_CHAT_UI', 'Progress bar element not found', {
+          chatUIPanelExists: !!this.chatUIPanel,
+          levelSectionExists: !!this.chatUIPanel?.querySelector('.sls-chat-level'),
+          progressBarExists: !!this.chatUIPanel?.querySelector('.sls-chat-progress-bar'),
+        });
       }
     } catch (error) {
       this.debugError('UPDATE_CHAT_UI', 'Error updating chat UI', error);
@@ -8778,12 +9890,8 @@ module.exports = class SoloLevelingStats {
    * - Primary: 'Friend or Foe BB' (Solo Leveling theme font)
    * - Fallback: 'Orbitron', 'Segoe UI', sans-serif
    */
-  injectChatUICSS() {
-    if (document.getElementById('sls-chat-ui-styles')) return;
-
-    const style = document.createElement('style');
-    style.id = 'sls-chat-ui-styles';
-    style.textContent = `
+  getChatUiCssText() {
+    return `
       /* ============================================================================
          SOLO LEVELING STATS - THEME CSS
          ============================================================================
@@ -9960,6 +11068,14 @@ module.exports = class SoloLevelingStats {
         padding: 8px;
       }
     `;
+  }
+
+  injectChatUICSS() {
+    if (document.getElementById('sls-chat-ui-styles')) return;
+
+    const style = document.createElement('style');
+    style.id = 'sls-chat-ui-styles';
+    style.textContent = this.getChatUiCssText();
 
     document.head.appendChild(style);
   }
@@ -9993,15 +11109,11 @@ module.exports = class SoloLevelingStats {
 
     // Debug Mode Toggle
     const debugToggle = this.createToggle(
+      'debugMode',
       'Debug Mode',
       'Show detailed console logs for troubleshooting (constructor, save, load, periodic backups)',
       this.settings.debugMode || false,
-      (value) =>
-        this.withAutoSave(() => {
-          this.settings.debugMode = value;
-          console.log('[SETTINGS] Debug mode:', value ? 'ENABLED' : 'DISABLED');
-          console.log('Reload Discord (Ctrl+R) to see changes in console');
-        }, true)
+      null
     );
     container.appendChild(debugToggle);
 
@@ -10028,12 +11140,65 @@ module.exports = class SoloLevelingStats {
     `;
     container.appendChild(info);
 
+    // Chat UI preview (kept as a helper for readability)
+    try {
+      const previewHeader = document.createElement('h3');
+      previewHeader.textContent = 'Chat UI Preview';
+      previewHeader.style.cssText = `
+        margin-top: 24px;
+        margin-bottom: 12px;
+        color: #d4a5ff;
+        font-size: 16px;
+        font-weight: 700;
+      `;
+      container.appendChild(previewHeader);
+
+      container.appendChild(this.createChatUiPreviewPanel());
+    } catch (error) {
+      this.debugError('SETTINGS_PANEL_PREVIEW', error);
+    }
+
+    // Delegated settings panel binding (single handler)
+    if (this._settingsPanelRoot && this._settingsPanelHandlers?.change) {
+      try {
+        this._settingsPanelRoot.removeEventListener('change', this._settingsPanelHandlers.change);
+      } catch (_) {
+        // Ignore removal errors
+      }
+    }
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+
+    this._settingsPanelHandlers = {
+      change: (e) => {
+        const target = e?.target;
+        if (!target) return;
+        const key = target.getAttribute?.('data-sls-setting');
+        if (!key) return;
+        const isChecked = !!target.checked;
+
+        const handlers = {
+          debugMode: () =>
+            this.withAutoSave(() => {
+              this.settings.debugMode = isChecked;
+              console.log('[SoloLevelingStats] Debug mode', isChecked ? 'enabled' : 'disabled');
+            }, true),
+        };
+
+        const fn = handlers[key];
+        fn && fn();
+      },
+    };
+
+    container.addEventListener('change', this._settingsPanelHandlers.change);
+    this._settingsPanelRoot = container;
+
     return container;
   }
 
   // FUNCTIONAL TOGGLE CREATOR (NO IF-ELSE!)
   // Creates a styled toggle switch with label and description
-  createToggle(label, description, defaultValue, onChange) {
+  createToggle(settingKey, label, description, defaultValue, _onChangeUnused) {
     const wrapper = document.createElement('div');
     wrapper.style.cssText = `
       margin-bottom: 20px;
@@ -10050,28 +11215,25 @@ module.exports = class SoloLevelingStats {
     const toggle = document.createElement('input');
     toggle.type = 'checkbox';
     toggle.checked = defaultValue;
+    toggle.id = `sls-setting-${settingKey}`;
+    toggle.setAttribute('data-sls-setting', settingKey);
     toggle.style.cssText = `
       width: 40px;
       height: 20px;
       margin-right: 12px;
       cursor: pointer;
     `;
-    toggle.addEventListener('change', (e) => onChange(e.target.checked));
 
     // Label
     const labelEl = document.createElement('label');
     labelEl.textContent = label;
+    labelEl.setAttribute('for', toggle.id);
     labelEl.style.cssText = `
       font-size: 16px;
       font-weight: 600;
       color: #ffffff;
       cursor: pointer;
     `;
-    labelEl.addEventListener('click', () => {
-      toggle.checked = !toggle.checked;
-      // eslint-disable-next-line no-undef
-      toggle.dispatchEvent(new Event('change'));
-    });
 
     // Description
     const desc = document.createElement('div');
