@@ -10,9 +10,19 @@ module.exports = class CriticalHit {
   // CONSTRUCTOR & INITIALIZATION
   // ============================================================================
   constructor() {
+    const isDevEnv =
+      (typeof BdApi !== 'undefined' &&
+        (BdApi?.env === 'development' ||
+          BdApi?.env?.NODE_ENV === 'development' ||
+          BdApi?.env?.MODE === 'development' ||
+          BdApi?.isDebug === true)) ||
+      false;
+
+    const baseCritChance = isDevEnv ? 50 : 6;
+
     this.defaultSettings = {
       enabled: true,
-      critChance: 50, // TEMPORARY: 50% for testing (normally 6% base chance, can be buffed by Agility/Luck/Skill Tree up to 25% max)
+      critChance: baseCritChance, // 6% base; optionally 50% in dev/debug environments
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
       critFont: "'Nova Flat', sans-serif", // Nova Flat - gradient text font
@@ -446,7 +456,9 @@ module.exports = class CriticalHit {
    */
   extractDiscordId(idStr) {
     if (!idStr) return null;
-    const matches = String(idStr).trim().match(/\d{17,19}/g);
+    const matches = String(idStr)
+      .trim()
+      .match(/\d{17,19}/g);
     return matches && matches.length > 0 ? matches[matches.length - 1] : null;
   }
 
@@ -819,44 +831,11 @@ module.exports = class CriticalHit {
    */
   saveMessageHistory() {
     try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:692',
-          message: 'saveMessageHistory: Entry',
-          data: {
-            historyLength: this.messageHistory.length,
-            stackTrace: new Error().stack?.split('\n').slice(1, 4).join('|'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
-      // #endregion
       // Use cached crit history or compute once
       const critHistory = this.getCritHistory();
       const critCount = critHistory.length;
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:695',
-          message: 'saveMessageHistory: Computed crit count',
-          data: { historyLength: this.messageHistory.length, critCount },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
-      // #endregion
       const critsByChannel = {};
-        // Use for...of loop for better performance
+      // Use for...of loop for better performance
       for (const entry of critHistory) {
         const channelId = entry.channelId || 'unknown';
         critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
@@ -986,8 +965,12 @@ module.exports = class CriticalHit {
           const match = messageId.match(/\d{17,19}/);
           if (match) {
             messageId = match[0]; // Use extracted Discord ID
+          } else {
+            messageId = null; // Invalid format, don't store
           }
         }
+      } else {
+        messageId = null;
       }
 
       // Validate and normalize authorId (must be string, Discord ID format)
@@ -1003,10 +986,26 @@ module.exports = class CriticalHit {
             authorId = null; // Invalid format, don't store
           }
         }
+      } else {
+        authorId = null;
       }
 
-      // Validate channelId
-      const channelId = messageData.channelId ? String(messageData.channelId).trim() : null;
+      // Validate and normalize channelId (must be string, Discord ID format)
+      let channelId = messageData.channelId;
+      if (channelId) {
+        channelId = String(channelId).trim();
+        // Extract Discord ID if it's embedded in a composite format
+        if (!/^\d{17,19}$/.test(channelId)) {
+          const match = channelId.match(/\d{17,19}/);
+          if (match) {
+            channelId = match[0]; // Use extracted Discord ID
+          } else {
+            channelId = null; // Invalid format, don't store
+          }
+        }
+      } else {
+        channelId = null;
+      }
 
       this.debugLog(
         'ADD_TO_HISTORY',
@@ -1061,15 +1060,14 @@ module.exports = class CriticalHit {
       }
 
       // Check if message already exists in history (update if exists)
-      // Try ID match first, then content-based match for reprocessed messages
-      // Use normalized messageId, not messageData.messageId
+      // Use normalized IDs for all comparisons to prevent duplicates
       const isValidDiscordId = messageId ? /^\d{17,19}$/.test(messageId) : false;
       const isHashId = messageId?.startsWith('hash_');
 
-        // Add to pending queue immediately for crits to handle race condition
+      // Add to pending queue immediately for crits to handle race condition
       // This allows restoration to find crits even before they're added to history
       if (isCrit && historyEntry.critSettings && isValidDiscordId && !isHashId && messageId) {
-          // Handle spam - limit queue size and clean up aggressively
+        // Handle spam - limit queue size and clean up aggressively
         const now = Date.now();
 
         // Clean up old pending crits (older than 3 seconds) and limit size
@@ -1101,39 +1099,21 @@ module.exports = class CriticalHit {
         });
       }
 
-      // #region agent log
-      if (isCrit) {
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:925',
-            message: 'ADD_TO_HISTORY: Adding crit to history',
-            data: {
-              messageId: messageId,
-              channelId: channelId,
-              critSettings: historyEntry.critSettings,
-              messageContent: messageData.messageContent?.substring(0, 50) || null,
-              author: messageData.author || null,
-              cacheInvalidated: true,
-              addedToPendingQueue:
-                isCrit && historyEntry.critSettings && isValidDiscordId && !isHashId && messageId,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'D',
-          }),
-        }).catch(() => {});
-      }
-      // #endregion
+      // Deduplication strategy: Try multiple matching methods in order of reliability
+      // 1. Primary: Exact match on normalized messageId + channelId
+      // 2. Secondary: Content hash match (for reprocessed messages with different IDs)
+      // 3. Tertiary: Author + channel + timestamp match (for messages without content)
 
-      let existingIndex = this.messageHistory.findIndex(
-        (entry) =>
-          entry.messageId === messageData.messageId && entry.channelId === messageData.channelId
-      );
+      // Strategy 1: Primary ID match (most reliable)
+      // Compare normalized IDs - null === null is true, so this handles null cases correctly
+      let existingIndex = this.messageHistory.findIndex((entry) => {
+        // Both messageId and channelId must match (using normalized values)
+        const messageIdMatch = entry.messageId === messageId; // null === null is true
+        const channelIdMatch = entry.channelId === channelId; // null === null is true
+        return messageIdMatch && channelIdMatch;
+      });
 
-      // If no ID match and we have content, try content-based matching
+      // Strategy 2: Content-based matching (for reprocessed messages)
       // This handles cases where message was "undone" and retyped with different ID
       if (
         existingIndex < 0 &&
@@ -1148,10 +1128,11 @@ module.exports = class CriticalHit {
           messageData.timestamp
         );
         existingIndex = this.messageHistory.findIndex((entry) => {
-          if (entry.channelId !== messageData.channelId) return false;
-          // Skip hash IDs in history
-          if (String(entry.messageId).startsWith('hash_')) return false;
-          // Match by content hash
+          // Must match normalized channelId
+          if (entry.channelId !== channelId) return false;
+          // Skip hash IDs in history (they're temporary/unsent messages)
+          if (entry.messageId && String(entry.messageId).startsWith('hash_')) return false;
+          // Match by content hash using normalized authorId if available
           if (entry.messageContent && entry.author) {
             const entryContentHash = this.getContentHash(
               entry.author,
@@ -1169,8 +1150,51 @@ module.exports = class CriticalHit {
             'Found existing entry by content hash (reprocessed message)',
             {
               oldId: this.messageHistory[existingIndex].messageId,
-              newId: messageData.messageId,
+              newId: messageId,
+              oldChannelId: this.messageHistory[existingIndex].channelId,
+              newChannelId: channelId,
               contentHash,
+              matchType: 'content_hash',
+            }
+          );
+        }
+      }
+
+      // Strategy 3: Author + channel + timestamp match (fallback for messages without content)
+      // This catches duplicates when messageId is null but we have authorId
+      if (
+        existingIndex < 0 &&
+        authorId &&
+        channelId &&
+        messageData.timestamp &&
+        !isHashId
+      ) {
+        existingIndex = this.messageHistory.findIndex((entry) => {
+          // Match on normalized authorId + channelId + timestamp
+          const authorMatch = entry.authorId === authorId; // Both normalized
+          const channelMatch = entry.channelId === channelId; // Both normalized
+          const timestampMatch =
+            entry.timestamp && messageData.timestamp
+              ? Math.abs(entry.timestamp - messageData.timestamp) < 5000 // Within 5 seconds
+              : false;
+          // Only match if we don't have conflicting messageIds (both should be null or both should match)
+          const messageIdCompatible =
+            (!entry.messageId && !messageId) || entry.messageId === messageId;
+
+          return authorMatch && channelMatch && timestampMatch && messageIdCompatible;
+        });
+
+        if (existingIndex >= 0) {
+          this.debugLog(
+            'ADD_TO_HISTORY',
+            'Found existing entry by author + channel + timestamp (fallback match)',
+            {
+              oldId: this.messageHistory[existingIndex].messageId,
+              newId: messageId,
+              authorId: authorId,
+              channelId: channelId,
+              timestamp: messageData.timestamp,
+              matchType: 'author_channel_timestamp',
             }
           );
         }
@@ -1180,44 +1204,12 @@ module.exports = class CriticalHit {
         // Update existing entry
         const wasCrit = this.messageHistory[existingIndex].isCrit;
         const existingId = this.messageHistory[existingIndex].messageId;
-        const existingIsHashId = String(existingId).startsWith('hash_');
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:920',
-            message: 'ADD_TO_HISTORY: Updating existing entry',
-            data: {
-              messageId: messageData.messageId,
-              existingId,
-              wasCrit,
-              nowCrit: isCrit,
-              existingIndex,
-              channelId: messageData.channelId,
-              isValidDiscordId,
-              isHashId,
-              existingIsHashId,
-              note:
-                existingIsHashId && isValidDiscordId
-                  ? 'Updating hash ID to Discord ID (message sent)'
-                  : 'Updating existing entry',
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'E',
-          }),
-        }).catch(() => {});
-        // #endregion
-
-        // If updating from hash ID to valid Discord ID, this is a message being sent
+        const existingIsHashId = String(existingId).startsWith('hash_');        // If updating from hash ID to valid Discord ID, this is a message being sent
         // Keep the crit status but update with the real Discord ID
         if (existingIsHashId && isValidDiscordId && wasCrit && isCrit) {
           this.debugLog('ADD_TO_HISTORY', 'Updating hash ID to Discord ID for sent message', {
             oldId: existingId,
-            newId: messageData.messageId,
+            newId: messageId,
             wasCrit,
             nowCrit: isCrit,
           });
@@ -1228,19 +1220,19 @@ module.exports = class CriticalHit {
           index: existingIndex,
           wasCrit: wasCrit,
           nowCrit: isCrit,
-          messageId: messageData.messageId,
-          authorId: messageData.authorId,
+          messageId: messageId,
+          authorId: authorId,
         });
       } else {
         // Add new entry
-        const isValidDiscordId = /^\d{17,19}$/.test(messageData.messageId);
-        const isHashId = messageData.messageId?.startsWith('hash_');
+        const isValidDiscordId = messageId ? /^\d{17,19}$/.test(messageId) : false;
+        const isHashId = messageId?.startsWith('hash_');
 
         // Only add to history if message has valid Discord ID (actually sent)
         // Hash IDs are for unsent/pending messages that might be "undone" - don't add to history
         if (isHashId) {
           this.debugLog('ADD_TO_HISTORY', 'Skipping hash ID (unsent/pending message)', {
-            messageId: messageData.messageId,
+            messageId: messageId,
             isCrit,
             note: 'Hash IDs are created for messages without Discord IDs - these are likely unsent/pending messages that should not be stored in history',
           });
@@ -1251,94 +1243,20 @@ module.exports = class CriticalHit {
         // Invalidate cache when history is modified
         if (isCrit) {
           this._cachedCritHistory = null;
-        }
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:904',
-            message: 'ADD_TO_HISTORY: Added new entry',
-            data: {
-              messageId: messageData.messageId,
-              isCrit,
-              isValidDiscordId,
-              historyLength: this.messageHistory.length,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'E',
-          }),
-        }).catch(() => {});
-        // #endregion
-        this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
+        }        this.debugLog('ADD_TO_HISTORY', 'Added new history entry', {
           index: this.messageHistory.length - 1,
           isCrit: isCrit,
-          messageId: messageData.messageId,
-          authorId: messageData.authorId,
+          messageId: messageId,
+          authorId: authorId,
         });
       }
 
-      // Auto-save immediately on crit, periodically for non-crits
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:918',
-          message: 'ADD_TO_HISTORY: Evaluating save conditions',
-          data: {
-            isCrit,
-            historyLength: this.messageHistory.length,
-            isModulo20: this.messageHistory.length % 20 === 0,
-            messageId: messageData.messageId,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'A',
-        }),
-      }).catch(() => {});
-      // #endregion
-      if (isCrit) {
+      // Auto-save immediately on crit, periodically for non-crits      if (isCrit) {
         this.debugLog('ADD_TO_HISTORY', 'CRITICAL: Triggering immediate save for crit message', {
-          messageId: messageData.messageId,
-          channelId: messageData.channelId,
-        });
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:924',
-            message: 'ADD_TO_HISTORY: Saving because isCrit=true',
-            data: { messageId: messageData.messageId, channelId: messageData.channelId },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
-        // #endregion
-        this.saveMessageHistory(); // Save immediately when crit happens
-      } else if (this.messageHistory.length % 20 === 0) {
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:926',
-            message: 'ADD_TO_HISTORY: Saving because modulo 20',
-            data: { messageId: messageData.messageId, historyLength: this.messageHistory.length },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'A',
-          }),
-        }).catch(() => {});
-        // #endregion
-        this.saveMessageHistory(); // Save every 20 non-crit messages
+          messageId: messageId,
+          channelId: channelId,
+        });        this.saveMessageHistory(); // Save immediately when crit happens
+      } else if (this.messageHistory.length % 20 === 0) {        this.saveMessageHistory(); // Save every 20 non-crit messages
       }
 
       // Use cached getCritHistory method
@@ -1351,15 +1269,18 @@ module.exports = class CriticalHit {
           totalCritCount: finalCritCount,
           isCrit: historyEntry.isCrit,
           hasCritSettings: !!historyEntry.critSettings,
-          messageId: messageData.messageId,
-          authorId: messageData.authorId,
-          channelId: messageData.channelId,
+          messageId: messageId,
+          authorId: authorId,
+          channelId: channelId,
         }
       );
     } catch (error) {
+      // Use normalized IDs if available, fallback to raw data for error logging
+      const errorMessageId = messageId ?? messageData?.messageId;
+      const errorChannelId = channelId ?? messageData?.channelId;
       this.debugError('ADD_TO_HISTORY', error, {
-        messageId: messageData?.messageId,
-        channelId: messageData?.channelId,
+        messageId: errorMessageId,
+        channelId: errorChannelId,
         isCrit: messageData?.isCrit,
       });
     }
@@ -1382,9 +1303,24 @@ module.exports = class CriticalHit {
    * @returns {Array} Array of crit message entries
    */
   getCritHistory(channelId = null) {
+    // Normalize channelId if provided (similar to addToHistory normalization)
+    let normalizedChannelId = null;
+    if (channelId) {
+      normalizedChannelId = String(channelId).trim();
+      // Extract Discord ID if it's embedded in a composite format
+      if (!/^\d{17,19}$/.test(normalizedChannelId)) {
+        const match = normalizedChannelId.match(/\d{17,19}/);
+        if (match) {
+          normalizedChannelId = match[0]; // Use extracted Discord ID
+        } else {
+          normalizedChannelId = null; // Invalid format, don't use
+        }
+      }
+    }
+
     // Cache crit history to avoid repeated filter operations
     const now = Date.now();
-    const cacheKey = channelId || 'all';
+    const cacheKey = normalizedChannelId || 'all';
 
     // Check if cache is valid
     if (
@@ -1401,7 +1337,7 @@ module.exports = class CriticalHit {
     const crits = [];
     for (const entry of this.messageHistory) {
       if (entry.isCrit) {
-        if (!channelId || entry.channelId === channelId) {
+        if (!normalizedChannelId || entry.channelId === normalizedChannelId) {
           crits.push(entry);
         }
       }
@@ -1790,29 +1726,7 @@ module.exports = class CriticalHit {
    */
   applyCritStyleWithSettings(messageElement, critSettings) {
     try {
-      const msgId = this.getMessageIdentifier(messageElement);
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:1457',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Entry',
-          data: {
-            messageId: msgId,
-            hasElement: !!messageElement,
-            hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-            hasCritSettings: !!critSettings,
-            useGradient: critSettings?.gradient,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
-      // #endregion
-      this.debugLog(
+      const msgId = this.getMessageIdentifier(messageElement);      this.debugLog(
         'APPLY_CRIT_STYLE_WITH_SETTINGS',
         'CRITICAL: Restoring crit style from saved settings',
         {
@@ -1898,36 +1812,7 @@ module.exports = class CriticalHit {
 
             // Force another reflow
             void content.offsetHeight;
-          }
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHit.plugin.js:1768',
-              message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Gradient applied for restoration',
-              data: {
-                gradient: gradientColors,
-                hasGradientInStyle,
-                hasGradientInComputed,
-                hasWebkitClip,
-                inlineBackgroundImage: content?.style?.backgroundImage,
-                computedBackgroundImage: computedStyles?.backgroundImage,
-                computedWebkitBackgroundClip: computedStyles?.webkitBackgroundClip,
-                computedBackgroundClip: computedStyles?.backgroundClip,
-                computedWebkitTextFillColor: computedStyles?.webkitTextFillColor,
-                computedColor: computedStyles?.color,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'post-fix',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
+          }          this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
             gradient: gradientColors,
             hasGradientInComputed,
             hasWebkitClip,
@@ -2013,29 +1898,7 @@ module.exports = class CriticalHit {
         }
       }
 
-      messageElement.classList.add('bd-crit-hit');
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:1730',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Added bd-crit-hit class',
-          data: {
-            messageId: msgId,
-            hasCritClass: messageElement.classList.contains('bd-crit-hit'),
-            hasContent: !!content,
-            useGradient,
-            contentHasGradient: content?.style?.backgroundImage?.includes('gradient'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
-      // #endregion
-      this.injectCritCSS();
+      messageElement.classList.add('bd-crit-hit');      this.injectCritCSS();
 
       // Re-get message ID for final verification (in case it wasn't available earlier)
       const finalMsgId = this.getMessageIdentifier(messageElement) || msgId;
@@ -2045,37 +1908,7 @@ module.exports = class CriticalHit {
       const finalHasGradient = finalComputedStyles?.backgroundImage?.includes('gradient');
       const finalHasWebkitClip =
         finalComputedStyles?.webkitBackgroundClip === 'text' ||
-        finalComputedStyles?.backgroundClip === 'text';
-
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:1912',
-          message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Final verification after restoration',
-          data: {
-            messageId: finalMsgId,
-            useGradient,
-            hasContent: !!content,
-            finalHasGradient,
-            finalHasWebkitClip,
-            inlineBackgroundImage: content?.style?.backgroundImage,
-            computedBackgroundImage: finalComputedStyles?.backgroundImage,
-            computedWebkitBackgroundClip: finalComputedStyles?.webkitBackgroundClip,
-            computedBackgroundClip: finalComputedStyles?.backgroundClip,
-            elementHasCritClass: messageElement.classList.contains('bd-crit-hit'),
-            contentHasCritClass: content?.classList?.contains('bd-crit-text-content'),
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'C',
-        }),
-      }).catch(() => {});
-      // #endregion
-
-      this.debugLog(
+        finalComputedStyles?.backgroundClip === 'text';      this.debugLog(
         'APPLY_CRIT_STYLE_WITH_SETTINGS',
         'SUCCESS: Crit style restored successfully from saved settings',
         {
@@ -2130,32 +1963,7 @@ module.exports = class CriticalHit {
             const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
             const hasWebkitClip =
               currentComputed?.webkitBackgroundClip === 'text' ||
-              currentComputed?.backgroundClip === 'text';
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHit.plugin.js:2103',
-                message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Event-based gradient check',
-                data: {
-                  messageId: finalMsgId,
-                  hasGradient,
-                  hasWebkitClip,
-                  computedBackgroundImage: currentComputed?.backgroundImage,
-                  isConnected: currentMessageElement.isConnected,
-                  elementReplaced: currentMessageElement !== messageElement,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'H',
-              }),
-            }).catch(() => {});
-            // #endregion
-
-            if (!hasGradient && useGradient) {
+              currentComputed?.backgroundClip === 'text';            if (!hasGradient && useGradient) {
               // Content element was replaced or gradient was removed - reapply
               const gradientColors =
                 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
@@ -2173,31 +1981,7 @@ module.exports = class CriticalHit {
               currentContent.classList.add('bd-crit-text-content');
 
               // Force reflow
-              void currentContent.offsetHeight;
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:2150',
-                  message:
-                    'APPLY_CRIT_STYLE_WITH_SETTINGS: Gradient missing, reapplying (event-based)',
-                  data: {
-                    messageId: finalMsgId,
-                    reappliedGradient: window
-                      .getComputedStyle(currentContent)
-                      ?.backgroundImage?.includes('gradient'),
-                    wasFromMutation: true,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'H',
-                }),
-              }).catch(() => {});
-              // #endregion
-            }
+              void currentContent.offsetHeight;            }
           }
         };
 
@@ -2278,29 +2062,7 @@ module.exports = class CriticalHit {
                   'important'
                 );
                 retryContent.style.setProperty('color', 'transparent', 'important');
-                retryContent.style.setProperty('display', 'inline-block', 'important');
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:1965',
-                    message: 'APPLY_CRIT_STYLE_WITH_SETTINGS: Second retry for restoration',
-                    data: {
-                      messageId: finalMsgId,
-                      retryHasGradient: window
-                        .getComputedStyle(retryContent)
-                        ?.backgroundImage?.includes('gradient'),
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'post-fix',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
-                // #endregion
-              }
+                retryContent.style.setProperty('display', 'inline-block', 'important');              }
             }
           }
         }, 300); // Longer delay for restoration scenarios
@@ -2412,7 +2174,7 @@ module.exports = class CriticalHit {
     const initialCrits = this.messageHistory.filter((e) => e.isCrit).length;
 
     this.messageHistory = this.messageHistory.filter((entry) => entry.timestamp > cutoffTime);
-        // Invalidate cache after history modification
+    // Invalidate cache after history modification
     this._cachedCritHistory = null;
     const removed = initialLength - this.messageHistory.length;
     const removedCrits = initialCrits - this.getCritHistory().length;
@@ -3069,7 +2831,7 @@ module.exports = class CriticalHit {
       }
     }
 
-        // Invalidate cache before checking to ensure we see latest history
+    // Invalidate cache before checking to ensure we see latest history
     // This fixes race condition where restoration checks happen before crit is added
     this._cachedCritHistory = null;
     this._cachedCritHistoryTimestamp = null;
@@ -3150,27 +2912,7 @@ module.exports = class CriticalHit {
               critSettings: pendingCrit.critSettings,
               messageContent: pendingCrit.messageContent,
               author: pendingCrit.author,
-            };
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHit.plugin.js:2985',
-                message: 'CHECK_FOR_RESTORATION: Found crit in pending queue',
-                data: {
-                  messageId: normalizedMsgId,
-                  pendingAge: Date.now() - pendingCrit.timestamp,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'F',
-              }),
-            }).catch(() => {});
-            // #endregion
-          }
+            };          }
         }
 
         if (isValidDiscordId && !historyEntry) {
@@ -3235,36 +2977,7 @@ module.exports = class CriticalHit {
               );
             }
           }
-        }
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:3006',
-            message: 'CHECK_FOR_RESTORATION: Checking history match',
-            data: {
-              messageId: normalizedMsgId,
-              pureMessageId,
-              channelId: this.currentChannelId,
-              channelCritCount: channelCrits.length,
-              foundHistoryEntry: !!historyEntry,
-              historyEntryIsCrit: historyEntry?.isCrit || false,
-              hasCritSettings: !!historyEntry?.critSettings,
-              contentHash,
-              isValidDiscordId,
-              sampleCritIds: channelCrits.slice(0, 5).map((e) => e.messageId),
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'D',
-          }),
-        }).catch(() => {});
-        // #endregion
-
-        // If not found initially, retry after a delay to handle race condition
+        }        // If not found initially, retry after a delay to handle race condition
         // Discord reprocesses messages before checkForCrit finishes adding to history
         const performRestoration = (entryToRestore) => {
           if (!entryToRestore || !entryToRestore.critSettings) return;
@@ -3282,30 +2995,7 @@ module.exports = class CriticalHit {
 
           // Use double RAF for DOM stability, then retry if element is replaced
           requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:2466',
-                  message: 'CHECK_FOR_RESTORATION: Before restore styling (RAF)',
-                  data: {
-                    messageId: normalizedMsgId,
-                    hasElement: !!messageElement,
-                    hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                    isConnected: messageElement?.isConnected,
-                    hasCritSettings: !!entryToRestore.critSettings,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'post-fix',
-                  hypothesisId: 'C',
-                }),
-              }).catch(() => {});
-              // #endregion
-
-              // Re-query element right before restoration to handle Discord replacements
+            requestAnimationFrame(() => {              // Re-query element right before restoration to handle Discord replacements
               // Discord often replaces elements, so the closure reference might be stale
               const currentMessageElement =
                 document.querySelector(`[data-message-id="${normalizedMsgId}"]`) ||
@@ -3338,55 +3028,8 @@ module.exports = class CriticalHit {
 
               // Always restore - don't skip even if gradient appears present
               // Discord's DOM manipulation can cause stale element references or style removal
-              const needsRestoration = true;
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:3120',
-                  message: 'CHECK_FOR_RESTORATION: Always restoring crit styling',
-                  data: {
-                    messageId: normalizedMsgId,
-                    hasCritClass,
-                    useGradient,
-                    needsRestoration,
-                    elementReplaced: currentMessageElement !== messageElement,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'E',
-                }),
-              }).catch(() => {});
-              // #endregion
-
-              if (needsRestoration) {
-                // Restore the crit
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:2792',
-                    message: 'CHECK_FOR_RESTORATION: Restoring crit styling',
-                    data: {
-                      messageId: normalizedMsgId,
-                      hasCritSettings: !!entryToRestore.critSettings,
-                      useGradient,
-                      hadCritClass: hasCritClass,
-                      needsRestoration,
-                      usingCurrentElement: currentMessageElement !== messageElement,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'post-fix',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
-                // #endregion
-                this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
+              const needsRestoration = true;              if (needsRestoration) {
+                // Restore the crit                this.applyCritStyleWithSettings(currentMessageElement, entryToRestore.critSettings);
                 this.critMessages.add(currentMessageElement);
                 // Mark as processed using message ID (not element reference)
                 if (normalizedMsgId) {
@@ -3405,91 +3048,15 @@ module.exports = class CriticalHit {
                           return id === normalizedMsgId || String(id).includes(normalizedMsgId);
                         });
 
-                      if (!retryElement || !retryElement.isConnected) {
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            location: 'CriticalHit.plugin.js:3190',
-                            message:
-                              'CHECK_FOR_RESTORATION: Verification skipped - element disconnected',
-                            data: {
-                              messageId: normalizedMsgId,
-                              attempt,
-                            },
-                            timestamp: Date.now(),
-                            sessionId: 'debug-session',
-                            runId: 'run1',
-                            hypothesisId: 'D',
-                          }),
-                        }).catch(() => {});
-                        // #endregion
-                        return;
+                      if (!retryElement || !retryElement.isConnected) {                        return;
                       }
 
-                      const content =
-                        this.findMessageContentElement(retryElement);
-
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHit.plugin.js:3195',
-                          message: 'CHECK_FOR_RESTORATION: Post-restoration gradient verification',
-                          data: {
-                            messageId: normalizedMsgId,
-                            attempt,
-                            hasContent: !!content,
-                            useGradient,
-                            hasCritClass: retryElement?.classList?.contains('bd-crit-hit'),
-                            isConnected: retryElement?.isConnected,
-                            elementReplaced: retryElement !== currentMessageElement,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'D',
-                        }),
-                      }).catch(() => {});
-                      // #endregion
-
-                      if (content && useGradient) {
+                      const content = this.findMessageContentElement(retryElement);                      if (content && useGradient) {
                         const computed = window.getComputedStyle(content);
                         const hasGradient = computed?.backgroundImage?.includes('gradient');
                         const hasWebkitClip =
                           computed?.webkitBackgroundClip === 'text' ||
-                          computed?.backgroundClip === 'text';
-
-                        // #region agent log
-                        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                          method: 'POST',
-                          headers: { 'Content-Type': 'application/json' },
-                          body: JSON.stringify({
-                            location: 'CriticalHit.plugin.js:3125',
-                            message:
-                              'CHECK_FOR_RESTORATION: Post-restoration gradient verification',
-                            data: {
-                              messageId: normalizedMsgId,
-                              attempt,
-                              hasGradient,
-                              hasWebkitClip,
-                              computedBackgroundImage: computed?.backgroundImage,
-                              hasCritClass: retryElement?.classList?.contains('bd-crit-hit'),
-                              isConnected: retryElement?.isConnected,
-                              useGradient,
-                              elementReplaced: retryElement !== currentMessageElement,
-                            },
-                            timestamp: Date.now(),
-                            sessionId: 'debug-session',
-                            runId: 'run1',
-                            hypothesisId: 'D',
-                          }),
-                        }).catch(() => {});
-                        // #endregion
-
-                        // If gradient is missing, reapply it aggressively
+                          computed?.backgroundClip === 'text';                        // If gradient is missing, reapply it aggressively
                         if (!hasGradient && attempt < 5) {
                           this.applyCritStyleWithSettings(
                             retryElement,
@@ -3518,7 +3085,10 @@ module.exports = class CriticalHit {
                       currentMessageElement;
 
                     if (!restoredElement || !restoredElement.isConnected) {
-                      this.debugLog('CHECK_FOR_RESTORATION', 'Element disconnected before animation trigger');
+                      this.debugLog(
+                        'CHECK_FOR_RESTORATION',
+                        'Element disconnected before animation trigger'
+                      );
                       return;
                     }
 
@@ -3530,30 +3100,7 @@ module.exports = class CriticalHit {
                       const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
                       const hasWebkitClip =
                         computedStyles?.webkitBackgroundClip === 'text' ||
-                        computedStyles?.backgroundClip === 'text';
-
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHit.plugin.js:3510',
-                          message: 'CHECK_FOR_RESTORATION: Verifying gradient before animation',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            hasWebkitClip,
-                            gradientReady: hasGradient && hasWebkitClip,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'SYNC',
-                        }),
-                      }).catch(() => {});
-                      // #endregion
-
-                      if (!hasGradient || !hasWebkitClip) {
+                        computedStyles?.backgroundClip === 'text';                      if (!hasGradient || !hasWebkitClip) {
                         // Gradient not ready, retry after short delay
                         setTimeout(() => {
                           const retryElement =
@@ -3605,35 +3152,11 @@ module.exports = class CriticalHit {
                       return;
                     }
 
-                    const currentContent =
-                      this.findMessageContentElement(monitoredElement);
+                    const currentContent = this.findMessageContentElement(monitoredElement);
 
                     if (currentContent && useGradient) {
                       const computed = window.getComputedStyle(currentContent);
-                      const hasGradient = computed?.backgroundImage?.includes('gradient');
-
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHit.plugin.js:3461',
-                          message: 'CHECK_FOR_RESTORATION: Event-based gradient check',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            computedBackgroundImage: computed?.backgroundImage,
-                            elementReplaced: monitoredElement !== currentMessageElement,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'H',
-                        }),
-                      }).catch(() => {});
-                      // #endregion
-
-                      if (!hasGradient) {
+                      const hasGradient = computed?.backgroundImage?.includes('gradient');                      if (!hasGradient) {
                         // Gradient disappeared! Reapply it
                         this.applyCritStyleWithSettings(
                           monitoredElement,
@@ -3729,30 +3252,7 @@ module.exports = class CriticalHit {
 
                     if (currentContent && useGradient) {
                       const computed = window.getComputedStyle(currentContent);
-                      const hasGradient = computed?.backgroundImage?.includes('gradient');
-
-                      // #region agent log
-                      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                          location: 'CriticalHit.plugin.js:3599',
-                          message: 'CHECK_FOR_RESTORATION: Event-based gradient check',
-                          data: {
-                            messageId: normalizedMsgId,
-                            hasGradient,
-                            computedBackgroundImage: computed?.backgroundImage,
-                            elementReplaced: currentMessageElement !== messageElement,
-                          },
-                          timestamp: Date.now(),
-                          sessionId: 'debug-session',
-                          runId: 'run1',
-                          hypothesisId: 'H',
-                        }),
-                      }).catch(() => {});
-                      // #endregion
-
-                      if (!hasGradient) {
+                      const hasGradient = computed?.backgroundImage?.includes('gradient');                      if (!hasGradient) {
                         // Gradient disappeared! Reapply it
                         this.applyCritStyleWithSettings(
                           currentMessageElement,
@@ -3805,30 +3305,7 @@ module.exports = class CriticalHit {
                     styleObserver.disconnect();
                     this.styleObservers.delete(normalizedMsgId);
                   }, 10000);
-                }
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:3220',
-                    message:
-                      'CHECK_FOR_RESTORATION: Skipping restoration - already has crit styling, but monitoring',
-                    data: {
-                      messageId: normalizedMsgId,
-                      hasCritClass,
-                      useGradient,
-                      monitoringSetup: useGradient && normalizedMsgId,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'E',
-                  }),
-                }).catch(() => {});
-                // #endregion
-              }
+                }              }
             });
           });
         };
@@ -3869,29 +3346,7 @@ module.exports = class CriticalHit {
                   critSettings: pendingCrit.critSettings,
                   messageContent: pendingCrit.messageContent,
                   author: pendingCrit.author,
-                };
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:3560',
-                    message: 'CHECK_FOR_RESTORATION: Retry found crit in pending queue',
-                    data: {
-                      messageId: normalizedMsgId,
-                      attempt,
-                      pendingAge: Date.now() - pendingCrit.timestamp,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'F',
-                  }),
-                }).catch(() => {});
-                // #endregion
-
-                performRestoration(pendingEntry);
+                };                performRestoration(pendingEntry);
                 return;
               }
 
@@ -3904,32 +3359,7 @@ module.exports = class CriticalHit {
                 const entryId = String(entry.messageId).trim();
                 if (entryId.startsWith('hash_')) return false;
                 return entryId === normalizedMsgId || entryId === pureMessageId;
-              });
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:3040',
-                  message: 'CHECK_FOR_RESTORATION: Retry history lookup',
-                  data: {
-                    messageId: normalizedMsgId,
-                    attempt,
-                    foundHistoryEntry: !!retryHistoryEntry,
-                    foundPendingCrit: !!pendingCrit,
-                    channelCritCount: retryChannelCrits.length,
-                    hasCritSettings: !!retryHistoryEntry?.critSettings,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'D',
-                }),
-              }).catch(() => {});
-              // #endregion
-
-              if (retryHistoryEntry && retryHistoryEntry.critSettings) {
+              });              if (retryHistoryEntry && retryHistoryEntry.critSettings) {
                 // Found it! Restore now
                 performRestoration(retryHistoryEntry);
               } else if (attempt < delays.length - 1) {
@@ -3982,28 +3412,7 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} messageElement - The message DOM element
    */
   checkForCrit(messageElement) {
-    try {
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:2422',
-          message: 'CHECK_FOR_CRIT: Entry',
-          data: {
-            hasElement: !!messageElement,
-            hasOffsetParent: !!messageElement?.offsetParent,
-            hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-            processedSize: this.processedMessages.size,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
-      // #endregion
-      // Verify element is still valid FIRST
+    try {      // Verify element is still valid FIRST
       if (!messageElement || !messageElement.offsetParent) {
         this.debugLog('CHECK_FOR_CRIT', 'Message element invalid, skipping');
         return;
@@ -4014,24 +3423,7 @@ module.exports = class CriticalHit {
       const messageId = this.getMessageIdentifier(messageElement, {
         phase: 'check_for_crit',
         verbose: true,
-      });
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:2436',
-          message: 'CHECK_FOR_CRIT: Got messageId',
-          data: { messageId, wasProcessed: this.processedMessages.has(messageId) },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'run1',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
-      // #endregion
-
-      // Validate message ID is correct (not channel ID)
+      });      // Validate message ID is correct (not channel ID)
       if (messageId && (!/^\d{17,19}$/.test(messageId) || messageId.length < 17)) {
         this.debugLog('CHECK_FOR_CRIT', 'WARNING: Invalid message ID extracted', {
           messageId,
@@ -4052,34 +3444,7 @@ module.exports = class CriticalHit {
       if (!messageId) {
         this.debugLog('CHECK_FOR_CRIT', 'Cannot process message without valid ID');
         return;
-      }
-
-      // #region agent log
-      const isValidDiscordId = /^\d{17,19}$/.test(messageId);
-      const isHashId = messageId.startsWith('hash_');
-      fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          location: 'CriticalHit.plugin.js:2459',
-          message: 'CHECK_FOR_CRIT: Checking if processed',
-          data: {
-            messageId,
-            isValidDiscordId,
-            isHashId,
-            wasProcessed: this.processedMessages.has(messageId),
-            isConnected: messageElement?.isConnected,
-            hasOffsetParent: !!messageElement?.offsetParent,
-          },
-          timestamp: Date.now(),
-          sessionId: 'debug-session',
-          runId: 'post-fix',
-          hypothesisId: 'B',
-        }),
-      }).catch(() => {});
-      // #endregion
-
-      // Only process messages with valid Discord IDs (not hash IDs from unsent messages)
+      }      // Only process messages with valid Discord IDs (not hash IDs from unsent messages)
       // Hash IDs are created for messages without Discord IDs (unsent/pending messages)
       // These should not be processed as they might be "undone" and cause confusion
       if (isHashId) {
@@ -4131,33 +3496,7 @@ module.exports = class CriticalHit {
 
         if (historyEntry) {
           // Message already processed - use saved determination
-          const isCrit = historyEntry.isCrit || false;
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHit.plugin.js:3420',
-              message: 'CHECK_FOR_CRIT: Found in history (reprocessing)',
-              data: {
-                messageId,
-                historyMessageId: historyEntry.messageId,
-                isCrit,
-                hasCritSettings: !!historyEntry.critSettings,
-                hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                isConnected: messageElement?.isConnected,
-                idsMatch: messageId === historyEntry.messageId,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'post-fix',
-              hypothesisId: 'E',
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
+          const isCrit = historyEntry.isCrit || false;          this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
             messageId,
             isCrit,
             wasProcessed: true,
@@ -4257,28 +3596,7 @@ module.exports = class CriticalHit {
           this.debugLog('CHECK_FOR_CRIT', 'Step 1: Applying crit style to message', {
             messageId: messageId,
             hasMessageElement: !!messageElement,
-          });
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHit.plugin.js:2609',
-              message: 'CHECK_FOR_CRIT: Before applyCritStyle',
-              data: {
-                messageId,
-                hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                isConnected: messageElement?.isConnected,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          // Forcefully apply crit style with aggressive retries
+          });          // Forcefully apply crit style with aggressive retries
           this.applyCritStyle(messageElement);
 
           // Force apply gradient and animation multiple times to ensure it sticks
@@ -4290,33 +3608,7 @@ module.exports = class CriticalHit {
               const content =
                 messageElement.querySelector('[class*="messageContent"]') ||
                 messageElement.querySelector('[class*="markup"]') ||
-                messageElement.querySelector('[class*="textContainer"]');
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:3561',
-                  message: 'CHECK_FOR_CRIT: forceApplyStyles execution',
-                  data: {
-                    messageId,
-                    retryCount,
-                    delay,
-                    hasContent: !!content,
-                    contentTag: content?.tagName,
-                    hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                    isConnected: messageElement?.isConnected,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'C',
-                }),
-              }).catch(() => {});
-              // #endregion
-
-              if (content && this.settings.critGradient !== false) {
+                messageElement.querySelector('[class*="textContainer"]');              if (content && this.settings.critGradient !== false) {
                 const gradientColors =
                   'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
 
@@ -4349,34 +3641,7 @@ module.exports = class CriticalHit {
                 const hasGradient = computed?.backgroundImage?.includes('gradient');
                 const hasAnimation =
                   computed?.animation?.includes('critShake') ||
-                  computed?.animation?.includes('critPulse');
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:3600',
-                    message: 'CHECK_FOR_CRIT: forceApplyStyles verification',
-                    data: {
-                      messageId,
-                      retryCount,
-                      delay,
-                      hasGradient,
-                      hasAnimation,
-                      computedBackgroundImage: computed?.backgroundImage,
-                      computedAnimation: computed?.animation,
-                      inlineBackgroundImage: content?.style?.backgroundImage,
-                      inlineAnimation: content?.style?.animation,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
-                // #endregion
-              }
+                  computed?.animation?.includes('critPulse');              }
 
               // Force add crit class
               messageElement.classList.add('bd-crit-hit');
@@ -4393,30 +3658,7 @@ module.exports = class CriticalHit {
           forceApplyStyles(150);
           forceApplyStyles(300);
           forceApplyStyles(500);
-          forceApplyStyles(1000); // Extra retry after 1 second
-
-          // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              location: 'CriticalHit.plugin.js:3569',
-              message: 'CHECK_FOR_CRIT: After forceful applyCritStyle',
-              data: {
-                messageId,
-                hasCritClass: messageElement?.classList?.contains('bd-crit-hit'),
-                isConnected: messageElement?.isConnected,
-                forceApplied: true,
-              },
-              timestamp: Date.now(),
-              sessionId: 'debug-session',
-              runId: 'run1',
-              hypothesisId: 'C',
-            }),
-          }).catch(() => {});
-          // #endregion
-
-          this.critMessages.add(messageElement);
+          forceApplyStyles(1000); // Extra retry after 1 second          this.critMessages.add(messageElement);
 
           // Forcefully trigger animation immediately and multiple times
           const triggerAnimation = () => {
@@ -4436,30 +3678,7 @@ module.exports = class CriticalHit {
                     const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
                     const hasWebkitClip =
                       computedStyles?.webkitBackgroundClip === 'text' ||
-                      computedStyles?.backgroundClip === 'text';
-
-                    // #region agent log
-                    fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        location: 'CriticalHit.plugin.js:4370',
-                        message: 'CHECK_FOR_CRIT: Force animation - verifying gradient',
-                        data: {
-                          messageId,
-                          hasGradient,
-                          hasWebkitClip,
-                          gradientReady: hasGradient && hasWebkitClip,
-                        },
-                        timestamp: Date.now(),
-                        sessionId: 'debug-session',
-                        runId: 'run1',
-                        hypothesisId: 'SYNC',
-                      }),
-                    }).catch(() => {});
-                    // #endregion
-
-                    if (!hasGradient || !hasWebkitClip) {
+                      computedStyles?.backgroundClip === 'text';                    if (!hasGradient || !hasWebkitClip) {
                       setTimeout(() => {
                         const retryElement =
                           document.querySelector(`[data-message-id="${messageId}"]`) ||
@@ -4470,28 +3689,7 @@ module.exports = class CriticalHit {
                       }, 100);
                       return;
                     }
-                  }
-
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHit.plugin.js:4370',
-                      message: 'CHECK_FOR_CRIT: Triggering animation (gradient verified)',
-                      data: {
-                        messageId,
-                        hasCritClass: currentElement?.classList?.contains('bd-crit-hit'),
-                        isConnected: currentElement?.isConnected,
-                      },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'SYNC',
-                    }),
-                  }).catch(() => {});
-                  // #endregion
-                  this.onCritHit(currentElement);
+                  }                  this.onCritHit(currentElement);
                 });
               });
             } catch (error) {
@@ -4608,63 +3806,19 @@ module.exports = class CriticalHit {
                   const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
                   const hasWebkitClip =
                     computedStyles?.webkitBackgroundClip === 'text' ||
-                    computedStyles?.backgroundClip === 'text';
-
-                  // #region agent log
-                  fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      location: 'CriticalHit.plugin.js:4470',
-                      message: 'CHECK_FOR_CRIT: Verifying gradient before onCritHit',
-                      data: {
-                        messageId,
-                        hasCritClass: currentElement?.classList?.contains('bd-crit-hit'),
-                        hasGradient,
-                        hasWebkitClip,
-                        gradientReady: hasGradient && hasWebkitClip,
-                      },
-                      timestamp: Date.now(),
-                      sessionId: 'debug-session',
-                      runId: 'run1',
-                      hypothesisId: 'SYNC',
-                    }),
-                  }).catch(() => {});
-                  // #endregion
-
-                  if (!hasGradient || !hasWebkitClip) {
+                    computedStyles?.backgroundClip === 'text';                  if (!hasGradient || !hasWebkitClip) {
                     // Gradient not ready, retry after short delay
                     setTimeout(() => {
                       const retryElement =
-                        document.querySelector(`[data-message-id="${messageId}"]`) || currentElement;
+                        document.querySelector(`[data-message-id="${messageId}"]`) ||
+                        currentElement;
                       if (retryElement && retryElement.isConnected) {
                         this.onCritHit(retryElement);
                       }
                     }, 100);
                     return;
                   }
-                }
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:4470',
-                    message: 'CHECK_FOR_CRIT: Calling onCritHit (gradient verified)',
-                    data: {
-                      messageId,
-                      hasCritClass: currentElement?.classList?.contains('bd-crit-hit'),
-                      isConnected: currentElement?.isConnected,
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'run1',
-                    hypothesisId: 'SYNC',
-                  }),
-                }).catch(() => {});
-                // #endregion
-                this.onCritHit(currentElement);
+                }                this.onCritHit(currentElement);
               });
             });
           } catch (error) {
@@ -4688,27 +3842,7 @@ module.exports = class CriticalHit {
 
         // Store in history (non-crit) for tracking - CRITICAL to prevent false positives
         if (messageId && this.currentChannelId) {
-          try {
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHit.plugin.js:2698',
-                message: 'CHECK_FOR_CRIT: Calling addToHistory for non-crit',
-                data: {
-                  messageId,
-                  channelId: this.currentChannelId,
-                  historyLength: this.messageHistory.length,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'post-fix',
-                hypothesisId: 'A',
-              }),
-            }).catch(() => {});
-            // #endregion
-            this.addToHistory({
+          try {            this.addToHistory({
               messageId: messageId,
               authorId: authorId, // Store author ID for filtering
               channelId: this.currentChannelId,
@@ -5097,28 +4231,7 @@ module.exports = class CriticalHit {
               content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
               content.style.setProperty('color', 'transparent', 'important');
               content.style.setProperty('display', 'inline-block', 'important');
-              void content.offsetHeight; // Force another reflow
-
-              // #region agent log
-              fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  location: 'CriticalHit.plugin.js:4795',
-                  message: 'APPLY_CRIT_STYLE: Reapplied gradient after Discord removal',
-                  data: {
-                    hasGradient: verifyHasGradient,
-                    hasClip: verifyHasClip,
-                    computedBackgroundImage: verifyComputed?.backgroundImage,
-                  },
-                  timestamp: Date.now(),
-                  sessionId: 'debug-session',
-                  runId: 'run1',
-                  hypothesisId: 'G',
-                }),
-              }).catch(() => {});
-              // #endregion
-            }
+              void content.offsetHeight; // Force another reflow            }
 
             // Explicitly exclude username/timestamp elements from gradient
             // Find and reset any username/timestamp elements that might have been affected
@@ -5218,40 +4331,7 @@ module.exports = class CriticalHit {
         const hasGradientInComputed = computedStyles?.backgroundImage?.includes('gradient');
         const hasWebkitClip =
           computedStyles?.webkitBackgroundClip === 'text' ||
-          computedStyles?.backgroundClip === 'text';
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:3783',
-            message: 'APPLY_CRIT_STYLE: Added bd-crit-hit class',
-            data: {
-              hasCritClass: messageElement.classList.contains('bd-crit-hit'),
-              hasContent: !!content,
-              useGradient,
-              contentHasGradient: hasGradientInStyle,
-              computedHasGradient: hasGradientInComputed,
-              hasWebkitClip,
-              inlineBackgroundImage: content?.style?.backgroundImage,
-              computedBackgroundImage: computedStyles?.backgroundImage,
-              computedWebkitBackgroundClip: computedStyles?.webkitBackgroundClip,
-              computedBackgroundClip: computedStyles?.backgroundClip,
-              computedWebkitTextFillColor: computedStyles?.webkitTextFillColor,
-              computedColor: computedStyles?.color,
-              contentTag: content?.tagName,
-              contentClasses: content ? Array.from(content.classList || []) : [],
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'post-fix',
-            hypothesisId: 'C',
-          }),
-        }).catch(() => {});
-        // #endregion
-
-        // If gradient didn't apply correctly, retry with MutationObserver to catch DOM changes
+          computedStyles?.backgroundClip === 'text';        // If gradient didn't apply correctly, retry with MutationObserver to catch DOM changes
         if (content && useGradient && !hasGradientInComputed) {
           this.debugLog('APPLY_CRIT_STYLE', 'WARNING: Gradient not applied correctly, will retry', {
             hasGradientInStyle,
@@ -5274,28 +4354,7 @@ module.exports = class CriticalHit {
                 content.style.setProperty('-webkit-background-clip', 'text', 'important');
                 content.style.setProperty('background-clip', 'text', 'important');
                 content.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
-                content.style.setProperty('color', 'transparent', 'important');
-
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    location: 'CriticalHit.plugin.js:3820',
-                    message: 'APPLY_CRIT_STYLE: Retried gradient application',
-                    data: {
-                      retryHasGradient: window
-                        .getComputedStyle(content)
-                        ?.backgroundImage?.includes('gradient'),
-                    },
-                    timestamp: Date.now(),
-                    sessionId: 'debug-session',
-                    runId: 'post-fix',
-                    hypothesisId: 'C',
-                  }),
-                }).catch(() => {});
-                // #endregion
-              }
+                content.style.setProperty('color', 'transparent', 'important');              }
             }
           }, 100);
         }
@@ -5889,7 +4948,10 @@ module.exports = class CriticalHit {
         if (attempt < maxAttempts) {
           setTimeout(() => verifyGradientAndTrigger(attempt + 1, maxAttempts), 50 * (attempt + 1));
         } else {
-          this.debugLog('ON_CRIT_HIT', 'Crit class not found after max attempts, triggering anyway');
+          this.debugLog(
+            'ON_CRIT_HIT',
+            'Crit class not found after max attempts, triggering anyway'
+          );
         }
       }
 
@@ -5900,39 +4962,20 @@ module.exports = class CriticalHit {
         const hasGradient = computedStyles?.backgroundImage?.includes('gradient');
         const hasWebkitClip =
           computedStyles?.webkitBackgroundClip === 'text' ||
-          computedStyles?.backgroundClip === 'text';
-
-        // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            location: 'CriticalHit.plugin.js:5680',
-            message: 'ON_CRIT_HIT: Verifying gradient before animation',
-            data: {
-              messageId,
-              attempt,
-              hasCritClass,
-              hasGradient,
-              hasWebkitClip,
-              willTrigger: hasGradient && hasWebkitClip,
-            },
-            timestamp: Date.now(),
-            sessionId: 'debug-session',
-            runId: 'run1',
-            hypothesisId: 'SYNC',
-          }),
-        }).catch(() => {});
-        // #endregion
-
-        if (!hasGradient || !hasWebkitClip) {
+          computedStyles?.backgroundClip === 'text';        if (!hasGradient || !hasWebkitClip) {
           if (attempt < maxAttempts) {
             // Force reflow and retry
             void contentElement.offsetHeight;
-            setTimeout(() => verifyGradientAndTrigger(attempt + 1, maxAttempts), 50 * (attempt + 1));
+            setTimeout(
+              () => verifyGradientAndTrigger(attempt + 1, maxAttempts),
+              50 * (attempt + 1)
+            );
             return;
           } else {
-            this.debugLog('ON_CRIT_HIT', 'Gradient not fully applied after max attempts, triggering animation anyway');
+            this.debugLog(
+              'ON_CRIT_HIT',
+              'Gradient not fully applied after max attempts, triggering animation anyway'
+            );
           }
         }
       }
@@ -5945,35 +4988,17 @@ module.exports = class CriticalHit {
           const finalElement =
             document.querySelector(`[data-message-id="${messageId}"]`) || currentElement;
 
-          if (finalElement && finalElement.isConnected && finalElement.classList?.contains('bd-crit-hit')) {
+          if (
+            finalElement &&
+            finalElement.isConnected &&
+            finalElement.classList?.contains('bd-crit-hit')
+          ) {
             // Particle burst effect (optional)
             try {
               this.createParticleBurst(finalElement);
             } catch (error) {
               this.debugError('ON_CRIT_HIT', error, { phase: 'particle_burst' });
-            }
-
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/b030fef3-bf2c-4bcb-b879-fe51f8a5dfa0', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                location: 'CriticalHit.plugin.js:5680',
-                message: 'ON_CRIT_HIT: Animation triggered after gradient verification',
-                data: {
-                  messageId,
-                  attempt,
-                  hasCritClass: finalElement.classList?.contains('bd-crit-hit'),
-                  isConnected: finalElement.isConnected,
-                },
-                timestamp: Date.now(),
-                sessionId: 'debug-session',
-                runId: 'run1',
-                hypothesisId: 'SYNC',
-              }),
-            }).catch(() => {});
-            // #endregion
-          }
+            }          }
         });
       });
     };
@@ -6138,13 +5163,23 @@ module.exports = class CriticalHit {
         msg.querySelector('[class*="messageContent"]') ||
         msg.querySelector('[class*="content"]') ||
         msg;
-      if (content) {
-        content.style.color = '';
-        content.style.fontFamily = '';
-        content.style.fontWeight = '';
-        content.style.textShadow = '';
-        content.style.animation = '';
-      }
+      if (!content) return;
+
+      [
+        'color',
+        'font-family',
+        'font-weight',
+        'text-shadow',
+        'animation',
+        'background',
+        'background-image',
+        'background-clip',
+        '-webkit-background-clip',
+        '-webkit-text-fill-color',
+      ].forEach((property) => content.style.removeProperty(property));
+
+      content.style.display = '';
+      content.classList.remove('bd-crit-text-content');
       msg.classList.remove('bd-crit-hit');
     });
 
@@ -6214,7 +5249,9 @@ module.exports = class CriticalHit {
                     <div class="crit-form-item">
                         <label class="crit-label">
                             Critical Hit Chance
-                            <span class="crit-label-value">${this.settings.critChance}%</span>
+                            <span class="crit-label-value crit-chance-label">${
+                              this.settings.critChance
+                            }%</span>
                             ${(() => {
                               const effectiveCrit = this.getEffectiveCritChance();
                               const totalBonus = effectiveCrit - this.settings.critChance;
@@ -6429,7 +5466,7 @@ module.exports = class CriticalHit {
                     <div class="crit-form-item">
                         <label class="crit-label">
                             History Retention (Days)
-                            <span class="crit-label-value">${
+                            <span class="crit-label-value history-retention-label">${
                               this.settings.historyRetentionDays || 30
                             }</span>
                         </label>
@@ -6567,27 +5604,30 @@ module.exports = class CriticalHit {
 
     // Use IntersectionObserver to detect when settings panel becomes visible
     if (window.IntersectionObserver && container) {
-      const displayObserver = new IntersectionObserver((entries) => {
-        entries.forEach((entry) => {
-          if (entry.isIntersecting) {
-            // Panel is visible, update display immediately
-            updateCritDisplay();
-            // Start periodic updates while visible
-            if (displayUpdateInterval) {
-              clearInterval(displayUpdateInterval);
-            }
-            displayUpdateInterval = setInterval(() => {
+      const displayObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              // Panel is visible, update display immediately
               updateCritDisplay();
-            }, 2000);
-          } else {
-            // Panel is hidden, stop periodic updates
-            if (displayUpdateInterval) {
-              clearInterval(displayUpdateInterval);
-              displayUpdateInterval = null;
+              // Start periodic updates while visible
+              if (displayUpdateInterval) {
+                clearInterval(displayUpdateInterval);
+              }
+              displayUpdateInterval = setInterval(() => {
+                updateCritDisplay();
+              }, 2000);
+            } else {
+              // Panel is hidden, stop periodic updates
+              if (displayUpdateInterval) {
+                clearInterval(displayUpdateInterval);
+                displayUpdateInterval = null;
+              }
             }
-          }
-        });
-      }, { threshold: 0.1 });
+          });
+        },
+        { threshold: 0.1 }
+      );
 
       displayObserver.observe(container);
     } else {
@@ -6653,14 +5693,14 @@ module.exports = class CriticalHit {
       retentionInput.value = e.target.value;
       plugin.settings.historyRetentionDays = parseInt(e.target.value);
       plugin.saveSettings();
-      container.querySelector('.crit-label-value').textContent = `${e.target.value}`;
+      container.querySelector('.history-retention-label').textContent = `${e.target.value}`;
     });
 
     retentionInput.addEventListener('change', (e) => {
       retentionSlider.value = e.target.value;
       plugin.settings.historyRetentionDays = parseInt(e.target.value);
       plugin.saveSettings();
-      container.querySelector('.crit-label-value').textContent = `${e.target.value}`;
+      container.querySelector('.history-retention-label').textContent = `${e.target.value}`;
     });
 
     // Auto-cleanup history
@@ -6763,7 +5803,7 @@ module.exports = class CriticalHit {
     this.settings.critChance = Math.max(0, Math.min(25, parseFloat(value) || 0));
     this.saveSettings();
     // Update label value in settings panel if it exists
-    const labelValue = document.querySelector('.crit-label-value');
+    const labelValue = document.querySelector('.crit-chance-label');
     if (labelValue) {
       labelValue.textContent = `${this.settings.critChance}%`;
     }
