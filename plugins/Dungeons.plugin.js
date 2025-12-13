@@ -983,7 +983,7 @@ module.exports = class Dungeons {
     this._mobSpawnQueueNextAt = new Map(); // channelKey -> next queue flush timestamp
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
-    this._mobSpawnLoopTickMs = 300; // Handles spawn waves + queue flush (lightweight)
+    this._mobSpawnLoopTickMs = 500; // Throttled to reduce UI load
     this.bossAttackTimers = new Map(); // Boss attack timers per dungeon
     this.mobAttackTimers = new Map(); // Mob attack timers per dungeon
     this.dungeonTimeouts = new Map(); // Legacy: per-dungeon completion timers (no longer scheduled)
@@ -1464,16 +1464,16 @@ module.exports = class Dungeons {
   }
 
   _computeNextMobSpawnDelayMs() {
-    // Matches prior behavior: base 6s with ±33% variance (4-8s)
+    // Throttled: base 6s with ±20% variance (4.8-7.2s) to reduce bursts
     const baseInterval = 6000;
-    const variance = baseInterval * 0.33;
+    const variance = baseInterval * 0.2;
     return baseInterval - variance + Math.random() * variance * 2;
   }
 
   async _mobSpawnLoopTick() {
     const now = Date.now();
-    const MAX_QUEUE_FLUSH_PER_TICK = 3;
-    const MAX_SPAWN_WAVES_PER_TICK = 2;
+    const MAX_QUEUE_FLUSH_PER_TICK = 2; // lower per tick to reduce spikes
+    const MAX_SPAWN_WAVES_PER_TICK = 1; // one wave per tick to smooth load
 
     // Flush queued mobs (batch append) when ready
     if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
@@ -3707,8 +3707,8 @@ module.exports = class Dungeons {
       // MEMORY OPTIMIZED: Smaller waves reduce memory footprint
       // Shadows naturally control mob population through combat
       // Balanced for multiple simultaneous dungeons
-      baseSpawnCount = 100; // Reduced from 200 (50% reduction for memory)
-      variancePercent = 0.3; // 70-130 per wave (maintains organic variance)
+      baseSpawnCount = 50; // Reduced from 100 to lower per-wave load
+      variancePercent = 0.2; // 40-60 per wave
 
       // Apply variance (e.g., 100 ±30% = 70-130)
       // Variance creates organic, unpredictable spawn waves
@@ -8375,6 +8375,7 @@ module.exports = class Dungeons {
       align-items: center;
       justify-content: center;
       animation: arise-fade-in 0.5s ease;
+      pointer-events: none;
     `;
 
     const container = document.createElement('div');
@@ -8416,6 +8417,8 @@ module.exports = class Dungeons {
       overlay.style.animation = 'arise-fade-out 0.5s ease';
       setTimeout(() => overlay.remove(), 500);
     }, 2500);
+    // Hard fail-safe removal in case animation timers fail
+    setTimeout(() => overlay.remove(), 4000);
   }
 
   /**
@@ -8441,6 +8444,7 @@ module.exports = class Dungeons {
       align-items: center;
       justify-content: center;
       animation: arise-fade-in 0.5s ease;
+      pointer-events: none;
     `;
 
     const failContainer = document.createElement('div');
@@ -8477,6 +8481,8 @@ module.exports = class Dungeons {
       overlay.style.animation = 'arise-fade-out 0.5s ease';
       setTimeout(() => overlay.remove(), 500);
     }, 2000);
+    // Hard fail-safe removal in case animation timers fail
+    setTimeout(() => overlay.remove(), 3500);
   }
 
   /**
