@@ -58,6 +58,7 @@ desktop.ini
 *.webp
 !docs/**/*.png
 !docs/**/*.jpg
+!themes/shadow_aura.jpeg
 
 # Debug/test files
 *Debug.js
