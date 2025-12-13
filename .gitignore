@@ -59,6 +59,7 @@ desktop.ini
 !docs/**/*.png
 !docs/**/*.jpg
 !themes/shadow_aura.jpeg
+!themes/shadow_icon.jpg
 
 # Debug/test files
 *Debug.js
