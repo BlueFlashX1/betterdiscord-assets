@@ -1,7 +1,7 @@
 /**
  * @name Solo Leveling (ClearVision Base)
  * @author BlueFlashXS
- * @version 1.0.1
+ * @version 1.0.0
  * @description Dark purple Solo Leveling theme based on ClearVision v7
  * @source https://github.com/ClearVision/ClearVision-v7
  * @authorId
@@ -77,10 +77,10 @@
 @import url('https://clearvision.github.io/ClearVision-v7/main.css');
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
 
-/* Import Orbitron font - used as fallback */
+/* Import Orbitron font - Used throughout theme for Solo Leveling aesthetic */
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
 
-/* Note: Critical Hit plugin uses FriendorFoeBB (loaded via plugin and/or installed locally) */
+/* Note: Critical Hit plugin now uses Friend or Foe BB (loaded via plugin, not theme) */
 /* Nova Flat import kept for backward compatibility but not actively used */
 
 /* ============================================================================
@@ -154,29 +154,15 @@
   --user-modal-attachment: var(--background-attachment);
   --user-modal-filter: var(--background-filter);
 
-  /* USER AREA CARD (bottom-left panel) */
-  /* Optional: set an image for the bottom user card (avatar + name + settings gear). */
-  /* Recommended: use a hosted image URL for reliability; set opacity > 0 to enable. */
-  --user-area-card-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_aura.jpeg');
-  --user-area-card-image-opacity: 0.65;
-  --user-area-card-overlay: rgba(0, 0, 0, 0.15);
-  --user-area-card-image-size: cover;
-  --user-area-card-image-zoom: 2; /* 200% */
-
   /* HOME ICON - Discord home button icon */
-  --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.jpg');
-  --home-size: 280% 280%;
-
-  /* RADII - keep a consistent rhythm */
-  --radius-surface: 14px; /* cards/tab bars/panels */
-  --radius-control: 8px; /* buttons/tabs/chips */
-  --radius-pill: 999px; /* fully rounded pills */
+  --home-icon: url(https://clearvision.github.io/icons/discord.svg);
+  --home-size: cover;
 
   /* FONTS - Typography settings */
-  /* Prefer FriendorFoeBB globally (Critical Hit font); fall back to Orbitron */
-  --main-font: 'FriendorFoeBB', 'Orbitron', sans-serif; /* Main text font */
+  /* Orbitron font used throughout for futuristic Solo Leveling aesthetic */
+  --main-font: 'Orbitron', sans-serif; /* Main text font */
   --code-font: 'Orbitron', monospace; /* Code block font */
-  --heading-font: 'FriendorFoeBB', 'Orbitron', sans-serif; /* Heading font */
+  --heading-font: 'Orbitron', sans-serif; /* Heading font */
 
   /* CHANNEL COLORS - Channel list text colors */
   /* Controls text colors in the channel list sidebar */
@@ -190,13 +176,6 @@
 
   /* ACCESSIBILITY - Focus indicators */
   --focus-color: var(--main-color); /* Focus outline color */
-}
-
-/* Global default font: inherit FriendorFoeBB everywhere */
-html,
-body,
-#app-mount {
-  font-family: var(--main-font) !important;
 }
 
 /* ============================================================================
@@ -325,12 +304,8 @@ body::after {
 
 /* Override ClearVision background overlays */
 /* Prevents ClearVision from adding its own background overlays */
-[id='app-mount'] > div[class^='app_']::before,
-[id='app-mount'] > div[class^='app_']::after,
-div[class^='app_']::before,
-div[class^='app_']::after,
-div[class*='app-']::before,
-div[class*='app-']::after,
+[class*='app']::before,
+[class*='app']::after,
 [class*='base']::before,
 [class*='base']::after {
   background: transparent !important;
@@ -338,9 +313,7 @@ div[class*='app-']::after,
 }
 
 /* Override ClearVision background-shading on main app container */
-[id='app-mount'] > div[class^='app_'],
-div[class^='app_'],
-div[class*='app-'] {
+[class*='app'] {
   background: transparent !important;
 }
 
@@ -490,8 +463,7 @@ h6,
 [class*='modeSelected'] [class*='name'],
 [class*='channel'][class*='selected'] [class*='name'] {
   font-weight: 500 !important;
-  /* Slightly calmer purple so the channel list isn't competing with tabs/cards */
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.25) !important;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.4) !important;
   color: rgba(255, 255, 255, 1) !important;
 }
 
@@ -539,28 +511,27 @@ button,
 /* Message Text - Better Contrast */
 /* Edge case: Excludes both .bd-crit-hit class and [class*='bd-crit-hit'] in class name */
 [class*='message'] [class*='content']:not(.bd-crit-hit):not([class*='bd-crit-hit']) {
-  /* Calmer body copy: less white + less shadow = less visual clutter */
-  color: rgba(225, 225, 240, 0.86) !important;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.32) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* Username - Better Contrast */
 [class*='message'] [class*='username'],
 [class*='message'] [class*='author'] {
-  color: rgba(255, 255, 255, 0.92) !important;
-  text-shadow: 0 0 3px rgba(0, 0, 0, 0.28) !important;
+  color: rgba(255, 255, 255, 0.98) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
 }
 
 /* Channel Name - Better Contrast */
 [class*='channel'] [class*='name'] {
-  color: rgba(225, 225, 240, 0.84) !important;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.28) !important;
+  color: rgba(255, 255, 255, 0.95) !important;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4) !important;
 }
 
 /* Selected Channel - Enhanced Contrast */
 [class*='selected'] [class*='name'] {
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.22) !important;
+  color: rgba(255, 255, 255, 1) !important;
+  text-shadow: 0 0 6px rgba(139, 92, 246, 0.35) !important;
 }
 
 /* ============================================================================
@@ -570,50 +541,6 @@ button,
    Targets: Left sidebar server icons, server list container, selected server indicators, badges
    Purpose: Style server list with purple glows, remove unwanted purple backgrounds, enhance badges
    ============================================================================ */
-
-/* Home icon (Discord Home button) */
-/* CSSPicker: Home renders as img[alt="App Icon"] inside div.childWrapper__* under div.tutorialContainer__* */
-div[class^='tutorialContainer_'] div[class^='childWrapper_'] {
-  background-image: var(--home-icon) !important;
-  background-position: center !important;
-  background-size: var(--home-size, cover) !important;
-  background-repeat: no-repeat !important;
-  background-color: transparent !important;
-}
-
-div[class^='tutorialContainer_'] img[alt='App Icon'] {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
-/* Home button: remove the left-edge selected indicator/pill */
-div[class^='tutorialContainer_'] div[class^='wrapper_']::before,
-div[class^='tutorialContainer_'] div[class^='wrapper_']::after,
-div[class^='tutorialContainer_'] div[class^='wrapper_'] [class*='pill'] {
-  display: none !important;
-}
-
-div[class^='tutorialContainer_'] div[class^='wrapper_'][class*='selected'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-}
-
-/* Server list: remove left-edge “pill” indicators globally */
-/* CSSPicker: server list container is div[aria-label="Servers"] and folder lists are ul[role=group][aria-label="..."] */
-div[aria-label='Servers'] div[class^='pill_'],
-div[aria-label='Servers'] div[class^='pill_']::before,
-div[aria-label='Servers'] div[class^='pill_']::after,
-ul[role='group'][aria-label] div[class^='pill_'],
-ul[role='group'][aria-label] div[class^='pill_']::before,
-ul[role='group'][aria-label] div[class^='pill_']::after {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  width: 0 !important;
-  pointer-events: none !important;
-}
 
 /* Selected Server Indicator Bar - Remove Purple */
 /* The vertical bar that appears next to selected server */
@@ -625,12 +552,8 @@ ul[role='group'][aria-label] div[class^='pill_']::after {
 [class*='server'][class*='selected'] [class*='pill'],
 [class*='guild'][class*='active'] [class*='pill'],
 [class*='server'][class*='active'] [class*='pill'] {
-  /* Fully remove the left edge indicator */
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-  width: 0 !important;
-  opacity: 0 !important;
+  background: var(--interactive-active) !important;
+  background-color: var(--interactive-active) !important;
 }
 
 /* Selected Server Background - Remove Purple */
@@ -706,258 +629,22 @@ aside[class*='panels']:hover {
   transition: none !important;
 }
 
-/* Server sidebar: NEVER turn transparent on hover (pin dark glass background) */
-/* CSSPicker: nav[aria-label="Servers sidebar"] wraps all server + Home/DM list items */
-nav[aria-label='Servers sidebar'],
-nav[aria-label='Servers sidebar']::before,
-nav[aria-label='Servers sidebar']::after,
-nav[aria-label='Servers sidebar']:hover,
-nav[aria-label='Servers sidebar']:hover::before,
-nav[aria-label='Servers sidebar']:hover::after,
-div[aria-label='Servers'][role='group'],
-div[aria-label='Servers'][role='group']::before,
-div[aria-label='Servers'][role='group']::after,
-div[aria-label='Servers'][role='group']:hover,
-div[aria-label='Servers'][role='group']:hover::before,
-div[aria-label='Servers'][role='group']:hover::after,
-ul[role='group'][aria-label],
-ul[role='group'][aria-label]::before,
-ul[role='group'][aria-label]::after,
-ul[role='group'][aria-label]:hover,
-ul[role='group'][aria-label]:hover::before,
-ul[role='group'][aria-label]:hover::after {
-  background: rgba(10, 10, 15, 0.75) !important;
-  background-color: rgba(10, 10, 15, 0.75) !important;
-  background-image: none !important;
-  opacity: 1 !important;
-}
-
 /* 1. SERVER ICON HOVER GLOW - Icons glow purple on hover */
-div[class*='guilds'] div[class*='listItem']:hover div[class*='wrapper']:not([class*='pill']) {
-  /* Remove server icon container glow/zoom */
-  box-shadow: none !important;
-  filter: none !important;
-  transform: none !important;
-  transition: none !important;
+div[class*='guilds'] div[class*='listItem']:hover div[class*='wrapper'] {
+  box-shadow: 0 0 14px rgba(139, 92, 246, 0.35) !important;
+  transform: scale(1.06) !important;
+  transition: all 0.3s ease !important;
 }
 
 /* 2. ACTIVE SERVER PURPLE PILL - Selected server has glowing left pill */
 div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span {
-  /* Indicator is removed globally below; keep this inert as a fallback */
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: none !important;
-  opacity: 0 !important;
-  display: none !important;
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.35) !important;
 }
 
 /* Animate pill appearance */
 div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span[style*='height'] {
   transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) !important;
-}
-
-/* Server/DM left edge indicator: remove entirely (active + hover) */
-nav[aria-label='Servers sidebar'] div[class^='pill_'],
-nav[aria-label='Servers sidebar'] div[class^='pill_']::before,
-nav[aria-label='Servers sidebar'] div[class^='pill_']::after,
-nav[aria-label='Servers sidebar'] span[class^='item_'],
-nav[aria-label='Servers sidebar'] span[class^='item_']::before,
-nav[aria-label='Servers sidebar'] span[class^='item_']::after,
-/* Extra-safe: some Discord builds scope the guild nav via class^='guilds_' */
-nav[class^='guilds_'] div[class^='pill_'],
-nav[class^='guilds_'] div[class^='pill_']::before,
-nav[class^='guilds_'] div[class^='pill_']::after,
-nav[class^='guilds_'] span[class^='item_'],
-nav[class^='guilds_'] span[class^='item_']::before,
-nav[class^='guilds_'] span[class^='item_']::after,
-/* Extra-safe: the pill wrapper itself can render a border-left/background */
-nav[aria-label='Servers sidebar'] div[aria-hidden='true'][class*='pill'],
-nav[class^='guilds_'] div[aria-hidden='true'][class*='pill'] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-  width: 0 !important;
-  pointer-events: none !important;
-  box-shadow: none !important;
-  background: transparent !important;
-  background-image: none !important;
-  border: none !important;
-  border-left: none !important;
-  border-color: transparent !important;
-  border-width: 0 !important;
-  outline: none !important;
-  transform: none !important;
-}
-
-/* Ultra-safe: if Discord forces the indicator to display, strip the purple edge anyway */
-nav[aria-label='Servers sidebar'] [class*='pill'],
-nav[aria-label='Servers sidebar'] [class*='pill']::before,
-nav[aria-label='Servers sidebar'] [class*='pill']::after,
-nav[class^='guilds_'] [class*='pill'],
-nav[class^='guilds_'] [class*='pill']::before,
-nav[class^='guilds_'] [class*='pill']::after {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  border: none !important;
-  border-left: none !important;
-  border-color: transparent !important;
-  border-width: 0 !important;
-  box-shadow: none !important;
-  filter: none !important;
-  outline: none !important;
-  transform: none !important;
-}
-
-/* Extra-safe: kill any left-indicator pseudo layer Discord attaches to list items/wrappers */
-nav[aria-label='Servers sidebar'] div[class^='listItem_']::before,
-nav[aria-label='Servers sidebar'] div[class^='listItem_']::after,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']::before,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']::after,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']::before,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']::after,
-nav[class^='guilds_'] div[class^='listItem_']::before,
-nav[class^='guilds_'] div[class^='listItem_']::after,
-nav[class^='guilds_'] div[class^='listItemWrapper_']::before,
-nav[class^='guilds_'] div[class^='listItemWrapper_']::after,
-nav[class^='guilds_'] div[class^='wrapper_']::before,
-nav[class^='guilds_'] div[class^='wrapper_']::after {
-  content: none !important;
-  display: none !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-/* Server sidebar container: also pin the wrapper behind the guild nav (prevents hover transparency) */
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar']),
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar'])::before,
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar'])::after,
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar']):hover,
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar']):hover::before,
-div[class^='sidebar_']:has(nav[aria-label='Servers sidebar']):hover::after {
-  background: rgba(10, 10, 15, 0.75) !important;
-  background-color: rgba(10, 10, 15, 0.75) !important;
-  background-image: none !important;
-  opacity: 1 !important;
-}
-
-/* Boost Goal bar (channel sidebar widget) */
-/* CSSPicker: div.container__0d0f9[role=button] > div.contentContainer__0d0f9 > div.textContainer__0d0f9 */
-#channels div[class^='container__0d0f9'][role='button'] {
-  display: none !important;
-}
-
-#channels div[class^='container__0d0f9'][role='button'] {
-  position: relative !important;
-  isolation: isolate !important;
-  overflow: hidden !important;
-  border-radius: 999px !important;
-  min-height: 44px !important;
-  background: linear-gradient(
-    180deg,
-    rgba(18, 12, 30, 0.72) 0%,
-    rgba(10, 7, 18, 0.62) 60%,
-    rgba(8, 6, 16, 0.62) 100%
-  ) !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34) !important;
-  backdrop-filter: blur(8px) !important;
-  -webkit-backdrop-filter: blur(8px) !important;
-  transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease !important;
-}
-
-/* Gradient border ring */
-#channels div[class^='container__0d0f9'][role='button']::before {
-  content: '' !important;
-  position: absolute !important;
-  inset: 0 !important;
-  border-radius: 999px !important;
-  padding: 1px !important;
-  background: linear-gradient(
-    90deg,
-    rgba(139, 92, 246, 0.55),
-    rgba(255, 255, 255, 0.08),
-    rgba(139, 92, 246, 0.35)
-  ) !important;
-  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
-  pointer-events: none !important;
-  z-index: 0 !important;
-  opacity: 0.9 !important;
-}
-
-/* Soft sheen */
-#channels div[class^='container__0d0f9'][role='button']::after {
-  content: '' !important;
-  position: absolute !important;
-  inset: 0 !important;
-  border-radius: 999px !important;
-  background: radial-gradient(
-    120% 140% at 15% 25%,
-    rgba(139, 92, 246, 0.18) 0%,
-    rgba(139, 92, 246, 0.06) 35%,
-    rgba(0, 0, 0, 0) 70%
-  ) !important;
-  pointer-events: none !important;
-  z-index: 1 !important;
-}
-
-#channels div[class^='container__0d0f9'][role='button']:hover {
-  border-color: rgba(139, 92, 246, 0.22) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38), 0 0 14px rgba(139, 92, 246, 0.1) !important;
-}
-
-#channels div[class^='contentContainer__0d0f9'] {
-  position: relative !important;
-  z-index: 2 !important;
-}
-
-#channels div[class^='textContainer__0d0f9'] {
-  position: absolute !important;
-  inset: 0 !important;
-  display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
-  padding: 0 14px !important;
-  gap: 10px !important;
-  pointer-events: none !important; /* keep the overall button clickable */
-  z-index: 3 !important;
-}
-
-/* Left “Boost Goal” chip */
-#channels
-  div[class^='textContainer__0d0f9']
-  > div[class^='textContentContainer__0d0f9']:first-child {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.55),
-    rgba(167, 139, 250, 0.35)
-  ) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: 999px !important;
-  padding: 6px 12px !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  font-weight: 700 !important;
-  font-size: 12px !important;
-  line-height: 1 !important;
-  letter-spacing: 0.2px !important;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.45) !important;
-  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.28), inset 0 0 0 1px rgba(255, 255, 255, 0.06) !important;
-}
-
-/* Right “7/28 Boosts” text */
-#channels
-  div[class^='textContainer__0d0f9']
-  > div[class^='textContentContainer__0d0f9']:last-child {
-  color: rgba(224, 208, 255, 0.9) !important;
-  font-weight: 700 !important;
-  font-size: 13px !important;
-  line-height: 1 !important;
-  letter-spacing: 0.15px !important;
-  opacity: 0.92 !important;
 }
 
 /* 3. UNREAD/MENTION BADGE GLOW - Notification badges pulse with glow */
@@ -983,59 +670,16 @@ div[class*='guilds'] [class*='numberBadge'] {
 
 /* 4. HOME/DM BUTTON GLOW - Discord home button has purple glow */
 div[class*='guilds'] div[class*='homeIcon'] {
-  /* Remove DM/Home container glow */
   color: #8b5cf6 !important;
-  filter: none !important;
+  filter: drop-shadow(0 0 6px rgba(139, 92, 246, 0.45)) !important;
 }
 
 /* Home button hover */
 div[class*='guilds'] div[class*='listItem']:hover div[class*='homeIcon'] {
-  /* Remove DM/Home hover glow/zoom */
   color: #a78bfa !important;
-  filter: none !important;
-  transform: none !important;
-  transition: none !important;
-}
-
-/* Servers sidebar: remove any remaining glow/scale on server + DM icon containers */
-nav[aria-label='Servers sidebar'] div[class^='wrapper_'],
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']::before,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']::after,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']:hover,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']:hover::before,
-nav[aria-label='Servers sidebar'] div[class^='wrapper_']:hover::after,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_'],
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']::before,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']::after,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']:hover,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']:hover::before,
-nav[aria-label='Servers sidebar'] div[class^='listItemWrapper_']:hover::after {
-  box-shadow: none !important;
-  filter: none !important;
-  transform: none !important;
-}
-
-/* Servers sidebar: remove purple left-edge border on selected/active server items */
-/* CSSPicker: selected server item is `div.wrapper__*` with role="treeitem" and border-left 3px */
-nav[aria-label='Servers sidebar'] div[role='treeitem'],
-nav[aria-label='Servers sidebar'] div[role='treeitem']:hover,
-nav[aria-label='Servers sidebar'] div[role='treeitem'][aria-selected='true'] {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  border: none !important;
-  border-left: none !important;
-  border-color: transparent !important;
-  border-width: 0 !important;
-  box-shadow: none !important;
-  outline: none !important;
-}
-
-/* Servers sidebar: remove icon drop-shadow (can read as a “purple edge”) */
-nav[aria-label='Servers sidebar'] img[class^='icon_'],
-nav[aria-label='Servers sidebar'] svg,
-nav[aria-label='Servers sidebar'] svg * {
-  filter: none !important;
+  filter: drop-shadow(0 0 8px rgba(139, 92, 246, 0.55)) !important;
+  transform: scale(1.08) !important;
+  transition: all 0.3s ease !important;
 }
 
 /* 5. ADD/EXPLORE BUTTON GLOW - Bottom buttons glow on hover */
@@ -1066,131 +710,6 @@ div[class*='guilds'] div[class*='circleIconButton']:hover svg {
    Purpose: Style channel list with 75% opacity background, purple glows, unread channel indicators
    ============================================================================ */
 
-/* Channel list polish (readability + aesthetics) */
-/* CSSPicker: ul.content_d125d2[aria-label="Channels"] > li.containerDefault_* > div.iconVisibility_* */
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'] {
-  /* Prevent any inherited left-edge indicator styles */
-  background: transparent !important;
-  border-left: none !important;
-  box-shadow: none !important;
-  border-radius: var(--radius-control, 8px) !important;
-}
-
-/* Clean rows: remove the darker “plate” for a flatter look */
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'] > div[class^='iconVisibility_'] {
-  background: transparent !important;
-  border: none !important;
-  border-left: none !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  padding: 4px 10px !important;
-  margin: 1px 8px !important;
-}
-
-/* Idle channels: calmer text (less competing purple) */
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'] a,
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'] span,
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'] [class*='name'] {
-  color: rgba(205, 205, 225, 0.72) !important;
-  text-shadow: none !important;
-}
-
-/* Hover: keep the plate, add subtle purple outline */
-#channels
-  ul[aria-label='Channels']
-  li[class^='containerDefault_']:hover
-  > div[class^='iconVisibility_'] {
-  background: rgba(10, 10, 15, 0.08) !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  box-shadow: none !important;
-}
-
-/* Selected: remove purple highlight entirely (active channel stays clean) */
-#channels
-  ul[aria-label='Channels']
-  li[class^='containerDefault_'][class*='selected']
-  > div[class^='iconVisibility_'] {
-  background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-}
-
-/* Selected text: readable and intentional (one emphasis source = text) */
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'][class*='selected'] a,
-#channels ul[aria-label='Channels'] li[class^='containerDefault_'][class*='selected'] span,
-#channels
-  ul[aria-label='Channels']
-  li[class^='containerDefault_'][class*='selected']
-  [class*='name'] {
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: none !important;
-}
-
-/* Dividers/section header lines: dim them so they don't compete */
-#channels div.sectionDivider__629e4,
-#channels div.sectionDivider__629e4::before,
-#channels div.sectionDivider__629e4::after {
-  background: rgba(139, 92, 246, 0.18) !important;
-  opacity: 0.35 !important;
-  box-shadow: none !important;
-}
-
-/* Channel header row ("TEXT CHANNELS"): calmer and less glowy */
-#channels ul[aria-label='Channels'] li.containerDefault__29444,
-#channels ul[aria-label='Channels'] li.containerDefault__29444 * {
-  color: rgba(224, 208, 255, 0.78) !important;
-  text-shadow: none !important;
-}
-
-/* Limit glow to one place: remove icon glow in the channel list */
-#channels a[class*='channel'] svg,
-#channels [class*='iconContainer'] svg,
-#channels [class*='iconItem'] svg {
-  filter: none !important;
-  text-shadow: none !important;
-}
-
-/* Browse Channels row (special layout): make it crisp and readable when idle */
-/* CSSPicker: ul[aria-label="Channels"] > li:first-of-type > div.containerDefault_* > div.link__2ea32.basicChannelRowLink__2ea32 */
-#channels
-  ul[aria-label='Channels']
-  > li:first-of-type
-  div[class^='link_'][class*='basicChannelRowLink_'],
-#channels
-  ul[aria-label='Channels']
-  > li:first-of-type
-  div[class^='link_'][class*='basicChannelRowLink_']
-  * {
-  color: rgba(255, 255, 255, 0.92) !important;
-  opacity: 1 !important;
-  text-shadow: none !important;
-  filter: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-#channels
-  ul[aria-label='Channels']
-  > li:first-of-type
-  div[class^='link_'][class*='basicChannelRowLink_'] {
-  background: rgba(15, 15, 26, 0.52) !important;
-  border: 1px solid rgba(255, 255, 255, 0.08) !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34) !important;
-  font-weight: 650 !important;
-  letter-spacing: 0.2px !important;
-}
-
-#channels
-  ul[aria-label='Channels']
-  > li:first-of-type
-  div[class^='containerDefault_'][class*='wrapper_']:hover
-  div[class^='link_'][class*='basicChannelRowLink_'] {
-  background: rgba(15, 15, 26, 0.58) !important;
-  border-color: rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(139, 92, 246, 0.35) !important;
-}
-
 /* Channel List Container - 75% Opacity (maintained on hover) */
 /* All channel list containers and wrappers */
 [class*='channels'],
@@ -1200,8 +719,7 @@ div[class*='guilds'] div[class*='circleIconButton']:hover svg {
 [class*='sidebar'][class*='content'],
 nav[class*='sidebar'],
 div[class*='sidebar'][class*='base'] {
-  /* More transparent so the wallpaper actually reads through (net ~40% visible after global overlay) */
-  background: rgba(10, 10, 15, 0.2) !important;
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
   opacity: 1 !important;
   transition: none !important;
 }
@@ -1214,7 +732,7 @@ div[class*='sidebar'][class*='base'] {
 [class*='sidebar'][class*='content']:hover,
 nav[class*='sidebar']:hover,
 div[class*='sidebar'][class*='base']:hover {
-  background: rgba(10, 10, 15, 0.2) !important;
+  background: rgba(10, 10, 15, 0.75) !important; /* 75% opacity - BALANCED for bright wallpaper */
   opacity: 1 !important;
   transition: none !important;
 }
@@ -1235,8 +753,7 @@ header[class*='header'] div[class*='name'] {
    Purple glow on selected channel
    ---------------------------------------- */
 a[class*='channel'][class*='selected'],
-/* IMPORTANT: do not style generic `[class*='wrapper']` here (it hits server/DM list wrappers) */
-a[class*='channel'][class*='selected'] {
+[class*='wrapper'][class*='selected'] {
   background: rgba(139, 92, 246, 0.2) !important;
   border-left: 3px solid rgba(139, 92, 246, 0.8) !important;
   box-shadow: inset 0 0 10px rgba(139, 92, 246, 0.2) !important;
@@ -1247,8 +764,7 @@ a[class*='channel'][class*='selected'] {
    Subtle glow when hovering over channels (excludes selected channels)
    ---------------------------------------- */
 a[class*='channel']:hover:not([class*='selected']),
-/* IMPORTANT: do not style generic `[class*='wrapper']` here (it hits server/DM list wrappers) */
-a[class*='channel']:hover:not([class*='selected']) {
+[class*='wrapper']:hover:not([class*='selected']) {
   background: rgba(139, 92, 246, 0.1) !important;
   box-shadow: inset 0 0 8px rgba(139, 92, 246, 0.15) !important;
   border-left: 2px solid rgba(139, 92, 246, 0.4) !important;
@@ -1257,8 +773,7 @@ a[class*='channel']:hover:not([class*='selected']) {
 
 /* Selected Channel Hover - Maintain selected styling with enhanced glow */
 a[class*='channel'][class*='selected']:hover,
-/* IMPORTANT: do not style generic `[class*='wrapper']` here (it hits server/DM list wrappers) */
-a[class*='channel'][class*='selected']:hover {
+[class*='wrapper'][class*='selected']:hover {
   background: rgba(139, 92, 246, 0.25) !important;
   border-left: 3px solid rgba(139, 92, 246, 0.9) !important;
   box-shadow: inset 0 0 12px rgba(139, 92, 246, 0.3) !important;
@@ -1303,68 +818,6 @@ a[class*='channel'][class*='selected']:hover {
   background: linear-gradient(135deg, rgba(10, 10, 20, 0.98), rgba(15, 10, 25, 0.98)) !important;
 }
 
-/* Channel list (guild channel sidebar) transparency override */
-/* CSSPicker: #channels is the scroller containing ul[aria-label="Channels"] inside the guild channel sidebar */
-div[class^='sidebar_']:has(#channels),
-div[class^='sidebar_']:has(#channels)::before,
-div[class^='sidebar_']:has(#channels)::after,
-div[class^='sidebarList_']:has(#channels),
-div[class^='sidebarList_']:has(#channels)::before,
-div[class^='sidebarList_']:has(#channels)::after,
-nav[class^='container_']:has(#channels),
-nav[class^='container_']:has(#channels)::before,
-nav[class^='container_']:has(#channels)::after,
-div#channels,
-div#channels::before,
-div#channels::after,
-ul[aria-label='Channels'] {
-  background: rgba(10, 10, 15, 0.2) !important;
-  background-color: rgba(10, 10, 15, 0.2) !important;
-  background-image: none !important;
-}
-
-div[class^='sidebar_']:has(#channels):hover,
-div[class^='sidebar_']:has(#channels):hover::before,
-div[class^='sidebar_']:has(#channels):hover::after,
-div[class^='sidebarList_']:has(#channels):hover,
-div[class^='sidebarList_']:has(#channels):hover::before,
-div[class^='sidebarList_']:has(#channels):hover::after,
-nav[class^='container_']:has(#channels):hover,
-nav[class^='container_']:has(#channels):hover::before,
-nav[class^='container_']:has(#channels):hover::after,
-div#channels:hover,
-div#channels:hover::before,
-div#channels:hover::after,
-ul[aria-label='Channels']:hover {
-  background: rgba(10, 10, 15, 0.2) !important;
-  background-color: rgba(10, 10, 15, 0.2) !important;
-  background-image: none !important;
-}
-
-/* Extra-safe: exact hashed classes from CSSPicker (Discord can swap which wrapper paints the backdrop) */
-div.sidebar__5e434,
-div.sidebar__5e434::before,
-div.sidebar__5e434::after,
-div.sidebarList__5e434,
-div.sidebarList__5e434::before,
-div.sidebarList__5e434::after,
-div.sidebarListRounded__5e434,
-div.sidebarListRounded__5e434::before,
-div.sidebarListRounded__5e434::after,
-nav.container__2637a,
-nav.container__2637a::before,
-nav.container__2637a::after,
-div#channels.scroller__629e4,
-div#channels.scroller__629e4::before,
-div#channels.scroller__629e4::after,
-ul.content_d125d2,
-ul.content_d125d2::before,
-ul.content_d125d2::after {
-  background: rgba(10, 10, 15, 0.2) !important;
-  background-color: rgba(10, 10, 15, 0.2) !important;
-  background-image: none !important;
-}
-
 /* Glowing borders separating sections */
 [class*='guilds'] {
   border-right: 1px solid rgba(139, 92, 246, 0.2) !important;
@@ -1397,8 +850,7 @@ header[class*='header'] {
    Category headers glow purple
    ---------------------------------------- */
 [role='button'][class*='container'] h2,
-/* Scope to SETTINGS sidebar items only (avoid affecting channel rows) */
-[class*='standardSidebarView'] [class*='containerDefault'] {
+[class*='containerDefault'] {
   color: #a78bfa !important;
   text-shadow: 0 0 8px rgba(167, 139, 250, 0.5) !important;
   font-weight: 600 !important;
@@ -1506,79 +958,6 @@ a[class*='channel'] [class*='name'],
 }
 
 /* ============================================================================
-   SECTION 7.1: PRIVATE CHANNELS / DM LIST (Friends + DMs)
-   ============================================================================
-   Targets: Left sidebar "Private channels" (Friends, Quests, Direct Messages list)
-   Purpose: Improve spacing + hierarchy, keep a clean selected pill (no glow/blur)
-   CSSPicker:
-   - nav.privateChannels_e6b769[aria-label="Private channels"]
-   - ul.content_d125d2[aria-label="Direct Messages"]
-   - div.interactive__972a0 / div.interactiveSelected__972a0
-   - a.link__972a0[data-list-item-id^="private-channels-uid_"]
-   ============================================================================ */
-
-/* DM list container: keep it clean (no overlays) */
-nav[aria-label='Private channels'] ul[aria-label='Direct Messages'],
-nav[aria-label='Private channels'] ul[aria-label='Direct Messages']::before,
-nav[aria-label='Private channels'] ul[aria-label='Direct Messages']::after {
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-/* Row wrapper (hover/selected surface lives here) */
-nav[aria-label='Private channels'] div[class^='interactive_'][class*='interactive__972a0'] {
-  background: transparent !important;
-  border: 1px solid transparent !important;
-  border-left: none !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  margin: 2px 6px !important;
-}
-
-nav[aria-label='Private channels'] div[class^='interactive_'][class*='interactive__972a0']:hover {
-  background: rgba(10, 10, 15, 0.08) !important;
-  border-color: rgba(255, 255, 255, 0.06) !important;
-  box-shadow: none !important;
-}
-
-/* Selected row: calm purple pill (no glow, no left bar) */
-nav[aria-label='Private channels']
-  div[class^='interactiveSelected_'][class*='interactiveSelected__972a0'],
-nav[aria-label='Private channels'] div[class*='interactiveSelected__972a0'],
-nav[aria-label='Private channels'] div[class*='selected_bf202d'] {
-  background: rgba(139, 92, 246, 0.22) !important;
-  border-color: rgba(139, 92, 246, 0.35) !important;
-  border-left: none !important;
-  box-shadow: none !important;
-}
-
-/* Link layout: consistent height/padding and calmer text */
-nav[aria-label='Private channels'] a[class^='link_'][data-list-item-id^='private-channels-uid_'] {
-  min-height: 38px !important;
-  padding: 8px 12px !important;
-  border-radius: var(--radius-control, 8px) !important;
-  color: rgba(225, 225, 240, 0.82) !important; /* calmer idle */
-  text-shadow: none !important;
-}
-
-/* Selected link text: slightly brighter */
-nav[aria-label='Private channels']
-  div[class*='interactiveSelected__972a0']
-  a[class^='link_'][data-list-item-id^='private-channels-uid_'],
-nav[aria-label='Private channels']
-  div[class*='selected_bf202d']
-  a[class^='link_'][data-list-item-id^='private-channels-uid_'] {
-  color: rgba(255, 255, 255, 0.96) !important;
-}
-
-/* Remove any icon glow in DM list (global channel icon glow can leak here) */
-nav[aria-label='Private channels'] svg,
-nav[aria-label='Private channels'] svg *,
-nav[aria-label='Private channels'] img {
-  filter: none !important;
-}
-
-/* ============================================================================
 
    SECTION 8: MEMBER LIST ENHANCEMENTS
    ============================================================================
@@ -1623,8 +1002,7 @@ nav[aria-label='Private channels'] img {
    ============================================================================ */
 
 /* Message Container - Visual separation */
-/* IMPORTANT: avoid `[class*='message']` here (matches `messageContent_` and causes purple left edge on text). */
-div[role='article'][class^='message_'] {
+[class*='message'] {
   border-left: 2px solid transparent !important;
   transition: border-color 0.2s ease !important;
 }
@@ -1632,68 +1010,12 @@ div[role='article'][class^='message_'] {
 /* Message Hover Effect - Subtle purple glow */
 /* Appears when hovering over messages (not critical hits) */
 /* Edge case: Excludes both .bd-crit-hit class and [class*='bd-crit-hit'] in class name */
-div[role='article'][class^='message_']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit']) {
+[class*='message']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit']) {
   background: rgba(138, 43, 226, 0.05) !important;
   opacity: 1 !important;
   border-left-color: rgba(138, 43, 226, 0.4) !important;
-  /* Avoid “double glow”: keep the highlight, remove the extra hover shadow layer. */
-  box-shadow: none !important;
-  transition: background-color 0.2s ease, border-color 0.2s ease !important;
-}
-
-/* ClearVision sometimes draws hover effects via pseudo-elements; keep hover clean. */
-div[role='article'][class^='message_']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit'])::before,
-div[role='article'][class^='message_']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit'])::after {
-  box-shadow: none !important;
-  filter: none !important;
-}
-
-/* Message content should never get a left-edge “selected” border */
-div[class^='messageContent_'],
-div[class^='markup_'] {
-  border: none !important;
-  border-left: none !important;
-  border-left-color: transparent !important;
-  border-width: 0 !important;
-  outline: none !important;
-}
-
-/* Attachments: remove inner/oval glow effects */
-[class*='message'] [class*='attachment'],
-[class*='message'] [class*='attachment']::before,
-[class*='message'] [class*='attachment']::after,
-[class*='message'] [class*='attachmentContainer'],
-[class*='message'] [class*='attachmentContainer']::before,
-[class*='message'] [class*='attachmentContainer']::after,
-[class*='message'] [class*='attachmentInner'],
-[class*='message'] [class*='attachmentInner']::before,
-[class*='message'] [class*='attachmentInner']::after {
-  box-shadow: none !important;
-  filter: none !important;
-  background-image: none !important;
-}
-
-[class*='message'] [class*='attachment'] * {
-  box-shadow: none !important;
-  filter: none !important;
-}
-
-/* Attachments: clean frame (pretty, but no glow) */
-[class*='message'] [class*='attachment'],
-[class*='message'] [class*='attachmentContainer'],
-[class*='message'] [class*='attachmentInner'] {
-  background: rgba(15, 15, 26, 0.55) !important;
-  border: 1px solid rgba(139, 92, 246, 0.18) !important;
-  border-radius: 14px !important;
-  overflow: hidden !important;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28) !important; /* neutral depth, not a purple glow */
-}
-
-[class*='message'] [class*='attachment']:hover,
-[class*='message'] [class*='attachmentContainer']:hover,
-[class*='message'] [class*='attachmentInner']:hover {
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.32) !important;
+  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important;
+  transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 /* Crit Hit Messages - No hover blur */
@@ -1730,9 +1052,8 @@ div[class^='markup_'] {
   background: rgba(15, 15, 26, 0.95) !important;
   border: 1px solid rgba(138, 43, 226, 0.3) !important;
   border-radius: 8px !important;
-  /* No glow around the message box */
-  box-shadow: none !important;
-  transition: border-color 0.2s ease !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease !important;
 }
 
 /* Message Input Focus - Enhanced Glow */
@@ -1741,19 +1062,7 @@ div[class^='markup_'] {
 [class*='slateTextArea']:focus-within:not(:disabled):not([disabled]):not([readonly]),
 [class*='textArea']:focus-within:not(:disabled):not([disabled]):not([readonly]) {
   border-color: rgba(138, 43, 226, 0.6) !important;
-  /* Keep the border change, but no glow */
-  box-shadow: none !important;
-}
-
-/* Extra-safe: Discord sometimes applies glow to the inner scrollable container */
-[class*='channelTextArea'] [class*='scrollableContainer'],
-[class*='channelTextArea'] [class*='scrollableContainer']::before,
-[class*='channelTextArea'] [class*='scrollableContainer']::after,
-[class*='textArea'] [class*='scrollableContainer'],
-[class*='textArea'] [class*='scrollableContainer']::before,
-[class*='textArea'] [class*='scrollableContainer']::after {
-  box-shadow: none !important;
-  filter: none !important;
+  box-shadow: 0 0 12px rgba(138, 43, 226, 0.35) !important;
 }
 
 /* ============================================================================
@@ -1892,100 +1201,14 @@ div[class^='markup_'] {
    Purpose: Style Discord embed cards with purple theme, special styling for Solo Leveling plugin embeds
    ============================================================================ */
 
-/* Embed Containers - Better Visibility (single accent edge, no stacked borders) */
-/* NOTE: Some embeds nest multiple wrapper/container layers; apply the accent only to the outer surface. */
+/* Embed Containers - Better Visibility */
+[class*='embed'],
 [class*='embedWrapper'],
 [class*='embedContainer'] {
-  background: rgba(15, 15, 26, 0.86) !important;
-  border: 1px solid rgba(138, 43, 226, 0.22) !important;
-  border-left: 4px solid rgba(138, 43, 226, 0.55) !important;
-  border-radius: 14px !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.32) !important;
-  overflow: hidden !important;
-}
-
-/* Remove duplicate accent edges on nested inner embed layers (prevents 2–3 bars on GIF/tenor previews). */
-[class*='embedWrapper'] [class*='embed'],
-[class*='embedWrapper'] [class*='embedContainer'],
-[class*='embedContainer'] [class*='embed'] {
-  background: transparent !important;
-  border: none !important;
-  border-left: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-}
-
-/* YouTube/video embeds: consistent 16:9 media sizing */
-/* Credit: seannmatts (snippet provided by user; adapted + flattened for non-nested CSS) */
-[class^='embedFull_']:has(iframe),
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) {
-  max-width: 750px !important;
-}
-
-[class^='embedFull_']:has(iframe) [class^='gridContainer_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class^='gridContainer_'] {
-  max-width: 750px !important;
-}
-
-[class^='embedFull_']:has(iframe) [class*='embedMedia_'],
-[class^='embedFull_']:has(iframe) [class^='image'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class*='embedMedia_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class^='image'] {
-  max-width: 750px !important;
-  max-height: unset !important;
-}
-
-[class^='embedFull_']:has(iframe) [class*='embedMedia_'] [class^='imageContainer_'],
-[class^='embedFull_']:has(iframe) [class^='image'] [class^='imageContainer_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com'])
-  [class*='embedMedia_']
-  [class^='imageContainer_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class^='image'] [class^='imageContainer_'] {
-  max-width: 750px !important;
-  aspect-ratio: 16/9 !important;
-  border-radius: 20px !important;
-  overflow: hidden !important;
-}
-
-[class^='embedFull_']:has(iframe) [class*='embedMedia_'] [class^='imageContainer_'] img,
-[class^='embedFull_']:has(iframe) [class^='image'] [class^='imageContainer_'] img,
-[class^='embedFull_']:has(img[src*='i.ytimg.com'])
-  [class*='embedMedia_']
-  [class^='imageContainer_']
-  img,
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class^='image'] [class^='imageContainer_'] img {
-  max-width: 750px !important;
-  max-height: unset !important;
-  aspect-ratio: 16/9 !important;
-  border-radius: 20px !important;
-}
-
-[class^='embedFull_']:has(iframe) [class*='embedMedia_'] > [class^='embedVideo_'],
-[class^='embedFull_']:has(iframe) [class^='image'] > [class^='embedVideo_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class*='embedMedia_'] > [class^='embedVideo_'],
-[class^='embedFull_']:has(img[src*='i.ytimg.com']) [class^='image'] > [class^='embedVideo_'] {
-  max-width: 750px !important;
-  aspect-ratio: 16/9 !important;
-  padding: 0 !important;
-  border-radius: 20px !important;
-  overflow: hidden !important;
-}
-
-[class^='embedFull_']:has(iframe) [class*='embedMedia_'] > [class^='embedVideo_'] > iframe,
-[class^='embedFull_']:has(iframe) [class^='image'] > [class^='embedVideo_'] > iframe,
-[class^='embedFull_']:has(img[src*='i.ytimg.com'])
-  [class*='embedMedia_']
-  > [class^='embedVideo_']
-  > iframe,
-[class^='embedFull_']:has(img[src*='i.ytimg.com'])
-  [class^='image']
-  > [class^='embedVideo_']
-  > iframe {
-  max-width: unset !important;
-  max-height: unset !important;
-  width: 100% !important;
-  height: 100% !important;
-  border-radius: 20px !important;
+  background: rgba(15, 15, 26, 0.9) !important;
+  border-left: 3px solid rgba(138, 43, 226, 0.5) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
 }
 
 /* Solo Leveling Plugin Embed - Enhanced Styling */
@@ -2070,10 +1293,8 @@ button[aria-label*='send']:hover:not(:disabled):not([disabled]),
 button[aria-label*='Settings'],
 button[aria-label*='settings'],
 [class*='iconButton'][class*='settings'],
-button[class*='guildSettings'],
-[role='button'][class*='guildSettings'],
-button[class*='userSettings'],
-[role='button'][class*='userSettings'],
+[class*='guildSettings'],
+[class*='userSettings'],
 [class*='accountButton'],
 button[aria-label*='User Settings'],
 button[aria-label*='Server Settings'] {
@@ -2085,25 +1306,14 @@ button[aria-label*='Server Settings'] {
 button[aria-label*='Settings']:hover:not(:disabled):not([disabled]),
 button[aria-label*='settings']:hover:not(:disabled):not([disabled]),
 [class*='iconButton'][class*='settings']:hover:not(:disabled):not([disabled]),
-button[class*='guildSettings']:hover:not(:disabled):not([disabled]),
-[role='button'][class*='guildSettings']:hover:not(:disabled):not([disabled]),
-button[class*='userSettings']:hover:not(:disabled):not([disabled]),
-[role='button'][class*='userSettings']:hover:not(:disabled):not([disabled]),
+[class*='guildSettings']:hover:not(:disabled):not([disabled]),
+[class*='userSettings']:hover:not(:disabled):not([disabled]),
 [class*='accountButton']:hover:not(:disabled):not([disabled]),
 button[aria-label*='User Settings']:hover:not(:disabled):not([disabled]),
 button[aria-label*='Server Settings']:hover:not(:disabled):not([disabled]) {
   box-shadow: 0 0 12px rgba(139, 92, 246, 0.35) !important;
   transform: scale(1.05) !important;
   transition: all 0.2s ease !important;
-}
-
-/* User Settings: Security page container should NOT glow/zoom on hover */
-fieldset[class^='userSettingsSecurity_'],
-fieldset[class^='userSettingsSecurity_']:hover,
-fieldset[class^='userSettingsSecurity_']:focus,
-fieldset[class^='userSettingsSecurity_']:focus-within {
-  box-shadow: none !important;
-  transform: none !important;
 }
 
 /* Username Hover - Enhanced glow on hover */
@@ -2191,45 +1401,6 @@ a:hover:not(:disabled):not([disabled]):not([aria-disabled='true']),
   --background-modifier-hover: transparent !important;
   --background-modifier-active: transparent !important;
   --background-modifier-selected: transparent !important;
-}
-
-/* ----------------------------------------
-   A.1 NOW PLAYING / FRIENDS SIDEBAR ACTIVITY CARDS
-   Targets: DM/Friends "Now Playing" right column cards (itemCard__*)
-   Goal: Keep card solid on hover + purple outline (no transparency)
-   ---------------------------------------- */
-div[class^='itemCard_'][class*='outer_'][class*='interactive_'],
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']::before,
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']::after {
-  background: rgba(15, 15, 26, 0.65) !important;
-  background-color: rgba(15, 15, 26, 0.65) !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  border-left: none !important;
-  border-color: rgba(255, 255, 255, 0.06) !important;
-  border-width: 1px !important;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.34) !important;
-  outline: none !important;
-}
-
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']:hover,
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']:hover::before,
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']:hover::after,
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']:focus,
-div[class^='itemCard_'][class*='outer_'][class*='interactive_']:focus-visible {
-  /* Keep the fill (no "transparent" hover) */
-  background: rgba(15, 15, 26, 0.7) !important;
-  background-color: rgba(15, 15, 26, 0.7) !important;
-  /* Purple outline */
-  border-color: rgba(139, 92, 246, 0.55) !important;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.38), 0 0 0 1px rgba(139, 92, 246, 0.55),
-    0 0 18px rgba(139, 92, 246, 0.12) !important;
-}
-
-/* Extra-safe: some builds draw a left edge via wrapper__00943 */
-div[class^='itemCard_'][class^='wrapper_'][class^='outer_'] {
-  border-left: none !important;
-  border-left-color: transparent !important;
 }
 
 /* ----------------------------------------
@@ -2581,10 +1752,10 @@ div[class*='badges'][style*='background'],
 /* Context Menu - Fully Opaque with Smooth Fade Animation + Purple Glow */
 /* Right-click context menus */
 [class*='contextMenu'],
-[class*='menuOverlay'],
+[class*='menu'],
 [class*='menuContent'],
-/* Keep container styling off individual menu items (prevents per-item “double glow”) */
-[class*='menu']:not([class*='menuItem']):not([class*='menuItemInner']):not([class*='menuItemContent']):not([class*='menuItemGroup']) {
+[class*='menuItem'],
+[class*='menuItemGroup'] {
   background: #0f0f1a !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -2593,13 +1764,6 @@ div[class*='badges'][style*='background'],
   border: 1px solid rgba(139, 92, 246, 0.2) !important;
   animation: tooltipFadeIn 0.15s ease-out !important;
   transition: opacity 0.15s ease-out !important;
-}
-
-/* Context menu items: never inherit a container glow */
-[class*='menuItemInner'],
-[class*='menuItemContent'] {
-  box-shadow: none !important;
-  border: none !important;
 }
 
 /* Menu Items - Override Discord's default blue with purple */
@@ -2615,30 +1779,19 @@ div[class*='badges'][style*='background'],
 }
 
 /* Menu Item Hover - Nice purple glow that persists */
-[class*='menuItemInner']:hover,
-[class*='menuItemInner']:hover::before,
-[class*='menuItemInner']:hover::after,
+[class*='menuItem']:hover,
 [class*='item'][role='menuitem']:hover,
 [class*='item'][role='menuitemcheckbox']:hover,
-[class*='item'][role='menuitemradio']:hover {
+[class*='item'][role='menuitemradio']:hover,
+[class*='contextMenu'] [class*='item']:hover,
+[class*='menu'] [class*='item']:hover {
   background: rgba(139, 92, 246, 0.25) !important;
   background-color: rgba(139, 92, 246, 0.25) !important;
-  background-image: none !important;
-  /* Prevent “double glow”: menu container already has a glow */
-  box-shadow: none !important;
+  box-shadow: 0 0 10px rgba(139, 92, 246, 0.22) !important;
   color: #c4b5fd !important;
   text-shadow: 0 0 6px rgba(139, 92, 246, 0.5) !important;
   transition: all 0.2s ease !important;
   border-left: 3px solid rgba(139, 92, 246, 0.6) !important;
-}
-
-/* If both a parent wrapper and an inner node are hovered, keep the highlight on the inner only */
-[class^='menuItem_']:hover {
-  background: transparent !important;
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  border-left: none !important;
 }
 
 /* Menu Item Icons - Glow on hover */
@@ -2669,8 +1822,7 @@ div[class*='badges'][style*='background'],
 [class*='item'][class*='selected'] {
   background: rgba(139, 92, 246, 0.35) !important;
   background-color: rgba(139, 92, 246, 0.35) !important;
-  /* Avoid per-item glow (menu container already has a glow) */
-  box-shadow: none !important;
+  box-shadow: 0 0 12px rgba(139, 92, 246, 0.25) !important;
   color: #c4b5fd !important;
   text-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
   border-left: 3px solid rgba(139, 92, 246, 0.8) !important;
@@ -2764,22 +1916,26 @@ div[class*='scroller'] {
 [class*='spinner']::before,
 [class*='loader']::before,
 [class*='loadingSpinner']::before {
-  /* Remove oval glow around spinners */
   content: '';
-  display: none !important;
-  background: none !important;
-  animation: none !important;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(138, 43, 226, 0.3) 0%, transparent 40%);
+  animation: shadowParticlePulse 2s ease-in-out infinite;
+  border-radius: 50%;
 }
 
 [class*='loading']::after,
 [class*='spinner']::after,
 [class*='loader']::after,
 [class*='loadingSpinner']::after {
-  /* Remove oval glow around spinners */
   content: '';
-  display: none !important;
-  background: none !important;
-  animation: none !important;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.2) 0%, transparent 40%);
+  animation: shadowParticlePulse 2s ease-in-out infinite 0.5s;
+  border-radius: 50%;
 }
 
 /* Loading Overlay - Shadow Army Effect */
@@ -2798,11 +1954,17 @@ div[class*='scroller'] {
 [class*='loadingOverlay']::before,
 [class*='loadingScreen']::before,
 [class*='splashScreen']::before {
-  /* Remove large glow blobs on loading overlays */
   content: '';
-  display: none !important;
-  background: none !important;
-  animation: none !important;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(circle at 20% 30%, rgba(138, 43, 226, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 70%, rgba(139, 92, 246, 0.2) 0%, transparent 50%),
+    radial-gradient(circle at 50% 50%, rgba(75, 0, 130, 0.15) 0%, transparent 50%);
+  animation: shadowArmyParticles 4s ease-in-out infinite;
+  pointer-events: none;
 }
 
 /* ============================================================================
@@ -2882,10 +2044,7 @@ div[class*='scroller'] {
     rgba(15, 5, 30, 0.1) 70%,
     rgba(25, 12, 40, 0.15) 100%
   ) !important;
-  /* Calmer frame: less purple, more neutral depth */
-  border: 1px solid rgba(255, 255, 255, 0.04) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.32) !important;
+  box-shadow: inset 0 0 100px rgba(139, 92, 246, 0.05) !important;
 }
 
 /* Base layer background - Extremely transparent (10-15%) for animated background */
@@ -2917,92 +2076,36 @@ nav[class*='sidebar'],
     rgba(20, 10, 35, 0.15) 0%,
     rgba(15, 10, 25, 0.15) 100%
   ) !important;
-  /* Reduce frame competition: subtle divider + mostly black shadow */
-  border-right: 1px solid rgba(139, 92, 246, 0.18) !important;
-  box-shadow: 2px 0 18px rgba(0, 0, 0, 0.35), 0 0 10px rgba(139, 92, 246, 0.05) !important;
-}
-
-/* Settings sidebar items (newer UI): prevent full solid-purple active row */
-/* CSSPicker: div.navScroller__409aa[role=list][data-list-id=settings-sidebar] > div.item_caf372.active_caf372[role=listitem] */
-div[role='list'][data-list-id='settings-sidebar']
-  [role='listitem'][data-list-item-id^='settings-sidebar___'] {
-  background: transparent !important;
-  border-left: 2px solid transparent !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-}
-
-div[role='list'][data-list-id='settings-sidebar']
-  [role='listitem'][data-list-item-id^='settings-sidebar___']:hover {
-  background: rgba(139, 92, 246, 0.1) !important;
-  border-left-color: rgba(139, 92, 246, 0.4) !important;
-  box-shadow: none !important;
-}
-
-div[role='list'][data-list-id='settings-sidebar']
-  [role='listitem'][data-list-item-id^='settings-sidebar___'][class*='active'],
-div[role='list'][data-list-id='settings-sidebar']
-  [role='listitem'][data-list-item-id^='settings-sidebar___'][aria-selected='true'] {
-  background: rgba(139, 92, 246, 0.16) !important;
-  border-left-color: rgba(139, 92, 246, 0.85) !important;
-  box-shadow: inset 0 0 14px rgba(139, 92, 246, 0.1) !important;
+  border-right: 2px solid rgba(139, 92, 246, 0.3) !important;
+  box-shadow: 2px 0 15px rgba(139, 92, 246, 0.2) !important;
 }
 
 /* ----------------------------------------
    #3: Selected Category Purple Highlight
    Active category has purple background + border
    ---------------------------------------- */
-/* Scope this to SETTINGS sidebar only (avoid affecting Servers sidebar which also contains "side") */
-[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='selected'],
-[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item'][class*='selected'] {
-  /* Slightly calmer so it doesn't outshine content pills/cards */
-  background: rgba(139, 92, 246, 0.16) !important;
-  border-left: 2px solid rgba(139, 92, 246, 0.85) !important;
-  box-shadow: inset 0 0 14px rgba(139, 92, 246, 0.1) !important;
+li[class*='selected'][class*='containerDefault'],
+[class*='side'] [class*='selected'],
+[class*='item'][class*='selected'] {
+  background: rgba(139, 92, 246, 0.2) !important;
+  border-left: 3px solid #8b5cf6 !important;
+  box-shadow: inset 0 0 20px rgba(139, 92, 246, 0.15) !important;
 }
 
 /* Category text glow */
-[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='selected'] [class*='text'],
-/* Settings sidebar text glow only */
-[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item'][class*='selected'] span,
-[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='selected'][class*='containerDefault'] {
+li[class*='selected'] [class*='text'],
+[class*='item'][class*='selected'] span,
+li[class*='selected'][class*='containerDefault'] {
   color: #a78bfa !important;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.35) !important;
-}
-
-/* Settings sidebar typography polish (FriendorFoeBB runs wide) */
-[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item'] {
-  font-size: 13.5px !important;
-  letter-spacing: 0.15px !important;
-}
-
-/* Settings content cards: unify into the solid depth style (reduce purple competition) */
-[class*='standardSidebarView'] [class*='contentRegion'] div[class^='card_'],
-[class*='standardSidebarView'] [class*='contentRegion'] div[class^='card_']::before,
-[class*='standardSidebarView'] [class*='contentRegion'] div[class^='card_']::after,
-[class*='standardSidebarView'] [class*='contentRegion'] div[class^='container_'][class*='card_'],
-[class*='standardSidebarView']
-  [class*='contentRegion']
-  div[class^='container_'][class*='card_']::before,
-[class*='standardSidebarView']
-  [class*='contentRegion']
-  div[class^='container_'][class*='card_']::after {
-  background: rgba(10, 7, 18, 0.78) !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.06) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.42) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
+  text-shadow: 0 0 8px rgba(139, 92, 246, 0.6) !important;
 }
 
 /* ----------------------------------------
    #4: Category Hover Glow
    Categories glow purple on hover
    ---------------------------------------- */
-/* IMPORTANT: scope to Settings sidebar so it doesn't match activity `itemCard__*` (contains "item") */
-[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:hover,
-[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:hover {
+li[class*='containerDefault']:hover,
+[class*='side'] [class*='item']:hover {
   background: rgba(139, 92, 246, 0.1) !important;
   border-left: 2px solid rgba(139, 92, 246, 0.4) !important;
   box-shadow: 0 0 10px rgba(139, 92, 246, 0.2) !important;
@@ -3079,9 +2182,9 @@ nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb:hover {
 [class*='side'] [class*='header']:not([class*='item']),
 [class*='sidebarRegion'] h2 {
   color: #c4b5fd !important;
-  text-shadow: 0 0 6px rgba(139, 92, 246, 0.32) !important;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.65) !important;
   text-transform: uppercase !important;
-  letter-spacing: 1px !important;
+  letter-spacing: 2px !important;
   font-weight: bold !important;
   font-size: 13px !important;
 }
@@ -3092,7 +2195,7 @@ nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb:hover {
 [class*='contentRegion'] h3,
 [class*='standardSidebarView'] h1 {
   color: #c4b5fd !important;
-  text-shadow: 0 0 7px rgba(139, 92, 246, 0.28) !important;
+  text-shadow: 0 0 10px rgba(139, 92, 246, 0.55) !important;
   font-weight: bold !important;
 }
 
@@ -3158,94 +2261,17 @@ nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb:hover {
    #11: Button Purple Theme
    Primary buttons are purple
    ---------------------------------------- */
-/* Settings button system (consistent across all settings pages) */
-[class*='standardSidebarView'] button[class*='look'] {
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  transform: none !important;
-}
-
-/* Primary (Brand) */
+/* Primary buttons */
 [class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand'] {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.82)
-  ) !important;
-  border: 1px solid rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.26) !important;
+  background: linear-gradient(135deg, #8b5cf6, #a78bfa) !important;
+  border: none !important;
+  box-shadow: 0 2px 8px rgba(139, 92, 246, 0.3) !important;
 }
 
 [class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand']:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.96),
-    rgba(196, 181, 253, 0.86)
-  ) !important;
-  border-color: rgba(139, 92, 246, 0.5) !important;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(139, 92, 246, 0.32) !important;
-  transform: none !important;
-}
-
-/* Secondary / Outline */
-[class*='standardSidebarView'] button[class*='lookOutlined'] {
-  background: rgba(10, 7, 18, 0.18) !important;
-  border: 1px solid rgba(255, 255, 255, 0.12) !important;
-  box-shadow: none !important;
-}
-
-[class*='standardSidebarView'] button[class*='lookOutlined']:hover {
-  background: rgba(10, 7, 18, 0.28) !important;
-  border-color: rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 0 0 1px rgba(139, 92, 246, 0.22) !important;
-}
-
-/* Destructive (Danger) */
-[class*='standardSidebarView'] button[class*='colorRed'][class*='lookOutlined'],
-[class*='standardSidebarView'] button[class*='lookOutlined'][class*='colorRed'] {
-  background: rgba(10, 7, 18, 0.12) !important;
-  border: 1px solid rgba(239, 68, 68, 0.55) !important;
-  box-shadow: none !important;
-}
-
-[class*='standardSidebarView'] button[class*='colorRed'][class*='lookOutlined']:hover,
-[class*='standardSidebarView'] button[class*='lookOutlined'][class*='colorRed']:hover {
-  background: rgba(239, 68, 68, 0.12) !important;
-  border-color: rgba(239, 68, 68, 0.75) !important;
-  box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.25) !important;
-}
-
-[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorRed'],
-[class*='standardSidebarView'] button[class*='colorRed'][class*='lookFilled'] {
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.92),
-    rgba(248, 113, 113, 0.82)
-  ) !important;
-  border: 1px solid rgba(239, 68, 68, 0.4) !important;
-  box-shadow: 0 12px 26px rgba(0, 0, 0, 0.26) !important;
-}
-
-[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorRed']:hover,
-[class*='standardSidebarView'] button[class*='colorRed'][class*='lookFilled']:hover {
-  background: linear-gradient(
-    135deg,
-    rgba(239, 68, 68, 0.96),
-    rgba(252, 165, 165, 0.86)
-  ) !important;
-  border-color: rgba(239, 68, 68, 0.6) !important;
-  box-shadow: 0 14px 30px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(239, 68, 68, 0.22) !important;
-  transform: none !important;
-}
-
-/* Disabled buttons: keep them calm and readable */
-[class*='standardSidebarView'] button:disabled,
-[class*='standardSidebarView'] button[disabled],
-[class*='standardSidebarView'] button[aria-disabled='true'] {
-  opacity: 0.55 !important;
-  filter: none !important;
-  transform: none !important;
-  box-shadow: none !important;
+  background: linear-gradient(135deg, #a78bfa, #c4b5fd) !important;
+  box-shadow: 0 4px 12px rgba(139, 92, 246, 0.5) !important;
+  transform: translateY(-1px) !important;
 }
 
 /* ----------------------------------------
@@ -3319,846 +2345,20 @@ div[role='tablist'][class*='tabBar__'] > *:not([role='tab']) {
   box-shadow: none !important;
 }
 
-/* Family Center tabs (Activity / My Family / Settings): convert underline tabs into pills */
-/* CSSPicker: div.settingsTabBar_*[role=tablist][aria-label="Family Center"] + div.settingsTabBarItem_*[role=tab] */
-div[role='tablist'][aria-label='Family Center'],
-div[role='tablist'][aria-label='Family Center']::before,
-div[role='tablist'][aria-label='Family Center']::after {
-  background: rgba(10, 7, 18, 0.82) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.44), 0 0 12px rgba(139, 92, 246, 0.06) !important;
-  padding: 4px !important;
-  gap: 8px !important;
-  margin-bottom: 16px !important;
-}
-
-div[role='tablist'][aria-label='Family Center'] [role='tab'],
-div[role='tablist'][aria-label='Family Center'] [role='tab']::before,
-div[role='tablist'][aria-label='Family Center'] [role='tab']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  padding: 8px 12px !important;
-  margin: 0 !important;
-  min-height: 34px !important;
-  line-height: 1 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px !important;
-  border-bottom: none !important; /* remove underline look */
-  text-decoration: none !important;
-}
-
-div[role='tablist'][aria-label='Family Center'] [role='tab']:hover,
-div[role='tablist'][aria-label='Family Center'] [role='tab']:hover::before,
-div[role='tablist'][aria-label='Family Center'] [role='tab']:hover::after {
-  background: rgba(139, 92, 246, 0.12) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.14) !important;
-  transform: translateY(-1px) !important;
-}
-
-div[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true'],
-div[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true']::before,
-div[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true']::after,
-div[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected'],
-div[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected']::before,
-div[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  border-left: none !important; /* kill the sidebar-style left bar */
-  box-shadow: 0 0 18px rgba(139, 92, 246, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.32) !important;
-}
-
-/* ----------------------------------------
-   User Settings content tabs (e.g., Security / Standing)
-   Scope strictly to settings so other tablists stay unchanged
-   ---------------------------------------- */
-[class*='standardSidebarView'] div[role='tablist']:not([aria-label='Friends']),
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']),
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends'])::before,
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends'])::after {
-  /* Solid surface (no blur), stronger shadow */
-  background: rgba(10, 7, 18, 0.78) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42), 0 0 14px rgba(139, 92, 246, 0.08) !important;
-  outline: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  padding: 4px !important;
-  gap: 8px !important;
-}
-
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab'],
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']::before,
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  padding: 8px 12px !important;
-  margin: 0 !important;
-  min-height: 34px !important;
-  line-height: 1 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  gap: 8px !important;
-  border-bottom: none !important;
-  text-decoration: none !important;
-}
-
-[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']:hover,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab']:hover::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab']:hover::after {
-  background: rgba(139, 92, 246, 0.12) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.14) !important;
-  transform: translateY(-1px) !important;
-}
-
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true'],
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current],
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected'],
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active'],
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true']::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current]::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected']::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active']::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true']::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current]::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected']::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  box-shadow: 0 0 22px rgba(139, 92, 246, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35) !important;
-}
-
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true']:hover,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current]:hover,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected']:hover,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active']:hover,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true']:hover::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current]:hover::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected']:hover::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active']:hover::before,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-selected='true']:hover::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][aria-current]:hover::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='selected']:hover::after,
-[class*='standardSidebarView']
-  [role='tablist']:not([aria-label='Friends'])
-  [role='tab'][class*='active']:hover::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.96),
-    rgba(167, 139, 250, 0.78)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.96) !important;
-  background-image: none !important;
-  box-shadow: 0 0 28px rgba(139, 92, 246, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-}
-
-/* ----------------------------------------
-   User Settings tabbed header tabs (e.g., Security / Standing)
-   NOTE: In the new settings UI this is under tabbedSettingsContainer_/tabBar_ (not standardSidebarView)
-   ---------------------------------------- */
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'],
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist']::before,
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist']::after {
-  /* Solid surface (no blur), stronger shadow */
-  background: rgba(10, 7, 18, 0.82) !important;
-  background-image: none !important;
-  /* Slightly clearer boundary so it matches the sidebar selection weight */
-  border: 1px solid rgba(139, 92, 246, 0.26) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.44), 0 0 12px rgba(139, 92, 246, 0.06) !important;
-  outline: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  padding: 4px !important;
-  gap: 8px !important;
-}
-
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab'],
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab']::before,
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-bottom: none !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  padding: 8px 12px !important;
-  margin: 0 !important;
-  min-height: 34px !important;
-  line-height: 1 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-decoration: none !important;
-}
-
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab']:hover,
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab']:hover::before,
-[class^='tabbedSettingsContainer_'] [class^='tabBar_'][role='tablist'] [role='tab']:hover::after {
-  background: rgba(139, 92, 246, 0.12) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.14) !important;
-  transform: translateY(-1px) !important;
-}
-
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true'],
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true']::before,
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true']::after,
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][class*='selected'],
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][class*='selected']::before,
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][class*='selected']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  border-left: 1px solid rgba(139, 92, 246, 0.75) !important;
-  /* Less neon: keep it filled but reduce glow so it doesn't compete with the sidebar highlight */
-  box-shadow: 0 0 18px rgba(139, 92, 246, 0.24), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 10px rgba(0, 0, 0, 0.32) !important;
-}
-
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true']:hover,
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true']:hover::before,
-[class^='tabbedSettingsContainer_']
-  [class^='tabBar_'][role='tablist']
-  [role='tab'][aria-selected='true']:hover::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.96),
-    rgba(167, 139, 250, 0.78)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.96) !important;
-  background-image: none !important;
-  box-shadow: 0 0 28px rgba(139, 92, 246, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-}
-
-/* Profiles modal: tab bar (Main Profile / Per-server Profiles) */
-/* CSSPicker: div.settingsPage_* contains div.tabBar_*[role=tablist] + div.tabBarItem_*[role=tab] */
-div[class^='settingsPage_'] div[class^='tabBar_'][role='tablist'],
-div[class^='settingsPage_'] div[class^='tabBar_'][role='tablist']::before,
-div[class^='settingsPage_'] div[class^='tabBar_'][role='tablist']::after {
-  /* Solid surface (no blur), stronger shadow */
-  background: rgba(10, 7, 18, 0.78) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.42), 0 0 14px rgba(139, 92, 246, 0.08) !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  padding: 4px !important;
-  gap: 8px !important;
-  margin-bottom: 16px !important;
-}
-
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'],
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_']::before,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-left: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-bottom: none !important; /* remove underline look */
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  padding: 8px 12px !important;
-  margin: 0 !important;
-  min-height: 34px !important;
-  line-height: 1 !important;
-  display: inline-flex !important;
-  align-items: center !important;
-  justify-content: center !important;
-  text-decoration: none !important;
-}
-
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_']:hover,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_']:hover::before,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_']:hover::after {
-  background: rgba(139, 92, 246, 0.12) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.14) !important;
-  transform: translateY(-1px) !important;
-}
-
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][aria-selected='true'],
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][aria-selected='true']::before,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][aria-selected='true']::after,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][class*='selected'],
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][class*='selected']::before,
-div[class^='settingsPage_']
-  div[class^='tabBar_'][role='tablist']
-  [role='tab'][class^='tabBarItem_'][class*='selected']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  border-left: 1px solid rgba(139, 92, 246, 0.75) !important;
-  box-shadow: 0 0 22px rgba(139, 92, 246, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35) !important;
-}
-
-/* Standing tab: make the \"Your account is all good\" card match the outside surface */
-/* CSSPicker: container uses cardPrimary_/card_ with its own semi-opaque background; remove it so it blends. */
-#privacy_and_safety_standing-tab div[class^='cardPrimary_'],
-#privacy_and_safety_standing-tab div[class^='cardPrimary_']::before,
-#privacy_and_safety_standing-tab div[class^='cardPrimary_']::after,
-#privacy_and_safety_standing-tab div[class^='card_'],
-#privacy_and_safety_standing-tab div[class^='card_']::before,
-#privacy_and_safety_standing-tab div[class^='card_']::after,
-/* Extra-safe: the actual element is usually container_* + cardPrimary__* + card__* */
-#privacy_and_safety_standing-tab div[class^='container_'][class*='cardPrimary'][class*='card_'],
-#privacy_and_safety_standing-tab div[class^='container_'][class*='cardPrimary'][class*='card_']::before,
-#privacy_and_safety_standing-tab div[class^='container_'][class*='cardPrimary'][class*='card_']::after {
-  /* Match the surrounding settings content surface exactly */
-  background: rgba(20, 20, 30, 0.12) !important;
-  background-color: rgba(20, 20, 30, 0.12) !important;
-  background-image: none !important;
-  border: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-}
-
-/* Header bar: hide trailing icons (Checkpoint / Inbox / Help) */
-/* CSSPicker: div.trailing_* contains role=button aria-label="Checkpoint"/"Inbox" + support.discord.com anchor */
-[class^='bar_'] [class^='trailing_'] [role='button'][aria-label='Checkpoint'],
-[class^='bar_'] [class^='trailing_'] [role='button'][aria-label='Inbox'],
-[class^='bar_'] [class^='trailing_'] a[href^='https://support.discord.com']
-{
-  display: none !important;
-}
-
-/* Bottom user panel: hide mute/unmute + deafen/undeafen (keep settings gear) */
-/* CSSPicker: controls are wrapped in div.micButtonParent__* under div.buttons__* */
-[class*='panels'] div[class^='buttons_'] div[class^='micButtonParent_'] {
-  display: none !important;
-}
-
-/* Bottom user panel: remove status badge overlay (prevents overlap with avatar + small username line) */
-/* CSSPicker: status badge is a tiny SVG shape with mask="url(#svg-mask-status-...)" */
-/* IMPORTANT: do NOT hide the avatar SVG mask itself (Discord uses it to render the avatar image). */
-section[aria-label='User area'] div[class^='avatarWrapper_'] [mask*='svg-mask-status-'],
-section[aria-label='User area']
-  div[class^='avatarWrapper_']
-  rect[class^='pointerEvents_'][mask*='svg-mask-status-'] {
-  /* Restored: status badge looks better present */
-  display: initial !important;
-}
-
-/* Bottom user panel: optional custom “avatar card” background */
-/* NOTE: Discord has shipped multiple DOM variants; support both selector shapes. */
-section[aria-label='User area'] > div[class^='container_'],
-section[aria-label='User area']
-  > div[class^='container_']:has(div[class^='avatarWrapper_']):has(div[class^='buttons_']) {
-  position: relative !important;
-  border-radius: 14px !important;
-  overflow: hidden !important;
-  /* Ensure our pseudo layers stack predictably */
-  isolation: isolate !important;
-  /* Make the image visible even if pseudos get covered */
-  background-image: var(--user-area-card-image) !important;
-  background-position: 50% 50% !important;
-  background-size: var(--user-area-card-image-size, cover) !important;
-  background-repeat: no-repeat !important;
-  background-color: transparent !important;
-}
-section[aria-label='User area'] > div[class^='container_']::before,
-section[aria-label='User area']
-  > div[class^='container_']:has(div[class^='avatarWrapper_']):has(div[class^='buttons_'])::before {
-  content: '' !important;
-  position: absolute !important;
-  inset: 0 !important;
-  background-image: var(--user-area-card-image) !important;
-  background-position: 50% 50% !important;
-  background-size: var(--user-area-card-image-size, cover) !important;
-  background-repeat: no-repeat !important;
-  opacity: var(--user-area-card-image-opacity) !important;
-  pointer-events: none !important;
-  z-index: 0 !important;
-  /* Make sure it’s visible even if a parent has filters */
-  filter: saturate(1.15) contrast(1.1) !important;
-  /* Zoom the image reliably (background-size sometimes gets reset by shorthands) */
-  transform: scale(var(--user-area-card-image-zoom, 1)) !important;
-  transform-origin: 50% 50% !important;
-}
-section[aria-label='User area'] > div[class^='container_']::after,
-section[aria-label='User area']
-  > div[class^='container_']:has(div[class^='avatarWrapper_']):has(div[class^='buttons_'])::after {
-  content: '' !important;
-  position: absolute !important;
-  inset: 0 !important;
-  background: var(--user-area-card-overlay) !important;
-  pointer-events: none !important;
-  z-index: 1 !important;
-}
-section[aria-label='User area'] > div[class^='container_'] > *,
-section[aria-label='User area']
-  > div[class^='container_']:has(div[class^='avatarWrapper_']):has(div[class^='buttons_'])
-  > * {
-  position: relative !important;
-  z-index: 2 !important;
-}
-
-/* Remove the inline gradient overlay layer so the image reads across the whole row */
-section[aria-label='User area'] div[class^='fitInAccount_'][aria-hidden='true'],
-section[aria-label='User area'] div[class*='fitInAccount'][aria-hidden='true'] {
-  /* Prefer removing it entirely */
-  display: none !important;
-  /* Fallback if display gets overridden: make it harmless */
-  background: none !important;
-  background-image: none !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-}
-
-/* Extra-safe: kill any user-area overlay that uses an inline linear-gradient background */
-section[aria-label='User area'] [aria-hidden='true'][style*='linear-gradient'] {
-  display: none !important;
-  background: none !important;
-  background-image: none !important;
-  opacity: 0 !important;
-}
-
-/* Bottom user panel: slightly shrink the main display name (not the handle/status line) */
-section[aria-label='User area'] [class*='nameTag'] {
-  font-size: 13px !important;
-  line-height: 16px !important;
-}
-
-/* Extra-safe: only the username line (keeps the smaller status/subtext readable) */
-section[aria-label='User area'] [class^='nameTag_'] [class^='usernameContainer_'],
-section[aria-label='User area'] [class^='nameTag_'] [class^='username_'] {
-  font-size: 13px !important;
-  line-height: 16px !important;
-}
-
-/* Bottom user panel: display-name effects text (actual visible display name) */
-/* CSSPicker: span.innerContainer_* has data-username-with-effects under div.nameTag__* */
-section[aria-label='User area']
-  div[class^='nameTag_']
-  span[class^='innerContainer_'][data-username-with-effects],
-section[aria-label='User area']
-  div[class^='nameTag_']
-  span[class^='innerContainer_'][data-username-with-effects]
-  * {
-  font-size: 14px !important;
-  line-height: 16px !important;
-}
-
-/* Fallback: force a visible shrink even if font-size is overridden elsewhere */
-section[aria-label='User area']
-  div[class^='nameTag_']
-  span[class^='innerContainer_'][data-username-with-effects] {
-  display: inline-block !important;
-  transform: scale(0.9) !important;
-  transform-origin: left center !important;
-}
-
 /* Friends tab area container cleanup (no dark box) */
-div[aria-label='Friends'] [class*='children__'],
-div[aria-label='Friends'] [class*='children__']::before,
-div[aria-label='Friends'] [class*='children__']::after,
-div[aria-label='Friends'] div[class*='tabBarContainer'],
-div[aria-label='Friends'] div[class*='tabBarContainer']::before,
-div[aria-label='Friends'] div[class*='tabBarContainer']::after,
 div[aria-label='Friends'] div[class*='tabBar__'],
 div[aria-label='Friends'] div[class*='tabBar__']::before,
 div[aria-label='Friends'] div[class*='tabBar__']::after,
-div[aria-label='Friends'] div[class*='tabBar__'] > *:not([role='tab']) {
+div[aria-label='Friends'] div[class*='tabBar__'] > *:not([role='tab']),
+div[aria-label='Friends'] div[class*='children__'],
+div[aria-label='Friends'] div[class*='children__']::before,
+div[aria-label='Friends'] div[class*='children__']::after,
+div[aria-label='Friends'] div[class*='upperContainer__'],
+div[aria-label='Friends'] div[class*='upperContainer__']::before,
+div[aria-label='Friends'] div[class*='upperContainer__']::after {
   background: transparent !important;
-  background-color: transparent !important;
   border: none !important;
   box-shadow: none !important;
-  backdrop-filter: none !important;
-}
-
-/* Friends header bar: give it a real surface so root background can't bleed through */
-/* NOTE: aria-label="Friends" is on the tablist itself; scope via main[aria-label="Friends"]. */
-main[aria-label='Friends'] div[class^='upperContainer_'],
-main[aria-label='Friends'] div[class^='upperContainer_']::before,
-main[aria-label='Friends'] div[class^='upperContainer_']::after,
-main[aria-label='Friends'] div[class^='headerBar_'],
-main[aria-label='Friends'] div[class^='headerBar_']::before,
-main[aria-label='Friends'] div[class^='headerBar_']::after {
-  background: linear-gradient(135deg, rgba(25, 15, 40, 0.92), rgba(15, 10, 30, 0.92)) !important;
-  border-bottom: 2px solid rgba(139, 92, 246, 0.35) !important;
-  box-shadow: 0 2px 14px rgba(139, 92, 246, 0.18) !important;
-  backdrop-filter: none !important;
-  /* Extend the bar slightly left to avoid “clipped” edge */
-  margin-left: -10px !important;
-  padding-left: 10px !important;
-}
-
-/* Friends top pills: override ClearVision/base tab visuals directly */
-/* NOTE: ClearVision often uses !important with higher specificity. Match the Friends top pill structure and out-specify it. */
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_'],
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']::before,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']::after {
-  /* Solid surface (no blur), stronger shadow */
-  background: rgba(10, 7, 18, 0.82) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.46), 0 0 14px rgba(139, 92, 246, 0.08) !important;
-  outline: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  padding: 4px !important;
-  padding-left: 14px !important;
-  gap: 6px !important;
-  margin-left: -10px !important;
-}
-
-/* Some layouts apply extra “box” styles via hover/focus. Keep them consistent. */
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_'] {
-  background: rgba(10, 7, 18, 0.82) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.46), 0 0 14px rgba(139, 92, 246, 0.08) !important;
-  outline: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  transform: none !important;
-  padding: 4px !important;
-  padding-left: 14px !important;
-  gap: 6px !important;
-  margin-left: -10px !important;
-}
-
-/* Critical: ClearVision/the theme applies hover styles to *topPill* containers. Override hover too. */
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:hover,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:active,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:focus,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:focus-within {
-  background: rgba(10, 7, 18, 0.56) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.26) !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34), 0 0 18px rgba(139, 92, 246, 0.14) !important;
-  outline: none !important;
-  transform: none !important;
-  margin-left: -10px !important;
-}
-
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_'] > div[role='tab'],
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']::before,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  color: rgba(243, 244, 246, 0.92) !important;
-}
-
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']:hover,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']:active,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']:focus,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab']:focus-within {
-  background: rgba(139, 92, 246, 0.12) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.28) !important;
-  box-shadow: 0 0 14px rgba(139, 92, 246, 0.14) !important;
-  outline: none !important;
-  transform: translateY(-1px) !important;
-}
-
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true'],
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true']::before,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  box-shadow: 0 0 22px rgba(139, 92, 246, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35) !important;
-}
-
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true']:hover,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true']:hover::before,
-div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']
-  > div[role='tab'][aria-selected='true']:hover::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.96),
-    rgba(167, 139, 250, 0.78)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.96) !important;
-  background-image: none !important;
-  box-shadow: 0 0 28px rgba(139, 92, 246, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-}
-
-/* Bulletproof fallback (exact hashes from CSSPicker capture) */
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends'] {
-  background: rgba(10, 7, 18, 0.82) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.22) !important;
-  border-radius: var(--radius-surface, 14px) !important;
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.46), 0 0 14px rgba(139, 92, 246, 0.08) !important;
-  outline: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  transform: none !important;
-  padding: 4px !important;
-  padding-left: 14px !important;
-  gap: 6px !important;
-  margin-left: -10px !important;
-}
-
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']:hover {
-  background: rgba(10, 7, 18, 0.56) !important;
-  background-image: none !important;
-  border: 1px solid rgba(139, 92, 246, 0.26) !important;
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.34), 0 0 18px rgba(139, 92, 246, 0.14) !important;
-  outline: none !important;
-  transform: none !important;
-  margin-left: -10px !important;
-}
-
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'],
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab']::before,
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab']::after {
-  background: transparent !important;
-  background-image: none !important;
-  border: 1px solid rgba(255, 255, 255, 0.07) !important;
-  border-radius: var(--radius-control, 8px) !important;
-  box-shadow: none !important;
-  outline: none !important;
-  transform: none !important;
-  color: rgba(243, 244, 246, 0.92) !important;
-}
-
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true'],
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true']::before,
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true']::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.92),
-    rgba(167, 139, 250, 0.72)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.92) !important;
-  background-image: none !important;
-  border-color: rgba(139, 92, 246, 0.75) !important;
-  box-shadow: 0 0 22px rgba(139, 92, 246, 0.34), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-  color: rgba(255, 255, 255, 0.96) !important;
-  text-shadow: 0 1px 14px rgba(0, 0, 0, 0.35) !important;
-}
-
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true']:hover,
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true']:hover::before,
-div.tabBar__133bf.topPill_aa8da2[role='tablist'][aria-label='Friends']
-  > div.item__133bf[role='tab'][aria-selected='true']:hover::after {
-  background: linear-gradient(
-    135deg,
-    rgba(139, 92, 246, 0.96),
-    rgba(167, 139, 250, 0.78)
-  ) !important;
-  background-color: rgba(139, 92, 246, 0.96) !important;
-  background-image: none !important;
-  box-shadow: 0 0 28px rgba(139, 92, 246, 0.4), inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
-  transform: none !important;
-}
-
-/* Friends page container stack (prevent dark bar bleed) */
-div[aria-label='Friends'] div[class*='layer__'],
-div[aria-label='Friends'] div[class*='layer__']::before,
-div[aria-label='Friends'] div[class*='layer__']::after,
-div[aria-label='Friends'] div[class*='container__'],
-div[aria-label='Friends'] div[class*='container__']::before,
-div[aria-label='Friends'] div[class*='container__']::after,
-div[aria-label='Friends'] section[class*='container__'],
-div[aria-label='Friends'] section[class*='container__']::before,
-div[aria-label='Friends'] section[class*='container__']::after,
-div[aria-label='Friends'] div[class*='page__'],
-div[aria-label='Friends'] div[class*='page__']::before,
-div[aria-label='Friends'] div[class*='page__']::after,
-div[aria-label='Friends'] div[class*='content__'],
-div[aria-label='Friends'] div[class*='content__']::before,
-div[aria-label='Friends'] div[class*='content__']::after,
-div[aria-label='Friends'] div[class*='base__'],
-div[aria-label='Friends'] div[class*='base__']::before,
-div[aria-label='Friends'] div[class*='base__']::after {
-  background: transparent !important;
-  background-color: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
 }
 
 /*   SECTION 22: ANIMATIONS & KEYFRAMES

@@ -6,25 +6,28 @@ A comprehensive BetterDiscord plugin and theme suite inspired by the Solo Leveli
 
 ### Required Files
 
-**Plugins (7 files):**
+**Plugins (6 files):**
+
 - `SoloLevelingStats.plugin.js` - Core stats system (REQUIRED)
 - `CriticalHit.plugin.js` - Critical hit effects
 - `SkillTree.plugin.js` - Skill tree system
 - `TitleManager.plugin.js` - Title management
 - `LevelProgressBar.plugin.js` - Progress bar UI
 - `SoloLevelingToasts.plugin.js` - Toast notifications
-- `LevelUpAnimation.plugin.js` - Level up animation
 
 **Theme (1 file):**
+
 - `SoloLeveling-ClearVision.theme.css` - Dark purple Solo Leveling theme
 
 **Optional Assets:**
+
 - `shadows-army-solo-leveling.gif` - Solo Leveling Shadow Army animated background
 - `shadows-army-solo-leveling-imgur.gif` - Alternative version hosted on Imgur
 
 ### How to Download
 
 1. **From GitHub Repository:**
+
    - Navigate to: `https://github.com/BlueFlashX1/betterdiscord-assets`
    - Click "Code" → "Download ZIP"
    - Extract the ZIP file
@@ -40,7 +43,8 @@ A comprehensive BetterDiscord plugin and theme suite inspired by the Solo Leveli
 ### File Checklist
 
 Before installation, ensure you have:
-- [ ] All 7 plugin files (`.plugin.js` extension)
+
+- [ ] All 6 plugin files (`.plugin.js` extension)
 - [ ] 1 theme file (`SoloLeveling-ClearVision.theme.css`)
 - [ ] BetterDiscord installed and enabled
 
@@ -51,6 +55,7 @@ Before installation, ensure you have:
 **Before installing plugins and themes, you must have BetterDiscord installed:**
 
 1. **Install BetterDiscord:**
+
    - Download from: `https://betterdiscord.app/`
    - Run the installer
    - Follow the installation wizard
@@ -62,6 +67,7 @@ Before installation, ensure you have:
    - If you see it, BetterDiscord is installed correctly
 
 **Requirements:**
+
 - Discord desktop app (not browser version)
 - BetterDiscord must be installed and enabled
 
@@ -70,6 +76,7 @@ Before installation, ensure you have:
 **Step 1: Locate BetterDiscord Folders**
 
 Find your BetterDiscord installation folder:
+
 - **macOS:** `~/Library/Application Support/BetterDiscord/`
 - **Windows:** `%AppData%\BetterDiscord\` (usually `C:\Users\YourName\AppData\Roaming\BetterDiscord\`)
 - **Linux:** `~/.config/BetterDiscord/`
@@ -84,7 +91,7 @@ Find your BetterDiscord installation folder:
    - `TitleManager.plugin.js`
    - `LevelProgressBar.plugin.js`
    - `SoloLevelingToasts.plugin.js`
-   - `LevelUpAnimation.plugin.js`
+   - Level up animation is included in `LevelProgressBar.plugin.js`
 3. Paste all files into `BetterDiscord/plugins/` folder
 
 **Step 3: Install Theme**
@@ -96,23 +103,25 @@ Find your BetterDiscord installation folder:
 **Step 4: Enable in BetterDiscord**
 
 1. **Reload Discord:**
+
    - Press `Ctrl+R` (Windows/Linux) or `Cmd+R` (macOS)
    - Or close and reopen Discord
 
 2. **Enable Plugins:**
+
    - Open Discord Settings (gear icon)
    - Click "BetterDiscord" in left sidebar
    - Click "Plugins" tab
-   - Toggle ON all 7 Solo Leveling plugins:
+   - Toggle ON all 6 Solo Leveling plugins:
      - SoloLevelingStats (REQUIRED - enable first)
      - CriticalHit
      - SkillTree
      - TitleManager
      - LevelProgressBar
      - SoloLevelingToasts
-     - LevelUpAnimation
 
 3. **Enable Theme:**
+
    - Still in Discord Settings → BetterDiscord
    - Click "Themes" tab
    - Toggle ON `SoloLeveling-ClearVision`
@@ -140,6 +149,7 @@ cp themes/SoloLeveling-ClearVision.theme.css ~/Library/Application\ Support/Bett
 ## Core Plugins
 
 ### SoloLevelingStats
+
 Foundation plugin that tracks Discord activity and rewards progression.
 
 - **Level System:** Gain XP from messages, level up, unlock stat points
@@ -158,6 +168,7 @@ Foundation plugin that tracks Discord activity and rewards progression.
 **Dependencies:** None
 
 ### CriticalHit
+
 Visual effects plugin where messages have a chance to land critical hits.
 
 - **Base Crit Chance:** 10% (fixed, buffed by Agility stat)
@@ -171,6 +182,7 @@ Visual effects plugin where messages have a chance to land critical hits.
 **Dependencies:** SoloLevelingStats, SkillTree
 
 ### SkillTree
+
 Passive abilities system to unlock powerful skills.
 
 - **5 Skill Branches:** Strength, Agility, Intelligence, Vitality, Luck
@@ -184,6 +196,7 @@ Passive abilities system to unlock powerful skills.
 **Dependencies:** SoloLevelingStats
 
 ### TitleManager
+
 Title system to display and equip achievement titles.
 
 - **Title Collection:** View all unlocked titles from achievements
@@ -197,6 +210,7 @@ Title system to display and equip achievement titles.
 ## Visual Enhancement Plugins
 
 ### LevelProgressBar
+
 Always-visible progress bar showing level progress.
 
 - Position: Top or bottom of Discord window
@@ -208,6 +222,7 @@ Always-visible progress bar showing level progress.
 **Dependencies:** SoloLevelingStats
 
 ### SoloLevelingToasts
+
 Custom toast notifications for events.
 
 - Purple gradient matching theme
@@ -218,19 +233,12 @@ Custom toast notifications for events.
 
 **Dependencies:** SoloLevelingStats
 
-### LevelUpAnimation
-Floating "LEVEL UP!" animation on level up.
-
-- Floating animation with fade
-- Particle effects (30 particles, configurable)
-- Purple glow matching theme
-- Customizable duration, distance, particle count, font size
-
-**Dependencies:** SoloLevelingStats
+**Level up animation:** Included (toggleable) via `LevelProgressBar` settings.
 
 ## Theme
 
 ### SoloLeveling-ClearVision
+
 Dark purple Solo Leveling theme based on ClearVision v7.
 
 - Dark purple/black color scheme
@@ -250,12 +258,13 @@ SoloLevelingStats (Core)
 ├── TitleManager (reads titles/achievements)
 ├── LevelProgressBar (reads level/XP)
 ├── SoloLevelingToasts (hooks into events)
-└── LevelUpAnimation (detects level ups)
+└── (Level up animation is provided by LevelProgressBar)
 ```
 
 ## Achievement System
 
 **Early Game Titles:**
+
 - The Weakest Hunter (+3% XP)
 - E-Rank Hunter (+8% XP)
 - D-Rank Hunter (+12% XP)
@@ -265,6 +274,7 @@ SoloLevelingStats (Core)
 - S-Rank Hunter (+40% XP)
 
 **Special Titles:**
+
 - Shadow Extraction (+15% XP)
 - Domain Expansion (+22% XP)
 - Ruler's Authority (+30% XP)
@@ -323,21 +333,25 @@ SoloLevelingStats (Core)
 ## Troubleshooting
 
 **Plugins not loading?**
+
 - Verify BetterDiscord is installed and enabled
 - Check files are in correct directories
 - Check console for errors (Ctrl+Shift+I / Cmd+Option+I)
 
 **Stats not tracking?**
+
 - Ensure SoloLevelingStats plugin is enabled
 - Verify you're sending messages (not just reading)
 - Check chat UI is visible (toggle in settings)
 
 **Crits not appearing?**
+
 - Verify CriticalHit plugin is enabled
 - Check SoloLevelingStats is running (for Agility bonuses)
 - Verify message filters aren't excluding your messages
 
 **Skills not unlocking?**
+
 - Check stat requirements are met
 - Verify prerequisite skills are unlocked
 - Ensure you have enough skill points
@@ -353,7 +367,6 @@ betterdiscord-dev/
 │   ├── TitleManager.plugin.js
 │   ├── LevelProgressBar.plugin.js
 │   ├── SoloLevelingToasts.plugin.js
-│   └── LevelUpAnimation.plugin.js
 ├── themes/
 │   └── SoloLeveling-ClearVision.theme.css
 └── README.md
