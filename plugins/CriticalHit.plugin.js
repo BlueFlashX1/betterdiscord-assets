@@ -3406,14 +3406,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Generate content hash for matching reprocessed messages
-   * @deprecated Use calculateContentHash() instead
-   */
-  getContentHash(author, content, timestamp) {
-    return this.calculateContentHash(author, content, timestamp);
-  }
-
-  /**
    * Atomically check and add message ID to processedMessages (fixes race condition)
    * Returns true if message was added (not already present), false if already processed
    */
@@ -4865,14 +4857,6 @@ module.exports = class CriticalHit {
   // ----------------------------------------------------------------------------
   // Content Hash Matching
   // ----------------------------------------------------------------------------
-
-  /**
-   * Calculates content hash for a message for matching
-   * @deprecated Use calculateContentHash() instead
-   */
-  calculateContentHashForRestoration(author, messageContent, timestamp) {
-    return this.calculateContentHash(author, messageContent, timestamp);
-  }
 
   /**
    * Creates a simple hash from content string (for content-based matching)

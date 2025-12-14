@@ -277,7 +277,7 @@ class ShadowStorageManager {
 
     // Required fields
     // Accept both id (uncompressed) and i (compressed) for identifier
-    if (!shadow.id && !shadow.i) {
+    if (!this.getCacheKey(shadow)) {
       errors.push('Missing required field: id or i');
     }
     if (!shadow.rank) errors.push('Missing required field: rank');
@@ -379,6 +379,124 @@ class ShadowStorageManager {
     if (!shadow) return null;
     // Prefer full id if available, otherwise use i (compressed)
     return shadow.id || shadow.i || null;
+  }
+
+  // ============================================================================
+  // COMBAT ENTITY NORMALIZATION HELPERS
+  // ============================================================================
+  /**
+   * Normalize a shadow object for combat so all downstream code can rely on:
+   * - a stable `id`
+   * - consistent `rank`
+   * - decompressed stats when possible
+   *
+   * NOTE: This returns a new object when it needs to add `id` to old/compressed shapes.
+   * It does NOT mutate the input.
+   *
+   * @param {Object} shadow
+   * @returns {Object|null}
+   */
+  normalizeShadowForCombat(shadow) {
+    const shadowId = this.getCacheKey(shadow);
+    if (!shadowId) return null;
+
+    const decompressed =
+      typeof this.getShadowData === 'function' ? this.getShadowData(shadow) || shadow : shadow;
+
+    // Ensure an `id` exists for combat/caches even if the record uses only `i`.
+    return decompressed?.id
+      ? decompressed
+      : {
+          ...decompressed,
+          id: shadowId,
+          i: decompressed?.i || shadow?.i,
+        };
+  }
+
+  /**
+   * Normalize a target (mob/boss/elite) object for combat.
+   * Supports the minimal target shapes passed in from Dungeons (type/rank/strength only).
+   *
+   * @param {Object} target
+   * @returns {Object}
+   */
+  normalizeTargetForCombat(target) {
+    const safeTarget = target && typeof target === 'object' ? target : {};
+    const type = safeTarget.type || 'mob';
+    const id = safeTarget.id || safeTarget.name || (type === 'boss' ? 'boss' : 'unknown');
+    const rank = safeTarget.rank || 'E';
+
+    const hp = Number.isFinite(safeTarget.hp) ? safeTarget.hp : 0;
+    const maxHp = Number.isFinite(safeTarget.maxHp) ? safeTarget.maxHp : hp;
+
+    const stats =
+      safeTarget.stats && typeof safeTarget.stats === 'object' ? safeTarget.stats : safeTarget;
+
+    return {
+      ...safeTarget,
+      id,
+      type,
+      rank,
+      hp,
+      maxHp: Math.max(maxHp, hp),
+      strength: Number.isFinite(stats.strength) ? stats.strength : 0,
+      agility: Number.isFinite(stats.agility) ? stats.agility : 0,
+      intelligence: Number.isFinite(stats.intelligence) ? stats.intelligence : 0,
+      vitality: Number.isFinite(stats.vitality) ? stats.vitality : 0,
+      perception: Number.isFinite(stats.perception) ? stats.perception : 0,
+    };
+  }
+
+  /**
+   * Resolve a consistent combat stats object for any participant.
+   * This is the "next biggest helper" after IDs/normalization: it removes stat glue duplication.
+   *
+   * Receive an Object, Return an Object.
+   *
+   * @param {Object} params
+   * @param {'shadow'|'target'} params.entityType
+   * @param {Object} params.entity
+   * @returns {{id: string|null, type: string, rank: string, stats: {strength:number, agility:number, intelligence:number, vitality:number, perception:number}, hp: number, maxHp: number}}
+   */
+  resolveCombatStats({ entityType, entity }) {
+    const ensureStats = (s) => ({
+      strength: Number.isFinite(s?.strength) ? s.strength : 0,
+      agility: Number.isFinite(s?.agility) ? s.agility : 0,
+      intelligence: Number.isFinite(s?.intelligence) ? s.intelligence : 0,
+      vitality: Number.isFinite(s?.vitality) ? s.vitality : 0,
+      perception: Number.isFinite(s?.perception) ? s.perception : 0,
+    });
+
+    const resolvers = {
+      shadow: () => {
+        const normalized = this.normalizeShadowForCombat(entity);
+        if (!normalized) return null;
+        const effective = this.getShadowEffectiveStats(normalized) || {};
+        const id = this.getCacheKey(normalized);
+        const rank = normalized.rank || 'E';
+        return {
+          id,
+          type: 'shadow',
+          rank,
+          stats: ensureStats(effective),
+          hp: 0,
+          maxHp: 0,
+        };
+      },
+      target: () => {
+        const normalized = this.normalizeTargetForCombat(entity);
+        return {
+          id: normalized.id || null,
+          type: normalized.type || 'mob',
+          rank: normalized.rank || 'E',
+          stats: ensureStats(normalized),
+          hp: Number.isFinite(normalized.hp) ? normalized.hp : 0,
+          maxHp: Number.isFinite(normalized.maxHp) ? normalized.maxHp : 0,
+        };
+      },
+    };
+
+    return (resolvers[entityType] || resolvers.target)();
   }
 
   /**
@@ -760,7 +878,7 @@ class ShadowStorageManager {
    */
   async saveShadow(shadow) {
     // Guard clause: Validate input (accept both id and i for compressed shadows)
-    const shadowId = shadow?.id || shadow?.i;
+    const shadowId = this.getCacheKey(shadow);
     if (!shadow || !shadowId) {
       const error = new Error('Invalid shadow object: missing id or i');
       this.debugError('SAVE', 'Cannot save shadow: invalid input', error);
@@ -791,7 +909,7 @@ class ShadowStorageManager {
         // No need to invalidate here - incremental cache handles it automatically
 
         // Get identifier for logging (accept both id and i for compressed shadows)
-        const shadowId = shadow.id || shadow.i;
+        const shadowId = this.getCacheKey(shadow);
         this.debugLog('SAVE', 'Shadow saved successfully', { id: shadowId, rank: shadow.rank });
         resolve({ success: true, shadow });
       };
@@ -929,7 +1047,7 @@ class ShadowStorageManager {
       // Process each shadow in batch
       shadows.forEach((shadow, index) => {
         // Validate shadow before saving (accept both id and i for compressed shadows)
-        const shadowId = shadow?.id || shadow?.i;
+        const shadowId = this.getCacheKey(shadow);
         if (!shadow || !shadowId) {
           errors++;
           this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index, shadow });
@@ -1503,7 +1621,7 @@ class ShadowStorageManager {
           return;
         }
 
-        const idForStore = shadow.id || shadow.i;
+        const idForStore = this.getCacheKey(shadow);
         if (!idForStore) {
           errors++;
           this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, {
@@ -1525,7 +1643,7 @@ class ShadowStorageManager {
           completed++;
           // Invalidate cache for updated shadow (handles compression state changes)
           // Store old shadow before update for proper invalidation
-          const oldShadow = this.recentCache.get(shadow.id || shadow.i);
+          const oldShadow = this.recentCache.get(this.getCacheKey(shadow));
           if (oldShadow) {
             this.invalidateCache(oldShadow);
           }
@@ -1537,7 +1655,7 @@ class ShadowStorageManager {
           errors++;
           this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
             index,
-            id: shadow.id || shadow.i,
+            id: this.getCacheKey(shadow),
             error: request.error,
           });
         };
@@ -1730,7 +1848,7 @@ class ShadowStorageManager {
                 // Ultra-compressed: p is scaled power (strength / 100)
                 shadowStrength = shadow.p * 100;
                 this.debugLog('GET_AGGREGATED_POWER', 'Using ultra-compressed power', {
-                  shadowId: shadow.i,
+                  shadowId: this.getCacheKey(shadow),
                   p: shadow.p,
                   calculatedStrength: shadowStrength,
                 });
@@ -1768,7 +1886,7 @@ class ShadowStorageManager {
                     'GET_AGGREGATED_POWER',
                     'Skipping shadow with no calculable strength',
                     {
-                      shadowId: shadow.id || shadow.i,
+                      shadowId: this.getCacheKey(shadow),
                       hasBaseStats: !!shadow.baseStats,
                       hasStrength: !!shadow.strength,
                       isCompressed: !!(shadow._c === 1 || shadow._c === 2),
@@ -2741,6 +2859,111 @@ module.exports = class ShadowArmy {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
+    // Compatibility shim: hot-reloads can leave older live instances missing newer helpers.
+    // Ensure `getCacheKey` exists before any extraction/async callbacks run.
+    if (typeof this.getCacheKey !== 'function') {
+      this.getCacheKey = (shadow) => (shadow ? shadow.id || shadow.i || null : null);
+    }
+
+    // Compatibility shim: older live instances may not have normalization helpers used by combat + UI.
+    if (typeof this.normalizeShadowForCombat !== 'function') {
+      this.normalizeShadowForCombat = (shadow) => {
+        const shadowId = typeof this.getCacheKey === 'function' ? this.getCacheKey(shadow) : null;
+        if (!shadowId) return null;
+        const decompressed =
+          typeof this.getShadowData === 'function' ? this.getShadowData(shadow) || shadow : shadow;
+        return decompressed?.id
+          ? decompressed
+          : {
+              ...decompressed,
+              id: shadowId,
+              i: decompressed?.i || shadow?.i,
+            };
+      };
+    }
+
+    if (typeof this.normalizeTargetForCombat !== 'function') {
+      this.normalizeTargetForCombat = (target) => {
+        const safeTarget = target && typeof target === 'object' ? target : {};
+        const type = safeTarget.type || 'mob';
+        const id = safeTarget.id || safeTarget.name || (type === 'boss' ? 'boss' : 'unknown');
+        const rank = safeTarget.rank || 'E';
+        const hp = Number.isFinite(safeTarget.hp) ? safeTarget.hp : 0;
+        const maxHp = Number.isFinite(safeTarget.maxHp) ? safeTarget.maxHp : hp;
+        const stats =
+          safeTarget.stats && typeof safeTarget.stats === 'object' ? safeTarget.stats : safeTarget;
+        return {
+          ...safeTarget,
+          id,
+          type,
+          rank,
+          hp,
+          maxHp: Math.max(maxHp, hp),
+          strength: Number.isFinite(stats.strength) ? stats.strength : 0,
+          agility: Number.isFinite(stats.agility) ? stats.agility : 0,
+          intelligence: Number.isFinite(stats.intelligence) ? stats.intelligence : 0,
+          vitality: Number.isFinite(stats.vitality) ? stats.vitality : 0,
+          perception: Number.isFinite(stats.perception) ? stats.perception : 0,
+        };
+      };
+    }
+
+    // Compatibility shim: older live instances may not have `resolveCombatStats`.
+    // This must exist because combat targeting calls it in hot paths.
+    if (typeof this.resolveCombatStats !== 'function') {
+      this.resolveCombatStats = ({ entityType, entity }) => {
+        const ensureStats = (s) => ({
+          strength: Number.isFinite(s?.strength) ? s.strength : 0,
+          agility: Number.isFinite(s?.agility) ? s.agility : 0,
+          intelligence: Number.isFinite(s?.intelligence) ? s.intelligence : 0,
+          vitality: Number.isFinite(s?.vitality) ? s.vitality : 0,
+          perception: Number.isFinite(s?.perception) ? s.perception : 0,
+        });
+
+        const safeEntity = entity && typeof entity === 'object' ? entity : {};
+
+        const resolvers = {
+          shadow: () => {
+            const normalized =
+              typeof this.normalizeShadowForCombat === 'function'
+                ? this.normalizeShadowForCombat(safeEntity)
+                : safeEntity;
+            const effective =
+              typeof this.getShadowEffectiveStats === 'function'
+                ? this.getShadowEffectiveStats(normalized)
+                : normalized;
+            const id =
+              typeof this.getCacheKey === 'function'
+                ? this.getCacheKey(normalized)
+                : normalized?.id || normalized?.i || null;
+            const rank = normalized?.rank || 'E';
+            return { id, type: 'shadow', rank, stats: ensureStats(effective), hp: 0, maxHp: 0 };
+          },
+          target: () => {
+            const normalized =
+              typeof this.normalizeTargetForCombat === 'function'
+                ? this.normalizeTargetForCombat(safeEntity)
+                : safeEntity;
+            const id = normalized?.id || normalized?.name || null;
+            const type = normalized?.type || 'mob';
+            const rank = normalized?.rank || 'E';
+            const hp = Number.isFinite(normalized?.hp) ? normalized.hp : 0;
+            const maxHp = Number.isFinite(normalized?.maxHp) ? normalized.maxHp : hp;
+            return {
+              id,
+              type,
+              rank,
+              stats: ensureStats(normalized),
+              hp,
+              maxHp: Math.max(maxHp, hp),
+            };
+          },
+        };
+
+        return (resolvers[entityType] || resolvers.target)();
+      };
+    }
+
     // Suppress BetterDiscord compatibility errors (discord_media module not found)
     // This is a BetterDiscord core issue with Discord 0.0.370+, not a plugin issue
     if (typeof window !== 'undefined' && !this._discordMediaErrorHandlerAdded) {
@@ -3553,7 +3776,7 @@ module.exports = class ShadowArmy {
           .then((shadow) => {
             if (shadow) {
               // Get identifier for logging (accept both id and i for compressed shadows)
-              const shadowId = shadow.id || shadow.i;
+              const shadowId = self.getCacheKey(shadow);
               self.debugLog('MESSAGE_EXTRACTION', 'SUCCESS: Shadow extracted from message', {
                 rank: shadow.rank,
                 role: shadow.role,
@@ -3760,6 +3983,12 @@ module.exports = class ShadowArmy {
 
     const _strength = userStats.strength || 0;
 
+    // Hot-reload safety: avoid crashing if older instances lack newer helpers.
+    const getShadowKey = (shadow) =>
+      typeof this.getCacheKey === 'function'
+        ? this.getCacheKey(shadow)
+        : shadow?.id || shadow?.i || null;
+
     // RANK VALIDATION: Ensure target rank is not too high
     const userRankIndex = this.shadowRanks.indexOf(userRank);
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
@@ -3933,7 +4162,7 @@ module.exports = class ShadowArmy {
           {
             attemptNum,
             shadowExists: !!shadow,
-            shadowId: shadow?.id || shadow?.i,
+            shadowId: getShadowKey(shadow),
             shadowRank: shadow?.rank,
             shadowRole: shadow?.role,
           }
@@ -3953,7 +4182,7 @@ module.exports = class ShadowArmy {
 
         // Success! Save shadow to database
         // Get identifier for logging (accept both id and i for compressed shadows)
-        const shadowId = shadow.id || shadow.i;
+        const shadowId = getShadowKey(shadow);
 
         if (this.storageManager) {
           try {
@@ -3997,7 +4226,7 @@ module.exports = class ShadowArmy {
 
             this.debugLog('EXTRACTION', 'Shadow saved successfully', {
               totalCount: newCount,
-              shadowId: shadow.id || shadow.i,
+              shadowId: getShadowKey(shadow),
               shadowRank: shadow.rank,
               shadowRole: shadow.role,
             });
@@ -4005,7 +4234,7 @@ module.exports = class ShadowArmy {
             // Emit event for other plugins (event-based sync)
             // Emit both BdApi.Events AND DOM event for maximum compatibility
             const eventData = {
-              shadowId: shadow.id || shadow.i,
+              shadowId: getShadowKey(shadow),
               shadowCount: newCount,
               shadowRank: shadow.rank,
               shadowRole: shadow.role,
@@ -4157,7 +4386,7 @@ module.exports = class ShadowArmy {
               `Attempt ${attemptNum} - Shadow extraction completed successfully`,
               {
                 attemptNum,
-                shadowId: shadow.id || shadow.i,
+                shadowId: this.getCacheKey(shadow),
                 shadowRank: shadow.rank,
                 shadowRole: shadow.role,
                 shadowStrength: shadow.strength,
@@ -4193,7 +4422,7 @@ module.exports = class ShadowArmy {
               `Attempt ${attemptNum} - Fallback to localStorage succeeded`,
               {
                 attemptNum,
-                shadowId: shadow.id || shadow.i,
+                shadowId: this.getCacheKey(shadow),
                 shadowRank: shadow.rank,
               }
             );
@@ -4206,7 +4435,7 @@ module.exports = class ShadowArmy {
             `Attempt ${attemptNum} - No storageManager, using localStorage fallback`,
             {
               attemptNum,
-              shadowId: shadow.id || shadow.i,
+              shadowId: this.getCacheKey(shadow),
             }
           );
           if (!this.settings.shadows) this.settings.shadows = [];
@@ -4224,7 +4453,7 @@ module.exports = class ShadowArmy {
             `Attempt ${attemptNum} - localStorage fallback succeeded`,
             {
               attemptNum,
-              shadowId: shadow.id || shadow.i,
+              shadowId: this.getCacheKey(shadow),
               shadowRank: shadow.rank,
             }
           );
@@ -5491,7 +5720,7 @@ module.exports = class ShadowArmy {
   calculateShadowPowerCached(shadow) {
     // Guard clause: Return 0 for invalid shadow
     // Accept both id (uncompressed) and i (compressed) for identifier
-    if (!shadow || (!shadow.id && !shadow.i)) {
+    if (!this.getCacheKey(shadow)) {
       this.debugLog('POWER_CALC', 'Invalid shadow object', {
         hasShadow: !!shadow,
         hasId: !!(shadow && shadow.id),
@@ -5501,7 +5730,7 @@ module.exports = class ShadowArmy {
     }
 
     // Get identifier for cache key (use id or i)
-    const shadowId = shadow.id || shadow.i;
+    const shadowId = this.getCacheKey(shadow);
     if (!shadowId) {
       return 0;
     }
@@ -5619,7 +5848,7 @@ module.exports = class ShadowArmy {
     if (!shadow || !this._shadowPowerCache) return;
     const keys = this.getAllCacheKeys
       ? this.getAllCacheKeys(shadow)
-      : [shadow.id || shadow.i].filter(Boolean);
+      : [this.getCacheKey(shadow)].filter(Boolean);
     keys.forEach((key) => {
       const powerCacheKey = `power_${key}`;
       if (this._shadowPowerCache.has(powerCacheKey)) {
@@ -5765,7 +5994,7 @@ module.exports = class ShadowArmy {
               } catch (shadowError) {
                 // Skip this shadow if calculation fails
                 this.debugLog('POWER', 'Failed to calculate power for shadow', {
-                  shadowId: shadow.id || shadow.i,
+                  shadowId: this.getCacheKey(shadow),
                   error: shadowError?.message,
                 });
               }
@@ -5812,7 +6041,7 @@ module.exports = class ShadowArmy {
             } catch (shadowError) {
               // Skip this shadow if calculation fails
               this.debugLog('POWER', 'Failed to calculate power for shadow', {
-                shadowId: shadow.id || shadow.i,
+                shadowId: this.getCacheKey(shadow),
                 error: shadowError?.message,
               });
             }
@@ -6118,7 +6347,7 @@ module.exports = class ShadowArmy {
 
         // Guard clause: Skip if shadow is still invalid
         if (!decompressed || (!decompressed.id && !decompressed.i)) {
-          const shadowId = shadow?.id || shadow?.i;
+          const shadowId = this.getCacheKey(shadow);
           this.debugLog('COMBAT', 'Invalid shadow data, skipping', {
             shadowId,
             hasGetShadowData: !!this.getShadowData,
@@ -6134,7 +6363,7 @@ module.exports = class ShadowArmy {
         // This should rarely happen, but ensures data integrity
         if (!effective) {
           this.debugLog('COMBAT', 'Cannot calculate effective stats, skipping shadow', {
-            shadowId: decompressed.id || decompressed.i,
+            shadowId: this.getCacheKey(decompressed),
             hasBaseStats: !!decompressed.baseStats,
             hasGrowthStats: !!decompressed.growthStats,
             hasNaturalGrowthStats: !!decompressed.naturalGrowthStats,
@@ -6154,7 +6383,7 @@ module.exports = class ShadowArmy {
               'COMBAT',
               'Using stored strength as fallback (effective stats are all 0)',
               {
-                shadowId: decompressed.id || decompressed.i,
+                shadowId: this.getCacheKey(decompressed),
                 storedStrength: fallbackStrength,
                 effectiveStats: effective,
                 baseStats: decompressed.baseStats,
@@ -6173,7 +6402,7 @@ module.exports = class ShadowArmy {
 
           // No valid stats or strength - skip this shadow
           this.debugLog('COMBAT', 'Skipping shadow with no valid stats or strength', {
-            shadowId: decompressed.id || decompressed.i,
+            shadowId: this.getCacheKey(decompressed),
             effectiveStats: effective,
             storedStrength: fallbackStrength,
             baseStats: decompressed.baseStats,
@@ -6191,7 +6420,7 @@ module.exports = class ShadowArmy {
         // Only log first few to avoid spam
         if (power === 0 && acc.totalShadows < 3) {
           this.debugLog('COMBAT', 'Power is 0 despite having effective stats', {
-            shadowId: decompressed.id || decompressed.i,
+            shadowId: this.getCacheKey(decompressed),
             effectiveStats: effective,
             totalEffectiveStats,
             baseStats: decompressed.baseStats,
@@ -6536,7 +6765,7 @@ module.exports = class ShadowArmy {
       const batchResults = batch.map((shadow) => {
         const power = this.calculateShadowPowerCached(shadow);
         const damage = power * 0.1; // 10% of power as damage
-        return { shadowId: shadow.id || shadow.i, damage, power };
+        return { shadowId: this.getCacheKey(shadow), damage, power };
       });
 
       // Aggregate batch damage
@@ -6587,6 +6816,7 @@ module.exports = class ShadowArmy {
    */
   async calculateCombatResultAggregated(target, options = {}) {
     const { damageMultiplier = 1.0 } = options;
+    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
 
     // Get aggregated stats (fast, uses cache)
     const armyStats = await this.getAggregatedArmyStats();
@@ -6595,7 +6825,7 @@ module.exports = class ShadowArmy {
     if (armyStats.totalShadows === 0) {
       return {
         damage: 0,
-        targetHP: target.hp || 0,
+        targetHP: targetCombat.hp,
         targetKilled: false,
         shadowsUsed: 0,
       };
@@ -6606,7 +6836,7 @@ module.exports = class ShadowArmy {
     const finalDamage = Math.floor(baseDamage * damageMultiplier);
 
     // Apply to target
-    const targetHP = target.hp || 0;
+    const targetHP = targetCombat.hp;
     const newTargetHP = Math.max(0, targetHP - finalDamage);
     const targetKilled = newTargetHP <= 0;
 
@@ -6849,12 +7079,14 @@ module.exports = class ShadowArmy {
       return { damage: 0, targetKilled: false };
     }
 
+    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
+
     // Use cached power calculation
     const power = this.calculateShadowPowerCached(shadow);
     const damage = Math.floor(power * 0.1); // 10% of power as damage
 
     // Apply damage to target
-    const targetHP = target.hp || 0;
+    const targetHP = targetCombat.hp;
     const newTargetHP = Math.max(0, targetHP - damage);
     const targetKilled = newTargetHP <= 0;
 
@@ -6864,7 +7096,7 @@ module.exports = class ShadowArmy {
     }
 
     // Get identifier (accept both id and i for compressed shadows)
-    const shadowId = shadow.id || shadow.i;
+    const shadowId = this.getCacheKey(shadow);
     return {
       shadowId: shadowId,
       damage,
@@ -6974,7 +7206,8 @@ module.exports = class ShadowArmy {
    * @returns {Promise<Object>} - Effectiveness estimate
    */
   async estimateArmyEffectiveness(target) {
-    const targetHP = target.hp || 0;
+    const normalizedTarget = this.normalizeTargetForCombat(target);
+    const targetHP = normalizedTarget.hp || 0;
 
     // Guard clause: Return early if no target HP
     if (targetHP <= 0) {
@@ -7028,40 +7261,39 @@ module.exports = class ShadowArmy {
    * @returns {Object} - Comprehensive combat data
    */
   createCombatData(shadow, target, dungeon = null) {
+    const shadowCombat = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
+    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
+    if (!shadowCombat || !targetCombat) return null;
+
     // Store only essential data (minimal memory footprint)
-    // Get identifier (accept both id and i for compressed shadows)
-    const shadowId = shadow.id || shadow.i;
+    const shadowId = shadowCombat.id;
 
     // Get stored personality (fast lookup)
-    const personality = this.getShadowPersonality(shadow);
-    const personalityName = shadow.personality || personality.name?.toLowerCase() || 'balanced';
+    const normalizedShadow =
+      typeof this.normalizeShadowForCombat === 'function'
+        ? this.normalizeShadowForCombat(shadow)
+        : shadow;
+    const personality = this.getShadowPersonality(normalizedShadow);
+    const personalityName =
+      normalizedShadow?.personality || personality.name?.toLowerCase() || 'balanced';
 
     // Get stored base attack interval (fast lookup)
     const baseInterval =
-      shadow.baseAttackInterval || this.calculateShadowAttackInterval(shadow, 2000);
-
-    // Get effective stats (cached)
-    const effective = this.getShadowEffectiveStats(shadow);
+      normalizedShadow?.baseAttackInterval ||
+      this.calculateShadowAttackInterval(normalizedShadow, 2000);
 
     // Calculate shadow power (cached)
     const power = this.calculateShadowPowerCached(shadow);
 
     // Extract target data (boss or mob)
+    const normalizedTarget = this.normalizeTargetForCombat(target);
     const targetData = {
-      id: target.id || target.name || 'unknown',
-      type: target.type || (dungeon?.boss?.id === target.id ? 'boss' : 'mob'),
-      rank: target.rank || 'E',
-      hp: target.hp || 0,
-      maxHp: target.maxHp || target.hp || 0,
-      stats:
-        target.strength !== undefined
-          ? {
-              strength: target.strength || 0,
-              agility: target.agility || 0,
-              intelligence: target.intelligence || 0,
-              vitality: target.vitality || 0,
-            }
-          : null,
+      id: normalizedTarget.id,
+      type: normalizedTarget.type,
+      rank: normalizedTarget.rank,
+      hp: normalizedTarget.hp,
+      maxHp: normalizedTarget.maxHp,
+      stats: targetCombat.stats,
     };
 
     // Include dungeon context if available
@@ -7083,13 +7315,7 @@ module.exports = class ShadowArmy {
       // Enhanced combat data from ShadowArmy
       personality: personalityName, // Stored personality
       baseAttackInterval: baseInterval, // Stored base attack interval
-      effectiveStats: {
-        strength: effective.strength || 0,
-        agility: effective.agility || 0,
-        intelligence: effective.intelligence || 0,
-        vitality: effective.vitality || 0,
-        perception: effective.perception || 0,
-      },
+      effectiveStats: shadowCombat.stats,
       dungeon: dungeonData, // Dungeon context
     };
   }
@@ -7252,7 +7478,7 @@ module.exports = class ShadowArmy {
     }
 
     // Get identifier for cache key (accept both id and i for compressed shadows)
-    const shadowId = shadow.id || shadow.i;
+    const shadowId = this.getCacheKey(shadow);
     if (!shadowId) {
       return this.shadowPersonalities.balanced;
     }
@@ -7433,8 +7659,13 @@ module.exports = class ShadowArmy {
     // Guard clause: Return 0 if invalid inputs
     if (!shadow || !target) return 0;
 
-    const personality = this.getShadowPersonality(shadow);
-    const effective = this.getShadowEffectiveStats(shadow);
+    const shadowCombat = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
+    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
+    if (!shadowCombat) return 0;
+
+    const normalizedShadow = this.normalizeShadowForCombat(shadow);
+    const personality = this.getShadowPersonality(normalizedShadow);
+    let effective = shadowCombat.stats;
 
     // CRITICAL FIX: Ensure shadow has valid stats
     // If all stats are 0, use shadow's level and rank as fallback
@@ -7446,14 +7677,15 @@ module.exports = class ShadowArmy {
       (effective.perception || 0);
     if (totalStats === 0) {
       // Fallback: Use level and rank to calculate minimum damage
-      const shadowLevel = shadow.level || 1;
-      const rankMultiplier = this.rankStatMultipliers[shadow.rank] || 1.0;
+      const shadowLevel = normalizedShadow?.level || shadow.level || 1;
+      const rankMultiplier = this.rankStatMultipliers[shadowCombat.rank] || 1.0;
       const fallbackStrength = shadowLevel * 10 * rankMultiplier;
-      effective.strength = fallbackStrength;
+      // Don't mutate cached/effective objects; use a local patched stats object.
+      effective = { ...effective, strength: fallbackStrength };
       this.debugLog('COMBAT', 'Shadow has 0 stats, using fallback calculation', {
-        shadowId: shadow.id,
+        shadowId: this.getCacheKey(normalizedShadow),
         level: shadowLevel,
-        rank: shadow.rank,
+        rank: shadowCombat.rank,
         fallbackStrength,
       });
     }
@@ -7463,13 +7695,13 @@ module.exports = class ShadowArmy {
 
     // CRITICAL FIX: Ensure minimum damage (at least 1 damage per attack)
     // This prevents shadows from doing 0 damage even with low stats
-    const minDamage = Math.max(1, shadow.level || 1); // Minimum 1 damage, or shadow level if higher
+    const minDamage = Math.max(1, normalizedShadow?.level || shadow.level || 1); // Minimum 1 damage, or shadow level if higher
 
     // Apply personality damage multiplier
     const personalityDamage = Math.max(minDamage, baseDamage * personality.damageMultiplier);
 
     // Apply target type modifiers
-    const targetType = target.type || 'mob';
+    const targetType = targetCombat.type || 'mob';
     const targetMultipliers = {
       mob: 1.0,
       elite: 0.9,
@@ -7477,10 +7709,23 @@ module.exports = class ShadowArmy {
     };
     const targetMultiplier = targetMultipliers[targetType] || 1.0;
 
+    // Rank-vs-rank scaling (bounded):
+    // Higher-ranked shadows hit harder; lower-ranked shadows deal less to higher-ranked targets.
+    // This complements Dungeons' stat-based scaling and makes rank gaps obvious in combat.
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const attackerRank = shadowCombat.rank || 'E';
+    const defenderRank = targetCombat.rank || 'E';
+    const attackerRankMult = this.rankStatMultipliers[attackerRank] || 1.0;
+    const defenderRankMult = this.rankStatMultipliers[defenderRank] || 1.0;
+    const ratio = attackerRankMult / (defenderRankMult || 1.0);
+    const rankVsMultiplier = clamp(Math.pow(ratio, 0.7), 0.35, 2.75);
+
     // Add random variance (±15% for unpredictability)
     const variance = 0.85 + Math.random() * 0.3; // 85-115%
 
-    const finalDamage = Math.floor(personalityDamage * targetMultiplier * variance);
+    const finalDamage = Math.floor(
+      personalityDamage * targetMultiplier * rankVsMultiplier * variance
+    );
 
     // CRITICAL FIX: Ensure final damage is at least 1
     return Math.max(1, finalDamage);
@@ -7528,8 +7773,20 @@ module.exports = class ShadowArmy {
     const personality = this.getShadowPersonality(shadow);
     const preference = personality.targetPreference || 'random';
 
-    // Filter out dead targets
-    const aliveTargets = availableTargets.filter((t) => (t.hp || 0) > 0);
+    const resolveHp = (t) =>
+      typeof this.resolveCombatStats === 'function'
+        ? this.resolveCombatStats({ entityType: 'target', entity: t })?.hp ?? 0
+        : Number.isFinite(t?.hp)
+        ? t.hp
+        : 0;
+
+    // Resolve combat HP once per target (hot path; avoid repeated resolver calls).
+    const aliveTargets = availableTargets
+      .map((t) => ({
+        target: t,
+        hp: resolveHp(t),
+      }))
+      .filter(({ hp }) => hp > 0);
 
     if (aliveTargets.length === 0) return null;
 
@@ -7537,23 +7794,20 @@ module.exports = class ShadowArmy {
     const targetSelectors = {
       weakest: () => {
         // Target with lowest HP
-        return aliveTargets.reduce((weakest, target) => {
-          return (target.hp || 0) < (weakest.hp || 0) ? target : weakest;
-        }, aliveTargets[0]);
+        return aliveTargets.reduce((weakest, cur) => (cur.hp < weakest.hp ? cur : weakest)).target;
       },
       strongest: () => {
         // Target with highest HP
-        return aliveTargets.reduce((strongest, target) => {
-          return (target.hp || 0) > (strongest.hp || 0) ? target : strongest;
-        }, aliveTargets[0]);
+        return aliveTargets.reduce((strongest, cur) => (cur.hp > strongest.hp ? cur : strongest))
+          .target;
       },
       nearest: () => {
         // Target first in array (nearest)
-        return aliveTargets[0];
+        return aliveTargets[0].target;
       },
       random: () => {
         // Random target
-        return aliveTargets[Math.floor(Math.random() * aliveTargets.length)];
+        return aliveTargets[Math.floor(Math.random() * aliveTargets.length)].target;
       },
     };
 
@@ -7650,7 +7904,7 @@ module.exports = class ShadowArmy {
    */
   processIndividualisticCombat(shadow, availableTargets, baseIntervalMs = 2000) {
     // Get identifier (accept both id and i for compressed shadows)
-    const shadowId = shadow?.id || shadow?.i;
+    const shadowId = this.getCacheKey(shadow);
 
     // Guard clause: Return early if invalid inputs
     if (!shadow || !availableTargets || availableTargets.length === 0) {
@@ -7683,12 +7937,13 @@ module.exports = class ShadowArmy {
 
     // Calculate damage with personality modifiers
     const damage = this.calculateShadowDamage(shadow, target);
+    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
 
     return {
       shadowId: shadowId,
       shadowPersonality: personality.name,
-      target: target.id || 'unknown',
-      targetType: target.type || 'mob',
+      target: targetCombat.id || 'unknown',
+      targetType: targetCombat.type || 'mob',
       damage,
       attackInterval,
       nextAttackTime: Date.now() + attackInterval,
@@ -10483,7 +10738,7 @@ module.exports = class ShadowArmy {
             }
             // Invalidate main plugin caches (power and personality)
             this.invalidateShadowPowerCache(oldShadow);
-            const oldId = oldShadow.id || oldShadow.i;
+            const oldId = this.getCacheKey(oldShadow);
             const oldI = oldShadow.i;
             if (this._shadowPersonalityCache) {
               if (oldId) this._shadowPersonalityCache.delete(`personality_${oldId}`);
@@ -10493,7 +10748,7 @@ module.exports = class ShadowArmy {
           }
           return ultraCompressedShadow;
         })
-        .filter((shadow) => shadow !== null && (shadow.id || shadow.i));
+        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
 
       let coldUpdated = 0;
       if (coldToUpdate.length > 0 && this.storageManager?.updateShadowsBatch) {
@@ -10538,7 +10793,7 @@ module.exports = class ShadowArmy {
             }
             // Invalidate main plugin caches (power and personality)
             this.invalidateShadowPowerCache(oldShadow);
-            const oldId = oldShadow.id || oldShadow.i;
+            const oldId = this.getCacheKey(oldShadow);
             const oldI = oldShadow.i;
             if (this._shadowPersonalityCache) {
               if (oldId) this._shadowPersonalityCache.delete(`personality_${oldId}`);
@@ -10549,7 +10804,7 @@ module.exports = class ShadowArmy {
 
           return compressedShadow;
         })
-        .filter((shadow) => shadow !== null && (shadow.id || shadow.i));
+        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
 
       let warmUpdated = 0;
       if (warmToCompress.length > 0 && this.storageManager?.updateShadowsBatch) {
@@ -10585,7 +10840,7 @@ module.exports = class ShadowArmy {
             }
             // Invalidate main plugin caches (power and personality)
             this.invalidateShadowPowerCache(oldShadow);
-            const oldId = oldShadow.id || oldShadow.i;
+            const oldId = this.getCacheKey(oldShadow);
             const oldI = oldShadow.i;
             if (this._shadowPersonalityCache) {
               if (oldId) this._shadowPersonalityCache.delete(`personality_${oldId}`);
@@ -10595,7 +10850,7 @@ module.exports = class ShadowArmy {
           }
           return decompressed;
         })
-        .filter((shadow) => shadow !== null && (shadow.id || shadow.i));
+        .filter((shadow) => shadow !== null && this.getCacheKey(shadow));
 
       let elitesUpdated = 0;
       if (elitesToDecompress.length > 0 && this.storageManager?.updateShadowsBatch) {
@@ -10707,7 +10962,7 @@ module.exports = class ShadowArmy {
       // Convert shadows to essence - batch delete for performance
       // Shadows are decompressed from processShadowsWithPower, but use id || i for safety
       const shadowIdsToDelete = toConvert
-        .map(({ shadow }) => shadow.id || shadow.i)
+        .map(({ shadow }) => this.getCacheKey(shadow))
         .filter(Boolean);
 
       if (shadowIdsToDelete.length > 0 && this.storageManager?.deleteShadowsBatch) {
@@ -11061,7 +11316,7 @@ module.exports = class ShadowArmy {
 
       // Delete shadows
       const shadowIdsToDelete = toConvert
-        .map(({ shadow }) => shadow.id || shadow.i)
+        .map(({ shadow }) => this.getCacheKey(shadow))
         .filter(Boolean);
 
       if (shadowIdsToDelete.length > 0 && this.storageManager?.deleteShadowsBatch) {
@@ -11601,7 +11856,7 @@ module.exports = class ShadowArmy {
     // Calculate generals (top 7 strongest)
     const withPower = safeShadows.map((shadow) => {
       const power = this.calculateShadowPowerCached(shadow);
-      const shadowId = shadow?.id || shadow?.i;
+      const shadowId = this.getCacheKey(shadow);
       return { shadow, power, id: shadowId };
     });
     const sortedByPower = [...withPower].sort((a, b) => (b.power || 0) - (a.power || 0));
@@ -12254,12 +12509,17 @@ module.exports = class ShadowArmy {
         : [];
 
     shadowsWithPower.sort((a, b) => b.strength - a.strength);
-    const generalIds = new Set(shadowsWithPower.slice(0, 7).map((x) => x.shadow.id));
+    const generalIds = new Set(
+      shadowsWithPower
+        .slice(0, 7)
+        .map((x) => this.getCacheKey(x.shadow))
+        .filter(Boolean)
+    );
 
     const listItems = shadowsForDisplay
       .slice(0, maxList)
       .map((shadow) => {
-        const shadowId = shadow?.id || shadow?.i || '';
+        const shadowId = this.getCacheKey(shadow) || '';
         const rank = this.escapeHtml(shadow.rank || 'E');
         const role = this.escapeHtml(shadow.roleName || shadow.role || 'Unknown');
         const isGeneral = shadowId && generalIds.has(shadowId);

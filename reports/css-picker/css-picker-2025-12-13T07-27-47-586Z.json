@@ -1,0 +1,481 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.2",
+  "url": "https://discord.com/channels/86004744966914048/123136820409139200",
+  "element": {
+    "capturedAt": "2025-12-13T07:27:47.430Z",
+    "summary": "div.pill_e5445c",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "pill_e5445c",
+      "wrapper__58105"
+    ],
+    "exactClassSelectors": [
+      ".pill_e5445c",
+      ".wrapper__58105"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"pill_\"]",
+      "[class^=\"wrapper_\"]"
+    ],
+    "parentSummary": "div.listItem__650eb",
+    "childrenSummary": {
+      "count": 1,
+      "firstChild": "span.item__58105"
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "pill_e5445c wrapper__58105"
+      },
+      {
+        "name": "aria-hidden",
+        "value": "true"
+      }
+    ],
+    "textPreview": null,
+    "computedStyle": {
+      "display": "flex",
+      "position": "absolute",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "rgba(139, 92, 246, 0.1)",
+      "backgroundImage": "none",
+      "background": "rgba(139, 92, 246, 0.1) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": null,
+      "borderColor": "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgba(139, 92, 246, 0.4)",
+      "borderWidth": "0px 0px 0px 2px",
+      "borderRadius": "0px",
+      "boxShadow": "rgba(139, 92, 246, 0.6) 0px 0px 12px 0px",
+      "outline": "rgba(0, 0, 0, 0) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "matrix(1.05, 0, 0, 1.05, 0, 0)",
+      "color": "rgba(0, 0, 0, 0)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "16px",
+      "lineHeight": "16px",
+      "padding": "0px",
+      "margin": "0px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "span.item__58105",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "item__58105"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "item__58105"
+          },
+          {
+            "name": "style",
+            "value": "opacity: 1; height: 8px; transform: translateX(0px) translateZ(0px);"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [
+          "span[class^=\"item_\"]"
+        ],
+        "selectorCandidates": [
+          "span[class^=\"item_\"]",
+          "div > div:nth-of-type(4) > div:nth-of-type(6) > div > div:nth-of-type(1) > span"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "absolute",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "oklab(0.988044 0.0000450313 0.0000197887)",
+          "backgroundImage": "none",
+          "background": "oklab(0.988044 0.0000450313 0.0000197887) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px 4px 4px 0px",
+          "boxShadow": "color(srgb 0.541177 0.168627 0.886275) 0px 0px 3px 1px",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "matrix(1, 0, 0, 1, 0, 0)",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px 0px 0px -4px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15552,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15581,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 12,
+        "selectorText": "[class*=\"app\"]",
+        "selector": "[class*=\"app\"]",
+        "pseudo": null,
+        "properties": {
+          "background": {
+            "value": "transparent",
+            "priority": "important"
+          },
+          "background-color": {
+            "value": "transparent",
+            "priority": "important"
+          },
+          "background-image": {
+            "value": "initial",
+            "priority": "important"
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 55,
+        "selectorText": "a[class*=\"channel\"]:hover:not([class*=\"selected\"]), [class*=\"wrapper\"]:hover:not([class*=\"selected\"])",
+        "selector": "a[class*=\"channel\"]:hover:not([class*=\"selected\"]), [class*=\"wrapper\"]:hover:not([class*=\"selected\"])",
+        "pseudo": null,
+        "properties": {
+          "background": {
+            "value": "rgba(139, 92, 246, 0.1)",
+            "priority": "important"
+          },
+          "background-color": {
+            "value": "rgba(139, 92, 246, 0.1)",
+            "priority": "important"
+          },
+          "background-image": {
+            "value": "initial",
+            "priority": "important"
+          },
+          "box-shadow": {
+            "value": "rgba(139, 92, 246, 0.15) 0px 0px 8px inset",
+            "priority": "important"
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 67,
+        "selectorText": "[class*=\"guilds\"] [class*=\"wrapper\"]:hover",
+        "selector": "[class*=\"guilds\"] [class*=\"wrapper\"]:hover",
+        "pseudo": null,
+        "properties": {
+          "box-shadow": {
+            "value": "rgba(139, 92, 246, 0.6) 0px 0px 12px",
+            "priority": "important"
+          },
+          "transform": {
+            "value": "scale(1.05)",
+            "priority": "important"
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 3.75,
+      "y": 814.7999877929688,
+      "width": 10.5,
+      "height": 50.4000244140625,
+      "top": 814.7999877929688,
+      "left": 3.75,
+      "right": 14.25,
+      "bottom": 865.2000122070312
+    },
+    "stableSelectors": [
+      "div[class^=\"pill_\"]",
+      "div[class^=\"wrapper_\"]"
+    ],
+    "bestSelector": "div[class^=\"pill_\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[class^=\"pill_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"wrapper_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div > div > div:nth-of-type(4) > div:nth-of-type(6) > div > div:nth-of-type(1)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.pill_e5445c",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "pill_e5445c",
+          "wrapper__58105"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"pill_\"]",
+          "div[class^=\"wrapper_\"]",
+          "div > div > div:nth-of-type(4) > div:nth-of-type(6) > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.listItem__650eb",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "listItem__650eb"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"listItem_\"]",
+          "ul > div > div > div:nth-of-type(4) > div:nth-of-type(6) > div"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.folderGroup__48112",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "folderGroup__48112"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"folderGroup_\"]",
+          "nav > ul > div > div > div:nth-of-type(4) > div:nth-of-type(6)"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.stack_dbd263",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "stack_dbd263"
+        ],
+        "role": "group",
+        "ariaLabel": "Servers",
+        "selectorCandidates": [
+          "div[aria-label=\"Servers\"]",
+          "div[role=\"group\"]",
+          "div[class^=\"stack_\"]",
+          "div:nth-of-type(1) > nav > ul > div > div > div:nth-of-type(4)"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.stack_dbd263",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "stack_dbd263",
+          "scroller_ef3116",
+          "none_d125d2",
+          "scrollerBase_d125d2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"stack_\"]",
+          "div[class^=\"scroller_\"]",
+          "div[class^=\"none_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(1) > nav > ul > div > div"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div.itemsContainer_ef3116",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "itemsContainer_ef3116"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"itemsContainer_\"]",
+          "div > div:nth-of-type(2) > div:nth-of-type(1) > nav > ul > div"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "ul.tree_ef3116",
+        "tagName": "ul",
+        "id": null,
+        "classList": [
+          "tree_ef3116"
+        ],
+        "role": "tree",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "ul[role=\"tree\"]",
+          "ul[class^=\"tree_\"]",
+          "div > div > div:nth-of-type(2) > div:nth-of-type(1) > nav > ul"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "nav.wrapper_ef3116",
+        "tagName": "nav",
+        "id": null,
+        "classList": [
+          "wrapper_ef3116",
+          "guilds__5e434",
+          "theme-dark",
+          "theme-darker",
+          "images-dark"
+        ],
+        "role": null,
+        "ariaLabel": "Servers sidebar",
+        "selectorCandidates": [
+          "nav[aria-label=\"Servers sidebar\"]",
+          "nav[class^=\"wrapper_\"]",
+          "nav[class^=\"guilds_\"]",
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(1) > nav"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.sidebar__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "sidebar__5e434",
+          "theme-dark",
+          "theme-darker",
+          "images-dark"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"sidebar_\"]",
+          "div:nth-of-type(2) > div > div > div > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.content__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "content__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"content_\"]",
+          "div > div:nth-of-type(2) > div > div > div > div:nth-of-type(2)"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 342px;"
+          }
+        ]
+      }
+    }
+  }
+}

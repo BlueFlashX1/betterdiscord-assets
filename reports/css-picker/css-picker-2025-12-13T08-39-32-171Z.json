@@ -1,0 +1,520 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.2",
+  "url": "https://discord.com/channels/@me",
+  "element": {
+    "capturedAt": "2025-12-13T08:39:31.856Z",
+    "summary": "div.itemCard__7e549",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "itemCard__7e549",
+      "wrapper__00943",
+      "outer_bf1984",
+      "padded_bf1984",
+      "interactive_bf1984"
+    ],
+    "exactClassSelectors": [
+      ".itemCard__7e549",
+      ".wrapper__00943",
+      ".outer_bf1984",
+      ".padded_bf1984",
+      ".interactive_bf1984"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"itemCard_\"]",
+      "[class^=\"wrapper_\"]",
+      "[class^=\"outer_\"]"
+    ],
+    "parentSummary": "div",
+    "childrenSummary": {
+      "count": 1,
+      "firstChild": "div"
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "itemCard__7e549 wrapper__00943 outer_bf1984 padded_bf1984 interactive_bf1984"
+      },
+      {
+        "name": "tabindex",
+        "value": "0"
+      },
+      {
+        "name": "aria-expanded",
+        "value": "false"
+      },
+      {
+        "name": "aria-haspopup",
+        "value": "menu"
+      },
+      {
+        "name": "role",
+        "value": "button"
+      }
+    ],
+    "textPreview": "IkanStreaming on TwitchTwitchplaying vs toad :) chicago woo",
+    "computedStyle": {
+      "display": "block",
+      "position": "static",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "rgba(139, 92, 246, 0.1)",
+      "backgroundImage": "none",
+      "background": "rgba(139, 92, 246, 0.1) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": null,
+      "borderColor": "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgba(139, 92, 246, 0.4)",
+      "borderWidth": "0px 0px 0px 2px",
+      "borderRadius": "8px",
+      "boxShadow": "rgba(139, 92, 246, 0.2) 0px 0px 10px 0px",
+      "outline": "rgba(0, 0, 0, 0) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "rgba(0, 0, 0, 0)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "16px",
+      "lineHeight": "16px",
+      "padding": "16px",
+      "margin": "8px 0px 0px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [],
+        "textPreview": "IkanStreaming on TwitchTwitchplaying vs toad :) chicago woo",
+        "stableSelectors": [],
+        "selectorCandidates": [
+          "div:nth-of-type(2) > aside > div > div:nth-of-type(1) > div:nth-of-type(3) > div"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 9467,
+        "selectorText": ".wrapper__00943",
+        "selector": ".wrapper__00943",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "1px solid var(--border-subtle)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15552,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15581,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/cd73b13f9881f091.css",
+        "sheetIndex": 10,
+        "ruleIndex": 1020,
+        "selectorText": ".inset_bf1984, .outer_bf1984",
+        "selector": ".inset_bf1984, .outer_bf1984",
+        "pseudo": null,
+        "properties": {
+          "border-radius": {
+            "value": "4px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/cd73b13f9881f091.css",
+        "sheetIndex": 10,
+        "ruleIndex": 1021,
+        "selectorText": ".outer_bf1984",
+        "selector": ".outer_bf1984",
+        "pseudo": null,
+        "properties": {
+          "background-color": {
+            "value": "var(--background-surface-high)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/cd73b13f9881f091.css",
+        "sheetIndex": 10,
+        "ruleIndex": 1026,
+        "selectorText": ".outer_bf1984.active_bf1984, .outer_bf1984.interactive_bf1984:hover",
+        "selector": ".outer_bf1984.active_bf1984, .outer_bf1984.interactive_bf1984:hover",
+        "pseudo": null,
+        "properties": {
+          "background-color": {
+            "value": "var(--background-surface-higher)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/cd73b13f9881f091.css",
+        "sheetIndex": 10,
+        "ruleIndex": 1056,
+        "selectorText": ".itemCard__7e549",
+        "selector": ".itemCard__7e549",
+        "pseudo": null,
+        "properties": {
+          "border-radius": {
+            "value": "8px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:20:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 20,
+        "ruleIndex": 203,
+        "selectorText": "li[class*=\"containerDefault\"]:hover, [class*=\"side\"] [class*=\"item\"]:hover",
+        "selector": "li[class*=\"containerDefault\"]:hover, [class*=\"side\"] [class*=\"item\"]:hover",
+        "pseudo": null,
+        "properties": {
+          "background": {
+            "value": "rgba(139, 92, 246, 0.1)",
+            "priority": "important"
+          },
+          "background-color": {
+            "value": "rgba(139, 92, 246, 0.1)",
+            "priority": "important"
+          },
+          "background-image": {
+            "value": "initial",
+            "priority": "important"
+          },
+          "box-shadow": {
+            "value": "rgba(139, 92, 246, 0.2) 0px 0px 10px",
+            "priority": "important"
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 1144,
+      "y": 357.59375,
+      "width": 336,
+      "height": 306.375,
+      "top": 357.59375,
+      "left": 1144,
+      "right": 1480,
+      "bottom": 663.96875
+    },
+    "stableSelectors": [
+      "div[role=\"button\"]",
+      "div[class^=\"itemCard_\"]",
+      "div[class^=\"wrapper_\"]",
+      "div[class^=\"outer_\"]"
+    ],
+    "bestSelector": "div[role=\"button\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[role=\"button\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"itemCard_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"wrapper_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      },
+      {
+        "selector": "div[class^=\"outer_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      },
+      {
+        "selector": "div > div:nth-of-type(2) > aside > div > div:nth-of-type(1) > div:nth-of-type(3)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.itemCard__7e549",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "itemCard__7e549",
+          "wrapper__00943",
+          "outer_bf1984",
+          "padded_bf1984",
+          "interactive_bf1984"
+        ],
+        "role": "button",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[role=\"button\"]",
+          "div[class^=\"itemCard_\"]",
+          "div[class^=\"wrapper_\"]",
+          "div[class^=\"outer_\"]",
+          "div > div:nth-of-type(2) > aside > div > div:nth-of-type(1) > div:nth-of-type(3)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "main > div > div:nth-of-type(2) > aside > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.scroller__7d20c",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "scroller__7d20c",
+          "thin_d125d2",
+          "scrollerBase_d125d2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"scroller_\"]",
+          "div[class^=\"thin_\"]",
+          "div[class^=\"scrollerBase_\"]",
+          "div:nth-of-type(2) > main > div > div:nth-of-type(2) > aside > div"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "aside.container__7d20c",
+        "tagName": "aside",
+        "id": null,
+        "classList": [
+          "container__7d20c"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "aside[class^=\"container_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(2) > main > div > div:nth-of-type(2) > aside"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.nowPlayingColumn__133bf",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "nowPlayingColumn__133bf"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"nowPlayingColumn_\"]",
+          "div > div:nth-of-type(2) > div:nth-of-type(2) > main > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div.tabBody__133bf",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "tabBody__133bf"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"tabBody_\"]",
+          "div > div > div:nth-of-type(2) > div:nth-of-type(2) > main > div"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "main.container__133bf",
+        "tagName": "main",
+        "id": null,
+        "classList": [
+          "container__133bf"
+        ],
+        "role": null,
+        "ariaLabel": "Friends",
+        "selectorCandidates": [
+          "main[aria-label=\"Friends\"]",
+          "main[class^=\"container_\"]",
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > main"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.page__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "page__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"page_\"]",
+          "div:nth-of-type(2) > div > div > div > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.content__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "content__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"content_\"]",
+          "div > div:nth-of-type(2) > div > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.base__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "base__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"base_\"]",
+          "div:nth-of-type(1) > div > div:nth-of-type(2) > div > div > div"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 325px;"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,507 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.2",
+  "url": "https://discord.com/channels/1311948619091284009/1311948619980738594",
+  "element": {
+    "capturedAt": "2025-12-13T02:46:45.162Z",
+    "summary": "span.innerContainer_dfb989",
+    "tagName": "span",
+    "id": null,
+    "classList": [
+      "innerContainer_dfb989",
+      "neon_dfb989"
+    ],
+    "exactClassSelectors": [
+      ".innerContainer_dfb989",
+      ".neon_dfb989"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"innerContainer_\"]",
+      "[class^=\"neon_\"]"
+    ],
+    "parentSummary": "div.container_dfb989",
+    "childrenSummary": {
+      "count": 3,
+      "firstChild": "span.emoji_e5de78"
+    },
+    "attributes": [
+      {
+        "name": "data-username-with-effects",
+        "value": "「 🫧 CurioSscales 🫧 ﮩ٨ـ♡ﮩ٨ 」"
+      },
+      {
+        "name": "class",
+        "value": "innerContainer_dfb989 neon_dfb989"
+      }
+    ],
+    "textPreview": "「 🫧 CurioSscales 🫧 ﮩ٨ـ♡ﮩ٨ 」",
+    "computedStyle": {
+      "display": "block",
+      "position": "relative",
+      "zIndex": "0",
+      "opacity": "1",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": "0px none rgb(255, 255, 255)",
+      "borderColor": "rgb(255, 255, 255)",
+      "borderWidth": "0px",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "outline": "rgb(255, 255, 255) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "rgb(255, 255, 255)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "24px",
+      "lineHeight": "30px",
+      "padding": "0px 0px 1.96px 1.96px",
+      "margin": "0px 0px -1.96px -1.96px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "span.emoji_e5de78",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "emoji_e5de78"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "emoji_e5de78"
+          }
+        ],
+        "textPreview": "🫧",
+        "stableSelectors": [
+          "span[class^=\"emoji_\"]"
+        ],
+        "selectorCandidates": [
+          "span[class^=\"emoji_\"]",
+          "div:nth-of-type(1) > div:nth-of-type(1) > div > div > span:nth-of-type(1) > span:nth-of-type(1)"
+        ],
+        "computedStyle": {
+          "display": "inline",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgb(255, 255, 255)",
+          "borderColor": "rgb(255, 255, 255)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgb(255, 255, 255) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgb(255, 255, 255)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "24px",
+          "lineHeight": "30px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 1,
+        "summary": "span.emoji_e5de78",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "emoji_e5de78"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "emoji_e5de78"
+          }
+        ],
+        "textPreview": "🫧",
+        "stableSelectors": [
+          "span[class^=\"emoji_\"]"
+        ],
+        "selectorCandidates": [
+          "span[class^=\"emoji_\"]",
+          "div:nth-of-type(1) > div:nth-of-type(1) > div > div > span:nth-of-type(1) > span:nth-of-type(2)"
+        ],
+        "computedStyle": {
+          "display": "inline",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgb(255, 255, 255)",
+          "borderColor": "rgb(255, 255, 255)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgb(255, 255, 255) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgb(255, 255, 255)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "24px",
+          "lineHeight": "30px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 2,
+        "summary": "span.emoji_e5de78",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "emoji_e5de78"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "emoji_e5de78"
+          }
+        ],
+        "textPreview": "♡",
+        "stableSelectors": [
+          "span[class^=\"emoji_\"]"
+        ],
+        "selectorCandidates": [
+          "span[class^=\"emoji_\"]",
+          "div:nth-of-type(1) > div:nth-of-type(1) > div > div > span:nth-of-type(1) > span:nth-of-type(3)"
+        ],
+        "computedStyle": {
+          "display": "inline",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgb(255, 255, 255)",
+          "borderColor": "rgb(255, 255, 255)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgb(255, 255, 255) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgb(255, 255, 255)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "24px",
+          "lineHeight": "30px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15552,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15581,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 343.046875,
+      "y": 293,
+      "width": 345.953125,
+      "height": 61.953125,
+      "top": 293,
+      "left": 343.046875,
+      "right": 689,
+      "bottom": 354.953125
+    },
+    "stableSelectors": [
+      "span[class^=\"innerContainer_\"]",
+      "span[class^=\"neon_\"]"
+    ],
+    "bestSelector": "span[class^=\"innerContainer_\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "span[class^=\"innerContainer_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "span[class^=\"neon_\"]",
+        "isValid": true,
+        "matchesNow": false,
+        "isUnique": null
+      },
+      {
+        "selector": "div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > span:nth-of-type(1)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "span.innerContainer_dfb989",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "innerContainer_dfb989",
+          "neon_dfb989"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "span[class^=\"innerContainer_\"]",
+          "span[class^=\"neon_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > span:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.container_dfb989",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container_dfb989",
+          "nicknameWithDisplayNameStyles__63ed3",
+          "showEffect_dfb989",
+          "loop_dfb989",
+          "inProfile_dfb989"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div[class^=\"nicknameWithDisplayNameStyles_\"]",
+          "div[class^=\"showEffect_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.defaultColor__4bd52",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "defaultColor__4bd52",
+          "heading-xl/semibold_cf4812"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"defaultColor_\"]",
+          "div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.usernameRow__63ed3",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "usernameRow__63ed3"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"usernameRow_\"]",
+          "div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.container__63ed3",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container__63ed3"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div:nth-of-type(1) > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div.profileBody__9c3be",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "profileBody__9c3be",
+          "thin_d125d2",
+          "scrollerBase_d125d2",
+          "fade_d125d2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"profileBody_\"]",
+          "div[class^=\"thin_\"]",
+          "div[class^=\"scrollerBase_\"]",
+          "div > div:nth-of-type(1) > div > div > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div.profile__9c3be",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "profile__9c3be"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"profile_\"]",
+          "div > div > div:nth-of-type(1) > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.inner_c0bea0",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "inner_c0bea0"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"inner_\"]",
+          "div:nth-of-type(2) > div > div > div:nth-of-type(1) > div > div"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.outer_c0bea0",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "outer_c0bea0",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "user-profile-modal-v2",
+          "custom-theme-background",
+          "custom-user-profile-theme"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"outer_\"]",
+          "div:nth-of-type(6) > div:nth-of-type(2) > div > div > div:nth-of-type(1) > div"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div:nth-of-type(6) > div:nth-of-type(2) > div > div > div:nth-of-type(1)"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 173px; --custom-guild-sidebar-width: 353px;"
+          }
+        ]
+      }
+    }
+  }
+}

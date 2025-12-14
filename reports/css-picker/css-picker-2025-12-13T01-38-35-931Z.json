@@ -1,0 +1,650 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.0",
+  "url": "https://discord.com/channels/86004744966914048/123136820409139200",
+  "element": {
+    "capturedAt": "2025-12-13T01:38:35.683Z",
+    "summary": "div.trailing_c38106",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "trailing_c38106"
+    ],
+    "exactClassSelectors": [
+      ".trailing_c38106"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"trailing_\"]"
+    ],
+    "parentSummary": "div.bar_c38106",
+    "childrenSummary": {
+      "count": 5,
+      "firstChild": "div.button__85643"
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "trailing_c38106"
+      }
+    ],
+    "textPreview": "Inbox",
+    "computedStyle": {
+      "display": "flex",
+      "position": "relative",
+      "zIndex": "1",
+      "opacity": "1",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": "0px none rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(0, 0, 0, 0)",
+      "borderWidth": "0px",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "outline": "rgba(0, 0, 0, 0) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "rgba(0, 0, 0, 0)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "16px",
+      "lineHeight": "16px",
+      "padding": "0px",
+      "margin": "0px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "div.button__85643",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "button__85643",
+          "iconWrapper__9293f",
+          "clickable__9293f"
+        ],
+        "role": "button",
+        "ariaLabel": "Checkpoint",
+        "attributes": [
+          {
+            "name": "class",
+            "value": "button__85643 iconWrapper__9293f clickable__9293f"
+          },
+          {
+            "name": "role",
+            "value": "button"
+          },
+          {
+            "name": "aria-label",
+            "value": "Checkpoint"
+          },
+          {
+            "name": "tabindex",
+            "value": "0"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [
+          "div[aria-label=\"Checkpoint\"]",
+          "div[role=\"button\"]",
+          "div[class^=\"button_\"]",
+          "div[class^=\"iconWrapper_\"]",
+          "div[class^=\"clickable_\"]"
+        ],
+        "selectorCandidates": [
+          "div[aria-label=\"Checkpoint\"]",
+          "div[role=\"button\"]",
+          "div[class^=\"button_\"]",
+          "div[class^=\"iconWrapper_\"]",
+          "div[class^=\"clickable_\"]",
+          "div > div > div > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1)"
+        ],
+        "computedStyle": {
+          "display": "flex",
+          "position": "relative",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none oklab(0.740158 0.00280207 -0.00954258)",
+          "borderColor": "oklab(0.740158 0.00280207 -0.00954258)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "oklab(0.740158 0.00280207 -0.00954258) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "oklab(0.740158 0.00280207 -0.00954258)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 1,
+        "summary": "span",
+        "tagName": "span",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "style",
+            "value": "display: none;"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [],
+        "selectorCandidates": [
+          "div > div > div > div:nth-of-type(1) > div:nth-of-type(3) > span:nth-of-type(1)"
+        ],
+        "computedStyle": {
+          "display": "none",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 2,
+        "summary": "div.clickable_c99c29",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "clickable_c99c29"
+        ],
+        "role": "button",
+        "ariaLabel": "Inbox",
+        "attributes": [
+          {
+            "name": "class",
+            "value": "clickable_c99c29"
+          },
+          {
+            "name": "aria-expanded",
+            "value": "false"
+          },
+          {
+            "name": "data-jump-section",
+            "value": "global"
+          },
+          {
+            "name": "aria-label",
+            "value": "Inbox"
+          },
+          {
+            "name": "aria-describedby",
+            "value": "«r4i»"
+          },
+          {
+            "name": "role",
+            "value": "button"
+          },
+          {
+            "name": "tabindex",
+            "value": "0"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [
+          "div[aria-label=\"Inbox\"]",
+          "div[role=\"button\"]",
+          "div[class^=\"clickable_\"]"
+        ],
+        "selectorCandidates": [
+          "div[aria-label=\"Inbox\"]",
+          "div[role=\"button\"]",
+          "div[class^=\"clickable_\"]",
+          "div > div > div > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(2)"
+        ],
+        "computedStyle": {
+          "display": "flex",
+          "position": "relative",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none oklab(0.671175 0.00174934 -0.010144)",
+          "borderColor": "oklab(0.671175 0.00174934 -0.010144)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "oklab(0.671175 0.00174934 -0.010144) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "oklab(0.671175 0.00174934 -0.010144)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px 4px",
+          "margin": "0px 2px"
+        }
+      },
+      {
+        "index": 3,
+        "summary": "span#«r4i».hiddenVisually_b18fe2",
+        "tagName": "span",
+        "id": "«r4i»",
+        "classList": [
+          "hiddenVisually_b18fe2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "id",
+            "value": "«r4i»"
+          },
+          {
+            "name": "class",
+            "value": "hiddenVisually_b18fe2"
+          }
+        ],
+        "textPreview": "Inbox",
+        "stableSelectors": [
+          "#«r4i»",
+          "span[class^=\"hiddenVisually_\"]"
+        ],
+        "selectorCandidates": [
+          "#«r4i»",
+          "span[class^=\"hiddenVisually_\"]",
+          "div > div > div > div:nth-of-type(1) > div:nth-of-type(3) > span:nth-of-type(2)"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "absolute",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 4,
+        "summary": "a.anchor_edefb8",
+        "tagName": "a",
+        "id": null,
+        "classList": [
+          "anchor_edefb8",
+          "anchorUnderlineOnHover_edefb8"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "tabindex",
+            "value": "-1"
+          },
+          {
+            "name": "class",
+            "value": "anchor_edefb8 anchorUnderlineOnHover_edefb8"
+          },
+          {
+            "name": "href",
+            "value": "https://support.discord.com"
+          },
+          {
+            "name": "rel",
+            "value": "noreferrer noopener"
+          },
+          {
+            "name": "target",
+            "value": "_blank"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [
+          "a[class^=\"anchor_\"]",
+          "a[class^=\"anchorUnderlineOnHover_\"]"
+        ],
+        "selectorCandidates": [
+          "a[class^=\"anchor_\"]",
+          "a[class^=\"anchorUnderlineOnHover_\"]",
+          "div > div > div > div:nth-of-type(1) > div:nth-of-type(3) > a"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none color(srgb 0.541177 0.168627 0.886275)",
+          "borderColor": "color(srgb 0.541177 0.168627 0.886275)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "color(srgb 0.541177 0.168627 0.886275) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "color(srgb 0.541177 0.168627 0.886275)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15552,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15581,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 1352,
+      "y": 1,
+      "width": 124,
+      "height": 32,
+      "top": 1,
+      "left": 1352,
+      "right": 1476,
+      "bottom": 33
+    },
+    "stableSelectors": [
+      "div[class^=\"trailing_\"]"
+    ],
+    "bestSelector": "div[class^=\"trailing_\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[class^=\"trailing_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": true
+      },
+      {
+        "selector": "div:nth-of-type(2) > div > div > div > div:nth-of-type(1) > div:nth-of-type(3)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": true
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.trailing_c38106",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "trailing_c38106"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"trailing_\"]",
+          "div:nth-of-type(2) > div > div > div > div:nth-of-type(1) > div:nth-of-type(3)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.bar_c38106",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "bar_c38106",
+          "theme-dark",
+          "theme-darker",
+          "images-dark"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"bar_\"]",
+          "div > div:nth-of-type(2) > div > div > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.base__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "base__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"base_\"]",
+          "div:nth-of-type(1) > div > div:nth-of-type(2) > div > div > div"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.container__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div > div:nth-of-type(1) > div > div:nth-of-type(2) > div > div"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.layer__960e4",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "layer__960e4",
+          "baseLayer__960e4"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"layer_\"]",
+          "div[class^=\"baseLayer_\"]",
+          "div:nth-of-type(3) > div > div:nth-of-type(1) > div > div:nth-of-type(2) > div"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div.layers__960e4",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "layers__960e4",
+          "layers__160d8"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"layers_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(3) > div > div:nth-of-type(1) > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div.app__160d8",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "app__160d8"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"app_\"]",
+          "body > div:nth-of-type(2) > div:nth-of-type(3) > div > div:nth-of-type(1) > div"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.app_a3002d",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "app_a3002d"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"app_\"]",
+          "body > div:nth-of-type(2) > div:nth-of-type(3) > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.notAppAsidePanel_a3002d",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "notAppAsidePanel_a3002d"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"notAppAsidePanel_\"]",
+          "body > div:nth-of-type(2) > div:nth-of-type(3) > div"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.appAsidePanelWrapper_a3002d",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "appAsidePanelWrapper_a3002d"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"appAsidePanelWrapper_\"]",
+          "body > div:nth-of-type(2) > div:nth-of-type(3)"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 353px;"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -1,0 +1,329 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.0",
+  "url": "https://discord.com/channels/@me",
+  "element": {
+    "capturedAt": "2025-12-13T01:49:57.368Z",
+    "summary": "rect",
+    "tagName": "rect",
+    "id": null,
+    "classList": [
+      "pointerEvents__44b0c"
+    ],
+    "exactClassSelectors": [
+      ".pointerEvents__44b0c"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"pointerEvents_\"]"
+    ],
+    "parentSummary": "svg",
+    "childrenSummary": {
+      "count": 0,
+      "firstChild": null
+    },
+    "attributes": [
+      {
+        "name": "width",
+        "value": "10"
+      },
+      {
+        "name": "height",
+        "value": "10"
+      },
+      {
+        "name": "x",
+        "value": "22"
+      },
+      {
+        "name": "y",
+        "value": "22"
+      },
+      {
+        "name": "fill",
+        "value": "#82838b"
+      },
+      {
+        "name": "mask",
+        "value": "url(#svg-mask-status-offline)"
+      },
+      {
+        "name": "class",
+        "value": "pointerEvents__44b0c"
+      }
+    ],
+    "textPreview": null,
+    "computedStyle": {
+      "display": "inline",
+      "position": "static",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": "0px none oklab(0.988044 0.0000450313 0.0000197887)",
+      "borderColor": "oklab(0.988044 0.0000450313 0.0000197887)",
+      "borderWidth": "0px",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "outline": "oklab(0.988044 0.0000450313 0.0000197887) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "oklab(0.988044 0.0000450313 0.0000197887)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "14px",
+      "lineHeight": "14px",
+      "padding": "0px",
+      "margin": "0px"
+    },
+    "children": [],
+    "tablistHints": null,
+    "matchedCssRules": [],
+    "rect": {
+      "x": 43,
+      "y": 866,
+      "width": 10,
+      "height": 10,
+      "top": 866,
+      "left": 43,
+      "right": 53,
+      "bottom": 876
+    },
+    "stableSelectors": [
+      "rect[class^=\"pointerEvents_\"]"
+    ],
+    "bestSelector": "rect[class^=\"pointerEvents_\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "rect[class^=\"pointerEvents_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "section > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > svg:nth-of-type(1) > rect",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": true
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "rect",
+        "tagName": "rect",
+        "id": null,
+        "classList": [
+          "pointerEvents__44b0c"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "rect[class^=\"pointerEvents_\"]",
+          "section > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > svg:nth-of-type(1) > rect"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "svg",
+        "tagName": "svg",
+        "id": null,
+        "classList": [
+          "mask__44b0c",
+          "svg__44b0c"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "svg[class^=\"mask_\"]",
+          "svg[class^=\"svg_\"]",
+          "div:nth-of-type(1) > section > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > svg:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.wrapper__44b0c",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "wrapper__44b0c",
+          "avatar__37e49"
+        ],
+        "role": "img",
+        "ariaLabel": "curiosscales, Invisible",
+        "selectorCandidates": [
+          "div[aria-label=\"curiosscales, Invisible\"]",
+          "div[role=\"img\"]",
+          "div[class^=\"wrapper_\"]",
+          "div[class^=\"avatar_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(1) > section > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.avatarWrapper__37e49",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "avatarWrapper__37e49",
+          "plated__37e49"
+        ],
+        "role": "button",
+        "ariaLabel": "Set Status",
+        "selectorCandidates": [
+          "div[aria-label=\"Set Status\"]",
+          "div[role=\"button\"]",
+          "div[class^=\"avatarWrapper_\"]",
+          "div[class^=\"plated_\"]",
+          "div > div:nth-of-type(2) > div:nth-of-type(1) > section > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.container__37e49",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container__37e49"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div > div > div:nth-of-type(2) > div:nth-of-type(1) > section > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "section.panels__5e434",
+        "tagName": "section",
+        "id": null,
+        "classList": [
+          "panels__5e434"
+        ],
+        "role": null,
+        "ariaLabel": "User area",
+        "selectorCandidates": [
+          "section[aria-label=\"User area\"]",
+          "section[class^=\"panels_\"]",
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(1) > section"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div.sidebar__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "sidebar__5e434",
+          "theme-dark",
+          "theme-darker",
+          "images-dark"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"sidebar_\"]",
+          "div:nth-of-type(2) > div > div > div > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.content__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "content__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"content_\"]",
+          "div > div:nth-of-type(2) > div > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.base__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "base__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"base_\"]",
+          "div:nth-of-type(1) > div > div:nth-of-type(2) > div > div > div"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.container__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div > div:nth-of-type(1) > div > div:nth-of-type(2) > div > div"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 353px;"
+          }
+        ]
+      }
+    }
+  }
+}

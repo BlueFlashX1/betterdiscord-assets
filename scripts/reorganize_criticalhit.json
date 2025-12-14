@@ -1,0 +1,17 @@
+{
+  "description": "Reorganization plan for CriticalHit.plugin.js",
+  "moves": [
+    {
+      "section": "lifecycle_methods",
+      "move_here": "lifecycle_methods"
+    },
+    {
+      "section": "settings_management",
+      "move_here": "settings_management"
+    },
+    {
+      "section": "settings_panel_listeners",
+      "move_here": "settings_panel_listeners"
+    }
+  ]
+}

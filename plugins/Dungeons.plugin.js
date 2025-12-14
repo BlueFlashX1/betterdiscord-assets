@@ -983,7 +983,7 @@ module.exports = class Dungeons {
     this._mobSpawnQueueNextAt = new Map(); // channelKey -> next queue flush timestamp
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
-    this._mobSpawnLoopTickMs = 300; // Handles spawn waves + queue flush (lightweight)
+    this._mobSpawnLoopTickMs = 500; // Throttled to reduce UI load
     this.bossAttackTimers = new Map(); // Boss attack timers per dungeon
     this.mobAttackTimers = new Map(); // Mob attack timers per dungeon
     this.dungeonTimeouts = new Map(); // Legacy: per-dungeon completion timers (no longer scheduled)
@@ -1123,6 +1123,21 @@ module.exports = class Dungeons {
         );
       },
     };
+
+    // RANK SCALING CONFIG (single source of truth)
+    // Used by combat damage + mob/boss/shadow HP scaling.
+    this.rankScaling = {
+      powerStep: 1.35, // base step used for rank power ratio
+      damageExponent: 0.85, // curve for rank-vs-rank damage multiplier
+      damageMin: 0.35,
+      damageMax: 3.25,
+      mobHpStep: 1.18,
+      mobHpMaxFactor: 12,
+      bossHpStep: 1.22,
+      shadowHpBaseFactor: 0.9,
+      shadowHpStep: 0.05,
+      shadowHpMaxFactor: 1.5,
+    };
     this._observers = new Set(); // Track all MutationObserver instances
     this._listeners = new Map(); // Track event listeners: {type: Set<handler>}
     this.dungeonCleanupInterval = null;
@@ -1135,6 +1150,9 @@ module.exports = class Dungeons {
     this.allocationCache = null; // Cache of all shadows
     this.allocationCacheTime = null; // When cache was created
     this.allocationCacheTTL = 60000; // 1 minute TTL
+    this._lastRebalanceAt = new Map(); // channelKey -> timestamp (throttle reinforcement)
+    this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
+    this._allocationSummary = new Map(); // channelKey -> { dungeonRank, assignedCount, avgShadowRankIndex }
 
     // Retry timeout IDs for cleanup
     this._retryTimeouts = [];
@@ -1439,12 +1457,13 @@ module.exports = class Dungeons {
         (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
       if (!hasWork) return;
 
-      // Spawning + queue flush are pure QoL; don't do work while window hidden
-      if (!this.isWindowVisible()) return;
+      // Allow queue flush even when window is hidden so newly spawned mobs actually deploy.
+      // We'll still skip creating NEW waves while hidden to prevent load spikes.
+      const isVisible = this.isWindowVisible();
 
       this._mobSpawnLoopInFlight = true;
       Promise.resolve()
-        .then(() => this._mobSpawnLoopTick())
+        .then(() => this._mobSpawnLoopTick(isVisible))
         .catch((error) => this.errorLog('CRITICAL', 'Mob spawn loop tick error', error))
         .finally(() => {
           this._mobSpawnLoopInFlight = false;
@@ -1464,16 +1483,16 @@ module.exports = class Dungeons {
   }
 
   _computeNextMobSpawnDelayMs() {
-    // Matches prior behavior: base 6s with ±33% variance (4-8s)
+    // Throttled: base 6s with ±20% variance (4.8-7.2s) to reduce bursts
     const baseInterval = 6000;
-    const variance = baseInterval * 0.33;
+    const variance = baseInterval * 0.2;
     return baseInterval - variance + Math.random() * variance * 2;
   }
 
-  async _mobSpawnLoopTick() {
+  async _mobSpawnLoopTick(isVisible = true) {
     const now = Date.now();
-    const MAX_QUEUE_FLUSH_PER_TICK = 3;
-    const MAX_SPAWN_WAVES_PER_TICK = 2;
+    const MAX_QUEUE_FLUSH_PER_TICK = 2; // lower per tick to reduce spikes
+    const MAX_SPAWN_WAVES_PER_TICK = 1; // one wave per tick to smooth load
 
     // Flush queued mobs (batch append) when ready
     if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
@@ -1487,8 +1506,8 @@ module.exports = class Dungeons {
       }
     }
 
-    // Trigger spawn waves when due
-    if (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
+    // Trigger spawn waves when due (skip while window hidden to reduce load)
+    if (isVisible && this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
       let spawns = 0;
       for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
         if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
@@ -1516,9 +1535,6 @@ module.exports = class Dungeons {
 
   async _combatLoopTick() {
     const now = Date.now();
-
-    // If window is hidden, visibility tracking will pause processing; do nothing here.
-    if (!this.isWindowVisible()) return;
 
     for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
       if (!dungeon || dungeon.completed || dungeon.failed) {
@@ -2145,7 +2161,7 @@ module.exports = class Dungeons {
       // Base: 100 + VIT × 10 + rankIndex × 50 (original)
       // Shadow Army Bonus: shadowCount × 25 (NEW!)
       // You need more HP to survive while commanding a larger army!
-      const rankIndex = this.settings.dungeonRanks.indexOf(rank);
+      const rankIndex = this.getRankIndexValue(rank);
       const baseHP = 100 + vitality * 10 + rankIndex * 50;
       const shadowArmyBonus = shadowCount * 25;
       this.settings.userMaxHP = baseHP + shadowArmyBonus;
@@ -2192,8 +2208,12 @@ module.exports = class Dungeons {
     try {
       // CRITICAL: Only use IndexedDB storageManager - no fallback to old settings.shadows
       if (!this.shadowArmy?.storageManager) {
-        this.debugLog('GET_SHADOW_COUNT', 'ShadowArmy storageManager not available yet');
-        return 0;
+        await this.waitForShadowArmyStorageManager({ timeoutMs: 2500, intervalMs: 200 });
+        if (!this.shadowArmy?.storageManager) {
+          this.debugLog('GET_SHADOW_COUNT', 'ShadowArmy storageManager not available yet');
+          // Prefer returning last known cached value (prevents “0 shadows” timing bugs).
+          return this._shadowCountCache?.count ?? 0;
+        }
       }
 
       const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, 10000);
@@ -2212,6 +2232,34 @@ module.exports = class Dungeons {
       this.debugLog('GET_SHADOW_COUNT', 'Failed to get shadow count from IndexedDB', error);
     }
     return 0;
+  }
+
+  /**
+   * Wait briefly for ShadowArmy IndexedDB storageManager to become available.
+   * Prevents allocation/deploy races right after plugin start/restore.
+   *
+   * @param {Object} params
+   * @param {number} params.timeoutMs
+   * @param {number} params.intervalMs
+   * @returns {Promise<boolean>}
+   */
+  async waitForShadowArmyStorageManager({ timeoutMs = 2500, intervalMs = 200 } = {}) {
+    const startedAt = Date.now();
+    const checkReady = () => Boolean(this.shadowArmy?.storageManager);
+
+    if (checkReady()) return true;
+
+    const waitTick = () =>
+      new Promise((resolve) => {
+        this._setTrackedTimeout(() => resolve(), intervalMs);
+      });
+
+    // Poll with short sleeps until timeout (keeps UI responsive).
+    while (true) {
+      if (checkReady()) return true;
+      if (Date.now() - startedAt >= timeoutMs) return false;
+      await waitTick();
+    }
   }
 
   /**
@@ -3132,7 +3180,7 @@ module.exports = class Dungeons {
    */
   calculateDungeonRank() {
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
-    const rankIndex = this.settings.dungeonRanks.indexOf(userRank);
+    const rankIndex = this.getRankIndexValue(userRank);
     const maxRankIndex = this.settings.dungeonRanks.length - 1;
 
     // Functional: Generate weights using Array.from and map
@@ -3201,7 +3249,7 @@ module.exports = class Dungeons {
       return; // Abort dungeon creation
     }
 
-    const rankIndex = this.settings.dungeonRanks.indexOf(rank);
+    const rankIndex = this.getRankIndexValue(rank);
     // THEMED BIOME DUNGEONS - Each biome spawns specific magic beast families
     // Biomes reflect natural habitats for magic beasts
     const dungeonBiomes = [
@@ -3278,8 +3326,7 @@ module.exports = class Dungeons {
 
     // Calculate expected shadow allocation for this dungeon
     // Get current shadow army size
-    const allShadows = await this.getAllShadows();
-    const totalShadowCount = allShadows.length;
+    const totalShadowCount = await this.getShadowCount();
 
     // Calculate this dungeon's weight relative to other active dungeons
     const activeDungeonsList = Array.from(this.activeDungeons.values()).filter(
@@ -3289,7 +3336,7 @@ module.exports = class Dungeons {
     // Weight system: E=1, D=2, C=3, B=4, A=5, S=6, etc.
     const thisWeight = rankIndex + 1;
     const existingTotalWeight = activeDungeonsList.reduce((sum, d) => {
-      const dRankIndex = this.settings.dungeonRanks.indexOf(d.rank);
+      const dRankIndex = this.getRankIndexValue(d.rank);
       return sum + (dRankIndex + 1);
     }, 0);
     const newTotalWeight = existingTotalWeight + thisWeight;
@@ -3327,13 +3374,13 @@ module.exports = class Dungeons {
       'Tribal Grounds': 5500, // Orc/ogre chieftains
     };
 
-    // Scale HP: Base vitality-based HP + shadow count scaling (rank-weighted)
-    // Shadow scaling: +HP per shadow based on biome, amplified by rank
-    // Lower ranks get softer scaling; higher ranks get stronger scaling
+    // Scale HP: rank MUST be noticeable even with large shadow counts.
+    // Use centralized factor helpers (single source of truth).
     const hpPerShadowBase = biomeHPMultipliers[dungeonType] || 5000;
-    const rankScale = Math.max(0.6, 0.6 + rankIndex * 0.12); // E softer, higher ranks stronger
-    const hpPerShadow = Math.floor(hpPerShadowBase * rankScale);
-    const shadowScaledHP = baseBossHPFromVitality + expectedShadowCount * hpPerShadow;
+    const bossRankHpFactor = this.getBossRankHpFactorByIndex(rankIndex);
+    const hpPerShadow = Math.floor(hpPerShadowBase * bossRankHpFactor);
+    const shadowScaledHP =
+      Math.floor(baseBossHPFromVitality * bossRankHpFactor) + expectedShadowCount * hpPerShadow;
     const finalBossHP = Math.floor(shadowScaledHP);
 
     // BOSS MAGIC BEAST TYPE (biome-appropriate)
@@ -3374,6 +3421,7 @@ module.exports = class Dungeons {
         ),
       },
       boss: {
+        id: `boss_${channelKey}`,
         name: bossName,
         hp: finalBossHP,
         maxHp: finalBossHP,
@@ -3635,6 +3683,10 @@ module.exports = class Dungeons {
       return;
     }
 
+    // Hot-reload/cleanup safety: ensure mob containers exist before pushing.
+    if (!dungeon.mobs || typeof dungeon.mobs !== 'object') dungeon.mobs = {};
+    if (!Array.isArray(dungeon.mobs.activeMobs)) dungeon.mobs.activeMobs = [];
+
     const queuedMobs = this._mobSpawnQueue.get(channelKey);
     if (!queuedMobs || queuedMobs.length === 0) {
       this._mobSpawnQueue.delete(channelKey);
@@ -3664,9 +3716,13 @@ module.exports = class Dungeons {
       return;
     }
 
+    // Hot-reload/cleanup safety: ensure mob containers exist before iterating/appending.
+    if (!dungeon.mobs || typeof dungeon.mobs !== 'object') dungeon.mobs = {};
+    if (!Array.isArray(dungeon.mobs.activeMobs)) dungeon.mobs.activeMobs = [];
+
     // CONTINUOUS SPAWN: Dynamic rate based on current mob count (prevents infinite growth)
     if (dungeon.boss.hp > 0) {
-      const dungeonRankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
+      const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
 
       // DYNAMIC SPAWN RATE WITH VARIANCE: Self-balancing with randomness
       // NO HARD CAPS - uses soft scaling that gradually slows down
@@ -3707,8 +3763,8 @@ module.exports = class Dungeons {
       // MEMORY OPTIMIZED: Smaller waves reduce memory footprint
       // Shadows naturally control mob population through combat
       // Balanced for multiple simultaneous dungeons
-      baseSpawnCount = 100; // Reduced from 200 (50% reduction for memory)
-      variancePercent = 0.3; // 70-130 per wave (maintains organic variance)
+      baseSpawnCount = 50; // Reduced from 100 to lower per-wave load
+      variancePercent = 0.2; // 40-60 per wave
 
       // Apply variance (e.g., 100 ±30% = 70-130)
       // Variance creates organic, unpredictable spawn waves
@@ -3797,12 +3853,11 @@ module.exports = class Dungeons {
           const mobIntelligence = Math.floor(baseIntelligence * intelligenceVariance);
           const mobVitality = Math.floor(baseVitality * vitalityVariance);
 
-          // CRITICAL: Calculate mob HP using vitality stat for consistency
-          // Mobs use different formula than user/shadow HP for balance (they're tougher enemies)
-          // Formula: 200 + VIT × 15 + rankIndex × 100
-          // This ensures mob HP scales with vitality stat (includes variance)
-          const baseHP = 200 + mobVitality * 15 + mobRankIndex * 100;
-          const hpVariance = 0.7 + Math.random() * 0.3; // 70-100% HP variance (was 80-120%)
+          // Mob HP scales on rank (multiplicative) + vitality (additive) with variance.
+          // This makes rank differences obvious while keeping low ranks killable.
+          const mobRankHpFactor = this.getMobRankHpFactorByIndex(mobRankIndex);
+          const baseHP = (200 + mobVitality * 15 + mobRankIndex * 100) * mobRankHpFactor;
+          const hpVariance = 0.7 + Math.random() * 0.3; // 70-100% HP variance (tighter to reduce extremes)
           const mobHP = Math.floor(baseHP * hpVariance);
 
           // Ensure minimum HP of 1 (mobs must be able to take damage and die)
@@ -4048,7 +4103,32 @@ module.exports = class Dungeons {
 
     // CRITICAL: Ensure shadow HP is initialized before starting combat
     // This prevents false "all shadows defeated" messages
-    const assignedShadows = dungeon.shadowAllocation?.shadows || [];
+    const assignedFromMap = this.shadowAllocations.get(channelKey) || [];
+    const assignedFromDungeon = dungeon.shadowAllocation?.shadows || [];
+    const assignedShadows = assignedFromMap.length > 0 ? assignedFromMap : assignedFromDungeon;
+
+    // Keep dungeon-local view synced for UI/other code paths
+    assignedFromMap.length > 0 &&
+      (dungeon.shadowAllocation = {
+        shadows: assignedFromMap,
+        updatedAt: Date.now(),
+        source: 'shadowAllocations',
+      });
+
+    // Throttled warning for missing deployments (helps debug “no shadows deployed” reports).
+    if (assignedShadows.length === 0) {
+      this._deployWarnings ??= new Map();
+      const last = this._deployWarnings.get(channelKey) || 0;
+      const nowWarn = Date.now();
+      if (nowWarn - last > 30000) {
+        this._deployWarnings.set(channelKey, nowWarn);
+        this.debugLog('DEPLOY', 'No shadows allocated for dungeon on join', {
+          channelKey,
+          dungeonRank: dungeon.rank,
+          bossHp: dungeon.boss?.hp,
+        });
+      }
+    }
     if (
       assignedShadows.length > 0 &&
       (!dungeon.shadowHP || Object.keys(dungeon.shadowHP).length === 0)
@@ -4058,8 +4138,8 @@ module.exports = class Dungeons {
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowsToInitialize = [];
       for (const shadow of assignedShadows) {
-        const shadowId = shadow?.id || shadow?.i;
-        if (!shadow || !shadowId) continue;
+        const shadowId = this.getShadowIdValue(shadow);
+        if (!shadowId) continue;
         deadShadows.has(shadowId) || shadowsToInitialize.push(shadow);
       }
 
@@ -4068,17 +4148,22 @@ module.exports = class Dungeons {
           try {
             const hpData = await this.initializeShadowHP(shadow, shadowHP);
             if (!hpData || !hpData.hp || hpData.hp <= 0) {
+              const shadowId = this.getShadowIdValue(shadow);
               this.errorLog(
                 'SHADOW_HP',
-                `HP initialization failed for shadow ${shadow.id} on join`,
+                `HP initialization failed for shadow ${shadowId} on join`,
                 {
                   hpData,
-                  shadowId: shadow.id,
+                  shadowId,
                 }
               );
             }
           } catch (error) {
-            this.errorLog('SHADOW_INIT', `Failed to initialize shadow ${shadow.id} on join`, error);
+            this.errorLog(
+              'SHADOW_INIT',
+              `Failed to initialize shadow ${this.getShadowIdValue(shadow)} on join`,
+              error
+            );
           }
         })
       );
@@ -4266,7 +4351,7 @@ module.exports = class Dungeons {
    * Uses TOTAL EFFECTIVE STATS if SoloLevelingStats is available
    */
   async calculateHP(vitality, rank = 'E', includeShadowBonus = false) {
-    const rankIndex = this.settings.dungeonRanks.indexOf(rank);
+    const rankIndex = this.getRankIndexValue(rank);
     const baseHP = 100 + vitality * 10 + rankIndex * 50;
 
     if (includeShadowBonus) {
@@ -4308,7 +4393,7 @@ module.exports = class Dungeons {
     const rank = this.soloLevelingStats.settings?.rank || 'E';
     await this.getShadowCount(); // Cache shadow count for HP calculation
 
-    const _rankIndex = this.settings.dungeonRanks.indexOf(rank); // Used in calculateHP internally
+    const _rankIndex = this.getRankIndexValue(rank); // Used in calculateHP internally
     const oldMaxHP = this.settings.userMaxHP || 0;
     this.settings.userMaxHP = await this.calculateHP(vitality, rank, true);
 
@@ -4421,7 +4506,7 @@ module.exports = class Dungeons {
     }
 
     // Fallback calculation: sum of stats weighted by rank
-    const rankIndex = this.settings.dungeonRanks.indexOf(mobRank);
+    const rankIndex = this.getRankIndexValue(mobRank);
     const rankMultiplier = 1.0 + rankIndex * 0.5; // E=1.0, D=1.5, SSS=4.5, etc.
     const totalStats = Object.values(mobStats).reduce((sum, val) => sum + (val || 0), 0);
     return totalStats * rankMultiplier;
@@ -4789,34 +4874,288 @@ module.exports = class Dungeons {
   // SHADOW COMBAT HELPERS
   // ============================================================================
   /**
+   * Get a stable shadow identifier across schema versions.
+   * Some older records use `i` instead of `id`.
+   * @param {Object} shadow
+   * @returns {string|null}
+   */
+  getShadowIdValue(shadow) {
+    return shadow?.id || shadow?.i || null;
+  }
+
+  /**
+   * Normalize shadow objects to always include `id` when possible.
+   * This prevents combat/allocation paths from silently skipping older records.
+   * @param {Object} shadow
+   * @returns {Object|null}
+   */
+  normalizeShadowId(shadow) {
+    if (!shadow) return null;
+    const stableId = this.getShadowIdValue(shadow);
+    return stableId && !shadow.id ? { ...shadow, id: stableId } : shadow;
+  }
+
+  // ============================================================================
+  // RANK SCALING HELPERS
+  // ============================================================================
+  clampNumber(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  findRankIndex(rank, rankArray = this.settings?.dungeonRanks) {
+    const list = Array.isArray(rankArray) && rankArray.length ? rankArray : ['E'];
+    return list.indexOf(rank);
+  }
+
+  getRankIndexValue(rank, rankArray = this.settings?.dungeonRanks) {
+    const idx = this.findRankIndex(rank, rankArray);
+    return idx >= 0 ? idx : 0;
+  }
+
+  getRankPowerValue(rank) {
+    const step = this.rankScaling?.powerStep ?? 1.35;
+    const list = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : ['E'];
+    const key = `${step}|${list.join(',')}`;
+    if (this._rankPowerCacheKey !== key) {
+      this._rankPowerCacheKey = key;
+      this._rankPowerCache = new Map();
+    }
+
+    const cacheKey = rank || 'E';
+    const cached = this._rankPowerCache.get(cacheKey);
+    if (cached !== undefined) return cached;
+
+    const computed = Math.pow(step, this.getRankIndexValue(cacheKey, list));
+    this._rankPowerCache.set(cacheKey, computed);
+    return computed;
+  }
+
+  /**
+   * Combat score proxy for a shadow used for allocation + sampling scaling.
+   * Uses rank as primary scaler and effective stats as secondary scaler.
+   *
+   * @param {Object} shadow
+   * @returns {number}
+   */
+  getShadowCombatScore(shadow) {
+    const stats = this.getShadowEffectiveStatsCached(shadow) || {};
+    const sum =
+      (stats.strength || 0) * 1.0 +
+      (stats.intelligence || 0) * 0.8 +
+      (stats.agility || 0) * 0.5 +
+      (stats.vitality || 0) * 0.6 +
+      (stats.perception || 0) * 0.2;
+    return this.getRankPowerValue(shadow?.rank || 'E') * (10 + sum);
+  }
+
+  getRankDamageMultiplier(attackerRank, defenderRank) {
+    const exponent = this.rankScaling?.damageExponent ?? 0.85;
+    const min = this.rankScaling?.damageMin ?? 0.35;
+    const max = this.rankScaling?.damageMax ?? 3.25;
+    const list = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : ['E'];
+    const key = `${exponent}|${min}|${max}|${this.rankScaling?.powerStep ?? 1.35}|${list.join(
+      ','
+    )}`;
+    if (this._rankDamageCacheKey !== key) {
+      this._rankDamageCacheKey = key;
+      this._rankDamageCache = new Map();
+    }
+
+    const a = attackerRank || 'E';
+    const d = defenderRank || 'E';
+    const pairKey = `${a}|${d}`;
+    const cached = this._rankDamageCache.get(pairKey);
+    if (cached !== undefined) return cached;
+
+    const ratio = this.getRankPowerValue(a) / (this.getRankPowerValue(d) || 1);
+    const computed = this.clampNumber(Math.pow(ratio, exponent), min, max);
+    this._rankDamageCache.set(pairKey, computed);
+    return computed;
+  }
+
+  getMobRankHpFactorByIndex(rankIndex) {
+    const step = this.rankScaling?.mobHpStep ?? 1.18;
+    const maxFactor = this.rankScaling?.mobHpMaxFactor ?? 12;
+    return this.clampNumber(Math.pow(step, Math.max(0, rankIndex)), 1, maxFactor);
+  }
+
+  getBossRankHpFactorByIndex(rankIndex) {
+    const step = this.rankScaling?.bossHpStep ?? 1.22;
+    return Math.max(1, Math.pow(step, Math.max(0, rankIndex)));
+  }
+
+  getShadowRankHpFactorByIndex(rankIndex) {
+    const base = this.rankScaling?.shadowHpBaseFactor ?? 0.9;
+    const step = this.rankScaling?.shadowHpStep ?? 0.05;
+    const maxFactor = this.rankScaling?.shadowHpMaxFactor ?? 1.5;
+    return this.clampNumber(base + Math.max(0, rankIndex) * step, base, maxFactor);
+  }
+
+  // ============================================================================
+  // COMBAT ENTITY NORMALIZATION HELPERS
+  // ============================================================================
+  getEnemyKey(enemy, fallbackType = 'mob') {
+    if (!enemy || typeof enemy !== 'object') return null;
+    const type = enemy.type || fallbackType;
+    return enemy.id || enemy.name || (type === 'boss' ? 'boss' : null);
+  }
+
+  normalizeEnemyForCombat(enemy, fallbackType = 'mob') {
+    const safeEnemy = enemy && typeof enemy === 'object' ? enemy : {};
+    const type = safeEnemy.type || fallbackType;
+    const id = this.getEnemyKey(safeEnemy, type);
+    const rank = safeEnemy.rank || 'E';
+    const hp = Number.isFinite(safeEnemy.hp) ? safeEnemy.hp : 0;
+    const maxHp = Number.isFinite(safeEnemy.maxHp) ? safeEnemy.maxHp : hp;
+
+    const stats =
+      safeEnemy.baseStats && typeof safeEnemy.baseStats === 'object'
+        ? safeEnemy.baseStats
+        : safeEnemy;
+
+    return {
+      ...safeEnemy,
+      id,
+      type,
+      rank,
+      hp,
+      maxHp: Math.max(maxHp, hp),
+      strength: Number.isFinite(stats.strength) ? stats.strength : 0,
+      agility: Number.isFinite(stats.agility) ? stats.agility : 0,
+      intelligence: Number.isFinite(stats.intelligence) ? stats.intelligence : 0,
+      vitality: Number.isFinite(stats.vitality) ? stats.vitality : 0,
+      perception: Number.isFinite(stats.perception) ? stats.perception : 0,
+    };
+  }
+
+  /**
+   * Resolve a consistent combat stats object for any participant.
+   * This eliminates inline `x || y || 0` stat glue and prevents schema drift bugs.
+   *
+   * Receive an Object, Return an Object.
+   *
+   * @param {Object} params
+   * @param {'shadow'|'enemy'|'user'} params.entityType
+   * @param {Object} [params.entity] - Full entity object (shadow/mob/boss)
+   * @param {Object} [params.stats] - Raw stats object
+   * @param {string} [params.rank] - Rank for raw stats fallback
+   * @param {string} [params.fallbackType] - For enemy normalization ('mob'|'boss')
+   * @returns {{id: string|null, type: string, rank: string, stats: {strength:number, agility:number, intelligence:number, vitality:number, perception:number}, hp: number, maxHp: number}}
+   */
+  resolveCombatStats({ entityType, entity, stats, rank, fallbackType = 'mob' }) {
+    const ensureStats = (s) => ({
+      strength: Number.isFinite(s?.strength) ? s.strength : 0,
+      agility: Number.isFinite(s?.agility) ? s.agility : 0,
+      intelligence: Number.isFinite(s?.intelligence) ? s.intelligence : 0,
+      vitality: Number.isFinite(s?.vitality) ? s.vitality : 0,
+      perception: Number.isFinite(s?.perception) ? s.perception : 0,
+    });
+
+    const byType = {
+      shadow: () => {
+        const normalizedShadow = this.normalizeShadowId(entity);
+        const id = this.getShadowIdValue(normalizedShadow);
+        const shadowRank = normalizedShadow?.rank || rank || 'E';
+        const effective = this.getShadowEffectiveStatsCached(normalizedShadow) || {};
+        return {
+          id,
+          type: 'shadow',
+          rank: shadowRank,
+          stats: ensureStats(effective),
+          hp: 0,
+          maxHp: 0,
+        };
+      },
+      enemy: () => {
+        const normalizedEnemy = entity ? this.normalizeEnemyForCombat(entity, fallbackType) : null;
+        const enemyRank = normalizedEnemy?.rank || rank || 'E';
+        const enemyStats = normalizedEnemy ? normalizedEnemy : stats || {};
+        return {
+          id: normalizedEnemy?.id || null,
+          type: normalizedEnemy?.type || fallbackType,
+          rank: enemyRank,
+          stats: ensureStats(enemyStats),
+          hp: normalizedEnemy?.hp ?? 0,
+          maxHp: normalizedEnemy?.maxHp ?? 0,
+        };
+      },
+      user: () => {
+        const userRank = rank || this.soloLevelingStats?.settings?.rank || 'E';
+        const userStats = stats || this.getUserEffectiveStats() || {};
+        return {
+          id: 'user',
+          type: 'user',
+          rank: userRank,
+          stats: ensureStats(userStats),
+          hp: Number.isFinite(this.settings?.userHP) ? this.settings.userHP : 0,
+          maxHp: Number.isFinite(this.settings?.userMaxHP) ? this.settings.userMaxHP : 0,
+        };
+      },
+    };
+
+    return (byType[entityType] || byType.enemy)();
+  }
+
+  // ============================================================================
+  // COMBAT PERFORMANCE HELPERS
+  // ============================================================================
+  /**
+   * Build an indexed snapshot for a single dungeon combat tick.
+   * This removes repeated O(n) `.find()` lookups inside hot loops.
+   *
+   * @param {Object} params
+   * @param {Object} params.dungeon
+   * @param {Array<Object>} params.aliveMobs
+   * @param {boolean} params.bossAlive
+   * @returns {{mobById: Map<string, Object>, bossAlive: boolean}}
+   */
+  buildDungeonCombatSnapshot({ dungeon, aliveMobs, bossAlive }) {
+    const mobById = new Map(
+      (aliveMobs || []).map((mob) => [this.getEnemyKey(mob, 'mob'), mob]).filter(([id]) => id)
+    );
+
+    return { mobById, bossAlive: Boolean(bossAlive) };
+  }
+
+  /**
+   * Apply damage to an entity that has an `hp` field.
+   * Centralizes clamping and returns useful info for kill tracking.
+   *
+   * @param {Object} entity
+   * @param {number} damage
+   * @returns {{oldHp: number, newHp: number, died: boolean}}
+   */
+  applyDamageToEntityHp(entity, damage) {
+    const oldHp = Number.isFinite(entity?.hp) ? entity.hp : 0;
+    const applied = Number.isFinite(damage) ? damage : 0;
+    const newHp = Math.max(0, oldHp - applied);
+    entity && (entity.hp = newHp);
+    return { oldHp, newHp, died: oldHp > 0 && newHp <= 0 };
+  }
+
+  /**
    * Select target for a shadow using ShadowArmy selector when available, otherwise fallback.
    * @param {Object} shadow
    * @param {Object} dungeon
    * @param {Array} aliveMobs
    * @param {boolean} bossAlive
+   * @param {{mobById: Map<string, Object>, bossAlive: boolean}|null} combatSnapshot
+   * @param {Array<Object>|null} availableTargetsOverride
    * @returns {{targetType: 'boss'|'mob'|null, targetEnemy: Object|null}}
    */
-  selectShadowTarget(shadow, dungeon, aliveMobs, bossAlive) {
+  selectShadowTarget(
+    shadow,
+    dungeon,
+    aliveMobs,
+    bossAlive,
+    combatSnapshot = null,
+    availableTargetsOverride = null
+  ) {
     let targetType = null;
     let targetEnemy = null;
-    const availableTargets = [];
-
-    if (bossAlive) {
-      availableTargets.push({
-        id: 'boss',
-        type: 'boss',
-        hp: dungeon.boss.hp,
-        rank: dungeon.boss.rank,
-      });
-    }
-    aliveMobs.forEach((mob) => {
-      availableTargets.push({
-        id: mob.id || mob.name,
-        type: 'mob',
-        hp: mob.hp,
-        rank: mob.rank,
-      });
-    });
+    const availableTargets = Array.isArray(availableTargetsOverride)
+      ? availableTargetsOverride
+      : this.prepareAvailableTargets(dungeon, bossAlive, aliveMobs);
 
     if (this.shadowArmy?.selectTargetForShadow && availableTargets.length > 0) {
       const selectedTarget = this.shadowArmy.selectTargetForShadow(shadow, availableTargets);
@@ -4824,7 +5163,9 @@ module.exports = class Dungeons {
         if (selectedTarget.id === 'boss' && bossAlive) {
           return { targetType: 'boss', targetEnemy: dungeon.boss };
         }
-        const mob = aliveMobs.find((m) => (m.id || m.name) === selectedTarget.id);
+        const mob =
+          combatSnapshot?.mobById?.get(selectedTarget.id) ||
+          aliveMobs.find((m) => this.getEnemyKey(m, 'mob') === selectedTarget.id);
         if (mob) return { targetType: 'mob', targetEnemy: mob };
       }
     }
@@ -4866,6 +5207,26 @@ module.exports = class Dungeons {
   }
 
   /**
+   * Get mob stats with ±10% variance, cached per tick to avoid re-rolling
+   * on every single virtual attack.
+   *
+   * @param {Object} mob
+   * @param {Map<string, Object>|null} cache
+   * @returns {{strength:number, agility:number, intelligence:number, vitality:number}}
+   */
+  getMobStatsWithVarianceCached(mob, cache = null) {
+    const id = this.getEnemyKey(mob, 'mob');
+    if (!cache || !id) return this.buildMobStatsWithVariance(mob);
+
+    const cached = cache.get(id);
+    if (cached) return cached;
+
+    const computed = this.buildMobStatsWithVariance(mob);
+    cache.set(id, computed);
+    return computed;
+  }
+
+  /**
    * Apply ±20% damage variance.
    */
   applyDamageVariance(baseDamage) {
@@ -4900,14 +5261,8 @@ module.exports = class Dungeons {
     // Magic damage from intelligence (increased)
     damage += attackerIntelligence * 2;
 
-    // Rank multiplier (increased advantage)
-    const attackerRankIndex = this.settings.dungeonRanks.indexOf(attackerRank);
-    const defenderRankIndex = this.settings.dungeonRanks.indexOf(defenderRank);
-    const rankDiff = attackerRankIndex - defenderRankIndex;
-
-    const rankMultiplier =
-      rankDiff > 0 ? 1 + rankDiff * 0.3 : rankDiff < 0 ? Math.max(0.4, 1 + rankDiff * 0.2) : 1;
-    damage *= rankMultiplier;
+    // Rank scaling (single source of truth)
+    damage *= this.getRankDamageMultiplier(attackerRank, defenderRank);
 
     // Critical hit chance from agility (better scaling)
     const critChance = Math.min(40, attackerAgility * 0.3); // Max 40% crit, 0.3% per agility
@@ -4958,9 +5313,10 @@ module.exports = class Dungeons {
    * @returns {Object} Effective stats object
    */
   getShadowEffectiveStatsCached(shadow) {
-    if (!shadow || !shadow.id) return null;
+    const shadowId = this.getShadowIdValue(shadow);
+    if (!shadowId) return null;
 
-    const cacheKey = `shadow_${shadow.id}`;
+    const cacheKey = `shadow_${shadowId}`;
     const now = Date.now();
 
     // Check cache (500ms TTL during combat)
@@ -5046,14 +5402,15 @@ module.exports = class Dungeons {
    * @returns {number} Calculated damage
    */
   calculateShadowDamage(shadow, enemyStats, enemyRank) {
-    if (!shadow) return 0;
+    const attacker = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
+    const defender = this.resolveCombatStats({
+      entityType: 'enemy',
+      stats: enemyStats,
+      rank: enemyRank,
+      fallbackType: 'mob',
+    });
 
-    // Get effective stats (cached during combat)
-    const shadowStats = this.getShadowEffectiveStatsCached(shadow);
-
-    const shadowRank = shadow.rank || 'E';
-
-    let damage = this.calculateDamage(shadowStats, enemyStats, shadowRank, enemyRank);
+    let damage = this.calculateDamage(attacker.stats, defender.stats, attacker.rank, defender.rank);
 
     // Apply role-based damage multiplier
     damage = this.applyRoleDamageMultiplier(shadow.role, damage);
@@ -5065,7 +5422,19 @@ module.exports = class Dungeons {
    * Calculate enemy (boss/mob) damage to target
    */
   calculateEnemyDamage(enemyStats, targetStats, enemyRank, targetRank) {
-    return this.calculateDamage(enemyStats, targetStats, enemyRank, targetRank);
+    const attacker = this.resolveCombatStats({
+      entityType: 'enemy',
+      stats: enemyStats,
+      rank: enemyRank,
+      fallbackType: 'mob',
+    });
+    const defender = this.resolveCombatStats({
+      entityType: 'enemy',
+      stats: targetStats,
+      rank: targetRank,
+      fallbackType: 'shadow',
+    });
+    return this.calculateDamage(attacker.stats, defender.stats, attacker.rank, defender.rank);
   }
 
   // ============================================================================
@@ -5081,7 +5450,6 @@ module.exports = class Dungeons {
     // Check cache validity (1 minute TTL) - unless forced
     if (
       !forceRecalculate &&
-      this.allocationCache &&
       this.allocationCacheTime &&
       Date.now() - this.allocationCacheTime < this.allocationCacheTTL
     ) {
@@ -5104,79 +5472,109 @@ module.exports = class Dungeons {
       return;
     }
 
-    // Calculate weights for each dungeon (higher rank = more shadows)
-    const dungeonWeights = activeDungeonsList.map((d) => {
-      const rankIndex = this.settings.dungeonRanks.indexOf(d.rank);
-      return { dungeon: d, weight: rankIndex + 1, channelKey: d.channelKey };
-    });
+    // Allocation goals:
+    // - UNIQUE shadow assignment across dungeons (finite army)
+    // - Prefer shadows close to the dungeon rank, but escalate to stronger ones if underpowered
+    // - Higher-rank / higher-progress dungeons get priority first
+    const getRankIndex = (rank) => this.getRankIndexValue(rank);
+    const getShadowId = (s) => this.getShadowIdValue(s);
+    const getBossFraction = (d) =>
+      d?.boss?.maxHp && d?.boss?.hp >= 0 ? d.boss.hp / d.boss.maxHp : 0;
+    const getMobFraction = (d) =>
+      d?.mobs?.targetCount && d?.mobs?.remaining >= 0 ? d.mobs.remaining / d.mobs.targetCount : 0;
+    const getUrgency = (d) => {
+      // Boss alive matters most, then remaining mobs.
+      const bossAlive = (d?.boss?.hp || 0) > 0;
+      const bossUrgency = bossAlive ? 0.7 + getBossFraction(d) * 0.6 : 0.55;
+      const mobUrgency = 0.6 + getMobFraction(d) * 0.5;
+      return bossUrgency * mobUrgency;
+    };
+    const getShadowScore = (shadow) => this.getShadowCombatScore(shadow);
 
-    const totalWeight = dungeonWeights.reduce((sum, dw) => sum + dw.weight, 0);
+    const weightedDungeons = activeDungeonsList
+      .map((d) => {
+        const rIdx = getRankIndex(d.rank);
+        const weight = Math.pow(rIdx + 1, 1.25) * getUrgency(d);
+        return { dungeon: d, channelKey: d.channelKey, rankIndex: rIdx, weight };
+      })
+      .sort((a, b) => b.weight - a.weight);
 
-    // Pre-allocate shadows to each dungeon (async for personality index queries)
-    for (const dw of dungeonWeights) {
-      const shadowPortion = (dw.weight / totalWeight) * allShadows.length;
-      const assignedCount = Math.max(1, Math.floor(shadowPortion));
+    const totalWeight = weightedDungeons.reduce((sum, dw) => sum + dw.weight, 0) || 1;
+    const assignedIds = new Set();
 
-      // Filter appropriate shadows (within ±2 ranks of dungeon)
-      const dungeonRankIndex = this.settings.dungeonRanks.indexOf(dw.dungeon.rank);
-      const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
+    // Sort shadows once by combat score descending (strongest first)
+    const shadowsSorted = [...allShadows]
+      .filter((s) => getShadowId(s))
+      .sort((a, b) => getShadowScore(b) - getShadowScore(a));
 
-      let appropriateShadows = [];
-      for (const s of allShadows) {
-        const shadowRankIndex = shadowRanks.indexOf(s.rank);
-        const rankDiff = Math.abs(shadowRankIndex - dungeonRankIndex);
-        rankDiff <= 2 && appropriateShadows.push(s);
-      }
+    const pickForDungeon = (dungeonRankIndex, count) => {
+      const windows = [1, 2, 4, 999];
+      const selected = [];
 
-      // Use personality index for fast filtering if available and need more shadows
-      if (this.shadowArmy && appropriateShadows.length < assignedCount) {
-        try {
-          // Try to get aggressive/berserker shadows using personality index
-          const preferredPersonalities = ['aggressive', 'berserker', 'assassin'];
-          for (const personality of preferredPersonalities) {
-            if (this.shadowArmy.getShadowsByPersonality) {
-              // PERFORMANCE: Cache personality lookups briefly (1.5s) to reduce repeated calls
-              const pCacheKey = `personality_${personality}`;
-              const now = Date.now();
-              let personalityShadows = null;
-              const cached = this._personalityCache.get(pCacheKey);
-              if (cached && now - cached.timestamp < 1500) {
-                personalityShadows = cached.value;
-              } else {
-                personalityShadows = await this.shadowArmy.getShadowsByPersonality(personality);
-                this._personalityCache.set(pCacheKey, {
-                  value: personalityShadows,
-                  timestamp: now,
-                });
-              }
-
-              const filtered = personalityShadows.filter((s) => {
-                const shadowRankIndex = shadowRanks.indexOf(s.rank);
-                const rankDiff = Math.abs(shadowRankIndex - dungeonRankIndex);
-                const existingIds = new Set(
-                  appropriateShadows.map((existing) => existing.id || existing.i)
-                );
-                return rankDiff <= 2 && !existingIds.has(s.id || s.i);
-              });
-              appropriateShadows = [...appropriateShadows, ...filtered];
-              if (appropriateShadows.length >= assignedCount) break;
-            }
-          }
-        } catch (error) {
-          this.errorLog('ALLOCATION', 'Failed to use personality index, using fallback', error);
+      for (const window of windows) {
+        if (selected.length >= count) break;
+        for (const s of shadowsSorted) {
+          if (selected.length >= count) break;
+          const id = getShadowId(s);
+          if (!id || assignedIds.has(id)) continue;
+          const diff = Math.abs(getRankIndex(s.rank) - dungeonRankIndex);
+          if (diff > window) continue;
+          assignedIds.add(id);
+          selected.push(s);
         }
       }
+      return selected;
+    };
 
-      const shadowPool =
-        appropriateShadows.length >= assignedCount ? appropriateShadows : allShadows;
-      const assigned = shadowPool.slice(0, assignedCount);
+    // Allocate (unique) shadows across dungeons by proportional weight.
+    let remaining = shadowsSorted.length;
+    weightedDungeons.forEach((dw, idx) => {
+      const isLast = idx === weightedDungeons.length - 1;
+      const proportional = Math.max(
+        1,
+        Math.round((dw.weight / totalWeight) * shadowsSorted.length)
+      );
+      const targetCount = isLast
+        ? Math.max(1, remaining)
+        : Math.max(1, Math.min(remaining, proportional));
+      const assigned = pickForDungeon(dw.rankIndex, targetCount);
+      remaining = Math.max(0, remaining - assigned.length);
+      // Normalize IDs: older shadow records sometimes use `i` instead of `id`.
+      // Some combat paths require `shadow.id`, so ensure it always exists when possible.
+      const normalizedAssigned = assigned.map((s) => this.normalizeShadowId(s)).filter(Boolean);
+      this.shadowAllocations.set(dw.channelKey, normalizedAssigned);
 
-      // Cache assignment for this dungeon
-      this.shadowAllocations.set(dw.channelKey, assigned);
-    }
+      // Keep dungeon-local view in sync (some paths initialize HP from `dungeon.shadowAllocation`).
+      dw.dungeon.shadowAllocation = {
+        shadows: normalizedAssigned,
+        totalPower: normalizedAssigned.reduce((sum, s) => sum + getShadowScore(s), 0),
+        updatedAt: Date.now(),
+        source: 'shadowAllocations',
+      };
+    });
 
-    // Update cache
-    this.allocationCache = allShadows;
+    // Allocation summary (debug-only): helps validate rank-based deployment decisions quickly.
+    this._allocationSummary = new Map();
+    weightedDungeons.forEach((dw) => {
+      const assigned = this.shadowAllocations.get(dw.channelKey) || [];
+      const avgRankIndex =
+        assigned.reduce((sum, s) => sum + getRankIndex(s?.rank || 'E'), 0) /
+        Math.max(1, assigned.length);
+      this._allocationSummary.set(dw.channelKey, {
+        dungeonRank: dw.dungeon.rank,
+        assignedCount: assigned.length,
+        avgShadowRankIndex: avgRankIndex,
+      });
+    });
+    this.debugLog('ALLOCATION', 'Shadow allocation summary', {
+      dungeons: Array.from(this._allocationSummary.entries()).map(([channelKey, meta]) => ({
+        channelKey,
+        ...meta,
+      })),
+    });
+
+    // Update cache (store only lightweight metadata to avoid retaining huge arrays)
+    this.allocationCache = { count: allShadows.length };
     this.allocationCacheTime = Date.now();
   }
 
@@ -5197,7 +5595,55 @@ module.exports = class Dungeons {
 
     // CRITICAL: Initialize shadow HP BEFORE starting combat
     // This ensures all shadows have HP initialized before they start attacking
-    const assignedShadows = dungeon.shadowAllocation?.shadows || [];
+    let assignedFromMap = this.shadowAllocations.get(channelKey) || [];
+    const assignedFromDungeon = dungeon.shadowAllocation?.shadows || [];
+    let assignedShadows = assignedFromMap.length > 0 ? assignedFromMap : assignedFromDungeon;
+
+    // Ensure `dungeon.shadowAllocation` reflects the live allocation map (single source of truth).
+    assignedFromMap.length > 0 &&
+      (dungeon.shadowAllocation = {
+        shadows: assignedFromMap,
+        updatedAt: Date.now(),
+        source: 'shadowAllocations',
+      });
+
+    // Self-heal: allocation can be empty due to restore/timing. Force a one-time reallocation and retry.
+    if (assignedShadows.length === 0) {
+      try {
+        await this.preSplitShadowArmy(true);
+        assignedFromMap = this.shadowAllocations.get(channelKey) || [];
+        assignedShadows = assignedFromMap.length > 0 ? assignedFromMap : assignedFromDungeon;
+
+        assignedFromMap.length > 0 &&
+          (dungeon.shadowAllocation = {
+            shadows: assignedFromMap,
+            updatedAt: Date.now(),
+            source: 'shadowAllocations',
+          });
+      } catch (error) {
+        this.errorLog('DEPLOY', 'Failed to reallocate shadows on startShadowAttacks', error);
+      }
+    }
+
+    // Throttled warning for missing deployments (helps debug “no shadows deployed” reports).
+    if (assignedShadows.length === 0) {
+      this._deployWarnings ??= new Map();
+      const last = this._deployWarnings.get(channelKey) || 0;
+      const nowWarn = Date.now();
+      if (nowWarn - last > 30000) {
+        this._deployWarnings.set(channelKey, nowWarn);
+        this.debugLog('DEPLOY', 'No shadows allocated for dungeon at startShadowAttacks', {
+          channelKey,
+          dungeonRank: dungeon.rank,
+          bossHp: dungeon.boss?.hp,
+          totalShadowsKnown: Number.isFinite(this.allocationCache?.count)
+            ? this.allocationCache.count
+            : undefined,
+          hasShadowArmy: Boolean(this.shadowArmy),
+          activeDungeons: this.activeDungeons?.size ?? 0,
+        });
+      }
+    }
     if (assignedShadows.length > 0) {
       const wasShadowHPEmpty =
         !dungeon.shadowHP ||
@@ -5206,8 +5652,8 @@ module.exports = class Dungeons {
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowsToInitialize = [];
       for (const shadow of assignedShadows) {
-        const shadowId = shadow?.id || shadow?.i;
-        if (!shadow || !shadowId) continue;
+        const shadowId = this.getShadowIdValue(shadow);
+        if (!shadowId) continue;
         deadShadows.has(shadowId) || shadowsToInitialize.push(shadow);
       }
 
@@ -5219,7 +5665,7 @@ module.exports = class Dungeons {
 
             // Validate HP was set correctly
             if (!hpData || !hpData.hp || hpData.hp <= 0) {
-              const shadowId = shadow?.id || shadow?.i;
+              const shadowId = this.getShadowIdValue(shadow);
               this.errorLog('SHADOW_HP', `HP initialization failed for shadow ${shadowId}`, {
                 hpData,
                 shadowId,
@@ -5228,7 +5674,7 @@ module.exports = class Dungeons {
           } catch (error) {
             this.errorLog(
               'SHADOW_INIT',
-              `Failed to initialize shadow ${shadow?.id || shadow?.i} before combat`,
+              `Failed to initialize shadow ${this.getShadowIdValue(shadow)} before combat`,
               error
             );
           }
@@ -5239,7 +5685,7 @@ module.exports = class Dungeons {
       // (We do NOT refill to full HP on subsequent passes to avoid erasing combat damage.)
       if (wasShadowHPEmpty) {
         for (const shadow of assignedShadows) {
-          const shadowId = shadow?.id || shadow?.i;
+          const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
           const hpData = shadowHP[shadowId];
           if (!hpData || typeof hpData.maxHp !== 'number' || hpData.maxHp <= 0) continue;
@@ -5465,6 +5911,29 @@ module.exports = class Dungeons {
           return;
         }
 
+        // Reinforcement: if this dungeon is underpowered for its rank/progress, reallocate stronger shadows.
+        // Throttled to avoid churn.
+        const nowRebalance = Date.now();
+        const lastRebalance = this._lastRebalanceAt.get(channelKey) || 0;
+        const rebalanceAllowed = nowRebalance - lastRebalance >= this._rebalanceCooldownMs;
+        const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
+        const avgAssignedRankIndex =
+          assignedShadows.reduce((sum, s) => sum + this.getRankIndexValue(s?.rank || 'E'), 0) /
+          Math.max(1, assignedShadows.length);
+        const expected = dungeon?.boss?.expectedShadowCount || 1;
+        const isBossAlive = (dungeon?.boss?.hp || 0) > 0;
+        const bossFraction =
+          dungeon?.boss?.maxHp && dungeon?.boss?.hp >= 0 ? dungeon.boss.hp / dungeon.boss.maxHp : 0;
+        const needsRebalance =
+          assignedShadows.length < Math.max(1, Math.floor(expected * 0.75)) ||
+          avgAssignedRankIndex < dungeonRankIndex - 0.9 ||
+          (isBossAlive && bossFraction > 0.6 && assignedShadows.length < expected);
+
+        if (rebalanceAllowed && needsRebalance) {
+          this._lastRebalanceAt.set(channelKey, nowRebalance);
+          await this.preSplitShadowArmy(true);
+        }
+
         const deadShadows = this.deadShadows.get(channelKey) || new Set();
         const shadowHP = dungeon.shadowHP || {}; // Object, not Map
 
@@ -5480,9 +5949,10 @@ module.exports = class Dungeons {
         // PERFORMANCE: Skip expensive initialization when window is hidden
         const shadowsToInitialize = [];
         for (const shadow of assignedShadows) {
-          if (!shadow || !shadow.id) continue;
-          if (deadShadows.has(shadow.id)) continue;
-          if (!isWindowVisible && shadowHP[shadow.id]) continue;
+          const shadowId = this.getShadowIdValue(shadow);
+          if (!shadowId) continue;
+          if (deadShadows.has(shadowId)) continue;
+          if (!isWindowVisible && shadowHP[shadowId]) continue;
           shadowsToInitialize.push(shadow);
         }
 
@@ -5494,21 +5964,27 @@ module.exports = class Dungeons {
 
               // Validate HP was set correctly
               if (!hpData || !hpData.hp || hpData.hp <= 0) {
-                this.errorLog('SHADOW_HP', `HP initialization failed for shadow ${shadow.id}`, {
+                const shadowId = this.getShadowIdValue(shadow);
+                this.errorLog('SHADOW_HP', `HP initialization failed for shadow ${shadowId}`, {
                   hpData,
-                  shadowId: shadow.id,
+                  shadowId,
                 });
               }
 
               // Initialize combat data using helper function
-              if (!dungeon.shadowCombatData[shadow.id]) {
-                dungeon.shadowCombatData[shadow.id] = this.initializeShadowCombatData(
+              const shadowId = this.getShadowIdValue(shadow);
+              shadowId &&
+                !dungeon.shadowCombatData[shadowId] &&
+                (dungeon.shadowCombatData[shadowId] = this.initializeShadowCombatData(
                   shadow,
                   dungeon
-                );
-              }
+                ));
             } catch (error) {
-              this.errorLog('SHADOW_INIT', `Failed to initialize shadow ${shadow.id}`, error);
+              this.errorLog(
+                'SHADOW_INIT',
+                `Failed to initialize shadow ${this.getShadowIdValue(shadow)}`,
+                error
+              );
             }
           })
         );
@@ -5524,8 +6000,9 @@ module.exports = class Dungeons {
           // Attempt resurrection for shadows at 0 HP (if mana is available)
           // This runs every shadow attack cycle (every 3 seconds) to check for mana availability
           for (const shadow of assignedShadows) {
-            if (!shadow || !shadow.id) continue;
-            const hpData = shadowHP[shadow.id];
+            const shadowId = this.getShadowIdValue(shadow);
+            if (!shadowId) continue;
+            const hpData = shadowHP[shadowId];
             if (hpData && hpData.hp <= 0) {
               const resurrected = await this.attemptAutoResurrection(shadow, channelKey);
               if (resurrected) {
@@ -5539,8 +6016,8 @@ module.exports = class Dungeons {
                 hpData.hp = hpData.maxHp; // FULL HP restoration
                 // Create new object reference to prevent race condition
                 // eslint-disable-next-line require-atomic-updates
-                shadowHP[shadow.id] = { ...hpData };
-                deadShadows.delete(shadow.id);
+                shadowHP[shadowId] = { ...hpData };
+                deadShadows.delete(shadowId);
               }
               // If resurrection failed (no mana), shadow stays at 0 HP but remains in dungeon
               // Shadow will be checked again in next cycle when mana regenerates
@@ -5554,9 +6031,10 @@ module.exports = class Dungeons {
         // Count alive shadows for combat readiness check
         let aliveShadowCount = 0;
         for (const s of assignedShadows) {
-          if (!s || !s.id) continue;
-          if (deadShadows.has(s.id)) continue;
-          shadowHP[s.id]?.hp > 0 && aliveShadowCount++;
+          const shadowId = this.getShadowIdValue(s);
+          if (!shadowId) continue;
+          if (deadShadows.has(shadowId)) continue;
+          shadowHP[shadowId]?.hp > 0 && aliveShadowCount++;
         }
 
         // Shadow deployment status tracked internally (debug logs removed for performance)
@@ -5577,6 +6055,7 @@ module.exports = class Dungeons {
           agility: dungeon.boss.agility,
           intelligence: dungeon.boss.intelligence,
           vitality: dungeon.boss.vitality,
+          perception: dungeon.boss.perception,
         };
 
         // PERFORMANCE: Limit mobs processed based on window visibility
@@ -5588,6 +6067,7 @@ module.exports = class Dungeons {
           m && m.hp > 0 && aliveMobs.push(m);
         }
         const bossAlive = dungeon.boss.hp > 0;
+        const combatSnapshot = this.buildDungeonCombatSnapshot({ dungeon, aliveMobs, bossAlive });
 
         // Combat tracking (for completion analytics)
         if (!dungeon.combatAnalytics) {
@@ -5615,20 +6095,55 @@ module.exports = class Dungeons {
           shadowHP
         );
 
-        // PERFORMANCE: Limit shadow processing when window is hidden
-        // Reuse isWindowVisible from function start
+        // PERFORMANCE: Sampling — do not process thousands of shadows every tick.
+        // We simulate a subset and scale damage up. This keeps gameplay responsive and prevents CPU pegging.
+        const maxSimulated =
+          Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) &&
+          this.settings.maxSimulatedShadowsPerTick > 0
+            ? this.settings.maxSimulatedShadowsPerTick
+            : 250;
         const maxShadowsToProcess = isWindowVisible
-          ? combatReadyShadows.length
-          : Math.min(10, Math.floor(combatReadyShadows.length * 0.2)); // Only process 20% or max 10 shadows when hidden
+          ? Math.min(combatReadyShadows.length, maxSimulated)
+          : Math.min(10, Math.floor(combatReadyShadows.length * 0.2)); // background stays heavily throttled
 
-        for (let i = 0; i < maxShadowsToProcess; i++) {
+        const stride =
+          maxShadowsToProcess > 0
+            ? Math.max(1, Math.floor(combatReadyShadows.length / maxShadowsToProcess))
+            : 1;
+        const totalPowerAll =
+          Number.isFinite(dungeon?.shadowAllocation?.totalPower) &&
+          dungeon.shadowAllocation.totalPower > 0
+            ? dungeon.shadowAllocation.totalPower
+            : null;
+        let sampledPower = 0;
+        for (
+          let i = 0, processed = 0;
+          i < combatReadyShadows.length && processed < maxShadowsToProcess;
+          i += stride, processed++
+        ) {
+          sampledPower += this.getShadowCombatScore(combatReadyShadows[i]);
+        }
+        const countScale =
+          maxShadowsToProcess > 0
+            ? Math.max(1, combatReadyShadows.length / maxShadowsToProcess)
+            : 1;
+        const powerScale =
+          totalPowerAll && sampledPower > 0 ? totalPowerAll / sampledPower : countScale;
+        const scaleFactor = this.clampNumber(powerScale, 0.25, 25);
+
+        for (
+          let i = 0, processed = 0;
+          i < combatReadyShadows.length && processed < maxShadowsToProcess;
+          i += stride, processed++
+        ) {
           const shadow = combatReadyShadows[i];
           // Guard clause: Ensure shadow exists and has valid ID
-          if (!shadow || !shadow.id) {
+          const shadowId = this.getShadowIdValue(shadow);
+          if (!shadowId) {
             continue; // Skip invalid shadow
           }
 
-          const shadowHPData = shadowHP[shadow.id];
+          const shadowHPData = shadowHP[shadowId];
           // Double-check HP (should already be filtered by getCombatReadyShadows, but safety check)
           if (!shadowHPData || shadowHPData.hp <= 0) {
             // Shadow at 0 HP - skip combat but DON'T add to deadShadows
@@ -5636,10 +6151,10 @@ module.exports = class Dungeons {
             continue; // Skip this shadow, continue to next
           }
 
-          const combatData = dungeon.shadowCombatData[shadow.id];
+          const combatData = dungeon.shadowCombatData[shadowId];
           if (!combatData) {
             // Initialize combat data if missing
-            dungeon.shadowCombatData[shadow.id] = {
+            dungeon.shadowCombatData[shadowId] = {
               lastAttackTime: Date.now() - 2000, // Allow immediate attack
               attackInterval: 2000,
               personality: 'balanced',
@@ -5649,7 +6164,7 @@ module.exports = class Dungeons {
             // Continue with initialized data
           }
 
-          const finalCombatData = dungeon.shadowCombatData[shadow.id];
+          const finalCombatData = dungeon.shadowCombatData[shadowId];
 
           // Calculate how many attacks this shadow would make in the time span
           // Account for individual attack interval (personality-based)
@@ -5685,109 +6200,89 @@ module.exports = class Dungeons {
             continue; // Shadow not ready yet, continue to next shadow
           }
 
-          // Process batch attacks with variance applied to each virtual attack
+          // FAST PATH: no per-attack loop. Compute attacks once, then apply personality-driven split + variance.
           let totalBossDamage = 0;
           let totalMobDamage = 0;
-          const _mobsKilled = 0; // Tracked in analytics.mobsKilledThisWave
-          const mobDamageMap = new Map(); // Track damage per mob for variance
+          const mobDamageMap = new Map();
 
-          for (let attackIndex = 0; attackIndex < attacksInSpan; attackIndex++) {
-            // PERSONALITY-BASED TARGET SELECTION: Use ShadowArmy's smart targeting
-            // Prepare available targets for personality-based selection
-            const availableTargets = [];
-            if (bossAlive) {
-              availableTargets.push({
-                id: 'boss',
-                type: 'boss',
-                hp: dungeon.boss.hp,
-                rank: dungeon.boss.rank,
-              });
-            }
-            aliveMobs.forEach((mob) => {
-              availableTargets.push({
-                id: mob.id || mob.name,
-                type: 'mob',
-                hp: mob.hp,
-                rank: mob.rank,
-              });
-            });
+          const bossAliveNow = dungeon.boss.hp > 0;
+          const hasMobs = aliveMobs.length > 0;
 
-            const { targetType, targetEnemy } = this.selectShadowTarget(
-              shadow,
-              dungeon,
-              aliveMobs,
-              bossAlive
-            );
-            if (!targetEnemy) {
-              // No targets available - skip this attack iteration
-              continue;
-            }
+          // Derive personality preference cheaply (cached by ShadowArmy).
+          const personalityObj = this.shadowArmy?.getShadowPersonality
+            ? this.shadowArmy.getShadowPersonality(shadow)
+            : null;
+          const targetPreference = personalityObj?.targetPreference || 'random';
 
-            // Create comprehensive combat data using ShadowArmy's stored info
-            // Includes shadow personality, attack interval, and target data (boss/mob)
-            let combatData = null;
-            if (this.shadowArmy?.createCombatData) {
-              const targetForCombat =
-                targetType === 'boss'
-                  ? { ...dungeon.boss, type: 'boss', id: 'boss' }
-                  : { ...targetEnemy, type: 'mob' };
-              combatData = this.shadowArmy.createCombatData(shadow, targetForCombat, dungeon);
-            }
+          // Boss focus probability based on preference (approximate ShadowArmy selector behavior).
+          const prefBossChance = {
+            strongest: 0.9,
+            nearest: 0.8,
+            random: 0.2,
+            weakest: 0.05,
+          };
+          const bossChance = hasMobs ? prefBossChance[targetPreference] ?? 0.2 : 1.0;
+          const bossAttacks = bossAliveNow
+            ? Math.min(attacksInSpan, Math.floor(attacksInSpan * bossChance))
+            : 0;
+          const mobAttacks = Math.max(0, attacksInSpan - bossAttacks);
 
-            // Calculate base damage using ShadowArmy's stored combat data if available
-            let baseDamage;
-            if (this.shadowArmy?.calculateShadowDamage && combatData) {
-              // Use ShadowArmy's damage calculation with stored personality
-              baseDamage = this.shadowArmy.calculateShadowDamage(shadow, {
-                type: targetType,
-                rank: targetEnemy.rank,
-                strength: targetType === 'boss' ? bossStats.strength : targetEnemy.strength,
-              });
-            } else {
-              // Fallback to Dungeons calculation
-              if (targetType === 'boss') {
-                baseDamage = this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank);
-              } else {
-                const mobStats = this.buildMobStatsWithVariance(targetEnemy);
-                baseDamage = this.calculateShadowDamage(shadow, mobStats, targetEnemy.rank);
-              }
-            }
+          // Representative mob stats for fast mob damage (avoid per-mob variance rolls).
+          const mobSampleN = Math.min(12, aliveMobs.length);
+          const mobSample = mobSampleN > 0 ? aliveMobs.slice(0, mobSampleN) : [];
+          const avgStat = (key, fallback) =>
+            mobSampleN > 0
+              ? mobSample.reduce((sum, m) => sum + (Number.isFinite(m?.[key]) ? m[key] : 0), 0) /
+                mobSampleN
+              : fallback;
+          const mobTarget = {
+            type: 'mob',
+            rank: dungeon.rank,
+            strength: Math.max(1, Math.floor(avgStat('strength', 10))),
+            agility: Math.max(0, Math.floor(avgStat('agility', 0))),
+            intelligence: Math.max(0, Math.floor(avgStat('intelligence', 0))),
+            vitality: Math.max(0, Math.floor(avgStat('vitality', 0))),
+            perception: Math.max(0, Math.floor(avgStat('perception', 0))),
+          };
 
-            // Apply damage variance (±20%) for each attack
-            let attackDamage = this.applyDamageVariance(baseDamage);
+          // One random variance factor per shadow per tick (keeps chaos without per-hit RNG cost).
+          const shadowVariance = 0.9 + Math.random() * 0.2;
 
-            // Personality-based damage modifiers (use ShadowArmy if available)
-            if (this.shadowArmy?.calculateShadowDamage && targetEnemy) {
-              // Use ShadowArmy's personality-based damage calculation
-              const personalityDamage = this.shadowArmy.calculateShadowDamage(shadow, {
-                type: targetType,
-                rank: targetEnemy.rank,
-                strength: targetType === 'boss' ? bossStats.strength : targetEnemy.strength,
-              });
-              attackDamage = personalityDamage || attackDamage; // Use personality damage if available
-            } else {
-              // Fallback behavior modifier (if available)
-              attackDamage = finalCombatData.behavior
-                ? this.applyBehaviorModifier(finalCombatData.behavior, attackDamage)
-                : attackDamage;
-            }
+          if (bossAliveNow && bossAttacks > 0) {
+            const perHitBoss = this.shadowArmy?.calculateShadowDamage
+              ? this.shadowArmy.calculateShadowDamage(shadow, {
+                  type: 'boss',
+                  rank: dungeon.boss.rank,
+                  strength: bossStats.strength,
+                })
+              : this.applyBehaviorModifier(
+                  finalCombatData.behavior || 'balanced',
+                  this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank)
+                );
+            totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor);
+            totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
+          }
 
-            // Accumulate damage
-            if (targetType === 'boss') {
-              totalBossDamage += attackDamage;
-              analytics.shadowsAttackedBoss++;
-            } else {
-              const mobId = targetEnemy.id || targetEnemy.name;
-              const currentDamage = mobDamageMap.get(mobId) || 0;
-              mobDamageMap.set(mobId, currentDamage + attackDamage);
-              analytics.shadowsAttackedMobs++;
-            }
+          if (hasMobs && mobAttacks > 0) {
+            const perHitMob = this.shadowArmy?.calculateShadowDamage
+              ? this.shadowArmy.calculateShadowDamage(shadow, mobTarget)
+              : this.applyBehaviorModifier(
+                  finalCombatData.behavior || 'balanced',
+                  this.calculateShadowDamage(shadow, mobTarget, dungeon.rank)
+                );
+            totalMobDamage = Math.floor(mobAttacks * perHitMob * shadowVariance * scaleFactor);
+            totalMobDamage > 0 && analytics.shadowsAttackedMobs++;
+
+            // Put mob damage onto a single random mob (cheap) so kills/extraction still function.
+            const targetMob = aliveMobs[Math.floor(Math.random() * aliveMobs.length)];
+            const mobId = this.getEnemyKey(targetMob, 'mob');
+            mobId && mobDamageMap.set(mobId, totalMobDamage);
           }
 
           // Apply accumulated damage
           if (totalBossDamage > 0) {
             // Guard clause: Ensure shadow still exists
-            if (!shadow || !shadow.id) {
+            if (!shadowId) {
               this.errorLog(
                 'SHADOW_ATTACKS',
                 'Shadow became invalid before boss damage application',
@@ -5796,20 +6291,20 @@ module.exports = class Dungeons {
                 }
               );
             } else {
-              await this.applyDamageToBoss(channelKey, totalBossDamage, 'shadow', shadow.id);
+              await this.applyDamageToBoss(channelKey, totalBossDamage, 'shadow', shadowId);
               analytics.totalBossDamage += totalBossDamage;
 
               // Initialize shadow contribution if needed (lookup pattern)
               if (!dungeon.shadowContributions || typeof dungeon.shadowContributions !== 'object') {
                 dungeon.shadowContributions = {};
               }
-              if (!dungeon.shadowContributions[shadow.id]) {
-                dungeon.shadowContributions[shadow.id] = {
+              if (!dungeon.shadowContributions[shadowId]) {
+                dungeon.shadowContributions[shadowId] = {
                   mobsKilled: 0,
                   bossDamage: 0,
                 };
               }
-              dungeon.shadowContributions[shadow.id].bossDamage += totalBossDamage;
+              dungeon.shadowContributions[shadowId].bossDamage += totalBossDamage;
             }
           }
 
@@ -5820,20 +6315,21 @@ module.exports = class Dungeons {
               mobDamageMap,
               aliveMobs,
               (mob, damage) => {
-                mob.hp = Math.max(0, mob.hp - damage);
-              }
+                this.applyDamageToEntityHp(mob, damage);
+              },
+              combatSnapshot.mobById
             );
 
             totalMobDamage += mobDamageResult.totalDamage;
             const _mobsKilled = mobDamageResult.targetsKilled; // Tracked in analytics
 
             // Process killed mobs (XP, extraction, notifications)
-            Array.from(mobDamageMap.keys()).forEach((mobId) => {
-              const mob = aliveMobs.find((m) => (m.id || m.name) === mobId);
+            mobDamageMap.forEach((_damage, mobId) => {
+              const mob = combatSnapshot.mobById.get(mobId);
               if (!mob || mob.hp > 0) return; // Only process dead mobs
 
               // Guard clause: Ensure shadow still exists and is valid
-              if (!shadow || !shadow.id) {
+              if (!shadowId) {
                 return; // Skip this mob kill processing
               }
 
@@ -5847,13 +6343,13 @@ module.exports = class Dungeons {
                 dungeon.shadowContributions = {};
               }
               // Ensure shadow contribution object exists before accessing
-              if (!dungeon.shadowContributions[shadow.id]) {
-                dungeon.shadowContributions[shadow.id] = {
+              if (!dungeon.shadowContributions[shadowId]) {
+                dungeon.shadowContributions[shadowId] = {
                   mobsKilled: 0,
                   bossDamage: 0,
                 };
               }
-              dungeon.shadowContributions[shadow.id].mobsKilled += 1;
+              dungeon.shadowContributions[shadowId].mobsKilled += 1;
 
               // Initialize notification tracking if needed (lookup pattern)
               if (!this.settings.mobKillNotifications) {
@@ -5871,15 +6367,13 @@ module.exports = class Dungeons {
               this.soloLevelingStats?.addXP?.(
                 this.calculateMobXP(mob.rank, dungeon.userParticipating)
               );
-
-              dungeon.userParticipating && this.extractImmediately(channelKey, mob);
             });
           }
 
           analytics.totalMobDamage += totalMobDamage;
 
           // Update combat data (use finalCombatData since we may have initialized it)
-          const combatDataToUpdate = dungeon.shadowCombatData[shadow.id];
+          const combatDataToUpdate = dungeon.shadowCombatData[shadowId];
           combatDataToUpdate.attackCount += attacksInSpan;
           combatDataToUpdate.damageDealt += totalBossDamage + totalMobDamage;
 
@@ -5913,7 +6407,7 @@ module.exports = class Dungeons {
             );
           }
 
-          dungeon.shadowAttacks[shadow.id] = now + totalTimeSpan;
+          dungeon.shadowAttacks[shadowId] = now + totalTimeSpan;
         }
 
         // EXTRACTION: Dead mobs stored for deferred extraction after dungeon completion
@@ -5969,8 +6463,12 @@ module.exports = class Dungeons {
     // CRITICAL: Only use IndexedDB storageManager - no fallback to old settings.shadows
     // Shadow data is stored in IndexedDB, not in settings
     if (!this.shadowArmy.storageManager) {
-      this.debugLog('GET_ALL_SHADOWS', 'ShadowArmy storageManager not available yet');
-      return [];
+      await this.waitForShadowArmyStorageManager({ timeoutMs: 2500, intervalMs: 200 });
+      if (!this.shadowArmy.storageManager) {
+        this.debugLog('GET_ALL_SHADOWS', 'ShadowArmy storageManager not available yet');
+        // Prefer returning last known cached value (prevents empty allocation timing bugs).
+        return this._shadowsCache?.shadows ?? [];
+      }
     }
 
     try {
@@ -6069,7 +6567,7 @@ module.exports = class Dungeons {
       attackCount: 0,
       damageDealt: 0,
       // Store shadow ID for reference
-      shadowId: shadow.id || shadow.i,
+      shadowId: this.getShadowIdValue(shadow),
     };
   }
 
@@ -6211,12 +6709,17 @@ module.exports = class Dungeons {
    * @param {Function} applyDamageCallback - Callback to apply damage (target, damage) => void
    * @returns {Object} - Summary of damage applied
    */
-  batchApplyDamage(damageMap, targets, applyDamageCallback) {
+  batchApplyDamage(damageMap, targets, applyDamageCallback, targetIndex = null) {
     let totalDamage = 0;
     let targetsKilled = 0;
 
+    const getTarget =
+      targetIndex && typeof targetIndex.get === 'function'
+        ? (id) => targetIndex.get(id)
+        : (id) => targets.find((t) => this.getEnemyKey(t, 'mob') === id);
+
     damageMap.forEach((damage, targetId) => {
-      const target = targets.find((t) => (t.id || t.name) === targetId);
+      const target = getTarget(targetId);
       if (!target || target.hp <= 0) return;
 
       const oldHP = target.hp;
@@ -6252,11 +6755,13 @@ module.exports = class Dungeons {
     }
 
     aliveMobs.forEach((mob) => {
+      const normalized = this.normalizeEnemyForCombat(mob, 'mob');
+      if (!normalized?.id) return;
       availableTargets.push({
-        id: mob.id || mob.name,
-        type: 'mob',
-        hp: mob.hp,
-        rank: mob.rank,
+        id: normalized.id,
+        type: normalized.type,
+        hp: normalized.hp,
+        rank: normalized.rank,
       });
     });
 
@@ -6270,8 +6775,8 @@ module.exports = class Dungeons {
    * @returns {Promise<Object>} - Updated shadow HP data
    */
   async initializeShadowHP(shadow, shadowHP) {
-    const shadowId = shadow?.id || shadow?.i;
-    if (!shadow || !shadowId) {
+    const shadowId = this.getShadowIdValue(shadow);
+    if (!shadowId) {
       this.errorLog('SHADOW_HP', 'Cannot initialize HP: shadow identifier is missing', { shadow });
       return null;
     }
@@ -6363,9 +6868,11 @@ module.exports = class Dungeons {
       const shadowRank = shadow.rank || 'E';
       const baseHP = await this.calculateHP(shadowVitality, shadowRank);
 
-      // Shadows have 10% of the calculated HP (10% of user HP formula result)
-      // This ensures shadows can die (HP can reach 0) while still being durable enough to fight
-      const maxHP = Math.floor(baseHP * 0.1);
+      // Shadows have a fraction of calculated HP so they can die, but rank should still matter.
+      // Apply a small rank HP factor on top of the existing rankIndex term in calculateHP.
+      const shadowRankIndex = this.getRankIndexValue(shadowRank);
+      const shadowRankHpFactor = this.getShadowRankHpFactorByIndex(shadowRankIndex);
+      const maxHP = Math.floor(baseHP * 0.1 * shadowRankHpFactor);
 
       // CRITICAL: Ensure HP is at least 1 (shadows must be able to take damage and die)
       // If calculated HP is 0, shadows would be immediately dead, which breaks combat
@@ -6388,7 +6895,7 @@ module.exports = class Dungeons {
         });
         // Set minimum HP to prevent shadow from being immediately dead
         // Use formula with minimum VIT (50) as fallback, then 10%
-        const rankIndex = this.settings.dungeonRanks.indexOf(shadowRank);
+        const rankIndex = this.getRankIndexValue(shadowRank);
         const minBaseHP = 100 + 50 * 10 + rankIndex * 50; // Formula with VIT=50
         const minHP = Math.max(1, Math.floor(minBaseHP * 0.1)); // 10% of minimum, at least 1
         // Atomic update: create new object to prevent race conditions
@@ -6425,9 +6932,10 @@ module.exports = class Dungeons {
   getCombatReadyShadows(assignedShadows, deadShadows, shadowHP) {
     const combatReady = [];
     for (const shadow of assignedShadows) {
-      if (!shadow || !shadow.id) continue;
-      if (deadShadows.has(shadow.id)) continue;
-      const hpData = shadowHP[shadow.id];
+      const shadowId = this.getShadowIdValue(shadow);
+      if (!shadowId) continue;
+      if (deadShadows.has(shadowId)) continue;
+      const hpData = shadowHP[shadowId];
       hpData && hpData.hp > 0 && combatReady.push(shadow);
     }
     return combatReady;
@@ -6586,7 +7094,7 @@ module.exports = class Dungeons {
    * @returns {number} XP amount
    */
   calculateMobXP(mobRank, userParticipating = true) {
-    const rankIndex = this.settings.dungeonRanks.indexOf(mobRank);
+    const rankIndex = this.getRankIndexValue(mobRank);
     const baseXP = 10 + rankIndex * 5;
     return userParticipating ? baseXP : Math.floor(baseXP * 0.3);
   }
@@ -7089,8 +7597,6 @@ module.exports = class Dungeons {
                 this.soloLevelingStats.addXP(mobXP);
               }
             }
-
-            dungeon.userParticipating && this.extractImmediately(channelKey, mob);
           }
         });
 
@@ -7124,12 +7630,13 @@ module.exports = class Dungeons {
       if (aliveMobs.length === 0) return;
 
       for (const shadow of allShadows) {
-        if (!shadow || !shadow.id) continue;
-        if (deadShadows.has(shadow.id)) continue;
-        const shadowHPData = shadowHP[shadow.id];
+        const shadowId = this.getShadowIdValue(shadow);
+        if (!shadowId) continue;
+        if (deadShadows.has(shadowId)) continue;
+        const shadowHPData = shadowHP[shadowId];
         if (!shadowHPData || shadowHPData.hp <= 0) continue;
 
-        const combatData = dungeon.shadowCombatData?.[shadow.id];
+        const combatData = dungeon.shadowCombatData?.[shadowId];
         if (!combatData) continue;
 
         // Check individual shadow cooldown (chaotic timing)
@@ -7181,14 +7688,15 @@ module.exports = class Dungeons {
           dungeon.mobs.remaining = Math.max(0, dungeon.mobs.remaining - 1);
 
           // Track shadow contribution for XP (with guard clauses)
-          if (shadow && shadow.id) {
+          const shadowId = this.getShadowIdValue(shadow);
+          if (shadowId) {
             if (!dungeon.shadowContributions || typeof dungeon.shadowContributions !== 'object') {
               dungeon.shadowContributions = {};
             }
-            if (!dungeon.shadowContributions[shadow.id]) {
-              dungeon.shadowContributions[shadow.id] = { mobsKilled: 0, bossDamage: 0 };
+            if (!dungeon.shadowContributions[shadowId]) {
+              dungeon.shadowContributions[shadowId] = { mobsKilled: 0, bossDamage: 0 };
             }
-            dungeon.shadowContributions[shadow.id].mobsKilled += 1;
+            dungeon.shadowContributions[shadowId].mobsKilled += 1;
           }
 
           if (!this.settings.mobKillNotifications[channelKey]) {
@@ -7206,11 +7714,6 @@ module.exports = class Dungeons {
             if (typeof this.soloLevelingStats.addXP === 'function') {
               this.soloLevelingStats.addXP(mobXP);
             }
-          }
-
-          // Only if user is actively participating
-          if (dungeon.userParticipating) {
-            this.extractImmediately(channelKey, targetMob);
           }
         }
 
@@ -7371,24 +7874,6 @@ module.exports = class Dungeons {
   }
 
   /**
-   * Extract mob immediately (batched for efficiency)
-   * Accumulates mobs for 10ms then processes in batches of 20
-   * Success → Shadow extracted, mob removed immediately
-   * Failure → Mob removed immediately (no retry, single attempt only)
-   */
-  extractImmediately(channelKey, mob) {
-    // DEFERRED EXTRACTION: Mobs are already stored in MobBossStorageManager database
-    // When mob dies, it's marked for extraction and processed after dungeon completion
-    // This prevents crashes during intense combat by deferring extraction processing
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (!dungeon || !dungeon.userParticipating) return;
-
-    // Mobs are already cached in database when spawned
-    // No need to store again - extraction will use database records
-    // This is a no-op now since mobs are stored in database during spawnMobs()
-  }
-
-  /**
    * Process deferred extractions after dungeon completion
    * Processes all stored mob extractions from MobBossStorageManager database in batches
    * Non-blocking: Yields to event loop between batches to prevent interference with active dungeons
@@ -7459,7 +7944,8 @@ module.exports = class Dungeons {
               const mobId = `dungeon_${channelKey}_mob_${mob.id}_${Date.now()}`;
               const mobRank = mob.rank || dungeon.rank;
               const mobStats = mob.baseStats || {};
-              const mobStrength = mob.strength || mobStats.strength || 10;
+              const normalizedMob = this.normalizeEnemyForCombat(mob, 'mob');
+              const mobStrength = normalizedMob.strength || mobStats.strength || 10;
 
               const extractionResult = await this.shadowArmy.attemptDungeonExtraction(
                 mobId,
@@ -7556,26 +8042,6 @@ module.exports = class Dungeons {
   }
 
   /**
-   * Queue dead mob for extraction (LEGACY - NO-OP for mobs)
-   *
-   * NO-OP: Mobs use immediate extraction only (single attempt, no retry queue)
-   * This function immediately removes the mob since extraction was already attempted
-   * via extractImmediately() → processImmediateBatch().
-   *
-   * Single-attempt semantics:
-   * - Extraction attempted once via extractImmediately() on mob death
-   * - Failed mobs are immediately removed (no retry, prevents queue buildup)
-   */
-  queueMobForExtraction(channelKey, mob) {
-    // NO-OP: Mobs use immediate extraction only (single attempt)
-    // Immediately remove mob from activeMobs (extraction already attempted via extractImmediately)
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (dungeon) {
-      dungeon.mobs.activeMobs = dungeon.mobs.activeMobs.filter((m) => m.id !== mob.id);
-    }
-  }
-
-  /**
    * Process extraction queue (LEGACY CLEANUP ONLY)
    *
    * NO-OP for mobs: Mobs use immediate extraction only (single attempt, no retry queue)
@@ -7616,13 +8082,23 @@ module.exports = class Dungeons {
 
     // Mob data
     const mobRank = mob.rank || 'E';
-    const mobStats = mob.baseStats || {
-      strength: mob.strength || 50,
-      agility: mob.agility || 50,
-      intelligence: mob.intelligence || 50,
-      vitality: mob.vitality || 50,
-      perception: mob.perception || 50,
-    };
+    const fallbackPositive = (value, fallback) =>
+      Number.isFinite(value) && value > 0 ? value : fallback;
+    const mobCombat = this.resolveCombatStats({
+      entityType: 'enemy',
+      entity: mob,
+      fallbackType: 'mob',
+    });
+    const mobStats =
+      mob.baseStats && typeof mob.baseStats === 'object'
+        ? mob.baseStats
+        : {
+            strength: fallbackPositive(mobCombat.stats.strength, 50),
+            agility: fallbackPositive(mobCombat.stats.agility, 50),
+            intelligence: fallbackPositive(mobCombat.stats.intelligence, 50),
+            vitality: fallbackPositive(mobCombat.stats.vitality, 50),
+            perception: fallbackPositive(mobCombat.stats.perception, 50),
+          };
     const mobStrength = mobStats.strength;
 
     // Use unique extraction ID per mob (1 attempt only, no daily limit)
@@ -7652,7 +8128,7 @@ module.exports = class Dungeons {
         const extractionEvent = new CustomEvent('shadowExtracted', {
           detail: {
             mobId: mobId,
-            shadowId: result.shadow.id,
+            shadowId: this.getShadowIdValue(result.shadow),
             shadowData: result.shadow,
             success: true,
             channelKey: channelKey,
@@ -7908,7 +8384,7 @@ module.exports = class Dungeons {
     }
 
     // Calculate user XP based on reason and participation
-    const rankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
+    const rankIndex = this.getRankIndexValue(dungeon.rank);
 
     if (reason === 'complete') {
       // Grant bonus XP for completion (if participating)
@@ -8295,7 +8771,10 @@ module.exports = class Dungeons {
       agility: bossData.boss.agility,
       intelligence: bossData.boss.intelligence,
       vitality: bossData.boss.vitality,
-      perception: bossData.boss.perception || 50, // Default perception if not present
+      perception:
+        Number.isFinite(bossData.boss.perception) && bossData.boss.perception > 0
+          ? bossData.boss.perception
+          : 50, // Default perception if not present
     };
     const mobStrength = mobStats.strength;
     const mobRank = bossData.boss.rank || bossData.dungeon.rank;
@@ -8375,6 +8854,7 @@ module.exports = class Dungeons {
       align-items: center;
       justify-content: center;
       animation: arise-fade-in 0.5s ease;
+      pointer-events: none;
     `;
 
     const container = document.createElement('div');
@@ -8416,6 +8896,8 @@ module.exports = class Dungeons {
       overlay.style.animation = 'arise-fade-out 0.5s ease';
       setTimeout(() => overlay.remove(), 500);
     }, 2500);
+    // Hard fail-safe removal in case animation timers fail
+    setTimeout(() => overlay.remove(), 4000);
   }
 
   /**
@@ -8441,6 +8923,7 @@ module.exports = class Dungeons {
       align-items: center;
       justify-content: center;
       animation: arise-fade-in 0.5s ease;
+      pointer-events: none;
     `;
 
     const failContainer = document.createElement('div');
@@ -8477,6 +8960,8 @@ module.exports = class Dungeons {
       overlay.style.animation = 'arise-fade-out 0.5s ease';
       setTimeout(() => overlay.remove(), 500);
     }, 2000);
+    // Hard fail-safe removal in case animation timers fail
+    setTimeout(() => overlay.remove(), 3500);
   }
 
   /**
@@ -8538,7 +9023,7 @@ module.exports = class Dungeons {
     if (Object.keys(contributions).length === 0) return null;
 
     // Get dungeon rank multiplier (higher rank = more XP)
-    const dungeonRankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
+    const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
     const dungeonRankMultiplier = 1.0 + dungeonRankIndex * 0.5; // E=1.0, D=1.5, SSS=4.5, etc.
 
     // Base XP rewards
@@ -8547,7 +9032,9 @@ module.exports = class Dungeons {
 
     // Get all shadows to calculate XP
     const allShadows = await this.getAllShadows();
-    const shadowMap = new Map(allShadows.map((s) => [s.id, s]));
+    const shadowMap = new Map(
+      allShadows.map((s) => [this.getShadowIdValue(s), s]).filter(([id]) => !!id)
+    );
 
     let totalXPGranted = 0;
     const leveledUpShadows = [];
@@ -8724,6 +9211,9 @@ module.exports = class Dungeons {
       if (!this.isWindowVisible()) {
         return; // Don't update UI when window is not visible
       }
+
+      // Ensure boss HP bar CSS is present before any render/recreate work.
+      this.ensureBossHpBarCssInjected?.();
 
       // CRITICAL: SYNC FROM STATS PLUGIN FIRST (get freshest HP/Mana)
       // Ensures HP bar shows accurate participation status
@@ -9165,6 +9655,9 @@ module.exports = class Dungeons {
     }
 
     try {
+      // Ensure boss HP bar CSS exists (Discord/BD can swap layers and styles may be removed).
+      this.ensureBossHpBarCssInjected?.();
+
       // Clean up any existing containers first to prevent duplicates
       // Only clean up containers that are not in the DOM or are empty
       document.querySelectorAll('.dungeon-boss-hp-container').forEach((el) => {
@@ -9900,6 +10393,9 @@ module.exports = class Dungeons {
         return; // Don't update UI when window is not visible
       }
 
+      // Ensure CSS is present before attempting DOM restoration.
+      this.ensureBossHpBarCssInjected?.();
+
       // Only restore for active dungeons in the current channel
       const currentChannelInfo = this.getChannelInfo();
       if (!currentChannelInfo) return;
@@ -10218,10 +10714,11 @@ module.exports = class Dungeons {
     if (totalShadowDamage > 0 && aliveShadows.length > 0) {
       const damagePerShadow = Math.floor(totalShadowDamage / aliveShadows.length);
       aliveShadows.forEach((shadow) => {
-        const hpData = shadowHP[shadow.id];
+        const shadowId = this.getShadowIdValue(shadow);
+        const hpData = shadowId ? shadowHP[shadowId] : null;
         if (hpData) {
           hpData.hp = Math.max(0, hpData.hp - damagePerShadow);
-          shadowHP[shadow.id] = hpData;
+          shadowHP[shadowId] = hpData;
           // Shadow death handled - will be resurrected when window becomes visible
         }
       });
@@ -10332,10 +10829,11 @@ module.exports = class Dungeons {
     if (totalShadowDamage > 0 && aliveShadows.length > 0) {
       const damagePerShadow = Math.floor(totalShadowDamage / aliveShadows.length);
       aliveShadows.forEach((shadow) => {
-        const hpData = shadowHP[shadow.id];
+        const shadowId = this.getShadowIdValue(shadow);
+        const hpData = shadowId ? shadowHP[shadowId] : null;
         if (hpData) {
           hpData.hp = Math.max(0, hpData.hp - damagePerShadow);
-          shadowHP[shadow.id] = hpData;
+          shadowHP[shadowId] = hpData;
         }
       });
     }
@@ -10809,7 +11307,7 @@ module.exports = class Dungeons {
 
           // VALIDATE: Ensure boss stats match dungeon rank (fixes any corrupted data)
           if (dungeon.boss && dungeon.rank) {
-            const rankIndex = this.settings.dungeonRanks.indexOf(dungeon.rank);
+            const rankIndex = this.findRankIndex(dungeon.rank);
             if (rankIndex >= 0) {
               // Expected boss stats based on rank (using centralized calculation)
               const expectedBossStats = this.calculateBossBaseStats(rankIndex);
@@ -10892,7 +11390,7 @@ module.exports = class Dungeons {
           if (dungeon.mobs && dungeon.mobs.activeMobs && Array.isArray(dungeon.mobs.activeMobs)) {
             dungeon.mobs.activeMobs.forEach((mob) => {
               if (mob.rank) {
-                const mobRankIndex = this.settings.dungeonRanks.indexOf(mob.rank);
+                const mobRankIndex = this.findRankIndex(mob.rank);
                 if (mobRankIndex >= 0) {
                   // Expected mob stats based on rank (base values, before variance)
                   // Using centralized calculation
@@ -11943,6 +12441,16 @@ module.exports = class Dungeons {
       this._injectedStyles = new Set();
     }
     this._injectedStyles.add(styleId);
+  }
+
+  /**
+   * Ensure boss HP bar CSS is injected.
+   * Defensive against style churn when navigating channels/layers.
+   */
+  ensureBossHpBarCssInjected() {
+    const styleId = 'dungeons-plugin-styles';
+    const hasStyle = Boolean(document.getElementById(styleId));
+    !hasStyle && this.injectCSS();
   }
 
   getSettingsPanel() {

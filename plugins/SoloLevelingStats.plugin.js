@@ -1454,6 +1454,26 @@ module.exports = class SoloLevelingStats {
    */
   setupWebpackPatches() {
     try {
+      const extractMessageFromPatch = ({ args, returnValue }) => {
+        const raw = [returnValue, ...(Array.isArray(args) ? args : [])].filter(Boolean);
+        const candidates = raw
+          .flatMap((v) => [
+            v,
+            v?.message,
+            v?.payload?.message,
+            v?.payload?.messageRecord,
+            v?.messageRecord,
+          ])
+          .filter(Boolean);
+
+        return candidates.find((m) => {
+          const hasId = typeof m?.id === 'string' || typeof m?.id === 'number';
+          const hasAuthor = typeof m?.author?.id === 'string' || typeof m?.author?.id === 'number';
+          const hasContent = typeof m?.content === 'string';
+          return hasId && (hasAuthor || hasContent);
+        });
+      };
+
       // Patch MessageStore.receiveMessage if available
       if (this.webpackModules.MessageStore && this.webpackModules.MessageStore.receiveMessage) {
         BdApi.Patcher.after(
@@ -1463,9 +1483,8 @@ module.exports = class SoloLevelingStats {
           (thisObject, args, returnValue) => {
             try {
               // Process message from store (more reliable than DOM)
-              if (returnValue && returnValue.id) {
-                this.processMessageFromStore(returnValue);
-              }
+              const message = extractMessageFromPatch({ args, returnValue });
+              message?.id && this.processMessageFromStore(message);
             } catch (error) {
               this.debugError('MESSAGE_STORE_PATCH', error);
             }
@@ -1484,15 +1503,8 @@ module.exports = class SoloLevelingStats {
           (thisObject, args, returnValue) => {
             try {
               // Process sent message
-              if (returnValue && returnValue.id) {
-                this.processMessageFromStore(returnValue);
-              } else if (args && args.length > 0) {
-                // Try to extract message from arguments
-                const message = args[0]?.message || args[0];
-                if (message && message.id) {
-                  this.processMessageFromStore(message);
-                }
-              }
+              const message = extractMessageFromPatch({ args, returnValue });
+              message?.id && this.processMessageFromStore(message);
             } catch (error) {
               this.debugError('MESSAGE_ACTIONS_PATCH', error);
             }
@@ -3745,50 +3757,83 @@ module.exports = class SoloLevelingStats {
     try {
       this.debugLog('LOAD_SETTINGS', 'Attempting to load settings...');
 
-      // Try to load settings - IndexedDB first (crash-resistant), then BdApi.Data
-      let saved = null;
-      let loadedFromFile = false;
+      // Robust load: collect candidates and pick the newest valid one.
+      // IMPORTANT: never overwrite a valid candidate with null (previous bug caused resets).
+      const getSavedTimestamp = (data) => {
+        const iso = data?._metadata?.lastSave;
+        const ts = iso ? Date.parse(iso) : NaN;
+        return Number.isFinite(ts) ? ts : 0;
+      };
+
+      const candidates = [];
 
       // File backup (survives some repair/reinstall cases)
-      const fileSaved = this.readFileBackup();
-      if (fileSaved) {
-        saved = fileSaved;
-        loadedFromFile = true;
-        this.debugLog('LOAD_SETTINGS', 'Loaded from file backup', { path: this.fileBackupPath });
+      try {
+        const fileSaved = this.readFileBackup();
+        fileSaved &&
+          typeof fileSaved === 'object' &&
+          candidates.push({ source: 'file', data: fileSaved, ts: getSavedTimestamp(fileSaved) });
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', 'File backup load failed', error);
       }
 
-      // Try IndexedDB first (crash-resistant)
+      // IndexedDB main
       if (this.saveManager) {
         try {
-          saved = await this.saveManager.load('settings');
-          if (saved) {
-            this.debugLog('LOAD_SETTINGS', 'Loaded from IndexedDB');
-          }
+          const idbSaved = await this.saveManager.load('settings');
+          idbSaved &&
+            typeof idbSaved === 'object' &&
+            candidates.push({
+              source: 'indexeddb',
+              data: idbSaved,
+              ts: getSavedTimestamp(idbSaved),
+            });
         } catch (error) {
           this.debugError('LOAD_SETTINGS', 'IndexedDB load failed', error);
         }
       }
 
-      // Fallback to BdApi.Data
-      if (!saved) {
-        try {
-          saved = BdApi.Data.load('SoloLevelingStats', 'settings');
-          if (saved) {
-            this.debugLog('LOAD_SETTINGS', 'Loaded from BdApi.Data (fallback)');
-            // Migrate to IndexedDB
-            if (this.saveManager) {
-              try {
-                await this.saveManager.save('settings', saved);
-                this.debugLog('LOAD_SETTINGS', 'Migrated to IndexedDB');
-              } catch (migrateError) {
-                this.debugError('LOAD_SETTINGS', 'Migration to IndexedDB failed', migrateError);
-              }
-            }
-          }
-        } catch (error) {
-          this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
-        }
+      // BdApi.Data main
+      try {
+        const bdSaved = BdApi.Data.load('SoloLevelingStats', 'settings');
+        bdSaved &&
+          typeof bdSaved === 'object' &&
+          candidates.push({ source: 'bdapi', data: bdSaved, ts: getSavedTimestamp(bdSaved) });
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
       }
+
+      // Pick newest; tie-break by storage priority for older saves missing timestamps
+      const sourcePriority = {
+        indexeddb: 3,
+        file: 2,
+        bdapi: 1,
+      };
+      const getPriority = (source) => sourcePriority[source] ?? 0;
+
+      const best = candidates.reduce(
+        (acc, cur) => {
+          const hasNewerTimestamp = cur.ts > acc.ts;
+          const isTie = cur.ts === acc.ts;
+          const hasHigherPriority = getPriority(cur.source) >= getPriority(acc.source);
+          return hasNewerTimestamp || (isTie && hasHigherPriority) ? cur : acc;
+        },
+        {
+          source: null,
+          data: null,
+          ts: 0,
+        }
+      );
+
+      let saved = best.data;
+      const loadedFromFile = best.source === 'file';
+
+      saved &&
+        this.debugLog('LOAD_SETTINGS', 'Selected settings candidate', {
+          source: best.source,
+          timestamp: best.ts,
+          fileBackupPath: this.fileBackupPath,
+        });
 
       // Try IndexedDB backup if main failed
       if (!saved && this.saveManager) {

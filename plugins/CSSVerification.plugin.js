@@ -73,6 +73,14 @@ module.exports = (() => {
               this.selectorScanMode = 'capped'; // 'capped' | 'full'
               this.selectorScanCaps = { capped: 1500, full: 20000 };
               this.remainingSelectorChecks = 0;
+              this.focusedSelectors = [
+                'div[role="tablist"]',
+                'div[role="tablist"][class*="tabBar__"]',
+                'div[aria-label="Friends"] div[class*="tabBar__"]',
+                'div[aria-label="Friends"] div[class*="children__"]',
+                'div[aria-label="Friends"] div[class*="upperContainer__"]',
+              ];
+              this.focusedSelectorResults = []; // {selector, matchCount, matches, error}
             }
 
             onStart() {
@@ -113,6 +121,7 @@ module.exports = (() => {
               this.usedVariables.clear();
               this.testResults.clear();
               this.selectorResults = [];
+              this.focusedSelectorResults = [];
               this.sourceIndex.clear();
               this.remainingSelectorChecks =
                 this.selectorScanCaps[this.selectorScanMode] ?? this.selectorScanCaps.capped;
@@ -129,6 +138,19 @@ module.exports = (() => {
                 );
               });
 
+              // Noise filter: keep matched selectors, or unmatched only if from our theme/custom CSS sources
+              const isRelevantSource = (sourceId = '') =>
+                sourceId.includes('SoloLeveling-ClearVision-theme-container') ||
+                sourceId.includes('customcss') ||
+                sourceId.includes('bd-customcss');
+
+              this.selectorResults = this.selectorResults.filter((entry) => {
+                if (entry.status === 'matched') return true;
+                const src = entry.context?.sourceId || '';
+                return isRelevantSource(src);
+              });
+
+              this.runFocusedSelectorChecks();
               this.testComputedStyles();
             }
 
@@ -274,6 +296,36 @@ module.exports = (() => {
               });
 
               return sources;
+            }
+
+            runFocusedSelectorChecks() {
+              this.focusedSelectorResults = [];
+              this.focusedSelectors.forEach((selector) => {
+                try {
+                  const matches = Array.from(document.querySelectorAll(selector));
+                  this.focusedSelectorResults.push({
+                    selector,
+                    matchCount: matches.length,
+                    matches: matches.slice(0, 5).map((el) => ({
+                      summary: this.getElementSummary(el),
+                      classList: Array.from(el.classList || []),
+                      role: el.getAttribute('role') || null,
+                      ariaLabel: el.getAttribute('aria-label') || null,
+                      rect: (() => {
+                        const r = el.getBoundingClientRect();
+                        return { x: r.x, y: r.y, width: r.width, height: r.height };
+                      })(),
+                    })),
+                  });
+                } catch (error) {
+                  this.focusedSelectorResults.push({
+                    selector,
+                    matchCount: 0,
+                    matches: [],
+                    error: error?.message || String(error),
+                  });
+                }
+              });
             }
 
             extractFromSource(source) {

@@ -1,0 +1,557 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.1.2",
+  "url": "https://discord.com/channels/86004744966914048/123136820409139200",
+  "element": {
+    "capturedAt": "2025-12-13T07:56:51.602Z",
+    "summary": "div.wrapper__6e9f8",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "wrapper__6e9f8",
+      "selected__6e9f8"
+    ],
+    "exactClassSelectors": [
+      ".wrapper__6e9f8",
+      ".selected__6e9f8"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"wrapper_\"]",
+      "[class^=\"selected_\"]"
+    ],
+    "parentSummary": "div",
+    "childrenSummary": {
+      "count": 2,
+      "firstChild": "span.hiddenVisually_b18fe2"
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "wrapper__6e9f8 selected__6e9f8"
+      },
+      {
+        "name": "role",
+        "value": "treeitem"
+      },
+      {
+        "name": "data-list-item-id",
+        "value": "guildsnav___86004744966914048"
+      },
+      {
+        "name": "tabindex",
+        "value": "0"
+      },
+      {
+        "name": "aria-level",
+        "value": "2"
+      },
+      {
+        "name": "aria-setsize",
+        "value": "6"
+      },
+      {
+        "name": "aria-posinset",
+        "value": "1"
+      },
+      {
+        "name": "aria-selected",
+        "value": "true"
+      }
+    ],
+    "textPreview": "BetterDiscord",
+    "computedStyle": {
+      "display": "flex",
+      "position": "static",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "rgba(139, 92, 246, 0.2)",
+      "backgroundImage": "none",
+      "background": "rgba(139, 92, 246, 0.2) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": null,
+      "borderColor": "rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgba(0, 0, 0, 0) rgb(139, 92, 246)",
+      "borderWidth": "0px 0px 0px 3px",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "outline": "rgba(0, 0, 0, 0) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "rgba(0, 0, 0, 0)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "16px",
+      "lineHeight": "16px",
+      "padding": "0px",
+      "margin": "0px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "span.hiddenVisually_b18fe2",
+        "tagName": "span",
+        "id": null,
+        "classList": [
+          "hiddenVisually_b18fe2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "hiddenVisually_b18fe2"
+          }
+        ],
+        "textPreview": "BetterDiscord",
+        "stableSelectors": [
+          "span[class^=\"hiddenVisually_\"]"
+        ],
+        "selectorCandidates": [
+          "span[class^=\"hiddenVisually_\"]",
+          "div > svg > foreignobject > div > div > span"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "absolute",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      },
+      {
+        "index": 1,
+        "summary": "img.icon__6e9f8",
+        "tagName": "img",
+        "id": null,
+        "classList": [
+          "icon__6e9f8"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "icon__6e9f8"
+          },
+          {
+            "name": "alt",
+            "value": " "
+          },
+          {
+            "name": "width",
+            "value": "40"
+          },
+          {
+            "name": "height",
+            "value": "40"
+          },
+          {
+            "name": "aria-hidden",
+            "value": "true"
+          },
+          {
+            "name": "src",
+            "value": "https://cdn.discordapp.com/icons/86004744966914048/1a6972fb7e50b70eff089fcc5e395c72.webp?size=160&quality=lossless"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [
+          "img[class^=\"icon_\"]"
+        ],
+        "selectorCandidates": [
+          "img[class^=\"icon_\"]",
+          "div > svg > foreignobject > div > div > img"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "color(srgb 0.0392157 0.0392157 0.0588235 / 0.501961)",
+          "backgroundImage": "none",
+          "background": "color(srgb 0.0392157 0.0392157 0.0588235 / 0.501961) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none rgba(0, 0, 0, 0)",
+          "borderColor": "rgba(0, 0, 0, 0)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "rgba(0, 0, 0, 0) none 0px",
+          "filter": "drop-shadow(rgba(139, 92, 246, 0.6) 0px 0px 4px)",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "rgba(0, 0, 0, 0)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15552,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/12633.22d5e2ff2069842d.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15581,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 54,
+        "selectorText": "nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"], nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"], nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover::after",
+        "selector": "nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"], nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"wrapper_\"]:hover::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"], nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]::after, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover::before, nav[aria-label=\"Servers sidebar\"] div[class^=\"listItemWrapper_\"]:hover",
+        "pseudo": "::after",
+        "properties": {
+          "box-shadow": {
+            "value": "none",
+            "priority": "important"
+          },
+          "filter": {
+            "value": "none",
+            "priority": "important"
+          },
+          "transform": {
+            "value": "none",
+            "priority": "important"
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 74,
+        "selectorText": "[class*=\"guilds\"] [class*=\"wrapper\"]:hover",
+        "selector": "[class*=\"guilds\"] [class*=\"wrapper\"]:hover",
+        "pseudo": null,
+        "properties": {
+          "box-shadow": {
+            "value": "rgba(139, 92, 246, 0.6) 0px 0px 12px",
+            "priority": "important"
+          },
+          "transform": {
+            "value": "scale(1.05)",
+            "priority": "important"
+          }
+        }
+      },
+      {
+        "stylesheet": "inline:19:style#SoloLeveling-ClearVision-theme-container",
+        "sheetIndex": 19,
+        "ruleIndex": 187,
+        "selectorText": "li[class*=\"selected\"][class*=\"containerDefault\"], [class*=\"side\"] [class*=\"selected\"], [class*=\"item\"][class*=\"selected\"]",
+        "selector": "li[class*=\"selected\"][class*=\"containerDefault\"], [class*=\"side\"] [class*=\"selected\"], [class*=\"item\"][class*=\"selected\"]",
+        "pseudo": null,
+        "properties": {
+          "background": {
+            "value": "rgba(139, 92, 246, 0.2)",
+            "priority": "important"
+          },
+          "background-color": {
+            "value": "rgba(139, 92, 246, 0.2)",
+            "priority": "important"
+          },
+          "background-image": {
+            "value": "initial",
+            "priority": "important"
+          },
+          "box-shadow": {
+            "value": "rgba(139, 92, 246, 0.15) 0px 0px 20px inset",
+            "priority": "important"
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 19.5,
+      "y": 380,
+      "width": 43,
+      "height": 40,
+      "top": 380,
+      "left": 19.5,
+      "right": 62.5,
+      "bottom": 420
+    },
+    "stableSelectors": [
+      "div[role=\"treeitem\"]",
+      "div[class^=\"wrapper_\"]",
+      "div[class^=\"selected_\"]"
+    ],
+    "bestSelector": "div[role=\"treeitem\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[role=\"treeitem\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"wrapper_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"selected_\"]",
+        "isValid": true,
+        "matchesNow": false,
+        "isUnique": null
+      },
+      {
+        "selector": "foreignobject > div > svg > foreignobject > div > div",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.wrapper__6e9f8",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "wrapper__6e9f8",
+          "selected__6e9f8"
+        ],
+        "role": "treeitem",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[role=\"treeitem\"]",
+          "div[class^=\"wrapper_\"]",
+          "div[class^=\"selected_\"]",
+          "foreignobject > div > svg > foreignobject > div > div"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "svg > foreignobject > div > svg > foreignobject > div"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "foreignobject",
+        "tagName": "foreignobject",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > svg > foreignobject > div > svg > foreignobject"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "svg",
+        "tagName": "svg",
+        "id": null,
+        "classList": [
+          "svg_cc5dd2",
+          "shiftSVG_cc5dd2"
+        ],
+        "role": "none",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "svg[role=\"none\"]",
+          "svg[class^=\"svg_\"]",
+          "svg[class^=\"shiftSVG_\"]",
+          "div > div > svg > foreignobject > div > svg"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.wrapper_cc5dd2",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "wrapper_cc5dd2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"wrapper_\"]",
+          "div:nth-of-type(2) > div > div > svg > foreignobject > div"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "foreignobject",
+        "tagName": "foreignobject",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(1) > div:nth-of-type(2) > div > div > svg > foreignobject"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "svg",
+        "tagName": "svg",
+        "id": null,
+        "classList": [
+          "svg_cc5dd2",
+          "shiftSVG_cc5dd2"
+        ],
+        "role": "none",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "svg[role=\"none\"]",
+          "svg[class^=\"svg_\"]",
+          "svg[class^=\"shiftSVG_\"]",
+          "ul > div:nth-of-type(1) > div:nth-of-type(2) > div > div > svg"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.wrapper_cc5dd2",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "wrapper_cc5dd2"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"wrapper_\"]",
+          "div:nth-of-type(5) > ul > div:nth-of-type(1) > div:nth-of-type(2) > div > div"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.blobContainer_e5445c",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "blobContainer_e5445c",
+          "selected_e5445c"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"blobContainer_\"]",
+          "div[class^=\"selected_\"]",
+          "div:nth-of-type(4) > div:nth-of-type(5) > ul > div:nth-of-type(1) > div:nth-of-type(2) > div"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div:nth-of-type(4) > div:nth-of-type(5) > ul > div:nth-of-type(1) > div:nth-of-type(2)"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 342px;"
+          }
+        ]
+      }
+    }
+  }
+}

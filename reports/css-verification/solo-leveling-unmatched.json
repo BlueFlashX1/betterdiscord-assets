@@ -1,0 +1,1934 @@
+[
+  {
+    "selector": ":is(.theme-light, .theme-dark .theme-light)",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ":is(.theme-midnight, .theme-light .theme-midnight)",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "body::before",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "body::after",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"app\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"app\"]::after",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"base\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"base\"]::after",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".app-3xd6d0",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".app-2CXKsg",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".theme-light",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"app-\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"base-\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"chat\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"message\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "p",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "h5",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "h6",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "textarea",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit *",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit ::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit ::after",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] .bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] .bd-crit-hit *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"content\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"text\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"messageContent\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"messageContent\"].bd-crit-hit *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "h5",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "h6",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"header\"] [class*=\"title\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"name\"][class*=\"header\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"content\"]:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"text\"]:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"messageContent\"]:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] .bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"content\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"text\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"messageContent\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": ".bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] .bd-crit-hit [class*=\"content\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] .bd-crit-hit [class*=\"text\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit [class*=\"content\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit [class*=\"text\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"content\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"text\"].bd-crit-hit",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"username\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"author\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelName\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"modeSelected\"] [class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channel\"][class*=\"selected\"] [class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"code\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"codeBlock\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "pre",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "textarea",
+    "matchCount": 0,
+    "inTheme": true,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"textArea\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelTextArea\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"content\"]:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"username\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"author\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"selected\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"selected\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"active\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"active\"]::before",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"selected\"] [class*=\"pill\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"selected\"] [class*=\"pill\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"active\"] [class*=\"pill\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"active\"] [class*=\"pill\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"selected\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"selected\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"active\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"active\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"] [class*=\"badge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"] [class*=\"badge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"] [class*=\"unread\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"] [class*=\"numberBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"] [class*=\"unreadBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"] [class*=\"unreadBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"] [class*=\"notificationBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"] [class*=\"notificationBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guildIcon\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"serverIcon\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guildIconWrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"serverIconWrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guildIcon\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"serverIcon\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"scroller\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"tree\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"base\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"base\"][class*=\"container\"]:has([class*=\"guilds\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "aside[class*=\"panels\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "nav[class*=\"guilds\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"wrapper\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"scroller\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"tree\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"][class*=\"base\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"base\"][class*=\"container\"]:has([class*=\"guilds\"]):hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "aside[class*=\"panels\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"listItem\"]:hover div[class*=\"wrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"listItem\"] div[class*=\"pill\"] span",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"listItem\"] div[class*=\"pill\"] span[style*=\"height\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] [class*=\"numberBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] [class*=\"iconBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"upperBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] [class*=\"numberBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"homeIcon\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"listItem\"]:hover div[class*=\"homeIcon\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"circleIconButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"circleIconButton\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"guilds\"] div[class*=\"circleIconButton\"]:hover svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channels\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelList\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sidebar\"][class*=\"container\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sidebar\"][class*=\"content\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "nav[class*=\"sidebar\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"sidebar\"][class*=\"base\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channels\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelList\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sidebar\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sidebar\"][class*=\"container\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sidebar\"][class*=\"content\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "nav[class*=\"sidebar\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "div[class*=\"sidebar\"][class*=\"base\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "header[class*=\"header\"] h1",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "header[class*=\"header\"] div[class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"][class*=\"selected\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"]:hover:not([class*=\"selected\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"wrapper\"]:hover:not([class*=\"selected\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"][class*=\"selected\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"wrapper\"][class*=\"selected\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] [class*=\"avatar\"]:has([class*=\"statusOnline\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] [class*=\"avatar\"]:has([class*=\"statusIdle\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] [class*=\"avatar\"]:has([class*=\"statusDnd\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] [class*=\"avatar\"]:has([class*=\"statusOffline\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guilds\"] [class*=\"wrapper\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[role=\"button\"][class*=\"container\"] h2",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"containerDefault\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[role=\"button\"][class*=\"container\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channel\"][class*=\"unread\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channel\"] [class*=\"unreadPill\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channel\"] [class*=\"unreadBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"] svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"iconContainer\"] svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"iconItem\"] svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"]:hover svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"iconContainer\"]:hover svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] [class*=\"usernameContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] button[aria-label*=\"Settings\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] button[aria-label*=\"settings\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] button:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"panels\"] button:hover svg",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a[class*=\"channel\"] [class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelInfo\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"] [class*=\"avatar\"]:has([class*=\"statusOnline\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"] [class*=\"avatar\"]:has([class*=\"statusIdle\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"] [class*=\"avatar\"]:has([class*=\"statusDnd\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"] [class*=\"avatar\"]:has([class*=\"statusOffline\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"] [class*=\"avatar\"]:has([class*=\"statusInvisible\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"]:hover [class*=\"avatar\"]:has([class*=\"statusOnline\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"]:hover [class*=\"avatar\"]:has([class*=\"statusIdle\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"member\"]:hover [class*=\"avatar\"]:has([class*=\"statusDnd\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"].bd-crit-hit:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:focus:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:focus-within:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:not(.bd-crit-hit):not([class*=\"bd-crit-hit\"]) :focus",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelTextArea\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"slateTextArea\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"textArea\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelTextArea\"]:focus-within:not(:disabled):not([disabled]):not([readonly])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"slateTextArea\"]:focus-within:not(:disabled):not([disabled]):not([readonly])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"textArea\"]:focus-within:not(:disabled):not([disabled]):not([readonly])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionBtn\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionBtn\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"][class*=\"reactionMe\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionBtn\"][class*=\"reactionMe\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"reactionButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"reactionInner\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionInner\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionButtonContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionToolbar\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionBar\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionWrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionButtonRow\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionRow\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionButtons\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionButtonGroup\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionAdd\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionAddButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"wrapper\"][class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"container\"][class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionInner\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionButtonContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionToolbar\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionBar\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionWrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionButtonRow\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionRow\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionButtons\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionButtonGroup\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionAdd\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"reactionAddButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"wrapper\"][class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"]:hover [class*=\"container\"][class*=\"reaction\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"tooltip\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"popup\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"overlay\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionTooltip\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionPopup\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUsers\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUserList\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionList\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionListPopout\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionPopout\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUsersPopout\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"user\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"username\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"note\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"message\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"text\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"content\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"tooltip\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"popup\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reaction\"] [class*=\"overlay\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionTooltip\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionPopup\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUsers\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUserList\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionList\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionListPopout\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionPopout\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"reactionUsersPopout\"] *",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embedWrapper\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embedContainer\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"][class*=\"solo\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"solo\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"leveling\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"rank\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"xp\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"title\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embedTitle\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"description\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embedDescription\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embed\"] [class*=\"field\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"embedField\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"selected\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"selected\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guild\"][class*=\"active\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"server\"][class*=\"active\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sendButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"button\"][class*=\"send\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"Send\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"send\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelTextArea\"] + [class*=\"button\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"slateTextArea\"] + [class*=\"button\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"textArea\"] + [class*=\"button\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"sendButton\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"button\"][class*=\"send\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"Send\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"send\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"channelTextArea\"] + [class*=\"button\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"slateTextArea\"] + [class*=\"button\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"textArea\"] + [class*=\"button\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"settingsButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"button\"][class*=\"settings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"settings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"iconButton\"][class*=\"settings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guildSettings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"userSettings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"accountButton\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"Server Settings\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"settingsButton\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"button\"][class*=\"settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"Settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"iconButton\"][class*=\"settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"guildSettings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"userSettings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"accountButton\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"User Settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "button[aria-label*=\"Server Settings\"]:hover:not(:disabled):not([disabled])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"username\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"message\"] [class*=\"author\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"header\"] [class*=\"title\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"header\"] [class*=\"name\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"button\"]:hover:not(:disabled):not([disabled]):not([class*=\"selected\"]):not([class*=\"sendButton\"]):not([class*=\"send\"]):not([class*=\"settingsButton\"]):not([class*=\"settings\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "a:hover:not(:disabled):not([disabled]):not([aria-disabled=\"true\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"link\"]:hover:not(:disabled):not([disabled]):not([aria-disabled=\"true\"])",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"mentionBadge\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"activityCard\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"activityPanel\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"richPresence\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"infoSection\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"popoutHeroBody\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"infoSection\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"popoutHeroBody\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"contentTitle\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"activityCard\"] h3",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"infoSection\"] h3",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"popout\"] [class*=\"activityName\"]",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"contentTitle\"]:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"activityCard\"] h3:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  },
+  {
+    "selector": "[class*=\"infoSection\"] h3:hover",
+    "matchCount": 0,
+    "inTheme": false,
+    "source": "css_source_33#SoloLeveling-ClearVision-theme-container"
+  }
+]

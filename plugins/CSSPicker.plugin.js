@@ -1,10 +1,11 @@
 /**
  * @name CSS Picker
  * @author BlueFlashX1
- * @description Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report into betterdiscord-dev.
- * @version 1.0.0
+ * @description Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report under reports/css-picker.
+ * @version 1.1.2
  * @authorId
  */
+/* global CSS, Element */
 
 module.exports = (() => {
   const config = {
@@ -16,13 +17,85 @@ module.exports = (() => {
           discord_id: '',
         },
       ],
-      version: '1.0.0',
+      version: '1.1.2',
       description:
-        'Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report into betterdiscord-dev.',
+        'Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report under reports/css-picker.',
     },
   };
 
   const PLUGIN_NAME = config.info.name;
+
+  const DEFAULT_SETTINGS = {
+    toastTimeoutMs: 5500,
+    toastIncludeComputed: true,
+    toastIncludeRules: true,
+    toastRuleCount: 3,
+    toastMaxChars: 260,
+    hotkeyEnabled: true,
+    hotkey: 'Ctrl+Shift+P',
+  };
+
+  const isEditableTarget = (target) => {
+    const el = target;
+    if (!el) return false;
+    const tag = el.tagName?.toLowerCase?.() || '';
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
+    return !!el.isContentEditable;
+  };
+
+  const normalizeHotkey = (hotkey) =>
+    String(hotkey || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, '');
+
+  const parseHotkey = (hotkey) => {
+    const normalized = normalizeHotkey(hotkey);
+    const parts = normalized.split('+').filter(Boolean);
+    const mods = new Set(
+      parts.filter((p) => ['ctrl', 'shift', 'alt', 'meta', 'cmd', 'command'].includes(p))
+    );
+    const key = parts.find((p) => !mods.has(p)) || '';
+
+    const hasCtrl = mods.has('ctrl');
+    const hasShift = mods.has('shift');
+    const hasAlt = mods.has('alt');
+    const hasMeta = mods.has('meta') || mods.has('cmd') || mods.has('command');
+
+    return { key, hasCtrl, hasShift, hasAlt, hasMeta };
+  };
+
+  const matchesHotkey = (event, hotkey) => {
+    const spec = parseHotkey(hotkey);
+    if (!spec.key) return false;
+
+    const key = String(event.key || '').toLowerCase();
+    const isKeyMatch = key === spec.key || (spec.key.length === 1 && key === spec.key);
+
+    return (
+      isKeyMatch &&
+      !!event.ctrlKey === spec.hasCtrl &&
+      !!event.shiftKey === spec.hasShift &&
+      !!event.altKey === spec.hasAlt &&
+      !!event.metaKey === spec.hasMeta
+    );
+  };
+
+  const loadSettings = () => {
+    try {
+      return { ...DEFAULT_SETTINGS, ...(BdApi.Data.load(PLUGIN_NAME, 'settings') || {}) };
+    } catch (e) {
+      return { ...DEFAULT_SETTINGS };
+    }
+  };
+
+  const saveSettings = (settings) => {
+    try {
+      BdApi.Data.save(PLUGIN_NAME, 'settings', settings);
+    } catch (e) {
+      // ignore
+    }
+  };
 
   const safeToast = (message, options = {}) => {
     try {
@@ -40,6 +113,147 @@ module.exports = (() => {
 
   const getTimestampForFilename = () => new Date().toISOString().replace(/[:.]/g, '-');
 
+  const isTrulyTransparent = (value) => {
+    const normalized = String(value || '')
+      .trim()
+      .toLowerCase();
+    return (
+      !normalized ||
+      normalized === 'none' ||
+      normalized === 'transparent' ||
+      normalized === 'rgba(0, 0, 0, 0)' ||
+      normalized === 'rgba(0,0,0,0)'
+    );
+  };
+
+  const truncateMiddle = (value, max = 90) => {
+    const str = String(value ?? '');
+    if (str.length <= max) return str;
+    const left = Math.max(10, Math.floor(max * 0.6));
+    const right = Math.max(8, max - left - 3);
+    return `${str.slice(0, left)}...${str.slice(-right)}`;
+  };
+
+  const formatCssValueCompact = (value) =>
+    truncateMiddle(
+      String(value ?? '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+      96
+    );
+
+  const shortenStylesheetLabel = (label) => {
+    const text = String(label ?? '');
+    const asUrl = /^https?:\/\//i.test(text);
+    if (!asUrl) return truncateMiddle(text, 52);
+    try {
+      const { pathname, host } = new URL(text);
+      const parts = pathname.split('/').filter(Boolean);
+      const tail = parts.slice(-2).join('/');
+      return truncateMiddle(`${host}/${tail}`, 52);
+    } catch (e) {
+      return truncateMiddle(text, 52);
+    }
+  };
+
+  const buildComputedVisualSummary = (computedStyle) => {
+    if (!computedStyle) return [];
+
+    const bgColor = computedStyle.backgroundColor;
+    const bgImg = computedStyle.backgroundImage;
+    const shadow = computedStyle.boxShadow;
+    const border = computedStyle.border;
+    const outline = computedStyle.outline;
+    const filter = computedStyle.filter;
+    const backdrop = computedStyle.backdropFilter;
+
+    const parts = [
+      !isTrulyTransparent(bgColor) && `bg ${formatCssValueCompact(bgColor)}`,
+      bgImg &&
+        !isTrulyTransparent(bgImg) &&
+        bgImg !== 'none' &&
+        `bg-img ${truncateMiddle(bgImg, 78)}`,
+      shadow && shadow !== 'none' && `shadow ${truncateMiddle(shadow, 78)}`,
+      border && border !== 'none' && `border ${truncateMiddle(border, 62)}`,
+      outline && outline !== 'none' && `outline ${truncateMiddle(outline, 62)}`,
+      filter && filter !== 'none' && `filter ${truncateMiddle(filter, 62)}`,
+      backdrop && backdrop !== 'none' && `backdrop ${truncateMiddle(backdrop, 62)}`,
+    ].filter(Boolean);
+
+    return parts.slice(0, 4);
+  };
+
+  const buildRuleHints = ({ matchedCssRules, maxRuleCount }) => {
+    const rules = Array.isArray(matchedCssRules) ? matchedCssRules : [];
+    const keys = [
+      'background-image',
+      'background',
+      'background-color',
+      'box-shadow',
+      'border',
+      'outline',
+      'filter',
+      'backdrop-filter',
+      'transform',
+    ];
+
+    const pickFirstRuleForKey = (key) =>
+      rules.find((r) => r?.properties && r.properties[key] && r.properties[key].value);
+
+    const picks = keys
+      .map((k) => [k, pickFirstRuleForKey(k)])
+      .filter(([, r]) => r)
+      .slice(0, Math.max(0, maxRuleCount || 0));
+
+    const unique = new Set();
+    return picks
+      .map(([key, r]) => {
+        const prop = r.properties[key];
+        const priority = prop?.priority === 'important' ? ' !important' : '';
+        const pseudo = r.pseudo ? r.pseudo : '';
+        const selector = truncateMiddle(`${r.selector}${pseudo}`, 58);
+        const sheet = shortenStylesheetLabel(r.stylesheet);
+        const line = `${key}${priority}: ${selector} @ ${sheet}`;
+
+        const dedupeKey = `${key}|${r.stylesheet}|${r.selectorText}`;
+        if (unique.has(dedupeKey)) return null;
+        unique.add(dedupeKey);
+        return line;
+      })
+      .filter(Boolean)
+      .slice(0, Math.max(0, maxRuleCount || 0));
+  };
+
+  const buildCaptureToastMessage = ({ elementDetails, saveResult, clipboardResult, settings }) => {
+    const elementSummary = elementDetails?.summary || 'unknown';
+    const bestSelector = elementDetails?.bestSelector || null;
+    const selectorLabel = bestSelector ? truncateMiddle(bestSelector, 70) : elementSummary;
+
+    const base = `Captured: ${selectorLabel}`;
+    const computedParts = settings.toastIncludeComputed
+      ? buildComputedVisualSummary(elementDetails?.computedStyle)
+      : [];
+    const ruleHints = settings.toastIncludeRules
+      ? buildRuleHints({
+          matchedCssRules: elementDetails?.matchedCssRules,
+          maxRuleCount: settings.toastRuleCount,
+        })
+      : [];
+
+    const fileMsg = saveResult?.ok ? `saved ${saveResult.fileName}` : 'save failed';
+    const clipMsg = clipboardResult?.ok ? 'clipboard ok' : 'clipboard failed';
+
+    const lines = [
+      `CSS Picker v${config.info.version} • ${base}`,
+      computedParts.length ? computedParts.join(' • ') : null,
+      ruleHints.length ? `Rules: ${ruleHints.join(' | ')}` : null,
+      `${fileMsg} • ${clipMsg}`,
+    ].filter(Boolean);
+
+    const message = lines.join('\n');
+    return truncateMiddle(message, settings.toastMaxChars || DEFAULT_SETTINGS.toastMaxChars);
+  };
+
   const getElementSummary = (el) => {
     if (!el) return 'unknown';
     const tag = el.tagName?.toLowerCase?.() || 'unknown';
@@ -49,14 +263,6 @@ module.exports = (() => {
         ? `.${el.className.trim().split(/\s+/)[0]}`
         : '';
     return `${tag}${id}${className}`;
-  };
-
-  const isUniqueSelector = (selector) => {
-    try {
-      return document.querySelectorAll(selector).length === 1;
-    } catch (e) {
-      return false;
-    }
   };
 
   const getSemanticClassSelectors = (el) => {
@@ -73,6 +279,11 @@ module.exports = (() => {
 
     const uniquePrefixes = Array.from(new Set(semanticPrefixes)).slice(0, 3);
     return uniquePrefixes.map((prefix) => `[class^="${prefix}_"]`);
+  };
+
+  const getExactClassSelectors = (el) => {
+    if (!el?.classList) return [];
+    return Array.from(el.classList).map((c) => `.${CSS.escape(c)}`);
   };
 
   const buildNthOfTypePath = (el, maxDepth = 6) => {
@@ -120,6 +331,58 @@ module.exports = (() => {
     return candidates;
   };
 
+  // Favor stable selectors over hashed class names
+  const getStableSelectorSet = (el) => {
+    if (!el || !(el instanceof Element)) return [];
+    const tag = el.tagName.toLowerCase();
+    const selectors = [];
+
+    // aria-label and role
+    const ariaLabel = el.getAttribute('aria-label');
+    ariaLabel && ariaLabel.length <= 80 && selectors.push(`${tag}[aria-label="${ariaLabel}"]`);
+    const role = el.getAttribute('role');
+    role && selectors.push(`${tag}[role="${role}"]`);
+
+    // data-testid
+    const dataTestId = el.getAttribute('data-testid');
+    dataTestId && selectors.push(`${tag}[data-testid="${dataTestId}"]`);
+
+    // id
+    if (el.id) selectors.push(`#${CSS.escape(el.id)}`);
+
+    // semantic class prefixes
+    getSemanticClassSelectors(el).forEach((s) => selectors.push(`${tag}${s}`));
+
+    // root fallbacks if applicable
+    if (tag === 'html') {
+      selectors.push(':root', 'html');
+    }
+
+    return Array.from(new Set(selectors)).filter(Boolean).slice(0, 8);
+  };
+
+  const getRootContext = () => {
+    const root = document.documentElement;
+    const body = document.body;
+    const getAttrs = (node) =>
+      Array.from(node?.attributes || [])
+        .map((a) => ({ name: a.name, value: a.value }))
+        .slice(0, 30);
+    const getClasses = (node) => Array.from(node?.classList || []);
+    return {
+      root: {
+        summary: root ? getElementSummary(root) : null,
+        classList: getClasses(root),
+        attributes: getAttrs(root),
+      },
+      body: {
+        summary: body ? getElementSummary(body) : null,
+        classList: getClasses(body),
+        attributes: getAttrs(body),
+      },
+    };
+  };
+
   const getSelectorCandidates = (el) => {
     if (!el || !(el instanceof Element)) return [];
 
@@ -164,6 +427,219 @@ module.exports = (() => {
     };
   };
 
+  const pickComputedStyles = (el) => {
+    if (!el || !(el instanceof Element)) return null;
+
+    const style = window.getComputedStyle(el);
+    const keys = [
+      'display',
+      'position',
+      'zIndex',
+      'opacity',
+      'backgroundColor',
+      'backgroundImage',
+      'background',
+      'border',
+      'borderColor',
+      'borderWidth',
+      'borderRadius',
+      'boxShadow',
+      'outline',
+      'filter',
+      'backdropFilter',
+      'transform',
+      'color',
+      'fontFamily',
+      'fontSize',
+      'lineHeight',
+      'padding',
+      'margin',
+    ];
+
+    return keys.reduce((acc, key) => {
+      const cssKey = key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+      acc[key] = style.getPropertyValue(cssKey) || style[key] || null;
+      return acc;
+    }, {});
+  };
+
+  const getChildElements = (el, max = 10) => {
+    if (!el || !(el instanceof Element) || !el.children) return [];
+    return Array.from(el.children).slice(0, max);
+  };
+
+  const getChildrenDetails = (el, max = 10) => {
+    const children = getChildElements(el, max);
+    return children
+      .map((child, index) => {
+        const node = getElementNodeInfo(child);
+        if (!node) return null;
+
+        const attrs = Array.from(child.attributes || [])
+          .map((a) => ({ name: a.name, value: a.value }))
+          .slice(0, 25);
+
+        return {
+          index,
+          ...node,
+          attributes: attrs,
+          textPreview: (child.textContent || '').trim().slice(0, 120) || null,
+          stableSelectors: getStableSelectorSet(child),
+          selectorCandidates: getSelectorCandidates(child).slice(0, 8),
+          computedStyle: pickComputedStyles(child),
+        };
+      })
+      .filter(Boolean);
+  };
+
+  const getTablistChildHints = (el) => {
+    if (!el || !(el instanceof Element)) return null;
+    const role = el.getAttribute('role');
+    if (role !== 'tablist') return null;
+
+    const children = getChildElements(el, 20);
+    const tabs = children.filter((child) => {
+      const hasTabRole = child.getAttribute('role') === 'tab';
+      const hasItemPrefix = Array.from(child.classList || []).some((c) => /^item[_]{1,2}/.test(c));
+      return hasTabRole || hasItemPrefix;
+    });
+
+    const selected = tabs.filter((child) => {
+      const ariaSelected = child.getAttribute('aria-selected');
+      return ariaSelected === 'true' || child.className?.includes?.('selected');
+    });
+
+    return {
+      childCount: children.length,
+      tabCandidatesCount: tabs.length,
+      selectedTabCandidatesCount: selected.length,
+      tabCandidatesSummaries: tabs.slice(0, 6).map((c) => ({
+        summary: getElementSummary(c),
+        role: c.getAttribute('role') || null,
+        ariaSelected: c.getAttribute('aria-selected') || null,
+        classList: Array.from(c.classList || []).slice(0, 10),
+        stableSelectors: getStableSelectorSet(c).slice(0, 4),
+        selectorCandidates: getSelectorCandidates(c).slice(0, 4),
+      })),
+    };
+  };
+
+  const getStylesheetLabel = (sheet, index) => {
+    const href = sheet?.href || null;
+    if (href) return href;
+    const owner = sheet?.ownerNode;
+    const ownerTag = owner?.tagName?.toLowerCase?.() || 'style';
+    const ownerId = owner?.id ? `#${owner.id}` : '';
+    const ownerClass =
+      typeof owner?.className === 'string' && owner.className.trim()
+        ? `.${owner.className.trim().split(/\s+/)[0]}`
+        : '';
+    return `inline:${index}:${ownerTag}${ownerId}${ownerClass}`;
+  };
+
+  const splitPseudo = (selectorText) => {
+    if (!selectorText || typeof selectorText !== 'string') return { selector: null, pseudo: null };
+    const pseudoMatch = selectorText.match(/(.*?)(::before|::after)\s*$/);
+    if (!pseudoMatch) return { selector: selectorText, pseudo: null };
+    return { selector: pseudoMatch[1].trim(), pseudo: pseudoMatch[2] };
+  };
+
+  const iterCssRules = (rules, onRule, state) => {
+    if (!rules) return;
+    for (let i = 0; i < rules.length; i++) {
+      if (state.shouldStop) return;
+      const rule = rules[i];
+
+      // CSSStyleRule
+      if (rule?.type === 1 && rule.selectorText) {
+        onRule(rule, i);
+        continue;
+      }
+
+      // CSSMediaRule / CSSSupportsRule
+      const hasNested = rule?.cssRules && rule.cssRules.length;
+      hasNested && iterCssRules(rule.cssRules, onRule, state);
+    }
+  };
+
+  const findMatchingCssRules = (el, keys, maxMatches = 30) => {
+    if (!el || !(el instanceof Element)) return [];
+    const matches = [];
+    const sheets = Array.from(document.styleSheets || []);
+
+    const state = { shouldStop: false };
+
+    sheets.forEach((sheet, sheetIndex) => {
+      if (state.shouldStop) return;
+
+      let rules;
+      try {
+        rules = sheet.cssRules;
+      } catch (e) {
+        // Cross-origin or restricted stylesheet
+        return;
+      }
+
+      const sheetLabel = getStylesheetLabel(sheet, sheetIndex);
+
+      iterCssRules(
+        rules,
+        (rule, ruleIndex) => {
+          if (state.shouldStop) return;
+
+          const selectorText = rule.selectorText;
+          const { selector, pseudo } = splitPseudo(selectorText);
+          if (!selector) return;
+
+          // Quick prefilter: only consider rules that set any of the keys
+          const hasAnyKey = keys.some((key) => {
+            try {
+              return !!rule.style?.getPropertyValue?.(key);
+            } catch (e) {
+              return false;
+            }
+          });
+          if (!hasAnyKey) return;
+
+          let isMatch = false;
+          try {
+            isMatch = el.matches(selector);
+          } catch (e) {
+            // Invalid selector for matches() (rare, but possible)
+            return;
+          }
+
+          if (!isMatch) return;
+
+          const props = keys.reduce((acc, key) => {
+            const value = rule.style.getPropertyValue(key);
+            if (!value) return acc;
+            acc[key] = {
+              value,
+              priority: rule.style.getPropertyPriority(key) || null,
+            };
+            return acc;
+          }, {});
+
+          matches.push({
+            stylesheet: sheetLabel,
+            sheetIndex,
+            ruleIndex,
+            selectorText,
+            selector: selector,
+            pseudo: pseudo,
+            properties: props,
+          });
+
+          if (matches.length >= maxMatches) state.shouldStop = true;
+        },
+        state
+      );
+    });
+
+    return matches;
+  };
+
   const getAncestry = (el, maxDepth = 10) => {
     const chain = [];
     let current = el;
@@ -200,6 +676,21 @@ module.exports = (() => {
 
     const MAX_SELECTOR_CANDIDATES = 8;
     const MAX_UNIQUE_CHECKS = 2;
+    const MAX_CHILDREN_DETAILS = 12;
+    const MATCH_KEYS = [
+      'background',
+      'background-color',
+      'background-image',
+      'border',
+      'border-color',
+      'border-width',
+      'border-radius',
+      'box-shadow',
+      'outline',
+      'filter',
+      'backdrop-filter',
+      'transform',
+    ];
 
     const rect = el.getBoundingClientRect();
     const classList = Array.from(el.classList || []);
@@ -222,15 +713,16 @@ module.exports = (() => {
         };
 
         try {
-          const match = document.querySelector(selector);
-          const matchesNow = Boolean(match);
+          const matches = Array.from(document.querySelectorAll(selector));
+          const matchCount = matches.length;
+          const matchesNow = matchCount > 0;
           const shouldCheckUniqueness = matchesNow && index < MAX_UNIQUE_CHECKS;
 
           return {
             ...base,
             isValid: true,
             matchesNow,
-            isUnique: shouldCheckUniqueness ? isUniqueSelector(selector) : null,
+            isUnique: shouldCheckUniqueness ? matchCount === 1 : null,
           };
         } catch (e) {
           return base;
@@ -243,6 +735,8 @@ module.exports = (() => {
       tagName: el.tagName.toLowerCase(),
       id: el.id || null,
       classList,
+      exactClassSelectors: getExactClassSelectors(el).slice(0, 10),
+      semanticClassSelectors: getSemanticClassSelectors(el),
       parentSummary,
       childrenSummary: {
         count: childrenCount,
@@ -250,6 +744,10 @@ module.exports = (() => {
       },
       attributes,
       textPreview: (el.textContent || '').trim().slice(0, 200) || null,
+      computedStyle: pickComputedStyles(el),
+      children: getChildrenDetails(el, MAX_CHILDREN_DETAILS),
+      tablistHints: getTablistChildHints(el),
+      matchedCssRules: findMatchingCssRules(el, MATCH_KEYS, 40),
       rect: {
         x: rect.x,
         y: rect.y,
@@ -260,8 +758,15 @@ module.exports = (() => {
         right: rect.right,
         bottom: rect.bottom,
       },
+      stableSelectors: getStableSelectorSet(el),
+      bestSelector:
+        getStableSelectorSet(el)[0] ||
+        getExactClassSelectors(el)[0] ||
+        (el.id ? `#${CSS.escape(el.id)}` : null),
+      rootSelectors: [':root', 'html', 'body'],
       selectorCandidates,
       ancestry: getAncestry(el, 10),
+      rootContext: getRootContext(),
     };
   };
 
@@ -278,9 +783,9 @@ module.exports = (() => {
       const path = require('path');
 
       const realPluginPath = fs.realpathSync(__filename);
-      const pluginsDir = path.dirname(realPluginPath); // .../betterdiscord-dev/plugins
-      const devRootDir = path.resolve(pluginsDir, '..'); // .../betterdiscord-dev
-      const reportsDir = path.join(devRootDir, 'reports', 'css-picker');
+      const pluginsDir = path.dirname(realPluginPath); // .../plugins
+      const rootDir = path.resolve(pluginsDir, '..'); // .../betterdiscord-dev OR .../BetterDiscord
+      const reportsDir = path.join(rootDir, 'reports', 'css-picker');
 
       fs.mkdirSync(reportsDir, { recursive: true });
 
@@ -354,32 +859,51 @@ module.exports = (() => {
     tooltip.id = 'css-picker-tooltip';
     tooltip.style.cssText = `
       position: fixed;
-      top: 16px;
-      left: 16px;
+      top: 28px;
+      right: 16px;
       max-width: 520px;
+      max-height: 70vh;
       z-index: 100001;
       pointer-events: none;
       background: rgba(17, 18, 20, 0.92);
       border: 1px solid rgba(88, 101, 242, 0.65);
       border-radius: 8px;
       padding: 10px 12px;
+      overflow: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       font-size: 12px;
       color: #dcddde;
       box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
     `;
-    tooltip.innerHTML = '<div style="opacity: 0.85;">CSS Picker active</div>';
+    tooltip.innerHTML = `<div style="opacity: 0.85;">CSS Picker v${escapeHtml(
+      config.info.version
+    )}</div>`;
     return tooltip;
   };
 
   const updateTooltip = ({ tooltip, el }) => {
     const summary = getElementSummary(el);
     const candidates = getSelectorCandidates(el).slice(0, 3);
+    const stable = getStableSelectorSet(el).slice(0, 2);
+    const best =
+      stable[0] || getExactClassSelectors(el)[0] || (el.id ? `#${CSS.escape(el.id)}` : null);
+    const rootCtx = getRootContext();
+    const rootClasses = (rootCtx.root.classList || []).slice(0, 4).join(' ') || '(none)';
+    const bodyClasses = (rootCtx.body.classList || []).slice(0, 4).join(' ') || '(none)';
 
     tooltip.innerHTML = `
       <div style="display:flex; justify-content: space-between; gap: 8px; align-items: baseline;">
         <div><strong>${escapeHtml(summary)}</strong></div>
         <div style="opacity: 0.7;">click to capture, esc to cancel</div>
+      </div>
+      <div style="margin-top: 2px; opacity: 0.65;">CSS Picker v${escapeHtml(
+        config.info.version
+      )}</div>
+      <div style="margin-top: 6px; opacity: 0.9;">
+        <div style="opacity: 0.75; margin-bottom: 4px;">Best selector:</div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.95;">${escapeHtml(
+          best || '(none)'
+        )}</div>
       </div>
       <div style="margin-top: 6px; opacity: 0.9;">
         <div style="opacity: 0.75; margin-bottom: 4px;">Selector candidates:</div>
@@ -391,6 +915,15 @@ module.exports = (() => {
               )}</div>`
           )
           .join('')}
+      </div>
+      <div style="margin-top: 6px; opacity: 0.9;">
+        <div style="opacity: 0.75; margin-bottom: 4px;">Root context (may override):</div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.95;">
+          :root/html classes: ${escapeHtml(rootClasses)}
+        </div>
+        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.95;">
+          body classes: ${escapeHtml(bodyClasses)}
+        </div>
       </div>
     `;
   };
@@ -415,26 +948,55 @@ module.exports = (() => {
       this.overlay = null;
       this.tooltip = null;
       this.launcher = null;
+      this.settings = loadSettings();
 
       this.onMouseMove = null;
       this.onClick = null;
       this.onKeyDown = null;
+      this.onGlobalHotkeyDown = null;
       this.hoverRafId = null;
       this.pendingHoverPoint = null;
       this._launcherClickHandler = null;
 
       this.injectLauncher();
-      safeToast('CSS Picker loaded. Open settings to start pick mode.', { type: 'info' });
+
+      this.onGlobalHotkeyDown = (event) => {
+        const settings = this.settings || loadSettings();
+        if (!settings.hotkeyEnabled) return;
+        if (isEditableTarget(event.target)) return;
+        if (!matchesHotkey(event, settings.hotkey)) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        (this.isActive && this.deactivatePickMode()) || this.activatePickMode();
+      };
+      document.addEventListener('keydown', this.onGlobalHotkeyDown, true);
+
+      const hotkeyLabel =
+        this.settings?.hotkeyEnabled && this.settings?.hotkey
+          ? ` Hotkey: ${this.settings.hotkey}`
+          : '';
+      safeToast(`CSS Picker v${config.info.version} loaded.${hotkeyLabel}`, {
+        type: 'info',
+      });
     }
 
     stop() {
       this.deactivatePickMode();
       this.removeLauncher();
+      if (this.onGlobalHotkeyDown)
+        document.removeEventListener('keydown', this.onGlobalHotkeyDown, true);
+      this.onGlobalHotkeyDown = null;
     }
 
     getSettingsPanel() {
       const panel = document.createElement('div');
       panel.style.cssText = 'padding: 16px;';
+
+      const settings = (this.settings = loadSettings());
+      const isChecked = (v) => (v ? 'checked' : '');
+      const startHotkeyHint =
+        settings.hotkeyEnabled && settings.hotkey ? ` (${escapeHtml(settings.hotkey)})` : '';
 
       panel.innerHTML = `
         <div>
@@ -452,7 +1014,7 @@ module.exports = (() => {
             cursor: pointer;
             font-weight: 600;
             margin-right: 10px;
-          ">Start pick mode (one capture)</button>
+          ">Start pick mode (one capture)${startHotkeyHint}</button>
           <button id="css-picker-stop" style="
             background: rgba(4, 4, 5, 0.6);
             color: var(--text-normal, #dcddde);
@@ -462,6 +1024,49 @@ module.exports = (() => {
             cursor: pointer;
           ">Stop</button>
         </div>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+          <div style="font-weight: 700; margin-bottom: 10px;">Toast details</div>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <input id="css-picker-toast-computed" type="checkbox" ${isChecked(
+              settings.toastIncludeComputed
+            )} />
+            <span>Include computed visual summary (bg, bg-image, shadow, border)</span>
+          </label>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <input id="css-picker-toast-rules" type="checkbox" ${isChecked(
+              settings.toastIncludeRules
+            )} />
+            <span>Include matching rule hints (why it looks that way)</span>
+          </label>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <span style="min-width: 140px; opacity: 0.85;">Rule hints count</span>
+            <input id="css-picker-toast-rule-count" type="number" min="0" max="6" value="${escapeHtml(
+              settings.toastRuleCount
+            )}" style="width: 80px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+          </label>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <span style="min-width: 140px; opacity: 0.85;">Toast timeout (ms)</span>
+            <input id="css-picker-toast-timeout" type="number" min="1500" max="20000" value="${escapeHtml(
+              settings.toastTimeoutMs
+            )}" style="width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+          </label>
+        </div>
+        <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
+          <div style="font-weight: 700; margin-bottom: 10px;">Hotkey</div>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <input id="css-picker-hotkey-enabled" type="checkbox" ${isChecked(
+              settings.hotkeyEnabled
+            )} />
+            <span>Enable hotkey to toggle pick mode</span>
+          </label>
+          <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
+            <span style="min-width: 140px; opacity: 0.85;">Hotkey</span>
+            <input id="css-picker-hotkey" type="text" value="${escapeHtml(
+              settings.hotkey
+            )}" style="width: 200px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+            <span style="opacity: 0.7;">Example: Ctrl+Shift+P</span>
+          </label>
+        </div>
       `;
 
       panel.querySelector('#css-picker-start').addEventListener('click', () => {
@@ -470,6 +1075,35 @@ module.exports = (() => {
 
       panel.querySelector('#css-picker-stop').addEventListener('click', () => {
         this.deactivatePickMode();
+      });
+
+      const update = (next) => {
+        const merged = { ...loadSettings(), ...next };
+        saveSettings(merged);
+        this.settings = merged;
+        safeToast('CSS Picker settings saved', { type: 'success', timeout: 2000 });
+      };
+
+      panel.querySelector('#css-picker-toast-computed').addEventListener('change', (e) => {
+        update({ toastIncludeComputed: !!e.target.checked });
+      });
+      panel.querySelector('#css-picker-toast-rules').addEventListener('change', (e) => {
+        update({ toastIncludeRules: !!e.target.checked });
+      });
+      panel.querySelector('#css-picker-toast-rule-count').addEventListener('change', (e) => {
+        const value = Math.max(0, Math.min(6, Number(e.target.value || 0)));
+        update({ toastRuleCount: value });
+      });
+      panel.querySelector('#css-picker-toast-timeout').addEventListener('change', (e) => {
+        const value = Math.max(1500, Math.min(20000, Number(e.target.value || 5500)));
+        update({ toastTimeoutMs: value });
+      });
+
+      panel.querySelector('#css-picker-hotkey-enabled').addEventListener('change', (e) => {
+        update({ hotkeyEnabled: !!e.target.checked });
+      });
+      panel.querySelector('#css-picker-hotkey').addEventListener('change', (e) => {
+        update({ hotkey: String(e.target.value || '').trim() || DEFAULT_SETTINGS.hotkey });
       });
 
       return panel;
@@ -548,10 +1182,15 @@ module.exports = (() => {
           ((saveResult.ok || clipboardResult.ok) && 'warning') ||
           'error';
 
-        const fileMsg = saveResult.ok ? `saved (${saveResult.fileName})` : 'failed to save';
-        const clipMsg = clipboardResult.ok ? 'copied' : 'failed to copy';
+        const settings = this.settings || loadSettings();
+        const message = buildCaptureToastMessage({
+          elementDetails: report.element,
+          saveResult,
+          clipboardResult,
+          settings,
+        });
 
-        safeToast(`Captured: ${clipMsg}; file ${fileMsg}`, { type: toastType, timeout: 4500 });
+        safeToast(message, { type: toastType, timeout: settings.toastTimeoutMs || 5500 });
 
         this.deactivatePickMode();
       };
@@ -648,12 +1287,14 @@ module.exports = (() => {
 
     updateLauncherState() {
       if (!this.launcher) return;
+      const settings = this.settings || loadSettings();
+      const hotkeySuffix = settings.hotkeyEnabled && settings.hotkey ? ` (${settings.hotkey})` : '';
       const states = {
         active: { text: 'Cancel CSS Picker', opacity: '0.82' },
         inactive: { text: 'Start CSS Picker', opacity: '0.96' },
       };
       const next = this.isActive ? states.active : states.inactive;
-      this.launcher.textContent = next.text;
+      this.launcher.textContent = `${next.text}${hotkeySuffix}`;
       this.launcher.style.opacity = next.opacity;
     }
   };

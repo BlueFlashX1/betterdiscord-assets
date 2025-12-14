@@ -1,0 +1,323 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.0.0",
+  "url": "https://discord.com/channels/@me",
+  "element": {
+    "capturedAt": "2025-12-12T22:44:15.711Z",
+    "summary": "div.item__133bf",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "item__133bf",
+      "item_aa8da2",
+      "selected_aa8da2",
+      "themed_aa8da2"
+    ],
+    "exactClassSelectors": [
+      ".item__133bf",
+      ".item_aa8da2",
+      ".selected_aa8da2",
+      ".themed_aa8da2"
+    ],
+    "semanticClassSelectors": [
+      "[class^=\"item_\"]",
+      "[class^=\"selected_\"]",
+      "[class^=\"themed_\"]"
+    ],
+    "parentSummary": "div.tabBar__133bf",
+    "childrenSummary": {
+      "count": 0,
+      "firstChild": null
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "item__133bf item_aa8da2 selected_aa8da2 themed_aa8da2"
+      },
+      {
+        "name": "role",
+        "value": "tab"
+      },
+      {
+        "name": "aria-selected",
+        "value": "true"
+      },
+      {
+        "name": "aria-controls",
+        "value": "online-tab"
+      },
+      {
+        "name": "aria-disabled",
+        "value": "false"
+      },
+      {
+        "name": "tabindex",
+        "value": "0"
+      },
+      {
+        "name": "data-tab-id",
+        "value": "ONLINE"
+      }
+    ],
+    "textPreview": "Online",
+    "rect": {
+      "x": 426.828125,
+      "y": 27,
+      "width": 89.7421875,
+      "height": 38,
+      "top": 27,
+      "left": 426.828125,
+      "right": 516.5703125,
+      "bottom": 65
+    },
+    "stableSelectors": [
+      "div[role=\"tab\"]",
+      "div[class^=\"item_\"]",
+      "div[class^=\"selected_\"]",
+      "div[class^=\"themed_\"]"
+    ],
+    "bestSelector": "div[role=\"tab\"]",
+    "rootSelectors": [
+      ":root",
+      "html"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[role=\"tab\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"item_\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div[class^=\"selected_\"]",
+        "isValid": true,
+        "matchesNow": false,
+        "isUnique": null
+      },
+      {
+        "selector": "div[class^=\"themed_\"]",
+        "isValid": true,
+        "matchesNow": false,
+        "isUnique": null
+      },
+      {
+        "selector": "main > section > div > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.item__133bf",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "item__133bf",
+          "item_aa8da2",
+          "selected_aa8da2",
+          "themed_aa8da2"
+        ],
+        "role": "tab",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[role=\"tab\"]",
+          "div[class^=\"item_\"]",
+          "div[class^=\"selected_\"]",
+          "div[class^=\"themed_\"]",
+          "main > section > div > div:nth-of-type(1) > div:nth-of-type(3) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.tabBar__133bf",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "tabBar__133bf",
+          "topPill_aa8da2"
+        ],
+        "role": "tablist",
+        "ariaLabel": "Friends",
+        "selectorCandidates": [
+          "div[aria-label=\"Friends\"]",
+          "div[role=\"tablist\"]",
+          "div[class^=\"tabBar_\"]",
+          "div[class^=\"topPill_\"]",
+          "div:nth-of-type(2) > main > section > div > div:nth-of-type(1) > div:nth-of-type(3)"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.children__9293f",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "children__9293f",
+          "scrollable__9293f"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"children_\"]",
+          "div[class^=\"scrollable_\"]",
+          "div:nth-of-type(2) > div:nth-of-type(2) > main > section > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.upperContainer__9293f",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "upperContainer__9293f"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"upperContainer_\"]",
+          "div > div:nth-of-type(2) > div:nth-of-type(2) > main > section > div"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "section.theme-dark",
+        "tagName": "section",
+        "id": null,
+        "classList": [
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "container__9293f",
+          "themed__9293f"
+        ],
+        "role": "navigation",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "section[role=\"navigation\"]",
+          "section[class^=\"container_\"]",
+          "section[class^=\"themed_\"]",
+          "div > div > div:nth-of-type(2) > div:nth-of-type(2) > main > section"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "main.container__133bf",
+        "tagName": "main",
+        "id": null,
+        "classList": [
+          "container__133bf"
+        ],
+        "role": null,
+        "ariaLabel": "Friends",
+        "selectorCandidates": [
+          "main[aria-label=\"Friends\"]",
+          "main[class^=\"container_\"]",
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > main"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div.page__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "page__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"page_\"]",
+          "div:nth-of-type(2) > div > div > div > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.content__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "content__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"content_\"]",
+          "div > div:nth-of-type(2) > div > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.base__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "base__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"base_\"]",
+          "div:nth-of-type(1) > div > div:nth-of-type(2) > div > div > div"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.container__5e434",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "container__5e434"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[class^=\"container_\"]",
+          "div > div:nth-of-type(1) > div > div:nth-of-type(2) > div > div"
+        ]
+      }
+    ],
+    "rootInfo": {
+      "summary": "html.platform-osx",
+      "classList": [
+        "platform-osx",
+        "theme-dark",
+        "theme-darker",
+        "images-dark",
+        "density-default",
+        "font-size-16",
+        "has-webkit-scrollbar",
+        "mouse-mode",
+        "reduce-motion",
+        "app-focused",
+        "visual-refresh",
+        "mana-text-inputs"
+      ],
+      "attributes": [
+        {
+          "name": "lang",
+          "value": "en-US"
+        },
+        {
+          "name": "style",
+          "value": "font-size: 100%; --saturation-factor: 1; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+        },
+        {
+          "name": "class",
+          "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+        },
+        {
+          "name": "data-rh",
+          "value": "lang,style,class"
+        }
+      ]
+    }
+  }
+}
