@@ -1221,7 +1221,7 @@ module.exports = class Dungeons {
     this._guildChannelCache = new Map(); // guildId -> {ts, channels}
     this._guildChannelCacheTTL = 30000; // 30s
     this.extractionRetryLimit = 3; // Max attempts per boss (mobs use single-attempt immediate extraction)
-    this.extractionProcessors = new Map(); // channelKey -> interval for continuous processing
+    // Legacy (removed): continuous extraction processors (mobs use MobBossStorageManager + deferred worker)
     this.shadowArmyCountCache = new Map(); // Track shadow count to detect new extractions
 
     // Throttle mob capacity warnings to prevent console spam
@@ -3996,8 +3996,8 @@ module.exports = class Dungeons {
       // Clear active dungeon reference
       this.settings.userActiveDungeon = null;
 
-      // Stop extraction if running
-      this.stopContinuousExtraction(channelKey);
+      // Stop extraction worker if running (legacy continuous processors removed)
+      this._stopDeferredExtractionWorker?.();
 
       // Save settings
       this.saveSettings();
@@ -7992,28 +7992,6 @@ module.exports = class Dungeons {
     } finally {
       // Always clear in-progress flag
       this.extractionInProgress.delete(channelKey);
-    }
-  }
-
-  /**
-   * Start continuous extraction processor (LEGACY - No longer needed)
-   * Mobs are now stored in database and processed after dungeon completion
-   * This method is kept for backward compatibility but does nothing
-   */
-  startContinuousExtraction(channelKey) {
-    // No-op: Mobs are stored in database and processed after dungeon completion
-    // No continuous processing needed
-  }
-
-  /**
-   * Stop continuous extraction processor
-   */
-  stopContinuousExtraction(channelKey) {
-    if (!this.extractionProcessors) return;
-    const processor = this.extractionProcessors.get(channelKey);
-    if (processor) {
-      clearInterval(processor);
-      this.extractionProcessors.delete(channelKey);
     }
   }
 
