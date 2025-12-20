@@ -1432,15 +1432,17 @@ module.exports = class SoloLevelingTitleManager {
       this._originalPushState = history.pushState;
       this._originalReplaceState = history.replaceState;
 
-      history.pushState = function (...args) {
+      this._pushStateWrapper = function (...args) {
         this._originalPushState.apply(history, args);
         handleUrlChange();
       }.bind(this);
+      history.pushState = this._pushStateWrapper;
 
-      history.replaceState = function (...args) {
+      this._replaceStateWrapper = function (...args) {
         this._originalReplaceState.apply(history, args);
         handleUrlChange();
       }.bind(this);
+      history.replaceState = this._replaceStateWrapper;
     } catch (error) {
       this.debugError('WATCHER', 'Failed to override history methods', error);
     }
@@ -1452,7 +1454,8 @@ module.exports = class SoloLevelingTitleManager {
       // FUNCTIONAL: Defensive restoration (short-circuit, no if-else)
       try {
         this._originalPushState &&
-          history.pushState !== this._originalPushState &&
+          this._pushStateWrapper &&
+          history.pushState === this._pushStateWrapper &&
           (history.pushState = this._originalPushState);
       } catch (error) {
         this.debugError('WATCHER', 'Failed to restore history.pushState', error);
@@ -1460,7 +1463,8 @@ module.exports = class SoloLevelingTitleManager {
 
       try {
         this._originalReplaceState &&
-          history.replaceState !== this._originalReplaceState &&
+          this._replaceStateWrapper &&
+          history.replaceState === this._replaceStateWrapper &&
           (history.replaceState = this._originalReplaceState);
       } catch (error) {
         this.debugError('WATCHER', 'Failed to restore history.replaceState', error);
@@ -1469,6 +1473,8 @@ module.exports = class SoloLevelingTitleManager {
       // Null out stored originals after successful restore
       this._originalPushState = null;
       this._originalReplaceState = null;
+      this._pushStateWrapper = null;
+      this._replaceStateWrapper = null;
     };
   }
 

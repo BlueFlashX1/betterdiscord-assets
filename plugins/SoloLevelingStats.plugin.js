@@ -283,6 +283,10 @@ module.exports = class SoloLevelingStats {
     this.pendingLevelUp = null;
     this.levelUpDebounceTimeout = null;
     this.levelUpDebounceDelay = 500; // 500ms debounce for level up notifications
+    // Level-up animation (overlay) queueing + cleanup
+    this._levelUpAnimationQueue = [];
+    this._levelUpAnimationInFlight = false;
+    this._levelUpAnimationTimeouts = new Set();
     this.lastMessageId = null; // Track last message ID for crit detection
     this.lastMessageElement = null; // Track last message element for crit detection
 
@@ -379,9 +383,6 @@ module.exports = class SoloLevelingStats {
       activityStreakBonusTime: 0,
       activityStreakBonusKey: null,
       activityStreakBonusTTL: 3600000, // 1 hour - streak changes daily
-      channelActivityBonus: null,
-      channelActivityBonusTime: 0,
-      channelActivityBonusTTL: 5000, // 5s - channel activity changes occasionally
       milestoneMultiplier: null,
       milestoneMultiplierLevel: null,
       milestoneMultiplierTTL: 100, // 100ms - level changes frequently
@@ -470,7 +471,6 @@ module.exports = class SoloLevelingStats {
     // ============================================================================
     // EVENT SYSTEM
     // ============================================================================
-    this.events = {};
     this.debug = {
       verbose: false, // Set to true for verbose logging (includes frequent operations)
       errorCount: 0,
@@ -3048,6 +3048,19 @@ module.exports = class SoloLevelingStats {
 
   showNotification(message, type = 'info', timeout = 3000) {
     try {
+      // Prefer SoloLevelingToasts for animated notifications if available.
+      // Fallback to BdApi.showToast otherwise.
+      const now = Date.now();
+      const cacheTtlMs = 3000;
+      if (!this._toastPluginCacheTime || now - this._toastPluginCacheTime > cacheTtlMs) {
+        this._toastPluginCacheTime = now;
+        this._toastPluginCache = BdApi?.Plugins?.get?.('SoloLevelingToasts')?.instance || null;
+      }
+      const slToasts = this._toastPluginCache;
+      if (slToasts?.showToast) {
+        slToasts.showToast(message, type, timeout);
+        return;
+      }
       if (BdApi && typeof BdApi.showToast === 'function') {
         BdApi.showToast(message, {
           type: type,
@@ -3403,8 +3416,12 @@ module.exports = class SoloLevelingStats {
     }
     if (this._channelTrackingHooks) {
       window.removeEventListener('popstate', this._channelTrackingHooks.popstateHandler);
-      history.pushState = this._channelTrackingHooks.originalPushState;
-      history.replaceState = this._channelTrackingHooks.originalReplaceState;
+      this._channelTrackingHooks.pushStateWrapper &&
+        history.pushState === this._channelTrackingHooks.pushStateWrapper &&
+        (history.pushState = this._channelTrackingHooks.originalPushState);
+      this._channelTrackingHooks.replaceStateWrapper &&
+        history.replaceState === this._channelTrackingHooks.replaceStateWrapper &&
+        (history.replaceState = this._channelTrackingHooks.originalReplaceState);
       this._channelTrackingHooks = null;
       this._channelTrackingState = null;
       this.debugLog('STOP', 'Channel tracking listeners/hooks restored');
@@ -3512,6 +3529,12 @@ module.exports = class SoloLevelingStats {
       }
       el.remove();
     });
+
+    // MEMORY CLEANUP: Clear level-up overlay animation (non-toast)
+    this.clearLevelUpAnimationTimeouts?.();
+    this._levelUpAnimationQueue && (this._levelUpAnimationQueue.length = 0);
+    this._levelUpAnimationInFlight = false;
+    document.getElementById('sls-levelup-overlay')?.remove();
 
     // Also cleanup tracked celebrations
     if (this._questCelebrations) {
@@ -5048,15 +5071,17 @@ module.exports = class SoloLevelingStats {
         }
       };
 
-      history.pushState = function (...args) {
+      const pushStateWrapper = function (...args) {
         originalPushState.apply(history, args);
         setTimeout(() => checkUrlChange(window.location.href), 0);
       };
+      history.pushState = pushStateWrapper;
 
-      history.replaceState = function (...args) {
+      const replaceStateWrapper = function (...args) {
         originalReplaceState.apply(history, args);
         setTimeout(() => checkUrlChange(window.location.href), 0);
       };
+      history.replaceState = replaceStateWrapper;
 
       // Method 3: Poll URL changes (fallback for Discord's internal navigation)
       // Optimized: Increased interval to reduce CPU usage (500ms -> 1000ms)
@@ -5077,6 +5102,8 @@ module.exports = class SoloLevelingStats {
         popstateHandler,
         originalPushState,
         originalReplaceState,
+        pushStateWrapper,
+        replaceStateWrapper,
       };
       this._channelTrackingState = state;
 
@@ -5183,31 +5210,33 @@ module.exports = class SoloLevelingStats {
           // #endregion
         }
 
-        // Clear existing timeout and set new one
-        if (this.levelUpDebounceTimeout) {
-          clearTimeout(this.levelUpDebounceTimeout);
+        // Debounce without starvation: once scheduled, don't keep resetting the timer.
+        // Rapid XP updates can otherwise prevent the notification from ever firing.
+        if (!this.levelUpDebounceTimeout) {
+          this.levelUpDebounceTimeout = setTimeout(() => {
+            if (this.pendingLevelUp) {
+              const {
+                oldLevel: finalOldLevel,
+                newLevel: finalNewLevel,
+                levelsGained: _finalLevelsGained,
+              } = this.pendingLevelUp;
+              // #region agent log
+              // #endregion
+
+              // Calculate actual stat points gained
+              const baseStatPoints = 5;
+              const levelBonus = Math.floor(finalNewLevel / 10);
+              const statPointsPerLevel = baseStatPoints + levelBonus;
+              const actualStatPointsGained = (finalNewLevel - finalOldLevel) * statPointsPerLevel;
+
+              this.showLevelUpNotification(finalNewLevel, finalOldLevel, actualStatPointsGained);
+              this.pendingLevelUp = null;
+              this.levelUpDebounceTimeout = null;
+            } else {
+              this.levelUpDebounceTimeout = null;
+            }
+          }, this.levelUpDebounceDelay);
         }
-        this.levelUpDebounceTimeout = setTimeout(() => {
-          if (this.pendingLevelUp) {
-            const {
-              oldLevel: finalOldLevel,
-              newLevel: finalNewLevel,
-              levelsGained: _finalLevelsGained,
-            } = this.pendingLevelUp;
-            // #region agent log
-            // #endregion
-
-            // Calculate actual stat points gained
-            const baseStatPoints = 5;
-            const levelBonus = Math.floor(finalNewLevel / 10);
-            const statPointsPerLevel = baseStatPoints + levelBonus;
-            const actualStatPointsGained = (finalNewLevel - finalOldLevel) * statPointsPerLevel;
-
-            this.showLevelUpNotification(finalNewLevel, finalOldLevel, actualStatPointsGained);
-            this.pendingLevelUp = null;
-            this.levelUpDebounceTimeout = null;
-          }
-        }, this.levelUpDebounceDelay);
 
         // Check for level achievements
         try {
@@ -5808,9 +5837,115 @@ module.exports = class SoloLevelingStats {
     message += `HP: ${currentMaxHP}/${currentMaxHP} (Fully Restored!)\n`;
     message += `+${actualStatPointsGained} stat point(s)! Use settings to allocate stats`;
 
-    this.showNotification(message, 'success', 5000);
+    // Use animated "level-up" toast style when SoloLevelingToasts is installed.
+    this.showNotification(message, 'level-up', 5000);
+
+    // Dedicated Level Up overlay animation (not a toast).
+    // Triggers every time the player's level increases (queues if multiple happen quickly).
+    this.enqueueLevelUpAnimation(oldLevel, newLevel);
 
     // Play level up sound/effect (optional)
+  }
+
+  // ============================================================================
+  // LEVEL UP OVERLAY ANIMATION (Non-toast)
+  // ============================================================================
+
+  getOrCreateLevelUpOverlay() {
+    const existing = document.getElementById('sls-levelup-overlay');
+    if (existing) return existing;
+
+    // Ensure required CSS exists (the overlay styles live in chat UI CSS).
+    try {
+      this.injectChatUICSS?.();
+    } catch (_) {
+      // Ignore CSS injection failures; overlay will still exist but may be unstyled.
+    }
+
+    const overlay = document.createElement('div');
+    overlay.id = 'sls-levelup-overlay';
+    overlay.className = 'sls-levelup-overlay';
+    (document.body || document.documentElement).appendChild(overlay);
+    return overlay;
+  }
+
+  clearLevelUpAnimationTimeouts() {
+    if (!this._levelUpAnimationTimeouts) return;
+    this._levelUpAnimationTimeouts.forEach((id) => clearTimeout(id));
+    this._levelUpAnimationTimeouts.clear();
+  }
+
+  enqueueLevelUpAnimation(oldLevel, newLevel) {
+    if (!this._isRunning) return;
+    if (document.hidden) return;
+    if (typeof oldLevel !== 'number' || typeof newLevel !== 'number') return;
+    if (newLevel <= oldLevel) return;
+
+    this._levelUpAnimationQueue || (this._levelUpAnimationQueue = []);
+
+    const levelsGained = newLevel - oldLevel;
+    const maxSequential = 5;
+
+    const entries =
+      levelsGained > maxSequential
+        ? [{ title: `LEVEL UP x${levelsGained}`, subtitle: `Level ${newLevel}` }]
+        : Array.from({ length: levelsGained }, (_, i) => ({
+            title: 'LEVEL UP',
+            subtitle: `Level ${oldLevel + 1 + i}`,
+          }));
+
+    entries.forEach((entry) => this._levelUpAnimationQueue.push(entry));
+    this.drainLevelUpAnimationQueue();
+  }
+
+  drainLevelUpAnimationQueue() {
+    if (!this._isRunning) return;
+    if (this._levelUpAnimationInFlight) return;
+    const next = this._levelUpAnimationQueue?.shift?.();
+    if (!next) return;
+
+    this._levelUpAnimationInFlight = true;
+    this.renderLevelUpBanner(next);
+
+    // Match CSS animation duration (1200ms) plus a small gap.
+    const doneId = setTimeout(() => {
+      this._levelUpAnimationInFlight = false;
+      this.drainLevelUpAnimationQueue();
+    }, 1350);
+    this._levelUpAnimationTimeouts?.add?.(doneId);
+  }
+
+  renderLevelUpBanner({ title, subtitle }) {
+    try {
+      const overlay = this.getOrCreateLevelUpOverlay();
+      if (!overlay) return;
+
+      // Clear previous banner(s) to avoid stacking.
+      overlay.textContent = '';
+
+      const banner = document.createElement('div');
+      banner.className = 'sls-levelup-banner';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'sls-levelup-title';
+      titleEl.textContent = title || 'LEVEL UP';
+
+      const subtitleEl = document.createElement('div');
+      subtitleEl.className = 'sls-levelup-subtitle';
+      subtitleEl.textContent = subtitle || '';
+
+      banner.appendChild(titleEl);
+      subtitleEl.textContent && banner.appendChild(subtitleEl);
+      overlay.appendChild(banner);
+
+      // Cleanup banner after animation; keep overlay for reuse.
+      const cleanupId = setTimeout(() => {
+        banner.remove();
+      }, 1600);
+      this._levelUpAnimationTimeouts?.add?.(cleanupId);
+    } catch (error) {
+      this.debugError?.('LEVEL_UP_ANIMATION', error);
+    }
   }
 
   resetLevelTo(targetLevel) {
@@ -9395,22 +9530,33 @@ module.exports = class SoloLevelingStats {
       // Watch for DOM changes (channel switches, etc.)
       if (!this.chatUIObserver) {
         this.chatUIObserver = new MutationObserver(() => {
-          if (!document.getElementById('sls-chat-ui')) {
+          if (document.hidden) return;
+          if (document.getElementById('sls-chat-ui')) return;
+          if (this._chatUiObserverDebounceTimeout) return;
+          this._chatUiObserverDebounceTimeout = setTimeout(() => {
+            this._chatUiObserverDebounceTimeout = null;
             tryCreateUI();
-          }
+          }, 150);
         });
 
         const chatContainer =
           document.querySelector('[class*="chat"]') ||
           document.querySelector('[class*="messagesWrapper"]') ||
-          document.body;
+          null;
 
-        if (chatContainer) {
-          this.chatUIObserver.observe(chatContainer, {
-            childList: true,
-            subtree: true,
-          });
+        // IMPORTANT: Never observe document.body; Discord mutates it constantly and can peg CPU.
+        if (!chatContainer) {
+          this._chatUiObserverRetryTimeout ||= setTimeout(() => {
+            this._chatUiObserverRetryTimeout = null;
+            this.chatUIObserver && this.createChatUI();
+          }, 1500);
+          return;
         }
+
+        this.chatUIObserver.observe(chatContainer, {
+          childList: true,
+          subtree: true,
+        });
       }
     } catch (error) {
       this.debugError('CREATE_CHAT_UI', error);
@@ -9446,6 +9592,14 @@ module.exports = class SoloLevelingStats {
     if (this._createChatUIErrorRetryTimeout) {
       clearTimeout(this._createChatUIErrorRetryTimeout);
       this._createChatUIErrorRetryTimeout = null;
+    }
+    if (this._chatUiObserverRetryTimeout) {
+      clearTimeout(this._chatUiObserverRetryTimeout);
+      this._chatUiObserverRetryTimeout = null;
+    }
+    if (this._chatUiObserverDebounceTimeout) {
+      clearTimeout(this._chatUiObserverDebounceTimeout);
+      this._chatUiObserverDebounceTimeout = null;
     }
     if (this.chatUICreationRetryInterval) {
       clearInterval(this.chatUICreationRetryInterval);
@@ -10574,6 +10728,73 @@ module.exports = class SoloLevelingStats {
         100% {
           opacity: 0;
           transform: translateY(-20px) scale(0);
+        }
+      }
+
+      /* Level up overlay animation (non-toast) */
+      .sls-levelup-overlay {
+        position: fixed;
+        left: 0;
+        right: 0;
+        top: 0;
+        pointer-events: none;
+        z-index: 999998;
+      }
+
+      .sls-levelup-banner {
+        position: absolute;
+        left: 50%;
+        top: 54px;
+        transform: translateX(-50%);
+        padding: 10px 16px;
+        border-radius: 10px;
+        background: rgba(10, 10, 15, 0.92);
+        border: 1px solid rgba(139, 92, 246, 0.55);
+        color: #a78bfa;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        box-shadow: 0 10px 30px rgba(139, 92, 246, 0.25);
+        text-shadow: 0 0 10px rgba(167, 139, 250, 0.6);
+        animation: sls-levelup-pop 1200ms ease-out forwards;
+        will-change: transform, opacity;
+        text-align: center;
+        min-width: 220px;
+      }
+
+      .sls-levelup-title {
+        font-size: 14px;
+        line-height: 1.2;
+      }
+
+      .sls-levelup-subtitle {
+        margin-top: 2px;
+        font-size: 12px;
+        font-weight: 700;
+        opacity: 0.92;
+        letter-spacing: 0.02em;
+        text-transform: none;
+      }
+
+      @keyframes sls-levelup-pop {
+        0% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(0) scale(0.75);
+        }
+        15% {
+          opacity: 1;
+          transform: translateX(-50%) translateY(0) scale(1.05);
+        }
+        100% {
+          opacity: 0;
+          transform: translateX(-50%) translateY(-14px) scale(1);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .sls-levelup-banner {
+          animation: none !important;
+          opacity: 1 !important;
         }
       }
 

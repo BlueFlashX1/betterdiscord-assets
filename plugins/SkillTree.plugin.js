@@ -2423,15 +2423,17 @@ module.exports = class SkillTree {
     let originalPushState = history.pushState;
     let originalReplaceState = history.replaceState;
 
-    history.pushState = function (...args) {
+    const pushStateWrapper = function (...args) {
       originalPushState.apply(history, args);
       handleUrlChange();
     };
+    history.pushState = pushStateWrapper;
 
-    history.replaceState = function (...args) {
+    const replaceStateWrapper = function (...args) {
       originalReplaceState.apply(history, args);
       handleUrlChange();
     };
+    history.replaceState = replaceStateWrapper;
 
     // Store cleanup function with try/finally to guarantee restoration
     this._urlChangeCleanup = () => {
@@ -2439,8 +2441,14 @@ module.exports = class SkillTree {
         // Remove popstate listener
         window.removeEventListener('popstate', handleUrlChange);
         // Restore original history methods
-        if (originalPushState) history.pushState = originalPushState;
-        if (originalReplaceState) history.replaceState = originalReplaceState;
+        pushStateWrapper &&
+          history.pushState === pushStateWrapper &&
+          originalPushState &&
+          (history.pushState = originalPushState);
+        replaceStateWrapper &&
+          history.replaceState === replaceStateWrapper &&
+          originalReplaceState &&
+          (history.replaceState = originalReplaceState);
       } catch (e) {
         console.error('[SkillTree] Error during URL watcher cleanup:', e);
       }

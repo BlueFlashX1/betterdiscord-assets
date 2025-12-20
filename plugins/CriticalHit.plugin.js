@@ -366,10 +366,27 @@ module.exports = class CriticalHit {
 
     // Restore history methods to avoid global side effects after stop()
     try {
-      this.originalPushState && (history.pushState = this.originalPushState);
-      this.originalReplaceState && (history.replaceState = this.originalReplaceState);
+      this._navPushStateWrapper &&
+        history.pushState === this._navPushStateWrapper &&
+        (history.pushState = this._navPrevPushState);
+      this._navReplaceStateWrapper &&
+        history.replaceState === this._navReplaceStateWrapper &&
+        (history.replaceState = this._navPrevReplaceState);
     } catch (e) {
       // Ignore
+    } finally {
+      this._navPrevPushState = null;
+      this._navPrevReplaceState = null;
+      this._navPushStateWrapper = null;
+      this._navReplaceStateWrapper = null;
+    }
+
+    try {
+      this._popstateHandler && window.removeEventListener('popstate', this._popstateHandler);
+    } catch (e) {
+      // Ignore
+    } finally {
+      this._popstateHandler = null;
     }
   }
 
@@ -1500,44 +1517,52 @@ module.exports = class CriticalHit {
    * Restores crit styling when switching channels
    */
   setupChannelChangeListener() {
-    // Listen for channel changes by watching URL changes
-    this.urlObserver?.disconnect();
-
+    // IMPORTANT: Do not use a document-wide MutationObserver to detect URL changes.
+    // Discord's DOM mutates constantly; observing `document` with subtree:true can peg CPU.
+    // Use history navigation hooks + popstate instead.
     let lastUrl = window.location.href;
-    this.urlObserver = new MutationObserver(() => {
-      const currentUrl = window.location.href;
-      if (currentUrl !== lastUrl) {
+    let scheduled = false;
+
+    const scheduleNavigationCheck = (verbose = false) => {
+      if (scheduled) return;
+      scheduled = true;
+      this._setTrackedTimeout(() => {
+        scheduled = false;
+        const currentUrl = window.location.href;
+        if (currentUrl === lastUrl) return;
         lastUrl = currentUrl;
-        // Only log in verbose mode - channel changes are frequent
         this.debug?.verbose &&
           this.debugLog('CHANNEL_CHANGE', 'Channel changed, re-initializing...');
-        this._handleChannelChange();
-      }
-    });
+        this._handleChannelChange(verbose);
+      }, 150);
+    };
 
-    // Observe document for URL changes
-    this.urlObserver.observe(document, {
-      childList: true,
-      subtree: true,
-    });
+    // Also listen for Discord's navigation events.
+    // IMPORTANT: Chain safely with any existing wrappers from other plugins.
+    const prevPushState = history.pushState;
+    const prevReplaceState = history.replaceState;
+    this.originalPushState || (this.originalPushState = prevPushState);
+    this.originalReplaceState || (this.originalReplaceState = prevReplaceState);
 
-    // Also listen for Discord's navigation events
-    if (!this.originalPushState) {
-      this.originalPushState = history.pushState;
-      this.originalReplaceState = history.replaceState;
-    }
+    const handleNavigation = () => scheduleNavigationCheck(true);
 
-    const handleNavigation = () => this._handleChannelChange(true);
-
-    history.pushState = (...args) => {
-      this.originalPushState.apply(history, args);
+    this._navPrevPushState = prevPushState;
+    this._navPrevReplaceState = prevReplaceState;
+    this._navPushStateWrapper = (...args) => {
+      prevPushState.apply(history, args);
+      handleNavigation();
+    };
+    this._navReplaceStateWrapper = (...args) => {
+      prevReplaceState.apply(history, args);
       handleNavigation();
     };
 
-    history.replaceState = (...args) => {
-      this.originalReplaceState.apply(history, args);
-      handleNavigation();
-    };
+    history.pushState = this._navPushStateWrapper;
+    history.replaceState = this._navReplaceStateWrapper;
+
+    // Back/forward navigation
+    this._popstateHandler = () => handleNavigation();
+    window.addEventListener('popstate', this._popstateHandler);
   }
 
   // ============================================================================
@@ -7395,7 +7420,20 @@ module.exports = class CriticalHit {
         }
       });
 
-      this.novaFlatObserver.observe(document.body, {
+      // IMPORTANT: Never observe document.body here; Discord mutates it constantly and can peg CPU.
+      // Scope the observer to the message container (cached lookup) and retry later if unavailable.
+      const novaObserveRoot = this._findMessageContainer?.() || null;
+      if (!novaObserveRoot) {
+        this._setTrackedTimeout(() => {
+          if (this._isStopped) return;
+          // Force re-evaluation next time this feature is invoked.
+          this.novaFlatObserver && this.novaFlatObserver.disconnect();
+          this.novaFlatObserver = null;
+        }, 1500);
+        return;
+      }
+
+      this.novaFlatObserver.observe(novaObserveRoot, {
         childList: true,
         subtree: true,
         attributes: true,

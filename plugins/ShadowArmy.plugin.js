@@ -3345,19 +3345,23 @@ module.exports = class ShadowArmy {
     // Listen to browser navigation events
     window.addEventListener('popstate', handleUrlChange);
 
-    // Override pushState and replaceState to detect programmatic navigation
+    // Override pushState and replaceState to detect programmatic navigation.
+    // IMPORTANT: Chain safely with any existing wrappers from other plugins.
     const originalPushState = history.pushState;
     const originalReplaceState = history.replaceState;
 
-    history.pushState = function (...args) {
+    const pushStateWrapper = function (...args) {
       originalPushState.apply(history, args);
       handleUrlChange();
     };
 
-    history.replaceState = function (...args) {
+    const replaceStateWrapper = function (...args) {
       originalReplaceState.apply(history, args);
       handleUrlChange();
     };
+
+    history.pushState = pushStateWrapper;
+    history.replaceState = replaceStateWrapper;
 
     // Setup member list watcher for widget persistence
     this.setupMemberListWatcher();
@@ -3365,8 +3369,12 @@ module.exports = class ShadowArmy {
     // Store cleanup functions
     this._urlChangeCleanup = () => {
       window.removeEventListener('popstate', handleUrlChange);
-      history.pushState = originalPushState;
-      history.replaceState = originalReplaceState;
+      pushStateWrapper &&
+        history.pushState === pushStateWrapper &&
+        (history.pushState = originalPushState);
+      replaceStateWrapper &&
+        history.replaceState === replaceStateWrapper &&
+        (history.replaceState = originalReplaceState);
     };
   }
 
@@ -3381,29 +3389,41 @@ module.exports = class ShadowArmy {
       this.memberListObserver.disconnect();
     }
 
-    // Create observer to watch for member list changes
-    this.memberListObserver = new MutationObserver(() => {
-      const widget = document.getElementById('shadow-army-widget');
-      const membersList = document.querySelector('[class*="members"]');
+    const findMemberRoot = () =>
+      document.querySelector('[class*="membersWrap"]') ||
+      document.querySelector('[class*="members"]') ||
+      null;
 
-      // Guard clause: If member list exists but widget doesn't, re-inject
-      if (!membersList || widget) return;
+    const memberRoot = findMemberRoot();
+    if (!memberRoot) {
+      // Member list not mounted yet; retry later.
+      const retryId = setTimeout(() => {
+        if (!this._isStopped) {
+          this.setupMemberListWatcher();
+        }
+      }, 1500);
+      this._retryTimeouts?.add?.(retryId);
+      return;
+    }
+
+    // Create observer to watch for member list changes (scoped to the member list container)
+    this.memberListObserver = new MutationObserver(() => {
+      if (this._isStopped) return;
+      if (document.hidden) return;
+
+      const widget = document.getElementById('shadow-army-widget');
+      if (widget) return;
 
       // Fast debounce re-injection (prevent multiple calls)
-      if (this.widgetReinjectionTimeout) {
-        clearTimeout(this.widgetReinjectionTimeout);
-      }
+      this.widgetReinjectionTimeout && clearTimeout(this.widgetReinjectionTimeout);
       this.widgetReinjectionTimeout = setTimeout(() => {
         if (this._isStopped) return;
         this.injectShadowRankWidget();
-      }, 100);
+      }, 200);
     });
 
-    // Start observing the entire document for member list changes
-    this.memberListObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-    });
+    // Observe the smallest stable container instead of document.body to reduce mutation volume.
+    this.memberListObserver.observe(memberRoot, { childList: true, subtree: true });
   }
 
   // ============================================================================
@@ -12345,9 +12365,12 @@ module.exports = class ShadowArmy {
       document.body.appendChild(modal);
       this.shadowArmyModal = modal;
 
-      // Real-time updates: Re-fetch and re-render every 3 seconds
+      // Real-time updates: Re-fetch and re-render periodically.
+      // NOTE: Fetching thousands of shadows is expensive; keep cadence conservative to avoid CPU spikes.
       // Store interval ID for proper cleanup
       this.autoRefreshInterval = setInterval(async () => {
+        if (document.hidden) return;
+        if (this._modalRefreshInFlight) return;
         // Guard clause: Clear interval if modal no longer exists
         if (!this.shadowArmyModal || !document.body.contains(modal)) {
           if (this.autoRefreshInterval) {
@@ -12358,6 +12381,7 @@ module.exports = class ShadowArmy {
         }
 
         try {
+          this._modalRefreshInFlight = true;
           // Re-fetch shadows for real-time stats
           if (this.storageManager && this.storageManager.getShadows) {
             const freshShadows = await this.storageManager.getShadows({}, 0, 10000);
@@ -12370,8 +12394,10 @@ module.exports = class ShadowArmy {
         } catch (error) {
           // debugError method is in SECTION 4
           this.debugError('UI', 'Error refreshing UI', error);
+        } finally {
+          this._modalRefreshInFlight = false;
         }
-      }, 3000); // Refresh every 3 seconds for real-time updates
+      }, 15000); // Refresh every 15 seconds for real-time updates (lower CPU)
     } catch (error) {
       // debugError method is in SECTION 4
       this.debugError('UI', 'Failed to open UI', error);
