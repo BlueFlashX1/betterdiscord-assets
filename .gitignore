@@ -58,6 +58,9 @@ desktop.ini
 *.webp
 !docs/**/*.png
 !docs/**/*.jpg
+!themes/**/*.png
+!themes/**/*.jpg
+!themes/**/*.jpeg
 
 # Debug/test files
 *Debug.js
