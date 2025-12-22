@@ -1184,10 +1184,11 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-size: 70% !important;
 }
 
+/* Allow default glyph to show if needed; rely on custom bg */
 nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  pointer-events: auto !important;
 }
 
 /* Home button: remove the left-edge selected indicator/pill */
