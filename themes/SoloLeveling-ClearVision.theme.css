@@ -1175,6 +1175,21 @@ nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
   pointer-events: none !important;
 }
 
+/* Modern nav home fallback */
+nav[aria-label='Servers'] a[aria-label='Home'],
+nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
+  background-image: var(--home-icon) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 70% !important;
+}
+
+nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
 /* Home button: remove the left-edge selected indicator/pill */
 div[class*='-tutorialContainer'] div[class*='-wrapper']::before,
 div[class*='-tutorialContainer'] div[class*='-wrapper']::after,
