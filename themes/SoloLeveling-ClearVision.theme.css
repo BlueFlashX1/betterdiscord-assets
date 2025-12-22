@@ -671,7 +671,7 @@
   --user-area-card-image-zoom: 2; /* 200% */
 
   /* HOME ICON - Discord home button icon */
-  --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-dev/main/themes/shadow_icon.png');
+  --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png');
   --home-size: 280% 280%;
 
   /* RADII - keep a consistent rhythm */
