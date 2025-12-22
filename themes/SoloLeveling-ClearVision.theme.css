@@ -1164,7 +1164,7 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-image: var(--home-icon) !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  background-size: 70% !important;
+  background-size: 60% !important;
 }
 
 /* Hide default home glyph */
