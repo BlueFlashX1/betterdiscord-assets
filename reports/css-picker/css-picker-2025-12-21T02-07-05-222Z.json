@@ -1,0 +1,493 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.2.0",
+  "url": "https://discord.com/channels/@me",
+  "element": {
+    "capturedAt": "2025-12-21T02:07:05.155Z",
+    "summary": "div.d878e741f1c1999b-container",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "d878e741f1c1999b-container",
+      "_730694f5672c9601-cardPrimary",
+      "_730694f5672c9601-card"
+    ],
+    "exactClassSelectors": [
+      ".d878e741f1c1999b-container",
+      "._730694f5672c9601-cardPrimary",
+      "._730694f5672c9601-card"
+    ],
+    "semanticClassSelectors": [],
+    "parentSummary": "div.d74ef86df6475678-container",
+    "childrenSummary": {
+      "count": 2,
+      "firstChild": "div.d878e741f1c1999b-profile"
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "d878e741f1c1999b-container _730694f5672c9601-cardPrimary _730694f5672c9601-card"
+      }
+    ],
+    "textPreview": "Your account is all goodThanks for upholding Discord's Terms of Service and Community Guidelines. If you break the rules, it will show up here.All good!LimitedVery limitedAt riskSuspended",
+    "computedStyle": {
+      "display": "flex",
+      "position": "relative",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "color(srgb 0.0392157 0.0392157 0.0588235 / 0.501961)",
+      "backgroundImage": "none",
+      "background": "color(srgb 0.0392157 0.0392157 0.0588235 / 0.501961) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": "0px none rgba(0, 0, 0, 0)",
+      "borderColor": "rgba(0, 0, 0, 0)",
+      "borderWidth": "0px",
+      "borderRadius": "8px",
+      "boxShadow": "none",
+      "outline": "color(srgb 0.878431 0.815686 1) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "color(srgb 0.878431 0.815686 1)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "16px",
+      "lineHeight": "16px",
+      "padding": "8px 0px 0px",
+      "margin": "0px 0px 32px"
+    },
+    "children": [
+      {
+        "index": 0,
+        "summary": "div.d878e741f1c1999b-profile",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "d878e741f1c1999b-profile"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "d878e741f1c1999b-profile"
+          }
+        ],
+        "textPreview": null,
+        "stableSelectors": [],
+        "selectorCandidates": [
+          "div > div > div:nth-of-type(2) > div > div > div:nth-of-type(1)"
+        ],
+        "computedStyle": {
+          "display": "block",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none color(srgb 0.878431 0.815686 1)",
+          "borderColor": "color(srgb 0.878431 0.815686 1)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "color(srgb 0.878431 0.815686 1) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "color(srgb 0.878431 0.815686 1)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px 0px 0px 16px"
+        }
+      },
+      {
+        "index": 1,
+        "summary": "div.d878e741f1c1999b-status",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "d878e741f1c1999b-status"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "attributes": [
+          {
+            "name": "class",
+            "value": "d878e741f1c1999b-status"
+          }
+        ],
+        "textPreview": "Your account is all goodThanks for upholding Discord's Terms of Service and Community Guidelines. If you break the rules",
+        "stableSelectors": [],
+        "selectorCandidates": [
+          "div > div > div:nth-of-type(2) > div > div > div:nth-of-type(2)"
+        ],
+        "computedStyle": {
+          "display": "flex",
+          "position": "static",
+          "zIndex": "auto",
+          "opacity": "1",
+          "backgroundColor": "rgba(0, 0, 0, 0)",
+          "backgroundImage": "none",
+          "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+          "border": "0px none color(srgb 0.878431 0.815686 1)",
+          "borderColor": "color(srgb 0.878431 0.815686 1)",
+          "borderWidth": "0px",
+          "borderRadius": "0px",
+          "boxShadow": "none",
+          "outline": "color(srgb 0.878431 0.815686 1) none 0px",
+          "filter": "none",
+          "backdropFilter": "none",
+          "transform": "none",
+          "color": "color(srgb 0.878431 0.815686 1)",
+          "fontFamily": "Orbitron, sans-serif",
+          "fontSize": "16px",
+          "lineHeight": "16px",
+          "padding": "0px",
+          "margin": "0px"
+        }
+      }
+    ],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 1180,
+        "selectorText": "._730694f5672c9601-card",
+        "selector": "._730694f5672c9601-card",
+        "pseudo": null,
+        "properties": {
+          "border-color": {
+            "value": "var(--__card-accent-color)",
+            "priority": null
+          },
+          "border-width": {
+            "value": "1px",
+            "priority": null
+          },
+          "border-radius": {
+            "value": "var(--radius-sm)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 1181,
+        "selectorText": "._730694f5672c9601-card:not(._730694f5672c9601-outline)",
+        "selector": "._730694f5672c9601-card:not(._730694f5672c9601-outline)",
+        "pseudo": null,
+        "properties": {
+          "background-color": {
+            "value": "var(--__card-accent-color)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 1191,
+        "selectorText": "._730694f5672c9601-cardPrimary, ._730694f5672c9601-cardPrimary._730694f5672c9601-editable",
+        "selector": "._730694f5672c9601-cardPrimary, ._730694f5672c9601-cardPrimary._730694f5672c9601-editable",
+        "pseudo": null,
+        "properties": {
+          "background-color": {
+            "value": "var(--card-background-default)",
+            "priority": null
+          },
+          "border": {
+            "value": "1px solid var(--border-subtle)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 13515,
+        "selectorText": ".d878e741f1c1999b-container",
+        "selector": ".d878e741f1c1999b-container",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "none",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "initial",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15658,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15687,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 386,
+      "y": 248,
+      "width": 696,
+      "height": 174,
+      "top": 248,
+      "left": 386,
+      "right": 1082,
+      "bottom": 422
+    },
+    "stableSelectors": [],
+    "bestSelector": ".d878e741f1c1999b-container",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div > div > div > div:nth-of-type(2) > div > div",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.d878e741f1c1999b-container",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "d878e741f1c1999b-container",
+          "_730694f5672c9601-cardPrimary",
+          "_730694f5672c9601-card"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div:nth-of-type(2) > div > div"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.d74ef86df6475678-container",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "d74ef86df6475678-container"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(1) > div > div > div > div:nth-of-type(2) > div"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div#privacy_and_safety_standing-tab.f8303a11ec48bef3-tabBarPanel",
+        "tagName": "div",
+        "id": "privacy_and_safety_standing-tab",
+        "classList": [
+          "f8303a11ec48bef3-tabBarPanel",
+          "_2666bc68709e8a16-tabPanel"
+        ],
+        "role": "tabpanel",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "#privacy_and_safety_standing-tab",
+          "div[role=\"tabpanel\"]",
+          "div:nth-of-type(1) > div:nth-of-type(1) > div > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div.f8303a11ec48bef3-tabbedSettingsContainer",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f8303a11ec48bef3-tabbedSettingsContainer"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > div"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div.f131e93f07e2fe18-settingsPage",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f131e93f07e2fe18-settingsPage"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div._6131ab3dbe0affed-panel",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "_6131ab3dbe0affed-panel"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div._6131ab3dbe0affed-scroller",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "_6131ab3dbe0affed-scroller",
+          "d125d22cdfd32cfe-auto",
+          "d125d22cdfd32cfe-scrollerBase"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.e9e3ed8b8badfe05-contentBody",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "e9e3ed8b8badfe05-contentBody"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.e9e3ed8b8badfe05-content",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "e9e3ed8b8badfe05-content"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div > div > div:nth-of-type(2)"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; dynamic-range-limit: no-limit; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body.enable-motion",
+        "classList": [
+          "enable-motion",
+          "underline-links"
+        ],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 300px;"
+          },
+          {
+            "name": "class",
+            "value": "enable-motion underline-links"
+          }
+        ]
+      }
+    }
+  }
+}

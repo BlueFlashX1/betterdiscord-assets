@@ -1,0 +1,372 @@
+{
+  "plugin": "CSS Picker",
+  "version": "1.2.0",
+  "url": "https://discord.com/channels/@me",
+  "element": {
+    "capturedAt": "2025-12-21T00:56:11.542Z",
+    "summary": "div.f8303a11ec48bef3-tab",
+    "tagName": "div",
+    "id": null,
+    "classList": [
+      "f8303a11ec48bef3-tab",
+      "aa8da23faa27393c-item",
+      "aa8da23faa27393c-brand"
+    ],
+    "exactClassSelectors": [
+      ".f8303a11ec48bef3-tab",
+      ".aa8da23faa27393c-item",
+      ".aa8da23faa27393c-brand"
+    ],
+    "semanticClassSelectors": [],
+    "parentSummary": "div.f8303a11ec48bef3-tabBar",
+    "childrenSummary": {
+      "count": 0,
+      "firstChild": null
+    },
+    "attributes": [
+      {
+        "name": "class",
+        "value": "f8303a11ec48bef3-tab aa8da23faa27393c-item aa8da23faa27393c-brand"
+      },
+      {
+        "name": "role",
+        "value": "tab"
+      },
+      {
+        "name": "aria-selected",
+        "value": "false"
+      },
+      {
+        "name": "aria-disabled",
+        "value": "false"
+      },
+      {
+        "name": "tabindex",
+        "value": "-1"
+      },
+      {
+        "name": "aria-label",
+        "value": "Standing"
+      },
+      {
+        "name": "data-tab-id",
+        "value": "PRIVACY_AND_SAFETY_STANDING"
+      }
+    ],
+    "textPreview": "Standing",
+    "computedStyle": {
+      "display": "flex",
+      "position": "relative",
+      "zIndex": "auto",
+      "opacity": "1",
+      "backgroundColor": "rgba(0, 0, 0, 0)",
+      "backgroundImage": "none",
+      "background": "rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box",
+      "border": "0px none oklab(0.988044 0.0000450313 0.0000197887)",
+      "borderColor": "oklab(0.988044 0.0000450313 0.0000197887)",
+      "borderWidth": "0px",
+      "borderRadius": "0px",
+      "boxShadow": "none",
+      "outline": "oklab(0.988044 0.0000450313 0.0000197887) none 0px",
+      "filter": "none",
+      "backdropFilter": "none",
+      "transform": "none",
+      "color": "oklab(0.988044 0.0000450313 0.0000197887)",
+      "fontFamily": "Orbitron, sans-serif",
+      "fontSize": "14px",
+      "lineHeight": "14px",
+      "padding": "0px 0px 16px",
+      "margin": "0px 0px -1px 24px"
+    },
+    "children": [],
+    "tablistHints": null,
+    "matchedCssRules": [
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 772,
+        "selectorText": ".aa8da23faa27393c-top .aa8da23faa27393c-item.aa8da23faa27393c-selected::after, .aa8da23faa27393c-top .aa8da23faa27393c-item:hover::after",
+        "selector": ".aa8da23faa27393c-top .aa8da23faa27393c-item.aa8da23faa27393c-selected::after, .aa8da23faa27393c-top .aa8da23faa27393c-item:hover",
+        "pseudo": "::after",
+        "properties": {
+          "background": {
+            "value": "var(--selected-tab-item-color)",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15658,
+        "selectorText": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "selector": "a, abbr, acronym, address, applet, big, blockquote, body, caption, cite, code, dd, del, dfn, div, dl, dt, em, fieldset, form, h1, h2, h3, h4, h5, h6, html, iframe, img, ins, kbd, label, legend, li, object, ol, p, pre, q, s, samp, small, span, strike, strong, table, tbody, td, tfoot, th, thead, tr, tt, ul, var",
+        "pseudo": null,
+        "properties": {
+          "border": {
+            "value": "0px",
+            "priority": null
+          },
+          "border-color": {
+            "value": "initial",
+            "priority": null
+          },
+          "border-width": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      },
+      {
+        "stylesheet": "https://discord.com/assets/web.3f9bc71bb8c261a1.css",
+        "sheetIndex": 0,
+        "ruleIndex": 15687,
+        "selectorText": "a, button, div, input, label, select, span, strong, textarea",
+        "selector": "a, button, div, input, label, select, span, strong, textarea",
+        "pseudo": null,
+        "properties": {
+          "outline": {
+            "value": "0px",
+            "priority": null
+          }
+        }
+      }
+    ],
+    "rect": {
+      "x": 479.3984375,
+      "y": 156,
+      "width": 68.9453125,
+      "height": 30,
+      "top": 156,
+      "left": 479.3984375,
+      "right": 548.34375,
+      "bottom": 186
+    },
+    "stableSelectors": [
+      "div[aria-label=\"Standing\"]",
+      "div[role=\"tab\"]"
+    ],
+    "bestSelector": "div[aria-label=\"Standing\"]",
+    "rootSelectors": [
+      ":root",
+      "html",
+      "body"
+    ],
+    "selectorCandidates": [
+      {
+        "selector": "div[aria-label=\"Standing\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": true
+      },
+      {
+        "selector": "div[role=\"tab\"]",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": false
+      },
+      {
+        "selector": "div:nth-of-type(1) > div > div > div > div:nth-of-type(1) > div:nth-of-type(2)",
+        "isValid": true,
+        "matchesNow": true,
+        "isUnique": null
+      }
+    ],
+    "ancestry": [
+      {
+        "depth": 0,
+        "summary": "div.f8303a11ec48bef3-tab",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f8303a11ec48bef3-tab",
+          "aa8da23faa27393c-item",
+          "aa8da23faa27393c-brand"
+        ],
+        "role": "tab",
+        "ariaLabel": "Standing",
+        "selectorCandidates": [
+          "div[aria-label=\"Standing\"]",
+          "div[role=\"tab\"]",
+          "div:nth-of-type(1) > div > div > div > div:nth-of-type(1) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 1,
+        "summary": "div.f8303a11ec48bef3-tabBar",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f8303a11ec48bef3-tabBar",
+          "aa8da23faa27393c-top"
+        ],
+        "role": "tablist",
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div[role=\"tablist\"]",
+          "div:nth-of-type(1) > div:nth-of-type(1) > div > div > div > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 2,
+        "summary": "div.f8303a11ec48bef3-tabbedSettingsContainer",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f8303a11ec48bef3-tabbedSettingsContainer"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div > div"
+        ]
+      },
+      {
+        "depth": 3,
+        "summary": "div",
+        "tagName": "div",
+        "id": null,
+        "classList": [],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div > div"
+        ]
+      },
+      {
+        "depth": 4,
+        "summary": "div.f131e93f07e2fe18-settingsPage",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "f131e93f07e2fe18-settingsPage"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1) > div"
+        ]
+      },
+      {
+        "depth": 5,
+        "summary": "div._6131ab3dbe0affed-panel",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "_6131ab3dbe0affed-panel"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 6,
+        "summary": "div._6131ab3dbe0affed-scroller",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "_6131ab3dbe0affed-scroller",
+          "d125d22cdfd32cfe-auto",
+          "d125d22cdfd32cfe-scrollerBase"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div:nth-of-type(2) > div:nth-of-type(2) > div:nth-of-type(1)"
+        ]
+      },
+      {
+        "depth": 7,
+        "summary": "div.e9e3ed8b8badfe05-contentBody",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "e9e3ed8b8badfe05-contentBody"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div > div:nth-of-type(2) > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 8,
+        "summary": "div.e9e3ed8b8badfe05-content",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "e9e3ed8b8badfe05-content",
+          "e9e3ed8b8badfe05-mobileNavigationOpen"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div > div > div:nth-of-type(2)"
+        ]
+      },
+      {
+        "depth": 9,
+        "summary": "div.abd9a8b9030934e3-container",
+        "tagName": "div",
+        "id": null,
+        "classList": [
+          "abd9a8b9030934e3-container"
+        ],
+        "role": null,
+        "ariaLabel": null,
+        "selectorCandidates": [
+          "div > div > div > div > div > div"
+        ]
+      }
+    ],
+    "rootContext": {
+      "root": {
+        "summary": "html.platform-osx",
+        "classList": [
+          "platform-osx",
+          "theme-dark",
+          "theme-darker",
+          "images-dark",
+          "density-default",
+          "font-size-16",
+          "has-webkit-scrollbar",
+          "mouse-mode",
+          "reduce-motion",
+          "app-focused",
+          "visual-refresh",
+          "mana-text-inputs"
+        ],
+        "attributes": [
+          {
+            "name": "lang",
+            "value": "en-US"
+          },
+          {
+            "name": "style",
+            "value": "font-size: 100%; --saturation-factor: 1; dynamic-range-limit: no-limit; --custom-zoom: 100; --devtools-sidebar-width: 0px;"
+          },
+          {
+            "name": "class",
+            "value": "platform-osx theme-dark theme-darker images-dark density-default font-size-16 has-webkit-scrollbar mouse-mode reduce-motion app-focused visual-refresh mana-text-inputs"
+          },
+          {
+            "name": "data-rh",
+            "value": "lang,style,class"
+          }
+        ]
+      },
+      "body": {
+        "summary": "body",
+        "classList": [],
+        "attributes": [
+          {
+            "name": "style",
+            "value": "--custom-app-panels-height: 72px; --custom-guild-sidebar-width: 300px;"
+          }
+        ]
+      }
+    }
+  }
+}
