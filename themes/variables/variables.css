@@ -1,0 +1,104 @@
+/**
+ * Solo Leveling - Modular Variables System
+ * ============================================================================
+ * Main entry point for all theme variables
+ * Imports all modular variable files in dependency order
+ *
+ * USAGE:
+ * Import this file in your theme:
+ * @import url('./variables/variables.css');
+ *
+ * Then use semantic tokens throughout:
+ * color: var(--sl-color-primary);
+ * box-shadow: var(--sl-effect-glow-medium);
+ * font-family: var(--sl-type-font-primary);
+ * ============================================================================
+ */
+
+/* ===== CORE VARIABLES ===== */
+/* Load in dependency order: colors → effects → typography → spacing → components */
+
+/* 1. Colors - Base color palette (no dependencies) */
+@import url('./_colors.css');
+
+/* 2. Effects - Visual effects using color tokens */
+@import url('./_effects.css');
+
+/* 3. Typography - Font and text styling */
+@import url('./_typography.css');
+
+/* 4. Spacing - Layout and spacing tokens */
+@import url('./_spacing.css');
+
+/* 5. Components - Semantic component tokens (uses all above) */
+@import url('./_components.css');
+
+/* 6. Utilities - Helper classes and reusable patterns */
+@import url('./_utilities.css');
+
+/* ============================================================================
+   BACKWARD COMPATIBILITY LAYER
+   ============================================================================
+   Maps old variable names to new semantic tokens
+   This allows gradual migration without breaking existing styles
+   Remove this section once migration is complete
+   ============================================================================ */
+
+:root {
+  /* Legacy color mappings */
+  --main-color: var(--sl-color-primary);
+  --hover-color: var(--sl-color-primary-hover);
+  --success-color: var(--sl-color-status-success);
+  --danger-color: var(--sl-color-status-danger);
+
+  --online-color: var(--sl-color-online);
+  --idle-color: var(--sl-color-idle);
+  --dnd-color: var(--sl-color-dnd);
+  --streaming-color: var(--sl-color-streaming);
+  --offline-color: var(--sl-color-offline);
+
+  /* Legacy glow mappings */
+  --glow-subtle: var(--sl-effect-glow-subtle);
+  --glow-light: var(--sl-effect-glow-light);
+  --glow-medium: var(--sl-effect-glow-medium);
+  --glow-strong: var(--sl-effect-glow-strong);
+  --glow-bold: var(--sl-effect-glow-bold);
+  --glow-intense: var(--sl-effect-glow-intense);
+  --glow-very-intense: var(--sl-effect-glow-very-intense);
+  --glow-heavy: var(--sl-effect-glow-heavy);
+  --glow-very-heavy: var(--sl-effect-glow-very-heavy);
+  --glow-extreme: var(--sl-effect-glow-extreme);
+
+  /* Legacy text shadow mappings */
+  --text-shadow-subtle: var(--sl-effect-text-shadow-subtle);
+  --text-shadow-light: var(--sl-effect-text-shadow-light);
+  --text-shadow-medium: var(--sl-effect-text-shadow-medium);
+  --text-shadow-strong: var(--sl-effect-text-shadow-strong);
+  --text-shadow-dark: var(--sl-effect-text-shadow-dark);
+
+  /* Legacy border mappings */
+  --border-purple-subtle: var(--sl-effect-border-purple-subtle);
+  --border-purple-light: var(--sl-effect-border-purple-light);
+  --border-purple-medium: var(--sl-effect-border-purple-medium);
+  --border-purple-strong: var(--sl-effect-border-purple-strong);
+
+  /* Legacy radius mappings */
+  --radius-surface: var(--sl-space-radius-surface);
+  --radius-control: var(--sl-space-radius-control);
+  --radius-pill: var(--sl-space-radius-pill);
+
+  /* Legacy transition mappings */
+  --transition-fast: var(--sl-effect-transition-fast);
+  --transition-normal: var(--sl-effect-transition-normal);
+  --transition-slow: var(--sl-effect-transition-slow);
+  --transition-bounce: var(--sl-effect-transition-bounce);
+
+  /* Legacy font mappings */
+  --main-font: var(--sl-type-font-primary);
+  --code-font: var(--sl-type-font-code);
+  --heading-font: var(--sl-type-font-heading);
+
+  /* Legacy channel mappings */
+  --channel-selected-bg: var(--sl-comp-channel-bg-selected);
+  --channel-unread: var(--sl-comp-channel-text-unread);
+}

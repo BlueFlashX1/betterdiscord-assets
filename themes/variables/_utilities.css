@@ -1,0 +1,133 @@
+/**
+ * Solo Leveling - Utility Patterns
+ * ============================================================================
+ * Pre-composed utility classes and reusable patterns
+ * These are complete styling patterns that can be applied directly
+ * ============================================================================
+ */
+
+:root {
+  /* ===== BUTTON PATTERNS ===== */
+  /* Complete button styling for different variants */
+  --sl-pattern-button-primary: {
+    background: var(--sl-comp-button-bg-primary);
+    color: var(--sl-comp-button-text-primary);
+    border: var(--sl-comp-button-border);
+    border-radius: var(--sl-comp-button-radius);
+    box-shadow: var(--sl-comp-button-shadow-primary);
+    padding: var(--sl-comp-button-padding-y) var(--sl-comp-button-padding-x);
+    font-family: var(--sl-comp-button-font);
+    font-weight: var(--sl-comp-button-font-weight);
+    transition: var(--sl-comp-button-transition);
+    cursor: pointer;
+  }
+
+  --sl-pattern-button-primary-hover: {
+    background: var(--sl-comp-button-bg-primary-hover);
+    box-shadow: var(--sl-comp-button-shadow-primary-hover);
+    transform: translateY(-1px);
+  }
+
+  /* ===== CARD PATTERNS ===== */
+  --sl-pattern-card-base: {
+    background: var(--sl-comp-card-bg);
+    border: var(--sl-comp-card-border);
+    border-radius: var(--sl-comp-card-radius);
+    box-shadow: var(--sl-comp-card-shadow);
+    padding: var(--sl-comp-card-padding);
+    transition: var(--sl-comp-card-transition);
+  }
+
+  --sl-pattern-card-hover: {
+    background: var(--sl-comp-card-bg-hover);
+    border: var(--sl-comp-card-border-hover);
+    box-shadow: var(--sl-comp-card-shadow-hover);
+    transform: translateY(-2px);
+  }
+
+  /* ===== GLOW HOVER PATTERN ===== */
+  /* Consistent hover glow for interactive elements */
+  --sl-pattern-glow-hover: {
+    box-shadow: var(--sl-effect-glow-medium);
+    transition: var(--sl-effect-transition-glow);
+  }
+
+  --sl-pattern-glow-hover-active: {
+    box-shadow: var(--sl-effect-glow-strong);
+  }
+
+  /* ===== TEXT GLOW PATTERN ===== */
+  /* Text with purple glow effect */
+  --sl-pattern-text-glow: {
+    color: var(--sl-color-accent-purple-300);
+    text-shadow: var(--sl-effect-text-shadow-medium);
+    transition: var(--sl-effect-transition-text-shadow);
+  }
+
+  --sl-pattern-text-glow-intense: {
+    text-shadow: var(--sl-effect-text-shadow-strong);
+  }
+}
+
+/* ===== UTILITY CLASSES ===== */
+/* Apply these classes directly to elements */
+
+.sl-glow-subtle {
+  box-shadow: var(--sl-effect-glow-subtle);
+}
+
+.sl-glow-medium {
+  box-shadow: var(--sl-effect-glow-medium);
+}
+
+.sl-glow-strong {
+  box-shadow: var(--sl-effect-glow-strong);
+}
+
+.sl-text-glow {
+  color: var(--sl-color-accent-purple-300);
+  text-shadow: var(--sl-effect-text-shadow-medium);
+}
+
+.sl-transition-fast {
+  transition: var(--sl-effect-transition-fast);
+}
+
+.sl-transition-normal {
+  transition: var(--sl-effect-transition-normal);
+}
+
+.sl-card {
+  background: var(--sl-comp-card-bg);
+  border: var(--sl-comp-card-border);
+  border-radius: var(--sl-comp-card-radius);
+  box-shadow: var(--sl-comp-card-shadow);
+  padding: var(--sl-comp-card-padding);
+  transition: var(--sl-comp-card-transition);
+}
+
+.sl-card:hover {
+  background: var(--sl-comp-card-bg-hover);
+  border: var(--sl-comp-card-border-hover);
+  box-shadow: var(--sl-comp-card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.sl-button-primary {
+  background: var(--sl-comp-button-bg-primary);
+  color: var(--sl-comp-button-text-primary);
+  border: var(--sl-comp-button-border);
+  border-radius: var(--sl-comp-button-radius);
+  box-shadow: var(--sl-comp-button-shadow-primary);
+  padding: var(--sl-comp-button-padding-y) var(--sl-comp-button-padding-x);
+  font-family: var(--sl-comp-button-font);
+  font-weight: var(--sl-comp-button-font-weight);
+  transition: var(--sl-comp-button-transition);
+  cursor: pointer;
+}
+
+.sl-button-primary:hover {
+  background: var(--sl-comp-button-bg-primary-hover);
+  box-shadow: var(--sl-comp-button-shadow-primary-hover);
+  transform: translateY(-1px);
+}
