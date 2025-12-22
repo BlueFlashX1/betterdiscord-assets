@@ -671,7 +671,7 @@
   --user-area-card-image-zoom: 2; /* 200% */
 
   /* HOME ICON - Discord home button icon */
-  --home-icon: url('./shadow_icon.png');
+  --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-dev/main/themes/shadow_icon.png');
   --home-size: 280% 280%;
 
   /* RADII - keep a consistent rhythm */
@@ -1160,14 +1160,19 @@ div[class*='-tutorialContainer'] div[class*='-childWrapper'] {
 
 /* Modern nav home fallback */
 nav[aria-label='Servers'] a[aria-label='Home'],
-nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'],
-nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
+nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-image: var(--home-icon) !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
   background-size: 70% !important;
-  opacity: 1 !important;
-  visibility: visible !important;
+}
+
+/* Hide default home glyph */
+div[class*='-tutorialContainer'] img[alt='App Icon'],
+nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }
 
 /* Home button: remove the left-edge selected indicator/pill */
