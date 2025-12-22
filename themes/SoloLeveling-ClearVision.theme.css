@@ -671,7 +671,7 @@
   --user-area-card-image-zoom: 2; /* 200% */
 
   /* HOME ICON - Discord home button icon */
-  --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.jpg');
+  --home-icon: url('./shadow_icon.png');
   --home-size: 280% 280%;
 
   /* RADII - keep a consistent rhythm */
@@ -1151,17 +1151,23 @@ button,
 /* Home icon (Discord Home button) */
 /* CSSPicker: Home renders as img[alt="App Icon"] inside div.childWrapper__* under div.tutorialContainer__* */
 div[class*='-tutorialContainer'] div[class*='-childWrapper'] {
-  background-image: url('./shadow_icon.png') !important;
+  background-image: var(--home-icon) !important;
   background-position: center !important;
   background-size: var(--home-size, cover) !important;
   background-repeat: no-repeat !important;
   background-color: transparent !important;
 }
 
-div[class*='-tutorialContainer'] img[alt='App Icon'] {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
+/* Modern nav home fallback */
+nav[aria-label='Servers'] a[aria-label='Home'],
+nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'],
+nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
+  background-image: var(--home-icon) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 70% !important;
+  opacity: 1 !important;
+  visibility: visible !important;
 }
 
 /* Home button: remove the left-edge selected indicator/pill */
