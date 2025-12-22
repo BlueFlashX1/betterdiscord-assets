@@ -1,8 +1,8 @@
 /**
  * @name CSS Picker
  * @author BlueFlashX1
- * @description Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report under reports/css-picker.
- * @version 1.1.2
+ * @description Hover to inspect, click to capture & auto-update theme. Integrates with Theme Auto Maintainer.
+ * @version 1.3.0
  * @authorId
  */
 /* global CSS, Element */
@@ -17,9 +17,9 @@ module.exports = (() => {
           discord_id: '',
         },
       ],
-      version: '1.1.2',
+      version: '1.2.0',
       description:
-        'Hover to inspect, click once to capture element details and selector candidates. Copies JSON and saves a report under reports/css-picker.',
+        'Hover to inspect, click to capture. Integrates with Theme Auto Maintainer for class verification.',
     },
   };
 
@@ -33,6 +33,10 @@ module.exports = (() => {
     toastMaxChars: 260,
     hotkeyEnabled: true,
     hotkey: 'Ctrl+Shift+P',
+    autoUpdateTheme: true,
+    verifyWithDOM: true,
+    verifyWithGitHub: true,
+    themePath: 'SoloLeveling-ClearVision.theme.css',
   };
 
   const isEditableTarget = (target) => {
