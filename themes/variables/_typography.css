@@ -1,0 +1,55 @@
+/**
+ * Solo Leveling - Typography
+ * ============================================================================
+ * Font families, sizes, weights, and text styling tokens
+ *
+ * Naming Convention: --sl-type-[property]-[variant]
+ * Properties: font, size, weight, height, spacing
+ * ============================================================================
+ */
+
+:root {
+  /* ===== FONT FAMILIES ===== */
+  /* Primary: FriendorFoeBB (Critical Hit plugin font) */
+  /* Fallback: Orbitron (futuristic Solo Leveling aesthetic) */
+  --sl-type-font-primary: 'FriendorFoeBB', 'Orbitron', sans-serif;
+  --sl-type-font-heading: 'FriendorFoeBB', 'Orbitron', sans-serif;
+  --sl-type-font-code: 'Orbitron', 'Fira Code', 'Consolas', monospace;
+  --sl-type-font-body: 'FriendorFoeBB', 'Orbitron', system-ui, sans-serif;
+
+  /* ===== FONT SIZES ===== */
+  /* Responsive type scale */
+  --sl-type-size-xs: 0.75rem; /* 12px */
+  --sl-type-size-sm: 0.875rem; /* 14px */
+  --sl-type-size-base: 1rem; /* 16px */
+  --sl-type-size-lg: 1.125rem; /* 18px */
+  --sl-type-size-xl: 1.25rem; /* 20px */
+  --sl-type-size-2xl: 1.5rem; /* 24px */
+  --sl-type-size-3xl: 1.875rem; /* 30px */
+  --sl-type-size-4xl: 2.25rem; /* 36px */
+  --sl-type-size-5xl: 3rem; /* 48px */
+
+  /* ===== FONT WEIGHTS ===== */
+  --sl-type-weight-light: 300;
+  --sl-type-weight-normal: 400;
+  --sl-type-weight-medium: 500;
+  --sl-type-weight-semibold: 600;
+  --sl-type-weight-bold: 700;
+  --sl-type-weight-extrabold: 800;
+  --sl-type-weight-black: 900;
+
+  /* ===== LINE HEIGHTS ===== */
+  --sl-type-height-tight: 1.25;
+  --sl-type-height-snug: 1.375;
+  --sl-type-height-normal: 1.5;
+  --sl-type-height-relaxed: 1.625;
+  --sl-type-height-loose: 2;
+
+  /* ===== LETTER SPACING ===== */
+  --sl-type-spacing-tighter: -0.05em;
+  --sl-type-spacing-tight: -0.025em;
+  --sl-type-spacing-normal: 0;
+  --sl-type-spacing-wide: 0.025em;
+  --sl-type-spacing-wider: 0.05em;
+  --sl-type-spacing-widest: 0.1em;
+}

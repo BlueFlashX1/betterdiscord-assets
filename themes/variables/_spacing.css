@@ -1,0 +1,68 @@
+/**
+ * Solo Leveling - Spacing & Layout
+ * ============================================================================
+ * Border radii, spacing scale, and layout tokens
+ *
+ * Naming Convention: --sl-space-[property]-[variant]
+ * Properties: radius, padding, margin, gap
+ * ============================================================================
+ */
+
+:root {
+  /* ===== BORDER RADII ===== */
+  /* Consistent rhythm for rounded corners */
+  --sl-space-radius-none: 0;
+  --sl-space-radius-sm: 4px;
+  --sl-space-radius-base: 6px;
+  --sl-space-radius-control: 8px; /* Buttons, tabs, chips */
+  --sl-space-radius-md: 10px;
+  --sl-space-radius-lg: 12px;
+  --sl-space-radius-surface: 14px; /* Cards, panels */
+  --sl-space-radius-xl: 16px;
+  --sl-space-radius-2xl: 20px;
+  --sl-space-radius-3xl: 24px;
+  --sl-space-radius-pill: 999px; /* Fully rounded pills */
+  --sl-space-radius-circle: 50%; /* Perfect circles */
+
+  /* ===== SPACING SCALE ===== */
+  /* Based on 4px grid system */
+  --sl-space-0: 0;
+  --sl-space-1: 0.25rem; /* 4px */
+  --sl-space-2: 0.5rem; /* 8px */
+  --sl-space-3: 0.75rem; /* 12px */
+  --sl-space-4: 1rem; /* 16px */
+  --sl-space-5: 1.25rem; /* 20px */
+  --sl-space-6: 1.5rem; /* 24px */
+  --sl-space-8: 2rem; /* 32px */
+  --sl-space-10: 2.5rem; /* 40px */
+  --sl-space-12: 3rem; /* 48px */
+  --sl-space-16: 4rem; /* 64px */
+  --sl-space-20: 5rem; /* 80px */
+  --sl-space-24: 6rem; /* 96px */
+
+  /* ===== SEMANTIC SPACING ===== */
+  /* Component-specific spacing */
+  --sl-space-button-padding-x: var(--sl-space-4);
+  --sl-space-button-padding-y: var(--sl-space-2);
+  --sl-space-card-padding: var(--sl-space-4);
+  --sl-space-input-padding-x: var(--sl-space-3);
+  --sl-space-input-padding-y: var(--sl-space-2);
+  --sl-space-gap-xs: var(--sl-space-1);
+  --sl-space-gap-sm: var(--sl-space-2);
+  --sl-space-gap-md: var(--sl-space-4);
+  --sl-space-gap-lg: var(--sl-space-6);
+  --sl-space-gap-xl: var(--sl-space-8);
+
+  /* ===== Z-INDEX SCALE ===== */
+  /* Layering system for stacking context */
+  --sl-space-z-base: 0;
+  --sl-space-z-dropdown: 1000;
+  --sl-space-z-sticky: 1020;
+  --sl-space-z-fixed: 1030;
+  --sl-space-z-modal-backdrop: 1040;
+  --sl-space-z-modal: 1050;
+  --sl-space-z-popover: 1060;
+  --sl-space-z-tooltip: 1070;
+  --sl-space-z-notification: 1080;
+  --sl-space-z-max: 9999;
+}

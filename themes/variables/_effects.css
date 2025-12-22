@@ -1,0 +1,117 @@
+/**
+ * Solo Leveling - Visual Effects
+ * ============================================================================
+ * Reusable glow, shadow, transition, and animation patterns
+ *
+ * Naming Convention: --sl-effect-[type]-[variant]
+ * Types: glow, shadow, text-shadow, transition, gradient
+ * Variants: subtle, light, medium, strong, intense, extreme
+ * ============================================================================
+ */
+
+:root {
+  /* ===== GLOW EFFECTS (BOX-SHADOW) ===== */
+  /* Layered glow intensities for interactive elements */
+  --sl-effect-glow-subtle: 0 0 4px var(--sl-color-purple-alpha-10);
+  --sl-effect-glow-light: 0 0 6px var(--sl-color-purple-alpha-15);
+  --sl-effect-glow-medium: 0 0 8px var(--sl-color-purple-alpha-20);
+  --sl-effect-glow-strong: 0 0 10px var(--sl-color-purple-alpha-25);
+  --sl-effect-glow-bold: 0 0 12px var(--sl-color-purple-alpha-35);
+  --sl-effect-glow-intense: 0 0 14px var(--sl-color-purple-alpha-40);
+  --sl-effect-glow-very-intense: 0 0 15px var(--sl-color-purple-alpha-40);
+  --sl-effect-glow-heavy: 0 0 20px var(--sl-color-purple-alpha-55);
+  --sl-effect-glow-very-heavy: 0 0 22px var(--sl-color-purple-alpha-35);
+  --sl-effect-glow-extreme: 0 0 28px var(--sl-color-purple-alpha-40);
+
+  /* Accent glow (using primary color) */
+  --sl-effect-glow-accent-subtle: 0 0 4px rgba(var(--sl-color-primary-rgb), 0.2);
+  --sl-effect-glow-accent-medium: 0 0 8px rgba(var(--sl-color-primary-rgb), 0.25);
+  --sl-effect-glow-accent-strong: 0 0 12px rgba(var(--sl-color-primary-rgb), 0.25);
+
+  /* ===== TEXT SHADOW EFFECTS ===== */
+  /* Text shadow patterns for readability and glow */
+  --sl-effect-text-shadow-subtle: 0 0 3px var(--sl-color-black-alpha-28);
+  --sl-effect-text-shadow-light: 0 0 4px var(--sl-color-purple-alpha-25);
+  --sl-effect-text-shadow-medium: 0 0 6px var(--sl-color-purple-alpha-25);
+  --sl-effect-text-shadow-strong: 0 0 8px var(--sl-color-purple-alpha-40);
+  --sl-effect-text-shadow-intense: 0 0 10px var(--sl-color-purple-alpha-40);
+  --sl-effect-text-shadow-dark: 0 1px 1px var(--sl-color-black-alpha-28);
+  --sl-effect-text-shadow-darker: 0 1px 1px rgba(0, 0, 0, 0.32);
+  --sl-effect-text-shadow-darkest: 0 1px 2px var(--sl-color-black-alpha-20);
+  --sl-effect-text-shadow-very-dark: 0 1px 2px var(--sl-color-black-alpha-30);
+  --sl-effect-text-shadow-extreme: 0 1px 14px rgba(0, 0, 0, 0.35);
+
+  /* ===== BOX SHADOW EFFECTS ===== */
+  /* Elevation shadows for cards, modals, popouts */
+  --sl-effect-shadow-card: 0 10px 26px var(--sl-color-black-alpha-34);
+  --sl-effect-shadow-card-hover: 0 12px 30px var(--sl-color-black-alpha-38),
+    0 0 14px var(--sl-color-purple-alpha-10);
+  --sl-effect-shadow-header: 0 2px 14px var(--sl-color-purple-alpha-18);
+  --sl-effect-shadow-modal: 0 16px 40px var(--sl-color-black-alpha-46),
+    0 0 14px var(--sl-color-purple-alpha-8);
+  --sl-effect-shadow-button-inset: inset 0 0 0 1px var(--sl-color-white-alpha-10);
+  --sl-effect-shadow-button-selected: 0 0 22px var(--sl-color-purple-alpha-34),
+    inset 0 0 0 1px var(--sl-color-white-alpha-10);
+  --sl-effect-shadow-button-selected-hover: 0 0 28px var(--sl-color-purple-alpha-40),
+    inset 0 0 0 1px var(--sl-color-white-alpha-10);
+
+  /* ===== BORDER EFFECTS ===== */
+  /* Reusable border patterns */
+  --sl-effect-border-purple-subtle: 1px solid var(--sl-color-purple-alpha-10);
+  --sl-effect-border-purple-light: 1px solid var(--sl-color-purple-alpha-15);
+  --sl-effect-border-purple-medium: 1px solid var(--sl-color-purple-alpha-20);
+  --sl-effect-border-purple-strong: 1px solid rgba(139, 92, 246, 0.22);
+  --sl-effect-border-purple-bold: 1px solid var(--sl-color-purple-alpha-35);
+  --sl-effect-border-purple-opaque: 1px solid var(--sl-color-purple-alpha-75);
+  --sl-effect-border-accent-medium: 1px solid rgba(var(--sl-color-primary-rgb), 0.2);
+  --sl-effect-border-white-subtle: 1px solid var(--sl-color-white-alpha-6);
+  --sl-effect-border-white-light: 1px solid var(--sl-color-white-alpha-7);
+  --sl-effect-border-white-medium: 1px solid var(--sl-color-white-alpha-8);
+
+  /* ===== TRANSITION EFFECTS ===== */
+  /* Consistent timing functions for animations */
+  --sl-effect-transition-fast: all 0.15s ease;
+  --sl-effect-transition-normal: all 0.2s ease;
+  --sl-effect-transition-slow: all 0.3s ease;
+  --sl-effect-transition-bounce: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --sl-effect-transition-glow: box-shadow 0.2s ease;
+  --sl-effect-transition-text-shadow: text-shadow 0.2s ease;
+  --sl-effect-transition-transform: transform 0.2s ease;
+  --sl-effect-transition-combined: box-shadow 0.2s ease, transform 0.2s ease;
+  --sl-effect-transition-border: border-color 0.18s ease, box-shadow 0.18s ease,
+    background-color 0.18s ease;
+
+  /* ===== GRADIENT EFFECTS ===== */
+  /* Reusable gradient patterns */
+  --sl-effect-gradient-purple-light: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.92),
+    rgba(167, 139, 250, 0.72)
+  );
+  --sl-effect-gradient-purple-bold: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.96),
+    rgba(167, 139, 250, 0.78)
+  );
+  --sl-effect-gradient-purple-intense: linear-gradient(
+    135deg,
+    var(--sl-color-purple-alpha-20),
+    rgba(192, 38, 211, 0.1)
+  );
+  --sl-effect-gradient-purple-subtle: linear-gradient(
+    135deg,
+    rgba(139, 92, 246, 0.08),
+    rgba(167, 139, 250, 0.04)
+  );
+  --sl-effect-gradient-background: linear-gradient(
+    180deg,
+    var(--sl-color-purple-alpha-18) 0%,
+    var(--sl-color-purple-alpha-6) 35%,
+    transparent 100%
+  );
+  --sl-effect-gradient-dark: linear-gradient(
+    180deg,
+    var(--sl-color-bg-alpha-25),
+    var(--sl-color-bg-alpha-75)
+  );
+}

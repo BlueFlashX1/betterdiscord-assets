@@ -1,0 +1,118 @@
+/**
+ * Solo Leveling - Component Tokens
+ * ============================================================================
+ * Semantic design tokens for UI components
+ * Combines primitives from colors, effects, typography, spacing
+ *
+ * Naming Convention: --sl-comp-[component]-[property]-[state]
+ * Components: button, card, input, channel, message, etc.
+ * Properties: bg, border, shadow, text, etc.
+ * States: default, hover, active, focus, disabled
+ * ============================================================================
+ */
+
+:root {
+  /* ===== BUTTON COMPONENT ===== */
+  --sl-comp-button-bg-primary: var(--sl-color-primary);
+  --sl-comp-button-bg-primary-hover: var(--sl-color-primary-hover);
+  --sl-comp-button-bg-primary-active: var(--sl-color-primary-active);
+  --sl-comp-button-text-primary: var(--sl-color-text-primary);
+  --sl-comp-button-shadow-primary: var(--sl-effect-glow-medium);
+  --sl-comp-button-shadow-primary-hover: var(--sl-effect-glow-strong);
+  --sl-comp-button-shadow-primary-active: var(--sl-effect-glow-intense);
+  --sl-comp-button-border: var(--sl-effect-border-purple-subtle);
+  --sl-comp-button-radius: var(--sl-space-radius-control);
+  --sl-comp-button-padding-x: var(--sl-space-button-padding-x);
+  --sl-comp-button-padding-y: var(--sl-space-button-padding-y);
+  --sl-comp-button-transition: var(--sl-effect-transition-normal);
+  --sl-comp-button-font: var(--sl-type-font-primary);
+  --sl-comp-button-font-weight: var(--sl-type-weight-medium);
+
+  /* ===== CARD COMPONENT ===== */
+  --sl-comp-card-bg: var(--sl-color-bg-surface);
+  --sl-comp-card-bg-hover: var(--sl-color-bg-elevated);
+  --sl-comp-card-border: var(--sl-effect-border-purple-subtle);
+  --sl-comp-card-border-hover: var(--sl-effect-border-purple-medium);
+  --sl-comp-card-shadow: var(--sl-effect-shadow-card);
+  --sl-comp-card-shadow-hover: var(--sl-effect-shadow-card-hover);
+  --sl-comp-card-radius: var(--sl-space-radius-surface);
+  --sl-comp-card-padding: var(--sl-space-card-padding);
+  --sl-comp-card-transition: var(--sl-effect-transition-normal);
+
+  /* ===== INPUT COMPONENT ===== */
+  --sl-comp-input-bg: rgba(0, 0, 0, 0.2);
+  --sl-comp-input-bg-focus: rgba(0, 0, 0, 0.3);
+  --sl-comp-input-bg-disabled: rgba(0, 0, 0, 0.1);
+  --sl-comp-input-text: var(--sl-color-text-primary);
+  --sl-comp-input-text-placeholder: var(--sl-color-text-muted);
+  --sl-comp-input-border: var(--sl-effect-border-purple-subtle);
+  --sl-comp-input-border-focus: var(--sl-effect-border-purple-medium);
+  --sl-comp-input-border-error: 1px solid var(--sl-color-status-danger);
+  --sl-comp-input-shadow-focus: var(--sl-effect-glow-medium);
+  --sl-comp-input-radius: var(--sl-space-radius-control);
+  --sl-comp-input-padding-x: var(--sl-space-input-padding-x);
+  --sl-comp-input-padding-y: var(--sl-space-input-padding-y);
+  --sl-comp-input-transition: var(--sl-effect-transition-border);
+
+  /* ===== CHANNEL COMPONENT ===== */
+  --sl-comp-channel-text-normal: var(--sl-color-text-secondary);
+  --sl-comp-channel-text-hover: var(--sl-color-text-primary);
+  --sl-comp-channel-text-selected: var(--sl-color-text-primary);
+  --sl-comp-channel-text-muted: var(--sl-color-text-muted);
+  --sl-comp-channel-text-unread: var(--sl-color-primary);
+  --sl-comp-channel-bg-selected: var(--sl-color-primary);
+  --sl-comp-channel-bg-hover: var(--sl-color-purple-alpha-10);
+  --sl-comp-channel-glow-selected: var(--sl-effect-glow-medium);
+  --sl-comp-channel-glow-unread: var(--sl-effect-glow-accent-subtle);
+  --sl-comp-channel-transition: var(--sl-effect-transition-fast);
+
+  /* ===== MESSAGE COMPONENT ===== */
+  --sl-comp-message-bg-hover: var(--sl-color-purple-alpha-5);
+  --sl-comp-message-bg-selected: var(--sl-color-purple-alpha-10);
+  --sl-comp-message-border-hover: var(--sl-effect-border-purple-subtle);
+  --sl-comp-message-text: var(--sl-color-text-primary);
+  --sl-comp-message-text-muted: var(--sl-color-text-tertiary);
+  --sl-comp-message-timestamp: var(--sl-color-text-muted);
+  --sl-comp-message-transition: var(--sl-effect-transition-fast);
+
+  /* ===== MEMBER LIST COMPONENT ===== */
+  --sl-comp-member-text: var(--sl-color-text-secondary);
+  --sl-comp-member-text-hover: var(--sl-color-text-primary);
+  --sl-comp-member-bg-hover: var(--sl-color-purple-alpha-10);
+  --sl-comp-member-avatar-glow-online: 0 0 8px var(--sl-color-online);
+  --sl-comp-member-avatar-glow-idle: 0 0 8px var(--sl-color-idle);
+  --sl-comp-member-avatar-glow-dnd: 0 0 8px var(--sl-color-dnd);
+  --sl-comp-member-transition: var(--sl-effect-transition-fast);
+
+  /* ===== MODAL COMPONENT ===== */
+  --sl-comp-modal-bg: var(--sl-color-bg-elevated);
+  --sl-comp-modal-overlay: var(--sl-color-bg-overlay);
+  --sl-comp-modal-shadow: var(--sl-effect-shadow-modal);
+  --sl-comp-modal-radius: var(--sl-space-radius-surface);
+  --sl-comp-modal-header-bg: var(--sl-color-bg-surface);
+  --sl-comp-modal-header-shadow: var(--sl-effect-shadow-header);
+
+  /* ===== STATUS INDICATOR COMPONENT ===== */
+  --sl-comp-status-online: var(--sl-color-online);
+  --sl-comp-status-idle: var(--sl-color-idle);
+  --sl-comp-status-dnd: var(--sl-color-dnd);
+  --sl-comp-status-offline: var(--sl-color-offline);
+  --sl-comp-status-streaming: var(--sl-color-streaming);
+  --sl-comp-status-glow-online: 0 0 6px var(--sl-color-online);
+  --sl-comp-status-glow-idle: 0 0 6px var(--sl-color-idle);
+  --sl-comp-status-glow-dnd: 0 0 6px var(--sl-color-dnd);
+
+  /* ===== TOOLTIP COMPONENT ===== */
+  --sl-comp-tooltip-bg: var(--sl-color-bg-elevated);
+  --sl-comp-tooltip-text: var(--sl-color-text-primary);
+  --sl-comp-tooltip-shadow: var(--sl-effect-shadow-modal);
+  --sl-comp-tooltip-border: var(--sl-effect-border-purple-light);
+  --sl-comp-tooltip-radius: var(--sl-space-radius-control);
+
+  /* ===== SCROLLBAR COMPONENT ===== */
+  --sl-comp-scrollbar-track: var(--sl-color-bg-surface);
+  --sl-comp-scrollbar-thumb: var(--sl-effect-gradient-purple-light);
+  --sl-comp-scrollbar-thumb-hover: var(--sl-effect-gradient-purple-bold);
+  --sl-comp-scrollbar-width: 8px;
+  --sl-comp-scrollbar-radius: var(--sl-space-radius-pill);
+}
