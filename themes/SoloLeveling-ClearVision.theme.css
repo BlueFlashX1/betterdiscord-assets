@@ -4741,4 +4741,51 @@ div[aria-label='Friends'] div[class*='base__']::after {
   display: none !important;
 }
 
+/* Profile/User popout top tab bar - match settings pill tabs */
+div[role='tablist'][class*='top'],
+div[role='tablist'][class*='Top'] {
+  background: rgba(var(--sl-color-bg-ink-deep-rgb), 0.82) !important;
+  border: 1px solid var(--sl-color-purple-alpha-22) !important;
+  border-radius: var(--radius-surface, 14px) !important;
+  box-shadow: 0 12px 28px var(--sl-color-black-alpha-38), 0 0 10px var(--sl-color-purple-alpha-6) !important;
+  padding: 4px !important;
+  gap: 8px !important;
+}
+
+div[role='tablist'][class*='top'] [role='tab'],
+div[role='tablist'][class*='Top'] [role='tab'] {
+  background: transparent !important;
+  border: 1px solid var(--sl-color-white-alpha-7) !important;
+  border-radius: var(--radius-control, 8px) !important;
+  box-shadow: none !important;
+  padding: 8px 12px !important;
+  margin: 0 !important;
+  min-height: 32px !important;
+  line-height: 1 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  text-shadow: none !important;
+}
+
+div[role='tablist'][class*='top'] [role='tab']:hover,
+div[role='tablist'][class*='Top'] [role='tab']:hover {
+  background: var(--bg-purple-light) !important;
+  border-color: var(--sl-color-purple-alpha-28) !important;
+  box-shadow: 0 0 12px var(--sl-color-purple-alpha-12) !important;
+  transform: translateY(-1px) !important;
+}
+
+div[role='tablist'][class*='top'] [role='tab'][aria-selected='true'],
+div[role='tablist'][class*='Top'] [role='tab'][aria-selected='true'],
+div[role='tablist'][class*='top'] [role='tab'][class*='selected'],
+div[role='tablist'][class*='Top'] [role='tab'][class*='selected'] {
+  background: var(--bg-purple-bold) !important;
+  border-color: var(--sl-color-purple-alpha-55) !important;
+  box-shadow: 0 0 16px var(--sl-color-purple-alpha-18) !important;
+  color: var(--sl-color-accent-purple-200) !important;
+  text-shadow: 0 0 10px var(--sl-color-purple-alpha-32) !important;
+}
+
 /* SECTION 22: ANIMATIONS & KEYFRAMES (reserved placeholder) */
