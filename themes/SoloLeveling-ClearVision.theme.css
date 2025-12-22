@@ -1219,23 +1219,6 @@ ul[role='group'][aria-label] div[class*='-pill']::after {
   background-color: transparent !important;
 }
 
-/* Server Notification Badge - Hidden */
-/* Hides notification badges on server icons */
-[class*='guild'] [class*='badge'],
-[class*='server'] [class*='badge'],
-[class*='guild'] [class*='unread'],
-[class*='server'] [class*='unread'],
-[class*='guild'] [class*='numberBadge'],
-[class*='server'] [class*='numberBadge'],
-[class*='guild'] [class*='unreadBadge'],
-[class*='server'] [class*='unreadBadge'],
-[class*='guild'] [class*='notificationBadge'],
-[class*='server'] [class*='notificationBadge'] {
-  display: none !important;
-  visibility: hidden !important;
-  opacity: 0 !important;
-}
-
 /* Server Icon - Remove Purple Border/Background */
 [class*='guildIcon'],
 [class*='serverIcon'],
