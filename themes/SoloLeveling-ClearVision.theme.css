@@ -672,7 +672,14 @@
 
   /* HOME ICON - Discord home button icon */
   --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png');
+<<<<<<< HEAD
   --home-size: 60% 60%;
+||||||| parent of aa127e1 (Use home-size var (60%) and drop forced child wrapper override)
+  --home-size: 280% 280%;
+=======
+  --home-size: 60% 60%;
+  --home-size: 280% 280%;
+>>>>>>> aa127e1 (Use home-size var (60%) and drop forced child wrapper override)
 
   /* RADII - keep a consistent rhythm */
   --radius-surface: var(--sl-space-radius-surface); /* cards/tab bars/panels */
@@ -1158,7 +1165,6 @@ div[class*='-tutorialContainer'] div[class*='-childWrapper'] {
   background-color: transparent !important;
 }
 
-/* Modern nav home fallback */
 nav[aria-label='Servers'] a[aria-label='Home'],
 nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-image: var(--home-icon) !important;
@@ -1171,24 +1177,6 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   min-height: 44px !important;
 }
 
-/* Hide default home glyph */
-div[class*='-tutorialContainer'] img[alt='App Icon'],
-nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
-  opacity: 0 !important;
-  visibility: hidden !important;
-  pointer-events: none !important;
-}
-
-/* Modern nav home fallback */
-nav[aria-label='Servers'] a[aria-label='Home'],
-nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
-  background-image: var(--home-icon) !important;
-  background-position: center !important;
-  background-repeat: no-repeat !important;
-  background-size: 70% !important;
-}
-
-/* Allow default glyph to show if needed; rely on custom bg */
 nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
   opacity: 1 !important;
   visibility: visible !important;
