@@ -1171,6 +1171,15 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   min-height: 44px !important;
 }
 
+/* Force override on current home child wrapper class to avoid Discord background-size */
+nav[aria-label='Servers'] a[aria-label='Home'] div._6e9f8dce4cc18de3-childWrapper {
+  background-size: 60% !important;
+  width: 44px !important;
+  height: 44px !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+}
+
 /* Hide default home glyph */
 div[class*='-tutorialContainer'] img[alt='App Icon'],
 nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
