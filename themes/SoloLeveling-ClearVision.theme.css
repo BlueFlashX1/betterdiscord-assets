@@ -672,7 +672,7 @@
 
   /* HOME ICON - Discord home button icon */
   --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png');
-  --home-size: 280% 280%;
+  --home-size: 60% 60%;
 
   /* RADII - keep a consistent rhythm */
   --radius-surface: var(--sl-space-radius-surface); /* cards/tab bars/panels */
@@ -1164,16 +1164,7 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-image: var(--home-icon) !important;
   background-position: center !important;
   background-repeat: no-repeat !important;
-  background-size: contain !important;
-  width: 44px !important;
-  height: 44px !important;
-  min-width: 44px !important;
-  min-height: 44px !important;
-}
-
-/* Force override on current home child wrapper class to avoid Discord background-size */
-nav[aria-label='Servers'] a[aria-label='Home'] div._6e9f8dce4cc18de3-childWrapper {
-  background-size: 60% !important;
+  background-size: var(--home-size, contain) !important;
   width: 44px !important;
   height: 44px !important;
   min-width: 44px !important;
