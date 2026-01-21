@@ -10,7 +10,7 @@
 set -e
 
 BETTERDISCORD_THEMES="$HOME/Library/Application Support/BetterDiscord/themes"
-SOURCE_DIR="/Users/matthewthompson/Documents/DEVELOPMENT/Better Discord/betterdiscord-dev/themes"
+SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/themes" && pwd)"
 TARGET_THEME="$BETTERDISCORD_THEMES/SoloLeveling-ClearVision.theme.css"
 TARGET_VARS_DIR="$BETTERDISCORD_THEMES/variables"
 

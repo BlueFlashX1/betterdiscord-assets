@@ -5,7 +5,9 @@
 
 set -e
 
-DEV_DIR="/Users/matthewthompson/Documents/DEVELOPMENT/betterdiscord-dev/plugins"
+# Auto-detect script location (works no matter where you move the directory!)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+DEV_DIR="$SCRIPT_DIR/plugins"
 BD_PLUGINS_DIR="$HOME/Library/Application Support/BetterDiscord/plugins"
 
 echo "🔗 Linking BetterDiscord plugins..."

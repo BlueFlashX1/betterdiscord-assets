@@ -16,8 +16,6 @@
  * - Multi-layer verification
  */
 
-/* global ZeresPluginLibrary:false */
-
 module.exports = (() => {
   const config = {
     info: {
@@ -229,10 +227,9 @@ module.exports = (() => {
       }
     : (([Plugin, Api]) => {
         const plugin = (Plugin, Library) => {
-          const { Patcher, Settings, Toasts } = Library;
+          const { Patcher, Toasts } = Library;
           const fs = require('fs');
           const path = require('path');
-          const https = require('https');
 
           return class ThemeAutoMaintainer extends Plugin {
             constructor() {
@@ -1018,7 +1015,7 @@ module.exports = (() => {
                 // Sync to betterdiscord-dev (with backup)
                 const devPath = path.join(
                   homeDir,
-                  'Documents/DEVELOPMENT/Better Discord/betterdiscord-dev/themes'
+                  'Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev/themes'
                 );
                 if (fs.existsSync(devPath)) {
                   const devThemePath = path.join(devPath, themeName);
@@ -1044,7 +1041,7 @@ module.exports = (() => {
                 // Sync to betterdiscord-assets (no backup, always up-to-date)
                 const assetsPath = path.join(
                   homeDir,
-                  'Documents/DEVELOPMENT/Better Discord/betterdiscord-assets/themes'
+                  'Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/themes'
                 );
                 if (fs.existsSync(assetsPath)) {
                   if (!fs.existsSync(assetsPath)) {

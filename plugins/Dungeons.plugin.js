@@ -273,12 +273,9 @@
  * - Multi-line HP bar layout
  * - Improved guild/channel switching
  */
-/* eslint-env browser */
 /* global CustomEvent */
 
-// ================================================================================
-// STORAGE MANAGER - IndexedDB Management
-// ================================================================================
+// ==== STORAGE MANAGER - IndexedDB Management ====
 /**
  * DungeonStorageManager - IndexedDB storage manager for Dungeons plugin
  * Handles persistent storage of dungeon data across sessions
@@ -345,7 +342,7 @@ class DungeonStorageManager {
             objectStore.createIndex('userParticipating', 'userParticipating', { unique: false });
           }
 
-          this.debugLog('[DungeonStorageManager] Database upgraded to v2 with new indices');
+          console.log('[DungeonStorageManager] Database upgraded to v2 with new indices');
         }
 
         // V3: Performance optimizations
@@ -375,14 +372,14 @@ class DungeonStorageManager {
             objectStore.createIndex('type_rank', ['type', 'rank'], { unique: false });
           }
 
-          this.debugLog(
+          console.log(
             '[DungeonStorageManager] Database upgraded to v3 with performance optimizations'
           );
         }
       };
 
       request.onblocked = () => {
-        this.debugLog('DungeonStorageManager: Database upgrade blocked by other tabs');
+        console.log('DungeonStorageManager: Database upgrade blocked by other tabs');
         reject(new Error('Database upgrade blocked'));
       };
     });
@@ -437,49 +434,48 @@ class DungeonStorageManager {
   async archiveDungeon(channelKey) {
     if (!this.db) await this.init();
 
-    return new Promise(async (resolve, reject) => {
-      try {
-        // Get dungeon from active store
-        const dungeon = await this.getDungeon(channelKey);
-        if (!dungeon) {
-          resolve({ success: false, reason: 'Not found' });
-          return;
-        }
-
-        // Add archive metadata
-        const archivedDungeon = {
-          ...dungeon,
-          archivedAt: Date.now(),
-          completedAt: dungeon.completedAt || Date.now(),
-        };
-
-        // Move to archive store and delete from active store (single transaction)
-        const transaction = this.db.transaction(
-          [this.storeName, this.archiveStoreName],
-          'readwrite'
-        );
-        const activeStore = transaction.objectStore(this.storeName);
-        const archiveStore = transaction.objectStore(this.archiveStoreName);
-
-        // Add to archive
-        const archiveRequest = archiveStore.put(archivedDungeon);
-        archiveRequest.onerror = () => reject(archiveRequest.error);
-
-        // Delete from active
-        const index = activeStore.index('channelKey');
-        const getKeyRequest = index.getKey(channelKey);
-        getKeyRequest.onsuccess = () => {
-          const key = getKeyRequest.result;
-          if (key) {
-            activeStore.delete(key);
+    return new Promise((resolve, reject) => {
+      // Get dungeon from active store
+      this.getDungeon(channelKey)
+        .then((dungeon) => {
+          if (!dungeon) {
+            resolve({ success: false, reason: 'Not found' });
+            return;
           }
-        };
 
-        transaction.oncomplete = () => resolve({ success: true, archived: true });
-        transaction.onerror = () => reject(transaction.error);
-      } catch (error) {
-        reject(error);
-      }
+          // Add archive metadata
+          const archivedDungeon = {
+            ...dungeon,
+            archivedAt: Date.now(),
+            completedAt: dungeon.completedAt || Date.now(),
+          };
+
+          // Move to archive store and delete from active store (single transaction)
+          const transaction = this.db.transaction(
+            [this.storeName, this.archiveStoreName],
+            'readwrite'
+          );
+          const activeStore = transaction.objectStore(this.storeName);
+          const archiveStore = transaction.objectStore(this.archiveStoreName);
+
+          // Add to archive
+          const archiveRequest = archiveStore.put(archivedDungeon);
+          archiveRequest.onerror = () => reject(archiveRequest.error);
+
+          // Delete from active
+          const index = activeStore.index('channelKey');
+          const getKeyRequest = index.getKey(channelKey);
+          getKeyRequest.onsuccess = () => {
+            const key = getKeyRequest.result;
+            if (key) {
+              activeStore.delete(key);
+            }
+          };
+
+          transaction.oncomplete = () => resolve({ success: true, archived: true });
+          transaction.onerror = () => reject(transaction.error);
+        })
+        .catch((error) => reject(error));
     });
   }
 
@@ -523,8 +519,8 @@ class DungeonStorageManager {
   }
 
   /**
-   * Sanitize dungeon object for IndexedDB storage
-   * Removes Promises and other non-serializable values
+   * Sanitize dungeon object for IndexedDB storage.
+   * Removes Promises and other non-serializable values; ensures object is safe for IndexedDB storage.
    */
   sanitizeDungeonForStorage(dungeon) {
     const MAX_ACTIVE_MOBS_TO_STORE = 250;
@@ -558,7 +554,7 @@ class DungeonStorageManager {
       JSON.stringify(prunedDungeon, (key, value) => {
         // Skip Promise values
         if (value instanceof Promise) {
-          this.debugLog(`[DungeonStorage] Skipping Promise value for key: ${key}`);
+          console.log(`[DungeonStorage] Skipping Promise value for key: ${key}`);
           return undefined;
         }
         // Skip function values
@@ -1087,19 +1083,35 @@ class MobBossStorageManager {
       const transaction = this.db.transaction([this.mobStoreName], 'readonly');
       const store = transaction.objectStore(this.mobStoreName);
 
+      // Guard: dungeonKey must be a valid IndexedDB key (string/number/date/array of such).
+      const keyInvalid =
+        dungeonKey === null ||
+        dungeonKey === undefined ||
+        dungeonKey === '' ||
+        Array.isArray(dungeonKey);
+      const dk = keyInvalid ? null : String(dungeonKey);
+      if (keyInvalid) {
+        resolve([]);
+        return;
+      }
+
       if (includeExtracted) {
         // Get all mobs for this dungeon
         const index = store.index('dungeonKey');
-        const request = index.getAll(dungeonKey);
+        const request = index.getAll(dk);
         request.onsuccess = () => resolve(request.result || []);
         request.onerror = () => reject(request.error);
       } else {
         // OPTIMIZED: Use compound index to get non-extracted mobs only
-        const index = store.index('dungeonKey_extracted');
-        const range = IDBKeyRange.bound([dungeonKey, false], [dungeonKey, false]);
-        const request = index.getAll(range);
-        request.onsuccess = () => resolve(request.result || []);
-        request.onerror = () => reject(request.error);
+        try {
+          const index = store.index('dungeonKey_extracted');
+          const range = IDBKeyRange.bound([dk, false], [dk, false]);
+          const request = index.getAll(range);
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        } catch (error) {
+          resolve([]);
+        }
       }
     });
   }
@@ -1381,9 +1393,7 @@ class MobBossStorageManager {
   }
 }
 
-// ================================================================================
-// MAIN PLUGIN CLASS
-// ================================================================================
+// ==== MAIN PLUGIN CLASS ====
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
 try {
@@ -1400,14 +1410,12 @@ try {
 }
 
 module.exports = class Dungeons {
-  // ============================================================================
-  // CONSTRUCTOR & DEFAULT SETTINGS
-  // ============================================================================
+  // ==== CONSTRUCTOR & DEFAULT SETTINGS ====
   constructor() {
     this.defaultSettings = {
       enabled: true,
       debug: false, // Debug mode: enables verbose console logging
-      spawnChance: 10, // 10% chance per user message (simple spawn rules)
+      spawnChance: 100, // 100% chance per user message (TESTING MODE)
       dungeonDuration: 600000, // 10 minutes
       maxDungeonsPercentage: 0.15, // Max 15% of server channels can have active dungeons
       minDungeonsAllowed: 3, // Always allow at least 3 dungeons even in small servers
@@ -1444,6 +1452,10 @@ module.exports = class Dungeons {
       userMana: null, // Will be calculated from intelligence
       userMaxMana: null,
     };
+
+    // Prevent noisy local agent-log network errors when the ingest endpoint is unavailable.
+    this._agentLogsPatched = false;
+    this._disableLocalAgentLogs();
 
     // IMPORTANT: avoid sharing references between defaults and live settings.
     // Hot paths mutate `this.settings`; if it aliases `defaultSettings`, defaults get corrupted.
@@ -1751,9 +1763,29 @@ module.exports = class Dungeons {
     };
   }
 
-  // ============================================================================
-  // DEBUG LOGGING
-  // ============================================================================
+  /**
+   * Disable agent log network calls to local ingest when unavailable.
+   * Swallows calls to 127.0.0.1:7242/ingest to avoid console ERR_CONNECTION_REFUSED.
+   */
+  _disableLocalAgentLogs() {
+    if (this._agentLogsPatched) return;
+    const origFetch =
+      typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
+    if (!origFetch) return;
+    const ResponseCtor = typeof window !== 'undefined' && window.Response ? window.Response : null;
+    if (!ResponseCtor) return;
+
+    window.fetch = (input, init) => {
+      const url = typeof input === 'string' ? input : input?.url || '';
+      if (url.startsWith('http://127.0.0.1:7242/ingest/')) {
+        return Promise.resolve(new ResponseCtor(null, { status: 204 }));
+      }
+      return origFetch(input, init);
+    };
+    this._agentLogsPatched = true;
+  }
+
+  // ==== DEBUG LOGGING ====
   /**
    * Debug log - Only logs when debug mode is enabled
    * Use for verbose/spam logs (burst spawns, capacity monitors, etc.)
@@ -2126,9 +2158,7 @@ module.exports = class Dungeons {
     console.error(prefix, ...payload);
   }
 
-  // ============================================================================
-  // PLUGIN LIFECYCLE - Start & Stop
-  // ============================================================================
+  // ==== PLUGIN LIFECYCLE - Start & Stop ====
   async start() {
     // Set plugin running state
     this.started = true;
@@ -2136,6 +2166,15 @@ module.exports = class Dungeons {
     // Reset observer start time when plugin starts
     this.observerStartTime = Date.now();
     this.loadSettings();
+
+    // TESTING MODE: Force spawn chance to 100%
+    if (this.settings.spawnChance !== 100) {
+      console.log(
+        `[Dungeons] Updating spawn chance from ${this.settings.spawnChance}% to 100% (TESTING MODE)`
+      );
+      this.settings.spawnChance = 100;
+      this.saveSettings();
+    }
 
     // Inject CSS using BdApi.DOM.addStyle (official API, persistent)
     this.injectCSS();
@@ -2442,9 +2481,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // UI EVENT DELEGATION (prevents thousands of per-element listeners)
-  // ============================================================================
+  // ==== UI EVENT DELEGATION (prevents thousands of per-element listeners) ====
 
   ensureDelegatedUiStyles() {
     const styleId = 'dungeons-delegated-ui-styles';
@@ -2548,9 +2585,7 @@ module.exports = class Dungeons {
     styleEl && styleEl.remove();
   }
 
-  // ============================================================================
-  // DATABASE INITIALIZATION & STORAGE
-  // ============================================================================
+  // ==== DATABASE INITIALIZATION & STORAGE ====
   async initStorage() {
     try {
       const userId = await this.getUserId();
@@ -2603,9 +2638,7 @@ module.exports = class Dungeons {
     return 'default';
   }
 
-  // ============================================================================
-  // SETTINGS MANAGEMENT
-  // ============================================================================
+  // ==== SETTINGS MANAGEMENT ====
   async loadSettings() {
     try {
       // Try to load settings - IndexedDB first (crash-resistant), then BdApi.Data
@@ -2763,9 +2796,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // USER STATS & RESOURCES - HP/Mana Scaling
-  // ============================================================================
+  // ==== USER STATS & RESOURCES - HP/Mana Scaling ====
   async initializeUserStats() {
     // Get stats ONCE at the start (avoid redundant calls)
     const totalStats = this.getUserEffectiveStats();
@@ -2891,10 +2922,7 @@ module.exports = class Dungeons {
     this._shadowCountCache = null;
   }
 
-  // ============================================================================
-  // ============================================================================
-  // PLUGIN INTEGRATION - External Plugin References (Optimized with BdApi)
-  // ============================================================================
+  // ==== PLUGIN INTEGRATION - External Plugin References (Optimized with BdApi) ====
 
   /**
    * Validate plugin reference with required method/property check
@@ -3001,6 +3029,11 @@ module.exports = class Dungeons {
 
         // Listen for shadow extraction events (event-based sync)
         this._shadowExtractedListener = (data) => {
+          const activeDungeonCount = this.activeDungeons?.size || 0;
+          if (activeDungeonCount === 0) {
+            return;
+          }
+
           // Invalidate shadow count cache
           this.invalidateShadowCountCache();
           // Invalidate shadows cache
@@ -3059,9 +3092,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // CHANNEL DETECTION (IMPROVED)
-  // ============================================================================
+  // ==== CHANNEL DETECTION (IMPROVED) ====
   /**
    * Get all text channels for a guild
    */
@@ -3164,6 +3195,54 @@ module.exports = class Dungeons {
     }
   }
 
+  /**
+   * Pick a spawn channel within the same guild, preferring unlocked/idle channels.
+   * Falls back to current channel if no candidates are available.
+   */
+  pickSpawnChannel(channelInfo) {
+    if (!channelInfo || !channelInfo.guildId || channelInfo.guildId === 'DM') {
+      return {
+        channelKey: channelInfo ? `${channelInfo.guildId}_${channelInfo.channelId}` : null,
+        channelInfo,
+        source: 'dm-or-missing',
+      };
+    }
+
+    const allChannels = this.getAllGuildChannels(channelInfo.guildId) || [];
+    const textChannels = allChannels.filter((ch) => {
+      // Discord text channel types: 0 (text), 5 (announcement), 11 (thread), 12 (private thread)
+      const type = ch?.type;
+      const isTextLike =
+        type === 0 || type === 5 || type === 11 || type === 12 || type === undefined;
+      return ch && ch.id && isTextLike;
+    });
+
+    const available = textChannels.filter((ch) => {
+      const key = `${channelInfo.guildId}_${ch.id}`;
+      return !this.channelLocks.has(key) && !this.activeDungeons.has(key);
+    });
+
+    const pool = available.length ? available : textChannels;
+    if (!pool.length) {
+      return {
+        channelKey: `${channelInfo.guildId}_${channelInfo.channelId}`,
+        channelInfo,
+        source: 'no-channels',
+      };
+    }
+
+    const chosen = pool[Math.floor(Math.random() * pool.length)];
+    return {
+      channelKey: `${channelInfo.guildId}_${chosen.id}`,
+      channelInfo: {
+        guildId: channelInfo.guildId,
+        channelId: chosen.id,
+        channelName: chosen.name,
+      },
+      source: available.length ? 'available-random' : 'any-random',
+    };
+  }
+
   getChannelInfo() {
     try {
       // Method 1: URL parsing
@@ -3225,9 +3304,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // DUNGEON NAMES GENERATOR
-  // ============================================================================
+  // ==== DUNGEON NAMES GENERATOR ====
   generateDungeonName(rank, biome) {
     // Biome-specific dungeon names
     const biomeNames = {
@@ -3301,9 +3378,7 @@ module.exports = class Dungeons {
     return bosses[Math.floor(Math.random() * bosses.length)];
   }
 
-  // ============================================================================
-  // MESSAGE OBSERVER
-  // ============================================================================
+  // ==== MESSAGE OBSERVER ====
   startMessageObserver() {
     if (this.messageObserver) {
       return;
@@ -3313,24 +3388,64 @@ module.exports = class Dungeons {
     // IMPORTANT: Do NOT fall back to observing document.body.
     // Observing the entire document can cause massive mutation volume and peg CPU.
     const findMessageContainer = () => {
-      // Try specific message container selectors first
+      // DEBUG: Log what we're looking for
+      console.log('[Dungeons] Searching for message container...');
+
+      // Try specific Discord message container selectors first (more specific to less specific)
       const selectors = [
+        // Most specific - Discord's actual message container classes
+        'main[class*="chatContent"] > div[class*="messagesWrapper"]',
+        'div[class*="messagesWrapper"]',
+        'div[class*="scrollerInner"]',
+        'ol[class*="scrollerInner"]', // Discord uses <ol> for message lists
+        'div[data-list-id="chat-messages"]',
         '[class*="messagesWrapper"]',
-        '[class*="chat"]',
+        '[class*="chat"] > [class*="content"]',
         '[class*="messages"]',
         '[class*="messageList"]',
       ];
 
-      const selectorContainer = selectors
-        .map((sel) => document.querySelector(sel))
-        .find((el) => Boolean(el));
-      if (selectorContainer) return selectorContainer;
+      // Try each selector and log results
+      for (const sel of selectors) {
+        const element = document.querySelector(sel);
+        if (element) {
+          console.log(`[Dungeons] Found container with selector: ${sel}`);
+          // Verify it actually contains or can contain messages
+          const hasMessages = element.querySelector('[class*="message"]') !== null;
+          const hasMessageId =
+            element.querySelector('[data-list-item-id^="chat-messages"]') !== null;
+          console.log(
+            `[Dungeons] Container check - hasMessages: ${hasMessages}, hasMessageId: ${hasMessageId}`
+          );
+          if (
+            hasMessages ||
+            hasMessageId ||
+            sel.includes('messagesWrapper') ||
+            sel.includes('scrollerInner')
+          ) {
+            console.log('[Dungeons] Container validated, using this element');
+            return element;
+          }
+        }
+      }
+
+      console.log('[Dungeons] Primary selectors failed, trying fallback...');
 
       // Fallback: Find scroller that contains actual message elements
       const scrollers = document.querySelectorAll('[class*="scroller"]');
+      console.log(`[Dungeons] Found ${scrollers.length} scroller elements`);
+
       let scrollerWithMessages = null;
       for (const scroller of scrollers) {
-        if (scroller.querySelector('[class*="message"]') !== null) {
+        const hasMessage = scroller.querySelector('[class*="message"]') !== null;
+        const hasMessageId =
+          scroller.querySelector('[data-list-item-id^="chat-messages"]') !== null;
+        if (hasMessage || hasMessageId) {
+          console.log('[Dungeons] Found scroller with messages:', {
+            classes: scroller.className,
+            hasMessage,
+            hasMessageId,
+          });
           scrollerWithMessages = scroller;
           break;
         }
@@ -3338,12 +3453,21 @@ module.exports = class Dungeons {
       if (scrollerWithMessages) return scrollerWithMessages;
 
       // No safe container found; retry later.
+      console.log('[Dungeons] No message container found in DOM');
       return null;
     };
 
     const messageContainer = findMessageContainer();
 
     if (messageContainer) {
+      console.log('[Dungeons] SUCCESS: Message container found, attaching observer');
+      console.log('[Dungeons] Container element:', {
+        tagName: messageContainer.tagName,
+        className: messageContainer.className,
+        id: messageContainer.id,
+        childCount: messageContainer.children.length,
+      });
+
       // Reset retry counters once we successfully attach.
       this._messageObserverRetryCount = 0;
       if (this._messageObserverRetryTimeoutId) {
@@ -3357,29 +3481,56 @@ module.exports = class Dungeons {
         if (!this.started || !this.settings?.enabled) return;
         if (document.hidden) return;
 
+        console.log('[Dungeons] MutationObserver callback fired, mutations:', mutations.length);
+
         // Queue real chat message list items only; avoid expensive DOM queries on every mutation.
+        let addedMessageCount = 0;
+        let totalNodesAdded = 0;
         mutations.forEach((mutation) => {
           mutation.addedNodes.forEach((node) => {
-            if (!node || node.nodeType !== 1) return;
+            totalNodesAdded++;
+            if (!node || node.nodeType !== 1) {
+              console.log('[Dungeons] Skipping node (not element node)');
+              return;
+            }
 
             const listItemId = node.getAttribute?.('data-list-item-id');
+            console.log('[Dungeons] Node added:', {
+              nodeName: node.nodeName,
+              listItemId,
+              classList: Array.from(node.classList || []),
+            });
+
             const isChatMessageItem = listItemId && listItemId.startsWith('chat-messages');
             const messageElement =
               (isChatMessageItem && (node.closest?.('[data-list-item-id]') || node)) ||
               node.closest?.('[data-list-item-id^="chat-messages"]');
 
-            if (!messageElement) return;
+            if (!messageElement) {
+              console.log('[Dungeons] Node is not a chat message element');
+              return;
+            }
+            console.log('[Dungeons] Found chat message element!');
             this._pendingMessageElements || (this._pendingMessageElements = new Set());
             this._pendingMessageElements.add(messageElement);
+            addedMessageCount++;
           });
         });
 
+        console.log('[Dungeons] Mutation summary:', { totalNodesAdded, addedMessageCount });
+
+        if (addedMessageCount > 0) {
+          console.log(
+            `[Dungeons] Observer detected ${addedMessageCount} new message(s), scheduling flush`
+          );
+        }
         this._scheduleMessageFlush();
       });
 
       // Track observer for cleanup
       this._observers.add(this.messageObserver);
       this.messageObserver.observe(messageContainer, { childList: true, subtree: true });
+      console.log('[Dungeons] Message observer is now ACTIVE and watching for messages');
     } else {
       // Avoid scheduling multiple concurrent retries.
       if (this._messageObserverRetryTimeoutId) return;
@@ -3472,15 +3623,25 @@ module.exports = class Dungeons {
     if (!this.settings.enabled) return;
 
     try {
+      console.log('[Dungeons] ========== NEW MESSAGE DETECTED ==========');
+
       // Check if message is old (before observer started) - skip old messages
       const messageTimestamp = this.getMessageTimestamp(messageElement);
       if (messageTimestamp && messageTimestamp < this.observerStartTime) {
+        console.log(
+          '[Dungeons] SKIPPED: Old message (timestamp:',
+          messageTimestamp,
+          'observer start:',
+          this.observerStartTime,
+          ')'
+        );
         return;
       }
 
       // Check for duplicate processing using message ID
       const messageId = this.getMessageId(messageElement);
       if (messageId && this.processedMessageIds.has(messageId)) {
+        console.log('[Dungeons] SKIPPED: Duplicate message ID:', messageId);
         return;
       }
       if (messageId) {
@@ -3493,26 +3654,51 @@ module.exports = class Dungeons {
       }
 
       const isUserMsg = this.isUserMessage(messageElement);
-      if (!isUserMsg) return;
+      console.log('[Dungeons] Message check - isUserMessage:', isUserMsg);
+      if (!isUserMsg) {
+        console.log('[Dungeons] SKIPPED: Not a user message (probably bot)');
+        return;
+      }
 
       const channelInfo = this.getChannelInfo() || this.getChannelInfoFromLocation();
-      if (!channelInfo) return;
+      console.log('[Dungeons] Channel info:', channelInfo);
+      if (!channelInfo) {
+        console.log('[Dungeons] SKIPPED: Could not get channel info');
+        return;
+      }
 
       const now = Date.now();
-      const channelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
+      const userChannelKey = `${channelInfo.guildId}_${channelInfo.channelId}`;
+
+      // Pick a spawn channel in the same guild to distribute dungeons
+      const spawnTarget = this.pickSpawnChannel(channelInfo);
+      const channelKey = spawnTarget.channelKey || userChannelKey;
+      const spawnChannelInfo = spawnTarget.channelInfo || channelInfo;
 
       // SIMPLE SPAWN RULES:
-      // - 10% chance per user message
+      // - 100% chance per user message (TESTING MODE)
       // - only one active dungeon per channel
       // - global cap of 10 active dungeons total
       const isGuild = Boolean(channelInfo.guildId) && channelInfo.guildId !== 'DM';
-      isGuild && this.checkDungeonSpawn(channelKey, channelInfo, { messageId }).catch(() => {});
+      console.log('[Dungeons] isGuild check:', {
+        isGuild,
+        guildId: channelInfo.guildId,
+        channelKey,
+      });
+      if (isGuild) {
+        console.log('[Dungeons] Calling checkDungeonSpawn for channel:', channelKey);
+        this.checkDungeonSpawn(channelKey, spawnChannelInfo, { messageId }).catch((err) => {
+          console.error('[Dungeons] checkDungeonSpawn ERROR:', err);
+        });
+      } else {
+        console.log('[Dungeons] SKIPPED: Not a guild channel (DM or invalid)');
+      }
 
       // Still check current channel for user attacks
-      if (this.settings.userActiveDungeon === channelKey) {
+      if (this.settings.userActiveDungeon === userChannelKey) {
         if (now - this.lastUserAttackTime >= this.settings.userAttackCooldown) {
           // Pass messageElement for critical hit detection
-          await this.processUserAttack(channelKey, messageElement);
+          await this.processUserAttack(userChannelKey, messageElement);
           this.lastUserAttackTime = now;
         }
       }
@@ -3619,9 +3805,7 @@ module.exports = class Dungeons {
     return !botBadge;
   }
 
-  // ============================================================================
-  // DUNGEON SPAWNING
-  // ============================================================================
+  // ==== DUNGEON SPAWNING ====
   /**
    * Get server member count for dynamic spawn rate calculation
    */
@@ -3872,22 +4056,45 @@ module.exports = class Dungeons {
     // - 10% chance per user message
     // - only one occupied dungeon per channel (lock while active)
     // - global cap: 10 active dungeons total
-    if (this.channelLocks.has(channelKey) || this.activeDungeons.has(channelKey)) return;
-    if (this.getActiveDungeonCountGlobal() >= 10) return;
+
+    // DEBUG: Log spawn attempt
+    console.log('[Dungeons] Spawn attempt:', {
+      channelKey,
+      hasLock: this.channelLocks.has(channelKey),
+      hasActiveDungeon: this.activeDungeons.has(channelKey),
+      globalCount: this.getActiveDungeonCountGlobal(),
+      spawnChanceSetting: this.settings?.spawnChance,
+    });
+
+    if (this.channelLocks.has(channelKey) || this.activeDungeons.has(channelKey)) {
+      console.log('[Dungeons] Blocked: Channel locked or has active dungeon');
+      return;
+    }
+    if (this.getActiveDungeonCountGlobal() >= 10) {
+      console.log('[Dungeons] Blocked: Global cap reached (10)');
+      return;
+    }
 
     const spawnChancePercent = Number.isFinite(this.settings?.spawnChance)
       ? this.settings.spawnChance
       : 10;
     const spawnChance = Math.max(0, Math.min(1, spawnChancePercent / 100));
-    if (Math.random() > spawnChance) return;
+    const roll = Math.random();
+    console.log('[Dungeons] Spawn roll:', { spawnChance, roll, willSpawn: roll <= spawnChance });
+    if (roll > spawnChance) {
+      console.log('[Dungeons] Blocked: Failed spawn roll');
+      return;
+    }
 
     // LOCK CHANNEL IMMEDIATELY: Prevents race conditions from message spam
     // Lock persists while the dungeon is active (one occupied dungeon per channel).
     this.channelLocks.add(channelKey);
 
     try {
+      console.log('[Dungeons] SUCCESS: Spawning dungeon in', channelKey);
       const dungeonRank = this.calculateDungeonRank();
       await this.createDungeon(channelKey, channelInfo, dungeonRank);
+      console.log('[Dungeons] Dungeon created successfully');
     } catch (error) {
       this.errorLog(`Error creating dungeon in ${channelKey}:`, error);
       this.channelLocks.delete(channelKey);
@@ -4220,9 +4427,7 @@ module.exports = class Dungeons {
     // Silent dungeon spawn (no console spam)
   }
 
-  // ============================================================================
-  // CONTINUOUS MOB SPAWNING
-  // ============================================================================
+  // ==== CONTINUOUS MOB SPAWNING ====
 
   /**
    * Start continuous mob spawning for a dungeon
@@ -4285,9 +4490,7 @@ module.exports = class Dungeons {
     this._stopMobSpawnLoop?.();
   }
 
-  // ============================================================================
-  // BEAST TYPE SELECTION HELPERS
-  // ============================================================================
+  // ==== BEAST TYPE SELECTION HELPERS ====
 
   /**
    * Select appropriate magic beast type based on biome families and rank
@@ -4662,9 +4865,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // USER PARTICIPATION & SELECTION
-  // ============================================================================
+  // ==== USER PARTICIPATION & SELECTION ====
   /**
    * Validate active dungeon status - check if dungeon still exists
    * If dungeon doesn't exist, force user out of active dungeon status
@@ -4935,9 +5136,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // HP/MANA SYNC HELPERS (Consolidated from redundant code)
-  // ============================================================================
+  // ==== HP/MANA SYNC HELPERS (Consolidated from redundant code) ====
 
   /**
    * Sync HP from SoloLevelingStats plugin (pull latest values)
@@ -5039,9 +5238,7 @@ module.exports = class Dungeons {
     uiUpdater?.call(this.soloLevelingStats);
   }
 
-  // ============================================================================
-  // STAT-BASED COMBAT CALCULATIONS
-  // ============================================================================
+  // ==== STAT-BASED COMBAT CALCULATIONS ====
   /**
    * Calculate HP from vitality stat and rank
    * Uses TOTAL EFFECTIVE STATS if SoloLevelingStats is available
@@ -5208,9 +5405,7 @@ module.exports = class Dungeons {
     return totalStats * rankMultiplier;
   }
 
-  // ============================================================================
-  // HP/MANA REGENERATION SYSTEM
-  // ============================================================================
+  // ==== HP/MANA REGENERATION SYSTEM ====
   /**
    * Start HP/Mana regeneration interval (runs every 1 second)
    */
@@ -5569,9 +5764,7 @@ module.exports = class Dungeons {
     return result;
   }
 
-  // ============================================================================
-  // SHADOW COMBAT HELPERS
-  // ============================================================================
+  // ==== SHADOW COMBAT HELPERS ====
   /**
    * Get a stable shadow identifier across schema versions.
    * Some older records use `i` instead of `id`.
@@ -5594,9 +5787,7 @@ module.exports = class Dungeons {
     return stableId && !shadow.id ? { ...shadow, id: stableId } : shadow;
   }
 
-  // ============================================================================
-  // RANK SCALING HELPERS
-  // ============================================================================
+  // ==== RANK SCALING HELPERS ====
   clampNumber(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
@@ -5648,9 +5839,9 @@ module.exports = class Dungeons {
   }
 
   getRankDamageMultiplier(attackerRank, defenderRank) {
-    const exponent = this.rankScaling?.damageExponent ?? 0.85;
-    const min = this.rankScaling?.damageMin ?? 0.35;
-    const max = this.rankScaling?.damageMax ?? 3.25;
+    const exponent = this.rankScaling?.damageExponent ?? 0.9;
+    const min = this.rankScaling?.damageMin ?? 0.25;
+    const max = this.rankScaling?.damageMax ?? 4.0;
     const list = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : ['E'];
     const key = `${exponent}|${min}|${max}|${this.rankScaling?.powerStep ?? 1.35}|${list.join(
       ','
@@ -5691,9 +5882,7 @@ module.exports = class Dungeons {
     return this.clampNumber(base + Math.max(0, rankIndex) * step, base, maxFactor);
   }
 
-  // ============================================================================
-  // COMBAT ENTITY NORMALIZATION HELPERS
-  // ============================================================================
+  // ==== COMBAT ENTITY NORMALIZATION HELPERS ====
   getEnemyKey(enemy, fallbackType = 'mob') {
     if (!enemy || typeof enemy !== 'object') return null;
     const type = enemy.type || fallbackType;
@@ -5796,9 +5985,7 @@ module.exports = class Dungeons {
     return (byType[entityType] || byType.enemy)();
   }
 
-  // ============================================================================
-  // COMBAT PERFORMANCE HELPERS
-  // ============================================================================
+  // ==== COMBAT PERFORMANCE HELPERS ====
   /**
    * Build an indexed snapshot for a single dungeon combat tick.
    * This removes repeated O(n) `.find()` lookups inside hot loops.
@@ -6167,9 +6354,7 @@ module.exports = class Dungeons {
     return this.calculateDamage(attacker.stats, defender.stats, attacker.rank, defender.rank);
   }
 
-  // ============================================================================
-  // SHADOW ARMY ATTACKS WITH DEATH SYSTEM
-  // ============================================================================
+  // ==== SHADOW ARMY ATTACKS WITH DEATH SYSTEM ====
 
   /**
    * Pre-split shadow army across active dungeons (OPTIMIZATION)
@@ -6177,16 +6362,25 @@ module.exports = class Dungeons {
    * Eliminates recalculating splits on every attack tick (3s interval)
    */
   async preSplitShadowArmy(forceRecalculate = false) {
+    console.log('[Dungeons] preSplitShadowArmy called (force:', forceRecalculate, ')');
+    const splitStart = Date.now();
+
     // Check cache validity (1 minute TTL) - unless forced
     if (
       !forceRecalculate &&
       this.allocationCacheTime &&
       Date.now() - this.allocationCacheTime < this.allocationCacheTTL
     ) {
+      console.log(
+        '[Dungeons] Using cached shadow allocation (age:',
+        Date.now() - this.allocationCacheTime,
+        'ms)'
+      );
       return; // Cache still valid
     }
 
     const allShadows = await this.getAllShadows();
+    console.log('[Dungeons] preSplitShadowArmy completed in', Date.now() - splitStart, 'ms');
     if (!allShadows || allShadows.length === 0) {
       this.shadowAllocations.clear();
       return;
@@ -6308,9 +6502,7 @@ module.exports = class Dungeons {
     this.allocationCacheTime = Date.now();
   }
 
-  // ============================================================================
-  // SHADOW ATTACK SYSTEM
-  // ============================================================================
+  // ==== SHADOW ATTACK SYSTEM ====
 
   /**
    * Start shadow attacks for a dungeon
@@ -6547,9 +6739,7 @@ module.exports = class Dungeons {
       this._stopCombatLoop();
   }
 
-  // ============================================================================
-  // MOB ATTACK SYSTEM
-  // ============================================================================
+  // ==== MOB ATTACK SYSTEM ====
 
   /**
    * Start mob attacks for a dungeon
@@ -6601,9 +6791,7 @@ module.exports = class Dungeons {
       this._stopCombatLoop();
   }
 
-  // ============================================================================
-  // COMBAT SYSTEM - Shadow Attacks (Dynamic & Chaotic)
-  // ============================================================================
+  // ==== COMBAT SYSTEM - Shadow Attacks (Dynamic & Chaotic) ====
   async processShadowAttacks(channelKey, cyclesMultiplier = 1) {
     try {
       // PERFORMANCE: Aggressively reduce processing when window is hidden
@@ -6649,6 +6837,20 @@ module.exports = class Dungeons {
       }
 
       try {
+        // Ensure combat state objects exist (defensive re-init)
+        if (!dungeon.shadowCombatData || typeof dungeon.shadowCombatData !== 'object') {
+          dungeon.shadowCombatData = {};
+        }
+        if (!dungeon.shadowHP || typeof dungeon.shadowHP !== 'object') {
+          dungeon.shadowHP = {};
+          if (!dungeon.shadowAttacks || typeof dungeon.shadowAttacks !== 'object') {
+            dungeon.shadowAttacks = {};
+            this.debugLog?.('SHADOW_ATTACKS', 'shadowAttacks reinitialized (was null/invalid)', {
+              channelKey,
+            });
+          }
+        }
+
         // OPTIMIZATION: Use pre-split shadow allocations (cached)
         // DYNAMIC DEPLOYMENT: Reallocate shadows if cache expired OR if this dungeon has no shadows
         // This ensures shadows are deployed even when dungeons spawn midway
@@ -7081,6 +7283,10 @@ module.exports = class Dungeons {
             const _mobsKilled = mobDamageResult.targetsKilled; // Tracked in analytics
 
             // Process killed mobs (XP, extraction, notifications)
+            if (!dungeon.mobs) {
+              dungeon.mobs = { killed: 0, remaining: 0, activeMobs: [], total: 0 };
+            }
+
             mobDamageMap.forEach((_damage, mobId) => {
               const mob = combatSnapshot.mobById.get(mobId);
               if (!mob || mob.hp > 0) return; // Only process dead mobs
@@ -7131,6 +7337,11 @@ module.exports = class Dungeons {
 
           // Update combat data (use finalCombatData since we may have initialized it)
           const combatDataToUpdate = dungeon.shadowCombatData[shadowId];
+          if (!combatDataToUpdate) {
+            // Reinitialize combat data defensively to avoid crash
+            dungeon.shadowCombatData[shadowId] = this.initializeShadowCombatData(shadow);
+            continue;
+          }
           combatDataToUpdate.attackCount += attacksInSpan;
           combatDataToUpdate.damageDealt += totalBossDamage + totalMobDamage;
 
@@ -7211,6 +7422,11 @@ module.exports = class Dungeons {
     if (useCache && this._shadowsCache) {
       const now = Date.now();
       if (now - this._shadowsCache.timestamp < 1000) {
+        console.log(
+          '[Dungeons] Using cached shadows (cache age:',
+          now - this._shadowsCache.timestamp,
+          'ms)'
+        );
         return this._shadowsCache.shadows;
       }
     }
@@ -7220,7 +7436,11 @@ module.exports = class Dungeons {
     // CRITICAL: Only use IndexedDB storageManager - no fallback to old settings.shadows
     // Shadow data is stored in IndexedDB, not in settings
     if (!this.shadowArmy.storageManager) {
+      console.log('[Dungeons] WARNING: Waiting up to 2500ms for ShadowArmy storageManager...');
+      const waitStart = Date.now();
       await this.waitForShadowArmyStorageManager({ timeoutMs: 2500, intervalMs: 200 });
+      const waitTime = Date.now() - waitStart;
+      console.log('[Dungeons] Wait completed after', waitTime, 'ms');
       if (!this.shadowArmy.storageManager) {
         this.debugLog('GET_ALL_SHADOWS', 'ShadowArmy storageManager not available yet');
         // Prefer returning last known cached value (prevents empty allocation timing bugs).
@@ -7275,9 +7495,7 @@ module.exports = class Dungeons {
     return this.baselineStats[rank] || this.baselineStats['E'];
   }
 
-  // ============================================================================
-  // COMBAT DATA HELPER FUNCTIONS (Performance Optimization)
-  // ============================================================================
+  // ==== COMBAT DATA HELPER FUNCTIONS (Performance Optimization) ====
 
   /**
    * Initialize shadow combat data using ShadowArmy's stored data (batch optimized)
@@ -7767,9 +7985,7 @@ module.exports = class Dungeons {
     return combatReady;
   }
 
-  // ============================================================================
-  // DAMAGE CALCULATION HELPERS
-  // ============================================================================
+  // ==== DAMAGE CALCULATION HELPERS ====
 
   /**
    * Apply boss damage variance (±25% per attack)
@@ -7970,9 +8186,7 @@ module.exports = class Dungeons {
     return damage * (roleMultipliers[role] || 1.0);
   }
 
-  // ============================================================================
-  // BOSS & MOB ATTACKS
-  // ============================================================================
+  // ==== BOSS & MOB ATTACKS ====
   async processBossAttacks(channelKey, cyclesMultiplier = 1) {
     try {
       // PERFORMANCE: Aggressively reduce processing when window is hidden
@@ -8625,9 +8839,7 @@ module.exports = class Dungeons {
     this.saveSettings();
   }
 
-  // ============================================================================
-  // EXTRACTION SYSTEM HELPERS
-  // ============================================================================
+  // ==== EXTRACTION SYSTEM HELPERS ====
 
   /**
    * Format time remaining in MM:SS format
@@ -8656,9 +8868,7 @@ module.exports = class Dungeons {
       .replace(/'/g, '&#039;');
   }
 
-  // ============================================================================
-  // MOB EXTRACTION SYSTEM - QUEUE & VERIFICATION
-  // ============================================================================
+  // ==== MOB EXTRACTION SYSTEM - QUEUE & VERIFICATION ====
 
   /**
    * Setup event listener for Shadow Army extractions
@@ -8947,12 +9157,8 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // SHADOW REVIVE SYSTEM
-  // ============================================================================
-  // ============================================================================
-  // RESURRECTION SYSTEM - Auto-Resurrection with Rank-Based Costs
-  // ============================================================================
+  // ==== SHADOW REVIVE SYSTEM ====
+  // ==== RESURRECTION SYSTEM - Auto-Resurrection with Rank-Based Costs ====
   /**
    * Calculate mana cost for resurrecting a shadow based on rank
    * Higher rank shadows cost more mana to resurrect
@@ -9105,9 +9311,7 @@ module.exports = class Dungeons {
   // Manual mass-revive function removed - superseded by automatic resurrection system
   // Automatic resurrection happens when shadows die (see attemptAutoResurrection)
 
-  // ============================================================================
-  // DUNGEON COMPLETION
-  // ============================================================================
+  // ==== DUNGEON COMPLETION ====
   async completeDungeon(channelKey, reason) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
@@ -9405,9 +9609,7 @@ module.exports = class Dungeons {
     this.saveSettings();
   }
 
-  // ============================================================================
-  // NOTIFICATION SYSTEM - Batched Toast Notifications
-  // ============================================================================
+  // ==== NOTIFICATION SYSTEM - Batched Toast Notifications ====
   /**
    * Show comprehensive dungeon completion summary (aggregate toast)
    * Includes: user XP, shadow XP, level-ups, rank-ups, mobs killed, deaths/revives, extractions
@@ -9451,9 +9653,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // ARISE EXTRACTION SYSTEM - Boss Shadow Extraction
-  // ============================================================================
+  // ==== ARISE EXTRACTION SYSTEM - Boss Shadow Extraction ====
   /**
    * Show ARISE button for shadow extraction from defeated boss
    * Button appears in channel header and allows user to attempt extraction
@@ -9889,22 +10089,25 @@ module.exports = class Dungeons {
         }
 
         // Check if shadow leveled up
-        const levelAfter = shadow.level || 1;
+        const updatedShadow = this.shadowArmy.getShadowData
+          ? this.shadowArmy.getShadowData(shadow)
+          : shadow;
+        const levelAfter = updatedShadow.level || shadow.level || 1;
         if (levelAfter > levelBefore) {
           leveledUpShadows.push({
-            shadow,
+            shadow: updatedShadow,
             levelBefore,
             levelAfter,
-            name: shadow.name || 'Shadow',
-            rank: shadow.rank,
+            name: updatedShadow.name || shadow.name || 'Shadow',
+            rank: updatedShadow.rank || shadow.rank,
           });
         }
 
         // Check if shadow ranked up (automatic)
-        const rankAfter = shadow.rank;
+        const rankAfter = updatedShadow.rank || shadow.rank;
         if (rankAfter !== rankBefore) {
           rankedUpShadows.push({
-            name: shadow.name || 'Shadow',
+            name: updatedShadow.name || shadow.name || 'Shadow',
             oldRank: rankBefore,
             newRank: rankAfter,
           });
@@ -9923,9 +10126,7 @@ module.exports = class Dungeons {
     };
   }
 
-  // ============================================================================
-  // VISUAL INDICATORS (BETTER SVG ICON)
-  // ============================================================================
+  // ==== VISUAL INDICATORS (BETTER SVG ICON) ====
   showDungeonIndicator(channelKey, channelInfo) {
     const channelSelector = `[data-list-item-id="channels___${channelInfo.channelId}"]`;
     const channelElement = document.querySelector(channelSelector);
@@ -9984,9 +10185,7 @@ module.exports = class Dungeons {
     this.dungeonIndicators.clear();
   }
 
-  // ============================================================================
-  // UI HELPERS - Channel Header & DOM Manipulation
-  // ============================================================================
+  // ==== UI HELPERS - Channel Header & DOM Manipulation ====
 
   updateBossHPBar(channelKey) {
     try {
@@ -10012,6 +10211,7 @@ module.exports = class Dungeons {
       const dungeon = this.activeDungeons.get(channelKey);
       if (!dungeon || dungeon.boss.hp <= 0) {
         this.removeBossHPBar(channelKey);
+        this._bossBarCache?.delete?.(channelKey);
         this.showChannelHeaderComments(channelKey);
         return;
       }
@@ -10033,6 +10233,7 @@ module.exports = class Dungeons {
         const existingBar = this.bossHPBars.get(channelKey);
         if (existingBar) {
           this.removeBossHPBar(channelKey);
+          this._bossBarCache?.delete?.(channelKey);
           this.showChannelHeaderComments(channelKey);
         }
         return;
@@ -10583,6 +10784,8 @@ module.exports = class Dungeons {
       }
     }
     this.bossHPBars.delete(channelKey);
+    // Clear cached payload so next render fully rebuilds the bar (prevents desync after removal)
+    this._bossBarCache?.delete?.(channelKey);
     // Restore comments when boss HP bar is removed
     this.showChannelHeaderComments(channelKey);
   }
@@ -10603,6 +10806,7 @@ module.exports = class Dungeons {
       }
     });
     this.bossHPBars.clear();
+    this._bossBarCache?.clear?.();
 
     // Also remove any orphaned containers
     document.querySelectorAll('.dungeon-boss-hp-container').forEach((container) => {
@@ -10687,19 +10891,13 @@ module.exports = class Dungeons {
     });
   }
 
-  // ============================================================================
-  // USER HP/MANA BARS
-  // ============================================================================
-  // ============================================================================
-  // USER HP/MANA BARS - Legacy Code Removed
-  // ============================================================================
+  // ==== USER HP/MANA BARS ====
+  // ==== USER HP/MANA BARS - Legacy Code Removed ====
   // User HP/Mana bars are now displayed by SoloLevelingStats plugin in chat UI header
   // All HP bar creation, positioning, and update code has been removed
   // HP/Mana calculations (calculateHP, calculateMana) are still used by resurrection system
 
-  // ============================================================================
-  // DUNGEON SELECTION UI (CHAT BUTTON)
-  // ============================================================================
+  // ==== DUNGEON SELECTION UI (CHAT BUTTON) ====
   findToolbar() {
     // Method 1: Look for existing TitleManager or SkillTree buttons to find toolbar
     const _titleBtn = document.querySelector('.tm-title-button');
@@ -11041,9 +11239,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // PERFORMANCE OPTIMIZATION: Active/Background Dungeon System
-  // ============================================================================
+  // ==== PERFORMANCE OPTIMIZATION: Active/Background Dungeon System ====
   /**
    * Check if a dungeon is "active" (user participating OR watching)
    * Active dungeons process at full speed, background dungeons process slower
@@ -11797,6 +11993,7 @@ module.exports = class Dungeons {
 
         // Remove all existing boss HP bars first (clean slate)
         this.removeAllBossHPBars();
+        this._bossBarCache?.clear?.();
 
         // Ensure boss HP bar CSS exists before recreating in the new channel.
         this.ensureBossHpBarCssInjected?.();
@@ -11826,6 +12023,14 @@ module.exports = class Dungeons {
             dungeon?.guildId === channelInfo.guildId;
           isCurrentChannel && this.updateBossHPBar(channelKey);
         });
+
+        // Force an immediate HP bar refresh for the current channel (bypasses throttling).
+        const currentDungeon = this.activeDungeons.get(currentChannelKey);
+        if (currentDungeon) {
+          this._hpBarUpdateQueue || (this._hpBarUpdateQueue = new Set());
+          this._hpBarUpdateQueue.add(currentChannelKey);
+          this.processHPBarUpdateQueue?.();
+        }
       }
     };
 
@@ -11948,9 +12153,7 @@ module.exports = class Dungeons {
     });
   }
 
-  // ============================================================================
-  // MOB KILL NOTIFICATIONS
-  // ============================================================================
+  // ==== MOB KILL NOTIFICATIONS ====
   startMobKillNotifications(channelKey) {
     if (this.mobKillNotificationTimers.has(channelKey)) return;
     const timer = setInterval(() => {
@@ -11989,9 +12192,7 @@ module.exports = class Dungeons {
     this.saveSettings();
   }
 
-  // ============================================================================
-  // CLEANUP LOOP
-  // ============================================================================
+  // ==== CLEANUP LOOP ====
   startDungeonCleanupLoop() {
     if (this.dungeonCleanupInterval) return;
     this.dungeonCleanupInterval = setInterval(() => {
@@ -12030,9 +12231,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // RESTORE ACTIVE DUNGEONS
-  // ============================================================================
+  // ==== RESTORE ACTIVE DUNGEONS ====
   async restoreActiveDungeons() {
     if (!this.storageManager) return;
 
@@ -12277,9 +12476,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // GARBAGE COLLECTION & MEMORY MANAGEMENT
-  // ============================================================================
+  // ==== GARBAGE COLLECTION & MEMORY MANAGEMENT ====
   /**
    * Trigger garbage collection and memory cleanup
    * @param {string} trigger - What triggered the GC (periodic, dungeon_complete, manual)
@@ -12351,9 +12548,7 @@ module.exports = class Dungeons {
     }
   }
 
-  // ============================================================================
-  // TOAST & CSS
-  // ============================================================================
+  // ==== TOAST & CSS ====
   showToast(message, type = 'info') {
     // PERFORMANCE: Skip toast notifications when window is hidden (except critical errors)
     if (!this.isWindowVisible() && type !== 'error') {
@@ -12506,9 +12701,7 @@ module.exports = class Dungeons {
     this.removeCSSById(styleId);
   }
 
-  // ============================================================================
-  // CSS MANAGEMENT SYSTEM - Advanced Theme Integration & Style Management
-  // ============================================================================
+  // ==== CSS MANAGEMENT SYSTEM - Advanced Theme Integration & Style Management ====
 
   /**
    * Inject or update CSS with automatic theme variable integration
@@ -13207,8 +13400,26 @@ module.exports = class Dungeons {
    */
   ensureBossHpBarCssInjected() {
     const styleId = 'dungeons-plugin-styles';
-    const hasStyle = Boolean(document.getElementById(styleId));
-    !hasStyle && this.injectCSS();
+    const styleEl = document.getElementById(styleId);
+    const styleInHead = Boolean(styleEl && document.head?.contains(styleEl));
+    const styleInBody = Boolean(styleEl && document.body?.contains(styleEl) && !styleInHead);
+    const styleHasContent = Boolean(styleEl?.textContent?.trim().length);
+    let hasValidStyle = styleInHead && styleHasContent;
+
+    // If the style slipped into <body> (common after Discord layer swaps), move it back.
+    if (styleEl && styleInBody) {
+      try {
+        styleEl.parentNode?.removeChild(styleEl);
+        document.head?.appendChild(styleEl);
+        hasValidStyle = styleHasContent;
+      } catch (_) {
+        hasValidStyle = false;
+      }
+    }
+
+    if (!styleEl || !hasValidStyle) {
+      this.injectCSS();
+    }
   }
 
   getSettingsPanel() {

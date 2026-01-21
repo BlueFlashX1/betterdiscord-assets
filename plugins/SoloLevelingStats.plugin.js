@@ -2036,7 +2036,8 @@ module.exports = class SoloLevelingStats {
     try {
       // Ensure stats object exists
       if (!this.settings.stats || typeof this.settings.stats !== 'object') {
-        this.settings.stats = { ...this.defaultSettings.stats };
+        // CRITICAL: Use deep copy to prevent defaultSettings corruption
+        this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
       } else {
         // Ensure all stat properties exist
         const defaultStats = this.defaultSettings.stats;
@@ -2052,7 +2053,8 @@ module.exports = class SoloLevelingStats {
 
       // Ensure activity object exists
       if (!this.settings.activity || typeof this.settings.activity !== 'object') {
-        this.settings.activity = { ...this.defaultSettings.activity };
+        // CRITICAL: Use deep copy to prevent defaultSettings corruption
+        this.settings.activity = JSON.parse(JSON.stringify(this.defaultSettings.activity));
       } else {
         // Ensure all activity properties exist
         const defaultActivity = this.defaultSettings.activity;
@@ -2096,8 +2098,9 @@ module.exports = class SoloLevelingStats {
     } catch (error) {
       this.debugError('MIGRATE_DATA', error);
       // Fallback to defaults if migration fails
-      this.settings.stats = { ...this.defaultSettings.stats };
-      this.settings.activity = { ...this.defaultSettings.activity };
+      // CRITICAL: Use deep copy to prevent defaultSettings corruption
+      this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
+      this.settings.activity = JSON.parse(JSON.stringify(this.defaultSettings.activity));
       this.settings.activity.channelsVisited = new Set();
       this.settings.perceptionBuffs = [];
       this.settings.unallocatedStatPoints = 0;
@@ -3928,14 +3931,17 @@ module.exports = class SoloLevelingStats {
           // CRITICAL: Ensure stats object exists and is properly initialized
           // If stats are missing or empty, merge with defaults instead of overwriting
           if (!this.settings.stats || typeof this.settings.stats !== 'object') {
-            this.settings.stats = { ...this.defaultSettings.stats };
+            // CRITICAL: Use deep copy to prevent defaultSettings corruption
+            this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
             this.debugLog('LOAD_SETTINGS', 'Stats object was missing, initialized from defaults');
           } else {
             // Merge stats with defaults to ensure all properties exist
-            this.settings.stats = {
+            // CRITICAL: Create new object to avoid reference sharing
+            const mergedStats = {
               ...this.defaultSettings.stats,
               ...this.settings.stats,
             };
+            this.settings.stats = mergedStats;
             // Ensure all stat properties exist (migration safety)
             this.settings.stats.strength =
               this.settings.stats.strength ?? this.defaultSettings.stats.strength ?? 0;
@@ -4023,14 +4029,16 @@ module.exports = class SoloLevelingStats {
           throw error;
         }
       } else {
-        this.settings = { ...this.defaultSettings };
+        // CRITICAL: Use deep copy to prevent defaultSettings corruption
+        this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
         // Initialize Set for channelsVisited
         this.settings.activity.channelsVisited = new Set();
         this.debugLog('LOAD_SETTINGS', 'No saved data found, using defaults');
       }
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error, { phase: 'load_settings' });
-      this.settings = { ...this.defaultSettings };
+      // CRITICAL: Use deep copy to prevent defaultSettings corruption
+      this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
       // Initialize Set for channelsVisited
       this.settings.activity.channelsVisited = new Set();
     }

@@ -2,8 +2,11 @@
 
 set -euo pipefail
 
+# Auto-detect script location (works no matter where you move the directory!)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SOURCE_DIR="$SCRIPT_DIR/themes"
+
 BETTERDISCORD_THEMES="$HOME/Library/Application Support/BetterDiscord/themes"
-SOURCE_DIR="/Users/matthewthompson/Documents/DEVELOPMENT/Better Discord/betterdiscord-dev/themes"
 
 THEME_NAME="SoloLeveling-ClearVision.theme.css"
 
