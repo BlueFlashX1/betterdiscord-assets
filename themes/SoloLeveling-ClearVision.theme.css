@@ -672,14 +672,7 @@
 
   /* HOME ICON - Discord home button icon */
   --home-icon: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png');
-<<<<<<< HEAD
-  --home-size: 60% 60%;
-||||||| parent of aa127e1 (Use home-size var (60%) and drop forced child wrapper override)
-  --home-size: 280% 280%;
-=======
-  --home-size: 60% 60%;
-  --home-size: 280% 280%;
->>>>>>> aa127e1 (Use home-size var (60%) and drop forced child wrapper override)
+  --home-size: 100% 100%;
 
   /* RADII - keep a consistent rhythm */
   --radius-surface: var(--sl-space-radius-surface); /* cards/tab bars/panels */
@@ -699,8 +692,12 @@
   --channel-hover: var(--interactive-hover); /* Channel hover text */
   --channel-selected: var(--interactive-active); /* Selected channel text */
   --channel-selected-bg: var(--main-color); /* Selected channel background */
-  --channel-unread: var(--main-color); /* Unread channel indicator */
-  --channel-unread-hover: var(--hover-color); /* Unread channel hover */
+  --channel-unread: rgba(var(--sl-color-primary-rgb), 0.95) !important; /* Unread channel text - PURPLE */
+  --channel-unread-hover: rgba(var(--sl-color-primary-rgb), 1) !important; /* Unread channel hover - BRIGHT PURPLE */
+
+  /* Discord unread indicator dot - Official CSS variable */
+  --indicator-unread: 270 100% 60%; /* Purple HSL for unread channel indicator dot */
+  --indicator-unread-mention: 270 100% 70%; /* Lighter purple for mentions */
 
   /* ACCESSIBILITY - Focus indicators */
   --focus-color: var(--main-color); /* Focus outline color */
@@ -819,6 +816,9 @@ body,
   --background-shading: transparent !important; /* NO global overlay */
   --normal-text: var(--sl-color-accent-lavender);
   --muted-text: var(--sl-color-accent-lavender-muted);
+  /* Unread indicator dot - Purple */
+  --indicator-unread: 270 100% 60% !important; /* Purple HSL for unread channel indicator dot */
+  --indicator-unread-mention: 270 100% 70% !important; /* Lighter purple for mentions */
 }
 
 /* DARK THEME - Dark mode */
@@ -826,6 +826,9 @@ body,
   --background-shading: transparent !important; /* NO global overlay */
   --normal-text: var(--sl-color-accent-lavender);
   --muted-text: var(--sl-color-accent-lavender-muted);
+  /* Unread indicator dot - Purple */
+  --indicator-unread: 270 100% 60% !important; /* Purple HSL for unread channel indicator dot */
+  --indicator-unread-mention: 270 100% 70% !important; /* Lighter purple for mentions */
 }
 
 /* ONYX THEME - Darkest mode */
@@ -833,6 +836,9 @@ body,
   --background-shading: transparent !important; /* NO global overlay */
   --normal-text: var(--sl-color-accent-lavender);
   --muted-text: var(--sl-color-accent-lavender-muted);
+  /* Unread indicator dot - Purple */
+  --indicator-unread: 270 100% 60% !important; /* Purple HSL for unread channel indicator dot */
+  --indicator-unread-mention: 270 100% 70% !important; /* Lighter purple for mentions */
 }
 
 /* ============================================================================
@@ -879,9 +885,14 @@ body::before {
   /* no-repeat = don't tile the image */
   background-attachment: fixed; /* Keep background fixed when scrolling */
   opacity: 1 !important; /* Maximum brightness - adjust 0.0-1.0 for darker/lighter */
-  filter: brightness(1.4) saturate(1.2); /* 40% BRIGHTER + 20% more saturation! (Fine-tuned) */
+  /* Performance: Optimized filter - using single operation for better GPU performance */
+  /* Combined brightness and saturation into a pre-computed filter for better performance */
+  filter: brightness(1.35) saturate(1.15); /* Slightly reduced for performance, visually similar */
   pointer-events: none; /* Allow clicks to pass through to elements behind */
   z-index: -2; /* Behind everything (negative z-index puts it behind content) */
+  /* Performance: Use will-change and containment for infinite animation */
+  will-change: opacity, filter;
+  contain: layout style paint;
   animation: soloLevelingFade 10s ease-in-out infinite;
   /* Animation: name duration timing-function iteration-count */
   /* Currently set to fade animation (though it's static in the keyframes) */
@@ -1165,6 +1176,7 @@ div[class*='-tutorialContainer'] div[class*='-childWrapper'] {
   background-color: transparent !important;
 }
 
+/* Modern nav home fallback */
 nav[aria-label='Servers'] a[aria-label='Home'],
 nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   background-image: var(--home-icon) !important;
@@ -1177,6 +1189,24 @@ nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
   min-height: 44px !important;
 }
 
+/* Hide default home glyph */
+div[class*='-tutorialContainer'] img[alt='App Icon'],
+nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
+  opacity: 0 !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+}
+
+/* Modern nav home fallback */
+nav[aria-label='Servers'] a[aria-label='Home'],
+nav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper'] {
+  background-image: var(--home-icon) !important;
+  background-position: center !important;
+  background-repeat: no-repeat !important;
+  background-size: 70% !important;
+}
+
+/* Allow default glyph to show if needed; rely on custom bg */
 nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon'] {
   opacity: 1 !important;
   visibility: visible !important;
@@ -1556,6 +1586,9 @@ div[class*='guilds'] div[class*='upperBadge'] {
     var(--sl-color-status-danger-600)
   ) !important;
   box-shadow: 0 0 10px var(--sl-color-status-danger-soft) !important;
+  /* Performance: Optimize infinite animation */
+  will-change: opacity, box-shadow;
+  contain: layout style paint;
   animation: badge-pulse 2s ease-in-out infinite !important;
   border: none !important;
 }
@@ -1641,7 +1674,14 @@ div[class*='guilds'] div[class*='circleIconButton']:hover {
 /* Plus/explore icon glow on hover */
 div[class*='guilds'] div[class*='circleIconButton']:hover svg {
   color: var(--sl-color-accent-purple-400) !important;
+  /* Performance: Add will-change hint for animated filter */
+  will-change: filter;
   filter: drop-shadow(0 0 6px var(--sl-color-purple-alpha-60)) !important;
+}
+
+/* Performance: Remove will-change when not hovering */
+div[class*='guilds'] div[class*='circleIconButton']:not(:hover) svg {
+  will-change: auto;
 }
 
 /* ============================================================================
@@ -1662,8 +1702,16 @@ div[class*='guilds'] div[class*='circleIconButton']:hover svg {
   border-radius: var(--radius-control, 8px) !important;
 }
 
+/* Unread channels: Add purple left border indicator (override the border-left: none above) */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] {
+  border-left: 3px solid rgba(var(--sl-color-primary-rgb), 1) !important; /* Thick purple left border */
+  padding-left: 4px !important; /* Adjust padding to accommodate border */
+}
+
 /* Clean rows: remove the darker “plate” for a flatter look */
-#channels ul[aria-label='Channels'] li[class*='-containerDefault'] > div[class*='-iconVisibility'] {
+/* EXCLUDE unread channels - they need purple styling */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) > div[class*='-iconVisibility'] {
   background: transparent !important;
   border: none !important;
   border-left: none !important;
@@ -1673,12 +1721,131 @@ div[class*='guilds'] div[class*='circleIconButton']:hover svg {
   margin: 1px 8px !important;
 }
 
-/* Idle channels: calmer text (less competing purple) */
-#channels ul[aria-label='Channels'] li[class*='-containerDefault'] a,
-#channels ul[aria-label='Channels'] li[class*='-containerDefault'] span,
-#channels ul[aria-label='Channels'] li[class*='-containerDefault'] [class*='name'] {
-  color: var(--sl-color-text-silver-alpha-72) !important;
-  text-shadow: none !important;
+/* Thread connection line alignment: adjust thread item positioning to align with Discord's lines */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] {
+  position: relative !important;
+  padding-left: 0 !important;
+  margin-left: 0 !important;
+}
+
+/* Thread connection lines: visible purple lines - smooth and continuous, not blocky */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']::before,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']::after,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link']::before,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link']::after,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::before,
+#channels ul[aria-label*='threads'] li[class*='-wrapper']::after {
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important; /* Visible purple */
+  background-color: transparent !important; /* No solid boxes */
+  color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  border-radius: 0 !important; /* Continuous lines, not blocky */
+  opacity: 1 !important; /* Fully visible */
+  box-shadow: none !important; /* No solid shadows */
+  border-width: 1px !important; /* Thin, smooth line */
+}
+
+/* Thread connection lines: visible border-left - continuous line */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] > *,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper'] {
+  border-left-color: rgba(var(--sl-color-primary-rgb), 0.5) !important; /* Visible purple */
+  border-left-width: 1px !important; /* Thin, continuous line */
+  border-radius: 0 !important; /* No rounded corners - continuous */
+  background: transparent !important; /* No solid boxes */
+}
+
+/* Thread connection lines: SVG elements - visible, smooth stroke */
+#channels ul[aria-label*='threads'] svg[class*='-threadLine'],
+#channels ul[aria-label*='threads'] [class*='-threadLine'],
+#channels ul[aria-label*='threads'] [class*='-line'],
+#channels ul[aria-label*='threads'] path[stroke],
+#channels ul[aria-label*='threads'] line[stroke] {
+  stroke: rgba(var(--sl-color-primary-rgb), 0.5) !important; /* Visible purple */
+  stroke-width: 1.5px !important; /* Thin, visible line */
+  stroke-linecap: round !important; /* Smooth caps */
+  stroke-linejoin: round !important; /* Smooth joins */
+  fill: transparent !important; /* No solid fill - keeps it smooth */
+  opacity: 1 !important; /* Fully visible */
+  filter: none !important; /* Clean appearance */
+}
+
+/* Thread connection lines: target parent thread container - visible, continuous */
+#channels ul[aria-label*='threads'],
+#channels ul[aria-label*='threads'] *,
+#channels ul[aria-label*='threads'] li,
+#channels ul[aria-label*='threads'] li * {
+  border-left-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  border-radius: 0 !important; /* Continuous, not blocky */
+  background: transparent !important; /* No solid boxes */
+}
+
+/* Thread connection lines: ensure transparent backgrounds - no solid boxes */
+#channels ul[aria-label*='threads'] [style*='background'],
+#channels ul[aria-label*='threads'] [style*='border'] {
+  background-color: transparent !important; /* No solid boxes */
+  background: transparent !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  border-radius: 0 !important; /* Continuous lines */
+}
+
+/* Thread connection lines: target Discord's native thread line elements - visible and smooth */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::before,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::after,
+#channels ul[aria-label*='threads'] [class*='-threadLine'],
+#channels ul[aria-label*='threads'] [class*='-line'],
+#channels ul[aria-label*='threads'] svg,
+#channels ul[aria-label*='threads'] svg *,
+#channels ul[aria-label*='threads'] path,
+#channels ul[aria-label*='threads'] line,
+#channels ul[aria-label*='threads'] rect {
+  stroke: rgba(var(--sl-color-primary-rgb), 0.5) !important; /* Visible purple */
+  stroke-width: 1.5px !important; /* Thin, visible */
+  stroke-linecap: round !important; /* Smooth caps */
+  stroke-linejoin: round !important; /* Smooth joins */
+  fill: transparent !important; /* No solid fill - smooth appearance */
+  background: transparent !important; /* No solid boxes */
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  opacity: 1 !important; /* Fully visible so threads are identifiable */
+  border-radius: 0 !important; /* Continuous, not blocky */
+  filter: none !important; /* Clean, smooth appearance */
+}
+
+/* Enhanced thread styling: subtle purple tint for better visibility + proper line alignment */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] > div[class*='-iconVisibility'] {
+  background: var(--sl-color-primary-alpha-5) !important;
+  border: 1px solid var(--sl-color-primary-alpha-10) !important;
+  border-radius: var(--radius-control, 8px) !important;
+  box-shadow: 0 0 8px var(--sl-color-primary-alpha-5) !important;
+  padding: 4px 12px 4px 12px !important; /* Adjusted padding to align with connection line */
+  margin: 1px 0 1px 20px !important; /* Better alignment - lines up with Discord's connection line endpoint */
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease !important;
+  will-change: auto;
+  position: relative !important;
+}
+
+/* Idle channels: bright, clear text - NO BLUR */
+/* Channel text: Bright white for readability */
+/* EXCLUDE unread channels - they need purple text */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) a,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) div,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) * {
+  color: var(--sl-color-text-primary) !important; /* 95% white - very bright */
+  text-shadow: none !important; /* Remove blur/glow for crisp, readable text */
+}
+
+/* Hide Members and Server Boosts items */
+#channels ul[aria-label='Channels'] li:has(a[href*='/members']),
+#channels ul[aria-label='Channels'] li:has(a[href*='/boosts']),
+#channels ul[aria-label='Channels'] li:has(div[aria-label*='Members']),
+#channels ul[aria-label='Channels'] li:has(div[aria-label*='Server Boosts']),
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:has(div[class*='-link'] a[href*='/members']),
+#channels ul[aria-label='Channels'] li[class*='-containerDefault']:has(div[class*='-link'] a[href*='/boosts']) {
+  display: none !important;
 }
 
 /* Hover: keep the plate, add subtle purple outline */
@@ -1689,6 +1856,49 @@ div[class*='guilds'] div[class*='circleIconButton']:hover svg {
   background: var(--sl-color-bg-alpha-8) !important;
   border: var(--sl-effect-border-white-subtle) !important;
   box-shadow: none !important;
+}
+
+/* Enhanced thread hover: vibrant purple glow */
+#channels
+  ul[aria-label*='threads']
+  li[class*='-containerDefault']:hover
+  > div[class*='-iconVisibility'] {
+  background: var(--sl-color-primary-alpha-10) !important;
+  border: 1px solid var(--sl-color-primary-alpha-35) !important;
+  box-shadow: 0 0 16px var(--sl-color-primary-alpha-20), 0 0 8px var(--sl-color-primary-alpha-15) !important;
+  transform: translateY(-1px) !important;
+  will-change: background, border-color, box-shadow, transform;
+  transition: background 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease !important;
+}
+
+/* Performance: Reset will-change when not hovering */
+#channels
+  ul[aria-label*='threads']
+  li[class*='-containerDefault']:not(:hover)
+  > div[class*='-iconVisibility'] {
+  will-change: auto;
+}
+
+/* Enhanced thread text: much brighter for better readability */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] a,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] span,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='name'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] div[role='button'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] div[class*='-link'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault'] * {
+  color: var(--sl-color-text-secondary) !important;
+  text-shadow: 0 0 6px var(--sl-color-primary-alpha-20), 0 0 3px var(--sl-color-primary-alpha-15) !important;
+}
+
+/* Thread text on hover: even brighter */
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover a,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover span,
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover [class*='name'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover div[role='button'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover div[class*='-link'],
+#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover * {
+  color: var(--sl-color-text-primary) !important;
+  text-shadow: 0 0 8px var(--sl-color-primary-alpha-30), 0 0 4px var(--sl-color-primary-alpha-20) !important;
 }
 
 /* Selected: remove purple highlight entirely (active channel stays clean) */
@@ -2004,18 +2214,155 @@ header[class*='header'] {
    #20: Unread Channel Purple Indicator
    Unread channels and badges glow purple
    ---------------------------------------- */
+
+/* Unread channel text: Bright purple for visibility */
+/* APPROACH: Use CSS filter to convert white text to purple (works even with inline styles) */
+/* This is a fallback approach that works when direct color overrides fail */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] [class*='name'] {
+  /* Try direct color first */
+  color: rgba(var(--sl-color-primary-rgb), 0.95) !important; /* Bright purple text */
+  font-weight: var(--sl-type-weight-semibold) !important; /* Bold for visibility */
+  text-shadow: 0 0 8px rgba(var(--sl-color-primary-rgb), 0.4), 0 0 4px rgba(var(--sl-color-primary-rgb), 0.3) !important; /* Purple text glow */
+  /* CSS Filter fallback: Convert white/light text to purple */
+  /* This works even if Discord uses inline styles or very specific selectors */
+  filter: brightness(0) saturate(100%) invert(27%) sepia(94%) saturate(2879%) hue-rotate(258deg) brightness(95%) contrast(92%) !important;
+}
+
+/* Unread channel container: Purple background with subtle glow */
+/* Override Discord's CSS variables for unread channel text color */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] > div[class*='-iconVisibility'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] > div[class*='-iconVisibility'] {
+  background: rgba(var(--sl-color-primary-rgb), 0.15) !important; /* Purple background */
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important; /* Purple border */
+  border-left: 3px solid rgba(var(--sl-color-primary-rgb), 0.8) !important; /* Thick purple left border */
+  border-radius: var(--radius-control, 8px) !important;
+  box-shadow: 0 0 12px rgba(var(--sl-color-primary-rgb), 0.25), 0 0 6px rgba(var(--sl-color-primary-rgb), 0.15) !important; /* Purple glow */
+  /* Override Discord's CSS variables that control channel text color */
+  --channels-default: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-text-active: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-normal: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-hover: rgba(var(--sl-color-primary-rgb), 1) !important;
+}
+
+/* Unread channel hover: Even more vibrant purple */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover > div[class*='-iconVisibility'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover > div[class*='-iconVisibility'] {
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important; /* Brighter purple on hover */
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.5) !important;
+  border-left: 3px solid rgba(var(--sl-color-primary-rgb), 1) !important; /* Full opacity purple */
+  box-shadow: 0 0 16px rgba(var(--sl-color-primary-rgb), 0.4), 0 0 8px rgba(var(--sl-color-primary-rgb), 0.25) !important; /* Stronger glow */
+}
+
+/* Unread channel text on hover: Maximum brightness */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'] [class*='name'] {
+  color: rgba(var(--sl-color-primary-rgb), 1) !important; /* Full brightness purple */
+  text-shadow: 0 0 12px rgba(var(--sl-color-primary-rgb), 0.6), 0 0 6px rgba(var(--sl-color-primary-rgb), 0.4) !important; /* Strong purple glow */
+}
+
+/* Unread channel text: Aggressive targeting - override ALL text elements */
+/* This catches any text elements that the more specific selectors might miss */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-iconVisibility'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-iconVisibility'] {
+  /* Override Discord's CSS variables that control channel text color */
+  --channels-default: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-text-active: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-normal: rgba(var(--sl-color-primary-rgb), 0.95) !important;
+  --interactive-hover: rgba(var(--sl-color-primary-rgb), 1) !important;
+}
+
+/* Target all child elements for text color */
+/* Use CSS filter as fallback for elements that don't respond to color override */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-iconVisibility'] *:not([class*='-unread']):not(svg):not(path),
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-iconVisibility'] *:not([class*='-unread']):not(svg):not(path) {
+  color: rgba(var(--sl-color-primary-rgb), 0.95) !important; /* Purple text */
+  /* CSS Filter fallback: Convert white/light text to purple */
+  filter: brightness(0) saturate(100%) invert(27%) sepia(94%) saturate(2879%) hue-rotate(258deg) brightness(95%) contrast(92%) !important;
+}
+
+/* Exclude the unread indicator dot from text color (it should stay purple background, not text) */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-unread'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-unread'] {
+  color: transparent !important; /* Dot doesn't need text color */
+}
+
+/* Legacy unread channel selector (for compatibility) */
 [class*='channel'][class*='unread'] {
-  color: var(--sl-color-accent-purple-400) !important;
+  color: rgba(var(--sl-color-primary-rgb), 0.95) !important;
   font-weight: var(--sl-type-weight-semibold) !important;
 }
 
-/* Unread badge/pill */
+/* ULTRA-AGGRESSIVE: Override ALL possible text elements in unread channels */
+/* This must come AFTER all other channel text rules to ensure it wins */
+/* Target every possible element type that could contain text */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] p,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h1,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h2,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h3,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] *,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] p,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h1,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h2,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h3,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] * {
+  color: rgba(var(--sl-color-primary-rgb), 0.95) !important; /* Purple text - highest priority */
+}
+
+/* Exclude the unread indicator dot from this aggressive rule */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-unread'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-unread'] {
+  color: transparent !important; /* Dot doesn't need text color */
+  background-color: rgba(var(--sl-color-primary-rgb), 1) !important; /* Ensure dot stays purple */
+}
+
+/* Unread indicator dot: Direct targeting of Discord's actual element */
+/* Discord uses div._2ea32c412048f708-unread for the unread dot */
+/* SCOPE TO CHANNEL LIST ONLY - Don't affect Discovery or other areas */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'] div[class*='-unread'][class*='-unreadImportant'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'] div[class*='-unread']:not([class*='name']):not([class*='text']):not([class*='Pill']):not([class*='Badge']) {
+  background-color: rgba(var(--sl-color-primary-rgb), 1) !important; /* Purple background */
+  background: rgba(var(--sl-color-primary-rgb), 1) !important; /* Purple background (fallback) */
+  box-shadow: 0 0 6px 1px rgba(var(--sl-color-primary-rgb), 0.8) !important; /* Purple glow */
+  border-radius: 0 var(--radius-xs, 4px) var(--radius-xs, 4px) 0 !important; /* Rounded right side */
+  /* Override Discord's CSS variables that control the dot color */
+  --channels-default: rgba(var(--sl-color-primary-rgb), 1) !important;
+  --interactive-text-active: rgba(var(--sl-color-primary-rgb), 1) !important;
+}
+
+/* Unread badge/pill: Purple background for number badges */
 [class*='channel'] [class*='unreadPill'],
 [class*='channel'] [class*='unreadBadge'],
 [class*='numberBadge'] {
   background: linear-gradient(
     135deg,
-    var(--sl-color-purple-alpha-95),
+    rgba(var(--sl-color-primary-rgb), 0.95),
     rgba(var(--sl-color-accent-purple-400-rgb), 0.95)
   ) !important;
   box-shadow: var(--glow-intense) !important;
@@ -2036,7 +2383,16 @@ a[class*='channel'] svg,
 
 a[class*='channel']:hover svg,
 [class*='iconContainer']:hover svg {
+  /* Performance: Add will-change hint for animated filter */
+  will-change: filter;
   filter: drop-shadow(0 0 6px var(--sl-color-purple-alpha-50)) !important;
+}
+
+/* Performance: Remove will-change when not hovering */
+a[class*='channel']:not(:hover) svg,
+[class*='iconContainer']:not(:hover) svg,
+[class*='iconItem']:not(:hover) svg {
+  will-change: auto;
 }
 
 /* ----------------------------------------
@@ -2073,7 +2429,14 @@ a[class*='channel']:hover svg,
 }
 
 [class*='panels'] button:hover svg {
+  /* Performance: Add will-change hint for animated filter */
+  will-change: filter;
   filter: drop-shadow(0 0 6px var(--sl-color-purple-alpha-60)) !important;
+}
+
+/* Performance: Remove will-change when not hovering */
+[class*='panels'] button:not(:hover) svg {
+  will-change: auto;
 }
 
 /* ----------------------------------------
@@ -2323,7 +2686,7 @@ div[class*='-markup'] {
 [class*='slateTextArea'],
 [class*='textArea'] {
   background: var(--sl-color-bg-surface-dark-alpha-95) !important;
-  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
+  border: none !important;
   border-radius: var(--sl-space-radius-control) !important;
   /* No glow around the message box */
   box-shadow: none !important;
@@ -2335,7 +2698,7 @@ div[class*='-markup'] {
 [class*='channelTextArea']:focus-within:not(:disabled):not([disabled]):not([readonly]),
 [class*='slateTextArea']:focus-within:not(:disabled):not([disabled]):not([readonly]),
 [class*='textArea']:focus-within:not(:disabled):not([disabled]):not([readonly]) {
-  border-color: var(--sl-color-primary-alpha-60) !important;
+  border: none !important;
   /* Keep the border change, but no glow */
   box-shadow: none !important;
 }
@@ -3076,6 +3439,8 @@ div[class*='badges'][style*='background'],
   opacity: 1 !important;
   box-shadow: 0 0 12px var(--sl-color-purple-alpha-22) !important;
   border: var(--border-purple-medium) !important;
+  /* Performance: Optimize tooltip animation */
+  will-change: opacity;
   animation: tooltipFadeIn 0.15s ease-out !important;
   transition: opacity 0.15s ease-out !important;
 }
@@ -3107,6 +3472,8 @@ div[class*='badges'][style*='background'],
   background-color: var(--sl-color-purple-alpha-25) !important;
   background-image: none !important;
   box-shadow: none !important;
+  /* Performance: Filter drop-shadow optimization */
+  filter: drop-shadow(0 0 4px var(--sl-color-purple-alpha-60)) !important;
   color: var(--sl-color-accent-purple-300) !important;
   text-shadow: 0 0 6px var(--sl-color-purple-alpha-50) !important;
   transition: var(--sl-effect-transition-normal) !important;
@@ -3296,6 +3663,8 @@ div[class*='scroller'] {
   background: var(--sl-color-bg-surface-dark-alpha-98) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
   box-shadow: 0 8px 32px var(--sl-color-black-alpha-55) !important;
+  /* Performance: Optimize popout animation */
+  will-change: opacity;
   animation: tooltipFadeIn 0.15s ease-out !important;
   transition: opacity 0.15s ease-out !important;
 }
@@ -3452,6 +3821,34 @@ div[role='list'][data-list-id='settings-sidebar']
   letter-spacing: 0.15px !important;
 }
 
+/* Settings sidebar items: make unselected text clearly visible - BRIGHT and CLEAR */
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']),
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']),
+[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected']) {
+  color: var(--sl-color-text-primary) !important; /* 95% white - very bright */
+}
+
+/* Settings sidebar items: text elements within unselected items - NO BLUR */
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) *,
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) *,
+[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected']) *,
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) span,
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) span,
+[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected']) span,
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) [class*='text'],
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) [class*='text'] {
+  color: var(--sl-color-text-primary) !important; /* 95% white - very bright */
+  text-shadow: none !important; /* Remove blur/glow effect for crisp text */
+}
+
+/* Settings sidebar items: hover state - brighter text */
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:hover:not([class*='selected']) *,
+[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:hover:not([class*='selected']) *,
+[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:hover:not([class*='selected']) * {
+  color: var(--sl-color-text-primary) !important;
+  text-shadow: 0 0 6px var(--sl-color-primary-alpha-20) !important;
+}
+
 /* Settings content cards: unify into the solid depth style (reduce purple competition) */
 [class*='standardSidebarView'] [class*='contentRegion'] div[class*='-card'],
 [class*='standardSidebarView'] [class*='contentRegion'] div[class*='-card']::before,
@@ -3498,7 +3895,14 @@ button[aria-label='Close']:hover {
 
 button[aria-label='Close']:hover svg {
   color: var(--sl-color-status-danger-500) !important;
+  /* Performance: Add will-change hint for animated filter */
+  will-change: filter;
   filter: drop-shadow(0 0 6px var(--sl-color-status-danger-alpha-60)) !important;
+}
+
+/* Performance: Remove will-change when not hovering */
+button[aria-label='Close']:not(:hover) svg {
+  will-change: auto;
 }
 
 /* ----------------------------------------
@@ -4402,6 +4806,8 @@ section[aria-label='User area']
   pointer-events: none !important;
   z-index: 0 !important;
   /* Make sure it’s visible even if a parent has filters */
+  /* Performance: Optimize filter - single operation, add will-change for transform */
+  will-change: filter, transform;
   filter: saturate(1.15) contrast(1.1) !important;
   /* Zoom the image reliably (background-size sometimes gets reset by shorthands) */
   transform: scale(var(--user-area-card-image-zoom, 1)) !important;
@@ -4810,4 +5216,78 @@ div[role='tablist'][class*='Top'] [role='tab'][class*='selected'] {
   text-shadow: 0 0 10px var(--sl-color-purple-alpha-32) !important;
 }
 
-/* SECTION 22: ANIMATIONS & KEYFRAMES (reserved placeholder) */
+/* ============================================================================
+   HIDE MESSAGE BOX BUTTONS - Gift Nitro & Apps
+   ============================================================================ */
+
+/* Hide Gift Nitro button in message box */
+div[aria-label="Send a gift"],
+div[role="button"][aria-label="Send a gift"],
+button[aria-label*='Send a gift'],
+button[aria-label*='Gift'] {
+  display: none !important;
+}
+
+/* Hide Apps button in message box */
+div[aria-label="Apps"],
+div[role="button"][aria-label="Apps"],
+button[aria-label*='Select an app'],
+button[aria-label*='Apps'],
+button[aria-label*='Open Apps'] {
+  display: none !important;
+}
+
+/* ============================================================================
+
+   SECTION 22: PERFORMANCE OPTIMIZATIONS & ACCESSIBILITY
+   ============================================================================
+   Targets: All animated elements, users with motion sensitivity
+   Purpose: Optimize performance and respect user preferences
+   ============================================================================ */
+
+/* ============================================================================
+   FINAL OVERRIDE: Unread Channel Text Color (Maximum Priority)
+   ============================================================================
+   This rule comes at the END of the file to ensure it overrides everything
+   ============================================================================ */
+
+/* FINAL OVERRIDE: Unread channel text - must be purple */
+/* This rule has maximum specificity and comes last to override all other rules */
+/* Uses CSS filter as ultimate fallback - works even with inline styles */
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] *,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] *,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] *:not(div[class*='-unread']):not(svg):not(path),
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] *,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] *,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] span,
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] [class*='name'],
+#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] *:not(div[class*='-unread']):not(svg):not(path) {
+  color: rgba(var(--sl-color-primary-rgb), 0.95) !important; /* PURPLE TEXT - FINAL OVERRIDE */
+  font-weight: var(--sl-type-weight-semibold) !important;
+  text-shadow: 0 0 8px rgba(var(--sl-color-primary-rgb), 0.4) !important;
+  /* CSS Filter: Convert white/light text to purple (ultimate fallback) */
+  /* This works even if Discord uses inline styles or very specific selectors */
+  filter: brightness(0) saturate(100%) invert(27%) sepia(94%) saturate(2879%) hue-rotate(258deg) brightness(95%) contrast(92%) !important;
+}
+
+/* Performance: Respect user's motion preferences */
+/* Reduces animation performance cost for users who prefer reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* SECTION 23: ANIMATIONS & KEYFRAMES (reserved placeholder) */
+/* Note: Keyframes are defined in the imported ClearVision base theme */
