@@ -1,42 +1,29 @@
-# BetterDiscord Development Documentation
+# BetterDiscord Dev Docs Index
 
-This directory contains all documentation for the BetterDiscord development project.
+This docs tree is grouped into three high-level areas for easier navigation.
 
-## Directory Structure
+## architecture/
+System design, deep technical analysis, and architecture references.
 
-### `/implementation/`
-Implementation plans, status updates, and technical documentation for major features:
-- **IMPLEMENTATION_COMPLETE.md** - Completed implementation summaries
-- **IMPLEMENTATION_STATUS.md** - Current implementation status tracking
-- **INDEXEDDB_IMPLEMENTATION_PLAN.md** - IndexedDB storage implementation plan
-- **SHADOW_STORAGE_RECOMMENDATION.md** - Shadow storage system recommendations
+Key subfolders:
+- architecture/implementation/
+- architecture/plugins-docs/
 
-### `/performance/`
-Performance analysis, reports, and optimization recommendations:
-- **PERFORMANCE_REPORT.md** - Performance testing reports
-- **PERFORMANCE_ANALYSIS.md** - Detailed performance analysis
-- **OPTIMIZATION_RECOMMENDATIONS.md** - Optimization suggestions and improvements
+## operations/
+Runbooks, install/deploy guides, troubleshooting, workflows, and operational checklists.
 
-### `/plugins/`
-Plugin-specific documentation, fixes, and updates:
-- **CRIT_CHANCE_UPDATE.md** - Critical hit chance system updates
-- **CRITICAL_HIT_FIX_BYTEROVER.md** - Critical hit plugin fixes
-- **CRITICAL_HIT_REFACTORING_SUMMARY.md** - Critical hit refactoring documentation
+Key subfolder:
+- operations/performance/
 
-### `/archive-migration/`
-Temporary documentation from migrations and status updates:
-- **POST_RESTART_STATUS.md** - Status after system restarts
-- **MESSAGE_VERIFICATION.md** - Message verification documentation
+## history/
+Session outcomes, applied fixes, milestones, and archive-style logs.
 
-## Archive Documentation
+Key subfolders:
+- history/archive-migration/
+- history/stories/
 
-Legacy documentation is maintained in the `/archive/` directory:
-- `/archive/docs/` - Historical documentation
-- `/archive/plugins-docs/` - Legacy plugin documentation
-- `/archive/themes-docs/` - Theme documentation
+## Navigation Rule
 
-## Quick Links
-
-- [Main README](../README.md) - Project overview
-- [Implementation Status](./implementation/IMPLEMENTATION_STATUS.md) - Current implementation status
-- [Performance Reports](./performance/PERFORMANCE_REPORT.md) - Latest performance metrics
+- If you are changing behavior/design: start in `architecture/`.
+- If you are running/deploying/debugging: start in `operations/`.
+- If you are searching prior decisions/results: start in `history/`.

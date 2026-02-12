@@ -123,3 +123,9 @@ empty/
 !README.md
 !plugins/*.md
 !themes/*.md
+
+# Keep docs markdown tracked (re-assert at end due rule order)
+!docs/**/*.md
+
+# Local workspace bucket (do not track)
+_local/
