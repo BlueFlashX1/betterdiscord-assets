@@ -840,7 +840,7 @@ module.exports = (() => {
     button.style.cssText = `
       position: fixed;
       right: 18px;
-      bottom: 18px;
+      top: 18px;
       z-index: 100002;
       background: var(--brand-color, #5865f2);
       color: #ffffff;
