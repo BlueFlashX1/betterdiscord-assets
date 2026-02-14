@@ -531,6 +531,29 @@ module.exports = class SoloLevelingTitleManager {
     return !!buttons && buttons.length >= 4;
   }
 
+  /**
+   * Check if the user can type in the current channel.
+   * Returns false if the text area is missing, disabled, or shows a "no permission" state.
+   */
+  _canUserType() {
+    const textArea = document.querySelector('[class*="channelTextArea"]');
+    if (!textArea) return false;
+
+    // Discord shows a disabled/locked text area or a "You do not have permission" notice
+    const noPermission =
+      textArea.querySelector('[class*="placeholder"][class*="disabled"]') ||
+      textArea.querySelector('[class*="upsellWrapper"]') ||
+      textArea.querySelector('[class*="locked"]');
+    if (noPermission) return false;
+
+    // Check if the actual editable area exists and is contenteditable
+    const editor =
+      textArea.querySelector('[role="textbox"]') ||
+      textArea.querySelector('[contenteditable="true"]') ||
+      textArea.querySelector('textarea');
+    return !!editor;
+  }
+
   getToolbarContainer() {
     const now = Date.now();
     const cached = this._toolbarCache?.element;
@@ -540,10 +563,36 @@ module.exports = class SoloLevelingTitleManager {
       return cached;
     }
 
-    // Find Discord's button row - look for the container with keyboard, gift, GIF, emoji icons
-    // (same logic as before, but cached).
-    const buttonRow =
-      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
+    // Find Discord's button row — start from channelTextArea (narrow scope)
+    // then fall back to broader search only if needed
+    const buttonRow = (() => {
+      const textArea =
+        document.querySelector('[class*="channelTextArea"]') ||
+        document.querySelector('[class*="slateTextArea"]') ||
+        document.querySelector('textarea[placeholder*="Message"]');
+
+      if (textArea) {
+        const container =
+          textArea.closest('[class*="container"]') ||
+          textArea.closest('[class*="wrapper"]') ||
+          textArea.parentElement?.parentElement?.parentElement;
+
+        if (container) {
+          // Look for button row within the text area container (scoped query)
+          const buttons = container.querySelectorAll('[class*="button"]');
+          if (buttons && buttons.length >= 4) {
+            return buttons[0]?.parentElement;
+          }
+          const buttonContainer =
+            container.querySelector('[class*="buttons"]') ||
+            container.querySelector('[class*="buttonContainer"]');
+          if (buttonContainer) return buttonContainer;
+        }
+      }
+
+      // Fallback: broader search scoped to chat area
+      const chatArea = document.querySelector('[class*="chat-"]') || document;
+      const el = Array.from(chatArea.querySelectorAll('[class*="button"]')).find((el) => {
         const siblings = Array.from(el.parentElement?.children || []);
         return (
           siblings.length >= 4 &&
@@ -554,29 +603,9 @@ module.exports = class SoloLevelingTitleManager {
               s.querySelector('[class*="attach"]')
           )
         );
-      })?.parentElement ||
-      (() => {
-        const textArea =
-          document.querySelector('[class*="channelTextArea"]') ||
-          document.querySelector('[class*="slateTextArea"]') ||
-          document.querySelector('textarea[placeholder*="Message"]');
-        if (!textArea) return null;
-
-        const container =
-          textArea.closest('[class*="container"]') ||
-          textArea.closest('[class*="wrapper"]') ||
-          textArea.parentElement?.parentElement?.parentElement;
-
-        const buttons = container?.querySelectorAll('[class*="button"]');
-        if (buttons && buttons.length >= 4) {
-          return buttons[0]?.parentElement;
-        }
-
-        return (
-          container?.querySelector('[class*="buttons"]') ||
-          container?.querySelector('[class*="buttonContainer"]')
-        );
-      })();
+      });
+      return el?.parentElement || null;
+    })();
 
     const toolbar = buttonRow || null;
     this._toolbarCache.element = toolbar;
@@ -1237,6 +1266,9 @@ module.exports = class SoloLevelingTitleManager {
     const existingButtons = document.querySelectorAll('.tm-title-button');
     existingButtons.forEach((btn) => btn.remove());
     this.titleButton = null;
+
+    // Hide button entirely if user can't type in this channel
+    if (!this._canUserType()) return;
 
     const toolbar = this.getToolbarContainer();
     if (!toolbar) {

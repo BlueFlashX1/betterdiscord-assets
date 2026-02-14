@@ -29,37 +29,59 @@
  * - getFontsFolderPath() - Load fonts from CriticalHit's font directory
  *
  * ============================================================================
- * FILE STRUCTURE & NAVIGATION
+ * FILE STRUCTURE & TABLE OF CONTENTS
  * ============================================================================
  *
- * This file follows a 4-section structure for easy navigation:
+ * ~11,500 lines organized into 4 major sections.
+ * Search for "// SECTION N" or "// §N.N" to jump to any section.
  *
- * SECTION 1: IMPORTS & DEPENDENCIES (Line 60)
- * SECTION 2: CONFIGURATION & HELPERS (Line 66)
- *   2.1 Constructor & Settings (Line 66)
- *   2.2 Performance Optimization (Line 66)
- *   2.3 Lookup Maps (Line 66)
- *   2.4 Helper Functions:
- *     2.4.1 Performance Helpers (Line 315-513)
- *     2.4.2 Lookup Helpers (Line 315-513)
- *     2.4.3 Calculation Helpers (Line 5156-5936)
- *     2.4.4 Formatting Helpers (Throughout)
- *     2.4.5 Stats & Buffs (Line 1593-1701)
- *     2.4.6 Utility Helpers (Line 4325-4535)
- *     2.4.7 Event Helpers (Line 513)
- * SECTION 3: MAJOR OPERATIONS (Line 597-7707)
- *   3.1 Plugin Lifecycle (Line 597, 3054)
- *   3.2 Settings Management (Line 3157, 7707)
- *   3.3 Activity Tracking (Line 3439-4535)
- *   3.4 XP & Leveling (Line 5007-5936)
- *   3.5 Stats System (Line 5936-6433)
- *   3.6 Quest System (Line 4556, 1365)
- *   3.7 Achievement System (Line 6433-7420)
- *   3.8 HP/Mana System (Line 5291)
- *   3.9 UI Management (Line 881-2262)
- * SECTION 4: DEBUGGING & DEVELOPMENT (Line 248-314)
- *   4.1 Debug Logging (Line 248-314)
- *   4.2 Performance Monitoring (Throughout)
+ * ┌─────────────────────────────────────────────────────────────────────┐
+ * │ SECTION 1: IMPORTS & DEPENDENCIES                         ~L 150   │
+ * │   UnifiedSaveManager loader (IndexedDB crash-resistant storage)    │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ SECTION 2: CONFIGURATION & HELPERS                        ~L 165   │
+ * │   §2.1  Constructor & Default Settings .................. ~L 178   │
+ * │   §2.2  Performance Optimization (DOM/calc caches) ...... ~L 331   │
+ * │   §2.3  Rank Data & Lookup Maps (O(1) lookups) ......... ~L 414   │
+ * │   §2.4  Stat Metadata & Quest Definitions .............. ~L 462   │
+ * │   §2.5  Debug & Event System State ..................... ~L 498   │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ SECTION 3: MAJOR OPERATIONS                               ~L 523   │
+ * │                                                                    │
+ * │  ── Helpers ──                                                     │
+ * │   §3.1  Performance Helpers (throttle, debounce, cache). ~L 531   │
+ * │   §3.2  Lookup Helpers (rank color/XP/stat points) ..... ~L 672   │
+ * │   §3.3  Calculation Helpers (quality, time, XP base) ... ~L 692   │
+ * │   §3.4  Event System Helpers (on/off/emit) ............. ~L 1333  │
+ * │   §3.5  Webpack Module Helpers (Discord internals) ..... ~L 1464  │
+ * │   §3.6  Utility Helpers (daily reset, perception) ...... ~L 1819  │
+ * │   §3.7  Message Detection (channel, input, observer) ... ~L 2077  │
+ * │                                                                    │
+ * │  ── Core Systems ──                                                │
+ * │   §3.8  XP & Leveling System (8-stage XP pipeline) .... ~L 2883  │
+ * │   §3.9  Notification System ............................ ~L 3060  │
+ * │   §3.10 Formatting Helpers ............................. ~L 3119  │
+ * │   §3.11 Plugin Lifecycle (start/stop) .................. ~L 3130  │
+ * │   §3.12 Settings Management (load/save/backup) ......... ~L 3625  │
+ * │   §3.13 CSS Styles (settings panel theme) .............. ~L 4325  │
+ * │   §3.14 Activity Tracking (shadow power, time) ......... ~L 4888  │
+ * │   §3.15 Level-Up & Rank System (check/promote) ......... ~L 5169  │
+ * │   §3.16 Level-Up Overlay Animation ..................... ~L 5920  │
+ * │   §3.17 Stats System (allocate, natural growth) ........ ~L 6471  │
+ * │   §3.18 Quest System (progress, complete, celebrate) ... ~L 7063  │
+ * │   §3.19 Achievement System (check, unlock, titles) ..... ~L 7330  │
+ * │     └── Achievement Definitions (76 titles, 791 lines) . ~L 7569  │
+ * │   §3.20 Shadow Army Integration (buffs, XP share) ...... ~L 8920  │
+ * │   §3.21 HP/Mana System (bars, regen, display) .......... ~L 8987  │
+ * │   §3.22 Chat UI (render, update, listeners) ............ ~L 9076  │
+ * │     └── Chat UI CSS (theme styles, 1200+ lines) ........ ~L 9986  │
+ * │   §3.23 Settings Panel (BetterDiscord API) ............. ~L 11243 │
+ * ├─────────────────────────────────────────────────────────────────────┤
+ * │ SECTION 4: DEBUGGING & DEVELOPMENT                        ~L 11415 │
+ * │   §4.1  Debug Logging (throttled, conditional) ......... ~L 11419 │
+ * │   §4.2  Debug Error Tracking ........................... ~L 11485 │
+ * │   §4.3  Debug Console (constructor logging) ............ ~L 11528 │
+ * └─────────────────────────────────────────────────────────────────────┘
  *
  * ============================================================================
  * VERSION HISTORY
@@ -172,9 +194,9 @@ module.exports = class SoloLevelingStats {
   // SECTION 2: CONFIGURATION & HELPERS
   // ============================================================================
 
-  /**
-   * 2.1 CONSTRUCTOR & DEFAULT SETTINGS
-   */
+  // ── §2.1 CONSTRUCTOR & DEFAULT SETTINGS ──────────────────────────────────
+  // Initializes all default state: stats, XP, rank, quests, achievements,
+  // HP/Mana, activity tracking, caches, and event system.
   constructor() {
     this.defaultSettings = {
       enabled: true,
@@ -247,9 +269,9 @@ module.exports = class SoloLevelingStats {
       userMaxMana: null,
     };
 
-    // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
+    // Deep copy to prevent defaultSettings from being modified
     // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
     this.debugConsole('[CONSTRUCTOR]', 'Settings initialized with deep copy', {
       level: this.settings.level,
       xp: this.settings.xp,
@@ -328,9 +350,9 @@ module.exports = class SoloLevelingStats {
     this.messageStorePatch = null; // Track message store patch for cleanup
     this.reactInjectionActive = false; // Track if React injection is active
 
-    // ============================================================================
-    // PERFORMANCE OPTIMIZATION SYSTEM
-    // ============================================================================
+    // ── §2.2 PERFORMANCE OPTIMIZATION SYSTEM ────────────────────────────────
+    // DOM Cache (eliminates 84 querySelector calls per update)
+    // Performance Caches (tiered TTL for expensive calculations)
 
     // DOM Cache (eliminates 84 querySelector calls per update!)
     this.domCache = {
@@ -467,6 +489,16 @@ module.exports = class SoloLevelingStats {
     this.STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
     this.UNWANTED_TITLES = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
 
+    // Pre-compiled regex patterns (avoids allocation per message in hot path)
+    this.RE_LINKS = /https?:\/\//;
+    this.RE_CODE = /```|`/;
+    this.RE_EMOJIS = /[\u{1F300}-\u{1F9FF}]/u;
+    this.RE_MENTIONS = /<@|@everyone|@here/;
+    this.RE_WORDS = /\b\w+\b/g;
+    this.RE_PROPER_SENTENCE = /^[A-Z].*[.!?]$/;
+    this.RE_NUMBERED_LIST = /^\d+[.)]\s/;
+    this.RE_BULLET_LIST = /^[-*]\s/m;
+
     // Single source of truth for stat metadata — replaces 3 inline statDefs
     this.STAT_METADATA = {
       strength:     { name: 'STR', fullName: 'Strength',     desc: '+5% XP',                                     longDesc: '+5% XP/msg',                                            gain: 'Send messages' },
@@ -494,10 +526,9 @@ module.exports = class SoloLevelingStats {
       perfectStreak: { name: 'Perfect Streak', desc: 'Send 10 messages', xp: 150, statPoints: 1 },
     };
 
-    // Debug system (UNIFIED: Now uses settings.debugMode instead of this.debug.enabled)
-    // ============================================================================
-    // EVENT SYSTEM
-    // ============================================================================
+    // ── §2.5 DEBUG & EVENT SYSTEM STATE ──────────────────────────────────────
+    // Debug system uses settings.debugMode (unified toggle)
+    // Event system provides xpChanged/levelChanged/rankChanged/statsChanged hooks
     this.debug = {
       verbose: false, // Set to true for verbose logging (includes frequent operations)
       errorCount: 0,
@@ -523,14 +554,11 @@ module.exports = class SoloLevelingStats {
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
   // ============================================================================
+  // All methods live here — helpers first, then core systems, then UI.
+  // Search for §3.N to jump to a specific subsection.
 
-  // ============================================================================
-  // HELPER FUNCTIONS - EXTRACTED FROM LONG FUNCTIONS
-  // ============================================================================
-
-  /**
-   * 2.4.1 PERFORMANCE HELPERS
-   */
+  // ── §3.1 PERFORMANCE HELPERS ────────────────────────────────────────────
+  // throttle(), debounce(), DOM cache management, perf cache invalidation
 
   throttle(func, wait) {
     let timeout = null;
@@ -669,9 +697,8 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  // ============================================================================
-  // LOOKUP MAP HELPERS (O(1) Performance)
-  // ============================================================================
+  // ── §3.2 LOOKUP MAP HELPERS ──────────────────────────────────────────────
+  // O(1) rank color, XP multiplier, stat points, quest data lookups
 
   getRankColor(rank) {
     return this.rankData.colors[rank] || '#808080';
@@ -689,9 +716,9 @@ module.exports = class SoloLevelingStats {
     return this.questData[questType] || {};
   }
 
-  // ============================================================================
-  // CALCULATION HELPERS
-  // ============================================================================
+  // ── §3.3 CALCULATION HELPERS ─────────────────────────────────────────────
+  // Quality bonus, message type bonus, time bonus, channel activity,
+  // streak bonus, XP requirements, HP/Mana formulas, skill tree integration
 
   calculateQualityBonus(messageText, messageLength) {
     let bonus = 0;
@@ -703,11 +730,11 @@ module.exports = class SoloLevelingStats {
       if (messageLength > 1000) bonus += 25; // Extra for extremely long
     }
 
-    // Rich content bonus
-    const hasLinks = /https?:\/\//.test(messageText);
-    const hasCode = /```|`/.test(messageText);
-    const hasEmojis = /[\u{1F300}-\u{1F9FF}]/u.test(messageText);
-    const hasMentions = /<@|@everyone|@here/.test(messageText);
+    // Rich content bonus (uses pre-compiled regex from constructor)
+    const hasLinks = this.RE_LINKS.test(messageText);
+    const hasCode = this.RE_CODE.test(messageText);
+    const hasEmojis = this.RE_EMOJIS.test(messageText);
+    const hasMentions = this.RE_MENTIONS.test(messageText);
 
     if (hasLinks) bonus += 5;
     if (hasCode) bonus += 10; // Code blocks show effort
@@ -715,7 +742,8 @@ module.exports = class SoloLevelingStats {
     if (hasMentions) bonus += 2;
 
     // Word diversity bonus (more unique words = better quality)
-    const words = messageText.toLowerCase().match(/\b\w+\b/g) || [];
+    this.RE_WORDS.lastIndex = 0; // Reset stateful regex
+    const words = messageText.toLowerCase().match(this.RE_WORDS) || [];
     const uniqueWords = new Set(words);
     if (uniqueWords.size > 10 && messageLength > 100) {
       bonus += Math.min(uniqueWords.size * 0.5, 15);
@@ -723,7 +751,7 @@ module.exports = class SoloLevelingStats {
 
     // Question/answer bonus (engagement indicators)
     if (messageText.includes('?') && messageLength > 30) bonus += 5;
-    if (messageText.match(/^[A-Z].*[.!?]$/)) bonus += 3; // Proper sentences
+    if (this.RE_PROPER_SENTENCE.test(messageText)) bonus += 3; // Proper sentences
 
     return Math.round(bonus);
   }
@@ -731,9 +759,9 @@ module.exports = class SoloLevelingStats {
   calculateMessageTypeBonus(messageText) {
     let bonus = 0;
 
-    // Structured content bonuses
-    if (messageText.match(/^\d+[\.\)]\s/)) bonus += 5; // Numbered lists
-    if (messageText.match(/^[-*]\s/m)) bonus += 5; // Bullet points
+    // Structured content bonuses (uses pre-compiled regex from constructor)
+    if (this.RE_NUMBERED_LIST.test(messageText)) bonus += 5; // Numbered lists
+    if (this.RE_BULLET_LIST.test(messageText)) bonus += 5; // Bullet points
     if (messageText.includes('\n') && messageText.split('\n').length > 2) bonus += 8; // Multi-line
 
     return bonus;
@@ -1074,6 +1102,41 @@ module.exports = class SoloLevelingStats {
     return info ? info.channelId : null;
   }
 
+  /**
+   * Check if the current view is a guild text channel (not thread/forum/VC/DM).
+   * Uses ChannelStore for accurate type detection, falls back to URL heuristics.
+   * Discord channel types: 0=GUILD_TEXT, 2=GUILD_VOICE, 5=GUILD_ANNOUNCEMENT,
+   * 10/11/12=threads, 13=GUILD_STAGE, 15=GUILD_FORUM, 1=DM, 3=GROUP_DM
+   */
+  _isGuildTextChannel() {
+    try {
+      const channelInfo = this.getCurrentChannelInfo();
+      if (!channelInfo) return false;
+
+      // DMs and group DMs are never guild text channels
+      if (channelInfo.isDM) return false;
+      if (channelInfo.channelType === 'dm' || channelInfo.channelType === 'group_dm') return false;
+
+      // Use ChannelStore for accurate channel type detection
+      const ChannelStore = this.webpackModules?.ChannelStore;
+      if (ChannelStore?.getChannel && channelInfo.rawChannelId) {
+        const channel = ChannelStore.getChannel(channelInfo.rawChannelId);
+        if (channel) {
+          // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT (also text-based)
+          return channel.type === 0 || channel.type === 5;
+        }
+      }
+
+      // Fallback: URL-based detection — guild server channels match /channels/{serverId}/{channelId}
+      // Threads/forums have the same URL pattern but we can't distinguish without ChannelStore,
+      // so allow injection (better to show than to miss)
+      return channelInfo.channelType === 'server';
+    } catch (error) {
+      this.debugError('IS_GUILD_TEXT_CHANNEL', error);
+      return true; // Default to allowing injection on error
+    }
+  }
+
   getTotalPerceptionBuff() {
     const now = Date.now();
     if (
@@ -1269,10 +1332,9 @@ module.exports = class SoloLevelingStats {
   getTotalEffectiveStats() {
     // Check cache first
     const now = Date.now();
-    // Create cache key from stats and active title (stats change infrequently)
-    const statsKey = JSON.stringify(this.settings.stats || {});
-    const titleKey = this.settings.achievements?.activeTitle || null;
-    const cacheKey = `${statsKey}_${titleKey}`;
+    // Cache key from stat values + active title (O(1) vs JSON.stringify O(n))
+    const s = this.settings.stats || {};
+    const cacheKey = `${s.strength || 0}_${s.agility || 0}_${s.intelligence || 0}_${s.vitality || 0}_${s.perception || 0}_${this.settings.achievements?.activeTitle || ''}`;
 
     if (
       this._cache.totalEffectiveStats &&
@@ -1330,9 +1392,9 @@ module.exports = class SoloLevelingStats {
     return this.cachedShadowPower;
   }
 
-  // ============================================================================
-  // EVENT SYSTEM HELPERS
-  // ============================================================================
+  // ── §3.4 EVENT SYSTEM HELPERS ────────────────────────────────────────────
+  // on(), off(), emit() — pub/sub for xpChanged, levelChanged, rankChanged,
+  // statsChanged, shadowPowerChanged events
 
   on(eventName, callback) {
     if (!this.eventListeners[eventName]) {
@@ -1461,9 +1523,9 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  // ============================================================================
-  // WEBPACK MODULE HELPERS
-  // ============================================================================
+  // ── §3.5 WEBPACK MODULE HELPERS ──────────────────────────────────────────
+  // Discord internals: MessageStore, UserStore, ChannelStore, MessageActions
+  // Function patching for reliable message tracking, React fiber injection
 
   /**
    * Initialize webpack modules for advanced Discord integration
@@ -1816,9 +1878,8 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  // ============================================================================
-  // UTILITY HELPERS
-  // ============================================================================
+  // ── §3.6 UTILITY HELPERS ─────────────────────────────────────────────────
+  // Daily reset, crit bonus calc, perception buffs, message detection helpers
 
   checkDailyReset() {
     const today = new Date().toDateString();
@@ -2880,9 +2941,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  // ============================================================================
-  // XP & LEVELING SYSTEM
-  // ============================================================================
+  // ── §3.8 XP & LEVELING SYSTEM ────────────────────────────────────────────
+  // Entry point: processMessageSent() → awardXP() (8-stage pipeline)
+  // Stages: base XP → stat% → title bonus → active skills → milestones
+  //         → diminishing returns → crit bonus → rank multiplier
 
   processMessageSent(messageText) {
     try {
@@ -2990,13 +3052,8 @@ module.exports = class SoloLevelingStats {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'check_achievements' });
       }
 
-      // Update UI immediately after processing
-      try {
-        this.updateChatUI();
-        this.debugLog('PROCESS_MESSAGE', 'UI updated after message processing');
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'update_ui' });
-      }
+      // UI update happens via xpChanged event listener (set up in start())
+      // No explicit updateChatUI() call needed here
 
       // Note: XP gain already triggers immediate save, but we'll also save quest progress
       // Save quest progress if it changed (but not every message to avoid spam)
@@ -3054,6 +3111,17 @@ module.exports = class SoloLevelingStats {
         // Track the new channel visit
         this.trackChannelVisit();
 
+        // Re-evaluate chat UI visibility for new channel
+        if (this._isGuildTextChannel()) {
+          // Guild text channel — ensure UI is present
+          if (!document.getElementById('sls-chat-ui')) {
+            this.createChatUI();
+          }
+        } else {
+          // Non-guild-text channel — remove UI
+          this.removeChatUI();
+        }
+
         // Update last channel ID
         return channelId;
       } else {
@@ -3090,6 +3158,10 @@ module.exports = class SoloLevelingStats {
     };
   }
 
+  // ── §3.9 NOTIFICATION SYSTEM ─────────────────────────────────────────────
+  // Toast-style notifications: success, error, warning, level-up
+  // Prefers SoloLevelingToasts plugin, falls back to BdApi.showToast
+
   showNotification(message, type = 'info', timeout = 3000) {
     try {
       // Prefer SoloLevelingToasts for animated notifications if available.
@@ -3116,9 +3188,8 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  // ============================================================================
-  // FORMATTING HELPERS
-  // ============================================================================
+  // ── §3.10 FORMATTING HELPERS ─────────────────────────────────────────────
+  // HTML escaping, number formatting, time formatting
 
   escapeHtml(text) {
     if (typeof text !== 'string') return text;
@@ -3127,9 +3198,9 @@ module.exports = class SoloLevelingStats {
     return div.innerHTML;
   }
 
-  // ============================================================================
-  // PLUGIN LIFECYCLE
-  // ============================================================================
+  // ── §3.11 PLUGIN LIFECYCLE ───────────────────────────────────────────────
+  // start(): Load settings → webpack → observers → activity → UI
+  // stop():  Remove UI → unpatch → stop observers → save → cleanup
 
   async start() {
     try {
@@ -3622,9 +3693,9 @@ module.exports = class SoloLevelingStats {
     this.debugLog('STOP', 'Plugin stopped');
   }
 
-  /**
-   * 3.2 SETTINGS MANAGEMENT
-   */
+  // ── §3.12 SETTINGS MANAGEMENT ────────────────────────────────────────────
+  // Triple-backup persistence: File, IndexedDB, BdApi.Data
+  // loadSettings() picks newest/highest-priority, deep merges, migrates
 
   readFileBackup() {
     if (!this.fileBackupPath) return null;
@@ -3645,8 +3716,15 @@ module.exports = class SoloLevelingStats {
     if (!this.fileBackupPath) return false;
     try {
       const fs = require('fs');
-      fs.writeFileSync(this.fileBackupPath, JSON.stringify(data, null, 2), 'utf8');
-      this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: this.fileBackupPath });
+      const jsonStr = JSON.stringify(data, null, 2);
+      // Async write to avoid blocking the UI thread
+      fs.writeFile(this.fileBackupPath, jsonStr, 'utf8', (err) => {
+        if (err) {
+          this.debugError('SAVE_SETTINGS_FILE', err);
+        } else {
+          this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: this.fileBackupPath });
+        }
+      });
       return true;
     } catch (error) {
       this.debugError('SAVE_SETTINGS_FILE', error);
@@ -4356,6 +4434,7 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  // ── §3.13 CSS STYLES (Settings Panel Theme) ──────────────────────────────
   // DEPRECATED: This settings CSS injector is not used by the current settings UI.
   // Kept for now to avoid breaking any external references, but safe to delete later.
   injectSettingsCSS() {
@@ -4885,9 +4964,9 @@ module.exports = class SoloLevelingStats {
     document.head.appendChild(style);
   }
 
-  /**
-   * 3.3 ACTIVITY TRACKING
-   */
+  // ── §3.14 ACTIVITY TRACKING ──────────────────────────────────────────────
+  // Shadow power observer, time-active counter (1-min poll),
+  // mouse/keyboard activity (5-min timeout), channel visit tracking
 
   setupShadowPowerObserver() {
     if (this.shadowPowerObserver) {
@@ -5166,9 +5245,10 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  /**
-   * 3.4 XP & LEVELING SYSTEM
-   */
+  // ── §3.15 LEVEL-UP & RANK SYSTEM ─────────────────────────────────────────
+  // checkLevelUp(): Detect level changes, award stat points, trigger animations
+  // checkRankPromotion(): E→D→C→B→A→S→SS→SSS→SSS+→NH→Monarch→Monarch+→SM
+  // showLevelUpNotification(): Banner + sound overlay
 
   checkLevelUp(oldLevel) {
     try {
@@ -5413,6 +5493,10 @@ module.exports = class SoloLevelingStats {
           achievements: this.settings.achievements.unlocked.length,
           timestamp: Date.now(),
         });
+        // Cap rank history to last 100 entries to prevent unbounded growth
+        if (this.settings.rankHistory.length > 100) {
+          this.settings.rankHistory = this.settings.rankHistory.slice(-100);
+        }
 
         // Save immediately on rank promotion (critical event)
         try {
@@ -5917,9 +6001,9 @@ module.exports = class SoloLevelingStats {
     // Play level up sound/effect (optional)
   }
 
-  // ============================================================================
-  // LEVEL UP OVERLAY ANIMATION (Non-toast)
-  // ============================================================================
+  // ── §3.16 LEVEL-UP OVERLAY ANIMATION ─────────────────────────────────────
+  // Full-screen overlay banner with CSS animations (slideDown, pulse, glow)
+  // Queue system supports up to 5 sequential animations
 
   getOrCreateLevelUpOverlay() {
     const existing = document.getElementById('sls-levelup-overlay');
@@ -6226,6 +6310,9 @@ module.exports = class SoloLevelingStats {
           achievements: currentAchievements,
           timestamp: Date.now(),
         });
+        if (this.settings.rankHistory.length > 100) {
+          this.settings.rankHistory = this.settings.rankHistory.slice(-100);
+        }
       }
 
       // Check daily quests - they don't depend on level, but we should verify they're still valid
@@ -6468,9 +6555,32 @@ module.exports = class SoloLevelingStats {
     });
   }
 
-  // ============================================================================
-  // STATS SYSTEM
-  // ============================================================================
+  // ── §3.17 STATS SYSTEM ───────────────────────────────────────────────────
+  // allocateStatPoint(): Spend points (STR/AGI/INT/VIT/PER)
+  // processNaturalStatGrowth(): Passive per-message stat gains (0.5%+ chance)
+  // _queueStatAllocation(): Aggregated notification batching
+  // _prunePerceptionBuffs(): Consolidate buffs when array exceeds 200 entries
+
+  /**
+   * Consolidate perception buffs when array exceeds 200 entries.
+   * Sums individual buff records by stat into a single entry per stat,
+   * preventing unbounded growth while preserving total buff values.
+   */
+  _prunePerceptionBuffs() {
+    if (!this.settings.perceptionBuffs || this.settings.perceptionBuffs.length <= 200) return;
+    // Consolidate: sum all buffs by stat into one entry per stat
+    const sumByStat = {};
+    for (const entry of this.settings.perceptionBuffs) {
+      sumByStat[entry.stat] = (sumByStat[entry.stat] || 0) + entry.buff;
+    }
+    this.settings.perceptionBuffs = Object.entries(sumByStat).map(([stat, buff]) => ({
+      stat,
+      buff: Math.round(buff * 10) / 10,
+    }));
+    this.debugLog('PRUNE_BUFFS', 'Consolidated perception buffs', {
+      newCount: this.settings.perceptionBuffs.length,
+    });
+  }
 
   /**
    * Aggregate stat allocation notifications to prevent spam
@@ -6691,6 +6801,7 @@ module.exports = class SoloLevelingStats {
       const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
       const roundedBuff = Math.round(randomBuff * 10) / 10;
       this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
+      this._prunePerceptionBuffs();
 
       // Calculate total stacked buff
       const totalPerceptionBuff =
@@ -6840,6 +6951,7 @@ module.exports = class SoloLevelingStats {
                 const roundedBuff = Math.round(randomBuff * 10) / 10;
                 this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
               }
+              this._prunePerceptionBuffs();
             }
           }
         });
@@ -6935,6 +7047,7 @@ module.exports = class SoloLevelingStats {
               const roundedBuff = Math.round(randomBuff * 10) / 10;
               this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
             }
+            this._prunePerceptionBuffs();
           }
 
           statsGrown.push({
@@ -7060,9 +7173,10 @@ module.exports = class SoloLevelingStats {
       .join('');
   }
 
-  // ============================================================================
-  // QUEST SYSTEM
-  // ============================================================================
+  // ── §3.18 QUEST SYSTEM ───────────────────────────────────────────────────
+  // 5 daily quests: Message Master, Character Champion, Channel Explorer,
+  // Active Adventurer, Perfect Streak. Midnight reset via checkDailyReset()
+  // Celebration animations on completion with targeted DOM updates
 
   updateQuestProgress(questId, amount) {
     const quest = this.settings.dailyQuests.quests[questId];
@@ -7469,9 +7583,11 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  /**
-   * 3.7 ACHIEVEMENT SYSTEM
-   */
+  // ── §3.19 ACHIEVEMENT SYSTEM ─────────────────────────────────────────────
+  // 76 achievements across 7 tiers: E-Rank → Monarch → Shadow Monarch
+  // Each achievement can unlock an equippable title with stat bonuses
+  // checkAchievements() runs after every message to evaluate conditions
+  // Achievement types: level, messages, crits, stat, channels, time, characters
 
   checkAchievements() {
     const achievements = this.getAchievementDefinitions();
@@ -8893,6 +9009,11 @@ module.exports = class SoloLevelingStats {
     });
   }
 
+  // ── §3.20 SHADOW ARMY INTEGRATION ────────────────────────────────────────
+  // getShadowArmyBuffs(): Read shadow stats from ShadowArmy plugin
+  // getEffectiveShadowArmyBuffs(): Apply Arise skill multiplier
+  // shareShadowXP(): 5% message XP, 10% quest XP to all shadows
+
   getShadowArmyBuffs() {
     // Check cache first (avoid repeated plugin lookups)
     const now = Date.now();
@@ -8984,9 +9105,10 @@ module.exports = class SoloLevelingStats {
     };
   }
 
-  // ============================================================================
-  // HP/MANA SYSTEM
-  // ============================================================================
+  // ── §3.21 HP/MANA SYSTEM ─────────────────────────────────────────────────
+  // HP = 100 + 10*VIT + 50*rank_index | Mana = 100 + 10*INT
+  // updateHPManaBars(): Render gradient fill bars with percentage text
+  // Consumed/restored via Dungeons plugin integration
 
   updateHPManaBars(totalStats = null) {
     const cachedHpManaDisplay = this._chatUIElements?.hpManaDisplay;
@@ -9073,12 +9195,22 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  /**
-   * 3.9 UI MANAGEMENT
-   */
+  // ── §3.22 CHAT UI MANAGEMENT ─────────────────────────────────────────────
+  // createChatUI(): Build collapsible panel (level, stats, quests, achievements)
+  // renderChatUI(): Generate full HTML with tabs (Stats | Quests | Achievements)
+  // updateChatUI(): Refresh visible tab (throttled to 2s)
+  // attachChatUIListeners(): Tab switching, stat allocation buttons
+  // getChatUiCssText(): 1200+ lines of theme CSS (§3.22.1)
 
   createChatUI() {
     try {
+      // Only inject chat UI in guild text channels (not threads/forums/VC/DMs)
+      if (!this._isGuildTextChannel()) {
+        this.debugLog('CREATE_CHAT_UI', 'Skipping — not a guild text channel');
+        this.removeChatUI();
+        return;
+      }
+
       this.debugLog('CREATE_CHAT_UI', 'Starting chat UI creation');
 
       // Remove existing UI if present
@@ -9733,8 +9865,7 @@ module.exports = class SoloLevelingStats {
         progressFill.style.width = percentString;
         progressFill.style.setProperty('width', percentString, 'important');
 
-        // Force a reflow to ensure the update is visible
-        void progressFill.offsetHeight;
+        // Style update batched with next frame (no forced reflow needed)
 
         // Also update any text that shows XP progress
         const cachedXpText = this._chatUIElements?.xpText;
@@ -10004,7 +10135,7 @@ module.exports = class SoloLevelingStats {
         background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
         border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 10px;
-        padding: 10px 12px;
+        padding: 14px 12px;
         box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         z-index: 1000;
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
@@ -11240,9 +11371,8 @@ module.exports = class SoloLevelingStats {
     document.head.appendChild(style);
   }
 
-  // ============================================================================
-  // SETTINGS PANEL (BetterDiscord API)
-  // ============================================================================
+  // ── §3.23 SETTINGS PANEL (BetterDiscord API) ─────────────────────────────
+  // getSettingsPanel(): Creates UI for debug mode toggle + reset tools
 
   // Creates UI for plugin settings with debug mode toggle
   getSettingsPanel() {
@@ -11416,10 +11546,9 @@ module.exports = class SoloLevelingStats {
   // SECTION 4: DEBUGGING & DEVELOPMENT
   // ============================================================================
 
-  /**
-   * Debug logging system (only logs when debugMode is enabled)
-   * Throttles frequent operations to prevent console spam
-   */
+  // ── §4.1 DEBUG LOGGING ──────────────────────────────────────────────────
+  // Conditional logging (settings.debugMode), throttles frequent operations
+  // to prevent console spam. Tracks operation counts and error history.
   debugLog(operation, message, data = null) {
     // UNIFIED DEBUG SYSTEM: Check settings.debugMode instead of this.debug.enabled
     if (!this.settings?.debugMode) return;
@@ -11449,10 +11578,8 @@ module.exports = class SoloLevelingStats {
     this.debug.operationCounts[operation] = (this.debug.operationCounts[operation] || 0) + 1;
   }
 
-  /**
-   /**
-    * Error logging with context and stack traces
-    */
+  // ── §4.2 DEBUG ERROR TRACKING ─────────────────────────────────────────────
+  // Error logging with context and stack traces
   debugError(operation, error, context = {}) {
     if (!this.debug) this.debug = {};
     if (typeof this.debug.errorCount !== 'number') this.debug.errorCount = 0;

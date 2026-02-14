@@ -22,6 +22,23 @@
  * remains primarily original work by BlueFlashX1.
  *
  * ============================================================================
+ * FILE STRUCTURE (~3,500 lines)
+ * ============================================================================
+ *
+ *   §1  Constructor & Initialization ................ L 38
+ *   §2  Lifecycle Methods (start/stop) .............. L 503
+ *   §3  Event Handling & Watchers ................... L 583
+ *   §4  Level-Up & SP Management .................... L 746
+ *   §5  Settings Management ......................... L 936
+ *   §6  Skill Bonus Calculation ..................... L 994
+ *   §7  Active Skills System (7 cooldown-based) ..... L 1068
+ *   §8  Data Access Methods ......................... L 1393
+ *   §9  Skill Data Access ........................... L 1524
+ *   §10 Skill Upgrade Methods ....................... L 1617
+ *   §11 UI Rendering (modal, toolbar, CSS) .......... L 1868
+ *   §12 Debugging & Development ..................... L 3313
+ *
+ * ============================================================================
  * VERSION HISTORY
  * ============================================================================
  *
@@ -33,7 +50,7 @@
 
 module.exports = class SkillTree {
   // ============================================================================
-  // CONSTRUCTOR & INITIALIZATION
+  // §1 CONSTRUCTOR & INITIALIZATION
   // ============================================================================
   constructor() {
     this.defaultSettings = {
@@ -500,7 +517,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // LIFECYCLE METHODS
+  // §2 LIFECYCLE METHODS (start/stop)
   // ============================================================================
   start() {
     // Reset stopped flag to allow watchers to recreate
@@ -580,7 +597,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // EVENT HANDLING & WATCHERS
+  // §3 EVENT HANDLING & WATCHERS
   // ============================================================================
   setupLevelUpWatcher() {
     // Return early if plugin is stopped to prevent recreating watchers
@@ -743,7 +760,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // LEVEL UP & SP MANAGEMENT
+  // §4 LEVEL-UP & SP MANAGEMENT
   // ============================================================================
   checkForLevelUp() {
     try {
@@ -933,7 +950,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // SETTINGS MANAGEMENT
+  // §5 SETTINGS MANAGEMENT
   // ============================================================================
   loadSettings() {
     try {
@@ -991,7 +1008,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // SKILL BONUS CALCULATION
+  // §6 SKILL BONUS CALCULATION
   // ============================================================================
   /**
    * Save skill bonuses to shared storage for SoloLevelingStats to read
@@ -1065,7 +1082,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // ACTIVE SKILLS SYSTEM
+  // §7 ACTIVE SKILLS SYSTEM (7 cooldown-based buffs)
   // ============================================================================
 
   /**
@@ -1390,7 +1407,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // DATA ACCESS METHODS
+  // §8 DATA ACCESS METHODS
   // ============================================================================
   /**
    * Get SoloLevelingStats data
@@ -1521,7 +1538,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // SKILL DATA ACCESS METHODS
+  // §9 SKILL DATA ACCESS METHODS
   // ============================================================================
   /**
    * Get skill level (0 = not unlocked)
@@ -1614,7 +1631,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // SKILL UPGRADE METHODS
+  // §10 SKILL UPGRADE METHODS
   // ============================================================================
   /**
    * Find skill and tier by skill ID
@@ -1865,7 +1882,7 @@ module.exports = class SkillTree {
   }
 
   // ... (rest of the UI methods remain the same, but need to be updated to show skill levels and upgrade costs)
-  // For brevity, I'll include the key UI methods that need updating
+  // §11 UI RENDERING (modal, toolbar button, CSS theme)
 
   injectCSS() {
     const css = `
@@ -2656,6 +2673,30 @@ module.exports = class SkillTree {
     return !!buttons && buttons.length >= 4;
   }
 
+  /**
+   * Check if the user can type in the current channel.
+   * Returns false if the text area is missing, disabled, or shows a "no permission" state.
+   */
+  _canUserType() {
+    const textArea = document.querySelector('[class*="channelTextArea"]');
+    if (!textArea) return false;
+
+    // Discord shows a disabled/locked text area or a "You do not have permission" notice
+    // Check for common no-permission indicators
+    const noPermission =
+      textArea.querySelector('[class*="placeholder"][class*="disabled"]') ||
+      textArea.querySelector('[class*="upsellWrapper"]') ||
+      textArea.querySelector('[class*="locked"]');
+    if (noPermission) return false;
+
+    // Check if the actual editable area exists and is contenteditable
+    const editor =
+      textArea.querySelector('[role="textbox"]') ||
+      textArea.querySelector('[contenteditable="true"]') ||
+      textArea.querySelector('textarea');
+    return !!editor;
+  }
+
   getToolbarContainer() {
     const now = Date.now();
     const cached = this._toolbarCache?.element;
@@ -2665,8 +2706,36 @@ module.exports = class SkillTree {
       return cached;
     }
 
-    const buttonRow =
-      Array.from(document.querySelectorAll('[class*="button"]')).find((el) => {
+    // Find Discord's button row — start from channelTextArea (narrow scope)
+    // then fall back to broader search only if needed
+    const buttonRow = (() => {
+      const textArea =
+        document.querySelector('[class*="channelTextArea"]') ||
+        document.querySelector('[class*="slateTextArea"]') ||
+        document.querySelector('textarea[placeholder*="Message"]');
+
+      if (textArea) {
+        const container =
+          textArea.closest('[class*="container"]') ||
+          textArea.closest('[class*="wrapper"]') ||
+          textArea.parentElement?.parentElement?.parentElement;
+
+        if (container) {
+          // Look for button row within the text area container (scoped query)
+          const buttons = container.querySelectorAll('[class*="button"]');
+          if (buttons && buttons.length >= 4) {
+            return buttons[0]?.parentElement;
+          }
+          const buttonContainer =
+            container.querySelector('[class*="buttons"]') ||
+            container.querySelector('[class*="buttonContainer"]');
+          if (buttonContainer) return buttonContainer;
+        }
+      }
+
+      // Fallback: broader search scoped to chat area
+      const chatArea = document.querySelector('[class*="chat-"]') || document;
+      const el = Array.from(chatArea.querySelectorAll('[class*="button"]')).find((el) => {
         const siblings = Array.from(el.parentElement?.children || []);
         return (
           siblings.length >= 4 &&
@@ -2677,29 +2746,9 @@ module.exports = class SkillTree {
               s.querySelector('[class*="attach"]')
           )
         );
-      })?.parentElement ||
-      (() => {
-        const textArea =
-          document.querySelector('[class*="channelTextArea"]') ||
-          document.querySelector('[class*="slateTextArea"]') ||
-          document.querySelector('textarea[placeholder*="Message"]');
-        if (!textArea) return null;
-
-        const container =
-          textArea.closest('[class*="container"]') ||
-          textArea.closest('[class*="wrapper"]') ||
-          textArea.parentElement?.parentElement?.parentElement;
-
-        const buttons = container?.querySelectorAll('[class*="button"]');
-        if (buttons && buttons.length >= 4) {
-          return buttons[0]?.parentElement;
-        }
-
-        return (
-          container?.querySelector('[class*="buttons"]') ||
-          container?.querySelector('[class*="buttonContainer"]')
-        );
-      })();
+      });
+      return el?.parentElement || null;
+    })();
 
     const toolbar = buttonRow || null;
     this._toolbarCache.element = toolbar;
@@ -2741,6 +2790,9 @@ module.exports = class SkillTree {
     const existingButtons = document.querySelectorAll('.st-skill-tree-button');
     existingButtons.forEach((btn) => btn.remove());
     this.skillTreeButton = null;
+
+    // Hide button entirely if user can't type in this channel
+    if (!this._canUserType()) return;
 
     const toolbar = this.getToolbarContainer();
     if (!toolbar) {
@@ -3310,7 +3362,7 @@ module.exports = class SkillTree {
   }
 
   // ============================================================================
-  // SECTION 4: DEBUGGING & DEVELOPMENT
+  // §12 DEBUGGING & DEVELOPMENT
   // ============================================================================
 
   getSettingsPanel() {
