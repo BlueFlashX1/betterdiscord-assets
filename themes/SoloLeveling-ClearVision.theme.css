@@ -674,41 +674,10 @@ div[class^="layer_"]:has(div[class*="bd-error-modal" i]) {
   box-shadow: none !important;
 }
 
-/* §6c (continued) — Error dialog inner surface colors
-   Content area gets a subtle purple tint, while detail rows get solid dark black */
-.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
-.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
-.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
-.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors {
-  background: rgba(36, 14, 74, 0.94) !important;
-}
+/* §6c (continued) — Error dialog inner surface colors:
+   consolidated in §6c nuclear block below (around §7) */
 
-.bd-modal-root:has(details.bd-addon-error) details.bd-addon-error,
-.bd-modal-root:has(details.bd-addon-error) summary.bd-addon-error-header,
-.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner,
-.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
-.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-icon {
-  background: rgba(10, 10, 16, 0.98) !important;
-  background-image: none !important;
-}
-
-/* §6d — Error dialog "Okay" button: force purple instead of Discord's default blue
-   Overrides BD's .bd-button-color-brand with Solo Leveling purple gradient */
-.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand,
-.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand,
-.bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
-.bd-modal-root:has(details.bd-addon-error) button.bd-button.bd-button-color-brand {
-  background: linear-gradient(180deg, rgba(147, 76, 255, 0.96), rgba(123, 43, 226, 0.96)) !important;
-  border: 1px solid rgba(168, 85, 247, 0.6) !important;
-  box-shadow: none !important;
-}
-
-.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
-.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content {
-  background: transparent !important;
-  background-image: none !important;
-  border: none !important;
-}
+/* §6d — Error dialog "Okay" button: consolidated in nuclear block below (line ~832) */
 
 /* §6e — Error dialog header/footer chrome: strip borders from header and footer rows
    So the modal looks seamless without inner divider lines */
@@ -766,35 +735,7 @@ main[aria-label="Friends"] div[class^="itemCard_"][role="button"],
   opacity: 1 !important;
 }
 
-/* §6d (continued) — Error dialog button: solid purple (flat, no gradient)
-   Second pass — overrides the gradient version above with flat #7b2be2
-   Also includes hover state brightening to #8a2be2 */
-.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand,
-.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand,
-.bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
-.bd-modal-root:has(details.bd-addon-error) button.bd-button.bd-button-color-brand {
-  background: #7b2be2 !important;
-  background-color: #7b2be2 !important;
-  background-image: none !important;
-  border: 1px solid rgba(168, 85, 247, 0.6) !important;
-  box-shadow: none !important;
-}
-
-.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand:hover,
-.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand:hover {
-  background: #8a2be2 !important;
-  background-color: #8a2be2 !important;
-  background-image: none !important;
-  border-color: rgba(168, 85, 247, 0.85) !important;
-  box-shadow: none !important;
-}
-
-.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
-.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content {
-  background: transparent !important;
-  background-image: none !important;
-  border: none !important;
-}
+/* §6d (continued) — Error dialog button: consolidated in nuclear block below */
 
 /* §4c — Quick Switcher result items: hover/selected state colors
    Purple highlight background + white text for the active/hovered result.
@@ -826,9 +767,8 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selec
   color: #f3e8ff !important;
 }
 
-/* §6d (final) — Nuclear override: force-solid purple button + kill all pseudo-elements
-   This is the highest-specificity pass to defeat ClearVision's gradient injections.
-   Strips ::before/::after pseudo-elements and text-shadow from the button entirely */
+/* §6d — Error dialog "Okay" button: solid purple, kill ClearVision gradient injections
+   Single consolidated block — replaces 3 earlier duplicate passes */
 .bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand,
 .bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand,
 .bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
@@ -839,6 +779,15 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selec
   border: 1px solid rgba(168, 85, 247, 0.6) !important;
   box-shadow: none !important;
   text-shadow: none !important;
+}
+/* Hover: brighten to primary purple */
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand:hover,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand:hover {
+  background: #8a2be2 !important;
+  background-color: #8a2be2 !important;
+  background-image: none !important;
+  border-color: rgba(168, 85, 247, 0.85) !important;
+  box-shadow: none !important;
 }
 
 .bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
@@ -965,21 +914,9 @@ section[aria-label="User status and settings"] button[aria-label="Output Options
   display: none !important;
 }
 
-/* §6c (override) — Error dialog body: match body background to header/footer tone
-   Final override to ensure the modal content area is solid dark everywhere */
-.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
-.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
-.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
-.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors {
-  background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
-  background-image: none !important;
-}
-
-
-/* §6c (nuclear) — Error dialog: force ALL inner surfaces to solid dark black
-   Catches every possible inner element: modal content, error list, error details,
-   error headers, icons, and secondary headers. Last-resort specificity pass */
+/* §6c (nuclear) — Error dialog: force ALL inner surfaces to solid dark
+   Consolidated block — replaces 3 earlier duplicate/overridden passes.
+   Covers modal content, error list, details, headers, icons, secondary headers */
 .bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
 .bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
 .bd-modal-root:has(details.bd-addon-error) .bd-modal-content,

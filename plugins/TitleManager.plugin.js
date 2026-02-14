@@ -587,8 +587,8 @@ module.exports = class SoloLevelingTitleManager {
   createTitleButtonIconSvg() {
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '20');
-    svg.setAttribute('height', '20');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
@@ -720,34 +720,34 @@ module.exports = class SoloLevelingTitleManager {
     const panel = document.createElement('div');
     panel.style.cssText = `
       padding: 20px;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.85) 100%);
       border-radius: 12px;
-      border: 2px solid rgba(139, 92, 246, 0.3);
-      box-shadow: 0 0 30px rgba(139, 92, 246, 0.2);
+      border: 2px solid rgba(138, 43, 226, 0.3);
+      box-shadow: 0 0 30px rgba(138, 43, 226, 0.2);
     `;
 
     panel.innerHTML = `
       <div>
         <h3 style="
-          color: #8b5cf6;
+          color: #8a2be2;
           font-size: 20px;
           font-weight: bold;
           margin-bottom: 20px;
           text-transform: uppercase;
           letter-spacing: 1px;
-          text-shadow: 0 0 10px rgba(139, 92, 246, 0.5);
+          text-shadow: 0 0 10px rgba(138, 43, 226, 0.5);
         ">Title Manager Settings</h3>
 
         <div style="
           margin-bottom: 20px;
           padding: 15px;
-          background: rgba(139, 92, 246, 0.1);
+          background: rgba(138, 43, 226, 0.1);
           border-radius: 8px;
-          border-left: 3px solid #8b5cf6;
+          border-left: 3px solid #8a2be2;
         ">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Sort Preferences</div>
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 10px;">Sort Preferences</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
-            Your default sort filter: <span style="color: #8b5cf6; font-weight: bold;">${this.getSortLabel(
+            Your default sort filter: <span style="color: #8a2be2; font-weight: bold;">${this.getSortLabel(
               this.settings.sortBy || 'xpBonus'
             )}</span>
             <br><br>
@@ -780,11 +780,11 @@ module.exports = class SoloLevelingTitleManager {
         <div style="
           margin-top: 15px;
           padding: 15px;
-          background: rgba(139, 92, 246, 0.1);
+          background: rgba(138, 43, 226, 0.1);
           border-radius: 8px;
-          border-left: 3px solid #8b5cf6;
+          border-left: 3px solid #8a2be2;
         ">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px; line-height: 1.6;">
             Enable Debug Mode to see detailed console logs for:
             <ul style="margin: 8px 0; padding-left: 20px;">
@@ -833,10 +833,19 @@ module.exports = class SoloLevelingTitleManager {
     if (document.getElementById(styleId)) return;
 
     const cssContent = `
+      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
+      .tm-title-button-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 44px;
+        padding: 13px 4px 0;
+        box-sizing: border-box;
+      }
       .tm-title-button {
         background: transparent;
-        border: none;
-        border-radius: 4px;
+        border: 1px solid rgba(138, 43, 226, 0.5);
+        border-radius: 6px;
         width: 32px;
         height: 32px;
         cursor: pointer;
@@ -844,27 +853,29 @@ module.exports = class SoloLevelingTitleManager {
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s ease;
-        margin: 0 2px;
+        transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+        margin: 0;
         flex-shrink: 0;
-        padding: 6px;
+        padding: 4px;
         box-sizing: border-box;
       }
 
       .tm-title-button svg {
-        width: 20px;
-        height: 20px;
-        transition: all 0.2s ease;
+        width: 24px;
+        height: 24px;
+        transition: color 0.15s ease;
         display: block;
       }
 
       .tm-title-button:hover {
-        background: var(--background-modifier-hover, rgba(4, 4, 5, 0.6));
         color: var(--interactive-hover, #dcddde);
+        border-color: rgba(138, 43, 226, 0.8);
+        background: rgba(138, 43, 226, 0.1);
       }
 
-      .tm-title-button:hover svg {
-        transform: scale(1.1);
+      .tm-title-button:active {
+        color: var(--interactive-active, #fff);
+        border-color: rgba(138, 43, 226, 1);
       }
 
       .tm-title-modal {
@@ -883,14 +894,14 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-modal-content {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
+        background: linear-gradient(135deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.85) 100%);
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 16px;
         width: 90%;
         max-width: 800px;
         max-height: 90vh;
         overflow-y: auto;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.5);
+        box-shadow: 0 0 30px rgba(138, 43, 226, 0.5);
       }
 
       .tm-modal-header {
@@ -898,12 +909,12 @@ module.exports = class SoloLevelingTitleManager {
         justify-content: space-between;
         align-items: center;
         padding: 20px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
       }
 
       .tm-modal-header h2 {
         margin: 0;
-        color: #8b5cf6;
+        color: #8a2be2;
         font-family: 'Orbitron', sans-serif;
         font-size: 24px;
       }
@@ -914,9 +925,8 @@ module.exports = class SoloLevelingTitleManager {
         align-items: center;
         gap: 12px;
         padding: 16px 20px;
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
-        border-bottom: 2px solid rgba(139, 92, 246, 0.2);
-        backdrop-filter: blur(10px);
+        background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.2);
       }
 
       .tm-filter-label {
@@ -925,51 +935,64 @@ module.exports = class SoloLevelingTitleManager {
         font-size: 14px;
         letter-spacing: 0.5px;
         text-transform: uppercase;
-        color: #8b5cf6;
+        color: #8a2be2;
       }
 
       .tm-sort-dropdown {
         flex: 1;
         padding: 10px 16px;
-        background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.6) 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
+        background: #0d0d14;
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 8px;
-        color: rgba(255, 255, 255, 0.9);
+        color: #e8dcff;
         font-size: 14px;
         font-weight: 500;
         cursor: pointer;
         outline: none;
         transition: all 0.3s ease;
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.2);
+        -webkit-appearance: none;
+        -moz-appearance: none;
+        appearance: none;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238a2be2' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+        background-repeat: no-repeat;
+        background-position: right 12px center;
+        padding-right: 36px;
       }
 
       .tm-sort-dropdown:hover {
-        border-color: rgba(139, 92, 246, 0.8);
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(139, 92, 246, 0.1) 100%);
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.4);
+        border-color: rgba(138, 43, 226, 0.8);
+        background-color: #1a0e2e;
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.4);
         transform: translateY(-1px);
       }
 
       .tm-sort-dropdown:focus {
-        border-color: #8b5cf6;
-        box-shadow: 0 0 25px rgba(139, 92, 246, 0.6);
+        border-color: #8a2be2;
+        box-shadow: 0 0 25px rgba(138, 43, 226, 0.6);
+        background-color: #0d0d14;
       }
 
       .tm-sort-dropdown option {
-        background: #1a1a2e;
-        color: rgba(255, 255, 255, 0.9);
+        background: #0d0d14;
+        color: #e8dcff;
         padding: 10px;
         font-size: 14px;
       }
 
+      .tm-sort-dropdown option:checked {
+        background: linear-gradient(135deg, #2a1548, #1a0e2e);
+        color: #d4b8ff;
+      }
+
       .tm-sort-dropdown option:hover {
-        background: rgba(139, 92, 246, 0.2);
+        background: #1a0e2e;
       }
 
       .tm-close-button {
         background: transparent;
         border: none;
-        color: #8b5cf6;
+        color: #8a2be2;
         font-size: 32px;
         cursor: pointer;
         width: 40px;
@@ -982,7 +1005,7 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-close-button:hover {
-        background: rgba(139, 92, 246, 0.2);
+        background: rgba(138, 43, 226, 0.2);
     }
 
       .tm-modal-body {
@@ -1035,8 +1058,8 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-no-title {
-        background: rgba(139, 92, 246, 0.1);
-        border: 2px dashed rgba(139, 92, 246, 0.3);
+        background: rgba(138, 43, 226, 0.1);
+        border: 2px dashed rgba(138, 43, 226, 0.3);
         border-radius: 12px;
         padding: 30px;
         margin-bottom: 20px;
@@ -1053,12 +1076,12 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-section-title {
-        color: #8b5cf6;
+        color: #8a2be2;
         font-family: 'Orbitron', sans-serif;
         font-size: 18px;
         margin-bottom: 15px;
         padding-bottom: 10px;
-        border-bottom: 2px solid rgba(139, 92, 246, 0.3);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
       }
 
       .tm-empty-state {
@@ -1090,8 +1113,8 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-title-card {
-        background: rgba(20, 20, 30, 0.8);
-        border: 2px solid rgba(139, 92, 246, 0.3);
+        background: rgba(0, 0, 0, 0.6);
+        border: 2px solid rgba(138, 43, 226, 0.3);
         border-radius: 12px;
         padding: 20px;
         text-align: center;
@@ -1104,8 +1127,8 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-title-card:hover:not(.active) {
-        border-color: rgba(139, 92, 246, 0.8);
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.4);
+        border-color: rgba(138, 43, 226, 0.8);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.4);
         transform: translateY(-2px);
       }
 
@@ -1116,7 +1139,7 @@ module.exports = class SoloLevelingTitleManager {
 
       .tm-title-name {
         font-weight: bold;
-        color: #8b5cf6;
+        color: #8a2be2;
         font-size: 16px;
         margin-bottom: 8px;
         font-family: 'Orbitron', sans-serif;
@@ -1145,20 +1168,20 @@ module.exports = class SoloLevelingTitleManager {
       .tm-equip-btn {
         width: 100%;
         padding: 8px;
-        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
-        border: 2px solid rgba(139, 92, 246, 0.8);
+        background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%);
+        border: 2px solid rgba(138, 43, 226, 0.8);
         border-radius: 6px;
         color: white;
         font-weight: bold;
         cursor: pointer;
         transition: all 0.2s ease;
-        box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
       }
 
       .tm-equip-btn:hover {
-        background: linear-gradient(135deg, #7c3aed 0%, #6d28d9 100%);
-        border-color: rgba(139, 92, 246, 1);
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.8);
+        background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
+        border-color: rgba(138, 43, 226, 1);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.8);
         transform: translateY(-1px);
     }
     `;
@@ -1208,7 +1231,9 @@ module.exports = class SoloLevelingTitleManager {
    * Create title button in Discord UI
    */
   createTitleButton() {
-    // Remove any existing buttons first (prevent duplicates)
+    // Remove any existing buttons/wrappers first (prevent duplicates)
+    const existingWrappers = document.querySelectorAll('.tm-title-button-wrapper');
+    existingWrappers.forEach((w) => w.remove());
     const existingButtons = document.querySelectorAll('.tm-title-button');
     existingButtons.forEach((btn) => btn.remove());
     this.titleButton = null;
@@ -1222,14 +1247,20 @@ module.exports = class SoloLevelingTitleManager {
       return;
     }
 
-    // Create title button with SVG icon
+    // Create title button with SVG icon, wrapped to match Discord native buttons
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tm-title-button-wrapper';
+
     const button = document.createElement('button');
     button.className = 'tm-title-button';
     button.replaceChildren(this.createTitleButtonIconSvg());
     button.title = 'Titles';
     button.addEventListener('click', () => this.openTitleModal());
 
-    // Insert button before skill tree button (or before apps button if no skill tree)
+    wrapper.appendChild(button);
+
+    // Insert wrapper before skill tree button wrapper (or before apps button if no skill tree)
+    const skillTreeWrapper = toolbar.querySelector('.st-skill-tree-button-wrapper');
     const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
     const appsButton = Array.from(toolbar.children).find(
       (el) =>
@@ -1237,12 +1268,13 @@ module.exports = class SoloLevelingTitleManager {
         el.getAttribute('aria-label')?.toLowerCase().includes('app')
     );
 
-    if (skillTreeBtn) {
-      toolbar.insertBefore(button, skillTreeBtn);
+    const insertRef = skillTreeWrapper || skillTreeBtn;
+    if (insertRef) {
+      toolbar.insertBefore(wrapper, insertRef);
     } else if (appsButton) {
-      toolbar.insertBefore(button, appsButton);
+      toolbar.insertBefore(wrapper, appsButton);
     } else {
-      toolbar.appendChild(button);
+      toolbar.appendChild(wrapper);
     }
     this.titleButton = button;
 

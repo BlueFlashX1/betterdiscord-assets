@@ -238,6 +238,8 @@ module.exports = class SoloLevelingStats {
         titles: [],
         activeTitle: null,
       },
+      // Chat UI panel state (closed by default, user opens manually)
+      chatUIPanelExpanded: false,
       // HP/Mana (calculated from stats)
       userHP: null,
       userMaxHP: null,
@@ -248,7 +250,7 @@ module.exports = class SoloLevelingStats {
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     // Shallow copy (this.settings = this.defaultSettings) causes save corruption!
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
-    this.debugConsole('🔧 [CONSTRUCTOR]', 'Settings initialized with deep copy', {
+    this.debugConsole('[CONSTRUCTOR]', 'Settings initialized with deep copy', {
       level: this.settings.level,
       xp: this.settings.xp,
       rank: this.settings.rank,
@@ -389,6 +391,9 @@ module.exports = class SoloLevelingStats {
       skillTreeBonuses: null,
       skillTreeBonusesTime: 0,
       skillTreeBonusesTTL: 2000, // 2s - skill tree changes rarely
+      activeSkillBuffs: null,
+      activeSkillBuffsTime: 0,
+      activeSkillBuffsTTL: 1000, // 1s - active skills can expire/activate frequently
       activeTitleBonus: null,
       activeTitleBonusTime: 0,
       activeTitleBonusKey: null,
@@ -428,18 +433,18 @@ module.exports = class SoloLevelingStats {
       },
       xpMultipliers: {
         E: 1.0,
-        D: 1.2,
+        D: 1.25,
         C: 1.5,
-        B: 2.0,
-        A: 3.0,
-        S: 5.0,
-        SS: 8.0,
-        SSS: 12.0,
-        'SSS+': 18.0,
-        NH: 25.0,
-        Monarch: 40.0,
-        'Monarch+': 60.0,
-        'Shadow Monarch': 100.0,
+        B: 1.85,
+        A: 2.25,
+        S: 2.75,
+        SS: 3.5,
+        SSS: 4.25,
+        'SSS+': 5.25,
+        NH: 6.5,
+        Monarch: 8.0,
+        'Monarch+': 10.0,
+        'Shadow Monarch': 12.5,
       },
       statPoints: {
         E: 2,
@@ -458,13 +463,35 @@ module.exports = class SoloLevelingStats {
       },
     };
 
-    // Quest lookup map
+    // Shared constants
+    this.STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    this.UNWANTED_TITLES = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
+
+    // Single source of truth for stat metadata — replaces 3 inline statDefs
+    this.STAT_METADATA = {
+      strength:     { name: 'STR', fullName: 'Strength',     desc: '+5% XP',                                     longDesc: '+5% XP/msg',                                            gain: 'Send messages' },
+      agility:      { name: 'AGI', fullName: 'Agility',      desc: '+2% Crit (capped 25%), +1% EXP/Crit',        longDesc: '+2% crit chance (capped 25%), +1% EXP per point during crit hits', gain: 'Send messages' },
+      intelligence: { name: 'INT', fullName: 'Intelligence',  desc: '+10% Long Msg',                              longDesc: '+10% long msg XP',                                      gain: 'Long messages' },
+      vitality:     { name: 'VIT', fullName: 'Vitality',      desc: '+5% Quests',                                 longDesc: '+5% quest rewards',                                     gain: 'Complete quests' },
+      perception:   { name: 'PER', fullName: 'Perception',    desc: 'Random buff stacks',                         longDesc: 'Random buff per point (stacks)',                         gain: 'Allocate stat points' },
+    };
+
+    // Default empty shadow buffs — used by getShadowArmyBuffs fallback paths
+    this.DEFAULT_SHADOW_BUFFS = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+
+    // Cached UI element references (avoids repeated querySelector)
+    this._chatUIElements = {};
+
+    // Dirty flag for throttled UI updates (used by 2s chatUIUpdateInterval)
+    this._chatUIDirty = false;
+
+    // Quest definitions — single source of truth for names, descriptions, and rewards
     this.questData = {
-      messageMaster: { name: 'Message Master', icon: '💬', reward: 50 },
-      characterChampion: { name: 'Character Champion', icon: '📝', reward: 75 },
-      channelExplorer: { name: 'Channel Explorer', icon: '🗺️', reward: 100 },
-      activeAdventurer: { name: 'Active Adventurer', icon: '⏰', reward: 125 },
-      perfectStreak: { name: 'Perfect Streak', icon: '🔥', reward: 150 },
+      messageMaster: { name: 'Message Master', desc: 'Send 20 messages', xp: 50, statPoints: 1 },
+      characterChampion: { name: 'Character Champion', desc: 'Type 1,000 characters', xp: 75, statPoints: 0 },
+      channelExplorer: { name: 'Channel Explorer', desc: 'Visit 5 unique channels', xp: 50, statPoints: 1 },
+      activeAdventurer: { name: 'Active Adventurer', desc: 'Be active for 30 minutes', xp: 100, statPoints: 0 },
+      perfectStreak: { name: 'Perfect Streak', desc: 'Send 10 messages', xp: 150, statPoints: 1 },
     };
 
     // Debug system (UNIFIED: Now uses settings.debugMode instead of this.debug.enabled)
@@ -832,6 +859,50 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * Get active skill buffs from SkillTree plugin (shared storage)
+   * @returns {Object|null} - Active buff effects or null
+   */
+  getActiveSkillBuffs() {
+    const now = Date.now();
+    if (
+      this._cache.activeSkillBuffs !== null &&
+      this._cache.activeSkillBuffsTime &&
+      now - this._cache.activeSkillBuffsTime < this._cache.activeSkillBuffsTTL
+    ) {
+      return this._cache.activeSkillBuffs;
+    }
+
+    try {
+      const buffs = BdApi.Data.load('SkillTree', 'activeBuffs') || null;
+      this._cache.activeSkillBuffs = buffs;
+      this._cache.activeSkillBuffsTime = now;
+      return buffs;
+    } catch (_error) {
+      this._cache.activeSkillBuffs = null;
+      this._cache.activeSkillBuffsTime = now;
+      return null;
+    }
+  }
+
+  /**
+   * Consume a charge from a charge-based active skill via SkillTree plugin
+   * @param {string} skillId - Active skill ID
+   * @returns {boolean}
+   */
+  consumeActiveSkillCharge(skillId) {
+    try {
+      const skillTreePlugin = BdApi.Plugins.get('SkillTree');
+      const instance = skillTreePlugin?.instance || skillTreePlugin;
+      if (instance && typeof instance.consumeActiveSkillCharge === 'function') {
+        return instance.consumeActiveSkillCharge(skillId);
+      }
+    } catch (_error) {
+      // SkillTree not available
+    }
+    return false;
+  }
+
   calculateBaseXpForMessage({ messageText, messageLength }) {
     // ===== BASE XP CALCULATION (Additive Bonuses) =====
     // Base XP: 10 per message
@@ -1044,7 +1115,7 @@ module.exports = class SoloLevelingStats {
     }
 
     const perceptionBuffs = this.settings.perceptionBuffs || [];
-    const buffsByStat = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+    const buffsByStat = { ...this.DEFAULT_SHADOW_BUFFS };
 
     // FUNCTIONAL: Reduce buffs by stat (additive stacking)
     perceptionBuffs.forEach((buff) => {
@@ -1062,24 +1133,58 @@ module.exports = class SoloLevelingStats {
   }
 
   getRankMultiplier() {
-    // Buffed rank multipliers for clear, noticeable progression
-    // Slightly nerfed but still very impactful - each rank feels like a major power spike
-    const rankMultipliers = {
-      E: 1.0, // Base (no bonus)
-      D: 1.25, // +25% (was 1.3)
-      C: 1.5, // +50% (was 1.6)
-      B: 1.85, // +85% (was 2.0) - Nearly double XP!
-      A: 2.25, // +125% (was 2.5)
-      S: 2.75, // +175% (was 3.2)
-      SS: 3.5, // +250% (was 4.0) - 3.5x XP!
-      SSS: 4.25, // +325% (was 5.0) - 4.25x XP!
-      'SSS+': 5.25, // +425% (was 6.5) - 5.25x XP!
-      NH: 6.5, // +550% (was 8.0) - National Hunter - 6.5x XP!
-      Monarch: 8.0, // +700% (was 10.0) - 8x XP!
-      'Monarch+': 10.0, // +900% (was 13.0) - 10x XP!
-      'Shadow Monarch': 12.5, // +1150% (was 16.0) - Shadow Monarch - 12.5x XP!
-    };
-    return rankMultipliers[this.settings.rank] || 1.0;
+    return this.rankData.xpMultipliers[this.settings.rank] || 1.0;
+  }
+
+  /**
+   * Get title and shadow buff percentages for a stat key.
+   * Handles old-format (raw number) → new-format (percentage) conversion
+   * and the perception/luck backward-compatibility fallback.
+   * @param {string} statKey - One of STAT_KEYS
+   * @param {Object} titleBonus - From getActiveTitleBonus()
+   * @param {Object} [shadowBuffs] - From getShadowArmyBuffs() (optional)
+   * @returns {{ titlePercent: number, shadowPercent: number }}
+   */
+  getBuffPercents(statKey, titleBonus, shadowBuffs) {
+    // Title: support both old format (raw numbers) and new format (percentages)
+    const percentKey = `${statKey}Percent`;
+    const rawKey = statKey === 'perception' ? (titleBonus.perception ?? titleBonus.luck ?? 0) : (titleBonus[statKey] || 0);
+    const titlePercent = titleBonus[percentKey] || (rawKey ? rawKey / 100 : 0);
+
+    // Shadow: percentages (0.1 = 10%), with perception/luck fallback
+    let shadowPercent = 0;
+    if (shadowBuffs) {
+      shadowPercent = statKey === 'perception'
+        ? (shadowBuffs.perception || shadowBuffs.luck || 0)
+        : (shadowBuffs[statKey] || 0);
+    }
+
+    return { titlePercent, shadowPercent };
+  }
+
+  getStatPointsForLevel(level) {
+    return 5 + Math.floor(level / 10);
+  }
+
+  getReactFiberKey(element) {
+    return Object.keys(element).find(
+      (key) =>
+        key.startsWith('__reactFiber') ||
+        key.startsWith('__reactInternalInstance') ||
+        key.startsWith('__reactContainer')
+    );
+  }
+
+  getMessageContainer() {
+    const cached = this._messageContainerEl;
+    if (cached && cached.isConnected) return cached;
+    const el =
+      document.querySelector('[class*="messagesWrapper"]') ||
+      document.querySelector('[class*="scrollerInner"]') ||
+      document.querySelector('[class*="messageList"]') ||
+      document.querySelector('[class*="scroller"]');
+    this._messageContainerEl = el || null;
+    return this._messageContainerEl;
   }
 
   getCurrentLevel() {
@@ -1202,53 +1307,15 @@ module.exports = class SoloLevelingStats {
     };
 
     const titleBonus = this.getActiveTitleBonus();
+    const shadowBuffs = this.getEffectiveShadowArmyBuffs();
 
-    // Migration: Support both 'luck' and 'perception' for backward compatibility
-    const perceptionStat = baseStats.perception ?? baseStats.luck ?? 0;
-    const perceptionTitleBonus = titleBonus.perception ?? titleBonus.luck ?? 0;
-
-    // Apply MULTIPLICATIVE percentage-based stat bonuses from titles
-    // Titles are multiplicative since you can only equip one at a time
-    // Support both old format (raw numbers) and new format (percentages)
-    const strengthPercent =
-      titleBonus.strengthPercent || (titleBonus.strength ? titleBonus.strength / 100 : 0);
-    const agilityPercent =
-      titleBonus.agilityPercent || (titleBonus.agility ? titleBonus.agility / 100 : 0);
-    const intelligencePercent =
-      titleBonus.intelligencePercent ||
-      (titleBonus.intelligence ? titleBonus.intelligence / 100 : 0);
-    const vitalityPercent =
-      titleBonus.vitalityPercent || (titleBonus.vitality ? titleBonus.vitality / 100 : 0);
-    const perceptionPercent =
-      titleBonus.perceptionPercent || (perceptionTitleBonus ? perceptionTitleBonus / 100 : 0);
-
-    // Apply title bonuses multiplicatively (multiply base stats by title multiplier)
-    const statsWithTitle = {
-      strength: Math.round(baseStats.strength * (1 + strengthPercent)),
-      agility: Math.round(baseStats.agility * (1 + agilityPercent)),
-      intelligence: Math.round(baseStats.intelligence * (1 + intelligencePercent)),
-      vitality: Math.round(baseStats.vitality * (1 + vitalityPercent)),
-      perception: Math.round(perceptionStat * (1 + perceptionPercent)),
-    };
-
-    // Get Shadow Army buffs (percentage-based multipliers, like titles)
-    // Shadow buffs are defined as percentages: 0.1 = 10%, 0.05 = 5%, etc.
-    // Each shadow role gives percentage buffs that stack additively
-    // Example: Tank shadow gives +10% VIT, +5% STR
-    // If you have 100 VIT and 1 Tank shadow: +10 VIT (100 * 0.1)
-    const shadowBuffs = this.getShadowArmyBuffs();
-
-    // Apply shadow buffs multiplicatively (like titles, but they stack additively)
-    // Shadow buffs are percentages that stack: if you have 2 Tank shadows, you get +20% VIT total
-    const result = {
-      strength: Math.round(statsWithTitle.strength * (1 + (shadowBuffs.strength || 0))),
-      agility: Math.round(statsWithTitle.agility * (1 + (shadowBuffs.agility || 0))),
-      intelligence: Math.round(statsWithTitle.intelligence * (1 + (shadowBuffs.intelligence || 0))),
-      vitality: Math.round(statsWithTitle.vitality * (1 + (shadowBuffs.vitality || 0))),
-      perception: Math.round(
-        statsWithTitle.perception * (1 + (shadowBuffs.perception || shadowBuffs.luck || 0))
-      ),
-    };
+    // Apply title + shadow bonuses multiplicatively per stat using shared helper
+    const result = {};
+    for (const key of this.STAT_KEYS) {
+      const { titlePercent, shadowPercent } = this.getBuffPercents(key, titleBonus, shadowBuffs);
+      const withTitle = Math.round(baseStats[key] * (1 + titlePercent));
+      result[key] = Math.round(withTitle * (1 + shadowPercent));
+    }
 
     // Cache the result
     this._cache.totalEffectiveStats = result;
@@ -1330,10 +1397,10 @@ module.exports = class SoloLevelingStats {
         levelInfo,
       };
 
+      this._chatUIDirty = true;
       this.emit('xpChanged', xpData);
 
-      // CRITICAL: Also trigger UI update immediately after emit
-      // This ensures progress bar updates even if event listeners fail
+      // Trigger UI update immediately after emit
       try {
         this.updateChatUI();
       } catch (error) {
@@ -1720,10 +1787,13 @@ module.exports = class SoloLevelingStats {
                       pluginInstance.attachStatButtonListeners(domElement);
                     }, 100);
 
-                    // Update UI periodically
+                    // Update UI periodically (only when data has changed)
                     if (!pluginInstance.chatUIUpdateInterval) {
                       pluginInstance.chatUIUpdateInterval = setInterval(() => {
-                        pluginInstance.updateChatUI();
+                        if (pluginInstance._chatUIDirty) {
+                          pluginInstance._chatUIDirty = false;
+                          pluginInstance.updateChatUI();
+                        }
                       }, 2000);
                     }
                   }
@@ -1770,16 +1840,7 @@ module.exports = class SoloLevelingStats {
     // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
     // Agility affects EXP multiplier: base 0.25 (25%) + agility bonus
     try {
-      const getMessageContainerElement = () => {
-        const cached = this._messageContainerEl;
-        if (cached && cached.isConnected) return cached;
-        const next =
-          document.querySelector('[class*="messagesWrapper"]') ||
-          document.querySelector('[class*="messageList"]') ||
-          document.querySelector('[class*="scroller"]');
-        this._messageContainerEl = next || null;
-        return this._messageContainerEl;
-      };
+      const getMessageContainerElement = () => this.getMessageContainer();
 
       const findMessageElementById = (messageId) => {
         if (!messageId) return null;
@@ -2182,12 +2243,7 @@ module.exports = class SoloLevelingStats {
       const userElement =
         document.querySelector('[class*="avatar"]') || document.querySelector('[class*="user"]');
       if (userElement) {
-        const reactKey = Object.keys(userElement).find(
-          (key) =>
-            key.startsWith('__reactFiber') ||
-            key.startsWith('__reactInternalInstance') ||
-            key.startsWith('__reactContainer')
-        );
+        const reactKey = this.getReactFiberKey(userElement);
         if (reactKey) {
           let fiber = userElement[reactKey];
           for (let i = 0; i < 10 && fiber; i++) {
@@ -2275,12 +2331,7 @@ module.exports = class SoloLevelingStats {
             currentUserId &&
             (() => {
               try {
-                const reactKey = Object.keys(messageElement).find(
-                  (key) =>
-                    key.startsWith('__reactFiber') ||
-                    key.startsWith('__reactInternalInstance') ||
-                    key.startsWith('__reactContainer')
-                );
+                const reactKey = this.getReactFiberKey(messageElement);
                 if (reactKey) {
                   let fiber = messageElement[reactKey];
                   for (let i = 0; i < 20 && fiber; i++) {
@@ -2631,13 +2682,7 @@ module.exports = class SoloLevelingStats {
     // Try React props (Discord stores message data in React)
     if (!messageId) {
       try {
-        // Enhanced: Try multiple React fiber key patterns for better compatibility
-        const reactKey = Object.keys(messageElement).find(
-          (key) =>
-            key.startsWith('__reactFiber') ||
-            key.startsWith('__reactInternalInstance') ||
-            key.startsWith('__reactContainer')
-        );
+        const reactKey = this.getReactFiberKey(messageElement);
         if (reactKey) {
           let fiber = messageElement[reactKey];
           for (let i = 0; i < 10 && fiber; i++) {
@@ -2677,9 +2722,7 @@ module.exports = class SoloLevelingStats {
   getMessageTimestamp(messageElement) {
     try {
       // Method 1: Try React props (most reliable)
-      const reactKey = Object.keys(messageElement).find(
-        (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-      );
+      const reactKey = this.getReactFiberKey(messageElement);
       if (reactKey) {
         let fiber = messageElement[reactKey];
         for (let i = 0; i < 20 && fiber; i++) {
@@ -2743,9 +2786,7 @@ module.exports = class SoloLevelingStats {
       // PRIMARY METHOD 1: Check React props for user ID match (MOST RELIABLE)
       if (currentUserId) {
         try {
-          const reactKey = Object.keys(messageElement).find(
-            (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-          );
+          const reactKey = this.getReactFiberKey(messageElement);
           if (reactKey) {
             let fiber = messageElement[reactKey];
             for (let i = 0; i < 20 && fiber; i++) {
@@ -3277,6 +3318,10 @@ module.exports = class SoloLevelingStats {
 
     // Cleanup unwanted titles from saved data
     this.cleanupUnwantedTitles();
+
+    // Re-validate unlocked achievements against current requirements
+    // (revokes titles if level requirements were raised)
+    this.revalidateUnlockedAchievements();
 
     // Apply retroactive natural stat growth based on level and activity
     this.applyRetroactiveNaturalStatGrowth();
@@ -4071,7 +4116,7 @@ module.exports = class SoloLevelingStats {
   shareShadowXP(xpAmount, source = 'message') {
     const shareWithPlugin = (plugin) => {
       plugin.instance.shareShadowXP(xpAmount, source);
-      this.debugConsole('🌟 [SHADOW XP]', ` Shared ${xpAmount} XP (${source})`);
+      this.debugConsole('[SHADOW XP]', `Shared ${xpAmount} XP (${source})`);
       return true;
     };
 
@@ -4872,10 +4917,7 @@ module.exports = class SoloLevelingStats {
     });
 
     // Observe message container for new messages (which might trigger shadow extraction)
-    const messageContainer =
-      document.querySelector('[class*="messagesWrapper"]') ||
-      document.querySelector('[class*="messageList"]') ||
-      document.querySelector('[class*="scroller"]');
+    const messageContainer = this.getMessageContainer();
 
     if (messageContainer) {
       this.shadowPowerObserver.observe(messageContainer, {
@@ -5151,9 +5193,7 @@ module.exports = class SoloLevelingStats {
         // IMPROVED: Award more stat points per level to ensure user stays ahead of shadows
         // Base: 5 points per level
         // Bonus: +1 point per 10 levels (level 10+ gets 6, level 20+ gets 7, etc.)
-        const baseStatPoints = 5;
-        const levelBonus = Math.floor(newLevel / 10); // +1 per 10 levels
-        const statPointsPerLevel = baseStatPoints + levelBonus;
+        const statPointsPerLevel = this.getStatPointsForLevel(newLevel);
         this.settings.unallocatedStatPoints += levelsGained * statPointsPerLevel;
         const _statPointsAfter = this.settings.unallocatedStatPoints;
 
@@ -5232,9 +5272,7 @@ module.exports = class SoloLevelingStats {
               // #endregion
 
               // Calculate actual stat points gained
-              const baseStatPoints = 5;
-              const levelBonus = Math.floor(finalNewLevel / 10);
-              const statPointsPerLevel = baseStatPoints + levelBonus;
+              const statPointsPerLevel = this.getStatPointsForLevel(finalNewLevel);
               const actualStatPointsGained = (finalNewLevel - finalOldLevel) * statPointsPerLevel;
 
               this.showLevelUpNotification(finalNewLevel, finalOldLevel, actualStatPointsGained);
@@ -5416,6 +5454,9 @@ module.exports = class SoloLevelingStats {
 
       const baseXP = this.calculateBaseXpForMessage({ messageText, messageLength });
 
+      // ===== ACTIVE SKILL BUFFS (SkillTree temporary activated abilities) =====
+      const activeBuffs = this.getActiveSkillBuffs();
+
       // ===== PERCENTAGE BONUSES (Additive, Not Multiplicative) =====
       let totalPercentageBonus = 0; // Track all percentage bonuses additively
 
@@ -5435,6 +5476,11 @@ module.exports = class SoloLevelingStats {
       // All stat bonus: Multiplies stat-based bonuses (strength, intelligence, perception)
       skillBonuses?.allStatBonus > 0 &&
         (this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus);
+
+      // Active buff: Ruler's Authority allStatMultiplier (stacks multiplicatively with passive)
+      if (activeBuffs?.allStatMultiplier > 1.0) {
+        this._skillTreeStatMultiplier = (this._skillTreeStatMultiplier || 1.0) * activeBuffs.allStatMultiplier;
+      }
 
       // Title bonus will be applied multiplicatively after percentage bonuses
       // (stored for later application)
@@ -5540,6 +5586,11 @@ module.exports = class SoloLevelingStats {
         xp = Math.round(xp * (1 + titleBonus.xp));
       }
 
+      // ===== ACTIVE SKILL: Sprint XP Multiplier (Multiplicative) =====
+      if (activeBuffs?.xpMultiplier > 1.0) {
+        xp = Math.round(xp * activeBuffs.xpMultiplier);
+      }
+
       // ===== MILESTONE BONUSES (Multiplicative - Catch-up mechanism) =====
       // At certain level milestones, multiply XP to help balance diminishing returns
       // These are MULTIPLICATIVE since they're milestone rewards
@@ -5605,7 +5656,29 @@ module.exports = class SoloLevelingStats {
       }
 
       // ===== CRITICAL HIT BONUS (Multiplicative, but capped) =====
-      const critBonus = this.checkCriticalHitBonus();
+      // Active skill: Mutilate — guaranteed crit (charge-based)
+      let activeSkillForcedCrit = false;
+      if (activeBuffs?.guaranteedCrit) {
+        const consumed = this.consumeActiveSkillCharge('mutilate');
+        if (consumed) activeSkillForcedCrit = true;
+      }
+
+      let critBonus = this.checkCriticalHitBonus();
+      // Active skill: Bloodlust — bonus crit chance (if not already crit)
+      if (critBonus <= 0 && activeBuffs?.critChanceBonus > 0) {
+        const roll = Math.random();
+        if (roll < activeBuffs.critChanceBonus) {
+          // Bloodlust-triggered crit: use base crit multiplier from agility
+          const agilityStat = this.settings.stats?.agility || 0;
+          critBonus = 0.25 + agilityStat * 0.01;
+        }
+      }
+      // Active skill: Mutilate — force crit if guaranteed
+      if (activeSkillForcedCrit && critBonus <= 0) {
+        const agilityStat = this.settings.stats?.agility || 0;
+        critBonus = 0.25 + agilityStat * 0.01;
+      }
+
       if (critBonus > 0) {
         const baseXPBeforeCrit = xp;
         let critMultiplier = critBonus;
@@ -5664,6 +5737,11 @@ module.exports = class SoloLevelingStats {
       // Rank multiplier applied last (this is the only remaining multiplicative bonus)
       const rankMultiplier = this.getRankMultiplier();
       xp = Math.round(xp * rankMultiplier);
+
+      // ===== ACTIVE SKILL: Domain Expansion Global Multiplier (final layer) =====
+      if (activeBuffs?.globalMultiplier > 1.0) {
+        xp = Math.round(xp * activeBuffs.globalMultiplier);
+      }
 
       // Final rounding
       xp = Math.round(xp);
@@ -5737,14 +5815,7 @@ module.exports = class SoloLevelingStats {
         xpRequired: newLevelInfo.xpRequired,
       });
 
-      // CRITICAL: Update UI immediately before emitting events (ensures progress bar updates)
-      try {
-        this.updateChatUI();
-      } catch (error) {
-        this.debugError('AWARD_XP', error, { phase: 'update_ui_before_emit' });
-      }
-
-      // Emit XP changed event for real-time progress bar updates (must be synchronous)
+      // Emit XP changed event for real-time progress bar updates (triggers updateChatUI internally)
       this.emitXPChanged();
 
       // Save immediately on XP gain (important data)
@@ -5757,13 +5828,6 @@ module.exports = class SoloLevelingStats {
           this.debugError('AWARD_XP', error, { phase: 'save_after_xp' });
         }
       }, 0);
-
-      // Update chat UI again after emit (double-check)
-      try {
-        this.updateChatUI();
-      } catch (error) {
-        this.debugError('AWARD_XP', error, { phase: 'update_ui_after_emit' });
-      }
 
       // Check for level up and rank promotion
       try {
@@ -5814,9 +5878,7 @@ module.exports = class SoloLevelingStats {
 
     // Calculate actual stat points gained if not provided
     if (actualStatPointsGained === null) {
-      const baseStatPoints = 5;
-      const levelBonus = Math.floor(newLevel / 10);
-      const statPointsPerLevel = baseStatPoints + levelBonus;
+      const statPointsPerLevel = this.getStatPointsForLevel(newLevel);
       actualStatPointsGained = levelsGained * statPointsPerLevel;
     }
 
@@ -6002,10 +6064,8 @@ module.exports = class SoloLevelingStats {
       // Formula: 5 + Math.floor(level / 10) per level
       // Sum stat points from level 1 to targetLevel
       let totalStatPoints = 0;
-      const baseStatPoints = 5;
       for (let level = 1; level <= targetLevel; level++) {
-        const levelBonus = Math.floor(level / 10);
-        totalStatPoints += baseStatPoints + levelBonus;
+        totalStatPoints += this.getStatPointsForLevel(level);
       }
       this.settings.unallocatedStatPoints = totalStatPoints;
 
@@ -6014,7 +6074,7 @@ module.exports = class SoloLevelingStats {
       // Formula: baseChance = 0.003, scalingFactor = 0.0005 per stat point
       // Expected growth per level per stat ≈ 0.003 + (avgStat * 0.0005)
       // We'll simulate this level by level using expected values
-      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const statNames = this.STAT_KEYS;
       const baseStats = {
         strength: 0,
         agility: 0,
@@ -6071,7 +6131,7 @@ module.exports = class SoloLevelingStats {
         this.settings.perceptionBuffs = [];
         // Generate buffs for perception stat (similar to allocation)
         // Using Array.from() instead of for-loop
-        const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const statOptions = this.STAT_KEYS;
         this.settings.perceptionBuffs = Array.from({ length: baseStats.perception }, () => {
           const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
           const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
@@ -6231,23 +6291,12 @@ module.exports = class SoloLevelingStats {
    */
 
   getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs) {
-    // Support both old format (raw) and new format (percentage)
-    const statPercentKey = `${statKey}Percent`;
-    const titleBuffPercent =
-      titleBonus[statPercentKey] || (titleBonus[statKey] ? titleBonus[statKey] / 100 : 0);
-    const hasTitleBuff = titleBuffPercent > 0;
+    const { titlePercent, shadowPercent } = this.getBuffPercents(statKey, titleBonus, shadowBuffs);
+    const hasTitleBuff = titlePercent > 0;
+    const hasShadowBuff = shadowPercent > 0;
 
-    // Get shadow buff for this stat (support both 'luck' and 'perception')
-    // Shadow buffs are percentages (0.1 = 10%), so multiply by 100 for display
-    const shadowBuffKey =
-      statKey === 'perception'
-        ? shadowBuffs.perception || shadowBuffs.luck || 0
-        : shadowBuffs[statKey] || 0;
-    const hasShadowBuff = shadowBuffKey > 0;
-    const shadowBuffPercent = shadowBuffKey * 100; // Convert to percentage for display
-
-    // Store numeric value without % suffix to avoid double % when building strings
-    const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
+    const titleBuffValue = hasTitleBuff ? (titlePercent * 100).toFixed(0) : null;
+    const shadowBuffDisplay = hasShadowBuff ? (shadowPercent * 100).toFixed(0) : null;
 
     // Build the HTML
     let html = totalValue.toString();
@@ -6256,8 +6305,8 @@ module.exports = class SoloLevelingStats {
       if (hasTitleBuff && titleBuffValue !== null) {
         buffContent += `+${titleBuffValue}%`;
       }
-      if (hasShadowBuff) {
-        buffContent += `+${shadowBuffPercent.toFixed(0)}%`;
+      if (hasShadowBuff && shadowBuffDisplay !== null) {
+        buffContent += `+${shadowBuffDisplay}%`;
       }
       html += `<span class="sls-chat-stat-buff">${buffContent}</span>`;
     }
@@ -6266,55 +6315,32 @@ module.exports = class SoloLevelingStats {
   }
 
   renderChatStatButtons() {
-    const stats = [
-      { key: 'strength', name: 'STR', fullName: 'Strength', desc: '+5% XP' },
-      {
-        key: 'agility',
-        name: 'AGI',
-        fullName: 'Agility',
-        desc: '+2% Crit (capped 25%), +1% EXP/Crit',
-      },
-      { key: 'intelligence', name: 'INT', fullName: 'Intelligence', desc: '+10% Long Msg' },
-      { key: 'vitality', name: 'VIT', fullName: 'Vitality', desc: '+5% Quests' },
-      { key: 'perception', name: 'PER', fullName: 'Perception', desc: 'Random buff stacks' },
-    ];
-
     const totalStats = this.getTotalEffectiveStats();
     const titleBonus = this.getActiveTitleBonus();
-    const shadowBuffs = this.getShadowArmyBuffs();
+    const shadowBuffs = this.getEffectiveShadowArmyBuffs();
 
-    return stats
-      .map((stat) => {
-        const baseValue = this.settings.stats[stat.key];
-        const totalValue = totalStats[stat.key];
+    return this.STAT_KEYS
+      .map((statKey) => {
+        const stat = this.STAT_METADATA[statKey];
+        const baseValue = this.settings.stats[statKey];
+        const totalValue = totalStats[statKey];
 
-        // Support both old format (raw) and new format (percentage)
-        const statPercentKey = `${stat.key}Percent`;
-        const titleBuffPercent =
-          titleBonus[statPercentKey] || (titleBonus[stat.key] ? titleBonus[stat.key] / 100 : 0);
-        const hasTitleBuff = titleBuffPercent > 0;
-
-        // Get shadow buff for this stat (support both 'luck' and 'perception')
-        // Shadow buffs are percentages (0.1 = 10%), so multiply by 100 for display
-        const shadowBuffKey =
-          stat.key === 'perception'
-            ? shadowBuffs.perception || shadowBuffs.luck || 0
-            : shadowBuffs[stat.key] || 0;
-        const hasShadowBuff = shadowBuffKey > 0;
-        const shadowBuffPercent = shadowBuffKey * 100; // Convert to percentage for display
+        const { titlePercent, shadowPercent } = this.getBuffPercents(statKey, titleBonus, shadowBuffs);
+        const hasTitleBuff = titlePercent > 0;
+        const hasShadowBuff = shadowPercent > 0;
 
         const canAllocate = this.settings.unallocatedStatPoints > 0;
 
-        // Store numeric value without % suffix to avoid double % when building strings
-        const titleBuffValue = hasTitleBuff ? (titleBuffPercent * 100).toFixed(0) : null;
+        const titleBuffDisplay = hasTitleBuff ? (titlePercent * 100).toFixed(0) : null;
+        const shadowBuffDisplay = hasShadowBuff ? (shadowPercent * 100).toFixed(0) : null;
 
         // Build tooltip showing breakdown
         let tooltipParts = [`${stat.fullName}: Base ${baseValue}`];
-        if (hasTitleBuff && titleBuffValue !== null) {
-          tooltipParts.push(`+${titleBuffValue}% title`);
+        if (hasTitleBuff && titleBuffDisplay !== null) {
+          tooltipParts.push(`+${titleBuffDisplay}% title`);
         }
         if (hasShadowBuff) {
-          tooltipParts.push(`+${shadowBuffPercent.toFixed(0)}% shadow`);
+          tooltipParts.push(`+${shadowBuffDisplay}% shadow`);
         }
         tooltipParts.push(`Total: ${totalValue}`);
         tooltipParts.push(`${stat.desc} per point`);
@@ -6323,7 +6349,7 @@ module.exports = class SoloLevelingStats {
         // Generate value with buff badges HTML using helper
         const valueWithBuffsHTML = this.getStatValueWithBuffsHTML(
           totalValue,
-          stat.key,
+          statKey,
           titleBonus,
           shadowBuffs
         );
@@ -6331,7 +6357,7 @@ module.exports = class SoloLevelingStats {
         return `
         <button
           class="sls-chat-stat-btn ${canAllocate ? 'sls-chat-stat-btn-available' : ''}"
-          data-stat="${stat.key}"
+          data-stat="${statKey}"
           ${!canAllocate ? 'disabled' : ''}
           title="${tooltip}"
         >
@@ -6347,44 +6373,17 @@ module.exports = class SoloLevelingStats {
   }
 
   renderChatStats() {
-    const statDefs = {
-      strength: { name: 'STR', desc: '+5% XP/msg', gain: 'Send messages' },
-      agility: {
-        name: 'AGI',
-        desc: '+2% crit chance (capped 25%), +1% EXP per point during crit hits',
-        gain: 'Send messages',
-      },
-      intelligence: { name: 'INT', desc: '+10% long msg XP', gain: 'Long messages' },
-      vitality: { name: 'VIT', desc: '+5% quest rewards', gain: 'Complete quests' },
-      perception: {
-        name: 'PER',
-        desc: 'Random buff per point (stacks)',
-        gain: 'Allocate stat points',
-      },
-    };
-
-    const baseStats = this.settings.stats;
     const totalStats = this.getTotalEffectiveStats();
     const titleBonus = this.getActiveTitleBonus();
 
-    return Object.entries(baseStats)
-      .map(([key, baseValue]) => {
-        // Skip 'luck' key - it's been migrated to 'perception', but may still exist in old data
-        if (key === 'luck') return '';
-
-        const def = statDefs[key];
-        // Skip if stat definition doesn't exist (safety check)
-        if (!def) {
-          console.warn(`SoloLevelingStats: Unknown stat key "${key}" in renderChatStats`);
-          return '';
-        }
+    return this.STAT_KEYS
+      .map((key) => {
+        const def = this.STAT_METADATA[key];
+        if (!def) return '';
 
         const totalValue = totalStats[key];
-        // Support both old format (raw) and new format (percentage)
-        const statPercentKey = `${key}Percent`;
-        const titleBuffPercent =
-          titleBonus[statPercentKey] || (titleBonus[key] ? titleBonus[key] / 100 : 0);
-        const hasTitleBuff = titleBuffPercent > 0;
+        const { titlePercent } = this.getBuffPercents(key, titleBonus);
+        const hasTitleBuff = titlePercent > 0;
 
         return `
         <div class="sls-chat-stat-item" data-stat="${key}">
@@ -6392,7 +6391,7 @@ module.exports = class SoloLevelingStats {
           <span class="sls-chat-stat-value">${totalValue}</span>
           ${
             hasTitleBuff
-              ? `<span class="sls-chat-stat-buff-indicator">+${(titleBuffPercent * 100).toFixed(
+              ? `<span class="sls-chat-stat-buff-indicator">+${(titlePercent * 100).toFixed(
                   0
                 )}%</span>`
               : ''
@@ -6400,7 +6399,6 @@ module.exports = class SoloLevelingStats {
         </div>
       `;
       })
-      .filter((html) => html !== '') // Remove empty strings
       .join('');
   }
 
@@ -6688,7 +6686,7 @@ module.exports = class SoloLevelingStats {
       if (!Array.isArray(this.settings.perceptionBuffs)) {
         this.settings.perceptionBuffs = [];
       }
-      const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const statOptions = this.STAT_KEYS;
       const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
       const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
       const roundedBuff = Math.round(randomBuff * 10) / 10;
@@ -6810,7 +6808,7 @@ module.exports = class SoloLevelingStats {
       const totalGrowth = messageBasedGrowth + levelBasedGrowth;
 
       if (totalGrowth > 0) {
-        const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+        const statNames = this.STAT_KEYS;
         let statsAdded = 0;
 
         // Distribute growth evenly across all stats
@@ -6835,7 +6833,7 @@ module.exports = class SoloLevelingStats {
               if (!Array.isArray(this.settings.perceptionBuffs)) {
                 this.settings.perceptionBuffs = [];
               }
-              const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+              const statOptions = this.STAT_KEYS;
               for (let i = 0; i < growthToAdd; i++) {
                 const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
                 const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
@@ -6876,7 +6874,7 @@ module.exports = class SoloLevelingStats {
 
   processNaturalStatGrowth() {
     try {
-      const statNames = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const statNames = this.STAT_KEYS;
       let statsGrown = [];
 
       // Get user level and rank for bonus growth
@@ -6930,7 +6928,7 @@ module.exports = class SoloLevelingStats {
               this.settings.perceptionBuffs = [];
             }
             // Generate buffs for each point of growth (random stat per buff)
-            const statOptions = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+            const statOptions = this.STAT_KEYS;
             for (let i = 0; i < growthAmount; i++) {
               const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
               const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
@@ -7038,42 +7036,9 @@ module.exports = class SoloLevelingStats {
    */
 
   renderChatQuests() {
-    const quests = [
-      {
-        id: 'messageMaster',
-        name: 'Message Master',
-        desc: 'Send 20 messages',
-        quest: this.settings.dailyQuests.quests.messageMaster,
-      },
-      {
-        id: 'characterChampion',
-        name: 'Character Champion',
-        desc: 'Type 1,000 characters',
-        quest: this.settings.dailyQuests.quests.characterChampion,
-      },
-      {
-        id: 'channelExplorer',
-        name: 'Channel Explorer',
-        desc: 'Visit 5 unique channels',
-        quest: this.settings.dailyQuests.quests.channelExplorer,
-      },
-      {
-        id: 'activeAdventurer',
-        name: 'Active Adventurer',
-        desc: 'Be active for 30 minutes',
-        quest: this.settings.dailyQuests.quests.activeAdventurer,
-      },
-      {
-        id: 'perfectStreak',
-        name: 'Perfect Streak',
-        desc: 'Send 10 messages',
-        quest: this.settings.dailyQuests.quests.perfectStreak,
-      },
-    ];
-
-    return quests
-      .map(({ id, name, desc, quest }) => {
-        // Cap progress at target for display
+    return Object.entries(this.settings.dailyQuests.quests)
+      .map(([questId, quest]) => {
+        const def = this.questData[questId] || { name: questId, desc: '' };
         const cappedProgress = Math.min(quest.progress, quest.target);
         const percentage = Math.min((cappedProgress / quest.target) * 100, 100);
         const progressText = quest.completed ? quest.target : Math.floor(cappedProgress);
@@ -7081,10 +7046,10 @@ module.exports = class SoloLevelingStats {
         return `
         <div class="sls-chat-quest-item ${quest.completed ? 'sls-chat-quest-complete' : ''}">
           <div class="sls-chat-quest-header">
-            <span class="sls-chat-quest-name">${name}</span>
+            <span class="sls-chat-quest-name">${def.name}</span>
             <span class="sls-chat-quest-progress">${progressText}/${quest.target}</span>
           </div>
-          <div class="sls-chat-quest-desc">${desc}</div>
+          <div class="sls-chat-quest-desc">${def.desc}</div>
           <div class="sls-chat-progress-bar">
             <div class="sls-chat-progress-fill" style="width: ${percentageText}%"></div>
           </div>
@@ -7118,23 +7083,10 @@ module.exports = class SoloLevelingStats {
   }
 
   completeQuest(questId) {
-    const questRewards = {
-      messageMaster: { xp: 50, statPoints: 1 },
-      characterChampion: { xp: 75, statPoints: 0 },
-      channelExplorer: { xp: 50, statPoints: 1 },
-      activeAdventurer: { xp: 100, statPoints: 0 },
-      perfectStreak: { xp: 150, statPoints: 1 },
-    };
-
-    const rewards = questRewards[questId];
-    if (!rewards) {
-      return;
-    }
+    const def = this.questData[questId];
+    if (!def) return;
 
     // Apply vitality bonus to rewards (enhanced by Perception buffs and skill tree)
-    // Vitality scales: +5% base per point, +1% per point after 10 (better scaling)
-    // Perception buffs enhance Vitality bonus: (base VIT bonus) * (1 + perception multiplier)
-    // Skill tree all-stat bonus enhances all stat bonuses
     const vitalityBaseBonus = this.settings.stats.vitality * 0.05;
     const vitalityAdvancedBonus = Math.max(0, (this.settings.stats.vitality - 10) * 0.01);
     const baseVitalityBonus = vitalityBaseBonus + vitalityAdvancedBonus;
@@ -7149,17 +7101,25 @@ module.exports = class SoloLevelingStats {
     if (skillBonuses?.allStatBonus > 0) skillAllStatBonus = skillBonuses.allStatBonus;
     if (skillBonuses?.questBonus > 0) skillQuestBonus = skillBonuses.questBonus;
 
-    // Perception and skill tree enhance Vitality: base bonus multiplied by (1 + perception multiplier + skill all-stat bonus)
+    // Perception and skill tree enhance Vitality
     const enhancedVitalityBonus =
       baseVitalityBonus * (1 + perceptionMultiplier + skillAllStatBonus) + skillQuestBonus;
     const vitalityBonus = 1 + enhancedVitalityBonus;
-    const xpReward = Math.round(rewards.xp * vitalityBonus);
+    let xpReward = Math.round(def.xp * vitalityBonus);
+
+    // Active skill: Shadow Exchange — double quest rewards (charge-based)
+    const questActiveBuffs = this.getActiveSkillBuffs();
+    if (questActiveBuffs?.questRewardMultiplier > 1.0) {
+      xpReward = Math.round(xpReward * questActiveBuffs.questRewardMultiplier);
+      // Consume the charge
+      this.consumeActiveSkillCharge('shadow_exchange_active');
+    }
 
     // Award rewards
     const oldLevel = this.settings.level;
     this.settings.xp += xpReward;
     this.settings.totalXP += xpReward;
-    this.settings.unallocatedStatPoints += rewards.statPoints;
+    this.settings.unallocatedStatPoints += def.statPoints;
 
     // Emit XP changed event for real-time progress bar updates
     this.emitXPChanged();
@@ -7171,23 +7131,14 @@ module.exports = class SoloLevelingStats {
     this.checkLevelUp(oldLevel);
 
     // Show notification
-    const questNames = {
-      messageMaster: 'Message Master',
-      characterChampion: 'Character Champion',
-      channelExplorer: 'Channel Explorer',
-      activeAdventurer: 'Active Adventurer',
-      perfectStreak: 'Perfect Streak',
-    };
-
     const message =
-      `[QUEST COMPLETE] ${questNames[questId]}\n` +
-      ` +${xpReward} XP${rewards.statPoints > 0 ? `, +${rewards.statPoints} stat point(s)` : ''}`;
+      `[QUEST COMPLETE] ${def.name}\n` +
+      ` +${xpReward} XP${def.statPoints > 0 ? `, +${def.statPoints} stat point(s)` : ''}`;
 
-    // Show toast notification for quest completion (2.5 seconds to match animation)
     this.showNotification(message, 'success', 2500);
 
     // Quest completion celebration animation
-    this.showQuestCompletionCelebration(questNames[questId], xpReward, rewards.statPoints);
+    this.showQuestCompletionCelebration(def.name, xpReward, def.statPoints);
 
     // Share XP with shadow army
     try {
@@ -7219,18 +7170,18 @@ module.exports = class SoloLevelingStats {
       // Build current progress section with all daily quests
       const questProgressHTML = Object.entries(this.settings.dailyQuests.quests)
         .map(([questId, quest]) => {
-          const questInfo = this.questData[questId] || { name: questId, icon: '📋' };
+          const questInfo = this.questData[questId] || { name: questId };
           const percentage = Math.min((quest.progress / quest.target) * 100, 100);
           const isComplete = quest.completed;
           const progressText = isComplete ? quest.target : Math.floor(quest.progress);
 
           return `
-            <div class="sls-quest-progress-item ${isComplete ? 'completed' : ''}">
+            <div class="sls-quest-progress-item ${isComplete ? 'completed' : ''}" data-quest-id="${questId}">
               <div class="sls-quest-progress-checkbox">
                 ${isComplete ? '✓' : '○'}
               </div>
               <div class="sls-quest-progress-info">
-                <div class="sls-quest-progress-name">${questInfo.icon} ${questInfo.name}</div>
+                <div class="sls-quest-progress-name">${questInfo.name}</div>
                 <div class="sls-quest-progress-bar-container">
                   <div class="sls-quest-progress-bar">
                     <div class="sls-quest-progress-fill" style="width: ${percentage}%"></div>
@@ -7318,43 +7269,36 @@ module.exports = class SoloLevelingStats {
         }
       });
 
-      // Update progress in real-time every 500ms
+      // Update progress in real-time — targeted DOM updates instead of full innerHTML rebuild
       const progressUpdateInterval = setInterval(() => {
         if (!celebration.parentNode) {
           clearInterval(progressUpdateInterval);
           return;
         }
 
-        const progressList = celebration.querySelector('.sls-quest-progress-list');
-        if (progressList) {
-          const updatedProgressHTML = Object.entries(this.settings.dailyQuests.quests)
-            .map(([questId, quest]) => {
-              const questInfo = this.questData[questId] || { name: questId, icon: '📋' };
-              const percentage = Math.min((quest.progress / quest.target) * 100, 100);
-              const isComplete = quest.completed;
-              const progressText = isComplete ? quest.target : Math.floor(quest.progress);
+        Object.entries(this.settings.dailyQuests.quests).forEach(([questId, quest]) => {
+          const item = celebration.querySelector(`[data-quest-id="${questId}"]`);
+          if (!item) return;
 
-              return `
-                <div class="sls-quest-progress-item ${isComplete ? 'completed' : ''}">
-                  <div class="sls-quest-progress-checkbox">
-                    ${isComplete ? '✓' : '○'}
-                  </div>
-                  <div class="sls-quest-progress-info">
-                    <div class="sls-quest-progress-name">${questInfo.icon} ${questInfo.name}</div>
-                    <div class="sls-quest-progress-bar-container">
-                      <div class="sls-quest-progress-bar">
-                        <div class="sls-quest-progress-fill" style="width: ${percentage}%"></div>
-                      </div>
-                      <div class="sls-quest-progress-text">${progressText}/${quest.target}</div>
-                    </div>
-                  </div>
-                </div>
-              `;
-            })
-            .join('');
+          const isComplete = quest.completed;
+          const percentage = Math.min((quest.progress / quest.target) * 100, 100);
+          const progressText = isComplete ? quest.target : Math.floor(quest.progress);
 
-          progressList.innerHTML = updatedProgressHTML;
-        }
+          // Update completed state
+          item.classList.toggle('completed', isComplete);
+
+          // Update checkbox
+          const checkbox = item.querySelector('.sls-quest-progress-checkbox');
+          if (checkbox) checkbox.textContent = isComplete ? '✓' : '○';
+
+          // Update progress fill width
+          const fill = item.querySelector('.sls-quest-progress-fill');
+          if (fill) fill.style.width = `${percentage}%`;
+
+          // Update progress text
+          const text = item.querySelector('.sls-quest-progress-text');
+          if (text) text.textContent = `${progressText}/${quest.target}`;
+        });
       }, 500);
 
       // Clear interval when celebration is removed
@@ -7500,7 +7444,7 @@ module.exports = class SoloLevelingStats {
 
   createQuestParticles(container) {
     const particleCount = 30;
-    const colors = ['#5a3a8f', '#4b2882', '#3d1f6b', '#8b5cf6', '#00ff88'];
+    const colors = ['#5a3a8f', '#4b2882', '#3d1f6b', '#8a2be2', '#00ff88'];
 
     for (let i = 0; i < particleCount; i++) {
       const particle = document.createElement('div');
@@ -7523,29 +7467,6 @@ module.exports = class SoloLevelingStats {
         particle.remove();
       }, 2000);
     }
-  }
-
-  renderQuest(questId, questName, questDesc, questData) {
-    // Cap progress at target for display
-    const cappedProgress = Math.min(questData.progress, questData.target);
-    const percentage = Math.min((cappedProgress / questData.target) * 100, 100);
-    const isComplete = questData.completed;
-    const progressText = isComplete ? questData.target : Math.floor(cappedProgress);
-    const percentageText = percentage.toFixed(1);
-
-    return `
-      <div class="sls-quest-item ${isComplete ? 'sls-quest-complete' : ''}">
-        <div class="sls-quest-header">
-          <div class="sls-quest-name">${questName}</div>
-          <div class="sls-quest-progress">${progressText}/${questData.target}</div>
-        </div>
-        <div class="sls-quest-desc">${questDesc}</div>
-        <div class="sls-progress-bar">
-          <div class="sls-progress-fill" style="width: ${percentageText}%"></div>
-        </div>
-        ${isComplete ? '<div class="sls-quest-complete-badge"> Complete</div>' : ''}
-      </div>
-    `;
   }
 
   /**
@@ -7733,26 +7654,26 @@ module.exports = class SoloLevelingStats {
       {
         id: 'shadow_extraction',
         name: 'Shadow Extraction',
-        description: 'Type 25,000 characters',
+        description: 'Type 25,000 characters — the Shadow Monarch\'s core power to raise the dead',
         condition: { type: 'characters', value: 25000 },
         title: 'Shadow Extraction',
-        titleBonus: { xp: 0.15, critChance: 0.02, agilityPercent: 0.05 }, // +15% XP, +2% Crit Chance, +5% Agility
+        titleBonus: { xp: 0.15, intelligencePercent: 0.1, critChance: 0.01 }, // Shadow Extraction: necromantic INT ability
       },
       {
         id: 'domain_expansion',
         name: 'Domain Expansion',
-        description: 'Type 75,000 characters',
-        condition: { type: 'characters', value: 75000 },
+        description: 'Reach Level 100 and type 75,000 characters — territorial dominance amplifying all power within',
+        condition: { type: 'level', value: 100 },
         title: 'Domain Expansion',
-        titleBonus: { xp: 0.22, intelligencePercent: 0.1, critChance: 0.01 }, // +22% XP, +10% INT, +1% Crit
+        titleBonus: { xp: 0.3, intelligencePercent: 0.15, vitalityPercent: 0.1, perceptionPercent: 0.05, critChance: 0.02 }, // Domain: area control INT, endurance, battlefield awareness
       },
       {
         id: 'ruler_authority',
         name: "Ruler's Authority",
-        description: 'Type 150,000 characters',
-        condition: { type: 'characters', value: 150000 },
+        description: 'Reach Level 200 and type 150,000 characters — the telekinetic power wielded by the Rulers',
+        condition: { type: 'level', value: 200 },
         title: "Ruler's Authority",
-        titleBonus: { xp: 0.3, intelligencePercent: 0.1, critChance: 0.02 }, // +30% XP, +10% INT, +2% Crit
+        titleBonus: { xp: 0.5, intelligencePercent: 0.2, perceptionPercent: 0.15, critChance: 0.03 }, // Ruler's Authority: telekinetic INT mastery, cosmic perception
       },
       // Level Milestones (1-2000)
       {
@@ -7803,10 +7724,10 @@ module.exports = class SoloLevelingStats {
       {
         id: 'shadow_army',
         name: 'Shadow Army Commander',
-        description: 'Reach Level 30',
-        condition: { type: 'level', value: 30 },
+        description: 'Reach Level 50 — commander of the shadow soldiers, Jin-Woo\'s extracted army',
+        condition: { type: 'level', value: 50 },
         title: 'Shadow Army Commander',
-        titleBonus: { xp: 0.22, critChance: 0.025, agilityPercent: 0.1, strengthPercent: 0.05 }, // +22% XP, +2.5% Crit, +10% AGI, +5% STR
+        titleBonus: { xp: 0.22, intelligencePercent: 0.1, agilityPercent: 0.05, critChance: 0.02 }, // Shadow Commander: INT to command army, tactical mobility
       },
       {
         id: 'elite_hunter',
@@ -7825,45 +7746,46 @@ module.exports = class SoloLevelingStats {
       {
         id: 'necromancer',
         name: 'Necromancer',
-        description: 'Reach Level 50',
-        condition: { type: 'level', value: 50 },
+        description: 'Reach Level 100 — the forbidden class obtained after Jin-Woo\'s job change quest',
+        condition: { type: 'level', value: 100 },
         title: 'Necromancer',
         titleBonus: {
-          xp: 0.32,
-          critChance: 0.035,
-          intelligencePercent: 0.1,
+          xp: 0.35,
+          intelligencePercent: 0.15,
           vitalityPercent: 0.05,
           agilityPercent: 0.05,
-        }, // +32% XP, +3.5% Crit, +10% INT, +5% VIT/AGI
+          critChance: 0.02,
+        }, // Necromancer class: heavy INT (shadow magic), some endurance and mobility
       },
       {
         id: 'national_level',
         name: 'National Level Hunter',
-        description: 'Reach Level 75',
-        condition: { type: 'level', value: 75 },
+        description: 'Reach Level 300 — one of the elite few hunters who represent an entire nation\'s power',
+        condition: { type: 'level', value: 300 },
         title: 'National Level Hunter',
         titleBonus: {
-          xp: 0.35,
-          critChance: 0.04,
-          strengthPercent: 0.1,
-          agilityPercent: 0.1,
-          intelligencePercent: 0.05,
-        }, // +35% XP, +4% Crit, +10% STR/AGI, +5% INT
+          xp: 0.8,
+          strengthPercent: 0.2,
+          agilityPercent: 0.15,
+          intelligencePercent: 0.15,
+          vitalityPercent: 0.1,
+          critChance: 0.06,
+        }, // National Level: elite above S-rank, strong all-round with combat focus
       },
       {
         id: 'monarch_candidate',
         name: 'Monarch Candidate',
-        description: 'Reach Level 100',
-        condition: { type: 'level', value: 100 },
+        description: 'Reach Level 500 — on the threshold of transcending mortal hunter limits',
+        condition: { type: 'level', value: 500 },
         title: 'Monarch Candidate',
         titleBonus: {
-          xp: 0.5,
-          critChance: 0.05,
-          strengthPercent: 0.15,
-          agilityPercent: 0.15,
-          intelligencePercent: 0.1,
-          vitalityPercent: 0.1,
-        }, // +50% XP, +5% Crit, +15% STR/AGI, +10% INT/VIT
+          xp: 1.2,
+          strengthPercent: 0.25,
+          agilityPercent: 0.25,
+          intelligencePercent: 0.2,
+          vitalityPercent: 0.2,
+          critChance: 0.1,
+        }, // Monarch Candidate: approaching transcendence, strong across all stats
       },
       {
         id: 'high_rank_hunter',
@@ -8160,43 +8082,42 @@ module.exports = class SoloLevelingStats {
       {
         id: 'shadow_monarch',
         name: 'Shadow Monarch',
-        description: 'Reach Level 50 and send 5,000 messages',
-        condition: { type: 'level', value: 50 },
+        description: 'Reach Shadow Monarch rank (Lv 2000) — Ashborn, the King of the Dead, supreme ruler of all shadows',
+        condition: { type: 'level', value: 2000 },
         title: 'Shadow Monarch',
-        titleBonus: { xp: 0.38, critChance: 0.03, agilityPercent: 0.1, strengthPercent: 0.05 }, // +38% XP, +3% Crit Chance, +10% Agility, +5% Strength
+        titleBonus: { xp: 5.0, strengthPercent: 1.0, agilityPercent: 1.0, intelligencePercent: 1.0, vitalityPercent: 1.0, perceptionPercent: 1.0, critChance: 0.3 }, // ASHBORN: supreme god-tier — 100% ALL stats, 500% XP, 30% Crit
       },
       {
         id: 'monarch_of_destruction',
         name: 'Monarch of Destruction',
-        description: 'Reach Level 75 and type 100,000 characters',
-        condition: { type: 'level', value: 75 },
+        description: 'Reach Monarch+ rank (Lv 1500) — Antares, the King of Dragons and ultimate adversary',
+        condition: { type: 'level', value: 1500 },
         title: 'Monarch of Destruction',
-        titleBonus: { xp: 0.45, critChance: 0.05, strengthPercent: 0.15, intelligencePercent: 0.1 }, // +45% XP, +5% Crit, +15% STR, +10% INT
+        titleBonus: { xp: 2.5, strengthPercent: 0.5, vitalityPercent: 0.4, intelligencePercent: 0.3, critChance: 0.2 }, // Antares: supreme destructive force, dragon durability, breath attacks, devastating strikes
       },
       {
         id: 'the_ruler',
         name: 'The Ruler',
-        description: 'Reach Level 100 and be active for 50 hours',
-        condition: { type: 'level', value: 100 },
+        description: 'Reach National Hunter rank (Lv 700) and be active for 200 hours — emissary of the Absolute Being',
+        condition: { type: 'level', value: 700 },
         title: 'The Ruler',
         titleBonus: {
-          xp: 0.5,
-          critChance: 0.05,
-          strengthPercent: 0.1,
-          agilityPercent: 0.1,
-          intelligencePercent: 0.1,
-          vitalityPercent: 0.1,
-          perceptionPercent: 0.05,
-        }, // +50% XP, +5% Crit Chance, +10% All Stats, +5% Perception
+          xp: 1.4,
+          intelligencePercent: 0.35,
+          perceptionPercent: 0.3,
+          vitalityPercent: 0.2,
+          strengthPercent: 0.15,
+          critChance: 0.1,
+        }, // Ruler: divine telekinetic power, cosmic awareness, light endurance
       },
       // Character-Based Titles
       {
         id: 'sung_jin_woo',
         name: 'Sung Jin-Woo',
-        description: 'Reach Level 50, send 5,000 messages, and type 100,000 characters',
-        condition: { type: 'level', value: 50 },
+        description: 'Reach S-Rank (Lv 200) and send 10,000 messages — the Hunter who defied fate',
+        condition: { type: 'level', value: 200 },
         title: 'Sung Jin-Woo',
-        titleBonus: { xp: 0.35, critChance: 0.03, strengthPercent: 0.1, agilityPercent: 0.1 }, // +35% XP, +3% Crit, +10% STR, +10% AGI
+        titleBonus: { xp: 0.5, strengthPercent: 0.1, agilityPercent: 0.15, intelligencePercent: 0.1, critChance: 0.05 }, // Jin-Woo: assassin AGI/Crit, growing INT, balanced warrior
       },
       {
         id: 'the_weakest',
@@ -8209,255 +8130,256 @@ module.exports = class SoloLevelingStats {
       {
         id: 's_rank_jin_woo',
         name: 'S-Rank Hunter Jin-Woo',
-        description: 'Reach S-Rank and Level 50',
-        condition: { type: 'level', value: 50 },
+        description: 'Reach S-Rank (Lv 200) — Korea\'s 10th S-Rank Hunter',
+        condition: { type: 'level', value: 200 },
         title: 'S-Rank Hunter Jin-Woo',
         titleBonus: {
-          xp: 0.42,
-          critChance: 0.04,
+          xp: 0.55,
+          agilityPercent: 0.15,
           strengthPercent: 0.1,
-          agilityPercent: 0.1,
-          intelligencePercent: 0.05,
-        }, // +42% XP, +4% Crit, +10% STR/AGI, +5% INT
+          intelligencePercent: 0.1,
+          critChance: 0.06,
+          perceptionPercent: 0.05,
+        }, // S-Rank Jin-Woo: assassin speed, dual dagger crits, shadow INT, combat awareness
       },
       {
         id: 'shadow_sovereign',
         name: 'Shadow Sovereign',
-        description: 'Reach Level 60 and send 7,500 messages',
-        condition: { type: 'level', value: 60 },
+        description: 'Reach Monarch+ rank (Lv 1500) and send 18,000 messages — heir to the shadow throne',
+        condition: { type: 'level', value: 1500 },
         title: 'Shadow Sovereign',
-        titleBonus: { xp: 0.4, critChance: 0.04, agilityPercent: 0.15, strengthPercent: 0.1 }, // +40% XP, +4% Crit, +15% AGI, +10% STR
+        titleBonus: { xp: 2.3, intelligencePercent: 0.4, agilityPercent: 0.3, strengthPercent: 0.25, critChance: 0.15 }, // Shadow heir: necromantic INT, shadow speed, growing power
       },
       {
         id: 'ashborn_successor',
         name: "Ashborn's Successor",
-        description: 'Reach Level 75 and type 200,000 characters',
-        condition: { type: 'level', value: 75 },
+        description: 'Reach Monarch+ rank (Lv 1500) and type 500,000 characters — chosen vessel of the Shadow Monarch',
+        condition: { type: 'level', value: 1500 },
         title: "Ashborn's Successor",
-        titleBonus: { xp: 0.48, critChance: 0.04, intelligencePercent: 0.1, agilityPercent: 0.1 }, // +48% XP, +4% Crit Chance, +10% Intelligence, +10% Agility
+        titleBonus: { xp: 2.4, intelligencePercent: 0.45, agilityPercent: 0.3, strengthPercent: 0.25, vitalityPercent: 0.2, critChance: 0.15 }, // Ashborn's vessel: inheriting shadow necromancy, combat prowess, shadow endurance
       },
       // Ability/Skill Titles
       {
         id: 'arise',
         name: 'Arise',
-        description: 'Unlock 10 achievements',
+        description: 'Unlock 10 achievements — the iconic command to summon shadow soldiers from the dead',
         condition: { type: 'achievements', value: 10 },
         title: 'Arise',
-        titleBonus: { xp: 0.12, critChance: 0.01, perceptionPercent: 0.05 }, // +12% XP, +1% Crit, +5% Perception
+        titleBonus: { xp: 0.12, intelligencePercent: 0.1, critChance: 0.01 }, // Arise: invocation of shadow extraction, pure INT
       },
       {
         id: 'shadow_exchange',
         name: 'Shadow Exchange',
-        description: 'Send 3,000 messages',
+        description: 'Send 3,000 messages — instant teleportation by swapping position with a shadow soldier',
         condition: { type: 'messages', value: 3000 },
         title: 'Shadow Exchange',
-        titleBonus: { xp: 0.2, critChance: 0.02, agilityPercent: 0.05 }, // +20% XP, +2% Crit, +5% AGI
+        titleBonus: { xp: 0.2, agilityPercent: 0.15, critChance: 0.02 }, // Shadow Exchange: instant repositioning, pure AGI mobility
       },
       {
         id: 'dagger_throw_master',
         name: 'Dagger Throw Master',
         description:
-          'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier!',
+          'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier! — Jin-Woo\'s lethal ranged precision',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
-        titleBonus: { xp: 0.25, critChance: 0.05, agilityPercent: 0.1 }, // +25% XP, +5% Crit Chance, +10% Agility
+        titleBonus: { xp: 0.25, critChance: 0.06, agilityPercent: 0.1, perceptionPercent: 0.1 }, // Dagger Throw: speed + precision + lethal accuracy
       },
       {
         id: 'stealth_master',
         name: 'Stealth Master',
-        description: 'Be active for 30 hours during off-peak hours',
+        description: 'Be active for 30 hours during off-peak hours — Jin-Woo\'s ability to erase his presence completely',
         condition: { type: 'time', value: 1800 },
         title: 'Stealth Master',
-        titleBonus: { xp: 0.18, agilityPercent: 0.1, critChance: 0.02 }, // +18% XP, +10% AGI, +2% Crit
+        titleBonus: { xp: 0.18, agilityPercent: 0.1, perceptionPercent: 0.1, critChance: 0.03 }, // Stealth: evasion + counter-detection + ambush crits
       },
       {
         id: 'mana_manipulator',
         name: 'Mana Manipulator',
-        description: 'Reach 15 Intelligence stat',
+        description: 'Reach 15 Intelligence stat — mastery over raw mana energy',
         condition: { type: 'stat', stat: 'intelligence', value: 15 },
         title: 'Mana Manipulator',
-        titleBonus: { xp: 0.22, intelligencePercent: 0.1 }, // +22% XP, +10% Intelligence
+        titleBonus: { xp: 0.22, intelligencePercent: 0.15, perceptionPercent: 0.05 }, // Mana Mastery: heavy INT + mana sense (PER)
       },
       {
         id: 'shadow_storage',
         name: 'Shadow Storage',
-        description: 'Visit 25 unique channels',
+        description: 'Visit 25 unique channels — storing shadow soldiers in a pocket dimension across locations',
         condition: { type: 'channels', value: 25 },
         title: 'Shadow Storage',
-        titleBonus: { xp: 0.16, intelligencePercent: 0.05, agilityPercent: 0.05 }, // +16% XP, +5% INT, +5% AGI
+        titleBonus: { xp: 0.16, intelligencePercent: 0.1, agilityPercent: 0.05 }, // Shadow Storage: INT to manage pocket dimension, cross-location mobility
       },
       {
         id: 'beast_monarch',
         name: 'Beast Monarch',
-        description: 'Reach 15 Strength stat',
-        condition: { type: 'stat', stat: 'strength', value: 15 },
+        description: 'Reach Monarch rank (Lv 1000) and 30 Strength stat — Rakan, the King of Beasts',
+        condition: { type: 'level', value: 1000 },
         title: 'Beast Monarch',
-        titleBonus: { xp: 0.28, strengthPercent: 0.1, critChance: 0.02 }, // +28% XP, +10% Strength, +2% Crit
+        titleBonus: { xp: 1.8, strengthPercent: 0.45, agilityPercent: 0.25, vitalityPercent: 0.2, perceptionPercent: 0.3, critChance: 0.2 }, // Rakan: raw STR beast, predatory senses + lethal crits
       },
       {
         id: 'frost_monarch',
         name: 'Frost Monarch',
-        description: 'Send 8,000 messages',
-        condition: { type: 'messages', value: 8000 },
+        description: 'Reach Monarch rank (Lv 1000) and send 15,000 messages — Sillad, the King of Snow Folk',
+        condition: { type: 'level', value: 1000 },
         title: 'Frost Monarch',
-        titleBonus: { xp: 0.3, critChance: 0.03, intelligencePercent: 0.1, agilityPercent: 0.05 }, // +30% XP, +3% Crit, +10% INT, +5% AGI
+        titleBonus: { xp: 1.8, intelligencePercent: 0.45, vitalityPercent: 0.25, perceptionPercent: 0.25, critChance: 0.1 }, // Sillad: cold intelligence, endurance, strategic awareness
       },
       {
         id: 'plague_monarch',
         name: 'Plague Monarch',
-        description: 'Reach Level 65',
-        condition: { type: 'level', value: 65 },
+        description: 'Reach Monarch rank (Lv 1000) and 30 Intelligence stat — Querehsha, the Queen of Insects',
+        condition: { type: 'level', value: 1000 },
         title: 'Plague Monarch',
-        titleBonus: { xp: 0.32, critChance: 0.03, intelligencePercent: 0.1, vitalityPercent: 0.05 }, // +32% XP, +3% Crit, +10% INT, +5% VIT
+        titleBonus: { xp: 1.8, intelligencePercent: 0.4, perceptionPercent: 0.3, vitalityPercent: 0.25, critChance: 0.08 }, // Querehsha: swarm intelligence, omnisensory awareness, attrition endurance
       },
       {
         id: 'monarch_white_flames',
         name: 'Monarch of White Flames',
-        description: 'Land 500 critical hits',
-        condition: { type: 'crits', value: 500 },
+        description: 'Reach Monarch rank (Lv 1000) and land 3,000 critical hits — Baran, the King of Demons',
+        condition: { type: 'level', value: 1000 },
         title: 'Monarch of White Flames',
-        titleBonus: { xp: 0.26, critChance: 0.04, agilityPercent: 0.05 }, // +26% XP, +4% Crit Chance, +5% Agility
+        titleBonus: { xp: 1.9, strengthPercent: 0.35, intelligencePercent: 0.3, vitalityPercent: 0.2, critChance: 0.18 }, // Baran: brute STR + lightning/fire magic, devastating crits
       },
       {
         id: 'monarch_transfiguration',
         name: 'Monarch of Transfiguration',
-        description: 'Reach Level 70 and type 150,000 characters',
-        condition: { type: 'level', value: 70 },
+        description: 'Reach Monarch rank (Lv 1000) and type 500,000 characters — Yogumunt, the King of Demonic Spectres',
+        condition: { type: 'level', value: 1000 },
         title: 'Monarch of Transfiguration',
-        titleBonus: { xp: 0.34, critChance: 0.04, intelligencePercent: 0.15, agilityPercent: 0.05 }, // +34% XP, +4% Crit, +15% INT, +5% AGI
+        titleBonus: { xp: 1.8, intelligencePercent: 0.45, agilityPercent: 0.25, perceptionPercent: 0.3, critChance: 0.1 }, // Yogumunt: master illusionist/schemer, spectral evasion, deception awareness
       },
       // Solo Leveling Lore Titles
       {
         id: 'shadow_soldier',
         name: 'Shadow Soldier',
-        description: 'Land 100 critical hits',
+        description: 'Land 100 critical hits — a loyal soldier extracted from the fallen',
         condition: { type: 'crits', value: 100 },
         title: 'Shadow Soldier',
-        titleBonus: { xp: 0.08, critChance: 0.01, agilityPercent: 0.05 }, // +8% XP, +1% Crit, +5% AGI
+        titleBonus: { xp: 0.08, strengthPercent: 0.05, agilityPercent: 0.05, critChance: 0.01 }, // Shadow Soldier: basic combat stats, loyal fighter
       },
       {
         id: 'kamish_slayer',
         name: 'Kamish Slayer',
-        description: 'Reach Level 80 and land 2,000 critical hits',
-        condition: { type: 'level', value: 80 },
+        description: 'Reach Level 200 and land 2,000 critical hits — the dragon Kamish required National Level Hunters to defeat',
+        condition: { type: 'level', value: 200 },
         title: 'Kamish Slayer',
-        titleBonus: { xp: 0.4, critChance: 0.05, strengthPercent: 0.1, agilityPercent: 0.1 }, // +40% XP, +5% Crit, +10% STR, +10% AGI
+        titleBonus: { xp: 0.5, strengthPercent: 0.15, agilityPercent: 0.1, vitalityPercent: 0.1, critChance: 0.05 }, // Kamish Slayer: dragon-killing STR, survival VIT, decisive strikes
       },
       {
         id: 'demon_tower_conqueror',
         name: 'Demon Tower Conqueror',
-        description: 'Reach Level 60 and visit 40 unique channels',
-        condition: { type: 'level', value: 60 },
+        description: 'Reach Level 100 and visit 40 unique channels — conqueror of the Demon King Baran\'s tower',
+        condition: { type: 'level', value: 100 },
         title: 'Demon Tower Conqueror',
-        titleBonus: { xp: 0.32, intelligencePercent: 0.1, vitalityPercent: 0.05 }, // +32% XP, +10% INT, +5% VIT
+        titleBonus: { xp: 0.35, strengthPercent: 0.1, intelligencePercent: 0.1, vitalityPercent: 0.1, critChance: 0.03 }, // Baran's tower: balanced combat (physical + magic demons), endurance gauntlet
       },
       {
         id: 'double_awakening',
         name: 'Double Awakening',
-        description: 'Reach Level 25 and send 3,500 messages',
-        condition: { type: 'level', value: 25 },
+        description: 'Reach Level 50 and send 3,500 messages — the rare phenomenon of awakening a second time, unlocking unlimited growth',
+        condition: { type: 'level', value: 50 },
         title: 'Double Awakening',
-        titleBonus: { xp: 0.15, critChance: 0.02, strengthPercent: 0.05, agilityPercent: 0.05 }, // +15% XP, +2% Crit, +5% STR, +5% AGI
+        titleBonus: { xp: 0.2, strengthPercent: 0.05, agilityPercent: 0.05, intelligencePercent: 0.05, vitalityPercent: 0.05, perceptionPercent: 0.05, critChance: 0.02 }, // Double Awakening: ALL stats unlocked (unlimited growth potential)
       },
       {
         id: 'system_user',
         name: 'System User',
-        description: 'Unlock 15 achievements',
+        description: 'Unlock 15 achievements — fully interfacing with the System that grants unlimited growth',
         condition: { type: 'achievements', value: 15 },
         title: 'System User',
-        titleBonus: { xp: 0.2, intelligencePercent: 0.1, perceptionPercent: 0.05 }, // +20% XP, +10% INT, +5% Perception
+        titleBonus: { xp: 0.25, intelligencePercent: 0.1, perceptionPercent: 0.1 }, // System User: INT (system interface) + PER (system notifications/awareness)
       },
       {
         id: 'instant_dungeon_master',
         name: 'Instant Dungeon Master',
-        description: 'Type 200,000 characters and be active for 75 hours',
+        description: 'Type 200,000 characters and be active for 75 hours — mastering the System\'s private training dimensions',
         condition: { type: 'characters', value: 200000 },
         title: 'Instant Dungeon Master',
-        titleBonus: { xp: 0.35, intelligencePercent: 0.1, vitalityPercent: 0.1 }, // +35% XP, +10% INT, +10% VIT
+        titleBonus: { xp: 0.5, intelligencePercent: 0.1, vitalityPercent: 0.1, strengthPercent: 0.05, agilityPercent: 0.05 }, // Instant Dungeon: grinding master, balanced growth from endless training
       },
       {
         id: 'shadow_army_general',
         name: 'Shadow Army General',
-        description: 'Reach Level 55 and land 750 critical hits',
-        condition: { type: 'level', value: 55 },
+        description: 'Reach Level 100 and land 750 critical hits — commanding the shadow army\'s elite forces',
+        condition: { type: 'level', value: 100 },
         title: 'Shadow Army General',
-        titleBonus: { xp: 0.3, critChance: 0.03, agilityPercent: 0.1, strengthPercent: 0.05 }, // +30% XP, +3% Crit, +10% AGI, +5% STR
+        titleBonus: { xp: 0.35, intelligencePercent: 0.15, strengthPercent: 0.1, agilityPercent: 0.05, critChance: 0.03 }, // Shadow General: strategic INT command, combat STR, tactical strikes
       },
       {
         id: 'monarch_of_beasts',
-        name: 'Monarch of Beasts',
-        description: 'Reach 18 Strength stat',
-        condition: { type: 'stat', stat: 'strength', value: 18 },
-        title: 'Monarch of Beasts',
-        titleBonus: { xp: 0.32, strengthPercent: 0.15, critChance: 0.02 }, // +32% XP, +15% STR, +2% Crit
+        name: 'Monarch of Fangs',
+        description: 'Reach Monarch rank (Lv 1000) and 40 Strength stat — Rakan, the King of Beasts unleashed',
+        condition: { type: 'level', value: 1000 },
+        title: 'Monarch of Fangs',
+        titleBonus: { xp: 2.0, strengthPercent: 0.5, agilityPercent: 0.3, perceptionPercent: 0.35, critChance: 0.22 }, // Rakan unleashed: apex predator, maximum STR/Crit, hunting instincts
       },
       {
-        id: 'monarch_of_insects',
-        name: 'Monarch of Insects',
-        description: 'Send 12,000 messages',
-        condition: { type: 'messages', value: 12000 },
-        title: 'Monarch of Insects',
-        titleBonus: { xp: 0.42, agilityPercent: 0.1, intelligencePercent: 0.05 }, // +42% XP, +10% AGI, +5% INT
+        id: 'monarch_of_plagues',
+        name: 'Monarch of Plagues',
+        description: 'Reach Monarch+ rank (Lv 1500) and send 20,000 messages — Querehsha, the Queen of Insects ascended',
+        condition: { type: 'level', value: 1500 },
+        title: 'Monarch of Plagues',
+        titleBonus: { xp: 2.3, intelligencePercent: 0.45, perceptionPercent: 0.35, vitalityPercent: 0.3, agilityPercent: 0.15, critChance: 0.1 }, // Querehsha ascended: plague mastery, swarm omniscience, corrosive endurance
       },
       {
         id: 'monarch_of_iron_body',
         name: 'Monarch of Iron Body',
-        description: 'Reach 18 Vitality stat',
-        condition: { type: 'stat', stat: 'vitality', value: 18 },
+        description: 'Reach Monarch rank (Lv 1000) and 35 Vitality stat — Tarnak, the King of Monstrous Humanoids',
+        condition: { type: 'level', value: 1000 },
         title: 'Monarch of Iron Body',
-        titleBonus: { xp: 0.3, vitalityPercent: 0.15, strengthPercent: 0.05 }, // +30% XP, +15% VIT, +5% STR
+        titleBonus: { xp: 1.8, vitalityPercent: 0.5, strengthPercent: 0.3, critChance: 0.05 }, // Tarnak: indestructible defense, massive VIT, secondary STR
       },
       {
         id: 'monarch_of_beginning',
         name: 'Monarch of Beginning',
-        description: 'Reach Level 90 and unlock 20 achievements',
-        condition: { type: 'level', value: 90 },
+        description: 'Reach Monarch rank (Lv 1000) and unlock 30 achievements — Legia, the King of Giants (weakest Monarch)',
+        condition: { type: 'level', value: 1000 },
         title: 'Monarch of Beginning',
         titleBonus: {
-          xp: 0.45,
-          critChance: 0.04,
-          strengthPercent: 0.1,
-          agilityPercent: 0.1,
-          intelligencePercent: 0.1,
-        }, // +45% XP, +4% Crit, +10% All Combat Stats
+          xp: 1.5,
+          strengthPercent: 0.3,
+          vitalityPercent: 0.25,
+          critChance: 0.05,
+        }, // Legia: weakest Monarch, brute force giant, durable but slow and unrefined
       },
       {
         id: 'absolute_ruler',
         name: 'Absolute Ruler',
-        description: 'Reach Level 120 and type 300,000 characters',
-        condition: { type: 'level', value: 120 },
+        description: 'Reach Monarch rank (Lv 1000) and type 600,000 characters — wielder of the Rulers\' full authority',
+        condition: { type: 'level', value: 1000 },
         title: 'Absolute Ruler',
         titleBonus: {
-          xp: 0.52,
-          critChance: 0.06,
-          strengthPercent: 0.15,
+          xp: 2.0,
+          intelligencePercent: 0.45,
+          perceptionPercent: 0.35,
+          vitalityPercent: 0.3,
+          strengthPercent: 0.2,
           agilityPercent: 0.15,
-          intelligencePercent: 0.1,
-          vitalityPercent: 0.1,
-          perceptionPercent: 0.1,
-        }, // +52% XP, +6% Crit, +15% STR/AGI, +10% INT/VIT/PER
+          critChance: 0.12,
+        }, // Absolute Ruler: full divine authority, supreme cosmic awareness, immortal endurance
       },
       {
         id: 'shadow_sovereign_heir',
         name: 'Shadow Sovereign Heir',
-        description: 'Reach Level 85 and land 1,500 critical hits',
-        condition: { type: 'level', value: 85 },
+        description: 'Reach Monarch+ rank (Lv 1500) and land 5,000 critical hits — on the cusp of inheriting the shadow',
+        condition: { type: 'level', value: 1500 },
         title: 'Shadow Sovereign Heir',
-        titleBonus: { xp: 0.43, critChance: 0.05, agilityPercent: 0.15, intelligencePercent: 0.1 }, // +43% XP, +5% Crit, +15% AGI, +10% INT
+        titleBonus: { xp: 2.3, agilityPercent: 0.35, critChance: 0.2, intelligencePercent: 0.3, strengthPercent: 0.2 }, // Shadow heir through combat: assassin crits, shadow magic, dagger mastery
       },
       {
         id: 'ruler_of_chaos',
         name: 'Ruler of Chaos',
-        description: 'Reach Level 110 and be active for 150 hours',
-        condition: { type: 'level', value: 110 },
+        description: 'Reach National Hunter rank (Lv 700) and be active for 300 hours — power beyond mortal comprehension',
+        condition: { type: 'level', value: 700 },
         title: 'Ruler of Chaos',
         titleBonus: {
-          xp: 0.48,
-          critChance: 0.05,
-          strengthPercent: 0.1,
-          agilityPercent: 0.1,
-          perceptionPercent: 0.1,
-        }, // +48% XP, +5% Crit, +10% STR/AGI/PER
+          xp: 1.5,
+          intelligencePercent: 0.3,
+          perceptionPercent: 0.3,
+          agilityPercent: 0.2,
+          strengthPercent: 0.15,
+          critChance: 0.12,
+        }, // Chaotic Ruler: unpredictable divine power, heightened awareness, cosmic speed
       },
     ];
 
@@ -8511,15 +8433,7 @@ module.exports = class SoloLevelingStats {
   }
 
   cleanupUnwantedTitles() {
-    const unwantedTitles = [
-      'Scribe',
-      'Wordsmith',
-      'Author',
-      'Explorer',
-      'Wanderer',
-      'Apprentice',
-      'Message Warrior',
-    ];
+    const unwantedTitles = this.UNWANTED_TITLES;
 
     let cleaned = false;
 
@@ -8568,17 +8482,59 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  revalidateUnlockedAchievements() {
+    const achievements = this.getAchievementDefinitions();
+    const unlocked = this.settings.achievements?.unlocked || [];
+    const titles = this.settings.achievements?.titles || [];
+
+    if (unlocked.length === 0) return;
+
+    const revokedIds = [];
+    const revokedTitles = [];
+
+    unlocked.forEach((id) => {
+      const achievement = achievements.find((a) => a.id === id);
+      if (!achievement) return; // unknown ID, leave it
+
+      if (!this.checkAchievementCondition(achievement)) {
+        revokedIds.push(id);
+        if (achievement.title) {
+          revokedTitles.push(achievement.title);
+        }
+      }
+    });
+
+    if (revokedIds.length === 0) return;
+
+    // Remove revoked achievement IDs
+    this.settings.achievements.unlocked = unlocked.filter(
+      (id) => !revokedIds.includes(id)
+    );
+
+    // Remove revoked titles
+    this.settings.achievements.titles = titles.filter(
+      (t) => !revokedTitles.includes(t)
+    );
+
+    // Unequip active title if it was revoked
+    if (
+      this.settings.achievements?.activeTitle &&
+      revokedTitles.includes(this.settings.achievements.activeTitle)
+    ) {
+      this.settings.achievements.activeTitle = null;
+    }
+
+    this.saveSettings(true);
+    this.debugLog('REVALIDATE', 'Revoked achievements that no longer meet requirements', {
+      revokedCount: revokedIds.length,
+      revokedIds,
+      revokedTitles,
+    });
+  }
+
   setActiveTitle(title) {
     // Filter out unwanted titles
-    const unwantedTitles = [
-      'Scribe',
-      'Wordsmith',
-      'Author',
-      'Explorer',
-      'Wanderer',
-      'Apprentice',
-      'Message Warrior',
-    ];
+    const unwantedTitles = this.UNWANTED_TITLES;
 
     // Allow null to unequip title
     if (title === null || title === '') {
@@ -8628,15 +8584,7 @@ module.exports = class SoloLevelingStats {
     }
 
     // Filter out unwanted titles
-    const unwantedTitles = [
-      'Scribe',
-      'Wordsmith',
-      'Author',
-      'Explorer',
-      'Wanderer',
-      'Apprentice',
-      'Message Warrior',
-    ];
+    const unwantedTitles = this.UNWANTED_TITLES;
     if (
       !this.settings.achievements.activeTitle ||
       unwantedTitles.includes(this.settings.achievements.activeTitle)
@@ -8731,456 +8679,167 @@ module.exports = class SoloLevelingStats {
    */
 
   /**
-   * Update shadow power from ShadowArmy plugin
-   * Uses getAggregatedArmyStats to get accurate total power
+   * Persist shadow power value and update display.
+   * @param {number} totalPower
+   * @param {Object} [shadowArmy] - ShadowArmy instance to sync cache back to
+   */
+  _commitShadowPower(totalPower, shadowArmy) {
+    this.cachedShadowPower = totalPower.toLocaleString();
+    this.settings.cachedShadowPower = this.cachedShadowPower;
+    this.saveSettings();
+    if (shadowArmy?.settings) {
+      shadowArmy.settings.cachedTotalPower = totalPower;
+      shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
+      shadowArmy.saveSettings();
+    }
+    this.updateShadowPowerDisplay();
+  }
+
+  /**
+   * Manually sum power from an array of shadow objects.
+   * @param {Object} shadowArmy - ShadowArmy plugin instance
+   * @param {Array}  shadows    - raw shadow records
+   * @returns {number} total power
+   */
+  _sumShadowPower(shadowArmy, shadows) {
+    return shadows.reduce((sum, shadow) => {
+      try {
+        if (shadowArmy.calculateShadowPowerCached) {
+          return sum + (shadowArmy.calculateShadowPowerCached(shadow) || 0);
+        }
+        const d = shadowArmy.getShadowData ? shadowArmy.getShadowData(shadow) : shadow;
+        if (shadowArmy.getShadowEffectiveStats && shadowArmy.calculateShadowPower) {
+          const eff = shadowArmy.getShadowEffectiveStats(d);
+          if (eff) {
+            const p = shadowArmy.calculateShadowPower(eff, 1);
+            return sum + (p > 0 ? p : (d?.strength || 0));
+          }
+        }
+        return sum + (d?.strength || 0);
+      } catch (_) {
+        return sum;
+      }
+    }, 0);
+  }
+
+  /**
+   * Update shadow power from ShadowArmy plugin.
+   * Layered fallback: SA cache -> aggregated stats -> manual IDB enumeration -> 0.
    */
   async updateShadowPower() {
     try {
       if (!this._isRunning) return;
 
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
-      if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
+      if (!shadowArmyPlugin?.instance) {
         this.cachedShadowPower = '0';
         this.updateShadowPowerDisplay();
         return;
       }
-
       const shadowArmy = shadowArmyPlugin.instance;
 
-      // FAST PATH: Check cached total power in ShadowArmy settings first (persistent cache)
-      // This provides instant updates without waiting for recalculation
+      // --- FAST PATH: ShadowArmy's own persistent cache ---
       if (shadowArmy.settings?.cachedTotalPower !== undefined) {
         const cachedPower = shadowArmy.settings.cachedTotalPower || 0;
         const cacheAge = shadowArmy.settings.cachedTotalPowerTimestamp
           ? Date.now() - shadowArmy.settings.cachedTotalPowerTimestamp
           : Infinity;
+        const isRecent = cacheAge < 300000; // 5 min
+        const isRecentZero = cachedPower === 0 && cacheAge < 10000;
 
-        // CRITICAL FIX: Don't use cached value if it's 0 and cache is old
-        // If cachedPower is 0, we should recalculate to get the actual value
-        // Only use cached 0 if it's very recent (less than 10 seconds) to avoid spam
-        const isRecentCache = cacheAge < 300000; // 5 minutes
-        const isRecentZero = cachedPower === 0 && cacheAge < 10000; // 10 seconds for zero
-
-        // Use cached value only if it's recent AND (it's not zero OR it's a very recent zero)
-        if (isRecentCache && (cachedPower > 0 || isRecentZero)) {
-          this.debugLog(
-            'UPDATE_SHADOW_POWER',
-            'Using cached total power from ShadowArmy settings',
-            {
-              cachedPower,
-              cacheAge: Math.floor(cacheAge / 1000) + 's',
-            }
-          );
-          this.cachedShadowPower = cachedPower.toLocaleString();
-          this.settings.cachedShadowPower = this.cachedShadowPower;
-          this.saveSettings();
-          this.updateShadowPowerDisplay();
-          // Still trigger background recalculation for accuracy, but don't wait
-          // Note: No cache - direct calculations always use fresh data
+        if (isRecent && (cachedPower > 0 || isRecentZero)) {
+          this.debugLog('UPDATE_SHADOW_POWER', 'Using ShadowArmy cached power', { cachedPower });
+          this._commitShadowPower(cachedPower, shadowArmy);
           return;
-        }
-
-        // If cached value is 0 and cache is old, force recalculation
-        if (cachedPower === 0 && cacheAge >= 10000) {
-          this.debugLog(
-            'UPDATE_SHADOW_POWER',
-            'Cached power is 0 and cache is old, forcing recalculation',
-            {
-              cachedPower,
-              cacheAge: Math.floor(cacheAge / 1000) + 's',
-              reason: 'Cached 0 value is stale, need fresh calculation',
-            }
-          );
-          // Don't return - continue to recalculation below
         }
       }
 
-      // Use getAggregatedArmyStats to get accurate total power
+      // --- PRIMARY: getAggregatedArmyStats + getTotalShadowPower ---
       if (typeof shadowArmy.getAggregatedArmyStats === 'function') {
         try {
-          // CRITICAL DIAGNOSTIC: Check IndexedDB directly before calling getAggregatedArmyStats
-          let indexedDBCount = 0;
-          if (shadowArmy.storageManager) {
-            try {
-              indexedDBCount = await shadowArmy.storageManager.getTotalCount();
-              this.debugLog('UPDATE_SHADOW_POWER', 'IndexedDB direct count check', {
-                indexedDBCount,
-                hasStorageManager: !!shadowArmy.storageManager,
-                dbInitialized: !!shadowArmy.storageManager?.db,
-                dbName: shadowArmy.storageManager?.dbName || 'unknown',
-              });
-            } catch (countError) {
-              this.debugError('UPDATE_SHADOW_POWER', 'Failed to get IndexedDB count', countError);
-            }
-          }
-
-          this.debugLog(
-            'UPDATE_SHADOW_POWER',
-            'Starting total power update - forcing recalculation',
-            {
-              hasShadowArmy: !!shadowArmy,
-              hasStorageManager: !!shadowArmy.storageManager,
-              dbInitialized: !!shadowArmy.storageManager?.db,
-              cachedPower: shadowArmy.settings?.cachedTotalPower,
-              indexedDBCount, // Include direct count check
-            }
-          );
-
-          // CRITICAL FIX: Use direct power calculation (faster, more reliable)
-          // This uses incremental cache and only recalculates if needed
           let totalPower = 0;
+
+          // Direct calculation (preferred)
           if (typeof shadowArmy.getTotalShadowPower === 'function') {
             try {
-              totalPower = await shadowArmy.getTotalShadowPower(false); // Use cache if valid
-              this.debugLog('UPDATE_SHADOW_POWER', 'Using direct power calculation', {
-                totalPower,
-                indexedDBCount,
-              });
-            } catch (powerError) {
-              this.debugError(
-                'UPDATE_SHADOW_POWER',
-                'Direct power calculation failed, using getAggregatedArmyStats',
-                powerError
-              );
-              // Fallback to getAggregatedArmyStats
-              const armyStats = await shadowArmy.getAggregatedArmyStats();
-              totalPower = armyStats?.totalPower ?? 0;
+              totalPower = await shadowArmy.getTotalShadowPower(false);
+            } catch (_) {
+              const stats = await shadowArmy.getAggregatedArmyStats();
+              totalPower = stats?.totalPower ?? 0;
             }
           } else {
-            // Fallback to getAggregatedArmyStats if direct function not available
-            const armyStats = await shadowArmy.getAggregatedArmyStats(true);
-            totalPower = armyStats?.totalPower ?? 0;
+            const stats = await shadowArmy.getAggregatedArmyStats(true);
+            totalPower = stats?.totalPower ?? 0;
           }
 
-          // For compatibility, still get full army stats for other data
-          const armyStats = await shadowArmy.getAggregatedArmyStats(); // Direct calculation
+          const armyStats = await shadowArmy.getAggregatedArmyStats();
 
-          // CRITICAL DIAGNOSTIC: Compare IndexedDB count with returned shadows
-          if (indexedDBCount > 0 && armyStats?.totalShadows === 0) {
-            // Try to get shadows directly to verify IndexedDB access
-            let directShadows = [];
+          // Diagnostic: IDB has data but aggregation returned 0 shadows -> manual calc
+          if (totalPower === 0 && armyStats?.totalShadows === 0 && shadowArmy.storageManager) {
             try {
-              if (shadowArmy.storageManager) {
-                // Get all shadows (up to 10k limit) to manually calculate power
-                directShadows = await shadowArmy.storageManager.getShadows({}, 0, 10000);
-                this.debugLog('UPDATE_SHADOW_POWER', 'Direct shadow retrieval test', {
-                  directShadowCount: directShadows?.length || 0,
-                  firstShadow: directShadows?.[0]
-                    ? {
-                        id: directShadows[0].id || directShadows[0].i,
-                        rank: directShadows[0].rank,
-                        hasStrength: !!directShadows[0].strength,
-                        hasBaseStats: !!directShadows[0].baseStats,
-                        isCompressed: !!(directShadows[0]._c === 1 || directShadows[0]._c === 2),
-                      }
-                    : null,
-                });
-
-                // FALLBACK: If getAggregatedArmyStats failed but we can get shadows directly,
-                // manually calculate the total power
-                if (directShadows && directShadows.length > 0) {
-                  this.debugLog(
-                    'UPDATE_SHADOW_POWER',
-                    'Using fallback: manually calculating power from direct retrieval',
-                    {
-                      shadowCount: directShadows.length,
-                      indexedDBCount,
-                    }
-                  );
-
-                  // Use ShadowArmy's methods to calculate power if available
-                  let fallbackPower = 0;
-                  if (
-                    shadowArmy.getShadowEffectiveStats &&
-                    shadowArmy.calculateShadowPower &&
-                    shadowArmy.getShadowData
-                  ) {
-                    directShadows.forEach((shadow) => {
-                      try {
-                        // Decompress if needed
-                        let decompressed = shadow;
-                        if (
-                          shadowArmy.getShadowData &&
-                          typeof shadowArmy.getShadowData === 'function'
-                        ) {
-                          decompressed = shadowArmy.getShadowData(shadow) || shadow;
-                        }
-
-                        // Get effective stats
-                        const effective = shadowArmy.getShadowEffectiveStats(decompressed);
-                        if (effective) {
-                          // Calculate power
-                          const power = shadowArmy.calculateShadowPower(effective, 1);
-                          if (power > 0) {
-                            fallbackPower += power;
-                          } else if (decompressed.strength > 0) {
-                            // Fallback to stored strength
-                            fallbackPower += decompressed.strength;
-                          }
-                        } else if (decompressed.strength > 0) {
-                          // Fallback to stored strength if effective stats unavailable
-                          fallbackPower += decompressed.strength;
-                        }
-                      } catch (shadowError) {
-                        // Skip this shadow if calculation fails
-                        this.debugLog(
-                          'UPDATE_SHADOW_POWER',
-                          'Failed to calculate power for shadow',
-                          {
-                            shadowId: shadow.id || shadow.i,
-                            error: shadowError?.message,
-                          }
-                        );
-                      }
-                    });
-
-                    if (fallbackPower > 0) {
-                      this.debugLog('UPDATE_SHADOW_POWER', 'Fallback calculation succeeded', {
-                        fallbackPower,
-                        shadowCount: directShadows.length,
-                        avgPower: Math.floor(fallbackPower / directShadows.length),
-                      });
-
-                      // Use fallback power
-                      this.cachedShadowPower = fallbackPower.toLocaleString();
-                      this.settings.cachedShadowPower = this.cachedShadowPower;
-                      this.saveSettings();
-
-                      // Update ShadowArmy's cached value
-                      if (shadowArmy.settings) {
-                        shadowArmy.settings.cachedTotalPower = fallbackPower;
-                        shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
-                        shadowArmy.saveSettings();
-                      }
-
-                      this.updateShadowPowerDisplay();
-                      return; // Exit early with fallback power
-                    }
+              const count = await shadowArmy.storageManager.getTotalCount();
+              if (count > 0) {
+                const direct = await shadowArmy.storageManager.getShadows({}, 0, 10000);
+                if (direct?.length > 0) {
+                  const manualPower = this._sumShadowPower(shadowArmy, direct);
+                  if (manualPower > 0) {
+                    this._commitShadowPower(manualPower, shadowArmy);
+                    return;
                   }
                 }
               }
-            } catch (directError) {
-              this.debugError('UPDATE_SHADOW_POWER', 'Failed to get shadows directly', directError);
+            } catch (e) {
+              this.debugError('UPDATE_SHADOW_POWER', 'Direct shadow retrieval failed', e);
             }
-
-            this.debugError(
-              'UPDATE_SHADOW_POWER',
-              'CRITICAL: IndexedDB has shadows but getAggregatedArmyStats returned 0!',
-              {
-                indexedDBCount,
-                returnedTotalShadows: armyStats?.totalShadows || 0,
-                returnedTotalPower: armyStats?.totalPower || 0,
-                directShadowCount: directShadows?.length || 0,
-                possibleCauses: [
-                  'getShadows() is returning empty array despite IndexedDB having data',
-                  'Shadows are being filtered out during aggregation',
-                  'Timing issue - IndexedDB not fully initialized',
-                  'Shadows exist but have no stats (all zeros)',
-                ],
-              }
-            );
-          } else if (indexedDBCount === 0) {
-            // IndexedDB is empty - user has no shadows
-            this.debugLog('UPDATE_SHADOW_POWER', 'IndexedDB is empty - no shadows exist', {
-              indexedDBCount,
-              returnedTotalShadows: armyStats?.totalShadows || 0,
-              note: 'This is expected if no shadows have been extracted yet',
-            });
           }
 
-          // Use totalPower from direct calculation (already set above)
-          // Ensure we have a valid number
-          if (!totalPower || totalPower === 0) {
-            totalPower = armyStats?.totalPower ?? 0;
-          }
+          // Fallback: armyStats power if direct calc was 0
+          if (!totalPower) totalPower = armyStats?.totalPower ?? 0;
 
-          // Additional validation: if totalPower is 0 but we have shadows, recalculate
+          // Retry once if power=0 but shadows exist
           if (totalPower === 0 && armyStats?.totalShadows > 0) {
-            this.debugLog(
-              'UPDATE_SHADOW_POWER',
-              'Total power is 0 but shadows exist, forcing recalculation',
-              {
-                totalShadows: armyStats.totalShadows,
-                hasStats: !!armyStats.totalStats,
-              }
-            );
-            // Try one more time with fresh calculation
-            const retryStats = await shadowArmy.getAggregatedArmyStats(true);
-            const retryPower = retryStats?.totalPower ?? 0;
-            if (retryPower > 0) {
-              this.debugLog('UPDATE_SHADOW_POWER', 'Retry succeeded, using retry power', {
-                retryPower,
-              });
-              this.cachedShadowPower = retryPower.toLocaleString();
-              this.updateShadowPowerDisplay();
+            const retry = await shadowArmy.getAggregatedArmyStats(true);
+            if ((retry?.totalPower ?? 0) > 0) {
+              this._commitShadowPower(retry.totalPower, shadowArmy);
               return;
             }
           }
 
-          this.debugLog('UPDATE_SHADOW_POWER', 'getAggregatedArmyStats result', {
-            armyStats: armyStats
-              ? {
-                  totalPower: armyStats.totalPower,
-                  totalShadows: armyStats.totalShadows,
-                  hasStats: !!armyStats.totalStats,
-                  totalStatsSum: armyStats.totalStats
-                    ? Object.values(armyStats.totalStats).reduce((sum, val) => sum + (val || 0), 0)
-                    : 0,
-                }
-              : null,
-            totalPower,
-            cachedPowerInSettings: shadowArmy.settings?.cachedTotalPower,
-          });
-
-          // CRITICAL: If we got 0 but ShadowArmy has shadows, log detailed diagnostics
-          if (totalPower === 0 && armyStats?.totalShadows > 0) {
-            this.debugError(
-              'UPDATE_SHADOW_POWER',
-              'WARNING: getAggregatedArmyStats returned 0 power despite having shadows!',
-              {
-                totalShadows: armyStats.totalShadows,
-                totalStats: armyStats.totalStats,
-                totalStatsSum: armyStats.totalStats
-                  ? Object.values(armyStats.totalStats).reduce((sum, val) => sum + (val || 0), 0)
-                  : 0,
-                byRank: armyStats.byRank,
-                hasStorageManager: !!shadowArmy.storageManager,
-                dbInitialized: !!shadowArmy.storageManager?.db,
-              }
-            );
-          }
-
-          this.debugLog('UPDATE_SHADOW_POWER', 'Total power calculation completed', {
+          this.debugLog('UPDATE_SHADOW_POWER', 'Power calculation completed', {
             totalPower,
             totalShadows: armyStats?.totalShadows || 0,
-            avgPower:
-              armyStats?.totalShadows > 0 ? Math.floor(totalPower / armyStats.totalShadows) : 0,
-            formattedPower: totalPower.toLocaleString(),
-            previousCachedPower: this.cachedShadowPower,
-            willUpdateDisplay: totalPower > 0 || armyStats?.totalShadows === 0,
           });
 
-          // Only update if we got a valid result (power > 0 OR no shadows exist)
-          // Don't update to 0 if shadows exist (data integrity issue)
+          // Commit result (guard against zeroing out when shadows exist)
           if (totalPower > 0 || (armyStats && armyStats.totalShadows === 0)) {
-            this.cachedShadowPower = totalPower.toLocaleString();
-
-            // PERSISTENCE: Save shadow power to settings so it persists after restart
-            this.settings.cachedShadowPower = this.cachedShadowPower;
-            this.saveSettings(); // Save immediately to persist across restarts
-
-            // Also update ShadowArmy's cached value for consistency
-            if (shadowArmy.settings) {
-              shadowArmy.settings.cachedTotalPower = totalPower;
-              shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
-              shadowArmy.saveSettings();
-            }
-
-            this.updateShadowPowerDisplay();
-
-            this.debugLog('UPDATE_SHADOW_POWER', 'Shadow power display updated and saved', {
-              newCachedPower: this.cachedShadowPower,
-              totalPower,
-              totalShadows: armyStats?.totalShadows || 0,
-              savedToSettings: true,
-            });
+            this._commitShadowPower(totalPower, shadowArmy);
           } else {
-            // Don't update to 0 if we have shadows - this indicates a data issue
-            this.debugError(
-              'UPDATE_SHADOW_POWER',
-              'Not updating to 0 - shadows exist but power is 0 (data integrity issue)',
-              {
-                totalPower,
-                totalShadows: armyStats?.totalShadows || 0,
-                keepingPreviousValue: this.cachedShadowPower,
-                possibleCauses: [
-                  'Shadows have no baseStats in IndexedDB',
-                  'Effective stats calculation returning all zeros',
-                  'Power calculation failing',
-                  'Shadows are compressed incorrectly',
-                ],
-              }
-            );
-            // Still update display with previous value (don't show 0 if we have shadows)
+            this.debugError('UPDATE_SHADOW_POWER', 'Power is 0 despite having shadows');
             this.updateShadowPowerDisplay();
           }
           return;
         } catch (error) {
-          // If getAggregatedArmyStats fails, fall through to fallback methods
-          this.debugError(
-            'UPDATE_SHADOW_POWER',
-            'getAggregatedArmyStats failed, using fallback',
-            error
-          );
+          this.debugError('UPDATE_SHADOW_POWER', 'Primary method failed', error);
         }
       }
 
-      // Fallback: Try to get from storage manager if method not available
-      if (shadowArmy.storageManager && typeof shadowArmy.storageManager.getShadows === 'function') {
+      // --- FALLBACK: manual storage manager enumeration ---
+      if (shadowArmy.storageManager?.getShadows) {
         try {
-          // Ensure storage manager is initialized
-          if (!shadowArmy.storageManager.db) {
-            await shadowArmy.storageManager.init();
-          }
-
+          if (!shadowArmy.storageManager.db) await shadowArmy.storageManager.init();
           const shadows = await shadowArmy.storageManager.getShadows({}, 0, 1000000);
-          this.debugLog('UPDATE_SHADOW_POWER', 'Retrieved shadows from storage manager', {
-            shadowCount: shadows?.length || 0,
-            dbInitialized: !!shadowArmy.storageManager.db,
-          });
-
-          if (shadows && shadows.length > 0) {
-            // Calculate total power using calculateShadowPowerCached
-            // This method handles decompression automatically
-            const totalPower = shadows.reduce((sum, shadow) => {
-              // Use calculateShadowPowerCached which handles compressed shadows
-              if (shadowArmy.calculateShadowPowerCached) {
-                const power = shadowArmy.calculateShadowPowerCached(shadow);
-                return sum + (power || 0);
-              }
-              // Fallback: try to get strength directly (may not work for compressed shadows)
-              const decompressed = shadowArmy.getShadowData
-                ? shadowArmy.getShadowData(shadow)
-                : shadow;
-              return sum + (decompressed?.strength || 0);
-            }, 0);
-
-            this.debugLog('UPDATE_SHADOW_POWER', 'Calculated total power from shadows', {
-              totalPower,
-              shadowCount: shadows.length,
-            });
-
-            this.cachedShadowPower = totalPower.toLocaleString();
-
-            // PERSISTENCE: Save shadow power to settings so it persists after restart
-            this.settings.cachedShadowPower = this.cachedShadowPower;
-            this.saveSettings(); // Save immediately to persist across restarts
-
-            // Also update ShadowArmy's cached value for consistency
-            if (shadowArmy.settings) {
-              shadowArmy.settings.cachedTotalPower = totalPower;
-              shadowArmy.settings.cachedTotalPowerTimestamp = Date.now();
-              shadowArmy.saveSettings();
-            }
-
-            this.updateShadowPowerDisplay();
+          if (shadows?.length > 0) {
+            const totalPower = this._sumShadowPower(shadowArmy, shadows);
+            this._commitShadowPower(totalPower, shadowArmy);
             return;
-          } else {
-            this.debugLog('UPDATE_SHADOW_POWER', 'No shadows found in storage manager');
           }
-        } catch (fallbackError) {
-          this.debugError('UPDATE_SHADOW_POWER', 'Fallback method failed', fallbackError);
+        } catch (e) {
+          this.debugError('UPDATE_SHADOW_POWER', 'Fallback storage enumeration failed', e);
         }
       }
 
-      // No shadows or method unavailable
-      this.cachedShadowPower = '0';
-
-      // PERSISTENCE: Save shadow power to settings so it persists after restart
-      this.settings.cachedShadowPower = this.cachedShadowPower;
-      this.saveSettings(); // Save immediately to persist across restarts
-
-      this.updateShadowPowerDisplay();
+      // No shadows
+      this._commitShadowPower(0, shadowArmy);
     } catch (error) {
       this.debugError('UPDATE_SHADOW_POWER', error);
       this.cachedShadowPower = '0';
@@ -9203,10 +8862,7 @@ module.exports = class SoloLevelingStats {
           ? cachedShadowPowerEl
           : this.chatUIPanel.querySelector('.sls-chat-shadow-power');
       if (shadowPowerEl) {
-        this._chatUIElements = {
-          ...(this._chatUIElements || {}),
-          shadowPowerEl,
-        };
+        this._chatUIElements.shadowPowerEl = shadowPowerEl;
         const newText = `Shadow Power: ${this.cachedShadowPower}`;
         shadowPowerEl.textContent = newText;
         this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Shadow power text updated in progress bar', {
@@ -9251,7 +8907,7 @@ module.exports = class SoloLevelingStats {
     try {
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
-        const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+        const result = this.DEFAULT_SHADOW_BUFFS;
         this._cache.shadowArmyBuffs = result;
         this._cache.shadowArmyBuffsTime = now;
         return result;
@@ -9289,29 +8945,43 @@ module.exports = class SoloLevelingStats {
           });
 
         // Return zeros for now, will be updated when async calculation completes
-        const result = shadowArmy.cachedBuffs || {
-          strength: 0,
-          agility: 0,
-          intelligence: 0,
-          vitality: 0,
-          perception: 0,
-        };
+        const result = shadowArmy.cachedBuffs || this.DEFAULT_SHADOW_BUFFS;
         this._cache.shadowArmyBuffs = result;
         this._cache.shadowArmyBuffsTime = now;
         return result;
       }
 
-      const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      const result = this.DEFAULT_SHADOW_BUFFS;
       this._cache.shadowArmyBuffs = result;
       this._cache.shadowArmyBuffsTime = now;
       return result;
     } catch (error) {
       // Silently fail if ShadowArmy isn't available
-      const result = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+      const result = this.DEFAULT_SHADOW_BUFFS;
       this._cache.shadowArmyBuffs = result;
       this._cache.shadowArmyBuffsTime = now;
       return result;
     }
+  }
+
+  /**
+   * Get shadow army buffs with active skill Arise multiplier applied
+   * @returns {Object} - Shadow buffs (potentially amplified)
+   */
+  getEffectiveShadowArmyBuffs() {
+    const baseBuffs = this.getShadowArmyBuffs();
+    const activeBuffs = this.getActiveSkillBuffs();
+    if (!activeBuffs || activeBuffs.shadowBuffMultiplier <= 1.0) return baseBuffs;
+
+    // Apply Arise multiplier to all shadow buff values
+    const multiplier = activeBuffs.shadowBuffMultiplier;
+    return {
+      strength: (baseBuffs.strength || 0) * multiplier,
+      agility: (baseBuffs.agility || 0) * multiplier,
+      intelligence: (baseBuffs.intelligence || 0) * multiplier,
+      vitality: (baseBuffs.vitality || 0) * multiplier,
+      perception: (baseBuffs.perception || 0) * multiplier,
+    };
   }
 
   // ============================================================================
@@ -9325,10 +8995,7 @@ module.exports = class SoloLevelingStats {
         ? cachedHpManaDisplay
         : this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
     if (!hpManaDisplay) return;
-    this._chatUIElements = {
-      ...(this._chatUIElements || {}),
-      hpManaDisplay,
-    };
+    this._chatUIElements.hpManaDisplay = hpManaDisplay;
 
     const effectiveStats = totalStats || this.getTotalEffectiveStats();
     const vitality = effectiveStats.vitality || 0;
@@ -9378,13 +9045,10 @@ module.exports = class SoloLevelingStats {
         ? cachedManaText
         : hpManaDisplay.querySelector('#sls-mp-text');
 
-    this._chatUIElements = {
-      ...(this._chatUIElements || {}),
-      hpBarFill,
-      hpText,
-      manaBarFill,
-      manaText,
-    };
+    this._chatUIElements.hpBarFill = hpBarFill;
+    this._chatUIElements.hpText = hpText;
+    this._chatUIElements.manaBarFill = manaBarFill;
+    this._chatUIElements.manaText = manaText;
 
     // Update HP bar
     if (hpBarFill) {
@@ -9623,12 +9287,39 @@ module.exports = class SoloLevelingStats {
     }
 
     // Clear chat UI element cache
-    this._chatUIElements = null;
+    this._chatUIElements = {};
     this._lastChatUIUpdateAt = 0;
     this._warnedMissingManaBarFill = false;
 
     // Remove injected CSS so it doesn't persist after disable
     document.getElementById('sls-chat-ui-styles')?.remove();
+  }
+
+  /**
+   * Build HTML string showing active title bonus buffs.
+   * Extracts the repeated IIFE pattern used in renderChatUI / updateChatUI.
+   * @param {Object} titleBonus - from getActiveTitleBonus()
+   * @param {string} cssClass   - CSS class for the wrapper span (default 'sls-chat-title-bonus')
+   * @returns {string} HTML or empty string
+   */
+  buildTitleBonusHTML(titleBonus, cssClass = 'sls-chat-title-bonus') {
+    if (!titleBonus) return '';
+    const buffs = [];
+    // Percentage-based stat bonuses (new format)
+    if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
+    if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
+    if (titleBonus.strengthPercent > 0) buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
+    if (titleBonus.agilityPercent > 0) buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
+    if (titleBonus.intelligencePercent > 0) buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
+    if (titleBonus.vitalityPercent > 0) buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
+    if (titleBonus.perceptionPercent > 0) buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
+    // Old format (raw numbers) backward compatibility
+    if (titleBonus.strength > 0 && !titleBonus.strengthPercent) buffs.push(`+${titleBonus.strength} STR`);
+    if (titleBonus.agility > 0 && !titleBonus.agilityPercent) buffs.push(`+${titleBonus.agility} AGI`);
+    if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent) buffs.push(`+${titleBonus.intelligence} INT`);
+    if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent) buffs.push(`+${titleBonus.vitality} VIT`);
+    if (titleBonus.luck > 0 && !titleBonus.perceptionPercent) buffs.push(`+${titleBonus.luck} PER`);
+    return buffs.length > 0 ? `<span class="${cssClass}">${buffs.join(', ')}</span>` : '';
   }
 
   renderChatUI() {
@@ -9685,7 +9376,7 @@ module.exports = class SoloLevelingStats {
           <div style="display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;">
             <div style="color: #ec4899; font-size: 11px; font-weight: 600; min-width: 30px; flex-shrink: 0;">HP</div>
             <div style="flex: 1; height: 12px; background: rgba(20, 20, 30, 0.8); border-radius: 6px; overflow: hidden; position: relative; min-width: 0;">
-              <div id="sls-hp-bar-fill" style="height: 100%; width: ${hpPercent}%; background: linear-gradient(90deg, #a855f7 0%, #9333ea 50%, #7c3aed 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(168, 85, 247, 0.5);"></div>
+              <div id="sls-hp-bar-fill" style="height: 100%; width: ${hpPercent}%; background: linear-gradient(90deg, #8a2be2 0%, #7b27cc 50%, #6c22b6 100%); border-radius: 6px; transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1); box-shadow: 0 0 8px rgba(138, 43, 226, 0.5);"></div>
             </div>
             <div id="sls-hp-text" style="color: rgba(255, 255, 255, 0.7); font-size: 10px; min-width: 50px; text-align: right; flex-shrink: 0; display: flex;">${Math.floor(
               this.settings.userHP
@@ -9703,7 +9394,7 @@ module.exports = class SoloLevelingStats {
         </div>
         <button class="sls-chat-toggle" id="sls-chat-toggle"></button>
       </div>
-      <div class="sls-chat-content" id="sls-chat-content">
+      <div class="sls-chat-content" id="sls-chat-content" style="display: ${this.settings.chatUIPanelExpanded ? 'block' : 'none'}">
         <!-- Level & XP -->
         <div class="sls-chat-level">
           <div class="sls-chat-level-row">
@@ -9726,37 +9417,7 @@ module.exports = class SoloLevelingStats {
         <div class="sls-chat-title-display">
           <span class="sls-chat-title-label">Title:</span>
           <span class="sls-chat-title-name">${this.settings.achievements.activeTitle}</span>
-          ${(() => {
-            const buffs = [];
-            if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-            if (titleBonus.critChance > 0)
-              buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-            // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
-            if (titleBonus.strengthPercent > 0)
-              buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
-            if (titleBonus.agilityPercent > 0)
-              buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
-            if (titleBonus.intelligencePercent > 0)
-              buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
-            if (titleBonus.vitalityPercent > 0)
-              buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-            if (titleBonus.perceptionPercent > 0)
-              buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
-            // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
-            if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
-              buffs.push(`+${titleBonus.strength} STR`);
-            if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
-              buffs.push(`+${titleBonus.agility} AGI`);
-            if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
-              buffs.push(`+${titleBonus.intelligence} INT`);
-            if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
-              buffs.push(`+${titleBonus.vitality} VIT`);
-            if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-              buffs.push(`+${titleBonus.luck} PER`);
-            return buffs.length > 0
-              ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
-              : '';
-          })()}
+          ${this.buildTitleBonusHTML(titleBonus)}
         </div>
         `
             : ''
@@ -9889,6 +9550,9 @@ module.exports = class SoloLevelingStats {
         content.style.display = isExpanded ? 'none' : 'block';
         toggleBtn.textContent = isExpanded ? '' : '';
 
+        // Persist panel state so it survives channel switches and reloads
+        this.settings.chatUIPanelExpanded = !isExpanded;
+
         // Toggle HP/MP text numbers visibility and enhance bars when collapsed
         const hpManaDisplay = panel.querySelector('#sls-chat-hp-mana-display');
         if (hpManaDisplay) {
@@ -9976,6 +9640,9 @@ module.exports = class SoloLevelingStats {
     if (!this.chatUIPanel) return;
     if (!this._isRunning) return;
 
+    // Clear dirty flag (interval won't re-call until next state change)
+    this._chatUIDirty = false;
+
     // Self-throttle to avoid redundant work when multiple events trigger updates
     const now = Date.now();
     const lastUpdateAt = this._lastChatUIUpdateAt || 0;
@@ -10004,8 +9671,6 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-      // Update HP/Mana bars
-      this.updateHPManaBars(totalStats);
 
       // Update rank display
       const cachedRankEl = this._chatUIElements?.rankEl;
@@ -10014,10 +9679,7 @@ module.exports = class SoloLevelingStats {
           ? cachedRankEl
           : this.chatUIPanel.querySelector('.sls-chat-rank');
       if (rankEl) rankEl.textContent = `Rank: ${this.settings.rank}`;
-      this._chatUIElements = {
-        ...(this._chatUIElements || {}),
-        rankEl,
-      };
+      this._chatUIElements.rankEl = rankEl;
 
       // Update level display
       const cachedLevelNumber = this._chatUIElements?.levelNumber;
@@ -10026,10 +9688,7 @@ module.exports = class SoloLevelingStats {
           ? cachedLevelNumber
           : this.chatUIPanel.querySelector('.sls-chat-level-number');
       if (levelNumber) levelNumber.textContent = `Lv.${this.settings.level}`;
-      this._chatUIElements = {
-        ...(this._chatUIElements || {}),
-        levelNumber,
-      };
+      this._chatUIElements.levelNumber = levelNumber;
 
       // Update progress bar with explicit style update
       // Try multiple selectors to find the progress bar (in order of preference)
@@ -10064,10 +9723,7 @@ module.exports = class SoloLevelingStats {
       }
 
       if (progressFill) {
-        this._chatUIElements = {
-          ...(this._chatUIElements || {}),
-          progressFill,
-        };
+        this._chatUIElements.progressFill = progressFill;
 
         // CRITICAL: Ensure percentage is valid before updating
         const validPercent = Math.min(100, Math.max(0, xpPercent));
@@ -10088,10 +9744,7 @@ module.exports = class SoloLevelingStats {
             : this.chatUIPanel.querySelector('.sls-xp-text');
         if (xpText) {
           xpText.textContent = `${Math.floor(levelInfo.xp)}/${levelInfo.xpRequired} XP`;
-          this._chatUIElements = {
-            ...(this._chatUIElements || {}),
-            xpText,
-          };
+          this._chatUIElements.xpText = xpText;
         }
 
         this.debugLog('UPDATE_CHAT_UI', 'Progress bar updated', {
@@ -10130,38 +9783,7 @@ module.exports = class SoloLevelingStats {
             <span class="sls-chat-title-name">${this.escapeHtml(
               this.settings.achievements.activeTitle
             )}</span>
-            ${(() => {
-              const buffs = [];
-              if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-              if (titleBonus.critChance > 0)
-                buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-              // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
-              if (titleBonus.strengthPercent > 0)
-                buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
-              if (titleBonus.agilityPercent > 0)
-                buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
-              if (titleBonus.intelligencePercent > 0)
-                buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
-              if (titleBonus.vitalityPercent > 0)
-                buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-              if (titleBonus.perceptionPercent > 0)
-                buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
-              // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
-              if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
-                buffs.push(`+${titleBonus.strength} STR`);
-              if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
-                buffs.push(`+${titleBonus.agility} AGI`);
-              if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
-                buffs.push(`+${titleBonus.intelligence} INT`);
-              if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
-                buffs.push(`+${titleBonus.vitality} VIT`);
-              if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-                buffs.push(`+${titleBonus.luck} PER`);
-
-              return buffs.length > 0
-                ? `<span class="sls-chat-title-bonus">${buffs.join(', ')}</span>`
-                : '';
-            })()}
+            ${this.buildTitleBonusHTML(titleBonus)}
           `;
           levelSection.parentElement.insertBefore(titleDiv, levelSection.nextElementSibling);
         }
@@ -10170,35 +9792,11 @@ module.exports = class SoloLevelingStats {
         const titleBonusEl = titleDisplay.querySelector('.sls-chat-title-bonus');
         if (titleName) titleName.textContent = this.settings.achievements.activeTitle;
         if (titleBonusEl) {
-          // Build complete bonus list matching TitleManager format exactly
-          const buffs = [];
-          if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-          if (titleBonus.critChance > 0)
-            buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-          // Check for percentage-based stat bonuses (new format) - matching TitleManager logic
-          if (titleBonus.strengthPercent > 0)
-            buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
-          if (titleBonus.agilityPercent > 0)
-            buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
-          if (titleBonus.intelligencePercent > 0)
-            buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
-          if (titleBonus.vitalityPercent > 0)
-            buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-          if (titleBonus.perceptionPercent > 0)
-            buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
-          // Support old format (raw numbers) for backward compatibility - matching TitleManager logic
-          if (titleBonus.strength > 0 && !titleBonus.strengthPercent)
-            buffs.push(`+${titleBonus.strength} STR`);
-          if (titleBonus.agility > 0 && !titleBonus.agilityPercent)
-            buffs.push(`+${titleBonus.agility} AGI`);
-          if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent)
-            buffs.push(`+${titleBonus.intelligence} INT`);
-          if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent)
-            buffs.push(`+${titleBonus.vitality} VIT`);
-          if (titleBonus.luck > 0 && !titleBonus.perceptionPercent)
-            buffs.push(`+${titleBonus.luck} PER`);
-
-          titleBonusEl.textContent = buffs.length > 0 ? buffs.join(', ') : '';
+          // Use helper — extract text content from the HTML span
+          const html = this.buildTitleBonusHTML(titleBonus);
+          const tmp = document.createElement('span');
+          tmp.innerHTML = html;
+          titleBonusEl.textContent = tmp.textContent || '';
         }
       }
     } else if (titleDisplay) {
@@ -10214,7 +9812,7 @@ module.exports = class SoloLevelingStats {
 
     // Update stat button values (keep total values visible, base stats for tooltips)
     // Get shadow buffs for generating value+buff HTML (titleBonus already declared above)
-    const shadowBuffs = this.getShadowArmyBuffs();
+    const shadowBuffs = this.getEffectiveShadowArmyBuffs();
 
     this.chatUIPanel.querySelectorAll('.sls-chat-stat-btn').forEach((btn) => {
       const statName = btn.dataset.stat;
@@ -10242,7 +9840,7 @@ module.exports = class SoloLevelingStats {
     });
 
     // Update HP/Mana bars
-    this.updateHPManaBars();
+    this.updateHPManaBars(totalStats);
 
     // Update unallocated points and stat allocation section
     const statAllocationEl = this.chatUIPanel.querySelector('.sls-chat-stat-allocation');
@@ -10315,15 +9913,8 @@ module.exports = class SoloLevelingStats {
                 plusEl.remove();
               }
 
-              // Update title
-              const statDefs = {
-                strength: { fullName: 'Strength', desc: '+5% XP' },
-                agility: { fullName: 'Agility', desc: '+2% Crit (capped 25%), +1% EXP/Crit' },
-                intelligence: { fullName: 'Intelligence', desc: '+10% Long Msg' },
-                vitality: { fullName: 'Vitality', desc: '+5% Quests' },
-                perception: { fullName: 'Perception', desc: 'Random buff stacks' },
-              };
-              const def = statDefs[statName];
+              // Update title from STAT_METADATA
+              const def = this.STAT_METADATA[statName];
               if (def) {
                 btn.title = `${def.fullName}: ${currentValue} - ${def.desc} per point`;
               }
@@ -10464,13 +10055,13 @@ module.exports = class SoloLevelingStats {
         min-height: 16px !important;
         min-width: 100px !important;
         flex: 1 !important;
-        box-shadow: 0 0 6px rgba(139, 92, 246, 0.4) !important;
-        border: 1px solid rgba(139, 92, 246, 0.2) !important;
+        box-shadow: 0 0 6px rgba(138, 43, 226, 0.4) !important;
+        border: 1px solid rgba(138, 43, 226, 0.2) !important;
       }
 
       /* Make bar fills more visible when collapsed */
       .sls-hp-mana-collapsed #sls-hp-bar-fill {
-        box-shadow: 0 0 10px rgba(168, 85, 247, 0.6) !important;
+        box-shadow: 0 0 10px rgba(138, 43, 226, 0.6) !important;
       }
       .sls-hp-mana-collapsed #sls-mp-bar-fill {
         box-shadow: 0 0 10px rgba(96, 165, 250, 0.6) !important;
@@ -10528,12 +10119,12 @@ module.exports = class SoloLevelingStats {
 
       .sls-chat-shadow-power {
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
-        color: #8b5cf6;
+        color: #8a2be2;
         font-size: 12px;
         font-weight: 600;
         margin-left: 12px;
         white-space: nowrap;
-        text-shadow: 0 0 4px rgba(139, 92, 246, 0.6);
+        text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
         display: flex !important;
         align-items: center;
         flex-shrink: 0;
@@ -10676,11 +10267,11 @@ module.exports = class SoloLevelingStats {
         position: absolute;
         width: 4px;
         height: 4px;
-        background: rgba(186, 85, 211, 0.9);
+        background: rgba(138, 43, 226, 0.9);
         border-radius: 50%;
         pointer-events: none;
         animation: sparkle-float 2s infinite;
-        box-shadow: 0 0 6px rgba(186, 85, 211, 0.8);
+        box-shadow: 0 0 6px rgba(138, 43, 226, 0.8);
       }
 
       /* Progress bar milestone markers - visual indicators for level milestones */
@@ -10689,7 +10280,7 @@ module.exports = class SoloLevelingStats {
         top: -8px;
         width: 2px;
         height: 22px;
-        background: rgba(139, 92, 246, 0.5);
+        background: rgba(138, 43, 226, 0.5);
         pointer-events: none;
         z-index: 1;
       }
@@ -10701,9 +10292,9 @@ module.exports = class SoloLevelingStats {
         left: -3px;
         width: 8px;
         height: 8px;
-        background: rgba(139, 92, 246, 0.8);
+        background: rgba(138, 43, 226, 0.8);
         border-radius: 50%;
-        box-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 6px rgba(138, 43, 226, 0.6);
       }
 
       /* ============================================================================
@@ -10757,12 +10348,12 @@ module.exports = class SoloLevelingStats {
         padding: 10px 16px;
         border-radius: 10px;
         background: rgba(10, 10, 15, 0.92);
-        border: 1px solid rgba(139, 92, 246, 0.55);
+        border: 1px solid rgba(138, 43, 226, 0.55);
         color: #a78bfa;
         font-weight: 800;
         letter-spacing: 0.08em;
         text-transform: uppercase;
-        box-shadow: 0 10px 30px rgba(139, 92, 246, 0.25);
+        box-shadow: 0 10px 30px rgba(138, 43, 226, 0.25);
         text-shadow: 0 0 10px rgba(167, 139, 250, 0.6);
         animation: sls-levelup-pop 1200ms ease-out forwards;
         will-change: transform, opacity;
@@ -10877,13 +10468,13 @@ module.exports = class SoloLevelingStats {
 
       .sls-quest-celebration-content {
         background: linear-gradient(135deg, rgba(5, 5, 10, 0.98) 0%, rgba(10, 5, 15, 0.98) 100%);
-        border: 2px solid rgba(139, 92, 246, 0.3);
+        border: 2px solid rgba(138, 43, 226, 0.3);
         border-radius: 12px;
         padding: 24px 32px;
         text-align: left;
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.2),
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.2),
                     0 0 40px rgba(75, 0, 130, 0.15),
-                    inset 0 0 30px rgba(139, 92, 246, 0.1);
+                    inset 0 0 30px rgba(138, 43, 226, 0.1);
         backdrop-filter: blur(8px);
         min-width: 400px;
         max-width: 500px;
@@ -10892,15 +10483,15 @@ module.exports = class SoloLevelingStats {
       .sls-quest-notification-header {
         margin-bottom: 16px;
         padding-bottom: 12px;
-        border-bottom: 1px solid rgba(139, 92, 246, 0.2);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.2);
       }
 
       .sls-quest-notification-title {
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         font-size: 18px;
         font-weight: 700;
-        color: rgba(139, 92, 246, 0.9);
-        text-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+        color: rgba(138, 43, 226, 0.9);
+        text-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         margin-bottom: 6px;
         letter-spacing: 0.5px;
       }
@@ -10919,8 +10510,8 @@ module.exports = class SoloLevelingStats {
         font-weight: 600;
         margin-bottom: 20px;
         padding: 10px;
-        background: rgba(139, 92, 246, 0.1);
-        border-left: 3px solid rgba(139, 92, 246, 0.5);
+        background: rgba(138, 43, 226, 0.1);
+        border-left: 3px solid rgba(138, 43, 226, 0.5);
         border-radius: 4px;
       }
 
@@ -10931,7 +10522,7 @@ module.exports = class SoloLevelingStats {
       .sls-quest-progress-title {
         font-size: 14px;
         font-weight: 700;
-        color: rgba(139, 92, 246, 0.8);
+        color: rgba(138, 43, 226, 0.8);
         margin-bottom: 12px;
         text-transform: uppercase;
         letter-spacing: 1px;
@@ -10950,13 +10541,13 @@ module.exports = class SoloLevelingStats {
         padding: 8px;
         background: rgba(10, 5, 15, 0.6);
         border-radius: 6px;
-        border: 1px solid rgba(139, 92, 246, 0.15);
+        border: 1px solid rgba(138, 43, 226, 0.15);
         transition: all 0.2s ease;
       }
 
       .sls-quest-progress-item.completed {
-        background: rgba(139, 92, 246, 0.1);
-        border-color: rgba(139, 92, 246, 0.3);
+        background: rgba(138, 43, 226, 0.1);
+        border-color: rgba(138, 43, 226, 0.3);
       }
 
       .sls-quest-progress-checkbox {
@@ -10966,13 +10557,13 @@ module.exports = class SoloLevelingStats {
         align-items: center;
         justify-content: center;
         font-size: 14px;
-        color: rgba(139, 92, 246, 0.6);
+        color: rgba(138, 43, 226, 0.6);
         flex-shrink: 0;
       }
 
       .sls-quest-progress-item.completed .sls-quest-progress-checkbox {
-        color: rgba(139, 92, 246, 0.9);
-        text-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
+        color: rgba(138, 43, 226, 0.9);
+        text-shadow: 0 0 6px rgba(138, 43, 226, 0.6);
       }
 
       .sls-quest-progress-info {
@@ -11003,18 +10594,18 @@ module.exports = class SoloLevelingStats {
         background: rgba(20, 10, 30, 0.8);
         border-radius: 3px;
         overflow: hidden;
-        border: 1px solid rgba(139, 92, 246, 0.2);
+        border: 1px solid rgba(138, 43, 226, 0.2);
       }
 
       .sls-quest-progress-fill {
         height: 100%;
-        background: linear-gradient(90deg, rgba(139, 92, 246, 0.6) 0%, rgba(139, 92, 246, 0.4) 100%);
+        background: linear-gradient(90deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.4) 100%);
         transition: width 0.3s ease;
         border-radius: 3px;
       }
 
       .sls-quest-progress-item.completed .sls-quest-progress-fill {
-        background: linear-gradient(90deg, rgba(139, 92, 246, 0.8) 0%, rgba(139, 92, 246, 0.6) 100%);
+        background: linear-gradient(90deg, rgba(138, 43, 226, 0.8) 0%, rgba(138, 43, 226, 0.6) 100%);
       }
 
       .sls-quest-progress-text {
@@ -11030,13 +10621,13 @@ module.exports = class SoloLevelingStats {
         justify-content: center;
         margin-top: 24px;
         padding-top: 20px;
-        border-top: 1px solid rgba(139, 92, 246, 0.2);
+        border-top: 1px solid rgba(138, 43, 226, 0.2);
       }
 
       .sls-quest-confirm-button {
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(75, 0, 130, 0.3) 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
+        background: linear-gradient(135deg, rgba(138, 43, 226, 0.3) 0%, rgba(75, 0, 130, 0.3) 100%);
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 8px;
         padding: 12px 32px;
         color: rgba(200, 180, 255, 0.95);
@@ -11046,21 +10637,21 @@ module.exports = class SoloLevelingStats {
         transition: all 0.2s ease;
         text-transform: uppercase;
         letter-spacing: 1px;
-        text-shadow: 0 0 6px rgba(139, 92, 246, 0.6);
-        box-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+        text-shadow: 0 0 6px rgba(138, 43, 226, 0.6);
+        box-shadow: 0 0 12px rgba(138, 43, 226, 0.3);
       }
 
       .sls-quest-confirm-button:hover {
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.4) 0%, rgba(75, 0, 130, 0.4) 100%);
-        border-color: rgba(139, 92, 246, 0.7);
+        background: linear-gradient(135deg, rgba(138, 43, 226, 0.4) 0%, rgba(75, 0, 130, 0.4) 100%);
+        border-color: rgba(138, 43, 226, 0.7);
         color: rgba(255, 255, 255, 1);
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.5);
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.5);
         transform: translateY(-2px);
       }
 
       .sls-quest-confirm-button:active {
         transform: translateY(0);
-        box-shadow: 0 0 8px rgba(139, 92, 246, 0.4);
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
       }
 
       .sls-quest-celebration-icon {
@@ -11074,7 +10665,7 @@ module.exports = class SoloLevelingStats {
         font-size: 20px;
         color: #ffffff;
         text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
-                     0 0 20px rgba(139, 92, 246, 0.8);
+                     0 0 20px rgba(138, 43, 226, 0.8);
         margin-bottom: 10px;
         animation: quest-text-glow 1s ease-in-out infinite;
       }
@@ -11112,7 +10703,7 @@ module.exports = class SoloLevelingStats {
 
       .sls-quest-celebrating {
         animation: quest-card-pulse 0.5s ease-out;
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.8) !important;
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.8) !important;
       }
 
       /* Fast fade-in animation (0-200ms) */
@@ -11232,11 +10823,11 @@ module.exports = class SoloLevelingStats {
       @keyframes quest-text-glow {
         0%, 100% {
           text-shadow: 0 0 10px rgba(255, 255, 255, 0.8),
-                       0 0 20px rgba(139, 92, 246, 0.8);
+                       0 0 20px rgba(138, 43, 226, 0.8);
         }
         50% {
           text-shadow: 0 0 20px rgba(255, 255, 255, 1),
-                       0 0 40px rgba(139, 92, 246, 1);
+                       0 0 40px rgba(138, 43, 226, 1);
         }
       }
 

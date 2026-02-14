@@ -47,6 +47,12 @@ module.exports = class SkillTree {
       lastLevel: 1, // Track last level to detect level ups
       totalEarnedSP: 0, // Total SP earned from level ups (for reset calculation)
       totalSpentSP: 0, // Total SP spent on skills (for accurate calculations)
+      // Active skills state
+      currentMana: 100, // Current mana (max derived from SLS intelligence stat)
+      maxMana: 100,     // Base max mana (can be boosted by intelligence)
+      activeSkillStates: {}, // { skillId: { active: false, expiresAt: 0, cooldownUntil: 0, chargesLeft: 0 } }
+      manaRegenRate: 1, // Mana regen per minute (base, scales with intelligence)
+      lastManaRegen: 0, // Timestamp of last mana regen tick
     };
 
     // Track all retry timeouts for proper cleanup
@@ -89,28 +95,28 @@ module.exports = class SkillTree {
             perLevelEffect: { xpBonus: 0.02 }, // +2% per level upgrade
           },
           {
-            id: 'shadow_storage',
-            name: 'Shadow Storage Capacity',
-            desc: 'Increased capacity for storing extracted shadows. Increases long message XP.',
-            lore: 'Passively store your shadow army for later use.',
+            id: 'shadow_preservation',
+            name: 'Shadow Preservation',
+            desc: 'Preserve and monitor shadows through their senses. Increases long message XP.',
+            lore: 'Store your shadow army and perceive the world through their eyes.',
             requirement: { level: 8 },
             baseEffect: { longMsgBonus: 0.03 }, // +3% per level
             perLevelEffect: { longMsgBonus: 0.03 },
           },
           {
-            id: 'basic_combat',
-            name: 'Combat Proficiency',
-            desc: 'Fundamental combat knowledge. Increases crit chance.',
-            lore: 'Passive mastery of combat basics.',
+            id: 'daggers_dance',
+            name: "Dagger's Dance",
+            desc: "Jin-Woo's signature dual-dagger combat style. Increases crit chance.",
+            lore: 'The dance of blades that cut through even S-Rank hunters.',
             requirement: { level: 10, strength: 5 },
             baseEffect: { critBonus: 0.01 }, // +1% per level
             perLevelEffect: { critBonus: 0.01 },
           },
           {
-            id: 'mana_sense',
-            name: 'Mana Sensitivity',
-            desc: 'Heightened sensitivity to mana flow. Increases XP from all sources.',
-            lore: 'Passively feel the flow of mana around you.',
+            id: 'kandiarus_blessing',
+            name: "Kandiaru's Blessing",
+            desc: "The System Architect's gift. Passively increases XP from all sources.",
+            lore: 'A hidden blessing woven into the System itself by its creator.',
             requirement: { level: 15, intelligence: 5 },
             baseEffect: { xpBonus: 0.015 }, // +1.5% per level
             perLevelEffect: { xpBonus: 0.015 },
@@ -141,24 +147,24 @@ module.exports = class SkillTree {
             name: 'Shadow Command Mastery',
             desc: 'Mastery over commanding your shadow army. Increases all stat bonuses.',
             lore: 'Passive command over shadows that brings them to life.',
-            requirement: { level: 60, skills: ['shadow_storage'] },
+            requirement: { level: 60, skills: ['shadow_preservation'] },
             baseEffect: { allStatBonus: 0.02 }, // +2% per level
             perLevelEffect: { allStatBonus: 0.02 },
           },
           {
-            id: 'instant_dungeon',
-            name: 'Dungeon Mastery',
-            desc: 'Mastery over creating training grounds. Increases quest rewards.',
-            lore: 'Passively generate dungeons for training and grinding.',
+            id: 'gate_creation',
+            name: 'Gate Creation',
+            desc: 'Open black-and-purple gates to other worlds. Increases quest rewards.',
+            lore: 'Tear open dimensional gates at will, each one a path to greater power.',
             requirement: { level: 75, intelligence: 15 },
             baseEffect: { questBonus: 0.04 }, // +4% per level
             perLevelEffect: { questBonus: 0.04 },
           },
           {
-            id: 'dagger_throw',
-            name: 'Dagger Mastery',
-            desc: 'Mastery over throwing daggers. Increases crit chance significantly.',
-            lore: "Passive mastery of Jin-Woo's signature combat technique.",
+            id: 'dagger_rush',
+            name: 'Dagger Rush',
+            desc: 'Barrage opponents with daggers from all directions. Increases crit chance significantly.',
+            lore: "A relentless storm of blades that leaves no opening for escape.",
             requirement: { level: 80, agility: 15 },
             baseEffect: { critBonus: 0.02 }, // +2% per level
             perLevelEffect: { critBonus: 0.02 },
@@ -185,11 +191,11 @@ module.exports = class SkillTree {
         growthRate: 2.0, // 2x faster growth than Tier 1
         skills: [
           {
-            id: 'domain_expansion',
-            name: 'Domain Mastery',
-            desc: 'Mastery over expanding your domain of influence. Massive XP and stat bonuses.',
-            lore: 'Passively create a domain where you are absolute ruler.',
-            requirement: { level: 150, intelligence: 30, skills: ['instant_dungeon'] },
+            id: 'monarchs_domain',
+            name: "Monarch's Domain",
+            desc: "Exert the Monarch's territory. Massive XP and stat bonuses.",
+            lore: 'Within this domain, the Shadow Monarch is absolute.',
+            requirement: { level: 150, intelligence: 30, skills: ['gate_creation'] },
             baseEffect: { xpBonus: 0.08, allStatBonus: 0.03 }, // +8% XP, +3% stats per level
             perLevelEffect: { xpBonus: 0.08, allStatBonus: 0.03 },
           },
@@ -263,10 +269,10 @@ module.exports = class SkillTree {
         growthRate: 4.0, // 4x faster growth than Tier 1
         skills: [
           {
-            id: 'absolute_ruler',
-            name: 'Absolute Authority',
-            desc: 'Passive authority over all existence. Maximum power.',
-            lore: 'The ultimate passive authority - rule over everything.',
+            id: 'rulers_domain',
+            name: "Ruler's Domain",
+            desc: 'The opposing cosmic force. Absolute authority over existence.',
+            lore: "Channel the Rulers' power - the cosmic opposite of the Monarchs.",
             requirement: { level: 1000, skills: ['ashborn_legacy'] },
             baseEffect: {
               xpBonus: 0.25,
@@ -284,20 +290,20 @@ module.exports = class SkillTree {
             },
           },
           {
-            id: 'void_mastery',
-            name: 'Void Mastery',
-            desc: 'Mastery over the void itself. Transcendent XP and stat bonuses.',
-            lore: 'Passive control over the void between dimensions.',
-            requirement: { level: 1200, skills: ['absolute_ruler'] },
+            id: 'shadow_realm',
+            name: 'Shadow Realm',
+            desc: 'Access the space between worlds. Transcendent XP and stat bonuses.',
+            lore: 'The dimension where shadows gather between life and death.',
+            requirement: { level: 1200, skills: ['rulers_domain'] },
             baseEffect: { xpBonus: 0.3, allStatBonus: 0.15, critBonus: 0.08 }, // +30% XP, +15% stats, +8% crit per level
             perLevelEffect: { xpBonus: 0.3, allStatBonus: 0.15, critBonus: 0.08 },
           },
           {
-            id: 'dimension_ruler',
-            name: "Dimension Ruler's Aura",
-            desc: 'Passive aura that rules across all dimensions. Massive bonuses.',
-            lore: 'Your presence passively affects all dimensions.',
-            requirement: { level: 1400, skills: ['void_mastery'] },
+            id: 'gate_ruler',
+            name: "Gate Ruler",
+            desc: 'Command the Gates between dimensions. Massive bonuses.',
+            lore: 'Every Gate bends to your will, every dungeon opens at your command.',
+            requirement: { level: 1400, skills: ['shadow_realm'] },
             baseEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.1, questBonus: 0.12 }, // +35% XP, +18% stats, +10% crit, +12% quest per level
             perLevelEffect: { xpBonus: 0.35, allStatBonus: 0.18, critBonus: 0.1, questBonus: 0.12 },
           },
@@ -314,11 +320,11 @@ module.exports = class SkillTree {
         growthRate: 5.0, // 5x faster growth than Tier 1
         skills: [
           {
-            id: 'omnipotent_presence',
-            name: 'Omnipotent Presence',
-            desc: 'Passive presence that transcends all limitations. Ultimate bonuses.',
-            lore: 'Your very existence passively defies all known limits.',
-            requirement: { level: 1500, skills: ['dimension_ruler'] },
+            id: 'dragons_fear',
+            name: "Dragon's Fear",
+            desc: 'Overwhelming killing intent that paralyzes all. Ultimate bonuses.',
+            lore: "An aura of terror that made even the Monarchs' armies hesitate.",
+            requirement: { level: 1500, skills: ['gate_ruler'] },
             baseEffect: {
               xpBonus: 0.4,
               allStatBonus: 0.2,
@@ -335,11 +341,11 @@ module.exports = class SkillTree {
             },
           },
           {
-            id: 'eternal_shadow',
-            name: "Eternal Shadow's Embrace",
-            desc: 'Passive embrace of eternal shadow power. Transcendent bonuses.',
-            lore: 'The eternal shadow itself passively flows through you.',
-            requirement: { level: 1750, skills: ['omnipotent_presence'] },
+            id: 'ashborns_will',
+            name: "Ashborn's Will",
+            desc: "The first Shadow Monarch's undying resolve. Transcendent bonuses.",
+            lore: "Ashborn's will persists across millennia, now flowing through you.",
+            requirement: { level: 1750, skills: ['dragons_fear'] },
             baseEffect: { xpBonus: 0.45, allStatBonus: 0.25, critBonus: 0.15, questBonus: 0.18 }, // +45% XP, +25% stats, +15% crit, +18% quest per level
             perLevelEffect: {
               xpBonus: 0.45,
@@ -349,11 +355,11 @@ module.exports = class SkillTree {
             },
           },
           {
-            id: 'true_monarch',
-            name: "True Monarch's Dominion",
-            desc: 'Passive dominion over all reality. Maximum possible power.',
-            lore: "The true monarch's passive dominion extends over all existence.",
-            requirement: { level: 2000, skills: ['eternal_shadow'] },
+            id: 'shadow_sovereign',
+            name: "Shadow Sovereign",
+            desc: "The Sovereign of Shadows - Ashborn's true title. Maximum possible power.",
+            lore: 'You have become the Shadow Sovereign, ruler of death and darkness.',
+            requirement: { level: 2000, skills: ['ashborns_will'] },
             baseEffect: {
               xpBonus: 0.5,
               allStatBonus: 0.3,
@@ -373,6 +379,98 @@ module.exports = class SkillTree {
       },
     };
 
+    // ===== ACTIVE SKILLS (Cooldown-Based Temporary Buffs) =====
+    // Active skills cost Mana, have a duration, and a cooldown.
+    // They provide powerful temporary multipliers in the awardXP chain.
+    // Unlock conditions: specific passive skill at a required level.
+    this.activeSkillDefs = {
+      sprint: {
+        id: 'sprint',
+        name: 'Sprint',
+        desc: 'Channel Jinwoo\'s supernatural speed. +100% XP for a short burst.',
+        lore: 'A burst of speed that leaves afterimages in your wake.',
+        manaCost: 30,
+        durationMs: 5 * 60 * 1000,  // 5 min
+        cooldownMs: 20 * 60 * 1000, // 20 min
+        effect: { xpMultiplier: 2.0 },
+        unlock: { passiveSkill: 'stealth', passiveLevel: 5 },
+      },
+      bloodlust: {
+        id: 'bloodlust',
+        name: 'Bloodlust',
+        desc: 'Unleash killing intent. +50% crit chance (uncapped during buff).',
+        lore: 'An aura of murderous intent that makes even S-Rank hunters freeze.',
+        manaCost: 50,
+        durationMs: 8 * 60 * 1000,  // 8 min
+        cooldownMs: 30 * 60 * 1000, // 30 min
+        effect: { critChanceBonus: 0.50 },
+        unlock: { passiveSkill: 'daggers_dance', passiveLevel: 8 },
+      },
+      mutilate: {
+        id: 'mutilate',
+        name: 'Mutilate',
+        desc: 'Critical strike mastery. Next 10 messages are guaranteed crits.',
+        lore: 'A flurry of precise strikes, each one finding its mark.',
+        manaCost: 40,
+        durationMs: null, // charge-based, not time-based
+        charges: 10,
+        cooldownMs: 25 * 60 * 1000, // 25 min
+        effect: { guaranteedCrit: true },
+        unlock: { passiveSkill: 'dagger_rush', passiveLevel: 10 },
+      },
+      rulers_authority: {
+        id: 'rulers_authority',
+        name: "Ruler's Authority",
+        desc: 'Telekinetic force amplifies all stats. +75% all stat bonuses.',
+        lore: 'The power to move objects with will alone, now amplifying your very being.',
+        manaCost: 60,
+        durationMs: 10 * 60 * 1000, // 10 min
+        cooldownMs: 45 * 60 * 1000, // 45 min
+        effect: { allStatMultiplier: 1.75 },
+        unlock: { passiveSkill: 'ruler_authority', passiveLevel: 10 },
+      },
+      shadow_exchange_active: {
+        id: 'shadow_exchange_active',
+        name: 'Shadow Exchange',
+        desc: 'Swap places with a shadow soldier. Double quest rewards for next quest.',
+        lore: 'Instantly switch positions with any shadow in your army.',
+        manaCost: 25,
+        durationMs: null, // charge-based
+        charges: 1,       // next 1 quest
+        cooldownMs: 60 * 60 * 1000, // 60 min
+        effect: { questRewardMultiplier: 2.0 },
+        unlock: { passiveSkill: 'shadow_exchange', passiveLevel: 10 },
+      },
+      arise_active: {
+        id: 'arise_active',
+        name: 'Arise',
+        desc: 'Command shadows to rise. +200% Shadow Army buff power.',
+        lore: 'ARISE! The command that raises the dead to serve the Shadow Monarch.',
+        manaCost: 80,
+        durationMs: 15 * 60 * 1000, // 15 min
+        cooldownMs: 60 * 60 * 1000, // 60 min
+        effect: { shadowBuffMultiplier: 3.0 },
+        unlock: { passiveSkill: 'arise', passiveLevel: 12 },
+      },
+      monarchs_domain_active: {
+        id: 'monarchs_domain_active',
+        name: "Monarch's Domain",
+        desc: 'Expand your domain of power. All bonuses +30% for the duration.',
+        lore: 'Within this domain, the Shadow Monarch reigns supreme over all.',
+        manaCost: 100,
+        durationMs: 20 * 60 * 1000, // 20 min
+        cooldownMs: 90 * 60 * 1000, // 90 min
+        effect: { globalMultiplier: 1.30 },
+        unlock: { passiveSkill: 'monarchs_domain', passiveLevel: 15 },
+      },
+    };
+
+    // Active skill ordering for UI display
+    this.activeSkillOrder = [
+      'sprint', 'bloodlust', 'mutilate', 'rulers_authority',
+      'shadow_exchange_active', 'arise_active', 'monarchs_domain_active',
+    ];
+
     // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.skillTreeModal = null;
@@ -384,6 +482,8 @@ module.exports = class SkillTree {
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
     this._periodicCheckInterval = null; // Periodic button persistence check
+    this._manaRegenInterval = null; // Mana regeneration interval
+    this._activeSkillTimers = {};   // Expiry timers for active skills { skillId: timeoutId }
 
     // Performance caches
     this._cache = {
@@ -444,6 +544,13 @@ module.exports = class SkillTree {
 
     // Start fallback polling only if event subscription isn't available.
     this.startLevelPolling();
+
+    // Active skills: restore timers for skills that were active before reload
+    this.restoreActiveSkillTimers();
+    this.saveActiveBuffs();
+
+    // Start mana regeneration
+    this.startManaRegen();
   }
 
   _setTrackedTimeout(callback, delayMs) {
@@ -527,6 +634,11 @@ module.exports = class SkillTree {
 
     // Clear intervals
     this.stopLevelPolling();
+    this.stopManaRegen();
+
+    // Clear active skill expiry timers
+    Object.values(this._activeSkillTimers).forEach((tid) => clearTimeout(tid));
+    this._activeSkillTimers = {};
 
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
@@ -837,6 +949,33 @@ module.exports = class SkillTree {
           ),
           (this.settings.unlockedSkills = []),
           this.saveSettings()));
+
+      // v2.5 skill ID rename migration (lore-accurate names)
+      const renameMap = {
+        shadow_storage: 'shadow_preservation',
+        basic_combat: 'daggers_dance',
+        dagger_throw: 'dagger_rush',
+        instant_dungeon: 'gate_creation',
+        mana_sense: 'kandiarus_blessing',
+        domain_expansion: 'monarchs_domain',
+        absolute_ruler: 'rulers_domain',
+        void_mastery: 'shadow_realm',
+        dimension_ruler: 'gate_ruler',
+        omnipotent_presence: 'dragons_fear',
+        eternal_shadow: 'ashborns_will',
+        true_monarch: 'shadow_sovereign',
+      };
+      if (this.settings.skillLevels) {
+        let migrated = false;
+        for (const [oldId, newId] of Object.entries(renameMap)) {
+          if (this.settings.skillLevels[oldId] !== undefined) {
+            this.settings.skillLevels[newId] = this.settings.skillLevels[oldId];
+            delete this.settings.skillLevels[oldId];
+            migrated = true;
+          }
+        }
+        if (migrated) this.saveSettings();
+      }
     } catch (error) {
       console.error('SkillTree: Error loading settings', error);
     }
@@ -863,6 +1002,19 @@ module.exports = class SkillTree {
       BdApi.Data.save('SkillTree', 'bonuses', bonuses);
     } catch (error) {
       console.error('SkillTree: Error saving bonuses', error);
+    }
+  }
+
+  /**
+   * Save active skill buff effects to shared storage for SoloLevelingStats to read
+   * SLS reads this via BdApi.Data.load('SkillTree', 'activeBuffs')
+   */
+  saveActiveBuffs() {
+    try {
+      const effects = this.getActiveBuffEffects();
+      BdApi.Data.save('SkillTree', 'activeBuffs', effects);
+    } catch (error) {
+      console.error('SkillTree: Error saving active buffs', error);
     }
   }
 
@@ -910,6 +1062,331 @@ module.exports = class SkillTree {
     this._cache.skillBonusesTime = now;
 
     return bonuses;
+  }
+
+  // ============================================================================
+  // ACTIVE SKILLS SYSTEM
+  // ============================================================================
+
+  /**
+   * Check if an active skill is unlocked (passive prerequisite met)
+   * @param {string} activeSkillId - Active skill ID
+   * @returns {boolean}
+   */
+  isActiveSkillUnlocked(activeSkillId) {
+    const def = this.activeSkillDefs[activeSkillId];
+    if (!def || !def.unlock) return false;
+    const passiveLevel = this.getSkillLevel(def.unlock.passiveSkill);
+    return passiveLevel >= def.unlock.passiveLevel;
+  }
+
+  /**
+   * Get current mana (with intelligence-based max calculation)
+   * @returns {{ current: number, max: number }}
+   */
+  getManaInfo() {
+    const soloData = this.getSoloLevelingData();
+    const intelligence = soloData?.stats?.intelligence || 0;
+    // Max mana: base 100 + 2 per intelligence point
+    const maxMana = 100 + intelligence * 2;
+    // Ensure current doesn't exceed max
+    const current = Math.min(this.settings.currentMana || 0, maxMana);
+    return { current, max: maxMana };
+  }
+
+  /**
+   * Regenerate mana over time (called on interval)
+   * Base: 1 mana/min, +0.1 per intelligence point
+   */
+  tickManaRegen() {
+    const now = Date.now();
+    const lastRegen = this.settings.lastManaRegen || now;
+    const elapsedMinutes = (now - lastRegen) / 60000;
+    if (elapsedMinutes < 0.5) return; // Min 30s between regen ticks
+
+    const soloData = this.getSoloLevelingData();
+    const intelligence = soloData?.stats?.intelligence || 0;
+    const regenPerMinute = 1 + intelligence * 0.1;
+    const regenAmount = regenPerMinute * elapsedMinutes;
+
+    const manaInfo = this.getManaInfo();
+    this.settings.currentMana = Math.min(
+      (this.settings.currentMana || 0) + regenAmount,
+      manaInfo.max
+    );
+    this.settings.lastManaRegen = now;
+    // Don't save on every tick - let periodic save handle it
+  }
+
+  /**
+   * Start mana regeneration interval
+   */
+  startManaRegen() {
+    if (this._manaRegenInterval) return;
+    // Initialize lastManaRegen if not set
+    if (!this.settings.lastManaRegen) {
+      this.settings.lastManaRegen = Date.now();
+    }
+    // Catch-up regen for time spent offline
+    this.tickManaRegen();
+
+    this._manaRegenInterval = setInterval(() => {
+      if (this._isStopped) return;
+      this.tickManaRegen();
+    }, 30000); // Every 30 seconds
+  }
+
+  /**
+   * Stop mana regeneration interval
+   */
+  stopManaRegen() {
+    if (this._manaRegenInterval) {
+      clearInterval(this._manaRegenInterval);
+      this._manaRegenInterval = null;
+    }
+  }
+
+  /**
+   * Get the state of an active skill
+   * @param {string} skillId
+   * @returns {{ active: boolean, expiresAt: number, cooldownUntil: number, chargesLeft: number }}
+   */
+  getActiveSkillState(skillId) {
+    const states = this.settings.activeSkillStates || {};
+    return states[skillId] || { active: false, expiresAt: 0, cooldownUntil: 0, chargesLeft: 0 };
+  }
+
+  /**
+   * Check if an active skill is currently active (buff running)
+   * @param {string} skillId
+   * @returns {boolean}
+   */
+  isActiveSkillRunning(skillId) {
+    const state = this.getActiveSkillState(skillId);
+    if (!state.active) return false;
+    const def = this.activeSkillDefs[skillId];
+    // Charge-based skills stay active until charges run out
+    if (def && def.charges && state.chargesLeft > 0) return true;
+    // Time-based skills check expiry
+    if (state.expiresAt > Date.now()) return true;
+    // Expired — deactivate
+    this._deactivateSkill(skillId);
+    return false;
+  }
+
+  /**
+   * Check if a skill is on cooldown
+   * @param {string} skillId
+   * @returns {boolean}
+   */
+  isActiveSkillOnCooldown(skillId) {
+    const state = this.getActiveSkillState(skillId);
+    return state.cooldownUntil > Date.now();
+  }
+
+  /**
+   * Get remaining cooldown in ms
+   * @param {string} skillId
+   * @returns {number}
+   */
+  getActiveSkillCooldownRemaining(skillId) {
+    const state = this.getActiveSkillState(skillId);
+    const remaining = state.cooldownUntil - Date.now();
+    return remaining > 0 ? remaining : 0;
+  }
+
+  /**
+   * Activate an active skill
+   * @param {string} skillId
+   * @returns {{ success: boolean, reason?: string }}
+   */
+  activateSkill(skillId) {
+    const def = this.activeSkillDefs[skillId];
+    if (!def) return { success: false, reason: 'Unknown skill' };
+
+    // Check unlock
+    if (!this.isActiveSkillUnlocked(skillId)) {
+      return { success: false, reason: 'Skill not unlocked' };
+    }
+
+    // Check already active
+    if (this.isActiveSkillRunning(skillId)) {
+      return { success: false, reason: 'Already active' };
+    }
+
+    // Check cooldown
+    if (this.isActiveSkillOnCooldown(skillId)) {
+      const remainMs = this.getActiveSkillCooldownRemaining(skillId);
+      const remainMin = Math.ceil(remainMs / 60000);
+      return { success: false, reason: `On cooldown (${remainMin}m)` };
+    }
+
+    // Check mana
+    const manaInfo = this.getManaInfo();
+    if (manaInfo.current < def.manaCost) {
+      return { success: false, reason: `Not enough Mana (${Math.floor(manaInfo.current)}/${def.manaCost})` };
+    }
+
+    // Deduct mana
+    this.settings.currentMana = manaInfo.current - def.manaCost;
+
+    // Set state
+    const now = Date.now();
+    if (!this.settings.activeSkillStates) this.settings.activeSkillStates = {};
+    this.settings.activeSkillStates[skillId] = {
+      active: true,
+      expiresAt: def.durationMs ? now + def.durationMs : 0,
+      cooldownUntil: now + def.cooldownMs,
+      chargesLeft: def.charges || 0,
+    };
+
+    // Set expiry timer for time-based skills
+    if (def.durationMs) {
+      this._setActiveSkillTimer(skillId, def.durationMs);
+    }
+
+    this.saveSettings();
+    this.saveActiveBuffs();
+
+    // Notification
+    const durationText = def.durationMs
+      ? `${Math.round(def.durationMs / 60000)}m`
+      : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
+    if (BdApi?.showToast) {
+      BdApi.showToast(`${def.name} activated! (${durationText})`, { type: 'success', timeout: 3000 });
+    }
+
+    // Fire DOM event for other plugins
+    document.dispatchEvent(new CustomEvent('SkillTree:activeSkillActivated', {
+      detail: { skillId, effect: def.effect, expiresAt: this.settings.activeSkillStates[skillId].expiresAt },
+    }));
+
+    return { success: true };
+  }
+
+  /**
+   * Set a timeout to deactivate a time-based skill when it expires
+   * @param {string} skillId
+   * @param {number} delayMs
+   */
+  _setActiveSkillTimer(skillId, delayMs) {
+    // Clear any existing timer
+    if (this._activeSkillTimers[skillId]) {
+      clearTimeout(this._activeSkillTimers[skillId]);
+    }
+    this._activeSkillTimers[skillId] = setTimeout(() => {
+      delete this._activeSkillTimers[skillId];
+      if (this._isStopped) return;
+      this._deactivateSkill(skillId);
+    }, delayMs);
+  }
+
+  /**
+   * Deactivate an active skill (buff expired or charges depleted)
+   * @param {string} skillId
+   */
+  _deactivateSkill(skillId) {
+    const state = this.getActiveSkillState(skillId);
+    if (!state.active) return;
+
+    // Keep cooldownUntil, clear active state
+    this.settings.activeSkillStates[skillId] = {
+      ...state,
+      active: false,
+      expiresAt: 0,
+      chargesLeft: 0,
+    };
+
+    this.saveSettings();
+    this.saveActiveBuffs();
+
+    const def = this.activeSkillDefs[skillId];
+    if (BdApi?.showToast && def) {
+      BdApi.showToast(`${def.name} expired.`, { type: 'info', timeout: 2000 });
+    }
+
+    document.dispatchEvent(new CustomEvent('SkillTree:activeSkillExpired', {
+      detail: { skillId },
+    }));
+  }
+
+  /**
+   * Consume a charge from a charge-based active skill
+   * Called by SLS when a message is sent and a charge-based buff is active
+   * @param {string} skillId
+   * @returns {boolean} - True if charge was consumed (and buff effect should apply)
+   */
+  consumeActiveSkillCharge(skillId) {
+    const state = this.getActiveSkillState(skillId);
+    if (!state.active || state.chargesLeft <= 0) return false;
+
+    state.chargesLeft -= 1;
+    this.settings.activeSkillStates[skillId] = state;
+
+    if (state.chargesLeft <= 0) {
+      this._deactivateSkill(skillId);
+    } else {
+      this.saveSettings();
+      this.saveActiveBuffs();
+    }
+
+    return true;
+  }
+
+  /**
+   * Restore active skill timers on plugin start (for skills that were active before reload)
+   */
+  restoreActiveSkillTimers() {
+    const states = this.settings.activeSkillStates || {};
+    const now = Date.now();
+
+    Object.entries(states).forEach(([skillId, state]) => {
+      if (!state.active) return;
+      const def = this.activeSkillDefs[skillId];
+      if (!def) return;
+
+      // Time-based: check if still valid
+      if (def.durationMs && state.expiresAt > 0) {
+        const remaining = state.expiresAt - now;
+        if (remaining > 0) {
+          this._setActiveSkillTimer(skillId, remaining);
+        } else {
+          // Expired while offline
+          this._deactivateSkill(skillId);
+        }
+      }
+      // Charge-based: stays active if charges remain (no timer needed)
+    });
+  }
+
+  /**
+   * Get all currently active buff effects (aggregated)
+   * @returns {Object} - Combined effect object from all active skills
+   */
+  getActiveBuffEffects() {
+    const effects = {
+      xpMultiplier: 1.0,
+      critChanceBonus: 0,
+      guaranteedCrit: false,
+      allStatMultiplier: 1.0,
+      questRewardMultiplier: 1.0,
+      shadowBuffMultiplier: 1.0,
+      globalMultiplier: 1.0,
+    };
+
+    Object.entries(this.activeSkillDefs).forEach(([skillId, def]) => {
+      if (!this.isActiveSkillRunning(skillId)) return;
+      const eff = def.effect;
+      if (eff.xpMultiplier) effects.xpMultiplier *= eff.xpMultiplier;
+      if (eff.critChanceBonus) effects.critChanceBonus += eff.critChanceBonus;
+      if (eff.guaranteedCrit) effects.guaranteedCrit = true;
+      if (eff.allStatMultiplier) effects.allStatMultiplier *= eff.allStatMultiplier;
+      if (eff.questRewardMultiplier) effects.questRewardMultiplier *= eff.questRewardMultiplier;
+      if (eff.shadowBuffMultiplier) effects.shadowBuffMultiplier *= eff.shadowBuffMultiplier;
+      if (eff.globalMultiplier) effects.globalMultiplier *= eff.globalMultiplier;
+    });
+
+    return effects;
   }
 
   // ============================================================================
@@ -1392,34 +1869,43 @@ module.exports = class SkillTree {
 
   injectCSS() {
     const css = `
-      /* Main Button - Matching TitleManager style */
+      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
+      .st-skill-tree-button-wrapper {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 44px;
+        padding: 13px 4px 0;
+        box-sizing: border-box;
+      }
       .st-skill-tree-button {
         width: 32px;
         height: 32px;
         background: transparent;
-        border: none;
-        border-radius: 4px;
+        border: 1px solid rgba(138, 43, 226, 0.5);
+        border-radius: 6px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: all 0.2s;
+        transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
         color: var(--interactive-normal, #b9bbbe);
-        padding: 6px;
-        margin: 0 2px;
+        padding: 4px;
+        margin: 0;
         box-sizing: border-box;
       }
       .st-skill-tree-button:hover {
-        background: var(--background-modifier-hover, rgba(79, 84, 92, 0.16));
         color: var(--interactive-hover, #dcddde);
-        transform: scale(1.1);
+        border-color: rgba(138, 43, 226, 0.8);
+        background: rgba(138, 43, 226, 0.1);
       }
       .st-skill-tree-button:active {
-        transform: scale(0.95);
+        color: var(--interactive-active, #fff);
+        border-color: rgba(138, 43, 226, 1);
       }
       .st-skill-tree-button svg {
-        width: 20px;
-        height: 20px;
+        width: 24px;
+        height: 24px;
         display: block;
       }
 
@@ -1429,7 +1915,7 @@ module.exports = class SkillTree {
         top: 50%;
         left: 50%;
         transform: translate(-50%, -50%);
-        background: linear-gradient(145deg, #1a1a2e 0%, #16213e 50%, #0f0f1e 100%);
+        background: linear-gradient(145deg, #0a0a10 0%, #0d0d14 50%, #08080e 100%);
         border-radius: 16px;
         padding: 0;
         max-width: 900px;
@@ -1438,9 +1924,9 @@ module.exports = class SkillTree {
         overflow: hidden;
         z-index: 10001;
         box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8),
-                    0 0 100px rgba(102, 126, 234, 0.3),
-                    inset 0 0 100px rgba(118, 75, 162, 0.1);
-        border: 2px solid rgba(102, 126, 234, 0.3);
+                    0 0 100px rgba(138, 43, 226, 0.3),
+                    inset 0 0 100px rgba(75, 0, 130, 0.1);
+        border: 2px solid rgba(138, 43, 226, 0.3);
         animation: modalFadeIn 0.3s ease-out;
       }
       @keyframes modalFadeIn {
@@ -1460,15 +1946,15 @@ module.exports = class SkillTree {
         padding-bottom: 80px;
         overflow-y: auto;
         max-height: calc(85vh - 200px);
-        background: linear-gradient(180deg, rgba(26, 26, 46, 0.95) 0%, rgba(15, 15, 30, 0.98) 100%);
+        background: linear-gradient(180deg, #0a0a0f 0%, #08080d 100%);
       }
 
       /* Header */
       .skilltree-header {
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.2) 0%, rgba(118, 75, 162, 0.2) 100%);
+        background: linear-gradient(135deg, #1a0e2e 0%, #140a24 100%);
         padding: 25px 30px;
-        border-bottom: 2px solid rgba(102, 126, 234, 0.3);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.3);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
         position: relative;
         overflow: hidden;
       }
@@ -1491,10 +1977,10 @@ module.exports = class SkillTree {
         color: #fff;
         font-size: 28px;
         font-weight: 800;
-        text-shadow: 0 2px 10px rgba(102, 126, 234, 0.8),
-                     0 0 20px rgba(118, 75, 162, 0.6);
+        text-shadow: 0 2px 10px rgba(138, 43, 226, 0.8),
+                     0 0 20px rgba(75, 0, 130, 0.6);
         letter-spacing: 1px;
-        background: linear-gradient(135deg, #fff 0%, #e0e7ff 50%, #c7d2fe 100%);
+        background: linear-gradient(135deg, #fff 0%, #e8dcff 50%, #d4b8ff 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -1510,18 +1996,18 @@ module.exports = class SkillTree {
         align-items: center;
         gap: 8px;
         padding: 8px 16px;
-        background: rgba(102, 126, 234, 0.15);
-        border: 1px solid rgba(102, 126, 234, 0.3);
+        background: #1a0e2e;
+        border: 1px solid rgba(138, 43, 226, 0.4);
         border-radius: 8px;
-        color: #e0e7ff;
+        color: #e8dcff;
         font-size: 14px;
         font-weight: 600;
       }
 
       .skilltree-reset-btn {
         padding: 10px 20px;
-        background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
-        border: 2px solid rgba(255, 68, 68, 1);
+        background: linear-gradient(135deg, #cc2222 0%, #aa1818 100%);
+        border: 2px solid var(--danger-color, #ff4444);
         border-radius: 8px;
         color: white;
         font-size: 14px;
@@ -1555,7 +2041,7 @@ module.exports = class SkillTree {
         left: 0;
         width: 100%;
         height: 100%;
-        background: rgba(0, 0, 0, 0.8);
+        background: #000000cc;
         backdrop-filter: blur(10px);
         display: flex;
         align-items: center;
@@ -1565,23 +2051,23 @@ module.exports = class SkillTree {
       }
 
       .st-confirm-dialog {
-        background: linear-gradient(135deg, #1e1b2f 0%, #1a102a 100%);
-        border: 2px solid rgba(124, 58, 237, 0.5);
+        background: linear-gradient(135deg, #0a0a10 0%, #08080d 100%);
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 16px;
         width: 90%;
         max-width: 500px;
-        box-shadow: 0 0 40px rgba(124, 58, 237, 0.35);
+        box-shadow: 0 0 40px rgba(138, 43, 226, 0.35);
         animation: bounceIn 0.3s ease;
       }
 
       .st-confirm-header {
         padding: 20px;
-        border-bottom: 2px solid rgba(124, 58, 237, 0.35);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.35);
       }
 
       .st-confirm-header h3 {
         margin: 0;
-        color: #c4b5fd;
+        color: #a855f7;
         font-size: 22px;
         font-weight: bold;
         text-align: center;
@@ -1612,7 +2098,7 @@ module.exports = class SkillTree {
         display: flex;
         gap: 12px;
         padding: 20px;
-        border-top: 2px solid rgba(124, 58, 237, 0.25);
+        border-top: 2px solid rgba(138, 43, 226, 0.25);
       }
 
       .st-confirm-btn {
@@ -1629,30 +2115,30 @@ module.exports = class SkillTree {
       }
 
       .st-confirm-cancel {
-        background: linear-gradient(135deg, rgba(45, 45, 63, 0.8) 0%, rgba(35, 35, 52, 0.8) 100%);
-        border: 2px solid rgba(124, 58, 237, 0.35);
+        background: linear-gradient(135deg, #0d0d14 0%, #0d0d14 100%);
+        border: 2px solid rgba(138, 43, 226, 0.35);
         color: rgba(236, 233, 255, 0.9);
       }
 
       .st-confirm-cancel:hover {
-        background: linear-gradient(135deg, rgba(58, 58, 92, 0.9) 0%, rgba(46, 46, 68, 0.9) 100%);
-        border-color: rgba(167, 139, 250, 0.7);
+        background: linear-gradient(135deg, #111118 0%, #111118 100%);
+        border-color: rgba(168, 85, 247, 0.7);
         transform: translateY(-2px);
-        box-shadow: 0 0 20px rgba(124, 58, 237, 0.35);
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.35);
       }
 
       .st-confirm-yes {
-        background: linear-gradient(135deg, rgba(124, 58, 237, 0.9) 0%, rgba(109, 40, 217, 0.9) 100%);
-        border: 2px solid rgba(167, 139, 250, 0.9);
+        background: linear-gradient(135deg, #7a26cc 0%, #4b0082 100%);
+        border: 2px solid rgba(168, 85, 247, 0.9);
         color: white;
-        box-shadow: 0 0 20px rgba(124, 58, 237, 0.4);
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.4);
       }
 
       .st-confirm-yes:hover {
-        background: linear-gradient(135deg, rgba(167, 139, 250, 1) 0%, rgba(139, 92, 246, 1) 100%);
-        border-color: rgba(196, 181, 253, 1);
+        background: linear-gradient(135deg, rgba(168, 85, 247, 1) 0%, rgba(138, 43, 226, 1) 100%);
+        border-color: rgba(168, 85, 247, 1);
         transform: translateY(-2px);
-        box-shadow: 0 0 25px rgba(167, 139, 250, 0.55);
+        box-shadow: 0 0 25px rgba(168, 85, 247, 0.55);
       }
 
       .st-confirm-btn:active {
@@ -1669,7 +2155,7 @@ module.exports = class SkillTree {
         position: absolute;
         top: 15px;
         right: 15px;
-        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+        background: linear-gradient(135deg, #ff4444 0%, #cc2222 100%);
         color: white;
         border: none;
         border-radius: 8px;
@@ -1677,13 +2163,13 @@ module.exports = class SkillTree {
         cursor: pointer;
         font-size: 18px;
         font-weight: 700;
-        box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+        box-shadow: 0 4px 15px rgba(255, 68, 68, 0.4);
         transition: all 0.2s;
         z-index: 10;
       }
       .skilltree-close-btn:hover {
         transform: scale(1.1) rotate(90deg);
-        box-shadow: 0 6px 20px rgba(239, 68, 68, 0.6);
+        box-shadow: 0 6px 20px rgba(255, 68, 68, 0.6);
       }
 
       /* Tier Section */
@@ -1692,12 +2178,11 @@ module.exports = class SkillTree {
         display: flex;
         gap: 8px;
         padding: 16px 20px;
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.1) 0%, rgba(139, 92, 246, 0.05) 100%);
-        border-bottom: 2px solid rgba(139, 92, 246, 0.2);
-        backdrop-filter: blur(10px);
+        background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.2);
         overflow-x: auto;
         scrollbar-width: thin;
-        scrollbar-color: rgba(139, 92, 246, 0.5) transparent;
+        scrollbar-color: rgba(138, 43, 226, 0.5) #0a0a0f;
       }
 
       .skilltree-tier-nav::-webkit-scrollbar {
@@ -1705,18 +2190,18 @@ module.exports = class SkillTree {
       }
 
       .skilltree-tier-nav::-webkit-scrollbar-track {
-        background: transparent;
+        background: #0a0a0f;
       }
 
       .skilltree-tier-nav::-webkit-scrollbar-thumb {
-        background: rgba(139, 92, 246, 0.5);
+        background: rgba(138, 43, 226, 0.5);
         border-radius: 3px;
       }
 
       .skilltree-tier-nav-btn {
         padding: 10px 20px;
-        background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.6) 100%);
-        border: 2px solid rgba(139, 92, 246, 0.5);
+        background: linear-gradient(135deg, #0d0d14 0%, #08080d 100%);
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 8px;
         color: rgba(255, 255, 255, 0.9);
         font-size: 14px;
@@ -1724,29 +2209,29 @@ module.exports = class SkillTree {
         cursor: pointer;
         outline: none;
         transition: all 0.3s ease;
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.2);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.2);
         white-space: nowrap;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
 
       .skilltree-tier-nav-btn:hover {
-        border-color: rgba(139, 92, 246, 0.8);
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.3) 0%, rgba(139, 92, 246, 0.2) 100%);
-        box-shadow: 0 0 25px rgba(139, 92, 246, 0.5);
+        border-color: rgba(138, 43, 226, 0.8);
+        background: linear-gradient(135deg, #2a1548 0%, #1e0f36 100%);
+        box-shadow: 0 0 25px rgba(138, 43, 226, 0.5);
         transform: translateY(-2px);
         color: #fff;
       }
 
       .skilltree-tier-nav-btn:active {
         transform: translateY(0);
-        box-shadow: 0 0 15px rgba(139, 92, 246, 0.3);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.3);
       }
 
       .skilltree-tier-nav-btn.active {
-        background: linear-gradient(135deg, rgba(139, 92, 246, 0.5) 0%, rgba(139, 92, 246, 0.4) 100%);
-        border-color: #8b5cf6;
-        box-shadow: 0 0 30px rgba(139, 92, 246, 0.7);
+        background: linear-gradient(135deg, #3d1a66 0%, #2e1450 100%);
+        border-color: #8a2be2;
+        box-shadow: 0 0 30px rgba(138, 43, 226, 0.7);
         color: #fff;
         font-weight: 700;
       }
@@ -1754,11 +2239,11 @@ module.exports = class SkillTree {
       .skilltree-tier {
         margin: 35px 0;
         padding: 25px;
-        background: linear-gradient(135deg, rgba(102, 126, 234, 0.08) 0%, rgba(118, 75, 162, 0.08) 100%);
+        background: linear-gradient(135deg, #110a1e 0%, #0e0818 100%);
         border-radius: 12px;
-        border: 1px solid rgba(102, 126, 234, 0.2);
+        border: 1px solid rgba(138, 43, 226, 0.2);
         scroll-margin-top: 20px;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3),
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
                     inset 0 1px 0 rgba(255, 255, 255, 0.05);
         position: relative;
         overflow: hidden;
@@ -1770,7 +2255,7 @@ module.exports = class SkillTree {
         left: 0;
         right: 0;
         height: 3px;
-        background: linear-gradient(90deg, #667eea 0%, #764ba2 50%, #667eea 100%);
+        background: linear-gradient(90deg, #8a2be2 0%, #4b0082 50%, #8a2be2 100%);
         background-size: 200% 100%;
         animation: gradientShift 3s ease infinite;
       }
@@ -1780,8 +2265,8 @@ module.exports = class SkillTree {
         font-size: 22px;
         font-weight: 700;
         padding-bottom: 12px;
-        border-bottom: 2px solid rgba(102, 126, 234, 0.4);
-        text-shadow: 0 2px 8px rgba(102, 126, 234, 0.6);
+        border-bottom: 2px solid rgba(138, 43, 226, 0.4);
+        text-shadow: 0 2px 8px rgba(138, 43, 226, 0.6);
         display: flex;
         align-items: center;
         gap: 12px;
@@ -1789,24 +2274,24 @@ module.exports = class SkillTree {
       .skilltree-tier-badge {
         display: inline-block;
         padding: 4px 12px;
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
         border-radius: 12px;
         font-size: 12px;
         font-weight: 700;
         color: white;
         text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-        box-shadow: 0 2px 8px rgba(102, 126, 234, 0.4);
+        box-shadow: 0 2px 8px rgba(138, 43, 226, 0.4);
       }
 
       /* Skill Card */
       .skilltree-skill {
-        background: linear-gradient(135deg, rgba(30, 30, 50, 0.8) 0%, rgba(20, 20, 35, 0.9) 100%);
+        background: linear-gradient(135deg, #0a0a12 0%, #08080e 100%);
         border-radius: 10px;
         padding: 18px;
         margin: 12px 0;
-        border: 1px solid rgba(102, 126, 234, 0.2);
-        border-left: 4px solid #667eea;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.4),
+        border: 1px solid rgba(138, 43, 226, 0.2);
+        border-left: 4px solid #8a2be2;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5),
                     inset 0 1px 0 rgba(255, 255, 255, 0.05);
         transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
@@ -1819,26 +2304,26 @@ module.exports = class SkillTree {
         left: -100%;
         width: 100%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, rgba(102, 126, 234, 0.1), transparent);
+        background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.1), transparent);
         transition: left 0.5s;
       }
       .skilltree-skill:hover {
         transform: translateX(5px);
-        border-color: rgba(102, 126, 234, 0.5);
-        box-shadow: 0 6px 25px rgba(102, 126, 234, 0.3),
-                    0 0 30px rgba(118, 75, 162, 0.2),
+        border-color: rgba(138, 43, 226, 0.5);
+        box-shadow: 0 6px 25px rgba(138, 43, 226, 0.3),
+                    0 0 30px rgba(75, 0, 130, 0.2),
                     inset 0 1px 0 rgba(255, 255, 255, 0.1);
       }
       .skilltree-skill:hover::before {
         left: 100%;
       }
       .skilltree-skill.unlocked {
-        border-left-color: #10b981;
-        background: linear-gradient(135deg, rgba(16, 185, 129, 0.1) 0%, rgba(30, 30, 50, 0.8) 100%);
+        border-left-color: #00ff88;
+        background: linear-gradient(135deg, #081a12 0%, #0a0a12 100%);
       }
       .skilltree-skill.max-level {
         border-left-color: #fbbf24;
-        background: linear-gradient(135deg, rgba(251, 191, 36, 0.1) 0%, rgba(30, 30, 50, 0.8) 100%);
+        background: linear-gradient(135deg, #1a1508 0%, #0a0a12 100%);
         box-shadow: 0 4px 20px rgba(251, 191, 36, 0.2),
                     0 0 30px rgba(251, 191, 36, 0.1);
       }
@@ -1857,28 +2342,28 @@ module.exports = class SkillTree {
         line-height: 1.5;
       }
       .skilltree-skill-lore {
-        color: #a78bfa;
+        color: #a855f7;
         font-size: 11px;
         font-style: italic;
         margin-top: 6px;
         padding-left: 12px;
-        border-left: 2px solid rgba(167, 139, 250, 0.3);
+        border-left: 2px solid rgba(168, 85, 247, 0.3);
       }
       .skilltree-skill-level {
-        color: #10b981;
+        color: #00ff88;
         font-size: 12px;
         margin-bottom: 6px;
         font-weight: 600;
-        text-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        text-shadow: 0 0 8px rgba(0, 255, 136, 0.5);
       }
       .skilltree-skill-effects {
-        color: #34d399;
+        color: #00ff88;
         font-size: 11px;
         margin-top: 8px;
         padding: 8px;
-        background: rgba(16, 185, 129, 0.1);
+        background: #081a12;
         border-radius: 6px;
-        border: 1px solid rgba(16, 185, 129, 0.2);
+        border: 1px solid rgba(0, 255, 136, 0.25);
       }
       .skilltree-skill-cost {
         color: #fbbf24;
@@ -1902,7 +2387,7 @@ module.exports = class SkillTree {
         margin-top: 12px;
       }
       .skilltree-upgrade-btn {
-        background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+        background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
         color: white;
         border: none;
         border-radius: 8px;
@@ -1910,7 +2395,7 @@ module.exports = class SkillTree {
         cursor: pointer;
         font-size: 13px;
         font-weight: 700;
-        box-shadow: 0 4px 15px rgba(16, 185, 129, 0.4),
+        box-shadow: 0 4px 15px rgba(0, 255, 136, 0.4),
                     inset 0 1px 0 rgba(255, 255, 255, 0.2);
         transition: all 0.2s;
         text-transform: uppercase;
@@ -1919,9 +2404,9 @@ module.exports = class SkillTree {
       }
       .skilltree-upgrade-btn:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(16, 185, 129, 0.6),
+        box-shadow: 0 6px 20px rgba(0, 255, 136, 0.6),
                     inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        background: linear-gradient(135deg, #34d399 0%, #10b981 100%);
+        background: linear-gradient(135deg, #00ff88 0%, #00ff88 100%);
       }
       .skilltree-upgrade-btn:active:not(:disabled) {
         transform: translateY(0);
@@ -1933,7 +2418,7 @@ module.exports = class SkillTree {
         box-shadow: none;
       }
       .skilltree-max-btn {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
         color: white;
         border: none;
         border-radius: 8px;
@@ -1941,7 +2426,7 @@ module.exports = class SkillTree {
         cursor: pointer;
         font-size: 13px;
         font-weight: 700;
-        box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4),
+        box-shadow: 0 4px 15px rgba(138, 43, 226, 0.4),
                     inset 0 1px 0 rgba(255, 255, 255, 0.2);
         transition: all 0.2s;
         text-transform: uppercase;
@@ -1949,9 +2434,9 @@ module.exports = class SkillTree {
       }
       .skilltree-max-btn:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6),
+        box-shadow: 0 6px 20px rgba(138, 43, 226, 0.6),
                     inset 0 1px 0 rgba(255, 255, 255, 0.3);
-        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        background: linear-gradient(135deg, #4b0082 0%, #8a2be2 100%);
       }
       .skilltree-max-btn:active:not(:disabled) {
         transform: translateY(0);
@@ -1968,16 +2453,181 @@ module.exports = class SkillTree {
         width: 10px;
       }
       .skilltree-modal-content::-webkit-scrollbar-track {
-        background: rgba(0, 0, 0, 0.3);
+        background: #0a0a0f;
         border-radius: 5px;
       }
       .skilltree-modal-content::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
         border-radius: 5px;
-        border: 2px solid rgba(0, 0, 0, 0.3);
+        border: 2px solid #0a0a0f;
       }
       .skilltree-modal-content::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #764ba2 0%, #667eea 100%);
+        background: linear-gradient(135deg, #4b0082 0%, #8a2be2 100%);
+      }
+
+      /* ===== ACTIVE SKILLS SECTION ===== */
+      .skilltree-active-section {
+        margin-top: 20px;
+        padding-top: 16px;
+        border-top: 2px solid rgba(138, 43, 226, 0.3);
+      }
+      .skilltree-active-section-header {
+        font-size: 16px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.95);
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .skilltree-mana-bar-container {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin-bottom: 16px;
+        padding: 10px 14px;
+        background: #08080e;
+        border-radius: 10px;
+        border: 1px solid rgba(0, 100, 255, 0.3);
+      }
+      .skilltree-mana-bar-label {
+        font-size: 13px;
+        font-weight: 600;
+        color: rgba(100, 180, 255, 0.9);
+        white-space: nowrap;
+      }
+      .skilltree-mana-bar-track {
+        flex: 1;
+        height: 12px;
+        background: #060608;
+        border-radius: 6px;
+        overflow: hidden;
+        position: relative;
+      }
+      .skilltree-mana-bar-fill {
+        height: 100%;
+        background: linear-gradient(90deg, #1e64ff 0%, #64b4ff 100%);
+        border-radius: 6px;
+        transition: width 0.5s ease;
+        box-shadow: 0 0 8px rgba(30, 100, 255, 0.5);
+      }
+      .skilltree-mana-bar-text {
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(100, 180, 255, 0.9);
+        white-space: nowrap;
+        min-width: 65px;
+        text-align: right;
+      }
+
+      /* Active Skill Card */
+      .skilltree-active-skill {
+        padding: 14px 16px;
+        margin-bottom: 10px;
+        background: linear-gradient(135deg, #0a0a12 0%, #0c0c14 100%);
+        border: 1px solid rgba(138, 43, 226, 0.25);
+        border-radius: 10px;
+        transition: all 0.3s ease;
+      }
+      .skilltree-active-skill:hover {
+        border-color: rgba(138, 43, 226, 0.5);
+        box-shadow: 0 0 12px rgba(138, 43, 226, 0.15);
+      }
+      .skilltree-active-skill.is-active {
+        border-color: rgba(0, 255, 136, 0.6);
+        box-shadow: 0 0 15px rgba(0, 255, 136, 0.15);
+        background: linear-gradient(135deg, #081a12 0%, #0a0a12 100%);
+      }
+      .skilltree-active-skill.is-locked {
+        opacity: 0.45;
+        filter: grayscale(0.4);
+      }
+      .skilltree-active-skill-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 6px;
+      }
+      .skilltree-active-skill-name {
+        font-size: 14px;
+        font-weight: 700;
+        color: rgba(255, 255, 255, 0.95);
+      }
+      .skilltree-active-skill-cost {
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(100, 180, 255, 0.9);
+      }
+      .skilltree-active-skill-desc {
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        margin-bottom: 6px;
+        line-height: 1.3;
+      }
+      .skilltree-active-skill-lore {
+        font-size: 11px;
+        color: rgba(138, 43, 226, 0.7);
+        font-style: italic;
+        margin-bottom: 8px;
+      }
+      .skilltree-active-skill-info {
+        display: flex;
+        gap: 12px;
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.5);
+        margin-bottom: 8px;
+      }
+      .skilltree-active-skill-info span {
+        display: flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .skilltree-active-skill-status {
+        font-size: 12px;
+        font-weight: 600;
+        margin-bottom: 8px;
+      }
+      .skilltree-active-skill-status.active-text {
+        color: #00ff88;
+      }
+      .skilltree-active-skill-status.cooldown-text {
+        color: #ff4444;
+      }
+
+      /* Activate Button */
+      .skilltree-activate-btn {
+        width: 100%;
+        padding: 8px 16px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        border: 2px solid rgba(138, 43, 226, 0.6);
+        background: linear-gradient(135deg, #6a1fb3 0%, #4b0082 100%);
+        color: white;
+        transition: all 0.3s ease;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .skilltree-activate-btn:hover:not(:disabled) {
+        background: linear-gradient(135deg, #9a4de6 0%, #7a26cc 100%);
+        border-color: rgba(168, 85, 247, 0.9);
+        box-shadow: 0 0 15px rgba(138, 43, 226, 0.4);
+        transform: translateY(-1px);
+      }
+      .skilltree-activate-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+        background: #0d0d14;
+        border-color: rgba(138, 43, 226, 0.2);
+      }
+      .skilltree-activate-btn:active:not(:disabled) {
+        transform: translateY(0);
+      }
+      .skilltree-active-skill-unlock-req {
+        font-size: 11px;
+        color: rgba(255, 68, 68, 0.8);
+        font-style: italic;
       }
     `;
 
@@ -2060,8 +2710,8 @@ module.exports = class SkillTree {
   createSkillTreeButtonIconSvg() {
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '20');
-    svg.setAttribute('height', '20');
+    svg.setAttribute('width', '24');
+    svg.setAttribute('height', '24');
     svg.setAttribute('viewBox', '0 0 24 24');
     svg.setAttribute('fill', 'none');
     svg.setAttribute('stroke', 'currentColor');
@@ -2085,7 +2735,9 @@ module.exports = class SkillTree {
    * Create skill tree button in Discord UI (matching TitleManager style and position)
    */
   createSkillTreeButton() {
-    // Remove any existing buttons first
+    // Remove any existing buttons/wrappers first
+    const existingWrappers = document.querySelectorAll('.st-skill-tree-button-wrapper');
+    existingWrappers.forEach((w) => w.remove());
     const existingButtons = document.querySelectorAll('.st-skill-tree-button');
     existingButtons.forEach((btn) => btn.remove());
     this.skillTreeButton = null;
@@ -2096,14 +2748,20 @@ module.exports = class SkillTree {
       return;
     }
 
-    // Create button with skill tree/layers icon
+    // Create button with skill tree/layers icon, wrapped to match Discord native buttons
+    const wrapper = document.createElement('div');
+    wrapper.className = 'st-skill-tree-button-wrapper';
+
     const button = document.createElement('button');
     button.className = 'st-skill-tree-button';
     button.replaceChildren(this.createSkillTreeButtonIconSvg());
     button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
     button.addEventListener('click', () => this.showSkillTreeModal());
 
-    // Insert button after title button (or before apps button if no title button)
+    wrapper.appendChild(button);
+
+    // Insert wrapper after title button wrapper (or before apps button if no title button)
+    const titleBtnWrapper = toolbar.querySelector('.tm-title-button-wrapper');
     const titleBtn = toolbar.querySelector('.tm-title-button');
     const appsButton = Array.from(toolbar.children).find(
       (el) =>
@@ -2111,12 +2769,13 @@ module.exports = class SkillTree {
         el.getAttribute('aria-label')?.toLowerCase().includes('app')
     );
 
-    if (titleBtn) {
-      toolbar.insertBefore(button, titleBtn.nextSibling);
+    const insertRef = titleBtnWrapper || titleBtn;
+    if (insertRef) {
+      toolbar.insertBefore(wrapper, insertRef.nextSibling);
     } else if (appsButton) {
-      toolbar.insertBefore(button, appsButton);
+      toolbar.insertBefore(wrapper, appsButton);
     } else {
-      toolbar.appendChild(button);
+      toolbar.appendChild(wrapper);
     }
 
     this.skillTreeButton = button;
@@ -2239,6 +2898,19 @@ module.exports = class SkillTree {
       if (maxBtn) {
         const skillId = maxBtn.getAttribute('data-skill-id');
         skillId && this.maxUpgradeSkill(skillId) && this.showSkillTreeModal();
+        return;
+      }
+
+      const activateBtn = target?.closest?.('.skilltree-activate-btn');
+      if (activateBtn && !activateBtn.disabled) {
+        const activeSkillId = activateBtn.getAttribute('data-active-skill-id');
+        if (activeSkillId) {
+          const result = this.activateSkill(activeSkillId);
+          if (!result.success && BdApi?.showToast) {
+            BdApi.showToast(result.reason, { type: 'error', timeout: 2500 });
+          }
+          this.showSkillTreeModal();
+        }
         return;
       }
 
@@ -2382,6 +3054,102 @@ module.exports = class SkillTree {
         html += `</div>`;
       }
     }
+
+    // ===== ACTIVE SKILLS SECTION (always visible below passive skills) =====
+    html += this.renderActiveSkills();
+
+    html += `</div>`;
+    return html;
+  }
+
+  /**
+   * Render active skills HTML section (mana bar + skill cards)
+   * @returns {string} - HTML string
+   */
+  renderActiveSkills() {
+    const manaInfo = this.getManaInfo();
+    const manaPercent = manaInfo.max > 0 ? (manaInfo.current / manaInfo.max) * 100 : 0;
+
+    let html = `
+      <div class="skilltree-active-section">
+        <div class="skilltree-active-section-header">
+          <span>Active Skills</span>
+        </div>
+        <div class="skilltree-mana-bar-container">
+          <span class="skilltree-mana-bar-label">Mana</span>
+          <div class="skilltree-mana-bar-track">
+            <div class="skilltree-mana-bar-fill" style="width: ${manaPercent.toFixed(1)}%"></div>
+          </div>
+          <span class="skilltree-mana-bar-text">${Math.floor(manaInfo.current)} / ${manaInfo.max}</span>
+        </div>
+    `;
+
+    this.activeSkillOrder.forEach((skillId) => {
+      const def = this.activeSkillDefs[skillId];
+      if (!def) return;
+
+      const isUnlocked = this.isActiveSkillUnlocked(skillId);
+      const isRunning = this.isActiveSkillRunning(skillId);
+      const isOnCooldown = this.isActiveSkillOnCooldown(skillId);
+      const cooldownRemaining = this.getActiveSkillCooldownRemaining(skillId);
+      const state = this.getActiveSkillState(skillId);
+
+      const cardClasses = [
+        'skilltree-active-skill',
+        isRunning ? 'is-active' : '',
+        !isUnlocked ? 'is-locked' : '',
+      ].filter(Boolean).join(' ');
+
+      // Duration text
+      const durationText = def.durationMs
+        ? `${Math.round(def.durationMs / 60000)}m`
+        : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
+      const cooldownText = `${Math.round(def.cooldownMs / 60000)}m`;
+
+      html += `<div class="${cardClasses}">`;
+      html += `<div class="skilltree-active-skill-header">`;
+      html += `<span class="skilltree-active-skill-name">${this.escapeHtml(def.name)}</span>`;
+      html += `<span class="skilltree-active-skill-cost">${def.manaCost} Mana</span>`;
+      html += `</div>`;
+      html += `<div class="skilltree-active-skill-desc">${this.escapeHtml(def.desc)}</div>`;
+      if (def.lore) {
+        html += `<div class="skilltree-active-skill-lore">${this.escapeHtml(def.lore)}</div>`;
+      }
+      html += `<div class="skilltree-active-skill-info">`;
+      html += `<span>Duration: ${durationText}</span>`;
+      html += `<span>Cooldown: ${cooldownText}</span>`;
+      html += `</div>`;
+
+      // Status line
+      if (isRunning) {
+        if (def.durationMs && state.expiresAt > 0) {
+          const remainMs = state.expiresAt - Date.now();
+          const remainMin = Math.max(0, Math.ceil(remainMs / 60000));
+          html += `<div class="skilltree-active-skill-status active-text">ACTIVE - ${remainMin}m remaining</div>`;
+        } else if (def.charges && state.chargesLeft > 0) {
+          html += `<div class="skilltree-active-skill-status active-text">ACTIVE - ${state.chargesLeft} charge${state.chargesLeft > 1 ? 's' : ''} left</div>`;
+        }
+      } else if (isOnCooldown) {
+        const cdMin = Math.ceil(cooldownRemaining / 60000);
+        html += `<div class="skilltree-active-skill-status cooldown-text">Cooldown: ${cdMin}m</div>`;
+      }
+
+      // Button or lock message
+      if (!isUnlocked) {
+        const reqSkillDef = this.findSkillAndTier(def.unlock.passiveSkill);
+        const reqName = reqSkillDef?.skill?.name || def.unlock.passiveSkill;
+        html += `<div class="skilltree-active-skill-unlock-req">Requires ${this.escapeHtml(reqName)} Lv${def.unlock.passiveLevel}</div>`;
+      } else if (isRunning) {
+        html += `<button class="skilltree-activate-btn" disabled>Active</button>`;
+      } else {
+        const canActivate = !isOnCooldown && manaInfo.current >= def.manaCost;
+        html += `<button class="skilltree-activate-btn" ${!canActivate ? 'disabled' : ''} data-active-skill-id="${this.escapeHtml(skillId)}">`;
+        html += isOnCooldown ? 'On Cooldown' : 'Activate';
+        html += `</button>`;
+      }
+
+      html += `</div>`;
+    });
 
     html += `</div>`;
     return html;
@@ -2551,10 +3319,10 @@ module.exports = class SkillTree {
     panel.style.padding = '20px';
     panel.innerHTML = `
       <div>
-        <h3 style="color: #8b5cf6; margin-bottom: 20px;">Skill Tree Settings</h3>
+        <h3 style="color: #8a2be2; margin-bottom: 20px;">Skill Tree Settings</h3>
 
-        <div style="margin-bottom: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 10px;">Visible Tiers (Toggle to Show/Hide)</div>
+        <div style="margin-bottom: 20px; padding: 15px; background: #1a0e2e; border-radius: 8px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 10px;">Visible Tiers (Toggle to Show/Hide)</div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
             <label style="display: flex; align-items: center;">
               <input type="checkbox" ${
@@ -2598,8 +3366,8 @@ module.exports = class SkillTree {
         <button id="st-reset-skills" style="
           width: 100%;
           padding: 12px;
-          background: linear-gradient(135deg, rgba(255, 68, 68, 0.8) 0%, rgba(220, 38, 38, 0.8) 100%);
-          border: 2px solid rgba(255, 68, 68, 1);
+          background: linear-gradient(135deg, #cc2222 0%, #aa1818 100%);
+          border: 2px solid #ff4444;
           border-radius: 8px;
           color: white;
           font-weight: bold;
@@ -2615,8 +3383,8 @@ module.exports = class SkillTree {
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
-        <div style="margin-top: 15px; padding: 10px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
+        <div style="margin-top: 15px; padding: 10px; background: #1a0e2e; border-radius: 8px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:
             <ul style="margin: 5px 0; padding-left: 20px;">
