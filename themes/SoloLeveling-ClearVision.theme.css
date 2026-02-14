@@ -37,7 +37,8 @@ AI MAINTENANCE RULES
 ║      ├─ §8b  Scroll behavior (hide scrollbar, gestures)          ║
 ║      ├─ §8c  Layout (width, overflow containment)                ║
 ║      ├─ §8d  Bottom strip (dark fill for panels gap)            ║
-║      └─ §8e  Purple top-edge border (accent line)               ║
+║      ├─ §8e  Purple top-edge border (accent line)               ║
+║      └─ §8f  Home icon → Shadow Monarch logo                    ║
 ║                                                                  ║
 ║  ┌─────────────────────────────────────────────────────────┐     ║
 ║  │  HOME / FRIENDS VIEW  (Discord logo → Friends tab)      │     ║
@@ -79,7 +80,8 @@ AI MAINTENANCE RULES
 ║      ├─ §6c  Error dialog internals (borders, colors)            ║
 ║      ├─ §6d  Error dialog action buttons (purple brand)          ║
 ║      ├─ §6e  Error dialog header/footer chrome                   ║
-║      └─ §6f  Error dialog tip/details rows                       ║
+║      ├─ §6f  Error dialog tip/details rows                       ║
+║      └─ §6g  Generic modal popups (solid bg + purple border)     ║
 ║                                                                  ║
 ║  ┌─────────────────────────────────────────────────────────┐     ║
 ║  │  SERVER / GUILD                                         │     ║
@@ -106,11 +108,49 @@ AI MAINTENANCE RULES
 ║  └─────────────────────────────────────────────────────────┘     ║
 ║                                                                  ║
 ║  §11 CHATBOX .............................. Message area styling  ║
-║      (subsections pending)                                       ║
+║      ├─ §11a  Hide scrollbar (keep scroll functional)               ║
+║      ├─ §11b  Embed cards (solid bg + purple left accent)           ║
+║      ├─ §11c  Mentioned messages (purple tint + purple left bar)    ║
+║      ├─ §11d  Reply context bar (purple spine connector)            ║
+║      ├─ §11e  Timestamps (muted purple tone)                                       ║
+║      └─ §11f  Message hover highlight (soft purple wash)                           ║
+║                                                                  ║
+║  §12 USER PROFILE ........................ Popout + full modal    ║
+║      ├─ §12a  Banner/header (purple vignette overlay)            ║
+║      ├─ §12b  Body section (solid bg, purple dividers)           ║
+║      ├─ §12c  Footer message input (solid dark + purple border)  ║
+║      ├─ §12d  Full modal: tab bar → pill style                   ║
+║      ├─ §12e  Full modal: hide scrollbars (body + tab panel)     ║
+║      ├─ §12f  Full modal: hide Notes section                     ║
+║      ├─ §12g  Full modal: activity tab transparent cards         ║
+║      └─ §12h  Guild activity popout (purple border)              ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  DISCOVER / QUESTS                                      │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §13 DISCOVER MENU ........................ Quests, Server/App    ║
+║      ├─ §13a  Header bar (transparent bg, kill ::after fade)     ║
+║      ├─ §13b  Backdrop (transparent, no gradient)                ║
+║      └─ §13c  Tab pills (purple pill style, match §10d)         ║
 ║                                                                  ║
 ║  ┌─────────────────────────────────────────────────────────┐     ║
 ║  │  SETTINGS                                               │     ║
 ║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §10 SETTINGS ............................ Full-screen modal      ║
+║      ├─ §10a  Settings backdrop (dimmed overlay)                  ║
+║      ├─ §10b  Settings sidebar (left menu, solid dark bg)         ║
+║      ├─ §10c  Settings content area (right panel, solid bg)       ║
+║      ├─ §10d  Tab headers (pill style)                            ║
+║      ├─ §10e  Settings close button (purple)                      ║
+║      ├─ §10f  Dropdown selects (purple border)                    ║
+║      ├─ §10g  Toggle switches (purple brand)                      ║
+║      ├─ §10h  Slider controls (purple)                            ║
+║      ├─ §10i  Family Center box_ container                        ║
+║      ├─ §10j  Guild Boosting settings + FAQ                       ║
+║      ├─ §10k  Keybinds settings                                   ║
+║      └─ §10l  Dropdown popout inner borders                       ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 */
@@ -1038,6 +1078,18 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
   display: none !important;
 }
 
+/* §8f — Home icon: replace Discord logo with Shadow Monarch icon.
+   The home button is the first treeitem in the server list (tutorialContainer_).
+   Hide the original img and set the shadow_icon.png as background on the wrapper. */
+nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] img {
+  display: none !important;
+}
+nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
+  background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  width: 48px !important;
+  height: 48px !important;
+}
+
 /* §6f (override) — Error dialog tip row: using .bd-error-modal class selector
    Alternate selector path for the same tip/details elements as §6f above.
    Needed when BD uses .bd-error-modal class instead of :has() matching */
@@ -1052,6 +1104,51 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
   background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
 }
+
+/* §6g — Generic modal popups (Create Server, etc.): solid dark bg + purple border.
+   Discord's generic modal uses root_ → focusLock_ (role="dialog") → anonymous div →
+   content wrapper with header_, content_, footer_ children (all share same hash).
+   The rootWithShadow_ class identifies popup dialogs with shadow styling.
+   Apply solid bg to outer root, header, content scroller, and footer. */
+div[class^="root_"][class*="rootWithShadow_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+}
+/* §6g (continued) — Header area: solid bg, inherit top border-radius */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="header_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Content/body scroller area: solid bg */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Footer area: solid bg + purple top separator */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="footer_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+}
+/* §6g (continued) — Hide scrollbar in the template/content scroller */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
 
 /* ═══════════════════════════════════════════════════════════
    §9  SERVER GUILD DIALOGS (VC permissions, channel settings, etc.)
@@ -1572,7 +1669,370 @@ div[class^="notice_"] div[class^="closeButton_"]:hover path {
    UNVERIFIED
    ═══════════════════════════════════════════════════════════════════════ */
 
-/* (awaiting further instructions) */
+/* §11a — Chatbox scroller: hide scrollbar (keep scroll functional)
+   The message scroller is div[class^="messagesWrapper_"] div[class^="scroller_"]
+   which is the main chat message list. Hide scrollbar across all browsers. */
+div[class^="messagesWrapper_"] div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="messagesWrapper_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §11b — Embed cards: solid dark bg + purple left-border accent
+   Discord default: background: var(--background-surface-high) → rgba(0,0,0,0.3)
+   and border-left: 4px solid white. Override to theme-matched solid dark bg
+   with purple left accent. Targets all embed types (link previews, rich embeds). */
+article[class^="embedFull_"],
+article[class^="embed_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  border-left: 4px solid #8a2be2 !important;
+  border-radius: 4px !important;
+}
+/* Embed inner grid container: transparent so parent bg shows through */
+article[class^="embedFull_"] div[class^="gridContainer_"],
+article[class^="embed_"] div[class^="gridContainer_"] {
+  background: transparent !important;
+  background-color: transparent !important;
+}
+
+/* §11c — Mentioned messages: purple tint bg + purple left bar
+   Discord default: bg var(--message-mentioned-background-default) (yellowish)
+   and ::before bar uses var(--icon-feedback-warning) (yellow/orange).
+   Override both to purple to match Solo Leveling theme. */
+div[class*="mentioned_"][class*="message_"],
+div[class^="message_"][class*="mentioned_"] {
+  background: rgba(138, 43, 226, 0.08) !important;
+  background-color: rgba(138, 43, 226, 0.08) !important;
+}
+/* Mentioned ::before left accent bar: purple instead of yellow */
+div[class*="mentioned_"][class*="message_"]::before,
+div[class^="message_"][class*="mentioned_"]::before {
+  background: #8a2be2 !important;
+  background-color: #8a2be2 !important;
+}
+/* Mentioned hover: slightly brighter purple tint */
+div[class*="mentioned_"][class*="message_"]:hover,
+div[class^="message_"][class*="mentioned_"]:hover {
+  background: rgba(138, 43, 226, 0.12) !important;
+  background-color: rgba(138, 43, 226, 0.12) !important;
+}
+
+/* §11d — Reply context bar: purple spine connector
+   The repliedMessage_ div has a ::before pseudo that draws the reply
+   connector line (the L-shaped pipe). Override its color to purple. */
+div[class^="repliedMessage_"]::before {
+  border-color: rgba(138, 43, 226, 0.5) !important;
+}
+
+/* §11e — Timestamps: muted purple tone
+   Both inline timestamps (next to username in header) and hover timestamps
+   (compact left-margin times). Default is grey ~srgb(0.58, 0.58, 0.61).
+   Override to a muted purple that fits the Solo Leveling palette. */
+div[class^="messagesWrapper_"] span[class^="timestamp_"],
+div[class^="messagesWrapper_"] span[class*="timestampInline_"],
+div[class^="messagesWrapper_"] time {
+  color: rgba(180, 140, 255, 0.5) !important;
+}
+
+/* §11f — Message hover highlight: soft purple wash
+   Discord shows a toolbar (react / reply / more) on message hover with a
+   subtle grey bg.  Replace with a very faint purple that fades in softly.
+   Using a gradient mask from transparent edges → center so the highlight
+   has soft edges rather than a hard rectangular block. */
+div[class^="messagesWrapper_"] div[class^="message_"]:hover {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(138, 43, 226, 0.14) 0%,
+    rgba(138, 43, 226, 0.07) 60%,
+    transparent 100%
+  ) !important;
+  background-color: transparent !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §12 — USER PROFILE (Popout + Full Modal) — UNVERIFIED
+   Covers both the small popout (.user-profile-popout) when clicking an
+   avatar, AND the full-screen modal (.user-profile-modal-v2) opened via
+   "View Full Profile". Both share outer_/inner_ structure.
+   Popout: outer_ → inner_ → [wrapper_, header_, body_, footer_]
+   Modal:  outer_ → inner_ → [profile_ (left), container_ (right tabs)]
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §12a — Banner/header: purple vignette overlay on the banner strip.
+   The header_ region contains the user's banner image (or profile color
+   gradient). Add a subtle purple vignette so it blends into the dark
+   body below, while still showing the banner content through. */
+.user-profile-popout div[class^="header_"],
+.user-profile-modal-v2 div[class^="header_"] {
+  position: relative !important;
+}
+.user-profile-popout div[class^="header_"]::after,
+.user-profile-modal-v2 div[class^="header_"]::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 10, 20, 0.45) 0%,
+    rgba(8, 10, 20, 0.35) 40%,
+    rgba(8, 10, 20, 0.7) 100%
+  ) !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+  border-radius: inherit !important;
+}
+
+/* §12b — Body section: solid dark bg, purple-tinted section dividers,
+   and ensure text stays readable on the dark surface.
+   The body_ contains username, pronouns, "Add Note", mutual friends/servers,
+   and role pills. */
+.user-profile-popout div[class^="body_"],
+.user-profile-modal-v2 div[class^="profileBody_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+}
+
+/* Section dividers inside the body — thin purple lines */
+.user-profile-popout div[class^="body_"] div[class^="section_"],
+.user-profile-popout div[class^="body_"] div[class^="userInfoSection_"],
+.user-profile-popout div[class^="body_"] div[class^="connectedAccountsSection_"],
+.user-profile-modal-v2 div[class^="profileBody_"] section[class^="section_"],
+.user-profile-modal-v2 div[class^="profileBody_"] section[class^="markup_"] {
+  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+}
+
+/* Role pills: subtle purple-tinted background */
+.user-profile-popout div[class^="role_"],
+.user-profile-popout div[class^="roleTag_"],
+.user-profile-modal-v2 div[class^="role_"],
+.user-profile-modal-v2 div[class^="roleTag_"] {
+  background: rgba(138, 43, 226, 0.1) !important;
+  border-color: rgba(138, 43, 226, 0.3) !important;
+}
+
+/* §12c — Footer: message input area at the bottom of the popout.
+   Solid dark bg with a purple border ring matching the chatbox input style. */
+.user-profile-popout div[class^="footer_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-color: rgba(8, 10, 20, 0.98) !important;
+}
+.user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"],
+.user-profile-popout div[class^="footer_"] div[class^="input_"],
+.user-profile-popout div[class^="footer_"] textarea {
+  background: rgba(15, 17, 30, 0.95) !important;
+  background-color: rgba(15, 17, 30, 0.95) !important;
+  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  border-radius: 8px !important;
+  color: #e0e0e0 !important;
+}
+.user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"]:focus-within,
+.user-profile-popout div[class^="footer_"] div[class^="input_"]:focus-within {
+  border-color: #8a2be2 !important;
+  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important;
+}
+
+/* §12d — Full modal tab bar: convert underline tabs to pill style.
+   The tab bar (Board, Activity, Wishlist, Mutual Friends, Mutual Servers)
+   uses role="tablist" with tabBarItem_ children. Replace the bottom-border
+   indicator with rounded pill backgrounds. */
+.user-profile-modal-v2 div[role="tablist"] {
+  border-bottom: 1px solid rgba(138, 43, 226, 0.15) !important;
+  gap: 4px !important;
+}
+.user-profile-modal-v2 div[class^="tabBarItem_"] {
+  border-radius: 16px !important;
+  padding: 6px 14px !important;
+  margin: 0 !important;
+  margin-bottom: -1px !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+/* Unselected tab: transparent, muted text */
+.user-profile-modal-v2 div[class^="tabBarItem_"]:not([class*="selected_"]) {
+  background: transparent !important;
+  color: rgba(180, 140, 255, 0.5) !important;
+}
+.user-profile-modal-v2 div[class^="tabBarItem_"]:not([class*="selected_"]):hover {
+  background: rgba(138, 43, 226, 0.1) !important;
+  color: rgba(180, 140, 255, 0.8) !important;
+}
+/* Selected tab: purple pill */
+.user-profile-modal-v2 div[class^="tabBarItem_"][class*="selected_"] {
+  background: rgba(138, 43, 226, 0.2) !important;
+  color: #b48cff !important;
+  border-bottom: none !important;
+}
+/* Kill the native underline indicator */
+.user-profile-modal-v2 div[class^="tabBarItem_"]::after {
+  display: none !important;
+}
+
+/* §12e — Full modal: hide scrollbars on profile body and tab panel scroller.
+   Both are scrollable divs that show thin scrollbars — hide them. */
+.user-profile-modal-v2 div[class^="profileBody_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"],
+.user-profile-modal-v2 div[class^="tabListScroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.user-profile-modal-v2 div[class^="profileBody_"]::-webkit-scrollbar,
+.user-profile-modal-v2 div[class^="tabPanelScroller_"]::-webkit-scrollbar,
+.user-profile-modal-v2 div[class^="tabListScroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §12f — Full modal: hide the Notes section entirely.
+   The "Note (only visible to you)" section is never used — hide it.
+   In the popout it's inside body_, in the modal it's a section in profileBody_. */
+.user-profile-popout div[class^="body_"] section[aria-labelledby]:has(textarea[class*="note_"]),
+.user-profile-popout div[class^="body_"] section[aria-labelledby]:has(div[class*="note_"]),
+.user-profile-modal-v2 div[class^="profileBody_"] section[aria-labelledby]:has(textarea[class*="note_"]),
+.user-profile-modal-v2 div[class^="profileBody_"] section[aria-labelledby]:has(div[class*="note_"]) {
+  display: none !important;
+}
+/* Fallback: hide by matching the Note header text directly */
+.user-profile-popout div[class^="body_"] div[class*="note_"],
+.user-profile-modal-v2 div[class^="profileBody_"] div[class*="note_"] {
+  display: none !important;
+}
+
+/* §12g — Full modal: activity tab sections + cards fully transparent.
+   The Activity tab panel contains sections (Recent activity, etc.) with
+   card lists. Force everything transparent so the modal bg shows through. */
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] section[class^="section_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] ul[class^="cards_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] ul[class^="cards_"] li,
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] div[class^="card_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] section {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+
+/* §12h — Guild activity popout card: purple border on the outer shell.
+   This is the card that appears when clicking someone's game/activity
+   status in the member list or chat. Uses popout_af3b89 class. */
+div[id^="popout_"] div[class^="popout_"]:has(div[class^="popoutContentWrapper_"]) {
+  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §13 — DISCOVER MENU
+   Quests, Server Discovery, and App Discovery header bars & backdrops.
+   Makes headers transparent so GIF wallpaper shows through, kills the
+   default ::after gradient fade, and styles tab items as purple pills.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §13a — Header bar: transparent bg, kill the ::after gradient fade.
+   children_ wraps the header bar content (tab buttons, search, etc.).
+   headerBarInner_ is the inner container. Both need transparent bg.
+   The ::after pseudo creates a gradient fade at the right edge — nuke it. */
+div[class^="children_"][class*="headerBarInner_"],
+div[class^="headerBarInner_"],
+div[class^="children_"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+/* Kill the right-edge gradient fade on the header bar */
+div[class^="children_"]::after,
+div[class^="headerBarInner_"]::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  opacity: 0 !important;
+}
+
+/* §13b — Backdrop: transparent, no gradient.
+   backdrop_ sits behind the Discover content with a gradient bg.
+   Force it fully transparent so the animated wallpaper shows through. */
+div[class^="backdrop_"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  opacity: 1 !important;
+}
+
+/* §13c — Discover tab pills: purple pill style matching §10d.
+   The Discover pages use headerBarTabItem_ and tabBarItem_ patterns
+   inside the header. Style them as rounded purple pills. */
+div[class^="children_"] div[class^="headerBarTabItem_"],
+div[class^="children_"] div[class^="tabBarItem_"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px 0 0 !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
+}
+/* Hover: subtle purple glow */
+div[class^="children_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]:hover {
+  background: rgba(138, 43, 226, 0.12) !important;
+  border-color: rgba(180, 140, 255, 0.25) !important;
+}
+/* Selected: purple pill fill */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"] {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.92),
+    rgba(138, 43, 226, 0.72)
+  ) !important;
+  border-color: rgba(180, 140, 255, 0.35) !important;
+  box-shadow: 0 0 22px rgba(138, 43, 226, 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+/* Selected + hover: brighter */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"]:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.96),
+    rgba(138, 43, 226, 0.78)
+  ) !important;
+}
+/* Kill the default underline indicator on Discover tabs */
+div[class^="children_"] div[class^="headerBarTabItem_"]::after,
+div[class^="children_"] div[class^="tabBarItem_"]::after,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]::after,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  height: 0 !important;
+}
+
 
 /* ═══════════════════════════════════════════════════════════════════════
    §10 — SETTINGS — VERIFIED — 2026-02-14
