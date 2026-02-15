@@ -4360,8 +4360,8 @@ module.exports = class CriticalHit {
           // CRITICAL: Don't mark as processed yet - let checkForCrit do it after validation
           // This allows checkForCrit to validate the messageId and reject channel IDs
 
-          // Optimization: If already styled, don't spam rAF
-          if (messageElement.classList.contains('bd-crit-hit')) return;
+          // Optimization removed: React may re-render children (content) while keeping parent (wrapper) styled.
+          // We must allow checkForCrit to run to verify content styling.
 
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
@@ -7359,13 +7359,18 @@ module.exports = class CriticalHit {
 
             /* Apply critFont only to crit text content, never to headers/usernames. */
             .bd-crit-hit .bd-crit-text-content,
-            .bd-crit-hit .bd-crit-text-content * {
+            .bd-crit-hit.bd-crit-text-content,
+            .bd-crit-hit .bd-crit-text-content *,
+            .bd-crit-hit.bd-crit-text-content * {
                 font-family: ${messageFont} !important;
             }
 
             /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
             /* Dynamic gradient from settings - persists through React re-renders */
-            .bd-crit-hit .bd-crit-text-content {
+            /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
+            /* Dynamic gradient from settings - persists through React re-renders */
+            .bd-crit-hit .bd-crit-text-content,
+            .bd-crit-hit.bd-crit-text-content {
                 background-image: ${
                   this.settings.critGradient !== false
                     ? this.settings.critGradientColor || this.DEFAULT_GRADIENT_COLORS
@@ -7390,7 +7395,8 @@ module.exports = class CriticalHit {
             }
 
             /* Critical Hit Glow & Font - ONLY apply to specific text content, NOT username/timestamp */
-            .bd-crit-hit .bd-crit-text-content {
+            .bd-crit-hit .bd-crit-text-content,
+            .bd-crit-hit.bd-crit-text-content {
                 text-shadow: ${
                   this.settings.critGlow
                     ? this.settings.critGradient !== false
@@ -7415,14 +7421,25 @@ module.exports = class CriticalHit {
             /* Override font on all child elements to ensure consistency - use critFont setting */
             /* CRITICAL: Force consistent 1.15em font size on all child elements within crit text */
             /* This prevents random font size changes from inheritance or Discord's CSS */
+            /* Override font on all child elements to ensure consistency - use critFont setting */
+            /* CRITICAL: Force consistent 1.15em font size on all child elements within crit text */
+            /* This prevents random font size changes from inheritance or Discord's CSS */
             .bd-crit-hit .bd-crit-text-content *,
+            .bd-crit-hit.bd-crit-text-content *,
             .bd-crit-hit .bd-crit-text-content span,
+            .bd-crit-hit.bd-crit-text-content span,
             .bd-crit-hit .bd-crit-text-content div,
+            .bd-crit-hit.bd-crit-text-content div,
             .bd-crit-hit .bd-crit-text-content p,
+            .bd-crit-hit.bd-crit-text-content p,
             .bd-crit-hit .bd-crit-text-content a,
+            .bd-crit-hit.bd-crit-text-content a,
             .bd-crit-hit .bd-crit-text-content strong,
+            .bd-crit-hit.bd-crit-text-content strong,
             .bd-crit-hit .bd-crit-text-content em,
-            .bd-crit-hit .bd-crit-text-content code {
+            .bd-crit-hit.bd-crit-text-content em,
+            .bd-crit-hit .bd-crit-text-content code,
+            .bd-crit-hit.bd-crit-text-content code {
                 font-family: ${messageFont} !important;
                 font-weight: inherit !important;
                 font-size: 1.15em !important; /* Force consistent size - no inheritance variations */
