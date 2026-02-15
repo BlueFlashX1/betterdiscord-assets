@@ -612,8 +612,7 @@ class MobBossStorageManager {
       },
     });
 
-    this.db = openedDb;
-    return openedDb;
+    return this.db;
   }
 
   async _withSingleStore(storeName, mode, operation) {
@@ -6589,11 +6588,18 @@ module.exports = class Dungeons {
 
           analytics.totalMobDamage += totalMobDamage;
 
+          // Guard: Ensure shadowCombatData object exists
+          if (!dungeon.shadowCombatData) {
+            dungeon.shadowCombatData = {};
+          }
+
           // Update combat data (use finalCombatData since we may have initialized it)
           const combatDataToUpdate = dungeon.shadowCombatData[shadowId];
           if (!combatDataToUpdate) {
             // Reinitialize combat data defensively to avoid crash
-            dungeon.shadowCombatData[shadowId] = this.initializeShadowCombatData(shadow);
+            if (shadow) {
+               dungeon.shadowCombatData[shadowId] = this.initializeShadowCombatData(shadow);
+            }
             continue;
           }
           combatDataToUpdate.attackCount += attacksInSpan;
