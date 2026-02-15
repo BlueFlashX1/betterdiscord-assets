@@ -1052,19 +1052,9 @@ module.exports = class CriticalHit {
     messageElement,
     gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)'
   ) {
-    if (!content) return false;
-
-    // Apply gradient styles using helper
-    const gradientStyles = this.createGradientStyles(gradientColors);
-    this.applyStyles(content, gradientStyles);
-
-    // Verify and reapply if needed
-    if (!this.verifyGradientStyles(content)) {
-      this.applyStyles(content, gradientStyles);
-    }
-
-    this.excludeHeaderElements(messageElement);
-    return this.verifyGradientStyles(content);
+    // Inline styles removed - now handled by CSS stylesheet
+    // .bd-crit-text-content class applies gradient via CSS
+    return true;
   }
 
   // ============================================================================
@@ -3068,17 +3058,8 @@ module.exports = class CriticalHit {
    * @returns {boolean} True if gradient was applied successfully
    */
   applyGradientStylesWithSettings(content, messageElement) {
-    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
-    const applied = this.applyGradientStyles(content, messageElement, gradientColors);
-
-    // Only log in verbose mode - this appears for every restored crit with gradient
-    this.debug?.verbose &&
-      this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'Gradient applied for restoration', {
-        gradient: gradientColors,
-        applied,
-      });
-
-    return applied;
+    // Inline styles removed - now handled by CSS stylesheet
+    return true;
   }
 
   /**
@@ -3142,17 +3123,8 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} content - The content element to style
    */
   applyFontStyles(content) {
-    this.applyStyles(content, {
-      'font-family': this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif",
-      'font-weight': 'bold',
-      'font-size': '1.15em', // Slightly bigger for Friend or Foe BB
-      'letter-spacing': '1px',
-      '-webkit-text-stroke': 'none',
-      'text-stroke': 'none',
-      'font-synthesis': 'none',
-      'font-variant': 'normal',
-      'font-style': 'normal',
-    });
+    // Inline styles removed - now handled by CSS stylesheet
+    // .bd-crit-text-content class applies font family, size, weight, etc.
   }
 
   /**
@@ -3162,27 +3134,7 @@ module.exports = class CriticalHit {
    * @param {boolean} useGradient - Whether gradient is being used
    */
   applyGlowEffect(content, critSettings, useGradient) {
-    // Use dictionary pattern for glow effect selection
-    const glowEffects = {
-      gradient: () =>
-        this.applyStyles(content, {
-          'text-shadow':
-            '0 0 3px rgba(138, 43, 226, 0.5), 0 0 6px rgba(123, 33, 198, 0.4), 0 0 9px rgba(107, 31, 176, 0.3), 0 0 12px rgba(75, 14, 130, 0.2)',
-        }),
-      solid: () => {
-        const color = critSettings.color || this.settings.critColor;
-        this.applyStyles(content, {
-          'text-shadow': `0 0 2px ${color}, 0 0 3px ${color}`,
-        });
-      },
-      none: () => this.applyStyles(content, { 'text-shadow': 'none' }),
-    };
-
-    // Determine which effect to apply
-    const shouldApplyGlow = critSettings.glow !== false && this.settings?.critGlow;
-    const effectType = shouldApplyGlow ? (useGradient ? 'gradient' : 'solid') : 'none';
-
-    (glowEffects[effectType] || glowEffects.none)();
+    // Inline styles removed - now handled by CSS stylesheet via text-shadow
   }
 
   /**
@@ -3226,13 +3178,7 @@ module.exports = class CriticalHit {
             currentContent.classList.add('bd-crit-text-content');
           }
 
-          const currentComputed = window.getComputedStyle(currentContent);
-          const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
-
-          if (!hasGradient && useGradient) {
-            if (this.debugMode) console.log(`[CriticalHit:Gradient] Missing gradient on ${messageId}, re-applying...`);
-            this.applyGradientStyles(currentContent, currentMessageElement, gradientColors);
-          }
+          // Legacy inline style check removed - we trust the CSS class now
         } else {
              if (this.debugMode) console.log(`[CriticalHit:Gradient] Content element not found for ${messageId}`);
         }
@@ -6378,7 +6324,7 @@ module.exports = class CriticalHit {
    */
   applyGradientToContentForStyling(content, messageElement) {
     content.classList.add('bd-crit-text-content');
-    this.applyGradientStyles(content, messageElement, this.DEFAULT_GRADIENT_COLORS);
+    // Inline styles removed - now handled by CSS stylesheet
   }
 
   /**
@@ -6388,14 +6334,7 @@ module.exports = class CriticalHit {
    */
   applySolidColorToContentForStyling(content, messageElement) {
     content.classList.add('bd-crit-text-content');
-    // Use applyStyles helper instead of individual setProperty calls
-    this.applyStyles(content, {
-      color: this.settings.critColor,
-      background: 'none',
-      '-webkit-background-clip': 'unset',
-      'background-clip': 'unset',
-      '-webkit-text-fill-color': 'unset',
-    });
+    // Inline styles removed - now handled by CSS stylesheet
 
     this.excludeHeaderElements(messageElement, ['color']);
   }
@@ -6406,20 +6345,7 @@ module.exports = class CriticalHit {
    * @param {boolean} useGradient - Whether gradient is being used
    */
   applyGlowToContentForStyling(content, useGradient) {
-    if (this.settings.critGlow) {
-      if (useGradient) {
-        this.applyStyles(content, {
-          'text-shadow':
-            '0 0 3px rgba(138, 43, 226, 0.5), 0 0 6px rgba(123, 33, 198, 0.4), 0 0 9px rgba(107, 31, 176, 0.3), 0 0 12px rgba(75, 14, 130, 0.2)',
-        });
-      } else {
-        this.applyStyles(content, {
-          'text-shadow': `0 0 2px ${this.settings.critColor}, 0 0 3px ${this.settings.critColor}`,
-        });
-      }
-    } else {
-      this.applyStyles(content, { 'text-shadow': 'none' });
-    }
+    // Inline styles removed - now handled by dynamic CSS in injectCritCSS
   }
 
   applyCritStyle(messageElement) {
@@ -6550,18 +6476,12 @@ module.exports = class CriticalHit {
 
               const currentContent = this.findMessageContentElement(currentMsg);
               if (currentContent) {
-                currentContent.classList.add('bd-crit-text-content');
-                const retryComputed = window.getComputedStyle(currentContent);
-                const retryHasGradient = retryComputed?.backgroundImage?.includes('gradient');
-
-                if (!retryHasGradient && useGradient && attempt <= maxAttempts) {
-                  const gradientStyles = this.createGradientStyles(this.DEFAULT_GRADIENT_COLORS);
-                  this.applyStyles(currentContent, gradientStyles);
-
-                  if (attempt < maxAttempts) {
-                    retryGradient(attempt + 1, maxAttempts);
-                  }
+                if (!currentContent.classList.contains('bd-crit-text-content')) {
+                  currentContent.classList.add('bd-crit-text-content');
                 }
+
+                // Styles are now handled by CSS stylesheet, no need to apply inline styles
+                // Just ensure classes are present
               }
             }, 50 * attempt);
           };
@@ -7444,23 +7364,42 @@ module.exports = class CriticalHit {
             }
 
             /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
-            /* BlueViolet gradient matching DEFAULT_GRADIENT_COLORS - persists through React re-renders */
+            /* Dynamic gradient from settings - persists through React re-renders */
             .bd-crit-hit .bd-crit-text-content {
-                background-image: linear-gradient(to right, #8a2be2 0%, #7b21c6 15%, #6b1fb0 30%, #4b0e82 45%, #2d1665 60%, #1a0e3d 75%, #0f0f23 85%, #000000 95%, #000000 100%) !important;
-                background: linear-gradient(to right, #8a2be2 0%, #7b21c6 15%, #6b1fb0 30%, #4b0e82 45%, #2d1665 60%, #1a0e3d 75%, #0f0f23 85%, #000000 95%, #000000 100%) !important;
-                -webkit-background-clip: text !important;
-                background-clip: text !important;
-                -webkit-text-fill-color: transparent !important;
-                color: transparent !important;
+                background-image: ${
+                  this.settings.critGradient !== false
+                    ? this.settings.critGradientColor || this.DEFAULT_GRADIENT_COLORS
+                    : 'none'
+                } !important;
+                background: ${
+                  this.settings.critGradient !== false
+                    ? this.settings.critGradientColor || this.DEFAULT_GRADIENT_COLORS
+                    : 'none'
+                } !important;
+                -webkit-background-clip: ${this.settings.critGradient !== false ? 'text' : 'border-box'} !important;
+                background-clip: ${this.settings.critGradient !== false ? 'text' : 'border-box'} !important;
+                -webkit-text-fill-color: ${
+                  this.settings.critGradient !== false ? 'transparent' : 'inherit'
+                } !important;
+                color: ${
+                  this.settings.critGradient !== false
+                    ? 'transparent'
+                    : this.settings.critColor || '#ff0000'
+                } !important;
                 display: inline-block !important; /* Required for background-clip to work */
             }
 
             /* Critical Hit Glow & Font - ONLY apply to specific text content, NOT username/timestamp */
             .bd-crit-hit .bd-crit-text-content {
-                text-shadow: 0 0 5px rgba(138, 43, 226, 0.8),
-                             0 0 10px rgba(123, 33, 198, 0.7),
-                             0 0 15px rgba(107, 31, 176, 0.6),
-                             0 0 20px rgba(75, 14, 130, 0.5) !important;
+                text-shadow: ${
+                  this.settings.critGlow
+                    ? this.settings.critGradient !== false
+                      ? '0 0 5px rgba(138, 43, 226, 0.8), 0 0 10px rgba(123, 33, 198, 0.7), 0 0 15px rgba(107, 31, 176, 0.6), 0 0 20px rgba(75, 14, 130, 0.5)'
+                      : `0 0 2px ${this.settings.critColor || '#ff0000'}, 0 0 3px ${
+                          this.settings.critColor || '#ff0000'
+                        }`
+                    : 'none'
+                } !important;
                 font-family: ${messageFont} !important; /* critFont setting - for message gradient text */
                 font-weight: bold !important; /* Bold for more impact */
                 font-size: 1.15em !important; /* Slightly bigger for Friend or Foe BB */
@@ -9992,6 +9931,10 @@ module.exports = class CriticalHit {
       this.debug.enabled = this.settings.debugMode === true;
 
       BdApi.Data.save('CriticalHit', 'settings', this.settings);
+
+      // Force CSS refresh to apply new settings (colors, gradients, etc.)
+      this._critCSSInjected = false;
+      this.injectCritCSS();
 
       this.debugLog('SAVE_SETTINGS', 'Settings saved', {
         debugMode: this.settings.debugMode,
