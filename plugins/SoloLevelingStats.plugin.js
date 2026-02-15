@@ -3930,8 +3930,9 @@ module.exports = class SoloLevelingStats {
         const dest = `${this.fileBackupPath}.bak${i + 1}`;
         if (fs.existsSync(src)) {
           try {
-            // Copy instead of rename to potentially preserve created timestamps or permissions
-            fs.copyFileSync(src, dest);
+            // Copy manually since fs.copyFileSync might be missing in Electron renderer
+            const content = fs.readFileSync(src);
+            fs.writeFileSync(dest, content);
           } catch (e) {
             // Ignore rotation errors (permissions, etc), focus on saving main file
             this.debugError('ROTATE_BACKUP', e);

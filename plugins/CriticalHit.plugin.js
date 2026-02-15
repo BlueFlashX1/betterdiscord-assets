@@ -3203,9 +3203,11 @@ module.exports = class CriticalHit {
     const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     let isApplying = false;
     const checkGradient = () => {
-      if (isApplying) return;
+      if (isApplying || this._isApplyingGradient) return;
+
       const currentMessageElement = this.requeryMessageElement(messageId);
       if (!currentMessageElement || !currentMessageElement.isConnected) {
+        if (this.debugMode) console.log(`[CriticalHit:Gradient] Element not connected for ${messageId}`);
         return;
       }
 
@@ -3213,12 +3215,14 @@ module.exports = class CriticalHit {
       try {
         // Re-apply bd-crit-hit class if Discord replaced the element (new element won't have it)
         if (!currentMessageElement.classList.contains('bd-crit-hit')) {
+          if (this.debugMode) console.log(`[CriticalHit:Gradient] Re-applying bd-crit-hit class to ${messageId}`);
           currentMessageElement.classList.add('bd-crit-hit');
         }
 
         const currentContent = this.findMessageContentElement(currentMessageElement);
         if (currentContent) {
           if (!currentContent.classList.contains('bd-crit-text-content')) {
+            if (this.debugMode) console.log(`[CriticalHit:Gradient] Re-applying bd-crit-text-content class`);
             currentContent.classList.add('bd-crit-text-content');
           }
 
@@ -3226,9 +3230,14 @@ module.exports = class CriticalHit {
           const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
 
           if (!hasGradient && useGradient) {
+            if (this.debugMode) console.log(`[CriticalHit:Gradient] Missing gradient on ${messageId}, re-applying...`);
             this.applyGradientStyles(currentContent, currentMessageElement, gradientColors);
           }
+        } else {
+             if (this.debugMode) console.log(`[CriticalHit:Gradient] Content element not found for ${messageId}`);
         }
+      } catch (e) {
+        if (this.debugMode) console.error(`[CriticalHit:Gradient] Error in checkGradient:`, e);
       } finally {
         isApplying = false;
       }
