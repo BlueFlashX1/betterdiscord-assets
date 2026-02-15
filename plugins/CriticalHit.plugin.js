@@ -209,6 +209,8 @@ module.exports = class CriticalHit {
       MessageStore: null,
       UserStore: null,
       MessageActions: null,
+      SelectedChannelStore: null,
+      SelectedGuildStore: null,
     };
     this.messageStorePatch = null; // Track MessageStore patch for cleanup
     this._cachedMessageSelectors = null;
@@ -437,7 +439,75 @@ module.exports = class CriticalHit {
    * @returns {boolean} True if ID is valid and not a channel ID
    */
   isValidMessageId(id, currentChannelId) {
+    // Reject IDs that match the current channel ID — they're channel IDs, not message IDs.
+    // Thread/forum edge cases (where message ID CAN equal thread ID) are handled separately
+    // by shouldRejectChannelMatchedMessageId + hasStrongMessageIdEvidence.
     return id && (!currentChannelId || id !== currentChannelId);
+  }
+
+  /**
+   * Checks whether a message ID has strong evidence from DOM/react message metadata
+   * @param {HTMLElement} messageElement - Message element to inspect
+   * @param {string} messageId - Candidate message ID
+   * @returns {boolean} True if message ID is strongly supported by message metadata
+   */
+  hasStrongMessageIdEvidence(messageElement, messageId) {
+    if (!messageElement || !messageId) return false;
+
+    const normalizedMessageId = this.normalizeId(messageId);
+    if (!normalizedMessageId) return false;
+
+    const domMessageIdCandidates = [
+      messageElement.getAttribute('data-message-id'),
+      messageElement.querySelector('[data-message-id]')?.getAttribute('data-message-id'),
+      messageElement.closest('[data-message-id]')?.getAttribute('data-message-id'),
+    ]
+      .map((id) => this.extractPureDiscordId(id))
+      .filter(Boolean);
+
+    if (domMessageIdCandidates.includes(normalizedMessageId)) {
+      return true;
+    }
+
+    try {
+      let currentFiber = this.getReactFiber(messageElement);
+      for (let i = 0; i < 60 && currentFiber; i++) {
+        const fiberMessageId =
+          currentFiber.memoizedProps?.message?.id ||
+          currentFiber.memoizedState?.message?.id ||
+          currentFiber.memoizedProps?.messageId ||
+          currentFiber.memoizedProps?.id ||
+          currentFiber.memoizedState?.id ||
+          currentFiber.stateNode?.props?.message?.id ||
+          currentFiber.stateNode?.props?.id ||
+          currentFiber.stateNode?.id;
+
+        const extractedFiberId = this.extractPureDiscordId(fiberMessageId);
+        if (extractedFiberId && extractedFiberId === normalizedMessageId) {
+          return true;
+        }
+
+        currentFiber = currentFiber.return;
+      }
+    } catch (error) {
+      // Silently ignore and fallback to false
+    }
+
+    return false;
+  }
+
+  /**
+   * Determines whether a message ID equal to current channel ID should be rejected.
+   * In thread/forum edge-cases, message ID can legitimately match channel/thread ID.
+   * @param {HTMLElement} messageElement - Message element being processed
+   * @param {string|null} messageId - Candidate message ID
+   * @returns {boolean} True if candidate should be rejected as likely channel ID
+   */
+  shouldRejectChannelMatchedMessageId(messageElement, messageId) {
+    if (!messageId || !this.currentChannelId) return false;
+    if (messageId !== this.currentChannelId) return false;
+
+    return !this.hasStrongMessageIdEvidence(messageElement, messageId);
   }
 
   /**
@@ -602,13 +672,19 @@ module.exports = class CriticalHit {
 
           if (msgId) {
             const idStr = String(msgId).trim();
-            if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
+            if (
+              this.isValidDiscordId(idStr) &&
+              this.isValidMessageId(idStr, currentChannelId)
+            ) {
               messageId = idStr;
               extractionMethod = 'react_fiber_message_id';
               break;
             }
             const extracted = this.extractPureDiscordId(idStr);
-            if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
+            if (
+              extracted &&
+              this.isValidMessageId(extracted, currentChannelId)
+            ) {
               messageId = extracted;
               extractionMethod = 'react_fiber_extracted';
               break;
@@ -629,12 +705,18 @@ module.exports = class CriticalHit {
         messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
       if (dataMsgId) {
         const idStr = String(dataMsgId).trim();
-        if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
+        if (
+          this.isValidDiscordId(idStr) &&
+          this.isValidMessageId(idStr, currentChannelId)
+        ) {
           messageId = idStr;
           extractionMethod = 'data-message-id';
         } else {
           const extracted = this.extractPureDiscordId(idStr);
-          if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
+          if (
+            extracted &&
+            this.isValidMessageId(extracted, currentChannelId)
+          ) {
             messageId = extracted;
             extractionMethod = 'data-message-id_extracted';
           }
@@ -938,12 +1020,12 @@ module.exports = class CriticalHit {
   excludeHeaderElements(messageElement, properties = null) {
     if (!messageElement) return;
     const propsToExclude = properties || this.DEFAULT_EXCLUDED_PROPERTIES;
-    const usernameElements = messageElement.querySelectorAll(
-      '[class*="username"], [class*="timestamp"], [class*="author"]'
+    const headerElements = messageElement.querySelectorAll(
+      '[class*="username"], [class*="timestamp"], [class*="author"], [class*="header"]'
     );
-    usernameElements.forEach((el) => {
+    headerElements.forEach((el) => {
       propsToExclude.forEach((prop) => {
-        el.style.setProperty(prop, 'unset', 'important');
+        el.style.removeProperty(prop);
       });
     });
   }
@@ -1222,11 +1304,14 @@ module.exports = class CriticalHit {
 
   /**
    * Regex pattern for extracting channel ID from Discord URL
-   * Matches: /channels/{guildId}/{channelId} or /channels/@me/{channelId}
+   * Matches:
+   * - /channels/{guildId}/{channelId}
+   * - /channels/{guildId}/{channelId}/threads/{threadId}
+   * - /channels/@me/{channelId}
    * @type {RegExp}
    */
   get CHANNEL_URL_PATTERN() {
-    return /channels\/\d+\/(\d+)/;
+    return /channels\/(?:@me|\d+)\/(\d+)(?:\/threads\/(\d+))?/;
   }
 
   /**
@@ -1268,7 +1353,9 @@ module.exports = class CriticalHit {
     try {
       const targetUrl = url || window.location.href;
       const urlMatch = targetUrl.match(this.CHANNEL_URL_PATTERN);
-      const result = urlMatch?.[1] || null;
+      const parentChannelId = urlMatch?.[1] || null;
+      const threadId = urlMatch?.[2] || null;
+      const result = threadId || parentChannelId;
 
       // Cache result if no explicit URL provided
       if (url === null) {
@@ -1337,7 +1424,24 @@ module.exports = class CriticalHit {
     }
 
     try {
-      // Method 1: Extract from URL (most reliable)
+      // Method 1: SelectedChannelStore (most reliable for thread/forum contexts)
+      const selectedChannelStore = this.webpackModules.SelectedChannelStore;
+      const selectedChannelIdCandidate =
+        selectedChannelStore?.getChannelId?.() ||
+        selectedChannelStore?.getCurrentlySelectedChannelId?.() ||
+        selectedChannelStore?.getLastSelectedChannelId?.(this.currentGuildId);
+
+      const selectedChannelId =
+        this.extractPureDiscordId(selectedChannelIdCandidate) ||
+        this.normalizeId(selectedChannelIdCandidate);
+
+      if (this.isValidDiscordId(selectedChannelId)) {
+        this._cache.currentChannelId = selectedChannelId;
+        this._cache.currentChannelIdTime = now;
+        return selectedChannelId;
+      }
+
+      // Method 2: Extract from URL (fallback)
       const channelIdFromURL = this.extractChannelIdFromURL();
       if (channelIdFromURL) {
         this._cache.currentChannelId = channelIdFromURL;
@@ -1345,7 +1449,7 @@ module.exports = class CriticalHit {
         return channelIdFromURL;
       }
 
-      // Method 2: Extract from message elements in DOM
+      // Method 3: Extract from message elements in DOM
       const messageElement = document.querySelector('[class*="message"]');
       const channelIdAttr = messageElement?.getAttribute('data-channel-id');
       const result = channelIdAttr || null;
@@ -1368,10 +1472,40 @@ module.exports = class CriticalHit {
    * @returns {string|null} Guild ID or null if not found (e.g., in DMs)
    */
   _getCurrentGuildId() {
+    const now = Date.now();
+    if (
+      this._cache.currentGuildId !== null &&
+      this._cache.currentGuildIdTime &&
+      now - this._cache.currentGuildIdTime < this._cache.currentGuildIdTTL
+    ) {
+      return this._cache.currentGuildId;
+    }
+
     try {
-      return this.extractGuildIdFromURL();
+      const selectedGuildStore = this.webpackModules.SelectedGuildStore;
+      const selectedGuildIdCandidate =
+        selectedGuildStore?.getGuildId?.() ||
+        selectedGuildStore?.getLastSelectedGuildId?.() ||
+        selectedGuildStore?.getCurrentGuildId?.();
+
+      const selectedGuildId =
+        this.extractPureDiscordId(selectedGuildIdCandidate) ||
+        this.normalizeId(selectedGuildIdCandidate);
+
+      if (this.isValidDiscordId(selectedGuildId)) {
+        this._cache.currentGuildId = selectedGuildId;
+        this._cache.currentGuildIdTime = now;
+        return selectedGuildId;
+      }
+
+      const guildIdFromURL = this.extractGuildIdFromURL();
+      this._cache.currentGuildId = guildIdFromURL;
+      this._cache.currentGuildIdTime = now;
+      return guildIdFromURL;
     } catch (error) {
       this.debugError('GET_CURRENT_GUILD_ID', error);
+      this._cache.currentGuildId = null;
+      this._cache.currentGuildIdTime = now;
       return null;
     }
   }
@@ -3719,6 +3853,7 @@ module.exports = class CriticalHit {
    * Sets up channel change listeners and processes existing messages
    */
   startObserving() {
+    // debug stripped
     if (this._isStopped) return;
     // Stop existing observer if any
     if (this.messageObserver) {
@@ -3727,6 +3862,7 @@ module.exports = class CriticalHit {
     }
 
     const messageContainer = this._findMessageContainer();
+    // debug stripped
 
     if (!messageContainer) {
       this.debug?.verbose &&
@@ -3794,9 +3930,11 @@ module.exports = class CriticalHit {
     // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
       // Process each mutation directly
+      let addedCount = 0;
       mutations.forEach((mutation) => {
         mutation.addedNodes.forEach((node) => {
           if (node.nodeType === 1) {
+            addedCount++;
             // Element node - process directly using double requestAnimationFrame
             requestAnimationFrame(() => {
               requestAnimationFrame(() => {
@@ -3808,6 +3946,7 @@ module.exports = class CriticalHit {
           }
         });
       });
+      // debug stripped
     });
 
     // Start observing - watch direct children AND subtree for messages
@@ -3862,10 +4001,42 @@ module.exports = class CriticalHit {
         );
       }
 
+      // SelectedChannelStore for active channel/thread ID resolution
+      if (!this.webpackModules.SelectedChannelStore) {
+        this.webpackModules.SelectedChannelStore = BdApi.Webpack.getModule((m) => {
+          if (!m) return false;
+          const hasChannelGetter =
+            typeof m.getChannelId === 'function' ||
+            typeof m.getCurrentlySelectedChannelId === 'function' ||
+            typeof m.getLastSelectedChannelId === 'function';
+          const hasStoreShape =
+            typeof m.addChangeListener === 'function' ||
+            typeof m.removeChangeListener === 'function';
+          return hasChannelGetter && hasStoreShape;
+        });
+      }
+
+      // SelectedGuildStore for reliable guild resolution (URL fallback remains)
+      if (!this.webpackModules.SelectedGuildStore) {
+        this.webpackModules.SelectedGuildStore = BdApi.Webpack.getModule((m) => {
+          if (!m) return false;
+          const hasGuildGetter =
+            typeof m.getGuildId === 'function' ||
+            typeof m.getCurrentGuildId === 'function' ||
+            typeof m.getLastSelectedGuildId === 'function';
+          const hasStoreShape =
+            typeof m.addChangeListener === 'function' ||
+            typeof m.removeChangeListener === 'function';
+          return hasGuildGetter && hasStoreShape;
+        });
+      }
+
       this.debugLog('WEBPACK_INIT', 'Webpack modules initialized', {
         hasMessageStore: !!this.webpackModules.MessageStore,
         hasUserStore: !!this.webpackModules.UserStore,
         hasMessageActions: !!this.webpackModules.MessageActions,
+        hasSelectedChannelStore: !!this.webpackModules.SelectedChannelStore,
+        hasSelectedGuildStore: !!this.webpackModules.SelectedGuildStore,
       });
     } catch (error) {
       this.debugError('WEBPACK_INIT', error);
@@ -3989,18 +4160,31 @@ module.exports = class CriticalHit {
                     pluginInstance._setTrackedTimeout(findAndProcessMessage, 100 * attempts);
                   return;
                 }
-                const messageElements = messageContainer.querySelectorAll('[class*="message"]');
+                const allMessageElements = Array.from(
+                  messageContainer.querySelectorAll('[class*="message"]')
+                );
+                const messageElements = allMessageElements.slice(-50);
                 let sentMessage = null;
-                for (const el of messageElements) {
+                for (let i = messageElements.length - 1; i >= 0; i--) {
+                  const el = messageElements[i];
                   if (!el || !el.isConnected) continue;
                   const content = el.textContent || '';
-                  const id = pluginInstance.getMessageIdentifier(el);
-                  const author = pluginInstance.getAuthorId(el);
-                  // Match by content and author (most reliable)
                   const contentMatch = content.includes(messageContent.substring(0, 50));
-                  const authorMatch = author === authorId;
-                  const notProcessed = !pluginInstance.processedMessages.has(id);
-                  if (contentMatch && authorMatch && notProcessed) {
+                  if (!contentMatch) continue;
+
+                  // Fast ID extraction path to avoid expensive fiber traversal on every candidate.
+                  const fastId =
+                    el.getAttribute?.('data-message-id') ||
+                    pluginInstance.extractPureDiscordId(
+                      el.getAttribute?.('data-list-item-id') || el.getAttribute?.('id')
+                    );
+                  const notProcessed = !fastId || !pluginInstance.processedMessages.has(fastId);
+                  if (!notProcessed) continue;
+
+                  // Only run author extraction on content-matched candidates.
+                  const author = pluginInstance.getAuthorId(el);
+                  const authorMatch = !authorId || author === authorId;
+                  if (authorMatch) {
                     sentMessage = el;
                     break;
                   }
@@ -4023,11 +4207,11 @@ module.exports = class CriticalHit {
                   }
                 } else if (attempts < maxAttempts) {
                   // Retry with increasing delay
-                  pluginInstance._setTrackedTimeout(findAndProcessMessage, 100 * attempts);
+                  pluginInstance._setTrackedTimeout(findAndProcessMessage, 150 * attempts);
                 }
               };
 
-              // Start searching after initial delay
+              // Start searching after initial delay (200ms for Discord to render the message)
               pluginInstance._setTrackedTimeout(findAndProcessMessage, 200);
             }
           } catch (error) {
@@ -4050,6 +4234,7 @@ module.exports = class CriticalHit {
   processNode(node) {
     try {
       if (this._isStopped) return;
+      // debug stripped
       // Only process nodes that were just added (not existing messages)
       // Check if this node was just added by checking if it's in the viewport
       // and wasn't there before the observer started
@@ -4105,8 +4290,8 @@ module.exports = class CriticalHit {
       // Get message ID to check against processedMessages (which now uses IDs, not element references)
       let messageId = messageElement ? this.getMessageIdentifier(messageElement) : null;
 
-      // CRITICAL FIX: Reject channel IDs - if messageId matches currentChannelId, it's wrong!
-      if (messageId && messageId === this.currentChannelId) {
+      // Reject likely channel IDs unless message metadata strongly supports this candidate
+      if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
         messageId = null; // Reject it, will use content hash fallback
       }
 
@@ -4126,6 +4311,7 @@ module.exports = class CriticalHit {
         (!messageId || // No ID yet - process it (will get ID later)
           !this.processedMessages.has(messageId)); // Has ID and not processed
 
+      // debug stripped
       if (shouldProcess) {
         // Skip if channel is still loading (but use shorter delay for better responsiveness)
         if (this.isLoadingChannel) {
@@ -4778,6 +4964,49 @@ module.exports = class CriticalHit {
   }
 
   /**
+   * Determines whether a crit message needs visual restoration.
+   * Handles the case where Discord preserves `bd-crit-hit` but replaces inline styles.
+   * @param {HTMLElement} messageElement - Message wrapper element
+   * @param {Object|null} critSettings - Saved crit settings (optional)
+   * @returns {boolean} True when restoration should run
+   */
+  shouldRestoreCritVisuals(messageElement, critSettings = null) {
+    if (!messageElement) return false;
+
+    const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
+    const content = this.findMessageContentElement(messageElement);
+
+    // Missing class/content indicates Discord likely replaced nodes; restore styles.
+    if (!hasCritClass || !content) return true;
+
+    // Crit content class is required for style persistence and observers.
+    if (!content.classList?.contains('bd-crit-text-content')) return true;
+
+    const useGradient =
+      critSettings?.gradient !== undefined
+        ? critSettings.gradient
+        : this.settings?.critGradient !== false;
+
+    if (useGradient) {
+      const gradientCheck = this.verifyGradientApplied(content);
+      const hasGradient = gradientCheck.hasGradient || gradientCheck.hasGradientInStyle;
+      if (!hasGradient || !gradientCheck.hasWebkitClip) return true;
+    } else {
+      const hasSolidColor = !!(
+        content.style?.color ||
+        content.style?.webkitTextFillColor ||
+        content.style?.getPropertyValue?.('-webkit-text-fill-color')
+      );
+      if (!hasSolidColor) return true;
+    }
+
+    // Font can also be reset by Discord re-renders.
+    if (this._needsFontApplication(messageElement)) return true;
+
+    return false;
+  }
+
+  /**
    * Checks if a message needs crit styling restoration from history
    * Handles race conditions with pending crits queue and throttling
    * @param {Node} node - DOM node to check
@@ -4802,7 +5031,7 @@ module.exports = class CriticalHit {
 
     // messageElement already found above for throttling, reuse it
 
-    if (messageElement && !messageElement?.classList?.contains('bd-crit-hit')) {
+    if (messageElement) {
       // Get message ID using improved extraction (only log if verbose)
       let msgId = this.getMessageIdentifier(messageElement);
 
@@ -4849,8 +5078,28 @@ module.exports = class CriticalHit {
         const isValidDiscordId = this.isValidDiscordId(normalizedMsgId);
 
         if (historyEntry?.critSettings) {
-          this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
+          const needsRestore = this.shouldRestoreCritVisuals(
+            messageElement,
+            historyEntry.critSettings
+          );
+          if (needsRestore) {
+            this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
+          }
         } else if (!historyEntry && isValidDiscordId) {
+          // For messages that already have crit class or are pending crit,
+          // allow the MutationObserver path to catch the animation trigger.
+          // Only skip if message is definitely not a crit candidate.
+          const pendingHint =
+            this.pendingCrits.has(normalizedMsgId) ||
+            this.pendingCrits.has(pureMessageId) ||
+            (!!contentHash && this.pendingCrits.has(contentHash));
+          const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
+
+          if (!pendingHint && !hasCritClass) {
+            // Not pending and no crit class — skip observer setup
+            return;
+          }
+
           // Use MutationObserver instead of polling setTimeout
           // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
           const checkForCrit = () => {
@@ -5255,27 +5504,103 @@ module.exports = class CriticalHit {
       }
       this.critMessages.add(messageElement);
 
-      // Trigger animation only for verified messages
-      if (isValidDiscordId && messageId) {
+
+      // Direct animation trigger — bypass the onCritHit/handleCriticalHit gate chain.
+      // Crit styling was already applied above; just need to show the floating text.
+      // debug stripped
+      {
+        const animTarget = messageElement;
+        const animId = messageId;
+        const animCombo = (() => {
+          const uid = this.getUserId(messageElement) || authorId || 'unknown';
+          const uc = this.getUserCombo(uid);
+          const now = Date.now();
+          const elapsed = now - uc.lastCritTime;
+          const c = elapsed <= 15000 ? uc.comboCount + 1 : 1;
+          this.updateUserCombo(uid, c, now);
+          this._comboUpdatedMessages.add(animId);
+          return c;
+        })();
+
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            const currentElement = this.requeryMessageElement(messageId, messageElement);
+            try {
+              let currentElement = (isValidDiscordId && animId)
+                ? (this.requeryMessageElement(animId, animTarget) || animTarget)
+                : animTarget;
 
-            if (currentElement?.isConnected) {
-              const contentElement = this.findMessageContentElement(currentElement);
+              // bd-crit-hit may be on currentElement itself or a child wrapper (applyCritStyle walks up to parent)
+              const hasCritOnSelf = currentElement?.classList?.contains('bd-crit-hit');
+              const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
+              const animElement = hasCritOnSelf ? currentElement : critChild;
 
-              if (contentElement) {
-                // CRITICAL FIX: Add delay before gradient verification
+              // debug stripped
+
+              // If element is connected and styled (on self or child), animate immediately
+              if (animElement?.isConnected) {
+                // debug stripped
+                this.showAnimation(animElement, animId, animCombo);
+              } else if (!currentElement?.isConnected || !animElement) {
+                // Element was disconnected (Discord replaced it during hash→real ID transition)
+                // or styling was lost. Retry after a short delay to find the replacement element.
+                // debug stripped
                 this._setTrackedTimeout(() => {
-                  const gradientCheck = this.verifyGradientApplied(contentElement);
-                  const hasGradient = gradientCheck.hasGradient || gradientCheck.hasGradientInStyle;
-                  const hasWebkitClip = gradientCheck.hasWebkitClip;
+                  try {
+                    // Try to find replacement by message ID first
+                    let retryElement = animId ? this.requeryMessageElement(animId) : null;
 
-                  if (hasGradient && hasWebkitClip) {
-                    this.onCritHit(currentElement);
+                    // If not found by original ID, search by content hash
+                    if (!retryElement?.isConnected) {
+                      const contentAuthor = authorId || 'unknown';
+                      const contentText = this.findMessageContentElement(animTarget)?.textContent?.trim()
+                        || animTarget?.textContent?.trim();
+                      if (contentText) {
+                        const contentHash = this.calculateContentHash(contentAuthor, contentText);
+                        // Search recent messages in DOM for matching content
+                        const container = this._cachedMessageContainer || document;
+                        const candidates = container.querySelectorAll?.('[class*="message"]') || [];
+                        for (const el of candidates) {
+                          if (!el?.isConnected || !el.offsetParent) continue;
+                          const elContent = this.findMessageContentElement(el);
+                          const elText = elContent?.textContent?.trim();
+                          const elAuthor = this.getAuthorId(el);
+                          if (elText && elAuthor) {
+                            const elHash = this.calculateContentHash(elAuthor, elText);
+                            if (elHash === contentHash) {
+                              retryElement = el;
+                              break;
+                            }
+                          }
+                        }
+                      }
+                    }
+
+                    // debug stripped
+                    if (retryElement?.isConnected) {
+                      // Re-apply crit styling to the replacement element
+                      // applyCritStyle may apply bd-crit-hit to a child wrapper element,
+                      // not necessarily retryElement itself (e.g. LI vs inner DIV)
+                      this.applyCritStyle(retryElement);
+                      this.critMessages.add(retryElement);
+
+                      // Find the element that actually got bd-crit-hit (could be retryElement or a descendant)
+                      const critTarget = retryElement.classList.contains('bd-crit-hit')
+                        ? retryElement
+                        : retryElement.querySelector('.bd-crit-hit');
+
+                      // debug stripped
+                      if (critTarget?.isConnected) {
+                        // debug stripped
+                        this.showAnimation(critTarget, animId, animCombo);
+                      }
+                    }
+                  } catch (retryError) {
+                    this.debugError('PROCESS_NEW_CRIT', retryError, { phase: 'direct_animation_retry' });
                   }
-                }, this.GRADIENT_VERIFICATION_DELAY_MS);
+                }, 150);
               }
+            } catch (error) {
+              this.debugError('PROCESS_NEW_CRIT', error, { phase: 'direct_animation' });
             }
           });
         });
@@ -5346,7 +5671,6 @@ module.exports = class CriticalHit {
     try {
       // Verify element is still valid FIRST
       if (!messageElement || !messageElement.offsetParent) {
-        this.debugLog('CHECK_FOR_CRIT', 'Message element invalid, skipping');
         return;
       }
 
@@ -5356,6 +5680,7 @@ module.exports = class CriticalHit {
         phase: 'check_for_crit',
         verbose: true,
       }); // Validate message ID is correct (not channel ID)
+      // debug stripped
 
       // Only warn about invalid message IDs if it's NOT a content hash (content hashes are intentional fallbacks)
       const isContentHash = messageId && messageId.startsWith('hash_');
@@ -5380,9 +5705,9 @@ module.exports = class CriticalHit {
           processedCount: this.processedMessages.size,
         });
 
-      // CRITICAL FIX: Reject channel IDs - if messageId matches currentChannelId, it's wrong!
-      if (messageId && messageId === this.currentChannelId) {
-        this.debugLog('CHECK_FOR_CRIT', 'WARNING: Rejected channel ID as message ID', {
+      // Reject likely channel IDs unless message metadata strongly supports this candidate
+      if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
+        this.debugLog('CHECK_FOR_CRIT', 'Rejected likely channel ID as message ID', {
           rejectedId: messageId,
           currentChannelId: this.currentChannelId,
         });
@@ -5400,7 +5725,10 @@ module.exports = class CriticalHit {
           verbose: true,
         });
 
-        if (retryMessageId && retryMessageId !== this.currentChannelId) {
+        if (
+          retryMessageId &&
+          !this.shouldRejectChannelMatchedMessageId(messageElement, retryMessageId)
+        ) {
           messageId = retryMessageId;
         } else {
           // Still no valid ID - use content hash as fallback but still process
@@ -5433,8 +5761,11 @@ module.exports = class CriticalHit {
 
       const isValidDiscordId = this.isValidDiscordId(messageId);
       const isHashId = messageId.startsWith('hash_'); // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
-      if (isHashId && this.handleQueuedMessage(messageId, messageElement)) {
-        return;
+      if (isHashId) {
+        if (this.handleQueuedMessage(messageId, messageElement)) {
+          // debug stripped
+          return;
+        }
       }
 
       // Check history FIRST before marking as processed
@@ -5461,6 +5792,7 @@ module.exports = class CriticalHit {
             const contentHash = this.calculateContentHash(author, contentText);
             const pendingCrit = this.pendingCrits.get(contentHash);
 
+            // debug stripped
             if (pendingCrit?.channelId === this.currentChannelId && pendingCrit?.isHashId) {
               // Found a queued message that was detected as crit!
               // BUT: Verify it's actually a crit using the real ID's deterministic roll
@@ -5519,22 +5851,9 @@ module.exports = class CriticalHit {
                 // Save immediately for queued messages (they're already confirmed crits)
                 this._throttledSaveHistory(false);
 
-                // Trigger animation now that message is verified (has real Discord ID)
-                // This ensures animations only trigger when messages are verified, not during queue
-                requestAnimationFrame(() => {
-                  requestAnimationFrame(() => {
-                    const verifiedElement = this.requeryMessageElement(messageId, messageElement);
-                    if (verifiedElement?.isConnected) {
-                      try {
-                        this.onCritHit(verifiedElement);
-                      } catch (error) {
-                        this.debugError('CHECK_FOR_CRIT', error, {
-                          phase: 'queued_verified_animation',
-                        });
-                      }
-                    }
-                  });
-                });
+                // Animation is triggered below in the historyEntry restoration path (line ~5906)
+                // which calls onCritHit after applying crit styling. No need for a separate
+                // async trigger here — that would cause throttle/dedup conflicts.
               } else {
                 // Queued detection was wrong - remove from pending queue
                 this.pendingCrits.delete(contentHash);
@@ -5631,19 +5950,68 @@ module.exports = class CriticalHit {
             });
           }
 
-          // Don't trigger animation from restoration - animations should only trigger when verified
-          // If message is in history, it was already animated when first verified
-          // This prevents double animations and ensures combo resets are accurate
-          if (!alreadyAnimated) {
-            // Only trigger animation if message is verified (has real Discord ID)
-            // This ensures animations only trigger once when confirmed, not during queue phase
-            if (isValidDiscordId && messageId) {
-              // Trigger animation for verified crits restored from history
-              try {
-                this.onCritHit(messageElement);
-              } catch (error) {
-                this.debugError('CHECK_FOR_CRIT', error, { phase: 'restore_animation' });
-              }
+          // Trigger animation for verified crits (has real Discord ID and not already animated)
+          // debug stripped
+          if (!alreadyAnimated && isValidDiscordId && messageId) {
+            // Direct animation trigger — bypass onCritHit/handleCriticalHit gate chain
+            // which has multiple dedup/throttle checks that can block first-time animations.
+            // We already confirmed: crit styling applied, user's own message, not already animated.
+            const animUserId = this.getUserId(messageElement) || this.getAuthorId(messageElement);
+            // debug stripped
+            if (animUserId && this.isOwnMessage(messageElement, animUserId)) {
+              // Update combo
+              const userCombo = this.getUserCombo(animUserId);
+              const comboNow = Date.now();
+              const timeSinceLastCrit = comboNow - userCombo.lastCritTime;
+              const newCombo = timeSinceLastCrit <= 15000 ? userCombo.comboCount + 1 : 1;
+              this.updateUserCombo(animUserId, newCombo, comboNow);
+
+              // Mark as combo-updated to prevent double increment
+              this._comboUpdatedMessages.add(messageId);
+              if (contentHash) this._comboUpdatedContentHashes.add(contentHash);
+
+              // Trigger animation directly after DOM settles
+              requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                  try {
+                    let target = this.requeryMessageElement(messageId, messageElement) || messageElement;
+                    // bd-crit-hit may be on target or a child wrapper
+                    const rHasCritOnSelf = target?.classList?.contains('bd-crit-hit');
+                    const rCritChild = !rHasCritOnSelf && target?.isConnected ? target.querySelector?.('.bd-crit-hit') : null;
+                    const rAnimTarget = rHasCritOnSelf ? target : rCritChild;
+
+                    // debug stripped
+                    if (rAnimTarget?.isConnected) {
+                      // debug stripped
+                      this.showAnimation(rAnimTarget, messageId, newCombo);
+                    } else if (!target?.isConnected || !rAnimTarget) {
+                      // Element was replaced by Discord or class not found — retry after short delay
+                      // debug stripped
+                      this._setTrackedTimeout(() => {
+                        try {
+                          const retryTarget = this.requeryMessageElement(messageId);
+                          // debug stripped
+                          if (retryTarget?.isConnected) {
+                            this.applyCritStyle(retryTarget);
+                            this.critMessages.add(retryTarget);
+                            const retryCritEl = retryTarget.classList.contains('bd-crit-hit')
+                              ? retryTarget
+                              : retryTarget.querySelector('.bd-crit-hit');
+                            if (retryCritEl?.isConnected) {
+                              // debug stripped
+                              this.showAnimation(retryCritEl, messageId, newCombo);
+                            }
+                          }
+                        } catch (retryError) {
+                          this.debugError('CHECK_FOR_CRIT', retryError, { phase: 'restore_animation_retry' });
+                        }
+                      }, 150);
+                    }
+                  } catch (error) {
+                    this.debugError('CHECK_FOR_CRIT', error, { phase: 'restore_animation' });
+                  }
+                });
+              });
             }
           }
 
@@ -5673,7 +6041,7 @@ module.exports = class CriticalHit {
         // Don't mark as processed again - already in history
         // But mark in processedMessages to skip future checks (efficiency)
         // CRITICAL: Only mark if it's not a channel ID
-        if (messageId && messageId !== this.currentChannelId) {
+        if (!this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
           this.processedMessages.add(messageId);
         }
         return;
@@ -5688,7 +6056,9 @@ module.exports = class CriticalHit {
 
       if (_dedupHash && this.processedMessages.has(_dedupHash)) {
         // Same content already processed under a different ID — skip
-        messageId && this.processedMessages.add(messageId); // Also mark real ID
+        messageId &&
+          !this.shouldRejectChannelMatchedMessageId(messageElement, messageId) &&
+          this.processedMessages.add(messageId); // Also mark real ID
         return;
       }
 
@@ -5823,11 +6193,11 @@ module.exports = class CriticalHit {
    */
   _isContentElement(element) {
     if (!element?.classList) return false;
-    return (
-      element.classList.contains('messageContent') ||
-      element.classList.contains('markup') ||
-      element.id?.includes('message-content')
+    const classes = Array.from(element.classList || []);
+    const hasContentClass = classes.some(
+      (c) => c.includes('messageContent') || c.includes('markup') || c.includes('textContainer')
     );
+    return hasContentClass || element.id?.includes('message-content');
   }
 
   /**
@@ -5929,14 +6299,17 @@ module.exports = class CriticalHit {
           if (markupElement && !this.isInHeaderArea(markupElement)) {
             return markupElement;
           }
+
+          // This candidate mixes header/content zones. Skip it to avoid styling usernames.
+          continue;
         }
 
         return found;
       }
     }
 
-    this.debugLog('APPLY_CRIT_STYLE', 'Could not find content element - skipping');
-    return null;
+    this.debugLog('APPLY_CRIT_STYLE', 'Could not find content element in styling pass');
+    return this.findMessageContentElement(messageElement);
   }
 
   // ----------------------------------------------------------------------------
@@ -5996,6 +6369,7 @@ module.exports = class CriticalHit {
 
   applyCritStyle(messageElement) {
     try {
+      // debug stripped
       this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
 
       // FIX: If we received a content element instead of message wrapper, find the parent message element
@@ -6055,6 +6429,7 @@ module.exports = class CriticalHit {
       const content = this.findMessageContentForStyling(actualMessageElement);
 
       if (!content) {
+        // debug stripped
         return;
       }
 
@@ -7033,24 +7408,13 @@ module.exports = class CriticalHit {
    */
   _applyCritFontToElement(element) {
     const messageFont = this.settings.critFont || `'${this.DEFAULT_CRIT_FONT}', sans-serif`;
-    element.style.setProperty('font-family', messageFont, 'important');
+    const critTextNodes = new Set(element.querySelectorAll('.bd-crit-text-content'));
+    element.classList?.contains('bd-crit-text-content') && critTextNodes.add(element);
 
-    const contentSelectors = [
-      '[class*="messageContent"]',
-      '[class*="markup"]',
-      '[class*="textContainer"]',
-      '[class*="content"]',
-      '[class*="text"]',
-      'span',
-      'div',
-      'p',
-    ];
-
-    contentSelectors.forEach((selector) => {
-      element.querySelectorAll(selector).forEach((el) => {
-        if (this._shouldApplyFontToElement(el)) {
-          el.style.setProperty('font-family', messageFont, 'important');
-        }
+    critTextNodes.forEach((node) => {
+      node.style.setProperty('font-family', messageFont, 'important');
+      node.querySelectorAll('*').forEach((child) => {
+        child.style.setProperty('font-family', messageFont, 'important');
       });
     });
   }
@@ -7063,7 +7427,10 @@ module.exports = class CriticalHit {
   _needsFontApplication(node) {
     if (!node.classList?.contains('bd-crit-hit')) return false;
 
-    const computedStyle = window.getComputedStyle(node);
+    const critTextNode = node.querySelector('.bd-crit-text-content');
+    if (!critTextNode) return false;
+
+    const computedStyle = window.getComputedStyle(critTextNode);
     const fontFamily = computedStyle.fontFamily;
     const expectedFont = this.settings.critFont || this.DEFAULT_CRIT_FONT;
     const normalizedExpected = expectedFont.replace(/'/g, '').replace(/"/g, '');
@@ -7096,34 +7463,14 @@ module.exports = class CriticalHit {
     // Force Friend or Foe BB (critFont) on all existing crit hit messages
     // Event-based font enforcement - replaced periodic setInterval with MutationObserver
     const applyCritFont = (element) => {
-      // Apply to message itself (use critFont setting for message text - Friend or Foe BB)
       const messageFont = this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif";
-      element.style.setProperty('font-family', messageFont, 'important');
+      const critTextNodes = new Set(element.querySelectorAll('.bd-crit-text-content'));
+      element.classList?.contains('bd-crit-text-content') && critTextNodes.add(element);
 
-      // Find all possible content elements
-      const contentSelectors = [
-        '[class*="messageContent"]',
-        '[class*="markup"]',
-        '[class*="textContainer"]',
-        '[class*="content"]',
-        '[class*="text"]',
-        'span',
-        'div',
-        'p',
-      ];
-
-      contentSelectors.forEach((selector) => {
-        const elements = element.querySelectorAll(selector);
-        elements.forEach((el) => {
-          // Skip username/timestamp elements
-          if (
-            !el.closest('[class*="username"]') &&
-            !el.closest('[class*="timestamp"]') &&
-            !el.closest('[class*="author"]') &&
-            !el.closest('[class*="header"]')
-          ) {
-            el.style.setProperty('font-family', messageFont, 'important');
-          }
+      critTextNodes.forEach((node) => {
+        node.style.setProperty('font-family', messageFont, 'important');
+        node.querySelectorAll('*').forEach((child) => {
+          child.style.setProperty('font-family', messageFont, 'important');
         });
       });
     };
@@ -7212,44 +7559,22 @@ module.exports = class CriticalHit {
                 position: relative;
             }
 
-            /* Apply critFont to ALL elements within crit hit messages (for message text) */
-            .bd-crit-hit,
-            .bd-crit-hit *,
-            .bd-crit-hit [class*='messageContent'],
-            .bd-crit-hit [class*='markup'],
-            .bd-crit-hit [class*='textContainer'],
-            .bd-crit-hit [class*='content'],
-            .bd-crit-hit [class*='text'],
-            .bd-crit-hit span,
-            .bd-crit-hit div,
-            .bd-crit-hit p {
+            /* Apply critFont only to crit text content, never to headers/usernames. */
+            .bd-crit-hit .bd-crit-text-content,
+            .bd-crit-hit .bd-crit-text-content * {
                 font-family: ${messageFont} !important;
             }
 
             /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
-            /* Reddish with darker purple at 50% - matches inline styles applied by plugin */
-            /* FIXED: CSS fallback ensures gradient persists even if Discord removes inline styles */
+            /* BlueViolet gradient matching DEFAULT_GRADIENT_COLORS - persists through React re-renders */
             .bd-crit-hit .bd-crit-text-content {
-                background-image: linear-gradient(to bottom, #dc2626 0%, #4b0e82 50%, #7c2d12 100%) !important;
-                background: linear-gradient(to bottom, #dc2626 0%, #4b0e82 50%, #7c2d12 100%) !important;
+                background-image: linear-gradient(to right, #8a2be2 0%, #7b21c6 15%, #6b1fb0 30%, #4b0e82 45%, #2d1665 60%, #1a0e3d 75%, #0f0f23 85%, #000000 95%, #000000 100%) !important;
+                background: linear-gradient(to right, #8a2be2 0%, #7b21c6 15%, #6b1fb0 30%, #4b0e82 45%, #2d1665 60%, #1a0e3d 75%, #0f0f23 85%, #000000 95%, #000000 100%) !important;
                 -webkit-background-clip: text !important;
                 background-clip: text !important;
                 -webkit-text-fill-color: transparent !important;
                 color: transparent !important;
                 display: inline-block !important; /* Required for background-clip to work */
-            }
-
-            /* Explicitly exclude username/timestamp from gradient */
-            .bd-crit-hit [class*='username'],
-            .bd-crit-hit [class*='timestamp'],
-            .bd-crit-hit [class*='author'],
-            .bd-crit-hit [class*='header'] {
-                background: unset !important;
-                background-image: unset !important;
-                -webkit-background-clip: unset !important;
-                background-clip: unset !important;
-                -webkit-text-fill-color: unset !important;
-                color: unset !important;
             }
 
             /* Critical Hit Glow & Font - ONLY apply to specific text content, NOT username/timestamp */
@@ -7268,14 +7593,6 @@ module.exports = class CriticalHit {
                 -webkit-text-stroke: none !important; /* Remove stroke for cleaner gradient */
                 text-stroke: none !important;
                 display: inline-block !important; /* Ensure gradient works */
-            }
-
-            /* Apply Friend or Foe BB font to all text within crit hit messages */
-            .bd-crit-hit .bd-crit-text-content,
-            .bd-crit-hit [class*='messageContent'],
-            .bd-crit-hit [class*='markup'],
-            .bd-crit-hit [class*='textContainer'] {
-                font-family: ${messageFont} !important;
             }
 
             /* Override font on all child elements to ensure consistency - use critFont setting */
@@ -7300,25 +7617,6 @@ module.exports = class CriticalHit {
                 text-transform: inherit !important;
                 -webkit-text-stroke: inherit !important;
                 text-stroke: inherit !important;
-            }
-
-            /* Explicitly reset glow/text effects on username/timestamp - but keep Friend or Foe BB font */
-            .bd-crit-hit [class*='username'],
-            .bd-crit-hit [class*='timestamp'],
-            .bd-crit-hit [class*='author'],
-            .bd-crit-hit [class*='header'] {
-                text-shadow: unset !important;
-                font-family: ${messageFont} !important; /* Use critFont setting */
-                font-weight: unset !important;
-                font-size: unset !important;
-                font-stretch: unset !important;
-                font-synthesis: unset !important;
-                font-variant: unset !important;
-                font-style: unset !important;
-                letter-spacing: unset !important;
-                text-transform: unset !important;
-                -webkit-text-stroke: unset !important;
-                text-stroke: unset !important;
             }
 
             }
@@ -7725,26 +8023,15 @@ module.exports = class CriticalHit {
    * @param {string} messageId - Message ID
    * @param {boolean} isValidDiscordId - Whether message has valid Discord ID
    * @param {number} now - Current timestamp
-   * @param {HTMLElement} messageElement - Message element for retry
    * @returns {boolean} True if should throttle
    */
-  _shouldThrottleOnCritHit(messageId, isValidDiscordId, now, messageElement) {
+  _shouldThrottleOnCritHit(messageId, isValidDiscordId, now) {
     const lastCallTime = this._onCritHitThrottle.get(messageId);
     const throttleMs = isValidDiscordId
       ? this.VERIFIED_MESSAGE_THROTTLE_MS
       : this._onCritHitThrottleMs;
 
     if (lastCallTime && now - lastCallTime < throttleMs) {
-      if (isValidDiscordId && messageElement) {
-        // Delay slightly for verified messages instead of skipping
-        const retryDelay = throttleMs - (now - lastCallTime);
-        this._setTrackedTimeout(() => {
-          if (this._isStopped) return;
-          if (messageElement?.isConnected) {
-            this.onCritHit(messageElement);
-          }
-        }, retryDelay);
-      }
       return true;
     }
 
@@ -7849,30 +8136,24 @@ module.exports = class CriticalHit {
    */
   onCritHit(messageElement) {
     if (!messageElement?.isConnected) {
-      this.debugLog('ON_CRIT_HIT', 'Message element invalid, skipping animation trigger');
       return;
     }
 
     const messageId = this.getMessageIdentifier(messageElement);
     if (!messageId) {
-      this.debugLog('ON_CRIT_HIT', 'Cannot process without message ID');
       return;
     }
 
     const isValidDiscordId = /^\d{17,19}$/.test(messageId);
 
-    // Early deduplication
+    // Early deduplication — clear previous entry so animation can proceed
     if (this.animatedMessages.has(messageId)) {
-      if (isValidDiscordId) {
-        this.animatedMessages.delete(messageId);
-      } else {
-        return;
-      }
+      this.animatedMessages.delete(messageId);
     }
 
     // Throttle check
     const now = Date.now();
-    if (this._shouldThrottleOnCritHit(messageId, isValidDiscordId, now, messageElement)) {
+    if (this._shouldThrottleOnCritHit(messageId, isValidDiscordId, now)) {
       return;
     }
 
@@ -7907,7 +8188,6 @@ module.exports = class CriticalHit {
             }
 
             // Direct call to animation handler (replaces hook-based approach)
-
             if (
               this.settings.animationEnabled !== false &&
               typeof this.handleCriticalHit === 'function'
@@ -9391,73 +9671,14 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} messageElement - The message DOM element that crit
    */
   handleCriticalHit(messageElement) {
-    if (!messageElement) return;
+    if (!messageElement) { return; }
 
-    // Get message ID and validate
+    // Get message ID — allow hash IDs through (new messages start with hash_ before server confirms)
     const messageId = this.getMessageId(messageElement);
-    if (!this.isValidDiscordId(messageId)) return;
+    if (!messageId) { return; }
 
-    // Verify gradient is applied before proceeding with animation
-    // This ensures synchronization between CriticalHit and CriticalHitAnimation
-    const verifyGradientSync = (element, attempt = 0, maxAttempts = 5) => {
-      if (!element || !element.isConnected) {
-        if (attempt < maxAttempts) {
-          this._setTrackedTimeout(() => {
-            const reQueried = messageId ? this.requeryMessageElement(messageId) : null;
-            if (reQueried) verifyGradientSync(reQueried, attempt + 1, maxAttempts);
-          }, 50 * (attempt + 1));
-        }
-        return false;
-      }
-
-      const hasCritClass = element.classList?.contains('bd-crit-hit');
-      if (!hasCritClass) {
-        attempt < maxAttempts &&
-          this._setTrackedTimeout(
-            () => verifyGradientSync(element, attempt + 1, maxAttempts),
-            50 * (attempt + 1)
-          );
-        return false;
-      }
-
-      // Check for gradient in content element
-      const contentSelectors = [
-        '[class*="messageContent"]',
-        '[class*="markup"]',
-        '[class*="textContainer"]',
-      ];
-      const contentElement =
-        contentSelectors
-          .map((selector) => element.querySelector(selector))
-          .find(
-            (found) =>
-              found &&
-              !found.closest('[class*="username"]') &&
-              !found.closest('[class*="timestamp"]')
-          ) || null;
-
-      if (contentElement) {
-        const gradientCheck = this.verifyGradientApplied(contentElement);
-        const hasGradient = gradientCheck.hasGradient;
-        const hasWebkitClip = gradientCheck.hasWebkitClip;
-        if (!hasGradient || !hasWebkitClip) {
-          if (attempt < maxAttempts) {
-            this._setTrackedTimeout(
-              () => verifyGradientSync(element, attempt + 1, maxAttempts),
-              50 * (attempt + 1)
-            );
-            return false;
-          }
-          // Max attempts reached, proceed anyway but log warning
-        }
-      }
-
-      return true;
-    };
-
-    // Verify gradient synchronization before proceeding
-    if (!verifyGradientSync(messageElement)) {
-      // Will retry asynchronously, return early
+    // Verify element has crit class and is in DOM before proceeding
+    if (!messageElement.isConnected || !messageElement.classList?.contains('bd-crit-hit')) {
       return;
     }
 
@@ -9506,9 +9727,10 @@ module.exports = class CriticalHit {
     }
 
     // Check message age (skip old restored messages)
+    // Only skip if we can CONFIRM the message is old; if timestamp is unavailable, allow animation
     if (this.isMessageInHistory(messageId)) {
       const messageTime = this.getMessageTimestamp(messageElement);
-      if (Date.now() - (messageTime || 0) > this.COMBO_TIMEOUT_MS) {
+      if (messageTime && Date.now() - messageTime > this.COMBO_TIMEOUT_MS) {
         this.animatedMessages.delete(messageId);
         this._processingAnimations.delete(messageId);
         return;
@@ -9925,18 +10147,21 @@ module.exports = class CriticalHit {
    * @param {number|null} comboOverride - Optional combo count override
    */
   showAnimation(messageElement, messageId, comboOverride = null) {
+    // debug stripped
     if (messageId && this.animatedMessages.has(messageId)) {
       const existingData = this.animatedMessages.get(messageId);
       if (!this._shouldAllowAnimation(messageId, messageElement, existingData)) {
+        // debug stripped
         return;
       }
       this.animatedMessages.delete(messageId);
     }
 
-    if (this.settings?.animationEnabled === false) return;
+    if (this.settings?.animationEnabled === false) { return; }
 
     // Final safety check - be lenient, just need crit class and DOM presence
     if (!messageElement?.classList || !messageElement.isConnected) {
+      // debug stripped
       if (messageId) {
         this.animatedMessages.delete(messageId);
         this._processingAnimations.delete(messageId);
@@ -9956,8 +10181,10 @@ module.exports = class CriticalHit {
           return;
         }
         // Retry with the same element (pass comboOverride)
+        // debug stripped
         this.showAnimation(messageElement, messageId, comboOverride);
       });
+      // debug stripped
       return;
     }
 
@@ -9978,10 +10205,11 @@ module.exports = class CriticalHit {
     // Get position and container
     const position = this.getMessageAreaPosition();
     const container = this.getAnimationContainer();
-    if (!container) return;
+    if (!container) { return; }
 
     // Check for duplicate animations in DOM
     if (this.hasDuplicateInDOM(container, messageId, position)) {
+      // debug stripped
       return;
     }
 
@@ -9989,9 +10217,11 @@ module.exports = class CriticalHit {
     this.fadeOutExistingAnimations();
 
     // Create animation element
+    // debug stripped
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
+    // debug stripped
 
     // Apply screen shake if enabled - delay to sync with animation becoming visible
     // Animation fades in quickly: 0% (invisible) → 3% (fully visible) = 120ms for 4000ms duration
@@ -10454,14 +10684,16 @@ module.exports = class CriticalHit {
       this.injectSettingsCSS();
       this.injectAnimationCSS();
 
-      // Start observing for new messages
-      this.startObserving();
+      // Initialize webpack modules first so SelectedChannelStore/SelectedGuildStore
+      // are available before observer-based processing starts.
+      this.initializeWebpackModules();
 
       // Get current user ID before setting up hooks
       this.getCurrentUserId();
 
-      // Initialize webpack modules for advanced integration
-      this.initializeWebpackModules();
+      // Start observing for new messages
+      // debug stripped
+      this.startObserving();
 
       // Hook into message send to capture sent messages immediately
       this.setupMessageSendHook();

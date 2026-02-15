@@ -2433,6 +2433,12 @@ module.exports = class ShadowArmy {
       this.autoRefreshInterval = null;
     }
 
+    // Clear member list observer health check
+    if (this._memberListHealthCheck) {
+      clearInterval(this._memberListHealthCheck);
+      this._memberListHealthCheck = null;
+    }
+
     // Clear widget reinjection timeout
     if (this.widgetReinjectionTimeout) {
       clearTimeout(this.widgetReinjectionTimeout);
@@ -2471,6 +2477,10 @@ module.exports = class ShadowArmy {
       this.memberListObserver.disconnect();
       this.memberListObserver = null;
     }
+    if (this.memberListAttributeObserver) {
+      this.memberListAttributeObserver.disconnect();
+      this.memberListAttributeObserver = null;
+    }
 
     // Remove shadow rank widget
     this.removeShadowRankWidget();
@@ -2508,11 +2518,12 @@ module.exports = class ShadowArmy {
       if (currentUrl === lastUrl) return;
 
       lastUrl = currentUrl;
-      // Re-inject widget after channel/guild change (button still disabled)
+      // Re-setup member list watcher on channel/guild change.
+      // The previous observer may be watching a stale (disconnected) DOM node
+      // since Discord re-renders the entire layout on navigation.
       const timeoutId = setTimeout(() => {
         this._retryTimeouts.delete(timeoutId);
-        // Widget re-injection on channel change
-        this.injectShadowRankWidget();
+        this.setupMemberListWatcher();
       }, 200);
       this._retryTimeouts.add(timeoutId);
     };
@@ -2699,13 +2710,18 @@ module.exports = class ShadowArmy {
   getMemberListElements() {
     if (typeof document === 'undefined') return null;
 
-    const membersWrap = Array.from(
-      document.querySelectorAll('[class^="membersWrap_"], [class*="membersWrap"]')
-    ).find((candidate) => {
+    const allCandidates = document.querySelectorAll('[class^="membersWrap_"], [class*="membersWrap"]');
+    const membersWrap = Array.from(allCandidates).find((candidate) => {
       if (!candidate?.isConnected) return false;
       if (candidate.closest('[id^="chat-messages-"]')) return false;
-      const rect = candidate.getBoundingClientRect?.();
-      return !rect || (rect.width > 0 && rect.height > 0);
+      // Accept the element if it's connected and not display:none.
+      // Don't reject based on getBoundingClientRect — during Discord's toggle animation,
+      // the element may briefly have zero dimensions while being rendered.
+      const style = candidate.style;
+      if (style?.display === 'none') return false;
+      const computed = window.getComputedStyle?.(candidate);
+      if (computed?.display === 'none') return false;
+      return true;
     });
 
     if (!membersWrap) return null;
@@ -2734,10 +2750,14 @@ module.exports = class ShadowArmy {
   }
 
   setupMemberListWatcher() {
+    // debug stripped
     // RE-ENABLED: Watch for member list changes to maintain widget
     // Guard clause: Disconnect existing observer if any
     if (this.memberListObserver) {
       this.memberListObserver.disconnect();
+    }
+    if (this.memberListAttributeObserver) {
+      this.memberListAttributeObserver.disconnect();
     }
 
     if (!this.canInjectWidgetInCurrentView()) {
@@ -2750,23 +2770,87 @@ module.exports = class ShadowArmy {
     }
 
     const memberRoot = this.getMemberListElements()?.membersWrap || null;
-    if (!memberRoot) {
-      // Member list not mounted yet; retry later.
+
+    // CRITICAL: membersWrap is a SIBLING of chatContent, not a child.
+    // Both sit inside a shared flex container. We must observe that common parent
+    // so we can see when membersWrap is added/removed/toggled.
+    const chatContent =
+      document.querySelector('main[class*="chatContent"]') ||
+      document.querySelector('section[class*="chatContent"][role="main"]') ||
+      document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
+      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])');
+
+    // Find the common flex parent that holds both chatContent and membersWrap.
+    // If memberRoot exists, its parentElement IS the flex container.
+    // If not, chatContent's parentElement is also the flex container.
+    const observeRoot =
+      memberRoot?.parentElement ||
+      chatContent?.parentElement ||
+      null;
+
+    if (!observeRoot) {
+      // debug stripped
       const retryId = setTimeout(() => {
-        if (!this._isStopped) {
-          this.setupMemberListWatcher();
-        }
-      }, 1500);
+        if (!this._isStopped) this.setupMemberListWatcher();
+      }, 1200);
       this._retryTimeouts?.add?.(retryId);
       return;
     }
 
-    // Create observer to watch for member list changes (scoped to the member list container)
-    this.memberListObserver = new MutationObserver(() => {
+    // Single observer on the common flex parent catches:
+    // - childList: membersWrap being added/removed from DOM (React mount/unmount)
+    // - attributes: class/style changes on membersWrap or its children (visibility toggles)
+    this._lastMemberListWatchCheck = 0;
+    this._memberListRetryCount = 0;
+    // Track whether the member list was absent on the previous check.
+    // When it transitions from absent → present, we ALWAYS reset retries.
+    let wasMemberListAbsent = false;
+
+    const onMemberListMutated = (mutations) => {
       if (this._isStopped) return;
       if (document.hidden) return;
+      const now = Date.now();
+      if (now - this._lastMemberListWatchCheck < 150) return;
+      this._lastMemberListWatchCheck = now;
       if (!this.canInjectWidgetInCurrentView()) {
         document.getElementById('shadow-army-widget')?.remove();
+        return;
+      }
+
+      const memberElements = this.getMemberListElements();
+      if (!memberElements?.membersList) {
+        document.getElementById('shadow-army-widget')?.remove();
+        wasMemberListAbsent = true;
+        // Member list not visible yet — schedule retries for Discord's toggle animation.
+        // ALWAYS reset retry counter when we detect absence, so toggling ON gets fresh retries.
+        if (this._memberListRetryCount >= 5) {
+          this._memberListRetryCount = 0;
+        }
+        if (this._memberListRetryCount < 5) {
+          this._memberListRetryCount++;
+          const retryId = setTimeout(() => {
+            this._retryTimeouts?.delete?.(retryId);
+            if (this._isStopped) return;
+            onMemberListMutated();
+          }, 300);
+          this._retryTimeouts?.add?.(retryId);
+        }
+        return;
+      }
+
+      // Member list is present — reset retry counter
+      this._memberListRetryCount = 0;
+
+      // If transitioning from absent → present, give Discord a beat to finish rendering
+      if (wasMemberListAbsent) {
+        // debug stripped
+        wasMemberListAbsent = false;
+        // Extra delay to let Discord finish mount/animation before injecting widget
+        this.widgetReinjectionTimeout && clearTimeout(this.widgetReinjectionTimeout);
+        this.widgetReinjectionTimeout = setTimeout(() => {
+          if (this._isStopped) return;
+          this.injectShadowRankWidget();
+        }, 250);
         return;
       }
 
@@ -2779,11 +2863,39 @@ module.exports = class ShadowArmy {
       this.widgetReinjectionTimeout = setTimeout(() => {
         if (this._isStopped) return;
         this.injectShadowRankWidget();
-      }, 200);
+      }, 150);
+    };
+
+    this.memberListObserver = new MutationObserver(onMemberListMutated);
+
+    // Observe the common parent for both childList (mount/unmount) and attributes (visibility).
+    this.memberListObserver.observe(observeRoot, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
     });
 
-    // Observe the smallest stable container instead of document.body to reduce mutation volume.
-    this.memberListObserver.observe(memberRoot, { childList: true, subtree: true });
+    // Periodic observer health check — if the observed root becomes disconnected
+    // (e.g., Discord re-renders the layout), re-establish the observer.
+    if (this._memberListHealthCheck) clearInterval(this._memberListHealthCheck);
+    this._memberListHealthCheck = setInterval(() => {
+      if (this._isStopped) {
+        clearInterval(this._memberListHealthCheck);
+        this._memberListHealthCheck = null;
+        return;
+      }
+      // If the observed root is no longer in the DOM, the observer is dead — rebuild it
+      if (!observeRoot.isConnected) {
+        // debug stripped
+        clearInterval(this._memberListHealthCheck);
+        this._memberListHealthCheck = null;
+        this.setupMemberListWatcher();
+      }
+    }, 3000);
+
+    // Immediate pass in case member list is already mounted when watcher starts.
+    this.injectShadowRankWidget();
   }
 
   // ============================================================================
@@ -4646,11 +4758,6 @@ module.exports = class ShadowArmy {
       if (nextShadow) {
         this.triggerAriseNow(nextShadow);
       }
-
-      // If more events arrived while animating, schedule next one with cooldown
-      if (this._pendingAriseShadow) {
-        this.schedulePendingAriseAnimation();
-      }
     }, waitMs);
 
     this._ariseDrainTimeout = queueTimeoutId;
@@ -4984,6 +5091,17 @@ module.exports = class ShadowArmy {
       this._shadowPowerCache.clear();
       this.debugLog('CACHE', 'Shadow power cache cleared');
     }
+  }
+
+  /**
+   * Get a stable cache key for a shadow object.
+   * Prefers full id, falls back to compressed i field.
+   * @param {Object} shadow - Shadow object
+   * @returns {string|null} Cache key or null if invalid
+   */
+  getCacheKey(shadow) {
+    if (!shadow) return null;
+    return shadow.id || shadow.i || null;
   }
 
   /**
@@ -7057,12 +7175,22 @@ module.exports = class ShadowArmy {
       }
 
       .sa-arise-text .sa-small-s {
-        font-size: 0.86em !important; /* Make S slightly smaller */
+        font-size: 0.8em !important; /* Reduce S moderately */
         display: inline-block !important;
       }
 
-      .sa-arise-text .sa-big-e {
-        font-size: calc(1em + 3px) !important; /* Make final e a few px larger */
+      .sa-arise-text .sa-small-r {
+        font-size: 0.72em !important; /* Make R much smaller */
+        display: inline-block !important;
+      }
+
+      .sa-arise-text .sa-mid-i {
+        font-size: 0.9em !important; /* Reduce i moderately */
+        display: inline-block !important;
+      }
+
+      .sa-arise-text .sa-mid-e {
+        font-size: 1em !important; /* Increase e a bit more */
         display: inline-block !important;
       }
 
@@ -7592,8 +7720,9 @@ module.exports = class ShadowArmy {
 
     const title = document.createElement('div');
     title.className = 'sa-arise-text';
-    // Text should be "ARiSe" with uppercase R, smaller S, and slightly larger e
-    title.innerHTML = 'ARi<span class="sa-small-s">S</span><span class="sa-big-e">e</span>';
+    // Text should be "ARiSe" with much smaller R and moderately smaller i/S/e
+    title.innerHTML =
+      'A<span class="sa-small-r">R</span><span class="sa-mid-i">i</span><span class="sa-small-s">S</span><span class="sa-mid-e">e</span>';
     wrapper.appendChild(title);
 
     // Debug: Log animation trigger with font info
@@ -9237,39 +9366,33 @@ module.exports = class ShadowArmy {
    * Fast injection with smart retry logic
    */
   async injectShadowRankWidget() {
+    // debug stripped
     // RE-ENABLED: Widget needed for member list display
     // Guard clause: Prevent reinjection after plugin stop
-    if (this._isStopped) return;
+    if (this._isStopped) { return; }
     if (!this.canInjectWidgetInCurrentView()) {
+      // debug stripped
       document.getElementById('shadow-army-widget')?.remove();
       return;
     }
 
     // Guard clause: Check if widget already exists
     const existingWidget = document.getElementById('shadow-army-widget');
-    if (existingWidget && this.isWidgetInValidMemberList(existingWidget)) return;
+    if (existingWidget && this.isWidgetInValidMemberList(existingWidget)) { return; }
     existingWidget && existingWidget.remove();
 
     // Check for member list immediately (no delay), scoped to actual sidebar membersWrap
     const memberElements = this.getMemberListElements();
     const membersList = memberElements?.membersList || null;
     if (!membersList) {
-      // Fast retry - check again in 200ms
-      const timeoutId = setTimeout(() => {
-        this._widgetInjectionTimeouts?.delete(timeoutId);
-        if (this._isStopped) return;
-        this.injectShadowRankWidget();
-      }, 200);
-      // Track timeout for cleanup
-      if (!this._widgetInjectionTimeouts) {
-        this._widgetInjectionTimeouts = new Set();
-      }
-      this._widgetInjectionTimeouts.add(timeoutId);
+      // debug stripped
+      // Avoid tight retry loops when member list is hidden; watcher will re-trigger on mount.
       return;
     }
 
     try {
       // Create widget container
+      // debug stripped
       const widget = document.createElement('div');
       widget.id = 'shadow-army-widget';
 
@@ -9290,8 +9413,10 @@ module.exports = class ShadowArmy {
       }
 
       // Initial update
+      // debug stripped
       this.updateShadowRankWidget();
     } catch (error) {
+      // debug stripped
       // debugError method is in SECTION 4
       this.debugError('WIDGET', 'Error injecting shadow rank widget', error);
     }
