@@ -1406,8 +1406,12 @@ module.exports = class ShadowArmy {
 
     // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
     this.saveManager = null;
-    if (UnifiedSaveManager) {
-      this.saveManager = new UnifiedSaveManager('ShadowArmy');
+    if (typeof UnifiedSaveManager === 'function') {
+      try {
+        this.saveManager = new UnifiedSaveManager('ShadowArmy');
+      } catch (e) {
+        console.warn('[ShadowArmy] UnifiedSaveManager initialization failed:', e.message);
+      }
     }
 
     // ============================================================================
