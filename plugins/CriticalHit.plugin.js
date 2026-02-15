@@ -5894,8 +5894,8 @@ module.exports = class CriticalHit {
           // and caused re-application when DOM structure didn't match perfectly, triggering
           // a MutationObserver loop.
           // ALSO check content element class - React may re-render content while keeping wrapper
-          const content = this.findMessageContentElement(messageElement);
-          const contentNeedsRestore = content && !content.classList.contains('bd-crit-text-content');
+          const contentEl = this.findMessageContentElement(messageElement);
+          const contentNeedsRestore = contentEl && !contentEl.classList.contains('bd-crit-text-content');
           const needsRestore = !messageElement.classList.contains('bd-crit-hit') || contentNeedsRestore;
 
           if (needsRestore) {
