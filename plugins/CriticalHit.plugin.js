@@ -4365,6 +4365,9 @@ module.exports = class CriticalHit {
    * @param {Node} node - DOM node to process
    */
   processNode(node) {
+    if (this._isStopped) return;
+    const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+    scheduleCallback(() => {
     try {
       if (this._isStopped) return;
       // debug stripped
@@ -4461,13 +4464,13 @@ module.exports = class CriticalHit {
           }
           this.checkForCrit(messageElement);
         }
-      }, { timeout: 1000 });
     } catch (error) {
       this.debugError('PROCESS_NODE', error, {
         nodeType: node?.nodeType,
         hasClassList: !!node?.classList,
       });
     }
+    }, { timeout: 1000 });
   }
 
   // ============================================================================
