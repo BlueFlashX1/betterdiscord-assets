@@ -107,6 +107,58 @@ module.exports = class SoloLevelingToasts {
     this._trackedTimeouts.clear();
   }
 
+  _clearTrackedTimeout(timeoutId) {
+    if (!Number.isFinite(timeoutId)) return;
+    clearTimeout(timeoutId);
+    this._trackedTimeouts.delete(timeoutId);
+  }
+
+  _extractMessageText(message) {
+    let messageText = message;
+    if (message && typeof message === 'object' && message.message) {
+      messageText = message.message;
+    } else if (message && typeof message === 'object' && message.text) {
+      messageText = message.text;
+    }
+    if (typeof messageText !== 'string') {
+      messageText = String(messageText);
+    }
+    return messageText;
+  }
+
+  _getToastTimeout(timeout) {
+    return timeout || this.settings.defaultTimeout;
+  }
+
+  _clearToastFadeTimeout(toast) {
+    if (!toast || !toast.dataset) return;
+    const existingTimeout = toast.dataset.fadeTimeout;
+    if (!existingTimeout) return;
+    const timeoutId = Number.parseInt(existingTimeout, 10);
+    this._clearTrackedTimeout(timeoutId);
+    toast.dataset.fadeTimeout = '';
+  }
+
+  _scheduleToastFadeOut(toast, timeoutMs) {
+    if (!toast) return;
+    this._clearToastFadeTimeout(toast);
+    const fadeAnimationDuration = this.settings.fadeAnimationDuration;
+    const fadeOutDelay = Math.max(0, timeoutMs - fadeAnimationDuration);
+    const timeoutId = this._setTrackedTimeout(() => {
+      this.startFadeOut(toast);
+      this._setTrackedTimeout(() => this.removeToast(toast, false), fadeAnimationDuration);
+    }, fadeOutDelay);
+    toast.dataset.fadeTimeout = timeoutId.toString();
+  }
+
+  _evictOldestToastIfNeeded() {
+    if (this.activeToasts.length < this.settings.maxToasts) return;
+    const oldestToast = this.activeToasts.shift();
+    if (!oldestToast) return;
+    this._clearToastFadeTimeout(oldestToast);
+    oldestToast.remove();
+  }
+
   detachSoloLevelingToastsSettingsPanelHandlers() {
     const root = this._settingsPanelRoot;
     const handlers = this._settingsPanelHandlers;
@@ -312,15 +364,7 @@ module.exports = class SoloLevelingToasts {
    * 4. Return key for grouping
    */
   getMessageGroupKey(message, type) {
-    let messageText = message;
-    if (message && typeof message === 'object' && message.message) {
-      messageText = message.message;
-    } else if (message && typeof message === 'object' && message.text) {
-      messageText = message.text;
-    }
-    if (typeof messageText !== 'string') {
-      messageText = String(messageText);
-    }
+    const messageText = this._extractMessageText(message);
 
     // Normalize: remove numbers, extra whitespace
     const normalized = messageText
@@ -341,15 +385,7 @@ module.exports = class SoloLevelingToasts {
    * 3. Combine numbers/values if applicable
    * 4. Create summary message
    */
-  combineMessages(messages) {
-    if (messages.length === 1) {
-      return messages[0].message;
-    }
-
-    const firstMsg = messages[0].message;
-    const count = messages.length;
-
-    // Try to extract and combine numbers
+  _extractMessageNumbers(messages) {
     const numbers = [];
     messages.forEach((msg) => {
       const matches = msg.message.match(/(\+?\d+(?:,\d{3})*(?:\.\d+)?)/g);
@@ -357,71 +393,131 @@ module.exports = class SoloLevelingToasts {
         numbers.push(...matches.map((m) => m.replace(/,/g, '')));
       }
     });
+    return numbers;
+  }
 
-    // Detect message type and format accordingly
+  _sumParsedNumbers(numbers) {
+    return numbers
+      .filter((n) => !isNaN(parseInt(n, 10)))
+      .reduce((sum, n) => sum + parseInt(n, 10), 0);
+  }
+
+  combineMessages(messages) {
+    if (messages.length === 1) {
+      return messages[0].message;
+    }
+
+    const firstMsg = messages[0].message;
+    const count = messages.length;
     const msgLower = firstMsg.toLowerCase();
+    const numbers = this._extractMessageNumbers(messages);
+    const totalXP = this._sumParsedNumbers(numbers);
+    const context = { firstMsg, msgLower, count, totalXP };
 
-    if (msgLower.includes('quest') || msgLower.includes('complete')) {
-      const totalXP = numbers
-        .filter((n) => !isNaN(parseInt(n)))
-        .reduce((sum, n) => sum + parseInt(n), 0);
-      return `Quest Complete x${count}${totalXP > 0 ? `\n+${totalXP.toLocaleString()} XP` : ''}`;
-    }
+    const statKeywords = [
+      'stat',
+      'strength',
+      'agility',
+      'intelligence',
+      'vitality',
+      'perception',
+    ];
 
-    if (msgLower.includes('achievement') || msgLower.includes('unlocked')) {
-      return `Achievements Unlocked x${count}`;
-    }
+    const rules = [
+      {
+        when: (ctx) => ctx.msgLower.includes('quest') || ctx.msgLower.includes('complete'),
+        format: (ctx) =>
+          `Quest Complete x${ctx.count}${ctx.totalXP > 0 ? `\n+${ctx.totalXP.toLocaleString()} XP` : ''}`,
+      },
+      {
+        when: (ctx) => ctx.msgLower.includes('achievement') || ctx.msgLower.includes('unlocked'),
+        format: (ctx) => `Achievements Unlocked x${ctx.count}`,
+      },
+      {
+        when: (ctx) => statKeywords.some((keyword) => ctx.msgLower.includes(keyword)),
+        format: (ctx) => {
+          const statMatches = ctx.firstMsg.match(/(\w+):\s*(\d+)\s*→\s*(\d+)/i);
+          if (statMatches) {
+            const statName = statMatches[1];
+            const finalValue = statMatches[3];
+            return `${statName}: +${ctx.count} → ${finalValue}`;
+          }
+          return `Stat Increases x${ctx.count}`;
+        },
+      },
+      {
+        when: (ctx) => ctx.msgLower.includes('xp') || ctx.msgLower.includes('experience'),
+        format: (ctx) => {
+          if (ctx.totalXP > 0) {
+            return `XP Gained x${ctx.count}\n+${ctx.totalXP.toLocaleString()} XP`;
+          }
+          return `XP Events x${ctx.count}`;
+        },
+      },
+      {
+        when: (ctx) => ctx.msgLower.includes('level'),
+        format: (ctx) => {
+          const levelMatches = ctx.firstMsg.match(/Lv\.?(\d+)/i);
+          if (levelMatches) {
+            return `Level Up x${ctx.count}\nLv.${levelMatches[1]}`;
+          }
+          return `Level Events x${ctx.count}`;
+        },
+      },
+    ];
 
-    if (
-      msgLower.includes('stat') ||
-      msgLower.includes('strength') ||
-      msgLower.includes('agility') ||
-      msgLower.includes('intelligence') ||
-      msgLower.includes('vitality') ||
-      msgLower.includes('perception')
-    ) {
-      const statMatches = firstMsg.match(/(\w+):\s*(\d+)\s*→\s*(\d+)/i);
-      if (statMatches) {
-        const statName = statMatches[1];
-        const finalValue = statMatches[3];
-        return `${statName}: +${count} → ${finalValue}`;
+    for (const rule of rules) {
+      if (rule.when(context)) {
+        return rule.format(context);
       }
-      return `Stat Increases x${count}`;
     }
 
-    if (msgLower.includes('xp') || msgLower.includes('experience')) {
-      const totalXP = numbers
-        .filter((n) => !isNaN(parseInt(n)))
-        .reduce((sum, n) => sum + parseInt(n), 0);
-      if (totalXP > 0) {
-        return `XP Gained x${count}\n+${totalXP.toLocaleString()} XP`;
-      }
-      return `XP Events x${count}`;
-    }
-
-    if (msgLower.includes('level')) {
-      const levelMatches = firstMsg.match(/Lv\.?(\d+)/i);
-      if (levelMatches) {
-        return `Level Up x${count}\nLv.${levelMatches[1]}`;
-      }
-      return `Level Events x${count}`;
-    }
-
-    // Generic grouping
     return `${firstMsg.substring(0, 50)}... x${count}`;
   }
 
-  /**
-   * Escape HTML to prevent XSS attacks
-   * Operations:
-   * 1. Create temporary div element
-   * 2. Set text content (browser escapes HTML)
-   * 3. Return innerHTML (safe HTML string)
-   */
-  escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
+  _normalizeNotificationText(messageText) {
+    if (typeof messageText !== 'string') return '';
+    return messageText.replace(/\s+/g, ' ').trim().toLowerCase();
+  }
+
+  _isNaturalGrowthNotification(msgLower) {
+    const hasNatural = msgLower.includes('natural');
+    const hasGrowth = msgLower.includes('growth');
+    return (
+      (hasNatural && hasGrowth) ||
+      msgLower.includes('natural stat growth') ||
+      msgLower.includes('retroactive natural growth') ||
+      msgLower.includes('natural strength growth') ||
+      msgLower.includes('natural agility growth') ||
+      msgLower.includes('natural intelligence growth') ||
+      msgLower.includes('natural vitality growth') ||
+      msgLower.includes('natural luck growth')
+    );
+  }
+
+  _isStatAllocationNotification(msgLower) {
+    return (
+      msgLower.includes('stat point allocated') ||
+      msgLower.includes('allocated to') ||
+      msgLower.includes('point added to') ||
+      (msgLower.includes('strength:') && msgLower.includes('→')) ||
+      (msgLower.includes('agility:') && msgLower.includes('→')) ||
+      (msgLower.includes('intelligence:') && msgLower.includes('→')) ||
+      (msgLower.includes('vitality:') && msgLower.includes('→')) ||
+      (msgLower.includes('perception:') && msgLower.includes('→')) ||
+      (msgLower.includes('luck:') && msgLower.includes('→'))
+    );
+  }
+
+  _getNotificationFilterFlags(messageText) {
+    const msgLower = this._normalizeNotificationText(messageText);
+    const isNaturalGrowth = this._isNaturalGrowthNotification(msgLower);
+    const isStatAllocation = this._isStatAllocationNotification(msgLower);
+    return {
+      isNaturalGrowth,
+      isStatAllocation,
+      shouldSkip: isNaturalGrowth || isStatAllocation,
+    };
   }
 
   // ============================================================================
@@ -461,7 +557,10 @@ module.exports = class SoloLevelingToasts {
     this._isStopped = true;
 
     // Clear hook retry
-    this._hookRetryId && (clearTimeout(this._hookRetryId), (this._hookRetryId = null));
+    if (this._hookRetryId) {
+      this._clearTrackedTimeout(this._hookRetryId);
+      this._hookRetryId = null;
+    }
     this._clearTrackedTimeouts();
 
     this.unhookIntoSoloLeveling();
@@ -471,7 +570,12 @@ module.exports = class SoloLevelingToasts {
 
     // Clear message groups
     this.messageGroups.forEach((group) => {
-      group.timeoutId && group.timeoutId !== true && clearTimeout(group.timeoutId);
+      if (group.timeoutId && group.timeoutId !== true) {
+        this._clearTrackedTimeout(group.timeoutId);
+      }
+      if (group.cleanupTimeoutId) {
+        this._clearTrackedTimeout(group.cleanupTimeoutId);
+      }
     });
     this.messageGroups.clear();
 
@@ -917,6 +1021,7 @@ module.exports = class SoloLevelingToasts {
     if (this._isStopped) return;
     const groupKey = this.getMessageGroupKey(message, type);
     const now = Date.now();
+    const messageText = this._extractMessageText(message);
 
     // Check if we have an existing group for this message
     if (this.messageGroups.has(groupKey)) {
@@ -924,10 +1029,7 @@ module.exports = class SoloLevelingToasts {
 
       // Add to existing group
       group.messages.push({
-        message:
-          typeof message === 'string'
-            ? message
-            : message.message || message.text || String(message),
+        message: messageText,
         timestamp: now,
       });
       group.count++;
@@ -935,14 +1037,14 @@ module.exports = class SoloLevelingToasts {
 
       // Reset timeout - wait for more messages
       if (group.timeoutId && group.timeoutId !== true) {
-        clearTimeout(group.timeoutId);
+        this._clearTrackedTimeout(group.timeoutId);
       }
 
       // Update existing toast if visible (immediate update)
       const existingToast = this.findToastByKey(groupKey);
       if (existingToast) {
         this.updateToastCount(existingToast, group.count);
-        this.resetToastFadeOut(existingToast, timeout || this.settings.defaultTimeout);
+        this.resetToastFadeOut(existingToast, this._getToastTimeout(timeout));
         return;
       }
 
@@ -971,10 +1073,7 @@ module.exports = class SoloLevelingToasts {
     const group = {
       messages: [
         {
-          message:
-            typeof message === 'string'
-              ? message
-              : message.message || message.text || String(message),
+          message: messageText,
           timestamp: now,
         },
       ],
@@ -1072,21 +1171,7 @@ module.exports = class SoloLevelingToasts {
     toast.classList.remove('fading-out');
     toast.style.animation = '';
     toast.style.pointerEvents = '';
-
-    const existingTimeout = toast.dataset.fadeTimeout;
-    if (existingTimeout) {
-      const id = parseInt(existingTimeout, 10);
-      Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
-    }
-
-    const fadeAnimationDuration = this.settings.fadeAnimationDuration;
-    const fadeOutDelay = Math.max(0, timeout - fadeAnimationDuration);
-    const timeoutId = this._setTrackedTimeout(() => {
-      this.startFadeOut(toast);
-      this._setTrackedTimeout(() => this.removeToast(toast, false), fadeAnimationDuration);
-    }, fadeOutDelay);
-
-    toast.dataset.fadeTimeout = timeoutId.toString();
+    this._scheduleToastFadeOut(toast, timeout);
   }
 
   /**
@@ -1116,26 +1201,17 @@ module.exports = class SoloLevelingToasts {
     if (!this.settings.enabled) {
       this.debugLog('SHOW_TOAST', 'Plugin disabled, using fallback toast');
       if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(message, { type, timeout: timeout || this.settings.defaultTimeout });
+        BdApi.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
       }
       return;
     }
 
     try {
       // Limit number of toasts
-      if (this.activeToasts.length >= this.settings.maxToasts) {
-        const oldestToast = this.activeToasts.shift();
-        if (oldestToast && oldestToast.parentElement) {
-          oldestToast.remove();
-          const index = this.activeToasts.indexOf(oldestToast);
-          if (index > -1) {
-            this.activeToasts.splice(index, 1);
-          }
-        }
-      }
+      this._evictOldestToastIfNeeded();
 
       const toastType = this.detectToastType(message, type);
-      const toastTimeout = timeout || this.settings.defaultTimeout;
+      const toastTimeout = this._getToastTimeout(timeout);
 
       // Process message: format numbers and summarize
       let processedMessage = message;
@@ -1182,12 +1258,7 @@ module.exports = class SoloLevelingToasts {
 
       // Click to dismiss - start fade out immediately
       toast.addEventListener('click', () => {
-        const existingTimeout = toast.dataset.fadeTimeout;
-        if (existingTimeout) {
-          const id = parseInt(existingTimeout, 10);
-          Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
-          toast.dataset.fadeTimeout = '';
-        }
+        this._clearToastFadeTimeout(toast);
         this.startFadeOut(toast);
         this._setTrackedTimeout(
           () => this.removeToast(toast, false),
@@ -1218,14 +1289,7 @@ module.exports = class SoloLevelingToasts {
       });
 
       // Auto-dismiss - start fade out before timeout ends
-      const fadeAnimationDuration = this.settings.fadeAnimationDuration;
-      const fadeOutDelay = Math.max(0, toastTimeout - fadeAnimationDuration);
-      const timeoutId = this._setTrackedTimeout(() => {
-        this.startFadeOut(toast);
-        this._setTrackedTimeout(() => this.removeToast(toast, false), fadeAnimationDuration);
-      }, fadeOutDelay);
-
-      toast.dataset.fadeTimeout = timeoutId.toString();
+      this._scheduleToastFadeOut(toast, toastTimeout);
 
       this.debugLog('SHOW_TOAST', 'Toast created and displayed', {
         toastType,
@@ -1241,7 +1305,7 @@ module.exports = class SoloLevelingToasts {
       });
       // Fallback to default toast
       if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(message, { type, timeout: timeout || this.settings.defaultTimeout });
+        BdApi.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
         this.debugLog('SHOW_TOAST', 'Fallback toast shown');
       }
     }
@@ -1263,12 +1327,7 @@ module.exports = class SoloLevelingToasts {
       return;
     }
 
-    const existingTimeout = toast.dataset.fadeTimeout;
-    if (existingTimeout) {
-      const id = parseInt(existingTimeout, 10);
-      Number.isFinite(id) && (clearTimeout(id), this._trackedTimeouts.delete(id));
-      toast.dataset.fadeTimeout = '';
-    }
+    this._clearToastFadeTimeout(toast);
 
     const computedStyle = window.getComputedStyle(toast);
     const currentTransform = computedStyle.transform;
@@ -1400,54 +1459,21 @@ module.exports = class SoloLevelingToasts {
             const [message, type, timeout] = args;
 
             // Extract message text from object if needed
-            let messageText = message;
-            if (message && typeof message === 'object' && message.message) {
-              messageText = message.message;
-            } else if (message && typeof message === 'object' && message.text) {
-              messageText = message.text;
-            }
+            const messageText = this._extractMessageText(message);
+            const filterFlags = this._getNotificationFilterFlags(messageText);
 
             // Filter out spammy notifications (natural growth + stat allocation)
-            if (messageText && typeof messageText === 'string') {
-              const msgClean = messageText.replace(/\s+/g, ' ').trim();
-              const msgLower = msgClean.toLowerCase();
-
-              const hasNatural = msgLower.includes('natural');
-              const hasGrowth = msgLower.includes('growth');
-
-              const isNaturalGrowth =
-                (hasNatural && hasGrowth) ||
-                msgLower.includes('natural stat growth') ||
-                msgLower.includes('retroactive natural growth') ||
-                msgLower.includes('natural strength growth') ||
-                msgLower.includes('natural agility growth') ||
-                msgLower.includes('natural intelligence growth') ||
-                msgLower.includes('natural vitality growth') ||
-                msgLower.includes('natural luck growth');
-
-              const isStatAllocation =
-                msgLower.includes('stat point allocated') ||
-                msgLower.includes('allocated to') ||
-                msgLower.includes('point added to') ||
-                (msgLower.includes('strength:') && msgLower.includes('→')) ||
-                (msgLower.includes('agility:') && msgLower.includes('→')) ||
-                (msgLower.includes('intelligence:') && msgLower.includes('→')) ||
-                (msgLower.includes('vitality:') && msgLower.includes('→')) ||
-                (msgLower.includes('perception:') && msgLower.includes('→')) ||
-                (msgLower.includes('luck:') && msgLower.includes('→'));
-
-              if (isNaturalGrowth || isStatAllocation) {
-                this.debugLog('HOOK_INTERCEPT', 'Skipping spammy notification', {
-                  originalMessage: messageText?.substring(0, 100),
-                  isNaturalGrowth,
-                  isStatAllocation,
-                });
-                return;
-              }
+            if (filterFlags.shouldSkip) {
+              this.debugLog('HOOK_INTERCEPT', 'Skipping spammy notification', {
+                originalMessage: messageText.substring(0, 100),
+                isNaturalGrowth: filterFlags.isNaturalGrowth,
+                isStatAllocation: filterFlags.isStatAllocation,
+              });
+              return;
             }
 
             this.debugLog('HOOK_INTERCEPT', 'Intercepted showNotification call', {
-              message: message?.substring(0, 100),
+              message: messageText.substring(0, 100),
               type,
               timeout,
             });
@@ -1456,7 +1482,7 @@ module.exports = class SoloLevelingToasts {
         );
 
         if (this._hookRetryId) {
-          clearTimeout(this._hookRetryId);
+          this._clearTrackedTimeout(this._hookRetryId);
           this._hookRetryId = null;
         }
 

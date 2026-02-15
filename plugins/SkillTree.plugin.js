@@ -579,6 +579,12 @@ module.exports = class SkillTree {
     return timeoutId;
   }
 
+  _clearTrackedTimeout(timeoutId) {
+    if (!Number.isFinite(timeoutId)) return;
+    clearTimeout(timeoutId);
+    this._retryTimeouts.delete(timeoutId);
+  }
+
   startLevelPolling() {
     // Only poll when we have no event-based subscriber yet.
     if (this.eventUnsubscribers.length > 0) return;
@@ -658,16 +664,16 @@ module.exports = class SkillTree {
     this._activeSkillTimers = {};
 
     // Clear all tracked retry timeouts
-    this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+    this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
     this._retryTimeouts.clear();
 
     // Clear legacy retry timeouts (for backwards compatibility)
     if (this._retryTimeout1) {
-      clearTimeout(this._retryTimeout1);
+      this._clearTrackedTimeout(this._retryTimeout1);
       this._retryTimeout1 = null;
     }
     if (this._retryTimeout2) {
-      clearTimeout(this._retryTimeout2);
+      this._clearTrackedTimeout(this._retryTimeout2);
       this._retryTimeout2 = null;
     }
 
@@ -1537,6 +1543,27 @@ module.exports = class SkillTree {
     return totalSpent;
   }
 
+  _syncUnlockedSkillState(skillId) {
+    if (!Array.isArray(this.settings.unlockedSkills)) {
+      this.settings.unlockedSkills = [];
+    }
+    if (!this.settings.unlockedSkills.includes(skillId)) {
+      this.settings.unlockedSkills.push(skillId);
+    }
+  }
+
+  _finalizeSkillUpgrade(skillId) {
+    this.settings.totalSpentSP = this.getTotalSpentSP();
+    this._syncUnlockedSkillState(skillId);
+
+    // Skill upgrades immediately affect computed bonuses.
+    this._cache.skillBonuses = null;
+    this._cache.skillBonusesTime = 0;
+
+    this.saveSettings();
+    this.updateButtonText();
+  }
+
   // ============================================================================
   // §9 SKILL DATA ACCESS METHODS
   // ============================================================================
@@ -1670,6 +1697,28 @@ module.exports = class SkillTree {
     this.eventUnsubscribers = [];
   }
 
+  _meetsMinimumRequirement(requiredValue, currentValue) {
+    return !requiredValue || currentValue >= requiredValue;
+  }
+
+  _meetsStatRequirements(requirement, stats) {
+    const perception = stats.perception || 0;
+    const statRules = [
+      ['strength', stats.strength || 0],
+      ['agility', stats.agility || 0],
+      ['intelligence', stats.intelligence || 0],
+      ['vitality', stats.vitality || 0],
+      ['perception', perception],
+    ];
+
+    return statRules.every(([key, value]) => this._meetsMinimumRequirement(requirement[key], value));
+  }
+
+  _hasRequiredSkills(requirementSkills) {
+    if (!Array.isArray(requirementSkills)) return true;
+    return requirementSkills.every((prereqId) => this.getSkillLevel(prereqId) > 0);
+  }
+
   /**
    * Check if skill can be unlocked/upgraded
    * @param {Object} skill - Skill definition
@@ -1691,32 +1740,17 @@ module.exports = class SkillTree {
       if (!cost || this.settings.skillPoints < cost) return false;
 
       // Check level requirement
-      if (skill.requirement?.level && soloData.level < skill.requirement.level) {
+      const requirement = skill.requirement || {};
+      if (!this._meetsMinimumRequirement(requirement.level, soloData.level)) {
         return false;
       }
 
       // Check stat requirements
       const stats = soloData.stats || {};
-      const requirement = skill.requirement || {};
-
-      if (requirement.strength && (stats.strength || 0) < requirement.strength) return false;
-      if (requirement.agility && (stats.agility || 0) < requirement.agility) return false;
-      if (requirement.intelligence && (stats.intelligence || 0) < requirement.intelligence)
-        return false;
-      if (requirement.vitality && (stats.vitality || 0) < requirement.vitality) return false;
-
-      // Support both perception and luck (migration)
-      const perception = stats.perception || stats.luck || 0;
-      if (requirement.perception && perception < requirement.perception) return false;
-      if (requirement.luck && perception < requirement.luck) return false;
+      if (!this._meetsStatRequirements(requirement, stats)) return false;
 
       // Check prerequisite skills
-      if (requirement.skills && Array.isArray(requirement.skills)) {
-        const hasAllPrereqs = requirement.skills.every(
-          (prereqId) => this.getSkillLevel(prereqId) > 0
-        );
-        if (!hasAllPrereqs) return false;
-      }
+      if (!this._hasRequiredSkills(requirement.skills)) return false;
 
       return true;
     } catch (error) {
@@ -1752,23 +1786,7 @@ module.exports = class SkillTree {
       const currentLevel = this.getSkillLevel(skillId);
       this.settings.skillLevels[skillId] = (currentLevel || 0) + 1;
 
-      // Update total spent SP to keep calculations accurate
-      this.settings.totalSpentSP = this.getTotalSpentSP();
-
-      // Legacy support: add to unlockedSkills if not already there
-      if (!this.settings.unlockedSkills) {
-        this.settings.unlockedSkills = [];
-      }
-      if (!this.settings.unlockedSkills.includes(skillId)) {
-        this.settings.unlockedSkills.push(skillId);
-      }
-
-      this.saveSettings();
-      this.updateButtonText();
-
-      // Invalidate skill bonuses cache since skill was upgraded
-      this._cache.skillBonuses = null;
-      this._cache.skillBonusesTime = 0;
+      this._finalizeSkillUpgrade(skillId);
 
       // Show notification
       const newLevel = this.getSkillLevel(skillId);
@@ -1847,19 +1865,7 @@ module.exports = class SkillTree {
       this.settings.skillPoints -= totalCost;
       this.settings.skillLevels[skillId] = targetLevel;
 
-      // Update total spent SP to keep calculations accurate
-      this.settings.totalSpentSP = this.getTotalSpentSP();
-
-      // Legacy support
-      if (!this.settings.unlockedSkills) {
-        this.settings.unlockedSkills = [];
-      }
-      if (!this.settings.unlockedSkills.includes(skillId)) {
-        this.settings.unlockedSkills.push(skillId);
-      }
-
-      this.saveSettings();
-      this.updateButtonText();
+      this._finalizeSkillUpgrade(skillId);
 
       // Show notification
       if (BdApi?.showToast) {

@@ -227,6 +227,53 @@ module.exports = class SoloLevelingTitleManager {
     return timeoutId;
   }
 
+  _clearTrackedTimeout(timeoutId) {
+    if (!Number.isFinite(timeoutId)) return;
+    clearTimeout(timeoutId);
+    this._retryTimeouts.delete(timeoutId);
+  }
+
+  _getSoloPluginInstanceCached(now = Date.now()) {
+    if (
+      this._cache.soloPluginInstance &&
+      this._cache.soloPluginInstanceTime &&
+      now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+    ) {
+      return this._cache.soloPluginInstance;
+    }
+
+    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+    if (!soloPlugin) {
+      this._cache.soloPluginInstance = null;
+      this._cache.soloPluginInstanceTime = 0;
+      return null;
+    }
+
+    const instance = soloPlugin.instance || soloPlugin;
+    this._cache.soloPluginInstance = instance;
+    this._cache.soloPluginInstanceTime = now;
+    return instance;
+  }
+
+  _getAchievementDefinitionsCached(instance, now = Date.now()) {
+    if (
+      this._cache.achievementDefinitions &&
+      this._cache.achievementDefinitionsTime &&
+      now - this._cache.achievementDefinitionsTime < this._cache.achievementDefinitionsTTL
+    ) {
+      return this._cache.achievementDefinitions;
+    }
+
+    if (!instance || typeof instance.getAchievementDefinitions !== 'function') {
+      return null;
+    }
+
+    const achievements = instance.getAchievementDefinitions();
+    this._cache.achievementDefinitions = achievements;
+    this._cache.achievementDefinitionsTime = now;
+    return achievements;
+  }
+
   detachTitleManagerSettingsPanelHandlers() {
     const root = this._settingsPanelRoot;
     const handlers = this._settingsPanelHandlers;
@@ -253,30 +300,11 @@ module.exports = class SoloLevelingTitleManager {
     }
 
     try {
-      // Cache plugin instance to avoid repeated lookups
-      let soloPlugin = null;
-      let instance = null;
-
-      if (
-        this._cache.soloPluginInstance &&
-        this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
-      ) {
-        instance = this._cache.soloPluginInstance;
-      } else {
-        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-        if (!soloPlugin) {
-          this._cache.soloLevelingData = null;
-          this._cache.soloLevelingDataTime = now;
-          this._cache.soloPluginInstance = null;
-          this._cache.soloPluginInstanceTime = 0;
-          return null;
-        }
-
-        instance = soloPlugin.instance || soloPlugin;
-        // Cache the instance
-        this._cache.soloPluginInstance = instance;
-        this._cache.soloPluginInstanceTime = now;
+      const instance = this._getSoloPluginInstanceCached(now);
+      if (!instance) {
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = now;
+        return null;
       }
 
       const achievements = instance.settings?.achievements || {};
@@ -300,6 +328,12 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
+  _cacheTitleBonusResult(titleName, result, now = Date.now()) {
+    this._cache.titleBonuses[titleName] = result;
+    this._cache.titleBonusesTime[titleName] = now;
+    return result;
+  }
+
   /**
    * Get title bonus info
    * @param {string} titleName - Title name
@@ -319,62 +353,23 @@ module.exports = class SoloLevelingTitleManager {
     }
 
     try {
-      // Get or cache plugin instance
-      let instance = null;
-      if (
-        this._cache.soloPluginInstance &&
-        this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
-      ) {
-        instance = this._cache.soloPluginInstance;
-      } else {
-        const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-        if (!soloPlugin) {
-          this._cache.titleBonuses[titleName] = null;
-          this._cache.titleBonusesTime[titleName] = now;
-          return null;
-        }
-
-        instance = soloPlugin.instance || soloPlugin;
-        // Cache the instance
-        this._cache.soloPluginInstance = instance;
-        this._cache.soloPluginInstanceTime = now;
+      const instance = this._getSoloPluginInstanceCached(now);
+      if (!instance) {
+        return this._cacheTitleBonusResult(titleName, null, now);
       }
 
-      // Cache achievement definitions (expensive operation)
-      let achievements = null;
-      if (
-        this._cache.achievementDefinitions &&
-        this._cache.achievementDefinitionsTime &&
-        now - this._cache.achievementDefinitionsTime < this._cache.achievementDefinitionsTTL
-      ) {
-        achievements = this._cache.achievementDefinitions;
-      } else {
-        if (instance.getAchievementDefinitions) {
-          achievements = instance.getAchievementDefinitions();
-          // Cache the definitions
-          this._cache.achievementDefinitions = achievements;
-          this._cache.achievementDefinitionsTime = now;
-        } else {
-          this._cache.titleBonuses[titleName] = null;
-          this._cache.titleBonusesTime[titleName] = now;
-          return null;
-        }
+      const achievements = this._getAchievementDefinitionsCached(instance, now);
+      if (!achievements) {
+        return this._cacheTitleBonusResult(titleName, null, now);
       }
 
       // Find achievement with this title
       const achievement = achievements.find((a) => a.title === titleName);
       const result = achievement?.titleBonus || null;
 
-      // Cache the result
-      this._cache.titleBonuses[titleName] = result;
-      this._cache.titleBonusesTime[titleName] = now;
-
-      return result;
+      return this._cacheTitleBonusResult(titleName, result, now);
     } catch (error) {
-      this._cache.titleBonuses[titleName] = null;
-      this._cache.titleBonusesTime[titleName] = now;
-      return null;
+      return this._cacheTitleBonusResult(titleName, null, now);
     }
   }
 
@@ -390,6 +385,18 @@ module.exports = class SoloLevelingTitleManager {
     return div.innerHTML;
   }
 
+  _appendPercentBonusLine(lines, bonus, key, label) {
+    if (bonus[key] > 0) {
+      lines.push(`+${(bonus[key] * 100).toFixed(0)}% ${label}`);
+    }
+  }
+
+  _appendRawBonusLine(lines, bonus, rawKey, percentKey, label) {
+    if (bonus[rawKey] > 0 && !bonus[percentKey]) {
+      lines.push(`+${bonus[rawKey]} ${label}`);
+    }
+  }
+
   /**
    * Build formatted bonus lines for a title.
    * Centralized to avoid duplicated logic across equip toast + modal rendering.
@@ -400,26 +407,27 @@ module.exports = class SoloLevelingTitleManager {
     if (!bonus) return [];
     const lines = [];
 
-    bonus.xp > 0 && lines.push(`+${(bonus.xp * 100).toFixed(0)}% XP`);
-    bonus.critChance > 0 && lines.push(`+${(bonus.critChance * 100).toFixed(0)}% Crit`);
+    const percentRules = [
+      ['xp', 'XP'],
+      ['critChance', 'Crit'],
+      ['strengthPercent', 'STR'],
+      ['agilityPercent', 'AGI'],
+      ['intelligencePercent', 'INT'],
+      ['vitalityPercent', 'VIT'],
+      ['perceptionPercent', 'PER'],
+    ];
+    percentRules.forEach(([key, label]) => this._appendPercentBonusLine(lines, bonus, key, label));
 
-    // Percent-based stat bonuses (new format)
-    bonus.strengthPercent > 0 && lines.push(`+${(bonus.strengthPercent * 100).toFixed(0)}% STR`);
-    bonus.agilityPercent > 0 && lines.push(`+${(bonus.agilityPercent * 100).toFixed(0)}% AGI`);
-    bonus.intelligencePercent > 0 &&
-      lines.push(`+${(bonus.intelligencePercent * 100).toFixed(0)}% INT`);
-    bonus.vitalityPercent > 0 && lines.push(`+${(bonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-    bonus.perceptionPercent > 0 &&
-      lines.push(`+${(bonus.perceptionPercent * 100).toFixed(0)}% PER`);
-
-    // Raw-number stat bonuses (legacy format)
-    bonus.strength > 0 && !bonus.strengthPercent && lines.push(`+${bonus.strength} STR`);
-    bonus.agility > 0 && !bonus.agilityPercent && lines.push(`+${bonus.agility} AGI`);
-    bonus.intelligence > 0 &&
-      !bonus.intelligencePercent &&
-      lines.push(`+${bonus.intelligence} INT`);
-    bonus.vitality > 0 && !bonus.vitalityPercent && lines.push(`+${bonus.vitality} VIT`);
-    bonus.luck > 0 && !bonus.perceptionPercent && lines.push(`+${bonus.luck} LUK`);
+    const rawRules = [
+      ['strength', 'strengthPercent', 'STR'],
+      ['agility', 'agilityPercent', 'AGI'],
+      ['intelligence', 'intelligencePercent', 'INT'],
+      ['vitality', 'vitalityPercent', 'VIT'],
+      ['perception', 'perceptionPercent', 'PER'],
+    ];
+    rawRules.forEach(([rawKey, percentKey, label]) =>
+      this._appendRawBonusLine(lines, bonus, rawKey, percentKey, label)
+    );
 
     return lines;
   }
@@ -515,7 +523,7 @@ module.exports = class SoloLevelingTitleManager {
       agiBonus: (bonus) => bonus?.agilityPercent || 0,
       intBonus: (bonus) => bonus?.intelligencePercent || 0,
       vitBonus: (bonus) => bonus?.vitalityPercent || 0,
-      perBonus: (bonus) => bonus?.perceptionPercent || 0,
+      perBonus: (bonus) => bonus?.perceptionPercent || bonus?.perception || 0,
     };
     const pickSortValue = sortValuePickers[sortBy] || sortValuePickers.xpBonus;
 
@@ -713,12 +721,12 @@ module.exports = class SoloLevelingTitleManager {
       this.removeCSS();
 
       // Clear all tracked retry timeouts
-      this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
+      this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
       this._retryTimeouts.clear();
 
       // FUNCTIONAL: Clear legacy timeouts (short-circuit)
-      this._retryTimeout1 && (clearTimeout(this._retryTimeout1), (this._retryTimeout1 = null));
-      this._retryTimeout2 && (clearTimeout(this._retryTimeout2), (this._retryTimeout2 = null));
+      this._retryTimeout1 && (this._clearTrackedTimeout(this._retryTimeout1), (this._retryTimeout1 = null));
+      this._retryTimeout2 && (this._clearTrackedTimeout(this._retryTimeout2), (this._retryTimeout2 = null));
     } finally {
       // FUNCTIONAL: Cleanup URL watcher (short-circuit)
       this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
@@ -1820,9 +1828,11 @@ module.exports = class SoloLevelingTitleManager {
     this.debugLog('MODAL', 'Title modal opened');
   }
 
+  /**
+   * @deprecated Kept as a compatibility alias. Internal code uses smooth refresh paths.
+   */
   refreshModal() {
-    this.closeTitleModal();
-    this._setTrackedTimeout(() => this.openTitleModal(), 100);
+    this.refreshModalSmooth();
   }
 
   /**

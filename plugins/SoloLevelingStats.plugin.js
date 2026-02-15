@@ -649,67 +649,64 @@ module.exports = class SoloLevelingStats {
     this.domCache.valid = false;
   }
 
+  _clearCurrentLevelCache() {
+    this._cache.currentLevel = null;
+    this._cache.currentLevelTime = 0;
+    this._cache.milestoneMultiplier = null;
+    this._cache.milestoneMultiplierLevel = null;
+  }
+
+  _clearPerceptionCaches() {
+    this._cache.totalPerceptionBuff = null;
+    this._cache.totalPerceptionBuffTime = 0;
+    this._cache.perceptionBuffsByStat = null;
+    this._cache.perceptionBuffsByStatTime = 0;
+  }
+
+  _clearTitleCaches() {
+    this._cache.activeTitleBonus = null;
+    this._cache.activeTitleBonusTime = 0;
+    this._cache.activeTitleBonusKey = null;
+  }
+
+  _clearShadowCaches() {
+    this._cache.shadowArmyBuffs = null;
+    this._cache.shadowArmyBuffsTime = 0;
+  }
+
+  _clearTotalEffectiveStatsCache() {
+    this._cache.totalEffectiveStats = null;
+    this._cache.totalEffectiveStatsTime = 0;
+    this._cache.totalEffectiveStatsKey = null;
+  }
+
   /**
    * Invalidate performance caches when data changes
    * Call this when XP, level, stats, or settings change
    */
   invalidatePerformanceCache(cacheKeys = null) {
     if (!cacheKeys) {
-      // Invalidate all caches
-      this._cache.currentLevel = null;
-      this._cache.currentLevelTime = 0;
-      this._cache.totalPerceptionBuff = null;
-      this._cache.totalPerceptionBuffTime = 0;
-      this._cache.perceptionBuffsByStat = null;
-      this._cache.perceptionBuffsByStatTime = 0;
-      this._cache.milestoneMultiplier = null;
-      this._cache.milestoneMultiplierLevel = null;
-      this._cache.activeTitleBonus = null;
-      this._cache.activeTitleBonusTime = 0;
-      this._cache.activeTitleBonusKey = null;
-      this._cache.shadowArmyBuffs = null;
-      this._cache.shadowArmyBuffsTime = 0;
-      this._cache.totalEffectiveStats = null;
-      this._cache.totalEffectiveStatsTime = 0;
-      this._cache.totalEffectiveStatsKey = null;
+      this._clearCurrentLevelCache();
+      this._clearPerceptionCaches();
+      this._clearTitleCaches();
+      this._clearShadowCaches();
+      this._clearTotalEffectiveStatsCache();
+      this._cache.hpCache.clear();
+      this._cache.manaCache.clear();
       return;
     }
 
-    // Invalidate specific caches
-    if (cacheKeys.includes('currentLevel')) {
-      this._cache.currentLevel = null;
-      this._cache.currentLevelTime = 0;
-      this._cache.milestoneMultiplier = null;
-      this._cache.milestoneMultiplierLevel = null;
+    const keySet = new Set(cacheKeys);
+    keySet.has('currentLevel') && this._clearCurrentLevelCache();
+    keySet.has('perception') && this._clearPerceptionCaches();
+    keySet.has('title') && this._clearTitleCaches();
+    keySet.has('shadow') && this._clearShadowCaches();
+    if (keySet.has('title') || keySet.has('stats') || keySet.has('shadow')) {
+      this._clearTotalEffectiveStatsCache();
     }
-    if (cacheKeys.includes('perception')) {
-      this._cache.totalPerceptionBuff = null;
-      this._cache.totalPerceptionBuffTime = 0;
-      this._cache.perceptionBuffsByStat = null;
-      this._cache.perceptionBuffsByStatTime = 0;
-    }
-    if (cacheKeys.includes('title')) {
-      this._cache.activeTitleBonus = null;
-      this._cache.activeTitleBonusTime = 0;
-      this._cache.activeTitleBonusKey = null;
-      this._cache.totalEffectiveStats = null;
-      this._cache.totalEffectiveStatsTime = 0;
-      this._cache.totalEffectiveStatsKey = null;
-    }
-    if (cacheKeys.includes('stats')) {
-      this._cache.totalEffectiveStats = null;
-      this._cache.totalEffectiveStatsTime = 0;
-      this._cache.totalEffectiveStatsKey = null;
-      // Clear HP/Mana caches since they depend on stats
+    if (keySet.has('stats')) {
       this._cache.hpCache.clear();
       this._cache.manaCache.clear();
-    }
-    if (cacheKeys.includes('shadow')) {
-      this._cache.shadowArmyBuffs = null;
-      this._cache.shadowArmyBuffsTime = 0;
-      this._cache.totalEffectiveStats = null;
-      this._cache.totalEffectiveStatsTime = 0;
-      this._cache.totalEffectiveStatsKey = null;
     }
   }
 
@@ -953,15 +950,19 @@ module.exports = class SoloLevelingStats {
     return mentionMatches ? mentionMatches.length : 0;
   }
 
+  getChannelStore() {
+    let channelStore = this.webpackModules?.ChannelStore;
+    if (!channelStore?.getChannel) {
+      channelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
+      if (channelStore) this.webpackModules.ChannelStore = channelStore;
+    }
+    return channelStore || null;
+  }
+
   getChannelTypeById(channelId) {
     if (!channelId) return null;
     try {
-      let ChannelStore = this.webpackModules?.ChannelStore;
-      if (!ChannelStore?.getChannel) {
-        ChannelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
-        if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
-      }
-      return ChannelStore?.getChannel?.(channelId)?.type ?? null;
+      return this.getChannelStore()?.getChannel?.(channelId)?.type ?? null;
     } catch (_error) {
       return null;
     }
@@ -969,6 +970,51 @@ module.exports = class SoloLevelingStats {
 
   isThreadLikeChannelType(channelType) {
     return channelType === 10 || channelType === 11 || channelType === 12;
+  }
+
+  doesMessageFiberMatchAuthorId(messageElement, authorIdToMatch) {
+    if (!messageElement || !authorIdToMatch) return false;
+    try {
+      const reactKey = this.getReactFiberKey(messageElement);
+      if (!reactKey) return false;
+
+      let fiber = messageElement[reactKey];
+      for (let i = 0; i < 20 && fiber; i++) {
+        const authorId =
+          fiber.memoizedProps?.message?.author?.id ||
+          fiber.memoizedState?.message?.author?.id ||
+          fiber.memoizedProps?.message?.authorId;
+        if (authorId === authorIdToMatch) return true;
+        fiber = fiber.return;
+      }
+      return false;
+    } catch (_error) {
+      return false;
+    }
+  }
+
+  ensureValidTotalXP(logContext = 'TOTAL_XP') {
+    if (
+      typeof this.settings.totalXP === 'number' &&
+      !isNaN(this.settings.totalXP) &&
+      this.settings.totalXP >= 0
+    ) {
+      return false;
+    }
+
+    const currentLevel = this.settings.level || 1;
+    let totalXPNeeded = 0;
+    for (let l = 1; l < currentLevel; l++) {
+      totalXPNeeded += this.getXPRequiredForLevel(l);
+    }
+    this.settings.totalXP = totalXPNeeded + (this.settings.xp || 0);
+
+    this.debugLog(logContext, 'Initialized missing totalXP', {
+      initializedTotalXP: this.settings.totalXP,
+      level: currentLevel,
+      xp: this.settings.xp,
+    });
+    return true;
   }
 
   buildMessageContextFromStore(message, messageText = '') {
@@ -1110,7 +1156,7 @@ module.exports = class SoloLevelingStats {
   }
 
   getPerceptionBurstProfile() {
-    const perceptionStat = this.settings?.stats?.perception ?? this.settings?.stats?.luck ?? 0;
+    const perceptionStat = this.settings?.stats?.perception ?? 0;
     const perception = Math.max(0, Number(perceptionStat) || 0);
     const burstChance = Math.min(0.82, 0.08 + perception * 0.007); // 8% base, +0.7% per PER
     const maxHits = Math.min(99, Math.max(1, 1 + Math.floor(perception * 1.2))); // 1..99
@@ -1354,14 +1400,9 @@ module.exports = class SoloLevelingStats {
       if (channelInfo.channelType === 'thread') return false;
 
       // Use ChannelStore for accurate channel type detection
-      let ChannelStore = this.webpackModules?.ChannelStore;
-      // Retry module lookup if not cached yet
-      if (!ChannelStore?.getChannel) {
-        ChannelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
-        if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
-      }
-      if (ChannelStore?.getChannel && channelInfo.rawChannelId) {
-        const channel = ChannelStore.getChannel(channelInfo.rawChannelId);
+      const channelStore = this.getChannelStore();
+      if (channelStore?.getChannel && channelInfo.rawChannelId) {
+        const channel = channelStore.getChannel(channelInfo.rawChannelId);
         if (channel) {
           // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT (text-based)
           // Exclude: 10/11/12=threads, 15=GUILD_FORUM, 2=VOICE, 13=STAGE
@@ -1463,8 +1504,8 @@ module.exports = class SoloLevelingStats {
       return this._cache.totalPerceptionBuff;
     }
 
-    const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
-    const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
+    const perceptionStat = this.settings.stats.perception ?? 0;
+    const perceptionBuffs = this.settings.perceptionBuffs ?? [];
 
     let result = 0;
     if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
@@ -1518,7 +1559,7 @@ module.exports = class SoloLevelingStats {
   /**
    * Get title and shadow buff percentages for a stat key.
    * Handles old-format (raw number) → new-format (percentage) conversion
-   * and the perception/luck backward-compatibility fallback.
+   * while using PER as the canonical perception stat key.
    * @param {string} statKey - One of STAT_KEYS
    * @param {Object} titleBonus - From getActiveTitleBonus()
    * @param {Object} [shadowBuffs] - From getShadowArmyBuffs() (optional)
@@ -1527,14 +1568,14 @@ module.exports = class SoloLevelingStats {
   getBuffPercents(statKey, titleBonus, shadowBuffs) {
     // Title: support both old format (raw numbers) and new format (percentages)
     const percentKey = `${statKey}Percent`;
-    const rawKey = statKey === 'perception' ? (titleBonus.perception ?? titleBonus.luck ?? 0) : (titleBonus[statKey] || 0);
+    const rawKey = statKey === 'perception' ? (titleBonus.perception || 0) : (titleBonus[statKey] || 0);
     const titlePercent = titleBonus[percentKey] || (rawKey ? rawKey / 100 : 0);
 
-    // Shadow: percentages (0.1 = 10%), with perception/luck fallback
+    // Shadow: percentages (0.1 = 10%)
     let shadowPercent = 0;
     if (shadowBuffs) {
       shadowPercent = statKey === 'perception'
-        ? (shadowBuffs.perception || shadowBuffs.luck || 0)
+        ? (shadowBuffs.perception || 0)
         : (shadowBuffs[statKey] || 0);
     }
 
@@ -1681,7 +1722,7 @@ module.exports = class SoloLevelingStats {
       agility: this.settings.stats.agility || 0,
       intelligence: this.settings.stats.intelligence || 0,
       vitality: this.settings.stats.vitality || 0,
-      perception: this.settings.stats.perception ?? this.settings.stats.luck ?? 0,
+      perception: this.settings.stats.perception ?? 0,
     };
 
     const titleBonus = this.getActiveTitleBonus();
@@ -1706,6 +1747,106 @@ module.exports = class SoloLevelingStats {
   getTotalShadowPower() {
     // Return cached value immediately
     return this.cachedShadowPower;
+  }
+
+  clampPercentage(value) {
+    return Number.isFinite(value) ? Math.min(100, Math.max(0, value)) : 0;
+  }
+
+  formatPercentWidth(value) {
+    return `${this.clampPercentage(value).toFixed(2)}%`;
+  }
+
+  getLevelProgressSnapshot({ allowFallback = false, logContext = null } = {}) {
+    const levelInfo = this.getCurrentLevel();
+    if (levelInfo && Number.isFinite(levelInfo.xpRequired) && levelInfo.xpRequired > 0) {
+      return {
+        valid: true,
+        source: 'levelInfo',
+        levelInfo,
+        xp: levelInfo.xp,
+        xpRequired: levelInfo.xpRequired,
+        xpPercent: this.clampPercentage((levelInfo.xp / levelInfo.xpRequired) * 100),
+      };
+    }
+
+    if (allowFallback) {
+      const fallbackXP = this.settings.xp || 0;
+      const fallbackXPRequired = this.getXPRequiredForLevel(this.settings.level || 1);
+      if (fallbackXPRequired > 0) {
+        const xpPercent = this.clampPercentage((fallbackXP / fallbackXPRequired) * 100);
+        if (logContext) {
+          this.debugLog(logContext, 'Using fallback XP calculation', {
+            fallbackXP,
+            fallbackXPRequired,
+            xpPercent,
+            level: this.settings.level,
+          });
+        }
+        return {
+          valid: true,
+          source: 'fallback',
+          levelInfo: levelInfo || null,
+          xp: fallbackXP,
+          xpRequired: fallbackXPRequired,
+          xpPercent,
+        };
+      }
+    }
+
+    return {
+      valid: false,
+      source: 'invalid',
+      levelInfo: levelInfo || null,
+      xp: 0,
+      xpRequired: 0,
+      xpPercent: 0,
+    };
+  }
+
+  getEventLevelInfoOrNull(logContext) {
+    const snapshot = this.getLevelProgressSnapshot({ allowFallback: false });
+    if (!snapshot.valid || !snapshot.levelInfo) {
+      this.debugLog(logContext, 'Level info not available, skipping emit');
+      return null;
+    }
+    return snapshot.levelInfo;
+  }
+
+  buildCoreProgressPayload(levelInfo) {
+    return {
+      xp: levelInfo.xp,
+      xpRequired: levelInfo.xpRequired,
+      totalXP: this.settings.totalXP,
+      levelInfo,
+    };
+  }
+
+  getXPProgressFillElement() {
+    const cachedProgressFill = this._chatUIElements?.progressFill;
+    if (cachedProgressFill && cachedProgressFill.isConnected) return cachedProgressFill;
+
+    let progressFill = this.chatUIPanel?.querySelector('#sls-xp-progress-fill');
+    if (!progressFill) progressFill = this.chatUIPanel?.querySelector('.sls-chat-progress-fill');
+
+    if (!progressFill) {
+      const levelSection = this.chatUIPanel?.querySelector('.sls-chat-level');
+      progressFill =
+        levelSection?.querySelector('#sls-xp-progress-fill') ||
+        levelSection?.querySelector('.sls-chat-progress-fill') ||
+        null;
+    }
+
+    if (!progressFill) {
+      const progressBar = this.chatUIPanel?.querySelector('.sls-chat-progress-bar');
+      progressFill =
+        progressBar?.querySelector('#sls-xp-progress-fill') ||
+        progressBar?.querySelector('.sls-chat-progress-fill') ||
+        null;
+    }
+
+    progressFill && (this._chatUIElements.progressFill = progressFill);
+    return progressFill || null;
   }
 
   // ── §3.4 EVENT SYSTEM HELPERS ────────────────────────────────────────────
@@ -1760,19 +1901,13 @@ module.exports = class SoloLevelingStats {
 
   emitXPChanged() {
     try {
-      const levelInfo = this.getCurrentLevel();
-      if (!levelInfo) {
-        this.debugLog('EMIT_XP_CHANGED', 'Level info not available, skipping emit');
-        return;
-      }
+      const levelInfo = this.getEventLevelInfoOrNull('EMIT_XP_CHANGED');
+      if (!levelInfo) return;
 
       const xpData = {
         level: this.settings.level,
-        xp: levelInfo.xp,
-        xpRequired: levelInfo.xpRequired,
-        totalXP: this.settings.totalXP,
         rank: this.settings.rank,
-        levelInfo,
+        ...this.buildCoreProgressPayload(levelInfo),
       };
 
       this._chatUIDirty = true;
@@ -1791,20 +1926,14 @@ module.exports = class SoloLevelingStats {
 
   emitLevelChanged(oldLevel, newLevel) {
     try {
-      const levelInfo = this.getCurrentLevel();
-      if (!levelInfo) {
-        this.debugLog('EMIT_LEVEL_CHANGED', 'Level info not available, skipping emit');
-        return;
-      }
+      const levelInfo = this.getEventLevelInfoOrNull('EMIT_LEVEL_CHANGED');
+      if (!levelInfo) return;
 
       this.emit('levelChanged', {
         oldLevel,
         newLevel,
-        xp: levelInfo.xp,
-        xpRequired: levelInfo.xpRequired,
-        totalXP: this.settings.totalXP,
         rank: this.settings.rank,
-        levelInfo,
+        ...this.buildCoreProgressPayload(levelInfo),
       });
 
       // Also emit XP changed since level affects XP display
@@ -1816,20 +1945,14 @@ module.exports = class SoloLevelingStats {
 
   emitRankChanged(oldRank, newRank) {
     try {
-      const levelInfo = this.getCurrentLevel();
-      if (!levelInfo) {
-        this.debugLog('EMIT_RANK_CHANGED', 'Level info not available, skipping emit');
-        return;
-      }
+      const levelInfo = this.getEventLevelInfoOrNull('EMIT_RANK_CHANGED');
+      if (!levelInfo) return;
 
       this.emit('rankChanged', {
         oldRank,
         newRank,
         level: this.settings.level,
-        xp: levelInfo.xp,
-        xpRequired: levelInfo.xpRequired,
-        totalXP: this.settings.totalXP,
-        levelInfo,
+        ...this.buildCoreProgressPayload(levelInfo),
       });
 
       // Also emit XP changed since rank affects XP display
@@ -2157,21 +2280,7 @@ module.exports = class SoloLevelingStats {
                 setTimeout(() => {
                   const domElement = document.getElementById('sls-chat-ui');
                   if (domElement) {
-                    pluginInstance.chatUIPanel = domElement;
-                    pluginInstance.attachChatUIListeners(domElement);
-                    setTimeout(() => {
-                      pluginInstance.attachStatButtonListeners(domElement);
-                    }, 100);
-
-                    // Update UI periodically (only when data has changed)
-                    if (!pluginInstance.chatUIUpdateInterval) {
-                      pluginInstance.chatUIUpdateInterval = setInterval(() => {
-                        if (pluginInstance._chatUIDirty) {
-                          pluginInstance._chatUIDirty = false;
-                          pluginInstance.updateChatUI();
-                        }
-                      }, 2000);
-                    }
+                    pluginInstance.initializeChatUIPanel(domElement, { onlyWhenDirty: true });
                   }
                 }, 100);
               }
@@ -2709,26 +2818,7 @@ module.exports = class SoloLevelingStats {
           }
 
           // Double-check: Only process if we have strong confirmation
-          const hasReactProps =
-            currentUserId &&
-            (() => {
-              try {
-                const reactKey = this.getReactFiberKey(messageElement);
-                if (reactKey) {
-                  let fiber = messageElement[reactKey];
-                  for (let i = 0; i < 20 && fiber; i++) {
-                    const authorId =
-                      fiber.memoizedProps?.message?.author?.id ||
-                      fiber.memoizedState?.message?.author?.id ||
-                      fiber.memoizedProps?.message?.authorId;
-                    if (authorId === currentUserId) return true;
-                    fiber = fiber.return;
-                  }
-                }
-                // eslint-disable-next-line no-empty
-              } catch (e) {}
-              return false;
-            })();
+          const hasReactProps = this.doesMessageFiberMatchAuthorId(messageElement, currentUserId);
 
           const hasExplicitYou = (() => {
             const usernameElement =
@@ -3167,39 +3257,11 @@ module.exports = class SoloLevelingStats {
       });
 
       // PRIMARY METHOD 1: Check React props for user ID match (MOST RELIABLE)
-      if (currentUserId) {
-        try {
-          const reactKey = this.getReactFiberKey(messageElement);
-          if (reactKey) {
-            let fiber = messageElement[reactKey];
-            for (let i = 0; i < 20 && fiber; i++) {
-              const authorId =
-                fiber.memoizedProps?.message?.author?.id ||
-                fiber.memoizedState?.message?.author?.id ||
-                fiber.memoizedProps?.message?.authorId;
-
-              if (authorId === currentUserId) {
-                this.debugLog(
-                  'IS_OWN_MESSAGE',
-                  'CONFIRMED: Detected via React props user ID match',
-                  {
-                    authorId,
-                    currentUserId,
-                    method: fiber.memoizedProps?.message?.author?.id
-                      ? 'memoizedProps.author.id'
-                      : fiber.memoizedState?.message?.author?.id
-                      ? 'memoizedState.author.id'
-                      : 'memoizedProps.authorId',
-                  }
-                );
-                return true;
-              }
-              fiber = fiber.return;
-            }
-          }
-        } catch (e) {
-          this.debugLog('IS_OWN_MESSAGE', 'React access failed', { error: e.message });
-        }
+      if (this.doesMessageFiberMatchAuthorId(messageElement, currentUserId)) {
+        this.debugLog('IS_OWN_MESSAGE', 'CONFIRMED: Detected via React props user ID match', {
+          currentUserId,
+        });
+        return true;
       }
 
       // PRIMARY METHOD 2: Check for explicit "You" indicator (RELIABLE)
@@ -3268,31 +3330,26 @@ module.exports = class SoloLevelingStats {
   // Stages: base XP → stat% → title bonus → active skills → milestones
   //         → diminishing returns → crit bonus → rank multiplier
 
-  processMessageSent(messageText, messageContext = null) {
+  runMessageProcessingStage(stageFn) {
     try {
-      if (!this._isRunning) return;
+      stageFn();
+    } catch (_error) {}
+  }
 
+  processMessageSent(messageText, messageContext = null) {
+    if (!this._isRunning || typeof messageText !== 'string' || messageText.length === 0) return;
+
+    try {
       const resolvedContext =
         messageContext && typeof messageContext === 'object'
           ? messageContext
           : this.buildMessageContextFromView(messageText);
 
-      this.debugLog('PROCESS_MESSAGE', 'Processing message', {
-        length: messageText.length,
-        preview: messageText.substring(0, 30),
-        source: resolvedContext?.source || 'unknown',
-        isReply: !!resolvedContext?.isReply,
-        mentionCount: resolvedContext?.mentionCount || 0,
-        isThread: !!resolvedContext?.isThread,
-      });
-
-      // Prevent duplicate processing
       const now = Date.now();
       const recentWindowMs = 2000;
       const channelScope = resolvedContext?.channelId || this.getCurrentChannelId() || 'global';
       const hashKey = `msg_${channelScope}_${this.hashString(messageText.substring(0, 2000))}`;
 
-      // Check if we've processed this message recently (within last 2 seconds)
       // Defensive: ensure Map semantics even if an older version left a Set here
       (!this.recentMessages || typeof this.recentMessages.get !== 'function') &&
         (this.recentMessages = new Map());
@@ -3305,105 +3362,30 @@ module.exports = class SoloLevelingStats {
       }
 
       const lastProcessedAt = this.recentMessages.get(hashKey);
-      if (lastProcessedAt && now - lastProcessedAt < recentWindowMs) {
-        this.debugLog('PROCESS_MESSAGE', 'Duplicate message detected, skipping');
-        return;
-      }
-
+      if (lastProcessedAt && now - lastProcessedAt < recentWindowMs) return;
       this.recentMessages.set(hashKey, now);
 
-      // Sanity check: Limit message length to prevent capturing wrong content
-      // Discord's max message length is 2000 characters
-      const maxMessageLength = 2000;
-      const actualMessageLength = Math.min(messageText.length, maxMessageLength);
+      const messageLength = Math.min(messageText.length, 2000);
 
-      // If message is longer than max, log warning
-      if (messageText.length > maxMessageLength) {
-        this.debugLog('PROCESS_MESSAGE', 'Message length exceeds Discord limit, truncating', {
-          originalLength: messageText.length,
-          truncatedLength: actualMessageLength,
-        });
-      }
-
-      const messageLength = actualMessageLength;
-
-      // Update activity counters
-      try {
+      this.runMessageProcessingStage(() => {
         this.settings.activity.messagesSent++;
         this.settings.activity.charactersTyped += messageLength;
-        this.debugLog('PROCESS_MESSAGE', 'Activity counters updated', {
-          messagesSent: this.settings.activity.messagesSent,
-          charactersTyped: this.settings.activity.charactersTyped,
-        });
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'update_activity' });
-      }
-
-      // Track channel visit
-      try {
-        this.trackChannelVisit();
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'track_channel' });
-      }
-
-      // Message context for crit detection is maintained by:
-      // - Webpack message patches (preferred)
-      // - MutationObserver fallback (when needed)
-      // Avoid scanning the entire message DOM here (expensive + can be incorrect).
-
-      // Calculate and award XP (this will save immediately)
-      try {
-        this.awardXP(messageText, messageLength, resolvedContext);
-        this.debugLog('PROCESS_MESSAGE', 'XP awarded successfully');
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'award_xp' });
-      }
-
-      // Update daily quests
-      try {
+      });
+      this.runMessageProcessingStage(() => this.trackChannelVisit());
+      this.runMessageProcessingStage(() => this.awardXP(messageText, messageLength, resolvedContext));
+      this.runMessageProcessingStage(() => {
         this.updateQuestProgress('messageMaster', 1);
         this.updateQuestProgress('characterChampion', messageLength);
-        this.updateQuestProgress('perfectStreak', 1); // Track Perfect Streak quest
-        this.debugLog('PROCESS_MESSAGE', 'Quest progress updated');
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'update_quests' });
-      }
-
-      // Process natural stat growth (scales with current stats)
-      try {
-        this.processNaturalStatGrowth();
-        this.debugLog('PROCESS_MESSAGE', 'Natural stat growth processed');
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'natural_stat_growth' });
-      }
-
-      // Check for achievements (will save if achievement unlocked)
-      try {
-        this.checkAchievements();
-      } catch (error) {
-        this.debugError('PROCESS_MESSAGE', error, { phase: 'check_achievements' });
-      }
-
-      // UI update happens via xpChanged event listener (set up in start())
-      // No explicit updateChatUI() call needed here
-
-      // Note: XP gain already triggers immediate save, but we'll also save quest progress
-      // Save quest progress if it changed (but not every message to avoid spam)
-      if (Date.now() - this.lastSaveTime > 5000) {
-        try {
-          this.saveSettings();
-        } catch (error) {
-          this.debugError('PROCESS_MESSAGE', error, { phase: 'periodic_save' });
-        }
-      }
-
-      this.debugLog('PROCESS_MESSAGE', 'Message processing completed');
-    } catch (error) {
-      this.debugError('PROCESS_MESSAGE', error, {
-        messageLength: messageText?.length,
-        messagePreview: messageText?.substring(0, 30),
+        this.updateQuestProgress('perfectStreak', 1);
       });
-    }
+      this.runMessageProcessingStage(() => this.processNaturalStatGrowth());
+      this.runMessageProcessingStage(() => this.checkAchievements());
+
+      // XP gain already triggers immediate save, this is only a periodic quest-progress flush.
+      if (Date.now() - this.lastSaveTime > 5000) {
+        this.runMessageProcessingStage(() => this.saveSettings());
+      }
+    } catch (_error) {}
   }
 
   hashString(str) {
@@ -4439,24 +4421,7 @@ module.exports = class SoloLevelingStats {
           }
 
           // CRITICAL: Ensure totalXP is initialized (prevent progress bar from breaking)
-          if (
-            typeof this.settings.totalXP !== 'number' ||
-            isNaN(this.settings.totalXP) ||
-            this.settings.totalXP < 0
-          ) {
-            // Calculate totalXP from current level and xp
-            const currentLevel = this.settings.level || 1;
-            let totalXPNeeded = 0;
-            for (let l = 1; l < currentLevel; l++) {
-              totalXPNeeded += this.getXPRequiredForLevel(l);
-            }
-            this.settings.totalXP = totalXPNeeded + (this.settings.xp || 0);
-            this.debugLog('LOAD_SETTINGS', 'Initialized missing totalXP', {
-              initializedTotalXP: this.settings.totalXP,
-              level: currentLevel,
-              xp: this.settings.xp,
-            });
-          }
+          this.ensureValidTotalXP('LOAD_SETTINGS');
 
           this.debugLog('LOAD_SETTINGS', 'Settings loaded successfully', {
             level: this.settings.level,
@@ -6188,24 +6153,7 @@ module.exports = class SoloLevelingStats {
       });
 
       // CRITICAL: Ensure totalXP is initialized (prevent progress bar from breaking)
-      if (
-        typeof this.settings.totalXP !== 'number' ||
-        isNaN(this.settings.totalXP) ||
-        this.settings.totalXP < 0
-      ) {
-        // Initialize totalXP from current level if missing (calculate manually to avoid circular dependency)
-        const currentLevel = this.settings.level || 1;
-        let totalXPNeeded = 0;
-        for (let l = 1; l < currentLevel; l++) {
-          totalXPNeeded += this.getXPRequiredForLevel(l);
-        }
-        this.settings.totalXP = totalXPNeeded + (this.settings.xp || 0);
-        this.debugLog('AWARD_XP', 'Initialized missing totalXP', {
-          initializedTotalXP: this.settings.totalXP,
-          level: currentLevel,
-          xp: this.settings.xp,
-        });
-      }
+      this.ensureValidTotalXP('AWARD_XP');
 
       // Add XP
       const oldLevel = this.settings.level;
@@ -6646,17 +6594,15 @@ module.exports = class SoloLevelingStats {
         this.emitRankChanged(oldRank, correctRank);
       }
 
-      // Save immediately
-      this.saveSettings(true);
+      this.applyStatMutationEffects({
+        emitPayload: {
+          statsGrown: [],
+        },
+        invalidateKeys: ['currentLevel', 'stats', 'perception'],
+      });
 
-      // Update UI
-      this.updateChatUI();
       this.emitXPChanged();
       this.emitLevelChanged(oldLevel, targetLevel);
-      this.emit('statsChanged', {
-        stats: { ...this.settings.stats },
-        statsGrown: [],
-      });
 
       // Verify final state
       const _finalLevelCheck = this.getCurrentLevel();
@@ -6700,23 +6646,49 @@ module.exports = class SoloLevelingStats {
    * 3.5 STATS SYSTEM
    */
 
-  getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs) {
+  getStatBuffBreakdown(statKey, titleBonus, shadowBuffs) {
     const { titlePercent, shadowPercent } = this.getBuffPercents(statKey, titleBonus, shadowBuffs);
     const hasTitleBuff = titlePercent > 0;
     const hasShadowBuff = shadowPercent > 0;
+    return {
+      titlePercent,
+      shadowPercent,
+      hasTitleBuff,
+      hasShadowBuff,
+      titleDisplay: hasTitleBuff ? (titlePercent * 100).toFixed(0) : null,
+      shadowDisplay: hasShadowBuff ? (shadowPercent * 100).toFixed(0) : null,
+    };
+  }
 
-    const titleBuffValue = hasTitleBuff ? (titlePercent * 100).toFixed(0) : null;
-    const shadowBuffDisplay = hasShadowBuff ? (shadowPercent * 100).toFixed(0) : null;
+  buildStatTooltip(statKey, baseValue, totalValue, titleBonus, shadowBuffs) {
+    const stat = this.STAT_METADATA[statKey];
+    if (!stat) return '';
+
+    const breakdown = this.getStatBuffBreakdown(statKey, titleBonus, shadowBuffs);
+    const tooltipParts = [`${stat.fullName}: Base ${baseValue}`];
+    if (breakdown.hasTitleBuff && breakdown.titleDisplay !== null) {
+      tooltipParts.push(`+${breakdown.titleDisplay}% title`);
+    }
+    if (breakdown.hasShadowBuff && breakdown.shadowDisplay !== null) {
+      tooltipParts.push(`+${breakdown.shadowDisplay}% shadow`);
+    }
+    tooltipParts.push(`Total: ${totalValue}`);
+    tooltipParts.push(`${stat.desc} per point`);
+    return tooltipParts.join(' | ');
+  }
+
+  getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs) {
+    const breakdown = this.getStatBuffBreakdown(statKey, titleBonus, shadowBuffs);
 
     // Build the HTML
     let html = totalValue.toString();
-    if (hasTitleBuff || hasShadowBuff) {
+    if (breakdown.hasTitleBuff || breakdown.hasShadowBuff) {
       let buffContent = '';
-      if (hasTitleBuff && titleBuffValue !== null) {
-        buffContent += `+${titleBuffValue}%`;
+      if (breakdown.hasTitleBuff && breakdown.titleDisplay !== null) {
+        buffContent += `+${breakdown.titleDisplay}%`;
       }
-      if (hasShadowBuff && shadowBuffDisplay !== null) {
-        buffContent += `+${shadowBuffDisplay}%`;
+      if (breakdown.hasShadowBuff && breakdown.shadowDisplay !== null) {
+        buffContent += `+${breakdown.shadowDisplay}%`;
       }
       html += `<span class="sls-chat-stat-buff">${buffContent}</span>`;
     }
@@ -6735,26 +6707,15 @@ module.exports = class SoloLevelingStats {
         const baseValue = this.settings.stats[statKey];
         const totalValue = totalStats[statKey];
 
-        const { titlePercent, shadowPercent } = this.getBuffPercents(statKey, titleBonus, shadowBuffs);
-        const hasTitleBuff = titlePercent > 0;
-        const hasShadowBuff = shadowPercent > 0;
-
         const canAllocate = this.settings.unallocatedStatPoints > 0;
 
-        const titleBuffDisplay = hasTitleBuff ? (titlePercent * 100).toFixed(0) : null;
-        const shadowBuffDisplay = hasShadowBuff ? (shadowPercent * 100).toFixed(0) : null;
-
-        // Build tooltip showing breakdown
-        let tooltipParts = [`${stat.fullName}: Base ${baseValue}`];
-        if (hasTitleBuff && titleBuffDisplay !== null) {
-          tooltipParts.push(`+${titleBuffDisplay}% title`);
-        }
-        if (hasShadowBuff) {
-          tooltipParts.push(`+${shadowBuffDisplay}% shadow`);
-        }
-        tooltipParts.push(`Total: ${totalValue}`);
-        tooltipParts.push(`${stat.desc} per point`);
-        const tooltip = tooltipParts.join(' | ');
+        const tooltip = this.buildStatTooltip(
+          statKey,
+          baseValue,
+          totalValue,
+          titleBonus,
+          shadowBuffs
+        );
 
         // Generate value with buff badges HTML using helper
         const valueWithBuffsHTML = this.getStatValueWithBuffsHTML(
@@ -6780,6 +6741,43 @@ module.exports = class SoloLevelingStats {
       `;
       })
       .join('');
+  }
+
+  formatUnallocatedStatPointsText() {
+    const points = this.settings.unallocatedStatPoints || 0;
+    return `${points} unallocated stat point${points === 1 ? '' : 's'}`;
+  }
+
+  syncChatStatButton(btn, { totalStats, titleBonus, shadowBuffs, canAllocate }) {
+    if (!btn) return;
+    const statName = btn.dataset?.stat || btn.getAttribute('data-stat');
+    if (!statName) return;
+
+    const baseValue = this.settings.stats[statName] || 0;
+    const totalValue = totalStats[statName] ?? baseValue;
+    const valueEl = btn.querySelector('.sls-chat-stat-btn-value');
+    if (valueEl) {
+      valueEl.innerHTML = this.getStatValueWithBuffsHTML(
+        totalValue,
+        statName,
+        titleBonus,
+        shadowBuffs
+      );
+    }
+
+    btn.title = this.buildStatTooltip(statName, baseValue, totalValue, titleBonus, shadowBuffs);
+    btn.disabled = !canAllocate;
+    btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
+
+    let plusEl = btn.querySelector('.sls-chat-stat-btn-plus');
+    if (canAllocate && !plusEl) {
+      plusEl = document.createElement('div');
+      plusEl.className = 'sls-chat-stat-btn-plus';
+      plusEl.textContent = '+';
+      btn.appendChild(plusEl);
+    } else if (!canAllocate && plusEl) {
+      plusEl.remove();
+    }
   }
 
   renderChatStats() {
@@ -7011,6 +7009,26 @@ module.exports = class SoloLevelingStats {
     this._statAllocationTimeout = null;
   }
 
+  applyStatMutationEffects({
+    emitPayload = null,
+    invalidateKeys = ['stats', 'perception'],
+    saveImmediately = true,
+    refreshUI = true,
+    recomputeHpMana = true,
+  } = {}) {
+    invalidateKeys?.length && this.invalidatePerformanceCache(invalidateKeys);
+    recomputeHpMana && this.recomputeHPManaFromStats();
+    saveImmediately && this.saveSettings(true);
+    refreshUI && this.updateChatUI();
+
+    if (emitPayload) {
+      this.emit('statsChanged', {
+        stats: { ...this.settings.stats },
+        ...emitPayload,
+      });
+    }
+  }
+
   allocateStatPoint(statName) {
     // Normalize stat name (handle case variations)
     if (!statName) {
@@ -7070,34 +7088,10 @@ module.exports = class SoloLevelingStats {
     const oldValue = this.settings.stats[statName];
     this.settings.stats[statName]++;
     this.settings.unallocatedStatPoints--;
-
-    // Invalidate caches since stats changed
-    this.invalidatePerformanceCache(['stats', 'perception']);
-
-    // Emit stats changed event for real-time updates
-    this.emit('statsChanged', {
-      stats: { ...this.settings.stats },
-      statChanged: statName,
-      oldValue,
-      newValue: this.settings.stats[statName],
-    });
-
-    // Recompute HP/Mana after stat changes (handles refunds/resets too)
-    this.recomputeHPManaFromStats();
+    const newValue = this.settings.stats[statName];
 
     // Special handling for Perception (PER): controls crit burst-hit profile
-    if (statName === 'perception' || statName === 'luck') {
-      // Migration: Use 'perception' as the canonical name
-      if (statName === 'luck') {
-        statName = 'perception';
-        // Migrate luck value to perception if needed
-        if (this.settings.stats.perception === undefined) {
-          this.settings.stats.perception = this.settings.stats.luck || 0;
-        }
-        // Don't double-increment - already incremented above
-        delete this.settings.stats.luck;
-      }
-
+    if (statName === 'perception') {
       const profile = this.getPerceptionBurstProfile();
 
       this.debugLog('ALLOCATE_STAT_PERCEPTION', 'Perception burst profile updated', {
@@ -7112,9 +7106,13 @@ module.exports = class SoloLevelingStats {
       )}%, max x${profile.maxHits}`;
       this._queueStatAllocation(statName, oldValue, this.settings.stats[statName], perEffect, null);
 
-      // Save immediately
-      this.saveSettings(true);
-      this.updateChatUI();
+      this.applyStatMutationEffects({
+        emitPayload: {
+          statChanged: statName,
+          oldValue,
+          newValue,
+        },
+      });
 
       this.debugLog(
         'ALLOCATE_STAT',
@@ -7132,7 +7130,7 @@ module.exports = class SoloLevelingStats {
       return true;
     }
 
-    // Calculate new effect strength for feedback (for non-luck stats)
+    // Calculate new effect strength for feedback (for non-PER stats)
     const statEffects = {
       strength: `+${(this.settings.stats[statName] * 5).toFixed(0)}% XP per message`,
       agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance`,
@@ -7155,11 +7153,13 @@ module.exports = class SoloLevelingStats {
       null // No perception buff for non-perception stats
     );
 
-    // Save immediately on stat allocation (important change)
-    this.saveSettings(true);
-
-    // Update chat UI
-    this.updateChatUI();
+    this.applyStatMutationEffects({
+      emitPayload: {
+        statChanged: statName,
+        oldValue,
+        newValue,
+      },
+    });
 
     // Debug log
     this.debugLog('ALLOCATE_STAT', 'Stat point allocated successfully', {
@@ -7326,19 +7326,10 @@ module.exports = class SoloLevelingStats {
 
       // If any stats grew, save and update UI
       if (statsGrown.length > 0) {
-        // Invalidate caches since stats changed
-        this.invalidatePerformanceCache(['stats', 'perception']);
-
-        // Save immediately (important change)
-        this.saveSettings(true);
-
-        // Update chat UI
-        this.updateChatUI();
-
-        // Emit stats changed event
-        this.emit('statsChanged', {
-          stats: { ...this.settings.stats },
-          statsGrown,
+        this.applyStatMutationEffects({
+          emitPayload: {
+            statsGrown,
+          },
         });
 
         // Natural stat growth is silent — reflected in chat UI stats panel.
@@ -7387,19 +7378,20 @@ module.exports = class SoloLevelingStats {
         const def = this.questData[questId] || { name: questId, desc: '' };
         const cappedProgress = Math.min(quest.progress, quest.target);
         const percentage = Math.min((cappedProgress / quest.target) * 100, 100);
-        const progressText = quest.completed ? quest.target : Math.floor(cappedProgress);
+        const progressText = quest.completed
+          ? 'Completed'
+          : `${Math.floor(cappedProgress)}/${quest.target}`;
         const percentageText = percentage.toFixed(1);
         return `
         <div class="sls-chat-quest-item ${quest.completed ? 'sls-chat-quest-complete' : ''}">
           <div class="sls-chat-quest-header">
             <span class="sls-chat-quest-name">${def.name}</span>
-            <span class="sls-chat-quest-progress">${progressText}/${quest.target}</span>
+            <span class="sls-chat-quest-progress">${progressText}</span>
           </div>
           <div class="sls-chat-quest-desc">${def.desc}</div>
           <div class="sls-chat-progress-bar">
             <div class="sls-chat-progress-fill" style="width: ${percentageText}%"></div>
           </div>
-          ${quest.completed ? '<div class="sls-chat-quest-badge">Complete</div>' : ''}
         </div>
       `;
       })
@@ -8989,7 +8981,6 @@ module.exports = class SoloLevelingStats {
       agility: bonus.agility || 0,
       intelligence: bonus.intelligence || 0,
       vitality: bonus.vitality || 0,
-      luck: bonus.luck || 0,
       perception: bonus.perception || 0,
       // New format (percentages) - primary format
       strengthPercent: bonus.strengthPercent || 0,
@@ -9248,6 +9239,15 @@ module.exports = class SoloLevelingStats {
   // getEffectiveShadowArmyBuffs(): Apply Arise skill multiplier
   // shareShadowXP(): 5% message XP, 10% quest XP to all shadows
 
+  cacheShadowArmyBuffs(buffs, timestamp = Date.now()) {
+    const normalized = buffs && typeof buffs === 'object'
+      ? { ...this.DEFAULT_SHADOW_BUFFS, ...buffs }
+      : { ...this.DEFAULT_SHADOW_BUFFS };
+    this._cache.shadowArmyBuffs = normalized;
+    this._cache.shadowArmyBuffsTime = timestamp;
+    return normalized;
+  }
+
   getShadowArmyBuffs() {
     // Check cache first (avoid repeated plugin lookups)
     const now = Date.now();
@@ -9262,10 +9262,7 @@ module.exports = class SoloLevelingStats {
     try {
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
-        const result = this.DEFAULT_SHADOW_BUFFS;
-        this._cache.shadowArmyBuffs = result;
-        this._cache.shadowArmyBuffsTime = now;
-        return result;
+        return this.cacheShadowArmyBuffs(null, now);
       }
 
       const shadowArmy = shadowArmyPlugin.instance;
@@ -9277,10 +9274,7 @@ module.exports = class SoloLevelingStats {
         // Otherwise return zeros (will be updated asynchronously)
         if (shadowArmy.cachedBuffs && Date.now() - (shadowArmy.cachedBuffsTime || 0) < 5000) {
           // Use cached buffs if recent (within 5 seconds)
-          const result = shadowArmy.cachedBuffs;
-          this._cache.shadowArmyBuffs = result;
-          this._cache.shadowArmyBuffsTime = now;
-          return result;
+          return this.cacheShadowArmyBuffs(shadowArmy.cachedBuffs, now);
         }
 
         // Trigger async calculation and cache it
@@ -9289,9 +9283,7 @@ module.exports = class SoloLevelingStats {
           .then((buffs) => {
             shadowArmy.cachedBuffs = buffs;
             shadowArmy.cachedBuffsTime = Date.now();
-            // Update our cache too
-            this._cache.shadowArmyBuffs = buffs;
-            this._cache.shadowArmyBuffsTime = Date.now();
+            this.cacheShadowArmyBuffs(buffs);
             // Update UI when buffs are calculated
             this.updateChatUI();
           })
@@ -9300,22 +9292,13 @@ module.exports = class SoloLevelingStats {
           });
 
         // Return zeros for now, will be updated when async calculation completes
-        const result = shadowArmy.cachedBuffs || this.DEFAULT_SHADOW_BUFFS;
-        this._cache.shadowArmyBuffs = result;
-        this._cache.shadowArmyBuffsTime = now;
-        return result;
+        return this.cacheShadowArmyBuffs(shadowArmy.cachedBuffs, now);
       }
 
-      const result = this.DEFAULT_SHADOW_BUFFS;
-      this._cache.shadowArmyBuffs = result;
-      this._cache.shadowArmyBuffsTime = now;
-      return result;
+      return this.cacheShadowArmyBuffs(null, now);
     } catch (error) {
       // Silently fail if ShadowArmy isn't available
-      const result = this.DEFAULT_SHADOW_BUFFS;
-      this._cache.shadowArmyBuffs = result;
-      this._cache.shadowArmyBuffsTime = now;
-      return result;
+      return this.cacheShadowArmyBuffs(null, now);
     }
   }
 
@@ -9354,24 +9337,7 @@ module.exports = class SoloLevelingStats {
     this._chatUIElements.hpManaDisplay = hpManaDisplay;
 
     const effectiveStats = totalStats || this.getTotalEffectiveStats();
-    const vitality = effectiveStats.vitality || 0;
-    const intelligence = effectiveStats.intelligence || 0;
-    const userRank = this.settings.rank || 'E';
-    const maxHP = this.calculateHP(vitality, userRank);
-    const maxMana = this.calculateMana(intelligence);
-
-    // Preserve current % when stats change (handles decreases after reset)
-    const prevMaxHP = this.settings.userMaxHP || maxHP;
-    const prevHP = this.settings.userHP ?? prevMaxHP;
-    const hpPercent = prevMaxHP > 0 ? Math.min(prevHP / prevMaxHP, 1) : 1;
-    this.settings.userMaxHP = maxHP;
-    this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercent));
-
-    const prevMaxMana = this.settings.userMaxMana || maxMana;
-    const prevMana = this.settings.userMana ?? prevMaxMana;
-    const manaPercentPrev = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
-    this.settings.userMaxMana = maxMana;
-    this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercentPrev));
+    this.recomputeHPManaFromStats(effectiveStats);
 
     const hpPercentDisplay = (this.settings.userHP / this.settings.userMaxHP) * 100;
     const manaPercentDisplay = (this.settings.userMana / this.settings.userMaxMana) * 100;
@@ -9431,10 +9397,31 @@ module.exports = class SoloLevelingStats {
 
   // ── §3.22 CHAT UI MANAGEMENT ─────────────────────────────────────────────
   // createChatUI(): Build collapsible panel (level, stats, quests, achievements)
-  // renderChatUI(): Generate full HTML with tabs (Stats | Quests | Achievements)
+  // renderChatUI(): Generate full HTML with sections (Stats | Activity | Quests)
   // updateChatUI(): Refresh visible tab (throttled to 2s)
   // attachChatUIListeners(): Tab switching, stat allocation buttons
   // getChatUiCssText(): 1200+ lines of theme CSS (§3.22.1)
+
+  ensureChatUIUpdateInterval(onlyWhenDirty = false) {
+    if (this.chatUIUpdateInterval) return;
+
+    this.chatUIUpdateInterval = setInterval(() => {
+      if (onlyWhenDirty && !this._chatUIDirty) return;
+      this._chatUIDirty = false;
+      this.updateChatUI();
+    }, 2000);
+  }
+
+  initializeChatUIPanel(panel, { onlyWhenDirty = false } = {}) {
+    if (!panel) return false;
+    this.chatUIPanel = panel;
+    this.attachChatUIListeners(panel);
+    setTimeout(() => {
+      panel.isConnected && this.attachStatButtonListeners(panel);
+    }, 100);
+    this.ensureChatUIUpdateInterval(onlyWhenDirty);
+    return true;
+  }
 
   createChatUI() {
     try {
@@ -9459,19 +9446,7 @@ module.exports = class SoloLevelingStats {
         setTimeout(() => {
           const uiPanel = document.getElementById('sls-chat-ui');
           if (uiPanel) {
-            this.attachChatUIListeners(uiPanel);
-            setTimeout(() => {
-              this.attachStatButtonListeners(uiPanel);
-            }, 100);
-
-            // Update UI periodically
-            if (!this.chatUIUpdateInterval) {
-              this.chatUIUpdateInterval = setInterval(() => {
-                this.updateChatUI();
-              }, 2000); // Update every 2 seconds
-            }
-
-            this.chatUIPanel = uiPanel;
+            this.initializeChatUIPanel(uiPanel);
           }
         }, 100);
         return; // React injection successful, skip DOM fallback
@@ -9514,22 +9489,7 @@ module.exports = class SoloLevelingStats {
           // Insert before the message input area
           messageInputArea.parentElement.insertBefore(uiPanel, messageInputArea);
 
-          // Add event listeners
-          this.attachChatUIListeners(uiPanel);
-
-          // Also attach listeners to stat buttons that were just created
-          setTimeout(() => {
-            this.attachStatButtonListeners(uiPanel);
-          }, 100);
-
-          // Update UI periodically
-          if (!this.chatUIUpdateInterval) {
-            this.chatUIUpdateInterval = setInterval(() => {
-              this.updateChatUI();
-            }, 2000); // Update every 2 seconds
-          }
-
-          this.chatUIPanel = uiPanel;
+          this.initializeChatUIPanel(uiPanel);
           return true;
         } catch (uiError) {
           this.debugError('TRY_CREATE_UI', uiError);
@@ -9671,67 +9631,50 @@ module.exports = class SoloLevelingStats {
   buildTitleBonusHTML(titleBonus, cssClass = 'sls-chat-title-bonus') {
     if (!titleBonus) return '';
     const buffs = [];
-    // Percentage-based stat bonuses (new format)
-    if (titleBonus.xp > 0) buffs.push(`+${(titleBonus.xp * 100).toFixed(0)}% XP`);
-    if (titleBonus.critChance > 0) buffs.push(`+${(titleBonus.critChance * 100).toFixed(0)}% Crit`);
-    if (titleBonus.strengthPercent > 0) buffs.push(`+${(titleBonus.strengthPercent * 100).toFixed(0)}% STR`);
-    if (titleBonus.agilityPercent > 0) buffs.push(`+${(titleBonus.agilityPercent * 100).toFixed(0)}% AGI`);
-    if (titleBonus.intelligencePercent > 0) buffs.push(`+${(titleBonus.intelligencePercent * 100).toFixed(0)}% INT`);
-    if (titleBonus.vitalityPercent > 0) buffs.push(`+${(titleBonus.vitalityPercent * 100).toFixed(0)}% VIT`);
-    if (titleBonus.perceptionPercent > 0) buffs.push(`+${(titleBonus.perceptionPercent * 100).toFixed(0)}% PER`);
-    // Old format (raw numbers) backward compatibility
-    if (titleBonus.strength > 0 && !titleBonus.strengthPercent) buffs.push(`+${titleBonus.strength} STR`);
-    if (titleBonus.agility > 0 && !titleBonus.agilityPercent) buffs.push(`+${titleBonus.agility} AGI`);
-    if (titleBonus.intelligence > 0 && !titleBonus.intelligencePercent) buffs.push(`+${titleBonus.intelligence} INT`);
-    if (titleBonus.vitality > 0 && !titleBonus.vitalityPercent) buffs.push(`+${titleBonus.vitality} VIT`);
-    if (titleBonus.luck > 0 && !titleBonus.perceptionPercent) buffs.push(`+${titleBonus.luck} PER`);
+
+    const percentRules = [
+      ['xp', 'XP'],
+      ['critChance', 'Crit'],
+      ['strengthPercent', 'STR'],
+      ['agilityPercent', 'AGI'],
+      ['intelligencePercent', 'INT'],
+      ['vitalityPercent', 'VIT'],
+      ['perceptionPercent', 'PER'],
+    ];
+    percentRules.forEach(([key, label]) => {
+      const value = titleBonus[key] || 0;
+      if (value > 0) buffs.push(`+${(value * 100).toFixed(0)}% ${label}`);
+    });
+
+    const rawRules = [
+      ['strength', 'strengthPercent', 'STR'],
+      ['agility', 'agilityPercent', 'AGI'],
+      ['intelligence', 'intelligencePercent', 'INT'],
+      ['vitality', 'vitalityPercent', 'VIT'],
+      ['perception', 'perceptionPercent', 'PER'],
+    ];
+    rawRules.forEach(([rawKey, percentKey, label]) => {
+      const rawValue = titleBonus[rawKey] || 0;
+      if (rawValue > 0 && !titleBonus[percentKey]) {
+        buffs.push(`+${rawValue} ${label}`);
+      }
+    });
+
     return buffs.length > 0 ? `<span class="${cssClass}">${buffs.join(', ')}</span>` : '';
   }
 
   renderChatUI() {
-    const levelInfo = this.getCurrentLevel();
-
-    // CRITICAL: Ensure levelInfo is valid and calculate XP percentage safely
-    let xpPercent = 0;
-    if (levelInfo && levelInfo.xpRequired && levelInfo.xpRequired > 0) {
-      xpPercent = Math.min(100, Math.max(0, (levelInfo.xp / levelInfo.xpRequired) * 100));
-    } else {
-      // Fallback: Use settings directly if levelInfo is invalid
-      const fallbackXP = this.settings.xp || 0;
-      const fallbackXPRequired = this.getXPRequiredForLevel(this.settings.level || 1);
-      if (fallbackXPRequired > 0) {
-        xpPercent = Math.min(100, Math.max(0, (fallbackXP / fallbackXPRequired) * 100));
-      }
-      this.debugLog('RENDER_CHAT_UI', 'Using fallback XP calculation', {
-        fallbackXP,
-        fallbackXPRequired,
-        xpPercent,
-        level: this.settings.level,
-      });
-    }
+    const progressSnapshot = this.getLevelProgressSnapshot({
+      allowFallback: true,
+      logContext: 'RENDER_CHAT_UI',
+    });
+    const xpPercent = progressSnapshot.xpPercent;
 
     const titleBonus = this.getActiveTitleBonus();
 
     // Calculate HP/Mana using TOTAL effective stats (including all buffs)
     const totalStats = this.getTotalEffectiveStats();
-    const vitality = totalStats.vitality || 0;
-    const intelligence = totalStats.intelligence || 0;
-    const userRank = this.settings.rank || 'E';
-    const maxHP = this.calculateHP(vitality, userRank);
-    const maxMana = this.calculateMana(intelligence);
-
-    // Preserve current % when stats change (handles decreases after reset)
-    const prevMaxHP = this.settings.userMaxHP || maxHP;
-    const prevHP = this.settings.userHP ?? prevMaxHP;
-    const hpPercentCurrent = prevMaxHP > 0 ? Math.min(prevHP / prevMaxHP, 1) : 1;
-    this.settings.userMaxHP = maxHP;
-    this.settings.userHP = Math.min(maxHP, Math.floor(maxHP * hpPercentCurrent));
-
-    const prevMaxMana = this.settings.userMaxMana || maxMana;
-    const prevMana = this.settings.userMana ?? prevMaxMana;
-    const manaPercentCurrent = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
-    this.settings.userMaxMana = maxMana;
-    this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercentCurrent));
+    this.recomputeHPManaFromStats(totalStats);
 
     const hpPercent = (this.settings.userHP / this.settings.userMaxHP) * 100;
     const manaPercent = (this.settings.userMana / this.settings.userMaxMana) * 100;
@@ -9767,10 +9710,7 @@ module.exports = class SoloLevelingStats {
             <div class="sls-chat-rank">Rank: ${this.settings.rank}</div>
             <div class="sls-chat-level-number">Lv.${this.settings.level}</div>
             <div class="sls-chat-progress-bar">
-              <div class="sls-chat-progress-fill" id="sls-xp-progress-fill" style="width: ${Math.min(
-                100,
-                Math.max(0, xpPercent)
-              ).toFixed(2)}%"></div>
+              <div class="sls-chat-progress-fill" id="sls-xp-progress-fill" style="width: ${this.formatPercentWidth(xpPercent)}"></div>
             </div>
             <div class="sls-chat-shadow-power">Shadow Power: ${this.getTotalShadowPower()}</div>
           </div>
@@ -9823,16 +9763,6 @@ module.exports = class SoloLevelingStats {
         </div>
         <div class="sls-chat-section" id="sls-chat-quests" style="display: none;">
           ${this.renderChatQuests()}
-        </div>
-
-        <div class="sls-chat-section-toggle" data-section="achievements">
-          <span class="sls-chat-section-title">Achievements (${
-            this.settings.achievements.unlocked.length
-          } unlocked)</span>
-          <span class="sls-chat-section-arrow"></span>
-        </div>
-        <div class="sls-chat-section" id="sls-chat-achievements" style="display: none;">
-          ${this.renderChatAchievements()}
         </div>
       </div>
     `;
@@ -10020,22 +9950,16 @@ module.exports = class SoloLevelingStats {
     const titleBonus = this.getActiveTitleBonus();
 
     try {
-      const levelInfo = this.getCurrentLevel();
+      const progressSnapshot = this.getLevelProgressSnapshot();
+      const levelInfo = progressSnapshot.levelInfo;
 
       // Guard clause: Return early if level info is invalid
-      if (!levelInfo || !levelInfo.xpRequired || levelInfo.xpRequired <= 0) {
+      if (!progressSnapshot.valid || !levelInfo) {
         this.debugLog('UPDATE_CHAT_UI', 'Invalid level info, skipping update');
         return;
       }
 
-      // Calculate XP percentage with safety checks
-      const xpPercent = Math.min(100, Math.max(0, (levelInfo.xp / levelInfo.xpRequired) * 100));
-
-      // Guard clause: Skip if percentage is invalid
-      if (isNaN(xpPercent) || !isFinite(xpPercent)) {
-        this.debugLog('UPDATE_CHAT_UI', 'Invalid XP percentage, skipping progress bar update');
-        return;
-      }
+      const xpPercent = progressSnapshot.xpPercent;
 
 
       // Update rank display
@@ -10057,43 +9981,11 @@ module.exports = class SoloLevelingStats {
       this._chatUIElements.levelNumber = levelNumber;
 
       // Update progress bar with explicit style update
-      // Try multiple selectors to find the progress bar (in order of preference)
-      const cachedProgressFill = this._chatUIElements?.progressFill;
-      let progressFill =
-        cachedProgressFill && cachedProgressFill.isConnected ? cachedProgressFill : null;
-      if (!progressFill) progressFill = this.chatUIPanel.querySelector('#sls-xp-progress-fill');
-
-      // Fallback: Try class selector
-      if (!progressFill) {
-        progressFill = this.chatUIPanel.querySelector('.sls-chat-progress-fill');
-      }
-
-      // Fallback: Try finding in level section
-      if (!progressFill) {
-        const levelSection = this.chatUIPanel.querySelector('.sls-chat-level');
-        if (levelSection) {
-          progressFill =
-            levelSection.querySelector('#sls-xp-progress-fill') ||
-            levelSection.querySelector('.sls-chat-progress-fill');
-        }
-      }
-
-      // Fallback: Try finding in progress bar container
-      if (!progressFill) {
-        const progressBar = this.chatUIPanel.querySelector('.sls-chat-progress-bar');
-        if (progressBar) {
-          progressFill =
-            progressBar.querySelector('#sls-xp-progress-fill') ||
-            progressBar.querySelector('.sls-chat-progress-fill');
-        }
-      }
+      const progressFill = this.getXPProgressFillElement();
 
       if (progressFill) {
-        this._chatUIElements.progressFill = progressFill;
-
-        // CRITICAL: Ensure percentage is valid before updating
-        const validPercent = Math.min(100, Math.max(0, xpPercent));
-        const percentString = `${validPercent.toFixed(2)}%`;
+        const validPercent = this.clampPercentage(xpPercent);
+        const percentString = this.formatPercentWidth(validPercent);
 
         // Update width with transition
         progressFill.style.width = percentString;
@@ -10180,28 +10072,12 @@ module.exports = class SoloLevelingStats {
     const shadowBuffs = this.getEffectiveShadowArmyBuffs();
 
     this.chatUIPanel.querySelectorAll('.sls-chat-stat-btn').forEach((btn) => {
-      const statName = btn.dataset.stat;
-      const valueEl = btn.querySelector('.sls-chat-stat-btn-value');
-      if (valueEl) {
-        // Use helper to generate HTML with buff badges instead of plain textContent
-        const totalValue = totalStats[statName] ?? this.settings.stats[statName];
-        valueEl.innerHTML = this.getStatValueWithBuffsHTML(
-          totalValue,
-          statName,
-          titleBonus,
-          shadowBuffs
-        );
-      }
-      // Update button state (use base stats for allocation logic)
-      const _currentValue = this.settings.stats[statName];
-      const canAllocate = this.settings.unallocatedStatPoints > 0;
-      btn.disabled = !canAllocate;
-      btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
-      // Update plus indicator
-      const plusEl = btn.querySelector('.sls-chat-stat-btn-plus');
-      if (plusEl) {
-        plusEl.style.display = canAllocate ? 'block' : 'none';
-      }
+      this.syncChatStatButton(btn, {
+        totalStats,
+        titleBonus,
+        shadowBuffs,
+        canAllocate: this.settings.unallocatedStatPoints > 0,
+      });
     });
 
     // Update HP/Mana bars
@@ -10216,9 +10092,7 @@ module.exports = class SoloLevelingStats {
           const allocationDiv = document.createElement('div');
           allocationDiv.className = 'sls-chat-stat-allocation';
           allocationDiv.innerHTML = `
-            <div class="sls-chat-stat-points">${
-              this.settings.unallocatedStatPoints
-            } unallocated stat point${this.settings.unallocatedStatPoints > 1 ? 's' : ''}</div>
+            <div class="sls-chat-stat-points">${this.formatUnallocatedStatPointsText()}</div>
             <div class="sls-chat-stat-buttons">
               ${this.renderChatStatButtons()}
             </div>
@@ -10238,9 +10112,7 @@ module.exports = class SoloLevelingStats {
         const pointsEl = statAllocationEl.querySelector('.sls-chat-stat-points');
         const buttonsEl = statAllocationEl.querySelector('.sls-chat-stat-buttons');
         if (pointsEl) {
-          pointsEl.textContent = `${this.settings.unallocatedStatPoints} unallocated stat point${
-            this.settings.unallocatedStatPoints > 1 ? 's' : ''
-          }`;
+          pointsEl.textContent = this.formatUnallocatedStatPointsText();
         }
         if (buttonsEl) {
           // Only re-render buttons if they don't exist (prevent unnecessary re-renders)
@@ -10253,36 +10125,12 @@ module.exports = class SoloLevelingStats {
           } else {
             // Buttons exist, just update values and state without re-rendering
             existingButtons.forEach((btn) => {
-              const statName = btn.getAttribute('data-stat');
-              if (!statName) return;
-
-              const valueEl = btn.querySelector('.sls-chat-stat-btn-value');
-              if (valueEl) {
-                valueEl.textContent = this.settings.stats[statName] || 0;
-              }
-
-              // Update button state
-              const currentValue = this.settings.stats[statName] || 0;
-              const canAllocate = this.settings.unallocatedStatPoints > 0;
-              btn.disabled = !canAllocate;
-              btn.classList.toggle('sls-chat-stat-btn-available', canAllocate);
-
-              // Update plus indicator
-              let plusEl = btn.querySelector('.sls-chat-stat-btn-plus');
-              if (canAllocate && !plusEl) {
-                plusEl = document.createElement('div');
-                plusEl.className = 'sls-chat-stat-btn-plus';
-                plusEl.textContent = '+';
-                btn.appendChild(plusEl);
-              } else if (!canAllocate && plusEl) {
-                plusEl.remove();
-              }
-
-              // Update title from STAT_METADATA
-              const def = this.STAT_METADATA[statName];
-              if (def) {
-                btn.title = `${def.fullName}: ${currentValue} - ${def.desc} per point`;
-              }
+              this.syncChatStatButton(btn, {
+                totalStats,
+                titleBonus,
+                shadowBuffs,
+                canAllocate: this.settings.unallocatedStatPoints > 0,
+              });
             });
           }
         }
@@ -10304,20 +10152,6 @@ module.exports = class SoloLevelingStats {
       questsSection.innerHTML = this.renderChatQuests();
     }
 
-    // Update achievements section if visible
-    const achievementsSection = this.chatUIPanel.querySelector('#sls-chat-achievements');
-    if (achievementsSection && achievementsSection.style.display !== 'none') {
-      achievementsSection.innerHTML = this.renderChatAchievements();
-    }
-
-    // Update achievements count in toggle
-    const achievementsToggle = this.chatUIPanel.querySelector(
-      '[data-section="achievements"] .sls-chat-section-title'
-    );
-    if (achievementsToggle) {
-      const count = this.settings.achievements.unlocked.length;
-      achievementsToggle.textContent = `Achievements (${count} unlocked)`;
-    }
   }
 
   /**
