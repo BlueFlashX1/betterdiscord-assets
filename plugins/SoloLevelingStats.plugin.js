@@ -3871,11 +3871,46 @@ module.exports = class SoloLevelingStats {
     if (!this.fileBackupPath) return null;
     try {
       const fs = require('fs');
-      if (!fs.existsSync(this.fileBackupPath)) {
-        return null;
+
+      // Helper to read and score a file
+      const getCandidate = (path) => {
+        try {
+          if (!fs.existsSync(path)) return null;
+          const raw = fs.readFileSync(path, 'utf8');
+          const data = JSON.parse(raw);
+
+          // Score quality: Level * 1000 + Stat Sum
+          const stats = data.stats || {};
+          const statSum = (Number(stats.strength) || 0) + (Number(stats.agility) || 0) +
+            (Number(stats.intelligence) || 0) + (Number(stats.vitality) || 0) + (Number(stats.perception) || 0);
+          const quality = (Number(data.level) || 0) * 1000 + statSum + (Number(data.totalXP || data.xp) || 0) * 0.01;
+
+          return { data, quality, path };
+        } catch (e) {
+          return null;
+        }
+      };
+
+      // Scan all backup slots: main, .bak1, .bak2, .bak3, .bak4, .bak5
+      const candidates = [];
+      const paths = [this.fileBackupPath];
+      for (let i = 1; i <= 5; i++) paths.push(`${this.fileBackupPath}.bak${i}`);
+
+      paths.forEach(p => {
+        const c = getCandidate(p);
+        if (c) candidates.push(c);
+      });
+
+      if (candidates.length === 0) return null;
+
+      // Sort by quality descending
+      candidates.sort((a, b) => b.quality - a.quality);
+
+      if (candidates.length > 1) {
+        this.debugLog('READ_FILE_BACKUP', `Found ${candidates.length} backups. Best: ${candidates[0].path} (Q:${candidates[0].quality})`);
       }
-      const raw = fs.readFileSync(this.fileBackupPath, 'utf8');
-      return JSON.parse(raw);
+
+      return candidates[0].data;
     } catch (error) {
       this.debugError('LOAD_SETTINGS_FILE', error);
       return null;
@@ -3886,13 +3921,31 @@ module.exports = class SoloLevelingStats {
     if (!this.fileBackupPath) return false;
     try {
       const fs = require('fs');
+
+      // Rotate backups: .bak4 -> .bak5, .bak3 -> .bak4, ... .json -> .bak1
+      // Keep up to 5 rolling backups
+      const maxBackups = 5;
+      for (let i = maxBackups - 1; i >= 0; i--) {
+        const src = i === 0 ? this.fileBackupPath : `${this.fileBackupPath}.bak${i}`;
+        const dest = `${this.fileBackupPath}.bak${i + 1}`;
+        if (fs.existsSync(src)) {
+          try {
+            // Copy instead of rename to potentially preserve created timestamps or permissions
+            fs.copyFileSync(src, dest);
+          } catch (e) {
+            // Ignore rotation errors (permissions, etc), focus on saving main file
+            this.debugError('ROTATE_BACKUP', e);
+          }
+        }
+      }
+
       const jsonStr = JSON.stringify(data, null, 2);
       // Async write to avoid blocking the UI thread
       fs.writeFile(this.fileBackupPath, jsonStr, 'utf8', (err) => {
         if (err) {
           this.debugError('SAVE_SETTINGS_FILE', err);
         } else {
-          this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: this.fileBackupPath });
+          this.debugLog('SAVE_SETTINGS', 'Saved file backup (rotated)', { path: this.fileBackupPath });
         }
       });
       return true;
