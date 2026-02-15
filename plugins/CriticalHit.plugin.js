@@ -3193,9 +3193,8 @@ module.exports = class CriticalHit {
    * @param {boolean} useGradient - Whether gradient is being used
    */
   setupGradientMonitoring(messageElement, content, messageId, useGradient) {
-    // PERF: No-op — CSS !important fallback in injected stylesheet now handles gradient persistence
-    // through Discord React re-renders. Per-message MutationObservers with getComputedStyle are redundant.
-    return;
+    // Re-enabled: CSS !important fallback alone does NOT persist through Discord React re-renders
+    // (Discord replaces entire DOM elements). The _isApplyingGradient guard prevents observer loops.
     if (!content || !useGradient || !messageId) return;
 
     // Clean up existing observer
