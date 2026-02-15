@@ -4420,77 +4420,48 @@ module.exports = class CriticalHit {
         }
       }
 
-      // Get message ID to check against processedMessages (which now uses IDs, not element references)
-      let messageId = messageElement ? this.getMessageIdentifier(messageElement) : null;
+      // CRITICAL PERF: Defer ALL processing to requestIdleCallback to prevent freeze
+      // Previously, getMessageIdentifier (Fiber traversal) was running synchronously, causing freeze.
+      const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
 
-      // Reject likely channel IDs unless message metadata strongly supports this candidate
-      if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
-        messageId = null; // Reject it, will use content hash fallback
-      }
+      scheduleCallback(() => {
+        if (this._isStopped) return;
 
-      // Only log in verbose mode to reduce console spam during startup
-      this.debug?.verbose &&
-        this.debugLog('PROCESS_NODE', 'processNode detected message', {
-          messageId: messageId,
-          alreadyProcessed: messageId ? this.processedMessages.has(messageId) : false,
-          isLoadingChannel: this.isLoadingChannel,
-        });
+        // Get message ID *inside* callback (heavy operation)
+        // Get message ID to check against processedMessages (which now uses IDs, not element references)
+        let messageId = messageElement ? this.getMessageIdentifier(messageElement) : null;
 
-      // CRITICAL FIX: Process messages even if messageId is null (new messages might not have ID yet)
-      // Also process if messageId exists and hasn't been processed
-      // But skip if messageId exists and is already processed (to avoid duplicates)
-      const shouldProcess =
-        messageElement &&
-        (!messageId || // No ID yet - process it (will get ID later)
-          !this.processedMessages.has(messageId)); // Has ID and not processed
-
-      // debug stripped
-      if (shouldProcess) {
-        // Skip if channel is still loading (but use shorter delay for better responsiveness)
-        if (this.isLoadingChannel) {
-          // Only log in verbose mode - this is expected behavior during channel load
-          this.debug?.verbose && this.debugLog('PROCESS_NODE', 'Skipping - channel loading');
-          return;
+        // Reject likely channel IDs unless message metadata strongly supports this candidate
+        if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
+          messageId = null; // Reject it, will use content hash fallback
         }
 
-        // FIXED: Process ALL messages regardless of scroll position
-        // The scroll check was too restrictive and blocked messages when not scrolled to bottom
-        // Instead, use a simple timing check to avoid processing during initial channel load
-        const timeSinceChannelLoad = Date.now() - (this.channelLoadTime || 0);
-        const timeSinceObserverStart = Date.now() - (this.observerStartTime || 0);
+        // Only log in verbose mode to reduce console spam during startup
+        this.debug?.verbose &&
+          this.debugLog('PROCESS_NODE', 'processNode detected message', {
+            messageId: messageId,
+            alreadyProcessed: messageId ? this.processedMessages.has(messageId) : false,
+            isLoadingChannel: this.isLoadingChannel,
+          });
 
-        // CRITICAL: For new messages (sent after observer started), process immediately
-        // Only delay if channel was just loaded (initial load)
-        const isNewMessage = timeSinceObserverStart > 2000; // Observer has been running for 2+ seconds
+        // CRITICAL FIX: Process messages even if messageId is null (new messages might not have ID yet)
+        // Also process if messageId exists and hasn't been processed
+        // But skip if messageId exists and is already processed (to avoid duplicates)
+        const shouldProcess =
+          messageElement &&
+          (!messageId || // No ID yet - process it (will get ID later)
+            !this.processedMessages.has(messageId)); // Has ID and not processed
 
-        if (isNewMessage || timeSinceChannelLoad > 500) {
-          // Reduced from 1000-2000ms for faster processing
-
-          // Process immediately (no scroll position check)
-          // CRITICAL: Don't mark as processed yet - let checkForCrit do it after validation
-          // This allows checkForCrit to validate the messageId and reject channel IDs
-
-          // Optimization removed: React may re-render children (content) while keeping parent (wrapper) styled.
-          // We must allow checkForCrit to run to verify content styling.
-
-          // Optimization: Use requestIdleCallback for bulk operations to prevent UI freeze
-          // Fallback to setTimeout if requestIdleCallback is not available
-          const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
-
-          scheduleCallback(() => {
-            if (this._isStopped) return;
-            this.checkForCrit(messageElement);
-          }, { timeout: 1000 });
-        } else {
-          // Retry after delay if channel just loaded
-          this._setTrackedTimeout(() => {
-            if (this._isStopped) return;
-            if (messageElement?.isConnected && !this.processedMessages.has(messageId)) {
-              this.checkForCrit(messageElement);
-            }
-          }, 500 - timeSinceChannelLoad);
+        if (shouldProcess) {
+          // Skip if channel is still loading (but use shorter delay for better responsiveness)
+          if (this.isLoadingChannel) {
+            // Only log in verbose mode - this is expected behavior during channel load
+            this.debug?.verbose && this.debugLog('PROCESS_NODE', 'Skipping - channel loading');
+            return;
+          }
+          this.checkForCrit(messageElement);
         }
-      }
+      }, { timeout: 1000 });
     } catch (error) {
       this.debugError('PROCESS_NODE', error, {
         nodeType: node?.nodeType,
