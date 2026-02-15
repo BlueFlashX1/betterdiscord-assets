@@ -4473,11 +4473,14 @@ module.exports = class CriticalHit {
           // Optimization removed: React may re-render children (content) while keeping parent (wrapper) styled.
           // We must allow checkForCrit to run to verify content styling.
 
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              this.checkForCrit(messageElement);
-            });
-          });
+          // Optimization: Use requestIdleCallback for bulk operations to prevent UI freeze
+          // Fallback to setTimeout if requestIdleCallback is not available
+          const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+
+          scheduleCallback(() => {
+            if (this._isStopped) return;
+            this.checkForCrit(messageElement);
+          }, { timeout: 1000 });
         } else {
           // Retry after delay if channel just loaded
           this._setTrackedTimeout(() => {
