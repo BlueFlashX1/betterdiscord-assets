@@ -2913,7 +2913,7 @@ module.exports = class Dungeons {
         if (!this.started || !this.settings?.enabled) return;
         if (document.hidden) return;
 
-        console.log('[Dungeons] MutationObserver callback fired, mutations:', mutations.length);
+        if (this.settings?.debugMode) console.log('[Dungeons] MutationObserver callback fired, mutations:', mutations.length);
 
         // Queue real chat message list items only; avoid expensive DOM queries on every mutation.
         let addedMessageCount = 0;
@@ -2922,12 +2922,12 @@ module.exports = class Dungeons {
           mutation.addedNodes.forEach((node) => {
             totalNodesAdded++;
             if (!node || node.nodeType !== 1) {
-              console.log('[Dungeons] Skipping node (not element node)');
+              if (this.settings?.debugMode) console.log('[Dungeons] Skipping node (not element node)');
               return;
             }
 
             const listItemId = node.getAttribute?.('data-list-item-id');
-            console.log('[Dungeons] Node added:', {
+            if (this.settings?.debugMode) console.log('[Dungeons] Node added:', {
               nodeName: node.nodeName,
               listItemId,
               classList: Array.from(node.classList || []),
@@ -2939,10 +2939,10 @@ module.exports = class Dungeons {
               node.closest?.('[data-list-item-id^="chat-messages"]');
 
             if (!messageElement) {
-              console.log('[Dungeons] Node is not a chat message element');
+              if (this.settings?.debugMode) console.log('[Dungeons] Node is not a chat message element');
               return;
             }
-            console.log('[Dungeons] Found chat message element!');
+            if (this.settings?.debugMode) console.log('[Dungeons] Found chat message element!');
             this._pendingMessageElements || (this._pendingMessageElements = new Set());
             this._pendingMessageElements.add(messageElement);
             addedMessageCount++;
