@@ -111,11 +111,45 @@ try {
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
 try {
+  if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
+    UnifiedSaveManager = window.UnifiedSaveManager;
+  } else {
   const path = require('path');
-  const managerFile = path.join(BdApi.Plugins.folder, 'UnifiedSaveManager.js');
-  delete require.cache[managerFile];
-  const maybeLoaded = require(managerFile);
-  UnifiedSaveManager = maybeLoaded || window.UnifiedSaveManager || null;
+  const fs = require('fs');
+  const pluginFolder =
+    (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
+      ? BdApi.Plugins.folder
+      : null) ||
+    (typeof __dirname === 'string' ? __dirname : null);
+  if (pluginFolder) {
+    const managerFile = path.join(pluginFolder, 'UnifiedSaveManager.js');
+    if (fs.existsSync(managerFile)) {
+      const managerCode = fs.readFileSync(managerFile, 'utf8');
+      const moduleSandbox = { exports: {} };
+      const exportsSandbox = moduleSandbox.exports;
+      const loader = new Function(
+        'window',
+        'module',
+        'exports',
+        `${managerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || window?.UnifiedSaveManager || null;`
+      );
+      const maybeLoaded = loader(
+        typeof window !== 'undefined' ? window : undefined,
+        moduleSandbox,
+        exportsSandbox
+      );
+      UnifiedSaveManager =
+        maybeLoaded || (typeof window !== 'undefined' ? window.UnifiedSaveManager : null) || null;
+      if (UnifiedSaveManager && typeof window !== 'undefined') {
+        window.UnifiedSaveManager = UnifiedSaveManager;
+      }
+    } else {
+      UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
+    }
+  } else {
+    UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
+  }
+  }
 } catch (error) {
   console.warn('[LevelProgressBar] Failed to load UnifiedSaveManager:', error);
   UnifiedSaveManager = window.UnifiedSaveManager || null;

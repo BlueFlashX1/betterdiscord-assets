@@ -110,7 +110,7 @@ module.exports = class CriticalHit {
     this.defaultSettings = {
       enabled: true,
       critChance: 10, // Base crit chance (can be buffed by Agility/Skill Tree up to 50% effective max)
-      critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
+      critColor: '#8a2be2', // Purple baseline to match Solo Leveling gradient fallback paths
       critGradient: true, // Use purple-black gradient with pink glow
       critFont: "'Friend or Foe BB', 'Orbitron', sans-serif", // Font for message gradient text (Solo Leveling theme - Friend or Foe BB)
       animationFont: 'Speedy Space Goat Oddity', // Font name for floating animation text (Shadow Arise animation - Speedy Space Goat Oddity)
@@ -144,6 +144,7 @@ module.exports = class CriticalHit {
       ownUserId: null,
       // Debug settings
       debugMode: false, // Debug logging (can be toggled in settings)
+      diagnosticLogs: true, // Always-on targeted diagnostics for crit style loss/mismatch
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings modification
@@ -1006,6 +1007,74 @@ module.exports = class CriticalHit {
     } finally {
       this._isApplyingGradient = wasApplying;
     }
+  }
+
+  /**
+   * Canonical expected crit visuals from settings/history for mismatch detection.
+   * @param {Object|null} critSettings
+   * @returns {{useGradient: boolean, color: string, gradient: string, gradientSignature: string}}
+   */
+  getExpectedCritVisuals(critSettings = null) {
+    const useGradient =
+      critSettings?.gradient !== undefined
+        ? critSettings.gradient
+        : this.settings?.critGradient !== false;
+    const color = critSettings?.color || this.settings?.critColor || this.defaultSettings?.critColor;
+    const gradient = this.DEFAULT_GRADIENT_COLORS;
+    return {
+      useGradient,
+      color,
+      gradient,
+      gradientSignature: String(this.simpleHash(gradient)),
+    };
+  }
+
+  /**
+   * Resolve any CSS color string into computed rgb/rgba form for reliable comparisons.
+   * @param {string|null|undefined} color
+   * @returns {string|null}
+   */
+  normalizeColorForCompare(color) {
+    if (!color || typeof document === 'undefined') return null;
+    try {
+      const probe = document.createElement('span');
+      probe.style.display = 'none';
+      probe.style.color = String(color);
+      document.body?.appendChild(probe);
+      const resolved = window.getComputedStyle(probe).color || probe.style.color || null;
+      probe.remove();
+      return resolved ? resolved.replace(/\s+/g, '').toLowerCase() : null;
+    } catch (_) {
+      return color ? String(color).replace(/\s+/g, '').toLowerCase() : null;
+    }
+  }
+
+  /**
+   * Compare solid text color against expected crit color.
+   * @param {HTMLElement} content
+   * @param {string} expectedColor
+   * @returns {boolean}
+   */
+  hasSolidColorMismatch(content, expectedColor) {
+    if (!content || !expectedColor) return false;
+    const computed = window.getComputedStyle(content);
+    const actual = this.normalizeColorForCompare(computed?.color || content.style?.color);
+    const expected = this.normalizeColorForCompare(expectedColor);
+    if (!actual || !expected) return false;
+    return actual !== expected;
+  }
+
+  /**
+   * Persist expected crit visuals as data attributes for post-rerender validation.
+   * @param {HTMLElement} messageElement
+   * @param {{useGradient: boolean, color: string, gradientSignature: string}} visuals
+   */
+  stampCritVisualMetadata(messageElement, visuals) {
+    if (!messageElement || !visuals) return;
+    const mode = visuals.useGradient ? 'gradient' : 'solid';
+    messageElement.setAttribute('data-bd-crit-mode', mode);
+    messageElement.setAttribute('data-bd-crit-color', visuals.color || '');
+    messageElement.setAttribute('data-bd-crit-gradient-signature', visuals.gradientSignature || '');
   }
 
   /**
@@ -2575,6 +2644,14 @@ module.exports = class CriticalHit {
         messageContent: messageData.messageContent || null,
         author: messageData.author || null, // Author username (for display)
       };
+      if (isCrit) {
+        this.diagLog('HISTORY_CRIT_SETTINGS', 'Persisting crit settings to history', {
+          messageId: historyEntry.messageId,
+          color: historyEntry.critSettings?.color || null,
+          gradient: historyEntry.critSettings?.gradient,
+          font: historyEntry.critSettings?.font || null,
+        });
+      }
 
       // Invalidate crit history cache before adding to history
       // This ensures restoration checks immediately see the new crit
@@ -2603,8 +2680,9 @@ module.exports = class CriticalHit {
 
       if (existingIndex >= 0) {
         // Update existing entry
-        const wasCrit = this.messageHistory[existingIndex].isCrit;
-        const existingId = this.messageHistory[existingIndex].messageId;
+        const existingEntry = this.messageHistory[existingIndex];
+        const wasCrit = existingEntry.isCrit;
+        const existingId = existingEntry.messageId;
         const existingIsHashId = String(existingId).startsWith('hash_'); // If updating from hash ID to valid Discord ID, this is a message being sent
         // Keep the crit status but update with the real Discord ID
         existingIsHashId &&
@@ -2618,14 +2696,24 @@ module.exports = class CriticalHit {
             nowCrit: isCrit,
           });
 
-        this.messageHistory[existingIndex] = historyEntry;
+        // Safety: deterministic crit outcome should never downgrade from crit->non-crit.
+        // Prevent transient re-processing from stripping already-applied crit styling.
+        const shouldPreserveCrit = wasCrit && !isCrit;
+        this.messageHistory[existingIndex] = shouldPreserveCrit
+          ? {
+              ...historyEntry,
+              isCrit: true,
+              critSettings: existingEntry.critSettings || historyEntry.critSettings,
+            }
+          : historyEntry;
         this.debug?.verbose &&
           this.debugLog('ADD_TO_HISTORY', 'Updated existing history entry', {
             index: existingIndex,
             wasCrit: wasCrit,
-            nowCrit: isCrit,
+            nowCrit: this.messageHistory[existingIndex].isCrit,
             messageId: messageData.messageId,
             authorId: messageData.authorId,
+            preservedCrit: shouldPreserveCrit,
           });
       } else {
         // Add new entry
@@ -3248,13 +3336,16 @@ module.exports = class CriticalHit {
         if (!currentMsg.classList.contains('bd-crit-hit')) {
           currentMsg.classList.add('bd-crit-hit');
         }
+        currentMsg.setAttribute('data-bd-crit-locked', '1');
+        this.stampCritVisualMetadata(
+          currentMsg,
+          this.getExpectedCritVisuals({ gradient: true, color: this.settings?.critColor })
+        );
 
-        const currentContent = this.findMessageContentElement(currentMsg);
+        const currentContent = this.getCritContentElement(currentMsg);
         if (!currentContent) return true;
 
-        if (!currentContent.classList.contains('bd-crit-text-content')) {
-          currentContent.classList.add('bd-crit-text-content');
-        }
+        this.ensureCritTextContentClass(currentMsg, currentContent);
 
         const retryComputed = window.getComputedStyle(currentContent);
         const hasGradient = retryComputed?.backgroundImage?.includes('gradient');
@@ -3326,7 +3417,7 @@ module.exports = class CriticalHit {
 
       // Apply crit style with specific settings (for restoration)
       // Find message content element
-      const content = this.findMessageContentElement(messageElement);
+      const content = this.getCritContentElement(messageElement);
       if (!content) {
         this.debugLog('APPLY_CRIT_STYLE_WITH_SETTINGS', 'No content element found - skipping');
         return;
@@ -3338,11 +3429,21 @@ module.exports = class CriticalHit {
         critSettings.gradient !== undefined
           ? critSettings.gradient
           : this.settings.critGradient !== false;
+      const expectedVisuals = this.getExpectedCritVisuals(critSettings);
+      const historyColor = this.normalizeColorForCompare(critSettings?.color);
+      const liveColor = this.normalizeColorForCompare(this.settings?.critColor);
+      if (historyColor && liveColor && historyColor !== liveColor) {
+        this.diagLog('COLOR_MISMATCH', 'History crit color differs from current setting', {
+          messageId: msgId,
+          historyColor: critSettings?.color,
+          currentSettingColor: this.settings?.critColor,
+        });
+      }
 
       // Apply styles to the entire content container (sentence-level, not letter-level)
       {
-        // Add a specific class to this element so CSS only targets it (not username/timestamp)
-        content.classList.add('bd-crit-text-content');
+        // Add class anchors so CSS survives Discord subtree replacements
+        this.ensureCritTextContentClass(messageElement, content);
 
         if (useGradient) {
           // Apply gradient with retry mechanism for restoration
@@ -3376,6 +3477,8 @@ module.exports = class CriticalHit {
       }
 
       messageElement.classList.add('bd-crit-hit');
+      messageElement.setAttribute('data-bd-crit-locked', '1');
+      this.stampCritVisualMetadata(messageElement, expectedVisuals);
       this.injectCritCSS();
 
       // Re-get message ID for final verification (in case it wasn't available earlier)
@@ -3412,6 +3515,13 @@ module.exports = class CriticalHit {
 
       // Set up gradient monitoring for persistence
       this.setupGradientMonitoring(messageElement, content, finalMsgId, useGradient);
+      this.diagLog('STYLE_APPLIED', 'Applied crit style from saved settings', {
+        messageId: finalMsgId,
+        mode: useGradient ? 'gradient' : 'solid',
+        expectedColor: expectedVisuals.color,
+        computedColor: finalComputedStyles?.color || null,
+        computedBackgroundImage: finalComputedStyles?.backgroundImage || null,
+      });
 
       // If gradient still didn't apply, schedule another retry
       if (content && useGradient && !finalHasGradient) {
@@ -4724,6 +4834,18 @@ module.exports = class CriticalHit {
     this.debugLog('PERFORM_CRIT_RESTORATION', 'Crit restored from history', {
       messageId: normalizedMsgId,
     });
+    this.diagLog('STYLE_RESTORED', 'Restored crit style from history', {
+      messageId: normalizedMsgId,
+      mode:
+        historyEntry?.critSettings?.gradient !== undefined
+          ? historyEntry.critSettings.gradient
+            ? 'gradient'
+            : 'solid'
+          : this.settings?.critGradient !== false
+          ? 'gradient'
+          : 'solid',
+      color: historyEntry?.critSettings?.color || this.settings?.critColor || null,
+    });
   }
 
   /**
@@ -4985,37 +5107,264 @@ module.exports = class CriticalHit {
   shouldRestoreCritVisuals(messageElement, critSettings = null) {
     if (!messageElement) return false;
 
+    const messageId = this.getMessageIdentifier(messageElement);
+    const expectedVisuals = this.getExpectedCritVisuals(critSettings);
+    const expectedMode = expectedVisuals.useGradient ? 'gradient' : 'solid';
+    const reportRestoreReason = (reason, extra = {}) => {
+      this.diagLog(
+        'STYLE_RESTORE_NEEDED',
+        reason,
+        {
+          messageId,
+          expectedMode,
+          ...extra,
+        },
+        'warn'
+      );
+      return true;
+    };
+
     const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
-    const content = this.findMessageContentElement(messageElement);
+    const content = this.getCritContentElement(messageElement);
+    const contentCandidates = this.getCritContentCandidates(messageElement, content);
 
     // Missing class/content indicates Discord likely replaced nodes; restore styles.
-    if (!hasCritClass || !content) return true;
+    if (!hasCritClass || !content) {
+      return reportRestoreReason('missing class or content', {
+        hasCritClass,
+        hasContent: !!content,
+      });
+    }
 
-    // Crit content class is required for style persistence and observers.
-    if (!content.classList?.contains('bd-crit-text-content')) return true;
+    // Crit content class should exist, but don't force restoration when visuals are still valid.
+    const hasCritTextClass = contentCandidates.some((candidate) =>
+      candidate.classList?.contains('bd-crit-text-content')
+    );
+    if (!hasCritTextClass) {
+      const gradientCheck = expectedVisuals.useGradient ? this.verifyGradientApplied(content) : null;
+      const hasUsableGradient =
+        !!gradientCheck &&
+        (gradientCheck.hasGradient || gradientCheck.hasGradientInStyle) &&
+        !!gradientCheck.hasWebkitClip;
+      const hasSolidColor = !expectedVisuals.useGradient && !!(
+        content.style?.color ||
+        content.style?.webkitTextFillColor ||
+        content.style?.getPropertyValue?.('-webkit-text-fill-color')
+      );
+      const hasValidSolidColor =
+        hasSolidColor && !this.hasSolidColorMismatch(content, expectedVisuals.color);
 
-    const useGradient =
-      critSettings?.gradient !== undefined
-        ? critSettings.gradient
-        : this.settings?.critGradient !== false;
+      if (hasUsableGradient || hasValidSolidColor) {
+        this.ensureCritTextContentClass(messageElement, content);
+      } else {
+        return reportRestoreReason('missing bd-crit-text-content class', {
+          hasUsableGradient,
+          hasValidSolidColor,
+        });
+      }
+    }
 
-    if (useGradient) {
+    if (expectedVisuals.useGradient) {
       const gradientCheck = this.verifyGradientApplied(content);
       const hasGradient = gradientCheck.hasGradient || gradientCheck.hasGradientInStyle;
-      if (!hasGradient || !gradientCheck.hasWebkitClip) return true;
+      const stampedMode = messageElement.getAttribute('data-bd-crit-mode') || null;
+      const stampedGradientSig = messageElement.getAttribute('data-bd-crit-gradient-signature') || null;
+      const signatureMismatch =
+        !!stampedGradientSig && stampedGradientSig !== expectedVisuals.gradientSignature;
+
+      if (!hasGradient || !gradientCheck.hasWebkitClip || signatureMismatch) {
+        return reportRestoreReason('gradient mismatch', {
+          hasGradient,
+          hasWebkitClip: !!gradientCheck.hasWebkitClip,
+          stampedMode,
+          stampedGradientSig,
+          expectedGradientSig: expectedVisuals.gradientSignature,
+          computedBackgroundImage: window.getComputedStyle(content)?.backgroundImage,
+        });
+      }
     } else {
       const hasSolidColor = !!(
         content.style?.color ||
         content.style?.webkitTextFillColor ||
         content.style?.getPropertyValue?.('-webkit-text-fill-color')
       );
-      if (!hasSolidColor) return true;
+      if (!hasSolidColor) {
+        return reportRestoreReason('solid color missing', {
+          stampedColor: messageElement.getAttribute('data-bd-crit-color') || null,
+        });
+      }
+
+      const hasColorMismatch = this.hasSolidColorMismatch(content, expectedVisuals.color);
+      if (hasColorMismatch) {
+        return reportRestoreReason('solid color mismatch', {
+          expectedColor: expectedVisuals.color,
+          actualColor: window.getComputedStyle(content)?.color || content.style?.color || null,
+          stampedColor: messageElement.getAttribute('data-bd-crit-color') || null,
+        });
+      }
     }
 
     // Font can also be reset by Discord re-renders.
-    if (this._needsFontApplication(messageElement)) return true;
+    if (this._needsFontApplication(messageElement)) {
+      return reportRestoreReason('font mismatch');
+    }
 
     return false;
+  }
+
+  _hasCritEvidenceForMessage(messageElement, messageId) {
+    if (!messageElement) return false;
+
+    const channelId = this.currentChannelId || this._getCurrentChannelId?.();
+    if (!channelId) return false;
+
+    const extractedMessageId =
+      this.normalizeId(messageId) ||
+      this.extractPureDiscordId(messageId) ||
+      this.normalizeId(this.getMessageIdentifier(messageElement));
+    const normalizedMessageId = extractedMessageId || null;
+    const pureMessageId = this.extractPureDiscordId(normalizedMessageId) || normalizedMessageId;
+
+    if (
+      normalizedMessageId &&
+      (this.pendingCrits.has(normalizedMessageId) ||
+        this.pendingCrits.has(pureMessageId) ||
+        this._processingCrits.has(normalizedMessageId))
+    ) {
+      return true;
+    }
+
+    const channelCrits = this.getCritHistory(channelId);
+    if (normalizedMessageId) {
+      const hasIdMatch = channelCrits.some((entry) => {
+        const entryId = this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
+        return !!entryId && (entryId === normalizedMessageId || entryId === pureMessageId);
+      });
+      if (hasIdMatch) return true;
+    }
+
+    const content = this.findMessageContentElement(messageElement);
+    const authorId = this.getAuthorId(messageElement);
+    const authorName =
+      messageElement.querySelector?.('[id^="message-username-"]')?.textContent?.trim() ||
+      messageElement.querySelector?.('[class*="username"]')?.textContent?.trim() ||
+      messageElement.querySelector?.('[class*="author"]')?.textContent?.trim() ||
+      null;
+    const contentText = content?.textContent?.trim();
+    if (!contentText) return false;
+
+    const contentHashes = new Set();
+    const addHash = (authorValue, contentValue) => {
+      const hash = this.calculateContentHash(authorValue, contentValue);
+      hash && contentHashes.add(hash);
+    };
+
+    [authorId, authorName, null].forEach((authorValue) => addHash(authorValue, contentText));
+    const compactContentText = contentText.slice(0, 200);
+    compactContentText !== contentText &&
+      [authorId, authorName, null].forEach((authorValue) => addHash(authorValue, compactContentText));
+
+    for (const hash of contentHashes) {
+      if (this.pendingCrits.has(hash)) return true;
+    }
+
+    return channelCrits.some((entry) => {
+      if (!entry?.messageContent) return false;
+
+      const entryContent = String(entry.messageContent).trim();
+      if (!entryContent) return false;
+
+      const entryAuthors = [entry.authorId, entry.author, null];
+
+      // Compare both full content and trimmed 200-char variant since history stores a truncated preview.
+      for (const entryAuthor of entryAuthors) {
+        const entryHash = this.calculateContentHash(entryAuthor, entryContent);
+        if (entryHash && contentHashes.has(entryHash)) return true;
+      }
+
+      // Last-resort textual match when IDs are unstable but author+content are clearly the same.
+      const sameContent =
+        entryContent === contentText ||
+        entryContent === compactContentText ||
+        compactContentText === entryContent;
+      const authorMatches =
+        (entry.authorId && authorId && String(entry.authorId) === String(authorId)) ||
+        (entry.author && authorName && String(entry.author).trim() === String(authorName).trim());
+
+      return sameContent && authorMatches;
+    });
+  }
+
+  _isKnownCritMessageId(messageId) {
+    const normalizedId = this.normalizeId(messageId) || this.extractPureDiscordId(messageId);
+    if (!normalizedId) return false;
+    const pureId = this.extractPureDiscordId(normalizedId) || normalizedId;
+
+    const allCrits = this.getCritHistory();
+    return allCrits.some((entry) => {
+      const entryId = this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
+      return !!entryId && (entryId === normalizedId || entryId === pureId);
+    });
+  }
+
+  _hasActiveCritStyling(messageElement) {
+    if (!messageElement) return false;
+
+    const critElement = messageElement.classList?.contains('bd-crit-hit')
+      ? messageElement
+      : messageElement.querySelector?.('.bd-crit-hit');
+    if (!critElement) return false;
+    if (critElement.dataset?.bdCritLocked === '1') return true;
+
+    const content = this.getCritContentElement(critElement);
+    if (!content) return false;
+
+    if (content.classList?.contains('bd-crit-text-content')) return true;
+
+    const inlineGradient =
+      content.style?.backgroundImage?.includes('gradient') ||
+      content.style?.background?.includes('gradient');
+    const transparentFill =
+      content.style?.webkitTextFillColor === 'transparent' ||
+      content.style?.getPropertyValue?.('-webkit-text-fill-color') === 'transparent';
+
+    return !!(inlineGradient || transparentFill);
+  }
+
+  _scheduleCritVisualRecheck(messageElement, messageId) {
+    const recheckDelays = [120, 420, 900];
+    recheckDelays.forEach((delayMs) => {
+      this._setTrackedTimeout(() => {
+        if (this._isStopped) return;
+
+        const requeried = (messageId && this.requeryMessageElement(messageId, messageElement)) || messageElement;
+        if (!requeried?.isConnected) return;
+
+        const critTarget = requeried.classList?.contains('bd-crit-hit')
+          ? requeried
+          : requeried.querySelector?.('.bd-crit-hit') || requeried;
+
+        if (!critTarget?.isConnected) return;
+        if (!this.shouldRestoreCritVisuals(critTarget)) return;
+
+        const normalizedMessageId = this.normalizeId(messageId) || this.extractPureDiscordId(messageId);
+        const channelCrits = this.getCritHistory(this.currentChannelId);
+        const historyEntry = normalizedMessageId
+          ? channelCrits.find((entry) => {
+              const entryId =
+                this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
+              return !!entryId && entryId === normalizedMessageId;
+            })
+          : null;
+
+        if (historyEntry?.critSettings) {
+          this.applyCritStyleWithSettings(critTarget, historyEntry.critSettings);
+          return;
+        }
+
+        this.applyCritStyle(critTarget);
+      }, delayMs);
+    });
   }
 
   /**
@@ -5461,6 +5810,15 @@ module.exports = class CriticalHit {
       totalCrits: this.stats.totalCrits,
       critRate: this.stats.critRate.toFixed(2) + '%',
     });
+    this.diagLog('CRIT_DETECTED', 'Critical hit detected for message', {
+      messageId,
+      authorId,
+      channelId: this.currentChannelId,
+      roll,
+      effectiveCritChance,
+      isValidDiscordId,
+      messagePreview: (messageContent || '').substring(0, 80),
+    });
 
     try {
       try {
@@ -5468,10 +5826,7 @@ module.exports = class CriticalHit {
 
         // FIX: Find the actual message element that has the class (must match what applyCritStyle uses)
         let elementWithClass = messageElement;
-        const isContentElement =
-          messageElement?.classList?.contains('messageContent') ||
-          messageElement?.classList?.contains('markup') ||
-          messageElement?.id?.includes('message-content');
+        const isContentElement = this._isContentElement(messageElement);
 
         if (isContentElement) {
           // Find parent message wrapper using the SAME logic as applyCritStyle
@@ -5916,7 +6271,7 @@ module.exports = class CriticalHit {
 
           // Only trigger animation if not already animated (prevent double animation)
           // Check by message ID first, then content hash with time check
-          const content = this.findMessageContentElement(messageElement);
+          const content = this.getCritContentElement(messageElement);
           const author = this.getAuthorId(messageElement);
           const contentText = content?.textContent?.trim();
           const contentHash = this.calculateContentHash(author, contentText);
@@ -6033,11 +6388,64 @@ module.exports = class CriticalHit {
           messageId && this.processedMessages.add(messageId);
           return;
         }
-        // It's NOT a crit - ensure crit class is removed if present
-        if (messageElement?.classList?.contains('bd-crit-hit')) {
-          messageElement.classList.remove('bd-crit-hit');
+        // It's NOT a crit - remove crit class only when there is no crit evidence.
+        // This prevents transient re-processing from stripping visuals on real crits.
+        const hasCritEvidence = this._hasCritEvidenceForMessage(messageElement, messageId);
+        const knownCritId = this._isKnownCritMessageId(messageId);
+        const critElement = messageElement?.classList?.contains('bd-crit-hit')
+          ? messageElement
+          : messageElement?.querySelector?.('.bd-crit-hit');
+        const hasCritLock = critElement?.dataset?.bdCritLocked === '1';
+        const hasActiveStyling = this._hasActiveCritStyling(messageElement);
+        const hasCritTextClass = !!(
+          messageElement?.classList?.contains('bd-crit-text-content') ||
+          messageElement?.querySelector?.('.bd-crit-text-content')
+        );
+        const normalizedMessageId = this.normalizeId(messageId) || this.extractPureDiscordId(messageId);
+        const pureMessageId = this.extractPureDiscordId(normalizedMessageId) || normalizedMessageId;
+        const hasStableDiscordMessageId = !!(
+          pureMessageId &&
+          !String(pureMessageId).startsWith('hash_') &&
+          this.isValidDiscordId(pureMessageId)
+        );
+        // Be conservative: never strip crit class from real Discord messages.
+        // This avoids visual loss when Discord re-renders faster than history reconciliation.
+        if (
+          critElement?.classList?.contains('bd-crit-hit') &&
+          !hasCritEvidence &&
+          !knownCritId &&
+          !hasCritLock &&
+          !hasActiveStyling &&
+          !hasCritTextClass &&
+          !hasStableDiscordMessageId
+        ) {
+          this.diagLog(
+            'STRIP_CLASS',
+            'Removing bd-crit-hit (message evaluated as non-crit with no retention evidence)',
+            {
+              messageId,
+              hasCritEvidence,
+              knownCritId,
+              hasCritLock,
+              hasActiveStyling,
+              hasCritTextClass,
+              hasStableDiscordMessageId,
+            },
+            'warn'
+          );
+          critElement.classList.remove('bd-crit-hit');
           // Remove from critMessages if present
-          this.critMessages.delete(messageElement);
+          this.critMessages.delete(critElement);
+        } else if (critElement?.classList?.contains('bd-crit-hit')) {
+          this.diagLog('STRIP_GUARDED', 'Retained bd-crit-hit due guardrail', {
+            messageId,
+            hasCritEvidence,
+            knownCritId,
+            hasCritLock,
+            hasActiveStyling,
+            hasCritTextClass,
+            hasStableDiscordMessageId,
+          });
         }
 
         // Reset combo for non-crit messages (even if in history)
@@ -6316,6 +6724,40 @@ module.exports = class CriticalHit {
     return this.findMessageContentElement(messageElement);
   }
 
+  /**
+   * Gets the preferred content node for crit style checks and application.
+   * @param {HTMLElement} messageElement - Message wrapper element
+   * @returns {HTMLElement|null} Preferred content node
+   */
+  getCritContentElement(messageElement) {
+    return this.findMessageContentForStyling(messageElement) || this.findMessageContentElement(messageElement);
+  }
+
+  /**
+   * Gets candidate content nodes that may carry crit classes/styles.
+   * @param {HTMLElement} messageElement - Message wrapper element
+   * @param {HTMLElement|null} preferred - Preferred content node
+   * @returns {HTMLElement[]} Candidate content nodes
+   */
+  getCritContentCandidates(messageElement, preferred = null) {
+    const candidates = [];
+    const add = (candidate) => candidate && !candidates.includes(candidate) && candidates.push(candidate);
+    add(preferred);
+    add(this.findMessageContentForStyling(messageElement));
+    add(this.findMessageContentElement(messageElement));
+    return candidates;
+  }
+
+  /**
+   * Ensures crit content marker class exists on stable content nodes.
+   * @param {HTMLElement} messageElement - Message wrapper element
+   * @param {HTMLElement|null} preferred - Preferred styled node
+   */
+  ensureCritTextContentClass(messageElement, preferred = null) {
+    const candidates = this.getCritContentCandidates(messageElement, preferred);
+    candidates.forEach((candidate) => candidate.classList?.add('bd-crit-text-content'));
+  }
+
   // ----------------------------------------------------------------------------
   // Style Application Helpers
   // ----------------------------------------------------------------------------
@@ -6358,10 +6800,7 @@ module.exports = class CriticalHit {
 
       // FIX: If we received a content element instead of message wrapper, find the parent message element
       let actualMessageElement = messageElement;
-      const isContentElement =
-        messageElement?.classList?.contains('messageContent') ||
-        messageElement?.classList?.contains('markup') ||
-        messageElement?.id?.includes('message-content');
+      const isContentElement = this._isContentElement(messageElement);
 
       if (isContentElement) {
         // Find parent message wrapper - must be a DIFFERENT element (not the same one)
@@ -6419,6 +6858,7 @@ module.exports = class CriticalHit {
 
       // Apply critical hit styling to the entire message content container
       try {
+        const expectedVisuals = this.getExpectedCritVisuals();
         this.debug?.verbose &&
           this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style', {
             useGradient: this.settings.critGradient !== false,
@@ -6445,6 +6885,8 @@ module.exports = class CriticalHit {
 
         // Add a class for easier identification (use actualMessageElement, not the original parameter)
         actualMessageElement.classList.add('bd-crit-hit');
+        actualMessageElement.setAttribute('data-bd-crit-locked', '1');
+        this.stampCritVisualMetadata(actualMessageElement, expectedVisuals);
 
         // Verify gradient was actually applied and get computed styles
         const useGradient = this.settings.critGradient !== false;
@@ -6476,8 +6918,10 @@ module.exports = class CriticalHit {
               if (!currentMsg.classList.contains('bd-crit-hit')) {
                 currentMsg.classList.add('bd-crit-hit');
               }
+              currentMsg.setAttribute('data-bd-crit-locked', '1');
+              this.stampCritVisualMetadata(currentMsg, expectedVisuals);
 
-              const currentContent = this.findMessageContentElement(currentMsg);
+              const currentContent = this.getCritContentElement(currentMsg);
               if (currentContent) {
                 if (!currentContent.classList.contains('bd-crit-text-content')) {
                   currentContent.classList.add('bd-crit-text-content');
@@ -6496,6 +6940,13 @@ module.exports = class CriticalHit {
         this.debugLog('APPLY_CRIT_STYLE', 'Crit style applied successfully', {
           useGradient: this.settings.critGradient !== false,
           elementTag: content?.tagName,
+        });
+        this.diagLog('STYLE_APPLIED', 'Applied crit style from live detection', {
+          messageId: this.getMessageIdentifier(actualMessageElement),
+          mode: expectedVisuals.useGradient ? 'gradient' : 'solid',
+          expectedColor: expectedVisuals.color,
+          computedColor: computedStyles?.color || null,
+          computedBackgroundImage: computedStyles?.backgroundImage || null,
         });
       } catch (error) {
         this.debugError('APPLY_CRIT_STYLE', error, { phase: 'apply_styles' });
@@ -7361,15 +7812,14 @@ module.exports = class CriticalHit {
             }
 
             /* Apply critFont only to crit text content, never to headers/usernames. */
+            /* Exclude <code>/<pre> so inline code and code blocks keep monospace font */
             .bd-crit-hit .bd-crit-text-content,
             .bd-crit-hit.bd-crit-text-content,
-            .bd-crit-hit .bd-crit-text-content *,
-            .bd-crit-hit.bd-crit-text-content * {
+            .bd-crit-hit .bd-crit-text-content *:not(code):not(pre):not(pre *),
+            .bd-crit-hit.bd-crit-text-content *:not(code):not(pre):not(pre *) {
                 font-family: ${messageFont} !important;
             }
 
-            /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
-            /* Dynamic gradient from settings - persists through React re-renders */
             /* Critical Hit Gradient - ONLY apply to specific text content, NOT username/timestamp */
             /* Dynamic gradient from settings - persists through React re-renders */
             .bd-crit-hit .bd-crit-text-content,
@@ -7413,49 +7863,60 @@ module.exports = class CriticalHit {
                 font-weight: bold !important; /* Bold for more impact */
                 font-size: 1.15em !important; /* Slightly bigger for Friend or Foe BB */
                 font-synthesis: none !important; /* Prevent font synthesis */
-                font-variant: normal !important; /* Override any font variants */
-                font-style: normal !important; /* Override italic/oblique */
+                font-variant: inherit !important; /* Preserve markdown font variants */
+                font-style: inherit !important; /* Preserve italic from <em> */
                 letter-spacing: 1px !important; /* Slight spacing */
                 -webkit-text-stroke: none !important; /* Remove stroke for cleaner gradient */
                 text-stroke: none !important;
                 display: inline-block !important; /* Ensure gradient works */
             }
 
-            /* Override font on all child elements to ensure consistency - use critFont setting */
-            /* CRITICAL: Force consistent 1.15em font size on all child elements within crit text */
-            /* This prevents random font size changes from inheritance or Discord's CSS */
-            /* Override font on all child elements to ensure consistency - use critFont setting */
-            /* CRITICAL: Force consistent 1.15em font size on all child elements within crit text */
-            /* This prevents random font size changes from inheritance or Discord's CSS */
-            .bd-crit-hit .bd-crit-text-content *,
-            .bd-crit-hit.bd-crit-text-content *,
-            .bd-crit-hit .bd-crit-text-content span,
-            .bd-crit-hit.bd-crit-text-content span,
-            .bd-crit-hit .bd-crit-text-content div,
-            .bd-crit-hit.bd-crit-text-content div,
-            .bd-crit-hit .bd-crit-text-content p,
-            .bd-crit-hit.bd-crit-text-content p,
-            .bd-crit-hit .bd-crit-text-content a,
-            .bd-crit-hit.bd-crit-text-content a,
-            .bd-crit-hit .bd-crit-text-content strong,
-            .bd-crit-hit.bd-crit-text-content strong,
-            .bd-crit-hit .bd-crit-text-content em,
-            .bd-crit-hit.bd-crit-text-content em,
-            .bd-crit-hit .bd-crit-text-content code,
-            .bd-crit-hit.bd-crit-text-content code {
+            /* Override font on child elements for crit styling consistency */
+            /* PRESERVES markdown formatting: <strong> stays bold, <em> stays italic, <code> keeps monospace */
+            .bd-crit-hit .bd-crit-text-content *:not(code):not(pre):not(pre *),
+            .bd-crit-hit.bd-crit-text-content *:not(code):not(pre):not(pre *) {
                 font-family: ${messageFont} !important;
-                font-weight: inherit !important;
-                font-size: 1.15em !important; /* Force consistent size - no inheritance variations */
+                font-weight: inherit !important; /* <strong> inherits bold from parent, normal text stays normal */
+                font-size: inherit !important; /* Inherit parent's 1.15em — no compounding on nested elements */
                 font-stretch: inherit !important;
                 font-synthesis: none !important;
-                font-variant: normal !important;
-                font-style: normal !important;
+                font-variant: inherit !important; /* Preserve markdown font variants */
+                font-style: inherit !important; /* Preserve italic from <em> tags */
                 letter-spacing: inherit !important;
                 text-transform: inherit !important;
                 -webkit-text-stroke: inherit !important;
                 text-stroke: inherit !important;
             }
 
+            /* Bold text (<strong>) should be extra-bold to stand out from already-bold parent */
+            .bd-crit-hit .bd-crit-text-content strong,
+            .bd-crit-hit.bd-crit-text-content strong {
+                font-weight: 900 !important;
+            }
+
+            /* Italic text (<em>) must preserve italic despite parent rules */
+            .bd-crit-hit .bd-crit-text-content em,
+            .bd-crit-hit.bd-crit-text-content em {
+                font-style: italic !important;
+            }
+
+            /* Inline code keeps monospace font, slightly smaller to look natural */
+            .bd-crit-hit .bd-crit-text-content code,
+            .bd-crit-hit.bd-crit-text-content code {
+                font-family: 'Consolas', 'Courier New', monospace !important;
+                font-size: 0.9em !important;
+                font-weight: normal !important;
+            }
+
+            /* Code blocks keep their own styling entirely */
+            .bd-crit-hit .bd-crit-text-content pre,
+            .bd-crit-hit.bd-crit-text-content pre,
+            .bd-crit-hit .bd-crit-text-content pre *,
+            .bd-crit-hit.bd-crit-text-content pre * {
+                font-family: 'Consolas', 'Courier New', monospace !important;
+                font-weight: normal !important;
+                font-style: normal !important;
+                font-size: inherit !important;
             }
         `;
 
@@ -8988,7 +9449,8 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} msg - Message element
    */
   _applyStylesToContent(content, msg) {
-    content.classList.add('bd-crit-text-content');
+    this.ensureCritTextContentClass(msg, content);
+    this.stampCritVisualMetadata(msg, this.getExpectedCritVisuals());
 
     const useGradient = this.settings.critGradient !== false;
     if (useGradient) {
@@ -9248,6 +9710,7 @@ module.exports = class CriticalHit {
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
     combo > 1 && this._animateComboCountUp(textElement, combo);
+    this._scheduleCritVisualRecheck(messageElement, messageId);
     // debug stripped
 
     // Apply screen shake if enabled - delay to sync with animation becoming visible
@@ -9995,6 +10458,22 @@ module.exports = class CriticalHit {
   // ============================================================================
   // DEBUG LOGGING SYSTEM
   // ============================================================================
+
+  /**
+   * Targeted diagnostics for crit-style retention (independent from debugMode).
+   * Use this for concrete strip/mismatch events that must be visible in user console.
+   * @param {string} operation
+   * @param {string} message
+   * @param {Object|null} data
+   * @param {'info'|'warn'|'error'} level
+   */
+  diagLog(operation, message, data = null, level = 'info') {
+    if (this.settings?.diagnosticLogs === false) return;
+    const method =
+      level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+    const prefix = `[CriticalHit:DIAG:${operation}] ${message}`;
+    data ? method(prefix, data) : method(prefix);
+  }
 
   /**
    * Debug logging helper - only logs when debug mode is enabled

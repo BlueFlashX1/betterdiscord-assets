@@ -172,13 +172,38 @@
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
 try {
-  const fs = require('fs');
-  const path = require('path');
-  const saveManagerPath = path.join(BdApi.Plugins.folder, 'UnifiedSaveManager.js');
-  if (fs.existsSync(saveManagerPath)) {
-    const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
-    eval(saveManagerCode);
-    UnifiedSaveManager = window.UnifiedSaveManager || eval('UnifiedSaveManager');
+  if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
+    UnifiedSaveManager = window.UnifiedSaveManager;
+  } else {
+    const fs = require('fs');
+    const path = require('path');
+    const pluginFolder =
+      (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
+        ? BdApi.Plugins.folder
+        : null) ||
+      (typeof __dirname === 'string' ? __dirname : null);
+    if (pluginFolder) {
+      const saveManagerPath = path.join(pluginFolder, 'UnifiedSaveManager.js');
+      if (fs.existsSync(saveManagerPath)) {
+        const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
+        const moduleSandbox = { exports: {} };
+        const exportsSandbox = moduleSandbox.exports;
+        const loader = new Function(
+          'window',
+          'module',
+          'exports',
+          `${saveManagerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || window?.UnifiedSaveManager || null;`
+        );
+        UnifiedSaveManager = loader(
+          typeof window !== 'undefined' ? window : undefined,
+          moduleSandbox,
+          exportsSandbox
+        );
+        if (UnifiedSaveManager && typeof window !== 'undefined') {
+          window.UnifiedSaveManager = UnifiedSaveManager;
+        }
+      }
+    }
   }
 } catch (error) {
   console.warn('[SoloLevelingStats] Failed to load UnifiedSaveManager:', error);
@@ -313,6 +338,13 @@ module.exports = class SoloLevelingStats {
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
+    // Startup persistence guards
+    // _startupLoadComplete: blocks any save before loadSettings() resolves
+    // _hasRealProgress: tracks whether current in-memory state is meaningful progress
+    // _startupProgressProbeComplete: one-time persisted progress scan before first save
+    this._startupLoadComplete = false;
+    this._hasRealProgress = false;
+    this._startupProgressProbeComplete = false;
     // Level up debouncing to prevent spam
     this.pendingLevelUp = null;
     this.levelUpDebounceTimeout = null;
@@ -3441,6 +3473,12 @@ module.exports = class SoloLevelingStats {
         }
       }
 
+      // STARTUP SAVE GUARD: block all saves until loadSettings() completes.
+      // Also reset first-save persisted-progress probe for this session.
+      this._startupLoadComplete = false;
+      this._startupProgressProbeComplete = false;
+      this._hasRealProgress = false;
+
       // Load settings (will use IndexedDB if available, fallback to BdApi.Data)
       await this.loadSettings();
       this.debugLog('START', 'Settings loaded', {
@@ -3519,10 +3557,12 @@ module.exports = class SoloLevelingStats {
       }, 5000);
 
       // PERIODIC BACKUP SAVE (Every 30 seconds)
-      // Safety net to ensure progress is saved even if debounce doesn't trigger
+      // Safety net — only saves if settings actually changed since last save
       this.periodicSaveInterval = setInterval(() => {
-        this.debugLog('PERIODIC_SAVE', 'Backup auto-save triggered');
-        this.saveSettings(); // Direct save (not debounced)
+        if (this._settingsDirty) {
+          this.debugLog('PERIODIC_SAVE', 'Backup auto-save triggered');
+          this.saveSettings();
+        }
       }, this.saveInterval); // 30 seconds (defined in constructor)
 
       if (typeof this.getSettingsPanel !== 'function') {
@@ -4116,6 +4156,119 @@ module.exports = class SoloLevelingStats {
     this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
   }
 
+  _isRealProgressState(data) {
+    if (!data || typeof data !== 'object') return false;
+
+    const stats = data.stats || {};
+    const activity = data.activity || {};
+    const quests = data.dailyQuests?.quests || {};
+    const achievements = data.achievements || {};
+
+    const hasStatGrowth = ['strength', 'agility', 'intelligence', 'vitality', 'perception'].some(
+      (key) => Number(stats[key] || 0) > 0
+    );
+    const hasActivity =
+      Number(activity.messagesSent || 0) > 0 ||
+      Number(activity.charactersTyped || 0) > 0 ||
+      Number(activity.timeActive || 0) > 0 ||
+      Number(activity.critsLanded || 0) > 0;
+    const hasQuestProgress = Object.values(quests).some(
+      (quest) =>
+        quest &&
+        (Number(quest.progress || 0) > 0 || quest.completed === true)
+    );
+    const hasAchievements =
+      (Array.isArray(achievements.unlocked) && achievements.unlocked.length > 0) ||
+      (Array.isArray(achievements.titles) && achievements.titles.length > 0) ||
+      Boolean(achievements.activeTitle);
+    const hasNonDefaultRank = typeof data.rank === 'string' && data.rank !== 'E';
+
+    return (
+      Number(data.level || 0) > 1 ||
+      Number(data.totalXP || 0) > 0 ||
+      Number(data.xp || 0) > 0 ||
+      Number(data.unallocatedStatPoints || 0) > 0 ||
+      hasNonDefaultRank ||
+      hasStatGrowth ||
+      hasActivity ||
+      hasQuestProgress ||
+      hasAchievements
+    );
+  }
+
+  async _detectPersistedRealProgress() {
+    const inspect = (source, data) => {
+      if (this._isRealProgressState(data)) {
+        return {
+          found: true,
+          source,
+          level: Number(data?.level || 0),
+          totalXP: Number(data?.totalXP || 0),
+        };
+      }
+      return null;
+    };
+
+    try {
+      const fileSaved = this.readFileBackup();
+      const match = inspect('file', fileSaved);
+      if (match) return match;
+    } catch (_) {
+      // best effort
+    }
+
+    if (this.saveManager) {
+      try {
+        const idbMain = await this.saveManager.load('settings');
+        const match = inspect('indexeddb-main', idbMain);
+        if (match) return match;
+      } catch (_) {
+        // best effort
+      }
+
+      try {
+        const backups = await this.saveManager.getBackups('settings', 3);
+        for (const backup of backups) {
+          const match = inspect('indexeddb-backup', backup?.data);
+          if (match) return match;
+        }
+      } catch (_) {
+        // best effort
+      }
+    }
+
+    try {
+      const bdMain = BdApi.Data.load('SoloLevelingStats', 'settings');
+      const match = inspect('bdapi-main', bdMain);
+      if (match) return match;
+    } catch (_) {
+      // best effort
+    }
+
+    try {
+      const bdBackup = BdApi.Data.load('SoloLevelingStats', 'settings_backup');
+      const match = inspect('bdapi-backup', bdBackup);
+      if (match) return match;
+    } catch (_) {
+      // best effort
+    }
+
+    try {
+      const fs = require('fs');
+      const pathModule = require('path');
+      const legacyPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+      if (fs.existsSync(legacyPath)) {
+        const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+        const match = inspect('legacy-file', legacyData);
+        if (match) return match;
+      }
+    } catch (_) {
+      // best effort
+    }
+
+    return { found: false };
+  }
+
   registerBackupConsoleHooks() {
     if (!window.SLSBackupTool) {
       window.SLSBackupTool = {};
@@ -4176,11 +4329,31 @@ module.exports = class SoloLevelingStats {
         this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
       }
 
+      // Legacy .data.json in plugins folder (old backup format — prevents orphaned data loss)
+      try {
+        const fs = require('fs');
+        const pathModule = require('path');
+        const legacyPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+        if (fs.existsSync(legacyPath)) {
+          const legacyRaw = fs.readFileSync(legacyPath, 'utf8');
+          const legacySaved = JSON.parse(legacyRaw);
+          if (legacySaved && typeof legacySaved === 'object') {
+            candidates.push({ source: 'legacy-file', data: legacySaved, ts: getSavedTimestamp(legacySaved) });
+            this.debugLog('LOAD_SETTINGS', 'Found legacy .data.json backup', {
+              level: legacySaved.level, rank: legacySaved.rank, ts: getSavedTimestamp(legacySaved),
+            });
+          }
+        }
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', 'Legacy .data.json load failed', error);
+      }
+
       // Pick best candidate by quality (data richness) + timestamp + storage priority
       // CRITICAL: prevents zeroed defaults with newer timestamps from overriding valid data
       const sourcePriority = {
         indexeddb: 3,
         file: 2,
+        'legacy-file': 1.5,
         bdapi: 1,
       };
       const getPriority = (source) => sourcePriority[source] ?? 0;
@@ -4354,6 +4527,20 @@ module.exports = class SoloLevelingStats {
           // Ensure HP/Mana align with current stats/rank after any reset/refund
           this.recomputeHPManaFromStats();
 
+          this._hasRealProgress = this._isRealProgressState(this.settings);
+          // If loaded state already has progress, skip extra first-save probe.
+          // If it looks fresh/default-like, force one persisted probe before first save.
+          this._startupProgressProbeComplete = this._hasRealProgress;
+
+          // STARTUP GUARD: load complete — unlock save path
+          this._startupLoadComplete = true;
+          this.debugLog('LOAD_SETTINGS', 'Startup load confirmed — saves unlocked', {
+            level: this.settings.level,
+            totalXP: this.settings.totalXP,
+            source: best.source,
+            hasRealProgress: this._hasRealProgress,
+          });
+
           // If we loaded from file backup, push it back to primary stores for persistence
           if (loadedFromFile) {
             try {
@@ -4381,11 +4568,48 @@ module.exports = class SoloLevelingStats {
           throw error;
         }
       } else {
-        // CRITICAL: Use deep copy to prevent defaultSettings corruption
-        this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
-        // Initialize Set for channelsVisited
-        this.settings.activity.channelsVisited = new Set();
-        this.debugLog('LOAD_SETTINGS', 'No saved data found, using defaults');
+        // LAST-RESORT SAFETY CHECK: Before accepting defaults, verify no real progress
+        // exists anywhere. This catches the edge case where all 3 tiers returned null
+        // but legacy .data.json has orphaned real data.
+        let rescuedFromLegacy = false;
+        try {
+          const fs = require('fs');
+          const pathModule = require('path');
+          const legacyPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+          if (fs.existsSync(legacyPath)) {
+            const legacyRaw = fs.readFileSync(legacyPath, 'utf8');
+            const legacyData = JSON.parse(legacyRaw);
+            if (legacyData && legacyData.level > 1) {
+              console.warn('[SoloLevelingStats] RESCUED: Found real progress in legacy .data.json (level', legacyData.level, ') — refusing to use defaults');
+              const merged = { ...this.defaultSettings, ...legacyData };
+              this.settings = JSON.parse(JSON.stringify(merged));
+              if (Array.isArray(this.settings.activity?.channelsVisited)) {
+                this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
+              } else {
+                this.settings.activity.channelsVisited = new Set();
+              }
+              this.recomputeHPManaFromStats();
+              this._hasRealProgress = true;
+              this._startupProgressProbeComplete = true;
+              this._startupLoadComplete = true;
+              // Persist rescued data to all tiers so future loads find it
+              try { await this.saveSettings(true); } catch (_) { /* best-effort */ }
+              rescuedFromLegacy = true;
+            }
+          }
+        } catch (legacyErr) {
+          this.debugError('LOAD_SETTINGS', 'Legacy rescue check failed', legacyErr);
+        }
+
+        if (!rescuedFromLegacy) {
+          // Genuinely new user — no data anywhere
+          this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+          this.settings.activity.channelsVisited = new Set();
+          this._hasRealProgress = false;
+          this._startupProgressProbeComplete = false;
+          this._startupLoadComplete = true; // Allow saves — this is a real fresh start
+          this.debugLog('LOAD_SETTINGS', 'No saved data found anywhere (including legacy), using defaults');
+        }
       }
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error, { phase: 'load_settings' });
@@ -4393,6 +4617,29 @@ module.exports = class SoloLevelingStats {
       this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
       // Initialize Set for channelsVisited
       this.settings.activity.channelsVisited = new Set();
+
+      // Even on error, try legacy rescue before allowing saves of defaults
+      try {
+        const fs = require('fs');
+        const pathModule = require('path');
+        const legacyPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+        if (fs.existsSync(legacyPath)) {
+          const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
+          if (legacyData && legacyData.level > 1) {
+            console.warn('[SoloLevelingStats] ERROR-PATH RESCUE: Found real progress in legacy .data.json');
+            const merged = { ...this.defaultSettings, ...legacyData };
+            this.settings = JSON.parse(JSON.stringify(merged));
+            if (Array.isArray(this.settings.activity?.channelsVisited)) {
+              this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
+            } else {
+              this.settings.activity.channelsVisited = new Set();
+            }
+          }
+        }
+      } catch (_) { /* best-effort */ }
+      this._hasRealProgress = this._isRealProgressState(this.settings);
+      this._startupProgressProbeComplete = this._hasRealProgress;
+      this._startupLoadComplete = true;
     }
   }
 
@@ -4433,11 +4680,69 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * Debounced save — coalesces rapid saveSettings() calls (20+ call sites).
+   * Actual I/O happens after 2s of quiet. Use immediate=true only for
+   * stop()/beforeunload/visibilitychange where data loss is critical.
+   */
   async saveSettings(immediate = false) {
     // Prevent saving if settings aren't initialized
     if (!this.settings) {
       this.debugError('SAVE_SETTINGS', new Error('Settings not initialized'));
       return;
+    }
+
+    // STARTUP SAVE GUARD: Block ALL saves until loadSettings() has confirmed
+    // real data loaded or verified this is a genuine fresh start. This prevents
+    // the "load defaults → immediate save → overwrite real progress" cascade.
+    if (this._startupLoadComplete === false) {
+      this.debugLog('SAVE_SETTINGS', 'BLOCKED — startup load not yet complete, refusing to save');
+      return;
+    }
+
+    if (immediate) {
+      // Flush any pending debounce and save now
+      if (this._saveSettingsTimer) {
+        clearTimeout(this._saveSettingsTimer);
+        this._saveSettingsTimer = null;
+      }
+      this._settingsDirty = false;
+      return this._saveSettingsImmediate();
+    }
+
+    // Debounced path — coalesce rapid calls
+    this._settingsDirty = true;
+    if (this._saveSettingsTimer) return;
+    this._saveSettingsTimer = setTimeout(() => {
+      this._saveSettingsTimer = null;
+      if (this._settingsDirty) {
+        this._settingsDirty = false;
+        this._saveSettingsImmediate();
+      }
+    }, 2000);
+  }
+
+  async _saveSettingsImmediate() {
+    if (!this.settings) return;
+
+    // FIRST-SAVE GUARD: if startup state looks fresh, probe every persisted source once.
+    // If real progress exists anywhere, reload instead of writing defaults over it.
+    if (!this._startupProgressProbeComplete) {
+      const probeResult = await this._detectPersistedRealProgress();
+      this._startupProgressProbeComplete = true;
+
+      const currentLooksFresh = !this._isRealProgressState(this.settings);
+      if (probeResult.found && currentLooksFresh) {
+        console.warn(
+          `[SoloLevelingStats] BLOCKED save: found persisted progress in ${probeResult.source} (level ${probeResult.level}, totalXP ${probeResult.totalXP}) while current state looks fresh. Reloading instead of overwriting.`
+        );
+        try {
+          await this.loadSettings();
+        } catch (_) {
+          // best effort
+        }
+        return;
+      }
     }
 
     try {
@@ -4490,6 +4795,7 @@ module.exports = class SoloLevelingStats {
 
       // Remove any non-serializable properties (functions, undefined, etc.)
       const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
+      this._hasRealProgress = this._isRealProgressState(cleanSettings) || this._hasRealProgress;
 
       // CRITICAL: Validate critical data before saving to prevent level resets
       // If level is invalid (0, negative, or missing), don't save corrupted data
@@ -4792,13 +5098,19 @@ module.exports = class SoloLevelingStats {
       }
     }, 60000); // Check every minute
 
-    // Track mouse/keyboard activity
+    // Track mouse/keyboard activity (throttled — was firing hundreds of times/sec on mousemove)
     this._activityTimeout = null;
+    this._lastActivityReset = 0;
     const resetActivityTimeout = () => {
+      const now = Date.now();
+      // Throttle: only process once per 2 seconds (mousemove fires 100s/sec)
+      if (now - this._lastActivityReset < 2000) return;
+      this._lastActivityReset = now;
+
       if (this._activityTimeout) {
         clearTimeout(this._activityTimeout);
       }
-      this.settings.activity.lastActiveTime = Date.now();
+      this.settings.activity.lastActiveTime = now;
       this._activityTimeout = setTimeout(() => {
         // User inactive
       }, 300000); // 5 minutes
@@ -5630,11 +5942,11 @@ module.exports = class SoloLevelingStats {
       // Emit XP changed event for real-time progress bar updates (triggers updateChatUI internally)
       this.emitXPChanged();
 
-      // Save immediately on XP gain (important data)
+      // Save on XP gain (debounced — coalesces rapid XP grants)
       // Use setTimeout to avoid blocking the main thread
       setTimeout(() => {
         try {
-          this.saveSettings(true);
+          this.saveSettings();
           this.debugLog('AWARD_XP', 'Settings saved after XP gain');
         } catch (error) {
           this.debugError('AWARD_XP', error, { phase: 'save_after_xp' });
@@ -6953,15 +7265,23 @@ module.exports = class SoloLevelingStats {
     const achievements = this.getAchievementDefinitions();
     let newAchievements = [];
 
+    // Build a Set for O(1) lookups (was O(n) .includes() per achievement — 3800 comparisons/msg)
+    if (!this._unlockedAchievementSet || this._unlockedAchievementSetSize !== this.settings.achievements.unlocked.length) {
+      this._unlockedAchievementSet = new Set(this.settings.achievements.unlocked);
+      this._unlockedAchievementSetSize = this.settings.achievements.unlocked.length;
+    }
+
     achievements.forEach((achievement) => {
-      // Skip if already unlocked
-      if (this.settings.achievements.unlocked.includes(achievement.id)) {
+      // Skip if already unlocked — O(1) Set.has vs O(n) Array.includes
+      if (this._unlockedAchievementSet.has(achievement.id)) {
         return;
       }
 
       // Check if achievement is unlocked
       if (this.checkAchievementCondition(achievement)) {
         this.unlockAchievement(achievement);
+        this._unlockedAchievementSet.add(achievement.id);
+        this._unlockedAchievementSetSize = this.settings.achievements.unlocked.length;
         newAchievements.push(achievement);
       }
     });

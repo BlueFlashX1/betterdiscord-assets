@@ -1274,17 +1274,49 @@ class ShadowStorageManager {
 // ================================================================================
 
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
-const UnifiedSaveManager = (() => {
-  try {
+let UnifiedSaveManager;
+try {
+  if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
+    UnifiedSaveManager = window.UnifiedSaveManager;
+  } else {
+    const fs = require('fs');
     const path = require('path');
-    const managerFile = path.join(BdApi.Plugins.folder, 'UnifiedSaveManager.js');
-    const maybeLoaded = require(managerFile);
-    return maybeLoaded || window.UnifiedSaveManager || null;
-  } catch (error) {
-    console.warn('[ShadowArmy] Failed to load UnifiedSaveManager:', error);
-    return window.UnifiedSaveManager || null;
+    const pluginFolder =
+      (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
+        ? BdApi.Plugins.folder
+        : null) ||
+      (typeof __dirname === 'string' ? __dirname : null);
+    if (pluginFolder) {
+      const saveManagerPath = path.join(pluginFolder, 'UnifiedSaveManager.js');
+      if (fs.existsSync(saveManagerPath)) {
+        const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
+        const moduleSandbox = { exports: {} };
+        const exportsSandbox = moduleSandbox.exports;
+        const loader = new Function(
+          'window',
+          'module',
+          'exports',
+          `${saveManagerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || (window && window.UnifiedSaveManager) || null;`
+        );
+        UnifiedSaveManager = loader(
+          typeof window !== 'undefined' ? window : undefined,
+          moduleSandbox,
+          exportsSandbox
+        );
+        if (UnifiedSaveManager && typeof window !== 'undefined') {
+          window.UnifiedSaveManager = UnifiedSaveManager;
+        }
+      } else {
+        UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
+      }
+    } else {
+      UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
+    }
   }
-})();
+} catch (error) {
+  console.warn('[ShadowArmy] Failed to load UnifiedSaveManager:', error);
+  UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
+}
 
 module.exports = class ShadowArmy {
   // ============================================================================
@@ -2261,6 +2293,16 @@ module.exports = class ShadowArmy {
     // Set stopped flag to prevent recreating watchers
     this._isStopped = true;
 
+    // Flush any pending debounced save immediately
+    if (this._saveSettingsTimer) {
+      clearTimeout(this._saveSettingsTimer);
+      this._saveSettingsTimer = null;
+    }
+    if (this._settingsDirty) {
+      this._settingsDirty = false;
+      this._saveSettingsImmediate();
+    }
+
     // Cleanup ARISE animation system (merged from ShadowAriseAnimation plugin)
     this.cleanupAriseAnimationSystem();
 
@@ -3088,7 +3130,24 @@ module.exports = class ShadowArmy {
    * CRITICAL: Shadows are stored in IndexedDB via storageManager, NOT in settings.
    * This prevents UI blocking and allows for thousands of shadows.
    */
-  async saveSettings() {
+  /**
+   * Debounced save — coalesces rapid saveSettings() calls into one write.
+   * All 17+ call sites hit this; actual I/O happens after 3s of quiet.
+   * Use saveSettingsImmediate() for critical paths (stop/beforeunload).
+   */
+  saveSettings() {
+    this._settingsDirty = true;
+    if (this._saveSettingsTimer) return;
+    this._saveSettingsTimer = setTimeout(() => {
+      this._saveSettingsTimer = null;
+      if (this._settingsDirty) {
+        this._settingsDirty = false;
+        this._saveSettingsImmediate();
+      }
+    }, 3000);
+  }
+
+  async _saveSettingsImmediate() {
     try {
       // Sync debug mode from debug.enabled to settings
       if (this.settings.debugMode !== this.debug.enabled) {
@@ -6003,7 +6062,8 @@ module.exports = class ShadowArmy {
     const MAX_LEVEL = 9999; // Safety cap to prevent infinite level-up loops
     const perShadow = baseAmount;
 
-    // Process shadows sequentially to prevent parallel IDB write race conditions
+    // Process all shadows in-memory first (CPU-only, no I/O)
+    const updatedShadows = [];
     for (const shadow of shadowsToGrant) {
       shadow.xp = (shadow.xp || 0) + perShadow;
       let level = shadow.level || 1;
@@ -6037,16 +6097,20 @@ module.exports = class ShadowArmy {
 
       // Invalidate individual shadow power cache before saving (prevents stale cache)
       this.invalidateShadowPowerCache(shadow);
+      updatedShadows.push(this.prepareShadowForSave(shadow));
+    }
 
-      // Save updated shadow to IndexedDB
-      if (this.storageManager) {
-        try {
-          await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
-        } catch (error) {
-          this.debugError('STORAGE', 'Failed to save shadow XP update to IndexedDB', error);
+    // Single batched IDB write for all shadows (was: sequential await per shadow)
+    if (this.storageManager && updatedShadows.length > 0) {
+      try {
+        if (this.storageManager.updateShadowsBatch) {
+          await this.storageManager.updateShadowsBatch(updatedShadows);
+        } else {
+          // Fallback: parallel writes if batch not available
+          await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
         }
-      } else {
-        this.debugLog('STORAGE', 'storageManager not available, cannot save shadow XP update');
+      } catch (error) {
+        this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);
       }
     }
 
