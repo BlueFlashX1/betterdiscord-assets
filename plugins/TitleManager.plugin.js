@@ -161,6 +161,8 @@ module.exports = class SoloLevelingTitleManager {
       'Wanderer',
       'Apprentice',
       'Message Warrior',
+      'Monarch of Beast',
+      'Monarch of Beasts',
     ]);
   }
 

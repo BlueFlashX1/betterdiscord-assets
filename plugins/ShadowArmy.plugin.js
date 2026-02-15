@@ -952,9 +952,13 @@ class ShadowStorageManager {
       S: 400,
       SS: 800,
       SSS: 1600,
-      Monarch: 3200,
+      'SSS+': 2400,
+      NH: 3200,
+      Monarch: 4800,
+      'Monarch+': 6400,
+      'Shadow Monarch': 9600,
     };
-    const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
+    const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'];
 
     return this._withStore('readonly', (store, _tx, resolve) => {
       const stats = {
@@ -9479,8 +9483,14 @@ module.exports = class ShadowArmy {
     try {
       // PERF: Use getCountByRank() instead of loading all 10K shadows from IDB
       // getCountByRank uses IDB index count() — orders of magnitude faster than full cursor scan
-      const ranks = ['SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+      // 12-rank Solo Leveling hierarchy (highest first for widget display)
+      // Shadow Monarch excluded — that's the player's exclusive title, not a shadow rank
+      const ranks = ['Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
       const rankColors = {
+        'Monarch+': '#ff6b2b',       // Deep orange
+        Monarch: '#ff4500',           // Red-orange
+        NH: '#e040fb',               // Neon purple
+        'SSS+': '#f50057',           // Hot pink
         SSS: '#ec4899',
         SS: '#ef4444',
         S: '#f59e0b',
@@ -9529,6 +9539,19 @@ module.exports = class ShadowArmy {
         return;
       }
 
+      // Short labels for display (long names don't fit in grid cells)
+      const rankLabels = {
+        'Monarch+': 'M+',
+        Monarch: 'M',
+        NH: 'NH',
+        'SSS+': 'SSS+',
+      };
+
+      // Split into elite tier (top 4) and standard tier (bottom 8)
+      const eliteRankNames = ['Monarch+', 'Monarch', 'NH', 'SSS+'];
+      const eliteRanks = rankCounts.filter((r) => eliteRankNames.includes(r.rank));
+      const standardRanks = rankCounts.filter((r) => !eliteRankNames.includes(r.rank));
+
       // Generate HTML with proper structure
       widget.innerHTML = `
         <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -9539,8 +9562,27 @@ module.exports = class ShadowArmy {
             ${totalCount} Total
           </div>
         </div>
-        <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
-          ${rankCounts
+        <div class="elite-rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px;">
+          ${eliteRanks
+            .map(
+              ({ rank, count, color }) => `
+            <div class="rank-box" style="
+              text-align: center;
+              padding: 3px 2px;
+              background: rgba(0, 0, 0, 0.5);
+              border-radius: 4px;
+              border: 1px solid ${color}60;
+              ${count > 0 ? `box-shadow: 0 0 6px ${color}30;` : ''}
+            ">
+              <div class="rank-label" style="color: ${color}; font-size: 8px; font-weight: bold; text-shadow: ${count > 0 ? `0 0 4px ${color}` : 'none'};">${rankLabels[rank] || rank}</div>
+              <div class="rank-count" style="color: ${count > 0 ? '#fff' : '#555'}; font-size: 12px; font-weight: bold;">${count}</div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+        <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
+          ${standardRanks
             .map(
               ({ rank, count, color }) => `
             <div class="rank-box" style="
@@ -9615,7 +9657,8 @@ module.exports = class ShadowArmy {
     // Guard clause: Return empty string if no shadows
     if (!shadows || shadows.length === 0) return '';
 
-    const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS'];
+    // Shadow Monarch excluded — player's exclusive title, not a shadow rank
+    const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+'];
     const rankColors = {
       E: '#999',
       D: '#a0a0a0',
@@ -9625,6 +9668,10 @@ module.exports = class ShadowArmy {
       S: '#f59e0b',
       SS: '#ef4444',
       SSS: '#ec4899',
+      'SSS+': '#f50057',
+      NH: '#e040fb',
+      Monarch: '#ff4500',
+      'Monarch+': '#ff6b2b',
     };
 
     // Use reduce for functional pattern to count shadows by rank
@@ -9719,10 +9766,14 @@ module.exports = class ShadowArmy {
   getShadowArmyGeneralCardHtml(shadow, index) {
     const safeShadow = shadow || {};
     const generalRank = (index || 0) + 1;
-    const shadowId = safeShadow.id || safeShadow.i || '';
+    // Sanitize ID: extract only the last valid shadow ID segment if corrupted/concatenated
+    const rawId = String(safeShadow.id || safeShadow.i || '');
+    const shadowId = rawId.length > 40 ? rawId.slice(-30) : rawId;
+    const shortId = rawId.slice(-8);
 
     const effectiveStats = this.getShadowEffectiveStats(safeShadow);
-    const level = safeShadow.level || 1;
+    // Force numeric level — IDB data may have string-concatenated values
+    const level = Number.isFinite(safeShadow.level) ? safeShadow.level : (parseInt(safeShadow.level, 10) || 1);
 
     const totalPower =
       typeof this.calculateShadowStrength === 'function'
@@ -9731,9 +9782,11 @@ module.exports = class ShadowArmy {
         ? this.calculateShadowPower(effectiveStats, 1)
         : 0;
 
+    // Force numeric xp
+    const xp = Number.isFinite(safeShadow.xp) ? safeShadow.xp : (parseInt(safeShadow.xp, 10) || 0);
     const xpNeeded = this.getShadowXpForNextLevel(level, safeShadow.rank);
     const xpProgress =
-      xpNeeded > 0 ? Math.max(0, Math.min(100, ((safeShadow.xp || 0) / xpNeeded) * 100)) : 0;
+      xpNeeded > 0 ? Math.max(0, Math.min(100, (xp / xpNeeded) * 100)) : 0;
 
     const combatTime = this.formatCombatHours(safeShadow.totalCombatTime || 0);
 
@@ -9742,13 +9795,14 @@ module.exports = class ShadowArmy {
     const roleColor = isMagicBeast ? '#f59e0b' : '#fff';
 
     return `
-                  <div class="sa-general-card" data-shadow-id="${shadowId}" style="
+                  <div class="sa-general-card" data-shadow-id="${shortId}" style="
                     background: rgba(251, 191, 36, 0.15);
                     border: 2px solid #fbbf24;
                     border-radius: 8px;
                     padding: 14px;
                     margin-bottom: 12px;
                     box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
+                    overflow: hidden;
                   ">
                     <div style="display: flex; gap: 12px;">
                       <!-- General Rank Badge -->
@@ -9765,19 +9819,20 @@ module.exports = class ShadowArmy {
                         flex-direction: column;
                         align-items: center;
                         justify-content: center;
+                        flex-shrink: 0;
                         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
                       ">
                         <div style="font-size: 10px;">#${generalRank}</div>
                       </div>
 
-                      <div style="flex: 1;">
+                      <div style="flex: 1; min-width: 0; overflow: hidden;">
                         <!-- Header -->
                         <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                          <span style="color: #8a2be2; font-weight: bold; font-size: 14px;">[${
+                          <span style="color: #8a2be2; font-weight: bold; font-size: 14px; flex-shrink: 0;">[${
                             safeShadow.rank || 'E'
                           }]</span>
-                          <span style="color: ${roleColor}; font-size: 14px; font-weight: bold;">${role}</span>
-                          <span style="color: #34d399; margin-left: auto; font-size: 14px; font-weight: bold;">${Math.floor(
+                          <span style="color: ${roleColor}; font-size: 14px; font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${role}</span>
+                          <span style="color: #34d399; margin-left: auto; font-size: 14px; font-weight: bold; flex-shrink: 0;">${Math.floor(
                             totalPower || 0
                           ).toLocaleString()}</span>
                         </div>
@@ -9786,9 +9841,7 @@ module.exports = class ShadowArmy {
                         <div style="margin-bottom: 8px;">
                           <div style="display: flex; justify-content: space-between; font-size: 11px; color: #999; margin-bottom: 2px;">
                             <span>Level ${level}</span>
-                            <span>${(
-                              safeShadow.xp || 0
-                            ).toLocaleString()} / ${xpNeeded.toLocaleString()} XP</span>
+                            <span>${xp.toLocaleString()} / ${xpNeeded.toLocaleString()} XP</span>
                           </div>
                           <div style="background: rgba(0,0,0,0.3); height: 6px; border-radius: 3px; overflow: hidden;">
                             <div style="background: linear-gradient(90deg, #fbbf24, #f59e0b); width: ${xpProgress}%; height: 100%; transition: width 0.3s;"></div>
@@ -9835,9 +9888,7 @@ module.exports = class ShadowArmy {
                         <div style="display: flex; gap: 12px; font-size: 11px;">
                           <div style="color: #34d399;">${combatTime} Combat</div>
                           <div style="color: #8a2be2;">Level ${level}</div>
-                          <div style="color: #fbbf24; margin-left: auto;">ID: ${shadowId.slice(
-                            -8
-                          )}</div>
+                          <div style="color: #fbbf24; margin-left: auto;">ID: ${shortId}</div>
                         </div>
                       </div>
                     </div>

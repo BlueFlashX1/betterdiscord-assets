@@ -487,7 +487,17 @@ module.exports = class SoloLevelingStats {
 
     // Shared constants
     this.STAT_KEYS = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
-    this.UNWANTED_TITLES = ['Scribe', 'Wordsmith', 'Author', 'Explorer', 'Wanderer', 'Apprentice', 'Message Warrior'];
+    this.UNWANTED_TITLES = [
+      'Scribe',
+      'Wordsmith',
+      'Author',
+      'Explorer',
+      'Wanderer',
+      'Apprentice',
+      'Message Warrior',
+      'Monarch of Beast',
+      'Monarch of Beasts',
+    ];
 
     // Pre-compiled regex patterns (avoids allocation per message in hot path)
     this.RE_LINKS = /https?:\/\//;
