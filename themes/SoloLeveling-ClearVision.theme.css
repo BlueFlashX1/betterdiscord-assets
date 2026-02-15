@@ -1164,7 +1164,7 @@ div[class^="buttons_"] div[class*="emojiButton_"]:hover {
    Only the outermost wrapper gets the border — everything inside is transparent/borderless */
 div[class^="positionContainer_"] > div[class^="container_"],
 div[id^="uid_"][role="dialog"],
-div[class^="contentWrapper_"] {
+div[class^="positionContainer_"] div[class^="contentWrapper_"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
@@ -1188,8 +1188,8 @@ div[class^="emojiPicker_"] div[class^="inspector_"],
 div[class^="emojiPicker_"] nav,
 section[class^="stickerPicker_"] div[class^="wrapper_"],
 section[class^="stickerPicker_"] div[class^="searchBar_"],
-div[class^="contentWrapper_"] div[class^="header_"],
-div[class^="contentWrapper_"] nav[class^="nav_"] {
+div[class^="positionContainer_"] div[class^="contentWrapper_"] div[class^="header_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"] {
   background: transparent !important;
   background-color: transparent !important;
   background-image: none !important;
@@ -1200,14 +1200,14 @@ div[class^="contentWrapper_"] nav[class^="nav_"] {
    Nuclear approach: hide scrollbars on ALL scrollable elements inside the picker */
 div[class^="emojiPicker_"] *,
 section[class^="stickerPicker_"] *,
-div[class^="contentWrapper_"] *,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] *,
 div[class^="positionContainer_"] * {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
 }
 div[class^="emojiPicker_"] *::-webkit-scrollbar,
 section[class^="stickerPicker_"] *::-webkit-scrollbar,
-div[class^="contentWrapper_"] *::-webkit-scrollbar,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] *::-webkit-scrollbar,
 div[class^="positionContainer_"] *::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
@@ -2175,7 +2175,8 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"]::after {
 div[class^="popout_"][role="listbox"],
 div[id^="popout_"] > div[class^="popout_"],
 div[class^="selectFieldPopout_"],
-div[role="listbox"] {
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
@@ -2194,9 +2195,9 @@ div[class^="popout_"][role="listbox"] div[role="option"],
 div[class^="selectFieldPopout_"] div[class^="scroller_"],
 div[class^="selectFieldPopout_"] div[role="option"],
 div[class^="selectFieldPopout_"] div[class^="option_"],
-div[role="listbox"] div[class^="scroller_"],
-div[role="listbox"] div[role="option"],
-div[role="listbox"] div[class^="option_"] {
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
@@ -2211,9 +2212,9 @@ div[class^="popout_"][role="listbox"] div[class^="scroller_"],
 div[class^="selectFieldPopout_"],
 div[class^="selectFieldPopout_"] div[class^="scroller_"],
 div[class^="selectFieldPopout_"] div[class^="scrollerBase_"],
-div[role="listbox"],
-div[role="listbox"] div[class^="scroller_"],
-div[role="listbox"] div[class^="scrollerBase_"] {
+div[class^="popout_"] div[role="listbox"],
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"] {
   scrollbar-width: none !important;
   -ms-overflow-style: none !important;
   overflow-y: auto !important;
@@ -2226,9 +2227,9 @@ div[class^="popout_"][role="listbox"] div[class^="scroller_"]::-webkit-scrollbar
 div[class^="selectFieldPopout_"]::-webkit-scrollbar,
 div[class^="selectFieldPopout_"] div[class^="scroller_"]::-webkit-scrollbar,
 div[class^="selectFieldPopout_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
-div[role="listbox"]::-webkit-scrollbar,
-div[role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
-div[role="listbox"] div[class^="scrollerBase_"]::-webkit-scrollbar {
+div[class^="popout_"] div[role="listbox"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"]::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
@@ -2368,11 +2369,11 @@ div[class^="popout_"] > div,
 div[class^="popout_"] div[class^="popout_"] *,
 div[id^="popout_"] > div > div *,
 div[class^="selectFieldPopout_"] *,
-div[role="listbox"] > div,
-div[role="listbox"] div[class^="scroller_"],
-div[role="listbox"] div[class^="list_"],
-div[role="listbox"] div[class^="option_"],
-div[role="listbox"] div[role="option"] {
+div[class^="popout_"] div[role="listbox"] > div,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="list_"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"] {
   border: none !important;
   border-color: transparent !important;
 }
@@ -2380,6 +2381,7 @@ div[role="listbox"] div[role="option"] {
 div[class^="popout_"][role="listbox"],
 div[id^="popout_"] > div[class^="popout_"],
 div[class^="selectFieldPopout_"],
-div[role="listbox"] {
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
   border: 1px solid #8a2be2 !important;
 }

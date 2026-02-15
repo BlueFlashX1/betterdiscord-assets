@@ -1,0 +1,82 @@
+/**
+ * @name HSL Diagnostic
+ * @author Curio
+ * @version 1.0.1
+ * @description Isolated HorizontalServerList test (official imports only) + user panel baseline align
+ */
+
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+:root {
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+
+  --SL-userpanel-bottom: 8px;
+  --SL-userpanel-left: 10px;
+  --SL-userpanel-width: 420px;
+  --SL-userpanel-height: 74px;
+}
+
+/* Force user panel to same baseline as bottom HSL dock (covers both old/new class variants) */
+section[aria-label='User status and settings'],
+section[class^='panels_'],
+section[class*='panels_'],
+div[class^='panels_'],
+div[class*='panels_'] {
+  position: fixed !important;
+  inset: auto auto var(--SL-userpanel-bottom) var(--SL-userpanel-left) !important;
+  left: var(--SL-userpanel-left) !important;
+  bottom: var(--SL-userpanel-bottom) !important;
+  width: var(--SL-userpanel-width) !important;
+  height: var(--SL-userpanel-height) !important;
+  margin: 0 !important;
+  transform: none !important;
+  z-index: 1106 !important;
+}
+
+section[aria-label='User status and settings'] > div[class^='container_'],
+section[aria-label='User status and settings'] > div[class^='containerQuestBarVisible_'],
+section[class^='panels_'] > div[class^='container_'],
+section[class^='panels_'] > div[class^='containerQuestBarVisible_'],
+section[class*='panels_'] > div[class^='container_'],
+section[class*='panels_'] > div[class^='containerQuestBarVisible_'],
+div[class^='panels_'] > div[class^='container_'],
+div[class^='panels_'] > div[class^='containerQuestBarVisible_'],
+div[class*='panels_'] > div[class^='container_'],
+div[class*='panels_'] > div[class^='containerQuestBarVisible_'] {
+  height: 100% !important;
+  min-height: 0 !important;
+  margin: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  :root { --SL-userpanel-width: 360px; }
+}
+
+/* Fix: inner user-panel container was absolute, causing visual offset above dock */
+section[aria-label='User status and settings'] > div[class^='container_'],
+section[aria-label='User status and settings'] > div[class^='containerQuestBarVisible_'],
+section[class^='panels_'] > div[class^='container_'],
+section[class^='panels_'] > div[class^='containerQuestBarVisible_'] {
+  position: relative !important;
+  top: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  left: auto !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+}
+
+/* Optional nudge: set to 0 or -2 if still slightly high */
+section[aria-label='User status and settings'],
+section[class^='panels_'] {
+  bottom: 0px !important;
+}
+
+
+

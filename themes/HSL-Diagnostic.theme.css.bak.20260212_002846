@@ -1,0 +1,45 @@
+/**
+ * @name HSL Diagnostic
+ * @author Curio
+ * @version 1.0.0
+ * @description Isolated HorizontalServerList test (official imports only)
+ */
+
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+:root {
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+}
+
+/* Name tag alignment with bottom HSL dock */
+:root {
+  --SL-userpanel-bottom: 10px;
+  --SL-userpanel-left: 10px;
+  --SL-userpanel-width: 420px;
+  --SL-userpanel-height: calc(var(--HSL-server-icon-size) + 26px);
+}
+
+section[aria-label='User status and settings'] {
+  position: fixed !important;
+  left: var(--SL-userpanel-left) !important;
+  bottom: var(--SL-userpanel-bottom) !important;
+  width: var(--SL-userpanel-width) !important;
+  height: var(--SL-userpanel-height) !important;
+  z-index: 1002 !important;
+}
+
+section[aria-label='User status and settings'] > div[class^='container_'],
+section[aria-label='User status and settings'] > div[class^='containerQuestBarVisible_'] {
+  height: 100% !important;
+  min-height: 0 !important;
+}
+
+@media (max-width: 1200px) {
+  :root {
+    --SL-userpanel-width: 360px;
+  }
+}
