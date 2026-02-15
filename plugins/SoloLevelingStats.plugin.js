@@ -285,10 +285,15 @@ module.exports = class SoloLevelingStats {
     if (UnifiedSaveManager) {
       this.saveManager = new UnifiedSaveManager('SoloLevelingStats');
     }
-    // File-based backup path (survives Bd repair better than BdApi.Data/IndexedDB)
+    // File-based backup path — stored OUTSIDE BetterDiscord folder so it survives BD reinstall/repair
+    // Location: /Library/Application Support/discord/SoloLevelingBackups/SoloLevelingStats.json
     try {
       const pathModule = require('path');
-      this.fileBackupPath = pathModule.join(BdApi.Plugins.folder, 'SoloLevelingStats.data.json');
+      const fs = require('fs');
+      const appSupport = pathModule.resolve(BdApi.Plugins.folder, '..', '..'); // Application Support
+      const backupDir = pathModule.join(appSupport, 'discord', 'SoloLevelingBackups');
+      fs.mkdirSync(backupDir, { recursive: true });
+      this.fileBackupPath = pathModule.join(backupDir, 'SoloLevelingStats.json');
     } catch (_) {
       this.fileBackupPath = null;
     }

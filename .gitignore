@@ -2,6 +2,12 @@
 # BLACKLIST - Files/Folders to NEVER commit
 # ============================================
 
+# Analysis / lint caches and reports
+.archlint-cache/
+archlint-report.*
+dead-symbols*.tsv
+criticalhit-dead-*.txt
+
 # Dependencies
 node_modules/
 package-lock.json

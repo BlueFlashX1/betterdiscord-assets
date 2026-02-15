@@ -108,6 +108,19 @@ try {
   console.warn('[LevelProgressBar] Failed to load SoloLevelingUtils:', error);
 }
 
+// Load UnifiedSaveManager for crash-resistant IndexedDB storage
+let UnifiedSaveManager;
+try {
+  const path = require('path');
+  const managerFile = path.join(BdApi.Plugins.folder, 'UnifiedSaveManager.js');
+  delete require.cache[managerFile];
+  const maybeLoaded = require(managerFile);
+  UnifiedSaveManager = maybeLoaded || window.UnifiedSaveManager || null;
+} catch (error) {
+  console.warn('[LevelProgressBar] Failed to load UnifiedSaveManager:', error);
+  UnifiedSaveManager = window.UnifiedSaveManager || null;
+}
+
 module.exports = class LevelProgressBar {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -404,6 +417,12 @@ module.exports = class LevelProgressBar {
     this._debug = SLUtils
       ? SLUtils.createDebugLogger('LevelProgressBar', () => this.settings?.debugMode)
       : null;
+
+    // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
+    this.saveManager = null;
+    if (UnifiedSaveManager) {
+      this.saveManager = new UnifiedSaveManager('LevelProgressBar');
+    }
   }
 
   // ============================================================================
@@ -413,11 +432,23 @@ module.exports = class LevelProgressBar {
   /**
    * 3.1 PLUGIN LIFECYCLE
    */
-  start() {
+  async start() {
     this._isStopped = false;
     this.debugLog('START', 'Plugin starting');
     this.initializeWebpackModules();
-    this.loadSettings();
+
+    // Initialize IndexedDB save manager
+    if (this.saveManager) {
+      try {
+        await this.saveManager.init();
+        this.debugLog('START', 'UnifiedSaveManager initialized (IndexedDB)');
+      } catch (error) {
+        this.debugError('START', error);
+        this.saveManager = null;
+      }
+    }
+
+    await this.loadSettings();
     this.injectCSS();
     this.createProgressBar();
 
@@ -502,26 +533,152 @@ module.exports = class LevelProgressBar {
   /**
    * 3.2 SETTINGS MANAGEMENT
    */
-  loadSettings() {
+  // ── FILE BACKUP (Tier 3) ─────────────────────────────────────────────────
+  // Stored OUTSIDE BetterDiscord folder so it survives BD reinstall/repair
+  // Location: /Library/Application Support/discord/SoloLevelingBackups/LevelProgressBar.json
+
+  _getFileBackupPath() {
     try {
-      const saved = BdApi.Data.load('LevelProgressBar', 'settings');
-      if (saved) {
+      const pathModule = require('path');
+      const appSupport = pathModule.resolve(BdApi.Plugins.folder, '..', '..'); // Application Support
+      const backupDir = pathModule.join(appSupport, 'discord', 'SoloLevelingBackups');
+      require('fs').mkdirSync(backupDir, { recursive: true });
+      return pathModule.join(backupDir, 'LevelProgressBar.json');
+    } catch { return null; }
+  }
+
+  readFileBackup() {
+    const filePath = this._getFileBackupPath();
+    if (!filePath) return null;
+    try {
+      const fs = require('fs');
+      if (!fs.existsSync(filePath)) return null;
+      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    } catch (error) {
+      this.debugError('LOAD_SETTINGS_FILE', error);
+      return null;
+    }
+  }
+
+  writeFileBackup(data) {
+    const filePath = this._getFileBackupPath();
+    if (!filePath) return false;
+    try {
+      const fs = require('fs');
+      fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8', (err) => {
+        if (err) this.debugError('SAVE_SETTINGS_FILE', err);
+        else this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: filePath });
+      });
+      return true;
+    } catch (error) {
+      this.debugError('SAVE_SETTINGS_FILE', error);
+      return false;
+    }
+  }
+
+  /**
+   * Load settings from all 3 tiers, picking the newest valid candidate.
+   * Tiers: (1) IndexedDB via UnifiedSaveManager, (2) BdApi.Data, (3) File backup
+   * Uses _metadata.lastSave timestamp to pick newest; tie-breaks by tier priority.
+   */
+  async loadSettings() {
+    try {
+      this.debugLog('LOAD_SETTINGS', 'Attempting to load settings from all tiers...');
+
+      const getSavedTimestamp = (data) => {
+        const iso = data?._metadata?.lastSave;
+        const ts = iso ? Date.parse(iso) : NaN;
+        return Number.isFinite(ts) ? ts : 0;
+      };
+
+      const candidates = [];
+
+      // Tier 3: File backup (survives BD reinstall)
+      try {
+        const fileSaved = this.readFileBackup();
+        if (fileSaved && typeof fileSaved === 'object') {
+          candidates.push({ source: 'file', data: fileSaved, ts: getSavedTimestamp(fileSaved) });
+        }
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', 'File backup load failed', error);
+      }
+
+      // Tier 1: IndexedDB (survives BD reinstall)
+      if (this.saveManager) {
+        try {
+          const idbSaved = await this.saveManager.load('settings');
+          if (idbSaved && typeof idbSaved === 'object') {
+            candidates.push({ source: 'indexeddb', data: idbSaved, ts: getSavedTimestamp(idbSaved) });
+          }
+        } catch (error) {
+          this.debugError('LOAD_SETTINGS', 'IndexedDB load failed', error);
+        }
+      }
+
+      // Tier 2: BdApi.Data (wiped on BD reinstall)
+      try {
+        const bdSaved = BdApi.Data.load('LevelProgressBar', 'settings');
+        if (bdSaved && typeof bdSaved === 'object') {
+          candidates.push({ source: 'bdapi', data: bdSaved, ts: getSavedTimestamp(bdSaved) });
+        }
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
+      }
+
+      // Pick newest; tie-break by storage priority
+      const sourcePriority = { indexeddb: 3, file: 2, bdapi: 1 };
+      const best = candidates.reduce(
+        (acc, cur) => {
+          const hasNewer = cur.ts > acc.ts;
+          const isTie = cur.ts === acc.ts;
+          const hasHigherPriority = (sourcePriority[cur.source] ?? 0) >= (sourcePriority[acc.source] ?? 0);
+          return hasNewer || (isTie && hasHigherPriority) ? cur : acc;
+        },
+        { source: null, data: null, ts: 0 }
+      );
+
+      if (best.data) {
+        this.debugLog('LOAD_SETTINGS', `Selected settings candidate`, {
+          source: best.source,
+          ts: best.ts ? new Date(best.ts).toISOString() : 'none',
+          candidateCount: candidates.length,
+        });
         this.settings = SLUtils
-          ? SLUtils.mergeSettings(this.defaultSettings, saved)
-          : JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved }));
-        this.debugLog('LOAD_SETTINGS', 'Settings loaded', { position: this.settings.position });
+          ? SLUtils.mergeSettings(this.defaultSettings, best.data)
+          : JSON.parse(JSON.stringify({ ...this.defaultSettings, ...best.data }));
       } else {
-        this.debugLog('LOAD_SETTINGS', 'No saved settings, using defaults');
+        this.debugLog('LOAD_SETTINGS', 'No saved settings found, using defaults');
       }
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error);
     }
   }
 
-  saveSettings() {
+  async saveSettings() {
     try {
-      BdApi.Data.save('LevelProgressBar', 'settings', this.settings);
-      this.debugLog('SAVE_SETTINGS', 'Settings saved successfully');
+      const cleanSettings = JSON.parse(JSON.stringify(this.settings));
+      cleanSettings._metadata = { lastSave: new Date().toISOString(), version: '1.4.0' };
+
+      // Tier 1: IndexedDB (crash-resistant, survives BD reinstall)
+      if (this.saveManager) {
+        try {
+          await this.saveManager.save('settings', cleanSettings, true);
+          this.debugLog('SAVE_SETTINGS', 'Saved to IndexedDB');
+        } catch (error) {
+          this.debugError('SAVE_SETTINGS', error);
+        }
+      }
+
+      // Tier 2: BdApi.Data (fast, inspectable)
+      try {
+        BdApi.Data.save('LevelProgressBar', 'settings', cleanSettings);
+        this.debugLog('SAVE_SETTINGS', 'Saved to BdApi.Data');
+      } catch (error) {
+        this.debugError('SAVE_SETTINGS', error);
+      }
+
+      // Tier 3: File backup outside BD folder (survives BD reinstall)
+      this.writeFileBackup(cleanSettings);
     } catch (error) {
       this.debugError('SAVE_SETTINGS', error);
     }
