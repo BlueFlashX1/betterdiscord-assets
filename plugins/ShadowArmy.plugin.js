@@ -848,10 +848,16 @@ class ShadowStorageManager {
           return;
         }
         const request = store.put(shadow);
-        request.onsuccess = () => { completed++; };
+        request.onsuccess = () => {
+          completed++;
+        };
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, { index, id: shadowId, error: request.error });
+          this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, {
+            index,
+            id: shadowId,
+            error: request.error,
+          });
         };
       });
     });
@@ -885,11 +891,23 @@ class ShadowStorageManager {
       // Select optimal index based on filters
       let index = store;
       if (filters.rank && filters.role) {
-        try { index = store.index('rank_role'); } catch (e) { /* fallback to store */ }
+        try {
+          index = store.index('rank_role');
+        } catch (e) {
+          /* fallback to store */
+        }
       } else if (filters.rank) {
-        try { index = store.index('rank'); } catch (e) { /* fallback to store */ }
+        try {
+          index = store.index('rank');
+        } catch (e) {
+          /* fallback to store */
+        }
       } else if (filters.role) {
-        try { index = store.index('role'); } catch (e) { /* fallback to store */ }
+        try {
+          index = store.index('role');
+        } catch (e) {
+          /* fallback to store */
+        }
       }
 
       const results = [];
@@ -925,11 +943,29 @@ class ShadowStorageManager {
    * Returns aggregate data: total, by rank, avg level, ready for rank-up, etc.
    */
   async getArmyStatistics() {
-    const rankUpBaselines = { E: 10, D: 25, C: 50, B: 100, A: 200, S: 400, SS: 800, SSS: 1600, Monarch: 3200 };
+    const rankUpBaselines = {
+      E: 10,
+      D: 25,
+      C: 50,
+      B: 100,
+      A: 200,
+      S: 400,
+      SS: 800,
+      SSS: 1600,
+      Monarch: 3200,
+    };
     const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
 
     return this._withStore('readonly', (store, _tx, resolve) => {
-      const stats = { total: 0, byRank: {}, byRole: {}, avgLevel: 0, totalCombatTime: 0, readyForRankUp: 0, totalPower: 0 };
+      const stats = {
+        total: 0,
+        byRank: {},
+        byRole: {},
+        avgLevel: 0,
+        totalCombatTime: 0,
+        readyForRankUp: 0,
+        totalPower: 0,
+      };
       let levelSum = 0;
       const request = store.openCursor();
 
@@ -939,16 +975,24 @@ class ShadowStorageManager {
           const shadow = cursor.value;
           stats.total++;
           stats.byRank[shadow.rank] = (stats.byRank[shadow.rank] || 0) + 1;
-          stats.byRole[shadow.role || shadow.roleName || 'Unknown'] = (stats.byRole[shadow.role || shadow.roleName || 'Unknown'] || 0) + 1;
+          stats.byRole[shadow.role || shadow.roleName || 'Unknown'] =
+            (stats.byRole[shadow.role || shadow.roleName || 'Unknown'] || 0) + 1;
           levelSum += shadow.level || 1;
           stats.totalCombatTime += shadow.totalCombatTime || 0;
           stats.totalPower += shadow.strength || 0;
 
           const effectiveStats = this.getShadowEffectiveStats(shadow);
-          const avgStats = (effectiveStats.strength + effectiveStats.agility + effectiveStats.intelligence + effectiveStats.vitality + effectiveStats.perception) / 5;
+          const avgStats =
+            (effectiveStats.strength +
+              effectiveStats.agility +
+              effectiveStats.intelligence +
+              effectiveStats.vitality +
+              effectiveStats.perception) /
+            5;
           const idx = rankOrder.indexOf(shadow.rank);
           const nextRank = rankOrder[idx + 1];
-          if (nextRank && avgStats >= (rankUpBaselines[nextRank] || 9999) * 0.8) stats.readyForRankUp++;
+          if (nextRank && avgStats >= (rankUpBaselines[nextRank] || 9999) * 0.8)
+            stats.readyForRankUp++;
 
           cursor.continue();
         } else {
@@ -1006,11 +1050,15 @@ class ShadowStorageManager {
       if (!store.indexNames.contains('personality')) {
         // Index doesn't exist — fallback to manual filter
         this.getAllShadows()
-          .then((all) => resolve(all.filter((s) => {
-            if (s.personality) return s.personality === personality;
-            const p = this.getShadowPersonality(s);
-            return p.name?.toLowerCase() === personality;
-          })))
+          .then((all) =>
+            resolve(
+              all.filter((s) => {
+                if (s.personality) return s.personality === personality;
+                const p = this.getShadowPersonality(s);
+                return p.name?.toLowerCase() === personality;
+              })
+            )
+          )
           .catch(reject);
         return;
       }
@@ -1096,11 +1144,18 @@ class ShadowStorageManager {
       tx.oncomplete = () => resolve(completed);
 
       shadows.forEach((shadow, index) => {
-        if (!shadow) { errors++; return; }
+        if (!shadow) {
+          errors++;
+          return;
+        }
         const idForStore = this.getCacheKey(shadow);
         if (!idForStore) {
           errors++;
-          this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, { index, hasI: !!shadow.i, hasId: !!shadow.id });
+          this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, {
+            index,
+            hasI: !!shadow.i,
+            hasId: !!shadow.id,
+          });
           return;
         }
         shadow.id || (shadow.id = idForStore);
@@ -1114,7 +1169,11 @@ class ShadowStorageManager {
         };
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, { index, id: this.getCacheKey(shadow), error: request.error });
+          this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
+            index,
+            id: this.getCacheKey(shadow),
+            error: request.error,
+          });
         };
       });
     });
@@ -1143,7 +1202,10 @@ class ShadowStorageManager {
       tx.oncomplete = () => resolve(completed);
 
       shadowIds.forEach((id, index) => {
-        if (!id) { errors++; return; }
+        if (!id) {
+          errors++;
+          return;
+        }
         const request = store.delete(id);
         request.onsuccess = () => {
           completed++;
@@ -1156,7 +1218,11 @@ class ShadowStorageManager {
         };
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, { index, id, error: request.error });
+          this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
+            index,
+            id,
+            error: request.error,
+          });
         };
       });
     });
@@ -1209,7 +1275,10 @@ class ShadowStorageManager {
         request.onsuccess = () => {
           (request.result || []).forEach((shadow) => {
             const strength = resolveStrength(shadow);
-            if (strength > 0) { totalPower += strength; totalCount++; }
+            if (strength > 0) {
+              totalPower += strength;
+              totalCount++;
+            }
           });
           completed++;
           if (completed + errors === weakRanks.length) {
@@ -1394,6 +1463,9 @@ module.exports = class ShadowArmy {
         chancePerInt: 0.01, // +1% per INT point (more impactful)
         maxExtractionChance: 0.3, // 30% cap for regular messages (dungeons skip this cap via skipCap=true)
         maxExtractionsPerMinute: 20, // hard safety cap
+        messageQueueInitialDelayMs: 120, // Delay before first queued extraction after a message
+        messageQueueIntervalMs: 450, // Gap between queued message extraction attempts
+        messageQueueMaxPending: 20, // Max queued extraction attempts kept during message spam
         // Special ARISE event tuning
         specialBaseChance: 0.01, // 1% base
         specialIntMultiplier: 0.003, // +0.3% per INT
@@ -1449,6 +1521,7 @@ module.exports = class ShadowArmy {
         animationDuration: 2500, // Animation duration in milliseconds
         scale: 1.0, // Animation scale multiplier
         showRankAndRole: true, // Show rank and role under ARISE text
+        minGapMs: 900, // Minimum gap between ARISE animations (prevents burst spam)
         animationFont: 'Speedy Space Goat Oddity', // Font for ARISE animation text
         useLocalFonts: true, // Use local font files for animation font
       },
@@ -1990,15 +2063,23 @@ module.exports = class ShadowArmy {
     this.soloPlugin = null;
     this.originalProcessMessage = null;
     this._extractionTimestamps = [];
+    this._pendingMessageExtractionCount = 0;
+    this._isProcessingMessageExtractionQueue = false;
+    this._messageExtractionQueueTimeout = null;
 
     // UI elements (widgets used instead)
     this.shadowArmyModal = null;
 
     // ARISE Animation system (merged from ShadowAriseAnimation plugin)
     this.animationContainer = null; // Animation container element
+    this._lastAriseAnimationAt = 0;
+    this._pendingAriseShadow = null;
+    this._ariseDrainTimeout = null;
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
+      PermissionStore: null,
+      Permissions: null,
     };
     this.webpackModuleAccess = false;
     this.reactInjectionActive = false;
@@ -2045,6 +2126,12 @@ module.exports = class ShadowArmy {
   async start() {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
+    this._pendingMessageExtractionCount = 0;
+    this._isProcessingMessageExtractionQueue = false;
+    this._messageExtractionQueueTimeout = null;
+    this._lastAriseAnimationAt = 0;
+    this._pendingAriseShadow = null;
+    this._ariseDrainTimeout = null;
 
     this._setupDiscordMediaErrorSuppression();
 
@@ -2315,6 +2402,12 @@ module.exports = class ShadowArmy {
     // Clear all tracked retry timeouts
     this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this._retryTimeouts.clear();
+    this._messageExtractionQueueTimeout = null;
+    this._ariseDrainTimeout = null;
+    this._pendingMessageExtractionCount = 0;
+    this._isProcessingMessageExtractionQueue = false;
+    this._pendingAriseShadow = null;
+    this._lastAriseAnimationAt = 0;
 
     // Clear natural growth interval
     if (this.naturalGrowthInterval) {
@@ -2464,6 +2557,182 @@ module.exports = class ShadowArmy {
    * Setup MutationObserver to watch for member list changes
    * Re-injects widget when member list is re-rendered (channel/guild switch)
    */
+  getCurrentChannelRouteInfo() {
+    if (typeof window === 'undefined') return null;
+
+    const pathname = window.location?.pathname || '';
+    const threadMatch = pathname.match(/^\/channels\/(\d+)\/(\d+)\/threads\/(\d+)$/);
+    if (threadMatch) {
+      return {
+        routeType: 'thread',
+        serverId: threadMatch[1],
+        parentChannelId: threadMatch[2],
+        rawChannelId: threadMatch[3],
+      };
+    }
+
+    const serverMatch = pathname.match(/^\/channels\/(\d+)\/(\d+)$/);
+    if (serverMatch) {
+      return {
+        routeType: 'server',
+        serverId: serverMatch[1],
+        rawChannelId: serverMatch[2],
+      };
+    }
+
+    return null;
+  }
+
+  getChannelStoreModule() {
+    let ChannelStore = this.webpackModules?.ChannelStore;
+    if (!ChannelStore?.getChannel) {
+      ChannelStore = BdApi.Webpack.getModule(
+        (m) =>
+          m && typeof m.getChannel === 'function' && (m.getChannelId || m.getLastSelectedChannelId)
+      );
+      if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
+    }
+    return ChannelStore || null;
+  }
+
+  hasWritableMessageInputInMainChat() {
+    const mainChat =
+      document.querySelector('main[class*="chatContent"]') ||
+      document.querySelector('section[class*="chatContent"][role="main"]') ||
+      document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
+      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])');
+    if (!mainChat) return false;
+
+    const messageInputArea =
+      mainChat.querySelector('[class*="channelTextArea"]') ||
+      mainChat.querySelector('[class*="textArea"]')?.parentElement ||
+      mainChat.querySelector('[class*="slateTextArea"]')?.parentElement;
+    if (!messageInputArea) return false;
+
+    if (
+      messageInputArea.getAttribute('aria-disabled') === 'true' ||
+      messageInputArea.closest('[aria-disabled="true"]')
+    ) {
+      return false;
+    }
+
+    const editor =
+      messageInputArea.querySelector('[role="textbox"]') ||
+      messageInputArea.querySelector('textarea') ||
+      messageInputArea.querySelector('[contenteditable="true"]') ||
+      messageInputArea.querySelector('[class*="slateTextArea"]');
+    if (!editor) return false;
+
+    if (
+      editor.getAttribute('aria-disabled') === 'true' ||
+      editor.getAttribute('disabled') !== null ||
+      editor.getAttribute('readonly') !== null ||
+      editor.getAttribute('contenteditable') === 'false'
+    ) {
+      return false;
+    }
+
+    return true;
+  }
+
+  hasViewAndSendPermissions(channel) {
+    if (!channel) return this.hasWritableMessageInputInMainChat();
+
+    let PermissionStore = this.webpackModules?.PermissionStore;
+    if (!PermissionStore?.can) {
+      PermissionStore = BdApi.Webpack.getModule(
+        (m) =>
+          m &&
+          typeof m.can === 'function' &&
+          (typeof m.canAccessChannel === 'function' || typeof m.computePermissions === 'function')
+      );
+      if (PermissionStore) this.webpackModules.PermissionStore = PermissionStore;
+    }
+
+    let Permissions = this.webpackModules?.Permissions;
+    if (!Permissions || Permissions.VIEW_CHANNEL == null || Permissions.SEND_MESSAGES == null) {
+      Permissions = BdApi.Webpack.getModule(
+        (m) =>
+          m &&
+          Object.prototype.hasOwnProperty.call(m, 'VIEW_CHANNEL') &&
+          Object.prototype.hasOwnProperty.call(m, 'SEND_MESSAGES')
+      );
+      if (Permissions) this.webpackModules.Permissions = Permissions;
+    }
+
+    if (
+      PermissionStore?.can &&
+      Permissions?.VIEW_CHANNEL != null &&
+      Permissions?.SEND_MESSAGES != null
+    ) {
+      const canView = !!PermissionStore.can(Permissions.VIEW_CHANNEL, channel);
+      const canSend = !!PermissionStore.can(Permissions.SEND_MESSAGES, channel);
+      return canView && canSend;
+    }
+
+    return this.hasWritableMessageInputInMainChat();
+  }
+
+  canInjectWidgetInCurrentView() {
+    if (typeof window === 'undefined' || typeof document === 'undefined') return false;
+
+    const routeInfo = this.getCurrentChannelRouteInfo();
+    if (!routeInfo || routeInfo.routeType !== 'server') return false; // excludes DMs and malformed routes
+    if ((window.location?.pathname || '').includes('/threads/')) return false;
+
+    const ChannelStore = this.getChannelStoreModule();
+    const channel = ChannelStore?.getChannel
+      ? ChannelStore.getChannel(routeInfo.rawChannelId)
+      : null;
+    if (channel) {
+      const channelType = Number(channel.type);
+      // Allow only guild text and announcement channels.
+      // Excludes forum (15), thread variants (10/11/12), voice (2), stage (13), etc.
+      if (channelType !== 0 && channelType !== 5) return false;
+      return this.hasViewAndSendPermissions(channel);
+    }
+
+    // Fallback when ChannelStore lookup fails: require a writable composer in main chat.
+    return this.hasWritableMessageInputInMainChat();
+  }
+
+  getMemberListElements() {
+    if (typeof document === 'undefined') return null;
+
+    const membersWrap = Array.from(
+      document.querySelectorAll('[class^="membersWrap_"], [class*="membersWrap"]')
+    ).find((candidate) => {
+      if (!candidate?.isConnected) return false;
+      if (candidate.closest('[id^="chat-messages-"]')) return false;
+      const rect = candidate.getBoundingClientRect?.();
+      return !rect || (rect.width > 0 && rect.height > 0);
+    });
+
+    if (!membersWrap) return null;
+
+    const membersList =
+      membersWrap.querySelector(':scope > [class^="members_"]') ||
+      membersWrap.querySelector(':scope > [class*="members"]') ||
+      membersWrap.querySelector('[class^="members_"]') ||
+      membersWrap.querySelector('[class*="members"]');
+
+    if (!membersList || membersList.closest('[id^="chat-messages-"]')) return null;
+
+    const membersContent =
+      membersList.querySelector(':scope > [class^="content_"]') ||
+      membersList.querySelector(':scope > [class*="content"]') ||
+      membersList.querySelector('[class^="content_"]') ||
+      membersList.querySelector('[class*="content"]');
+
+    return { membersWrap, membersList, membersContent };
+  }
+
+  isWidgetInValidMemberList(widget) {
+    if (!widget || typeof widget.closest !== 'function') return false;
+    if (widget.closest('[id^="chat-messages-"]')) return false;
+    return !!widget.closest('[class^="membersWrap_"], [class*="membersWrap"]');
+  }
+
   setupMemberListWatcher() {
     // RE-ENABLED: Watch for member list changes to maintain widget
     // Guard clause: Disconnect existing observer if any
@@ -2471,12 +2740,16 @@ module.exports = class ShadowArmy {
       this.memberListObserver.disconnect();
     }
 
-    const findMemberRoot = () =>
-      document.querySelector('[class*="membersWrap"]') ||
-      document.querySelector('[class*="members"]') ||
-      null;
+    if (!this.canInjectWidgetInCurrentView()) {
+      document.getElementById('shadow-army-widget')?.remove();
+      const retryId = setTimeout(() => {
+        if (!this._isStopped) this.setupMemberListWatcher();
+      }, 1500);
+      this._retryTimeouts?.add?.(retryId);
+      return;
+    }
 
-    const memberRoot = findMemberRoot();
+    const memberRoot = this.getMemberListElements()?.membersWrap || null;
     if (!memberRoot) {
       // Member list not mounted yet; retry later.
       const retryId = setTimeout(() => {
@@ -2492,9 +2765,14 @@ module.exports = class ShadowArmy {
     this.memberListObserver = new MutationObserver(() => {
       if (this._isStopped) return;
       if (document.hidden) return;
+      if (!this.canInjectWidgetInCurrentView()) {
+        document.getElementById('shadow-army-widget')?.remove();
+        return;
+      }
 
       const widget = document.getElementById('shadow-army-widget');
-      if (widget) return;
+      if (widget && this.isWidgetInValidMemberList(widget)) return;
+      widget && widget.remove();
 
       // Fast debounce re-injection (prevent multiple calls)
       this.widgetReinjectionTimeout && clearTimeout(this.widgetReinjectionTimeout);
@@ -2863,36 +3141,12 @@ module.exports = class ShadowArmy {
       // Call original function first (synchronous)
       const result = self.originalProcessMessage.call(this, messageText);
 
-      // Attempt extraction after message is processed
-      // Use setTimeout to avoid blocking message processing
-      // Fire and forget - don't wait for result
+      // Queue extraction after message processing to prevent burst spam
       self.debugLog('MESSAGE_LISTENER', 'Message received, attempting extraction', {
         messageLength: messageText?.length || 0,
         messagePreview: messageText?.substring(0, 30) || 'N/A',
       });
-      const extractionTimeoutId = setTimeout(() => {
-        self._retryTimeouts?.delete(extractionTimeoutId);
-        if (self._isStopped) return;
-        self
-          .attemptShadowExtraction()
-          .then((shadow) => {
-            if (shadow) {
-              // Get identifier for logging (accept both id and i for compressed shadows)
-              const shadowId = self.getCacheKey(shadow);
-              self.debugLog('MESSAGE_EXTRACTION', 'SUCCESS: Shadow extracted from message', {
-                rank: shadow.rank,
-                role: shadow.role,
-                id: shadowId,
-              });
-            } else {
-              self.debugLog('MESSAGE_EXTRACTION', 'No shadow extracted (returned null)');
-            }
-          })
-          .catch((error) => {
-            self.debugError('MESSAGE_EXTRACTION', 'Error during message extraction', error);
-          });
-      }, 100); // Small delay to ensure message is fully processed
-      self._retryTimeouts?.add(extractionTimeoutId);
+      self.queueMessageExtraction(messageText);
 
       return result;
     };
@@ -2902,6 +3156,102 @@ module.exports = class ShadowArmy {
       hasInstance: !!instance,
       hasProcessMessageSent: !!instance.processMessageSent,
     });
+  }
+
+  getMessageQueueInitialDelayMs() {
+    const cfg = this.settings?.extractionConfig || this.defaultSettings.extractionConfig;
+    const value = Number(cfg?.messageQueueInitialDelayMs);
+    return Number.isFinite(value) ? Math.max(50, value) : 120;
+  }
+
+  getMessageQueueIntervalMs() {
+    const cfg = this.settings?.extractionConfig || this.defaultSettings.extractionConfig;
+    const value = Number(cfg?.messageQueueIntervalMs);
+    return Number.isFinite(value) ? Math.max(150, value) : 450;
+  }
+
+  getMessageQueueMaxPending() {
+    const cfg = this.settings?.extractionConfig || this.defaultSettings.extractionConfig;
+    const fallback = Number(cfg?.maxExtractionsPerMinute) || 20;
+    const value = Number(cfg?.messageQueueMaxPending);
+    return Number.isFinite(value) ? Math.max(1, Math.floor(value)) : Math.max(1, fallback);
+  }
+
+  queueMessageExtraction(messageText = '') {
+    if (this._isStopped) return;
+
+    const maxPending = this.getMessageQueueMaxPending();
+    if ((this._pendingMessageExtractionCount || 0) >= maxPending) {
+      this.debugLog('MESSAGE_QUEUE', 'Message extraction queue full, dropping event', {
+        maxPending,
+      });
+      return;
+    }
+
+    this._pendingMessageExtractionCount = (this._pendingMessageExtractionCount || 0) + 1;
+    this.debugLog('MESSAGE_QUEUE', 'Queued message extraction', {
+      pendingQueue: this._pendingMessageExtractionCount,
+      messageLength: messageText?.length || 0,
+    });
+
+    // First queued message waits a tiny bit so SoloLevelingStats can finalize sync updates
+    const initialDelay = this.getMessageQueueInitialDelayMs();
+    this.scheduleMessageQueueDrain(initialDelay);
+  }
+
+  scheduleMessageQueueDrain(delayMs = 0) {
+    if (this._isStopped) return;
+    if (this._isProcessingMessageExtractionQueue) return;
+    if (this._messageExtractionQueueTimeout) return;
+    if ((this._pendingMessageExtractionCount || 0) <= 0) return;
+
+    const safeDelay = Math.max(0, Number(delayMs) || 0);
+    const queueTimeoutId = setTimeout(() => {
+      this._retryTimeouts?.delete(queueTimeoutId);
+      this._messageExtractionQueueTimeout = null;
+      this.drainMessageExtractionQueue();
+    }, safeDelay);
+
+    this._messageExtractionQueueTimeout = queueTimeoutId;
+    this._retryTimeouts?.add(queueTimeoutId);
+  }
+
+  drainMessageExtractionQueue() {
+    if (this._isStopped) return;
+    if (this._isProcessingMessageExtractionQueue) return;
+
+    const pendingCount = this._pendingMessageExtractionCount || 0;
+    if (pendingCount <= 0) return;
+
+    this._isProcessingMessageExtractionQueue = true;
+    this._pendingMessageExtractionCount = pendingCount - 1;
+
+    this.attemptShadowExtraction()
+      .then((shadow) => {
+        if (shadow) {
+          // Get identifier for logging (accept both id and i for compressed shadows)
+          const shadowId = this.getCacheKey(shadow);
+          this.debugLog('MESSAGE_EXTRACTION', 'SUCCESS: Shadow extracted from message', {
+            rank: shadow.rank,
+            role: shadow.role,
+            id: shadowId,
+            pendingQueue: this._pendingMessageExtractionCount || 0,
+          });
+        } else {
+          this.debugLog('MESSAGE_EXTRACTION', 'No shadow extracted (returned null)');
+        }
+      })
+      .catch((error) => {
+        this.debugError('MESSAGE_EXTRACTION', 'Error during message extraction', error);
+      })
+      .finally(() => {
+        this._isProcessingMessageExtractionQueue = false;
+        if (this._isStopped) return;
+
+        if ((this._pendingMessageExtractionCount || 0) > 0) {
+          this.scheduleMessageQueueDrain(this.getMessageQueueIntervalMs());
+        }
+      });
   }
 
   /**
@@ -2929,6 +3279,14 @@ module.exports = class ShadowArmy {
       }
     }
     this.originalProcessMessage = null;
+
+    if (this._messageExtractionQueueTimeout) {
+      clearTimeout(this._messageExtractionQueueTimeout);
+      this._retryTimeouts?.delete(this._messageExtractionQueueTimeout);
+      this._messageExtractionQueueTimeout = null;
+    }
+    this._pendingMessageExtractionCount = 0;
+    this._isProcessingMessageExtractionQueue = false;
   }
 
   /**
@@ -4191,13 +4549,8 @@ module.exports = class ShadowArmy {
 
     // Use integrated ARISE animation if enabled
     if (this.settings?.ariseAnimation?.enabled) {
-      try {
-        this.triggerArise(shadow);
-        return;
-      } catch (error) {
-        this.debugError('ANIMATION', 'Error triggering ARISE animation', error);
-        // Fall through to fallback animation
-      }
+      this.queueAriseAnimation(shadow);
+      return;
     }
 
     // Fallback: simple inline ARISE animation (minimal, in case ARISE animation disabled or fails)
@@ -4249,6 +4602,69 @@ module.exports = class ShadowArmy {
       this._retryTimeouts?.add(removeId);
     }, 2000);
     this._retryTimeouts?.add(fadeOutId);
+  }
+
+  getAriseAnimationMinGapMs() {
+    const ariseConfig = this.settings?.ariseAnimation || this.defaultSettings.ariseAnimation;
+    const value = Number(ariseConfig?.minGapMs);
+    return Number.isFinite(value) ? Math.max(250, value) : 900;
+  }
+
+  queueAriseAnimation(shadow) {
+    if (!shadow) return;
+    if (this._isStopped) return;
+
+    const minGapMs = this.getAriseAnimationMinGapMs();
+    const elapsed = Date.now() - (this._lastAriseAnimationAt || 0);
+
+    if (!this._ariseDrainTimeout && elapsed >= minGapMs) {
+      this.triggerAriseNow(shadow);
+      return;
+    }
+
+    // Coalesce burst events: keep latest shadow data while waiting for cooldown
+    this._pendingAriseShadow = shadow;
+    this.schedulePendingAriseAnimation();
+  }
+
+  schedulePendingAriseAnimation() {
+    if (this._isStopped) return;
+    if (!this._pendingAriseShadow) return;
+    if (this._ariseDrainTimeout) return;
+
+    const minGapMs = this.getAriseAnimationMinGapMs();
+    const elapsed = Date.now() - (this._lastAriseAnimationAt || 0);
+    const waitMs = Math.max(0, minGapMs - elapsed);
+
+    const queueTimeoutId = setTimeout(() => {
+      this._retryTimeouts?.delete(queueTimeoutId);
+      this._ariseDrainTimeout = null;
+      if (this._isStopped) return;
+
+      const nextShadow = this._pendingAriseShadow;
+      this._pendingAriseShadow = null;
+      if (nextShadow) {
+        this.triggerAriseNow(nextShadow);
+      }
+
+      // If more events arrived while animating, schedule next one with cooldown
+      if (this._pendingAriseShadow) {
+        this.schedulePendingAriseAnimation();
+      }
+    }, waitMs);
+
+    this._ariseDrainTimeout = queueTimeoutId;
+    this._retryTimeouts?.add(queueTimeoutId);
+  }
+
+  triggerAriseNow(shadow) {
+    if (!shadow) return;
+    try {
+      this.triggerArise(shadow);
+      this._lastAriseAnimationAt = Date.now();
+    } catch (error) {
+      this.debugError('ANIMATION', 'Error triggering ARISE animation', error);
+    }
   }
 
   // ============================================================================
@@ -6625,6 +7041,7 @@ module.exports = class ShadowArmy {
         }', 'Orbitron', system-ui, sans-serif;
         font-weight: 700;
         font-size: 42px;
+        line-height: 1.12;
         letter-spacing: 0.12em;
         text-transform: none; /* Preserve "ARiSe" casing */
         color: #ffffff;
@@ -6639,23 +7056,34 @@ module.exports = class ShadowArmy {
         text-rendering: optimizeLegibility;
       }
 
-      .sa-arise-text .sa-small-r {
-        font-size: 0.9em !important; /* Make R 10% smaller */
+      .sa-arise-text .sa-small-s {
+        font-size: 0.86em !important; /* Make S slightly smaller */
+        display: inline-block !important;
+      }
+
+      .sa-arise-text .sa-big-e {
+        font-size: calc(1em + 3px) !important; /* Make final e a few px larger */
         display: inline-block !important;
       }
 
       .sa-arise-meta {
-        margin-top: 10px;
+        margin-top: calc(28px + (var(--sa-scale, 1) - 1) * 20px);
         font-family: 'Orbitron', system-ui, sans-serif;
         font-size: 16px;
-        font-weight: 600;
+        font-weight: 900;
+        line-height: 1.25;
         letter-spacing: 0.15em;
         text-transform: uppercase;
-        color: #c4b5fd;
+        background: linear-gradient(180deg, #d8b4fe 0%, #7e22ce 58%, #09060d 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        -webkit-text-fill-color: transparent;
+        -webkit-text-stroke: 1px rgba(147, 51, 234, 0.9);
         text-shadow:
-          0 0 6px rgba(138, 43, 226, 0.8),
-          0 0 12px rgba(138, 43, 226, 0.5),
-          0 0 20px rgba(75, 0, 130, 0.3);
+          0 0 4px rgba(147, 51, 234, 0.9),
+          0 0 10px rgba(147, 51, 234, 0.65),
+          0 0 18px rgba(45, 15, 65, 0.45);
       }
 
       .sa-arise-particle {
@@ -6915,6 +7343,8 @@ module.exports = class ShadowArmy {
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
+      PermissionStore: null,
+      Permissions: null,
     };
     this.webpackModuleAccess = false;
 
@@ -7162,8 +7592,8 @@ module.exports = class ShadowArmy {
 
     const title = document.createElement('div');
     title.className = 'sa-arise-text';
-    // Text should be "ARiSe" (capital A, R, i, S, e) with R slightly smaller
-    title.innerHTML = 'A<span class="sa-small-r">R</span>iSe';
+    // Text should be "ARiSe" with uppercase R, smaller S, and slightly larger e
+    title.innerHTML = 'ARi<span class="sa-small-s">S</span><span class="sa-big-e">e</span>';
     wrapper.appendChild(title);
 
     // Debug: Log animation trigger with font info
@@ -8810,12 +9240,19 @@ module.exports = class ShadowArmy {
     // RE-ENABLED: Widget needed for member list display
     // Guard clause: Prevent reinjection after plugin stop
     if (this._isStopped) return;
+    if (!this.canInjectWidgetInCurrentView()) {
+      document.getElementById('shadow-army-widget')?.remove();
+      return;
+    }
 
     // Guard clause: Check if widget already exists
-    if (document.getElementById('shadow-army-widget')) return;
+    const existingWidget = document.getElementById('shadow-army-widget');
+    if (existingWidget && this.isWidgetInValidMemberList(existingWidget)) return;
+    existingWidget && existingWidget.remove();
 
-    // Check for member list immediately (no delay)
-    const membersList = document.querySelector('[class*="members"]');
+    // Check for member list immediately (no delay), scoped to actual sidebar membersWrap
+    const memberElements = this.getMemberListElements();
+    const membersList = memberElements?.membersList || null;
     if (!membersList) {
       // Fast retry - check again in 200ms
       const timeoutId = setTimeout(() => {
@@ -8842,7 +9279,7 @@ module.exports = class ShadowArmy {
       });
 
       // Insert at the top of member list
-      const membersContent = membersList.querySelector('[class*="content"]');
+      const membersContent = memberElements?.membersContent || null;
       if (membersContent && membersContent.firstChild) {
         membersContent.insertBefore(widget, membersContent.firstChild);
       } else if (membersList.firstChild) {
@@ -8870,6 +9307,10 @@ module.exports = class ShadowArmy {
 
     const widget = document.getElementById('shadow-army-widget');
     if (!widget) return;
+    if (!this.canInjectWidgetInCurrentView()) {
+      widget.remove();
+      return;
+    }
 
     try {
       // Get all shadows
@@ -9794,6 +10235,8 @@ module.exports = class ShadowArmy {
           <div>Max Extractions / Minute: ${Number(
             cfg.maxExtractionsPerMinute || 0
           ).toLocaleString()}</div>
+          <div>Queue Interval: ${Number(cfg.messageQueueIntervalMs || 0).toLocaleString()}ms</div>
+          <div>Queue Max Pending: ${Number(cfg.messageQueueMaxPending || 0).toLocaleString()}</div>
           <div>Special ARISE Max Chance: ${(cfg.specialMaxChance * 100).toFixed(1)}%</div>
           <div>Special ARISE Max / Day: ${Number(cfg.specialMaxPerDay || 0).toLocaleString()}</div>
           <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(138, 43, 226, 0.3);">
@@ -9829,6 +10272,9 @@ module.exports = class ShadowArmy {
             }>
             <span>Show rank and role under ARISE</span>
           </label>
+          <div style="font-size: 11px; opacity: 0.8; margin-bottom: 8px;">
+            ARISE cooldown: ${Number(ariseConfig.minGapMs || 0).toLocaleString()}ms
+          </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="sa-debug-mode" ${
               this.settings?.debugMode === true ? 'checked' : ''

@@ -544,10 +544,10 @@ module.exports = class SoloLevelingToasts {
         max-height: fit-content;
         padding: 14px 18px;
         background: rgba(10, 10, 15, 0.95);
-        border: 1px solid rgba(139, 92, 246, 0.3);
+        border: 1px solid rgba(138, 43, 226, 0.3);
         border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(139, 92, 246, 0.4),
-                    0 0 40px rgba(139, 92, 246, 0.2);
+        box-shadow: 0 4px 20px rgba(138, 43, 226, 0.4),
+                    0 0 40px rgba(138, 43, 226, 0.2);
         pointer-events: auto;
         cursor: pointer;
         overflow: visible;
@@ -617,9 +617,9 @@ module.exports = class SoloLevelingToasts {
       }
 
       .sl-toast.level-up {
-        border-color: rgba(139, 92, 246, 0.5);
-        box-shadow: 0 4px 20px rgba(139, 92, 246, 0.5),
-                    0 0 40px rgba(139, 92, 246, 0.3);
+        border-color: rgba(138, 43, 226, 0.5);
+        box-shadow: 0 4px 20px rgba(138, 43, 226, 0.5),
+                    0 0 40px rgba(138, 43, 226, 0.3);
       }
 
       .sl-toast.achievement {
@@ -641,11 +641,11 @@ module.exports = class SoloLevelingToasts {
       }
 
       .sl-toast-title {
-        font-family: 'Press Start 2P', monospace;
+        font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
         font-size: 11px;
         font-weight: bold;
         margin-bottom: 6px;
-        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 30%, #6d28d9 60%, #000000 100%);
+        background: linear-gradient(135deg, #8a2be2 0%, #7b21c6 30%, #6b1fb0 60%, #000000 100%);
         -webkit-background-clip: text;
         -webkit-text-fill-color: transparent;
         background-clip: text;
@@ -653,9 +653,9 @@ module.exports = class SoloLevelingToasts {
         white-space: normal;
         overflow-wrap: break-word;
         max-width: 100%;
-        text-shadow: 0 0 3px rgba(139, 92, 246, 0.5),
-                     0 0 6px rgba(124, 58, 237, 0.4),
-                     0 0 9px rgba(109, 40, 217, 0.3);
+        text-shadow: 0 0 3px rgba(138, 43, 226, 0.5),
+                     0 0 6px rgba(123, 33, 198, 0.4),
+                     0 0 9px rgba(107, 31, 176, 0.3);
         text-transform: uppercase;
         letter-spacing: 1px;
         line-height: 1.3;
@@ -675,7 +675,7 @@ module.exports = class SoloLevelingToasts {
         position: absolute;
         width: 4px;
         height: 4px;
-        background: radial-gradient(circle, #8b5cf6 0%, rgba(139, 92, 246, 0) 70%);
+        background: radial-gradient(circle, #8a2be2 0%, rgba(138, 43, 226, 0) 70%);
         border-radius: 50%;
         pointer-events: none;
         animation: sl-particle-fade 1.5s ease-out forwards;
@@ -699,7 +699,7 @@ module.exports = class SoloLevelingToasts {
         left: 0;
         right: 0;
         height: 2px;
-        background: linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.8), transparent);
+        background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.8), transparent);
         animation: sl-toast-progress linear forwards;
       }
 
@@ -1176,7 +1176,7 @@ module.exports = class SoloLevelingToasts {
       progressBar.style.right = '0';
       progressBar.style.height = '2px';
       progressBar.style.background =
-        'linear-gradient(90deg, transparent, rgba(139, 92, 246, 0.8), transparent)';
+        'linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.8), transparent)';
       progressBar.style.animation = `sl-toast-progress ${toastTimeout}ms linear forwards`;
       toast.appendChild(progressBar);
 
@@ -1507,7 +1507,7 @@ module.exports = class SoloLevelingToasts {
     panel.style.padding = '20px';
     panel.innerHTML = `
       <div>
-        <h3 style="color: #8b5cf6; margin-bottom: 20px;">Toast Notification Settings</h3>
+        <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Notification Settings</h3>
 
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${
@@ -1536,7 +1536,7 @@ module.exports = class SoloLevelingToasts {
 
         <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
           <span style="margin-bottom: 5px;">Position:</span>
-          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(139, 92, 246, 0.2); border: 1px solid rgba(139, 92, 246, 0.4); border-radius: 8px; color: #fff; width: 100%;">
+          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(138, 43, 226, 0.2); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 8px; color: #fff; width: 100%;">
             <option value="top-right" ${
               this.settings.position === 'top-right' ? 'selected' : ''
             }>Top Right</option>
@@ -1559,8 +1559,8 @@ module.exports = class SoloLevelingToasts {
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
-        <div style="margin-top: 20px; padding: 15px; background: rgba(139, 92, 246, 0.1); border-radius: 8px; border-left: 3px solid #8b5cf6;">
-          <div style="color: #8b5cf6; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
+        <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 8px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:
             <ul style="margin: 5px 0; padding-left: 20px;">

@@ -1021,6 +1021,28 @@ module.exports = class SoloLevelingStats {
       // Reduced verbosity - only log if verbose mode enabled (frequent operation)
       this.debugLog('GET_CHANNEL_INFO', 'Getting channel info', { url });
 
+      // Pattern 0: Thread route - /channels/{serverId}/{parentChannelId}/threads/{threadId}
+      const threadMatch = url.match(/channels\/(\d+)\/(\d+)\/threads\/(\d+)/);
+      if (threadMatch) {
+        const serverId = threadMatch[1];
+        const parentChannelId = threadMatch[2];
+        const threadId = threadMatch[3];
+        this.debugLog('GET_CHANNEL_INFO', 'Thread route detected', {
+          serverId,
+          parentChannelId,
+          threadId,
+          type: 'thread',
+        });
+        return {
+          channelId: `thread_${serverId}_${parentChannelId}_${threadId}`,
+          channelType: 'thread',
+          serverId,
+          isDM: false,
+          rawChannelId: threadId,
+          parentChannelId,
+        };
+      }
+
       // Pattern 1: Server channel - /channels/{serverId}/{channelId}
       const serverChannelMatch = url.match(/channels\/(\d+)\/(\d+)/);
       if (serverChannelMatch) {
@@ -1110,12 +1132,16 @@ module.exports = class SoloLevelingStats {
    */
   _isGuildTextChannel() {
     try {
+      const pathname = window.location?.pathname || '';
+      if (/\/threads\/\d+/.test(pathname)) return false;
+
       const channelInfo = this.getCurrentChannelInfo();
       if (!channelInfo) return false;
 
       // DMs and group DMs are never guild text channels
       if (channelInfo.isDM) return false;
       if (channelInfo.channelType === 'dm' || channelInfo.channelType === 'group_dm') return false;
+      if (channelInfo.channelType === 'thread') return false;
 
       // Use ChannelStore for accurate channel type detection
       let ChannelStore = this.webpackModules?.ChannelStore;
@@ -1137,9 +1163,6 @@ module.exports = class SoloLevelingStats {
       // Without ChannelStore we can't distinguish threads/forums from text channels.
       // Check URL for thread indicators (threads often have /threads/ in URL or longer channel IDs)
       if (channelInfo.channelType === 'server') {
-        // If DOM has thread-specific elements, skip injection
-        const threadHeader = document.querySelector('[class*="threadHeader"], [class*="forumPost"]');
-        if (threadHeader) return false;
         return true;
       }
       return false;
@@ -1147,6 +1170,77 @@ module.exports = class SoloLevelingStats {
       this.debugError('IS_GUILD_TEXT_CHANNEL', error);
       return false;
     }
+  }
+
+  _getPrimaryChatContainer() {
+    return (
+      document.querySelector('main[class*="chatContent"]') ||
+      document.querySelector('section[class*="chatContent"][role="main"]') ||
+      document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
+      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])')
+    );
+  }
+
+  _getMessageInputAreaInPrimaryChat() {
+    const mainChat = this._getPrimaryChatContainer();
+    if (!mainChat) return null;
+
+    const messageInputArea =
+      mainChat.querySelector('[class*="channelTextArea"]') ||
+      mainChat.querySelector('[class*="textArea"]')?.parentElement ||
+      mainChat.querySelector('[class*="slateTextArea"]')?.parentElement;
+
+    if (!messageInputArea || !messageInputArea.parentElement) return null;
+
+    // Safety: don't inject inside dialogs/modals (Forward To, etc.)
+    if (
+      messageInputArea.closest('[role="dialog"]') ||
+      messageInputArea.closest('[class*="layerContainer_"]')
+    ) {
+      return null;
+    }
+
+    return messageInputArea;
+  }
+
+  _hasWritableMessageInputInCurrentView() {
+    try {
+      const messageInputArea = this._getMessageInputAreaInPrimaryChat();
+      if (!messageInputArea) return false;
+
+      if (
+        messageInputArea.getAttribute('aria-disabled') === 'true' ||
+        messageInputArea.closest('[aria-disabled="true"]')
+      ) {
+        return false;
+      }
+
+      const editor =
+        messageInputArea.querySelector('[role="textbox"]') ||
+        messageInputArea.querySelector('textarea') ||
+        messageInputArea.querySelector('[contenteditable="true"]') ||
+        messageInputArea.querySelector('[class*="slateTextArea"]');
+
+      if (!editor) return false;
+
+      if (
+        editor.getAttribute('aria-disabled') === 'true' ||
+        editor.getAttribute('disabled') !== null ||
+        editor.getAttribute('readonly') !== null ||
+        editor.getAttribute('contenteditable') === 'false'
+      ) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      this.debugError('HAS_WRITABLE_INPUT', error);
+      return false;
+    }
+  }
+
+  _canShowChatUIInCurrentView() {
+    return this._isGuildTextChannel() && this._hasWritableMessageInputInCurrentView();
   }
 
   getTotalPerceptionBuff() {
@@ -1810,6 +1904,11 @@ module.exports = class SoloLevelingStats {
         'Z',
         (thisObject, args, returnValue) => {
           try {
+            // Guard every render so injected UI never appears in threads/forums/locked channels
+            if (!pluginInstance._canShowChatUIInCurrentView()) {
+              return returnValue;
+            }
+
             // Find body element in React tree
             const bodyPath = BdApi.Utils.findInTree(
               returnValue,
@@ -9228,23 +9327,11 @@ module.exports = class SoloLevelingStats {
       // Function to actually create the UI
       const tryCreateUI = () => {
         try {
-          // Find the chat input area in the MAIN chat content (not inside dialogs/modals)
-          const mainChat = document.querySelector('[class*="chatContent"]') ||
-            document.querySelector('[class*="chat_"]');
-          const searchRoot = mainChat || document;
-          const messageInputArea =
-            searchRoot.querySelector('[class*="channelTextArea"]') ||
-            searchRoot.querySelector('[class*="textArea"]')?.parentElement ||
-            searchRoot.querySelector('[class*="slateTextArea"]')?.parentElement;
+          if (!this._canShowChatUIInCurrentView()) return false;
 
-          if (!messageInputArea || !messageInputArea.parentElement) {
-            return false;
-          }
-
-          // Safety: don't inject inside dialogs/modals (Forward To, etc.)
-          if (messageInputArea.closest('[role="dialog"]') || messageInputArea.closest('[class*="layerContainer_"]')) {
-            return false;
-          }
+          // Find writable input area scoped to primary chat content only
+          const messageInputArea = this._getMessageInputAreaInPrimaryChat();
+          if (!messageInputArea) return false;
 
           // Check if UI already exists
           if (document.getElementById('sls-chat-ui')) {
@@ -9322,6 +9409,10 @@ module.exports = class SoloLevelingStats {
       if (!this.chatUIObserver) {
         this.chatUIObserver = new MutationObserver(() => {
           if (document.hidden) return;
+          if (!this._canShowChatUIInCurrentView()) {
+            this.removeChatUI();
+            return;
+          }
           if (document.getElementById('sls-chat-ui')) return;
           if (this._chatUiObserverDebounceTimeout) return;
           this._chatUiObserverDebounceTimeout = setTimeout(() => {

@@ -1,0 +1,2151 @@
+{
+  "generatedAt": "2026-02-12T03:33:54.495Z",
+  "sourceTheme": "/Users/matthewthompson/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/themes/SoloLeveling-ClearVision.theme.css",
+  "totalBlocks": 342,
+  "areas": [
+    {
+      "area": "Theme Shell & Global",
+      "blockCount": 7,
+      "firstLine": 809,
+      "lastLine": 3694
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "blockCount": 22,
+      "firstLine": 1157,
+      "lastLine": 2163
+    },
+    {
+      "area": "Channel Sidebar",
+      "blockCount": 49,
+      "firstLine": 1453,
+      "lastLine": 5125
+    },
+    {
+      "area": "DM List",
+      "blockCount": 4,
+      "firstLine": 2434,
+      "lastLine": 2474
+    },
+    {
+      "area": "Chat Messages",
+      "blockCount": 15,
+      "firstLine": 1026,
+      "lastLine": 2882
+    },
+    {
+      "area": "Message Composer",
+      "blockCount": 7,
+      "firstLine": 2618,
+      "lastLine": 3964
+    },
+    {
+      "area": "Embeds & Media",
+      "blockCount": 13,
+      "firstLine": 2659,
+      "lastLine": 2791
+    },
+    {
+      "area": "Members List",
+      "blockCount": 1,
+      "firstLine": 2482,
+      "lastLine": 2482
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "blockCount": 13,
+      "firstLine": 2055,
+      "lastLine": 4709
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "blockCount": 19,
+      "firstLine": 3215,
+      "lastLine": 5051
+    },
+    {
+      "area": "Settings UI",
+      "blockCount": 41,
+      "firstLine": 2873,
+      "lastLine": 4637
+    },
+    {
+      "area": "BetterDiscord UI",
+      "blockCount": 5,
+      "firstLine": 984,
+      "lastLine": 4137
+    },
+    {
+      "area": "Scrollbars",
+      "blockCount": 13,
+      "firstLine": 3464,
+      "lastLine": 3897
+    },
+    {
+      "area": "Animation & Effects",
+      "blockCount": 0,
+      "firstLine": null,
+      "lastLine": null
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "blockCount": 133,
+      "firstLine": 1,
+      "lastLine": 5164
+    }
+  ],
+  "blocks": [
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 1,
+      "sourceStartLine": 809,
+      "selectorHeader": ":is(.theme-dark, .theme-light .theme-dark)"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 2,
+      "sourceStartLine": 822,
+      "selectorHeader": ":is(.theme-darker, .theme-light .theme-darker)"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 3,
+      "sourceStartLine": 832,
+      "selectorHeader": ":is(.theme-midnight, .theme-light .theme-midnight)"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 4,
+      "sourceStartLine": 919,
+      "selectorHeader": "[id='app-mount'] > div[class*='-app']::before,\n[id='app-mount'] > div[class*='-app']::after,\ndiv[class*='-app']::before,\ndiv[class*='-app']::after,\ndiv[class*='app-']::before,\ndiv[class*='app-']::after,\n[class*='base']::before,\n[class*='base']::after"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 5,
+      "sourceStartLine": 933,
+      "selectorHeader": "[id='app-mount'] > div[class*='-app'],\ndiv[class*='-app'],\ndiv[class*='app-']"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 6,
+      "sourceStartLine": 940,
+      "selectorHeader": "*"
+    },
+    {
+      "area": "Theme Shell & Global",
+      "areaIndex": 7,
+      "sourceStartLine": 3694,
+      "selectorHeader": "[class*='sidebar'][class*='theme-dark'],\nnav[class*='sidebar'],\n[class*='standardSidebarView'] [class*='sidebar'],\n[class*='sidebarRegion']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 1,
+      "sourceStartLine": 1157,
+      "selectorHeader": "div[class*='-tutorialContainer'] div[class*='-childWrapper']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 2,
+      "sourceStartLine": 1188,
+      "selectorHeader": "div[class*='-tutorialContainer'] img[alt='App Icon'],\nnav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 3,
+      "sourceStartLine": 1205,
+      "selectorHeader": "nav[aria-label='Servers'] a[aria-label='Home'] img[alt='App Icon']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 4,
+      "sourceStartLine": 1212,
+      "selectorHeader": "div[class*='-tutorialContainer'] div[class*='-wrapper']::before,\ndiv[class*='-tutorialContainer'] div[class*='-wrapper']::after,\ndiv[class*='-tutorialContainer'] div[class*='-wrapper'] [class*='pill']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 5,
+      "sourceStartLine": 1219,
+      "selectorHeader": "div[class*='-tutorialContainer'] div[class*='-wrapper'][class*='selected']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 6,
+      "sourceStartLine": 1283,
+      "selectorHeader": "div[class*='guilds'],\nnav[class*='guilds'],\n[class*='guilds'][class*='wrapper'],\n[class*='guilds'][class*='scroller'],\n[class*='guilds'][class*='tree'],\n[class*='guilds'][class*='base'],\n[class*='base'][class*='container']:has([class*='guilds']),\naside[class*='panels']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 7,
+      "sourceStartLine": 1302,
+      "selectorHeader": "div[class*='guilds']:hover,\nnav[class*='guilds']:hover,\n[class*='guilds'][class*='wrapper']:hover,\n[class*='guilds'][class*='scroller']:hover,\n[class*='guilds'][class*='tree']:hover,\n[class*='guilds'][class*='base']:hover,\n[class*='base'][class*='container']:has([class*='guilds']):hover,\naside[class*='panels']:hover"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 8,
+      "sourceStartLine": 1344,
+      "selectorHeader": "div[class*='guilds'] div[class*='listItem']:hover div[class*='wrapper']:not([class*='pill'])"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 9,
+      "sourceStartLine": 1353,
+      "selectorHeader": "div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 10,
+      "sourceStartLine": 1363,
+      "selectorHeader": "div[class*='guilds'] div[class*='listItem'] div[class*='pill'] span[style*='height']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 11,
+      "sourceStartLine": 1571,
+      "selectorHeader": "div[class*='guilds'] [class*='numberBadge'],\ndiv[class*='guilds'] [class*='iconBadge'],\ndiv[class*='guilds'] div[class*='upperBadge']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 12,
+      "sourceStartLine": 1592,
+      "selectorHeader": "div[class*='guilds'] [class*='numberBadge']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 13,
+      "sourceStartLine": 1599,
+      "selectorHeader": "div[class*='guilds'] div[class*='homeIcon']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 14,
+      "sourceStartLine": 1606,
+      "selectorHeader": "div[class*='guilds'] div[class*='listItem']:hover div[class*='homeIcon']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 15,
+      "sourceStartLine": 1656,
+      "selectorHeader": "div[class*='guilds'] div[class*='circleIconButton']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 16,
+      "sourceStartLine": 1663,
+      "selectorHeader": "div[class*='guilds'] div[class*='circleIconButton']:hover"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 17,
+      "sourceStartLine": 1670,
+      "selectorHeader": "div[class*='guilds'] div[class*='circleIconButton']:hover svg"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 18,
+      "sourceStartLine": 1678,
+      "selectorHeader": "div[class*='guilds'] div[class*='circleIconButton']:not(:hover) svg"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 19,
+      "sourceStartLine": 2083,
+      "selectorHeader": "[class*='guilds'],\n[class*='sidebar'],\n[class*='panels']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 20,
+      "sourceStartLine": 2141,
+      "selectorHeader": "[class*='guilds']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 21,
+      "sourceStartLine": 2155,
+      "selectorHeader": "[class*='guilds'] [class*='wrapper']"
+    },
+    {
+      "area": "Server Sidebar & Home",
+      "areaIndex": 22,
+      "sourceStartLine": 2163,
+      "selectorHeader": "[class*='guilds'] [class*='wrapper']:hover"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 1,
+      "sourceStartLine": 1453,
+      "selectorHeader": "#channels div[class*='-container'][role='button']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 2,
+      "sourceStartLine": 1459,
+      "selectorHeader": "#channels div[class*='-container'][role='button']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 3,
+      "sourceStartLine": 1479,
+      "selectorHeader": "#channels div[class*='-container'][role='button']::before"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 4,
+      "sourceStartLine": 1503,
+      "selectorHeader": "#channels div[class*='-container'][role='button']::after"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 5,
+      "sourceStartLine": 1519,
+      "selectorHeader": "#channels div[class*='-container'][role='button']:hover"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 6,
+      "sourceStartLine": 1524,
+      "selectorHeader": "#channels div[class*='-contentContainer']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 7,
+      "sourceStartLine": 1529,
+      "selectorHeader": "#channels div[class*='-textContainer']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 8,
+      "sourceStartLine": 1541,
+      "selectorHeader": "#channels div[class*='-textContainer'] > div[class*='-textContentContainer']:first-child"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 9,
+      "sourceStartLine": 1561,
+      "selectorHeader": "#channels div[class*='-textContainer'] > div[class*='-textContentContainer']:last-child"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 10,
+      "sourceStartLine": 1683,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 11,
+      "sourceStartLine": 1701,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 12,
+      "sourceStartLine": 1708,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 13,
+      "sourceStartLine": 1720,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 14,
+      "sourceStartLine": 1727,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault']::before,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']::after,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link']::before,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link']::after,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::before,\n#channels ul[aria-label*='threads'] li[class*='-wrapper']::after"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 15,
+      "sourceStartLine": 1743,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] > *,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-link'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 16,
+      "sourceStartLine": 1754,
+      "selectorHeader": "#channels ul[aria-label*='threads'] svg[class*='-threadLine'],\n#channels ul[aria-label*='threads'] [class*='-threadLine'],\n#channels ul[aria-label*='threads'] [class*='-line'],\n#channels ul[aria-label*='threads'] path[stroke],\n#channels ul[aria-label*='threads'] line[stroke]"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 17,
+      "sourceStartLine": 1769,
+      "selectorHeader": "#channels ul[aria-label*='threads'],\n#channels ul[aria-label*='threads'] *,\n#channels ul[aria-label*='threads'] li,\n#channels ul[aria-label*='threads'] li *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 18,
+      "sourceStartLine": 1780,
+      "selectorHeader": "#channels ul[aria-label*='threads'] [style*='background'],\n#channels ul[aria-label*='threads'] [style*='border']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 19,
+      "sourceStartLine": 1789,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::before,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='-wrapper']::after,\n#channels ul[aria-label*='threads'] [class*='-threadLine'],\n#channels ul[aria-label*='threads'] [class*='-line'],\n#channels ul[aria-label*='threads'] svg,\n#channels ul[aria-label*='threads'] svg *,\n#channels ul[aria-label*='threads'] path,\n#channels ul[aria-label*='threads'] line,\n#channels ul[aria-label*='threads'] rect"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 20,
+      "sourceStartLine": 1812,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault'] > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 21,
+      "sourceStartLine": 1825,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) a,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) div,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:not([class*='modeUnread']):not([class*='unread']) *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 22,
+      "sourceStartLine": 1837,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li:has(a[href*='/members']),\n#channels ul[aria-label='Channels'] li:has(a[href*='/boosts']),\n#channels ul[aria-label='Channels'] li:has(div[aria-label*='Members']),\n#channels ul[aria-label='Channels'] li:has(div[aria-label*='Server Boosts']),\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:has(div[class*='-link'] a[href*='/members']),\n#channels ul[aria-label='Channels'] li[class*='-containerDefault']:has(div[class*='-link'] a[href*='/boosts'])"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 23,
+      "sourceStartLine": 1847,
+      "selectorHeader": "#channels\n  ul[aria-label='Channels']\n  li[class*='-containerDefault']:hover\n  > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 24,
+      "sourceStartLine": 1857,
+      "selectorHeader": "#channels\n  ul[aria-label*='threads']\n  li[class*='-containerDefault']:hover\n  > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 25,
+      "sourceStartLine": 1870,
+      "selectorHeader": "#channels\n  ul[aria-label*='threads']\n  li[class*='-containerDefault']:not(:hover)\n  > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 26,
+      "sourceStartLine": 1878,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault'] a,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] span,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] [class*='name'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] div[role='button'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] div[class*='-link'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault'] *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 27,
+      "sourceStartLine": 1889,
+      "selectorHeader": "#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover a,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover span,\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover [class*='name'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover div[role='button'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover div[class*='-link'],\n#channels ul[aria-label*='threads'] li[class*='-containerDefault']:hover *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 28,
+      "sourceStartLine": 1900,
+      "selectorHeader": "#channels\n  ul[aria-label='Channels']\n  li[class*='-containerDefault'][class*='selected']\n  > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 29,
+      "sourceStartLine": 1910,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='selected'] a,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='selected'] span,\n#channels\n  ul[aria-label='Channels']\n  li[class*='-containerDefault'][class*='selected']\n  [class*='name']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 30,
+      "sourceStartLine": 1921,
+      "selectorHeader": "#channels div._629e4c86564a4ee7-sectionDivider"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 31,
+      "sourceStartLine": 1927,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li._29444ba32c7fbeab-containerDefault"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 32,
+      "sourceStartLine": 1932,
+      "selectorHeader": "#channels a[class*='channel'] svg,\n#channels [class*='iconContainer'] svg,\n#channels [class*='iconItem'] svg"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 33,
+      "sourceStartLine": 1940,
+      "selectorHeader": "#channels\n  ul[aria-label='Channels']\n  > li:first-of-type\n  div[class*='-link'][class*='basicChannelRowLink'],\n#channels\n  ul[aria-label='Channels']\n  > li:first-of-type\n  div[class*='-link'][class*='basicChannelRowLink']\n  *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 34,
+      "sourceStartLine": 1959,
+      "selectorHeader": "#channels\n  ul[aria-label='Channels']\n  > li:first-of-type\n  div[class*='-link'][class*='basicChannelRowLink']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 35,
+      "sourceStartLine": 1971,
+      "selectorHeader": "#channels\n  ul[aria-label='Channels']\n  > li:first-of-type\n  div[class*='-containerDefault'][class*='wrapper']:hover\n  div[class*='-link'][class*='basicChannelRowLink']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 36,
+      "sourceStartLine": 2097,
+      "selectorHeader": "div[class*='-sidebar']:has(#channels),\ndiv[class*='-sidebar']:has(#channels)::before,\ndiv[class*='-sidebar']:has(#channels)::after,\ndiv[class*='-sidebarList']:has(#channels),\ndiv[class*='-sidebarList']:has(#channels)::before,\ndiv[class*='-sidebarList']:has(#channels)::after,\nnav[class*='-container']:has(#channels),\nnav[class*='-container']:has(#channels)::before,\nnav[class*='-container']:has(#channels)::after,\ndiv#channels,\ndiv#channels::before,\ndiv#channels::after,\nul[aria-label='Channels']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 37,
+      "sourceStartLine": 2117,
+      "selectorHeader": "div[class*='-sidebar']:has(#channels):hover,\ndiv[class*='-sidebar']:has(#channels):hover::before,\ndiv[class*='-sidebar']:has(#channels):hover::after,\ndiv[class*='-sidebarList']:has(#channels):hover,\ndiv[class*='-sidebarList']:has(#channels):hover::before,\ndiv[class*='-sidebarList']:has(#channels):hover::after,\nnav[class*='-container']:has(#channels):hover,\nnav[class*='-container']:has(#channels):hover::before,\nnav[class*='-container']:has(#channels):hover::after,\ndiv#channels:hover,\ndiv#channels:hover::before,\ndiv#channels:hover::after,\nul[aria-label='Channels']:hover"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 38,
+      "sourceStartLine": 2186,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] [class*='name']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 39,
+      "sourceStartLine": 2215,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] > div[class*='-iconVisibility'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 40,
+      "sourceStartLine": 2231,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover > div[class*='-iconVisibility'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover > div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 41,
+      "sourceStartLine": 2240,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover a[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread']:hover div[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover a[class*='-link'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread']:hover div[class*='-link'] [class*='name']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 42,
+      "sourceStartLine": 2257,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-iconVisibility'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-iconVisibility']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 43,
+      "sourceStartLine": 2268,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-iconVisibility'] *:not([class*='-unread']):not(svg):not(path),\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-iconVisibility'] *:not([class*='-unread']):not(svg):not(path)"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 44,
+      "sourceStartLine": 2277,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-unread'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-unread']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 45,
+      "sourceStartLine": 2289,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] p,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h1,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h2,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] h3,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] *,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] p,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h1,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h2,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] h3,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] *"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 46,
+      "sourceStartLine": 2311,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-unread'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-unread']"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 47,
+      "sourceStartLine": 2318,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'] div[class*='-unread'][class*='-unreadImportant'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'] div[class*='-unread']:not([class*='name']):not([class*='text']):not([class*='Pill']):not([class*='Badge'])"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 48,
+      "sourceStartLine": 3814,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:hover,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:hover"
+    },
+    {
+      "area": "Channel Sidebar",
+      "areaIndex": 49,
+      "sourceStartLine": 5125,
+      "selectorHeader": "#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] a[class*='-link'] *,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] div[class*='-link'] *,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='modeUnread'] *:not(div[class*='-unread']):not(svg):not(path),\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] a[class*='-link'] *,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] div[class*='-link'] *,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] span,\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] [class*='name'],\n#channels ul[aria-label='Channels'] li[class*='-containerDefault'][class*='unread'] *:not(div[class*='-unread']):not(svg):not(path)"
+    },
+    {
+      "area": "DM List",
+      "areaIndex": 1,
+      "sourceStartLine": 2434,
+      "selectorHeader": "nav[aria-label='Private channels'] ul[aria-label='Direct Messages'],\nnav[aria-label='Private channels'] ul[aria-label='Direct Messages']::before,\nnav[aria-label='Private channels'] ul[aria-label='Direct Messages']::after"
+    },
+    {
+      "area": "DM List",
+      "areaIndex": 2,
+      "sourceStartLine": 2454,
+      "selectorHeader": "nav[aria-label='Private channels'] ul[aria-label='Direct Messages'],\nnav[aria-label='Private channels'] ul[aria-label='Direct Messages']::before,\nnav[aria-label='Private channels'] ul[aria-label='Direct Messages']::after"
+    },
+    {
+      "area": "DM List",
+      "areaIndex": 3,
+      "sourceStartLine": 2460,
+      "selectorHeader": "nav[aria-label='Private channels'] a[class*='-link'][data-list-item-id^='private-channels-uid_']"
+    },
+    {
+      "area": "DM List",
+      "areaIndex": 4,
+      "sourceStartLine": 2474,
+      "selectorHeader": "nav[aria-label='Private channels'] svg,\nnav[aria-label='Private channels'] svg *,\nnav[aria-label='Private channels'] img"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 1,
+      "sourceStartLine": 1026,
+      "selectorHeader": "[class*='message'] [class*='content']:not(.bd-crit-hit):not([class*='bd-crit-hit']),\n[class*='message'] [class*='text']:not(.bd-crit-hit):not([class*='bd-crit-hit']),\n[class*='messageContent']:not(.bd-crit-hit):not([class*='bd-crit-hit'])"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 2,
+      "sourceStartLine": 1061,
+      "selectorHeader": "[class*='message'] [class*='username'],\n[class*='message'] [class*='author'],\n[class*='username']"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 3,
+      "sourceStartLine": 1122,
+      "selectorHeader": "[class*='message'] [class*='content']:not(.bd-crit-hit):not([class*='bd-crit-hit'])"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 4,
+      "sourceStartLine": 1138,
+      "selectorHeader": "[class*='message'] [class*='username'],\n[class*='message'] [class*='author']"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 5,
+      "sourceStartLine": 2500,
+      "selectorHeader": "div[role='article'][class*='-message']"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 6,
+      "sourceStartLine": 2532,
+      "selectorHeader": "div[role='article'][class*='-message']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit'])"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 7,
+      "sourceStartLine": 2544,
+      "selectorHeader": "div[role='article'][class*='-message']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit'])::before,\ndiv[role='article'][class*='-message']:hover:not(.bd-crit-hit):not([class*='bd-crit-hit'])::after"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 8,
+      "sourceStartLine": 2551,
+      "selectorHeader": "div[class*='-messageContent'],\ndiv[class*='-markup']"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 9,
+      "sourceStartLine": 2561,
+      "selectorHeader": "[class*='message'] [class*='attachment'],\n[class*='message'] [class*='attachment']::before,\n[class*='message'] [class*='attachment']::after,\n[class*='message'] [class*='attachmentContainer'],\n[class*='message'] [class*='attachmentContainer']::before,\n[class*='message'] [class*='attachmentContainer']::after,\n[class*='message'] [class*='attachmentInner'],\n[class*='message'] [class*='attachmentInner']::before,\n[class*='message'] [class*='attachmentInner']::after"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 10,
+      "sourceStartLine": 2576,
+      "selectorHeader": "[class*='message'] [class*='attachment'] *"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 11,
+      "sourceStartLine": 2581,
+      "selectorHeader": "[class*='message'] [class*='attachment'],\n[class*='message'] [class*='attachmentContainer'],\n[class*='message'] [class*='attachmentInner']"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 12,
+      "sourceStartLine": 2592,
+      "selectorHeader": "[class*='message'] [class*='attachment']:hover,\n[class*='message'] [class*='attachmentContainer']:hover,\n[class*='message'] [class*='attachmentInner']:hover"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 13,
+      "sourceStartLine": 2599,
+      "selectorHeader": "[class*='message'].bd-crit-hit:hover"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 14,
+      "sourceStartLine": 2609,
+      "selectorHeader": "[class*='message']:focus:not(.bd-crit-hit):not([class*='bd-crit-hit']),\n[class*='message']:focus-within:not(.bd-crit-hit):not([class*='bd-crit-hit']),\n[class*='message']:not(.bd-crit-hit):not([class*='bd-crit-hit']) *:focus"
+    },
+    {
+      "area": "Chat Messages",
+      "areaIndex": 15,
+      "sourceStartLine": 2882,
+      "selectorHeader": "[class*='message'] [class*='username']:hover,\n[class*='message'] [class*='author']:hover"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 1,
+      "sourceStartLine": 2618,
+      "selectorHeader": "[class*='channelTextArea'],\n[class*='slateTextArea'],\n[class*='textArea']"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 2,
+      "sourceStartLine": 2638,
+      "selectorHeader": "[class*='channelTextArea']:focus-within:not(:disabled):not([disabled]):not([readonly]),\n[class*='slateTextArea']:focus-within:not(:disabled):not([disabled]):not([readonly]),\n[class*='textArea']:focus-within:not(:disabled):not([disabled]):not([readonly])"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 3,
+      "sourceStartLine": 2648,
+      "selectorHeader": "[class*='channelTextArea'] [class*='scrollableContainer'],\n[class*='channelTextArea'] [class*='scrollableContainer']::before,\n[class*='channelTextArea'] [class*='scrollableContainer']::after,\n[class*='textArea'] [class*='scrollableContainer'],\n[class*='textArea'] [class*='scrollableContainer']::before,\n[class*='textArea'] [class*='scrollableContainer']::after"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 4,
+      "sourceStartLine": 2815,
+      "selectorHeader": "[class*='sendButton'],\n[class*='button'][class*='send'],\nbutton[aria-label*='Send'],\nbutton[aria-label*='send'],\n[class*='channelTextArea'] + [class*='button'],\n[class*='slateTextArea'] + [class*='button'],\n[class*='textArea'] + [class*='button']"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 5,
+      "sourceStartLine": 2827,
+      "selectorHeader": "[class*='sendButton']:hover:not(:disabled):not([disabled]),\n[class*='button'][class*='send']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='Send']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='send']:hover:not(:disabled):not([disabled]),\n[class*='channelTextArea'] + [class*='button']:hover:not(:disabled):not([disabled]),\n[class*='slateTextArea'] + [class*='button']:hover:not(:disabled):not([disabled]),\n[class*='textArea'] + [class*='button']:hover:not(:disabled):not([disabled])"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 6,
+      "sourceStartLine": 2898,
+      "selectorHeader": "button:hover:not(:disabled):not([disabled]):not([class*='sendButton']):not([class*='send']):not(\n    [class*='settingsButton']\n  ):not([class*='settings']):not([aria-label*='Send']):not([aria-label*='send']):not(\n    [aria-label*='Settings']\n  ):not([aria-label*='settings']),\n[class*='button']:hover:not(:disabled):not([disabled]):not([class*='selected']):not(\n    [class*='sendButton']\n  ):not([class*='send']):not([class*='settingsButton']):not([class*='settings'])"
+    },
+    {
+      "area": "Message Composer",
+      "areaIndex": 7,
+      "sourceStartLine": 3964,
+      "selectorHeader": "[class*='standardSidebarView'] div:has(> textarea),\n[class*='standardSidebarView'] div:has(> input),\n[class*='standardSidebarView'] [class*='input'][class*='focused'],\n[class*='standardSidebarView'] [class*='input'][class*='error']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 1,
+      "sourceStartLine": 2659,
+      "selectorHeader": "[class*='embedWrapper'],\n[class*='embedContainer']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 2,
+      "sourceStartLine": 2679,
+      "selectorHeader": "[class*='embedWrapper'] [class*='embed'],\n[class*='embedWrapper'] [class*='embedContainer'],\n[class*='embedContainer'] [class*='embed']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 3,
+      "sourceStartLine": 2690,
+      "selectorHeader": "[class*='-embedFull']:has(iframe),\n[class*='-embedFull']:has(img[src*='i.ytimg.com'])"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 4,
+      "sourceStartLine": 2697,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='-gridContainer'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='-gridContainer']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 5,
+      "sourceStartLine": 2702,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='embedMedia'],\n[class*='-embedFull']:has(iframe) [class*='-image'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='embedMedia'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='-image']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 6,
+      "sourceStartLine": 2710,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='embedMedia'] [class*='-imageContainer'],\n[class*='-embedFull']:has(iframe) [class*='-image'] [class*='-imageContainer'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='embedMedia'] [class*='-imageContainer'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='-image'] [class*='-imageContainer']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 7,
+      "sourceStartLine": 2720,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='embedMedia'] [class*='-imageContainer'] img,\n[class*='-embedFull']:has(iframe) [class*='-image'] [class*='-imageContainer'] img,\n[class*='-embedFull']:has(img[src*='i.ytimg.com'])\n  [class*='embedMedia']\n  [class*='-imageContainer']\n  img,\n[class*='-embedFull']:has(img[src*='i.ytimg.com'])\n  [class*='-image']\n  [class*='-imageContainer']\n  img"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 8,
+      "sourceStartLine": 2736,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='embedMedia'] > [class*='-embedVideo'],\n[class*='-embedFull']:has(iframe) [class*='-image'] > [class*='-embedVideo'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='embedMedia'] > [class*='-embedVideo'],\n[class*='-embedFull']:has(img[src*='i.ytimg.com']) [class*='-image'] > [class*='-embedVideo']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 9,
+      "sourceStartLine": 2747,
+      "selectorHeader": "[class*='-embedFull']:has(iframe) [class*='embedMedia'] > [class*='-embedVideo'] > iframe,\n[class*='-embedFull']:has(iframe) [class*='-image'] > [class*='-embedVideo'] > iframe,\n[class*='-embedFull']:has(img[src*='i.ytimg.com'])\n  [class*='embedMedia']\n  > [class*='-embedVideo']\n  > iframe,\n[class*='-embedFull']:has(img[src*='i.ytimg.com'])\n  [class*='-image']\n  > [class*='-embedVideo']\n  > iframe"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 10,
+      "sourceStartLine": 2764,
+      "selectorHeader": "[class*='embed'][class*='solo'],\n[class*='embed'] [class*='solo'],\n[class*='embed'] [class*='leveling'],\n[class*='embed'] [class*='rank'],\n[class*='embed'] [class*='xp']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 11,
+      "sourceStartLine": 2776,
+      "selectorHeader": "[class*='embed'] [class*='title'],\n[class*='embedTitle']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 12,
+      "sourceStartLine": 2784,
+      "selectorHeader": "[class*='embed'] [class*='description'],\n[class*='embedDescription']"
+    },
+    {
+      "area": "Embeds & Media",
+      "areaIndex": 13,
+      "sourceStartLine": 2791,
+      "selectorHeader": "[class*='embed'] [class*='field'],\n[class*='embedField']"
+    },
+    {
+      "area": "Members List",
+      "areaIndex": 1,
+      "sourceStartLine": 2482,
+      "selectorHeader": "[class*='member']:hover"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 1,
+      "sourceStartLine": 2055,
+      "selectorHeader": "[class*='panels'] [class*='avatar']"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 2,
+      "sourceStartLine": 2063,
+      "selectorHeader": "[class*='panels'] [class*='avatar']:has([class*='statusOnline'])"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 3,
+      "sourceStartLine": 2068,
+      "selectorHeader": "[class*='panels'] [class*='avatar']:has([class*='statusIdle'])"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 4,
+      "sourceStartLine": 2073,
+      "selectorHeader": "[class*='panels'] [class*='avatar']:has([class*='statusDnd'])"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 5,
+      "sourceStartLine": 2078,
+      "selectorHeader": "[class*='panels'] [class*='avatar']:has([class*='statusOffline'])"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 6,
+      "sourceStartLine": 2151,
+      "selectorHeader": "[class*='panels']"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 7,
+      "sourceStartLine": 2371,
+      "selectorHeader": "[class*='panels'] [class*='nameTag'],\n[class*='panels'] [class*='usernameContainer']"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 8,
+      "sourceStartLine": 2382,
+      "selectorHeader": "[class*='panels'] button[aria-label*='Settings']:hover,\n[class*='panels'] button[aria-label*='settings']:hover"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 9,
+      "sourceStartLine": 2394,
+      "selectorHeader": "[class*='panels'] button:hover"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 10,
+      "sourceStartLine": 2404,
+      "selectorHeader": "[class*='panels'] button:hover svg"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 11,
+      "sourceStartLine": 2410,
+      "selectorHeader": "[class*='panels'] button:not(:hover) svg"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 12,
+      "sourceStartLine": 4703,
+      "selectorHeader": "[class*='panels'] div[class*='-buttons'] div[class*='-micButtonParent']"
+    },
+    {
+      "area": "User Area / Profile Strip",
+      "areaIndex": 13,
+      "sourceStartLine": 4709,
+      "selectorHeader": "section[aria-label='User area'] div[class*='-avatarWrapper'] [mask*='svg-mask-status-'],\nsection[aria-label='User area']\n  div[class*='-avatarWrapper']\n  rect[class*='-pointerEvents'][mask*='svg-mask-status-']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 1,
+      "sourceStartLine": 3215,
+      "selectorHeader": "[class*='popoutHeroBody'] [class*='badges'],\n[class*='popoutHeroBody'] > div[class*='badges'],\n[class*='popoutContentWrapper'] [class*='hero'] [class*='badges'],\n[class*='hero'] [class*='popoutHeroInner'] [class*='badges']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 2,
+      "sourceStartLine": 3234,
+      "selectorHeader": "[class*='userPopout'] time,\n[class*='popout'] time,\n[class*='userPopout'] [datetime],\n[class*='popout'] [datetime],\n[class*='userPopout'] [class*='timestamp'],\n[class*='popout'] [class*='timestamp']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 3,
+      "sourceStartLine": 3250,
+      "selectorHeader": "[class*='userPopout'] [style*='color'],\n[class*='popout'] [style*='color']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 4,
+      "sourceStartLine": 3319,
+      "selectorHeader": "[class*='tooltip'],\n[class*='tooltipContent'],\n[class*='tooltipContentWrapper'],\n[class*='tooltipWrapper'],\n[class*='tippy'],\n[class*='tippyBox'],\n[class*='tippyContent']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 5,
+      "sourceStartLine": 3337,
+      "selectorHeader": "[class*='tooltip'] *,\n[class*='tooltipContent'] *,\n[class*='tippy'] *,\n[class*='tippyContent'] *"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 6,
+      "sourceStartLine": 3360,
+      "selectorHeader": "[class*='listItemTooltipContent'],\n[class*='listItemTooltipContent'] *,\n[class*='listItemTooltipContent']::before,\n[class*='listItemTooltipContent']::after"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 7,
+      "sourceStartLine": 3372,
+      "selectorHeader": "[class*='contextMenu'],\n[class*='menuOverlay'],\n[class*='menuContent'],\n[class*='menu']:not([class*='menuItem']):not([class*='menuItemInner']):not(\n    [class*='menuItemContent']\n  ):not([class*='menuItemGroup'])"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 8,
+      "sourceStartLine": 3390,
+      "selectorHeader": "[class*='menuItemInner'],\n[class*='menuItemContent']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 9,
+      "sourceStartLine": 3396,
+      "selectorHeader": "[class*='menuItem'],\n[class*='item'][role='menuitem'],\n[class*='item'][role='menuitemcheckbox'],\n[class*='item'][role='menuitemradio'],\n[class*='contextMenu'] [class*='item'],\n[class*='menu'] [class*='item']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 10,
+      "sourceStartLine": 3407,
+      "selectorHeader": "[class*='menuItemInner']:hover,\n[class*='menuItemInner']:hover::before,\n[class*='menuItemInner']:hover::after,\n[class*='item'][role='menuitem']:hover,\n[class*='item'][role='menuitemcheckbox']:hover,\n[class*='item'][role='menuitemradio']:hover"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 11,
+      "sourceStartLine": 3425,
+      "selectorHeader": "[class*='-menuItem']:hover"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 12,
+      "sourceStartLine": 3433,
+      "selectorHeader": "[class*='menuItem']:hover [class*='icon'],\n[class*='item']:hover [class*='icon'],\n[class*='menuItem']:hover svg,\n[class*='item']:hover svg"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 13,
+      "sourceStartLine": 3441,
+      "selectorHeader": "[class*='menuItem'][style*='background'],\n[class*='item'][style*='background']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 14,
+      "sourceStartLine": 3446,
+      "selectorHeader": "[class*='menuItem']:hover[style*='background'],\n[class*='item']:hover[style*='background']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 15,
+      "sourceStartLine": 3452,
+      "selectorHeader": "[class*='menuItem'][class*='focused'],\n[class*='menuItem'][class*='selected'],\n[class*='item'][class*='focused'],\n[class*='item'][class*='selected']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 16,
+      "sourceStartLine": 3593,
+      "selectorHeader": "[class*='userPopout'],\n[class*='userPopoutOuter'],\n[class*='userProfileModal']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 17,
+      "sourceStartLine": 3614,
+      "selectorHeader": "[class*='userPopout'] [class*='header'],\n[class*='userPopout'] [class*='banner']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 18,
+      "sourceStartLine": 3620,
+      "selectorHeader": "[class*='userPopout'] [class*='username'],\n[class*='userPopout'] [class*='name']"
+    },
+    {
+      "area": "Menus, Tooltips & Popouts",
+      "areaIndex": 19,
+      "sourceStartLine": 5051,
+      "selectorHeader": "._5126c0cd07f243a0-buttonsInner.f84418acfdbdfe54-popover.f7ecaca5c80dbf3a-wrapper,\n[class*='buttonsInner'][class*='popover'][class*='wrapper']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 1,
+      "sourceStartLine": 2873,
+      "selectorHeader": "fieldset[class*='-userSettingsSecurity'],\nfieldset[class*='-userSettingsSecurity']:hover,\nfieldset[class*='-userSettingsSecurity']:focus,\nfieldset[class*='-userSettingsSecurity']:focus-within"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 2,
+      "sourceStartLine": 3650,
+      "selectorHeader": "[class*='standardSidebarView']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 3,
+      "sourceStartLine": 3738,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='selected'],\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item'][class*='selected']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 4,
+      "sourceStartLine": 3751,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='selected'] [class*='text'],\n \n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item'][class*='selected'] span,\n[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='selected'][class*='containerDefault']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 5,
+      "sourceStartLine": 3760,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 6,
+      "sourceStartLine": 3766,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']),\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']),\n[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected'])"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 7,
+      "sourceStartLine": 3773,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) *,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) *,\n[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected']) *,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) span,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) span,\n[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:not([class*='selected']) span,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:not([class*='selected']) [class*='text'],\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:not([class*='selected']) [class*='text']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 8,
+      "sourceStartLine": 3786,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='side'] [class*='item']:hover:not([class*='selected']) *,\n[class*='standardSidebarView'] [class*='sidebarRegion'] [class*='item']:hover:not([class*='selected']) *,\n[class*='standardSidebarView'] [class*='sidebarRegion'] li[class*='containerDefault']:hover:not([class*='selected']) *"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 9,
+      "sourceStartLine": 3794,
+      "selectorHeader": "[class*='standardSidebarView'] [class*='contentRegion'] div[class*='-card'],\n[class*='standardSidebarView'] [class*='contentRegion'] div[class*='-card']::before,\n[class*='standardSidebarView'] [class*='contentRegion'] div[class*='-card']::after,\n[class*='standardSidebarView'] [class*='contentRegion'] div[class*='-container'][class*='card'],\n[class*='standardSidebarView']\n  [class*='contentRegion']\n  div[class*='-container'][class*='card']::before,\n[class*='standardSidebarView']\n  [class*='contentRegion']\n  div[class*='-container'][class*='card']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 10,
+      "sourceStartLine": 3901,
+      "selectorHeader": "[class*='standardSidebarView'] h2[class*='header'],\n[class*='standardSidebarView'] [class*='header'][class*='eyebrow'],\n[class*='side'] h2,\n[class*='side'] [class*='header']:not([class*='item']),\n[class*='sidebarRegion'] h2"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 11,
+      "sourceStartLine": 3938,
+      "selectorHeader": "[class*='standardSidebarView'] input[type='text'],\n[class*='standardSidebarView'] input[type='email'],\n[class*='standardSidebarView'] input[type='password'],\n[class*='standardSidebarView'] textarea"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 12,
+      "sourceStartLine": 3954,
+      "selectorHeader": "[class*='standardSidebarView'] input[type='text']:focus,\n[class*='standardSidebarView'] input[type='email']:focus,\n[class*='standardSidebarView'] input[type='password']:focus,\n[class*='standardSidebarView'] textarea:focus"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 13,
+      "sourceStartLine": 3972,
+      "selectorHeader": "[class*='standardSidebarView'] div[class*='switch'][class*='checked']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 14,
+      "sourceStartLine": 3986,
+      "selectorHeader": "[class*='standardSidebarView'] div[class*='switch'][class*='checked'] div[class*='handle']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 15,
+      "sourceStartLine": 3991,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='look']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 16,
+      "sourceStartLine": 4002,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 17,
+      "sourceStartLine": 4013,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorBrand']:hover"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 18,
+      "sourceStartLine": 4024,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookOutlined']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 19,
+      "sourceStartLine": 4031,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookOutlined']:hover"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 20,
+      "sourceStartLine": 4037,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='colorRed'][class*='lookOutlined'],\n[class*='standardSidebarView'] button[class*='lookOutlined'][class*='colorRed']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 21,
+      "sourceStartLine": 4045,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='colorRed'][class*='lookOutlined']:hover,\n[class*='standardSidebarView'] button[class*='lookOutlined'][class*='colorRed']:hover"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 22,
+      "sourceStartLine": 4052,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorRed'],\n[class*='standardSidebarView'] button[class*='colorRed'][class*='lookFilled']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 23,
+      "sourceStartLine": 4063,
+      "selectorHeader": "[class*='standardSidebarView'] button[class*='lookFilled'][class*='colorRed']:hover,\n[class*='standardSidebarView'] button[class*='colorRed'][class*='lookFilled']:hover"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 24,
+      "sourceStartLine": 4075,
+      "selectorHeader": "[class*='standardSidebarView'] button:disabled,\n[class*='standardSidebarView'] button[disabled],\n[class*='standardSidebarView'] button[aria-disabled='true']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 25,
+      "sourceStartLine": 4085,
+      "selectorHeader": "[class*='standardSidebarView'] div[class*='divider'],\n[class*='standardSidebarView'] hr"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 26,
+      "sourceStartLine": 4102,
+      "selectorHeader": "[class*='standardSidebarView'] header[class*='header'],\n[class*='contentRegion'] header,\n[class*='header'][class*='headerContent']"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 27,
+      "sourceStartLine": 4118,
+      "selectorHeader": "[class*='standardSidebarView'] header [class*='title'],\n[class*='contentRegion'] header h1"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 28,
+      "sourceStartLine": 4312,
+      "selectorHeader": "[class*='standardSidebarView'] div[role='tablist']:not([aria-label='Friends']),\n[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']),\n[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends'])::before,\n[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends'])::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 29,
+      "sourceStartLine": 4333,
+      "selectorHeader": "[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab'],\n[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']::before,\n[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 30,
+      "sourceStartLine": 4355,
+      "selectorHeader": "[class*='standardSidebarView'] [role='tablist']:not([aria-label='Friends']) [role='tab']:hover,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab']:hover::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab']:hover::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 31,
+      "sourceStartLine": 4369,
+      "selectorHeader": "[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true'],\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current],\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected'],\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active'],\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true']::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current]::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected']::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active']::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true']::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current]::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected']::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 32,
+      "sourceStartLine": 4420,
+      "selectorHeader": "[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true']:hover,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current]:hover,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected']:hover,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active']:hover,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true']:hover::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current]:hover::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected']:hover::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active']:hover::before,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-selected='true']:hover::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][aria-current]:hover::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='selected']:hover::after,\n[class*='standardSidebarView']\n  [role='tablist']:not([aria-label='Friends'])\n  [role='tab'][class*='active']:hover::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 33,
+      "sourceStartLine": 4467,
+      "selectorHeader": "[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'],\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist']::before,\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 34,
+      "sourceStartLine": 4488,
+      "selectorHeader": "[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab'],\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab']::before,\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 35,
+      "sourceStartLine": 4510,
+      "selectorHeader": "[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab']:hover,\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab']:hover::before,\n[class*='-tabbedSettingsContainer'] [class*='-tabBar'][role='tablist'] [role='tab']:hover::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 36,
+      "sourceStartLine": 4520,
+      "selectorHeader": "[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true'],\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true']::before,\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true']::after,\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][class*='selected'],\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][class*='selected']::before,\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][class*='selected']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 37,
+      "sourceStartLine": 4555,
+      "selectorHeader": "[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true']:hover,\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true']:hover::before,\n[class*='-tabbedSettingsContainer']\n  [class*='-tabBar'][role='tablist']\n  [role='tab'][aria-selected='true']:hover::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 38,
+      "sourceStartLine": 4575,
+      "selectorHeader": "div[class*='-settingsPage'] div[class*='-tabBar'][role='tablist'],\ndiv[class*='-settingsPage'] div[class*='-tabBar'][role='tablist']::before,\ndiv[class*='-settingsPage'] div[class*='-tabBar'][role='tablist']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 39,
+      "sourceStartLine": 4593,
+      "selectorHeader": "div[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'],\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem']::before,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem']::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 40,
+      "sourceStartLine": 4621,
+      "selectorHeader": "div[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem']:hover,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem']:hover::before,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem']:hover::after"
+    },
+    {
+      "area": "Settings UI",
+      "areaIndex": 41,
+      "sourceStartLine": 4637,
+      "selectorHeader": "div[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][aria-selected='true'],\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][aria-selected='true']::before,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][aria-selected='true']::after,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][class*='selected'],\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][class*='selected']::before,\ndiv[class*='-settingsPage']\n  div[class*='-tabBar'][role='tablist']\n  [role='tab'][class*='-tabBarItem'][class*='selected']::after"
+    },
+    {
+      "area": "BetterDiscord UI",
+      "areaIndex": 1,
+      "sourceStartLine": 984,
+      "selectorHeader": ".bd-crit-hit,\n.bd-crit-hit *,\n.bd-crit-hit *::before,\n.bd-crit-hit *::after,\n[class*='message'].bd-crit-hit,\n[class*='message'].bd-crit-hit *,\n[class*='message'] .bd-crit-hit,\n[class*='message'] .bd-crit-hit *,\n[class*='message'] [class*='content'].bd-crit-hit,\n[class*='message'] [class*='text'].bd-crit-hit,\n[class*='messageContent'].bd-crit-hit,\n[class*='messageContent'].bd-crit-hit *"
+    },
+    {
+      "area": "BetterDiscord UI",
+      "areaIndex": 2,
+      "sourceStartLine": 1038,
+      "selectorHeader": ".bd-crit-hit,\n[class*='message'] .bd-crit-hit,\n[class*='message'].bd-crit-hit,\n[class*='message'] [class*='content'].bd-crit-hit,\n[class*='message'] [class*='text'].bd-crit-hit,\n[class*='messageContent'].bd-crit-hit"
+    },
+    {
+      "area": "BetterDiscord UI",
+      "areaIndex": 3,
+      "sourceStartLine": 1049,
+      "selectorHeader": ".bd-crit-hit,\n[class*='message'] .bd-crit-hit [class*='content'],\n[class*='message'] .bd-crit-hit [class*='text'],\n[class*='message'].bd-crit-hit [class*='content'],\n[class*='message'].bd-crit-hit [class*='text'],\n[class*='message'] [class*='content'].bd-crit-hit,\n[class*='message'] [class*='text'].bd-crit-hit"
+    },
+    {
+      "area": "BetterDiscord UI",
+      "areaIndex": 4,
+      "sourceStartLine": 4125,
+      "selectorHeader": "input.bd-search"
+    },
+    {
+      "area": "BetterDiscord UI",
+      "areaIndex": 5,
+      "sourceStartLine": 4137,
+      "selectorHeader": "input.bd-search:focus"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 1,
+      "sourceStartLine": 3464,
+      "selectorHeader": "::-webkit-scrollbar"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 2,
+      "sourceStartLine": 3482,
+      "selectorHeader": "::-webkit-scrollbar-track"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 3,
+      "sourceStartLine": 3489,
+      "selectorHeader": "::-webkit-scrollbar-thumb"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 4,
+      "sourceStartLine": 3509,
+      "selectorHeader": "::-webkit-scrollbar-thumb:hover"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 5,
+      "sourceStartLine": 3519,
+      "selectorHeader": "div[class*='scroller']::-webkit-scrollbar"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 6,
+      "sourceStartLine": 3850,
+      "selectorHeader": "[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 7,
+      "sourceStartLine": 3859,
+      "selectorHeader": "[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-track"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 8,
+      "sourceStartLine": 3864,
+      "selectorHeader": "[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-thumb"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 9,
+      "sourceStartLine": 3874,
+      "selectorHeader": "[class*='contentRegion'] [class*='scroller']::-webkit-scrollbar-thumb:hover"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 10,
+      "sourceStartLine": 3883,
+      "selectorHeader": "nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 11,
+      "sourceStartLine": 3888,
+      "selectorHeader": "nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-track"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 12,
+      "sourceStartLine": 3892,
+      "selectorHeader": "nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb"
+    },
+    {
+      "area": "Scrollbars",
+      "areaIndex": 13,
+      "sourceStartLine": 3897,
+      "selectorHeader": "nav[class*='sidebar'] [class*='scroller']::-webkit-scrollbar-thumb:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 1,
+      "sourceStartLine": 1,
+      "selectorHeader": "@import url('https://clearvision.github.io/ClearVision-v7/main.css');\n@import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');\n\n \n@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');\n\n \n \n\n \n\n:root"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 2,
+      "sourceStartLine": 802,
+      "selectorHeader": "html,\nbody,\n#app-mount"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 3,
+      "sourceStartLine": 842,
+      "selectorHeader": "body"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 4,
+      "sourceStartLine": 860,
+      "selectorHeader": "body::before"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 5,
+      "sourceStartLine": 899,
+      "selectorHeader": "body::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 6,
+      "sourceStartLine": 957,
+      "selectorHeader": ".a3002d7de5be5280-app,\n.theme-dark,\n.theme-light,\nbody,\ndiv[class*='app-'],\ndiv[class*='base-'],\ndiv[class*='sidebar'],\ndiv[class*='chat'],\ndiv[class*='content'],\ndiv[class*='container'],\ndiv[class*='message'],\nspan,\np,\nh1,\nh2,\nh3,\nh4,\nh5,\nh6,\nbutton,\ninput,\ntextarea"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 7,
+      "sourceStartLine": 1009,
+      "selectorHeader": "h1,\nh2,\nh3,\nh4,\nh5,\nh6,\n[class*='title'],\n[class*='header'] [class*='title'],\n[class*='name'][class*='header']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 8,
+      "sourceStartLine": 1071,
+      "selectorHeader": "[class*='channel'] [class*='name'],\n[class*='channelName']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 9,
+      "sourceStartLine": 1079,
+      "selectorHeader": "[class*='selected'] [class*='name'],\n[class*='modeSelected'] [class*='name'],\n[class*='channel'][class*='selected'] [class*='name']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 10,
+      "sourceStartLine": 1089,
+      "selectorHeader": "code,\n[class*='code'],\n[class*='codeBlock'],\npre"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 11,
+      "sourceStartLine": 1102,
+      "selectorHeader": "input,\ntextarea,\n[class*='input'],\n[class*='textArea'],\n[class*='channelTextArea']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 12,
+      "sourceStartLine": 1114,
+      "selectorHeader": "button,\n[class*='button']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 13,
+      "sourceStartLine": 1145,
+      "selectorHeader": "[class*='channel'] [class*='name']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 14,
+      "sourceStartLine": 1151,
+      "selectorHeader": "[class*='selected'] [class*='name']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 15,
+      "sourceStartLine": 1175,
+      "selectorHeader": "nav[aria-label='Servers'] a[aria-label='Home'],\nnav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 16,
+      "sourceStartLine": 1196,
+      "selectorHeader": "nav[aria-label='Servers'] a[aria-label='Home'],\nnav[aria-label='Servers'] a[aria-label='Home'] div[class*='childWrapper']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 17,
+      "sourceStartLine": 1225,
+      "selectorHeader": "div[aria-label='Servers'] div[class*='-pill'],\ndiv[aria-label='Servers'] div[class*='-pill']::before,\ndiv[aria-label='Servers'] div[class*='-pill']::after,\nul[role='group'][aria-label] div[class*='-pill'],\nul[role='group'][aria-label] div[class*='-pill']::before,\nul[role='group'][aria-label] div[class*='-pill']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 18,
+      "sourceStartLine": 1240,
+      "selectorHeader": "[class*='guild'][class*='selected']::before,\n[class*='server'][class*='selected']::before,\n[class*='guild'][class*='active']::before,\n[class*='server'][class*='active']::before,\n[class*='guild'][class*='selected'] [class*='pill'],\n[class*='server'][class*='selected'] [class*='pill'],\n[class*='guild'][class*='active'] [class*='pill'],\n[class*='server'][class*='active'] [class*='pill']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 19,
+      "sourceStartLine": 1258,
+      "selectorHeader": "[class*='guild'][class*='selected'],\n[class*='server'][class*='selected'],\n[class*='guild'][class*='active'],\n[class*='server'][class*='active']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 20,
+      "sourceStartLine": 1267,
+      "selectorHeader": "[class*='guildIcon'],\n[class*='serverIcon'],\n[class*='guildIconWrapper'],\n[class*='serverIconWrapper']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 21,
+      "sourceStartLine": 1276,
+      "selectorHeader": "[class*='guildIcon']:hover,\n[class*='serverIcon']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 22,
+      "sourceStartLine": 1318,
+      "selectorHeader": "nav[aria-label='Servers sidebar'],\nnav[aria-label='Servers sidebar']::before,\nnav[aria-label='Servers sidebar']::after,\nnav[aria-label='Servers sidebar']:hover,\nnav[aria-label='Servers sidebar']:hover::before,\nnav[aria-label='Servers sidebar']:hover::after,\ndiv[aria-label='Servers'][role='group'],\ndiv[aria-label='Servers'][role='group']::before,\ndiv[aria-label='Servers'][role='group']::after,\ndiv[aria-label='Servers'][role='group']:hover,\ndiv[aria-label='Servers'][role='group']:hover::before,\ndiv[aria-label='Servers'][role='group']:hover::after,\nul[role='group'][aria-label],\nul[role='group'][aria-label]::before,\nul[role='group'][aria-label]::after,\nul[role='group'][aria-label]:hover,\nul[role='group'][aria-label]:hover::before,\nul[role='group'][aria-label]:hover::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 23,
+      "sourceStartLine": 1368,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] div[class*='-pill'],\nnav[aria-label='Servers sidebar'] div[class*='-pill']::before,\nnav[aria-label='Servers sidebar'] div[class*='-pill']::after,\nnav[aria-label='Servers sidebar'] span[class*='-item'],\nnav[aria-label='Servers sidebar'] span[class*='-item']::before,\nnav[aria-label='Servers sidebar'] span[class*='-item']::after,\n \nnav[class*='-guilds'] div[class*='-pill'],\nnav[class*='-guilds'] div[class*='-pill']::before,\nnav[class*='-guilds'] div[class*='-pill']::after,\nnav[class*='-guilds'] span[class*='-item'],\nnav[class*='-guilds'] span[class*='-item']::before,\nnav[class*='-guilds'] span[class*='-item']::after,\n \nnav[aria-label='Servers sidebar'] div[aria-hidden='true'][class*='pill'],\nnav[class*='-guilds'] div[aria-hidden='true'][class*='pill']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 24,
+      "sourceStartLine": 1401,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] [class*='pill'],\nnav[aria-label='Servers sidebar'] [class*='pill']::before,\nnav[aria-label='Servers sidebar'] [class*='pill']::after,\nnav[class*='-guilds'] [class*='pill'],\nnav[class*='-guilds'] [class*='pill']::before,\nnav[class*='-guilds'] [class*='pill']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 25,
+      "sourceStartLine": 1421,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] div[class*='-listItem']::before,\nnav[aria-label='Servers sidebar'] div[class*='-listItem']::after,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']::before,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']::after,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']::before,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']::after,\nnav[class*='-guilds'] div[class*='-listItem']::before,\nnav[class*='-guilds'] div[class*='-listItem']::after,\nnav[class*='-guilds'] div[class*='-listItemWrapper']::before,\nnav[class*='-guilds'] div[class*='-listItemWrapper']::after,\nnav[class*='-guilds'] div[class*='-wrapper']::before,\nnav[class*='-guilds'] div[class*='-wrapper']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 26,
+      "sourceStartLine": 1440,
+      "selectorHeader": "div[class*='-sidebar']:has(nav[aria-label='Servers sidebar']),\ndiv[class*='-sidebar']:has(nav[aria-label='Servers sidebar'])::before,\ndiv[class*='-sidebar']:has(nav[aria-label='Servers sidebar'])::after,\ndiv[class*='-sidebar']:has(nav[aria-label='Servers sidebar']):hover,\ndiv[class*='-sidebar']:has(nav[aria-label='Servers sidebar']):hover::before,\ndiv[class*='-sidebar']:has(nav[aria-label='Servers sidebar']):hover::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 27,
+      "sourceStartLine": 1615,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] div[class*='-wrapper'],\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']::before,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']::after,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']:hover,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']:hover::before,\nnav[aria-label='Servers sidebar'] div[class*='-wrapper']:hover::after,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper'],\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']::before,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']::after,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']:hover,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']:hover::before,\nnav[aria-label='Servers sidebar'] div[class*='-listItemWrapper']:hover::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 28,
+      "sourceStartLine": 1633,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] div[role='treeitem'],\nnav[aria-label='Servers sidebar'] div[role='treeitem']:hover,\nnav[aria-label='Servers sidebar'] div[role='treeitem'][aria-selected='true']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 29,
+      "sourceStartLine": 1649,
+      "selectorHeader": "nav[aria-label='Servers sidebar'] img[class*='-icon'],\nnav[aria-label='Servers sidebar'] svg,\nnav[aria-label='Servers sidebar'] svg *"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 30,
+      "sourceStartLine": 1981,
+      "selectorHeader": "[class*='channels'],\n[class*='channelList'],\n[class*='sidebar'],\n[class*='sidebar'][class*='container'],\n[class*='sidebar'][class*='content'],\nnav[class*='sidebar'],\ndiv[class*='sidebar'][class*='base']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 31,
+      "sourceStartLine": 1996,
+      "selectorHeader": "[class*='channels']:hover,\n[class*='channelList']:hover,\n[class*='sidebar']:hover,\n[class*='sidebar'][class*='container']:hover,\n[class*='sidebar'][class*='content']:hover,\nnav[class*='sidebar']:hover,\ndiv[class*='sidebar'][class*='base']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 32,
+      "sourceStartLine": 2009,
+      "selectorHeader": "header[class*='header'] h1,\nheader[class*='header'] div[class*='name']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 33,
+      "sourceStartLine": 2020,
+      "selectorHeader": "a[class*='channel'][class*='selected'],\n \na[class*='channel'][class*='selected']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 34,
+      "sourceStartLine": 2032,
+      "selectorHeader": "a[class*='channel']:hover:not([class*='selected']),\n \na[class*='channel']:hover:not([class*='selected'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 35,
+      "sourceStartLine": 2045,
+      "selectorHeader": "a[class*='channel'][class*='selected']:hover,\n \na[class*='channel'][class*='selected']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 36,
+      "sourceStartLine": 2135,
+      "selectorHeader": "div._5e434347c823b592-sidebar"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 37,
+      "sourceStartLine": 2146,
+      "selectorHeader": "header[class*='header']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 38,
+      "sourceStartLine": 2168,
+      "selectorHeader": "[role='button'][class*='container'] h2,\n \n[class*='standardSidebarView'] [class*='containerDefault']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 39,
+      "sourceStartLine": 2182,
+      "selectorHeader": "[role='button'][class*='container']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 40,
+      "sourceStartLine": 2283,
+      "selectorHeader": "[class*='channel'][class*='unread']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 41,
+      "sourceStartLine": 2332,
+      "selectorHeader": "[class*='channel'] [class*='unreadPill'],\n[class*='channel'] [class*='unreadBadge'],\n[class*='numberBadge']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 42,
+      "sourceStartLine": 2346,
+      "selectorHeader": "a[class*='channel'] svg,\n[class*='iconContainer'] svg,\n[class*='iconItem'] svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 43,
+      "sourceStartLine": 2357,
+      "selectorHeader": "a[class*='channel']:hover svg,\n[class*='iconContainer']:hover svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 44,
+      "sourceStartLine": 2364,
+      "selectorHeader": "a[class*='channel']:not(:hover) svg,\n[class*='iconContainer']:not(:hover) svg,\n[class*='iconItem']:not(:hover) svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 45,
+      "sourceStartLine": 2415,
+      "selectorHeader": "header[class*='header']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 46,
+      "sourceStartLine": 2425,
+      "selectorHeader": "a[class*='channel'] [class*='name'],\n[class*='channelInfo']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 47,
+      "sourceStartLine": 2797,
+      "selectorHeader": "[class*='guild'][class*='selected'],\n[class*='server'][class*='selected'],\n[class*='guild'][class*='active'],\n[class*='server'][class*='active']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 48,
+      "sourceStartLine": 2839,
+      "selectorHeader": "[class*='settingsButton'],\n[class*='button'][class*='settings'],\nbutton[aria-label*='Settings'],\nbutton[aria-label*='settings'],\n[class*='iconButton'][class*='settings'],\nbutton[class*='guildSettings'],\n[role='button'][class*='guildSettings'],\nbutton[class*='userSettings'],\n[role='button'][class*='userSettings'],\n[class*='accountButton'],\nbutton[aria-label*='User Settings'],\nbutton[aria-label*='Server Settings']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 49,
+      "sourceStartLine": 2856,
+      "selectorHeader": "[class*='settingsButton']:hover:not(:disabled):not([disabled]),\n[class*='button'][class*='settings']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='Settings']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='settings']:hover:not(:disabled):not([disabled]),\n[class*='iconButton'][class*='settings']:hover:not(:disabled):not([disabled]),\nbutton[class*='guildSettings']:hover:not(:disabled):not([disabled]),\n[role='button'][class*='guildSettings']:hover:not(:disabled):not([disabled]),\nbutton[class*='userSettings']:hover:not(:disabled):not([disabled]),\n[role='button'][class*='userSettings']:hover:not(:disabled):not([disabled]),\n[class*='accountButton']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='User Settings']:hover:not(:disabled):not([disabled]),\nbutton[aria-label*='Server Settings']:hover:not(:disabled):not([disabled])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 50,
+      "sourceStartLine": 2890,
+      "selectorHeader": "[class*='title'][class*='header'],\n[class*='header'] [class*='title'],\n[class*='header'] [class*='name']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 51,
+      "sourceStartLine": 2912,
+      "selectorHeader": "a:hover:not(:disabled):not([disabled]):not([aria-disabled='true']),\n[class*='link']:hover:not(:disabled):not([disabled]):not([aria-disabled='true'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 52,
+      "sourceStartLine": 2919,
+      "selectorHeader": "[class*='mentionBadge'],\n[class*='notification']:not([class*='channel']):not([class*='guild']):not([class*='server'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 53,
+      "sourceStartLine": 2928,
+      "selectorHeader": "[class*='activityCard'],\n[class*='activityPanel'],\n[class*='richPresence']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 54,
+      "sourceStartLine": 2969,
+      "selectorHeader": "div[class*='-itemCard'][class*='outer'][class*='interactive'],\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']::before,\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 55,
+      "sourceStartLine": 2988,
+      "selectorHeader": "div[class*='-itemCard'][class*='outer'][class*='interactive']:hover,\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']:hover::before,\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']:hover::after,\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']:focus,\ndiv[class*='-itemCard'][class*='outer'][class*='interactive']:focus-visible"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 56,
+      "sourceStartLine": 3002,
+      "selectorHeader": "div[class*='-itemCard'][class*='-wrapper'][class*='-outer']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 57,
+      "sourceStartLine": 3008,
+      "selectorHeader": "[class*='infoSection'],\n[class*='popoutHeroBody']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 58,
+      "sourceStartLine": 3024,
+      "selectorHeader": "[class*='infoSection']:hover,\n[class*='popoutHeroBody']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 59,
+      "sourceStartLine": 3031,
+      "selectorHeader": "[class*='contentTitle'],\n[class*='activityCard'] h3,\n[class*='infoSection'] h3,\n[class*='popout'] [class*='activityName']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 60,
+      "sourceStartLine": 3049,
+      "selectorHeader": "[class*='contentTitle']:hover,\n[class*='activityCard'] h3:hover,\n[class*='infoSection'] h3:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 61,
+      "sourceStartLine": 3057,
+      "selectorHeader": "[class*='contentImage'],\n[class*='imageContainer'] img,\n[class*='popoutThumbnailContainer'] img,\n[class*='activityCard'] img[alt*='icon'],\n[class*='activityCard'] img[alt*='App']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 62,
+      "sourceStartLine": 3073,
+      "selectorHeader": "[class*='contentImage']:hover,\n[class*='imageContainer'] img:hover,\n[class*='popoutThumbnailContainer'] img:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 63,
+      "sourceStartLine": 3082,
+      "selectorHeader": "[class*='activityCard'] [class*='bar'],\n[class*='activityCard'] [class*='time'],\n[class*='activityCard'] [class*='timestamp'],\n[class*='activityPanel'] [class*='bar'],\n[class*='activityPanel'] [class*='time'],\n[class*='activityPanel'] [class*='timestamp'],\n[class*='richPresence'] [class*='bar'],\n[class*='richPresence'] [class*='time'],\n[class*='richPresence'] [class*='timestamp']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 64,
+      "sourceStartLine": 3105,
+      "selectorHeader": "[class*='activityCard'] [class*='Container'],\n[class*='activityPanel'] [class*='Container'],\n[class*='richPresence'] [class*='Container']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 65,
+      "sourceStartLine": 3115,
+      "selectorHeader": "[class*='activityText'],\n[class*='activityDetails'],\n[class*='activityMetadata'],\n[class*='activityInfo'],\n[class*='activityName'],\n[class*='activityType'],\n[class*='activityStatus']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 66,
+      "sourceStartLine": 3126,
+      "selectorHeader": "[class*='activityCard'] time,\n[class*='activityCard'] [datetime],\n[class*='activityPanel'] time,\n[class*='richPresence'] time"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 67,
+      "sourceStartLine": 3136,
+      "selectorHeader": "[class*='activityCard'] [aria-label*='time'],\n[class*='activityCard'] [aria-label*='timestamp']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 68,
+      "sourceStartLine": 3142,
+      "selectorHeader": "[class*='activityCard'] [class*='timestamp'],\n[class*='activityCard'] [class*='timestamp'] *,\n[class*='activityCard'] [class*='time'],\n[class*='activityCard'] [class*='time'] *,\n[class*='activityCard'] [class*='bar'],\n[class*='activityCard'] [class*='bar'] *,\n[class*='activityPanel'] [class*='timestamp'],\n[class*='activityPanel'] [class*='timestamp'] *,\n[class*='activityPanel'] [class*='time'],\n[class*='activityPanel'] [class*='time'] *,\n[class*='richPresence'] [class*='timestamp'],\n[class*='richPresence'] [class*='timestamp'] *,\n[class*='richPresence'] [class*='time'],\n[class*='richPresence'] [class*='time'] *"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 69,
+      "sourceStartLine": 3169,
+      "selectorHeader": "[class*='activityCard'] [style*='background'],\n[class*='activityCard'] [style*='#8a2be2'],\n[class*='activityCard'] [style*='#ba55d3'],\n[class*='activityCard'] [style*='rgba(138, 43, 226'],\n[class*='activityCard'] [style*='rgba(139, 92, 246'],\n[class*='activityPanel'] [style*='background'],\n[class*='richPresence'] [style*='background']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 70,
+      "sourceStartLine": 3186,
+      "selectorHeader": "[class*='badgesContainer'],\n[class*='badgesContainerPopout'],\n[class*='badgesContainerCard'],\n[class*='badges'][class*='Container']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 71,
+      "sourceStartLine": 3201,
+      "selectorHeader": "[class*='badgesContainer'] *,\n[class*='badgesContainer'] time,\n[class*='badgesContainer'] span,\n[class*='badgesContainer'] div"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 72,
+      "sourceStartLine": 3225,
+      "selectorHeader": "[class*='badgesContainer'] img,\n[class*='badgesContainer'] svg,\n[class*='badgesContainer'] [class*='icon'],\n[class*='badges'] img,\n[class*='badges'] svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 73,
+      "sourceStartLine": 3256,
+      "selectorHeader": "[class*='badge'][style*='138, 43, 226'],\n[class*='badge'][style*='139, 92, 246'],\n[class*='Badge'][style*='138, 43, 226'],\ndiv[class*='badges'][style*='background'],\n[class*='userPopout'] [style*='rgb(138, 43, 226)'],\n[class*='userPopout'] [style*='rgba(138, 43, 226'],\n[class*='popout'] [style*='background-color: rgb(138, 43, 226)']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 74,
+      "sourceStartLine": 3270,
+      "selectorHeader": "[class*='status'][class*='online'],\n[class*='statusOnline'],\n[class*='status'][style*='online']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 75,
+      "sourceStartLine": 3295,
+      "selectorHeader": "[class*='status'][class*='idle'],\n[class*='statusIdle'],\n[class*='status'][style*='idle']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 76,
+      "sourceStartLine": 3303,
+      "selectorHeader": "[class*='status'][class*='dnd'],\n[class*='statusDnd'],\n[class*='status'][style*='dnd']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 77,
+      "sourceStartLine": 3311,
+      "selectorHeader": "[class*='status'][class*='streaming'],\n[class*='statusStreaming'],\n[class*='status'][style*='streaming']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 78,
+      "sourceStartLine": 3348,
+      "selectorHeader": "[class*='rowGuildName'],\n[class*='rowGuildName'] *,\n[class*='rowGuildName']::before,\n[class*='rowGuildName']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 79,
+      "sourceStartLine": 3526,
+      "selectorHeader": "div[class*='scroller']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 80,
+      "sourceStartLine": 3532,
+      "selectorHeader": "[class*='loading'],\n[class*='spinner'],\n[class*='loader'],\n[class*='loadingSpinner']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 81,
+      "sourceStartLine": 3548,
+      "selectorHeader": "[class*='loading']::before,\n[class*='spinner']::before,\n[class*='loader']::before,\n[class*='loadingSpinner']::before"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 82,
+      "sourceStartLine": 3559,
+      "selectorHeader": "[class*='loading']::after,\n[class*='spinner']::after,\n[class*='loader']::after,\n[class*='loadingSpinner']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 83,
+      "sourceStartLine": 3570,
+      "selectorHeader": "[class*='loadingOverlay'],\n[class*='loadingScreen'],\n[class*='splashScreen']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 84,
+      "sourceStartLine": 3583,
+      "selectorHeader": "[class*='loadingOverlay']::before,\n[class*='loadingScreen']::before,\n[class*='splashScreen']::before"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 85,
+      "sourceStartLine": 3626,
+      "selectorHeader": "[class*='modal'],\n[class*='modalRoot'],\n[class*='modalContent']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 86,
+      "sourceStartLine": 3643,
+      "selectorHeader": "[class*='modal'] [class*='header'],\n[class*='modal'] [class*='title']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 87,
+      "sourceStartLine": 3678,
+      "selectorHeader": "[class*='layer'][class*='baseLayer']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 88,
+      "sourceStartLine": 3683,
+      "selectorHeader": "[class*='contentColumn'],\n[class*='contentRegionScroller']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 89,
+      "sourceStartLine": 3712,
+      "selectorHeader": "div[role='list'][data-list-id='settings-sidebar']\n  [role='listitem'][data-list-item-id^='settings-sidebar___']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 90,
+      "sourceStartLine": 3722,
+      "selectorHeader": "div[role='list'][data-list-id='settings-sidebar']\n  [role='listitem'][data-list-item-id^='settings-sidebar___']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 91,
+      "sourceStartLine": 3729,
+      "selectorHeader": "div[role='list'][data-list-id='settings-sidebar']\n  [role='listitem'][data-list-item-id^='settings-sidebar___'][class*='active'],\ndiv[role='list'][data-list-id='settings-sidebar']\n  [role='listitem'][data-list-item-id^='settings-sidebar___'][aria-selected='true']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 92,
+      "sourceStartLine": 3827,
+      "selectorHeader": "button[aria-label='Close']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 93,
+      "sourceStartLine": 3838,
+      "selectorHeader": "button[aria-label='Close']:hover svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 94,
+      "sourceStartLine": 3845,
+      "selectorHeader": "button[aria-label='Close']:not(:hover) svg"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 95,
+      "sourceStartLine": 3919,
+      "selectorHeader": "[class*='contentRegion'] h1,\n[class*='contentRegion'] h2,\n[class*='contentRegion'] h3,\n[class*='standardSidebarView'] h1"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 96,
+      "sourceStartLine": 3929,
+      "selectorHeader": "[class*='contentRegion'],\n[class*='content'][class*='contentColumn']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 97,
+      "sourceStartLine": 4142,
+      "selectorHeader": "div[role='tablist'],\ndiv[role='tablist']::before,\ndiv[role='tablist']::after,\ndiv[role='tablist'][class*='tabBar__'],\ndiv[role='tablist'][class*='tabBar__']::before,\ndiv[role='tablist'][class*='tabBar__']::after,\ndiv[role='tablist'][class*='tabBar__'] > *:not([role='tab'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 98,
+      "sourceStartLine": 4165,
+      "selectorHeader": "div[role='tablist'][aria-label='Family Center'],\ndiv[role='tablist'][aria-label='Family Center']::before,\ndiv[role='tablist'][aria-label='Family Center']::after,\ndiv[role='tablist']:has([data-tab-id*='PRIVACY']),\ndiv[role='tablist']:has([data-tab-id*='SECURITY'])::before,\ndiv[role='tablist']:has([data-tab-id*='SECURITY'])::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 99,
+      "sourceStartLine": 4185,
+      "selectorHeader": "div[role='tablist'][aria-label='Family Center'] [role='tab'],\ndiv[role='tablist'][aria-label='Family Center'] [role='tab']::before,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab']::after,\ndiv[role='tab'][data-tab-id*='PRIVACY'],\ndiv[role='tab'][data-tab-id*='SECURITY'],\ndiv[role='tab'][data-tab-id*='CONTENT'],\ndiv[role='tab'][data-tab-id*='SOCIAL'],\ndiv[role='tab'][data-tab-id*='VOICE'],\ndiv[role='tab'][data-tab-id*='VIDEO'],\ndiv[role='tab'][data-tab-id*='PRIVACY']::before,\ndiv[role='tab'][data-tab-id*='SECURITY']::before,\ndiv[role='tab'][data-tab-id*='CONTENT']::before,\ndiv[role='tab'][data-tab-id*='SOCIAL']::before,\ndiv[role='tab'][data-tab-id*='VOICE']::before,\ndiv[role='tab'][data-tab-id*='VIDEO']::before,\ndiv[role='tab'][data-tab-id*='PRIVACY']::after,\ndiv[role='tab'][data-tab-id*='SECURITY']::after,\ndiv[role='tab'][data-tab-id*='CONTENT']::after,\ndiv[role='tab'][data-tab-id*='SOCIAL']::after,\ndiv[role='tab'][data-tab-id*='VOICE']::after,\ndiv[role='tab'][data-tab-id*='VIDEO']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 100,
+      "sourceStartLine": 4226,
+      "selectorHeader": "div[role='tablist'][aria-label='Family Center'] [role='tab']:hover,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab']:hover::before,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab']:hover::after,\ndiv[role='tab'][data-tab-id*='PRIVACY']:hover,\ndiv[role='tab'][data-tab-id*='SECURITY']:hover,\ndiv[role='tab'][data-tab-id*='CONTENT']:hover,\ndiv[role='tab'][data-tab-id*='SOCIAL']:hover,\ndiv[role='tab'][data-tab-id*='VOICE']:hover,\ndiv[role='tab'][data-tab-id*='VIDEO']:hover,\ndiv[role='tab'][data-tab-id*='PRIVACY']:hover::before,\ndiv[role='tab'][data-tab-id*='SECURITY']:hover::before,\ndiv[role='tab'][data-tab-id*='CONTENT']:hover::before,\ndiv[role='tab'][data-tab-id*='SOCIAL']:hover::before,\ndiv[role='tab'][data-tab-id*='VOICE']:hover::before,\ndiv[role='tab'][data-tab-id*='VIDEO']:hover::before,\ndiv[role='tab'][data-tab-id*='PRIVACY']:hover::after,\ndiv[role='tab'][data-tab-id*='SECURITY']:hover::after,\ndiv[role='tab'][data-tab-id*='CONTENT']:hover::after,\ndiv[role='tab'][data-tab-id*='SOCIAL']:hover::after,\ndiv[role='tab'][data-tab-id*='VOICE']:hover::after,\ndiv[role='tab'][data-tab-id*='VIDEO']:hover::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 101,
+      "sourceStartLine": 4254,
+      "selectorHeader": "div[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true'],\ndiv[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true']::before,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab'][aria-selected='true']::after,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected'],\ndiv[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected']::before,\ndiv[role='tablist'][aria-label='Family Center'] [role='tab'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='PRIVACY'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='SECURITY'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='CONTENT'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='SOCIAL'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='VOICE'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='VIDEO'][aria-selected='true'],\ndiv[role='tab'][data-tab-id*='PRIVACY'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='SECURITY'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='CONTENT'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='SOCIAL'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='VOICE'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='VIDEO'][aria-selected='true']::before,\ndiv[role='tab'][data-tab-id*='PRIVACY'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='SECURITY'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='CONTENT'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='SOCIAL'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='VOICE'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='VIDEO'][aria-selected='true']::after,\ndiv[role='tab'][data-tab-id*='PRIVACY'][class*='selected'],\ndiv[role='tab'][data-tab-id*='SECURITY'][class*='selected'],\ndiv[role='tab'][data-tab-id*='CONTENT'][class*='selected'],\ndiv[role='tab'][data-tab-id*='SOCIAL'][class*='selected'],\ndiv[role='tab'][data-tab-id*='VOICE'][class*='selected'],\ndiv[role='tab'][data-tab-id*='VIDEO'][class*='selected'],\ndiv[role='tab'][data-tab-id*='PRIVACY'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='SECURITY'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='CONTENT'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='SOCIAL'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='VOICE'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='VIDEO'][class*='selected']::before,\ndiv[role='tab'][data-tab-id*='PRIVACY'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='SECURITY'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='CONTENT'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='SOCIAL'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='VOICE'][class*='selected']::after,\ndiv[role='tab'][data-tab-id*='VIDEO'][class*='selected']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 102,
+      "sourceStartLine": 4671,
+      "selectorHeader": "#privacy_and_safety_standing-tab div[class*='-cardPrimary'],\n#privacy_and_safety_standing-tab div[class*='-cardPrimary']::before,\n#privacy_and_safety_standing-tab div[class*='-cardPrimary']::after,\n#privacy_and_safety_standing-tab div[class*='-card'],\n#privacy_and_safety_standing-tab div[class*='-card']::before,\n#privacy_and_safety_standing-tab div[class*='-card']::after,\n \n#privacy_and_safety_standing-tab div[class*='container'][class*='cardPrimary'],\n#privacy_and_safety_standing-tab div[class*='container'][class*='cardPrimary']::before,\n#privacy_and_safety_standing-tab div[class*='container'][class*='cardPrimary']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 103,
+      "sourceStartLine": 4694,
+      "selectorHeader": "[class*='-bar'] [class*='-trailing'] [role='button'][aria-label='Checkpoint'],\n[class*='-bar'] [class*='-trailing'] [role='button'][aria-label='Inbox'],\n[class*='-bar'] [class*='-trailing'] a[href^='https://support.discord.com']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 104,
+      "sourceStartLine": 4720,
+      "selectorHeader": "section[aria-label='User area'] > div[class*='-container'],\nsection[aria-label='User area']\n  > div[class*='-container']:has(div[class*='-avatarWrapper']):has(div[class*='-buttons'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 105,
+      "sourceStartLine": 4738,
+      "selectorHeader": "section[aria-label='User area'] > div[class*='-container']::before,\nsection[aria-label='User area']\n  > div[class*='-container']:has(div[class*='-avatarWrapper']):has(div[class*='-buttons'])::before"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 106,
+      "sourceStartLine": 4759,
+      "selectorHeader": "section[aria-label='User area'] > div[class*='-container']::after,\nsection[aria-label='User area']\n  > div[class*='-container']:has(div[class*='-avatarWrapper']):has(div[class*='-buttons'])::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 107,
+      "sourceStartLine": 4769,
+      "selectorHeader": "section[aria-label='User area'] > div[class*='-container'] > *,\nsection[aria-label='User area']\n  > div[class*='-container']:has(div[class*='-avatarWrapper']):has(div[class*='-buttons'])\n  > *"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 108,
+      "sourceStartLine": 4776,
+      "selectorHeader": "section[aria-label='User area'] div[class*='-fitInAccount'][aria-hidden='true'],\nsection[aria-label='User area'] div[class*='fitInAccount'][aria-hidden='true']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 109,
+      "sourceStartLine": 4788,
+      "selectorHeader": "section[aria-label='User area'] [aria-hidden='true'][style*='linear-gradient']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 110,
+      "sourceStartLine": 4796,
+      "selectorHeader": "section[aria-label='User area'] [class*='nameTag']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 111,
+      "sourceStartLine": 4802,
+      "selectorHeader": "section[aria-label='User area'] [class*='-nameTag'] [class*='-usernameContainer'],\nsection[aria-label='User area'] [class*='-nameTag'] [class*='-username']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 112,
+      "sourceStartLine": 4809,
+      "selectorHeader": "section[aria-label='User area']\n  div[class*='-nameTag']\n  span[class*='-innerContainer'][data-username-with-effects],\nsection[aria-label='User area']\n  div[class*='-nameTag']\n  span[class*='-innerContainer'][data-username-with-effects]\n  *"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 113,
+      "sourceStartLine": 4822,
+      "selectorHeader": "section[aria-label='User area']\n  div[class*='-nameTag']\n  span[class*='-innerContainer'][data-username-with-effects]"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 114,
+      "sourceStartLine": 4831,
+      "selectorHeader": "div[aria-label='Friends'] [class*='children__'],\ndiv[aria-label='Friends'] [class*='children__']::before,\ndiv[aria-label='Friends'] [class*='children__']::after,\ndiv[aria-label='Friends'] div[class*='tabBarContainer'],\ndiv[aria-label='Friends'] div[class*='tabBarContainer']::before,\ndiv[aria-label='Friends'] div[class*='tabBarContainer']::after,\ndiv[aria-label='Friends'] div[class*='tabBar__'],\ndiv[aria-label='Friends'] div[class*='tabBar__']::before,\ndiv[aria-label='Friends'] div[class*='tabBar__']::after,\ndiv[aria-label='Friends'] div[class*='tabBar__'] > *:not([role='tab'])"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 115,
+      "sourceStartLine": 4849,
+      "selectorHeader": "main[aria-label='Friends'] div[class*='-upperContainer'],\nmain[aria-label='Friends'] div[class*='-upperContainer']::before,\nmain[aria-label='Friends'] div[class*='-upperContainer']::after,\nmain[aria-label='Friends'] div[class*='-headerBar'],\nmain[aria-label='Friends'] div[class*='-headerBar']::before,\nmain[aria-label='Friends'] div[class*='-headerBar']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 116,
+      "sourceStartLine": 4870,
+      "selectorHeader": "section[role='navigation'][class*='_9293f6b2fc12398a-container']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 117,
+      "sourceStartLine": 4877,
+      "selectorHeader": "div#add_friend-tab > header,\ndiv#add_friend-tab header[class*='header']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 118,
+      "sourceStartLine": 4885,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_'],\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']::before,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 119,
+      "sourceStartLine": 4903,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 120,
+      "sourceStartLine": 4920,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:hover,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:active,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:focus,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']:focus-within"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 121,
+      "sourceStartLine": 4933,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_'] > div[role='tab'],\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']::before,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 122,
+      "sourceStartLine": 4948,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']:hover,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']:active,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']:focus,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab']:focus-within"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 123,
+      "sourceStartLine": 4964,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true'],\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true']::before,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 124,
+      "sourceStartLine": 4985,
+      "selectorHeader": "div[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true']:hover,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true']:hover::before,\ndiv[role='tablist'][aria-label='Friends'][class*='tabBar__'][class*='topPill_']\n  > div[role='tab'][aria-selected='true']:hover::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 125,
+      "sourceStartLine": 5002,
+      "selectorHeader": "div._133bf5eea8e33a34-tabBar.aa8da23faa27393c-topPill[role='tablist'][aria-label='Friends']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 126,
+      "sourceStartLine": 5017,
+      "selectorHeader": "div[aria-label='Friends'] div[class*='layer__'],\ndiv[aria-label='Friends'] div[class*='layer__']::before,\ndiv[aria-label='Friends'] div[class*='layer__']::after,\ndiv[aria-label='Friends'] div[class*='container__'],\ndiv[aria-label='Friends'] div[class*='container__']::before,\ndiv[aria-label='Friends'] div[class*='container__']::after,\ndiv[aria-label='Friends'] section[class*='container__'],\ndiv[aria-label='Friends'] section[class*='container__']::before,\ndiv[aria-label='Friends'] section[class*='container__']::after,\ndiv[aria-label='Friends'] div[class*='page__'],\ndiv[aria-label='Friends'] div[class*='page__']::before,\ndiv[aria-label='Friends'] div[class*='page__']::after,\ndiv[aria-label='Friends'] div[class*='content__'],\ndiv[aria-label='Friends'] div[class*='content__']::before,\ndiv[aria-label='Friends'] div[class*='content__']::after,\ndiv[aria-label='Friends'] div[class*='base__'],\ndiv[aria-label='Friends'] div[class*='base__']::before,\ndiv[aria-label='Friends'] div[class*='base__']::after"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 127,
+      "sourceStartLine": 5057,
+      "selectorHeader": "div[role='tablist'][class*='top'],\ndiv[role='tablist'][class*='Top']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 128,
+      "sourceStartLine": 5068,
+      "selectorHeader": "div[role='tablist'][class*='top'] [role='tab'],\ndiv[role='tablist'][class*='Top'] [role='tab']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 129,
+      "sourceStartLine": 5085,
+      "selectorHeader": "div[role='tablist'][class*='top'] [role='tab']:hover,\ndiv[role='tablist'][class*='Top'] [role='tab']:hover"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 130,
+      "sourceStartLine": 5093,
+      "selectorHeader": "div[role='tablist'][class*='top'] [role='tab'][aria-selected='true'],\ndiv[role='tablist'][class*='Top'] [role='tab'][aria-selected='true'],\ndiv[role='tablist'][class*='top'] [role='tab'][class*='selected'],\ndiv[role='tablist'][class*='Top'] [role='tab'][class*='selected']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 131,
+      "sourceStartLine": 5104,
+      "selectorHeader": "div[aria-label=\"Send a gift\"],\ndiv[role=\"button\"][aria-label=\"Send a gift\"],\nbutton[aria-label*='Send a gift'],\nbutton[aria-label*='Gift']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 132,
+      "sourceStartLine": 5116,
+      "selectorHeader": "div[aria-label=\"Apps\"],\ndiv[role=\"button\"][aria-label=\"Apps\"],\nbutton[aria-label*='Select an app'],\nbutton[aria-label*='Apps'],\nbutton[aria-label*='Open Apps']"
+    },
+    {
+      "area": "Misc / Needs Manual Tag",
+      "areaIndex": 133,
+      "sourceStartLine": 5164,
+      "selectorHeader": "@media (prefers-reduced-motion: reduce)"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+/**
+ * @name HSL Diagnostic
+ * @author Curio
+ * @version 1.0.2
+ * @description Isolated HorizontalServerList test (official imports + minimal vars only)
+ */
+
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+:root {
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+}
