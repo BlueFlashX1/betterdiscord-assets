@@ -4423,12 +4423,7 @@ module.exports = class CriticalHit {
         }
       }
 
-      // CRITICAL PERF: Defer ALL processing to requestIdleCallback to prevent freeze
-      // Previously, getMessageIdentifier (Fiber traversal) was running synchronously, causing freeze.
-      const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
 
-      scheduleCallback(() => {
-        if (this._isStopped) return;
 
         // Get message ID *inside* callback (heavy operation)
         // Get message ID to check against processedMessages (which now uses IDs, not element references)
