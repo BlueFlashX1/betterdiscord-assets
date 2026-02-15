@@ -202,22 +202,19 @@ module.exports = (() => {
               confirmText: 'Download Now',
               cancelText: 'Cancel',
               onConfirm: () => {
-                require('request').get(
-                  'https://rauenzi.github.io/BDPluginLibrary/release/0PluginLibrary.plugin.js',
-                  (error, response, body) => {
-                    if (error) {
-                      require('electron').shell.openExternal(
-                        'https://betterdiscord.app/Download?id=9'
-                      );
-                      return;
-                    }
-                    require('fs').writeFile(
-                      require('path').join(BdApi.Plugins.folder, '0PluginLibrary.plugin.js'),
-                      body,
-                      () => {}
-                    );
-                  }
-                );
+                BdApi.Net.fetch(
+                  'https://rauenzi.github.io/BDPluginLibrary/release/0PluginLibrary.plugin.js'
+                ).then(res => res.text()).then(body => {
+                  require('fs').writeFile(
+                    require('path').join(BdApi.Plugins.folder, '0PluginLibrary.plugin.js'),
+                    body,
+                    () => {}
+                  );
+                }).catch(() => {
+                  require('electron').shell.openExternal(
+                    'https://betterdiscord.app/Download?id=9'
+                  );
+                });
               },
             }
           );
