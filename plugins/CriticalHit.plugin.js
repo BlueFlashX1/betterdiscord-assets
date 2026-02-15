@@ -110,7 +110,7 @@ module.exports = class CriticalHit {
     // ============================================================================
     this.defaultSettings = {
       enabled: true,
-      critChance: 10, // Base crit chance (can be buffed by Agility/Luck/Skill Tree up to 30% max)
+      critChance: 10, // Base crit chance (can be buffed by Agility/Skill Tree up to 50% effective max)
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
       critFont: "'Friend or Foe BB', 'Orbitron', sans-serif", // Font for message gradient text (Solo Leveling theme - Friend or Foe BB)
@@ -1959,11 +1959,86 @@ module.exports = class CriticalHit {
    * Sets text content for animation element
    * @param {HTMLElement} element - Animation element
    * @param {number} combo - Combo count
+   * @param {number} displayCombo - Combo number currently displayed
    */
-  _setAnimationText(element, combo) {
+  _setAnimationText(element, combo, displayCombo = combo) {
     const showCombo = this.settings?.showCombo !== false;
-    const comboText = showCombo && combo > 1 ? this.formatComboText(combo) : '';
+    const safeDisplayCombo = Math.max(1, Math.floor(Number(displayCombo) || 1));
+    const comboText = showCombo && safeDisplayCombo > 1 ? this.formatComboText(safeDisplayCombo) : '';
     element.textContent = `CRITICAL HIT!${comboText}`;
+  }
+
+  /**
+   * Gets the combo count-up animation duration in milliseconds
+   * @param {number} targetCombo - Target combo number
+   * @returns {number} Duration in ms
+   */
+  _getComboCountUpDuration(targetCombo) {
+    const safeTarget = Math.max(1, Math.floor(Number(targetCombo) || 1));
+    return Math.min(380, 120 + (Math.min(40, safeTarget) - 1) * 9);
+  }
+
+  /**
+   * Cancels in-flight combo count-up animation for an element
+   * @param {HTMLElement} element - Animation element
+   */
+  _cancelComboCountUp(element) {
+    if (!element?._chaComboCountRaf) return;
+    cancelAnimationFrame(element._chaComboCountRaf);
+    element._chaComboCountRaf = null;
+  }
+
+  /**
+   * Animates combo text quickly from X1 to target XN
+   * @param {HTMLElement} element - Animation element
+   * @param {number} targetCombo - Final combo number
+   */
+  _animateComboCountUp(element, targetCombo) {
+    const showCombo = this.settings?.showCombo !== false;
+    const safeTarget = Math.max(1, Math.floor(Number(targetCombo) || 1));
+
+    if (!element?.isConnected || !showCombo || safeTarget <= 1) {
+      this._setAnimationText(element, safeTarget, safeTarget);
+      return;
+    }
+
+    if (typeof requestAnimationFrame !== 'function') {
+      this._setAnimationText(element, safeTarget, safeTarget);
+      return;
+    }
+
+    this._cancelComboCountUp(element);
+    this._setAnimationText(element, safeTarget, 1);
+
+    const start = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    const duration = this._getComboCountUpDuration(safeTarget);
+
+    const tick = (now) => {
+      if (!element?.isConnected) {
+        this._cancelComboCountUp(element);
+        return;
+      }
+
+      const elapsed = Math.max(0, now - start);
+      const progress = Math.min(1, elapsed / duration);
+      const eased = 1 - Math.pow(1 - progress, 3); // ease-out cubic
+      const displayCombo = Math.min(
+        safeTarget,
+        Math.max(1, Math.round(1 + (safeTarget - 1) * eased))
+      );
+
+      this._setAnimationText(element, safeTarget, displayCombo);
+
+      if (progress >= 1) {
+        element._chaComboCountRaf = null;
+        this._setAnimationText(element, safeTarget, safeTarget);
+        return;
+      }
+
+      element._chaComboCountRaf = requestAnimationFrame(tick);
+    };
+
+    element._chaComboCountRaf = requestAnimationFrame(tick);
   }
 
   /**
@@ -2006,7 +2081,9 @@ module.exports = class CriticalHit {
    */
   createAnimationElement(messageId, combo, position) {
     const textElement = this._createBaseAnimationElement(messageId);
-    this._setAnimationText(textElement, combo);
+    const showCombo = this.settings?.showCombo !== false;
+    const shouldCountUp = showCombo && combo > 1;
+    this._setAnimationText(textElement, combo, shouldCountUp ? 1 : combo);
     this._applyComboFontSize(textElement, combo);
     this._applyAnimationPosition(textElement, position);
 
@@ -5510,15 +5587,20 @@ module.exports = class CriticalHit {
       {
         const animTarget = messageElement;
         const animId = messageId;
+        const burstProfile = this._loadPerceptionBurstProfile();
+        const burstHits = this.calculateBurstHitCount(animId, messageElement);
         const animCombo = (() => {
           const uid = this.getUserId(messageElement) || authorId || 'unknown';
-          const uc = this.getUserCombo(uid);
           const now = Date.now();
-          const elapsed = now - uc.lastCritTime;
-          const c = elapsed <= 15000 ? uc.comboCount + 1 : 1;
-          this.updateUserCombo(uid, c, now);
+          this.updateUserCombo(uid, burstHits, now);
+          this.persistLastCritBurst({
+            messageId: animId,
+            userId: uid,
+            burstHits,
+            profile: burstProfile,
+          });
           this._comboUpdatedMessages.add(animId);
-          return c;
+          return burstHits;
         })();
 
         requestAnimationFrame(() => {
@@ -5958,12 +6040,16 @@ module.exports = class CriticalHit {
             const animUserId = this.getUserId(messageElement) || this.getAuthorId(messageElement);
             // debug stripped
             if (animUserId && this.isOwnMessage(messageElement, animUserId)) {
-              // Update combo
-              const userCombo = this.getUserCombo(animUserId);
               const comboNow = Date.now();
-              const timeSinceLastCrit = comboNow - userCombo.lastCritTime;
-              const newCombo = timeSinceLastCrit <= 15000 ? userCombo.comboCount + 1 : 1;
+              const burstProfile = this._loadPerceptionBurstProfile();
+              const newCombo = this.calculateBurstHitCount(messageId, messageElement);
               this.updateUserCombo(animUserId, newCombo, comboNow);
+              this.persistLastCritBurst({
+                messageId,
+                userId: animUserId,
+                burstHits: newCombo,
+                profile: burstProfile,
+              });
 
               // Mark as combo-updated to prevent double increment
               this._comboUpdatedMessages.add(messageId);
@@ -8429,14 +8515,13 @@ module.exports = class CriticalHit {
 
                               // Get individual bonuses for display
                               let agilityBonus = 0;
-                              let luckBonus = 0;
+                              let skillBonus = 0;
                               try {
                                 agilityBonus =
                                   (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ??
                                     0) * 100;
-                                luckBonus =
-                                  (BdApi.Data.load('SoloLevelingStats', 'luckBonus')?.bonus ?? 0) *
-                                  100;
+                                skillBonus =
+                                  (BdApi.Data.load('SkillTree', 'bonuses')?.critBonus ?? 0) * 100;
                               } catch (e) {
                                 // Silently ignore - bonuses are optional
                               }
@@ -8445,18 +8530,40 @@ module.exports = class CriticalHit {
                                 const bonuses = [];
                                 if (agilityBonus > 0)
                                   bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
-                                if (luckBonus > 0) bonuses.push(`+${luckBonus.toFixed(1)}% LUK`);
+                                if (skillBonus > 0) bonuses.push(`+${skillBonus.toFixed(1)}% Skill`);
                                 return `<span class="crit-agility-bonus" style="color: #8a2be2; font-size: 0.9em; margin-left: 8px;">${bonuses.join(
                                   ' + '
                                 )} = ${effectiveCrit.toFixed(1)}%</span>`;
                               }
                               return `<span class="crit-agility-bonus" style="color: #666; font-size: 0.9em; margin-left: 8px;">(Effective: ${effectiveCrit.toFixed(
                                 1
-                              )}%, max 30%)</span>`;
+                              )}%, max 50%)</span>`;
                             })()}
                         </label>
                         <div class="crit-form-description" style="margin-top: 8px;">
-                            Base crit chance is 10% by default. Increase Agility/Luck stats to boost crit chance (capped at 30% to prevent spam).
+                            Base crit chance is 10% by default. AGI increases crit chance (effective max 50%). PER controls multi-hit crit burst size (xN), not chance.
+                            ${(() => {
+                              try {
+                                const perData = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
+                                const perception = Math.max(
+                                  0,
+                                  Number(perData.effectivePerception ?? perData.perception ?? 0) || 0
+                                );
+                                const chainChance = Math.min(
+                                  82,
+                                  Math.round((0.08 + perception * 0.007) * 100)
+                                );
+                                const maxHits = Math.min(
+                                  99,
+                                  Math.max(1, Number(perData.maxHits) || (1 + Math.floor(perception * 1.2)))
+                                );
+                                return `<div style="margin-top: 6px; color: #8a2be2; font-size: 0.9em;">PER ${perception.toFixed(
+                                  0
+                                )}: ${chainChance}% chain chance, max x${maxHits}</div>`;
+                              } catch (_e) {
+                                return '';
+                              }
+                            })()}
                         </div>
                     </div>
 
@@ -9300,28 +9407,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Loads luck bonus from SoloLevelingStats
-   * @returns {number} Luck bonus percentage
-   */
-  _loadLuckBonus() {
-    try {
-      const luckData = BdApi.Data.load('SoloLevelingStats', 'luckBonus');
-      const luckBonusPercent = (luckData?.bonus ?? 0) * this.BONUS_TO_PERCENT;
-      if (luckBonusPercent > 0) {
-        this.debugLog('GET_EFFECTIVE_CRIT', 'Luck buffs applied to crit chance', {
-          luckBonusPercent: luckBonusPercent.toFixed(1),
-          luckBuffs: luckData?.luckBuffs ?? [],
-          luckStat: luckData?.luck ?? 0,
-        });
-      }
-      return luckBonusPercent;
-    } catch (error) {
-      this.debugLog('GET_EFFECTIVE_CRIT', 'Could not load luck bonus', { error: error.message });
-      return 0;
-    }
-  }
-
-  /**
    * Loads skill tree bonus from SkillTree plugin
    * @returns {number} Skill tree crit bonus percentage
    */
@@ -9345,12 +9430,12 @@ module.exports = class CriticalHit {
 
   /**
    * Gets individual bonuses for display
-   * @returns {Object} Object with agility and luck bonuses
+   * @returns {Object} Object with agility and skill bonuses
    */
   _getIndividualBonuses() {
     return {
       agility: this._loadAgilityBonus(),
-      luck: this._loadLuckBonus(),
+      skill: this._loadSkillTreeBonus(),
     };
   }
 
@@ -9368,13 +9453,13 @@ module.exports = class CriticalHit {
     const bonuses = this._getIndividualBonuses();
     const bonusParts = [];
     if (bonuses.agility > 0) bonusParts.push(`+${bonuses.agility.toFixed(1)}% AGI`);
-    if (bonuses.luck > 0) bonusParts.push(`+${bonuses.luck.toFixed(1)}% LUK`);
+    if (bonuses.skill > 0) bonusParts.push(`+${bonuses.skill.toFixed(1)}% Skill`);
     return `Crit: ${this.settings.critChance}% base (${bonusParts.join(
       ' + '
     )}) = ${effectiveCrit.toFixed(1)}%`;
   }
 
-  // Get effective crit chance (base + agility bonus + luck buffs, capped at 30%)
+  // Get effective crit chance (base + AGI + skill tree, capped at 50%)
   // Simple hash function for deterministic random number generation
   simpleHash(str) {
     const hash = Array.from(str).reduce((hash, char) => {
@@ -9385,10 +9470,97 @@ module.exports = class CriticalHit {
     return Math.abs(hash);
   }
 
+  _seededUnitRoll(seed, step = '0') {
+    const hash = this.simpleHash(`${seed}:${step}`);
+    return (hash % 10000) / 10000;
+  }
+
+  _loadPerceptionBurstProfile() {
+    try {
+      const saved = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
+      const perception = Math.max(0, Number(saved.effectivePerception ?? saved.perception ?? 0) || 0);
+      const extraHitChance = Math.min(0.82, 0.08 + perception * 0.007); // 8% base + 0.7%/PER
+      const maxHits = Math.min(99, Math.max(1, Number(saved.maxHits) || (1 + Math.floor(perception * 1.2))));
+      const jackpotChance =
+        Number.isFinite(saved.jackpotChance)
+          ? Math.max(0, Math.min(0.06, Number(saved.jackpotChance)))
+          : perception >= 25
+          ? Math.min(0.06, (perception - 24) * 0.0012)
+          : 0;
+
+      return {
+        perception,
+        extraHitChance,
+        maxHits,
+        jackpotChance,
+      };
+    } catch (error) {
+      this.debugLog('BURST_PROFILE', 'Could not load perception burst profile', {
+        error: error.message,
+      });
+      return {
+        perception: 0,
+        extraHitChance: 0.08,
+        maxHits: 1,
+        jackpotChance: 0,
+      };
+    }
+  }
+
+  calculateBurstHitCount(messageId, messageElement) {
+    const profile = this._loadPerceptionBurstProfile();
+    if (profile.maxHits <= 1) return 1;
+
+    const authorId = this.getAuthorId(messageElement) || 'unknown';
+    const channelId = this.currentChannelId || this._getCurrentChannelId() || 'unknown';
+    const seed = `${messageId || 'noid'}:${channelId}:${authorId}:burst`;
+
+    let hits = 1;
+    let step = 1;
+    while (hits < profile.maxHits) {
+      const decay = Math.pow(0.88, hits - 1);
+      const chance = profile.extraHitChance * decay;
+      const roll = this._seededUnitRoll(seed, `chain-${step}`);
+      if (roll <= chance) {
+        hits += 1;
+        step += 1;
+        continue;
+      }
+      break;
+    }
+
+    // Rare jackpot chain for high PER builds (10x-99x)
+    if (profile.jackpotChance > 0) {
+      const jackpotRoll = this._seededUnitRoll(seed, 'jackpot-roll');
+      if (jackpotRoll <= profile.jackpotChance) {
+        const jackpotSize = 10 + Math.floor(this._seededUnitRoll(seed, 'jackpot-size') * 90);
+        hits = Math.max(hits, Math.min(99, jackpotSize));
+      }
+    }
+
+    return Math.max(1, Math.min(99, hits));
+  }
+
+  persistLastCritBurst({ messageId, userId, burstHits, profile }) {
+    try {
+      BdApi.Data.save('CriticalHit', 'lastCritBurst', {
+        messageId: messageId || null,
+        userId: userId || null,
+        burstHits: Math.max(1, Math.min(99, Number(burstHits) || 1)),
+        perception: profile?.perception ?? 0,
+        extraHitChance: profile?.extraHitChance ?? 0,
+        maxHits: profile?.maxHits ?? 1,
+        jackpotChance: profile?.jackpotChance ?? 0,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      this.debugError('PERSIST_CRIT_BURST', error);
+    }
+  }
+
   getEffectiveCritChance() {
     let baseChance = this.settings.critChance || this.DEFAULT_CRIT_CHANCE;
     baseChance += this._loadAgilityBonus();
-    baseChance += this._loadLuckBonus();
     baseChance += this._loadSkillTreeBonus();
     return Math.min(this.MAX_EFFECTIVE_CRIT_CHANCE, Math.max(0, baseChance));
   }
@@ -9747,7 +9919,6 @@ module.exports = class CriticalHit {
     // This prevents the same verified message from incrementing combo multiple times
     // Content hash check prevents duplicate increments when Discord replaces elements (message ID changes)
     // BUT: We still allow animation even if combo was already updated
-    let combo = null; // Will be set if combo needs updating
     let storedCombo = null; // Will be set for showAnimation
 
     // Check both message ID and content hash for deduplication
@@ -9772,24 +9943,20 @@ module.exports = class CriticalHit {
         this._comboUpdatedContentHashes.clear();
       }
 
-      // Synchronous combo update (atomic in single-threaded JavaScript)
-      const userCombo = this.getUserCombo(userIdForCombo);
+      // PER-driven burst size (xN) for this crit event
+      const burstProfile = this._loadPerceptionBurstProfile();
+      const burstHits = this.calculateBurstHitCount(messageId, messageElement);
       const comboNow = Date.now();
-      const timeSinceLastCrit = comboNow - userCombo.lastCritTime;
 
-      combo = 1;
-      if (timeSinceLastCrit <= 15000) {
-        // Check message history (15 second timeout)
-        combo = userCombo.comboCount + 1;
-      } else {
-        // Combo expired (>15s), reset to 1
-        combo = 1;
-      }
-
-      // Update combo immediately (before async animation and before cooldown check)
-      // This is synchronous, so it's atomic - no race conditions possible
-      this.updateUserCombo(userIdForCombo, combo, comboNow);
-      storedCombo = combo; // Use updated combo for animation display
+      // Update combo immediately (before async animation/cooldown checks)
+      this.updateUserCombo(userIdForCombo, burstHits, comboNow);
+      this.persistLastCritBurst({
+        messageId,
+        userId: userIdForCombo,
+        burstHits,
+        profile: burstProfile,
+      });
+      storedCombo = burstHits; // Display as XN for this single crit
     }
 
     // Cooldown check (AFTER combo update so combo always increments)
@@ -10221,6 +10388,7 @@ module.exports = class CriticalHit {
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
+    combo > 1 && this._animateComboCountUp(textElement, combo);
     // debug stripped
 
     // Apply screen shake if enabled - delay to sync with animation becoming visible
@@ -10254,11 +10422,14 @@ module.exports = class CriticalHit {
 
     existingElements.forEach((existingEl) => {
       if (!existingEl.parentNode) {
+        this._cancelComboCountUp(existingEl);
         this.activeAnimations.delete(existingEl);
         return;
       }
 
       try {
+        this._cancelComboCountUp(existingEl);
+
         // Clear cleanup timeout if exists
         if (existingEl._chaCleanupTimeout) {
           clearTimeout(existingEl._chaCleanupTimeout);
@@ -10275,6 +10446,7 @@ module.exports = class CriticalHit {
         // Remove element after fade completes - only remove, don't clear other styles
         this._setTrackedTimeout(() => {
           try {
+            this._cancelComboCountUp(existingEl);
             existingEl.parentNode && existingEl.remove();
             this.activeAnimations.delete(existingEl);
           } catch (e) {
@@ -10284,6 +10456,7 @@ module.exports = class CriticalHit {
       } catch (e) {
         // If fade fails, just remove immediately
         try {
+          this._cancelComboCountUp(existingEl);
           existingEl.parentNode && existingEl.remove();
           this.activeAnimations.delete(existingEl);
         } catch (error2) {
@@ -10308,6 +10481,7 @@ module.exports = class CriticalHit {
     const cleanupTimeout = this._setTrackedTimeout(() => {
       try {
         if (!textElement.parentNode) {
+          this._cancelComboCountUp(textElement);
           this.activeAnimations.delete(textElement);
           return;
         }
@@ -10318,6 +10492,7 @@ module.exports = class CriticalHit {
           allElements.length > 1 &&
             allElements.forEach((el) => {
               try {
+                this._cancelComboCountUp(el);
                 if (el.parentNode) {
                   el.remove();
                 }
@@ -10331,9 +10506,11 @@ module.exports = class CriticalHit {
 
         // Only remove element - don't clear animation styles
         // Animation has completed, CSS fade-out is done, just remove from DOM
+        this._cancelComboCountUp(textElement);
         textElement.parentNode && textElement.remove();
         this.activeAnimations.delete(textElement);
       } catch (e) {
+        this._cancelComboCountUp(textElement);
         this.activeAnimations.delete(textElement);
       }
     }, cleanupDelay);
@@ -10851,6 +11028,7 @@ module.exports = class CriticalHit {
       this.clearSessionTracking();
       this.pendingCrits && this.pendingCrits.clear();
       this.animatedMessages && this.animatedMessages.clear();
+      this.activeAnimations?.forEach((el) => this._cancelComboCountUp(el));
       this.activeAnimations && this.activeAnimations.clear();
 
       this.detachCriticalHitSettingsPanelHandlers();

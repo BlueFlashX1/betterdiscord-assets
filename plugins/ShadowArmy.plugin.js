@@ -215,7 +215,7 @@ class ShadowStorageManager {
     // Database configuration
     this.userId = userId || 'default';
     this.dbName = `ShadowArmyDB_${this.userId}`;
-    this.dbVersion = 2; // Upgraded for natural growth system
+    this.dbVersion = 3; // v3 adds personalityKey normalization index
     this.storeName = 'shadows';
     this.db = null;
 
@@ -245,6 +245,15 @@ class ShadowStorageManager {
     } catch (error) {
       this.debugError('STORAGE', 'Failed to load migration flag from BdApi.Data', error);
       this.migrationCompleted = false;
+    }
+
+    this.personalityMigrationFlagKey = `personalityKeyMigrationCompleted_${this.userId}`;
+    try {
+      this.personalityKeyMigrationCompleted =
+        BdApi.Data.load('ShadowArmy', this.personalityMigrationFlagKey) === true;
+    } catch (error) {
+      this.debugError('STORAGE', 'Failed to load personality migration flag', error);
+      this.personalityKeyMigrationCompleted = false;
     }
 
     // Note: Natural growth tracking is stored per-shadow (lastNaturalGrowth) in records
@@ -317,6 +326,93 @@ class ShadowStorageManager {
     if (!shadow) return null;
     // Prefer full id if available, otherwise use i (compressed)
     return shadow.id || shadow.i || null;
+  }
+
+  normalizePersonalityValue(value) {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  }
+
+  derivePersonalityKeyFromRole(role) {
+    const normalizedRole = this.normalizePersonalityValue(role);
+    if (!normalizedRole) return '';
+
+    const roleToPersonality = {
+      tank: 'tank',
+      healer: 'supportive',
+      support: 'supportive',
+      mage: 'strategic',
+      ranger: 'tactical',
+      assassin: 'aggressive',
+      berserker: 'aggressive',
+      knight: 'balanced',
+      ant: 'aggressive',
+      bear: 'aggressive',
+      wolf: 'tactical',
+      spider: 'strategic',
+      centipede: 'strategic',
+      golem: 'tank',
+      serpent: 'strategic',
+      naga: 'strategic',
+      wyvern: 'tactical',
+      dragon: 'aggressive',
+      titan: 'aggressive',
+      giant: 'aggressive',
+      elf: 'strategic',
+      demon: 'aggressive',
+      ghoul: 'aggressive',
+      orc: 'aggressive',
+      ogre: 'aggressive',
+      yeti: 'tank',
+    };
+
+    return roleToPersonality[normalizedRole] || 'balanced';
+  }
+
+  getNormalizedPersonalityKey(shadow) {
+    if (!shadow || typeof shadow !== 'object') return '';
+
+    const explicitKey = this.normalizePersonalityValue(shadow.personalityKey || shadow.pk);
+    if (explicitKey) return explicitKey;
+
+    const explicitPersonality = this.normalizePersonalityValue(shadow.personality);
+    if (explicitPersonality) return explicitPersonality;
+
+    const role = shadow.role || shadow.ro || '';
+    return this.derivePersonalityKeyFromRole(role);
+  }
+
+  ensurePersonalityKey(shadow) {
+    if (!shadow || typeof shadow !== 'object') return { shadow, changed: false };
+
+    const normalizedKey = this.getNormalizedPersonalityKey(shadow);
+    const currentKey = this.normalizePersonalityValue(shadow.personalityKey);
+    const currentPersonality = this.normalizePersonalityValue(shadow.personality);
+    let changed = false;
+
+    // Ensure field exists on all records so index queries remain predictable.
+    if (currentKey !== normalizedKey) {
+      shadow.personalityKey = normalizedKey;
+      changed = true;
+    } else if (!Object.prototype.hasOwnProperty.call(shadow, 'personalityKey')) {
+      shadow.personalityKey = normalizedKey;
+      changed = true;
+    }
+
+    if (!currentPersonality && normalizedKey) {
+      shadow.personality = normalizedKey;
+      changed = true;
+    } else if (currentPersonality && shadow.personality !== currentPersonality) {
+      shadow.personality = currentPersonality;
+      changed = true;
+    }
+
+    if ((shadow._c === 1 || shadow._c === 2) && this.normalizePersonalityValue(shadow.pk) !== normalizedKey) {
+      shadow.pk = normalizedKey;
+      changed = true;
+    }
+
+    return { shadow, changed };
   }
 
   // ============================================================================
@@ -641,6 +737,8 @@ class ShadowStorageManager {
           objectStore.createIndex('strength', 'strength', { unique: false });
           objectStore.createIndex('extractedAt', 'extractedAt', { unique: false });
           objectStore.createIndex('rank_role', ['rank', 'role'], { unique: false });
+          objectStore.createIndex('personality', 'personality', { unique: false });
+          objectStore.createIndex('personalityKey', 'personalityKey', { unique: false });
 
           this.debugLog('INIT', 'Created object store and indexes', { storeName: this.storeName });
         }
@@ -664,6 +762,17 @@ class ShadowStorageManager {
           }
 
           this.debugLog('INIT', 'Added v2 indexes for natural growth', { oldVersion });
+        }
+
+        if (oldVersion < 3) {
+          const transaction = event.target.transaction;
+          const objectStore = transaction.objectStore(this.storeName);
+          if (!objectStore.indexNames.contains('personalityKey')) {
+            objectStore.createIndex('personalityKey', 'personalityKey', { unique: false });
+          }
+          this.debugLog('INIT', 'Added v3 index for personality key normalization', {
+            oldVersion,
+          });
         }
       };
     });
@@ -754,6 +863,118 @@ class ShadowStorageManager {
     }
   }
 
+  /**
+   * Backfill personalityKey for all existing IndexedDB shadow records in batches.
+   * This makes personality queries index-friendly and avoids full scans.
+   *
+   * @param {Object} options
+   * @param {number} options.batchSize - Max records per transaction batch
+   * @returns {Promise<{scanned:number,updated:number,errors:number,batches:number}>}
+   */
+  async migratePersonalityKeys({ batchSize = 1000 } = {}) {
+    if (!this.db) await this.init();
+
+    const safeBatchSize = Math.max(100, Math.floor(batchSize) || 1000);
+    let scanned = 0;
+    let updated = 0;
+    let errors = 0;
+    let batches = 0;
+    let lastKey = null;
+
+    while (true) {
+      const batchResult = await new Promise((resolve, reject) => {
+        const tx = this.db.transaction([this.storeName], 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        const range = lastKey == null ? null : IDBKeyRange.lowerBound(lastKey, true);
+
+        let localScanned = 0;
+        let localUpdated = 0;
+        let localErrors = 0;
+        let nextKey = null;
+
+        const request = range ? store.openCursor(range) : store.openCursor();
+        request.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (!cursor) return;
+
+          if (localScanned >= safeBatchSize) {
+            // Defer this row to the next batch to keep transactions short.
+            nextKey = cursor.key;
+            return;
+          }
+
+          localScanned++;
+          const shadow = cursor.value;
+          const { shadow: normalizedShadow, changed } = this.ensurePersonalityKey(shadow);
+          if (!changed) {
+            cursor.continue();
+            return;
+          }
+
+          const updateRequest = cursor.update(normalizedShadow);
+          updateRequest.onsuccess = () => {
+            localUpdated++;
+          };
+          updateRequest.onerror = () => {
+            localErrors++;
+          };
+          cursor.continue();
+        };
+        request.onerror = () => reject(request.error);
+
+        tx.oncomplete = () => {
+          resolve({
+            scanned: localScanned,
+            updated: localUpdated,
+            errors: localErrors,
+            nextKey,
+          });
+        };
+        tx.onerror = () => reject(tx.error);
+      });
+
+      if (batchResult.scanned === 0) {
+        break;
+      }
+
+      scanned += batchResult.scanned;
+      updated += batchResult.updated;
+      errors += batchResult.errors;
+      batches++;
+
+      if (batchResult.nextKey == null) {
+        break;
+      }
+      lastKey = batchResult.nextKey;
+
+      // Yield to UI/event loop between large batches.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+
+    return { scanned, updated, errors, batches };
+  }
+
+  async ensurePersonalityKeyMigration(force = false) {
+    if (!force && this.personalityKeyMigrationCompleted) {
+      return { migrated: false, reason: 'Already migrated', scanned: 0, updated: 0, errors: 0 };
+    }
+
+    const result = await this.migratePersonalityKeys({ batchSize: 1000 });
+    if (result.errors === 0) {
+      this.personalityKeyMigrationCompleted = true;
+      try {
+        BdApi.Data.save('ShadowArmy', this.personalityMigrationFlagKey, true);
+      } catch (error) {
+        this.debugError('MIGRATION', 'Failed to persist personality key migration flag', error);
+      }
+    }
+
+    return {
+      migrated: true,
+      ...result,
+    };
+  }
+
   // ============================================================================
   // STORAGE 3.3 SHADOW OPERATIONS
   // ============================================================================
@@ -775,11 +996,13 @@ class ShadowStorageManager {
       throw new Error('Invalid shadow object: missing id or i');
     }
 
+    const { shadow: normalizedShadow } = this.ensurePersonalityKey(shadow);
+
     return this._withStore('readwrite', (store, _tx, resolve, reject) => {
-      const request = store.put(shadow);
+      const request = store.put(normalizedShadow);
       request.onsuccess = () => {
-        this.updateCache(shadow);
-        resolve({ success: true, shadow });
+        this.updateCache(normalizedShadow);
+        resolve({ success: true, shadow: normalizedShadow });
       };
       request.onerror = () => reject(request.error);
     });
@@ -847,7 +1070,8 @@ class ShadowStorageManager {
           this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index });
           return;
         }
-        const request = store.put(shadow);
+        const { shadow: normalizedShadow } = this.ensurePersonalityKey(shadow);
+        const request = store.put(normalizedShadow);
         request.onsuccess = () => {
           completed++;
         };
@@ -1048,27 +1272,57 @@ class ShadowStorageManager {
    * @returns {Promise<Array>} - Array of shadows with matching personality
    */
   async getShadowsByPersonality(personality) {
-    if (!personality) return [];
+    const normalizedPersonality = this.normalizePersonalityValue(personality);
+    if (!normalizedPersonality) return [];
 
-    return this._withStore('readonly', (store, _tx, resolve, reject) => {
-      if (!store.indexNames.contains('personality')) {
-        // Index doesn't exist — fallback to manual filter
-        this.getAllShadows()
-          .then((all) =>
-            resolve(
-              all.filter((s) => {
-                if (s.personality) return s.personality === personality;
-                const p = this.getShadowPersonality(s);
-                return p.name?.toLowerCase() === personality;
-              })
-            )
-          )
-          .catch(reject);
+    return this._withStore('readonly', (store, _tx, resolve) => {
+      const resolveByCursorFallback = () => {
+        const results = [];
+        const cursorRequest = store.openCursor();
+        cursorRequest.onsuccess = (event) => {
+          const cursor = event.target.result;
+          if (cursor) {
+            if (this.getNormalizedPersonalityKey(cursor.value) === normalizedPersonality) {
+              results.push(cursor.value);
+            }
+            cursor.continue();
+            return;
+          }
+          resolve(results);
+        };
+        cursorRequest.onerror = () => resolve([]);
+      };
+
+      // Fast path: normalized index lookup.
+      if (store.indexNames.contains('personalityKey')) {
+        const request = store.index('personalityKey').getAll(normalizedPersonality);
+        request.onsuccess = () => {
+          const result = request.result || [];
+          // During first startup migration, old rows may still be missing personalityKey.
+          if (result.length > 0 || this.personalityKeyMigrationCompleted) {
+            resolve(result);
+            return;
+          }
+          resolveByCursorFallback();
+        };
+        request.onerror = () => resolveByCursorFallback();
         return;
       }
-      const request = store.index('personality').getAll(personality);
-      request.onsuccess = () => resolve(request.result || []);
-      request.onerror = () => resolve([]);
+
+      // Legacy index path when personalityKey index is not present yet.
+      if (store.indexNames.contains('personality')) {
+        const request = store.index('personality').getAll();
+        request.onsuccess = () => {
+          const result = (request.result || []).filter(
+            (shadow) => this.getNormalizedPersonalityKey(shadow) === normalizedPersonality
+          );
+          resolve(result);
+        };
+        request.onerror = () => resolveByCursorFallback();
+        return;
+      }
+
+      resolveByCursorFallback();
     });
   }
 
@@ -1163,19 +1417,20 @@ class ShadowStorageManager {
           return;
         }
         shadow.id || (shadow.id = idForStore);
+        const { shadow: normalizedShadow } = this.ensurePersonalityKey(shadow);
 
-        const request = store.put(shadow);
+        const request = store.put(normalizedShadow);
         request.onsuccess = () => {
           completed++;
-          const oldShadow = this.recentCache.get(this.getCacheKey(shadow));
+          const oldShadow = this.recentCache.get(this.getCacheKey(normalizedShadow));
           if (oldShadow) this.invalidateCache(oldShadow);
-          this.updateCache(shadow, oldShadow);
+          this.updateCache(normalizedShadow, oldShadow);
         };
         request.onerror = () => {
           errors++;
           this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
             index,
-            id: this.getCacheKey(shadow),
+            id: this.getCacheKey(normalizedShadow),
             error: request.error,
           });
         };
@@ -2066,6 +2321,7 @@ module.exports = class ShadowArmy {
     // Solo Leveling Stats plugin integration
     this.soloPlugin = null;
     this.originalProcessMessage = null;
+    this._messageProcessWrapper = null;
     this._extractionTimestamps = [];
     this._pendingMessageExtractionCount = 0;
     this._isProcessingMessageExtractionQueue = false;
@@ -2179,6 +2435,21 @@ module.exports = class ShadowArmy {
             total: migrationResult.total,
           }
         );
+      }
+
+      // Ensure personalityKey exists on all records for indexed personality queries.
+      try {
+        const personalityMigration = await this.storageManager.ensurePersonalityKeyMigration(false);
+        if (personalityMigration?.migrated) {
+          this.debugLog('MIGRATION', 'Personality key migration completed', {
+            scanned: personalityMigration.scanned || 0,
+            updated: personalityMigration.updated || 0,
+            errors: personalityMigration.errors || 0,
+            batches: personalityMigration.batches || 0,
+          });
+        }
+      } catch (error) {
+        this.debugError('MIGRATION', 'Personality key migration failed', error);
       }
 
       // Verify storage is working by checking count
@@ -3280,15 +3551,33 @@ module.exports = class ShadowArmy {
       return;
     }
 
-    // Store original function for cleanup
-    this.originalProcessMessage = instance.processMessageSent;
+    // Avoid duplicate wrapping during hot reload/restart.
+    if (
+      this._messageProcessWrapper &&
+      instance.processMessageSent === this._messageProcessWrapper
+    ) {
+      this.debugLog('MESSAGE_LISTENER', 'processMessageSent already wrapped by ShadowArmy');
+      return;
+    }
+
+    const currentProcessMessage = instance.processMessageSent;
+    if (typeof currentProcessMessage !== 'function') {
+      this.debugLog(
+        'MESSAGE_LISTENER',
+        'processMessageSent is not callable, message extraction disabled'
+      );
+      return;
+    }
+
+    // Store current function so we preserve any wrappers from other plugins.
+    this.originalProcessMessage = currentProcessMessage;
 
     // Wrap processMessageSent to add extraction logic
     // NOTE: processMessageSent is SYNCHRONOUS in SoloLevelingStats, not async
     const self = this;
-    instance.processMessageSent = function (messageText) {
+    const wrappedProcessMessage = function (messageText) {
       // Call original function first (synchronous)
-      const result = self.originalProcessMessage.call(this, messageText);
+      const result = currentProcessMessage.call(this, messageText);
 
       // Queue extraction after message processing to prevent burst spam
       self.debugLog('MESSAGE_LISTENER', 'Message received, attempting extraction', {
@@ -3299,6 +3588,11 @@ module.exports = class ShadowArmy {
 
       return result;
     };
+    wrappedProcessMessage.__shadowArmyWrapped = true;
+    wrappedProcessMessage.__shadowArmyPrevious = currentProcessMessage;
+
+    this._messageProcessWrapper = wrappedProcessMessage;
+    instance.processMessageSent = wrappedProcessMessage;
 
     this.debugLog('MESSAGE_LISTENER', 'Message listener setup complete', {
       hasOriginalFunction: !!this.originalProcessMessage,
@@ -3423,11 +3717,16 @@ module.exports = class ShadowArmy {
     // Guard clause: Restore original function if exists
     if (this.soloPlugin && this.originalProcessMessage) {
       const instance = this.soloPlugin.instance || this.soloPlugin;
-      if (instance && instance.processMessageSent) {
+      if (
+        instance &&
+        instance.processMessageSent &&
+        (!this._messageProcessWrapper || instance.processMessageSent === this._messageProcessWrapper)
+      ) {
         instance.processMessageSent = this.originalProcessMessage;
       }
     }
     this.originalProcessMessage = null;
+    this._messageProcessWrapper = null;
 
     if (this._messageExtractionQueueTimeout) {
       clearTimeout(this._messageExtractionQueueTimeout);
@@ -3443,9 +3742,10 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Get user stats from SoloLevelingStats
    * 2. Check rate limiting (max extractions per minute)
-   * 3. Calculate extraction chance based on stats
-   * 4. Attempt extraction with retries (up to 3 attempts)
-   * 5. Only extracts humanoid shadows (no magic beasts from messages)
+   * 3. Determine target rank (same rank or +1)
+   * 4. Calculate extraction chance preview for diagnostics
+   * 5. Attempt extraction with retries (up to 3 attempts)
+   * 6. Only extracts humanoid shadows (no magic beasts from messages)
    * @returns {Object|null} - Extracted shadow or null if failed
    */
   async attemptShadowExtraction() {
@@ -3480,40 +3780,6 @@ module.exports = class ShadowArmy {
       return null;
     }
 
-    // Calculate extraction chance based on stats
-    const extractionChance = this.calculateExtractionChance(
-      intelligence,
-      perception,
-      strength,
-      rank
-    );
-
-    // Guard clause: Random roll for extraction
-    const roll = Math.random();
-    if (roll > extractionChance) {
-      this.debugLog('MESSAGE_EXTRACTION', 'Extraction roll failed', {
-        extractionChance: (extractionChance * 100).toFixed(2) + '%',
-        roll: (roll * 100).toFixed(2) + '%',
-        intelligence,
-        perception,
-        strength,
-        rank,
-      });
-      return null; // Failed extraction roll
-    }
-
-    this.debugLog('MESSAGE_EXTRACTION', 'Extraction roll succeeded, proceeding to extraction', {
-      extractionChance: (extractionChance * 100).toFixed(2) + '%',
-      roll: (roll * 100).toFixed(2) + '%',
-      intelligence,
-      perception,
-      strength,
-      rank,
-    });
-
-    // Record extraction attempt timestamp
-    this._extractionTimestamps.push(now);
-
     // Determine target rank (can extract same rank or 1 rank above)
     const rankIndex = this.shadowRanks.indexOf(rank);
     const availableRanks = this.shadowRanks.slice(
@@ -3521,6 +3787,34 @@ module.exports = class ShadowArmy {
       Math.min(rankIndex + 2, this.shadowRanks.length)
     );
     const targetRank = availableRanks[Math.floor(Math.random() * availableRanks.length)];
+
+    // Preflight chance preview for diagnostics only (actual success/failure is handled by retries).
+    const targetRankMultiplier = this.rankStatMultipliers[targetRank] || 1.0;
+    const targetBaselineStats = this.getRankBaselineStats(targetRank, targetRankMultiplier);
+    const estimatedTargetStrength = this.calculateShadowStrength(targetBaselineStats, 1);
+    const extractionChancePreview = this.calculateExtractionChance(
+      rank,
+      stats,
+      targetRank,
+      estimatedTargetStrength,
+      intelligence,
+      perception,
+      strength,
+      false
+    );
+
+    this.debugLog('MESSAGE_EXTRACTION', 'Message extraction preflight', {
+      extractionChancePreview: (extractionChancePreview * 100).toFixed(2) + '%',
+      intelligence,
+      perception,
+      strength,
+      rank,
+      targetRank,
+      estimatedTargetStrength,
+    });
+
+    // Record extraction attempt timestamp before retry extraction begins
+    this._extractionTimestamps.push(now);
 
     // Attempt extraction (humanoid only, respects 30% cap, max 3 attempts)
     const extractedShadow = await this.attemptExtractionWithRetries(
@@ -4434,8 +4728,54 @@ module.exports = class ShadowArmy {
     strength,
     skipCap = false
   ) {
-    const userRankIndex = this.shadowRanks.indexOf(userRank);
-    const targetRankIndex = this.shadowRanks.indexOf(targetRank);
+    // Backward-compatibility shim:
+    // Older call sites used (intelligence, perception, strength, rank).
+    const usingLegacySignature =
+      typeof userRank === 'number' &&
+      typeof userStats === 'number' &&
+      typeof targetRank === 'number' &&
+      typeof targetStrength === 'string';
+    if (usingLegacySignature) {
+      intelligence = userRank;
+      perception = userStats;
+      strength = targetRank;
+      userRank = targetStrength;
+      targetRank = userRank;
+      targetStrength = 0;
+      userStats = {
+        strength: Number.isFinite(strength) ? strength : 0,
+        agility: 0,
+        intelligence: Number.isFinite(intelligence) ? intelligence : 0,
+        vitality: 0,
+        perception: Number.isFinite(perception) ? perception : 0,
+      };
+    }
+
+    // Defensive normalization for cross-plugin integration and future updates.
+    const numericOrZero = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? parsed : 0;
+    };
+    const safeUserStats =
+      userStats && typeof userStats === 'object'
+        ? {
+            strength: numericOrZero(userStats.strength),
+            agility: numericOrZero(userStats.agility),
+            intelligence: numericOrZero(userStats.intelligence),
+            vitality: numericOrZero(userStats.vitality),
+            perception: numericOrZero(userStats.perception),
+          }
+        : { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
+    const safeIntelligence = numericOrZero(intelligence || safeUserStats.intelligence);
+    const safePerception = numericOrZero(perception || safeUserStats.perception);
+    const safeStrength = numericOrZero(strength || safeUserStats.strength);
+    const safeTargetStrength = numericOrZero(targetStrength);
+
+    const safeUserRank = this.shadowRanks.includes(userRank) ? userRank : 'E';
+    const safeTargetRank = this.shadowRanks.includes(targetRank) ? targetRank : safeUserRank;
+
+    const userRankIndex = this.shadowRanks.indexOf(safeUserRank);
+    const targetRankIndex = this.shadowRanks.indexOf(safeTargetRank);
 
     // Guard clause: STRICT RANK ENFORCEMENT - Cannot extract shadows more than 1 rank above you
     // B-rank hunter: Can extract up to A-rank (1 above), CANNOT extract S-rank (2 above)
@@ -4444,7 +4784,7 @@ module.exports = class ShadowArmy {
       // debugLog method is in SECTION 4
       this.debugLog(
         'EXTRACTION_RANK_CHECK',
-        `Cannot extract [${targetRank}] shadow - too high! (User rank: ${userRank}, Max: ${
+        `Cannot extract [${safeTargetRank}] shadow - too high! (User rank: ${safeUserRank}, Max: ${
           this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
         })`
       );
@@ -4456,30 +4796,30 @@ module.exports = class ShadowArmy {
     // Base chance from Intelligence
     const baseChance = Math.max(
       cfg.minBaseChance || 0.01,
-      intelligence * (cfg.chancePerInt || 0.01)
+      safeIntelligence * (cfg.chancePerInt || 0.01)
     );
 
     // Stats multiplier
-    const totalStats = Object.values(userStats).reduce((sum, val) => sum + (val || 0), 0);
+    const totalStats = this.calculateUserStrength(safeUserStats);
     const statsMultiplier =
       1.0 +
-      (intelligence * 0.01 + // INT: +1% per point
-        perception * 0.005 + // PER: +0.5% per point
-        strength * 0.003 + // STR: +0.3% per point
+      (safeIntelligence * 0.01 + // INT: +1% per point
+        safePerception * 0.005 + // PER: +0.5% per point
+        safeStrength * 0.003 + // STR: +0.3% per point
         (totalStats / 1000) * 0.01); // Total power bonus
 
     // Rank probability multiplier (lower ranks easier)
-    const rankMultiplier = this.rankProbabilityMultipliers[targetRank] || 1.0;
+    const rankMultiplier = this.rankProbabilityMultipliers[safeTargetRank] || 1.0;
 
     // Rank difference penalty (if target is stronger)
     const rankPenalty = rankDiff > 0 ? Math.pow(0.5, rankDiff) : 1.0; // 50% reduction per rank above
 
     // Target strength resistance (improved - uses actual target strength if provided)
     // Use dictionary pattern for resistance calculation
-    const userStrength = this.calculateUserStrength(userStats);
+    const userStrength = this.calculateUserStrength(safeUserStats);
     const resistanceCalculators = {
       strengthBased: () => {
-        const strengthRatio = Math.min(1.0, targetStrength / Math.max(1, userStrength));
+        const strengthRatio = Math.min(1.0, safeTargetStrength / Math.max(1, userStrength));
         return Math.min(0.9, strengthRatio * 0.7); // Max 70% resistance from strength difference
       },
       rankBased: () => {
@@ -4488,13 +4828,14 @@ module.exports = class ShadowArmy {
     };
 
     const targetResistance =
-      targetStrength > 0
+      safeTargetStrength > 0
         ? resistanceCalculators.strengthBased()
         : resistanceCalculators.rankBased();
 
     // Calculate raw chance
     const rawChance =
       baseChance * statsMultiplier * rankMultiplier * rankPenalty * (1 - targetResistance);
+    if (!Number.isFinite(rawChance)) return 0;
 
     // Apply hard cap to prevent 100% extraction on every message (skip for dungeons)
     // Use lookup map for cap values
@@ -8271,6 +8612,64 @@ module.exports = class ShadowArmy {
   // 3.15 HYBRID COMPRESSION SYSTEM - Top 100 Full, Rest Compressed
   // ============================================================================
 
+  normalizePersonalityValue(value) {
+    if (typeof value !== 'string') return '';
+    return value.trim().toLowerCase();
+  }
+
+  derivePersonalityFromRole(role) {
+    const normalizedRole = this.normalizePersonalityValue(role);
+    if (!normalizedRole) return '';
+
+    const roleToPersonality = {
+      tank: 'tank',
+      healer: 'supportive',
+      support: 'supportive',
+      mage: 'strategic',
+      ranger: 'tactical',
+      assassin: 'aggressive',
+      berserker: 'aggressive',
+      knight: 'balanced',
+      ant: 'aggressive',
+      bear: 'aggressive',
+      wolf: 'tactical',
+      spider: 'strategic',
+      centipede: 'strategic',
+      golem: 'tank',
+      serpent: 'strategic',
+      naga: 'strategic',
+      wyvern: 'tactical',
+      dragon: 'aggressive',
+      titan: 'aggressive',
+      giant: 'aggressive',
+      elf: 'strategic',
+      demon: 'aggressive',
+      ghoul: 'aggressive',
+      orc: 'aggressive',
+      ogre: 'aggressive',
+      yeti: 'tank',
+    };
+
+    return roleToPersonality[normalizedRole] || 'balanced';
+  }
+
+  getShadowPersonalityKey(shadow) {
+    if (!shadow || typeof shadow !== 'object') return '';
+
+    // Prefer storage manager normalization when available (single source of truth).
+    if (this.storageManager?.getNormalizedPersonalityKey) {
+      return this.storageManager.getNormalizedPersonalityKey(shadow);
+    }
+
+    const explicitKey = this.normalizePersonalityValue(shadow.personalityKey || shadow.pk);
+    if (explicitKey) return explicitKey;
+
+    const explicitPersonality = this.normalizePersonalityValue(shadow.personality);
+    if (explicitPersonality) return explicitPersonality;
+
+    return this.derivePersonalityFromRole(shadow.role || shadow.ro || '');
+  }
+
   /**
    * Compress shadow data (80% memory reduction per shadow)
    * Used for non-elite shadows (beyond top 100)
@@ -8290,6 +8689,7 @@ module.exports = class ShadowArmy {
       i: shadow.id.slice(-12), // Last 12 chars of ID (still unique)
       r: shadow.rank,
       ro: shadow.role,
+      pk: this.getShadowPersonalityKey(shadow),
       l: shadow.level || 1,
       x: shadow.xp || 0,
       b: [
@@ -8345,6 +8745,7 @@ module.exports = class ShadowArmy {
       _c: 2, // Ultra-compression marker
       i: shadow.id.slice(-8), // Last 8 chars (still unique)
       r: shadow.rank || 'E',
+      pk: this.getShadowPersonalityKey(shadow),
       p: Math.floor((shadow.strength || 0) / 100), // Power (scaled)
       l: shadow.level || 1,
       e: Math.floor((shadow.extractedAt || Date.now()) / 86400000), // Days since epoch
@@ -8382,6 +8783,8 @@ module.exports = class ShadowArmy {
       rank: compressed.r,
       role: 'unknown', // Not stored in ultra-compressed
       roleName: 'Unknown',
+      personalityKey: this.normalizePersonalityValue(compressed.pk),
+      personality: this.normalizePersonalityValue(compressed.pk),
       level: compressed.l,
       xp: 0, // Not stored
       strength: compressed.p * 100, // Reconstruct power
@@ -8429,6 +8832,12 @@ module.exports = class ShadowArmy {
       rank: compressed.r,
       role: compressed.ro,
       roleName: this.shadowRoles[compressed.ro]?.name || compressed.ro,
+      personalityKey:
+        this.normalizePersonalityValue(compressed.pk) ||
+        this.derivePersonalityFromRole(compressed.ro),
+      personality:
+        this.normalizePersonalityValue(compressed.pk) ||
+        this.derivePersonalityFromRole(compressed.ro),
       level: compressed.l,
       xp: compressed.x,
       baseStats,
@@ -9264,7 +9673,14 @@ module.exports = class ShadowArmy {
 
     // If already stored in compressed form, keep it as-is (compression pipeline expects _c objects)
     if (shadow._c === 1 || shadow._c === 2) {
-      return shadow;
+      const personalityKey = this.getShadowPersonalityKey(shadow);
+      if (shadow.pk === personalityKey) {
+        return shadow;
+      }
+      return {
+        ...shadow,
+        pk: personalityKey,
+      };
     }
 
     // Avoid `delete` in hot paths (can degrade object shape performance in V8).
@@ -9284,6 +9700,10 @@ module.exports = class ShadowArmy {
     shadowToSave.baseStats = shadowToSave.baseStats || { ...defaultStats };
     shadowToSave.growthStats = shadowToSave.growthStats || { ...defaultStats };
     shadowToSave.naturalGrowthStats = shadowToSave.naturalGrowthStats || { ...defaultStats };
+    shadowToSave.personalityKey = this.getShadowPersonalityKey(shadowToSave);
+    if (!shadowToSave.personality && shadowToSave.personalityKey) {
+      shadowToSave.personality = shadowToSave.personalityKey;
+    }
 
     // Ensure strength is populated before saving (helps widgets/aggregation and avoids 0-power saves)
     if (

@@ -204,12 +204,12 @@ module.exports = class SoloLevelingStats {
       // Stat definitions
       stats: {
         strength: 0, // Physical power: +2% XP per point (hits harder in combat)
-        agility: 0, // Reflexes/Speed: +2% chance for 1.5x XP multiplier per point (faster actions = more efficient) CAPPED 30%
+        agility: 0, // Reflexes/Speed: +2% crit chance per point (capped by CriticalHit at 50% effective)
         intelligence: 0, // Mana/Magic: Tiered XP (100-200:+3%, 200-400:+7%, 400+:+12% per point), max mana (Dungeons)
         vitality: 0, // HP/Stamina: +5% quest rewards, increases max HP (used in Dungeons for survival)
-        perception: 0, // Senses/Mana sense: Random stat buff per point (perceives opportunities to grow)
+        perception: 0, // Sense precision: increases critical burst hit count (multi-hit crit chains)
       },
-      perceptionBuffs: [], // Array of random stat buffs: [{ stat: 'strength', buff: 2.5 }, { stat: 'agility', buff: 3.2 }]
+      perceptionBuffs: [], // Legacy field (old random PER buffs), retained for backward compatibility
       unallocatedStatPoints: 0,
       // Level system
       level: 1,
@@ -300,6 +300,11 @@ module.exports = class SoloLevelingStats {
     // Track recently processed messages to prevent duplicates
     // Must be a Map (hashKey -> timestamp). Some older versions used Set; guard in processMessageSent.
     this.recentMessages = new Map();
+    // Anti-abuse tracking for XP scoring (repeat text + ultra-fast send decay)
+    this._messageAntiAbuse = {
+      lastMessageTime: 0,
+      fingerprints: new Map(), // Map<fingerprint, { count, lastSeen }>
+    };
     this.lastSaveTime = Date.now();
     this.saveInterval = 30000; // Save every 30 seconds (backup save)
     this.importantSaveInterval = 5000; // Save important changes every 5 seconds
@@ -434,6 +439,7 @@ module.exports = class SoloLevelingStats {
       criticalHitComboData: null, // Cache CriticalHitAnimation combo info (short TTL)
       criticalHitComboDataTime: 0,
       criticalHitComboDataTTL: 500, // 500ms - reduces repeated reads during message bursts
+      lastAppliedCritBurst: null, // Last validated PER burst used for XP bonus calculation
     };
 
     // Rank lookup maps (replaces if-else chains)
@@ -512,10 +518,10 @@ module.exports = class SoloLevelingStats {
     // Single source of truth for stat metadata — replaces 3 inline statDefs
     this.STAT_METADATA = {
       strength:     { name: 'STR', fullName: 'Strength',     desc: '+5% XP',                                     longDesc: '+5% XP/msg',                                            gain: 'Send messages' },
-      agility:      { name: 'AGI', fullName: 'Agility',      desc: '+2% Crit (capped 25%), +1% EXP/Crit',        longDesc: '+2% crit chance (capped 25%), +1% EXP per point during crit hits', gain: 'Send messages' },
+      agility:      { name: 'AGI', fullName: 'Agility',      desc: '+2% Crit Chance',                             longDesc: '+2% critical hit chance per point (effective cap handled by CriticalHit)', gain: 'Send messages' },
       intelligence: { name: 'INT', fullName: 'Intelligence',  desc: '+10% Long Msg',                              longDesc: '+10% long msg XP',                                      gain: 'Long messages' },
       vitality:     { name: 'VIT', fullName: 'Vitality',      desc: '+5% Quests',                                 longDesc: '+5% quest rewards',                                     gain: 'Complete quests' },
-      perception:   { name: 'PER', fullName: 'Perception',    desc: 'Random buff stacks',                         longDesc: 'Random buff per point (stacks)',                         gain: 'Allocate stat points' },
+      perception:   { name: 'PER', fullName: 'Perception',    desc: 'Crit Burst Hits',                            longDesc: 'Higher chance for multi-hit critical bursts (xN)',       gain: 'Allocate stat points' },
     };
 
     // Default empty shadow buffs — used by getShadowArmyBuffs fallback paths
@@ -941,7 +947,184 @@ module.exports = class SoloLevelingStats {
     return false;
   }
 
-  calculateBaseXpForMessage({ messageText, messageLength }) {
+  extractMentionCountFromText(messageText = '') {
+    if (!messageText) return 0;
+    const mentionMatches = messageText.match(/<@!?\d+>|@everyone|@here/g);
+    return mentionMatches ? mentionMatches.length : 0;
+  }
+
+  getChannelTypeById(channelId) {
+    if (!channelId) return null;
+    try {
+      let ChannelStore = this.webpackModules?.ChannelStore;
+      if (!ChannelStore?.getChannel) {
+        ChannelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
+        if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
+      }
+      return ChannelStore?.getChannel?.(channelId)?.type ?? null;
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  isThreadLikeChannelType(channelType) {
+    return channelType === 10 || channelType === 11 || channelType === 12;
+  }
+
+  buildMessageContextFromStore(message, messageText = '') {
+    const channelId = message?.channel_id || this.getCurrentChannelId();
+    const channelType = this.getChannelTypeById(channelId);
+    const mentionCount = Array.isArray(message?.mentions)
+      ? message.mentions.length + (message?.mention_everyone ? 1 : 0)
+      : this.extractMentionCountFromText(messageText);
+
+    return {
+      source: 'store',
+      channelId,
+      channelType,
+      mentionCount,
+      hasMentions: mentionCount > 0,
+      isReply: !!(message?.message_reference || message?.referenced_message),
+      isThread:
+        this.isThreadLikeChannelType(channelType) ||
+        /\/threads\/\d+/.test(window.location?.pathname || ''),
+      isForumThread: channelType === 11 || channelType === 12,
+    };
+  }
+
+  buildMessageContextFromView(messageText = '', messageElement = null) {
+    const channelInfo = this.getCurrentChannelInfo() || {};
+    const rawChannelId = channelInfo.rawChannelId || null;
+    const channelType = this.getChannelTypeById(rawChannelId);
+    const mentionCount = this.extractMentionCountFromText(messageText);
+
+    const hasReplyNode = !!messageElement?.querySelector?.(
+      '[class*="replied"], [class*="reply"], [id*="reply"]'
+    );
+
+    return {
+      source: 'view',
+      channelId: rawChannelId || channelInfo.channelId || null,
+      channelType,
+      mentionCount,
+      hasMentions: mentionCount > 0,
+      isReply: hasReplyNode,
+      isThread:
+        channelInfo.channelType === 'thread' ||
+        this.isThreadLikeChannelType(channelType) ||
+        /\/threads\/\d+/.test(window.location?.pathname || ''),
+      isForumThread: channelType === 11 || channelType === 12,
+    };
+  }
+
+  calculateInteractionQualityBonus(messageContext = {}, messageText = '') {
+    const mentionCount = Number.isFinite(messageContext?.mentionCount)
+      ? messageContext.mentionCount
+      : this.extractMentionCountFromText(messageText);
+    const isReply = messageContext?.isReply === true;
+    const isThreadParticipation = messageContext?.isThread === true;
+
+    let bonus = 0;
+    isReply && (bonus += 5); // Encourage actual conversation chains
+    mentionCount > 0 && (bonus += Math.min(8, mentionCount * 2)); // Cap mention bonus to avoid farming
+    isThreadParticipation && (bonus += 4); // Reward focused thread participation
+
+    return bonus;
+  }
+
+  normalizeMessageFingerprint(messageText = '') {
+    return String(messageText || '')
+      .toLowerCase()
+      .replace(/https?:\/\/\S+/g, '<url>')
+      .replace(/<@!?\d+>|@everyone|@here/g, '<mention>')
+      .replace(/[^\w\s<>]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 220);
+  }
+
+  pruneAntiAbuseFingerprints(now, maxAgeMs) {
+    if (!this._messageAntiAbuse?.fingerprints) return;
+    for (const [key, entry] of this._messageAntiAbuse.fingerprints.entries()) {
+      if (!entry?.lastSeen || now - entry.lastSeen > maxAgeMs) {
+        this._messageAntiAbuse.fingerprints.delete(key);
+      }
+    }
+  }
+
+  getRapidSendDecayMultiplier(deltaMs) {
+    if (!isFinite(deltaMs)) return 1.0;
+    if (deltaMs < 700) return 0.18;
+    if (deltaMs < 1200) return 0.35;
+    if (deltaMs < 2000) return 0.55;
+    if (deltaMs < 3500) return 0.75;
+    if (deltaMs < 5000) return 0.9;
+    return 1.0;
+  }
+
+  getRepeatDecayMultiplier(repeatCount) {
+    if (repeatCount <= 1) return 1.0;
+    if (repeatCount === 2) return 0.85;
+    if (repeatCount === 3) return 0.65;
+    return Math.max(0.35, 0.65 - (repeatCount - 3) * 0.08);
+  }
+
+  calculateAntiAbuseScore(messageText, messageContext = {}) {
+    const now = Date.now();
+    this._messageAntiAbuse = this._messageAntiAbuse || {
+      lastMessageTime: 0,
+      fingerprints: new Map(),
+    };
+    const state = this._messageAntiAbuse;
+    const repeatWindowMs = 2 * 60 * 1000;
+
+    // Rapid-send decay (ultra-fast bursts are penalized heavily)
+    const deltaMs = state.lastMessageTime > 0 ? now - state.lastMessageTime : Number.POSITIVE_INFINITY;
+    const rapidMultiplier = this.getRapidSendDecayMultiplier(deltaMs);
+
+    // Repeat-text decay (same normalized content in rolling window)
+    this.pruneAntiAbuseFingerprints(now, repeatWindowMs);
+    const fingerprint = this.normalizeMessageFingerprint(messageText);
+    let repeatCount = 1;
+    if (fingerprint.length >= 6) {
+      const existing = state.fingerprints.get(fingerprint);
+      if (existing && now - existing.lastSeen <= repeatWindowMs) {
+        repeatCount = existing.count + 1;
+      }
+      state.fingerprints.set(fingerprint, { count: repeatCount, lastSeen: now });
+    }
+    const repeatMultiplier = this.getRepeatDecayMultiplier(repeatCount);
+
+    // Combined decay with floor to avoid zeroing out progression
+    const multiplier = Math.max(0.12, Math.min(1.0, rapidMultiplier * repeatMultiplier));
+    state.lastMessageTime = now;
+
+    return {
+      multiplier,
+      rapidMultiplier,
+      repeatMultiplier,
+      repeatCount,
+      deltaMs: isFinite(deltaMs) ? deltaMs : null,
+      source: messageContext?.source || 'unknown',
+    };
+  }
+
+  getPerceptionBurstProfile() {
+    const perceptionStat = this.settings?.stats?.perception ?? this.settings?.stats?.luck ?? 0;
+    const perception = Math.max(0, Number(perceptionStat) || 0);
+    const burstChance = Math.min(0.82, 0.08 + perception * 0.007); // 8% base, +0.7% per PER
+    const maxHits = Math.min(99, Math.max(1, 1 + Math.floor(perception * 1.2))); // 1..99
+    const jackpotChance = perception >= 25 ? Math.min(0.06, (perception - 24) * 0.0012) : 0;
+
+    return {
+      perception,
+      burstChance,
+      maxHits,
+      jackpotChance,
+    };
+  }
+
+  calculateBaseXpForMessage({ messageText, messageLength, messageContext = null }) {
     // ===== BASE XP CALCULATION (Additive Bonuses) =====
     // Base XP: 10 per message
     let baseXP = 10;
@@ -971,7 +1154,24 @@ module.exports = class SoloLevelingStats {
     const streakBonus = this.calculateActivityStreakBonus();
     baseXP += streakBonus;
 
-    return baseXP;
+    // 7. Interaction quality bonus (reply/mention/thread participation)
+    const interactionBonus = this.calculateInteractionQualityBonus(messageContext || {}, messageText);
+
+    // 8. Anti-abuse scoring (repeat-text + ultra-fast send decay)
+    const antiAbuse = this.calculateAntiAbuseScore(messageText, messageContext || {});
+    const decayedBaseXp = Math.max(3, Math.round(baseXP * antiAbuse.multiplier));
+    const scaledInteractionBonus = Math.round(interactionBonus * Math.max(0.5, antiAbuse.multiplier));
+    const finalBaseXp = decayedBaseXp + scaledInteractionBonus;
+
+    this._lastAntiAbuseMeta = {
+      antiAbuse,
+      interactionBonus,
+      scaledInteractionBonus,
+      preDecayBaseXP: baseXP,
+      postDecayBaseXP: finalBaseXp,
+    };
+
+    return finalBaseXp;
   }
 
   getXPRequiredForLevel(level) {
@@ -1837,17 +2037,10 @@ module.exports = class SoloLevelingStats {
           channelId: message.channel_id,
         });
 
-        // Award XP and update quests
-        // CRITICAL: awardXP expects (messageText, messageLength) - fix parameter order
-        this.awardXP(messageText, messageLength);
-        this.updateQuestProgress('messageMaster', 1);
-        this.updateQuestProgress('characterChampion', messageLength);
+        if (!messageText.length) return;
 
-        // Track activity
-        if (this.settings.activity) {
-          this.settings.activity.messagesSent++;
-          this.settings.activity.charactersTyped += messageLength;
-        }
+        const messageContext = this.buildMessageContextFromStore(message, messageText);
+        this.processMessageSent(messageText, messageContext);
       }
     } catch (error) {
       this.debugError('MESSAGE_STORE_PROCESS', error);
@@ -2022,6 +2215,8 @@ module.exports = class SoloLevelingStats {
     // CriticalHit plugin adds 'bd-crit-hit' class to crit messages
     // Agility affects EXP multiplier: base 0.25 (25%) + agility bonus
     try {
+      this._cache.lastAppliedCritBurst = null;
+
       const getMessageContainerElement = () => this.getMessageContainer();
 
       const findMessageElementById = (messageId) => {
@@ -2089,8 +2284,7 @@ module.exports = class SoloLevelingStats {
       const baseCritBonus = 0.25;
       let critMultiplier = baseCritBonus + agilityBonus;
 
-      // Check for combo multiplier (from CriticalHitAnimation)
-      // Higher combos = exponentially more EXP (scales with combo number itself)
+      // Check burst-hit multiplier produced by CriticalHit (PER-driven multi-crit)
       try {
         const now = Date.now();
         const cachedComboData = this._cache?.criticalHitComboData;
@@ -2102,7 +2296,10 @@ module.exports = class SoloLevelingStats {
             ? cachedComboData
             : (() => {
                 try {
-                  const loaded = BdApi.Data.load('CriticalHitAnimation', 'userCombo');
+                  const loaded = {
+                    combo: BdApi.Data.load('CriticalHitAnimation', 'userCombo'),
+                    burst: BdApi.Data.load('CriticalHit', 'lastCritBurst'),
+                  };
                   this._cache.criticalHitComboData = loaded;
                   this._cache.criticalHitComboDataTime = now;
                   return loaded;
@@ -2114,33 +2311,51 @@ module.exports = class SoloLevelingStats {
                 }
               })();
 
-        if (comboData && comboData.comboCount > 1) {
-          const comboCount = comboData.comboCount || 1;
+        const comboCount = comboData?.combo?.comboCount || 1;
+        const burstData = comboData?.burst || null;
+        let burstHits = Math.max(1, Number(burstData?.burstHits || comboCount || 1));
 
-          // Exponential combo scaling: combo bonus = (comboCount - 1) ^ 1.5 * 0.02
-          // Examples:
-          //   2x combo: (2-1)^1.5 * 0.02 = 0.02 (2%)
-          //   3x combo: (3-1)^1.5 * 0.02 = 0.056 (5.6%)
-          //   5x combo: (5-1)^1.5 * 0.02 = 0.16 (16%)
-          //   10x combo: (10-1)^1.5 * 0.02 = 0.54 (54%)
-          //   20x combo: (20-1)^1.5 * 0.02 = 1.65 (165%)
-          const comboBonus = Math.pow(comboCount - 1, 1.5) * 0.02;
-          critMultiplier += comboBonus;
+        // If burst is for a different message, ignore it for this XP calc.
+        if (
+          burstData?.messageId &&
+          this.lastMessageId &&
+          String(burstData.messageId) !== String(this.lastMessageId)
+        ) {
+          burstHits = 1;
+        }
 
-          // Agility also enhances combo bonus: combo bonus * (1 + agility * 0.01)
-          // Example: 10x combo (0.54) with 10 agility = 0.54 * 1.10 = 0.594
-          const agilityComboEnhancement = comboBonus * (agilityStat * 0.01);
-          critMultiplier += agilityComboEnhancement;
+        if (burstHits > 1) {
+          // PER burst bonus uses diminishing returns + hard caps.
+          // This preserves burst reward identity without making leveling trivial.
+          const effectiveBurstHits = Math.min(40, burstHits); // ignore extreme jackpot tails for XP scaling
+          const logGain = Math.log2(effectiveBurstHits + 1) * 0.08;
+          const chainGain = (Math.min(20, effectiveBurstHits) - 1) * 0.012;
+          const burstBonus = Math.min(0.85, logGain + chainGain); // Max +85%
+          critMultiplier += burstBonus;
 
-          this.debugLog('CHECK_CRIT_BONUS', 'Combo detected', {
-            comboCount,
-            comboBonus: (comboBonus * 100).toFixed(1) + '%',
-            agilityComboEnhancement: (agilityComboEnhancement * 100).toFixed(1) + '%',
-            totalComboBonus: ((comboBonus + agilityComboEnhancement) * 100).toFixed(1) + '%',
+          // Light AGI synergy (kept modest to avoid runaway scaling)
+          const agilityBurstEnhancement = burstBonus * Math.min(0.2, agilityStat * 0.002);
+          critMultiplier += agilityBurstEnhancement;
+
+          this._cache.lastAppliedCritBurst = {
+            burstHits,
+            effectiveBurstHits,
+            burstBonus,
+            agilityBurstEnhancement,
+            messageId: this.lastMessageId || null,
+            timestamp: now,
+          };
+
+          this.debugLog('CHECK_CRIT_BONUS', 'Burst detected', {
+            burstHits,
+            effectiveBurstHits,
+            burstBonus: (burstBonus * 100).toFixed(1) + '%',
+            agilityBurstEnhancement: (agilityBurstEnhancement * 100).toFixed(1) + '%',
+            totalBurstBonus: ((burstBonus + agilityBurstEnhancement) * 100).toFixed(1) + '%',
           });
         }
       } catch (error) {
-        // Combo data not available or error accessing
+        // Burst data not available or error accessing
       }
 
       this.debugLog('CHECK_CRIT_BONUS', 'Crit bonus calculated', {
@@ -2159,10 +2374,8 @@ module.exports = class SoloLevelingStats {
   }
 
   integrateWithCriticalHit() {
-    // Try to find CriticalHit plugin and enhance crit chance with Agility stat
-    // Note: BetterDiscord doesn't provide direct plugin-to-plugin access
-    // This integration would need to be done via a shared data store or event system
-    // For now, we'll store the agility bonus in a way CriticalHit can read it
+    // AGI = crit chance provider, PER = burst-hit provider for CriticalHit.
+    // Data is shared through BdApi.Data.
 
     // Initialize variables at function scope to prevent ReferenceError in catch block
     let cappedCritBonus = 0;
@@ -2178,24 +2391,18 @@ module.exports = class SoloLevelingStats {
         return;
       }
 
-      // NEW AGILITY SYSTEM: Crit chance with 1.5x XP multiplier
-      // Agility: +2% crit chance per point
-      // Perception buffs for AGI: Add to crit chance
-      // Title crit bonus: Add to crit chance
-      // CAPPED AT 30% MAX to prevent XP abuse
-      // When crit: 1.5x XP multiplier (not bonus XP, direct multiplier)
+      // AGI system: +2% crit chance per AGI point (+title crit chance)
+      // Effective crit chance is capped in CriticalHit at 50%.
 
       agilityStat = this.settings.stats.agility || 0;
-      const perceptionBuffsByStat = this.getPerceptionBuffsByStat();
       baseAgilityBonus = agilityStat * 0.02; // 2% per point
-      const perceptionAgiBonus = (perceptionBuffsByStat.agility || 0) / 100; // Convert % to decimal
       const titleBonus = this.getActiveTitleBonus();
       titleCritBonus = titleBonus.critChance || 0;
 
-      // FUNCTIONAL: Sum all crit bonuses, cap at 30% (0.30)
-      const totalCritChance = Math.min(baseAgilityBonus + perceptionAgiBonus + titleCritBonus, 0.3);
+      // FUNCTIONAL: Sum crit bonuses, cap at 50% (0.50)
+      const totalCritChance = Math.min(baseAgilityBonus + titleCritBonus, 0.5);
       cappedCritBonus = totalCritChance; // Alias for clarity
-      enhancedAgilityBonus = baseAgilityBonus + perceptionAgiBonus; // Combined agility bonus
+      enhancedAgilityBonus = baseAgilityBonus; // Agility-only crit chance
 
       // Prepare data object (ensure all values are serializable numbers)
       const agilityData = {
@@ -2203,8 +2410,8 @@ module.exports = class SoloLevelingStats {
         baseBonus: isNaN(baseAgilityBonus) ? 0 : Number(baseAgilityBonus.toFixed(6)),
         titleCritBonus: isNaN(titleCritBonus) ? 0 : Number(titleCritBonus.toFixed(6)),
         agility: agilityStat,
-        perceptionEnhanced: perceptionAgiBonus > 0,
-        capped: totalCritChance >= 0.3, // Indicate if it was capped at 30%
+        perceptionEnhanced: false,
+        capped: totalCritChance >= 0.5, // Indicate if it was capped at 50%
       };
 
       // Always save agility bonus (even if 0) so CriticalHit knows current agility
@@ -2224,44 +2431,37 @@ module.exports = class SoloLevelingStats {
         );
       }
 
-      // Save Perception buffs for CriticalHit to read (stacked random buffs apply to crit chance)
+      // Save PER burst profile for CriticalHit (PER now controls multi-hit burst size, not crit chance)
       try {
-        let perceptionCritBonus = 0;
-        // Migration: Support both old 'luck' and new 'perception' names
-        const perceptionStat = this.settings.stats.perception ?? this.settings.stats.luck ?? 0;
-        const perceptionBuffs = this.settings.perceptionBuffs ?? this.settings.luckBuffs ?? [];
-
-        if (perceptionStat > 0 && Array.isArray(perceptionBuffs) && perceptionBuffs.length > 0) {
-          // Sum all stacked perception buffs for crit chance bonus
-          const totalPerceptionBuff =
-            typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
-          perceptionCritBonus = totalPerceptionBuff / 100; // Convert % to decimal
-        }
-
+        const perceptionProfile = this.getPerceptionBurstProfile();
         const perceptionData = {
-          bonus: isNaN(perceptionCritBonus) ? 0 : Number(perceptionCritBonus.toFixed(6)),
-          perception: perceptionStat,
-          perceptionBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
-          totalBuffPercent: isNaN(perceptionCritBonus)
-            ? 0
-            : Number((perceptionCritBonus * 100).toFixed(2)),
-          // Keep old key for backward compatibility
-          luck: perceptionStat,
-          luckBuffs: Array.isArray(perceptionBuffs) ? [...perceptionBuffs] : [],
+          perception: perceptionProfile.perception,
+          effectivePerception: perceptionProfile.perception,
+          burstChance: Number(perceptionProfile.burstChance.toFixed(6)),
+          maxHits: perceptionProfile.maxHits,
+          jackpotChance: Number(perceptionProfile.jackpotChance.toFixed(6)),
+          updatedAt: Date.now(),
         };
 
-        BdApi.Data.save('SoloLevelingStats', 'luckBonus', perceptionData); // Keep old key name for CriticalHit compatibility
+        BdApi.Data.save('SoloLevelingStats', 'perceptionBurst', perceptionData);
 
-        if (perceptionCritBonus > 0) {
-          this.debugLog(
-            'PERCEPTION_BONUS',
-            `Perception buffs available for CriticalHit: +${(perceptionCritBonus * 100).toFixed(
-              1
-            )}% crit chance (${perceptionBuffs.length} stacked buffs)`
-          );
-        }
+        // Backward compatibility payload for older readers: luck no longer affects crit chance.
+        BdApi.Data.save('SoloLevelingStats', 'luckBonus', {
+          bonus: 0,
+          perception: perceptionProfile.perception,
+          luck: perceptionProfile.perception,
+          luckBuffs: [],
+          totalBuffPercent: 0,
+        });
+
+        this.debugLog('PERCEPTION_BURST', 'Perception burst profile synced for CriticalHit', {
+          perception: perceptionProfile.perception,
+          burstChance: `${(perceptionProfile.burstChance * 100).toFixed(1)}%`,
+          maxHits: perceptionProfile.maxHits,
+          jackpotChance: `${(perceptionProfile.jackpotChance * 100).toFixed(2)}%`,
+        });
       } catch (error) {
-        this.debugError('SAVE_PERCEPTION_BONUS', error);
+        this.debugError('SAVE_PERCEPTION_BURST', error);
       }
     } catch (error) {
       // Error saving bonus - log but don't crash
@@ -2593,7 +2793,8 @@ module.exports = class SoloLevelingStats {
             const timeoutId = setTimeout(() => {
               self._messageProcessTimeouts?.delete(timeoutId);
               if (!self._isRunning) return;
-              self.processMessageSent(messageText);
+              const context = self.buildMessageContextFromView(messageText, messageElement);
+              self.processMessageSent(messageText, context);
             }, 100);
             if (!self._messageProcessTimeouts) {
               self._messageProcessTimeouts = new Set();
@@ -2702,7 +2903,7 @@ module.exports = class SoloLevelingStats {
 
               // No store confirmation observed -> award XP via input path
               this._pendingSendFallback = null;
-              this.processMessageSent(messageText);
+              this.processMessageSent(messageText, this.buildMessageContextFromView(messageText));
             }, 350);
             this._messageProcessTimeouts.add(fallbackTimeoutId);
             return;
@@ -2760,7 +2961,7 @@ module.exports = class SoloLevelingStats {
             const processSendTimeoutId = setTimeout(() => {
               this._messageProcessTimeouts?.delete(processSendTimeoutId);
               if (!this._isRunning) return;
-              this.processMessageSent(messageText);
+              this.processMessageSent(messageText, this.buildMessageContextFromView(messageText));
               lastInputValue = '';
             }, 100);
             this._messageProcessTimeouts.add(processSendTimeoutId);
@@ -3067,19 +3268,29 @@ module.exports = class SoloLevelingStats {
   // Stages: base XP → stat% → title bonus → active skills → milestones
   //         → diminishing returns → crit bonus → rank multiplier
 
-  processMessageSent(messageText) {
+  processMessageSent(messageText, messageContext = null) {
     try {
       if (!this._isRunning) return;
+
+      const resolvedContext =
+        messageContext && typeof messageContext === 'object'
+          ? messageContext
+          : this.buildMessageContextFromView(messageText);
 
       this.debugLog('PROCESS_MESSAGE', 'Processing message', {
         length: messageText.length,
         preview: messageText.substring(0, 30),
+        source: resolvedContext?.source || 'unknown',
+        isReply: !!resolvedContext?.isReply,
+        mentionCount: resolvedContext?.mentionCount || 0,
+        isThread: !!resolvedContext?.isThread,
       });
 
       // Prevent duplicate processing
       const now = Date.now();
       const recentWindowMs = 2000;
-      const hashKey = `msg_${this.hashString(messageText.substring(0, 2000))}`;
+      const channelScope = resolvedContext?.channelId || this.getCurrentChannelId() || 'global';
+      const hashKey = `msg_${channelScope}_${this.hashString(messageText.substring(0, 2000))}`;
 
       // Check if we've processed this message recently (within last 2 seconds)
       // Defensive: ensure Map semantics even if an older version left a Set here
@@ -3142,7 +3353,7 @@ module.exports = class SoloLevelingStats {
 
       // Calculate and award XP (this will save immediately)
       try {
-        this.awardXP(messageText, messageLength);
+        this.awardXP(messageText, messageLength, resolvedContext);
         this.debugLog('PROCESS_MESSAGE', 'XP awarded successfully');
       } catch (error) {
         this.debugError('PROCESS_MESSAGE', error, { phase: 'award_xp' });
@@ -4340,7 +4551,7 @@ module.exports = class SoloLevelingStats {
         );
         // Continue with main save even if bonus save fails
       } else {
-        // Save agility and luck bonuses for CriticalHit before saving settings
+        // Sync AGI crit-chance + PER burst profile for CriticalHit before saving settings
         try {
           this.saveAgilityBonus();
         } catch (error) {
@@ -5637,7 +5848,7 @@ module.exports = class SoloLevelingStats {
     }
   }
 
-  awardXP(messageText, messageLength) {
+  awardXP(messageText, messageLength, messageContext = null) {
     try {
       this.debugLog('AWARD_XP', 'Calculating XP', { messageLength });
 
@@ -5645,7 +5856,25 @@ module.exports = class SoloLevelingStats {
       const levelInfo = this.getCurrentLevel();
       const currentLevel = levelInfo.level;
 
-      const baseXP = this.calculateBaseXpForMessage({ messageText, messageLength });
+      const baseXP = this.calculateBaseXpForMessage({ messageText, messageLength, messageContext });
+      const antiAbuseMeta = this._lastAntiAbuseMeta;
+      if (antiAbuseMeta?.antiAbuse) {
+        const shouldLogAntiAbuse =
+          antiAbuseMeta.antiAbuse.multiplier < 1 || antiAbuseMeta.interactionBonus > 0;
+        shouldLogAntiAbuse &&
+          this.debugLog('ANTI_ABUSE', 'Applied anti-abuse scoring', {
+            multiplier: antiAbuseMeta.antiAbuse.multiplier,
+            rapidMultiplier: antiAbuseMeta.antiAbuse.rapidMultiplier,
+            repeatMultiplier: antiAbuseMeta.antiAbuse.repeatMultiplier,
+            repeatCount: antiAbuseMeta.antiAbuse.repeatCount,
+            deltaMs: antiAbuseMeta.antiAbuse.deltaMs,
+            interactionBonus: antiAbuseMeta.interactionBonus,
+            scaledInteractionBonus: antiAbuseMeta.scaledInteractionBonus,
+            preDecayBaseXP: antiAbuseMeta.preDecayBaseXP,
+            postDecayBaseXP: antiAbuseMeta.postDecayBaseXP,
+            source: antiAbuseMeta.antiAbuse.source,
+          });
+      }
 
       // ===== ACTIVE SKILL BUFFS (SkillTree temporary activated abilities) =====
       const activeBuffs = this.getActiveSkillBuffs();
@@ -5666,7 +5895,7 @@ module.exports = class SoloLevelingStats {
       messageLength > 200 &&
         skillBonuses?.longMsgBonus > 0 &&
         (totalPercentageBonus += skillBonuses.longMsgBonus * 100);
-      // All stat bonus: Multiplies stat-based bonuses (strength, intelligence, perception)
+      // All stat bonus: Multiplies stat-based bonuses (strength, intelligence)
       skillBonuses?.allStatBonus > 0 &&
         (this._skillTreeStatMultiplier = 1 + skillBonuses.allStatBonus);
 
@@ -5678,23 +5907,9 @@ module.exports = class SoloLevelingStats {
       // Title bonus will be applied multiplicatively after percentage bonuses
       // (stored for later application)
 
-      // Get Perception buff (renamed from Luck)
-      const totalPerceptionBuff =
-        typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
-
-      // Apply Skill Tree allStatBonus multiplier to Perception buff if available
-      let adjustedPerceptionBuff = totalPerceptionBuff;
-      if (this._skillTreeStatMultiplier && totalPerceptionBuff > 0) {
-        adjustedPerceptionBuff = totalPerceptionBuff * this._skillTreeStatMultiplier;
-      }
-      totalPercentageBonus += adjustedPerceptionBuff;
-
       // ===== STAT BONUSES (Additive with Diminishing Returns) =====
-      // Get perception buffs by stat (NEW SYSTEM)
-      const perceptionBuffsByStat = this.getPerceptionBuffsByStat();
 
       // Strength: +2% per point, with diminishing returns after 20 points
-      // PLUS perception buffs for strength (additive)
       const strengthStat = this.settings.stats.strength || 0;
       let strengthBonus = 0;
       if (strengthStat > 0) {
@@ -5708,8 +5923,6 @@ module.exports = class SoloLevelingStats {
         if (this._skillTreeStatMultiplier) {
           strengthBonus *= this._skillTreeStatMultiplier;
         }
-        // ADD perception buffs for strength (additive stacking)
-        strengthBonus += perceptionBuffsByStat.strength || 0;
         totalPercentageBonus += strengthBonus;
       }
 
@@ -5717,7 +5930,6 @@ module.exports = class SoloLevelingStats {
       // TIER 1 (100-200 chars): +3% per INT point
       // TIER 2 (200-400 chars): +7% per INT point
       // TIER 3 (400+ chars):    +12% per INT point
-      // PLUS perception buffs for intelligence (additive)
 
       const intelligenceStat = this.settings.stats.intelligence || 0;
 
@@ -5749,9 +5961,6 @@ module.exports = class SoloLevelingStats {
           // Apply Skill Tree allStatBonus multiplier if available
           this._skillTreeStatMultiplier && (intelligenceBonus *= this._skillTreeStatMultiplier);
 
-          // ADD perception buffs for intelligence (additive stacking)
-          intelligenceBonus += perceptionBuffsByStat.intelligence || 0;
-
           totalPercentageBonus += intelligenceBonus;
 
           this.debugLog('INT_TIER_BONUS', 'Intelligence tier bonus applied', {
@@ -5762,9 +5971,6 @@ module.exports = class SoloLevelingStats {
             intelligenceBonus: intelligenceBonus.toFixed(1) + '%',
           });
         })();
-
-      // Perception buff already applied above (lines 4355-4359) as adjustedPerceptionBuff
-      // No need to add totalPerceptionBuff again - removed to prevent double-counting
 
       // ===== APPLY PERCENTAGE BONUSES (Additive) =====
       // Cap total percentage bonus at 500% (6x multiplier max) to prevent exponential growth
@@ -5876,6 +6082,7 @@ module.exports = class SoloLevelingStats {
         const baseXPBeforeCrit = xp;
         let critMultiplier = critBonus;
         let isMegaCrit = false;
+        let comboFlatBonusXP = 0;
 
         // Check for Dagger Throw Master mega crit (special case - keep 1000x)
         const activeTitle = this.settings.achievements?.activeTitle;
@@ -5906,6 +6113,24 @@ module.exports = class SoloLevelingStats {
         // Apply crit multiplier (only multiplicative bonus remaining)
         xp = Math.round(xp * (1 + critMultiplier));
 
+        // PER burst chain grants additional flat XP with strict cap.
+        // Keeps higher combos rewarding while preventing easy over-leveling.
+        const critBurstInfo = this._cache?.lastAppliedCritBurst || null;
+        if (!isMegaCrit && critBurstInfo?.burstHits > 1) {
+          const effectiveBurstHits = Math.min(30, Number(critBurstInfo.effectiveBurstHits || 1));
+          const extraRatio = Math.min(
+            0.35,
+            Math.log2(effectiveBurstHits + 1) * 0.03 +
+              (Math.min(20, effectiveBurstHits) - 1) * 0.008
+          );
+          const cappedFlatBonus = Math.max(6, Math.round(baseXPBeforeCrit * 0.35));
+          comboFlatBonusXP = Math.min(
+            cappedFlatBonus,
+            Math.max(2, Math.round(baseXPBeforeCrit * extraRatio))
+          );
+          xp += comboFlatBonusXP;
+        }
+
         // Track crit for achievements
         if (!this.settings.activity.critsLanded) {
           this.settings.activity.critsLanded = 0;
@@ -5919,6 +6144,8 @@ module.exports = class SoloLevelingStats {
             critBonus: (critBonus * 100).toFixed(0) + '%',
             baseXPBeforeCrit,
             critBonusXP: xp - baseXPBeforeCrit,
+            comboFlatBonusXP,
+            burstHits: this._cache?.lastAppliedCritBurst?.burstHits || 1,
             finalXP: xp,
             totalCrits: this.settings.activity.critsLanded,
             isMegaCrit,
@@ -6319,21 +6546,8 @@ module.exports = class SoloLevelingStats {
         perception: baseStats.perception,
       };
 
-      // Reset perception buffs (generate some based on perception stat)
-      if (baseStats.perception > 0) {
-        this.settings.perceptionBuffs = [];
-        // Generate buffs for perception stat (similar to allocation)
-        // Using Array.from() instead of for-loop
-        const statOptions = this.STAT_KEYS;
-        this.settings.perceptionBuffs = Array.from({ length: baseStats.perception }, () => {
-          const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-          const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
-          const roundedBuff = Math.round(randomBuff * 10) / 10;
-          return { stat: randomStat, buff: roundedBuff };
-        });
-      } else {
-        this.settings.perceptionBuffs = [];
-      }
+      // PER redesign: no random stacked buffs are generated on reset/rebuild.
+      this.settings.perceptionBuffs = [];
 
       // Clear old luck data if it exists
       if (this.settings.stats.luck !== undefined) {
@@ -6725,8 +6939,6 @@ module.exports = class SoloLevelingStats {
 
     // Group allocations by stat
     const statGroups = {};
-    const totalPerceptionBuffs = [];
-
     this._statAllocationQueue.forEach((allocation) => {
       const statName = allocation.statName;
       if (!statGroups[statName]) {
@@ -6739,11 +6951,6 @@ module.exports = class SoloLevelingStats {
       }
       statGroups[statName].count++;
       statGroups[statName].newValue = allocation.newValue; // Update to latest value
-
-      // Collect perception buffs
-      if (allocation.perceptionBuff) {
-        totalPerceptionBuffs.push(allocation.perceptionBuff);
-      }
     });
 
     // Build notification message
@@ -6761,21 +6968,11 @@ module.exports = class SoloLevelingStats {
 
     // Calculate bonuses for each stat type
     Object.entries(statGroups).forEach(([statName, data]) => {
-      if (statName === 'perception' && totalPerceptionBuffs.length > 0) {
-        // Group perception buffs by stat
-        const buffStats = {};
-        totalPerceptionBuffs.forEach((buff) => {
-          if (!buffStats[buff.stat]) buffStats[buff.stat] = 0;
-          buffStats[buff.stat] += buff.buff;
-        });
-        const totalBuff = totalPerceptionBuffs.reduce((sum, buff) => sum + buff.buff, 0);
-        const buffList = Object.entries(buffStats)
-          .map(
-            ([stat, value]) =>
-              `+${value.toFixed(1)}% ${stat.charAt(0).toUpperCase() + stat.slice(1)}`
-          )
-          .join(', ');
-        bonusLines.push(`Perception Buffs: ${buffList} (Total: +${totalBuff.toFixed(1)}%)`);
+      if (statName === 'perception') {
+        const profile = this.getPerceptionBurstProfile();
+        bonusLines.push(
+          `Perception: ${Math.round(profile.burstChance * 100)}% chain chance, up to x${profile.maxHits} hits`
+        );
       } else if (data.effectText && statName !== 'perception') {
         // Calculate total bonus from allocated points
         let totalBonus = 0;
@@ -6888,7 +7085,7 @@ module.exports = class SoloLevelingStats {
     // Recompute HP/Mana after stat changes (handles refunds/resets too)
     this.recomputeHPManaFromStats();
 
-    // Special handling for Perception: Generate random buff that stacks
+    // Special handling for Perception (PER): controls crit burst-hit profile
     if (statName === 'perception' || statName === 'luck') {
       // Migration: Use 'perception' as the canonical name
       if (statName === 'luck') {
@@ -6901,38 +7098,19 @@ module.exports = class SoloLevelingStats {
         delete this.settings.stats.luck;
       }
 
-      // Generate random buff that stacks
-      if (!Array.isArray(this.settings.perceptionBuffs)) {
-        this.settings.perceptionBuffs = [];
-      }
-      const statOptions = this.STAT_KEYS;
-      const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-      const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
-      const roundedBuff = Math.round(randomBuff * 10) / 10;
-      this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
-      this._prunePerceptionBuffs();
+      const profile = this.getPerceptionBurstProfile();
 
-      // Calculate total stacked buff
-      const totalPerceptionBuff =
-        typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
-
-      this.debugLog('ALLOCATE_STAT_PERCEPTION', 'Random perception buff generated', {
-        newBuff: roundedBuff,
-        randomStat: randomStat,
-        totalBuffs: this.settings.perceptionBuffs.length,
-        allBuffs: [...this.settings.perceptionBuffs],
-        totalStackedBuff: totalPerceptionBuff.toFixed(1) + '%',
+      this.debugLog('ALLOCATE_STAT_PERCEPTION', 'Perception burst profile updated', {
         perceptionStat: this.settings.stats.perception,
+        burstChance: `${(profile.burstChance * 100).toFixed(1)}%`,
+        maxHits: profile.maxHits,
+        jackpotChance: `${(profile.jackpotChance * 100).toFixed(2)}%`,
       });
 
-      // Queue notification for aggregation (prevents spam)
-      this._queueStatAllocation(
-        statName,
-        oldValue,
-        this.settings.stats[statName],
-        null, // Perception doesn't use standard effect text
-        { stat: randomStat, buff: roundedBuff } // Store buff info
-      );
+      const perEffect = `Crit burst chance ${(profile.burstChance * 100).toFixed(
+        0
+      )}%, max x${profile.maxHits}`;
+      this._queueStatAllocation(statName, oldValue, this.settings.stats[statName], perEffect, null);
 
       // Save immediately
       this.saveSettings(true);
@@ -6945,8 +7123,8 @@ module.exports = class SoloLevelingStats {
           statName,
           oldValue,
           newValue: this.settings.stats[statName],
-          newBuff: roundedBuff,
-          totalStackedBuff: totalPerceptionBuff,
+          burstChance: profile.burstChance,
+          maxHits: profile.maxHits,
           remainingPoints: this.settings.unallocatedStatPoints,
         }
       );
@@ -6957,15 +7135,13 @@ module.exports = class SoloLevelingStats {
     // Calculate new effect strength for feedback (for non-luck stats)
     const statEffects = {
       strength: `+${(this.settings.stats[statName] * 5).toFixed(0)}% XP per message`,
-      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance (capped 25%), +${
-        this.settings.stats[statName]
-      }% EXP per crit`,
+      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance`,
       intelligence: `+${(
         this.settings.stats[statName] * 10 +
         Math.max(0, (this.settings.stats[statName] - 5) * 2)
       ).toFixed(0)}% bonus XP (long messages)`,
       vitality: `+${(this.settings.stats[statName] * 5).toFixed(0)}% quest rewards`,
-      perception: `+Random stacked buff per point (2%–8% each)`,
+      perception: `Increases critical burst hit chains (xN)`,
     };
 
     const effectText = statEffects[statName] || 'Effect applied';
@@ -7048,20 +7224,7 @@ module.exports = class SoloLevelingStats {
             this.settings.stats[statName] += growthToAdd;
             statsAdded += growthToAdd;
 
-            // Special handling for Perception: Generate random buffs
-            if (statName === 'perception') {
-              if (!Array.isArray(this.settings.perceptionBuffs)) {
-                this.settings.perceptionBuffs = [];
-              }
-              const statOptions = this.STAT_KEYS;
-              for (let i = 0; i < growthToAdd; i++) {
-                const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-                const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
-                const roundedBuff = Math.round(randomBuff * 10) / 10;
-                this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
-              }
-              this._prunePerceptionBuffs();
-            }
+            // PER no longer generates random stacked buffs during growth.
           }
         });
 
@@ -7138,21 +7301,7 @@ module.exports = class SoloLevelingStats {
 
           this.settings.stats[statName] += growthAmount;
 
-          // Special handling for Perception: Generate random buff that stacks
-          if (statName === 'perception') {
-            if (!Array.isArray(this.settings.perceptionBuffs)) {
-              this.settings.perceptionBuffs = [];
-            }
-            // Generate buffs for each point of growth (random stat per buff)
-            const statOptions = this.STAT_KEYS;
-            for (let i = 0; i < growthAmount; i++) {
-              const randomStat = statOptions[Math.floor(Math.random() * statOptions.length)];
-              const randomBuff = Math.random() * 3 + 2; // 2% to 5% (no bad 1% rolls)
-              const roundedBuff = Math.round(randomBuff * 10) / 10;
-              this.settings.perceptionBuffs.push({ stat: randomStat, buff: roundedBuff });
-            }
-            this._prunePerceptionBuffs();
-          }
+          // PER no longer generates random stacked buffs during growth.
 
           statsGrown.push({
             stat: statName,
@@ -7288,9 +7437,6 @@ module.exports = class SoloLevelingStats {
     const vitalityBaseBonus = this.settings.stats.vitality * 0.05;
     const vitalityAdvancedBonus = Math.max(0, (this.settings.stats.vitality - 10) * 0.01);
     const baseVitalityBonus = vitalityBaseBonus + vitalityAdvancedBonus;
-    const totalPerceptionBuff =
-      typeof this.getTotalPerceptionBuff === 'function' ? this.getTotalPerceptionBuff() : 0;
-    const perceptionMultiplier = totalPerceptionBuff / 100;
 
     // Get skill tree bonuses
     let skillAllStatBonus = 0;
@@ -7299,9 +7445,9 @@ module.exports = class SoloLevelingStats {
     if (skillBonuses?.allStatBonus > 0) skillAllStatBonus = skillBonuses.allStatBonus;
     if (skillBonuses?.questBonus > 0) skillQuestBonus = skillBonuses.questBonus;
 
-    // Perception and skill tree enhance Vitality
-    const enhancedVitalityBonus =
-      baseVitalityBonus * (1 + perceptionMultiplier + skillAllStatBonus) + skillQuestBonus;
+    // Skill tree can still amplify vitality rewards.
+    // Perception no longer modifies quest rewards (PER now powers crit burst hits).
+    const enhancedVitalityBonus = baseVitalityBonus * (1 + skillAllStatBonus) + skillQuestBonus;
     const vitalityBonus = 1 + enhancedVitalityBonus;
     let xpReward = Math.round(def.xp * vitalityBonus);
 
