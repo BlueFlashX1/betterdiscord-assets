@@ -1891,23 +1891,22 @@ module.exports = class SkillTree {
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 44px;
-        padding: 13px 4px 0;
+        padding: 0 2px;
         box-sizing: border-box;
       }
       .st-skill-tree-button {
-        width: 32px;
-        height: 32px;
+        width: 24px;
+        height: 24px;
         background: transparent;
         border: 1px solid rgba(138, 43, 226, 0.5);
-        border-radius: 6px;
+        border-radius: 4px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
         color: var(--interactive-normal, #b9bbbe);
-        padding: 4px;
+        padding: 2px;
         margin: 0;
         box-sizing: border-box;
       }
@@ -1921,8 +1920,8 @@ module.exports = class SkillTree {
         border-color: rgba(138, 43, 226, 1);
       }
       .st-skill-tree-button svg {
-        width: 24px;
-        height: 24px;
+        width: 18px;
+        height: 18px;
         display: block;
       }
 
@@ -2669,8 +2668,10 @@ module.exports = class SkillTree {
 
   isValidToolbarContainer(toolbar) {
     if (!toolbar?.isConnected) return false;
-    const buttons = toolbar.querySelectorAll?.('[class*="button"]');
-    return !!buttons && buttons.length >= 4;
+    // Count native Discord buttons (class*="button") plus our own custom buttons
+    const nativeButtons = toolbar.querySelectorAll?.('[class*="button"], [aria-label]');
+    // Lowered threshold — Discord may show 2-3 buttons in some contexts (e.g., DMs, threads)
+    return !!nativeButtons && nativeButtons.length >= 2;
   }
 
   /**
@@ -2679,22 +2680,14 @@ module.exports = class SkillTree {
    */
   _canUserType() {
     const textArea = document.querySelector('[class*="channelTextArea"]');
-    if (!textArea) return false;
+    if (!textArea) return true; // No text area found yet — allow button, don't block
 
     // Discord shows a disabled/locked text area or a "You do not have permission" notice
-    // Check for common no-permission indicators
     const noPermission =
       textArea.querySelector('[class*="placeholder"][class*="disabled"]') ||
       textArea.querySelector('[class*="upsellWrapper"]') ||
       textArea.querySelector('[class*="locked"]');
-    if (noPermission) return false;
-
-    // Check if the actual editable area exists and is contenteditable
-    const editor =
-      textArea.querySelector('[role="textbox"]') ||
-      textArea.querySelector('[contenteditable="true"]') ||
-      textArea.querySelector('textarea');
-    return !!editor;
+    return !noPermission;
   }
 
   getToolbarContainer() {
@@ -2706,44 +2699,69 @@ module.exports = class SkillTree {
       return cached;
     }
 
-    // Find Discord's button row — start from channelTextArea (narrow scope)
-    // then fall back to broader search only if needed
+    // Find Discord's button row in the chat text area
     const buttonRow = (() => {
       const textArea =
         document.querySelector('[class*="channelTextArea"]') ||
         document.querySelector('[class*="slateTextArea"]') ||
         document.querySelector('textarea[placeholder*="Message"]');
 
-      if (textArea) {
-        const container =
-          textArea.closest('[class*="container"]') ||
-          textArea.closest('[class*="wrapper"]') ||
-          textArea.parentElement?.parentElement?.parentElement;
+      if (!textArea) return null;
 
-        if (container) {
-          // Look for button row within the text area container (scoped query)
-          const buttons = container.querySelectorAll('[class*="button"]');
-          if (buttons && buttons.length >= 4) {
-            return buttons[0]?.parentElement;
-          }
-          const buttonContainer =
-            container.querySelector('[class*="buttons"]') ||
-            container.querySelector('[class*="buttonContainer"]');
-          if (buttonContainer) return buttonContainer;
-        }
+      // Strategy 1: Look for a "buttons" (plural) container class — Discord often uses this
+      const scope =
+        textArea.closest('[class*="channelTextArea"]') || textArea.parentElement?.parentElement;
+      if (scope) {
+        const buttonsContainer = scope.querySelector('[class*="buttons"]');
+        if (buttonsContainer && buttonsContainer.children.length >= 2) return buttonsContainer;
       }
 
-      // Fallback: broader search scoped to chat area
+      // Strategy 2: Walk up from textArea and find a narrow container, then look for buttons
+      const container =
+        textArea.closest('[class*="channelTextArea"]') ||
+        textArea.closest('[class*="inner"]') ||
+        textArea.parentElement?.parentElement?.parentElement;
+
+      if (container) {
+        // Look for button row — check for aria-label buttons (Discord sets these)
+        const ariaButtons = container.querySelectorAll('[aria-label]');
+        if (ariaButtons.length >= 2) {
+          const parent = ariaButtons[0]?.parentElement;
+          if (parent && parent.children.length >= 2) return parent;
+        }
+
+        // Check for elements with "button" in class name
+        const buttons = container.querySelectorAll('[class*="button"]');
+        if (buttons.length >= 2) return buttons[0]?.parentElement;
+
+        // Check for named button containers
+        const buttonContainer =
+          container.querySelector('[class*="buttons"]') ||
+          container.querySelector('[class*="buttonContainer"]') ||
+          container.querySelector('[class*="actionButtons"]');
+        if (buttonContainer) return buttonContainer;
+      }
+
+      // Strategy 3: Broader search — find emoji/gif/sticker/attach buttons by aria-label
       const chatArea = document.querySelector('[class*="chat-"]') || document;
+      const knownButton = chatArea.querySelector(
+        '[aria-label*="emoji" i], [aria-label*="gif" i], ' +
+        '[aria-label*="sticker" i], [aria-label*="attach" i], ' +
+        '[class*="emojiButton"], [class*="attachButton"]'
+      );
+      if (knownButton?.parentElement) return knownButton.parentElement;
+
+      // Strategy 4: Fallback — look for a row of buttons near emoji/gif/attach elements
       const el = Array.from(chatArea.querySelectorAll('[class*="button"]')).find((el) => {
         const siblings = Array.from(el.parentElement?.children || []);
         return (
-          siblings.length >= 4 &&
+          siblings.length >= 2 &&
           siblings.some(
             (s) =>
               s.querySelector('[class*="emoji"]') ||
               s.querySelector('[class*="gif"]') ||
-              s.querySelector('[class*="attach"]')
+              s.querySelector('[class*="attach"]') ||
+              s.querySelector('[class*="sticker"]')
           )
         );
       });

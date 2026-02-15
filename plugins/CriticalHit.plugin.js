@@ -113,7 +113,7 @@ module.exports = class CriticalHit {
       critChance: 10, // Base crit chance (can be buffed by Agility/Luck/Skill Tree up to 30% max)
       critColor: '#ff0000', // Brilliant red (kept for compatibility, but gradient is used)
       critGradient: true, // Use purple-black gradient with pink glow
-      critFont: "'Friend or Foe BB', sans-serif", // Font for message gradient text (Solo Leveling theme - Friend or Foe BB)
+      critFont: "'Friend or Foe BB', 'Orbitron', sans-serif", // Font for message gradient text (Solo Leveling theme - Friend or Foe BB)
       animationFont: 'Speedy Space Goat Oddity', // Font name for floating animation text (Shadow Arise animation - Speedy Space Goat Oddity)
       useLocalFonts: true, // Use local font files (Friend or Foe BB and Speedy Space Goat Oddity require local files, auto-enabled)
       critAnimation: true, // Add a subtle animation
@@ -180,7 +180,6 @@ module.exports = class CriticalHit {
     this.maxCritHistory = this.settings.maxCritHistory ?? 1000;
     this.maxHistoryPerChannel = this.settings.maxHistoryPerChannel ?? 500;
     this.historyCleanupInterval = null; // Interval for periodic history cleanup
-    this._forceNovaInterval = null; // Interval for Nova Flat font enforcement (legacy, now using MutationObserver)
     this._displayUpdateInterval = null; // Interval for settings panel display updates
     this.novaFlatObserver = null; // MutationObserver for Nova Flat font enforcement
     // Cache DOM queries
@@ -253,12 +252,6 @@ module.exports = class CriticalHit {
     this.lastAnimationTime = 0;
     this._comboUpdateLock = new Set(); // Tracks users with in-progress combo updates
 
-    // Performance optimization: Message processing batching
-    this._pendingNodes = new Set(); // Queue of nodes waiting to be processed
-    this._processingBatch = false; // Flag to prevent concurrent batch processing
-    this._batchProcessingTimeout = null; // Timeout for delayed batch processing
-    this._maxBatchSize = 10; // Maximum nodes to process per batch (reduced from 50 to prevent blocking)
-    this._batchDelayMs = 50; // Delay before processing batch (increased from 16ms to reduce CPU usage)
     this._observerThrottleTimeout = null; // Throttle observer callback to prevent excessive firing
     this._lastObserverCall = 0; // Track last observer call time
     this._observerThrottleMs = 100; // Minimum 100ms between observer processing
@@ -435,15 +428,6 @@ module.exports = class CriticalHit {
     if (/^\d{17,19}$/.test(normalized)) return normalized;
     const match = normalized.match(/\d{17,19}/);
     return match ? match[0] : null;
-  }
-
-  /**
-   * Alias for extractPureDiscordId() for backward compatibility
-   * @param {string} id - ID that may contain Discord ID
-   * @returns {string|null} Pure Discord ID or null
-   */
-  extractDiscordId(id) {
-    return this.extractPureDiscordId(id);
   }
 
   /**
@@ -695,7 +679,7 @@ module.exports = class CriticalHit {
     if (messageId) {
       messageId = String(messageId).trim();
       if (!this.isValidDiscordId(messageId)) {
-        const extracted = this.extractDiscordId(messageId);
+        const extracted = this.extractPureDiscordId(messageId);
         messageId = extracted || null;
         extractionMethod = extracted
           ? extractionMethod
@@ -988,7 +972,7 @@ module.exports = class CriticalHit {
   applyGradientStyles(
     content,
     messageElement,
-    gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)'
+    gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)'
   ) {
     if (!content) return false;
 
@@ -996,13 +980,9 @@ module.exports = class CriticalHit {
     const gradientStyles = this.createGradientStyles(gradientColors);
     this.applyStyles(content, gradientStyles);
 
-    // Force reflow to ensure styles are computed
-    void content.offsetHeight;
-
     // Verify and reapply if needed
     if (!this.verifyGradientStyles(content)) {
       this.applyStyles(content, gradientStyles);
-      void content.offsetHeight;
     }
 
     this.excludeHeaderElements(messageElement);
@@ -2379,37 +2359,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Creates a history entry object from message data
-   * @param {Object} messageData - Message data
-   * @param {string} messageId - Normalized message ID
-   * @param {string} authorId - Normalized author ID
-   * @param {string} channelId - Normalized channel ID
-   * @param {boolean} isCrit - Whether message is a crit
-   * @returns {Object} History entry object
-   */
-  _createHistoryEntry(messageData, messageId, authorId, channelId, isCrit) {
-    return {
-      messageId: messageId || null,
-      authorId: authorId || null,
-      channelId: channelId || null,
-      guildId: this.currentGuildId || 'dm',
-      timestamp: messageData.timestamp || Date.now(),
-      isCrit: isCrit,
-      critSettings: isCrit
-        ? {
-            color: this.settings.critColor,
-            gradient: this.settings.critGradient !== false,
-            font: this.settings.critFont,
-            animation: this.settings.critAnimation,
-            glow: this.settings.critGlow,
-          }
-        : null,
-      messageContent: messageData.messageContent || null,
-      author: messageData.author || null,
-    };
-  }
-
-  /**
    * Adds a message to history with crit status and settings
    * Handles duplicate detection, content-based matching for reprocessed messages
    * @param {Object} messageData - Message data including ID, author, channel, crit status
@@ -2964,7 +2913,7 @@ module.exports = class CriticalHit {
    * @returns {boolean} True if gradient was applied successfully
    */
   applyGradientStylesWithSettings(content, messageElement) {
-    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     const applied = this.applyGradientStyles(content, messageElement, gradientColors);
 
     // Only log in verbose mode - this appears for every restored crit with gradient
@@ -2982,7 +2931,7 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} content - The content element
    */
   setupGradientRetryObserver(content) {
-    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     const gradientRetryObserver = this._trackTransientObserver(
       new MutationObserver((mutations) => {
         const hasStyleMutation = mutations.some(
@@ -3038,7 +2987,7 @@ module.exports = class CriticalHit {
    */
   applyFontStyles(content) {
     this.applyStyles(content, {
-      'font-family': this.settings.critFont || "'Friend or Foe BB', sans-serif",
+      'font-family': this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif",
       'font-weight': 'bold',
       'font-size': '1.15em', // Slightly bigger for Friend or Foe BB
       'letter-spacing': '1px',
@@ -3062,7 +3011,7 @@ module.exports = class CriticalHit {
       gradient: () =>
         this.applyStyles(content, {
           'text-shadow':
-            '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
+            '0 0 3px rgba(138, 43, 226, 0.5), 0 0 6px rgba(123, 33, 198, 0.4), 0 0 9px rgba(107, 31, 176, 0.3), 0 0 12px rgba(75, 14, 130, 0.2)',
         }),
       solid: () => {
         const color = critSettings.color || this.settings.critColor;
@@ -3093,31 +3042,43 @@ module.exports = class CriticalHit {
     // Clean up existing observer
     this.styleObservers.has(messageId) && this.styleObservers.get(messageId).disconnect();
 
-    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
+    let isApplying = false;
     const checkGradient = () => {
+      if (isApplying) return;
       const currentMessageElement = this.requeryMessageElement(messageId);
-      if (
-        !currentMessageElement ||
-        !currentMessageElement.isConnected ||
-        !currentMessageElement.classList.contains('bd-crit-hit')
-      ) {
+      if (!currentMessageElement || !currentMessageElement.isConnected) {
         return;
       }
 
-      const currentContent = this.findMessageContentElement(currentMessageElement);
-      if (currentContent) {
-        const currentComputed = window.getComputedStyle(currentContent);
-        const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
-
-        if (!hasGradient && useGradient) {
-          currentContent.classList.add('bd-crit-text-content');
-          this.applyGradientStyles(currentContent, currentMessageElement, gradientColors);
+      isApplying = true;
+      try {
+        // Re-apply bd-crit-hit class if Discord replaced the element (new element won't have it)
+        if (!currentMessageElement.classList.contains('bd-crit-hit')) {
+          currentMessageElement.classList.add('bd-crit-hit');
         }
+
+        const currentContent = this.findMessageContentElement(currentMessageElement);
+        if (currentContent) {
+          if (!currentContent.classList.contains('bd-crit-text-content')) {
+            currentContent.classList.add('bd-crit-text-content');
+          }
+
+          const currentComputed = window.getComputedStyle(currentContent);
+          const hasGradient = currentComputed?.backgroundImage?.includes('gradient');
+
+          if (!hasGradient && useGradient) {
+            this.applyGradientStyles(currentContent, currentMessageElement, gradientColors);
+          }
+        }
+      } finally {
+        isApplying = false;
       }
     };
 
     const parentContainer = messageElement?.parentElement || document.body;
     const styleObserver = new MutationObserver((mutations) => {
+      if (isApplying) return;
       const hasStyleMutation = mutations.some(
         (m) =>
           m.type === 'attributes' && (m.attributeName === 'style' || m.attributeName === 'class')
@@ -3157,47 +3118,61 @@ module.exports = class CriticalHit {
   setupGradientRestorationRetryObserver(messageElement, content, useGradient) {
     if (!messageElement?.isConnected || !useGradient) return;
 
-    const retryContent = this.findMessageContentElement(messageElement);
-    if (!retryContent) return;
+    const msgId = this.getMessageIdentifier(messageElement);
+    if (!msgId) return;
 
-    const gradientColors = 'linear-gradient(to bottom, #8b5cf6 0%, #6d28d9 50%, #000000 100%)';
+    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
+    let isRestoring = false;
     const checkAndRestoreGradient = () => {
-      if (messageElement?.classList?.contains('bd-crit-hit') && messageElement?.isConnected) {
-        const retryComputed = window.getComputedStyle(retryContent);
+      if (isRestoring) return true;
+      // Re-query to handle element replacement by Discord
+      const currentMsg = this.requeryMessageElement(msgId);
+      if (!currentMsg?.isConnected) return true; // Element gone, stop monitoring
+
+      isRestoring = true;
+      try {
+        // Re-apply bd-crit-hit class if missing (element was replaced)
+        if (!currentMsg.classList.contains('bd-crit-hit')) {
+          currentMsg.classList.add('bd-crit-hit');
+        }
+
+        const currentContent = this.findMessageContentElement(currentMsg);
+        if (!currentContent) return true;
+
+        if (!currentContent.classList.contains('bd-crit-text-content')) {
+          currentContent.classList.add('bd-crit-text-content');
+        }
+
+        const retryComputed = window.getComputedStyle(currentContent);
         const hasGradient = retryComputed?.backgroundImage?.includes('gradient');
         const hasWebkitClip =
           retryComputed?.webkitBackgroundClip === 'text' ||
           retryComputed?.backgroundClip === 'text';
 
         if (!hasGradient || !hasWebkitClip) {
-          // Reapply gradient if missing
-          this.applyGradientStyles(retryContent, messageElement, gradientColors);
+          this.applyGradientStyles(currentContent, currentMsg, gradientColors);
           return false; // Still needs monitoring
         }
         return true; // Gradient is applied correctly
+      } finally {
+        isRestoring = false;
       }
-      return true; // Element disconnected or no crit class
     };
 
-    // Always set up observer for restoration (even if gradient appears applied initially)
-    // Discord's DOM updates may remove it later
+    // Watch the parent container (persists across element replacements)
+    const parentContainer = messageElement?.parentElement || document.body;
     const restorationRetryObserver = this._trackTransientObserver(
       new MutationObserver(() => {
-        // Check and restore gradient on any mutation
+        if (isRestoring) return;
         checkAndRestoreGradient();
       })
     );
 
-    restorationRetryObserver.observe(retryContent, {
+    restorationRetryObserver.observe(parentContainer, {
+      childList: true,
+      subtree: true,
       attributes: true,
       attributeFilter: ['style', 'class'],
-      childList: true, // Also watch for child changes
-      subtree: true, // Watch subtree for nested changes
-    });
-
-    restorationRetryObserver.observe(messageElement, {
-      attributes: true,
-      attributeFilter: ['class'],
     });
 
     // Initial check
@@ -3207,7 +3182,7 @@ module.exports = class CriticalHit {
     this._setTrackedTimeout(
       () => this._disconnectTransientObserver(restorationRetryObserver),
       5000
-    ); // Increased from 2000ms to 5000ms for better persistence
+    );
   }
 
   /**
@@ -3816,11 +3791,6 @@ module.exports = class CriticalHit {
       this.LOAD_OBSERVER_TIMEOUT_MS
     );
 
-    // Ensure _pendingNodes is initialized before creating observer
-    if (!this._pendingNodes) {
-      this._pendingNodes = new Set();
-    }
-
     // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
       // Process each mutation directly
@@ -3899,61 +3869,6 @@ module.exports = class CriticalHit {
       });
     } catch (error) {
       this.debugError('WEBPACK_INIT', error);
-    }
-  }
-
-  /**
-   * Set up message receive hook (patches MessageStore.receiveMessage)
-   * Provides more reliable message detection than DOM observation
-   */
-  setupMessageReceiveHook() {
-    try {
-      if (!this.webpackModules.MessageStore) {
-        this.debugLog('MESSAGE_RECEIVE_HOOK', 'MessageStore not available, using DOM fallback');
-        return;
-      }
-
-      // Patch MessageStore.receiveMessage to detect received messages
-      if (this.webpackModules.MessageStore.receiveMessage) {
-        const pluginInstance = this;
-        BdApi.Patcher.after(
-          'CriticalHit',
-          this.webpackModules.MessageStore,
-          'receiveMessage',
-          (thisObject, args, returnValue) => {
-            try {
-              if (pluginInstance._isStopped) return;
-              // Process received message (more reliable than DOM)
-              if (returnValue && returnValue.id) {
-                // Check if this is our own message (for crit detection)
-                const currentUserId =
-                  pluginInstance.currentUserId || pluginInstance.settings?.ownUserId;
-                if (returnValue.author && returnValue.author.id === currentUserId) {
-                  // This is our sent message - process for crit check
-                  // Wait for DOM to be ready, then process
-                  requestAnimationFrame(() => {
-                    requestAnimationFrame(() => {
-                      if (pluginInstance._isStopped) return;
-                      const messageElement = document.querySelector(
-                        `[data-message-id="${returnValue.id}"]`
-                      );
-                      if (messageElement) {
-                        pluginInstance.processNode(messageElement);
-                      }
-                    });
-                  });
-                }
-              }
-            } catch (error) {
-              pluginInstance.debugError('MESSAGE_RECEIVE_HOOK', error);
-            }
-          }
-        );
-        this.messageStorePatch = true;
-        this.debugLog('MESSAGE_RECEIVE_HOOK', 'MessageStore receive hook installed');
-      }
-    } catch (error) {
-      this.debugError('MESSAGE_RECEIVE_HOOK', error);
     }
   }
 
@@ -4125,182 +4040,6 @@ module.exports = class CriticalHit {
     } catch (error) {
       this.debugError('MESSAGE_SEND_HOOK', error, { phase: 'setup' });
     }
-  }
-
-  /**
-   * Processes observer mutations with throttling
-   * Separated from observer callback to allow throttling
-   * @param {Array<MutationRecord>} mutations - Mutation records from observer
-   */
-  _processObserverMutations(mutations) {
-    // CRITICAL: Defensive check - Ensure _pendingNodes exists
-    if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-      this._pendingNodes = new Set();
-    }
-
-    // Collect all nodes to process
-    const nodesToProcess = [];
-    try {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node && node.nodeType === 1) {
-            // Element node - add to batch
-            // CRITICAL: Only add if it looks like a message container to reduce processing
-            // Quick check to avoid processing every DOM element
-            const hasMessageClass =
-              node.classList && Array.from(node.classList).some((c) => c.includes('message'));
-            const hasMessageChild = node.querySelector('[class*="message"]');
-
-            if (hasMessageClass || hasMessageChild) {
-              nodesToProcess.push(node);
-            }
-          }
-        });
-      });
-
-      // Batch process nodes to reduce lag (only if we have nodes and _pendingNodes is valid)
-      if (
-        nodesToProcess.length > 0 &&
-        this._pendingNodes &&
-        typeof this._pendingNodes.add === 'function'
-      ) {
-        this.batchProcessNodes(nodesToProcess);
-      }
-    } catch (err) {
-      // Silently handle errors in observer callback to prevent breaking Discord
-      // Reinitialize _pendingNodes if it got corrupted
-      if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-        this._pendingNodes = new Set();
-      }
-    }
-  }
-
-  /**
-   * Batches node processing to reduce lag from rapid DOM mutations
-   * Uses requestAnimationFrame for smooth processing
-   * @param {Array<Node>} nodes - Array of nodes to process
-   */
-  batchProcessNodes(nodes) {
-    // CRITICAL: Initialize _pendingNodes if not already initialized (defensive programming)
-    // This can happen if observer fires before constructor completes or during hot reload
-    if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-      this._pendingNodes = new Set();
-    }
-
-    // Validate inputs before processing
-    if (!Array.isArray(nodes) || nodes.length === 0) {
-      return; // Nothing to process
-    }
-
-    // Add nodes to pending queue (only if _pendingNodes is valid)
-    // CRITICAL: Double-check _pendingNodes is still valid before forEach loop
-    if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-      this._pendingNodes = new Set();
-    }
-
-    // Only proceed if _pendingNodes is definitely valid
-    if (this._pendingNodes && typeof this._pendingNodes.add === 'function') {
-      nodes.forEach((node) => {
-        // CRITICAL: Re-check _pendingNodes inside loop in case it gets corrupted during iteration
-        if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-          this._pendingNodes = new Set();
-          return; // Skip this node if Set was corrupted
-        }
-
-        if (node && node.nodeType === 1) {
-          // Only process element nodes
-          try {
-            this._pendingNodes.add(node);
-          } catch (err) {
-            // Silently ignore errors adding nodes (Set might be corrupted)
-            // Reinitialize if corrupted
-            if (!this._pendingNodes || typeof this._pendingNodes.add !== 'function') {
-              this._pendingNodes = new Set();
-            }
-          }
-        }
-      });
-    }
-
-    // If already processing a batch, don't start another
-    if (this._processingBatch) return;
-
-    // Clear any existing timeout
-    this._batchProcessingTimeout &&
-      (this._trackedTimeouts.delete(this._batchProcessingTimeout),
-      clearTimeout(this._batchProcessingTimeout));
-
-    // Process batch on next frame
-    this._batchProcessingTimeout = this._setTrackedTimeout(() => {
-      this._processBatch();
-    }, this._batchDelayMs);
-  }
-
-  /**
-   * Processes a batch of pending nodes
-   * Limits batch size to prevent lag spikes
-   */
-  _processBatch() {
-    // Defensive check: Initialize _pendingNodes if not already initialized
-    if (!this._pendingNodes) {
-      this._pendingNodes = new Set();
-    }
-    if (this._pendingNodes.size === 0) {
-      this._processingBatch = false;
-      return;
-    }
-
-    this._processingBatch = true;
-
-    // Defensive check: Ensure _pendingNodes exists before processing
-    if (!this._pendingNodes) {
-      this._pendingNodes = new Set();
-      this._processingBatch = false;
-      return;
-    }
-
-    // Take up to maxBatchSize nodes
-    const nodesToProcess = Array.from(this._pendingNodes).slice(0, this._maxBatchSize);
-    nodesToProcess.forEach((node) => {
-      if (this._pendingNodes) {
-        this._pendingNodes.delete(node);
-      }
-    });
-
-    // Process nodes asynchronously to prevent blocking main thread
-    // Use setTimeout instead of requestAnimationFrame to allow other tasks to run
-    this._setTrackedTimeout(() => {
-      if (this._isStopped) return;
-      // Process nodes one at a time with small delays to prevent blocking
-      let index = 0;
-      const processNext = () => {
-        if (this._isStopped) return;
-        if (index < nodesToProcess.length) {
-          const node = nodesToProcess[index];
-          try {
-            this.processNode(node);
-            this.checkForRestoration(node);
-          } catch (error) {
-            this.debugError('BATCH_PROCESS', error, { nodeType: node?.nodeType });
-          }
-          index++;
-          // Process next node after small delay to prevent blocking
-          if (index < nodesToProcess.length) {
-            this._setTrackedTimeout(processNext, 5); // 5ms delay between nodes
-          } else {
-            // All nodes processed, continue with remaining batch
-            if (this._pendingNodes.size > 0) {
-              this._batchProcessingTimeout = this._setTrackedTimeout(() => {
-                this._processBatch();
-              }, this._batchDelayMs);
-            } else {
-              this._processingBatch = false;
-            }
-          }
-        }
-      };
-      processNext();
-    }, 0); // Start immediately but allow other tasks to run first
   }
 
   /**
@@ -5526,8 +5265,6 @@ module.exports = class CriticalHit {
               const contentElement = this.findMessageContentElement(currentElement);
 
               if (contentElement) {
-                void contentElement.offsetHeight;
-
                 // CRITICAL FIX: Add delay before gradient verification
                 this._setTrackedTimeout(() => {
                   const gradientCheck = this.verifyGradientApplied(contentElement);
@@ -5943,9 +5680,26 @@ module.exports = class CriticalHit {
       }
 
       // Message not in history - check if already processed (to prevent duplicate processing)
+      // DOUBLE-CRIT FIX: Also check content hash to catch same message under different IDs
+      // (MutationObserver may use hash_XXXXX, sendMessage hook uses real Discord ID)
+      const _dedupContent = this.findMessageContentElement(messageElement)?.textContent?.trim();
+      const _dedupAuthor = this.getAuthorId(messageElement);
+      const _dedupHash = _dedupContent ? this.calculateContentHash(_dedupAuthor, _dedupContent) : null;
+
+      if (_dedupHash && this.processedMessages.has(_dedupHash)) {
+        // Same content already processed under a different ID — skip
+        messageId && this.processedMessages.add(messageId); // Also mark real ID
+        return;
+      }
+
       if (!this.markAsProcessed(messageId)) {
         this.debugLog('CHECK_FOR_CRIT', 'Message already processed (by ID)', { messageId });
         return;
+      }
+
+      // Also mark the content hash as processed to prevent duplicate detection paths
+      if (_dedupHash) {
+        this.processedMessages.add(_dedupHash);
       }
 
       // Guard clauses: early returns for invalid states
@@ -6039,7 +5793,7 @@ module.exports = class CriticalHit {
    * @type {string}
    */
   get DEFAULT_GRADIENT_COLORS() {
-    return 'linear-gradient(to right, #8b5cf6 0%, #7c3aed 15%, #6d28d9 30%, #4c1d95 45%, #312e81 60%, #1e1b4b 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
+    return 'linear-gradient(to right, #8a2be2 0%, #7b21c6 15%, #6b1fb0 30%, #4b0e82 45%, #2d1665 60%, #1a0e3d 75%, #0f0f23 85%, #000000 95%, #000000 100%)';
   }
 
   /**
@@ -6228,7 +5982,7 @@ module.exports = class CriticalHit {
       if (useGradient) {
         this.applyStyles(content, {
           'text-shadow':
-            '0 0 3px rgba(139, 92, 246, 0.5), 0 0 6px rgba(124, 58, 237, 0.4), 0 0 9px rgba(109, 40, 217, 0.3), 0 0 12px rgba(91, 33, 182, 0.2)',
+            '0 0 3px rgba(138, 43, 226, 0.5), 0 0 6px rgba(123, 33, 198, 0.4), 0 0 9px rgba(107, 31, 176, 0.3), 0 0 12px rgba(75, 14, 130, 0.2)',
         });
       } else {
         this.applyStyles(content, {
@@ -6336,9 +6090,6 @@ module.exports = class CriticalHit {
         // Verify gradient was actually applied and get computed styles
         const useGradient = this.settings.critGradient !== false;
 
-        // Force a reflow to ensure styles are computed
-        void content.offsetHeight;
-
         const gradientCheck = this.verifyGradientApplied(content);
         const hasGradientInStyle = gradientCheck.hasGradientInStyle;
         const hasGradientInComputed = gradientCheck.hasGradient;
@@ -6354,29 +6105,35 @@ module.exports = class CriticalHit {
           });
 
           // Retry after a short delay to catch DOM updates
-          // Use multiple retries with increasing delays to handle rapid messages
+          // Re-query elements each attempt to handle Discord element replacement
+          const msgIdForRetry = this.getMessageIdentifier(actualMessageElement);
           const retryGradient = (attempt = 1, maxAttempts = 5) => {
             this._setTrackedTimeout(() => {
               if (this._isStopped) return;
-              if (content && actualMessageElement?.classList?.contains('bd-crit-hit')) {
-                const retryComputed = window.getComputedStyle(content);
+              const currentMsg = this.requeryMessageElement(msgIdForRetry);
+              if (!currentMsg?.isConnected) return;
+
+              // Re-apply class if missing (element was replaced)
+              if (!currentMsg.classList.contains('bd-crit-hit')) {
+                currentMsg.classList.add('bd-crit-hit');
+              }
+
+              const currentContent = this.findMessageContentElement(currentMsg);
+              if (currentContent) {
+                currentContent.classList.add('bd-crit-text-content');
+                const retryComputed = window.getComputedStyle(currentContent);
                 const retryHasGradient = retryComputed?.backgroundImage?.includes('gradient');
 
                 if (!retryHasGradient && useGradient && attempt <= maxAttempts) {
-                  // Force reapply gradient with stronger styles
                   const gradientStyles = this.createGradientStyles(this.DEFAULT_GRADIENT_COLORS);
-                  this.applyStyles(content, gradientStyles);
+                  this.applyStyles(currentContent, gradientStyles);
 
-                  // Force reflow
-                  void content.offsetHeight;
-
-                  // Retry again if still not applied
                   if (attempt < maxAttempts) {
                     retryGradient(attempt + 1, maxAttempts);
                   }
                 }
               }
-            }, 50 * attempt); // Increasing delay: 50ms, 100ms, 150ms, 200ms, 250ms
+            }, 50 * attempt);
           };
           retryGradient();
         }
@@ -7132,8 +6889,7 @@ module.exports = class CriticalHit {
    * @param {string} styleId - Style element ID
    */
   _removeOldStyle(styleId) {
-    const oldStyle = document.getElementById(styleId);
-    oldStyle && oldStyle.remove();
+    BdApi.DOM.removeStyle(styleId);
   }
 
   /**
@@ -7155,8 +6911,6 @@ module.exports = class CriticalHit {
       this._setTrackedTimeout(() => this.loadCritAnimationFont(animationFontName), 500);
     }
 
-    this.loadGoogleFont('Nova Flat');
-
     // Ensure useLocalFonts is enabled for fonts that require local files
     if (
       this._matchesFontPattern(critFontName, 'friend or foe') ||
@@ -7166,14 +6920,10 @@ module.exports = class CriticalHit {
       this.settings.useLocalFonts = true;
     }
 
-    this._removeOldStyle(this.CSS_STYLE_IDS.animation);
+    BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.animation);
 
     // Use Friend or Foe BB for animation (consistent with theme)
-    // Note: animFont variable removed - using Friend or Foe BB directly in CSS
-
-    const style = document.createElement('style');
-    style.id = 'cha-styles';
-    style.textContent = `
+    const animCSS = `
       @keyframes chaFloatUp {
         0% {
           opacity: 0;
@@ -7213,7 +6963,7 @@ module.exports = class CriticalHit {
         }
       }
       .cha-critical-hit-text {
-        font-family: 'Friend or Foe BB', sans-serif !important;
+        font-family: 'Friend or Foe BB', 'Orbitron', sans-serif !important;
         font-size: 4.5rem !important;
         font-weight: 900 !important;
         letter-spacing: 0.1em !important;
@@ -7243,7 +6993,7 @@ module.exports = class CriticalHit {
         transform-origin: center center !important;
       }
     `;
-    document.head.appendChild(style);
+    BdApi.DOM.addStyle(this.CSS_STYLE_IDS.animation, animCSS);
   }
 
   // ----------------------------------------------------------------------------
@@ -7329,7 +7079,7 @@ module.exports = class CriticalHit {
    */
   injectCritCSS() {
     if (this.settings?.cssEnabled !== true) return;
-    if (document.getElementById(this.CSS_STYLE_IDS.crit)) return;
+    BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
 
     const critFontName = this._extractFontName(this.settings.critFont) || this.DEFAULT_CRIT_FONT;
     // Load crit font immediately and ensure it's ready
@@ -7347,7 +7097,7 @@ module.exports = class CriticalHit {
     // Event-based font enforcement - replaced periodic setInterval with MutationObserver
     const applyCritFont = (element) => {
       // Apply to message itself (use critFont setting for message text - Friend or Foe BB)
-      const messageFont = this.settings.critFont || "'Friend or Foe BB', sans-serif";
+      const messageFont = this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif";
       element.style.setProperty('font-family', messageFont, 'important');
 
       // Find all possible content elements
@@ -7442,11 +7192,9 @@ module.exports = class CriticalHit {
     }
 
     // Define messageFont for CSS template literal
-    const messageFont = this.settings.critFont || "'Friend or Foe BB', sans-serif";
+    const messageFont = this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif";
 
-    const style = document.createElement('style');
-    style.id = 'bd-crit-hit-styles';
-    style.textContent = `
+    const critCSS = `
             /* Friend or Foe BB font is loaded via loadLocalFont() - no need for Google Fonts import */
 
             @keyframes critShake {
@@ -7482,8 +7230,8 @@ module.exports = class CriticalHit {
             /* Reddish with darker purple at 50% - matches inline styles applied by plugin */
             /* FIXED: CSS fallback ensures gradient persists even if Discord removes inline styles */
             .bd-crit-hit .bd-crit-text-content {
-                background-image: linear-gradient(to bottom, #dc2626 0%, #4c1d95 50%, #7c2d12 100%) !important;
-                background: linear-gradient(to bottom, #dc2626 0%, #4c1d95 50%, #7c2d12 100%) !important;
+                background-image: linear-gradient(to bottom, #dc2626 0%, #4b0e82 50%, #7c2d12 100%) !important;
+                background: linear-gradient(to bottom, #dc2626 0%, #4b0e82 50%, #7c2d12 100%) !important;
                 -webkit-background-clip: text !important;
                 background-clip: text !important;
                 -webkit-text-fill-color: transparent !important;
@@ -7506,10 +7254,10 @@ module.exports = class CriticalHit {
 
             /* Critical Hit Glow & Font - ONLY apply to specific text content, NOT username/timestamp */
             .bd-crit-hit .bd-crit-text-content {
-                text-shadow: 0 0 5px rgba(139, 92, 246, 0.8),
-                             0 0 10px rgba(124, 58, 237, 0.7),
-                             0 0 15px rgba(109, 40, 217, 0.6),
-                             0 0 20px rgba(91, 33, 182, 0.5) !important;
+                text-shadow: 0 0 5px rgba(138, 43, 226, 0.8),
+                             0 0 10px rgba(123, 33, 198, 0.7),
+                             0 0 15px rgba(107, 31, 176, 0.6),
+                             0 0 20px rgba(75, 14, 130, 0.5) !important;
                 font-family: ${messageFont} !important; /* critFont setting - for message gradient text */
                 font-weight: bold !important; /* Bold for more impact */
                 font-size: 1.15em !important; /* Slightly bigger for Friend or Foe BB */
@@ -7576,7 +7324,7 @@ module.exports = class CriticalHit {
             }
         `;
 
-    document.head.appendChild(style);
+    BdApi.DOM.addStyle(this.CSS_STYLE_IDS.crit, critCSS);
   }
 
   // ----------------------------------------------------------------------------
@@ -7587,11 +7335,9 @@ module.exports = class CriticalHit {
    * Injects CSS styles for the settings panel UI
    */
   injectSettingsCSS() {
-    if (document.getElementById(this.CSS_STYLE_IDS.settings)) return;
+    BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.settings);
 
-    const style = document.createElement('style');
-    style.id = this.CSS_STYLE_IDS.settings;
-    style.textContent = `
+    const settingsCSS = `
             .bd-crit-hit-settings {
                 padding: 0;
                 color: var(--text-normal);
@@ -7616,7 +7362,7 @@ module.exports = class CriticalHit {
                 font-size: 20px;
                 font-weight: 600;
                 color: var(--text-normal);
-                font-family: 'Friend or Foe BB', sans-serif !important;
+                font-family: 'Friend or Foe BB', 'Orbitron', sans-serif !important;
             }
 
             .crit-settings-subtitle {
@@ -7761,7 +7507,7 @@ module.exports = class CriticalHit {
                 border-radius: 6px;
                 color: var(--text-normal);
                 font-size: 14px;
-                font-family: 'Friend or Foe BB', sans-serif !important;
+                font-family: 'Friend or Foe BB', 'Orbitron', sans-serif !important;
                 transition: all 0.2s ease;
             }
 
@@ -7867,7 +7613,7 @@ module.exports = class CriticalHit {
             }
         `;
 
-    document.head.appendChild(style);
+    BdApi.DOM.addStyle(this.CSS_STYLE_IDS.settings, settingsCSS);
   }
 
   // ============================================================================
@@ -7894,7 +7640,7 @@ module.exports = class CriticalHit {
   get PARTICLE_COLORS() {
     return [
       'rgba(138, 43, 226, 0.9)', // Blue Violet
-      'rgba(139, 92, 246, 0.9)', // Violet
+      'rgba(138, 43, 226, 0.9)', // Violet
       'rgba(167, 139, 250, 0.9)', // Light Purple
       'rgba(196, 181, 253, 0.9)', // Lavender
       'rgba(255, 255, 255, 0.9)', // White
@@ -8340,11 +8086,8 @@ module.exports = class CriticalHit {
 
     this.critMessages.clear();
 
-    const style = document.getElementById(this.CSS_STYLE_IDS.crit);
-    style && style.remove();
+    BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
 
-    this._forceNovaInterval &&
-      (clearInterval(this._forceNovaInterval), (this._forceNovaInterval = null));
     this._displayUpdateInterval &&
       (clearInterval(this._displayUpdateInterval), (this._displayUpdateInterval = null));
   }
@@ -8423,7 +8166,7 @@ module.exports = class CriticalHit {
                                 if (agilityBonus > 0)
                                   bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
                                 if (luckBonus > 0) bonuses.push(`+${luckBonus.toFixed(1)}% LUK`);
-                                return `<span class="crit-agility-bonus" style="color: #8b5cf6; font-size: 0.9em; margin-left: 8px;">${bonuses.join(
+                                return `<span class="crit-agility-bonus" style="color: #8a2be2; font-size: 0.9em; margin-left: 8px;">${bonuses.join(
                                   ' + '
                                 )} = ${effectiveCrit.toFixed(1)}%</span>`;
                               }
@@ -8934,7 +8677,7 @@ module.exports = class CriticalHit {
                 </div>
 
                 <div class="crit-font-credit" style="margin-top: 32px; padding: 16px; background: rgba(138, 43, 226, 0.05); border-radius: 8px; border-top: 1px solid rgba(138, 43, 226, 0.2); text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.6);">
-                    <div>Icons made from <a href="https://www.onlinewebfonts.com/icon" target="_blank" rel="noopener noreferrer" style="color: #8b5cf6; text-decoration: none;">svg icons</a> is licensed by CC BY 4.0</div>
+                    <div>Icons made from <a href="https://www.onlinewebfonts.com/icon" target="_blank" rel="noopener noreferrer" style="color: #8a2be2; text-decoration: none;">svg icons</a> is licensed by CC BY 4.0</div>
                     <div style="margin-top: 4px; opacity: 0.8;">Font: "Friend or Foe BB" from OnlineWebFonts.com</div>
                 </div>
             </div>
@@ -9699,8 +9442,6 @@ module.exports = class CriticalHit {
         const hasWebkitClip = gradientCheck.hasWebkitClip;
         if (!hasGradient || !hasWebkitClip) {
           if (attempt < maxAttempts) {
-            // Force reflow and retry
-            void contentElement.offsetHeight;
             this._setTrackedTimeout(
               () => verifyGradientSync(element, attempt + 1, maxAttempts),
               50 * (attempt + 1)
@@ -10725,9 +10466,6 @@ module.exports = class CriticalHit {
       // Hook into message send to capture sent messages immediately
       this.setupMessageSendHook();
 
-      // Set up message receive hook (patches MessageStore.receiveMessage) - enhanced tracking
-      this.setupMessageReceiveHook();
-
       // Start periodic cleanup if enabled
       if (this.settings.autoCleanupHistory) {
         this.startPeriodicCleanup();
@@ -10769,13 +10507,6 @@ module.exports = class CriticalHit {
         this._observerThrottleTimeout = null;
       }
 
-      // Clear batch processing timeout
-      if (this._batchProcessingTimeout) {
-        this._trackedTimeouts.delete(this._batchProcessingTimeout);
-        clearTimeout(this._batchProcessingTimeout);
-        this._batchProcessingTimeout = null;
-      }
-
       // OPTIMIZED: Force immediate save before stopping (bypass throttle)
       // Clear any pending throttled save
       this._saveHistoryThrottle &&
@@ -10806,12 +10537,6 @@ module.exports = class CriticalHit {
       });
       this._transientObservers && this._transientObservers.clear();
 
-      // Clean up batch processing
-      this._batchProcessingTimeout && clearTimeout(this._batchProcessingTimeout);
-      this._batchProcessingTimeout = null;
-      this._pendingNodes && this._pendingNodes.clear();
-      this._processingBatch = false;
-
       // CRITICAL: Clear observer throttle timeout to prevent memory leaks
       if (this._observerThrottleTimeout) {
         clearTimeout(this._observerThrottleTimeout);
@@ -10830,12 +10555,6 @@ module.exports = class CriticalHit {
       if (this.historyCleanupInterval) {
         clearInterval(this.historyCleanupInterval);
         this.historyCleanupInterval = null;
-      }
-
-      // Clean up intervals
-      if (this._forceNovaInterval) {
-        clearInterval(this._forceNovaInterval);
-        this._forceNovaInterval = null;
       }
 
       if (this._displayUpdateInterval) {
@@ -10871,16 +10590,12 @@ module.exports = class CriticalHit {
         this._cache.urlGuildIdSource = null;
       }
 
-      // Remove injected CSS
-      const critStyle = document.getElementById('bd-crit-hit-styles');
-      critStyle && critStyle.remove();
+      // Remove injected CSS via BdApi
+      BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
+      BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.settings);
+      BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.animation);
 
-      const settingsStyle = document.getElementById('bd-crit-hit-settings-styles');
-      settingsStyle && settingsStyle.remove();
-
-      const animationStyle = document.getElementById('bd-crit-hit-animation-styles');
-      animationStyle && animationStyle.remove();
-
+      // Remove font link (manual DOM - dynamic ID)
       const fontLink = document.getElementById('bd-crit-hit-nova-flat-font');
       fontLink && fontLink.remove();
 

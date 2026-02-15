@@ -303,68 +303,6 @@ class ShadowStorageManager {
     };
   }
 
-  /**
-   * Normalize shadow object (ensure all fields are present with defaults)
-   * Operations:
-   * 1. Ensure required fields exist
-   * 2. Add default values for missing optional fields
-   * 3. Normalize stat objects
-   * @param {Object} shadow - Shadow object to normalize
-   * @returns {Object} - Normalized shadow object
-   */
-  normalizeShadow(shadow) {
-    if (!shadow) return null;
-
-    const normalized = { ...shadow };
-
-    // Required fields with defaults
-    normalized.id =
-      normalized.id || `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    normalized.rank = normalized.rank || 'E';
-    normalized.role = normalized.role || 'knight';
-    normalized.level = normalized.level || 1;
-    normalized.xp = normalized.xp || 0;
-    normalized.strength = normalized.strength || 0;
-    normalized.extractedAt = normalized.extractedAt || Date.now();
-
-    // Stat objects with defaults
-    const defaultStats = {
-      strength: 0,
-      agility: 0,
-      intelligence: 0,
-      vitality: 0,
-      perception: 0,
-    };
-
-    normalized.baseStats = normalized.baseStats || { ...defaultStats };
-    normalized.growthStats = normalized.growthStats || { ...defaultStats };
-    normalized.naturalGrowthStats = normalized.naturalGrowthStats || { ...defaultStats };
-
-    // Ensure all stat fields exist
-    Object.keys(defaultStats).forEach((stat) => {
-      normalized.baseStats[stat] = normalized.baseStats[stat] || 0;
-      normalized.growthStats[stat] = normalized.growthStats[stat] || 0;
-      normalized.naturalGrowthStats[stat] = normalized.naturalGrowthStats[stat] || 0;
-    });
-
-    // Optional fields with defaults
-    normalized.totalCombatTime = normalized.totalCombatTime || 0;
-    normalized.lastNaturalGrowth = normalized.lastNaturalGrowth || normalized.extractedAt;
-    normalized.ownerLevelAtExtraction = normalized.ownerLevelAtExtraction || 1;
-    normalized.growthVarianceSeed = normalized.growthVarianceSeed || Math.random();
-
-    return normalized;
-  }
-
-  /**
-   * Check if shadow ID is valid
-   * @param {string} id - Shadow ID to validate
-   * @returns {boolean} - True if valid
-   */
-  isValidShadowId(id) {
-    return id && typeof id === 'string' && id.trim().length > 0;
-  }
-
   // ============================================================================
   // STORAGE 2.4 CACHE MANAGEMENT HELPERS
   // ============================================================================
@@ -500,35 +438,16 @@ class ShadowStorageManager {
   }
 
   /**
-   * Get all possible cache keys for a shadow (for invalidation)
-   * Returns both id and i if both exist, for proper cache invalidation
-   * @param {Object} shadow - Shadow object
-   * @returns {string[]} - Array of cache keys
-   */
-  getAllCacheKeys(shadow) {
-    if (!shadow) return [];
-    const keys = [];
-    if (shadow.id) keys.push(shadow.id);
-    if (shadow.i && shadow.i !== shadow.id) keys.push(shadow.i);
-    return keys;
-  }
-
-  /**
    * Invalidate cache entries for a shadow (handles both id and i)
-   * Invalidates recent cache (storage manager only handles its own cache)
    * @param {Object} shadow - Shadow object to invalidate
    */
   invalidateCache(shadow) {
     if (!shadow) return;
-    const keys = this.getAllCacheKeys(shadow);
-
-    // Invalidate recent cache
-    keys.forEach((key) => {
-      if (this.recentCache.has(key)) {
-        this.recentCache.delete(key);
-        this.debugLog('CACHE', 'Invalidated recent cache entry', { key });
-      }
-    });
+    const id = shadow.id || shadow.i;
+    if (id) this.recentCache.delete(id);
+    if (shadow.id && shadow.i && shadow.id !== shadow.i) {
+      this.recentCache.delete(shadow.i);
+    }
   }
 
   /**
@@ -543,48 +462,22 @@ class ShadowStorageManager {
    * @param {Object} oldShadow - Previous shadow state (for invalidation)
    */
   updateCache(shadow, oldShadow = null) {
-    // Guard clause: Validate input (accept both id and i for compressed shadows)
     const shadowId = this.getCacheKey(shadow);
-    if (!shadow || !shadowId) {
-      this.debugError('CACHE', 'Cannot update cache: invalid shadow', { shadow });
-      return;
-    }
+    if (!shadow || !shadowId) return;
 
     // Invalidate old cache entries if shadow state changed (compression/decompression)
     if (oldShadow) {
-      const oldKeys = this.getAllCacheKeys(oldShadow);
-      const newKeys = this.getAllCacheKeys(shadow);
-
-      // Remove old keys that are different from new keys
-      oldKeys.forEach((oldKey) => {
-        if (!newKeys.includes(oldKey)) {
-          // Invalidate all caches for old key
-          if (this.recentCache.has(oldKey)) {
-            this.recentCache.delete(oldKey);
-          }
-          if (this._shadowPowerCache) {
-            this._shadowPowerCache.delete(`power_${oldKey}`);
-          }
-          if (this._shadowPersonalityCache) {
-            this._shadowPersonalityCache.delete(`personality_${oldKey}`);
-          }
-          this.debugLog('CACHE', 'Invalidated old cache entry', { oldKey, newKey: shadowId });
-        }
-      });
+      this.invalidateCache(oldShadow);
     }
 
-    // Add to recent cache (LRU)
-    if (this.recentCache.has(shadowId)) {
-      // Move to end (most recently used)
-      this.recentCache.delete(shadowId);
-    }
+    // Add to recent cache (LRU) — delete first to move to end
+    this.recentCache.delete(shadowId);
     this.recentCache.set(shadowId, shadow);
 
     // Evict oldest if recent cache limit reached
     if (this.recentCache.size > this.cacheLimit) {
       const firstKey = this.recentCache.keys().next().value;
       this.recentCache.delete(firstKey);
-      this.debugLog('CACHE', 'Evicted oldest from recent cache', { evictedId: firstKey });
     }
   }
 
@@ -687,22 +580,6 @@ class ShadowStorageManager {
     return Date.now() - cacheTime >= ttl;
   }
 
-  /**
-   * Deep clone shadow object (prevents mutation)
-   * @param {Object} shadow - Shadow object to clone
-   * @returns {Object} - Cloned shadow object
-   */
-  cloneShadow(shadow) {
-    if (!shadow) return null;
-    try {
-      return JSON.parse(JSON.stringify(shadow));
-    } catch (error) {
-      this.debugError('UTILITY', 'Failed to clone shadow', error);
-      // Fallback: shallow clone
-      return { ...shadow };
-    }
-  }
-
   // ============================================================================
   // STORAGE SECTION 3: MAJOR OPERATIONS
   // ============================================================================
@@ -792,6 +669,23 @@ class ShadowStorageManager {
     });
   }
 
+  /**
+   * Execute a function within an IndexedDB transaction
+   * Eliminates boilerplate for db init check, transaction creation, error handling
+   * @param {string} mode - 'readonly' or 'readwrite'
+   * @param {Function} fn - (store, transaction, resolve, reject) => void
+   * @returns {Promise<*>}
+   */
+  async _withStore(mode, fn) {
+    if (!this.db) await this.init();
+    return new Promise((resolve, reject) => {
+      const transaction = this.db.transaction([this.storeName], mode);
+      const store = transaction.objectStore(this.storeName);
+      transaction.onerror = () => reject(transaction.error);
+      fn(store, transaction, resolve, reject);
+    });
+  }
+
   // ============================================================================
   // STORAGE 3.2 MIGRATION FROM LOCALSTORAGE
   // ============================================================================
@@ -877,48 +771,17 @@ class ShadowStorageManager {
    * 7. Return success status with shadow
    */
   async saveShadow(shadow) {
-    // Guard clause: Validate input (accept both id and i for compressed shadows)
-    const shadowId = this.getCacheKey(shadow);
-    if (!shadow || !shadowId) {
-      const error = new Error('Invalid shadow object: missing id or i');
-      this.debugError('SAVE', 'Cannot save shadow: invalid input', error);
-      throw error;
+    if (!shadow || !this.getCacheKey(shadow)) {
+      throw new Error('Invalid shadow object: missing id or i');
     }
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readwrite', (store, _tx, resolve, reject) => {
       const request = store.put(shadow);
-
-      // Transaction error handler (catches all transaction errors)
-      transaction.onerror = () => {
-        this.debugError('SAVE', 'Transaction failed while saving shadow', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      // Request success handler
       request.onsuccess = () => {
-        // Update cache (recent cache - optimize memory usage)
         this.updateCache(shadow);
-
-        // No need to invalidate here - incremental cache handles it automatically
-
-        // Get identifier for logging (accept both id and i for compressed shadows)
-        const shadowId = this.getCacheKey(shadow);
-        this.debugLog('SAVE', 'Shadow saved successfully', { id: shadowId, rank: shadow.rank });
         resolve({ success: true, shadow });
       };
-
-      // Request error handler (fallback)
-      request.onerror = () => {
-        this.debugError('SAVE', 'Failed to save shadow', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -933,65 +796,26 @@ class ShadowStorageManager {
    * 5. Return shadow object or null if not found
    */
   async getShadow(id) {
-    // Guard clause: Validate input
-    if (!id) {
-      this.debugError('GET', 'Cannot get shadow: missing id', null);
-      return null;
-    }
+    if (!id) return null;
 
     // Fast path: Check cache first (O(1) lookup)
-    // Handle both full id and compressed i
-    if (this.recentCache.has(id)) {
-      this.debugLog('GET', 'Shadow found in recent cache', { id });
-      return this.recentCache.get(id);
-    }
+    if (this.recentCache.has(id)) return this.recentCache.get(id);
 
-    // Also check if id matches any shadow's i (compressed key)
-    // This handles lookups by full id when shadow is compressed
-    for (const [cacheKey, cachedShadow] of this.recentCache.entries()) {
+    // Check if id matches any shadow's alternate key (compressed/decompressed)
+    for (const [, cachedShadow] of this.recentCache.entries()) {
       if (cachedShadow && (cachedShadow.id === id || cachedShadow.i === id)) {
-        this.debugLog('GET', 'Shadow found in recent cache (by identifier match)', {
-          id,
-          cacheKey,
-        });
         return cachedShadow;
       }
     }
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readonly', (store, _tx, resolve) => {
       const request = store.get(id);
-
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('GET', 'Transaction failed while getting shadow', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      // Request success handler
       request.onsuccess = () => {
         const shadow = request.result;
-        if (shadow) {
-          // Update cache for future lookups (LRU behavior)
-          this.updateCache(shadow);
-          this.debugLog('GET', 'Shadow retrieved from IndexedDB', { id, rank: shadow.rank });
-        } else {
-          this.debugLog('GET', 'Shadow not found in IndexedDB', { id });
-        }
+        if (shadow) this.updateCache(shadow);
         resolve(shadow || null);
       };
-
-      // Request error handler (fallback)
-      request.onerror = () => {
-        this.debugError('GET', 'Failed to get shadow', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => resolve(null);
     });
   }
 
@@ -1007,78 +831,29 @@ class ShadowStorageManager {
    * 6. Return count of successfully saved shadows
    */
   async saveShadowsBatch(shadows) {
-    // Guard clause: Validate input
-    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
-      this.debugLog('BATCH_SAVE', 'No shadows to save', { count: 0 });
-      return 0;
-    }
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readwrite', (store, tx, resolve) => {
       let completed = 0;
       let errors = 0;
       const total = shadows.length;
 
-      // Transaction error handler (catches all transaction errors)
-      transaction.onerror = () => {
-        this.debugError('BATCH_SAVE', 'Transaction failed during batch save', transaction.error);
-        reject(transaction.error);
-      };
+      tx.oncomplete = () => resolve(completed);
 
-      // Transaction complete handler (all operations finished)
-      transaction.oncomplete = () => {
-        // No need to invalidate here - incremental cache handles it automatically
-
-        this.debugLog('BATCH_SAVE', 'Batch save transaction completed', {
-          completed,
-          errors,
-          total,
-          successRate: `${((completed / total) * 100).toFixed(1)}%`,
-        });
-        resolve(completed);
-      };
-
-      // Process each shadow in batch
       shadows.forEach((shadow, index) => {
-        // Validate shadow before saving (accept both id and i for compressed shadows)
         const shadowId = this.getCacheKey(shadow);
         if (!shadow || !shadowId) {
           errors++;
-          this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index, shadow });
-          if (completed + errors === total) {
-            // All processed, but transaction still running - wait for oncomplete
-          }
+          this.debugError('BATCH_SAVE', `Invalid shadow at index ${index}`, { index });
           return;
         }
-
         const request = store.put(shadow);
-
-        request.onsuccess = () => {
-          completed++;
-          // Don't resolve here - wait for transaction.oncomplete
-        };
-
+        request.onsuccess = () => { completed++; };
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, {
-            index,
-            id: shadowId,
-            error: request.error,
-          });
-          // Don't reject here - continue with other shadows
+          this.debugError('BATCH_SAVE', `Failed to save shadow at index ${index}`, { index, id: shadowId, error: request.error });
         };
       });
-
-      // Edge case: If all shadows are invalid, transaction completes immediately
-      if (errors === total) {
-        // Transaction will still fire oncomplete, which will resolve
-      }
     });
   }
 
@@ -1102,161 +877,46 @@ class ShadowStorageManager {
     sortBy = 'extractedAt',
     sortOrder = 'desc'
   ) {
-    // Guard clause: Validate parameters
     if (offset < 0) offset = 0;
     if (limit < 1) limit = 50;
-    if (limit > 10000) {
-      this.debugLog('GET_SHADOWS', 'Limit too large, capping at 10000', { requested: limit });
-      limit = 10000;
-    }
+    if (limit > 10000) limit = 10000;
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-
-      // Select optimal index based on filters (indexed queries are faster)
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
+      // Select optimal index based on filters
       let index = store;
-
       if (filters.rank && filters.role) {
-        // Composite index for rank + role (most specific)
-        try {
-          index = store.index('rank_role');
-        } catch (e) {
-          this.debugError('GET_SHADOWS', 'rank_role index not found, using object store', e);
-        }
+        try { index = store.index('rank_role'); } catch (e) { /* fallback to store */ }
       } else if (filters.rank) {
-        // Rank index (common filter)
-        try {
-          index = store.index('rank');
-        } catch (e) {
-          this.debugError('GET_SHADOWS', 'rank index not found, using object store', e);
-        }
+        try { index = store.index('rank'); } catch (e) { /* fallback to store */ }
       } else if (filters.role) {
-        // Role index (common filter)
-        try {
-          index = store.index('role');
-        } catch (e) {
-          this.debugError('GET_SHADOWS', 'role index not found, using object store', e);
-        }
+        try { index = store.index('role'); } catch (e) { /* fallback to store */ }
       }
 
-      const request = index.openCursor();
       const results = [];
+      const request = index.openCursor();
 
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('GET_SHADOWS', 'Transaction failed', {
-          error: transaction.error,
-          errorMessage: transaction.error?.message,
-          errorName: transaction.error?.name,
-        });
-        reject(transaction.error || request.error);
-      };
-
-      // Request error handler (cursor-specific errors)
-      request.onerror = () => {
-        this.debugError('GET_SHADOWS', 'Cursor request failed', {
-          error: request.error,
-          errorMessage: request.error?.message,
-          errorName: request.error?.name,
-          indexName: index.name || 'objectStore',
-          filters,
-        });
-        reject(request.error || new Error('Cursor request failed'));
-      };
-
-      // Cursor success handler
       request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor) {
           const shadow = cursor.value;
-
-          // Apply filters (early exit for performance)
           let matches = true;
           if (filters.rank && shadow.rank !== filters.rank) matches = false;
           if (filters.role && shadow.role !== filters.role) matches = false;
           if (filters.minLevel && (shadow.level || 1) < filters.minLevel) matches = false;
           if (filters.maxLevel && (shadow.level || 1) > filters.maxLevel) matches = false;
           if (filters.minStrength && (shadow.strength || 0) < filters.minStrength) matches = false;
-
-          if (matches) {
-            results.push(shadow);
-          }
-
+          if (matches) results.push(shadow);
           cursor.continue();
         } else {
-          // All shadows processed - sort and paginate
           results.sort((a, b) => {
             const aVal = a[sortBy] || 0;
             const bVal = b[sortBy] || 0;
             return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
           });
-
-          // Apply pagination
-          const paginated = results.slice(offset, offset + limit);
-
-          // CRITICAL DIAGNOSTIC: Log if we got 0 results but should have shadows
-          if (results.length === 0 && Object.keys(filters).length === 0) {
-            // Empty filters should return all shadows - if we got 0, something is wrong
-            this.debugError(
-              'GET_SHADOWS',
-              'WARNING: Empty filters returned 0 results - possible IndexedDB issue',
-              {
-                total: results.length,
-                returned: paginated.length,
-                offset,
-                limit,
-                filters,
-                dbInitialized: !!this.db,
-                storeName: this.storeName,
-                indexName: index.name || 'objectStore',
-                possibleCauses: [
-                  'IndexedDB store is empty (no shadows saved)',
-                  'Cursor not iterating correctly',
-                  'Transaction completed before cursor finished',
-                  'Database corruption or migration needed',
-                ],
-              }
-            );
-          } else {
-            this.debugLog('GET_SHADOWS', 'Query completed', {
-              total: results.length,
-              returned: paginated.length,
-              offset,
-              limit,
-              filters,
-              dbInitialized: !!this.db,
-              storeName: this.storeName,
-            });
-          }
-
-          // Debug: Log sample shadow data if available
-          if (paginated.length > 0 && paginated.length <= 5) {
-            this.debugLog('GET_SHADOWS', 'Sample shadow data', {
-              sampleShadows: paginated.map((s) => ({
-                id: s.id,
-                rank: s.rank,
-                strength: s.strength,
-                hasBaseStats: !!s.baseStats,
-                level: s.level || 1,
-              })),
-            });
-          }
-
-          resolve(paginated);
+          resolve(results.slice(offset, offset + limit));
         }
       };
-
-      // Request error handler (fallback)
-      request.onerror = () => {
-        this.debugError('GET_SHADOWS', 'Failed to open cursor', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -1265,100 +925,39 @@ class ShadowStorageManager {
    * Returns aggregate data: total, by rank, avg level, ready for rank-up, etc.
    */
   async getArmyStatistics() {
-    if (!this.db) await this.init();
+    const rankUpBaselines = { E: 10, D: 25, C: 50, B: 100, A: 200, S: 400, SS: 800, SSS: 1600, Monarch: 3200 };
+    const rankOrder = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
 
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const request = store.openCursor();
-
-      const stats = {
-        total: 0,
-        byRank: {},
-        byRole: {},
-        avgLevel: 0,
-        totalCombatTime: 0,
-        readyForRankUp: 0,
-        totalPower: 0,
-      };
+    return this._withStore('readonly', (store, _tx, resolve) => {
+      const stats = { total: 0, byRank: {}, byRole: {}, avgLevel: 0, totalCombatTime: 0, readyForRankUp: 0, totalPower: 0 };
       let levelSum = 0;
+      const request = store.openCursor();
 
       request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor) {
           const shadow = cursor.value;
           stats.total++;
-
-          // By rank
           stats.byRank[shadow.rank] = (stats.byRank[shadow.rank] || 0) + 1;
-
-          // By role
-          const role = shadow.role || shadow.roleName || 'Unknown';
-          stats.byRole[role] = (stats.byRole[role] || 0) + 1;
-
-          // Level sum
+          stats.byRole[shadow.role || shadow.roleName || 'Unknown'] = (stats.byRole[shadow.role || shadow.roleName || 'Unknown'] || 0) + 1;
           levelSum += shadow.level || 1;
-
-          // Combat time
           stats.totalCombatTime += shadow.totalCombatTime || 0;
-
-          // Power
           stats.totalPower += shadow.strength || 0;
 
-          // Check rank-up readiness (simplified, just check avg stats)
           const effectiveStats = this.getShadowEffectiveStats(shadow);
-          const avgStats =
-            (effectiveStats.strength +
-              effectiveStats.agility +
-              effectiveStats.intelligence +
-              effectiveStats.vitality +
-              effectiveStats.perception) /
-            5;
-
-          const shadowRanks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'Monarch'];
-          const idx = shadowRanks.indexOf(shadow.rank);
-          const nextRank = shadowRanks[idx + 1];
-          const baselineStats = {
-            E: 10,
-            D: 25,
-            C: 50,
-            B: 100,
-            A: 200,
-            S: 400,
-            SS: 800,
-            SSS: 1600,
-            Monarch: 3200,
-          };
-          const nextBaseline = baselineStats[nextRank] || 9999;
-
-          if (nextRank && avgStats >= nextBaseline * 0.8) {
-            stats.readyForRankUp++;
-          }
+          const avgStats = (effectiveStats.strength + effectiveStats.agility + effectiveStats.intelligence + effectiveStats.vitality + effectiveStats.perception) / 5;
+          const idx = rankOrder.indexOf(shadow.rank);
+          const nextRank = rankOrder[idx + 1];
+          if (nextRank && avgStats >= (rankUpBaselines[nextRank] || 9999) * 0.8) stats.readyForRankUp++;
 
           cursor.continue();
         } else {
-          // Calculate averages
           stats.avgLevel = stats.total > 0 ? Math.floor(levelSum / stats.total) : 0;
           stats.totalCombatTime = Math.floor(stats.totalCombatTime);
-          this.debugLog('GET_ARMY_STATS', 'Statistics calculated', {
-            total: stats.total,
-            avgLevel: stats.avgLevel,
-          });
           resolve(stats);
         }
       };
-
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('GET_ARMY_STATS', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      // Request error handler
-      request.onerror = () => {
-        this.debugError('GET_ARMY_STATS', 'Failed to get army statistics', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => resolve(stats);
     });
   }
 
@@ -1401,53 +1000,23 @@ class ShadowStorageManager {
    * @returns {Promise<Array>} - Array of shadows with matching personality
    */
   async getShadowsByPersonality(personality) {
-    // Guard clause: Return empty if no personality
     if (!personality) return [];
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-
-      // Check if personality index exists
+    return this._withStore('readonly', (store, _tx, resolve, reject) => {
       if (!store.indexNames.contains('personality')) {
-        // Index doesn't exist yet - fallback to manual filter
+        // Index doesn't exist — fallback to manual filter
         this.getAllShadows()
-          .then((allShadows) => {
-            const filtered = allShadows.filter((s) => {
-              // Get personality (may need to calculate if not stored)
-              const storedPersonality = s.personality;
-              if (storedPersonality) return storedPersonality === personality;
-              // Calculate if not stored (fallback)
-              const personalityObj = this.getShadowPersonality(s);
-              return personalityObj.name?.toLowerCase() === personality;
-            });
-            resolve(filtered);
-          })
+          .then((all) => resolve(all.filter((s) => {
+            if (s.personality) return s.personality === personality;
+            const p = this.getShadowPersonality(s);
+            return p.name?.toLowerCase() === personality;
+          })))
           .catch(reject);
         return;
       }
-
-      const index = store.index('personality');
-      const request = index.getAll(personality);
-
-      transaction.onerror = () => {
-        this.debugError('GET_BY_PERSONALITY', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      request.onsuccess = () => {
-        const shadows = request.result || [];
-        this.debugLog(
-          'GET_BY_PERSONALITY',
-          `Retrieved ${shadows.length} shadows with personality ${personality}`
-        );
-        resolve(shadows);
-      };
+      const request = store.index('personality').getAll(personality);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
     });
   }
 
@@ -1461,34 +1030,10 @@ class ShadowStorageManager {
    * 4. Return total count
    */
   async getTotalCount() {
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readonly', (store, _tx, resolve) => {
       const request = store.count();
-
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('GET_TOTAL_COUNT', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      // Request success handler
-      request.onsuccess = () => {
-        const count = request.result;
-        this.debugLog('GET_TOTAL_COUNT', 'Count retrieved', { count });
-        resolve(count);
-      };
-
-      // Request error handler
-      request.onerror = () => {
-        this.debugError('GET_TOTAL_COUNT', 'Failed to get count', request.error);
-        reject(request.error);
-      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => resolve(0);
     });
   }
 
@@ -1504,49 +1049,20 @@ class ShadowStorageManager {
    * 6. Return success status
    */
   async deleteShadow(id) {
-    // Guard clause: Validate input
-    if (!id) {
-      const error = new Error('Invalid shadow ID: missing id');
-      this.debugError('DELETE', 'Cannot delete shadow: invalid input', error);
-      throw error;
-    }
+    if (!id) throw new Error('Invalid shadow ID: missing id');
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readwrite', (store, _tx, resolve, reject) => {
       const request = store.delete(id);
-
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('DELETE', 'Transaction failed while deleting shadow', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      // Request success handler
       request.onsuccess = () => {
-        // Remove from cache (cleanup) - handle both id and i
-        // Try to get shadow first to invalidate all possible keys
         const cachedShadow = this.recentCache.get(id);
         if (cachedShadow) {
           this.invalidateCache(cachedShadow);
         } else {
-          // Fallback: just delete by id
           this.recentCache.delete(id);
         }
-        this.debugLog('DELETE', 'Shadow deleted successfully', { id });
         resolve({ success: true });
       };
-
-      // Request error handler (fallback)
-      request.onerror = () => {
-        this.debugError('DELETE', 'Failed to delete shadow', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => reject(request.error);
     });
   }
 
@@ -1571,93 +1087,34 @@ class ShadowStorageManager {
    * @returns {Promise<number>} - Count of successfully updated shadows
    */
   async updateShadowsBatch(shadows) {
-    // Guard clause: Validate input
-    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) {
-      this.debugLog('BATCH_UPDATE', 'No shadows to update', { count: 0 });
-      return 0;
-    }
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readwrite', (store, tx, resolve) => {
       let completed = 0;
       let errors = 0;
-      const total = shadows.length;
 
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError(
-          'BATCH_UPDATE',
-          'Transaction failed during batch update',
-          transaction.error
-        );
-        reject(transaction.error);
-      };
+      tx.oncomplete = () => resolve(completed);
 
-      // Transaction complete handler
-      transaction.oncomplete = () => {
-        this.debugLog('BATCH_UPDATE', 'Batch update transaction completed', {
-          completed,
-          errors,
-          total,
-          successRate: `${((completed / total) * 100).toFixed(1)}%`,
-        });
-        resolve(completed);
-      };
-
-      // Process each shadow in batch
       shadows.forEach((shadow, index) => {
-        // Guard clause: Validate shadow has identifier
-        // IndexedDB store keyPath is `id` (see db.createObjectStore(... { keyPath: 'id' })).
-        // Some compressed records may only have `i`; normalize to always have `id`.
-        if (!shadow) {
-          errors++;
-          this.debugError('BATCH_UPDATE', `Null shadow at index ${index}`, { index });
-          return;
-        }
-
+        if (!shadow) { errors++; return; }
         const idForStore = this.getCacheKey(shadow);
         if (!idForStore) {
           errors++;
-          this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, {
-            index,
-            isCompressed: shadow._c === 1 || shadow._c === 2,
-            hasI: !!shadow.i,
-            hasId: !!shadow.id,
-            shadowKeys: Object.keys(shadow || {}),
-          });
+          this.debugError('BATCH_UPDATE', `Invalid shadow at index ${index}`, { index, hasI: !!shadow.i, hasId: !!shadow.id });
           return;
         }
-
-        // Normalize: ensure `id` exists so IndexedDB keyPath resolves.
         shadow.id || (shadow.id = idForStore);
 
         const request = store.put(shadow);
-
         request.onsuccess = () => {
           completed++;
-          // Invalidate cache for updated shadow (handles compression state changes)
-          // Store old shadow before update for proper invalidation
           const oldShadow = this.recentCache.get(this.getCacheKey(shadow));
-          if (oldShadow) {
-            this.invalidateCache(oldShadow);
-          }
-          // Update cache with new shadow state
+          if (oldShadow) this.invalidateCache(oldShadow);
           this.updateCache(shadow, oldShadow);
         };
-
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, {
-            index,
-            id: this.getCacheKey(shadow),
-            error: request.error,
-          });
+          this.debugError('BATCH_UPDATE', `Failed to update shadow at index ${index}`, { index, id: this.getCacheKey(shadow), error: request.error });
         };
       });
     });
@@ -1677,77 +1134,29 @@ class ShadowStorageManager {
    * @returns {Promise<number>} - Count of successfully deleted shadows
    */
   async deleteShadowsBatch(shadowIds) {
-    // Guard clause: Validate input
-    if (!shadowIds || !Array.isArray(shadowIds) || shadowIds.length === 0) {
-      this.debugLog('BATCH_DELETE', 'No shadows to delete', { count: 0 });
-      return 0;
-    }
+    if (!shadowIds || !Array.isArray(shadowIds) || shadowIds.length === 0) return 0;
 
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readwrite');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readwrite', (store, tx, resolve) => {
       let completed = 0;
       let errors = 0;
-      const total = shadowIds.length;
 
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError(
-          'BATCH_DELETE',
-          'Transaction failed during batch delete',
-          transaction.error
-        );
-        reject(transaction.error);
-      };
+      tx.oncomplete = () => resolve(completed);
 
-      // Transaction complete handler
-      transaction.oncomplete = () => {
-        // No need to invalidate here - incremental cache handles it automatically
-
-        this.debugLog('BATCH_DELETE', 'Batch delete transaction completed', {
-          completed,
-          errors,
-          total,
-          successRate: `${((completed / total) * 100).toFixed(1)}%`,
-        });
-        resolve(completed);
-      };
-
-      // Process each shadow ID in batch
       shadowIds.forEach((id, index) => {
-        // Guard clause: Validate ID
-        if (!id) {
-          errors++;
-          this.debugError('BATCH_DELETE', `Invalid shadow ID at index ${index}`, { index, id });
-          return;
-        }
-
+        if (!id) { errors++; return; }
         const request = store.delete(id);
-
         request.onsuccess = () => {
           completed++;
-          // Remove from cache - handle both id and i for compressed shadows
           const cachedShadow = this.recentCache.get(id);
           if (cachedShadow) {
             this.invalidateCache(cachedShadow);
           } else {
-            // Fallback: just delete by id
             this.recentCache.delete(id);
           }
         };
-
         request.onerror = () => {
           errors++;
-          this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, {
-            index,
-            id,
-            error: request.error,
-          });
+          this.debugError('BATCH_DELETE', `Failed to delete shadow at index ${index}`, { index, id, error: request.error });
         };
       });
     });
@@ -1758,21 +1167,6 @@ class ShadowStorageManager {
   // ============================================================================
 
   /**
-   * Get aggregated power for weak shadows (2+ ranks below user rank)
-   * Uses BdAPI patterns: Cache-first with TTL, concurrent execution prevention, indexed queries
-   * Operations:
-   * 1. Validate input parameters (guard clauses)
-   * 2. Check cache first (1 minute TTL) - fast path
-   * 3. Prevent concurrent execution (lock mechanism)
-   * 4. Calculate weak rank threshold (2+ ranks below user)
-   * 5. Query IndexedDB using rank index (batch queries)
-   * 6. Sum total power and count
-   * 7. Update cache and resolve
-   * @param {string} userRank - User's current rank
-   * @param {string[]} shadowRanks - Array of all shadow ranks in order
-   * @returns {Promise<Object>} - { totalPower, totalCount, ranks, timestamp }
-   */
-  /**
    * Calculate weak shadow power directly (no cache)
    * Weak shadows are 2+ ranks below user rank, used for buffs
    * @param {string} userRank - User's current rank
@@ -1780,184 +1174,56 @@ class ShadowStorageManager {
    * @returns {Promise<Object>} - { totalPower, totalCount, ranks, timestamp }
    */
   async getAggregatedPower(userRank, shadowRanks) {
-    this.debugLog('GET_AGGREGATED_POWER', 'Starting direct weak shadow power calculation', {
-      userRank,
-      shadowRanksCount: shadowRanks?.length || 0,
-    });
+    const emptyResult = { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
+    if (!userRank || !shadowRanks || !Array.isArray(shadowRanks)) return emptyResult;
 
-    // Guard clause: Validate input
-    if (!userRank || !shadowRanks || !Array.isArray(shadowRanks)) {
-      const error = new Error('Invalid parameters: userRank and shadowRanks required');
-      this.debugError('GET_AGGREGATED_POWER', 'Invalid parameters', error);
-      return { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
-    }
-
-    // Ensure database initialized
-    if (!this.db) {
-      await this.init();
-    }
-
-    // Calculate weak rank threshold (2+ ranks below user rank)
     const userRankIndex = shadowRanks.indexOf(userRank);
-    if (userRankIndex === -1) {
-      this.debugError('GET_AGGREGATED_POWER', 'User rank not found in shadowRanks array', {
-        userRank,
-        shadowRanks,
-      });
-      return { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
-    }
+    if (userRankIndex === -1) return emptyResult;
 
-    const weakRankThreshold = Math.max(0, userRankIndex - 2);
-    const weakRanks = shadowRanks.slice(0, weakRankThreshold + 1);
+    const weakRanks = shadowRanks.slice(0, Math.max(0, userRankIndex - 2) + 1);
+    if (weakRanks.length === 0) return emptyResult;
 
-    // Guard clause: No weak ranks to aggregate
-    if (weakRanks.length === 0) {
-      return { totalPower: 0, totalCount: 0, ranks: [], timestamp: Date.now() };
-    }
+    // Resolve shadow strength from various storage formats
+    const resolveStrength = (shadow) => {
+      if (shadow.strength > 0) return shadow.strength;
+      if (shadow._c === 2 && shadow.p !== undefined) return shadow.p * 100;
+      if (shadow.baseStats) return this.calculateShadowPower(shadow.baseStats, 1);
+      const decompressed = this.getShadowData(shadow);
+      if (decompressed?.baseStats) return this.calculateShadowPower(decompressed.baseStats, 1);
+      if (decompressed?.strength > 0) return decompressed.strength;
+      if (decompressed?._c === 2 && decompressed?.p !== undefined) return decompressed.p * 100;
+      const effectiveStats = this.getShadowEffectiveStats?.(shadow);
+      if (effectiveStats) return this.calculateShadowPower(effectiveStats, 1);
+      return 0;
+    };
 
-    // Direct calculation - no cache, always fresh
-    const promise = new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
+    return this._withStore('readonly', (store, _tx, resolve) => {
       const rankIndex = store.index('rank');
-
       let totalPower = 0;
       let totalCount = 0;
       let completed = 0;
       let errors = 0;
 
-      // Transaction error handler
-      transaction.onerror = () => {
-        this.debugError('GET_AGGREGATED_POWER', 'Transaction failed', transaction.error);
-        reject(transaction.error);
-      };
-
-      // Process each weak rank in parallel
       weakRanks.forEach((rank) => {
         const request = rankIndex.getAll(rank);
-
         request.onsuccess = () => {
-          const shadows = request.result || [];
-          shadows.forEach((shadow) => {
-            // Calculate strength from stats if missing
-            let shadowStrength = shadow.strength;
-
-            // Handle ultra-compressed shadows (they store power as 'p' scaled by 100)
-            if (!shadowStrength || shadowStrength === 0) {
-              if (shadow._c === 2 && shadow.p !== undefined) {
-                // Ultra-compressed: p is scaled power (strength / 100)
-                shadowStrength = shadow.p * 100;
-                this.debugLog('GET_AGGREGATED_POWER', 'Using ultra-compressed power', {
-                  shadowId: this.getCacheKey(shadow),
-                  p: shadow.p,
-                  calculatedStrength: shadowStrength,
-                });
-              } else if (shadow.baseStats) {
-                // Try to calculate from baseStats
-                shadowStrength = this.calculateShadowPower(shadow.baseStats, 1); // Use multiplier 1, not level
-              } else {
-                // Fallback: use decompressed data
-                const decompressed = this.getShadowData(shadow);
-                if (decompressed && decompressed.baseStats) {
-                  shadowStrength = this.calculateShadowPower(decompressed.baseStats, 1); // Use multiplier 1
-                } else if (decompressed && decompressed.strength) {
-                  shadowStrength = decompressed.strength;
-                } else if (decompressed && decompressed._c === 2 && decompressed.p !== undefined) {
-                  // Decompressed ultra-compressed shadow still has 'p'
-                  shadowStrength = decompressed.p * 100;
-                }
-              }
-            }
-            // Ensure we have a valid strength value
-            if (!shadowStrength || shadowStrength === 0) {
-              // Last resort: try to get from shadow directly if it exists
-              if (shadow.strength && shadow.strength > 0) {
-                shadowStrength = shadow.strength;
-              } else {
-                // Try to calculate from effective stats if available
-                const effectiveStats = this.getShadowEffectiveStats
-                  ? this.getShadowEffectiveStats(shadow)
-                  : null;
-                if (effectiveStats) {
-                  shadowStrength = this.calculateShadowPower(effectiveStats, 1);
-                } else {
-                  // Skip this shadow if we can't calculate strength
-                  this.debugLog(
-                    'GET_AGGREGATED_POWER',
-                    'Skipping shadow with no calculable strength',
-                    {
-                      shadowId: this.getCacheKey(shadow),
-                      hasBaseStats: !!shadow.baseStats,
-                      hasStrength: !!shadow.strength,
-                      isCompressed: !!(shadow._c === 1 || shadow._c === 2),
-                    }
-                  );
-                  return; // Skip this shadow (use return in forEach, not continue)
-                }
-              }
-            }
-            // Only add to totals if we have valid strength
-            if (shadowStrength && shadowStrength > 0) {
-              totalPower += shadowStrength;
-              totalCount++;
-            }
+          (request.result || []).forEach((shadow) => {
+            const strength = resolveStrength(shadow);
+            if (strength > 0) { totalPower += strength; totalCount++; }
           });
-
           completed++;
-
-          // Check if all ranks processed
           if (completed + errors === weakRanks.length) {
-            const result = {
-              totalPower,
-              totalCount,
-              ranks: weakRanks,
-              timestamp: Date.now(),
-            };
-
-            this.debugLog('GET_AGGREGATED_POWER', 'Direct calculation completed successfully', {
-              totalPower,
-              totalCount,
-              ranksProcessed: weakRanks.length,
-              weakRanks,
-              avgPowerPerShadow: totalCount > 0 ? Math.floor(totalPower / totalCount) : 0,
-            });
-
-            resolve(result);
+            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now() });
           }
         };
-
         request.onerror = () => {
           errors++;
-          this.debugError(
-            'GET_AGGREGATED_POWER',
-            `Failed to get shadows for rank ${rank}`,
-            request.error
-          );
-
-          // Continue with other ranks even if one fails
           if (completed + errors === weakRanks.length) {
-            const result = {
-              totalPower,
-              totalCount,
-              ranks: weakRanks,
-              timestamp: Date.now(),
-            };
-
-            this.debugLog('GET_AGGREGATED_POWER', 'Direct calculation completed with errors', {
-              totalPower,
-              totalCount,
-              errors,
-              ranksProcessed: weakRanks.length,
-            });
-
-            resolve(result);
+            resolve({ totalPower, totalCount, ranks: weakRanks, timestamp: Date.now() });
           }
         };
       });
     });
-
-    // Direct calculation - return promise directly
-    return promise;
   }
 
   // ============================================================================
@@ -1975,29 +1241,10 @@ class ShadowStorageManager {
    * @returns {Promise<Array>} - Array of shadows with matching rank
    */
   async getShadowsByRank(rank) {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const index = store.index('rank');
-      const request = index.getAll(rank); // Direct index query - FAST!
-
-      transaction.onerror = () => {
-        this.debugError('GET_BY_RANK', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      request.onsuccess = () => {
-        const shadows = request.result || [];
-        this.debugLog('GET_BY_RANK', 'Shadows retrieved by rank', { rank, count: shadows.length });
-        resolve(shadows);
-      };
-
-      request.onerror = () => {
-        this.debugError('GET_BY_RANK', 'Failed to get shadows by rank', request.error);
-        reject(request.error);
-      };
+    return this._withStore('readonly', (store, _tx, resolve) => {
+      const request = store.index('rank').getAll(rank);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
     });
   }
 
@@ -2011,36 +1258,19 @@ class ShadowStorageManager {
    * @returns {Promise<Array>} - Array of top shadows
    */
   async getTopShadowsByPower(limit = 100) {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const index = store.index('strength');
-      const request = index.openCursor(null, 'prev'); // Descending order
-
+    return this._withStore('readonly', (store, _tx, resolve) => {
       const results = [];
-
-      transaction.onerror = () => {
-        this.debugError('GET_TOP_POWER', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
+      const request = store.index('strength').openCursor(null, 'prev');
       request.onsuccess = (event) => {
         const cursor = event.target.result;
         if (cursor && results.length < limit) {
           results.push(cursor.value);
           cursor.continue();
         } else {
-          this.debugLog('GET_TOP_POWER', 'Top shadows retrieved', { count: results.length, limit });
           resolve(results);
         }
       };
-
-      request.onerror = () => {
-        this.debugError('GET_TOP_POWER', 'Failed to get top shadows by power', request.error);
-        reject(request.error);
-      };
+      request.onerror = () => resolve([]);
     });
   }
 
@@ -2054,29 +1284,10 @@ class ShadowStorageManager {
    * @returns {Promise<number>} - Count of shadows with matching rank
    */
   async getCountByRank(rank) {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const index = store.index('rank');
-      const request = index.count(rank); // Direct count - VERY FAST!
-
-      transaction.onerror = () => {
-        this.debugError('GET_COUNT_BY_RANK', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      request.onsuccess = () => {
-        const count = request.result || 0;
-        this.debugLog('GET_COUNT_BY_RANK', 'Count retrieved by rank', { rank, count });
-        resolve(count);
-      };
-
-      request.onerror = () => {
-        this.debugError('GET_COUNT_BY_RANK', 'Failed to get count by rank', request.error);
-        reject(request.error);
-      };
+    return this._withStore('readonly', (store, _tx, resolve) => {
+      const request = store.index('rank').count(rank);
+      request.onsuccess = () => resolve(request.result || 0);
+      request.onerror = () => resolve(0);
     });
   }
 
@@ -2089,29 +1300,10 @@ class ShadowStorageManager {
    * @returns {Promise<Array>} - Array of shadows with matching role
    */
   async getShadowsByRole(role) {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const roleIndex = store.index('role');
-      const request = roleIndex.getAll(role);
-
-      transaction.onerror = () => {
-        this.debugError('GET_BY_ROLE', 'Transaction failed', transaction.error);
-        reject(transaction.error || request.error);
-      };
-
-      request.onsuccess = () => {
-        const shadows = request.result || [];
-        this.debugLog('GET_BY_ROLE', 'Shadows retrieved by role', { role, count: shadows.length });
-        resolve(shadows);
-      };
-
-      request.onerror = () => {
-        this.debugError('GET_BY_ROLE', 'Failed to get shadows by role', request.error);
-        reject(request.error);
-      };
+    return this._withStore('readonly', (store, _tx, resolve) => {
+      const request = store.index('role').getAll(role);
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => resolve([]);
     });
   }
 
@@ -2794,11 +1986,6 @@ module.exports = class ShadowArmy {
     // CSS management tracking
     this._injectedStyles = new Set(); // Track all injected CSS styles for cleanup
 
-    this._combatPerformance = null; // Performance metrics tracker
-
-    // Shadow personality system
-    this._shadowPersonalityCache = new Map(); // Cache shadow personalities
-
     // Solo Leveling Stats plugin integration
     this.soloPlugin = null;
     this.originalProcessMessage = null;
@@ -2859,140 +2046,7 @@ module.exports = class ShadowArmy {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
-    // Compatibility shim: hot-reloads can leave older live instances missing newer helpers.
-    // Ensure `getCacheKey` exists before any extraction/async callbacks run.
-    if (typeof this.getCacheKey !== 'function') {
-      this.getCacheKey = (shadow) => (shadow ? shadow.id || shadow.i || null : null);
-    }
-
-    // Compatibility shim: older live instances may not have normalization helpers used by combat + UI.
-    if (typeof this.normalizeShadowForCombat !== 'function') {
-      this.normalizeShadowForCombat = (shadow) => {
-        const shadowId = typeof this.getCacheKey === 'function' ? this.getCacheKey(shadow) : null;
-        if (!shadowId) return null;
-        const decompressed =
-          typeof this.getShadowData === 'function' ? this.getShadowData(shadow) || shadow : shadow;
-        return decompressed?.id
-          ? decompressed
-          : {
-              ...decompressed,
-              id: shadowId,
-              i: decompressed?.i || shadow?.i,
-            };
-      };
-    }
-
-    if (typeof this.normalizeTargetForCombat !== 'function') {
-      this.normalizeTargetForCombat = (target) => {
-        const safeTarget = target && typeof target === 'object' ? target : {};
-        const type = safeTarget.type || 'mob';
-        const id = safeTarget.id || safeTarget.name || (type === 'boss' ? 'boss' : 'unknown');
-        const rank = safeTarget.rank || 'E';
-        const hp = Number.isFinite(safeTarget.hp) ? safeTarget.hp : 0;
-        const maxHp = Number.isFinite(safeTarget.maxHp) ? safeTarget.maxHp : hp;
-        const stats =
-          safeTarget.stats && typeof safeTarget.stats === 'object' ? safeTarget.stats : safeTarget;
-        return {
-          ...safeTarget,
-          id,
-          type,
-          rank,
-          hp,
-          maxHp: Math.max(maxHp, hp),
-          strength: Number.isFinite(stats.strength) ? stats.strength : 0,
-          agility: Number.isFinite(stats.agility) ? stats.agility : 0,
-          intelligence: Number.isFinite(stats.intelligence) ? stats.intelligence : 0,
-          vitality: Number.isFinite(stats.vitality) ? stats.vitality : 0,
-          perception: Number.isFinite(stats.perception) ? stats.perception : 0,
-        };
-      };
-    }
-
-    // Compatibility shim: older live instances may not have `resolveCombatStats`.
-    // This must exist because combat targeting calls it in hot paths.
-    if (typeof this.resolveCombatStats !== 'function') {
-      this.resolveCombatStats = ({ entityType, entity }) => {
-        const ensureStats = (s) => ({
-          strength: Number.isFinite(s?.strength) ? s.strength : 0,
-          agility: Number.isFinite(s?.agility) ? s.agility : 0,
-          intelligence: Number.isFinite(s?.intelligence) ? s.intelligence : 0,
-          vitality: Number.isFinite(s?.vitality) ? s.vitality : 0,
-          perception: Number.isFinite(s?.perception) ? s.perception : 0,
-        });
-
-        const safeEntity = entity && typeof entity === 'object' ? entity : {};
-
-        const resolvers = {
-          shadow: () => {
-            const normalized =
-              typeof this.normalizeShadowForCombat === 'function'
-                ? this.normalizeShadowForCombat(safeEntity)
-                : safeEntity;
-            const effective =
-              typeof this.getShadowEffectiveStats === 'function'
-                ? this.getShadowEffectiveStats(normalized)
-                : normalized;
-            const id =
-              typeof this.getCacheKey === 'function'
-                ? this.getCacheKey(normalized)
-                : normalized?.id || normalized?.i || null;
-            const rank = normalized?.rank || 'E';
-            return { id, type: 'shadow', rank, stats: ensureStats(effective), hp: 0, maxHp: 0 };
-          },
-          target: () => {
-            const normalized =
-              typeof this.normalizeTargetForCombat === 'function'
-                ? this.normalizeTargetForCombat(safeEntity)
-                : safeEntity;
-            const id = normalized?.id || normalized?.name || null;
-            const type = normalized?.type || 'mob';
-            const rank = normalized?.rank || 'E';
-            const hp = Number.isFinite(normalized?.hp) ? normalized.hp : 0;
-            const maxHp = Number.isFinite(normalized?.maxHp) ? normalized.maxHp : hp;
-            return {
-              id,
-              type,
-              rank,
-              stats: ensureStats(normalized),
-              hp,
-              maxHp: Math.max(maxHp, hp),
-            };
-          },
-        };
-
-        return (resolvers[entityType] || resolvers.target)();
-      };
-    }
-
-    // Suppress BetterDiscord compatibility errors (discord_media module not found)
-    // This is a BetterDiscord core issue with Discord 0.0.370+, not a plugin issue
-    if (typeof window !== 'undefined' && !this._discordMediaErrorHandlerAdded) {
-      this._discordMediaErrorHandlerAdded = true;
-
-      // Handle unhandled promise rejections for discord_media errors
-      // Store the handler so we can remove it on stop()
-      this._discordMediaUnhandledRejectionHandler = (event) => {
-        // Guard: don't interfere after stop
-        if (this._isStopped) return;
-
-        const error = event.reason;
-        const errorMessage = error?.message || error?.toString() || '';
-        const errorStack = error?.stack || '';
-
-        // Suppress the specific BetterDiscord discord_media module error
-        if (
-          errorMessage.includes("Cannot find module 'discord_media'") ||
-          errorMessage.includes('discord_media') ||
-          errorStack.includes('discord_media') ||
-          errorStack.includes('nativeModules.js')
-        ) {
-          // Prevent the error from appearing in console
-          event.preventDefault();
-        }
-      };
-
-      window.addEventListener('unhandledrejection', this._discordMediaUnhandledRejectionHandler);
-    }
+    this._setupDiscordMediaErrorSuppression();
 
     // Get user ID for storage isolation
     this.userId = await this.getUserId();
@@ -3200,6 +2254,32 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Suppress BetterDiscord discord_media module errors
+   * BetterDiscord core issue with Discord 0.0.370+, not a plugin issue
+   */
+  _setupDiscordMediaErrorSuppression() {
+    if (typeof window === 'undefined' || this._discordMediaErrorHandlerAdded) return;
+    this._discordMediaErrorHandlerAdded = true;
+
+    this._discordMediaUnhandledRejectionHandler = (event) => {
+      if (this._isStopped) return;
+      const error = event.reason;
+      const errorMessage = error?.message || error?.toString() || '';
+      const errorStack = error?.stack || '';
+      if (
+        errorMessage.includes("Cannot find module 'discord_media'") ||
+        errorMessage.includes('discord_media') ||
+        errorStack.includes('discord_media') ||
+        errorStack.includes('nativeModules.js')
+      ) {
+        event.preventDefault();
+      }
+    };
+
+    window.addEventListener('unhandledrejection', this._discordMediaUnhandledRejectionHandler);
+  }
+
+  /**
    * Stop the ShadowArmy plugin and clean up resources
    * Operations:
    * 1. Remove message listener to prevent memory leaks
@@ -3254,6 +2334,12 @@ module.exports = class ShadowArmy {
       this.widgetUpdateInterval = null;
     }
 
+    // Clear modal auto-refresh interval
+    if (this.autoRefreshInterval) {
+      clearInterval(this.autoRefreshInterval);
+      this.autoRefreshInterval = null;
+    }
+
     // Clear widget reinjection timeout
     if (this.widgetReinjectionTimeout) {
       clearTimeout(this.widgetReinjectionTimeout);
@@ -3295,10 +2381,6 @@ module.exports = class ShadowArmy {
 
     // Remove shadow rank widget
     this.removeShadowRankWidget();
-
-    // Clear cached buffs
-    this.cachedBuffs = null;
-    this.cachedBuffsTime = null;
 
     // Clear Solo Leveling data cache
     this._soloDataCache = null;
@@ -4703,164 +3785,6 @@ module.exports = class ShadowArmy {
       .forEach((bossId) => delete attempts[bossId]);
   }
 
-  /**
-   * Handle one or multiple extractions (normal or special ARISE)
-   * Operations:
-   * 1. Determine extraction count (1 for normal, 3-7 for special)
-   * 2. Generate shadows in a loop with specified target rank
-   * 3. Save shadows to IndexedDB (async, non-blocking)
-   * 4. Update extraction timestamps and counters
-   * 5. Grant XP to shadows based on extraction type
-   * 6. Save settings (config only, shadows in IndexedDB)
-   * 7. Show extraction animation
-   * 8. Update UI if needed
-   *
-   * @param {boolean} fromDungeon - If true, can extract magic beast shadows
-   */
-  async handleExtractionBurst(
-    userRank,
-    userLevel,
-    userStats,
-    isSpecial,
-    targetRank = null,
-    fromDungeon = false
-  ) {
-    const now = Date.now();
-    const _cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
-
-    // Decide how many shadows to extract in this burst
-    const count = isSpecial ? 3 + Math.floor(Math.random() * 5) : 1; // 3–7 for special, 1 for normal
-
-    // RANK VALIDATION: Ensure target rank is not too high
-    let rankToUse = targetRank || userRank;
-
-    if (targetRank) {
-      const userRankIndex = this.shadowRanks.indexOf(userRank);
-      const targetRankIndex = this.shadowRanks.indexOf(targetRank);
-      const rankDiff = targetRankIndex - userRankIndex;
-
-      // If target rank is more than 1 above user, cap it to user rank + 1
-      if (rankDiff > 1) {
-        rankToUse = this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)];
-        // debugLog method is in SECTION 4
-        this.debugLog('EXTRACTION', 'Extraction target adjusted', {
-          original: targetRank,
-          adjusted: rankToUse,
-          userRank,
-        });
-      }
-    }
-
-    // Generate shadows using Array.from for functional pattern
-    const extractedShadows = await Promise.all(
-      Array.from({ length: count }, async () => {
-        const shadow = this.generateShadow(rankToUse, userLevel, userStats, fromDungeon);
-
-        // Save to IndexedDB if available, otherwise fallback to localStorage
-        if (this.storageManager) {
-          try {
-            await this.storageManager.saveShadow(this.prepareShadowForSave(shadow));
-          } catch (error) {
-            // debugError method is in SECTION 4
-            this.debugError('STORAGE', 'Failed to save shadow to IndexedDB', error);
-            // Fallback to localStorage
-            if (!this.settings.shadows) this.settings.shadows = [];
-            this.settings.shadows.push(shadow);
-          }
-        } else {
-          // Fallback to localStorage
-          if (!this.settings.shadows) this.settings.shadows = [];
-          this.settings.shadows.push(shadow);
-        }
-
-        this.settings.totalShadowsExtracted++;
-        this.settings.lastExtractionTime = now;
-        if (!this.extractionTimestamps) this.extractionTimestamps = [];
-        this.extractionTimestamps.push(now);
-
-        // Invalidate buff cache when new shadows are added
-        this.cachedBuffs = null;
-        this.cachedBuffsTime = null;
-
-        // debugLog method is in SECTION 4
-        this.debugLog('EXTRACTION', 'Shadow extracted', { rank: shadow.rank, role: shadow.role });
-
-        return shadow;
-      })
-    );
-
-    // If we extracted shadows but have no generals yet, grantShadowXP() can early-return.
-    // In that case, invalidate caches explicitly so total power/aggregation can refresh later.
-    if (extractedShadows.length > 0) {
-      this.settings.cachedTotalPowerShadowCount = 0; // Force recalculation
-      this.invalidateArmyStatsCache('extractionBurst');
-    }
-
-    // New shadows start with 0 shadow XP; give them a small burst so they can level over time
-    if (isSpecial) {
-      await this.grantShadowXP(10, 'special_arise');
-    } else {
-      await this.grantShadowXP(2, 'extraction');
-    }
-
-    this.saveSettings();
-
-    // Show extraction animation for the last shadow
-    // Guard clause: Only show if shadows were extracted
-    if (extractedShadows.length > 0) {
-      this.showExtractionAnimation(extractedShadows[extractedShadows.length - 1]);
-    }
-
-    this.updateUI();
-  }
-
-  /**
-   * Check if special ARISE event can be triggered (daily limit)
-   * Operations:
-   * 1. Get today's date string
-   * 2. Initialize specialArise tracking if missing
-   * 3. Reset counter if new day
-   * 4. Check if countToday is below maxPerDay limit
-   */
-  canTriggerSpecialArise() {
-    const today = new Date().toDateString();
-    // Guard clause: Initialize if missing
-    if (!this.settings.specialArise) {
-      this.settings.specialArise = { ...this.defaultSettings.specialArise };
-    }
-    // Guard clause: Reset counter if new day
-    if (this.settings.specialArise.lastDate !== today) {
-      this.settings.specialArise.lastDate = today;
-      this.settings.specialArise.countToday = 0;
-    }
-    const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
-    return this.settings.specialArise.countToday < (cfg.specialMaxPerDay || 5);
-  }
-
-  /**
-   * Mark that a special ARISE event was used (increment daily counter)
-   * Operations:
-   * 1. Get today's date string
-   * 2. Initialize specialArise tracking if missing
-   * 3. Reset counter if new day
-   * 4. Increment countToday
-   * 5. Save settings to persist daily limit
-   */
-  markSpecialAriseUsed() {
-    const today = new Date().toDateString();
-    // Guard clause: Initialize if missing
-    if (!this.settings.specialArise) {
-      this.settings.specialArise = { ...this.defaultSettings.specialArise };
-    }
-    // Guard clause: Reset counter if new day
-    if (this.settings.specialArise.lastDate !== today) {
-      this.settings.specialArise.lastDate = today;
-      this.settings.specialArise.countToday = 0;
-    }
-    this.settings.specialArise.countToday += 1;
-    this.saveSettings();
-  }
-
   // ============================================================================
   // 3.7 SHADOW GENERATION & STATS - Creation & Calculation
   // ============================================================================
@@ -4977,165 +3901,6 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Determine shadow rank based on user rank and level
-   * Higher rank = better shadows, but still chance for lower ranks
-   * Operations:
-   * 1. Calculate probability distribution for each rank based on user rank
-   * 2. Generate random roll (0-1)
-   * 3. Use cumulative probability to select rank
-   * 4. Return selected rank or fallback to user's rank
-   */
-  determineShadowRank(userRankIndex, userLevel) {
-    // Base probabilities shift based on user rank
-    // E rank: Mostly E, some D
-    // S rank: Mostly A-S, some B-C
-    // Monarch: Mostly S-SSS, some A
-
-    const rankProbabilities = this.calculateRankProbabilities(userRankIndex);
-    const roll = Math.random();
-
-    // Use Array.from with find for functional pattern
-    let cumulative = 0;
-    const selectedRank = this.shadowRanks.find((_, i) => {
-      cumulative += rankProbabilities[i];
-      return roll < cumulative;
-    });
-
-    // Guard clause: Fallback to user's rank if no match
-    return selectedRank || this.shadowRanks[Math.min(userRankIndex, this.shadowRanks.length - 1)];
-  }
-
-  /**
-   * Calculate probability distribution for shadow ranks based on user rank
-   * STRICT RULE: Cannot extract shadows ABOVE your rank (Solo Leveling lore)
-   *
-   * Restrictions:
-   * - Your rank: Most common (40-50%)
-   * - 1 rank above: Rare (5-10%) - requires high stats/perception
-   * - 2+ ranks above: IMPOSSIBLE (0%)
-   * - Lower ranks: Decreasing probability
-   *
-   * Example (B-rank user):
-   * - A-rank: 5% (1 above, rare)
-   * - B-rank: 50% (your rank, common)
-   * - C-rank: 25% (1 below, common)
-   * - D-rank: 15% (2 below, uncommon)
-   * - E-rank: 5% (3 below, rare)
-   * - S-rank+: 0% (impossible)
-   *
-   * Operations:
-   * 1. Initialize probability array (all zeros)
-   * 2. Set probabilities centered on user rank
-   * 3. Allow 1 rank above with low chance (5-10%)
-   * 4. Prevent 2+ ranks above (0%)
-   * 5. Return probability array for rank selection
-   */
-  calculateRankProbabilities(userRankIndex) {
-    const probabilities = new Array(this.shadowRanks.length).fill(0);
-
-    // Guard clause: Return zeros if invalid rank index
-    if (userRankIndex < 0) return probabilities;
-
-    // STRICT ENFORCEMENT: Cannot extract more than 1 rank above user
-    const maxExtractableIndex = Math.min(userRankIndex + 1, this.shadowRanks.length - 1);
-
-    // Distribution centered on user rank:
-    // - 1 rank above: 5% (rare, requires perception)
-    // - Your rank: 50% (most common)
-    // - 1 rank below: 25%
-    // - 2 ranks below: 15%
-    // - 3 ranks below: 5%
-    // - 4+ ranks below: 0% (too weak to extract)
-
-    // Use lookup map for probability distribution
-    const probabilityMap = {
-      above: {
-        index: maxExtractableIndex,
-        value: 0.05,
-        condition: () =>
-          maxExtractableIndex > userRankIndex && maxExtractableIndex < this.shadowRanks.length,
-      },
-      current: { index: userRankIndex, value: 0.5, condition: () => true },
-      below1: { index: userRankIndex - 1, value: 0.25, condition: () => userRankIndex - 1 >= 0 },
-      below2: { index: userRankIndex - 2, value: 0.15, condition: () => userRankIndex - 2 >= 0 },
-      below3: { index: userRankIndex - 3, value: 0.05, condition: () => userRankIndex - 3 >= 0 },
-    };
-
-    // Apply probabilities using dictionary pattern
-    Object.values(probabilityMap).forEach(({ index, value, condition }) => {
-      if (condition()) {
-        probabilities[index] = value;
-      }
-    });
-
-    // Normalize probabilities to ensure they sum to 1.0
-    const sum = probabilities.reduce((a, b) => a + b, 0);
-    // Guard clause: Only normalize if sum > 0
-    if (sum <= 0) return probabilities;
-
-    // Use map for functional pattern
-    return probabilities.map((prob) => prob / sum);
-  }
-
-  /**
-   * Get exponential rank multiplier for shadow strength scaling
-   * Operations:
-   * 1. Get multiplier from rankStatMultipliers (exponential: 1.5x per rank)
-   * 2. Return multiplier (E = 1.0x, S = 7.59x, Shadow Monarch = 129.74x)
-   */
-  getRankMultiplier(shadowRank) {
-    return this.rankStatMultipliers[shadowRank] || 1.0;
-  }
-
-  // ============================================================================
-  // PROBABILITY SYSTEM WITH STATS INFLUENCE
-  // ============================================================================
-
-  /**
-   * Determine extractable ranks based on user rank (Solo Leveling lore)
-   * Operations:
-   * 1. Get user rank index
-   * 2. Calculate extractable ranks (user rank + up to 2 ranks above)
-   * 3. Apply rank probability multipliers (lower ranks easier)
-   * 4. Apply stats boost to multipliers
-   * 5. Normalize probabilities
-   */
-  determineExtractableRanks(userRank, userStats) {
-    const userRankIndex = this.shadowRanks.indexOf(userRank);
-
-    // Guard clause: Return empty array if invalid rank
-    if (userRankIndex < 0) return [];
-
-    // Lore constraint: Can extract up to 2 ranks above user rank
-    const maxExtractableIndex = Math.min(userRankIndex + 2, this.shadowRanks.length - 1);
-
-    // Guard clause: Return empty array if no extractable ranks
-    if (maxExtractableIndex < 0) return [];
-
-    // Stats influence
-    const intelligence = userStats?.intelligence || 0;
-    const statsBoost = 1.0 + intelligence * 0.01; // +1% per INT point
-
-    // Use Array.from with map for functional pattern
-    const extractableRanks = Array.from({ length: maxExtractableIndex + 1 }, (_, i) => {
-      const rank = this.shadowRanks[i];
-      const multiplier = (this.rankProbabilityMultipliers[rank] || 1.0) * statsBoost;
-      return { rank, multiplier };
-    });
-
-    // Normalize probabilities using map
-    const totalMultiplier = extractableRanks.reduce((sum, r) => sum + r.multiplier, 0);
-
-    // Guard clause: Return empty array if total multiplier is zero
-    if (totalMultiplier <= 0) return [];
-
-    return extractableRanks.map((r) => ({
-      ...r,
-      probability: r.multiplier / totalMultiplier,
-    }));
-  }
-
-  /**
    * Calculate extraction chance with stats influence and lore constraints
    * Operations:
    * 1. Check lore constraint (can't extract significantly stronger - max 2 ranks above)
@@ -5232,30 +3997,6 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Select rank by weighted probability
-   * Operations:
-   * 1. Generate random roll (0-1)
-   * 2. Use cumulative probability to select rank
-   * 3. Return selected rank
-   */
-  selectRankByProbability(rankChances) {
-    // Guard clause: Return null if invalid input
-    if (!rankChances || rankChances.length === 0) return null;
-
-    const roll = Math.random();
-    let cumulative = 0;
-
-    // Use find for functional pattern (early return on match)
-    const selected = rankChances.find((rankChance) => {
-      cumulative += rankChance.probability || rankChance.chance || 0;
-      return roll < cumulative;
-    });
-
-    // Guard clause: Fallback to first rank if no match found
-    return selected?.rank || rankChances[0]?.rank || null;
-  }
-
-  /**
    * Calculate user strength from stats (for resistance calculation)
    */
   calculateUserStrength(userStats) {
@@ -5265,40 +4006,6 @@ module.exports = class ShadowArmy {
     // Use Object.values with reduce for functional pattern
     const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
     return statKeys.reduce((sum, key) => sum + (userStats[key] || 0), 0);
-  }
-
-  /**
-   * Estimate target strength based on rank for extraction calculations
-   * This provides a more accurate extraction chance by considering target power
-   * Operations:
-   * 1. Get rank baseline stats (proportionate to expected stats at that rank)
-   * 2. Apply rank multiplier for exponential scaling
-   * 3. Calculate total strength from estimated stats
-   * 4. Return estimated strength value
-   */
-  estimateTargetStrengthByRank(targetRank, targetRankIndex, userStats) {
-    // Guard clause: Return 0 if invalid rank
-    if (!targetRank || targetRankIndex < 0) return 0;
-
-    // Get rank baseline stats (similar to shadow generation)
-    const rankBaselines = this.getRankBaselineStats(
-      targetRank,
-      this.rankStatMultipliers[targetRank] || 1.0
-    );
-
-    // Guard clause: Return 0 if no baselines
-    if (!rankBaselines) return 0;
-
-    // Calculate estimated total stats for this rank
-    // Use reduce for functional pattern
-    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
-    const estimatedStats = statKeys.reduce((stats, key) => {
-      stats[key] = rankBaselines[key] || 10;
-      return stats;
-    }, {});
-
-    // Calculate strength value (similar to shadow strength calculation)
-    return this.calculateShadowStrength(estimatedStats, 1);
   }
 
   /**
@@ -5528,17 +4235,20 @@ module.exports = class ShadowArmy {
       document.body.appendChild(animation);
     }
 
-    setTimeout(() => {
+    const fadeOutId = setTimeout(() => {
+      this._retryTimeouts?.delete(fadeOutId);
       animation.classList.add('fade-out');
-      setTimeout(() => {
-        // Use BdApi.DOM utilities if available for removal
+      const removeId = setTimeout(() => {
+        this._retryTimeouts?.delete(removeId);
         if (BdApi && BdApi.DOM && typeof BdApi.DOM.remove === 'function') {
           BdApi.DOM.remove(animation);
         } else {
           animation.remove();
         }
       }, 500);
+      this._retryTimeouts?.add(removeId);
     }, 2000);
+    this._retryTimeouts?.add(fadeOutId);
   }
 
   // ============================================================================
@@ -6695,1443 +5405,6 @@ module.exports = class ShadowArmy {
     }
   }
 
-  /**
-   * Calculate army damage output using aggregated stats (O(1) instead of O(n))
-   * Operations:
-   * 1. Get aggregated army stats (cached)
-   * 2. Calculate damage using aggregated power
-   * 3. Apply damage multipliers
-   * 4. Return total damage
-   * @param {Object} options - Combat options
-   * @param {number} options.damageMultiplier - Damage multiplier (default: 1.0)
-   * @param {string} options.targetType - Target type (mob/boss) for different multipliers
-   * @returns {Promise<number>} - Total army damage
-   */
-  async calculateArmyDamage(options = {}) {
-    const { damageMultiplier = 1.0, targetType = 'mob' } = options;
-
-    // Get aggregated stats (uses cache)
-    const armyStats = await this.getAggregatedArmyStats();
-
-    // Guard clause: Return 0 if no army
-    if (armyStats.totalShadows === 0) return 0;
-
-    // Base damage from total power
-    const baseDamage = armyStats.totalPower * 0.1; // 10% of power as base damage
-
-    // Apply target type multipliers
-    const targetMultipliers = {
-      mob: 1.0,
-      boss: 0.5, // Bosses take 50% damage (tankier)
-      elite: 0.75, // Elite mobs take 75% damage
-    };
-    const targetMultiplier = targetMultipliers[targetType] || 1.0;
-
-    // Calculate final damage
-    const totalDamage = baseDamage * damageMultiplier * targetMultiplier;
-
-    return Math.floor(totalDamage);
-  }
-
-  /**
-   * Process combat in batches with throttling (prevents CPU overload)
-   * Operations:
-   * 1. Split shadows into batches
-   * 2. Process each batch with delay
-   * 3. Use requestAnimationFrame for smooth updates
-   * 4. Return combat results
-   * @param {Array<Object>} shadows - Shadows to process
-   * @param {Object} target - Target monster/boss
-   * @param {Object} options - Combat processing options
-   * @param {number} options.batchSize - Shadows per batch (default: 100)
-   * @param {number} options.delayMs - Delay between batches (default: 16ms for 60fps)
-   * @param {Function} options.onBatchComplete - Callback after each batch
-   * @returns {Promise<Object>} - Combat results
-   */
-  async processCombatBatch(shadows, target, options = {}) {
-    const {
-      batchSize = 100,
-      delayMs = 16, // ~60fps
-      onBatchComplete = null,
-    } = options;
-
-    // Guard clause: Return early if no shadows
-    if (!shadows || shadows.length === 0) {
-      return { totalDamage: 0, shadowsProcessed: 0, batches: 0 };
-    }
-
-    // Split into batches
-    const batches = [];
-    for (let i = 0; i < shadows.length; i += batchSize) {
-      batches.push(shadows.slice(i, i + batchSize));
-    }
-
-    let totalDamage = 0;
-    let shadowsProcessed = 0;
-
-    // Process batches with throttling
-    for (let i = 0; i < batches.length; i++) {
-      if (this._isStopped) {
-        return {
-          totalDamage: Math.floor(totalDamage),
-          shadowsProcessed,
-          batches: i,
-          avgDamagePerShadow: shadowsProcessed > 0 ? Math.floor(totalDamage / shadowsProcessed) : 0,
-        };
-      }
-      const batch = batches[i];
-
-      // Process batch (use cached power calculations)
-      const batchResults = batch.map((shadow) => {
-        const power = this.calculateShadowPowerCached(shadow);
-        const damage = power * 0.1; // 10% of power as damage
-        return { shadowId: this.getCacheKey(shadow), damage, power };
-      });
-
-      // Aggregate batch damage
-      const batchDamage = batchResults.reduce((sum, result) => sum + result.damage, 0);
-      totalDamage += batchDamage;
-      shadowsProcessed += batch.length;
-
-      // Callback if provided
-      if (onBatchComplete && typeof onBatchComplete === 'function') {
-        onBatchComplete({ batchIndex: i, totalBatches: batches.length, batchDamage, totalDamage });
-      }
-
-      // Throttle: Wait before next batch (except last batch)
-      if (i < batches.length - 1) {
-        await new Promise((resolve) => {
-          if (this._isStopped) {
-            resolve(undefined);
-            return;
-          }
-          if (window.requestAnimationFrame) {
-            requestAnimationFrame(() => setTimeout(resolve, delayMs));
-          } else {
-            setTimeout(resolve, delayMs);
-          }
-        });
-      }
-    }
-
-    return {
-      totalDamage: Math.floor(totalDamage),
-      shadowsProcessed,
-      batches: batches.length,
-      avgDamagePerShadow: shadowsProcessed > 0 ? Math.floor(totalDamage / shadowsProcessed) : 0,
-    };
-  }
-
-  /**
-   * Calculate combat result using aggregated stats (ultra-fast for millions)
-   * Uses pre-calculated army stats instead of individual shadow calculations
-   * Operations:
-   * 1. Get aggregated army stats (cached)
-   * 2. Calculate total damage from aggregated power
-   * 3. Apply combat modifiers
-   * 4. Return combat result
-   * @param {Object} target - Target monster/boss
-   * @param {Object} options - Combat options
-   * @returns {Promise<Object>} - Combat result
-   */
-  async calculateCombatResultAggregated(target, options = {}) {
-    const { damageMultiplier = 1.0 } = options;
-    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
-
-    // Get aggregated stats (fast, uses cache)
-    const armyStats = await this.getAggregatedArmyStats();
-
-    // Guard clause: Return early if no army
-    if (armyStats.totalShadows === 0) {
-      return {
-        damage: 0,
-        targetHP: targetCombat.hp,
-        targetKilled: false,
-        shadowsUsed: 0,
-      };
-    }
-
-    // Calculate damage from aggregated power
-    const baseDamage = armyStats.totalPower * 0.1; // 10% of power as damage
-    const finalDamage = Math.floor(baseDamage * damageMultiplier);
-
-    // Apply to target
-    const targetHP = targetCombat.hp;
-    const newTargetHP = Math.max(0, targetHP - finalDamage);
-    const targetKilled = newTargetHP <= 0;
-
-    return {
-      damage: finalDamage,
-      targetHP: newTargetHP,
-      targetKilled,
-      shadowsUsed: armyStats.totalShadows,
-      armyPower: armyStats.totalPower,
-    };
-  }
-
-  /**
-   * Performance monitor for combat operations
-   * Tracks FPS, CPU usage, and memory to prevent overload
-   * Operations:
-   * 1. Track frame times
-   * 2. Calculate FPS
-   * 3. Monitor memory usage
-   * 4. Return performance metrics
-   * @returns {Object} - Performance metrics
-   */
-  getCombatPerformanceMetrics() {
-    // eslint-disable-next-line no-undef
-    const perfNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    const now = perfNow;
-
-    // Initialize performance tracking if needed
-    if (!this._combatPerformance) {
-      this._combatPerformance = {
-        frameTimes: [],
-        lastFrameTime: now,
-        fps: 60,
-        memoryUsage: 0,
-        combatOperations: 0,
-        lastUpdate: now,
-      };
-    }
-
-    const perf = this._combatPerformance;
-
-    // Calculate FPS from frame times
-    const frameTime = now - perf.lastFrameTime;
-    perf.frameTimes.push(frameTime);
-    if (perf.frameTimes.length > 60) {
-      perf.frameTimes.shift(); // Keep last 60 frames
-    }
-
-    const avgFrameTime = perf.frameTimes.reduce((sum, t) => sum + t, 0) / perf.frameTimes.length;
-    perf.fps = avgFrameTime > 0 ? Math.floor(1000 / avgFrameTime) : 60;
-
-    // Get memory usage (if available)
-    // eslint-disable-next-line no-undef
-    if (typeof performance !== 'undefined' && performance.memory) {
-      // eslint-disable-next-line no-undef
-      perf.memoryUsage = Math.floor(performance.memory.usedJSHeapSize / 1024 / 1024); // MB
-    }
-
-    perf.lastFrameTime = now;
-    perf.lastUpdate = now;
-
-    return {
-      fps: perf.fps,
-      memoryMB: perf.memoryUsage,
-      combatOperations: perf.combatOperations,
-      avgFrameTime: Math.floor(avgFrameTime),
-      isHealthy: perf.fps >= 30 && perf.memoryUsage < 500, // Healthy if 30+ FPS and <500MB
-    };
-  }
-
-  /**
-   * Throttle combat operations based on performance metrics
-   * Automatically adjusts batch size and delay based on FPS
-   * Operations:
-   * 1. Get current performance metrics
-   * 2. Adjust batch size based on FPS
-   * 3. Adjust delay based on memory usage
-   * 4. Return optimized combat options
-   * @returns {Object} - Optimized combat options
-   */
-  getOptimizedCombatOptions() {
-    const metrics = this.getCombatPerformanceMetrics();
-
-    // Adjust batch size based on FPS
-    let batchSize = 100; // Default
-    if (metrics.fps < 30) {
-      batchSize = 50; // Smaller batches if FPS is low
-    } else if (metrics.fps >= 60) {
-      batchSize = 200; // Larger batches if FPS is high
-    }
-
-    // Adjust delay based on memory
-    let delayMs = 16; // Default ~60fps
-    if (metrics.memoryMB > 300) {
-      delayMs = 32; // Slower if memory is high
-    } else if (metrics.memoryMB < 100) {
-      delayMs = 8; // Faster if memory is low
-    }
-
-    return {
-      batchSize,
-      delayMs,
-      useAggregation: metrics.combatOperations > 1000, // Use aggregation for large armies
-      throttle: !metrics.isHealthy, // Throttle if performance is poor
-    };
-  }
-
-  /**
-   * Clear combat performance cache
-   * Call after major combat operations to free memory
-   */
-  clearCombatCache() {
-    // Clear power cache
-    this.clearShadowPowerCache();
-
-    // Clear aggregated stats cache
-    this.invalidateArmyStatsCache('clearCombatCache');
-
-    // Clear personality cache (keep recent entries, clear old)
-    if (this._shadowPersonalityCache && this._shadowPersonalityCache.size > 1000) {
-      // Keep only most recent 1000 personalities
-      const entries = Array.from(this._shadowPersonalityCache.entries());
-      this._shadowPersonalityCache.clear();
-      entries.slice(-1000).forEach(([key, value]) => {
-        this._shadowPersonalityCache.set(key, value);
-      });
-    }
-
-    // Reset performance tracking
-    if (this._combatPerformance) {
-      this._combatPerformance.frameTimes = [];
-      this._combatPerformance.combatOperations = 0;
-    }
-
-    this.debugLog('COMBAT', 'Combat cache cleared');
-  }
-
-  /**
-   * Initialize combat performance tracking
-   * Call at start of combat session
-   */
-  initCombatPerformanceTracking() {
-    // eslint-disable-next-line no-undef
-    const perfNow = typeof performance !== 'undefined' ? performance.now() : Date.now();
-    this._combatPerformance = {
-      frameTimes: [],
-      lastFrameTime: perfNow,
-      fps: 60,
-      memoryUsage: 0,
-      combatOperations: 0,
-      lastUpdate: perfNow,
-    };
-    this.debugLog('COMBAT', 'Combat performance tracking initialized');
-  }
-
-  /**
-   * Combat queue manager - Processes combat in priority order
-   * Operations:
-   * 1. Queue combat operations with priority
-   * 2. Process queue in batches
-   * 3. Handle high-priority operations first
-   * 4. Throttle based on performance
-   * @param {Array<Object>} combatOperations - Array of { priority, shadow, target, callback }
-   * @param {Object} options - Queue processing options
-   * @returns {Promise<Array>} - Combat results
-   */
-  async processCombatQueue(combatOperations, options = {}) {
-    const { maxConcurrent = 10, priorityThreshold = 5 } = options;
-
-    // Guard clause: Return early if no operations
-    if (!combatOperations || combatOperations.length === 0) {
-      return [];
-    }
-
-    // Sort by priority (higher priority first)
-    const sortedOps = [...combatOperations].sort((a, b) => (b.priority || 0) - (a.priority || 0));
-
-    // Split into high and low priority
-    const highPriority = sortedOps.filter((op) => (op.priority || 0) >= priorityThreshold);
-    const lowPriority = sortedOps.filter((op) => (op.priority || 0) < priorityThreshold);
-
-    const results = [];
-
-    // Process high priority first (synchronous, fast)
-    for (const op of highPriority) {
-      try {
-        const result = await this.processSingleCombat(op.shadow, op.target);
-        if (op.callback) op.callback(result);
-        results.push(result);
-      } catch (error) {
-        this.debugError('COMBAT', 'High priority combat error', error);
-      }
-    }
-
-    // Process low priority in batches (throttled)
-    const batchSize = Math.min(maxConcurrent, lowPriority.length);
-    for (let i = 0; i < lowPriority.length; i += batchSize) {
-      const batch = lowPriority.slice(i, i + batchSize);
-      const batchResults = await Promise.all(
-        batch.map(async (op) => {
-          try {
-            const result = await this.processSingleCombat(op.shadow, op.target);
-            if (op.callback) op.callback(result);
-            return result;
-          } catch (error) {
-            this.debugError('COMBAT', 'Low priority combat error', error);
-            return null;
-          }
-        })
-      );
-      results.push(...batchResults.filter((r) => r !== null));
-
-      // Throttle between batches
-      if (i + batchSize < lowPriority.length) {
-        await new Promise((resolve) => {
-          setTimeout(() => {
-            resolve(undefined);
-          }, 16); // ~60fps
-        });
-      }
-    }
-
-    return results;
-  }
-
-  /**
-   * Process single combat operation (lightweight, cached)
-   * Operations:
-   * 1. Get shadow power (cached)
-   * 2. Calculate damage
-   * 3. Apply to target
-   * 4. Return result
-   * @param {Object} shadow - Shadow object
-   * @param {Object} target - Target monster/boss
-   * @returns {Object} - Combat result
-   */
-  async processSingleCombat(shadow, target) {
-    // Guard clause: Return early if invalid inputs
-    if (!shadow || !target) {
-      return { damage: 0, targetKilled: false };
-    }
-
-    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
-
-    // Use cached power calculation
-    const power = this.calculateShadowPowerCached(shadow);
-    const damage = Math.floor(power * 0.1); // 10% of power as damage
-
-    // Apply damage to target
-    const targetHP = targetCombat.hp;
-    const newTargetHP = Math.max(0, targetHP - damage);
-    const targetKilled = newTargetHP <= 0;
-
-    // Update performance counter
-    if (this._combatPerformance) {
-      this._combatPerformance.combatOperations++;
-    }
-
-    // Get identifier (accept both id and i for compressed shadows)
-    const shadowId = this.getCacheKey(shadow);
-    return {
-      shadowId: shadowId,
-      damage,
-      targetHP: newTargetHP,
-      targetKilled,
-      power,
-    };
-  }
-
-  /**
-   * Batch update shadows after combat (efficient database operations)
-   * Operations:
-   * 1. Collect all shadow updates
-   * 2. Batch update in single transaction
-   * 3. Clear caches after update
-   * @param {Array<Object>} shadowUpdates - Array of { shadow, updates }
-   * @returns {Promise<number>} - Count of updated shadows
-   */
-  async batchUpdateShadowsAfterCombat(shadowUpdates) {
-    // Guard clause: Return early if no updates
-    if (!shadowUpdates || shadowUpdates.length === 0) {
-      return 0;
-    }
-
-    try {
-      // Prepare shadows for batch update
-      const shadowsToUpdate = shadowUpdates
-        .map(({ shadow, updates }) => {
-          // Apply updates to shadow
-          const updatedShadow = { ...shadow, ...updates };
-          // Recalculate strength if stats changed
-          if (updates.baseStats || updates.growthStats || updates.naturalGrowthStats) {
-            const effective = this.getShadowEffectiveStats(updatedShadow);
-            updatedShadow.strength = this.calculateShadowStrength(
-              effective,
-              updatedShadow.level || 1
-            );
-          }
-          return this.prepareShadowForSave(updatedShadow);
-        })
-        .filter((shadow) => shadow !== null);
-
-      // Batch update using storage manager
-      if (this.storageManager?.updateShadowsBatch && shadowsToUpdate.length > 0) {
-        const updated = await this.storageManager.updateShadowsBatch(shadowsToUpdate);
-        // Clear caches after update
-        this.clearCombatCache();
-        return updated;
-      }
-
-      return 0;
-    } catch (error) {
-      this.debugError('COMBAT', 'Failed to batch update shadows after combat', error);
-      return 0;
-    }
-  }
-
-  /**
-   * Get combat-ready shadow subset (top performers only)
-   * For millions of shadows, only use top N for combat calculations
-   * Operations:
-   * 1. Get aggregated stats
-   * 2. Calculate top N shadows needed for combat
-   * 3. Return subset of shadows
-   * @param {number} maxShadows - Maximum shadows to use (default: 1000)
-   * @returns {Promise<Array<Object>>} - Combat-ready shadow subset
-   */
-  async getCombatReadyShadows(maxShadows = 1000) {
-    try {
-      // CRITICAL: Only use IndexedDB storageManager - no fallback to old settings.shadows
-      if (!this.storageManager) {
-        this.debugLog('COMBAT', 'storageManager not available, returning empty array');
-        return [];
-      }
-
-      // Get shadows from IndexedDB only
-      const allShadows = await this.storageManager.getShadows({}, 0, maxShadows * 2); // Get 2x for filtering
-
-      // Guard clause: Return all if below limit
-      if (allShadows.length <= maxShadows) {
-        return allShadows.map((s) => this.getShadowData(s));
-      }
-
-      // Process with power and sort (use cached calculations)
-      const withPower = this.processShadowsWithPower(allShadows, true);
-
-      // Sort by power (strongest first)
-      withPower.sort((a, b) => b.power - a.power);
-
-      // Return top N shadows
-      return withPower.slice(0, maxShadows).map(({ shadow }) => this.getShadowData(shadow));
-    } catch (error) {
-      this.debugError('COMBAT', 'Failed to get combat-ready shadows', error);
-      return [];
-    }
-  }
-
-  /**
-   * Calculate army effectiveness against target (early exit optimization)
-   * Quickly determines if army can defeat target without full calculation
-   * Operations:
-   * 1. Get aggregated army stats
-   * 2. Calculate total army damage
-   * 3. Compare with target HP
-   * 4. Return effectiveness estimate
-   * @param {Object} target - Target monster/boss
-   * @returns {Promise<Object>} - Effectiveness estimate
-   */
-  async estimateArmyEffectiveness(target) {
-    const normalizedTarget = this.normalizeTargetForCombat(target);
-    const targetHP = normalizedTarget.hp || 0;
-
-    // Guard clause: Return early if no target HP
-    if (targetHP <= 0) {
-      return { canDefeat: true, estimatedRounds: 0, confidence: 1.0 };
-    }
-
-    // Get aggregated stats (fast, cached)
-    const armyStats = await this.getAggregatedArmyStats();
-
-    // Guard clause: Return early if no army
-    if (armyStats.totalShadows === 0) {
-      return { canDefeat: false, estimatedRounds: Infinity, confidence: 1.0 };
-    }
-
-    // Calculate damage per round (using aggregated power)
-    const damagePerRound = Math.floor(armyStats.totalPower * 0.1); // 10% of power
-
-    // Guard clause: Early exit if damage is 0
-    if (damagePerRound <= 0) {
-      return { canDefeat: false, estimatedRounds: Infinity, confidence: 1.0 };
-    }
-
-    // Estimate rounds needed
-    const estimatedRounds = Math.ceil(targetHP / damagePerRound);
-
-    // Calculate confidence (based on army size and power)
-    const confidence = Math.min(1.0, armyStats.totalShadows / 1000); // More shadows = higher confidence
-
-    return {
-      canDefeat: true,
-      estimatedRounds,
-      confidence,
-      damagePerRound,
-      armyPower: armyStats.totalPower,
-    };
-  }
-
-  /**
-   * Memory-efficient combat data structure
-   * Stores only essential combat data to minimize memory usage
-   * @param {Object} shadow - Shadow object
-   * @param {Object} target - Target object
-   * @returns {Object} - Minimal combat data
-   */
-  /**
-   * Create comprehensive combat data using stored ShadowArmy info
-   * Includes shadow personality, attack interval, and target data (boss/mob)
-   * @param {Object} shadow - Shadow object
-   * @param {Object} target - Target object (boss or mob)
-   * @param {Object} dungeon - Optional dungeon object for context
-   * @returns {Object} - Comprehensive combat data
-   */
-  createCombatData(shadow, target, dungeon = null) {
-    const shadowCombat = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
-    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
-    if (!shadowCombat || !targetCombat) return null;
-
-    // Store only essential data (minimal memory footprint)
-    const shadowId = shadowCombat.id;
-
-    // Get stored personality (fast lookup)
-    const normalizedShadow =
-      typeof this.normalizeShadowForCombat === 'function'
-        ? this.normalizeShadowForCombat(shadow)
-        : shadow;
-    const personality = this.getShadowPersonality(normalizedShadow);
-    const personalityName =
-      normalizedShadow?.personality || personality.name?.toLowerCase() || 'balanced';
-
-    // Get stored base attack interval (fast lookup)
-    const baseInterval =
-      normalizedShadow?.baseAttackInterval ||
-      this.calculateShadowAttackInterval(normalizedShadow, 2000);
-
-    // Calculate shadow power (cached)
-    const power = this.calculateShadowPowerCached(shadow);
-
-    // Extract target data (boss or mob)
-    const normalizedTarget = this.normalizeTargetForCombat(target);
-    const targetData = {
-      id: normalizedTarget.id,
-      type: normalizedTarget.type,
-      rank: normalizedTarget.rank,
-      hp: normalizedTarget.hp,
-      maxHp: normalizedTarget.maxHp,
-      stats: targetCombat.stats,
-    };
-
-    // Include dungeon context if available
-    const dungeonData = dungeon
-      ? {
-          id: dungeon.channelKey || dungeon.id,
-          rank: dungeon.rank,
-          bossHp: dungeon.boss?.hp || 0,
-          mobCount: dungeon.mobs?.activeMobs?.length || 0,
-        }
-      : null;
-
-    return {
-      s: shadowId, // Shadow ID (compressed key)
-      t: targetData, // Target data (boss/mob)
-      p: power, // Shadow power (cached)
-      d: 0, // Damage (calculated)
-      ts: Date.now(), // Timestamp
-      // Enhanced combat data from ShadowArmy
-      personality: personalityName, // Stored personality
-      baseAttackInterval: baseInterval, // Stored base attack interval
-      effectiveStats: shadowCombat.stats,
-      dungeon: dungeonData, // Dungeon context
-    };
-  }
-
-  /**
-   * Debounce combat updates (prevents excessive UI updates)
-   * Operations:
-   * 1. Debounce combat result updates
-   * 2. Batch UI updates
-   * 3. Return debounced update function
-   * @param {Function} updateFn - Update function to debounce
-   * @param {number} delayMs - Debounce delay (default: 100ms)
-   * @returns {Function} - Debounced update function
-   */
-  debounceCombatUpdate(updateFn, delayMs = 100) {
-    let timeoutId = null;
-
-    return (...args) => {
-      if (this._isStopped) return;
-      // Clear existing timeout
-      if (timeoutId) {
-        clearTimeout(timeoutId);
-      }
-
-      // Set new timeout
-      timeoutId = setTimeout(() => {
-        if (this._isStopped) return;
-        updateFn(...args);
-        timeoutId = null;
-      }, delayMs);
-    };
-  }
-
-  /**
-   * Throttle combat calculations (prevents CPU overload)
-   * Operations:
-   * 1. Throttle function calls
-   * 2. Skip calls if too frequent
-   * 3. Return throttled function
-   * @param {Function} fn - Function to throttle
-   * @param {number} delayMs - Throttle delay (default: 16ms for 60fps)
-   * @returns {Function} - Throttled function
-   */
-  throttleCombatCalculation(fn, delayMs = 16) {
-    let lastCall = 0;
-    let timeoutId = null;
-
-    return (...args) => {
-      if (this._isStopped) return;
-      const now = Date.now();
-      const timeSinceLastCall = now - lastCall;
-
-      if (timeSinceLastCall >= delayMs) {
-        // Enough time passed, call immediately
-        lastCall = now;
-        fn(...args);
-      } else {
-        // Too soon, schedule for later
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-        }
-        timeoutId = setTimeout(() => {
-          if (this._isStopped) return;
-          lastCall = Date.now();
-          fn(...args);
-          timeoutId = null;
-        }, delayMs - timeSinceLastCall);
-      }
-    };
-  }
-
-  // ============================================================================
-  // 3.9.6 SHADOW PERSONALITY & BEHAVIOR SYSTEM
-  // ============================================================================
-
-  /**
-   * Shadow Personality System - Individualistic combat behavior
-   * Each shadow has unique personality affecting attack speed, damage, and targeting
-   */
-
-  /**
-   * Shadow personality types with behavior modifiers
-   * Each personality affects attack interval, damage calculation, and targeting
-   * Defined as instance property (not in constructor) for easier access
-   */
-  get shadowPersonalities() {
-    return {
-      aggressive: {
-        name: 'Aggressive',
-        attackIntervalMultiplier: 0.7, // Attacks 30% faster
-        damageMultiplier: 1.2, // 20% more damage
-        targetPreference: 'weakest', // Targets weakest enemies
-        defenseMultiplier: 0.8, // 20% less defense (glass cannon)
-        description: 'Fast, high damage, low defense',
-      },
-      defensive: {
-        name: 'Defensive',
-        attackIntervalMultiplier: 1.3, // Attacks 30% slower
-        damageMultiplier: 0.8, // 20% less damage
-        targetPreference: 'strongest', // Tanks strongest enemies
-        defenseMultiplier: 1.5, // 50% more defense (tank)
-        description: 'Slow, low damage, high defense',
-      },
-      balanced: {
-        name: 'Balanced',
-        attackIntervalMultiplier: 1.0, // Normal speed
-        damageMultiplier: 1.0, // Normal damage
-        targetPreference: 'random', // Random targeting
-        defenseMultiplier: 1.0, // Normal defense
-        description: 'Average in all stats',
-      },
-      berserker: {
-        name: 'Berserker',
-        attackIntervalMultiplier: 0.5, // Attacks 50% faster
-        damageMultiplier: 1.5, // 50% more damage
-        targetPreference: 'nearest', // Attacks nearest
-        defenseMultiplier: 0.5, // 50% less defense (very fragile)
-        description: 'Extremely fast, very high damage, very low defense',
-      },
-      tank: {
-        name: 'Tank',
-        attackIntervalMultiplier: 1.5, // Attacks 50% slower
-        damageMultiplier: 0.6, // 40% less damage
-        targetPreference: 'strongest', // Always tanks
-        defenseMultiplier: 2.0, // 100% more defense (very tanky)
-        description: 'Very slow, low damage, very high defense',
-      },
-      assassin: {
-        name: 'Assassin',
-        attackIntervalMultiplier: 0.8, // Attacks 20% faster
-        damageMultiplier: 1.3, // 30% more damage
-        targetPreference: 'weakest', // Targets weak enemies (cleanup)
-        defenseMultiplier: 0.9, // 10% less defense
-        description: 'Fast, high damage, targets weak enemies',
-      },
-      support: {
-        name: 'Support',
-        attackIntervalMultiplier: 1.2, // Attacks 20% slower
-        damageMultiplier: 0.7, // 30% less damage
-        targetPreference: 'random', // Random targeting
-        defenseMultiplier: 1.2, // 20% more defense
-        description: 'Slower, lower damage, higher defense',
-      },
-    };
-  }
-
-  /**
-   * Get or assign personality to shadow
-   * Operations:
-   * 1. Check if shadow already has personality
-   * 2. If not, assign based on role and stats
-   * 3. Return personality object
-   * @param {Object} shadow - Shadow object
-   * @returns {Object} - Personality object with modifiers
-   */
-  getShadowPersonality(shadow) {
-    // Guard clause: Return default if no shadow
-    if (!shadow) {
-      return this.shadowPersonalities.balanced;
-    }
-
-    // Get identifier for cache key (accept both id and i for compressed shadows)
-    const shadowId = this.getCacheKey(shadow);
-    if (!shadowId) {
-      return this.shadowPersonalities.balanced;
-    }
-
-    // Check cache first (fast path)
-    const cacheKey = `personality_${shadowId}`;
-    if (this._shadowPersonalityCache && this._shadowPersonalityCache.has(cacheKey)) {
-      const cachedPersonality = this._shadowPersonalityCache.get(cacheKey);
-      if (this.shadowPersonalities[cachedPersonality]) {
-        return this.shadowPersonalities[cachedPersonality];
-      }
-    }
-
-    // Check if shadow already has assigned personality (from storage)
-    if (shadow.personality && this.shadowPersonalities[shadow.personality]) {
-      // Cache it
-      if (this._shadowPersonalityCache) {
-        this._shadowPersonalityCache.set(cacheKey, shadow.personality);
-      }
-      return this.shadowPersonalities[shadow.personality];
-    }
-
-    // Assign personality based on role and stats
-    const role = this.shadowRoles[shadow.role || shadow.roleName];
-    const effective = this.getShadowEffectiveStats(shadow);
-
-    // Calculate stat ratios to determine personality
-    const totalStats =
-      effective.strength +
-      effective.agility +
-      effective.intelligence +
-      effective.vitality +
-      effective.perception;
-    const strengthRatio = totalStats > 0 ? effective.strength / totalStats : 0.2;
-    const agilityRatio = totalStats > 0 ? effective.agility / totalStats : 0.2;
-    const vitalityRatio = totalStats > 0 ? effective.vitality / totalStats : 0.2;
-
-    // Determine personality based on stat distribution
-    let personality = 'balanced'; // Default
-
-    if (strengthRatio > 0.3 && agilityRatio > 0.25) {
-      personality = 'berserker'; // High STR + AGI = berserker
-    } else if (strengthRatio > 0.35) {
-      personality = 'aggressive'; // High STR = aggressive
-    } else if (vitalityRatio > 0.4) {
-      personality = 'tank'; // High VIT = tank
-    } else if (agilityRatio > 0.3 && strengthRatio < 0.2) {
-      personality = 'assassin'; // High AGI, low STR = assassin
-    } else if (vitalityRatio > 0.3 && strengthRatio < 0.25) {
-      personality = 'defensive'; // High VIT, low STR = defensive
-    } else if (strengthRatio < 0.2 && vitalityRatio < 0.2) {
-      personality = 'support'; // Low STR + VIT = support
-    }
-
-    // Role-based personality overrides
-    if (role) {
-      if (
-        role.name?.toLowerCase().includes('tank') ||
-        role.name?.toLowerCase().includes('guardian')
-      ) {
-        personality = 'tank';
-      } else if (
-        role.name?.toLowerCase().includes('assassin') ||
-        role.name?.toLowerCase().includes('rogue')
-      ) {
-        personality = 'assassin';
-      } else if (
-        role.name?.toLowerCase().includes('berserker') ||
-        role.name?.toLowerCase().includes('warrior')
-      ) {
-        personality = 'berserker';
-      }
-    }
-
-    // Cache personality for shadow (don't mutate original)
-    // cacheKey already declared above at line 5322, reuse it
-    if (this._shadowPersonalityCache && !this._shadowPersonalityCache.has(cacheKey)) {
-      this._shadowPersonalityCache.set(cacheKey, personality);
-      // Evict oldest entries if cache is full (limit 5000)
-      if (this._shadowPersonalityCache.size > 5000) {
-        const firstKey = this._shadowPersonalityCache.keys().next().value;
-        this._shadowPersonalityCache.delete(firstKey);
-      }
-    }
-
-    // PERSISTENT STORAGE: Store personality in shadow object for future use
-    // This eliminates expensive stat ratio calculations on every access
-    if (!shadow.personality || shadow.personality !== personality) {
-      shadow.personality = personality;
-      // Save asynchronously (don't block return)
-      if (this.storageManager?.saveShadow) {
-        const shadowToSave = this.prepareShadowForSave(shadow);
-        this.storageManager.saveShadow(shadowToSave).catch((error) => {
-          this.debugError('PERSONALITY', 'Failed to save personality', error);
-        });
-      }
-    }
-
-    return this.shadowPersonalities[personality] || this.shadowPersonalities.balanced;
-  }
-
-  /**
-   * Calculate individual shadow attack interval based on personality
-   * Operations:
-   * 1. Get shadow personality
-   * 2. Calculate base interval from agility
-   * 3. Apply personality multiplier
-   * 4. Add random variance
-   * @param {Object} shadow - Shadow object
-   * @param {number} baseIntervalMs - Base attack interval in milliseconds
-   * @returns {number} - Individual attack interval in milliseconds
-   */
-  calculateShadowAttackInterval(shadow, baseIntervalMs = 2000) {
-    // Guard clause: Return base if no shadow
-    if (!shadow) return baseIntervalMs;
-
-    // Check if stored base interval exists and agility hasn't changed significantly
-    const effective = this.getShadowEffectiveStats(shadow);
-    const currentAgility = effective.agility || 0;
-
-    if (shadow.baseAttackInterval && shadow._lastAgilityForInterval !== undefined) {
-      const agilityChange = Math.abs(currentAgility - shadow._lastAgilityForInterval);
-      const agilityChangePercent =
-        shadow._lastAgilityForInterval > 0
-          ? (agilityChange / shadow._lastAgilityForInterval) * 100
-          : 100;
-
-      // Use stored interval if agility changed less than 5% (minor stat changes)
-      if (agilityChangePercent < 5) {
-        // Apply random variance (±10% for unpredictability)
-        const variance = 0.9 + Math.random() * 0.2; // 90-110%
-        return Math.max(100, Math.floor(shadow.baseAttackInterval * variance));
-      }
-    }
-
-    // Calculate new interval
-    const personality = this.getShadowPersonality(shadow);
-
-    // Base interval from agility (higher agility = faster attacks)
-    const agilityFactor = Math.max(0.5, 1.0 - currentAgility / 1000); // Agility reduces interval
-
-    // Apply personality multiplier
-    const personalityInterval = baseIntervalMs * personality.attackIntervalMultiplier;
-
-    // Apply agility factor
-    const baseInterval = personalityInterval * agilityFactor;
-
-    // Store base interval (without variance) for future use
-    shadow.baseAttackInterval = Math.max(100, Math.floor(baseInterval));
-    shadow._lastAgilityForInterval = currentAgility;
-
-    // Save asynchronously (don't block return)
-    if (this.storageManager?.saveShadow) {
-      const shadowToSave = this.prepareShadowForSave(shadow);
-      this.storageManager.saveShadow(shadowToSave).catch((error) => {
-        this.debugError('ATTACK_INTERVAL', 'Failed to save base attack interval', error);
-      });
-    }
-
-    // Add random variance (±10% for unpredictability)
-    const variance = 0.9 + Math.random() * 0.2; // 90-110%
-
-    return Math.max(100, Math.floor(baseInterval * variance)); // Minimum 100ms
-  }
-
-  /**
-   * Calculate individual shadow damage based on personality
-   * Operations:
-   * 1. Get shadow personality
-   * 2. Calculate base damage from stats
-   * 3. Apply personality damage multiplier
-   * 4. Add random variance
-   * @param {Object} shadow - Shadow object
-   * @param {Object} target - Target monster/boss
-   * @returns {number} - Individual damage value
-   */
-  calculateShadowDamage(shadow, target) {
-    // Guard clause: Return 0 if invalid inputs
-    if (!shadow || !target) return 0;
-
-    const shadowCombat = this.resolveCombatStats({ entityType: 'shadow', entity: shadow });
-    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
-    if (!shadowCombat) return 0;
-
-    const normalizedShadow = this.normalizeShadowForCombat(shadow);
-    const personality = this.getShadowPersonality(normalizedShadow);
-    let effective = shadowCombat.stats;
-
-    // CRITICAL FIX: Ensure shadow has valid stats
-    // If all stats are 0, use shadow's level and rank as fallback
-    const totalStats =
-      (effective.strength || 0) +
-      (effective.agility || 0) +
-      (effective.intelligence || 0) +
-      (effective.vitality || 0) +
-      (effective.perception || 0);
-    if (totalStats === 0) {
-      // Fallback: Use level and rank to calculate minimum damage
-      const shadowLevel = normalizedShadow?.level || shadow.level || 1;
-      const rankMultiplier = this.rankStatMultipliers[shadowCombat.rank] || 1.0;
-      const fallbackStrength = shadowLevel * 10 * rankMultiplier;
-      // Don't mutate cached/effective objects; use a local patched stats object.
-      effective = { ...effective, strength: fallbackStrength };
-      this.debugLog('COMBAT', 'Shadow has 0 stats, using fallback calculation', {
-        shadowId: this.getCacheKey(normalizedShadow),
-        level: shadowLevel,
-        rank: shadowCombat.rank,
-        fallbackStrength,
-      });
-    }
-
-    // Base damage from strength (primary stat)
-    const baseDamage = (effective.strength || 0) * 0.15; // 15% of strength as base damage
-
-    // CRITICAL FIX: Ensure minimum damage (at least 1 damage per attack)
-    // This prevents shadows from doing 0 damage even with low stats
-    const minDamage = Math.max(1, normalizedShadow?.level || shadow.level || 1); // Minimum 1 damage, or shadow level if higher
-
-    // Apply personality damage multiplier
-    const personalityDamage = Math.max(minDamage, baseDamage * personality.damageMultiplier);
-
-    // Apply target type modifiers
-    const targetType = targetCombat.type || 'mob';
-    const targetMultipliers = {
-      mob: 1.0,
-      elite: 0.9,
-      boss: 0.7, // Bosses take less damage
-    };
-    const targetMultiplier = targetMultipliers[targetType] || 1.0;
-
-    // Rank-vs-rank scaling (bounded):
-    // Higher-ranked shadows hit harder; lower-ranked shadows deal less to higher-ranked targets.
-    // This complements Dungeons' stat-based scaling and makes rank gaps obvious in combat.
-    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
-    const attackerRank = shadowCombat.rank || 'E';
-    const defenderRank = targetCombat.rank || 'E';
-    const attackerRankMult = this.rankStatMultipliers[attackerRank] || 1.0;
-    const defenderRankMult = this.rankStatMultipliers[defenderRank] || 1.0;
-    const ratio = attackerRankMult / (defenderRankMult || 1.0);
-    const rankVsMultiplier = clamp(Math.pow(ratio, 0.7), 0.35, 2.75);
-
-    // Add random variance (±15% for unpredictability)
-    const variance = 0.85 + Math.random() * 0.3; // 85-115%
-
-    const finalDamage = Math.floor(
-      personalityDamage * targetMultiplier * rankVsMultiplier * variance
-    );
-
-    // CRITICAL FIX: Ensure final damage is at least 1
-    return Math.max(1, finalDamage);
-  }
-
-  /**
-   * Calculate shadow defense based on personality
-   * Operations:
-   * 1. Get shadow personality
-   * 2. Calculate base defense from vitality
-   * 3. Apply personality defense multiplier
-   * @param {Object} shadow - Shadow object
-   * @returns {number} - Defense value
-   */
-  calculateShadowDefense(shadow) {
-    // Guard clause: Return 0 if no shadow
-    if (!shadow) return 0;
-
-    const personality = this.getShadowPersonality(shadow);
-    const effective = this.getShadowEffectiveStats(shadow);
-
-    // Base defense from vitality
-    const baseDefense = effective.vitality * 0.2; // 20% of vitality as defense
-
-    // Apply personality defense multiplier
-    return Math.floor(baseDefense * personality.defenseMultiplier);
-  }
-
-  /**
-   * Select target for shadow based on personality
-   * Operations:
-   * 1. Get shadow personality
-   * 2. Filter available targets
-   * 3. Select target based on personality preference
-   * @param {Object} shadow - Shadow object
-   * @param {Array<Object>} availableTargets - Array of target monsters/bosses
-   * @returns {Object|null} - Selected target or null
-   */
-  selectTargetForShadow(shadow, availableTargets) {
-    // Guard clause: Return null if no shadow or targets
-    if (!shadow || !availableTargets || availableTargets.length === 0) {
-      return null;
-    }
-
-    const personality = this.getShadowPersonality(shadow);
-    const preference = personality.targetPreference || 'random';
-
-    const resolveHp = (t) =>
-      typeof this.resolveCombatStats === 'function'
-        ? this.resolveCombatStats({ entityType: 'target', entity: t })?.hp ?? 0
-        : Number.isFinite(t?.hp)
-        ? t.hp
-        : 0;
-
-    // Resolve combat HP once per target (hot path; avoid repeated resolver calls).
-    const aliveTargets = availableTargets
-      .map((t) => ({
-        target: t,
-        hp: resolveHp(t),
-      }))
-      .filter(({ hp }) => hp > 0);
-
-    if (aliveTargets.length === 0) return null;
-
-    // Select target based on personality preference
-    const targetSelectors = {
-      weakest: () => {
-        // Target with lowest HP
-        return aliveTargets.reduce((weakest, cur) => (cur.hp < weakest.hp ? cur : weakest)).target;
-      },
-      strongest: () => {
-        // Target with highest HP
-        return aliveTargets.reduce((strongest, cur) => (cur.hp > strongest.hp ? cur : strongest))
-          .target;
-      },
-      nearest: () => {
-        // Target first in array (nearest)
-        return aliveTargets[0].target;
-      },
-      random: () => {
-        // Random target
-        return aliveTargets[Math.floor(Math.random() * aliveTargets.length)].target;
-      },
-    };
-
-    const selector = targetSelectors[preference] || targetSelectors.random;
-    return selector();
-  }
-
-  /**
-   * Select shadow target for mob (mobs attack different shadows)
-   * Operations:
-   * 1. Filter available shadows
-   * 2. Select target based on mob behavior
-   * 3. Return selected shadow
-   * @param {Object} mob - Mob object
-   * @param {Array<Object>} availableShadows - Array of shadow objects
-   * @returns {Object|null} - Selected shadow target or null
-   */
-  selectShadowTargetForMob(mob, availableShadows) {
-    // Guard clause: Return null if no mob or shadows
-    if (!mob || !availableShadows || availableShadows.length === 0) {
-      return null;
-    }
-
-    // Filter out dead shadows (if tracking HP)
-    const aliveShadows = availableShadows.filter((s) => {
-      // If shadow has HP tracking, filter by HP > 0
-      if (s.currentHP !== undefined) {
-        return s.currentHP > 0;
-      }
-      return true; // Assume alive if no HP tracking
-    });
-
-    if (aliveShadows.length === 0) return null;
-
-    // Mob behavior: Different mobs target different shadows
-    const mobType = mob.type || 'normal';
-    const mobBehavior = {
-      aggressive: () => {
-        // Aggressive mobs target weakest shadows
-        return aliveShadows.reduce((weakest, shadow) => {
-          const weakPower = this.calculateShadowPowerCached(weakest);
-          const shadowPower = this.calculateShadowPowerCached(shadow);
-          return shadowPower < weakPower ? shadow : weakest;
-        }, aliveShadows[0]);
-      },
-      defensive: () => {
-        // Defensive mobs target strongest shadows (threat elimination)
-        return aliveShadows.reduce((strongest, shadow) => {
-          const strongPower = this.calculateShadowPowerCached(strongest);
-          const shadowPower = this.calculateShadowPowerCached(shadow);
-          return shadowPower > strongPower ? shadow : strongest;
-        }, aliveShadows[0]);
-      },
-      balanced: () => {
-        // Balanced mobs target random shadows
-        return aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
-      },
-      boss: () => {
-        // Bosses target strongest shadows (generals)
-        return aliveShadows.reduce((strongest, shadow) => {
-          const strongPower = this.calculateShadowPowerCached(strongest);
-          const shadowPower = this.calculateShadowPowerCached(shadow);
-          return shadowPower > strongPower ? shadow : strongest;
-        }, aliveShadows[0]);
-      },
-    };
-
-    // Determine mob behavior based on type
-    let behavior = 'balanced';
-    if (mobType === 'boss' || mob.rank === 'SSS' || mob.rank === 'NH') {
-      behavior = 'boss';
-    } else if (mob.aggressive || mobType === 'aggressive') {
-      behavior = 'aggressive';
-    } else if (mob.defensive || mobType === 'defensive') {
-      behavior = 'defensive';
-    }
-
-    const selector = mobBehavior[behavior] || mobBehavior.balanced;
-    return selector();
-  }
-
-  /**
-   * Process individualistic combat with personality-based behavior
-   * Operations:
-   * 1. Get shadow personality
-   * 2. Calculate individual attack interval
-   * 3. Select target based on personality
-   * 4. Calculate damage with personality modifiers
-   * 5. Return combat result
-   * @param {Object} shadow - Shadow object
-   * @param {Array<Object>} availableTargets - Available targets
-   * @param {number} baseIntervalMs - Base attack interval
-   * @returns {Object} - Combat result with timing
-   */
-  processIndividualisticCombat(shadow, availableTargets, baseIntervalMs = 2000) {
-    // Get identifier (accept both id and i for compressed shadows)
-    const shadowId = this.getCacheKey(shadow);
-
-    // Guard clause: Return early if invalid inputs
-    if (!shadow || !availableTargets || availableTargets.length === 0) {
-      return {
-        shadowId: shadowId || null,
-        target: null,
-        damage: 0,
-        attackInterval: baseIntervalMs,
-        personality: 'balanced',
-      };
-    }
-
-    const personality = this.getShadowPersonality(shadow);
-
-    // Calculate individual attack interval
-    const attackInterval = this.calculateShadowAttackInterval(shadow, baseIntervalMs);
-
-    // Select target based on personality
-    const target = this.selectTargetForShadow(shadow, availableTargets);
-
-    if (!target) {
-      return {
-        shadowId: shadowId,
-        target: null,
-        damage: 0,
-        attackInterval,
-        personality: personality.name,
-      };
-    }
-
-    // Calculate damage with personality modifiers
-    const damage = this.calculateShadowDamage(shadow, target);
-    const targetCombat = this.resolveCombatStats({ entityType: 'target', entity: target });
-
-    return {
-      shadowId: shadowId,
-      shadowPersonality: personality.name,
-      target: targetCombat.id || 'unknown',
-      targetType: targetCombat.type || 'mob',
-      damage,
-      attackInterval,
-      nextAttackTime: Date.now() + attackInterval,
-      defense: this.calculateShadowDefense(shadow),
-    };
-  }
-
-  /**
-   * Process mob attack on shadow (mobs attack different shadows)
-   * Operations:
-   * 1. Select shadow target for mob
-   * 2. Calculate mob damage
-   * 3. Apply shadow defense
-   * 4. Return attack result
-   * @param {Object} mob - Mob object
-   * @param {Array<Object>} availableShadows - Available shadows
-   * @returns {Object} - Attack result
-   */
-  processMobAttackOnShadow(mob, availableShadows) {
-    // Guard clause: Return early if invalid inputs
-    if (!mob || !availableShadows || availableShadows.length === 0) {
-      return {
-        mobId: mob?.id || null,
-        targetShadow: null,
-        damage: 0,
-        shadowKilled: false,
-      };
-    }
-
-    // Select shadow target for mob
-    const targetShadow = this.selectShadowTargetForMob(mob, availableShadows);
-
-    if (!targetShadow) {
-      return {
-        mobId: mob.id,
-        targetShadow: null,
-        damage: 0,
-        shadowKilled: false,
-      };
-    }
-
-    // Calculate mob damage
-    const mobDamage = (mob.strength || 100) * 0.1; // 10% of mob strength as damage
-
-    // Apply shadow defense
-    const shadowDefense = this.calculateShadowDefense(targetShadow);
-    const finalDamage = Math.max(1, Math.floor(mobDamage - shadowDefense * 0.5)); // Defense reduces damage
-
-    // Apply damage to shadow (if tracking HP)
-    let shadowKilled = false;
-    if (targetShadow.currentHP !== undefined) {
-      targetShadow.currentHP = Math.max(0, (targetShadow.currentHP || 100) - finalDamage);
-      shadowKilled = targetShadow.currentHP <= 0;
-    }
-
-    return {
-      mobId: mob.id,
-      mobType: mob.type || 'normal',
-      targetShadow: targetShadow.id,
-      targetShadowPersonality: this.getShadowPersonality(targetShadow).name,
-      damage: finalDamage,
-      shadowKilled,
-      shadowDefense,
-    };
-  }
-
-  /**
-   * Schedule individualistic attacks for shadows
-   * Each shadow attacks at different intervals based on personality
-   * Operations:
-   * 1. Process each shadow with individual timing
-   * 2. Schedule attacks based on personality intervals
-   * 3. Return attack schedule
-   * @param {Array<Object>} shadows - Array of shadows
-   * @param {Array<Object>} targets - Array of targets
-   * @param {number} baseIntervalMs - Base attack interval
-   * @returns {Array<Object>} - Attack schedule with timing
-   */
-  scheduleIndividualisticAttacks(shadows, targets, baseIntervalMs = 2000) {
-    // Guard clause: Return empty array if no shadows or targets
-    if (!shadows || shadows.length === 0 || !targets || targets.length === 0) {
-      return [];
-    }
-
-    const now = Date.now();
-    const attackSchedule = [];
-
-    // Process each shadow with individual timing
-    shadows.forEach((shadow) => {
-      const combatResult = this.processIndividualisticCombat(shadow, targets, baseIntervalMs);
-
-      if (combatResult.target) {
-        attackSchedule.push({
-          ...combatResult,
-          scheduledTime: now + combatResult.attackInterval,
-          shadow,
-        });
-      }
-    });
-
-    // Sort by scheduled time (earliest first)
-    attackSchedule.sort((a, b) => a.scheduledTime - b.scheduledTime);
-
-    return attackSchedule;
-  }
-
-  /**
-   * Process combat round with individualistic behavior
-   * Operations:
-   * 1. Process shadow attacks with individual timing
-   * 2. Process mob attacks on shadows
-   * 3. Return round results
-   * @param {Array<Object>} shadows - Array of shadows
-   * @param {Array<Object>} mobs - Array of mobs
-   * @param {Object} boss - Boss object (optional)
-   * @returns {Object} - Combat round results
-   */
-  async processCombatRound(shadows, mobs, boss = null) {
-    // Guard clause: Return early if no shadows
-    if (!shadows || shadows.length === 0) {
-      return {
-        shadowAttacks: [],
-        mobAttacks: [],
-        bossAttacks: [],
-        totalDamageDealt: 0,
-        totalDamageTaken: 0,
-      };
-    }
-
-    const targets = [];
-    if (boss && (boss.hp || 0) > 0) targets.push(boss);
-    if (mobs && mobs.length > 0) {
-      targets.push(...mobs.filter((m) => (m.hp || 0) > 0));
-    }
-
-    // Process shadow attacks (individualistic)
-    const shadowAttacks = shadows
-      .map((shadow) => this.processIndividualisticCombat(shadow, targets, 2000))
-      .filter((attack) => attack.target !== null);
-
-    // Process mob attacks on shadows (mobs target different shadows)
-    const mobAttacks = [];
-    if (mobs && mobs.length > 0) {
-      mobs.forEach((mob) => {
-        if ((mob.hp || 0) > 0) {
-          const attack = this.processMobAttackOnShadow(mob, shadows);
-          if (attack.targetShadow) {
-            mobAttacks.push(attack);
-          }
-        }
-      });
-    }
-
-    // Calculate totals
-    const totalDamageDealt = shadowAttacks.reduce((sum, attack) => sum + attack.damage, 0);
-    const totalDamageTaken = mobAttacks.reduce((sum, attack) => sum + attack.damage, 0);
-
-    return {
-      shadowAttacks,
-      mobAttacks,
-      bossAttacks: boss ? [] : [], // Boss attacks can be added later
-      totalDamageDealt,
-      totalDamageTaken,
-      shadowsUsed: shadowAttacks.length,
-      mobsActive: mobAttacks.length,
-    };
-  }
-
   // ============================================================================
   // 3.10 SHADOW BUFFS & XP SYSTEM
   // ============================================================================
@@ -9259,19 +6532,19 @@ module.exports = class ShadowArmy {
 
       .shadow-extraction-content {
         background: rgba(0, 0, 0, 0.9);
-        border: 2px solid #8b5cf6;
+        border: 2px solid #8a2be2;
         border-radius: 12px;
         padding: 20px 30px;
         text-align: center;
-        box-shadow: 0 0 20px rgba(139, 92, 246, 0.6);
+        box-shadow: 0 0 20px rgba(138, 43, 226, 0.6);
       }
 
       .shadow-extraction-title {
-        font-family: 'Speedy Space Goat Oddity', sans-serif !important;
+        font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
         font-size: 32px;
         font-weight: 700;
-        color: #a78bfa;
-        text-shadow: 0 0 10px rgba(139, 92, 246, 0.8);
+        color: #9370db;
+        text-shadow: 0 0 10px rgba(138, 43, 226, 0.8);
         margin-bottom: 10px;
         animation: glow 1s ease-in-out infinite alternate;
       }
@@ -9308,10 +6581,10 @@ module.exports = class ShadowArmy {
 
       @keyframes glow {
         from {
-          text-shadow: 0 0 10px rgba(139, 92, 246, 0.8);
+          text-shadow: 0 0 10px rgba(138, 43, 226, 0.8);
         }
         to {
-          text-shadow: 0 0 20px rgba(139, 92, 246, 1), 0 0 30px rgba(139, 92, 246, 0.6);
+          text-shadow: 0 0 20px rgba(138, 43, 226, 1), 0 0 30px rgba(138, 43, 226, 0.6);
         }
       }
 
@@ -9349,19 +6622,17 @@ module.exports = class ShadowArmy {
       .sa-arise-text {
         font-family: '${
           this.settings?.ariseAnimation?.animationFont || 'Speedy Space Goat Oddity'
-        }', system-ui, sans-serif;
+        }', 'Orbitron', system-ui, sans-serif;
         font-weight: 700;
         font-size: 42px;
         letter-spacing: 0.12em;
         text-transform: none; /* Preserve "ARiSe" casing */
-        background: linear-gradient(135deg, #020617 0%, #0f172a 35%, #1d4ed8 70%, #38bdf8 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
+        color: #ffffff;
         text-shadow:
-          0 0 10px rgba(15, 23, 42, 0.95),
-          0 0 18px rgba(37, 99, 235, 0.95),
-          0 0 26px rgba(56, 189, 248, 0.75);
+          0 0 6px rgba(138, 43, 226, 0.9),
+          0 0 14px rgba(138, 43, 226, 0.7),
+          0 0 28px rgba(138, 43, 226, 0.5),
+          0 0 42px rgba(75, 0, 130, 0.4);
         animation: sa-arise-glow 0.7s ease-in-out infinite alternate;
         -webkit-font-smoothing: antialiased;
         -moz-osx-font-smoothing: grayscale;
@@ -9374,11 +6645,17 @@ module.exports = class ShadowArmy {
       }
 
       .sa-arise-meta {
-        margin-top: 6px;
-        font-size: 14px;
-        color: #e5e7eb;
-        text-shadow: 0 0 8px rgba(15, 23, 42, 0.8);
-        opacity: 0.9;
+        margin-top: 10px;
+        font-family: 'Orbitron', system-ui, sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+        color: #c4b5fd;
+        text-shadow:
+          0 0 6px rgba(138, 43, 226, 0.8),
+          0 0 12px rgba(138, 43, 226, 0.5),
+          0 0 20px rgba(75, 0, 130, 0.3);
       }
 
       .sa-arise-particle {
@@ -9386,7 +6663,7 @@ module.exports = class ShadowArmy {
         width: 5px;
         height: 5px;
         border-radius: 999px;
-        background: radial-gradient(circle, #38bdf8 0%, rgba(15, 23, 42, 0) 70%);
+        background: radial-gradient(circle, #9333ea 0%, rgba(75, 0, 130, 0) 70%);
         animation: sa-arise-particle-fade var(--sa-duration, 2.5s) ease-out forwards;
       }
 
@@ -9408,13 +6685,13 @@ module.exports = class ShadowArmy {
       @keyframes sa-arise-glow {
         from {
           filter:
-            drop-shadow(0 0 10px rgba(15, 23, 42, 1))
-            drop-shadow(0 0 18px rgba(37, 99, 235, 0.9));
+            drop-shadow(0 0 8px rgba(138, 43, 226, 0.8))
+            drop-shadow(0 0 16px rgba(75, 0, 130, 0.6));
         }
         to {
           filter:
-            drop-shadow(0 0 16px rgba(30, 64, 175, 1))
-            drop-shadow(0 0 30px rgba(56, 189, 248, 0.95));
+            drop-shadow(0 0 14px rgba(138, 43, 226, 1))
+            drop-shadow(0 0 30px rgba(147, 51, 234, 0.8));
         }
       }
 
@@ -9451,7 +6728,7 @@ module.exports = class ShadowArmy {
         margin-top: 8px;
         max-height: 300px;
         overflow-y: auto;
-        border-top: 1px solid rgba(139, 92, 246, 0.4);
+        border-top: 1px solid rgba(138, 43, 226, 0.4);
         padding-top: 6px;
       }
 
@@ -9460,7 +6737,7 @@ module.exports = class ShadowArmy {
         align-items: flex-start;
         gap: 6px;
         padding: 4px 0;
-        border-bottom: 1px solid rgba(139, 92, 246, 0.15);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.15);
         max-width: 100%;
         overflow: hidden;
       }
@@ -9953,9 +7230,11 @@ module.exports = class ShadowArmy {
       this._retryTimeouts?.add(fontVerifyTimeoutId);
     }
 
-    setTimeout(() => {
+    const wrapperRemoveId = setTimeout(() => {
+      this._retryTimeouts?.delete(wrapperRemoveId);
       wrapper.remove();
     }, durationMs + 200);
+    this._retryTimeouts?.add(wrapperRemoveId);
   }
 
   // 3.13.2 CSS MANAGEMENT HELPERS - Theme Integration & Advanced Features
@@ -10199,79 +7478,6 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Update CSS dynamically (for runtime theme changes)
-   * Operations:
-   * 1. Find existing style element
-   * 2. Update content with new theme variables
-   * 3. Trigger reflow for immediate update
-   * @param {string} styleId - Style identifier
-   * @param {string} cssContent - New CSS content
-   * @returns {boolean} - Success status
-   */
-  updateCSS(styleId, cssContent) {
-    return this.injectOrUpdateCSS(styleId, cssContent, { forceUpdate: true, useThemeVars: true });
-  }
-
-  /**
-   * Get CSS template with theme variable placeholders
-   * Helper for creating CSS templates that auto-adapt to themes
-   * @param {string} baseCSS - Base CSS with ${variable} placeholders
-   * @returns {string} - CSS ready for injection
-   */
-  getCSSTemplate(baseCSS) {
-    return this.mergeCSSWithThemeVars(baseCSS);
-  }
-
-  /**
-   * Check for CSS conflicts (duplicate selectors)
-   * Operations:
-   * 1. Parse CSS selectors
-   * 2. Check for conflicts with existing styles
-   * 3. Return conflict report
-   * @param {string} cssContent - CSS to check
-   * @returns {Object} - Conflict report
-   */
-  checkCSSConflicts(cssContent) {
-    try {
-      // Simple selector extraction (basic implementation)
-      const selectorRegex = /([^{]+)\{/g;
-      const selectors = [];
-      let match;
-
-      while ((match = selectorRegex.exec(cssContent)) !== null) {
-        const selector = match[1].trim();
-        if (selector && !selector.startsWith('@')) {
-          selectors.push(selector);
-        }
-      }
-
-      // Check for conflicts in existing styles
-      const conflicts = [];
-      if (this._injectedStyles) {
-        this._injectedStyles.forEach((styleId) => {
-          const style = document.getElementById(styleId);
-          if (style && style.textContent) {
-            selectors.forEach((selector) => {
-              if (style.textContent.includes(selector)) {
-                conflicts.push({ selector, conflictingStyle: styleId });
-              }
-            });
-          }
-        });
-      }
-
-      return {
-        hasConflicts: conflicts.length > 0,
-        conflicts,
-        selectors: selectors.length,
-      };
-    } catch (error) {
-      this.debugError('CSS', 'Failed to check CSS conflicts', error);
-      return { hasConflicts: false, conflicts: [], selectors: 0 };
-    }
-  }
-
-  /**
    * Cleanup all injected CSS styles
    * Operations:
    * 1. Iterate through tracked styles
@@ -10287,14 +7493,6 @@ module.exports = class ShadowArmy {
 
     this._injectedStyles.clear();
     this.debugLog('CSS', 'All injected CSS cleaned up');
-  }
-
-  /**
-   * Get list of all injected CSS styles
-   * @returns {Array<string>} - Array of style IDs
-   */
-  getInjectedStyles() {
-    return this._injectedStyles ? Array.from(this._injectedStyles) : [];
   }
 
   /**
@@ -10405,14 +7603,14 @@ module.exports = class ShadowArmy {
 
       .dungeon-boss-container {
         background: linear-gradient(135deg,
-          ${customColors.bossBgStart || 'rgba(139, 92, 246, 0.2)'},
+          ${customColors.bossBgStart || 'rgba(138, 43, 226, 0.2)'},
           ${customColors.bossBgEnd || 'rgba(168, 85, 247, 0.1)'}
         );
-        border: 2px solid ${customColors.bossBorder || '#8b5cf6'};
+        border: 2px solid ${customColors.bossBorder || '#8a2be2'};
         border-radius: 12px;
         padding: 20px;
         margin: 16px 0;
-        box-shadow: 0 0 20px ${customColors.bossGlow || 'rgba(139, 92, 246, 0.3)'};
+        box-shadow: 0 0 20px ${customColors.bossGlow || 'rgba(138, 43, 226, 0.3)'};
       }
 
       .dungeon-button {
@@ -10451,10 +7649,10 @@ module.exports = class ShadowArmy {
       /* Animation for dungeon events */
       @keyframes dungeonPulse {
         0%, 100% {
-          box-shadow: 0 0 20px ${customColors.pulseGlow || 'rgba(139, 92, 246, 0.3)'};
+          box-shadow: 0 0 20px ${customColors.pulseGlow || 'rgba(138, 43, 226, 0.3)'};
         }
         50% {
-          box-shadow: 0 0 30px ${customColors.pulseGlow || 'rgba(139, 92, 246, 0.6)'};
+          box-shadow: 0 0 30px ${customColors.pulseGlow || 'rgba(138, 43, 226, 0.6)'};
         }
       }
 
@@ -10465,30 +7663,6 @@ module.exports = class ShadowArmy {
 
     // Merge with theme variables
     return this.mergeCSSWithThemeVars(baseDungeonCSS);
-  }
-
-  /**
-   * Inject dungeon CSS with automatic theme integration
-   * Convenience method for dungeon CSS injection
-   * @param {Object} options - Dungeon CSS options (same as generateDungeonCSSTemplate)
-   * @returns {boolean} - Success status
-   */
-  injectDungeonCSS(options = {}) {
-    const styleId = 'shadow-army-dungeon-styles';
-    const cssContent = this.generateDungeonCSSTemplate(options);
-    return this.injectOrUpdateCSS(styleId, cssContent, {
-      forceUpdate: true,
-      useThemeVars: true,
-      priority: 200, // Higher priority for dungeon CSS
-    });
-  }
-
-  /**
-   * Remove dungeon CSS
-   * @returns {boolean} - Success status
-   */
-  removeDungeonCSS() {
-    return this.removeCSSById('shadow-army-dungeon-styles');
   }
 
   // ============================================================================
@@ -11120,29 +8294,29 @@ module.exports = class ShadowArmy {
       padding: 24px;
       min-width: 400px;
       max-width: 500px;
-      border: 1px solid rgba(139, 92, 246, 0.5);
+      border: 1px solid rgba(138, 43, 226, 0.5);
       box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
     `;
 
     modalContent.innerHTML = `
-      <h2 style="color: #8b5cf6; margin: 0 0 16px 0; font-size: 20px;">Convert Shadows to Essence</h2>
-      <div style="margin-bottom: 16px; padding: 12px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; font-size: 12px;">
-        <div style="color: #a78bfa; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
+      <h2 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 20px;">Convert Shadows to Essence</h2>
+      <div style="margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 12px;">
+        <div style="color: #9370db; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
           config.essence || 0
         ).toLocaleString()}</div>
         <div style="opacity: 0.8;">Select rank and quantity of shadows to convert</div>
       </div>
       <label style="display: block; margin-bottom: 12px;">
         <span style="display: block; margin-bottom: 6px; color: #dcddde; font-size: 13px; font-weight: 600;">Rank:</span>
-        <select id="essence-convert-rank" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
+        <select id="essence-convert-rank" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
           ${ranks.map((rank) => `<option value="${rank}">${rank}</option>`).join('')}
         </select>
       </label>
       <label style="display: block; margin-bottom: 16px;">
         <span style="display: block; margin-bottom: 6px; color: #dcddde; font-size: 13px; font-weight: 600;">Quantity:</span>
-        <input type="number" id="essence-convert-quantity" min="1" value="1" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
+        <input type="number" id="essence-convert-quantity" min="1" value="1" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
       </label>
-      <div id="essence-convert-preview" style="margin-bottom: 16px; padding: 12px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; font-size: 12px; color: #a78bfa; display: none;">
+      <div id="essence-convert-preview" style="margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 12px; color: #9370db; display: none;">
         <div style="font-weight: bold; margin-bottom: 4px;">Preview:</div>
         <div id="essence-convert-preview-text"></div>
       </div>
@@ -11150,7 +8324,7 @@ module.exports = class ShadowArmy {
         <button id="essence-convert-cancel" style="padding: 8px 16px; background: #4f545c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
           Cancel
         </button>
-        <button id="essence-convert-confirm" style="padding: 8px 16px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
+        <button id="essence-convert-confirm" style="padding: 8px 16px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
           Convert
         </button>
       </div>
@@ -11217,7 +8391,7 @@ module.exports = class ShadowArmy {
       confirmBtn.disabled = true;
       confirmBtn.textContent = 'Converting...';
       resultDiv.style.display = 'block';
-      resultDiv.innerHTML = '<span style="color: #a78bfa;">Converting shadows...</span>';
+      resultDiv.innerHTML = '<span style="color: #9370db;">Converting shadows...</span>';
 
       try {
         const result = await this.convertShadowsToEssence(rank, quantity);
@@ -11542,18 +8716,18 @@ module.exports = class ShadowArmy {
     const cssContent = `
       #shadow-army-widget {
         background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
-        border: 1px solid rgba(139, 92, 246, 0.4) !important;
+        border: 1px solid rgba(138, 43, 226, 0.4) !important;
         border-radius: 8px !important;
         padding: 12px !important;
         margin: 12px 8px !important;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(139, 92, 246, 0.15) !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
       }
 
       #shadow-army-widget:hover {
-        border-color: rgba(139, 92, 246, 0.6) !important;
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 24px rgba(139, 92, 246, 0.25) !important;
+        border-color: rgba(138, 43, 226, 0.6) !important;
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5), 0 0 24px rgba(138, 43, 226, 0.25) !important;
       }
 
       #shadow-army-widget .widget-header {
@@ -11564,10 +8738,10 @@ module.exports = class ShadowArmy {
       }
 
       #shadow-army-widget .widget-title {
-        color: #8b5cf6 !important;
+        color: #8a2be2 !important;
         font-size: 12px !important;
         font-weight: bold !important;
-        text-shadow: 0 0 8px rgba(139, 92, 246, 0.8) !important;
+        text-shadow: 0 0 8px rgba(138, 43, 226, 0.8) !important;
       }
 
       #shadow-army-widget .widget-total {
@@ -11603,7 +8777,7 @@ module.exports = class ShadowArmy {
       #shadow-army-widget .widget-footer {
         margin-top: 8px !important;
         padding-top: 8px !important;
-        border-top: 1px solid rgba(139, 92, 246, 0.2) !important;
+        border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
         text-align: center !important;
         color: #888 !important;
         font-size: 9px !important;
@@ -11714,7 +8888,7 @@ module.exports = class ShadowArmy {
       if (!shadows || shadows.length === 0) {
         widget.innerHTML = `
           <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div class="widget-title" style="color: #8b5cf6; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
+            <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
             <div class="widget-total" style="color: #999; font-size: 11px;">0 Total</div>
           </div>
           <div style="text-align: center; padding: 20px; color: #999; font-size: 11px;">No shadows yet</div>
@@ -11728,7 +8902,7 @@ module.exports = class ShadowArmy {
         SSS: '#ec4899',
         SS: '#ef4444',
         S: '#f59e0b',
-        A: '#8b5cf6',
+        A: '#8a2be2',
         B: '#3b82f6',
         C: '#22c55e',
         D: '#a0a0a0',
@@ -11751,7 +8925,7 @@ module.exports = class ShadowArmy {
       // Generate HTML with proper structure
       widget.innerHTML = `
         <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-          <div class="widget-title" style="color: #8b5cf6; font-size: 12px; font-weight: bold; text-shadow: 0 0 8px rgba(139, 92, 246, 0.8);">
+          <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold; text-shadow: 0 0 8px rgba(138, 43, 226, 0.8);">
             MY SHADOW ARMY
           </div>
           <div class="widget-total" style="color: #999; font-size: 11px;">
@@ -11779,7 +8953,7 @@ module.exports = class ShadowArmy {
         <div class="widget-footer" style="
           margin-top: 8px;
           padding-top: 8px;
-          border-top: 1px solid rgba(139, 92, 246, 0.2);
+          border-top: 1px solid rgba(138, 43, 226, 0.2);
           text-align: center;
           color: #888;
           font-size: 9px;
@@ -11808,7 +8982,7 @@ module.exports = class ShadowArmy {
    * Format combat time dynamically (seconds, minutes, or hours)
    * Internal calculations stay in hours, display adapts to magnitude
    */
-  formatCombatTime(hours) {
+  formatCombatHours(hours) {
     // Guard clause: Return early for invalid hours
     if (!hours || hours === 0) return '0s';
 
@@ -11840,7 +9014,7 @@ module.exports = class ShadowArmy {
       D: '#a0a0a0',
       C: '#22c55e',
       B: '#3b82f6',
-      A: '#8b5cf6',
+      A: '#8a2be2',
       S: '#f59e0b',
       SS: '#ef4444',
       SSS: '#ec4899',
@@ -11954,7 +9128,7 @@ module.exports = class ShadowArmy {
     const xpProgress =
       xpNeeded > 0 ? Math.max(0, Math.min(100, ((safeShadow.xp || 0) / xpNeeded) * 100)) : 0;
 
-    const combatTime = this.formatCombatTime(safeShadow.totalCombatTime || 0);
+    const combatTime = this.formatCombatHours(safeShadow.totalCombatTime || 0);
 
     const role = safeShadow.role || safeShadow.roleName || 'Unknown';
     const isMagicBeast = this.shadowRoles?.[role]?.isMagicBeast || false;
@@ -11992,7 +9166,7 @@ module.exports = class ShadowArmy {
                       <div style="flex: 1;">
                         <!-- Header -->
                         <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
-                          <span style="color: #8b5cf6; font-weight: bold; font-size: 14px;">[${
+                          <span style="color: #8a2be2; font-weight: bold; font-size: 14px;">[${
                             safeShadow.rank || 'E'
                           }]</span>
                           <span style="color: ${roleColor}; font-size: 14px; font-weight: bold;">${role}</span>
@@ -12053,7 +9227,7 @@ module.exports = class ShadowArmy {
                         <!-- Combat Info -->
                         <div style="display: flex; gap: 12px; font-size: 11px;">
                           <div style="color: #34d399;">${combatTime} Combat</div>
-                          <div style="color: #8b5cf6;">Level ${level}</div>
+                          <div style="color: #8a2be2;">Level ${level}</div>
                           <div style="color: #fbbf24; margin-left: auto;">ID: ${shadowId.slice(
                             -8
                           )}</div>
@@ -12112,9 +9286,9 @@ module.exports = class ShadowArmy {
           backdrop-filter: blur(5px);
         `;
         modal.innerHTML = `
-          <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px;">
+          <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8a2be2; border-radius: 12px; padding: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
+              <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
               <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
             </div>
             <div style="text-align: center; padding: 40px; color: #999;">
@@ -12179,9 +9353,9 @@ module.exports = class ShadowArmy {
         // Guard clause: Return early if no shadows
         if (!shadows || shadows.length === 0) {
           modal.innerHTML = `
-            <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8b5cf6; border-radius: 12px; padding: 20px;">
+            <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8a2be2; border-radius: 12px; padding: 20px;">
               <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
+                <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
                 <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
               </div>
               <div style="text-align: center; padding: 40px; color: #999;">
@@ -12193,17 +9367,17 @@ module.exports = class ShadowArmy {
         }
 
         const { generals, totalArmyPower, sortedRoles } = this.computeShadowArmyUiData(shadows);
-        const totalCombatTime = this.formatCombatTime(
+        const totalCombatTime = this.formatCombatHours(
           shadows.reduce((sum, shadow) => sum + (shadow.totalCombatTime || 0), 0)
         );
         const essenceTotal = (this.settings.shadowEssence?.essence || 0).toLocaleString();
         const roleDistributionHtml = sortedRoles
           .map(
             ([role, data]) => `
-                    <div style="background: rgba(139, 92, 246, 0.1); border-radius: 6px; padding: 8px;">
+                    <div style="background: rgba(138, 43, 226, 0.1); border-radius: 6px; padding: 8px;">
                       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
                         <span style="color: ${
-                          data.isMagicBeast ? '#f59e0b' : '#8b5cf6'
+                          data.isMagicBeast ? '#f59e0b' : '#8a2be2'
                         }; font-size: 12px; font-weight: bold;">
                           ${role}
                         </span>
@@ -12213,7 +9387,7 @@ module.exports = class ShadowArmy {
                 </div>
                       <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 9px; color: #999;">
                         <div>Lvl: <span style="color: #34d399;">${data.avgLevel}</span></div>
-                        <div>Pwr: <span style="color: #8b5cf6;">${data.avgPower}</span></div>
+                        <div>Pwr: <span style="color: #8a2be2;">${data.avgPower}</span></div>
                         <div>STR: <span style="color: #ef4444;">${
                           data.avgStats.strength
                         }</span></div>
@@ -12229,14 +9403,14 @@ module.exports = class ShadowArmy {
             max-width: 900px;
             max-height: 90vh;
             background: #1e1e1e;
-            border: 2px solid #8b5cf6;
+            border: 2px solid #8a2be2;
             border-radius: 12px;
             padding: 20px;
             overflow-y: auto;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
           ">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-              <h2 style="color: #8b5cf6; margin: 0;">Shadow Army Command</h2>
+              <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
               <button id="close-shadow-army-modal" style="
                 background: transparent;
                 border: none;
@@ -12251,15 +9425,15 @@ module.exports = class ShadowArmy {
 
             <!-- Army Overview -->
             <div style="
-              background: linear-gradient(135deg, rgba(139, 92, 246, 0.15), rgba(168, 85, 247, 0.1));
-              border: 1px solid #8b5cf6;
+              background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(168, 85, 247, 0.1));
+              border: 1px solid #8a2be2;
               border-radius: 8px;
               padding: 12px;
               margin-bottom: 16px;
             ">
               <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 12px;">
                 <div style="text-align: center;">
-                  <div style="color: #8b5cf6; font-size: 20px; font-weight: bold;">${
+                  <div style="color: #8a2be2; font-size: 20px; font-weight: bold;">${
                     shadows.length
                   }</div>
                   <div style="color: #999; font-size: 11px;">Total Shadows</div>
@@ -12281,14 +9455,14 @@ module.exports = class ShadowArmy {
                   <div style="color: #999; font-size: 11px;">Total Power</div>
                 </div>
                 <div style="text-align: center;">
-                  <div style="color: #a78bfa; font-size: 20px; font-weight: bold;">${essenceTotal}</div>
+                  <div style="color: #9370db; font-size: 20px; font-weight: bold;">${essenceTotal}</div>
                   <div style="color: #999; font-size: 11px;">Essence</div>
                 </div>
               </div>
 
               <!-- Shadow Rank Distribution -->
-              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="color: #8b5cf6; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
+                <div style="color: #8a2be2; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
                   Shadow Rank Distribution
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
@@ -12297,8 +9471,8 @@ module.exports = class ShadowArmy {
             </div>
 
               <!-- Shadow Role/Class Distribution -->
-              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(139, 92, 246, 0.3); border-radius: 8px; padding: 12px;">
-                <div style="color: #8b5cf6; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
+              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 8px; padding: 12px;">
+                <div style="color: #8a2be2; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
                   Army Composition by Role/Class
                 </div>
                 <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
@@ -12550,7 +9724,7 @@ module.exports = class ShadowArmy {
         const role = this.escapeHtml(shadow.roleName || shadow.role || 'Unknown');
         const isGeneral = shadowId && generalIds.has(shadowId);
         const generalBadge = isGeneral
-          ? '<span style="background: rgba(139, 92, 246, 0.3); color: #8b5cf6; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">GENERAL</span>'
+          ? '<span style="background: rgba(138, 43, 226, 0.3); color: #8a2be2; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">GENERAL</span>'
           : '';
 
         const level = Number.isFinite(shadow.level) ? shadow.level : shadow.level || 1;
@@ -12598,16 +9772,16 @@ module.exports = class ShadowArmy {
           <div>Local cache (settings): ${localCacheCount.toLocaleString()}</div>
           <div>Cached IndexedDB count: ${indexedDbCountLabel}</div>
           <div>Total Extracted: ${(this.settings.totalShadowsExtracted || 0).toLocaleString()}</div>
-          <div style="color: #8b5cf6; font-weight: bold;">Generals: ${generalsCount} / 7 (Auto-selected strongest)</div>
+          <div style="color: #8a2be2; font-weight: bold;">Generals: ${generalsCount} / 7 (Auto-selected strongest)</div>
           <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Generals provide full buffs • Other shadows provide diminishing returns</div>
         </div>
 
-        <div style="margin-top: 12px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px;">
-          <button type="button" data-sa-action="diagnostic" style="padding: 6px 12px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
+        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
+          <button type="button" data-sa-action="diagnostic" style="padding: 6px 12px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
             Check Actual Storage (Diagnostic)
           </button>
           <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Click to check IndexedDB for actual shadow count</div>
-          <div id="shadow-army-diagnostic-result" style="margin-top: 8px; font-size: 11px; color: #a78bfa;"></div>
+          <div id="shadow-army-diagnostic-result" style="margin-top: 8px; font-size: 11px; color: #9370db;"></div>
         </div>
 
         <div class="shadow-army-config">
@@ -12622,7 +9796,7 @@ module.exports = class ShadowArmy {
           ).toLocaleString()}</div>
           <div>Special ARISE Max Chance: ${(cfg.specialMaxChance * 100).toFixed(1)}%</div>
           <div>Special ARISE Max / Day: ${Number(cfg.specialMaxPerDay || 0).toLocaleString()}</div>
-          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(139, 92, 246, 0.3);">
+          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(138, 43, 226, 0.3);">
             <div style="font-size: 11px; opacity: 0.8;">Stats Influence: INT +1%, PER +0.5%, STR +0.3% per point</div>
             <div style="font-size: 11px; opacity: 0.8;">Lore: Can't extract targets 2+ ranks stronger</div>
             <div style="font-size: 11px; opacity: 0.8;">Max 3 extraction attempts per target</div>
@@ -12661,8 +9835,8 @@ module.exports = class ShadowArmy {
             }>
             <span>Debug Mode (Console logs for font verification & animation)</span>
           </label>
-          <div style="margin-top: 8px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.7);">
-            <strong style="color: #8b5cf6;">Debug Mode:</strong> Enable to see detailed console logs for:
+          <div style="margin-top: 8px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.7);">
+            <strong style="color: #8a2be2;">Debug Mode:</strong> Enable to see detailed console logs for:
             <ul style="margin: 4px 0; padding-left: 20px;">
               <li>Font loading status (FONT_LOADER)</li>
               <li>Font verification when ARISE animation triggers</li>
@@ -12675,13 +9849,13 @@ module.exports = class ShadowArmy {
 
         <div class="shadow-army-config" style="margin-top: 16px;">
           <h3>Shadow Essence Conversion</h3>
-          <div style="margin-bottom: 12px; padding: 8px; background: rgba(139, 92, 246, 0.1); border-radius: 4px; font-size: 11px;">
-            <div style="color: #a78bfa; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
+          <div style="margin-bottom: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 11px;">
+            <div style="color: #9370db; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
               this.settings.shadowEssence?.essence || 0
             ).toLocaleString()}</div>
             <div style="opacity: 0.8;">Convert shadows to essence manually. Select rank and quantity below.</div>
           </div>
-          <button type="button" data-sa-action="convert-essence" style="padding: 8px 16px; background: #8b5cf6; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-bottom: 12px;">
+          <button type="button" data-sa-action="convert-essence" style="padding: 8px 16px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-bottom: 12px;">
             Convert Shadows to Essence
           </button>
         </div>
@@ -12746,7 +9920,7 @@ module.exports = class ShadowArmy {
 
           const noteHtml =
             diagnostic.counts.indexedDB > 0 && diagnostic.counts.localStorage === 0
-              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(139, 92, 246, 0.2); border-radius: 4px; font-size: 10px; color: #a78bfa;">
+              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(138, 43, 226, 0.2); border-radius: 4px; font-size: 10px; color: #9370db;">
                    <strong>Note:</strong> Shadows are in IndexedDB (${safe(
                      diagnostic.counts.indexedDB
                    )}) but not in local settings cache. IndexedDB is the primary storage.
@@ -12754,8 +9928,8 @@ module.exports = class ShadowArmy {
               : '';
 
           resultDiv.innerHTML = `
-            <div style="background: rgba(139, 92, 246, 0.15); padding: 12px; border-radius: 4px; margin-top: 8px; border: 1px solid rgba(139, 92, 246, 0.3);">
-              <div style="font-weight: bold; margin-bottom: 8px; color: #a78bfa;">Storage Diagnostic Results:</div>
+            <div style="background: rgba(138, 43, 226, 0.15); padding: 12px; border-radius: 4px; margin-top: 8px; border: 1px solid rgba(138, 43, 226, 0.3);">
+              <div style="font-weight: bold; margin-bottom: 8px; color: #9370db;">Storage Diagnostic Results:</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
                 <div>Local cache:</div>
                 <div style="font-weight: bold;">${safe(

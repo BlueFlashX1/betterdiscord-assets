@@ -1118,22 +1118,34 @@ module.exports = class SoloLevelingStats {
       if (channelInfo.channelType === 'dm' || channelInfo.channelType === 'group_dm') return false;
 
       // Use ChannelStore for accurate channel type detection
-      const ChannelStore = this.webpackModules?.ChannelStore;
+      let ChannelStore = this.webpackModules?.ChannelStore;
+      // Retry module lookup if not cached yet
+      if (!ChannelStore?.getChannel) {
+        ChannelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
+        if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
+      }
       if (ChannelStore?.getChannel && channelInfo.rawChannelId) {
         const channel = ChannelStore.getChannel(channelInfo.rawChannelId);
         if (channel) {
-          // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT (also text-based)
+          // type 0 = GUILD_TEXT, type 5 = GUILD_ANNOUNCEMENT (text-based)
+          // Exclude: 10/11/12=threads, 15=GUILD_FORUM, 2=VOICE, 13=STAGE
           return channel.type === 0 || channel.type === 5;
         }
       }
 
       // Fallback: URL-based detection — guild server channels match /channels/{serverId}/{channelId}
-      // Threads/forums have the same URL pattern but we can't distinguish without ChannelStore,
-      // so allow injection (better to show than to miss)
-      return channelInfo.channelType === 'server';
+      // Without ChannelStore we can't distinguish threads/forums from text channels.
+      // Check URL for thread indicators (threads often have /threads/ in URL or longer channel IDs)
+      if (channelInfo.channelType === 'server') {
+        // If DOM has thread-specific elements, skip injection
+        const threadHeader = document.querySelector('[class*="threadHeader"], [class*="forumPost"]');
+        if (threadHeader) return false;
+        return true;
+      }
+      return false;
     } catch (error) {
       this.debugError('IS_GUILD_TEXT_CHANNEL', error);
-      return true; // Default to allowing injection on error
+      return false;
     }
   }
 
@@ -3435,19 +3447,7 @@ module.exports = class SoloLevelingStats {
       }
     });
 
-    // Force log to debug file
-    try {
-      if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(`Solo Leveling Stats enabled! Level ${this.settings.level}`, {
-          type: 'success',
-          timeout: 3000,
-        });
-      } else {
-        this.debugLog('START', `Plugin enabled! Level ${this.settings.level}`);
-      }
-    } catch (error) {
-      this.debugError('START', error, { phase: 'toast_notification' });
-    }
+    // Startup is silent — no toast on every reload.
 
     // Log startup to debug
   }
@@ -6971,12 +6971,7 @@ module.exports = class SoloLevelingStats {
             newStats: { ...this.settings.stats },
           });
 
-          // Show notification
-          this.showNotification(
-            ` Retroactive Natural Growth Applied! \n+${statsAdded} total stat points based on your level ${level} and ${messagesSent.toLocaleString()} messages!`,
-            'success',
-            5000
-          );
+          // Retroactive growth is silent — logged to debug only.
         }
       }
     } catch (error) {
@@ -7088,28 +7083,8 @@ module.exports = class SoloLevelingStats {
           statsGrown,
         });
 
-        // Show notification if multiple stats grew, or if it's a significant stat
-        if (statsGrown.length > 1) {
-          const statsList = statsGrown
-            .map(
-              (s) =>
-                `${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} (${s.oldValue}→${s.newValue}${
-                  s.growthAmount > 1 ? ` +${s.growthAmount}` : ''
-                })`
-            )
-            .join(', ');
-          this.showNotification(` Natural Growth! \n${statsList}`, 'success', 4000);
-        } else if (statsGrown.length === 1) {
-          const s = statsGrown[0];
-          const growthText = s.growthAmount > 1 ? ` +${s.growthAmount}` : '';
-          this.showNotification(
-            ` Natural ${s.stat.charAt(0).toUpperCase() + s.stat.slice(1)} Growth! \n${
-              s.oldValue
-            } → ${s.newValue}${growthText}`,
-            'success',
-            3000
-          );
-        }
+        // Natural stat growth is silent — reflected in chat UI stats panel.
+        // Debug log captures the details for troubleshooting.
       }
     } catch (error) {
       this.debugError('NATURAL_STAT_GROWTH', error);
@@ -7635,6 +7610,10 @@ module.exports = class SoloLevelingStats {
         return (this.settings.activity?.critsLanded || 0) >= condition.value;
       case 'stat':
         return this.settings.stats?.[condition.stat] >= condition.value;
+      case 'compound':
+        return (condition.conditions || []).every((c) =>
+          this.checkAchievementCondition({ condition: c })
+        );
       default:
         return false;
     }
@@ -8328,7 +8307,7 @@ module.exports = class SoloLevelingStats {
         id: 'beast_monarch',
         name: 'Beast Monarch',
         description: 'Reach Monarch rank (Lv 1000) and 30 Strength stat — Rakan, the King of Beasts',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'stat', stat: 'strength', value: 30 }] },
         title: 'Beast Monarch',
         titleBonus: { xp: 1.8, strengthPercent: 0.45, agilityPercent: 0.25, vitalityPercent: 0.2, perceptionPercent: 0.3, critChance: 0.2 }, // Rakan: raw STR beast, predatory senses + lethal crits
       },
@@ -8336,7 +8315,7 @@ module.exports = class SoloLevelingStats {
         id: 'frost_monarch',
         name: 'Frost Monarch',
         description: 'Reach Monarch rank (Lv 1000) and send 15,000 messages — Sillad, the King of Snow Folk',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'messages', value: 15000 }] },
         title: 'Frost Monarch',
         titleBonus: { xp: 1.8, intelligencePercent: 0.45, vitalityPercent: 0.25, perceptionPercent: 0.25, critChance: 0.1 }, // Sillad: cold intelligence, endurance, strategic awareness
       },
@@ -8344,7 +8323,7 @@ module.exports = class SoloLevelingStats {
         id: 'plague_monarch',
         name: 'Plague Monarch',
         description: 'Reach Monarch rank (Lv 1000) and 30 Intelligence stat — Querehsha, the Queen of Insects',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'stat', stat: 'intelligence', value: 30 }] },
         title: 'Plague Monarch',
         titleBonus: { xp: 1.8, intelligencePercent: 0.4, perceptionPercent: 0.3, vitalityPercent: 0.25, critChance: 0.08 }, // Querehsha: swarm intelligence, omnisensory awareness, attrition endurance
       },
@@ -8352,7 +8331,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_white_flames',
         name: 'Monarch of White Flames',
         description: 'Reach Monarch rank (Lv 1000) and land 3,000 critical hits — Baran, the King of Demons',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'crits', value: 3000 }] },
         title: 'Monarch of White Flames',
         titleBonus: { xp: 1.9, strengthPercent: 0.35, intelligencePercent: 0.3, vitalityPercent: 0.2, critChance: 0.18 }, // Baran: brute STR + lightning/fire magic, devastating crits
       },
@@ -8360,7 +8339,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_transfiguration',
         name: 'Monarch of Transfiguration',
         description: 'Reach Monarch rank (Lv 1000) and type 500,000 characters — Yogumunt, the King of Demonic Spectres',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'characters', value: 500000 }] },
         title: 'Monarch of Transfiguration',
         titleBonus: { xp: 1.8, intelligencePercent: 0.45, agilityPercent: 0.25, perceptionPercent: 0.3, critChance: 0.1 }, // Yogumunt: master illusionist/schemer, spectral evasion, deception awareness
       },
@@ -8377,7 +8356,7 @@ module.exports = class SoloLevelingStats {
         id: 'kamish_slayer',
         name: 'Kamish Slayer',
         description: 'Reach Level 200 and land 2,000 critical hits — the dragon Kamish required National Level Hunters to defeat',
-        condition: { type: 'level', value: 200 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 200 }, { type: 'crits', value: 2000 }] },
         title: 'Kamish Slayer',
         titleBonus: { xp: 0.5, strengthPercent: 0.15, agilityPercent: 0.1, vitalityPercent: 0.1, critChance: 0.05 }, // Kamish Slayer: dragon-killing STR, survival VIT, decisive strikes
       },
@@ -8385,7 +8364,7 @@ module.exports = class SoloLevelingStats {
         id: 'demon_tower_conqueror',
         name: 'Demon Tower Conqueror',
         description: 'Reach Level 100 and visit 40 unique channels — conqueror of the Demon King Baran\'s tower',
-        condition: { type: 'level', value: 100 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 100 }, { type: 'channels', value: 40 }] },
         title: 'Demon Tower Conqueror',
         titleBonus: { xp: 0.35, strengthPercent: 0.1, intelligencePercent: 0.1, vitalityPercent: 0.1, critChance: 0.03 }, // Baran's tower: balanced combat (physical + magic demons), endurance gauntlet
       },
@@ -8393,7 +8372,7 @@ module.exports = class SoloLevelingStats {
         id: 'double_awakening',
         name: 'Double Awakening',
         description: 'Reach Level 50 and send 3,500 messages — the rare phenomenon of awakening a second time, unlocking unlimited growth',
-        condition: { type: 'level', value: 50 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 50 }, { type: 'messages', value: 3500 }] },
         title: 'Double Awakening',
         titleBonus: { xp: 0.2, strengthPercent: 0.05, agilityPercent: 0.05, intelligencePercent: 0.05, vitalityPercent: 0.05, perceptionPercent: 0.05, critChance: 0.02 }, // Double Awakening: ALL stats unlocked (unlimited growth potential)
       },
@@ -8409,7 +8388,7 @@ module.exports = class SoloLevelingStats {
         id: 'instant_dungeon_master',
         name: 'Instant Dungeon Master',
         description: 'Type 200,000 characters and be active for 75 hours — mastering the System\'s private training dimensions',
-        condition: { type: 'characters', value: 200000 },
+        condition: { type: 'compound', conditions: [{ type: 'characters', value: 200000 }, { type: 'time', value: 75 }] },
         title: 'Instant Dungeon Master',
         titleBonus: { xp: 0.5, intelligencePercent: 0.1, vitalityPercent: 0.1, strengthPercent: 0.05, agilityPercent: 0.05 }, // Instant Dungeon: grinding master, balanced growth from endless training
       },
@@ -8417,7 +8396,7 @@ module.exports = class SoloLevelingStats {
         id: 'shadow_army_general',
         name: 'Shadow Army General',
         description: 'Reach Level 100 and land 750 critical hits — commanding the shadow army\'s elite forces',
-        condition: { type: 'level', value: 100 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 100 }, { type: 'crits', value: 750 }] },
         title: 'Shadow Army General',
         titleBonus: { xp: 0.35, intelligencePercent: 0.15, strengthPercent: 0.1, agilityPercent: 0.05, critChance: 0.03 }, // Shadow General: strategic INT command, combat STR, tactical strikes
       },
@@ -8425,7 +8404,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_of_beasts',
         name: 'Monarch of Fangs',
         description: 'Reach Monarch rank (Lv 1000) and 40 Strength stat — Rakan, the King of Beasts unleashed',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'stat', stat: 'strength', value: 40 }] },
         title: 'Monarch of Fangs',
         titleBonus: { xp: 2.0, strengthPercent: 0.5, agilityPercent: 0.3, perceptionPercent: 0.35, critChance: 0.22 }, // Rakan unleashed: apex predator, maximum STR/Crit, hunting instincts
       },
@@ -8433,7 +8412,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_of_plagues',
         name: 'Monarch of Plagues',
         description: 'Reach Monarch+ rank (Lv 1500) and send 20,000 messages — Querehsha, the Queen of Insects ascended',
-        condition: { type: 'level', value: 1500 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1500 }, { type: 'messages', value: 20000 }] },
         title: 'Monarch of Plagues',
         titleBonus: { xp: 2.3, intelligencePercent: 0.45, perceptionPercent: 0.35, vitalityPercent: 0.3, agilityPercent: 0.15, critChance: 0.1 }, // Querehsha ascended: plague mastery, swarm omniscience, corrosive endurance
       },
@@ -8441,7 +8420,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_of_iron_body',
         name: 'Monarch of Iron Body',
         description: 'Reach Monarch rank (Lv 1000) and 35 Vitality stat — Tarnak, the King of Monstrous Humanoids',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'stat', stat: 'vitality', value: 35 }] },
         title: 'Monarch of Iron Body',
         titleBonus: { xp: 1.8, vitalityPercent: 0.5, strengthPercent: 0.3, critChance: 0.05 }, // Tarnak: indestructible defense, massive VIT, secondary STR
       },
@@ -8449,7 +8428,7 @@ module.exports = class SoloLevelingStats {
         id: 'monarch_of_beginning',
         name: 'Monarch of Beginning',
         description: 'Reach Monarch rank (Lv 1000) and unlock 30 achievements — Legia, the King of Giants (weakest Monarch)',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'achievements', value: 30 }] },
         title: 'Monarch of Beginning',
         titleBonus: {
           xp: 1.5,
@@ -8462,7 +8441,7 @@ module.exports = class SoloLevelingStats {
         id: 'absolute_ruler',
         name: 'Absolute Ruler',
         description: 'Reach Monarch rank (Lv 1000) and type 600,000 characters — wielder of the Rulers\' full authority',
-        condition: { type: 'level', value: 1000 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1000 }, { type: 'characters', value: 600000 }] },
         title: 'Absolute Ruler',
         titleBonus: {
           xp: 2.0,
@@ -9249,13 +9228,21 @@ module.exports = class SoloLevelingStats {
       // Function to actually create the UI
       const tryCreateUI = () => {
         try {
-          // Find the chat input area or message list container
+          // Find the chat input area in the MAIN chat content (not inside dialogs/modals)
+          const mainChat = document.querySelector('[class*="chatContent"]') ||
+            document.querySelector('[class*="chat_"]');
+          const searchRoot = mainChat || document;
           const messageInputArea =
-            document.querySelector('[class*="channelTextArea"]') ||
-            document.querySelector('[class*="textArea"]')?.parentElement ||
-            document.querySelector('[class*="slateTextArea"]')?.parentElement;
+            searchRoot.querySelector('[class*="channelTextArea"]') ||
+            searchRoot.querySelector('[class*="textArea"]')?.parentElement ||
+            searchRoot.querySelector('[class*="slateTextArea"]')?.parentElement;
 
           if (!messageInputArea || !messageInputArea.parentElement) {
+            return false;
+          }
+
+          // Safety: don't inject inside dialogs/modals (Forward To, etc.)
+          if (messageInputArea.closest('[role="dialog"]') || messageInputArea.closest('[class*="layerContainer_"]')) {
             return false;
           }
 
