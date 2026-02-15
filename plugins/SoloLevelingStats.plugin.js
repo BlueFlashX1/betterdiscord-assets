@@ -4122,7 +4122,8 @@ module.exports = class SoloLevelingStats {
         this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
       }
 
-      // Pick newest; tie-break by storage priority for older saves missing timestamps
+      // Pick best candidate by quality (data richness) + timestamp + storage priority
+      // CRITICAL: prevents zeroed defaults with newer timestamps from overriding valid data
       const sourcePriority = {
         indexeddb: 3,
         file: 2,
@@ -4130,8 +4131,25 @@ module.exports = class SoloLevelingStats {
       };
       const getPriority = (source) => sourcePriority[source] ?? 0;
 
+      const getCandidateQuality = (data) => {
+        if (!data || typeof data !== 'object') return 0;
+        const stats = data.stats || {};
+        const statSum = (Number(stats.strength) || 0) + (Number(stats.agility) || 0) +
+          (Number(stats.intelligence) || 0) + (Number(stats.vitality) || 0) + (Number(stats.perception) || 0);
+        return (Number(data.level) || 0) * 1000 + statSum + (Number(data.totalXP || data.xp) || 0) * 0.01;
+      };
+
+      // Score all candidates
+      candidates.forEach(c => { c.quality = getCandidateQuality(c.data); });
+
       const best = candidates.reduce(
         (acc, cur) => {
+          // If current candidate has much higher quality (>50% more), prefer it even if older
+          const qualityRatio = acc.quality > 0 ? cur.quality / acc.quality : (cur.quality > 0 ? Infinity : 1);
+          if (qualityRatio > 1.5) return cur; // Higher quality candidate wins
+          if (qualityRatio < 0.67) return acc; // Current best has much higher quality
+
+          // Similar quality: use timestamp then priority
           const hasNewerTimestamp = cur.ts > acc.ts;
           const isTie = cur.ts === acc.ts;
           const hasHigherPriority = getPriority(cur.source) >= getPriority(acc.source);
@@ -4141,6 +4159,7 @@ module.exports = class SoloLevelingStats {
           source: null,
           data: null,
           ts: 0,
+          quality: 0,
         }
       );
 
@@ -4151,6 +4170,9 @@ module.exports = class SoloLevelingStats {
         this.debugLog('LOAD_SETTINGS', 'Selected settings candidate', {
           source: best.source,
           timestamp: best.ts,
+          quality: best.quality,
+          candidateCount: candidates.length,
+          allQualities: candidates.map(c => ({ source: c.source, quality: c.quality, ts: c.ts })),
           fileBackupPath: this.fileBackupPath,
         });
 
@@ -4442,6 +4464,42 @@ module.exports = class SoloLevelingStats {
         return; // Don't save corrupted data
       }
 
+      // CRITICAL: Validate stats haven't regressed to defaults (prevent stat wipe)
+      const statSum = Object.values(cleanSettings.stats || {}).reduce(
+        (a, b) => a + (Number(b) || 0), 0
+      );
+      if (statSum === 0 && cleanSettings.level > 1) {
+        this.debugError(
+          'SAVE_SETTINGS',
+          new Error(
+            `All stats are zero at level ${cleanSettings.level}. Aborting save to prevent data wipe.`
+          )
+        );
+        return; // Don't save — this is clearly corrupt
+      }
+
+      // CRITICAL: Check for stat regression vs existing file backup
+      try {
+        const existingBackup = this.readFileBackup();
+        if (existingBackup?.stats) {
+          const existingStatSum = Object.values(existingBackup.stats).reduce(
+            (a, b) => a + (Number(b) || 0), 0
+          );
+          if (existingStatSum > 0 && statSum < existingStatSum * 0.5) {
+            this.debugError(
+              'SAVE_SETTINGS',
+              new Error(
+                `Stats regression detected: current ${statSum} vs backup ${existingStatSum} (>50% drop). Aborting save.`
+              )
+            );
+            return; // Don't overwrite good data with regressed data
+          }
+        }
+      } catch (regressionCheckError) {
+        // Don't block save if regression check itself fails
+        this.debugError('SAVE_SETTINGS', 'Regression check failed (non-fatal)', regressionCheckError);
+      }
+
       // CRITICAL: Validate totalXP is valid (prevent progress bar from breaking)
       if (
         typeof cleanSettings.totalXP !== 'number' ||
@@ -4468,6 +4526,7 @@ module.exports = class SoloLevelingStats {
         totalXP: cleanSettings.totalXP,
         rank: cleanSettings.rank,
         stats: cleanSettings.stats,
+        statSum,
         metadata: cleanSettings._metadata,
       });
 
