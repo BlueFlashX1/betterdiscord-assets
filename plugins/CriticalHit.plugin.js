@@ -4414,6 +4414,9 @@ module.exports = class CriticalHit {
           // CRITICAL: Don't mark as processed yet - let checkForCrit do it after validation
           // This allows checkForCrit to validate the messageId and reject channel IDs
 
+          // Optimization: If already styled, don't spam rAF
+          if (messageElement.classList.contains('bd-crit-hit')) return;
+
           requestAnimationFrame(() => {
             requestAnimationFrame(() => {
               this.checkForCrit(messageElement);
@@ -5941,11 +5944,10 @@ module.exports = class CriticalHit {
         if (isCrit) {
           // It's a crit - restore style with saved settings and trigger animation
           // Always restore gradient even if class is present (Discord might have removed it)
-          const needsRestore =
-            !messageElement.classList.contains('bd-crit-hit') ||
-            !this.findMessageContentElement(messageElement)?.style?.backgroundImage?.includes(
-              'gradient'
-            );
+          // Fix infinite loop: Check ONLY for the class. The inline style check was too aggressive
+          // and caused re-application when DOM structure didn't match perfectly, triggering
+          // a MutationObserver loop.
+          const needsRestore = !messageElement.classList.contains('bd-crit-hit');
 
           if (needsRestore) {
             // Use saved critSettings for proper gradient restoration
