@@ -261,6 +261,8 @@ module.exports = class CriticalHit {
     // Performance optimization: Observer limits
     this._maxStyleObservers = 50; // Maximum gradient monitoring observers
     this._observerCleanupInterval = null; // Interval to clean up old observers
+    this._critCSSInjected = false; // Guard: inject CSS only once
+    this._msgIdCache = new WeakMap(); // Cache: getMessageIdFromElement results (auto-GC on element detach)
 
     // Performance optimization: History save throttling
     this._saveHistoryThrottle = null; // Timeout for throttled saves
@@ -627,6 +629,10 @@ module.exports = class CriticalHit {
    * @returns {string|null} messageId
    */
   getMessageIdFromElement(messageElement, debugContext = {}) {
+    // PERF: Check WeakMap cache first — avoids redundant fiber traversals (5-7 calls per message)
+    if (messageElement && this._msgIdCache?.has(messageElement)) {
+      return this._msgIdCache.get(messageElement);
+    }
     let messageId = null;
     let extractionMethod = null;
     const currentChannelId = this.currentChannelId || null;
@@ -830,6 +836,10 @@ module.exports = class CriticalHit {
       }
     }
 
+    // PERF: Cache result in WeakMap — auto-GCs when element detaches
+    if (messageElement && messageId) {
+      this._msgIdCache?.set(messageElement, messageId);
+    }
     return messageId;
   }
 
@@ -1035,9 +1045,9 @@ module.exports = class CriticalHit {
    * @param {HTMLElement} content - Content element to check
    * @returns {boolean} True if gradient is properly applied
    */
-  verifyGradientStyles(content) {
+  verifyGradientStyles(content, existingComputed = null) {
     if (!content) return false;
-    const computed = window.getComputedStyle(content);
+    const computed = existingComputed || window.getComputedStyle(content); // PERF: Reuse computed style if provided
     const hasGradient = computed?.backgroundImage?.includes('gradient');
     const hasClip =
       computed?.webkitBackgroundClip === 'text' || computed?.backgroundClip === 'text';
@@ -1244,8 +1254,8 @@ module.exports = class CriticalHit {
     const hasWebkitClip =
       computedStyles?.webkitBackgroundClip === 'text' || computedStyles?.backgroundClip === 'text';
 
-    // Use verifyGradientStyles for consistency (returns boolean)
-    const isValid = this.verifyGradientStyles(contentElement);
+    // PERF: Pass existing computed styles to avoid double getComputedStyle call
+    const isValid = this.verifyGradientStyles(contentElement, computedStyles);
 
     return {
       hasGradient: hasGradientInComputed,
@@ -3171,6 +3181,9 @@ module.exports = class CriticalHit {
    * @param {boolean} useGradient - Whether gradient is being used
    */
   setupGradientMonitoring(messageElement, content, messageId, useGradient) {
+    // PERF: No-op — CSS !important fallback in injected stylesheet now handles gradient persistence
+    // through Discord React re-renders. Per-message MutationObservers with getComputedStyle are redundant.
+    return;
     if (!content || !useGradient || !messageId) return;
 
     // Clean up existing observer
@@ -3929,24 +3942,24 @@ module.exports = class CriticalHit {
 
     // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
-      // Process each mutation directly
-      let addedCount = 0;
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType === 1) {
-            addedCount++;
-            // Element node - process directly using double requestAnimationFrame
-            requestAnimationFrame(() => {
-              requestAnimationFrame(() => {
-                this.processNode(node);
-                // Also check if this is a message that needs crit restoration
-                this.checkForRestoration(node);
-              });
-            });
+      // PERF: Batch all added nodes from the mutation batch, process in single RAF chain
+      const addedElements = [];
+      for (let i = 0; i < mutations.length; i++) {
+        const added = mutations[i].addedNodes;
+        for (let j = 0; j < added.length; j++) {
+          if (added[j].nodeType === 1) addedElements.push(added[j]);
+        }
+      }
+      if (addedElements.length === 0) return;
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          for (let k = 0; k < addedElements.length; k++) {
+            this.processNode(addedElements[k]);
+            this.checkForRestoration(addedElements[k]);
           }
         });
       });
-      // debug stripped
     });
 
     // Start observing - watch direct children AND subtree for messages
@@ -4373,37 +4386,23 @@ module.exports = class CriticalHit {
    * Reply detection selectors
    * @type {Array<string>}
    */
+  // PERF: Selector arrays cached as frozen constants — avoids allocating new arrays per access
   get REPLY_SELECTORS() {
-    return [
-      '[class*="reply"]',
-      '[class*="repliedMessage"]',
-      '[class*="messageReference"]',
-      '[class*="repliedText"]',
-      '[class*="replyMessage"]',
-    ];
+    return this._REPLY_SELECTORS ??= Object.freeze([
+      '[class*="reply"]', '[class*="repliedMessage"]', '[class*="messageReference"]',
+      '[class*="repliedText"]', '[class*="replyMessage"]',
+    ]);
   }
 
-  /**
-   * System message detection selectors
-   * @type {Array<string>}
-   */
   get SYSTEM_MESSAGE_SELECTORS() {
-    return [
-      '[class*="systemMessage"]',
-      '[class*="systemText"]',
-      '[class*="joinMessage"]',
-      '[class*="leaveMessage"]',
-      '[class*="pinnedMessage"]',
-      '[class*="boostMessage"]',
-    ];
+    return this._SYSTEM_MESSAGE_SELECTORS ??= Object.freeze([
+      '[class*="systemMessage"]', '[class*="systemText"]', '[class*="joinMessage"]',
+      '[class*="leaveMessage"]', '[class*="pinnedMessage"]', '[class*="boostMessage"]',
+    ]);
   }
 
-  /**
-   * Bot detection selectors
-   * @type {Array<string>}
-   */
   get BOT_SELECTORS() {
-    return ['[class*="botTag"]', '[class*="bot"]', '[class*="botText"]'];
+    return this._BOT_SELECTORS ??= Object.freeze(['[class*="botTag"]', '[class*="bot"]', '[class*="botText"]']);
   }
 
   /**
@@ -6513,8 +6512,7 @@ module.exports = class CriticalHit {
           retryGradient();
         }
 
-        // Add CSS animation if not already added
-        this.injectCritCSS();
+        // PERF: CSS is injected once in start() — no per-crit re-injection needed
 
         this.debugLog('APPLY_CRIT_STYLE', 'Crit style applied successfully', {
           useGradient: this.settings.critGradient !== false,
@@ -7446,6 +7444,7 @@ module.exports = class CriticalHit {
    */
   injectCritCSS() {
     if (this.settings?.cssEnabled !== true) return;
+    if (this._critCSSInjected) return; // PERF: Only inject once — CSS persists through React re-renders
     BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
 
     const critFontName = this._extractFontName(this.settings.critFont) || this.DEFAULT_CRIT_FONT;
@@ -7623,6 +7622,7 @@ module.exports = class CriticalHit {
         `;
 
     BdApi.DOM.addStyle(this.CSS_STYLE_IDS.crit, critCSS);
+    this._critCSSInjected = true; // PERF: Mark as injected to prevent redundant re-injection
   }
 
   // ----------------------------------------------------------------------------
@@ -10826,6 +10826,7 @@ module.exports = class CriticalHit {
       BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
       BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.settings);
       BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.animation);
+      this._critCSSInjected = false; // Reset so CSS re-injects on next start()
 
       // Remove font link (manual DOM - dynamic ID)
       const fontLink = document.getElementById('bd-crit-hit-nova-flat-font');

@@ -2090,6 +2090,9 @@ module.exports = class ShadowArmy {
     // Track all retry timeouts for proper cleanup
     this._retryTimeouts = new Set();
     this._isStopped = false;
+    // PERF: Dirty flag — skip widget/modal IDB queries when no data has changed
+    this._widgetDirty = true; // Start dirty so first update runs
+    this._postExtractionDebounceTimer = null; // Debounce post-extraction cascade
 
     // ============================================================================
     // DEBUG SYSTEM - Property initialization (methods in SECTION 4)
@@ -2332,8 +2335,10 @@ module.exports = class ShadowArmy {
     }, 100);
     this._retryTimeouts.add(widgetStartupTimeoutId);
 
-    // Update widget every 30 seconds
+    // Update widget every 30 seconds (only if data changed)
     this.widgetUpdateInterval = setInterval(() => {
+      if (!this._widgetDirty) return; // PERF: Skip IDB query when nothing changed
+      this._widgetDirty = false;
       this.updateShadowRankWidget();
     }, 30000);
 
@@ -2431,6 +2436,12 @@ module.exports = class ShadowArmy {
     if (this.autoRefreshInterval) {
       clearInterval(this.autoRefreshInterval);
       this.autoRefreshInterval = null;
+    }
+
+    // Clear post-extraction debounce timer
+    if (this._postExtractionDebounceTimer) {
+      clearTimeout(this._postExtractionDebounceTimer);
+      this._postExtractionDebounceTimer = null;
     }
 
     // Clear member list observer health check
@@ -2719,8 +2730,9 @@ module.exports = class ShadowArmy {
       // the element may briefly have zero dimensions while being rendered.
       const style = candidate.style;
       if (style?.display === 'none') return false;
-      const computed = window.getComputedStyle?.(candidate);
-      if (computed?.display === 'none') return false;
+      // PERF: Use offsetParent instead of getComputedStyle — avoids forced style recalculation
+      // offsetParent is null when element is display:none (except for fixed/body, which membersWrap isn't)
+      if (candidate.offsetParent === null) return false;
       return true;
     });
 
@@ -2811,6 +2823,27 @@ module.exports = class ShadowArmy {
       if (document.hidden) return;
       const now = Date.now();
       if (now - this._lastMemberListWatchCheck < 150) return;
+
+      // PERF: Skip mutations that only affect the chat area (not the member list)
+      // The observer watches the flex parent of both chat + member list with subtree: true,
+      // so every chat message DOM mutation fires this callback unnecessarily.
+      let hasMemberListMutation = false;
+      for (let i = 0; i < mutations.length; i++) {
+        const target = mutations[i].target;
+        if (target?.classList) {
+          const cn = target.className;
+          if (typeof cn === 'string' && (cn.includes('membersWrap') || cn.includes('members_'))) {
+            hasMemberListMutation = true;
+            break;
+          }
+        }
+        if (!hasMemberListMutation && target?.closest?.('[class*="membersWrap"]')) {
+          hasMemberListMutation = true;
+          break;
+        }
+      }
+      if (!hasMemberListMutation) return;
+
       this._lastMemberListWatchCheck = now;
       if (!this.canInjectWidgetInCurrentView()) {
         document.getElementById('shadow-army-widget')?.remove();
@@ -3849,15 +3882,21 @@ module.exports = class ShadowArmy {
               );
             }
 
-            // REAL-TIME WIDGET UPDATE: Update shadow member widget CSS immediately
-            // This ensures the widget reflects the new shadow count in real-time
-            if (typeof this.updateShadowRankWidget === 'function') {
-              try {
-                await this.updateShadowRankWidget();
-              } catch (error) {
-                this.debugError('WIDGET', 'Failed to update widget after extraction', error);
+            // PERF: Mark widget dirty + debounce update (500ms) to coalesce burst extractions
+            this._widgetDirty = true;
+            if (this._postExtractionDebounceTimer) clearTimeout(this._postExtractionDebounceTimer);
+            this._postExtractionDebounceTimer = setTimeout(async () => {
+              this._postExtractionDebounceTimer = null;
+              if (this._isStopped) return;
+              if (typeof this.updateShadowRankWidget === 'function') {
+                try {
+                  this._widgetDirty = false;
+                  await this.updateShadowRankWidget();
+                } catch (error) {
+                  this.debugError('WIDGET', 'Failed to update widget after extraction', error);
+                }
               }
-            }
+            }, 500);
 
             // Shadow extraction completed - logged above in EXTRACTION_RETRIES completion log
 
@@ -9438,31 +9477,8 @@ module.exports = class ShadowArmy {
     }
 
     try {
-      // Get all shadows
-      let shadows = [];
-      if (this.storageManager && this.storageManager.getShadows) {
-        try {
-          shadows = await this.storageManager.getShadows({}, 0, 10000);
-        } catch (err) {
-          shadows = this.settings.shadows || [];
-        }
-      } else {
-        shadows = this.settings.shadows || [];
-      }
-
-      // Guard clause: Return early if no shadows
-      if (!shadows || shadows.length === 0) {
-        widget.innerHTML = `
-          <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
-            <div class="widget-total" style="color: #999; font-size: 11px;">0 Total</div>
-          </div>
-          <div style="text-align: center; padding: 20px; color: #999; font-size: 11px;">No shadows yet</div>
-        `;
-        return;
-      }
-
-      // Count by rank using reduce for functional pattern
+      // PERF: Use getCountByRank() instead of loading all 10K shadows from IDB
+      // getCountByRank uses IDB index count() — orders of magnitude faster than full cursor scan
       const ranks = ['SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
       const rankColors = {
         SSS: '#ec4899',
@@ -9475,18 +9491,43 @@ module.exports = class ShadowArmy {
         E: '#999',
       };
 
-      // Use reduce to count shadows by rank
-      const rankCountsMap = shadows.reduce((counts, shadow) => {
-        const rank = shadow.rank || 'E';
-        counts[rank] = (counts[rank] || 0) + 1;
-        return counts;
-      }, {});
+      let rankCounts;
+      let totalCount = 0;
+      if (this.storageManager && this.storageManager.getCountByRank) {
+        try {
+          const counts = await Promise.all(
+            ranks.map(async (rank) => {
+              const count = await this.storageManager.getCountByRank(rank);
+              return { rank, count, color: rankColors[rank] || '#999' };
+            })
+          );
+          rankCounts = counts;
+          totalCount = counts.reduce((sum, r) => sum + r.count, 0);
+        } catch (err) {
+          // Fallback: try full load if index counts fail
+          const shadows = this.settings.shadows || [];
+          totalCount = shadows.length;
+          const rankCountsMap = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
+          rankCounts = ranks.map((rank) => ({ rank, count: rankCountsMap[rank] || 0, color: rankColors[rank] || '#999' }));
+        }
+      } else {
+        const shadows = this.settings.shadows || [];
+        totalCount = shadows.length;
+        const rankCountsMap = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
+        rankCounts = ranks.map((rank) => ({ rank, count: rankCountsMap[rank] || 0, color: rankColors[rank] || '#999' }));
+      }
 
-      const rankCounts = ranks.map((rank) => ({
-        rank,
-        count: rankCountsMap[rank] || 0,
-        color: rankColors[rank] || '#999',
-      }));
+      // Guard clause: Return early if no shadows
+      if (totalCount === 0) {
+        widget.innerHTML = `
+          <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+            <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
+            <div class="widget-total" style="color: #999; font-size: 11px;">0 Total</div>
+          </div>
+          <div style="text-align: center; padding: 20px; color: #999; font-size: 11px;">No shadows yet</div>
+        `;
+        return;
+      }
 
       // Generate HTML with proper structure
       widget.innerHTML = `
@@ -9495,7 +9536,7 @@ module.exports = class ShadowArmy {
             MY SHADOW ARMY
           </div>
           <div class="widget-total" style="color: #999; font-size: 11px;">
-            ${shadows.length} Total
+            ${totalCount} Total
           </div>
         </div>
         <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;">
@@ -10111,6 +10152,7 @@ module.exports = class ShadowArmy {
       this.autoRefreshInterval = setInterval(async () => {
         if (document.hidden) return;
         if (this._modalRefreshInFlight) return;
+        if (!this._widgetDirty) return; // PERF: Skip refresh when no data changed
         // Guard clause: Clear interval if modal no longer exists
         if (!this.shadowArmyModal || !document.body.contains(modal)) {
           if (this.autoRefreshInterval) {
@@ -10122,6 +10164,7 @@ module.exports = class ShadowArmy {
 
         try {
           this._modalRefreshInFlight = true;
+          this._widgetDirty = false;
           // Re-fetch shadows for real-time stats
           if (this.storageManager && this.storageManager.getShadows) {
             const freshShadows = await this.storageManager.getShadows({}, 0, 10000);
