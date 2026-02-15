@@ -499,6 +499,8 @@ module.exports = class SkillTree {
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
     this._periodicCheckInterval = null; // Periodic button persistence check
+    this._composerObserver = null; // Composer DOM watcher for button persistence
+    this._ensureButtonScheduled = false; // Debounce flag for ensure-button checks
     this._manaRegenInterval = null; // Mana regeneration interval
     this._activeSkillTimers = {};   // Expiry timers for active skills { skillId: timeoutId }
 
@@ -552,6 +554,7 @@ module.exports = class SkillTree {
 
     // Watch for window focus/visibility changes (user coming back from another window)
     this.setupWindowFocusWatcher();
+    this.setupComposerMutationWatcher();
 
     // Watch for level ups from SoloLevelingStats (event-based, will retry if not ready)
     this.setupLevelUpWatcher();
@@ -571,10 +574,12 @@ module.exports = class SkillTree {
   }
 
   _setTrackedTimeout(callback, delayMs) {
-    const timeoutId = setTimeout(() => {
+    const wrappedCallback = () => {
       this._retryTimeouts.delete(timeoutId);
-      !this._isStopped && callback();
-    }, delayMs);
+      if (this._isStopped) return;
+      callback();
+    };
+    const timeoutId = setTimeout(wrappedCallback, delayMs);
     this._retryTimeouts.add(timeoutId);
     return timeoutId;
   }
@@ -718,6 +723,11 @@ module.exports = class SkillTree {
       this.toolbarObserver.disconnect();
       this.toolbarObserver = null;
     }
+    if (this._composerObserver) {
+      this._composerObserver.disconnect();
+      this._composerObserver = null;
+    }
+    this._ensureButtonScheduled = false;
 
     this.stopPeriodicButtonCheck();
 
@@ -2672,12 +2682,71 @@ module.exports = class SkillTree {
     }
   }
 
-  isValidToolbarContainer(toolbar) {
+  _getComposerRoot() {
+    const primaryChat = this._getPrimaryChatContainer();
+    const roots = [
+      ...(primaryChat?.querySelectorAll?.('[class*="channelTextArea"]') || []),
+      ...document.querySelectorAll('[class*="channelTextArea"]'),
+    ];
+
+    const uniqueRoots = Array.from(new Set(roots));
+    for (const root of uniqueRoots) {
+      if (!this._isElementVisible(root)) continue;
+      const formRoot = root.closest('form') || root;
+      const editor = formRoot.querySelector(
+        '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
+      );
+      if (!editor) continue;
+      return formRoot;
+    }
+
+    return null;
+  }
+
+  _getPrimaryChatContainer() {
+    return (
+      document.querySelector('main[class*="chatContent"]') ||
+      document.querySelector('section[class*="chatContent"][role="main"]') ||
+      document.querySelector('section[class*="chatContent"]:not([role="complementary"])') ||
+      document.querySelector('div[class*="chatContent"]:not([role="complementary"])')
+    );
+  }
+
+  _isElementVisible(element) {
+    if (!element || !element.isConnected) return false;
+    if (element.getAttribute('aria-hidden') === 'true') return false;
+    const rects = element.getClientRects?.();
+    return !!(rects && rects.length > 0);
+  }
+
+  isValidToolbarContainer(toolbar, composerRoot = null) {
     if (!toolbar?.isConnected) return false;
-    // Count native Discord buttons (class*="button") plus our own custom buttons
-    const nativeButtons = toolbar.querySelectorAll?.('[class*="button"], [aria-label]');
-    // Lowered threshold — Discord may show 2-3 buttons in some contexts (e.g., DMs, threads)
-    return !!nativeButtons && nativeButtons.length >= 2;
+
+    const root = composerRoot || this._getComposerRoot();
+    if (!root?.isConnected) return false;
+
+    const rootForm = root.closest('form') || root;
+    const toolbarForm = toolbar.closest('form');
+    const sameForm = !!(toolbarForm && rootForm && toolbarForm === rootForm);
+    const sameRegion =
+      root.contains(toolbar) ||
+      toolbar.contains(root) ||
+      sameForm ||
+      (!!root.parentElement && root.parentElement.contains(toolbar));
+    if (!sameRegion) return false;
+
+    const hasTextbox = !!root.querySelector(
+      '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
+    );
+    if (!hasTextbox) return false;
+
+    const buttonLike = toolbar.querySelectorAll?.('button, [class*="button"], [aria-label]');
+    const buttonCount = buttonLike ? buttonLike.length : 0;
+    const hasComposerActionButton = !!toolbar.querySelector(
+      '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
+    );
+
+    return hasComposerActionButton || buttonCount >= 2;
   }
 
   /**
@@ -2685,122 +2754,115 @@ module.exports = class SkillTree {
    * Returns false if the text area is missing, disabled, or shows a "no permission" state.
    */
   _canUserType() {
-    const textArea = document.querySelector('[class*="channelTextArea"]');
-    if (!textArea) return true; // No text area found yet — allow button, don't block
+    const composerRoot = this._getComposerRoot();
+    if (!composerRoot) return false;
 
-    // Discord shows a disabled/locked text area or a "You do not have permission" notice
-    const noPermission =
-      textArea.querySelector('[class*="placeholder"][class*="disabled"]') ||
-      textArea.querySelector('[class*="upsellWrapper"]') ||
-      textArea.querySelector('[class*="locked"]');
-    return !noPermission;
+    const editor = composerRoot.querySelector(
+      '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
+    );
+    if (!editor) return false;
+
+    const isDisabled =
+      editor.getAttribute('aria-disabled') === 'true' ||
+      editor.getAttribute('disabled') !== null ||
+      editor.getAttribute('readonly') !== null ||
+      editor.getAttribute('contenteditable') === 'false' ||
+      !!editor.closest('[aria-disabled="true"]');
+    if (isDisabled) return false;
+
+    const blockedSelectors = [
+      '[class*="placeholder"][class*="disabled"]',
+      '[class*="upsellWrapper"]',
+      '[class*="cannotSend"]',
+    ];
+    return !blockedSelectors.some((selector) => composerRoot.querySelector(selector));
   }
 
   getToolbarContainer() {
     const now = Date.now();
-    const cached = this._toolbarCache?.element;
-    const cacheFresh =
-      cached && this._toolbarCache.time && now - this._toolbarCache.time < this._toolbarCache.ttl;
-    if (cacheFresh && this.isValidToolbarContainer(cached)) {
+    const cache = this._toolbarCache || {};
+    const cached = cache.element;
+    const composerRoot = this._getComposerRoot();
+    if (!composerRoot) {
+      Object.assign(this._toolbarCache, { element: null, time: now });
+      return null;
+    }
+
+    const cacheFresh = cached && cache.time && now - cache.time < cache.ttl;
+    if (cacheFresh && this.isValidToolbarContainer(cached, composerRoot)) {
       return cached;
     }
 
-    // Find Discord's button row in the chat text area
-    const buttonRow = (() => {
-      const textArea =
-        document.querySelector('[class*="channelTextArea"]') ||
-        document.querySelector('[class*="slateTextArea"]') ||
-        document.querySelector('textarea[placeholder*="Message"]');
+    const formRoot = composerRoot.closest('form') || composerRoot;
+    const searchScope = formRoot.parentElement || formRoot;
 
-      if (!textArea) return null;
+    const selectorCandidates = [
+      '[class*="buttons"]',
+      '[class*="buttonContainer"]',
+      '[class*="actionButtons"]',
+      '[class*="inner"]',
+    ];
 
-      // Strategy 1: Look for a "buttons" (plural) container class — Discord often uses this
-      const scope =
-        textArea.closest('[class*="channelTextArea"]') || textArea.parentElement?.parentElement;
-      if (scope) {
-        const buttonsContainer = scope.querySelector('[class*="buttons"]');
-        if (buttonsContainer && buttonsContainer.children.length >= 2) return buttonsContainer;
-      }
+    const candidateSet = new Set();
+    selectorCandidates.forEach((selector) => {
+      composerRoot.querySelectorAll(selector).forEach((node) => candidateSet.add(node));
+      searchScope.querySelectorAll(selector).forEach((node) => candidateSet.add(node));
+    });
 
-      // Strategy 2: Walk up from textArea and find a narrow container, then look for buttons
-      const container =
-        textArea.closest('[class*="channelTextArea"]') ||
-        textArea.closest('[class*="inner"]') ||
-        textArea.parentElement?.parentElement?.parentElement;
-
-      if (container) {
-        // Look for button row — check for aria-label buttons (Discord sets these)
-        const ariaButtons = container.querySelectorAll('[aria-label]');
-        if (ariaButtons.length >= 2) {
-          const parent = ariaButtons[0]?.parentElement;
-          if (parent && parent.children.length >= 2) return parent;
-        }
-
-        // Check for elements with "button" in class name
-        const buttons = container.querySelectorAll('[class*="button"]');
-        if (buttons.length >= 2) return buttons[0]?.parentElement;
-
-        // Check for named button containers
-        const buttonContainer =
-          container.querySelector('[class*="buttons"]') ||
-          container.querySelector('[class*="buttonContainer"]') ||
-          container.querySelector('[class*="actionButtons"]');
-        if (buttonContainer) return buttonContainer;
-      }
-
-      // Strategy 3: Broader search — find emoji/gif/sticker/attach buttons by aria-label
-      const chatArea = document.querySelector('[class*="chat-"]') || document;
-      const knownButton = chatArea.querySelector(
-        '[aria-label*="emoji" i], [aria-label*="gif" i], ' +
-        '[aria-label*="sticker" i], [aria-label*="attach" i], ' +
-        '[class*="emojiButton"], [class*="attachButton"]'
+    const composerActionButtons = searchScope.querySelectorAll(
+      '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
+    );
+    composerActionButtons.forEach((btn) => {
+      if (!btn) return;
+      btn.parentElement && candidateSet.add(btn.parentElement);
+      const container = btn.closest(
+        '[class*="buttons"], [class*="buttonContainer"], [class*="actionButtons"], [class*="inner"]'
       );
-      if (knownButton?.parentElement) return knownButton.parentElement;
+      container && candidateSet.add(container);
+    });
 
-      // Strategy 4: Fallback — look for a row of buttons near emoji/gif/attach elements
-      const el = Array.from(chatArea.querySelectorAll('[class*="button"]')).find((el) => {
-        const siblings = Array.from(el.parentElement?.children || []);
-        return (
-          siblings.length >= 2 &&
-          siblings.some(
-            (s) =>
-              s.querySelector('[class*="emoji"]') ||
-              s.querySelector('[class*="gif"]') ||
-              s.querySelector('[class*="attach"]') ||
-              s.querySelector('[class*="sticker"]')
-          )
+    const candidateContainers = Array.from(candidateSet).filter(Boolean);
+    const scoredCandidates = candidateContainers
+      .filter((container) => this.isValidToolbarContainer(container, composerRoot))
+      .map((container) => {
+        const hasComposerActionButton = !!container.querySelector(
+          '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
         );
-      });
-      return el?.parentElement || null;
-    })();
+        const buttonLike = container.querySelectorAll('button, [class*="button"], [aria-label]');
+        const buttonCount = buttonLike ? buttonLike.length : 0;
+        const score = (hasComposerActionButton ? 100 : 0) + buttonCount;
+        return { container, score };
+      })
+      .sort((a, b) => b.score - a.score);
 
-    const toolbar = buttonRow || null;
-    this._toolbarCache.element = toolbar;
-    this._toolbarCache.time = now;
-    return this.isValidToolbarContainer(toolbar) ? toolbar : null;
+    const toolbar = scoredCandidates[0]?.container || null;
+
+    Object.assign(this._toolbarCache, { element: toolbar, time: now });
+    return this.isValidToolbarContainer(toolbar, composerRoot) ? toolbar : null;
   }
 
   createSkillTreeButtonIconSvg() {
     const svgNS = 'http://www.w3.org/2000/svg';
     const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '24');
-    svg.setAttribute('height', '24');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
+    const attributes = {
+      width: '24',
+      height: '24',
+      viewBox: '0 0 24 24',
+      fill: 'none',
+      stroke: 'currentColor',
+      'stroke-width': '2',
+      'stroke-linecap': 'round',
+      'stroke-linejoin': 'round',
+    };
+    Object.entries(attributes).forEach(([key, value]) => svg.setAttribute(key, value));
 
-    const p1 = document.createElementNS(svgNS, 'path');
-    p1.setAttribute('d', 'M12 2L2 7L12 12L22 7L12 2Z');
-    const p2 = document.createElementNS(svgNS, 'path');
-    p2.setAttribute('d', 'M2 17L12 22L22 17');
-    const p3 = document.createElementNS(svgNS, 'path');
-    p3.setAttribute('d', 'M2 12L12 17L22 12');
-    svg.appendChild(p1);
-    svg.appendChild(p2);
-    svg.appendChild(p3);
+    ['M12 2L2 7L12 12L22 7L12 2Z', 'M2 17L12 22L22 17', 'M2 12L12 17L22 12'].forEach(
+      (pathData) => {
+        const pathElement = document.createElementNS(svgNS, 'path');
+        pathElement.setAttribute('d', pathData);
+        svg.appendChild(pathElement);
+      }
+    );
     return svg;
   }
 
@@ -2808,21 +2870,33 @@ module.exports = class SkillTree {
    * Create skill tree button in Discord UI (matching TitleManager style and position)
    */
   createSkillTreeButton() {
-    // Remove any existing buttons/wrappers first
-    const existingWrappers = document.querySelectorAll('.st-skill-tree-button-wrapper');
-    existingWrappers.forEach((w) => w.remove());
-    const existingButtons = document.querySelectorAll('.st-skill-tree-button');
-    existingButtons.forEach((btn) => btn.remove());
-    this.skillTreeButton = null;
+    if (this._isStopped) return;
 
     // Hide button entirely if user can't type in this channel
-    if (!this._canUserType()) return;
+    if (!this._canUserType()) {
+      document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
+      this.skillTreeButton = null;
+      return;
+    }
 
     const toolbar = this.getToolbarContainer();
     if (!toolbar) {
-      this._setTrackedTimeout(() => this.createSkillTreeButton(), 1000);
+      this._setTrackedTimeout(() => this.createSkillTreeButton(), 500);
       return;
     }
+
+    const existingInToolbar = toolbar.querySelector('.st-skill-tree-button');
+    if (existingInToolbar && document.body.contains(existingInToolbar)) {
+      this.skillTreeButton = existingInToolbar;
+      this.updateButtonText();
+      this.observeToolbar(toolbar);
+      return;
+    }
+
+    // Remove stale instances only after we have a valid toolbar target.
+    document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
+    document.querySelectorAll('.st-skill-tree-button').forEach((btn) => btn.remove());
+    this.skillTreeButton = null;
 
     // Create button with skill tree/layers icon, wrapped to match Discord native buttons
     const wrapper = document.createElement('div');
@@ -2879,7 +2953,7 @@ module.exports = class SkillTree {
       ) {
         // Button was removed or moved, recreate it
         if (!this._isStopped) {
-          this.createSkillTreeButton();
+          this._queueEnsureSkillTreeButton(120);
         }
       }
     });
@@ -3304,31 +3378,16 @@ module.exports = class SkillTree {
    * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
    */
   setupWindowFocusWatcher() {
-    // Bind handlers to instance (same pattern as AutoIdleOnAFK)
     this._boundHandleBlur = this._handleWindowBlur.bind(this);
     this._boundHandleFocus = this._handleWindowFocus.bind(this);
+    this._boundHandleVisibilityChange = () => {
+      if (this._isStopped || document.hidden) return;
+      this._setTrackedTimeout(() => this._ensureSkillTreeButton(), 300);
+    };
 
-    // Listen for window blur events (Discord window loses focus)
     window.addEventListener('blur', this._boundHandleBlur);
-
-    // Listen for window focus events (Discord window gains focus - user returns)
     window.addEventListener('focus', this._boundHandleFocus);
-
-    // Also listen for visibility changes (tab switching within browser)
-    document.addEventListener(
-      'visibilitychange',
-      (this._boundHandleVisibilityChange = () => {
-        if (this._isStopped) return;
-        // User returned to tab (tab is now visible)
-        if (!document.hidden) {
-          this._setTrackedTimeout(() => {
-            if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-              this.createSkillTreeButton();
-            }
-          }, 300);
-        }
-      })
-    );
+    document.addEventListener('visibilitychange', this._boundHandleVisibilityChange);
 
     // Periodic persistence check as fallback (only enabled when toolbar observer isn't active)
     this.startPeriodicButtonCheck();
@@ -3342,14 +3401,55 @@ module.exports = class SkillTree {
     };
   }
 
+  setupComposerMutationWatcher() {
+    if (this._composerObserver) {
+      this._composerObserver.disconnect();
+      this._composerObserver = null;
+    }
+
+    this._composerObserver = new MutationObserver((mutations) => {
+      if (this._isStopped) return;
+      const shouldCheck = mutations.some(
+        (mutation) =>
+          mutation.type === 'childList' &&
+          (mutation.addedNodes?.length > 0 || mutation.removedNodes?.length > 0)
+      );
+      shouldCheck && this._queueEnsureSkillTreeButton(120);
+    });
+
+    this._composerObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: false,
+    });
+  }
+
+  _queueEnsureSkillTreeButton(delayMs = 120) {
+    if (this._isStopped || this._ensureButtonScheduled) return;
+    this._ensureButtonScheduled = true;
+    this._setTrackedTimeout(() => {
+      this._ensureButtonScheduled = false;
+      this._ensureSkillTreeButton();
+    }, delayMs);
+  }
+
+  _ensureSkillTreeButton() {
+    if (this._isStopped) return;
+    const toolbar = this.getToolbarContainer();
+    const exists =
+      this.skillTreeButton &&
+      document.body.contains(this.skillTreeButton) &&
+      !!toolbar &&
+      toolbar.contains(this.skillTreeButton);
+    !exists && this.createSkillTreeButton();
+  }
+
   startPeriodicButtonCheck() {
     if (this._periodicCheckInterval) return;
     if (this.toolbarObserver) return;
     this._periodicCheckInterval = setInterval(() => {
       if (this._isStopped) return;
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        this.createSkillTreeButton();
-      }
+      this._ensureSkillTreeButton();
       this.toolbarObserver && this.stopPeriodicButtonCheck();
     }, 15000);
   }
@@ -3378,10 +3478,7 @@ module.exports = class SkillTree {
 
     // Small delay to let Discord finish re-rendering after focus
     this._setTrackedTimeout(() => {
-      // Check if button still exists when user returns
-      if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-        this.createSkillTreeButton();
-      }
+      this._ensureSkillTreeButton();
     }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
   }
 

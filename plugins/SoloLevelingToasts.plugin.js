@@ -893,18 +893,26 @@ module.exports = class SoloLevelingToasts {
       }
     `;
 
-    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
-    try {
-      BdApi.DOM.addStyle(styleId, cssContent);
-      this.debugLog('INJECT_CSS', 'CSS injected successfully via BdApi.DOM');
-    } catch (error) {
-      // Fallback to manual injection
+    const injectedViaBdApi = (() => {
+      try {
+        BdApi.DOM.addStyle(styleId, cssContent);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    })();
+
+    if (!injectedViaBdApi) {
       const style = document.createElement('style');
       style.id = styleId;
       style.textContent = cssContent;
       document.head.appendChild(style);
-      this.debugLog('INJECT_CSS', 'CSS injected successfully via manual method');
     }
+
+    this.debugLog(
+      'INJECT_CSS',
+      `CSS injected successfully via ${injectedViaBdApi ? 'BdApi.DOM' : 'manual method'}`
+    );
   }
 
   removeCSS() {

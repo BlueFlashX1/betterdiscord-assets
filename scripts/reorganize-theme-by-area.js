@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { AREA_ORDER, classifySelector, countLine } = require('./theme-css-area-utils');
 
 const THEME_PATH =
   '/Users/matthewthompson/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/themes/SoloLeveling-ClearVision.theme.css';
@@ -12,144 +13,47 @@ const OUT_MANIFEST = path.join(OUT_DIR, 'organization-manifest.json');
 const OUT_GUIDE =
   '/Users/matthewthompson/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/docs/THEME_REORGANIZATION_GUIDE.md';
 
-const AREA_ORDER = [
-  'Theme Shell & Global',
-  'Server Sidebar & Home',
-  'Channel Sidebar',
-  'DM List',
-  'Chat Messages',
-  'Message Composer',
-  'Embeds & Media',
-  'Members List',
-  'User Area / Profile Strip',
-  'Menus, Tooltips & Popouts',
-  'Settings UI',
-  'BetterDiscord UI',
-  'Scrollbars',
-  'Animation & Effects',
-  'Misc / Needs Manual Tag',
-];
-
-const AREA_RULES = [
-  {
-    area: 'Theme Shell & Global',
-    patterns: [/["']app-mount["']/i, /class\*=\"-app\"/i, /theme-dark|theme-light|theme-midnight/i, /^\*$/],
-  },
-  {
-    area: 'Server Sidebar & Home',
-    patterns: [/aria-label="Servers"/i, /tutorialContainer/i, /guilds/i, /circleIconButton/i, /App Icon/i],
-  },
-  {
-    area: 'Channel Sidebar',
-    patterns: [/#channels/i, /aria-label="Channels"/i, /thread/i, /iconVisibility/i, /containerDefault/i],
-  },
-  {
-    area: 'DM List',
-    patterns: [/Private channels/i, /private-channels-uid_/i, /Direct Messages/i, /interactiveSelected/i],
-  },
-  {
-    area: 'Chat Messages',
-    patterns: [/message/i, /role="article"/i, /messageContent/i, /markup/i],
-  },
-  {
-    area: 'Message Composer',
-    patterns: [/channelTextArea/i, /slateTextArea/i, /textArea/i, /sendButton/i, /attach/i],
-  },
-  {
-    area: 'Embeds & Media',
-    patterns: [/embed/i, /iframe/i, /ytimg/i, /imageContainer/i, /embedVideo/i],
-  },
-  {
-    area: 'Members List',
-    patterns: [/members/i, /member/i],
-  },
-  {
-    area: 'User Area / Profile Strip',
-    patterns: [/aria-label="User area"/i, /avatar/i, /accountButton/i, /panels/i],
-  },
-  {
-    area: 'Menus, Tooltips & Popouts',
-    patterns: [/menu/i, /tooltip/i, /popover/i, /contextMenu/i, /popout/i],
-  },
-  {
-    area: 'Settings UI',
-    patterns: [/standardSidebarView/i, /settingsPage/i, /userSettings/i, /tabbedSettings/i, /role="tablist"/i],
-  },
-  {
-    area: 'BetterDiscord UI',
-    patterns: [/\.bd-/i, /#bd-/i, /monaco-editor/i],
-  },
-  {
-    area: 'Scrollbars',
-    patterns: [/scrollbar/i],
-  },
-  {
-    area: 'Animation & Effects',
-    patterns: [/keyframes/i, /animation/i, /pulse/i],
-  },
-];
-
-function countLine(text, idx) {
-  let line = 1;
-  for (let i = 0; i < idx; i++) {
-    if (text.charCodeAt(i) === 10) line += 1;
-  }
-  return line;
-}
-
-function classify(selector) {
-  for (const rule of AREA_RULES) {
-    for (const p of rule.patterns) {
-      if (p.test(selector)) return rule.area;
-    }
-  }
-  return 'Misc / Needs Manual Tag';
-}
-
 function parseTopLevelBlocks(text) {
   const blocks = [];
-  let i = 0;
-  let inString = false;
-  let quote = '';
-  let inComment = false;
+  let cursor = 0;
+  let activeQuote = '';
+  let commentMode = false;
   let depth = 0;
   let blockStart = -1;
   let headerStart = 0;
 
-  while (i < text.length) {
-    const ch = text[i];
-    const next = text[i + 1];
-
-    if (inComment) {
+  const advanceLiteralState = (ch, next) => {
+    if (commentMode) {
       if (ch === '*' && next === '/') {
-        inComment = false;
-        i += 2;
-        continue;
+        commentMode = false;
+        return 2;
       }
-      i += 1;
-      continue;
+      return 1;
     }
 
-    if (inString) {
-      if (ch === '\\') {
-        i += 2;
-        continue;
-      }
-      if (ch === quote) inString = false;
-      i += 1;
-      continue;
+    if (activeQuote) {
+      if (ch === '\\') return 2;
+      if (ch === activeQuote) activeQuote = '';
+      return 1;
     }
 
     if (ch === '/' && next === '*') {
-      inComment = true;
-      i += 2;
-      continue;
+      commentMode = true;
+      return 2;
     }
-
     if (ch === '"' || ch === "'") {
-      inString = true;
-      quote = ch;
-      i += 1;
+      activeQuote = ch;
+      return 1;
+    }
+    return 0;
+  };
+
+  while (cursor < text.length) {
+    const ch = text[cursor];
+    const next = text[cursor + 1];
+    const literalAdvance = advanceLiteralState(ch, next);
+    if (literalAdvance > 0) {
+      cursor += literalAdvance;
       continue;
     }
 
@@ -158,14 +62,14 @@ function parseTopLevelBlocks(text) {
         blockStart = headerStart;
       }
       depth += 1;
-      i += 1;
+      cursor += 1;
       continue;
     }
 
     if (ch === '}') {
       if (depth > 0) depth -= 1;
       if (depth === 0 && blockStart >= 0) {
-        const blockEnd = i + 1;
+        const blockEnd = cursor + 1;
         const blockText = text.slice(blockStart, blockEnd);
         const preamble = text.slice(headerStart, blockStart);
         const selectorHeader = text.slice(blockStart, text.indexOf('{', blockStart));
@@ -185,11 +89,11 @@ function parseTopLevelBlocks(text) {
         headerStart = blockEnd;
         blockStart = -1;
       }
-      i += 1;
+      cursor += 1;
       continue;
     }
 
-    i += 1;
+    cursor += 1;
   }
 
   return blocks;
@@ -207,7 +111,7 @@ function main() {
   for (const a of AREA_ORDER) grouped.set(a, []);
 
   for (const b of blocks) {
-    const area = classify(b.classifySeed || b.selectorHeader || '');
+    const area = classifySelector(b.classifySeed || b.selectorHeader || '');
     if (!grouped.has(area)) grouped.set(area, []);
     grouped.get(area).push({ ...b, area });
   }

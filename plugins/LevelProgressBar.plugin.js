@@ -1029,18 +1029,28 @@ module.exports = class LevelProgressBar {
 
     `;
 
-    // Use BdApi.DOM for persistent CSS injection (v1.8.0+)
-    try {
-      BdApi.DOM.addStyle(styleId, cssContent);
-      this.debugLog('INJECT_CSS', 'CSS injected successfully via BdApi.DOM');
-    } catch (error) {
-      // Fallback to manual injection
-      const style = document.createElement('style');
-      style.id = styleId;
-      style.textContent = cssContent;
-      document.head.appendChild(style);
-      this.debugLog('INJECT_CSS', 'CSS injected successfully via manual method');
+    const addStyleSafely = () => {
+      if (!BdApi.DOM?.addStyle) return false;
+      try {
+        BdApi.DOM.addStyle(styleId, cssContent);
+        return true;
+      } catch (_error) {
+        return false;
+      }
+    };
+
+    const injectedViaBdApi = addStyleSafely();
+    if (!injectedViaBdApi) {
+      const styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      styleElement.textContent = cssContent;
+      document.head.appendChild(styleElement);
     }
+
+    this.debugLog(
+      'INJECT_CSS',
+      `CSS injected successfully via ${injectedViaBdApi ? 'BdApi.DOM' : 'manual method'}`
+    );
   }
 
   removeCSS() {
@@ -1457,35 +1467,6 @@ module.exports = class LevelProgressBar {
     document.getElementById('lpb-levelup-overlay')?.remove();
   }
 
-  showIntegratedLevelUpAnimation({ newLevel, oldLevel }) {
-    if (this._isStopped) return;
-    if (!this.settings.integratedLevelUpAnimation) return;
-
-    // Skip if SLS is active — it already shows its own level-up overlay
-    if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-      this.debugLog('LEVEL_UP', 'Skipping LPB animation (SLS handles it)', { newLevel });
-      return;
-    }
-
-    const overlay = this.getOrCreateLevelUpOverlay();
-
-    if (SLUtils) {
-      SLUtils.showLevelUpBanner(overlay, {
-        title: `Level Up: Lv.${newLevel}`,
-        bannerClass: 'lpb-levelup-banner',
-        durationMs: 1300,
-      });
-    } else {
-      const banner = document.createElement('div');
-      banner.className = 'lpb-levelup-banner';
-      banner.textContent = `Level Up: Lv.${newLevel}`;
-      overlay.appendChild(banner);
-      this._setTrackedTimeout(() => banner.remove(), 1300);
-    }
-
-    this.debugLog('LEVEL_UP', 'Integrated animation shown', { newLevel, oldLevel });
-  }
-
   /**
    * 3.7 VISUAL EFFECTS & UPDATES
    */
@@ -1813,22 +1794,6 @@ module.exports = class LevelProgressBar {
   debugError(operation, error, data = null) {
     if (this._debug) { this._debug.error(operation, error, data ? { context: data } : {}); return; }
     console.error(`[LevelProgressBar] ERROR [${operation}]:`, error, data || '');
-  }
-
-  createProgressSparkles(progressTrack, xpPercent) {
-    // FUNCTIONAL: Create 3-5 sparkles using Array.from (NO FOR-LOOP!)
-    const sparkleCount = 3 + Math.floor(Math.random() * 3);
-
-    Array.from({ length: sparkleCount }, (_, i) => {
-      const sparkle = document.createElement('div');
-      sparkle.className = 'lpb-sparkle';
-      sparkle.style.left = `${xpPercent}%`;
-      sparkle.style.animationDelay = `${i * 0.2}s`;
-      progressTrack.appendChild(sparkle);
-
-      this._setTrackedTimeout(() => sparkle.remove(), 2000);
-      return sparkle;
-    });
   }
 
   updateMilestoneMarkers(progressTrack, xpPercent) {

@@ -1829,13 +1829,6 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   /**
-   * @deprecated Kept as a compatibility alias. Internal code uses smooth refresh paths.
-   */
-  refreshModal() {
-    this.refreshModalSmooth();
-  }
-
-  /**
    * Smooth refresh without closing modal (no disappear)
    */
   refreshModalSmooth() {

@@ -229,45 +229,6 @@ class UnifiedSaveManager {
   }
 
   /**
-   * Restore from specific backup
-   * @param {string} key - Data key
-   * @param {number} backupId - Backup ID to restore
-   */
-  async restoreFromBackup(key, backupId) {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.backupStoreName, this.storeName], 'readwrite');
-      const backupStore = transaction.objectStore(this.backupStoreName);
-      const backupRequest = backupStore.get(backupId);
-
-      backupRequest.onsuccess = () => {
-        const backup = backupRequest.result;
-        if (!backup || backup.plugin !== this.pluginName || backup.dataKey !== key) {
-          reject(new Error('Backup not found or invalid'));
-          return;
-        }
-
-        // Restore to main store
-        const fullKey = `${this.pluginName}_${key}`;
-        const mainStore = transaction.objectStore(this.storeName);
-        const restoreRequest = mainStore.put({
-          key: fullKey,
-          plugin: this.pluginName,
-          dataKey: key,
-          data: backup.data,
-          timestamp: Date.now(),
-        });
-
-        restoreRequest.onsuccess = () => resolve(backup.data);
-        restoreRequest.onerror = () => reject(restoreRequest.error);
-      };
-
-      backupRequest.onerror = () => reject(backupRequest.error);
-    });
-  }
-
-  /**
    * Clean up old backups (keep last 10 per plugin+key)
    */
   async cleanupOldBackups(key) {
@@ -344,32 +305,6 @@ class UnifiedSaveManager {
     });
   }
 
-  /**
-   * Get all keys for this plugin
-   */
-  async getAllKeys() {
-    if (!this.db) await this.init();
-
-    return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], 'readonly');
-      const store = transaction.objectStore(this.storeName);
-      const index = store.index('plugin');
-      const range = IDBKeyRange.only(this.pluginName);
-      const request = index.openCursor(range);
-
-      const keys = [];
-      request.onsuccess = (event) => {
-        const cursor = event.target.result;
-        if (cursor) {
-          keys.push(cursor.value.dataKey);
-          cursor.continue();
-        } else {
-          resolve(keys);
-        }
-      };
-      request.onerror = () => reject(request.error);
-    });
-  }
 }
 
 // Export for use in plugins

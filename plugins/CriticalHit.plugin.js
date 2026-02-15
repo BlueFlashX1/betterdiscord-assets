@@ -18,7 +18,6 @@
  * - SoloLevelingStats: Provides message history, combo data, and font loading
  *   - SoloLevelingStats reads: BdApi.Data.load('CriticalHitAnimation', 'userCombo')
  *   - SoloLevelingStats reads: Message history for critical hit tracking
- *   - SoloLevelingStats uses: getFontsFolderPath() for font loading
  *   - SoloLevelingStats writes: BdApi.Data.save('SoloLevelingStats', 'agilityBonus', ...)
  *   - SoloLevelingStats writes: BdApi.Data.save('SoloLevelingStats', 'luckBonus', ...)
  *
@@ -254,10 +253,6 @@ module.exports = class CriticalHit {
     this.lastAnimationTime = 0;
     this._comboUpdateLock = new Set(); // Tracks users with in-progress combo updates
 
-    this._observerThrottleTimeout = null; // Throttle observer callback to prevent excessive firing
-    this._lastObserverCall = 0; // Track last observer call time
-    this._observerThrottleMs = 100; // Minimum 100ms between observer processing
-
     // Performance optimization: Observer limits
     this._maxStyleObservers = 50; // Maximum gradient monitoring observers
     this._observerCleanupInterval = null; // Interval to clean up old observers
@@ -304,9 +299,21 @@ module.exports = class CriticalHit {
     return timeoutId;
   }
 
+  _clearTrackedTimeout(timeoutId) {
+    if (!timeoutId) return;
+    this._trackedTimeouts.delete(timeoutId);
+    clearTimeout(timeoutId);
+  }
+
   _clearTrackedTimeouts() {
     this._trackedTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
     this._trackedTimeouts.clear();
+  }
+
+  _clearAnimationTracking(messageId) {
+    if (!messageId) return;
+    this.animatedMessages.delete(messageId);
+    this._processingAnimations.delete(messageId);
   }
 
   _setTrackedInterval(callback, intervalMs) {
@@ -320,15 +327,6 @@ module.exports = class CriticalHit {
   _clearTrackedIntervals() {
     this._trackedIntervals.forEach((intervalId) => clearInterval(intervalId));
     this._trackedIntervals.clear();
-  }
-
-  _trackRaf(callback) {
-    const rafId = requestAnimationFrame(() => {
-      this._trackedRafIds.delete(rafId);
-      !this._isStopped && callback();
-    });
-    this._trackedRafIds.add(rafId);
-    return rafId;
   }
 
   _cancelTrackedRafs() {
@@ -474,15 +472,7 @@ module.exports = class CriticalHit {
     try {
       let currentFiber = this.getReactFiber(messageElement);
       for (let i = 0; i < 60 && currentFiber; i++) {
-        const fiberMessageId =
-          currentFiber.memoizedProps?.message?.id ||
-          currentFiber.memoizedState?.message?.id ||
-          currentFiber.memoizedProps?.messageId ||
-          currentFiber.memoizedProps?.id ||
-          currentFiber.memoizedState?.id ||
-          currentFiber.stateNode?.props?.message?.id ||
-          currentFiber.stateNode?.props?.id ||
-          currentFiber.stateNode?.id;
+        const fiberMessageId = this._extractFiberMessageId(currentFiber);
 
         const extractedFiberId = this.extractPureDiscordId(fiberMessageId);
         if (extractedFiberId && extractedFiberId === normalizedMessageId) {
@@ -530,17 +520,6 @@ module.exports = class CriticalHit {
       return acc & acc;
     }, 0);
     return `hash_${Math.abs(hash)}`;
-  }
-
-  /**
-   * Alias for calculateContentHash() for backward compatibility
-   * @param {string} content - Message content
-   * @param {string} author - Author username (optional)
-   * @param {string|number|null} timestamp - Optional timestamp
-   * @returns {string|null} Content hash or null
-   */
-  createContentHash(content, author = null, timestamp = null) {
-    return this.calculateContentHash(author, content, timestamp);
   }
 
   /**
@@ -618,6 +597,25 @@ module.exports = class CriticalHit {
     return null;
   }
 
+  /**
+   * Extract message ID candidate from a React fiber node.
+   * @param {Object|null} currentFiber - React fiber node
+   * @returns {string|number|null}
+   */
+  _extractFiberMessageId(currentFiber) {
+    return (
+      currentFiber?.memoizedProps?.message?.id ||
+      currentFiber?.memoizedState?.message?.id ||
+      currentFiber?.memoizedProps?.messageId ||
+      currentFiber?.memoizedProps?.id ||
+      currentFiber?.memoizedState?.id ||
+      currentFiber?.stateNode?.props?.message?.id ||
+      currentFiber?.stateNode?.props?.id ||
+      currentFiber?.stateNode?.id ||
+      null
+    );
+  }
+
   // ============================================================================
   // MESSAGE ID & AUTHOR EXTRACTION
   // ============================================================================
@@ -666,15 +664,7 @@ module.exports = class CriticalHit {
           }
 
           // Try direct message ID from various props
-          const msgId =
-            currentFiber.memoizedProps?.message?.id ||
-            currentFiber.memoizedState?.message?.id ||
-            currentFiber.memoizedProps?.messageId ||
-            currentFiber.memoizedProps?.id ||
-            currentFiber.memoizedState?.id ||
-            currentFiber.stateNode?.props?.message?.id ||
-            currentFiber.stateNode?.props?.id ||
-            currentFiber.stateNode?.id;
+          const msgId = this._extractFiberMessageId(currentFiber);
 
           if (msgId) {
             const idStr = String(msgId).trim();
@@ -938,17 +928,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Extracts message ID from a message element
-   * Wrapper around getMessageIdentifier() for backward compatibility
-   * @param {HTMLElement} element - The message DOM element
-   * @returns {string|null} Message ID or null if not found
-   */
-  getMessageId(element) {
-    // Use the comprehensive getMessageIdentifier() method
-    return this.getMessageIdentifier(element);
-  }
-
-  /**
    * Extracts user/author ID from a message element using React fiber traversal
    * @param {HTMLElement} element - The message DOM element
    * @returns {string|null} User ID or null if not found
@@ -1108,22 +1087,6 @@ module.exports = class CriticalHit {
    */
   get HEADER_SELECTORS() {
     return this.HEADER_CLASS_PATTERNS.map((pattern) => `[class*="${pattern}"]`);
-  }
-
-  /**
-   * Checks if a message ID exists in CriticalHit plugin's message history
-   * @param {string} messageId - The message ID to check
-   * @returns {boolean} True if message is in history
-   */
-  isMessageInHistory(messageId) {
-    if (!messageId) return false;
-    try {
-      const history = BdApi.Data.load('CriticalHit', 'messageHistory');
-      if (!Array.isArray(history)) return false;
-      return history.some((entry) => String(entry.messageId) === String(messageId));
-    } catch (error) {
-      return false;
-    }
   }
 
   /**
@@ -2410,32 +2373,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Cleans up expired entries from pending crits queue
-   * @param {number} maxAge - Maximum age in milliseconds
-   */
-  _cleanupExpiredPendingCrits(maxAge) {
-    const now = Date.now();
-    Array.from(this.pendingCrits.entries()).forEach(([pendingId, pendingData]) => {
-      if (now - pendingData.timestamp > maxAge) {
-        this.pendingCrits.delete(pendingId);
-      }
-    });
-  }
-
-  /**
-   * Trims pending crits queue when at capacity
-   */
-  _trimPendingCritsQueue() {
-    if (this.pendingCrits.size < this.maxPendingCrits) return;
-
-    const sortedEntries = Array.from(this.pendingCrits.entries()).sort(
-      (a, b) => a[1].timestamp - b[1].timestamp
-    );
-    const toRemove = Math.floor(this.maxPendingCrits * this.PENDING_QUEUE_TRIM_PERCENTAGE);
-    sortedEntries.slice(0, toRemove).forEach(([id]) => this.pendingCrits.delete(id));
-  }
-
-  /**
    * Updates the pending crits queue with a new crit entry
    * Handles queue size limits, expiration cleanup, and content-based matching
    * @param {string} messageId - Normalized message ID
@@ -2767,16 +2704,6 @@ module.exports = class CriticalHit {
   // ----------------------------------------------------------------------------
   // History Retrieval
   // ----------------------------------------------------------------------------
-
-  /**
-   * Gets all message history entries for a specific channel
-   * @param {string} channelId - The channel ID to filter by
-   * @returns {Array} Array of message history entries
-   */
-  getChannelHistory(channelId) {
-    if (!channelId) return [];
-    return this.messageHistory.filter((entry) => entry.channelId === channelId);
-  }
 
   /**
    * Gets all crit messages from history, optionally filtered by channel
@@ -3802,21 +3729,6 @@ module.exports = class CriticalHit {
     this._cache.statsTime = now;
   }
 
-  /**
-   * Gets current statistics with additional history info
-   * @returns {Object} Current stats object
-   */
-  getStats() {
-    // Ensure stats are up to date
-    this.updateStats();
-
-    return {
-      ...this.stats,
-      historySize: this.messageHistory.length,
-      critsInHistory: this.messageHistory.filter((e) => e.isCrit).length,
-    };
-  }
-
   // ============================================================================
   // OBSERVER & MESSAGE PROCESSING
   // ============================================================================
@@ -3874,11 +3786,16 @@ module.exports = class CriticalHit {
    */
   _getMessageContainerSelectors() {
     return [
+      'main[class*="chatContent"] [class*="messagesWrapper"]',
+      'section[class*="chatContent"] [class*="messagesWrapper"]',
+      '[class*="chatContent"] [class*="messagesWrapper"]',
       '[class*="messagesWrapper"]',
+      'ol[role="list"][aria-label^="Messages in"]',
+      '[id^="chat-messages-"]',
+      '[class*="messageList"]',
       '[class*="messageContainer"]',
       '[class*="scrollerInner"]',
-      '[class*="scroller"]',
-      '[class*="listItem"]',
+      '[class*="scroller"]'
     ];
   }
 
@@ -3890,7 +3807,12 @@ module.exports = class CriticalHit {
   _isMessageContainer(element) {
     if (!element) return false;
     const hasMessages = element.querySelector('[class*="message"]') !== null;
-    return hasMessages || element.matches('[class*="scroller"]');
+    const hasMessageList = element.querySelector('ol[role="list"][aria-label^="Messages in"]');
+    const hasChatMessageAnchor = element.querySelector('[id^="chat-messages-"]');
+    const isMessageList =
+      element.matches('ol[role="list"][aria-label^="Messages in"]') ||
+      element.matches('[id^="chat-messages-"]');
+    return hasMessages || !!hasMessageList || !!hasChatMessageAnchor || isMessageList;
   }
 
   /**
@@ -3921,11 +3843,41 @@ module.exports = class CriticalHit {
       return this._cachedMessageContainer;
     }
 
-    // Try selectors
+    // Try selectors and score candidates to avoid binding observer to unrelated scrollers.
     const selectors = this._getMessageContainerSelectors();
-    const foundElement = selectors
-      .map((selector) => document.querySelector(selector))
-      .find((element) => this._isMessageContainer(element));
+    const candidates = [];
+    const seen = new Set();
+
+    selectors.forEach((selector) => {
+      document.querySelectorAll(selector).forEach((element) => {
+        if (!element || seen.has(element) || !this._isMessageContainer(element)) return;
+        seen.add(element);
+        candidates.push(element);
+      });
+    });
+
+    const foundElement =
+      candidates
+        .map((element) => {
+          const messageCount = element.querySelectorAll('[class*="message"]').length;
+          const inChatContent = !!element.closest(
+            'main[class*="chatContent"], section[class*="chatContent"]'
+          );
+          const hasMessagesList =
+            element.matches('ol[role="list"][aria-label^="Messages in"]') ||
+            !!element.querySelector('ol[role="list"][aria-label^="Messages in"]');
+          const hasChatAnchor =
+            element.matches('[id^="chat-messages-"]') ||
+            !!element.querySelector('[id^="chat-messages-"]');
+          const score =
+            (inChatContent ? 1000 : 0) +
+            (hasMessagesList ? 500 : 0) +
+            (hasChatAnchor ? 300 : 0) +
+            messageCount;
+          return { element, score };
+        })
+        .sort((a, b) => b.score - a.score)[0]
+        ?.element || null;
 
     if (foundElement) {
       const now = Date.now();
@@ -3992,30 +3944,49 @@ module.exports = class CriticalHit {
     // Wait for channel to load, then restore crits (event-driven via MutationObserver)
     this.isLoadingChannel = true;
     this.observerStartTime = Date.now();
+    let channelMarkedLoaded = false;
+
+    const markChannelLoaded = (reason = 'observer') => {
+      if (channelMarkedLoaded || this._isStopped) return;
+      channelMarkedLoaded = true;
+      this.isLoadingChannel = false;
+      this.channelLoadTime = Date.now();
+      this._disconnectTransientObserver(loadObserver);
+
+      this.debug?.verbose &&
+        this.debugLog('START_OBSERVING', 'Channel load complete', {
+          reason,
+          channelId,
+        });
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          channelId && this.restoreChannelCrits(channelId);
+        });
+      });
+    };
 
     // Use MutationObserver to detect when messages are loaded (no polling)
     const loadObserver = this._trackTransientObserver(
       new MutationObserver(() => {
         const messageCount =
           messageContainer?.querySelectorAll?.('[class*="message"]')?.length ?? 0;
-        messageCount > 0 &&
-          ((this.isLoadingChannel = false),
-          (this.channelLoadTime = Date.now()),
-          this._disconnectTransientObserver(loadObserver),
-          // Restore crits after DOM is ready (event-driven, not polling)
-          requestAnimationFrame(() => {
-            requestAnimationFrame(() => {
-              channelId && this.restoreChannelCrits(channelId);
-            });
-          }));
+        messageCount > 0 && markChannelLoaded('mutation');
       })
     );
 
     messageContainer && loadObserver.observe(messageContainer, { childList: true, subtree: true });
-    this._setTrackedTimeout(
-      () => this._disconnectTransientObserver(loadObserver),
-      this.LOAD_OBSERVER_TIMEOUT_MS
-    );
+    const initialMessageCount = messageContainer?.querySelectorAll?.('[class*="message"]')?.length ?? 0;
+    if (initialMessageCount > 0) {
+      markChannelLoaded('initial');
+    } else {
+      this._setTrackedTimeout(() => {
+        if (!channelMarkedLoaded) {
+          // Fallback safety: never block crit processing indefinitely if load observer misses.
+          markChannelLoaded('timeout');
+        }
+      }, this.LOAD_OBSERVER_TIMEOUT_MS);
+    }
 
     // Create mutation observer to watch for new messages
     this.messageObserver = new MutationObserver((mutations) => {
@@ -5587,104 +5558,100 @@ module.exports = class CriticalHit {
       {
         const animTarget = messageElement;
         const animId = messageId;
-        const burstProfile = this._loadPerceptionBurstProfile();
-        const burstHits = this.calculateBurstHitCount(animId, messageElement);
-        const animCombo = (() => {
-          const uid = this.getUserId(messageElement) || authorId || 'unknown';
-          const now = Date.now();
-          this.updateUserCombo(uid, burstHits, now);
-          this.persistLastCritBurst({
+        const animUserId = this.getUserId(messageElement) || authorId || this.getAuthorId(messageElement);
+        const isOwnCritSource = !!(animUserId && this.isOwnMessage(messageElement, animUserId));
+
+        if (isOwnCritSource) {
+          const animCombo = this._syncBurstComboForMessage({
             messageId: animId,
-            userId: uid,
-            burstHits,
-            profile: burstProfile,
+            messageElement,
+            userId: animUserId,
           });
-          this._comboUpdatedMessages.add(animId);
-          return burstHits;
-        })();
+          this._markComboUpdated(animId);
 
-        requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            try {
-              let currentElement = (isValidDiscordId && animId)
-                ? (this.requeryMessageElement(animId, animTarget) || animTarget)
-                : animTarget;
+            requestAnimationFrame(() => {
+              try {
+                let currentElement = (isValidDiscordId && animId)
+                  ? (this.requeryMessageElement(animId, animTarget) || animTarget)
+                  : animTarget;
 
-              // bd-crit-hit may be on currentElement itself or a child wrapper (applyCritStyle walks up to parent)
-              const hasCritOnSelf = currentElement?.classList?.contains('bd-crit-hit');
-              const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
-              const animElement = hasCritOnSelf ? currentElement : critChild;
+                // bd-crit-hit may be on currentElement itself or a child wrapper (applyCritStyle walks up to parent)
+                const hasCritOnSelf = currentElement?.classList?.contains('bd-crit-hit');
+                const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
+                const animElement = hasCritOnSelf ? currentElement : critChild;
 
-              // debug stripped
-
-              // If element is connected and styled (on self or child), animate immediately
-              if (animElement?.isConnected) {
                 // debug stripped
-                this.showAnimation(animElement, animId, animCombo);
-              } else if (!currentElement?.isConnected || !animElement) {
-                // Element was disconnected (Discord replaced it during hash→real ID transition)
-                // or styling was lost. Retry after a short delay to find the replacement element.
-                // debug stripped
-                this._setTrackedTimeout(() => {
-                  try {
-                    // Try to find replacement by message ID first
-                    let retryElement = animId ? this.requeryMessageElement(animId) : null;
 
-                    // If not found by original ID, search by content hash
-                    if (!retryElement?.isConnected) {
-                      const contentAuthor = authorId || 'unknown';
-                      const contentText = this.findMessageContentElement(animTarget)?.textContent?.trim()
-                        || animTarget?.textContent?.trim();
-                      if (contentText) {
-                        const contentHash = this.calculateContentHash(contentAuthor, contentText);
-                        // Search recent messages in DOM for matching content
-                        const container = this._cachedMessageContainer || document;
-                        const candidates = container.querySelectorAll?.('[class*="message"]') || [];
-                        for (const el of candidates) {
-                          if (!el?.isConnected || !el.offsetParent) continue;
-                          const elContent = this.findMessageContentElement(el);
-                          const elText = elContent?.textContent?.trim();
-                          const elAuthor = this.getAuthorId(el);
-                          if (elText && elAuthor) {
-                            const elHash = this.calculateContentHash(elAuthor, elText);
-                            if (elHash === contentHash) {
-                              retryElement = el;
-                              break;
+                // If element is connected and styled (on self or child), animate immediately
+                if (animElement?.isConnected) {
+                  // debug stripped
+                  this.showAnimation(animElement, animId, animCombo);
+                } else if (!currentElement?.isConnected || !animElement) {
+                  // Element was disconnected (Discord replaced it during hash→real ID transition)
+                  // or styling was lost. Retry after a short delay to find the replacement element.
+                  // debug stripped
+                  this._setTrackedTimeout(() => {
+                    try {
+                      // Try to find replacement by message ID first
+                      let retryElement = animId ? this.requeryMessageElement(animId) : null;
+
+                      // If not found by original ID, search by content hash
+                      if (!retryElement?.isConnected) {
+                        const contentAuthor = authorId || 'unknown';
+                        const contentText = this.findMessageContentElement(animTarget)?.textContent?.trim()
+                          || animTarget?.textContent?.trim();
+                        if (contentText) {
+                          const contentHash = this.calculateContentHash(contentAuthor, contentText);
+                          // Search recent messages in DOM for matching content
+                          const container = this._cachedMessageContainer || document;
+                          const candidates = container.querySelectorAll?.('[class*="message"]') || [];
+                          for (const el of candidates) {
+                            if (!el?.isConnected || !el.offsetParent) continue;
+                            const elContent = this.findMessageContentElement(el);
+                            const elText = elContent?.textContent?.trim();
+                            const elAuthor = this.getAuthorId(el);
+                            if (elText && elAuthor) {
+                              const elHash = this.calculateContentHash(elAuthor, elText);
+                              if (elHash === contentHash) {
+                                retryElement = el;
+                                break;
+                              }
                             }
                           }
                         }
                       }
-                    }
-
-                    // debug stripped
-                    if (retryElement?.isConnected) {
-                      // Re-apply crit styling to the replacement element
-                      // applyCritStyle may apply bd-crit-hit to a child wrapper element,
-                      // not necessarily retryElement itself (e.g. LI vs inner DIV)
-                      this.applyCritStyle(retryElement);
-                      this.critMessages.add(retryElement);
-
-                      // Find the element that actually got bd-crit-hit (could be retryElement or a descendant)
-                      const critTarget = retryElement.classList.contains('bd-crit-hit')
-                        ? retryElement
-                        : retryElement.querySelector('.bd-crit-hit');
 
                       // debug stripped
-                      if (critTarget?.isConnected) {
+                      if (retryElement?.isConnected) {
+                        // Re-apply crit styling to the replacement element
+                        // applyCritStyle may apply bd-crit-hit to a child wrapper element,
+                        // not necessarily retryElement itself (e.g. LI vs inner DIV)
+                        this.applyCritStyle(retryElement);
+                        this.critMessages.add(retryElement);
+
+                        // Find the element that actually got bd-crit-hit (could be retryElement or a descendant)
+                        const critTarget = retryElement.classList.contains('bd-crit-hit')
+                          ? retryElement
+                          : retryElement.querySelector('.bd-crit-hit');
+
                         // debug stripped
-                        this.showAnimation(critTarget, animId, animCombo);
+                        if (critTarget?.isConnected) {
+                          // debug stripped
+                          this.showAnimation(critTarget, animId, animCombo);
+                        }
                       }
+                    } catch (retryError) {
+                      this.debugError('PROCESS_NEW_CRIT', retryError, { phase: 'direct_animation_retry' });
                     }
-                  } catch (retryError) {
-                    this.debugError('PROCESS_NEW_CRIT', retryError, { phase: 'direct_animation_retry' });
-                  }
-                }, 150);
+                  }, 150);
+                }
+              } catch (error) {
+                this.debugError('PROCESS_NEW_CRIT', error, { phase: 'direct_animation' });
               }
-            } catch (error) {
-              this.debugError('PROCESS_NEW_CRIT', error, { phase: 'direct_animation' });
-            }
+            });
           });
-        });
+        }
       }
 
       // Save to history using short-circuit
@@ -6040,20 +6007,14 @@ module.exports = class CriticalHit {
             const animUserId = this.getUserId(messageElement) || this.getAuthorId(messageElement);
             // debug stripped
             if (animUserId && this.isOwnMessage(messageElement, animUserId)) {
-              const comboNow = Date.now();
-              const burstProfile = this._loadPerceptionBurstProfile();
-              const newCombo = this.calculateBurstHitCount(messageId, messageElement);
-              this.updateUserCombo(animUserId, newCombo, comboNow);
-              this.persistLastCritBurst({
+              const newCombo = this._syncBurstComboForMessage({
                 messageId,
+                messageElement,
                 userId: animUserId,
-                burstHits: newCombo,
-                profile: burstProfile,
               });
 
               // Mark as combo-updated to prevent double increment
-              this._comboUpdatedMessages.add(messageId);
-              if (contentHash) this._comboUpdatedContentHashes.add(contentHash);
+              this._markComboUpdated(messageId, contentHash);
 
               // Trigger animation directly after DOM settles
               requestAnimationFrame(() => {
@@ -6283,15 +6244,6 @@ module.exports = class CriticalHit {
       (c) => c.includes('messageContent') || c.includes('markup') || c.includes('textContainer')
     );
     return hasContentClass || element.id?.includes('message-content');
-  }
-
-  /**
-   * Finds all message content elements in message
-   * @param {HTMLElement} messageElement - Message element
-   * @returns {Array<HTMLElement>} Array of content elements
-   */
-  _findAllMessageContents(messageElement) {
-    return Array.from(messageElement.querySelectorAll('[class*="messageContent"]'));
   }
 
   /**
@@ -6736,26 +6688,6 @@ module.exports = class CriticalHit {
     return null;
   }
 
-  /**
-   * Gets the path to the fonts folder for local font loading
-   * DEPRECATED: Fonts are now embedded as base64 data URIs
-   * This method is kept for backward compatibility with SoloLevelingStats
-   * but should not be used for font loading (use loadLocalFont instead)
-   * @returns {string|null} Returns null to prevent file:// URL usage
-   */
-  getFontsFolderPath() {
-    // DEPRECATED: Fonts are now embedded as base64 in the plugin
-    // Returning null prevents SoloLevelingStats from trying to load fonts from file:// URLs
-    this.debugLog(
-      'FONT_LOADER',
-      'getFontsFolderPath() called but deprecated - fonts use base64 embedding',
-      {
-        note: 'Fonts are loaded via loadLocalFont() which uses embedded base64 data',
-      }
-    );
-    return null; // Return null to prevent file:// URL usage
-  }
-
   // ----------------------------------------------------------------------------
   // Font Name Helpers
   // ----------------------------------------------------------------------------
@@ -6767,92 +6699,6 @@ module.exports = class CriticalHit {
    */
   _normalizeFontNameForId(fontName) {
     return fontName.replace(/\s+/g, '-').toLowerCase();
-  }
-
-  /**
-   * Gets font file name from font name
-   * @param {string} fontName - Font name
-   * @returns {string} Font file name
-   */
-  _getFontFileName(fontName) {
-    if (fontName.toLowerCase().includes('friend or foe')) return 'FriendorFoeBB';
-    if (
-      fontName.toLowerCase().includes('speedy space goat') ||
-      fontName.toLowerCase().includes('speedy goat')
-    ) {
-      return 'SpeedySpaceGoatOddity';
-    }
-    return fontName.replace(/\s+/g, '');
-  }
-
-  /**
-   * Creates font family CSS string
-   * @param {string} fontName - Font name
-   * @returns {string} Font family CSS
-   */
-  _createFontFamily(fontName) {
-    return `'${fontName}', sans-serif`;
-  }
-
-  /**
-   * Gets font style element ID
-   * @param {string} fontName - Font name
-   * @returns {string} Style element ID
-   */
-  _getFontStyleId(fontName) {
-    return `cha-font-${this._normalizeFontNameForId(fontName)}`;
-  }
-
-  /**
-   * Creates @font-face CSS rule
-   * @param {string} fontName - Font name
-   * @param {string} fontsPath - Fonts folder path
-   * @param {string} fontFileName - Font file name
-   * @returns {string} CSS text
-   */
-  _createFontFaceCSS(fontName, fontsPath, fontFileName) {
-    return `
-      @font-face {
-        font-family: '${fontName}';
-        src: url('${fontsPath}${fontFileName}.woff2') format('woff2'),
-             url('${fontsPath}${fontFileName}.woff') format('woff'),
-             url('${fontsPath}${fontFileName}.ttf') format('truetype');
-        font-weight: normal;
-        font-style: normal;
-        font-display: swap;
-      }
-    `;
-  }
-
-  /**
-   * Verifies font is loaded
-   * @param {string} fontName - Font name
-   * @param {string} fontsPath - Fonts folder path
-   */
-  _verifyFontLoaded(fontName, fontsPath) {
-    if (document.fonts?.check) {
-      // Use Font Loading API to wait for fonts to load before verifying
-      document.fonts.ready
-        .then(() => {
-          // Additional delay to ensure font is fully loaded
-          return new Promise((resolve) => {
-            this._setTrackedTimeout(resolve, 500);
-          });
-        })
-        .then(() => {
-          const fontLoaded = document.fonts.check(`16px '${fontName}'`);
-          if (!fontLoaded) {
-            this.debugLog('FONT_LOADER', `Font '${fontName}' may not have loaded correctly`, {
-              fontName,
-              fontsPath,
-              note: 'Check that font files exist in fonts/ folder',
-            });
-          }
-        })
-        .catch(() => {
-          // Silently ignore font loading errors (font may still work)
-        });
-    }
   }
 
   /**
@@ -6873,44 +6719,6 @@ module.exports = class CriticalHit {
    */
   _matchesFontPattern(fontName, pattern) {
     return fontName.toLowerCase().includes(pattern.toLowerCase());
-  }
-
-  /**
-   * Checks if font requires local files
-   * @param {string} fontName - Font name
-   * @returns {boolean} True if requires local files
-   */
-  _requiresLocalFont(fontName) {
-    const lowerName = fontName.toLowerCase();
-    return (
-      this._matchesFontPattern(lowerName, 'vampire wars') ||
-      this._matchesFontPattern(lowerName, 'speedy space goat') ||
-      this._matchesFontPattern(lowerName, 'speedy goat')
-    );
-  }
-
-  /**
-   * Checks if font is Nova Flat
-   * @param {string} fontName - Font name
-   * @returns {boolean} True if Nova Flat
-   */
-  _isNovaFlat(fontName) {
-    return this._matchesFontPattern(fontName, 'nova flat');
-  }
-
-  /**
-   * Tries to load local font with warning
-   * @param {string} fontName - Font name
-   * @param {string} warningMessage - Warning message
-   * @returns {boolean} True if loaded
-   */
-  _tryLoadLocalFontWithWarning(fontName, warningMessage) {
-    if (this.settings.useLocalFonts) {
-      const loaded = this.loadLocalFont(fontName);
-      if (loaded) return true;
-    }
-    this.debugLog('FONT_LOADER', warningMessage, { fontName });
-    return this.loadGoogleFont(fontName);
   }
 
   /**
@@ -7344,14 +7152,6 @@ module.exports = class CriticalHit {
   // ----------------------------------------------------------------------------
 
   /**
-   * Removes old CSS style element by ID
-   * @param {string} styleId - Style element ID
-   */
-  _removeOldStyle(styleId) {
-    BdApi.DOM.removeStyle(styleId);
-  }
-
-  /**
    * Injects CSS styles for animations, screen shake, and combo display
    * Includes keyframe animations for float, fade, and shake effects
    */
@@ -7473,20 +7273,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Checks if element should have font applied (not in header)
-   * @param {HTMLElement} el - Element to check
-   * @returns {boolean} True if should apply font
-   */
-  _shouldApplyFontToElement(el) {
-    return (
-      !el.closest('[class*="username"]') &&
-      !el.closest('[class*="timestamp"]') &&
-      !el.closest('[class*="author"]') &&
-      !el.closest('[class*="header"]')
-    );
-  }
-
-  /**
    * Applies crit font to element and its content
    * @param {HTMLElement} element - Element to apply font to
    */
@@ -7547,18 +7333,7 @@ module.exports = class CriticalHit {
 
     // Force Friend or Foe BB (critFont) on all existing crit hit messages
     // Event-based font enforcement - replaced periodic setInterval with MutationObserver
-    const applyCritFont = (element) => {
-      const messageFont = this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif";
-      const critTextNodes = new Set(element.querySelectorAll('.bd-crit-text-content'));
-      element.classList?.contains('bd-crit-text-content') && critTextNodes.add(element);
-
-      critTextNodes.forEach((node) => {
-        node.style.setProperty('font-family', messageFont, 'important');
-        node.querySelectorAll('*').forEach((child) => {
-          child.style.setProperty('font-family', messageFont, 'important');
-        });
-      });
-    };
+    const applyCritFont = (element) => this._applyCritFontToElement(element);
 
     // Apply to existing crit messages immediately
     const existingCritMessages = document.querySelectorAll('.bd-crit-hit');
@@ -8000,463 +7775,13 @@ module.exports = class CriticalHit {
     BdApi.DOM.addStyle(this.CSS_STYLE_IDS.settings, settingsCSS);
   }
 
-  // ============================================================================
-  // VISUAL EFFECTS
-  // ============================================================================
-  // Handles visual effects when crits are detected (animations, particle bursts)
-
-  // ----------------------------------------------------------------------------
-  // Visual Effects Constants
-  // ----------------------------------------------------------------------------
-
-  /**
-   * Particle burst particle count
-   * @type {number}
-   */
-  get PARTICLE_COUNT() {
-    return 15;
-  }
-
-  /**
-   * Particle colors array
-   * @type {Array<string>}
-   */
-  get PARTICLE_COLORS() {
-    return [
-      'rgba(138, 43, 226, 0.9)', // Blue Violet
-      'rgba(138, 43, 226, 0.9)', // Violet
-      'rgba(167, 139, 250, 0.9)', // Light Purple
-      'rgba(196, 181, 253, 0.9)', // Lavender
-      'rgba(255, 255, 255, 0.9)', // White
-    ];
-  }
-
-  /**
-   * Particle animation base distance
-   * @type {number}
-   */
-  get PARTICLE_BASE_DISTANCE() {
-    return 50;
-  }
-
-  /**
-   * Particle animation distance variation
-   * @type {number}
-   */
-  get PARTICLE_DISTANCE_VARIATION() {
-    return 30;
-  }
-
-  /**
-   * Particle animation base duration in seconds
-   * @type {number}
-   */
-  get PARTICLE_BASE_DURATION() {
-    return 0.6;
-  }
-
-  /**
-   * Particle animation duration variation in seconds
-   * @type {number}
-   */
-  get PARTICLE_DURATION_VARIATION() {
-    return 0.4;
-  }
-
-  /**
-   * Particle container cleanup delay in milliseconds
-   * @type {number}
-   */
-  get PARTICLE_CLEANUP_DELAY_MS() {
-    return 1200;
-  }
-
-  /**
-   * Particle size in pixels
-   * @type {number}
-   */
-  get PARTICLE_SIZE() {
-    return 4;
-  }
-
-  /**
-   * Particle container z-index
-   * @type {number}
-   */
-  get PARTICLE_Z_INDEX() {
-    return 9999;
-  }
-
   // ----------------------------------------------------------------------------
   // Throttle Management
   // ----------------------------------------------------------------------------
 
-  /**
-   * Cleans up old throttle entries
-   * @param {number} now - Current timestamp
-   */
-  _cleanupOnCritHitThrottle(now) {
-    if (this._onCritHitThrottle.size <= this.MAX_THROTTLE_MAP_SIZE) return;
-
-    const cutoffTime = now - this.THROTTLE_CLEANUP_CUTOFF_MS;
-    for (const [msgId, callTime] of this._onCritHitThrottle.entries()) {
-      callTime < cutoffTime && this._onCritHitThrottle.delete(msgId);
-    }
-  }
-
-  /**
-   * Checks if message should be throttled
-   * @param {string} messageId - Message ID
-   * @param {boolean} isValidDiscordId - Whether message has valid Discord ID
-   * @param {number} now - Current timestamp
-   * @returns {boolean} True if should throttle
-   */
-  _shouldThrottleOnCritHit(messageId, isValidDiscordId, now) {
-    const lastCallTime = this._onCritHitThrottle.get(messageId);
-    const throttleMs = isValidDiscordId
-      ? this.VERIFIED_MESSAGE_THROTTLE_MS
-      : this._onCritHitThrottleMs;
-
-    if (lastCallTime && now - lastCallTime < throttleMs) {
-      return true;
-    }
-
-    this._onCritHitThrottle.set(messageId, now);
-    return false;
-  }
-
   // ----------------------------------------------------------------------------
   // Gradient Verification
   // ----------------------------------------------------------------------------
-
-  /**
-   * Verifies gradient is applied and triggers animation
-   * @param {HTMLElement} messageElement - Message element
-   * @param {string} messageId - Message ID
-   * @param {Function} proceedCallback - Callback to proceed with animation
-   * @returns {boolean} True if gradient verified immediately
-   */
-  _verifyGradientAndTrigger(messageElement, messageId, proceedCallback) {
-    let lastVerificationTime = 0;
-
-    const verify = () => {
-      const now = Date.now();
-      if (now - lastVerificationTime < this.GRADIENT_VERIFICATION_DELAY_MS) return false;
-      lastVerificationTime = now;
-
-      const currentElement = this.requeryMessageElement(messageId, messageElement);
-      if (!currentElement?.isConnected || !currentElement.classList?.contains('bd-crit-hit')) {
-        return false;
-      }
-
-      const contentElement = this.findMessageContentElement(currentElement);
-      if (!contentElement) return false;
-
-      const gradientCheck = this.verifyGradientApplied(contentElement);
-      return gradientCheck.hasGradient && gradientCheck.hasWebkitClip;
-    };
-
-    if (verify()) {
-      proceedCallback();
-      return true;
-    }
-
-    // Set up MutationObserver
-    const parentContainer = messageElement?.parentElement || document.body;
-    const observer = this._trackTransientObserver(
-      new MutationObserver((mutations) => {
-        const hasRelevantMutation = mutations.some((m) => {
-          if (m.type === 'attributes' && m.attributeName === 'class') {
-            const target = m.target;
-            return (
-              target.classList?.contains('bd-crit-hit') ||
-              target.querySelector?.('[class*="message"]')?.classList?.contains('bd-crit-hit')
-            );
-          }
-          if (m.type === 'attributes' && m.attributeName === 'style') return true;
-          if (m.type === 'childList' && m.addedNodes.length) {
-            return Array.from(m.addedNodes).some((node) => {
-              if (node.nodeType !== Node.ELEMENT_NODE) return false;
-              const id = this.getMessageIdentifier(node);
-              return id === messageId || String(id).includes(messageId);
-            });
-          }
-          return false;
-        });
-
-        if (hasRelevantMutation) {
-          requestAnimationFrame(() => {
-            if (verify()) {
-              this._disconnectTransientObserver(observer);
-              proceedCallback();
-            }
-          });
-        }
-      })
-    );
-
-    observer.observe(parentContainer, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'style'],
-    });
-
-    const contentElement = this.findMessageContentElement(messageElement);
-    contentElement &&
-      observer.observe(contentElement, { attributes: true, attributeFilter: ['style', 'class'] });
-
-    this._setTrackedTimeout(() => {
-      this._disconnectTransientObserver(observer);
-      proceedCallback();
-    }, this.GRADIENT_VERIFICATION_TIMEOUT_MS);
-
-    return false;
-  }
-
-  /**
-   * Called when a crit is detected - triggers visual effects
-   * CriticalHitAnimation plugin hooks into this method for animations
-   * Verifies gradient is applied before triggering animation for robust synchronization
-   * @param {HTMLElement} messageElement - The message DOM element
-   */
-  onCritHit(messageElement) {
-    if (!messageElement?.isConnected) {
-      return;
-    }
-
-    const messageId = this.getMessageIdentifier(messageElement);
-    if (!messageId) {
-      return;
-    }
-
-    const isValidDiscordId = /^\d{17,19}$/.test(messageId);
-
-    // Early deduplication — clear previous entry so animation can proceed
-    if (this.animatedMessages.has(messageId)) {
-      this.animatedMessages.delete(messageId);
-    }
-
-    // Throttle check
-    const now = Date.now();
-    if (this._shouldThrottleOnCritHit(messageId, isValidDiscordId, now)) {
-      return;
-    }
-
-    this._cleanupOnCritHitThrottle(now);
-
-    if (this._processingAnimations.has(messageId)) {
-      return;
-    }
-
-    this._processingAnimations.add(messageId);
-
-    const proceedWithAnimation = () => {
-      // Gradient verified (or max attempts reached), trigger animation
-      // Use double RAF to ensure DOM is stable
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // Re-query element one more time before triggering
-          const finalElement = this.requeryMessageElement(messageId, messageElement);
-
-          if (
-            finalElement &&
-            finalElement.isConnected &&
-            finalElement.classList?.contains('bd-crit-hit')
-          ) {
-            // Particle burst effect removed - using improved animation instead
-
-            // Double-check: Ensure not already animated (race condition protection)
-            const finalMessageId = this.getMessageIdentifier(finalElement) || messageId;
-            if (this.animatedMessages.has(finalMessageId)) {
-              this._processingAnimations.delete(finalMessageId);
-              return;
-            }
-
-            // Direct call to animation handler (replaces hook-based approach)
-            if (
-              this.settings.animationEnabled !== false &&
-              typeof this.handleCriticalHit === 'function'
-            ) {
-              try {
-                this.handleCriticalHit(finalElement);
-              } catch (error) {
-                this.debugError('ON_CRIT_HIT', error, { phase: 'animation_handler' });
-                // Remove processing lock on error
-                this._processingAnimations.delete(finalMessageId);
-              }
-            } else {
-              // Remove processing lock if animation disabled or handler missing
-              this._processingAnimations.delete(finalMessageId);
-            }
-          } else {
-            // Element not valid, remove processing lock
-            this._processingAnimations.delete(messageId);
-          }
-        });
-      });
-    };
-
-    // Gradient already verified, proceed immediately
-    proceedWithAnimation();
-  }
-
-  // ----------------------------------------------------------------------------
-  // Particle Burst Effect
-  // ----------------------------------------------------------------------------
-
-  /**
-   * Gets element center position
-   * @param {HTMLElement} element - Element to get position for
-   * @returns {Object|null} Position object with x and y or null
-   */
-  _getElementCenterPosition(element) {
-    try {
-      const rect = element.getBoundingClientRect();
-      return {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * Creates particle container element
-   * @param {number} centerX - Center X coordinate
-   * @param {number} centerY - Center Y coordinate
-   * @returns {HTMLElement} Particle container element
-   */
-  _createParticleContainer(centerX, centerY) {
-    const container = document.createElement('div');
-    container.className = 'bd-crit-particle-burst';
-    container.style.cssText = `position: fixed; left: ${centerX}px; top: ${centerY}px; width: 0; height: 0; pointer-events: none; z-index: ${this.PARTICLE_Z_INDEX};`;
-    document.body.appendChild(container);
-    return container;
-  }
-
-  /**
-   * Creates a single particle element
-   * @param {number} index - Particle index
-   * @param {number} totalCount - Total particle count
-   * @returns {HTMLElement} Particle element
-   */
-  _createParticle(index, totalCount) {
-    const particle = document.createElement('div');
-    const angle = (Math.PI * 2 * index) / totalCount;
-    const distance = this.PARTICLE_BASE_DISTANCE + Math.random() * this.PARTICLE_DISTANCE_VARIATION;
-    const duration = this.PARTICLE_BASE_DURATION + Math.random() * this.PARTICLE_DURATION_VARIATION;
-    const color = this.PARTICLE_COLORS[Math.floor(Math.random() * this.PARTICLE_COLORS.length)];
-
-    particle.style.cssText = `position: absolute; width: ${this.PARTICLE_SIZE}px; height: ${this.PARTICLE_SIZE}px; border-radius: 50%; background: ${color}; box-shadow: 0 0 6px ${color}, 0 0 12px ${color}; left: 0; top: 0; opacity: 1;`;
-
-    const endX = Math.cos(angle) * distance;
-    const endY = Math.sin(angle) * distance;
-
-    particle.animate(
-      [
-        { transform: 'translate(0, 0) scale(1)', opacity: 1 },
-        { transform: `translate(${endX}px, ${endY}px) scale(0)`, opacity: 0 },
-      ],
-      { duration: duration * 1000, easing: 'ease-out', fill: 'forwards' }
-    );
-
-    return particle;
-  }
-
-  /**
-   * Creates a particle burst effect at the message location
-   * @param {HTMLElement} messageElement - The message DOM element
-   */
-  createParticleBurst(messageElement) {
-    try {
-      const messageId = this.getMessageIdentifier(messageElement) || 'unknown';
-      this.debug?.verbose &&
-        this.debugLog('CREATE_PARTICLE_BURST', 'Starting particle burst creation', {
-          hasMessageElement: !!messageElement,
-          messageId,
-        });
-
-      const position = this._getElementCenterPosition(messageElement);
-      if (!position) return;
-
-      const container = this._createParticleContainer(position.x, position.y);
-
-      Array.from({ length: this.PARTICLE_COUNT }, (_, i) => {
-        try {
-          container.appendChild(this._createParticle(i, this.PARTICLE_COUNT));
-        } catch (error) {
-          this.debugError('CREATE_PARTICLE_BURST', error, {
-            phase: 'create_particle',
-            particleIndex: i,
-          });
-        }
-      });
-
-      this._setTrackedTimeout(() => {
-        try {
-          container.parentNode && container.parentNode.removeChild(container);
-        } catch (error) {
-          this.debugError('CREATE_PARTICLE_BURST', error, { phase: 'cleanup' });
-        }
-      }, this.PARTICLE_CLEANUP_DELAY_MS);
-    } catch (error) {
-      this.debugError('CREATE_PARTICLE_BURST', error);
-    }
-  }
-
-  // ----------------------------------------------------------------------------
-  // Crit Removal
-  // ----------------------------------------------------------------------------
-
-  /**
-   * Removes all style properties from element
-   * @param {HTMLElement} element - Element to clear styles from
-   */
-  _clearAllStyles(element) {
-    const styleProps = [
-      'color',
-      'fontFamily',
-      'fontWeight',
-      'textShadow',
-      'animation',
-      'background',
-      'backgroundImage',
-      'webkitBackgroundClip',
-      'backgroundClip',
-      'webkitTextFillColor',
-      'display',
-    ];
-    styleProps.forEach((prop) => {
-      element.style[prop] = '';
-    });
-  }
-
-  /**
-   * Removes all crit styling from all messages (for testing/debugging)
-   */
-  removeAllCrits() {
-    document.querySelectorAll('.bd-crit-hit').forEach((msg) => {
-      const content =
-        msg.querySelector('.bd-crit-text-content') ||
-        msg.querySelector('[class*="messageContent"]') ||
-        msg.querySelector('[class*="content"]') ||
-        msg;
-      if (content) {
-        content.classList.remove('bd-crit-text-content');
-        this._clearAllStyles(content);
-      }
-      msg.classList.remove('bd-crit-hit');
-    });
-
-    this.critMessages.clear();
-
-    BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
-
-    this._displayUpdateInterval &&
-      (clearInterval(this._displayUpdateInterval), (this._displayUpdateInterval = null));
-  }
 
   // ============================================================================
   // SETTINGS PANEL UI
@@ -9541,6 +8866,38 @@ module.exports = class CriticalHit {
     return Math.max(1, Math.min(99, hits));
   }
 
+  _markComboUpdated(messageId, contentHash = null) {
+    if (messageId) {
+      this._comboUpdatedMessages.add(messageId);
+    }
+    if (contentHash) {
+      this._comboUpdatedContentHashes.add(contentHash);
+    }
+
+    if (this._comboUpdatedMessages.size > this.MAX_THROTTLE_MAP_SIZE) {
+      this._comboUpdatedMessages.clear();
+    }
+    if (this._comboUpdatedContentHashes.size > this.MAX_THROTTLE_MAP_SIZE) {
+      this._comboUpdatedContentHashes.clear();
+    }
+  }
+
+  _syncBurstComboForMessage({ messageId, messageElement, userId, timestamp = Date.now() }) {
+    const safeUserId = userId || 'unknown';
+    const profile = this._loadPerceptionBurstProfile();
+    const burstHits = this.calculateBurstHitCount(messageId, messageElement);
+
+    this.updateUserCombo(safeUserId, burstHits, timestamp);
+    this.persistLastCritBurst({
+      messageId,
+      userId: safeUserId,
+      burstHits,
+      profile,
+    });
+
+    return burstHits;
+  }
+
   persistLastCritBurst({ messageId, userId, burstHits, profile }) {
     try {
       BdApi.Data.save('CriticalHit', 'lastCritBurst', {
@@ -9793,460 +9150,7 @@ module.exports = class CriticalHit {
   // REACT FIBER UTILITIES
   // ============================================================================
   // Handles React fiber traversal for extracting message data
-  // Note: getReactFiber, traverseFiber, getMessageId, getUserId are defined earlier
-
-  /**
-   * Maximum fiber traversal depth for timestamp extraction
-   * @type {number}
-   */
-  get MAX_TIMESTAMP_FIBER_DEPTH() {
-    return 30;
-  }
-
-  /**
-   * Extracts message timestamp from a message element using React fiber traversal
-   * @param {HTMLElement} element - The message DOM element
-   * @returns {number} Timestamp in milliseconds, or 0 if not found
-   */
-  getMessageTimestamp(element) {
-    try {
-      const fiber = this.getReactFiber(element);
-      if (fiber) {
-        const timestamp = this.traverseFiber(
-          fiber,
-          (f) => f.memoizedProps?.message?.timestamp || f.memoizedState?.message?.timestamp,
-          30
-        );
-        if (timestamp)
-          return timestamp instanceof Date
-            ? timestamp.getTime()
-            : typeof timestamp === 'string'
-            ? new Date(timestamp).getTime()
-            : typeof timestamp === 'number'
-            ? timestamp
-            : 0;
-      }
-    } catch (error) {
-      // Silently fail - React fiber access may fail on some elements
-    }
-    return 0;
-  }
-
-  // ============================================================================
-  // CRITICAL HIT HANDLING
-  // ============================================================================
-  // Handles critical hit events, combo management, and animation triggering
-
-  /**
-   * Main handler for critical hit events
-   * Validates message, updates combo count, checks cooldown, and triggers animation
-   * @param {HTMLElement} messageElement - The message DOM element that crit
-   */
-  handleCriticalHit(messageElement) {
-    if (!messageElement) { return; }
-
-    // Get message ID — allow hash IDs through (new messages start with hash_ before server confirms)
-    const messageId = this.getMessageId(messageElement);
-    if (!messageId) { return; }
-
-    // Verify element has crit class and is in DOM before proceeding
-    if (!messageElement.isConnected || !messageElement.classList?.contains('bd-crit-hit')) {
-      return;
-    }
-
-    // Get element position for duplicate detection (cache early)
-    let elementRect;
-    try {
-      elementRect = messageElement.getBoundingClientRect();
-    } catch (e) {
-      return; // Element not accessible
-    }
-
-    const elementPosition = {
-      x: elementRect.left + elementRect.width / 2,
-      y: elementRect.top + elementRect.height / 2,
-    };
-    const elementTimestamp = Date.now();
-
-    // Verify message has crit class and is in DOM
-    const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
-    const isInDOM = messageElement.isConnected;
-    if (!hasCritClass || !isInDOM) return;
-
-    // Get content hash for deduplication
-    const content = this.findMessageContentElement(messageElement);
-    const author = this.getAuthorId(messageElement);
-    let contentHash = null;
-    const contentText = content?.textContent?.trim();
-    contentHash = this.calculateContentHash(author, contentText);
-
-    // Position-based duplicate detection (handles element replacement scenarios)
-    if (this.isDuplicateByPosition(messageId, elementPosition, elementTimestamp)) {
-      return;
-    }
-
-    // Atomic check-and-add to prevent race conditions (with content hash for deduplication)
-    if (!this.addToAnimatedMessages(messageId, elementPosition, elementTimestamp, contentHash)) {
-      return; // Already animated
-    }
-
-    // Validate user FIRST (before updating combo)
-    const userId = this.getUserId(messageElement);
-    if (!this.isValidDiscordId(userId) || !this.isOwnMessage(messageElement, userId)) {
-      this.animatedMessages.delete(messageId);
-      this._processingAnimations.delete(messageId);
-      return;
-    }
-
-    // Check message age (skip old restored messages)
-    // Only skip if we can CONFIRM the message is old; if timestamp is unavailable, allow animation
-    if (this.isMessageInHistory(messageId)) {
-      const messageTime = this.getMessageTimestamp(messageElement);
-      if (messageTime && Date.now() - messageTime > this.COMBO_TIMEOUT_MS) {
-        this.animatedMessages.delete(messageId);
-        this._processingAnimations.delete(messageId);
-        return;
-      }
-    }
-
-    // Update combo synchronously to prevent race conditions during spam
-    // IMPORTANT: Update combo BEFORE cooldown check so combo always increments correctly
-    // even if cooldown blocks the animation
-    // CRITICAL: Only update combo ONCE per message ID to prevent duplicate increments
-    const userIdForCombo = userId || 'unknown';
-
-    // Check if combo was already updated for this message ID OR content hash
-    // This prevents the same verified message from incrementing combo multiple times
-    // Content hash check prevents duplicate increments when Discord replaces elements (message ID changes)
-    // BUT: We still allow animation even if combo was already updated
-    let storedCombo = null; // Will be set for showAnimation
-
-    // Check both message ID and content hash for deduplication
-    const alreadyUpdatedById = this._comboUpdatedMessages.has(messageId);
-    const alreadyUpdatedByHash = contentHash && this._comboUpdatedContentHashes.has(contentHash);
-
-    if (alreadyUpdatedById || alreadyUpdatedByHash) {
-      // Combo already updated for this message (by ID or content hash) - skip combo update but still allow animation
-      // Get current combo for display purposes
-      const userCombo = this.getUserCombo(userIdForCombo);
-      storedCombo = userCombo.comboCount; // Use current combo for animation display
-    } else {
-      // Mark this message as having combo updated (both by ID and content hash if available)
-      this._comboUpdatedMessages.add(messageId);
-      contentHash && this._comboUpdatedContentHashes.add(contentHash);
-
-      // Cleanup old entries to prevent memory leaks
-      if (this._comboUpdatedMessages.size > this.MAX_THROTTLE_MAP_SIZE) {
-        this._comboUpdatedMessages.clear();
-      }
-      if (this._comboUpdatedContentHashes.size > this.MAX_THROTTLE_MAP_SIZE) {
-        this._comboUpdatedContentHashes.clear();
-      }
-
-      // PER-driven burst size (xN) for this crit event
-      const burstProfile = this._loadPerceptionBurstProfile();
-      const burstHits = this.calculateBurstHitCount(messageId, messageElement);
-      const comboNow = Date.now();
-
-      // Update combo immediately (before async animation/cooldown checks)
-      this.updateUserCombo(userIdForCombo, burstHits, comboNow);
-      this.persistLastCritBurst({
-        messageId,
-        userId: userIdForCombo,
-        burstHits,
-        profile: burstProfile,
-      });
-      storedCombo = burstHits; // Display as XN for this single crit
-    }
-
-    // Cooldown check (AFTER combo update so combo always increments)
-    // NOTE: Cooldown only prevents duplicate animations for the SAME message
-    // Different messages can trigger animations simultaneously
-    const now = Date.now();
-    const timeSinceLastAnimation = now - this.lastAnimationTime;
-
-    // Only block if this is the same message trying to animate again within cooldown
-    // Allow different messages to animate even if within cooldown period
-    const isDuplicateMessage =
-      this.animatedMessages.has(messageId) || this._processingAnimations.has(messageId);
-    if (isDuplicateMessage && timeSinceLastAnimation < this.ANIMATION_COOLDOWN_MS) {
-      this.animatedMessages.delete(messageId);
-      this._processingAnimations.delete(messageId);
-      return;
-    }
-
-    // Update last animation time (but allow multiple simultaneous animations from different messages)
-    this.lastAnimationTime = now;
-
-    // Store position for fallback lookup
-    const storedPosition = { ...elementPosition };
-
-    // Use double RAF for DOM stability with fallback recovery
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        // Try to use original element first
-        let targetElement = messageElement;
-        let targetMessageId = messageId;
-
-        // Check if original element is still valid
-        const isOriginalValid = this.isElementValidForAnimation(messageElement, messageId);
-
-        if (!isOriginalValid) {
-          // Try to find element by position (fallback for replaced elements)
-          targetElement = this.findElementByPosition(storedPosition, messageId);
-          if (targetElement) {
-            targetMessageId = this.getMessageId(targetElement) || messageId;
-          } else {
-            // Last resort: try to find any crit element at this position
-            targetElement = this.findCritElementByPosition(storedPosition);
-            if (targetElement) {
-              targetMessageId = this.getMessageId(targetElement);
-              // Update animatedMessages with new messageId if found
-              if (targetMessageId && targetMessageId !== messageId) {
-                const existingData = this.animatedMessages.get(messageId);
-                if (existingData) {
-                  this.animatedMessages.delete(messageId);
-                  this.animatedMessages.set(targetMessageId, {
-                    ...existingData,
-                    messageId: targetMessageId,
-                  });
-                }
-              }
-            }
-          }
-        }
-
-        // Final check: ensure we have a valid element
-        if (!targetElement || !this.isElementValidForAnimation(targetElement, targetMessageId)) {
-          this.markMessageAsRemoved(messageId);
-          return;
-        }
-        // Pass stored combo to showAnimation (already updated synchronously above)
-        // CRITICAL: Ensure storedCombo is passed correctly - it should be a number, not null
-        if (storedCombo === null || storedCombo === undefined) {
-          // Fallback: get current combo if storedCombo wasn't set
-          const userId = this.getUserId(targetElement) || userIdForCombo;
-          const userCombo = this.getUserCombo(userId);
-          storedCombo = userCombo.comboCount;
-        }
-
-        this.showAnimation(targetElement, targetMessageId, storedCombo);
-      });
-    });
-  }
-
-  /**
-   * Checks if element is valid for animation (more lenient than strict stability)
-   * Allows animation if element is in DOM and has crit class, even if messageId changed slightly
-   * @param {HTMLElement} messageElement - The message DOM element
-   * @param {string} expectedMessageId - Expected message ID for validation
-   * @returns {boolean} True if element is valid for animation
-   */
-  isElementValidForAnimation(messageElement, expectedMessageId) {
-    if (!messageElement?.classList) return false;
-
-    const stillInDOM = messageElement.isConnected;
-    const stillHasCritClass = messageElement.classList.contains('bd-crit-hit');
-
-    // Must be in DOM and have crit class
-    if (!stillInDOM || !stillHasCritClass) return false;
-
-    // If we have an expected messageId, check it (but be lenient)
-    if (expectedMessageId) {
-      const currentMessageId = this.getMessageId(messageElement);
-      // Allow if messageId matches OR if current is null (element might be transitioning)
-      return !currentMessageId || currentMessageId === expectedMessageId;
-    }
-
-    return true;
-  }
-
-  /**
-   * Gets all message elements from the DOM (cached query)
-   * Filters out content-only elements to get actual message containers
-   * @returns {HTMLElement[]} Array of message elements
-   */
-  getCachedMessages() {
-    try {
-      const container = this._cachedMessageContainer || this._findMessageContainer?.() || document;
-      const allMessages = container.querySelectorAll?.('[class*="message"]') || [];
-      const filteredMessages = [];
-      for (const msg of allMessages) {
-        if (!msg?.classList || !msg.offsetParent || !msg.isConnected) continue;
-        let isNotContent = true;
-        for (const className of msg.classList) {
-          (className.includes('messageContent') ||
-            className.includes('messageGroup') ||
-            className.includes('messageText')) &&
-            (isNotContent = false);
-          if (!isNotContent) break;
-        }
-        isNotContent && filteredMessages.push(msg);
-      }
-      return filteredMessages;
-    } catch (error) {
-      this.debugError('GET_CACHED_MESSAGES', error);
-      return [];
-    }
-  }
-
-  /**
-   * Gets the position of an element (center point)
-   * @param {HTMLElement} element - The element to get position for
-   * @returns {Object|null} Position object with x and y coordinates, or null if element not accessible
-   */
-  getElementPosition(element) {
-    try {
-      if (!element || !element.getBoundingClientRect) {
-        return null;
-      }
-      const rect = element.getBoundingClientRect();
-      const position = {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      };
-      return position;
-    } catch (error) {
-      return null;
-    }
-  }
-
-  /**
-   * Finds a message element by its position (fallback when original element is replaced)
-   * Used when Discord replaces message elements but position remains the same
-   * @param {Object} position - Position object with x and y coordinates
-   * @param {string} originalMessageId - Original message ID for exact matching
-   * @returns {HTMLElement|null} Found element or null
-   */
-  findElementByPosition(position, originalMessageId) {
-    const tolerance = 100; // pixels
-    const allMessages = this.getCachedMessages();
-
-    return (
-      allMessages.find((msg) => {
-        try {
-          if (!msg.classList?.contains('bd-crit-hit')) return false;
-
-          const msgPosition = this.getElementPosition(msg);
-          if (!msgPosition) return false;
-
-          const positionDiff =
-            Math.abs(msgPosition.x - position.x) + Math.abs(msgPosition.y - position.y);
-
-          if (positionDiff < tolerance) {
-            const msgId = this.getMessageId(msg);
-            return !originalMessageId || msgId === originalMessageId || !msgId;
-          }
-          return false;
-        } catch (error) {
-          return false;
-        }
-      }) || null
-    );
-  }
-
-  /**
-   * Finds any crit element at a given position (last resort fallback)
-   * Used when message ID is unknown but position is known
-   * @param {Object} position - Position object with x and y coordinates
-   * @returns {HTMLElement|null} Found element or null
-   */
-  findCritElementByPosition(position) {
-    const tolerance = 100;
-    const allMessages = this.getCachedMessages();
-
-    return (
-      allMessages.find((msg) => {
-        try {
-          if (!msg.classList?.contains('bd-crit-hit') || !msg.isConnected) return false;
-
-          const msgPosition = this.getElementPosition(msg);
-          if (!msgPosition) return false;
-
-          const positionDiff =
-            Math.abs(msgPosition.x - position.x) + Math.abs(msgPosition.y - position.y);
-
-          return positionDiff < tolerance;
-        } catch (error) {
-          return false;
-        }
-      }) || null
-    );
-  }
-
-  /**
-   * Marks a message as removed but keeps entry for duplicate detection
-   * Prevents duplicate animations when messages are reprocessed
-   * @param {string} messageId - The message ID to mark as removed
-   */
-  markMessageAsRemoved(messageId) {
-    const existingData = this.animatedMessages.get(messageId);
-    if (existingData?.constructor === Object) {
-      existingData.removed = true;
-      existingData.removedAt = Date.now();
-    }
-  }
-
-  /**
-   * Checks if an animation is a duplicate based on position and timestamp
-   * Handles cases where same logical message gets new messageId after element replacement
-   * @param {string} messageId - The message ID
-   * @param {Object} elementPosition - Position object with x and y coordinates
-   * @param {number} elementTimestamp - Timestamp of the message
-   * @returns {boolean} True if duplicate detected
-   */
-  isDuplicateByPosition(messageId, elementPosition, elementTimestamp) {
-    const positionTolerance = 50; // pixels
-    const timeTolerance = 2000; // ms
-    const currentTime = Date.now();
-
-    return Array.from(this.animatedMessages.entries()).some(([trackedMessageId, trackedData]) => {
-      if (!trackedData || typeof trackedData !== 'object' || !trackedData.position) return false;
-
-      // Clean up old entries
-      const timeSinceTracked = currentTime - trackedData.timestamp;
-      if (timeSinceTracked > timeTolerance) {
-        this.animatedMessages.delete(trackedMessageId);
-        return false;
-      }
-
-      // Check position and timing
-      const positionDiff =
-        Math.abs(trackedData.position.x - elementPosition.x) +
-        Math.abs(trackedData.position.y - elementPosition.y);
-      const timeDiff = elementTimestamp - trackedData.timestamp;
-
-      return positionDiff < positionTolerance && timeDiff < timeTolerance;
-    });
-  }
-
-  /**
-   * Atomically add message to animatedMessages set
-   * Returns true if added, false if already exists
-   */
-  addToAnimatedMessages(messageId, elementPosition, elementTimestamp, contentHash = null) {
-    // Early return if already animated (atomic check)
-    if (this.animatedMessages.has(messageId)) {
-      const existing = this.animatedMessages.get(messageId);
-      // If same content hash, it's a duplicate
-      if (contentHash && existing?.contentHash === contentHash) {
-        return false;
-      }
-    }
-
-    const sizeBefore = this.animatedMessages.size;
-    this.animatedMessages.set(messageId, {
-      position: elementPosition,
-      timestamp: elementTimestamp,
-      messageId: messageId,
-      contentHash: contentHash, // Store content hash for deduplication
-    });
-
-    // Remove from processing lock when successfully added
-    this._processingAnimations.delete(messageId);
-
-    return this.animatedMessages.size > sizeBefore;
-  }
+  // Note: getReactFiber, traverseFiber, getMessageIdentifier, getUserId are defined earlier
 
   // ============================================================================
   // ANIMATION DISPLAY
@@ -10291,22 +9195,6 @@ module.exports = class CriticalHit {
   }
 
   /**
-   * Gets combo count for animation display
-   * @param {HTMLElement} messageElement - Message element
-   * @param {number|null} comboOverride - Optional combo override
-   * @returns {number} Combo count
-   */
-  _getComboForAnimation(messageElement, comboOverride) {
-    if (comboOverride !== null && comboOverride !== undefined) {
-      return comboOverride;
-    }
-
-    const userId = this.getUserId(messageElement) || 'unknown';
-    const userCombo = this.getUserCombo(userId);
-    return userCombo.comboCount || 1;
-  }
-
-  /**
    * Displays the "CRITICAL HIT!" animation with combo count
    * Handles duplicate detection, positioning, and cleanup
    * @param {HTMLElement} messageElement - The message DOM element
@@ -10329,10 +9217,7 @@ module.exports = class CriticalHit {
     // Final safety check - be lenient, just need crit class and DOM presence
     if (!messageElement?.classList || !messageElement.isConnected) {
       // debug stripped
-      if (messageId) {
-        this.animatedMessages.delete(messageId);
-        this._processingAnimations.delete(messageId);
-      }
+      this._clearAnimationTracking(messageId);
       return;
     }
 
@@ -10341,10 +9226,7 @@ module.exports = class CriticalHit {
       // Give it one more frame to get the class
       requestAnimationFrame(() => {
         if (!messageElement.classList?.contains('bd-crit-hit')) {
-          if (messageId) {
-            this.animatedMessages.delete(messageId);
-            this._processingAnimations.delete(messageId);
-          }
+          this._clearAnimationTracking(messageId);
           return;
         }
         // Retry with the same element (pass comboOverride)
@@ -10589,11 +9471,8 @@ module.exports = class CriticalHit {
 
     this._saveUserComboToStorage(key, comboCount, lastCritTime);
 
-    if (combo.timeout) clearTimeout(combo.timeout);
-    combo.timeout &&
-      (this._trackedTimeouts.delete(combo.timeout),
-      clearTimeout(combo.timeout),
-      (combo.timeout = null));
+    this._clearTrackedTimeout(combo.timeout);
+    combo.timeout = null;
     combo.timeout = this._setTrackedTimeout(
       () => this._resetUserComboAfterTimeout(key),
       this.COMBO_RESET_TIMEOUT_MS
@@ -10909,18 +9788,10 @@ module.exports = class CriticalHit {
       // Restore global navigation hooks + disconnect URL observer
       this.teardownChannelChangeListener();
 
-      // CRITICAL: Clear observer throttle timeout to prevent memory leaks
-      if (this._observerThrottleTimeout) {
-        this._trackedTimeouts.delete(this._observerThrottleTimeout);
-        clearTimeout(this._observerThrottleTimeout);
-        this._observerThrottleTimeout = null;
-      }
-
       // OPTIMIZED: Force immediate save before stopping (bypass throttle)
       // Clear any pending throttled save
-      this._saveHistoryThrottle &&
-        (this._trackedTimeouts.delete(this._saveHistoryThrottle),
-        clearTimeout(this._saveHistoryThrottle));
+      this._clearTrackedTimeout(this._saveHistoryThrottle);
+      this._saveHistoryThrottle = null;
       this._saveHistoryPending = false;
       // Save immediately (no throttle on stop - critical for data persistence)
       this.saveMessageHistory();
@@ -10946,19 +9817,8 @@ module.exports = class CriticalHit {
       });
       this._transientObservers && this._transientObservers.clear();
 
-      // CRITICAL: Clear observer throttle timeout to prevent memory leaks
-      if (this._observerThrottleTimeout) {
-        clearTimeout(this._observerThrottleTimeout);
-        this._observerThrottleTimeout = null;
-      }
-
       // Clean up observer cleanup interval
       this._observerCleanupInterval && clearInterval(this._observerCleanupInterval);
-
-      // Clean up save history throttle
-      this._saveHistoryThrottle && clearTimeout(this._saveHistoryThrottle);
-      this._saveHistoryPending = false;
-      this.styleObservers.clear();
 
       // Stop periodic cleanup
       if (this.historyCleanupInterval) {
@@ -10978,8 +9838,7 @@ module.exports = class CriticalHit {
 
       // Clear combo timers
       this.userCombos?.forEach((combo) => {
-        combo?.timeout &&
-          (clearTimeout(combo.timeout), this._trackedTimeouts.delete(combo.timeout));
+        this._clearTrackedTimeout(combo?.timeout);
         combo && (combo.timeout = null);
       });
 
@@ -11238,310 +10097,6 @@ module.exports = class CriticalHit {
   // ============================================================================
   // SETTINGS PANEL EVENT LISTENERS
   // ============================================================================
-
-  /**
-   * Attaches event listeners for basic settings (crit chance, color, font, etc.)
-   * @param {HTMLElement} container - Settings panel container
-   */
-  attachBasicSettingsListeners(container) {
-    // Crit chance slider and input
-    const critChanceSlider = container.querySelector('#crit-chance-slider');
-    const critChanceInput = container.querySelector('#crit-chance');
-    if (critChanceSlider && critChanceInput) {
-      const updateCritChance = (value) => {
-        const numValue = parseFloat(value) || 0;
-        critChanceSlider.value = numValue;
-        critChanceInput.value = numValue;
-        this.updateCritChance(numValue);
-      };
-      critChanceSlider.addEventListener('input', (e) => updateCritChance(e.target.value));
-      critChanceInput.addEventListener('change', (e) => updateCritChance(e.target.value));
-    }
-
-    // Crit color picker
-    const critColorPicker = container.querySelector('#crit-color');
-    if (critColorPicker) {
-      critColorPicker.addEventListener('change', (e) => {
-        this.updateCritColor(e.target.value);
-      });
-    }
-
-    // Crit font selector
-    const critFontSelect = container.querySelector('#crit-font');
-    if (critFontSelect) {
-      critFontSelect.addEventListener('change', (e) => {
-        this.updateCritFont(e.target.value);
-      });
-    }
-
-    // Crit gradient toggle
-    const critGradientCheckbox = container.querySelector('#crit-gradient');
-    if (critGradientCheckbox) {
-      critGradientCheckbox.addEventListener('change', (e) => {
-        this.updateCritGradient(e.target.checked);
-      });
-    }
-
-    // Crit glow toggle
-    const critGlowCheckbox = container.querySelector('#crit-glow');
-    if (critGlowCheckbox) {
-      critGlowCheckbox.addEventListener('change', (e) => {
-        this.updateCritGlow(e.target.checked);
-      });
-    }
-
-    // Crit animation toggle
-    const critAnimationCheckbox = container.querySelector('#crit-animation');
-    if (critAnimationCheckbox) {
-      critAnimationCheckbox.addEventListener('change', (e) => {
-        this.updateCritAnimation(e.target.checked);
-      });
-    }
-
-    // Test crit button
-    const testCritBtn = container.querySelector('#test-crit-btn');
-    if (testCritBtn) {
-      testCritBtn.addEventListener('click', () => {
-        this.testCrit();
-      });
-    }
-  }
-
-  /**
-   * Attaches event listeners for filter settings
-   * @param {HTMLElement} container - Settings panel container
-   */
-  attachFilterListeners(container) {
-    const filterReplies = container.querySelector('#filter-replies');
-    const filterSystem = container.querySelector('#filter-system');
-    const filterBots = container.querySelector('#filter-bots');
-    const filterEmpty = container.querySelector('#filter-empty');
-
-    if (filterReplies) {
-      filterReplies.addEventListener('change', (e) => {
-        this.settings.filterReplies = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    if (filterSystem) {
-      filterSystem.addEventListener('change', (e) => {
-        this.settings.filterSystemMessages = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    if (filterBots) {
-      filterBots.addEventListener('change', (e) => {
-        this.settings.filterBotMessages = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    if (filterEmpty) {
-      filterEmpty.addEventListener('change', (e) => {
-        this.settings.filterEmptyMessages = e.target.checked;
-        this.saveSettings();
-      });
-    }
-  }
-
-  /**
-   * Attaches event listeners for history settings
-   * @param {HTMLElement} container - Settings panel container
-   */
-  attachHistoryListeners(container) {
-    const historyRetentionSlider = container.querySelector('#history-retention-slider');
-    const historyRetentionInput = container.querySelector('#history-retention');
-    const autoCleanupCheckbox = container.querySelector('#auto-cleanup-history');
-
-    if (historyRetentionSlider && historyRetentionInput) {
-      const updateRetention = (value) => {
-        const numValue = Math.max(1, Math.min(90, parseInt(value) || 30));
-        historyRetentionSlider.value = numValue;
-        historyRetentionInput.value = numValue;
-        this.settings.historyRetentionDays = numValue;
-        this.saveSettings();
-      };
-      historyRetentionSlider.addEventListener('input', (e) => updateRetention(e.target.value));
-      historyRetentionInput.addEventListener('change', (e) => updateRetention(e.target.value));
-    }
-
-    if (autoCleanupCheckbox) {
-      autoCleanupCheckbox.addEventListener('change', (e) => {
-        this.settings.autoCleanupHistory = e.target.checked;
-        this.saveSettings();
-        if (e.target.checked) {
-          this.startPeriodicCleanup();
-        } else {
-          if (this.historyCleanupInterval) {
-            clearInterval(this.historyCleanupInterval);
-            this.historyCleanupInterval = null;
-          }
-        }
-      });
-    }
-  }
-
-  /**
-   * Attaches event listeners for animation settings
-   * @param {HTMLElement} container - Settings panel container
-   */
-  attachAnimationListeners(container) {
-    // Animation duration
-    const animationDurationSlider = container.querySelector('#animation-duration-slider');
-    const animationDurationInput = container.querySelector('#animation-duration');
-    if (animationDurationSlider && animationDurationInput) {
-      const updateDuration = (value) => {
-        const numValue = Math.max(1000, Math.min(10000, parseInt(value) || 4000));
-        animationDurationSlider.value = numValue;
-        animationDurationInput.value = numValue;
-        this.settings.animationDuration = numValue;
-        this.saveSettings();
-      };
-      animationDurationSlider.addEventListener('input', (e) => updateDuration(e.target.value));
-      animationDurationInput.addEventListener('change', (e) => updateDuration(e.target.value));
-    }
-
-    // Float distance
-    const floatDistanceSlider = container.querySelector('#float-distance-slider');
-    const floatDistanceInput = container.querySelector('#float-distance');
-    if (floatDistanceSlider && floatDistanceInput) {
-      const updateFloatDistance = (value) => {
-        const numValue = Math.max(50, Math.min(300, parseInt(value) || 150));
-        floatDistanceSlider.value = numValue;
-        floatDistanceInput.value = numValue;
-        this.settings.floatDistance = numValue;
-        this.saveSettings();
-      };
-      floatDistanceSlider.addEventListener('input', (e) => updateFloatDistance(e.target.value));
-      floatDistanceInput.addEventListener('change', (e) => updateFloatDistance(e.target.value));
-    }
-
-    // Font size
-    const fontSizeSlider = container.querySelector('#animation-fontsize-slider');
-    const fontSizeInput = container.querySelector('#animation-fontsize');
-    if (fontSizeSlider && fontSizeInput) {
-      const updateFontSize = (value) => {
-        const numValue = Math.max(24, Math.min(72, parseInt(value) || 36));
-        fontSizeSlider.value = numValue;
-        fontSizeInput.value = numValue;
-        this.settings.fontSize = numValue;
-        this.saveSettings();
-      };
-      fontSizeSlider.addEventListener('input', (e) => updateFontSize(e.target.value));
-      fontSizeInput.addEventListener('change', (e) => updateFontSize(e.target.value));
-    }
-
-    // Screen shake
-    const screenShakeCheckbox = container.querySelector('#screen-shake');
-    if (screenShakeCheckbox) {
-      screenShakeCheckbox.addEventListener('change', (e) => {
-        this.settings.screenShake = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    // Glow pulse
-    const glowPulseCheckbox = container.querySelector('#glow-pulse');
-    if (glowPulseCheckbox) {
-      glowPulseCheckbox.addEventListener('change', (e) => {
-        this.settings.glowPulse = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    // Shake intensity
-    const shakeIntensitySlider = container.querySelector('#shake-intensity-slider');
-    const shakeIntensityInput = container.querySelector('#shake-intensity');
-    if (shakeIntensitySlider && shakeIntensityInput) {
-      const updateShakeIntensity = (value) => {
-        const numValue = Math.max(1, Math.min(10, parseInt(value) || 3));
-        shakeIntensitySlider.value = numValue;
-        shakeIntensityInput.value = numValue;
-        this.settings.shakeIntensity = numValue;
-        this.saveSettings();
-      };
-      shakeIntensitySlider.addEventListener('input', (e) => updateShakeIntensity(e.target.value));
-      shakeIntensityInput.addEventListener('change', (e) => updateShakeIntensity(e.target.value));
-    }
-
-    // Shake duration
-    const shakeDurationSlider = container.querySelector('#shake-duration-slider');
-    const shakeDurationInput = container.querySelector('#shake-duration');
-    if (shakeDurationSlider && shakeDurationInput) {
-      const updateShakeDuration = (value) => {
-        const numValue = Math.max(100, Math.min(500, parseInt(value) || 250));
-        shakeDurationSlider.value = numValue;
-        shakeDurationInput.value = numValue;
-        this.settings.shakeDuration = numValue;
-        this.saveSettings();
-      };
-      shakeDurationSlider.addEventListener('input', (e) => updateShakeDuration(e.target.value));
-      shakeDurationInput.addEventListener('change', (e) => updateShakeDuration(e.target.value));
-    }
-
-    // Show combo
-    const showComboCheckbox = container.querySelector('#show-combo');
-    if (showComboCheckbox) {
-      showComboCheckbox.addEventListener('change', (e) => {
-        this.settings.showCombo = e.target.checked;
-        this.saveSettings();
-      });
-    }
-
-    // Max combo
-    const maxComboSlider = container.querySelector('#max-combo-slider');
-    const maxComboInput = container.querySelector('#max-combo');
-    if (maxComboSlider && maxComboInput) {
-      const updateMaxCombo = (value) => {
-        const numValue = Math.max(10, Math.min(999, parseInt(value) || 999));
-        maxComboSlider.value = numValue;
-        maxComboInput.value = numValue;
-        this.settings.maxCombo = numValue;
-        this.saveSettings();
-      };
-      maxComboSlider.addEventListener('input', (e) => updateMaxCombo(e.target.value));
-      maxComboInput.addEventListener('change', (e) => updateMaxCombo(e.target.value));
-    }
-  }
-
-  /**
-   * Attaches event listeners for debug mode toggle
-   * @param {HTMLElement} container - Settings panel container
-   */
-  attachDebugListeners(container) {
-    const debugCheckbox = container.querySelector('#debug-mode');
-    if (debugCheckbox) {
-      debugCheckbox.addEventListener('change', (e) => {
-        const enabled = e.target.checked;
-        this.updateDebugMode(enabled);
-
-        // Update UI to reflect change
-        const checkboxGroup = debugCheckbox.closest('.crit-checkbox-group');
-        if (checkboxGroup) {
-          checkboxGroup.style.background = enabled
-            ? 'rgba(255, 165, 0, 0.1)'
-            : 'var(--background-modifier-hover)';
-          checkboxGroup.style.border = enabled ? '1px solid rgba(255, 165, 0, 0.3)' : 'transparent';
-
-          const checkboxText = checkboxGroup.querySelector('.crit-checkbox-text');
-          if (checkboxText) {
-            checkboxText.style.fontWeight = enabled ? '600' : '500';
-            checkboxText.style.color = enabled ? 'var(--text-brand)' : 'var(--text-normal)';
-          }
-
-          const description = checkboxGroup.querySelector('.crit-form-description strong');
-          if (description) {
-            description.textContent = enabled
-              ? 'WARNING: Currently enabled - check console for logs'
-              : 'Currently disabled - no console spam';
-            description.style.color = enabled ? 'var(--text-brand)' : 'var(--text-muted)';
-          }
-        }
-      });
-    }
-  }
 
   /**
    * Sets up MutationObserver to update settings panel display

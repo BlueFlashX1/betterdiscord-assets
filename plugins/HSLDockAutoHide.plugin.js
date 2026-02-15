@@ -615,56 +615,6 @@ module.exports = class HSLDockAutoHide {
     this.rail.style.width = `${width}px`;
   }
 
-  getElementTranslate(el) {
-    if (!el || !(el instanceof Element)) return { x: 0, y: 0 };
-    const style = getComputedStyle(el);
-
-    let x = 0;
-    let y = 0;
-
-    const t = (style.translate || "").trim();
-    if (t && t !== "none") {
-      const parts = t.split(/\s+/).filter(Boolean);
-      if (parts.length >= 1) x = Number.parseFloat(parts[0]) || 0;
-      if (parts.length >= 2) y = Number.parseFloat(parts[1]) || 0;
-    }
-
-    if (x === 0 && y === 0) {
-      const m = style.transform;
-      if (m && m !== "none") {
-        if (m.startsWith("matrix3d(")) {
-          const values = m
-            .slice("matrix3d(".length, -1)
-            .split(",")
-            .map((v) => Number.parseFloat(v.trim()));
-          if (values.length === 16) {
-            x = values[12] || 0;
-            y = values[13] || 0;
-          }
-        } else if (m.startsWith("matrix(")) {
-          const values = m
-            .slice("matrix(".length, -1)
-            .split(",")
-            .map((v) => Number.parseFloat(v.trim()));
-          if (values.length === 6) {
-            x = values[4] || 0;
-            y = values[5] || 0;
-          }
-        }
-      }
-    }
-
-    return { x, y };
-  }
-
-  isVisible(el) {
-    if (!el || !(el instanceof Element)) return false;
-    const style = getComputedStyle(el);
-    if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) return false;
-    const rect = el.getBoundingClientRect();
-    return rect.width > 0 && rect.height > 0;
-  }
-
   isAlertNodeActive(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
