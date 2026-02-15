@@ -392,6 +392,7 @@ class DungeonStorageManager {
       },
     });
 
+    this.db = openedDb;
     return this.db;
   }
 
