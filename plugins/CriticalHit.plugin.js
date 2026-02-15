@@ -159,6 +159,7 @@ module.exports = class CriticalHit {
     // Pending crits queue to handle race condition
     this.pendingCrits = new Map(); // Map<messageId, {critSettings, timestamp, channelId}>
     this.maxPendingCrits = 100;
+    this._isApplyingGradient = false; // Re-entrancy guard: prevents infinite MutationObserver→style→observer loops
     // Cache crit history to avoid repeated filter operations
     this._cachedCritHistory = null;
     this._cachedCritHistoryTimestamp = 0;
@@ -995,10 +996,16 @@ module.exports = class CriticalHit {
    */
   applyStyles(element, styles, important = true) {
     if (!element) return;
-    const flag = important ? 'important' : '';
-    Object.entries(styles).forEach(([prop, value]) => {
-      element.style.setProperty(prop, value, flag);
-    });
+    const wasApplying = this._isApplyingGradient;
+    this._isApplyingGradient = true;
+    try {
+      const flag = important ? 'important' : '';
+      Object.entries(styles).forEach(([prop, value]) => {
+        element.style.setProperty(prop, value, flag);
+      });
+    } finally {
+      this._isApplyingGradient = wasApplying;
+    }
   }
 
   /**
@@ -3082,6 +3089,7 @@ module.exports = class CriticalHit {
     const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     const gradientRetryObserver = this._trackTransientObserver(
       new MutationObserver((mutations) => {
+        if (this._isApplyingGradient) return; // Guard against re-entrancy
         const hasStyleMutation = mutations.some(
           (m) =>
             m.type === 'attributes' && (m.attributeName === 'style' || m.attributeName === 'class')
