@@ -9,6 +9,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DEV_DIR="$SCRIPT_DIR/plugins"
 BD_PLUGINS_DIR="$HOME/Library/Application Support/BetterDiscord/plugins"
+BLOCKED_PLUGINS=(
+    "HSLDockNametagBridge.plugin.js"
+    "HSLDockLocalDebug.plugin.js"
+)
 
 echo "🔗 Linking BetterDiscord plugins..."
 echo "   Source: $DEV_DIR"
@@ -27,10 +31,31 @@ if [ ! -d "$DEV_DIR" ]; then
     exit 1
 fi
 
+is_blocked_plugin() {
+    local name="$1"
+    for blocked in "${BLOCKED_PLUGINS[@]}"; do
+        if [[ "$name" == "$blocked" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # Process each plugin
 cd "$DEV_DIR"
 for plugin in *.plugin.js; do
     if [ ! -f "$plugin" ]; then
+        continue
+    fi
+
+    if is_blocked_plugin "$plugin"; then
+        target_path="$BD_PLUGINS_DIR/$plugin"
+        echo "Skipping blocked plugin: $plugin"
+        if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+            echo "  Removing blocked target: $target_path"
+            rm -f "$target_path"
+        fi
+        echo ""
         continue
     fi
 

@@ -4,6 +4,10 @@
 
 PLUGINS_DIR="$HOME/Library/Application Support/BetterDiscord/plugins"
 DISABLED_DIR="$PLUGINS_DIR/disabled"
+BLOCKED_PLUGINS=(
+    "HSLDockNametagBridge.plugin.js"
+    "HSLDockLocalDebug.plugin.js"
+)
 
 if [ ! -d "$DISABLED_DIR" ]; then
     echo "❌ No disabled plugins folder found"
@@ -15,9 +19,22 @@ echo ""
 echo "Available disabled plugins:"
 echo ""
 
+is_blocked_plugin() {
+    local name="$1"
+    for blocked in "${BLOCKED_PLUGINS[@]}"; do
+        if [[ "$name" == "$blocked" ]]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
 # List all disabled plugins
 ls -1 "$DISABLED_DIR"/*.plugin.js 2>/dev/null | while read plugin; do
-    basename "$plugin"
+    plugin_name="$(basename "$plugin")"
+    if ! is_blocked_plugin "$plugin_name"; then
+        echo "$plugin_name"
+    fi
 done
 
 echo ""
@@ -27,8 +44,13 @@ if [ "$plugin_name" = "all" ]; then
     count=0
     for plugin in "$DISABLED_DIR"/*.plugin.js; do
         if [ -f "$plugin" ]; then
+            base_name="$(basename "$plugin")"
+            if is_blocked_plugin "$base_name"; then
+                echo "⏭️  Skipped blocked plugin: $base_name"
+                continue
+            fi
             mv "$plugin" "$PLUGINS_DIR/"
-            echo "✅ Enabled: $(basename "$plugin")"
+            echo "✅ Enabled: $base_name"
             ((count++))
         fi
     done
@@ -36,6 +58,10 @@ if [ "$plugin_name" = "all" ]; then
     echo "✅ Re-enabled $count plugins"
     echo "🔄 Restart Discord to apply changes"
 elif [ -n "$plugin_name" ]; then
+    if is_blocked_plugin "$plugin_name"; then
+        echo "❌ Plugin is blocked and cannot be enabled: $plugin_name"
+        exit 1
+    fi
     disabled_path="$DISABLED_DIR/$plugin_name"
     if [ -f "$disabled_path" ]; then
         mv "$disabled_path" "$PLUGINS_DIR/"

@@ -13,6 +13,10 @@ NC='\033[0m' # No Color
 # Directories
 DEV_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ASSETS_DIR="$DEV_DIR/../betterdiscord-assets"
+BLOCKED_PLUGINS=(
+    "HSLDockNametagBridge.plugin.js"
+    "HSLDockLocalDebug.plugin.js"
+)
 
 # Check if assets directory exists
 if [ ! -d "$ASSETS_DIR" ]; then
@@ -48,6 +52,16 @@ for current_root, dirs, files in os.walk(root):
         except FileNotFoundError:
             pass
 PY
+}
+
+is_blocked_plugin() {
+    local name="$1"
+    for blocked in "${BLOCKED_PLUGINS[@]}"; do
+        if [[ "$name" == "$blocked" ]]; then
+            return 0
+        fi
+    done
+    return 1
 }
 
 # Function to copy plugin
@@ -90,6 +104,11 @@ for plugin in "$DEV_DIR/plugins"/*.plugin.js; do
     if [ -f "$plugin" ]; then
         # Skip backup files
         if [[ "$plugin" != *.backup* ]] && [[ "$plugin" != *.bak* ]]; then
+            plugin_name="$(basename "$plugin")"
+            if is_blocked_plugin "$plugin_name"; then
+                echo -e "${YELLOW}Skipping blocked plugin: $plugin_name${NC}"
+                continue
+            fi
             copy_plugin "$plugin"
         fi
     fi
