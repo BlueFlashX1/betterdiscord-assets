@@ -5893,7 +5893,10 @@ module.exports = class CriticalHit {
           // Fix infinite loop: Check ONLY for the class. The inline style check was too aggressive
           // and caused re-application when DOM structure didn't match perfectly, triggering
           // a MutationObserver loop.
-          const needsRestore = !messageElement.classList.contains('bd-crit-hit');
+          // ALSO check content element class - React may re-render content while keeping wrapper
+          const content = this.findMessageContentElement(messageElement);
+          const contentNeedsRestore = content && !content.classList.contains('bd-crit-text-content');
+          const needsRestore = !messageElement.classList.contains('bd-crit-hit') || contentNeedsRestore;
 
           if (needsRestore) {
             // Use saved critSettings for proper gradient restoration
