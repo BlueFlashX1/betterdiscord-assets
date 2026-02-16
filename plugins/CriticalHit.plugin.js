@@ -108,7 +108,7 @@ module.exports = class CriticalHit {
     // DEFAULT SETTINGS (Merged from CriticalHit + CriticalHitAnimation)
     // ============================================================================
     this.defaultSettings = {
-      enabled: true,
+      enabled: false,
       critChance: 10, // Base crit chance (can be buffed by Agility/Skill Tree up to 50% effective max)
       critColor: '#8a2be2', // Purple baseline to match Solo Leveling gradient fallback paths
       critGradient: true, // Use purple-black gradient with pink glow
