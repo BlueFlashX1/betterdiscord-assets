@@ -3854,10 +3854,21 @@ module.exports = class CriticalHit {
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          // PERF: Deduplicate processing by message element.
+          // Multiple child nodes in the same message may be added at once.
+          const uniqueMessageElements = new Set();
           for (let k = 0; k < addedElements.length; k++) {
-            this.processNode(addedElements[k]);
-            this.checkForRestoration(addedElements[k]);
+            const messageElement = this.findMessageElementForRestoration(addedElements[k]);
+            if (messageElement?.isConnected) {
+              uniqueMessageElements.add(messageElement);
+            }
           }
+
+          uniqueMessageElements.forEach((messageElement) => {
+            // Consolidated processing path
+            this.processNode(messageElement);
+            // checkForRestoration is now triggered inside processNode if node is already processed
+          });
         });
       });
     });
@@ -4152,8 +4163,8 @@ module.exports = class CriticalHit {
       if (this._isStopped) return;
       // Only process nodes that were just added (not existing messages)
 
-      // More flexible message detection
-      let messageElement = null;
+      // Use provided messageElement or identify from node
+      let messageElement = node.hasAttribute?.('data-message-id') || node.classList?.contains('messageListItem') ? node : null;
 
       // OPTIMIZED: Direct matching for message classes
       if (node.classList) {
@@ -4205,11 +4216,16 @@ module.exports = class CriticalHit {
         // But skip if messageId exists and is already processed (to avoid duplicates)
         const shouldProcess =
           messageElement &&
-          (!messageId || // No ID yet - process it (will get ID later)
+          (!messageId || // No ID yet - process it
             !this.processedMessages.has(messageId) || // Has ID and not processed
-            this._isKnownCritMessageId(messageId)); // Has ID but is a known crit - allow re-processing for restoration
+            this._isKnownCritMessageId(messageId)); // Has ID but is a known crit - allow restoration check
 
         if (shouldProcess) {
+          // Perform restoration check if already processed (logic previously in checkForRestoration)
+          if (messageId && this.processedMessages.has(messageId)) {
+             this.checkForRestoration(messageElement, messageId);
+             return;
+          }
           // Skip if channel is still loading (but use shorter delay for better responsiveness)
           if (this.isLoadingChannel) {
             // Only log in verbose mode - this is expected behavior during channel load
@@ -4801,7 +4817,7 @@ module.exports = class CriticalHit {
    * @param {string} author - Author username
    * @returns {Object|null} History entry or null
    */
-  findHistoryEntryForRestoration(
+   findHistoryEntryForRestoration(
     normalizedMsgId,
     pureMessageId,
     channelCrits,
@@ -4809,24 +4825,19 @@ module.exports = class CriticalHit {
     messageContent,
     author
   ) {
-    if (!this.isValidDiscordId(normalizedMsgId)) return null;
+    if (!normalizedMsgId) return null;
 
-    // Check pending queue first
+    // Check pending queue first (O(1))
     const pendingCrit =
       this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
     if (pendingCrit?.channelId === this.currentChannelId) {
       return this._createHistoryEntryFromPending(normalizedMsgId, pendingCrit);
     }
 
-    // Try exact match
-    let historyEntry = this._findEntryByExactId(channelCrits, normalizedMsgId, pureMessageId);
+    // O(1) Lookup using history map
+    let historyEntry = this._historyMap.get(normalizedMsgId) || this._historyMap.get(pureMessageId);
 
-    // Try matching pure IDs
-    if (!historyEntry) {
-      historyEntry = this._findEntryByPureId(channelCrits, normalizedMsgId, pureMessageId);
-    }
-
-    // Try content-based matching
+    // Try content-based matching if no ID match (O(N), but less common)
     if (!historyEntry && contentHash && messageContent && author) {
       historyEntry = this._findEntryByContentHash(channelCrits, contentHash);
 
@@ -4983,14 +4994,11 @@ module.exports = class CriticalHit {
       return true;
     }
 
-    const channelCrits = this.getCritHistory(channelId);
-    if (normalizedMessageId) {
-      const hasIdMatch = channelCrits.some((entry) => {
-        const entryId = this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
-        return !!entryId && (entryId === normalizedMessageId || entryId === pureMessageId);
-      });
-      if (hasIdMatch) return true;
-    }
+    // Use O(1) map lookup instead of O(N) scan
+    const historyEntry = (normalizedMessageId && this._historyMap.get(normalizedMessageId)) ||
+                         (pureMessageId && this._historyMap.get(pureMessageId));
+
+    if (historyEntry?.isCrit) return true;
 
     const content = this.findMessageContentElement(messageElement);
     const authorId = this.getAuthorId(messageElement);
@@ -5045,15 +5053,12 @@ module.exports = class CriticalHit {
   }
 
   _isKnownCritMessageId(messageId) {
-    const normalizedId = this.normalizeId(messageId) || this.extractPureDiscordId(messageId);
+    const normalizedId = this.normalizeId(messageId);
     if (!normalizedId) return false;
-    const pureId = this.extractPureDiscordId(normalizedId) || normalizedId;
 
-    const allCrits = this.getCritHistory();
-    return allCrits.some((entry) => {
-      const entryId = this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
-      return !!entryId && (entryId === normalizedId || entryId === pureId);
-    });
+    // Use O(1) history map lookup instead of O(N) history scan
+    const entry = this._historyMap.get(normalizedId);
+    return !!(entry && entry.isCrit);
   }
 
   _hasActiveCritStyling(messageElement) {
@@ -5121,237 +5126,56 @@ module.exports = class CriticalHit {
    * Handles race conditions with pending crits queue and throttling
    * @param {Node} node - DOM node to check
    */
-  checkForRestoration(node) {
-    // Check if a newly added node is a message that should have a crit restored
+  checkForRestoration(node, providedMsgId = null) {
     if (!this.currentChannelId || this.isLoadingChannel) return;
 
-    // Find message element and throttle
-    const messageElement = this.findMessageElementForRestoration(node);
-    if (messageElement) {
-      const msgId = this.getMessageIdentifier(messageElement);
-      if (msgId && this.shouldThrottleRestorationCheck(String(msgId).trim())) {
-        return;
-      }
+    // Re-use identified message element if possible, otherwise find it
+    const messageElement = (node?.hasAttribute?.('data-message-id') || node?.classList?.contains('messageListItem'))
+        ? node
+        : this.findMessageElementForRestoration(node);
+
+    if (!messageElement) return;
+
+    const msgId = providedMsgId || this.getMessageIdentifier(messageElement);
+    if (!msgId) return;
+
+    const normalizedMsgId = String(msgId).trim();
+    if (this.shouldThrottleRestorationCheck(normalizedMsgId)) {
+      return;
     }
 
-    // Invalidate cache before checking to ensure we see latest history
-    // This fixes race condition where restoration checks happen before crit is added
-    this._cachedCritHistory = null;
-    this._cachedCritHistoryTimestamp = null;
+    // Skip hash IDs (unsent/pending messages)
+    if (normalizedMsgId.startsWith('hash_')) return;
 
-    // messageElement already found above for throttling, reuse it
+    // O(1) Lookup using history map
+    const pureMessageId = this.extractPureDiscordId(normalizedMsgId) || normalizedMsgId;
+    const historyEntry = this._historyMap.get(normalizedMsgId) || this._historyMap.get(pureMessageId);
 
-    if (messageElement) {
-      // Get message ID using improved extraction (only log if verbose)
-      let msgId = this.getMessageIdentifier(messageElement);
-
-      if (msgId) {
-        // Check if this message should have a crit
-        const channelCrits = this.getCritHistory(this.currentChannelId);
-        const normalizedMsgId = String(msgId).trim();
-
-        // Skip hash IDs (unsent/pending messages) - they shouldn't be restored
-        if (normalizedMsgId.startsWith('hash_')) {
-          return; // Don't restore hash IDs
-        }
-
-        // Extract pure Discord message ID if in composite format
-        const pureMessageId = this.extractPureDiscordId(normalizedMsgId) || normalizedMsgId;
-
-        // Calculate content hash for matching
-        const messageContent = messageElement.textContent?.trim() || '';
-        const author =
-          messageElement.querySelector('[class*="username"]')?.textContent?.trim() ||
-          messageElement.querySelector('[class*="author"]')?.textContent?.trim() ||
-          '';
-        const timestamp = messageElement.querySelector('time')?.getAttribute('datetime') || '';
-        const contentHash = this.calculateContentHash(author, messageContent, timestamp);
-
-        this.debug.verbose &&
-          this.debugLog('CHECK_FOR_RESTORATION', 'Checking if message needs restoration', {
-            msgId: normalizedMsgId,
-            pureMessageId: pureMessageId !== normalizedMsgId ? pureMessageId : undefined,
-            channelId: this.currentChannelId,
-            channelCritCount: channelCrits.length,
-          });
-
-        // Find history entry using helper function
-        const historyEntry = this.findHistoryEntryForRestoration(
-          normalizedMsgId,
-          pureMessageId,
-          channelCrits,
-          contentHash,
-          messageContent,
-          author
-        );
-
-        const isValidDiscordId = this.isValidDiscordId(normalizedMsgId);
-
-        if (historyEntry?.critSettings) {
-          const needsRestore = this.shouldRestoreCritVisuals(
-            messageElement,
-            historyEntry.critSettings
-          );
-          if (needsRestore) {
-            this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
-          }
-        } else if (!historyEntry && isValidDiscordId) {
-          // For messages that already have crit class or are pending crit,
-          // allow the MutationObserver path to catch the animation trigger.
-          // Only skip if message is definitely not a crit candidate.
-          const pendingHint =
-            this.pendingCrits.has(normalizedMsgId) ||
-            this.pendingCrits.has(pureMessageId) ||
-            (!!contentHash && this.pendingCrits.has(contentHash));
-          const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
-
-          if (!pendingHint && !hasCritClass) {
-            // Not pending and no crit class — skip observer setup
-            return;
-          }
-
-          // Use MutationObserver instead of polling setTimeout
-          // Watch for when message gets crit class (indicating crit was detected) or when element is replaced
-          const checkForCrit = () => {
-            // Re-query element in case Discord replaced it
-            const retryElement = this.requeryMessageElement(normalizedMsgId);
-
-            if (!retryElement || !retryElement.isConnected) return false;
-
-            // Check pending queue first (fastest path)
-            // Try multiple matching strategies:
-            // 1. Direct message ID match (real ID)
-            // 2. Pure message ID match (without normalization)
-            // 3. Content hash match (for queued messages that got real IDs)
-            let pendingCrit =
-              this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
-
-            // If not found by ID, try content-based matching (for queued messages)
-            if (!pendingCrit && retryElement) {
-              const content = this.findMessageContentElement(retryElement);
-              const author = this.getAuthorId(retryElement);
-              content &&
-                author &&
-                (pendingCrit = this.pendingCrits.get(
-                  this.calculateContentHash(author, content.textContent?.trim() || '')
-                ));
-            }
-
-            if (pendingCrit?.channelId === this.currentChannelId) {
-              // Found in pending queue!
-              const pendingEntry = {
-                messageId: normalizedMsgId,
-                channelId: this.currentChannelId,
-                isCrit: true,
-                critSettings: pendingCrit.critSettings,
-                messageContent: pendingCrit.messageContent,
-                author: pendingCrit.author,
-              };
-              this.performCritRestoration(pendingEntry, normalizedMsgId, messageElement);
-              return true;
-            }
-
-            // Check if element now has crit class (crit was detected)
-            if (retryElement?.classList?.contains('bd-crit-hit')) {
-              // Invalidate cache and check history
-              this._cachedCritHistory = null;
-              this._cachedCritHistoryTimestamp = null;
-              const retryChannelCrits = this.getCritHistory(this.currentChannelId);
-
-              const retryHistoryEntry = retryChannelCrits.find((entry) => {
-                const entryId = this.normalizeId(entry.messageId);
-                if (!entryId || entryId.startsWith('hash_')) return false;
-                return entryId === normalizedMsgId || entryId === pureMessageId;
-              });
-
-              if (retryHistoryEntry?.critSettings) {
-                this.performCritRestoration(retryHistoryEntry, normalizedMsgId, messageElement);
-                return true;
-              }
-            }
-
-            return false;
-          };
-
-          // Initial check
-          if (checkForCrit()) {
-            return; // Already found, no need to observe
-          }
-
-          // OPTIMIZED: Set up MutationObserver with throttling
-          const parentContainer = messageElement?.parentElement || document.body;
-          let lastRestorationCheck = 0;
-
-          const restorationObserver = this._trackTransientObserver(
-            new MutationObserver((mutations) => {
-              const now = Date.now();
-              // Throttle: Skip if checked recently
-              if (now - lastRestorationCheck < this.RESTORATION_CHECK_THROTTLE_MS) return;
-              lastRestorationCheck = now;
-
-              const hasRelevantMutation = mutations.some((m) => {
-                // Check for class changes (crit class added)
-                if (m.type === 'attributes' && m.attributeName === 'class') {
-                  const target = m.target;
-                  if (
-                    target.classList?.contains('bd-crit-hit') ||
-                    target.querySelector?.('[class*="message"]')?.classList?.contains('bd-crit-hit')
-                  ) {
-                    return true;
-                  }
-                }
-                // Check for child additions (element replaced)
-                if (m.type === 'childList' && m.addedNodes.length) {
-                  return Array.from(m.addedNodes).some((node) => {
-                    if (node.nodeType !== Node.ELEMENT_NODE) return false;
-                    const id = this.getMessageIdentifier(node);
-                    return id === normalizedMsgId || String(id).includes(normalizedMsgId);
-                  });
-                }
-                return false;
-              });
-
-              if (hasRelevantMutation) {
-                // Use requestAnimationFrame to batch checks
-                requestAnimationFrame(() => {
-                  if (checkForCrit()) {
-                    this._disconnectTransientObserver(restorationObserver);
-                  }
-                });
-              }
-            })
-          );
-
-          restorationObserver.observe(parentContainer, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class'],
-          });
-
-          // Cleanup observer after timeout
-          this._setTrackedTimeout(
-            () => this._disconnectTransientObserver(restorationObserver),
-            this.RESTORATION_OBSERVER_TIMEOUT_MS
-          );
-        }
-      } else {
-        // Only log non-matches if verbose (reduces spam)
-        this.debug.verbose &&
-          this.debugLog('CHECK_FOR_RESTORATION', 'No matching crit found in history', {
-            channelId: this.currentChannelId,
-          });
+    if (historyEntry?.critSettings) {
+      const needsRestore = this.shouldRestoreCritVisuals(messageElement, historyEntry.critSettings);
+      if (needsRestore) {
+        this.performCritRestoration(historyEntry, normalizedMsgId, messageElement);
       }
-    } else {
-      // Only log this warning in verbose mode - it's normal for some elements to not have message IDs yet
-      this.debug?.verbose &&
-        this.debugLog(
-          'CHECK_FOR_RESTORATION',
-          'WARNING: Could not get message ID for restoration check',
-          {
-            channelId: this.currentChannelId,
-          }
-        );
+      return;
+    }
+
+    // No direct history match, check pending queue
+    const pendingCrit = this.pendingCrits.get(normalizedMsgId) || this.pendingCrits.get(pureMessageId);
+    if (pendingCrit && pendingCrit.channelId === this.currentChannelId) {
+       this.performCritRestoration(
+         this._createHistoryEntryFromPending(normalizedMsgId, pendingCrit),
+         normalizedMsgId,
+         messageElement
+       );
+       return;
+    }
+
+    // Fallback: search by content (O(N) history scan, but only if ID lookup fails)
+    const hasCritClass = messageElement.classList?.contains('bd-crit-hit');
+    if (hasCritClass) {
+        // Element already has crit class - we just need to ensure styles are attached.
+        // If we don't have history and it's not pending, it might be a session orphan.
+        this.applyCritStyle(messageElement);
     }
   }
 
