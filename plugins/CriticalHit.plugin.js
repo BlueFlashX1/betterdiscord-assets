@@ -1583,36 +1583,7 @@ module.exports = class CriticalHit {
    * Used for restoration of crit styles when channel loads
    * @returns {Array<HTMLElement>} Array of unique message elements
    */
-  _findMessagesInDOM() {
-    try {
-      const allMessages = [];
-      const seenIds = new Set();
 
-      // FUNCTIONAL: Use flatMap to flatten all selectors into single array
-      const elements = this.MESSAGE_SELECTORS.flatMap((selector) =>
-        Array.from(document.querySelectorAll(selector))
-      );
-
-      // FUNCTIONAL: Use forEach to process elements
-      elements.forEach((el) => {
-        const msgId = this._getMessageIdFromElement(el);
-
-        if (msgId && !seenIds.has(msgId)) {
-          seenIds.add(msgId);
-          allMessages.push(el);
-        } else if (!msgId && !allMessages.includes(el)) {
-          // Include elements without IDs but avoid duplicates
-          allMessages.push(el);
-        }
-      });
-
-      // Remove duplicates by element reference
-      return Array.from(new Set(allMessages));
-    } catch (error) {
-      this.debugError('FIND_MESSAGES_IN_DOM', error);
-      return [];
-    }
-  }
 
   /**
    * Delay before re-initializing observer after channel change (ms)
@@ -2874,269 +2845,68 @@ module.exports = class CriticalHit {
    * @param {string} channelId - The channel ID to restore crits for
    * @param {number} retryCount - Internal retry counter for failed restorations
    */
+  /**
+   * Restores critical hit styles for messages in the current channel
+   * OPTIMIZED: Uses O(1) targeted lookup via data-message-id rather than scanning all DOM nodes.
+   * Eliminates synchronous DOM scanning and fiber traversal overhead during batch restoration.
+   * @param {string} channelId - The channel ID to restore
+   * @param {number} retryCount - Retry attempt number
+   */
   restoreChannelCrits(channelId, retryCount = 0) {
-    try {
-      this.debugLog('RESTORE_CHANNEL_CRITS', 'CRITICAL: Starting restoration process', {
-        channelId,
-        retryCount,
-        currentChannelId: this.currentChannelId,
-        historySize: this.messageHistory.length,
-        totalCritsInHistory: this.getCritHistory().length,
-      });
+    if (this._isStopped) return;
 
-      // Restore crits for this channel from history
-      if (!channelId) {
-        this.debugLog('RESTORE_CHANNEL_CRITS', 'ERROR: No channel ID provided for restoration');
-        return;
-      }
-
-      const channelCrits = this.getCritHistory(channelId);
-      if (!channelCrits.length) {
-        this.debugLog(
-          'RESTORE_CHANNEL_CRITS',
-          'WARNING: No crits found in history for this channel',
-          {
-            channelId,
-            totalCritsInHistory: this.getCritHistory().length,
-            allChannelIds: [...new Set(this.messageHistory.map((e) => e.channelId))],
-          }
-        );
-        return;
-      }
-
-      // Only log in verbose mode - summary logs below provide enough info
-      this.debug?.verbose &&
-        this.debugLog('RESTORE_CHANNEL_CRITS', 'SUCCESS: Found crits to restore from history', {
-          critCount: channelCrits.length,
-          attempt: retryCount + 1,
-          channelId: channelId,
-          sampleCritIds: channelCrits.slice(0, 5).map((e) => e.messageId),
-          allCritIds: channelCrits.map((e) => e.messageId),
-        });
-      // Only log in verbose mode - this appears during restoration
-      this.debug?.verbose &&
-        this.debugLog(
-          'RESTORE_CHANNEL_CRITS_START',
-          `Restoring ${channelCrits.length} crits for channel ${channelId} (attempt ${
-            retryCount + 1
-          })`
-        );
-
-      // Create a Set of message IDs that should have crits (normalize to strings)
-      const critMessageIds = new Set(
-        channelCrits.map((entry) => this.normalizeId(entry.messageId)).filter(Boolean)
-      );
-      let restoredCount = 0;
-      let skippedAlreadyStyled = 0;
-      let noIdFound = 0;
-      let idMismatch = 0;
-      const foundIds = new Set();
-
-      // Find all messages in DOM
-      const uniqueMessages = this._findMessagesInDOM();
-
-      // Only log in verbose mode - this appears during restoration
-      this.debug?.verbose &&
-        this.debugLog('RESTORE_CHANNEL_CRITS', 'Found messages in channel', {
-          messageCount: uniqueMessages.length,
-          expectedCrits: channelCrits.length,
-          expectedIds: Array.from(critMessageIds).slice(0, 10), // First 10 for debugging
-        });
-
-      uniqueMessages.forEach((msgElement) => {
-        try {
-          // Skip if already has crit styling (efficient check - avoids unnecessary processing)
-          if (msgElement?.classList?.contains('bd-crit-hit')) {
-            skippedAlreadyStyled++;
-            // Mark as processed to skip future checks
-            const msgId = this.getMessageIdentifier(msgElement);
-            msgId && this.processedMessages.add(msgId);
-            return;
-          }
-
-          // Try multiple methods to get message ID (don't log every extraction - too verbose)
-          let msgId = this.getMessageIdentifier(msgElement);
-
-          // If no ID found, try alternative methods
-          if (!msgId) {
-            // Try React fiber
-            try {
-              const reactKey = Object.keys(msgElement).find(
-                (key) => key.startsWith('__reactFiber') || key.startsWith('__reactInternalInstance')
-              );
-              if (reactKey) {
-                // FUNCTIONAL: Fiber traversal (while loop)
-                let fiber = msgElement[reactKey];
-                let depth = 0;
-                while (fiber && depth < 20 && !msgId) {
-                  msgId = fiber.memoizedProps?.message?.id || fiber.memoizedState?.message?.id;
-                  msgId && (msgId = String(msgId));
-                  fiber = fiber.return;
-                  depth++;
-                }
-              }
-            } catch (e) {
-              // React access failed, continue
-            }
-          }
-
-          if (!msgId) {
-            noIdFound++;
-            // Try alternative ID methods for debugging
-            const altId =
-              msgElement.getAttribute('data-list-item-id') ||
-              msgElement.getAttribute('id') ||
-              msgElement.closest('[data-list-item-id]')?.getAttribute('data-list-item-id');
-            altId && !foundIds.has(String(altId)) && foundIds.add(String(altId));
-            return;
-          }
-
-          foundIds.add(msgId);
-          const normalizedMsgId = this.normalizeId(msgId);
-          const pureMessageId = this.extractPureDiscordId(normalizedMsgId) || normalizedMsgId;
-
-          // Match message to crit entry
-          const matchedEntry = this.matchCritToMessage(
-            normalizedMsgId,
-            pureMessageId,
-            channelCrits
-          );
-
-          if (matchedEntry?.critSettings) {
-            // Restore crit using helper function
-            const success = this.restoreSingleCrit(
-              msgElement,
-              matchedEntry,
-              normalizedMsgId,
-              retryCount
-            );
-            if (success) {
-              restoredCount++;
-              // Mark as processed to skip future checks (efficiency)
-              this.processedMessages.add(normalizedMsgId);
-            }
-          } else {
-            idMismatch++;
-            // Only log mismatch if we have a pure Discord ID (not hash) to reduce noise
-            // Hash IDs are expected to not match most of the time
-            // Only log mismatches if verbose (reduces spam)
-            if (
-              (this.isValidDiscordId(normalizedMsgId) || this.isValidDiscordId(pureMessageId)) &&
-              this.debug.verbose
-            ) {
-              this.debugLog('RESTORE_CHANNEL_CRITS', 'No matching entry found for message', {
-                msgId: normalizedMsgId,
-                pureMessageId: pureMessageId !== normalizedMsgId ? pureMessageId : undefined,
-                foundMatchedEntry: !!matchedEntry,
-                hasCritSettings: !!matchedEntry?.critSettings,
-                expectedIdsSample: Array.from(critMessageIds).slice(0, 3),
-              });
-            }
-          }
-        } catch (error) {
-          this.debugError('RESTORE_CHANNEL_CRITS', error, { phase: 'restore_single_message' });
-        }
-      });
-
-      // Enhanced debugging
-      const successRate =
-        channelCrits.length > 0 ? ((restoredCount / channelCrits.length) * 100).toFixed(1) : 0;
-      const missingCount = channelCrits.length - restoredCount;
-
-      // Only show detailed missing IDs if there are few missing (likely a real issue)
-      // If many are missing, they're probably just not visible
-      const showMissingDetails = missingCount <= 5;
-
-      // Only show detailed summary if restoration failed or in verbose mode
-      // Successful restorations are less verbose
-      const shouldShowDetailedSummary = restoredCount < channelCrits.length || this.debug?.verbose;
-
-      if (shouldShowDetailedSummary) {
-        this.debugLog(
-          'RESTORE_CHANNEL_CRITS',
-          restoredCount === channelCrits.length
-            ? 'SUCCESS: Restoration completed successfully'
-            : missingCount > 10
-            ? 'WARNING: Restoration summary (many messages not visible - scroll to restore)'
-            : 'WARNING: Restoration summary (incomplete)',
-          {
-            restored: restoredCount,
-            total: channelCrits.length,
-            successRate: `${successRate}%`,
-            ...(this.debug?.verbose && {
-              skippedAlreadyStyled,
-              noIdFound,
-              idMismatch,
-              foundIdsCount: foundIds.size,
-              expectedIdsCount: critMessageIds.size,
-            }),
-            ...(showMissingDetails && {
-              sampleFoundIds: Array.from(foundIds).slice(0, 5),
-              sampleExpectedIds: Array.from(critMessageIds).slice(0, 5),
-              missingIds: Array.from(critMessageIds)
-                .filter((id) => !foundIds.has(id))
-                .slice(0, 5),
-            }),
-            ...(missingCount > 10 && {
-              note: 'Many messages not found - likely scrolled out of view. Scroll to them to restore crits.',
-            }),
-          }
-        );
-      } else if (restoredCount > 0) {
-        // Brief success log for successful restorations
-        this.debugLog(
-          'RESTORE_CHANNEL_CRITS',
-          `Restored ${restoredCount} of ${channelCrits.length} crits for channel ${channelId}`
-        );
-      }
-
-      // If we didn't restore all crits and haven't retried too many times, try again
-      // Reduced max retries to prevent excessive attempts
-      // Reduced max retries from 5 to 3 to prevent excessive retry spam
-      if (restoredCount < channelCrits.length && retryCount < 3) {
-        const nextRetry = retryCount + 1;
-        // Only log retries if verbose (reduces spam)
-        this.debug.verbose &&
-          this.debugLog('RESTORE_CHANNEL_CRITS', 'Not all crits restored, will retry', {
-            restored: restoredCount,
-            total: channelCrits.length,
-            nextRetry: nextRetry,
-            missingCount: channelCrits.length - restoredCount,
-          });
-        // Set up MutationObserver to retry when new messages are added
-        this.setupRestorationRetryObserver(channelId, nextRetry);
-      } else if (restoredCount < channelCrits.length && retryCount >= 3) {
-        // Final warning after max retries
-        // Note: Messages not currently visible in the viewport cannot be restored
-        // This is expected - Discord only loads visible messages into the DOM
-        this.debugLog(
-          'RESTORE_CHANNEL_CRITS',
-          'WARNING: Max retries reached - some crits may not be restored (messages may be outside viewport)',
-          {
-            restored: restoredCount,
-            total: channelCrits.length,
-            missingCount: channelCrits.length - restoredCount,
-            retryCount,
-            note: 'Messages not currently visible cannot be restored. Scroll to them to restore crits.',
-          }
-        );
-      }
-
-      // Removed automatic retry after delay - prevents excessive retry spam
-      // Messages outside viewport will be restored when user scrolls to them (via checkForRestoration)
-      // if (retryCount === 0 && restoredCount < channelCrits.length) {
-      //   setTimeout(() => {
-      //     if (this.currentChannelId === channelId) {
-      //       this.restoreChannelCrits(channelId, 6);
-      //     }
-      //   }, 5000);
-      // }
-    } catch (error) {
-      this.debugError('RESTORE_CHANNEL_CRITS', error, {
-        channelId,
-        retryCount,
-      });
+    // Normalize channel ID and validate
+    const targetChannelId = channelId || this.currentChannelId || this._getCurrentChannelId();
+    if (!targetChannelId) {
+      this.debugLog('RESTORE_CHANNEL_CRITS', 'ERROR: No channel ID resolved for restoration');
+      return;
     }
+
+    // Filter history for current channel - usually a small number (< 50)
+    const channelCrits = this.getCritHistory(targetChannelId);
+    if (!channelCrits.length) return;
+
+    this.debugLog('RESTORE_CHANNEL_CRITS', `Restoring ${channelCrits.length} crits (Targeted Lookup)`, {
+      channelId: targetChannelId,
+      retryCount,
+    });
+
+    // Process in chunks to ensure zero frame drops, even if history is large
+    const CHUNK_SIZE = 50;
+
+    const processChunk = (startIndex) => {
+      if (this._isStopped) return;
+      // Abort if channel changed since starting (unless it's a specific channelId request)
+      if (channelId && this.currentChannelId !== targetChannelId) return;
+
+      const limit = Math.min(channelCrits.length, startIndex + CHUNK_SIZE);
+      let restoredInChunk = 0;
+
+      for (let i = startIndex; i < limit; i++) {
+        const crit = channelCrits[i];
+        if (!crit || !crit.messageId) continue;
+
+        // O(1) TARGETED LOOKUP
+        // Query directly for the message element by its ID
+        const normalizedId = this.normalizeId(crit.messageId);
+        const messageElement = document.querySelector(`[data-message-id="${normalizedId}"]`);
+
+        if (messageElement) {
+          // Bypass repeated ID extraction by passing known ID
+          this.restoreSingleCrit(messageElement, crit, normalizedId, retryCount);
+          restoredInChunk++;
+        }
+      }
+
+      if (limit < channelCrits.length) {
+        requestIdleCallback(() => processChunk(limit), { timeout: 1000 });
+      } else {
+        this.debugLog('RESTORE_COMPLETE', 'Targeted restoration complete', { total: channelCrits.length });
+      }
+    };
+
+    // Schedule async processing
+    requestIdleCallback(() => processChunk(0), { timeout: 1000 });
   }
 
   /**
