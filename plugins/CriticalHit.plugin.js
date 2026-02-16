@@ -165,6 +165,7 @@ module.exports = class CriticalHit {
     this._cachedCritHistory = null;
     this._cachedCritHistoryTimestamp = 0;
     this._cachedCritHistoryMaxAge = 1000; // 1 second cache validity
+    this._historyMap = new Map(); // O(1) lookup for message history (messageId -> historyEntry)
     // Throttle restoration checks to prevent spam
     this._restorationCheckThrottle = new Map(); // Map<messageId, lastCheckTime>
     this._restorationCheckThrottleMs = 100; // Minimum 100ms between checks for same message
@@ -637,92 +638,27 @@ module.exports = class CriticalHit {
     let extractionMethod = null;
     const currentChannelId = this.currentChannelId || null;
 
-    // Method 1: React fiber traversal (MOST RELIABLE - gets actual message ID from React props)
-    try {
-      const fiber = this.getReactFiber(messageElement);
+    // Method 1: data-message-id attribute (FASTEST - direct DOM attribute)
+    const dataMsgId =
+      messageElement.getAttribute('data-message-id') ||
+      messageElement.querySelector('[data-message-id]')?.getAttribute('data-message-id') ||
+      messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
 
-      if (fiber) {
-        let currentFiber = fiber;
-        for (let i = 0; i < 100 && currentFiber; i++) {
-          // Try message object first (most reliable)
-          const messageObj =
-            currentFiber.memoizedProps?.message ||
-            currentFiber.memoizedState?.message ||
-            currentFiber.memoizedProps?.messageProps?.message ||
-            currentFiber.memoizedProps?.messageProps ||
-            currentFiber.stateNode?.props?.message ||
-            currentFiber.stateNode?.message;
-
-          if (messageObj?.id) {
-            const msgIdStr = String(messageObj.id).trim();
-            if (
-              this.isValidDiscordId(msgIdStr) &&
-              this.isValidMessageId(msgIdStr, currentChannelId)
-            ) {
-              messageId = msgIdStr;
-              extractionMethod = 'react_fiber_message_obj';
-              break;
-            }
-          }
-
-          // Try direct message ID from various props
-          const msgId = this._extractFiberMessageId(currentFiber);
-
-          if (msgId) {
-            const idStr = String(msgId).trim();
-            if (
-              this.isValidDiscordId(idStr) &&
-              this.isValidMessageId(idStr, currentChannelId)
-            ) {
-              messageId = idStr;
-              extractionMethod = 'react_fiber_message_id';
-              break;
-            }
-            const extracted = this.extractPureDiscordId(idStr);
-            if (
-              extracted &&
-              this.isValidMessageId(extracted, currentChannelId)
-            ) {
-              messageId = extracted;
-              extractionMethod = 'react_fiber_extracted';
-              break;
-            }
-          }
-          currentFiber = currentFiber.return;
-        }
-      }
-    } catch (e) {
-      // Silently continue to other methods
-    }
-
-    // Method 2: data-message-id attribute (more specific than data-list-item-id)
-    if (!messageId) {
-      const dataMsgId =
-        messageElement.getAttribute('data-message-id') ||
-        messageElement.querySelector('[data-message-id]')?.getAttribute('data-message-id') ||
-        messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
-      if (dataMsgId) {
-        const idStr = String(dataMsgId).trim();
-        if (
-          this.isValidDiscordId(idStr) &&
-          this.isValidMessageId(idStr, currentChannelId)
-        ) {
-          messageId = idStr;
-          extractionMethod = 'data-message-id';
-        } else {
-          const extracted = this.extractPureDiscordId(idStr);
-          if (
-            extracted &&
-            this.isValidMessageId(extracted, currentChannelId)
-          ) {
-            messageId = extracted;
-            extractionMethod = 'data-message-id_extracted';
-          }
+    if (dataMsgId) {
+      const idStr = String(dataMsgId).trim();
+      if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
+        messageId = idStr;
+        extractionMethod = 'data-message-id';
+      } else {
+        const extracted = this.extractPureDiscordId(idStr);
+        if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
+          messageId = extracted;
+          extractionMethod = 'data-message-id_extracted';
         }
       }
     }
 
-    // Method 3: data-list-item-id attribute (WARNING: Can be channel ID, so validate!)
+    // Method 2: data-list-item-id attribute (FAST - common in Discord list items)
     if (!messageId) {
       const listItemId =
         messageElement.getAttribute('data-list-item-id') ||
@@ -738,6 +674,52 @@ module.exports = class CriticalHit {
             : 'data-list-item-id_extracted';
         }
       }
+    }
+
+    // Method 3: React fiber traversal (RELIABLE but COSTLY - fallback only)
+    if (!messageId) {
+      try {
+        const fiber = this.getReactFiber(messageElement);
+        if (fiber) {
+          let currentFiber = fiber;
+          // PERF: Reduced depth from 100 to 15 — plenty for message context
+          for (let i = 0; i < 15 && currentFiber; i++) {
+            const messageObj =
+              currentFiber.memoizedProps?.message ||
+              currentFiber.memoizedState?.message ||
+              currentFiber.memoizedProps?.messageProps?.message ||
+              currentFiber.memoizedProps?.messageProps ||
+              currentFiber.stateNode?.props?.message ||
+              currentFiber.stateNode?.message;
+
+            if (messageObj?.id) {
+              const msgIdStr = String(messageObj.id).trim();
+              if (this.isValidDiscordId(msgIdStr) && this.isValidMessageId(msgIdStr, currentChannelId)) {
+                messageId = msgIdStr;
+                extractionMethod = 'react_fiber_message_obj';
+                break;
+              }
+            }
+
+            const msgId = this._extractFiberMessageId(currentFiber);
+            if (msgId) {
+              const idStr = String(msgId).trim();
+              if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
+                messageId = idStr;
+                extractionMethod = 'react_fiber_message_id';
+                break;
+              }
+              const extracted = this.extractPureDiscordId(idStr);
+              if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
+                messageId = extracted;
+                extractionMethod = 'react_fiber_extracted';
+                break;
+              }
+            }
+            currentFiber = currentFiber.return;
+          }
+        }
+      } catch (e) {}
     }
 
     // Method 4: Check for id attribute - extract pure message ID from composite formats
@@ -2123,8 +2105,9 @@ module.exports = class CriticalHit {
       .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
       .slice(-this.maxHistorySize);
 
-    // Invalidate cache
+    // Invalidate cache and rebuild map
     this._cachedCritHistory = null;
+    this._rebuildHistoryMap();
     this._trimPerChannelHistory();
   }
 
@@ -2161,8 +2144,21 @@ module.exports = class CriticalHit {
         toRemove.forEach(({ index }) => this.messageHistory.splice(index, 1));
       });
 
-    // Invalidate cache
+    // Invalidate cache and rebuild map
     this._cachedCritHistory = null;
+    this._rebuildHistoryMap();
+  }
+
+  /**
+   * Rebuilds the O(1) history map from the current messageHistory array
+   */
+  _rebuildHistoryMap() {
+    this._historyMap.clear();
+    this.messageHistory.forEach((entry) => {
+      if (entry.messageId) {
+        this._historyMap.set(entry.messageId, entry);
+      }
+    });
   }
 
   // ----------------------------------------------------------------------------
@@ -2321,7 +2317,17 @@ module.exports = class CriticalHit {
         })();
         const loadTime = endTime - startTime;
 
-        this.debugLog('LOAD_MESSAGE_HISTORY', 'SUCCESS: Message history loaded successfully', {
+        // Populate O(1) history map
+      this._historyMap.clear();
+      if (Array.isArray(this.messageHistory)) {
+        this.messageHistory.forEach((entry) => {
+          if (entry.messageId) {
+            this._historyMap.set(entry.messageId, entry);
+          }
+        });
+      }
+
+      this.debugLog('LOAD_MESSAGE_HISTORY', 'SUCCESS: Message history loaded successfully', {
           messageCount: this.messageHistory.length,
           critCount: critCount,
           critsByChannel: critsByChannel,
@@ -2677,6 +2683,9 @@ module.exports = class CriticalHit {
               critSettings: existingEntry.critSettings || historyEntry.critSettings,
             }
           : historyEntry;
+        if (historyEntry.messageId) {
+          this._historyMap.set(historyEntry.messageId, this.messageHistory[existingIndex]);
+        }
         this.debug?.verbose &&
           this.debugLog('ADD_TO_HISTORY', 'Updated existing history entry', {
             index: existingIndex,
@@ -2702,6 +2711,9 @@ module.exports = class CriticalHit {
         }
 
         this.messageHistory.push(historyEntry);
+        if (historyEntry.messageId) {
+          this._historyMap.set(historyEntry.messageId, historyEntry);
+        }
 
         // OPTIMIZED: Smart history trimming with crit prioritization
         this._trimHistoryIfNeeded();
@@ -4148,49 +4160,22 @@ module.exports = class CriticalHit {
       // More flexible message detection
       let messageElement = null;
 
-      // Check if node itself is a message container (not content)
+      // OPTIMIZED: Direct matching for message classes
       if (node.classList) {
-        let hasMessageClass = false;
-        let isNotContent = true;
-        for (const className of node.classList) {
-          className.includes('message') && (hasMessageClass = true);
-          (className.includes('messageContent') ||
-            className.includes('messageGroup') ||
-            className.includes('messageText') ||
-            className.includes('markup')) &&
-            (isNotContent = false);
-          if (hasMessageClass && !isNotContent) break;
-        }
+        const isMsg = node.classList.contains('message-2C84CH') || // Common Discord message class
+                      node.classList.contains('message-36f9Yy') ||
+                      Array.from(node.classList).some(c => c.includes('message') && !c.includes('Content') && !c.includes('Group'));
 
-        if (hasMessageClass && isNotContent && node.offsetParent !== null) {
-          // Check if it has message-like structure
-          const hasContent =
-            node.querySelector('[class*="content"]') ||
-            node.querySelector('[class*="text"]') ||
-            (node.textContent?.trim().length ?? 0) > 0;
-          hasContent && (messageElement = node);
+        if (isMsg && node.offsetParent !== null) {
+          messageElement = node;
         }
       }
 
       // Check for message in children if node itself isn't a message
-      if (!messageElement) {
-        // Look for message containers in children
-        const potentialMessages = node.querySelectorAll?.('[class*="message"]') || [];
-        for (const msg of potentialMessages) {
-          if (!msg?.classList) continue;
-          let isNotContent = true;
-          for (const className of msg.classList) {
-            (className.includes('messageContent') ||
-              className.includes('messageGroup') ||
-              className.includes('messageText')) &&
-              (isNotContent = false);
-            if (!isNotContent) break;
-          }
-          if (isNotContent && msg.offsetParent !== null) {
-            messageElement = msg;
-            break;
-          }
-        }
+      if (!messageElement && node.querySelectorAll) {
+        // PERF: Only search depth 1-2 for messages to avoid heavy recursion
+        messageElement = node.querySelector(':scope > [class*="message"]:not([class*="Content"]):not([class*="Group"])') ||
+                         node.querySelector(':scope > * > [class*="message"]:not([class*="Content"]):not([class*="Group"])');
       }
 
 
@@ -5882,14 +5867,17 @@ module.exports = class CriticalHit {
       // This ensures we use the saved determination if message was already processed
       let historyEntry = null;
       if (messageId) {
-        // Include guild ID in history lookup for accuracy across guilds
-        const guildId = this.currentGuildId || 'dm';
-        historyEntry = this.messageHistory.find(
-          (e) =>
-            e.messageId === messageId &&
-            e.channelId === this.currentChannelId &&
-            (e.guildId || 'dm') === guildId
-        );
+        // O(1) MAP LOOKUP - Replaces O(N) this.messageHistory.find()
+        historyEntry = this._historyMap.get(messageId);
+
+        // Verify entry matches current channel/guild context if needed
+        // (Usually messageId is globally unique in Discord, but we double-check for safety)
+        if (historyEntry) {
+          const guildId = this.currentGuildId || 'dm';
+          const contextMatch = historyEntry.channelId === this.currentChannelId &&
+                               (historyEntry.guildId || 'dm') === guildId;
+          if (!contextMatch) historyEntry = null;
+        }
 
         // If not found in history, check pending queue by content hash
         // This handles queued messages that were detected as crits with hash IDs
