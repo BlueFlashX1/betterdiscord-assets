@@ -3749,7 +3749,6 @@ module.exports = class CriticalHit {
    * Sets up channel change listeners and processes existing messages
    */
   startObserving() {
-    // debug stripped
     if (this._isStopped) return;
     // Stop existing observer if any
     if (this.messageObserver) {
@@ -3758,7 +3757,6 @@ module.exports = class CriticalHit {
     }
 
     const messageContainer = this._findMessageContainer();
-    // debug stripped
 
     if (!messageContainer) {
       this.debug?.verbose &&
@@ -4152,10 +4150,7 @@ module.exports = class CriticalHit {
     scheduleCallback(() => {
     try {
       if (this._isStopped) return;
-      // debug stripped
       // Only process nodes that were just added (not existing messages)
-      // Check if this node was just added by checking if it's in the viewport
-      // and wasn't there before the observer started
 
       // More flexible message detection
       let messageElement = null;
@@ -4171,11 +4166,19 @@ module.exports = class CriticalHit {
         }
       }
 
-      // Check for message in children if node itself isn't a message
-      if (!messageElement && node.querySelectorAll) {
-        // PERF: Only search depth 1-2 for messages to avoid heavy recursion
-        messageElement = node.querySelector(':scope > [class*="message"]:not([class*="Content"]):not([class*="Group"])') ||
-                         node.querySelector(':scope > * > [class*="message"]:not([class*="Content"]):not([class*="Group"])');
+      // IMPROVEMENT: Upward traversal to find message wrapper if node is a child (e.g. content re-render)
+      if (!messageElement && node.parentElement) {
+        messageElement = node.closest('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
+                         node.closest('[class*="messageListItem"]') ||
+                         node.closest('[data-message-id]');
+
+        // Double check it's actually a message wrapper
+        if (messageElement && (
+            messageElement.classList.contains('messageContent') ||
+            messageElement.classList.contains('messageGroup')
+        )) {
+          messageElement = null; // Rejected
+        }
       }
 
 
@@ -4203,7 +4206,8 @@ module.exports = class CriticalHit {
         const shouldProcess =
           messageElement &&
           (!messageId || // No ID yet - process it (will get ID later)
-            !this.processedMessages.has(messageId)); // Has ID and not processed
+            !this.processedMessages.has(messageId) || // Has ID and not processed
+            this._isKnownCritMessageId(messageId)); // Has ID but is a known crit - allow re-processing for restoration
 
         if (shouldProcess) {
           // Skip if channel is still loading (but use shorter delay for better responsiveness)
@@ -4611,6 +4615,8 @@ module.exports = class CriticalHit {
    */
   findMessageElementForRestoration(node) {
     let messageElement = null;
+
+    // Direct check
     if (node.classList) {
       const classes = Array.from(node.classList);
       if (
@@ -4620,7 +4626,23 @@ module.exports = class CriticalHit {
         messageElement = node;
       }
     }
-    if (!messageElement) {
+
+    // Upward traversal (CRITICAL for re-renders)
+    if (!messageElement && node.parentElement) {
+      messageElement = node.closest('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
+                       node.closest('[class*="messageListItem"]') ||
+                       node.closest('[data-message-id]');
+
+      if (messageElement && (
+          messageElement.classList.contains('messageContent') ||
+          messageElement.classList.contains('messageGroup')
+      )) {
+        messageElement = null;
+      }
+    }
+
+    // Downward check (fallback)
+    if (!messageElement && node.querySelectorAll) {
       messageElement = node.querySelector(
         '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])'
       );
@@ -5601,7 +5623,6 @@ module.exports = class CriticalHit {
 
       // Direct animation trigger — bypass the onCritHit/handleCriticalHit gate chain.
       // Crit styling was already applied above; just need to show the floating text.
-      // debug stripped
       {
         const animTarget = messageElement;
         const animId = messageId;
@@ -5628,16 +5649,13 @@ module.exports = class CriticalHit {
                 const critChild = !hasCritOnSelf && currentElement?.isConnected ? currentElement.querySelector?.('.bd-crit-hit') : null;
                 const animElement = hasCritOnSelf ? currentElement : critChild;
 
-                // debug stripped
 
                 // If element is connected and styled (on self or child), animate immediately
                 if (animElement?.isConnected) {
-                  // debug stripped
                   this.showAnimation(animElement, animId, animCombo);
                 } else if (!currentElement?.isConnected || !animElement) {
                   // Element was disconnected (Discord replaced it during hash→real ID transition)
                   // or styling was lost. Retry after a short delay to find the replacement element.
-                  // debug stripped
                   this._setTrackedTimeout(() => {
                     try {
                       // Try to find replacement by message ID first
@@ -5669,7 +5687,6 @@ module.exports = class CriticalHit {
                         }
                       }
 
-                      // debug stripped
                       if (retryElement?.isConnected) {
                         // Re-apply crit styling to the replacement element
                         // applyCritStyle may apply bd-crit-hit to a child wrapper element,
@@ -5682,9 +5699,7 @@ module.exports = class CriticalHit {
                           ? retryElement
                           : retryElement.querySelector('.bd-crit-hit');
 
-                        // debug stripped
                         if (critTarget?.isConnected) {
-                          // debug stripped
                           this.showAnimation(critTarget, animId, animCombo);
                         }
                       }
@@ -5775,7 +5790,6 @@ module.exports = class CriticalHit {
         phase: 'check_for_crit',
         verbose: true,
       }); // Validate message ID is correct (not channel ID)
-      // debug stripped
 
       // Only warn about invalid message IDs if it's NOT a content hash (content hashes are intentional fallbacks)
       const isContentHash = messageId && messageId.startsWith('hash_');
@@ -5858,7 +5872,6 @@ module.exports = class CriticalHit {
       const isHashId = messageId.startsWith('hash_'); // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
       if (isHashId) {
         if (this.handleQueuedMessage(messageId, messageElement)) {
-          // debug stripped
           return;
         }
       }
@@ -5890,7 +5903,6 @@ module.exports = class CriticalHit {
             const contentHash = this.calculateContentHash(author, contentText);
             const pendingCrit = this.pendingCrits.get(contentHash);
 
-            // debug stripped
             if (pendingCrit?.channelId === this.currentChannelId && pendingCrit?.isHashId) {
               // Found a queued message that was detected as crit!
               // BUT: Verify it's actually a crit using the real ID's deterministic roll
@@ -6051,13 +6063,11 @@ module.exports = class CriticalHit {
           }
 
           // Trigger animation for verified crits (has real Discord ID and not already animated)
-          // debug stripped
           if (!alreadyAnimated && isValidDiscordId && messageId) {
             // Direct animation trigger — bypass onCritHit/handleCriticalHit gate chain
             // which has multiple dedup/throttle checks that can block first-time animations.
             // We already confirmed: crit styling applied, user's own message, not already animated.
             const animUserId = this.getUserId(messageElement) || this.getAuthorId(messageElement);
-            // debug stripped
             if (animUserId && this.isOwnMessage(messageElement, animUserId)) {
               const newCombo = this._syncBurstComboForMessage({
                 messageId,
@@ -6078,17 +6088,13 @@ module.exports = class CriticalHit {
                     const rCritChild = !rHasCritOnSelf && target?.isConnected ? target.querySelector?.('.bd-crit-hit') : null;
                     const rAnimTarget = rHasCritOnSelf ? target : rCritChild;
 
-                    // debug stripped
                     if (rAnimTarget?.isConnected) {
-                      // debug stripped
                       this.showAnimation(rAnimTarget, messageId, newCombo);
                     } else if (!target?.isConnected || !rAnimTarget) {
                       // Element was replaced by Discord or class not found — retry after short delay
-                      // debug stripped
                       this._setTrackedTimeout(() => {
                         try {
                           const retryTarget = this.requeryMessageElement(messageId);
-                          // debug stripped
                           if (retryTarget?.isConnected) {
                             this.applyCritStyle(retryTarget);
                             this.critMessages.add(retryTarget);
@@ -6096,7 +6102,6 @@ module.exports = class CriticalHit {
                               ? retryTarget
                               : retryTarget.querySelector('.bd-crit-hit');
                             if (retryCritEl?.isConnected) {
-                              // debug stripped
                               this.showAnimation(retryCritEl, messageId, newCombo);
                             }
                           }
@@ -6525,7 +6530,6 @@ module.exports = class CriticalHit {
 
   applyCritStyle(messageElement) {
     try {
-      // debug stripped
       this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
 
       // FIX: If we received a content element instead of message wrapper, find the parent message element
@@ -6582,7 +6586,6 @@ module.exports = class CriticalHit {
       const content = this.findMessageContentForStyling(actualMessageElement);
 
       if (!content) {
-        // debug stripped
         return;
       }
 
@@ -9371,11 +9374,9 @@ module.exports = class CriticalHit {
    * @param {number|null} comboOverride - Optional combo count override
    */
   showAnimation(messageElement, messageId, comboOverride = null) {
-    // debug stripped
     if (messageId && this.animatedMessages.has(messageId)) {
       const existingData = this.animatedMessages.get(messageId);
       if (!this._shouldAllowAnimation(messageId, messageElement, existingData)) {
-        // debug stripped
         return;
       }
       this.animatedMessages.delete(messageId);
@@ -9385,7 +9386,6 @@ module.exports = class CriticalHit {
 
     // Final safety check - be lenient, just need crit class and DOM presence
     if (!messageElement?.classList || !messageElement.isConnected) {
-      // debug stripped
       this._clearAnimationTracking(messageId);
       return;
     }
@@ -9399,10 +9399,8 @@ module.exports = class CriticalHit {
           return;
         }
         // Retry with the same element (pass comboOverride)
-        // debug stripped
         this.showAnimation(messageElement, messageId, comboOverride);
       });
-      // debug stripped
       return;
     }
 
@@ -9427,7 +9425,6 @@ module.exports = class CriticalHit {
 
     // Check for duplicate animations in DOM
     if (this.hasDuplicateInDOM(container, messageId, position)) {
-      // debug stripped
       return;
     }
 
@@ -9435,13 +9432,11 @@ module.exports = class CriticalHit {
     this.fadeOutExistingAnimations();
 
     // Create animation element
-    // debug stripped
     const textElement = this.createAnimationElement(messageId, combo, position);
     container.appendChild(textElement);
     this.activeAnimations.add(textElement);
     combo > 1 && this._animateComboCountUp(textElement, combo);
     this._scheduleCritVisualRecheck(messageElement, messageId);
-    // debug stripped
 
     // Apply screen shake if enabled - delay to sync with animation becoming visible
     // Animation fades in quickly: 0% (invisible) → 3% (fully visible) = 120ms for 4000ms duration
@@ -9921,7 +9916,6 @@ module.exports = class CriticalHit {
       this.getCurrentUserId();
 
       // Start observing for new messages
-      // debug stripped
       this.startObserving();
 
       // Hook into message send to capture sent messages immediately
