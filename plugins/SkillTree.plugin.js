@@ -2480,21 +2480,14 @@ module.exports = class SkillTree {
         box-shadow: none;
       }
 
-      /* Scrollbar */
+      /* Scrollbar - Hidden but scrollable */
       .skilltree-modal-content::-webkit-scrollbar {
-        width: 10px;
+        width: 0px;
+        background: transparent;
       }
-      .skilltree-modal-content::-webkit-scrollbar-track {
-        background: #0a0a0f;
-        border-radius: 5px;
-      }
-      .skilltree-modal-content::-webkit-scrollbar-thumb {
-        background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
-        border-radius: 5px;
-        border: 2px solid #0a0a0f;
-      }
-      .skilltree-modal-content::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(135deg, #4b0082 0%, #8a2be2 100%);
+      .skilltree-modal-content {
+        scrollbar-width: none;  /* Firefox */
+        -ms-overflow-style: none;  /* IE 10+ */
       }
 
       /* ===== ACTIVE SKILLS SECTION ===== */

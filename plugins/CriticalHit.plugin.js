@@ -3856,10 +3856,30 @@ module.exports = class CriticalHit {
 
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
+          // PERF: Deduplicate processing by message element.
+          // Multiple child nodes in the same message may be added at once.
+          const uniqueMessageElements = new Set();
           for (let k = 0; k < addedElements.length; k++) {
-            this.processNode(addedElements[k]);
-            this.checkForRestoration(addedElements[k]);
+             // Use closest() for robust upward traversal
+             const messageElement = addedElements[k].closest?.('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
+                              addedElements[k].closest?.('[class*="messageListItem"]') ||
+                              addedElements[k].closest?.('[data-message-id]');
+
+            if (messageElement && messageElement.isConnected && !messageElement.classList.contains('messageContent')) {
+              uniqueMessageElements.add(messageElement);
+            } else if (addedElements[k].nodeType === 1 && addedElements[k].isConnected) {
+              // Fallback for nodes that might be messages themselves
+              const isMsg = addedElements[k].classList?.contains('message-2C84CH') ||
+                            addedElements[k].classList?.contains('messageListItem') ||
+                            Array.from(addedElements[k].classList || []).some(c => c.includes('message-') && !c.includes('Content'));
+              if (isMsg) uniqueMessageElements.add(addedElements[k]);
+            }
           }
+
+          uniqueMessageElements.forEach((messageElement) => {
+            this.processNode(messageElement);
+            this.checkForRestoration(messageElement);
+          });
         });
       });
     });
@@ -5027,11 +5047,10 @@ module.exports = class CriticalHit {
     if (!normalizedId) return false;
     const pureId = this.extractPureDiscordId(normalizedId) || normalizedId;
 
-    const allCrits = this.getCritHistory();
-    return allCrits.some((entry) => {
-      const entryId = this.normalizeId(entry.messageId) || this.extractPureDiscordId(entry.messageId);
-      return !!entryId && (entryId === normalizedId || entryId === pureId);
-    });
+    // Use O(1) history map lookup instead of O(N) history scan
+    const entry = (normalizedId && this._historyMap.get(normalizedId)) ||
+                  (pureId && this._historyMap.get(pureId));
+    return !!(entry && entry.isCrit);
   }
 
   _hasActiveCritStyling(messageElement) {
