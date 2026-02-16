@@ -195,7 +195,8 @@ module.exports = (() => {
           return config.info.version;
         }
         load() {
-          BdApi.showConfirmationModal(
+          const showConfirmationModal = BdApi.UI?.showConfirmationModal || BdApi.showConfirmationModal;
+          showConfirmationModal(
             'Library Missing',
             `The library plugin needed for ${config.info.name} is missing. Please click Download Now to install it.`,
             {
@@ -1073,8 +1074,9 @@ module.exports = (() => {
               }
 
               const action = this.settings.commentInsteadOfRemove ? 'comment out' : 'remove';
+              const showConfirmationModal = BdApi.UI?.showConfirmationModal || BdApi.showConfirmationModal;
 
-              BdApi.showConfirmationModal(
+              showConfirmationModal(
                 'Clean Unused Selectors',
                 `This will ${action} ${this.unusedSelectors.length} unused selectors. Backups will be created. Continue?`,
                 {
