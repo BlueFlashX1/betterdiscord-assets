@@ -3070,13 +3070,30 @@ ${childSel} {
       }
     }
 
-    this.rebuildCritMessageStyles();
+    this.rebuildCritMessageStyles(true); // Sync — CSS must be active before Discord re-renders
   }
 
   /**
-   * Rebuilds the combined per-message CSS style block. Debounced via requestAnimationFrame.
+   * Rebuilds the combined per-message CSS style block.
+   * @param {boolean} [immediate=false] - If true, rebuild synchronously (bypasses RAF debounce).
+   *   Use immediate=true for new crit injection so CSS is active before Discord re-renders.
+   *   Use immediate=false (default) for bulk operations like restoration or settings changes.
    */
-  rebuildCritMessageStyles() {
+  rebuildCritMessageStyles(immediate = false) {
+    if (immediate) {
+      // Synchronous path — cancel any pending RAF and rebuild now
+      if (this._critCSSRebuildRAF) {
+        cancelAnimationFrame(this._critCSSRebuildRAF);
+        this._critCSSRebuildRAF = null;
+      }
+      BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.critMessages);
+      if (this.critCSSRules.size > 0) {
+        const allRules = Array.from(this.critCSSRules.values()).join('\n');
+        BdApi.DOM.addStyle(this.CSS_STYLE_IDS.critMessages, allRules);
+      }
+      return;
+    }
+    // Debounced path — batch via requestAnimationFrame
     if (this._critCSSRebuildRAF) return; // Already scheduled
     this._critCSSRebuildRAF = requestAnimationFrame(() => {
       this._critCSSRebuildRAF = null;
@@ -5816,6 +5833,12 @@ ${childSel} {
    * @param {string} author - The author username
    */
   processNonCrit(messageId, authorId, messageContent, author) {
+    // Clean up any stale per-message CSS (e.g., from optimistic processing that rolled crit
+    // but real message didn't, or from hash→real ID transition)
+    if (messageId && !messageId.startsWith('hash_')) {
+      this.removeCritMessageCSS(messageId);
+    }
+
     // Only log non-crit messages in verbose debug mode to reduce console noise
     this.debug?.verbose &&
       this.debugLog('CHECK_FOR_CRIT', 'Non-crit message detected', {
@@ -6059,15 +6082,13 @@ ${childSel} {
             const existingData = this.animatedMessages.get(messageId);
             const timeSinceAnimated = Date.now() - existingData.timestamp;
 
-            // For verified messages, always allow animation (they're confirmed crits)
-            // For non-verified messages, use stricter 2-second window
-            if (isValidDiscordId) {
-              // Verified message - always allow animation (don't set alreadyAnimated)
-              // Remove old entry to allow new animation
-              this.animatedMessages.delete(messageId);
-            } else if (timeSinceAnimated < 2000) {
-              // Non-verified message - use 2-second window
+            // Unified 1.5s cooldown for ALL messages (verified or not).
+            // Prevents double animation during optimistic→real message transition (~500ms).
+            // After 1.5s, allow re-animation (handles scroll restoration).
+            if (timeSinceAnimated < 1500) {
               alreadyAnimated = true;
+            } else {
+              this.animatedMessages.delete(messageId);
             }
           }
 
@@ -6077,19 +6098,15 @@ ${childSel} {
               if (animData?.contentHash === contentHash) {
                 const timeSinceAnimated = Date.now() - animData.timestamp;
 
-                // For verified messages, always allow animation (they're confirmed crits)
-                // For non-verified messages, use stricter 2-second window
-                if (isValidDiscordId) {
-                  // Verified message - always allow animation (remove old entry)
-                  this.animatedMessages.delete(msgId); // Don't set alreadyAnimated - allow the animation
-                  return true; // Found matching content hash, processed it
-                } else if (timeSinceAnimated < 2000) {
-                  // Non-verified message - use 2-second window
-                  // Same content animated recently - skip
+                // Unified 1.5s cooldown — prevents optimistic→real double animation
+                // while allowing restoration after scrolling (>1.5s gap)
+                if (timeSinceAnimated < 1500) {
                   alreadyAnimated = true;
                   return true;
+                } else {
+                  this.animatedMessages.delete(msgId);
+                  return true;
                 }
-                // Content matches but enough time passed - allow retry
               }
               return false;
             });
@@ -6163,7 +6180,12 @@ ${childSel} {
           messageId && this.processedMessages.add(messageId);
           return;
         }
-        // It's NOT a crit - remove crit class only when there is no crit evidence.
+        // It's NOT a crit - clean up any stale per-message CSS rules
+        if (messageId && !messageId.startsWith('hash_')) {
+          this.removeCritMessageCSS(messageId);
+        }
+
+        // Remove crit class only when there is no crit evidence.
         // This prevents transient re-processing from stripping visuals on real crits.
         const hasCritEvidence = this._hasCritEvidenceForMessage(messageElement, messageId);
         const knownCritId = this._isKnownCritMessageId(messageId);
