@@ -651,14 +651,15 @@ module.exports = class SkillTree {
         React.createElement(
           'svg',
           {
-            width: '24',
-            height: '24',
+            width: '20',
+            height: '20',
             viewBox: '0 0 24 24',
             fill: 'none',
             stroke: 'currentColor',
             strokeWidth: '2',
             strokeLinecap: 'round',
             strokeLinejoin: 'round',
+            style: { display: 'block', margin: 'auto' },
           },
           ...svgPaths.map((d, i) => React.createElement('path', { key: i, d }))
         )
@@ -1973,7 +1974,7 @@ module.exports = class SkillTree {
 
   injectCSS() {
     const css = `
-      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
+      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji = 32×32) */
       .st-skill-tree-button-wrapper {
         display: flex;
         align-items: center;
@@ -1982,8 +1983,8 @@ module.exports = class SkillTree {
         box-sizing: border-box;
       }
       .st-skill-tree-button {
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         background: transparent;
         border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 4px;
@@ -1993,7 +1994,7 @@ module.exports = class SkillTree {
         justify-content: center;
         transition: color 0.15s ease, background-color 0.15s ease, border-color 0.15s ease;
         color: var(--interactive-normal, #b9bbbe);
-        padding: 2px;
+        padding: 0;
         margin: 0;
         box-sizing: border-box;
       }
@@ -2007,8 +2008,8 @@ module.exports = class SkillTree {
         border-color: rgba(138, 43, 226, 1);
       }
       .st-skill-tree-button svg {
-        width: 18px;
-        height: 18px;
+        width: 20px;
+        height: 20px;
         display: block;
       }
 

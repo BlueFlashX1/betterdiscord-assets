@@ -286,10 +286,10 @@ module.exports = class SoloLevelingTitleManager {
           {
             className: 'tm-title-icon',
             viewBox: '0 0 24 24',
-            width: '18',
-            height: '18',
+            width: '20',
+            height: '20',
             fill: 'currentColor',
-            style: { display: 'block' },
+            style: { display: 'block', margin: 'auto' },
           },
           React.createElement('path', {
             d: 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z',
@@ -966,7 +966,7 @@ module.exports = class SoloLevelingTitleManager {
     if (document.getElementById(styleId)) return;
 
     const cssContent = `
-      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
+      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji = 32×32) */
       .tm-title-button-wrapper {
         display: flex;
         align-items: center;
@@ -978,8 +978,8 @@ module.exports = class SoloLevelingTitleManager {
         background: transparent;
         border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 4px;
-        width: 24px;
-        height: 24px;
+        width: 32px;
+        height: 32px;
         cursor: pointer;
         color: var(--interactive-normal, #b9bbbe);
         display: flex;
@@ -993,8 +993,8 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-title-button svg {
-        width: 16px;
-        height: 16px;
+        width: 20px;
+        height: 20px;
         transition: color 0.15s ease;
         display: block;
       }
