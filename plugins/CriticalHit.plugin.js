@@ -3362,9 +3362,8 @@ ${childSel} {
         this.applyFontStyles(content);
         this.applyGlowEffect(content, critSettings, useGradient);
 
-        if (critSettings.animation !== false && this.settings?.critAnimation) {
-          content.style.animation = 'critPulse 0.5s ease-in-out';
-        }
+        // NO critPulse animation on restoration — only newly sent messages animate.
+        // Restored crits get styling only (gradient, font, glow) without visual animation.
       }
 
       messageElement.classList.add('bd-crit-hit');
@@ -6067,113 +6066,8 @@ ${childSel} {
             this.critMessages.add(messageElement);
           }
 
-          // Only trigger animation if not already animated (prevent double animation)
-          // Check by message ID first, then content hash with time check
-          const content = this.getCritContentElement(messageElement);
-          const author = this.getAuthorId(messageElement);
-          const contentText = content?.textContent?.trim();
-          const contentHash = this.calculateContentHash(author, contentText);
-
-          // Check if this message was already animated
-          let alreadyAnimated = false;
-
-          // Check by message ID first (fastest check)
-          if (messageId && this.animatedMessages.has(messageId)) {
-            const existingData = this.animatedMessages.get(messageId);
-            const timeSinceAnimated = Date.now() - existingData.timestamp;
-
-            // Unified 1.5s cooldown for ALL messages (verified or not).
-            // Prevents double animation during optimistic→real message transition (~500ms).
-            // After 1.5s, allow re-animation (handles scroll restoration).
-            if (timeSinceAnimated < 1500) {
-              alreadyAnimated = true;
-            } else {
-              this.animatedMessages.delete(messageId);
-            }
-          }
-
-          // Also check by content hash (handles element replacement scenarios)
-          if (!alreadyAnimated && contentHash) {
-            Array.from(this.animatedMessages.entries()).find(([msgId, animData]) => {
-              if (animData?.contentHash === contentHash) {
-                const timeSinceAnimated = Date.now() - animData.timestamp;
-
-                // Unified 1.5s cooldown — prevents optimistic→real double animation
-                // while allowing restoration after scrolling (>1.5s gap)
-                if (timeSinceAnimated < 1500) {
-                  alreadyAnimated = true;
-                  return true;
-                } else {
-                  this.animatedMessages.delete(msgId);
-                  return true;
-                }
-              }
-              return false;
-            });
-          }
-
-          // Trigger animation for verified crits (has real Discord ID and not already animated)
-          // debug stripped
-          if (!alreadyAnimated && isValidDiscordId && messageId) {
-            // Direct animation trigger — bypass onCritHit/handleCriticalHit gate chain
-            // which has multiple dedup/throttle checks that can block first-time animations.
-            // We already confirmed: crit styling applied, user's own message, not already animated.
-            const animUserId = this.getUserId(messageElement) || this.getAuthorId(messageElement);
-            // debug stripped
-            if (animUserId && this.isOwnMessage(messageElement, animUserId)) {
-              const newCombo = this._syncBurstComboForMessage({
-                messageId,
-                messageElement,
-                userId: animUserId,
-              });
-
-              // Mark as combo-updated to prevent double increment
-              this._markComboUpdated(messageId, contentHash);
-
-              // Trigger animation directly after DOM settles
-              requestAnimationFrame(() => {
-                requestAnimationFrame(() => {
-                  try {
-                    let target = this.requeryMessageElement(messageId, messageElement) || messageElement;
-                    // bd-crit-hit may be on target or a child wrapper
-                    const rHasCritOnSelf = target?.classList?.contains('bd-crit-hit');
-                    const rCritChild = !rHasCritOnSelf && target?.isConnected ? target.querySelector?.('.bd-crit-hit') : null;
-                    const rAnimTarget = rHasCritOnSelf ? target : rCritChild;
-
-                    // debug stripped
-                    if (rAnimTarget?.isConnected) {
-                      // debug stripped
-                      this.showAnimation(rAnimTarget, messageId, newCombo);
-                    } else if (!target?.isConnected || !rAnimTarget) {
-                      // Element was replaced by Discord or class not found — retry after short delay
-                      // debug stripped
-                      this._setTrackedTimeout(() => {
-                        try {
-                          const retryTarget = this.requeryMessageElement(messageId);
-                          // debug stripped
-                          if (retryTarget?.isConnected) {
-                            this.applyCritStyle(retryTarget);
-                            this.critMessages.add(retryTarget);
-                            const retryCritEl = retryTarget.classList.contains('bd-crit-hit')
-                              ? retryTarget
-                              : retryTarget.querySelector('.bd-crit-hit');
-                            if (retryCritEl?.isConnected) {
-                              // debug stripped
-                              this.showAnimation(retryCritEl, messageId, newCombo);
-                            }
-                          }
-                        } catch (retryError) {
-                          this.debugError('CHECK_FOR_CRIT', retryError, { phase: 'restore_animation_retry' });
-                        }
-                      }, 150);
-                    }
-                  } catch (error) {
-                    this.debugError('CHECK_FOR_CRIT', error, { phase: 'restore_animation' });
-                  }
-                });
-              });
-            }
-          }
+          // NO animation for restored crits — only newly sent messages trigger animation.
+          // Styling is restored above; animation is exclusively handled by processNewCrit().
 
           // Don't mark as processed again - already in history
           // But mark in processedMessages to skip future checks (efficiency)
