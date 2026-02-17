@@ -153,21 +153,31 @@ module.exports = class ShadowExchange {
 
   patchContextMenu() {
     try {
-      this._unpatchContextMenu = BdApi.ContextMenu.patch("message", (retVal, props) => {
-        const { message, channel } = props;
-        if (!message || !channel) return;
+      this._unpatchContextMenu = BdApi.ContextMenu.patch("message", (tree, props) => {
+        try {
+          const { message, channel } = props;
+          if (!message || !channel) return;
 
-        const item = BdApi.ContextMenu.buildItem({
-          type: "text",
-          label: "Shadow Mark",
-          action: () => this.markMessage(channel, message),
-        });
+          const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+          const item = BdApi.ContextMenu.buildItem({
+            type: "text",
+            label: "Shadow Mark",
+            id: "shadow-exchange-mark",
+            action: () => this.markMessage(channel, message),
+          });
 
-        // Append to end of context menu children
-        retVal.props.children.push(
-          BdApi.ContextMenu.buildItem({ type: "separator" }),
-          item
-        );
+          // tree.props.children may be a flat array or contain nested groups.
+          // Walk to the actual array of menu groups/items.
+          const children = tree?.props?.children;
+          if (Array.isArray(children)) {
+            children.push(separator, item);
+          } else if (children?.props?.children && Array.isArray(children.props.children)) {
+            // Scroller wrapper — push into its children
+            children.props.children.push(separator, item);
+          }
+        } catch (err) {
+          console.error("[ShadowExchange] Context menu callback error:", err);
+        }
       });
     } catch (err) {
       console.error("[ShadowExchange] Context menu patch failed:", err);
@@ -909,14 +919,14 @@ module.exports = class ShadowExchange {
       }
       /* Position based on LPB top/bottom mode */
       .se-swirl-icon[data-lpb-position="top"] {
-        top: 14px;
+        top: 9px;
       }
       .se-swirl-icon[data-lpb-position="bottom"] {
-        bottom: 14px;
+        bottom: 9px;
       }
       /* Fallback if data attribute not set yet — default to top */
       .se-swirl-icon:not([data-lpb-position]) {
-        top: 14px;
+        top: 9px;
       }
       .se-swirl-icon:hover {
         opacity: 1;
