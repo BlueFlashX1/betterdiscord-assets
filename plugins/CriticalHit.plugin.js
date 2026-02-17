@@ -5634,6 +5634,21 @@ ${childSel} {
     roll,
     isValidDiscordId
   ) {
+    // GUARD: If message exists in persisted crit history, it's old — restore style only, no animation.
+    // This catches messages that bypassed _historyMap (ID format mismatch or missing entry)
+    // but ARE in the persisted getCritHistory() array.
+    if (messageId && isValidDiscordId) {
+      const channelCrits = this.getCritHistory(this.currentChannelId);
+      const existingEntry = channelCrits?.find(entry => entry.messageId === messageId);
+      if (existingEntry) {
+        this.applyCritStyleWithSettings(messageElement, existingEntry.critSettings);
+        this.critMessages.add(messageElement);
+        this.processedMessages.add(messageId);
+        this._processingCrits.delete(messageId);
+        return;
+      }
+    }
+
     this.stats.totalCrits++;
     this.updateStats();
 

@@ -2222,13 +2222,14 @@ module.exports = class ShadowArmy {
     }, 600000); // 10 minutes after start
     this._retryTimeouts.add(compressionTimeoutId);
 
-    // Emergency essence conversion (only if army > 5000)
-    const emergencyTimeoutId = setTimeout(() => {
-      this._retryTimeouts.delete(emergencyTimeoutId);
-      if (this._isStopped) return;
-      this.processEmergencyCleanup();
-    }, 900000); // 15 minutes after start
-    this._retryTimeouts.add(emergencyTimeoutId);
+    // REMOVED: No automatic army trimming — user controls army size manually
+    // Emergency essence conversion disabled to prevent shadow loss on restart
+    // const emergencyTimeoutId = setTimeout(() => {
+    //   this._retryTimeouts.delete(emergencyTimeoutId);
+    //   if (this._isStopped) return;
+    //   this.processEmergencyCleanup();
+    // }, 900000); // 15 minutes after start
+    // this._retryTimeouts.add(emergencyTimeoutId);
 
     // Then process every hour
     this.naturalGrowthInterval = setInterval(() => {

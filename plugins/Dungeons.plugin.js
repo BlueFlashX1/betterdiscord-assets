@@ -8392,6 +8392,23 @@ module.exports = class Dungeons {
         if (!dungeon.failedResurrections) dungeon.failedResurrections = 0;
         dungeon.failedResurrections++;
 
+        // Award shadow essence on failed resurrection (1 essence per failure)
+        try {
+          const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy')?.instance;
+          if (shadowArmyPlugin) {
+            if (!shadowArmyPlugin.settings.shadowEssence) {
+              shadowArmyPlugin.settings.shadowEssence = {
+                ...(shadowArmyPlugin.defaultSettings?.shadowEssence || {}),
+              };
+            }
+            shadowArmyPlugin.settings.shadowEssence.essence =
+              (shadowArmyPlugin.settings.shadowEssence.essence || 0) + 1;
+            shadowArmyPlugin.saveSettings();
+          }
+        } catch (essenceError) {
+          this.debugLog?.(`Failed to award shadow essence: ${essenceError.message}`);
+        }
+
         // ANTI-SPAM: Show warning ONCE when mana hits 0, not every 50 failures
         if (!dungeon.lowManaWarningShown && this.settings.userMana === 0) {
           dungeon.lowManaWarningShown = true; // Flag to prevent spam
