@@ -23,7 +23,7 @@ AI MAINTENANCE RULES
 ║  └─────────────────────────────────────────────────────────┘     ║
 ║                                                                  ║
 ║  §1  IMPORTS & VARIABLES .................. @import, :root       ║
-║      └─ ClearVision base, Orbitron font, brand colors, GIF bg   ║
+║      └─ HSL dock, ClearVision base, Orbitron font, colors, bg   ║
 ║                                                                  ║
 ║  §2  ANIMATED WALLPAPER (LOCKED) ......... body::before/::after  ║
 ║      └─ Full-screen GIF background + readability overlay         ║
@@ -155,6 +155,10 @@ AI MAINTENANCE RULES
 ╚══════════════════════════════════════════════════════════════════╝
 */
 
+/* HorizontalServerList — makes the server list a bottom dock */
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
 @import url('https://clearvision.github.io/ClearVision-v7/main.css');
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
@@ -165,6 +169,12 @@ AI MAINTENANCE RULES
    ═══════════════════════════════════════════════════════════ */
 
 :root {
+  /* HorizontalServerList layout */
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+
   /* Core brand colors (used throughout — purple Solo Leveling palette) */
   --main-color: #8a2be2;
   --hover-color: #a855f7;
@@ -940,8 +950,8 @@ section[aria-label="User status and settings"] button[aria-label="Output Options
 
 /* §8a — Server list: solid dark background instead of transparent/blurred
    Targets the <nav> "Servers sidebar" and its inner scrollers/containers.
-   The horizontal layout itself is handled by the HSLDockAutoHide plugin,
-   but this gives it the solid dark surface to sit on */
+   The horizontal layout comes from HorizontalServerList CSS (§1 imports),
+   auto-hide/show from HSLDockAutoHide plugin. This gives the solid dark surface. */
 nav[aria-label="Servers sidebar"],
 nav[aria-label="Servers sidebar"] ul[role="tree"],
 nav[aria-label="Servers sidebar"] [data-list-id="guildsnav"],
