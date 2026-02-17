@@ -1898,6 +1898,10 @@ module.exports = class CriticalHit {
     const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
 
+    // Apply user's font setting (inline style overrides the hardcoded CSS default)
+    const critFont = this.settings?.critFont || this.DEFAULT_CRIT_FONT;
+    textElement.style.fontFamily = critFont;
+
     if (messageId) {
       textElement.setAttribute('data-cha-message-id', messageId);
     }
