@@ -1147,58 +1147,27 @@ module.exports = class CriticalHit {
 
     // Check element's own classes first (fastest check)
     const classes = Array.from(element.classList || []);
-    const hasHeaderClass = classes.some((c) =>
-      this.HEADER_CLASS_PATTERNS.some((pattern) => c.includes(pattern))
-    );
-
-    if (hasHeaderClass) {
-      this.debug?.enabled &&
-        this.debugLog('IS_IN_HEADER_AREA', 'Element has header class', {
-          elementTag: element.tagName,
-          classes: classes,
-        });
+    if (classes.some((c) => this.HEADER_CLASS_PATTERNS.some((pattern) => c.includes(pattern)))) {
       return true;
     }
 
     // Check if element contains username/timestamp/author elements as children
-    const hasUsernameChild = element.querySelector('[class*="username"]') !== null;
-    const hasTimestampChild = element.querySelector('[class*="timestamp"]') !== null;
-    const hasAuthorChild = element.querySelector('[class*="author"]') !== null;
-
-    if (hasUsernameChild || hasTimestampChild || hasAuthorChild) {
-      this.debug?.enabled &&
-        this.debugLog('IS_IN_HEADER_AREA', 'Element contains username/timestamp/author child', {
-          elementTag: element.tagName,
-          hasUsernameChild,
-          hasTimestampChild,
-          hasAuthorChild,
-        });
+    if (
+      element.querySelector('[class*="username"]') ||
+      element.querySelector('[class*="timestamp"]') ||
+      element.querySelector('[class*="author"]')
+    ) {
       return true;
     }
 
     // Check parent chain using selectors
-    const headerParent = this.HEADER_SELECTORS.map((selector) => element.closest(selector)).find(
-      (parent) => parent !== null
-    );
-
-    if (headerParent) {
-      this.debug?.enabled &&
-        this.debugLog('IS_IN_HEADER_AREA', 'Element is in header area', {
-          elementTag: element.tagName,
-          headerParentClasses: Array.from(headerParent.classList || []),
-          headerParentTag: headerParent.tagName,
-        });
+    if (this.HEADER_SELECTORS.some((selector) => element.closest(selector))) {
       return true;
     }
 
     // Check if element's text content looks like a username or timestamp
     const text = element.textContent?.trim() || '';
     if (text.match(/^\d{1,2}:\d{2}$/) || text.length < 3) {
-      this.debug?.enabled &&
-        this.debugLog('IS_IN_HEADER_AREA', 'Element text looks like timestamp/username', {
-          elementTag: element.tagName,
-          text: text,
-        });
       return true;
     }
 
@@ -2938,9 +2907,10 @@ module.exports = class CriticalHit {
    */
   setupGradientRetryObserver(content) {
     const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
+    let isRetrying = false; // Local re-entrancy guard (fixes infinite loop)
     const gradientRetryObserver = this._trackTransientObserver(
       new MutationObserver((mutations) => {
-        if (this._isApplyingGradient) return; // Guard against re-entrancy
+        if (this._isApplyingGradient || isRetrying) return; // Guard against re-entrancy
         const hasStyleMutation = mutations.some(
           (m) =>
             m.type === 'attributes' && (m.attributeName === 'style' || m.attributeName === 'class')
@@ -2948,9 +2918,14 @@ module.exports = class CriticalHit {
 
         if (hasStyleMutation) {
           if (!this.verifyGradientStyles(content)) {
-            // Use applyStyles helper instead of individual setProperty calls
-            const gradientStyles = this.createGradientStyles(gradientColors);
-            this.applyStyles(content, gradientStyles);
+            isRetrying = true;
+            try {
+              const gradientStyles = this.createGradientStyles(gradientColors);
+              this.applyStyles(content, gradientStyles);
+            } finally {
+              // Keep guard up for 1 frame to absorb observer re-fires from our style changes
+              requestAnimationFrame(() => { isRetrying = false; });
+            }
           } else {
             gradientRetryObserver.disconnect();
           }
@@ -3022,46 +2997,37 @@ module.exports = class CriticalHit {
     // Clean up existing observer
     this.styleObservers.has(messageId) && this.styleObservers.get(messageId).disconnect();
 
-    const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     let isApplying = false;
+    let pendingCheckRAF = null; // Dedup RAF — only one pending check per observer
     const checkGradient = () => {
+      pendingCheckRAF = null; // Clear pending flag
       if (isApplying || this._isApplyingGradient) return;
 
       const currentMessageElement = this.requeryMessageElement(messageId);
-      if (!currentMessageElement || !currentMessageElement.isConnected) {
-        if (this.debugMode) console.log(`[CriticalHit:Gradient] Element not connected for ${messageId}`);
-        return;
-      }
+      if (!currentMessageElement || !currentMessageElement.isConnected) return;
 
       isApplying = true;
       try {
-        // Re-apply bd-crit-hit class if Discord replaced the element (new element won't have it)
+        // Re-apply classes if Discord replaced the element (new element won't have them)
         if (!currentMessageElement.classList.contains('bd-crit-hit')) {
-          if (this.debugMode) console.log(`[CriticalHit:Gradient] Re-applying bd-crit-hit class to ${messageId}`);
           currentMessageElement.classList.add('bd-crit-hit');
         }
 
         const currentContent = this.findMessageContentElement(currentMessageElement);
-        if (currentContent) {
-          if (!currentContent.classList.contains('bd-crit-text-content')) {
-            if (this.debugMode) console.log(`[CriticalHit:Gradient] Re-applying bd-crit-text-content class`);
-            currentContent.classList.add('bd-crit-text-content');
-          }
-
-          // Legacy inline style check removed - we trust the CSS class now
-        } else {
-             if (this.debugMode) console.log(`[CriticalHit:Gradient] Content element not found for ${messageId}`);
+        if (currentContent && !currentContent.classList.contains('bd-crit-text-content')) {
+          currentContent.classList.add('bd-crit-text-content');
         }
       } catch (e) {
-        if (this.debugMode) console.error(`[CriticalHit:Gradient] Error in checkGradient:`, e);
+        this.debugError('GRADIENT', `Error in checkGradient:`, e);
       } finally {
-        isApplying = false;
+        // Keep isApplying=true for 1 frame to absorb observer re-fires from our own mutations
+        requestAnimationFrame(() => { isApplying = false; });
       }
     };
 
     const parentContainer = messageElement?.parentElement || document.body;
     const styleObserver = new MutationObserver((mutations) => {
-      if (isApplying) return;
+      if (isApplying || pendingCheckRAF) return; // Skip if applying OR already scheduled
       const hasStyleMutation = mutations.some(
         (m) =>
           m.type === 'attributes' && (m.attributeName === 'style' || m.attributeName === 'class')
@@ -3069,9 +3035,8 @@ module.exports = class CriticalHit {
       const hasChildMutation = mutations.some((m) => m.type === 'childList');
 
       if (hasStyleMutation || hasChildMutation) {
-        requestAnimationFrame(() => {
-          requestAnimationFrame(checkGradient);
-        });
+        // Single RAF (not double) with dedup — prevents cascading RAF chains
+        pendingCheckRAF = requestAnimationFrame(checkGradient);
       }
     });
 
@@ -3106,7 +3071,9 @@ module.exports = class CriticalHit {
 
     const gradientColors = 'linear-gradient(to bottom, #8a2be2 0%, #6b1fb0 50%, #000000 100%)';
     let isRestoring = false;
+    let checkScheduled = false; // Dedup — only one pending check
     const checkAndRestoreGradient = () => {
+      checkScheduled = false;
       if (isRestoring) return true;
       // Re-query to handle element replacement by Discord
       const currentMsg = this.requeryMessageElement(msgId);
@@ -3141,7 +3108,8 @@ module.exports = class CriticalHit {
         }
         return true; // Gradient is applied correctly
       } finally {
-        isRestoring = false;
+        // Keep isRestoring=true for 1 frame to absorb re-fires from our own mutations
+        requestAnimationFrame(() => { isRestoring = false; });
       }
     };
 
@@ -3149,8 +3117,13 @@ module.exports = class CriticalHit {
     const parentContainer = messageElement?.parentElement || document.body;
     const restorationRetryObserver = this._trackTransientObserver(
       new MutationObserver(() => {
-        if (isRestoring) return;
-        checkAndRestoreGradient();
+        if (isRestoring || checkScheduled) return; // Skip if busy or already scheduled
+        checkScheduled = true;
+        requestAnimationFrame(() => {
+          if (checkAndRestoreGradient()) {
+            this._disconnectTransientObserver(restorationRetryObserver);
+          }
+        });
       })
     );
 
@@ -3178,6 +3151,9 @@ module.exports = class CriticalHit {
    * @param {Object} critSettings - Saved crit settings (gradient, font, etc.)
    */
   applyCritStyleWithSettings(messageElement, critSettings) {
+    // Re-entrancy guard — prevent cascade from observers detecting our own DOM mutations
+    if (this._isApplyingGradient) return;
+    this._isApplyingGradient = true;
     try {
       const msgId = this.getMessageIdentifier(messageElement);
       // Only log in verbose mode - this appears for every restored crit
@@ -3253,9 +3229,9 @@ module.exports = class CriticalHit {
         this.applyFontStyles(content);
         this.applyGlowEffect(content, critSettings, useGradient);
 
-        critSettings.animation !== false &&
-          this.settings?.critAnimation &&
-          (content.style.animation = 'critPulse 0.5s ease-in-out');
+        if (critSettings.animation !== false && this.settings?.critAnimation) {
+          content.style.animation = 'critPulse 0.5s ease-in-out';
+        }
       }
 
       messageElement.classList.add('bd-crit-hit');
@@ -3266,62 +3242,25 @@ module.exports = class CriticalHit {
       // Re-get message ID for final verification (in case it wasn't available earlier)
       const finalMsgId = this.getMessageIdentifier(messageElement) || msgId;
 
-      // Final verification of computed styles after restoration
-      const finalComputedStyles = content ? window.getComputedStyle(content) : null;
-      const finalHasGradient = finalComputedStyles?.backgroundImage?.includes('gradient');
-      const finalHasWebkitClip =
-        finalComputedStyles?.webkitBackgroundClip === 'text' ||
-        finalComputedStyles?.backgroundClip === 'text';
-      // Only log in verbose mode - this appears for every restored crit
-      this.debug?.verbose &&
-        this.debugLog(
-          'APPLY_CRIT_STYLE_WITH_SETTINGS',
-          'SUCCESS: Crit style restored successfully from saved settings',
-          {
-            messageId: finalMsgId,
-            channelId: this.currentChannelId,
-            useGradient,
-            elementHasClass: messageElement.classList.contains('bd-crit-hit'),
-            contentHasClass: content.classList.contains('bd-crit-text-content'),
-            finalHasGradient,
-            finalHasWebkitClip,
-            finalStyles: {
-              background: content.style.background,
-              webkitBackgroundClip: content.style.webkitBackgroundClip,
-              webkitTextFillColor: content.style.webkitTextFillColor,
-              textShadow: content.style.textShadow,
-              computedBackgroundImage: finalComputedStyles?.backgroundImage,
-            },
-          }
-        );
-
       // Set up gradient monitoring for persistence
       this.setupGradientMonitoring(messageElement, content, finalMsgId, useGradient);
-      this.diagLog('STYLE_APPLIED', 'Applied crit style from saved settings', {
-        messageId: finalMsgId,
-        mode: useGradient ? 'gradient' : 'solid',
-        expectedColor: expectedVisuals.color,
-        computedColor: finalComputedStyles?.color || null,
-        computedBackgroundImage: finalComputedStyles?.backgroundImage || null,
-      });
 
-      // If gradient still didn't apply, schedule another retry
-      if (content && useGradient && !finalHasGradient) {
-        this.debugLog(
-          'APPLY_CRIT_STYLE_WITH_SETTINGS',
-          'WARNING: Gradient still not applied after restoration, scheduling retry',
-          {
-            finalHasGradient,
-            computedBackgroundImage: finalComputedStyles?.backgroundImage,
-          }
-        );
-        this.setupGradientRestorationRetryObserver(messageElement, content, useGradient);
+      // If gradient still didn't apply, schedule retry
+      if (content && useGradient) {
+        const finalComputedStyles = window.getComputedStyle(content);
+        const finalHasGradient = finalComputedStyles?.backgroundImage?.includes('gradient');
+        if (!finalHasGradient) {
+          this.setupGradientRestorationRetryObserver(messageElement, content, useGradient);
+        }
       }
     } catch (error) {
       this.debugError('APPLY_CRIT_STYLE_WITH_SETTINGS', error, {
         hasMessageElement: !!messageElement,
         hasCritSettings: !!critSettings,
       });
+    } finally {
+      // Release guard after 1 frame to absorb observer re-fires from our own DOM mutations
+      requestAnimationFrame(() => { this._isApplyingGradient = false; });
     }
   }
 
@@ -5078,9 +5017,17 @@ module.exports = class CriticalHit {
   }
 
   _scheduleCritVisualRecheck(messageElement, messageId) {
+    // Dedup: Cancel any pending rechecks for this message before scheduling new ones
+    if (!this._pendingRechecks) this._pendingRechecks = new Map();
+    const existingTimers = this._pendingRechecks.get(messageId);
+    if (existingTimers) {
+      existingTimers.forEach(id => clearTimeout(id));
+    }
+
+    const timers = [];
     const recheckDelays = [120, 420, 900];
     recheckDelays.forEach((delayMs) => {
-      this._setTrackedTimeout(() => {
+      const timerId = this._setTrackedTimeout(() => {
         if (this._isStopped) return;
 
         const requeried = (messageId && this.requeryMessageElement(messageId, messageElement)) || messageElement;
@@ -5108,9 +5055,20 @@ module.exports = class CriticalHit {
           return;
         }
 
-        this.applyCritStyle(critTarget);
+        // CRITICAL: Use _isApplyingGradient guard to prevent cascade
+        // applyCritStyle → DOM change → styleObserver → checkGradient → more DOM changes
+        if (this._isApplyingGradient) return;
+        this._isApplyingGradient = true;
+        try {
+          this.applyCritStyle(critTarget);
+        } finally {
+          // Release guard after 1 frame to absorb observer re-fires
+          requestAnimationFrame(() => { this._isApplyingGradient = false; });
+        }
       }, delayMs);
+      timers.push(timerId);
     });
+    this._pendingRechecks.set(messageId, timers);
   }
 
   /**
@@ -5544,26 +5502,11 @@ module.exports = class CriticalHit {
     messageId && this._processingCrits.add(messageId);
 
     const effectiveCritChance = this.getEffectiveCritChance();
-    this.debugLog('CHECK_FOR_CRIT', 'CRITICAL HIT DETECTED!', {
-      messageId: messageId,
-      authorId: authorId,
-      channelId: this.currentChannelId,
-      messagePreview: messageContent.substring(0, 50),
-      author: author,
-      roll: roll,
-      baseCritChance: this.settings.critChance,
-      effectiveCritChance: effectiveCritChance,
-      totalCrits: this.stats.totalCrits,
-      critRate: this.stats.critRate.toFixed(2) + '%',
-    });
-    this.diagLog('CRIT_DETECTED', 'Critical hit detected for message', {
+    this.diagLog('CRIT_DETECTED', 'Critical hit detected', {
       messageId,
-      authorId,
-      channelId: this.currentChannelId,
       roll,
       effectiveCritChance,
-      isValidDiscordId,
-      messagePreview: (messageContent || '').substring(0, 80),
+      totalCrits: this.stats.totalCrits,
     });
 
     try {
@@ -5796,35 +5739,8 @@ module.exports = class CriticalHit {
       }); // Validate message ID is correct (not channel ID)
       // debug stripped
 
-      // Only warn about invalid message IDs if it's NOT a content hash (content hashes are intentional fallbacks)
-      const isContentHash = messageId && messageId.startsWith('hash_');
-      if (
-        messageId &&
-        !isContentHash &&
-        (!this.isValidDiscordId(messageId) || messageId.length < 17)
-      ) {
-        this.debugLog('CHECK_FOR_CRIT', 'WARNING: Invalid message ID extracted', {
-          messageId,
-          length: messageId?.length,
-          elementId: messageElement.getAttribute('id'),
-          note: 'This might be a channel ID instead of message ID',
-        });
-      }
-
-      this.debug?.verbose &&
-        this.debugLog('CHECK_FOR_CRIT', 'Message detected for crit check', {
-          messageId: messageId || 'unknown',
-          hasElement: !!messageElement,
-          elementValid: !!messageElement?.offsetParent,
-          processedCount: this.processedMessages.size,
-        });
-
       // Reject likely channel IDs unless message metadata strongly supports this candidate
       if (this.shouldRejectChannelMatchedMessageId(messageElement, messageId)) {
-        this.debugLog('CHECK_FOR_CRIT', 'Rejected likely channel ID as message ID', {
-          rejectedId: messageId,
-          currentChannelId: this.currentChannelId,
-        });
         // Try to get real message ID from React fiber
         messageId = null; // Will retry with React fiber traversal
       }
@@ -5852,26 +5768,14 @@ module.exports = class CriticalHit {
             messageId = author
               ? this.calculateContentHash(author, content)
               : this.calculateContentHash(null, content);
-            this.debugLog('CHECK_FOR_CRIT', 'Using content hash as message ID fallback', {
-              messageId,
-              contentPreview: content.substring(0, 50),
-            });
           } else {
-            this.debugLog('CHECK_FOR_CRIT', 'Cannot process message without content or ID');
             return;
           }
         }
       }
 
       // Define isValidDiscordId and isHashId at the top so they're available throughout the method
-      // CRITICAL FIX: Check if messageId exists before calling .startsWith()
-      if (!messageId) {
-        this.debugLog('CHECK_FOR_CRIT', 'Cannot process message without ID', {
-          hasElement: !!messageElement,
-          elementValid: !!messageElement?.offsetParent,
-        });
-        return;
-      }
+      if (!messageId) return;
 
       const isValidDiscordId = this.isValidDiscordId(messageId);
       const isHashId = messageId.startsWith('hash_'); // Handle queued messages (hash IDs) - detect crits but don't apply styling yet
@@ -6232,10 +6136,7 @@ module.exports = class CriticalHit {
         return;
       }
 
-      if (!this.markAsProcessed(messageId)) {
-        this.debugLog('CHECK_FOR_CRIT', 'Message already processed (by ID)', { messageId });
-        return;
-      }
+      if (!this.markAsProcessed(messageId)) return;
 
       // Also mark the content hash as processed to prevent duplicate detection paths
       if (_dedupHash) {
@@ -6243,16 +6144,8 @@ module.exports = class CriticalHit {
       }
 
       // Guard clauses: early returns for invalid states
-      if (this.isLoadingChannel) {
-        this.debugLog('CHECK_FOR_CRIT', 'Channel still loading, skipping');
-        return;
-      }
-
-      if (this.shouldFilterMessage(messageElement)) {
-        // Already marked as processed by markAsProcessed above
-        this.debugLog('CHECK_FOR_CRIT', 'Message filtered out', { messageId });
-        return;
-      }
+      if (this.isLoadingChannel) return;
+      if (this.shouldFilterMessage(messageElement)) return;
 
       // Verify it's actually a message (has some text content)
       const hasText =
@@ -6260,26 +6153,12 @@ module.exports = class CriticalHit {
         messageElement.querySelector('[class*="content"]')?.textContent?.trim().length > 0 ||
         messageElement.querySelector('[class*="text"]')?.textContent?.trim().length > 0;
 
-      if (!hasText) {
-        // Already marked as processed by markAsProcessed above
-        this.debugLog('CHECK_FOR_CRIT', 'Message has no text content', { messageId });
-        return; // Not a real message
-      }
+      if (!hasText) return;
 
       // Calculate crit roll using helper function
       const effectiveCritChance = this.getEffectiveCritChance();
       const roll = this.calculateCritRoll(messageId, messageElement);
       const isCrit = roll <= effectiveCritChance;
-
-      this.debug?.verbose &&
-        this.debugLog('CHECK_FOR_CRIT', 'Checking for crit', {
-          messageId,
-          roll: roll.toFixed(2),
-          baseCritChance: this.settings.critChance,
-          effectiveCritChance,
-          isCrit: roll <= effectiveCritChance,
-          deterministic: !!messageId,
-        });
 
       // Get message info
       const messageContent = messageElement.textContent?.trim() || '';
@@ -6434,10 +6313,6 @@ module.exports = class CriticalHit {
 
     // If messageElement is already a content element, use it directly
     if (this._isContentElement(messageElement) && !this.isInHeaderArea(messageElement)) {
-      this.debugLog('APPLY_CRIT_STYLE', 'Using provided element as content', {
-        elementTag: messageElement.tagName,
-        classes: Array.from(messageElement.classList || []),
-      });
       return messageElement;
     }
 
@@ -6446,11 +6321,6 @@ module.exports = class CriticalHit {
       const elements = messageElement.querySelectorAll(selector);
       const found = Array.from(elements).find((el) => !this.isInHeaderArea(el));
       if (found) {
-        this.debugLog('APPLY_CRIT_STYLE', `Found content via ${selector}`, {
-          elementTag: found.tagName,
-          classes: Array.from(found.classList || []),
-        });
-
         // Check if parent has header elements - if so, find more specific text element
         if (this._parentHasHeaderElements(found)) {
           const textElement = this._findTextElementInContent(found);
@@ -6469,7 +6339,6 @@ module.exports = class CriticalHit {
       }
     }
 
-    this.debugLog('APPLY_CRIT_STYLE', 'Could not find content element in styling pass');
     return this.findMessageContentElement(messageElement);
   }
 
@@ -6543,6 +6412,10 @@ module.exports = class CriticalHit {
   }
 
   applyCritStyle(messageElement) {
+    // Re-entrancy guard — prevent cascade from observers detecting our own DOM mutations
+    if (this._isApplyingGradient) return;
+    this._isApplyingGradient = true;
+
     try {
       // debug stripped
       this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
@@ -6593,10 +6466,6 @@ module.exports = class CriticalHit {
         }
       }
 
-      this.debugLog('APPLY_CRIT_STYLE', 'Finding message content element', {
-        messageElementClasses: Array.from(actualMessageElement.classList || []),
-      });
-
       // Find message content using helper function (now using the correct message element)
       const content = this.findMessageContentForStyling(actualMessageElement);
 
@@ -6629,7 +6498,9 @@ module.exports = class CriticalHit {
           this.applyGlowToContentForStyling(content, useGradient);
 
           // Add animation if enabled
-          this.settings?.critAnimation && (content.style.animation = 'critPulse 0.5s ease-in-out');
+          if (this.settings?.critAnimation) {
+            content.style.animation = 'critPulse 0.5s ease-in-out';
+          }
         }
 
         // Add a class for easier identification (use actualMessageElement, not the original parameter)
@@ -6657,46 +6528,35 @@ module.exports = class CriticalHit {
           // Retry after a short delay to catch DOM updates
           // Re-query elements each attempt to handle Discord element replacement
           const msgIdForRetry = this.getMessageIdentifier(actualMessageElement);
-          const retryGradient = (attempt = 1, maxAttempts = 5) => {
+          const retryGradient = (attempt = 1, maxAttempts = 3) => {
             this._setTrackedTimeout(() => {
               if (this._isStopped) return;
+              if (this._isApplyingGradient) return; // Prevent cascade
               const currentMsg = this.requeryMessageElement(msgIdForRetry);
               if (!currentMsg?.isConnected) return;
 
-              // Re-apply class if missing (element was replaced)
-              if (!currentMsg.classList.contains('bd-crit-hit')) {
-                currentMsg.classList.add('bd-crit-hit');
-              }
-              currentMsg.setAttribute('data-bd-crit-locked', '1');
-              this.stampCritVisualMetadata(currentMsg, expectedVisuals);
+              this._isApplyingGradient = true;
+              try {
+                // Re-apply class if missing (element was replaced)
+                if (!currentMsg.classList.contains('bd-crit-hit')) {
+                  currentMsg.classList.add('bd-crit-hit');
+                }
+                currentMsg.setAttribute('data-bd-crit-locked', '1');
+                this.stampCritVisualMetadata(currentMsg, expectedVisuals);
 
-              const currentContent = this.getCritContentElement(currentMsg);
-              if (currentContent) {
-                if (!currentContent.classList.contains('bd-crit-text-content')) {
+                const currentContent = this.getCritContentElement(currentMsg);
+                if (currentContent && !currentContent.classList.contains('bd-crit-text-content')) {
                   currentContent.classList.add('bd-crit-text-content');
                 }
-
-                // Styles are now handled by CSS stylesheet, no need to apply inline styles
-                // Just ensure classes are present
+              } finally {
+                requestAnimationFrame(() => { this._isApplyingGradient = false; });
               }
-            }, 50 * attempt);
+            }, 100 * attempt); // Wider spacing (100ms not 50ms) to reduce overlap
           };
           retryGradient();
         }
 
         // PERF: CSS is injected once in start() — no per-crit re-injection needed
-
-        this.debugLog('APPLY_CRIT_STYLE', 'Crit style applied successfully', {
-          useGradient: this.settings.critGradient !== false,
-          elementTag: content?.tagName,
-        });
-        this.diagLog('STYLE_APPLIED', 'Applied crit style from live detection', {
-          messageId: this.getMessageIdentifier(actualMessageElement),
-          mode: expectedVisuals.useGradient ? 'gradient' : 'solid',
-          expectedColor: expectedVisuals.color,
-          computedColor: computedStyles?.color || null,
-          computedBackgroundImage: computedStyles?.backgroundImage || null,
-        });
       } catch (error) {
         this.debugError('APPLY_CRIT_STYLE', error, { phase: 'apply_styles' });
       }
@@ -6704,6 +6564,9 @@ module.exports = class CriticalHit {
       this.debugError('APPLY_CRIT_STYLE', error, {
         hasMessageElement: !!messageElement,
       });
+    } finally {
+      // Release guard after 1 frame to absorb observer re-fires from our own DOM mutations
+      requestAnimationFrame(() => { this._isApplyingGradient = false; });
     }
   }
 
@@ -7424,7 +7287,8 @@ module.exports = class CriticalHit {
 
     critTextNodes.forEach((node) => {
       node.style.setProperty('font-family', messageFont, 'important');
-      node.querySelectorAll('*').forEach((child) => {
+      // Apply to children but skip code/pre elements to preserve monospace
+      node.querySelectorAll('*:not(code):not(pre):not(pre *)').forEach((child) => {
         child.style.setProperty('font-family', messageFont, 'important');
       });
     });
@@ -7611,7 +7475,7 @@ module.exports = class CriticalHit {
                 font-family: ${messageFont} !important; /* critFont setting - for message gradient text */
                 font-weight: bold !important; /* Bold for more impact */
                 font-size: 1.15em !important; /* Slightly bigger for Friend or Foe BB */
-                font-synthesis: none !important; /* Prevent font synthesis */
+                font-synthesis: style !important; /* Allow italic synthesis for fonts without italic variant */
                 font-variant: inherit !important; /* Preserve markdown font variants */
                 font-style: inherit !important; /* Preserve italic from <em> */
                 letter-spacing: 1px !important; /* Slight spacing */
@@ -7628,7 +7492,7 @@ module.exports = class CriticalHit {
                 font-weight: inherit !important; /* <strong> inherits bold from parent, normal text stays normal */
                 font-size: inherit !important; /* Inherit parent's 1.15em — no compounding on nested elements */
                 font-stretch: inherit !important;
-                font-synthesis: none !important;
+                font-synthesis: style !important; /* Allow italic synthesis for fonts without italic variant */
                 font-variant: inherit !important; /* Preserve markdown font variants */
                 font-style: inherit !important; /* Preserve italic from <em> tags */
                 letter-spacing: inherit !important;
@@ -10231,6 +10095,39 @@ module.exports = class CriticalHit {
    * @param {string} message - Log message
    * @param {Object|null} data - Optional data object to log
    */
+  /**
+   * Debug helper: logs computed styles of markdown elements (em, strong, code) inside a content element.
+   * Only runs when debug mode is enabled. Used to diagnose style stripping during crit animation.
+   */
+  _debugMarkdownStyles(contentEl, context) {
+    if (!this.debug?.enabled || !contentEl) return;
+    const checks = [
+      { tag: 'em', expect: { fontStyle: 'italic' } },
+      { tag: 'strong', expect: { fontWeight: v => parseInt(v) >= 700 } },
+      { tag: 'code', expect: { fontFamily: v => /mono|consolas|courier/i.test(v) } },
+    ];
+    const results = {};
+    for (const { tag, expect } of checks) {
+      const el = contentEl.querySelector(tag);
+      if (!el) continue;
+      const cs = window.getComputedStyle(el);
+      const [prop] = Object.keys(expect);
+      const val = cs[prop];
+      const checker = expect[prop];
+      const ok = typeof checker === 'function' ? checker(val) : val === checker;
+      results[tag] = { [prop]: val, ok };
+      if (!ok) {
+        this.debugLog('CRIT_STYLE_DEBUG', `STYLE STRIPPED: <${tag}> ${prop}=${val} (${context})`, {
+          element: el.textContent?.substring(0, 30),
+          allFontProps: { fontStyle: cs.fontStyle, fontWeight: cs.fontWeight, fontFamily: cs.fontFamily?.substring(0, 40) },
+        });
+      }
+    }
+    if (Object.keys(results).length > 0) {
+      this.debugLog('CRIT_STYLE_DEBUG', `Markdown style check (${context})`, results);
+    }
+  }
+
   debugLog(operation, message, data = null) {
     // Guard clause: early return if debug disabled
     if (!this.debug?.enabled) return;

@@ -4366,17 +4366,28 @@ module.exports = class SoloLevelingStats {
         return (Number(data.level) || 0) * 1000 + statSum + (Number(data.totalXP || data.xp) || 0) * 0.01;
       };
 
-      // Score all candidates
-      candidates.forEach(c => { c.quality = getCandidateQuality(c.data); });
+      // Score all candidates and sanitize timestamps
+      const MAX_VALID_TIMESTAMP = Date.now() + 86400000; // Now + 1 day (anything beyond is bogus)
+      candidates.forEach(c => {
+        c.quality = getCandidateQuality(c.data);
+        // Clamp future timestamps — prevents poisoned data (e.g. year 2099) from winning
+        if (c.ts > MAX_VALID_TIMESTAMP) {
+          this.debugLog('LOAD_SETTINGS', `WARNING: Clamped future timestamp from ${c.source}`, {
+            originalTs: new Date(c.ts).toISOString(), clampedTo: new Date(MAX_VALID_TIMESTAMP).toISOString(),
+          });
+          c.ts = 0; // Treat as unknown age — let quality decide
+        }
+      });
 
       const best = candidates.reduce(
         (acc, cur) => {
-          // If current candidate has much higher quality (>50% more), prefer it even if older
+          // QUALITY-FIRST selection: higher quality ALWAYS wins unless nearly identical
+          // This prevents stale data with newer timestamps from overriding real progress
           const qualityRatio = acc.quality > 0 ? cur.quality / acc.quality : (cur.quality > 0 ? Infinity : 1);
-          if (qualityRatio > 1.5) return cur; // Higher quality candidate wins
-          if (qualityRatio < 0.67) return acc; // Current best has much higher quality
+          if (qualityRatio > 1.1) return cur;  // 10% higher quality wins regardless of timestamp
+          if (qualityRatio < 0.91) return acc;  // Current best is 10%+ higher quality
 
-          // Similar quality: use timestamp then priority
+          // Nearly identical quality (<10% diff): use timestamp then priority
           const hasNewerTimestamp = cur.ts > acc.ts;
           const isTie = cur.ts === acc.ts;
           const hasHigherPriority = getPriority(cur.source) >= getPriority(acc.source);
@@ -4393,15 +4404,17 @@ module.exports = class SoloLevelingStats {
       let saved = best.data;
       const loadedFromFile = best.source === 'file';
 
-      saved &&
-        this.debugLog('LOAD_SETTINGS', 'Selected settings candidate', {
-          source: best.source,
-          timestamp: best.ts,
-          quality: best.quality,
-          candidateCount: candidates.length,
-          allQualities: candidates.map(c => ({ source: c.source, quality: c.quality, ts: c.ts })),
-          fileBackupPath: this.fileBackupPath,
-        });
+      // ALWAYS log candidate selection (critical for diagnosing data loss)
+      this.debugLog('LOAD_SETTINGS', saved ? 'Selected settings candidate' : 'WARNING: No valid candidate found', {
+        winner: best.source,
+        winnerLevel: saved?.level,
+        winnerQuality: best.quality,
+        candidateCount: candidates.length,
+        allCandidates: candidates.map(c => ({
+          source: c.source, level: c.data?.level, quality: c.quality,
+          ts: c.ts ? new Date(c.ts).toISOString() : 'none',
+        })),
+      });
 
       // Try IndexedDB backup if main failed
       if (!saved && this.saveManager) {
@@ -5092,6 +5105,9 @@ module.exports = class SoloLevelingStats {
       if (timeDiff < 5) {
         this.settings.activity.timeActive += timeDiff;
         this.settings.activity.lastActiveTime = now;
+
+        // Debounced save — activity tracking fires every minute
+        this.saveSettings();
 
         // Update daily quest: Active Adventurer
         this.updateQuestProgress('activeAdventurer', timeDiff);
@@ -6592,6 +6608,9 @@ module.exports = class SoloLevelingStats {
         },
       });
 
+      // Save immediately — stat allocation is player-visible progress
+      this.saveSettings(true);
+
       this.debugLog(
         'ALLOCATE_STAT',
         `${statName.charAt(0).toUpperCase() + statName.slice(1)} stat point allocated with buff`,
@@ -6638,6 +6657,9 @@ module.exports = class SoloLevelingStats {
         newValue,
       },
     });
+
+    // Save immediately — stat allocation is player-visible progress
+    this.saveSettings(true);
 
     // Debug log
     this.debugLog('ALLOCATE_STAT', 'Stat point allocated successfully', {
@@ -6810,8 +6832,8 @@ module.exports = class SoloLevelingStats {
           },
         });
 
-        // Natural stat growth is silent — reflected in chat UI stats panel.
-        // Debug log captures the details for troubleshooting.
+        // Debounced save — natural growth happens per-message so we coalesce
+        this.saveSettings();
       }
     } catch (error) {
       this.debugError('NATURAL_STAT_GROWTH', error);
