@@ -10057,14 +10057,8 @@ ${childSel} {
         this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
       }
 
-      // Ensure debugMode defaults to false if not explicitly set (safeguard against corrupted/missing settings)
-      if (
-        this.settings.debugMode === undefined ||
-        this.settings.debugMode === null ||
-        typeof this.settings.debugMode !== 'boolean'
-      ) {
-        this.settings.debugMode = false;
-      }
+      // Force debug off — re-enable manually via settings when needed
+      this.settings.debugMode = false;
 
       // Sync debug.enabled with settings.debugMode
       this.debug.enabled = this.settings.debugMode === true;
