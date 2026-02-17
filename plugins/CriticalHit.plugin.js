@@ -1898,10 +1898,10 @@ module.exports = class CriticalHit {
     const textElement = document.createElement('div');
     textElement.className = 'cha-critical-hit-text';
 
-    // Apply animation font setting (inline style overrides the hardcoded CSS default)
-    // animationFont = Shadow Arise font (Speedy Space Goat Oddity), NOT critFont (message text font)
-    const animFont = this.settings?.animationFont || this.DEFAULT_ANIMATION_FONT;
-    textElement.style.fontFamily = animFont;
+    // Apply crit font to CRITICAL HIT! floating text (matches the styled message font)
+    // animationFont (Speedy Space Goat Oddity) is reserved for the Arise animation, not this
+    const critFont = this.settings?.critFont || this.DEFAULT_CRIT_FONT;
+    textElement.style.fontFamily = critFont;
 
     if (messageId) {
       textElement.setAttribute('data-cha-message-id', messageId);
