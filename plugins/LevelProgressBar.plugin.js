@@ -888,7 +888,7 @@ module.exports = class LevelProgressBar {
         width: 100%;
         background: rgba(10, 10, 15, 0.95);
         border-bottom: 2px solid rgba(138, 43, 226, 0.5);
-        padding: 14px 20px 14px 80px;
+        padding: 22px 20px 22px 80px;
         display: flex;
         flex-direction: row;
         align-items: center;
@@ -913,7 +913,7 @@ module.exports = class LevelProgressBar {
       }
 
       .lpb-progress-bar.compact {
-        padding: 8px 15px 8px 80px;
+        padding: 14px 15px 14px 80px;
       }
 
       .lpb-progress-text {

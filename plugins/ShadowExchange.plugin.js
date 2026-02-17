@@ -81,6 +81,9 @@ module.exports = class ShadowExchange {
       this._retryInject2 = setTimeout(() => this.injectSwirlIcon(), 5000);
       this.observeLPBChanges();
 
+      // Right-click context menu on messages → "Shadow Mark"
+      this.patchContextMenu();
+
       // Global Escape key to close panel
       this.escHandler = (e) => {
         if (e.key === "Escape" && this.panelOpen) {
@@ -106,6 +109,10 @@ module.exports = class ShadowExchange {
       clearTimeout(this._retryInject2);
       if (this.escHandler) {
         document.removeEventListener("keydown", this.escHandler, true);
+      }
+      if (this._unpatchContextMenu) {
+        this._unpatchContextMenu();
+        this._unpatchContextMenu = null;
       }
       this.closePanel();
       this.removeSwirlIcon();
@@ -140,6 +147,96 @@ module.exports = class ShadowExchange {
     } catch (_) {
       this.GuildStore = null;
     }
+  }
+
+  // ── Context Menu (right-click → Shadow Mark) ──────────────────────────
+
+  patchContextMenu() {
+    try {
+      this._unpatchContextMenu = BdApi.ContextMenu.patch("message", (retVal, props) => {
+        const { message, channel } = props;
+        if (!message || !channel) return;
+
+        const item = BdApi.ContextMenu.buildItem({
+          type: "text",
+          label: "Shadow Mark",
+          action: () => this.markMessage(channel, message),
+        });
+
+        // Append to end of context menu children
+        retVal.props.children.push(
+          BdApi.ContextMenu.buildItem({ type: "separator" }),
+          item
+        );
+      });
+    } catch (err) {
+      console.error("[ShadowExchange] Context menu patch failed:", err);
+    }
+  }
+
+  /**
+   * Mark a specific message from the context menu.
+   * @param {object} channel - Discord channel object
+   * @param {object} message - Discord message object
+   */
+  async markMessage(channel, message) {
+    const channelId = channel.id;
+    const guildId = channel.guild_id || null;
+    const messageId = message.id;
+
+    // Duplicate check
+    const dup = this.settings.waypoints.find(
+      (w) => w.channelId === channelId && w.messageId === messageId
+    );
+    if (dup) {
+      BdApi.UI.showToast(`Already marked: ${dup.label}`, { type: "warning" });
+      return;
+    }
+
+    let channelName = channel.name || "DM";
+    let guildName = guildId ? "Unknown Server" : "Direct Messages";
+    let locationType = "message";
+
+    try {
+      if (guildId) {
+        const guild = this.GuildStore?.getGuild(guildId);
+        if (guild) guildName = guild.name;
+      }
+      if (!channel.name && channel.recipients?.length) channelName = "DM";
+    } catch (_) {}
+
+    const shadow = await this.getWeakestAvailableShadow();
+    if (!shadow) {
+      BdApi.UI.showToast("No shadows available!", { type: "error" });
+      return;
+    }
+
+    const label = guildId
+      ? `${guildName} \u00BB #${channelName}`
+      : `DM \u00BB ${channelName}`;
+
+    const waypoint = {
+      id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      label,
+      locationType,
+      guildId,
+      channelId,
+      messageId,
+      shadowId: shadow.id,
+      shadowName: shadow.name,
+      shadowRank: shadow.rank,
+      createdAt: Date.now(),
+      lastVisited: null,
+      visitCount: 0,
+      channelName,
+      guildName,
+    };
+
+    this.settings.waypoints.push(waypoint);
+    this.saveSettings();
+    this.refreshPanel();
+
+    BdApi.UI.showToast(`${shadow.name} stationed at message in ${label}`, { type: "success" });
   }
 
   // ── Persistence ────────────────────────────────────────────────────────
@@ -492,11 +589,27 @@ module.exports = class ShadowExchange {
     url += `/${wp.channelId}`;
     if (wp.messageId) url += `/${wp.messageId}`;
 
+    // Primary: use Discord's internal router (no reload)
     if (this.NavigationUtils?.transitionTo) {
       this.NavigationUtils.transitionTo(url);
     } else {
-      // Fallback
-      window.location.href = `https://discord.com${url}`;
+      // Secondary: try alternative Webpack lookup
+      try {
+        const nav = BdApi.Webpack.getModule(
+          (m) => m?.transitionTo && typeof m.transitionTo === "function",
+          { searchExports: true }
+        );
+        if (nav?.transitionTo) {
+          nav.transitionTo(url);
+        } else {
+          // Last resort: push state + popstate (avoids full page reload)
+          history.pushState({}, "", url);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+        }
+      } catch (_) {
+        history.pushState({}, "", url);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
     }
 
     wp.lastVisited = Date.now();
@@ -784,29 +897,32 @@ module.exports = class ShadowExchange {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 26px;
-        height: 26px;
+        width: 30px;
+        height: 30px;
         border-radius: 50%;
+        border: 2px solid rgba(155, 89, 182, 0.6);
+        background: rgba(10, 10, 20, 0.7);
         cursor: pointer;
-        opacity: 0.7;
-        transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        opacity: 0.85;
+        transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         pointer-events: auto;
       }
       /* Position based on LPB top/bottom mode */
       .se-swirl-icon[data-lpb-position="top"] {
-        top: 8px;
+        top: 14px;
       }
       .se-swirl-icon[data-lpb-position="bottom"] {
-        bottom: 8px;
+        bottom: 14px;
       }
       /* Fallback if data attribute not set yet — default to top */
       .se-swirl-icon:not([data-lpb-position]) {
-        top: 8px;
+        top: 14px;
       }
       .se-swirl-icon:hover {
         opacity: 1;
         transform: scale(1.15);
-        box-shadow: 0 0 10px rgba(155, 89, 182, 0.5);
+        border-color: rgba(155, 89, 182, 1);
+        box-shadow: 0 0 12px rgba(155, 89, 182, 0.6);
       }
 
       /* ── Panel Overlay ─────────────────────────────────────────────── */
