@@ -74,14 +74,11 @@ module.exports = class ShadowExchange {
       this.loadSettings();
       this.injectCSS();
 
-      // Delay icon injection — LPB may not be in the DOM yet
+      // Swirl icon lives on document.body (outside React tree).
+      // Try immediate inject, retry after delay, and watch for LPB to appear.
+      this.injectSwirlIcon();
       this._retryInject = setTimeout(() => this.injectSwirlIcon(), 1500);
-      this._retryInject2 = setTimeout(() => {
-        if (!document.getElementById(ShadowExchange.SWIRL_ID)) {
-          this.injectSwirlIcon();
-        }
-      }, 5000);
-
+      this._retryInject2 = setTimeout(() => this.injectSwirlIcon(), 5000);
       this.observeLPBChanges();
 
       // Global Escape key to close panel
@@ -112,7 +109,6 @@ module.exports = class ShadowExchange {
       }
       this.closePanel();
       this.removeSwirlIcon();
-      if (this.lpbObserver) this.lpbObserver.disconnect();
       if (this.bodyObserver) this.bodyObserver.disconnect();
       this.removeCSS();
     } catch (err) {
@@ -513,11 +509,19 @@ module.exports = class ShadowExchange {
 
   // ── Swirl Icon Injection ───────────────────────────────────────────────
 
+  /**
+   * Inject the swirl icon as a fixed-position element on document.body.
+   *
+   * The LPB progress bar is entirely React-managed — any child appended to
+   * .lpb-progress-bar or #lpb-progress-container gets destroyed on the next
+   * React reconciliation cycle.  Instead, the swirl icon lives as its own
+   * independent fixed-position element anchored to the bar's visual location.
+   */
   injectSwirlIcon() {
     if (document.getElementById(ShadowExchange.SWIRL_ID)) return;
 
-    const progressBar = document.querySelector(".lpb-progress-bar");
-    if (!progressBar) return;
+    const container = document.getElementById("lpb-progress-container");
+    if (!container) return;
 
     const icon = document.createElement("div");
     icon.id = ShadowExchange.SWIRL_ID;
@@ -537,8 +541,22 @@ module.exports = class ShadowExchange {
       this.togglePanel();
     });
 
-    progressBar.appendChild(icon);
+    // Append to document.body — completely outside React's managed tree.
+    document.body.appendChild(icon);
     this.swirlIcon = icon;
+
+    // Position the icon to match LPB location
+    this._positionSwirlIcon();
+  }
+
+  /** Align the fixed-position swirl icon to the LPB progress bar's right side. */
+  _positionSwirlIcon() {
+    const icon = document.getElementById(ShadowExchange.SWIRL_ID);
+    const container = document.getElementById("lpb-progress-container");
+    if (!icon || !container) return;
+
+    const isBottom = container.classList.contains("bottom");
+    icon.dataset.lpbPosition = isBottom ? "bottom" : "top";
   }
 
   removeSwirlIcon() {
@@ -548,33 +566,22 @@ module.exports = class ShadowExchange {
   }
 
   observeLPBChanges() {
-    // Watch for LPB container appearing/re-rendering
-    const tryObserve = () => {
-      const container = document.getElementById("lpb-progress-container");
-      if (container) {
-        this.lpbObserver = new MutationObserver(() => {
-          if (!document.getElementById(ShadowExchange.SWIRL_ID)) {
-            this.injectSwirlIcon();
-          }
-        });
-        this.lpbObserver.observe(container, { childList: true, subtree: true });
-        return true;
-      }
-      return false;
-    };
-
-    if (!tryObserve()) {
-      // LPB container not in DOM yet — watch body for it
-      this.bodyObserver = new MutationObserver(() => {
-        if (document.getElementById("lpb-progress-container")) {
-          this.bodyObserver.disconnect();
-          this.bodyObserver = null;
-          this.injectSwirlIcon();
-          tryObserve();
-        }
-      });
-      this.bodyObserver.observe(document.body, { childList: true, subtree: true });
+    // Wait for the LPB container to appear, then inject swirl icon.
+    // No need to observe React child changes since the icon lives on document.body.
+    if (document.getElementById("lpb-progress-container")) {
+      this.injectSwirlIcon();
+      return;
     }
+
+    // LPB container not in DOM yet — watch body for it
+    this.bodyObserver = new MutationObserver(() => {
+      if (document.getElementById("lpb-progress-container")) {
+        this.bodyObserver.disconnect();
+        this.bodyObserver = null;
+        this.injectSwirlIcon();
+      }
+    });
+    this.bodyObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   // ── Waypoint Panel ─────────────────────────────────────────────────────
@@ -769,20 +776,32 @@ module.exports = class ShadowExchange {
 
   injectCSS() {
     const css = `
-      /* ── Swirl Icon in LPB ─────────────────────────────────────────── */
+      /* ── Swirl Icon (fixed-position, outside React tree) ───────── */
       .se-swirl-icon {
+        position: fixed;
+        right: 20px;
+        z-index: 999998;
         display: flex;
         align-items: center;
         justify-content: center;
-        flex-shrink: 0;
         width: 26px;
         height: 26px;
         border-radius: 50%;
         cursor: pointer;
         opacity: 0.7;
         transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-        margin-left: 8px;
         pointer-events: auto;
+      }
+      /* Position based on LPB top/bottom mode */
+      .se-swirl-icon[data-lpb-position="top"] {
+        top: 8px;
+      }
+      .se-swirl-icon[data-lpb-position="bottom"] {
+        bottom: 8px;
+      }
+      /* Fallback if data attribute not set yet — default to top */
+      .se-swirl-icon:not([data-lpb-position]) {
+        top: 8px;
       }
       .se-swirl-icon:hover {
         opacity: 1;
