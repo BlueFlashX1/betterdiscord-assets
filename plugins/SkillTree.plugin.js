@@ -499,7 +499,7 @@ module.exports = class SkillTree {
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
     this._periodicCheckInterval = null; // Periodic button persistence check
-    this._composerObserver = null; // Composer DOM watcher for button persistence
+    // _composerObserver removed — React patcher handles button persistence
     this._ensureButtonScheduled = false; // Debounce flag for ensure-button checks
     this._manaRegenInterval = null; // Mana regeneration interval
     this._activeSkillTimers = {};   // Expiry timers for active skills { skillId: timeoutId }
@@ -534,8 +534,7 @@ module.exports = class SkillTree {
 
     this.injectCSS();
 
-    // Register toolbar button via SLUtils React patcher.
-    // If SLUtils is unavailable, falls back to legacy createSkillTreeButton.
+    // Register toolbar button via SLUtils React patcher (React-only, no DOM fallback).
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'st-skill-tree-button-wrapper',
@@ -546,19 +545,7 @@ module.exports = class SkillTree {
         },
       });
     } else {
-      // Legacy path — own observer
-      this.createSkillTreeButton();
-      this.saveSkillBonuses();
-      this._retryTimeout1 = this._setTrackedTimeout(() => {
-        (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
-          this.createSkillTreeButton();
-        this._retryTimeout1 = null;
-      }, 2000);
-      this._retryTimeout2 = this._setTrackedTimeout(() => {
-        (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
-          this.createSkillTreeButton();
-        this._retryTimeout2 = null;
-      }, 5000);
+      console.error('[SkillTree] SLUtils not available — toolbar button inactive');
     }
     this.saveSkillBonuses();
 
@@ -567,7 +554,6 @@ module.exports = class SkillTree {
 
     // Watch for window focus/visibility changes (user coming back from another window)
     this.setupWindowFocusWatcher();
-    this.setupComposerMutationWatcher();
 
     // Watch for level ups from SoloLevelingStats (event-based, will retry if not ready)
     this.setupLevelUpWatcher();
@@ -813,18 +799,8 @@ module.exports = class SkillTree {
     this._cache.skillBonuses = null;
     this._cache.skillBonusesTime = 0;
 
-    // Disconnect toolbar observer
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
-    if (this._composerObserver) {
-      this._composerObserver.disconnect();
-      this._composerObserver = null;
-    }
-    this._ensureButtonScheduled = false;
-
-    this.stopPeriodicButtonCheck();
+    // No toolbar observer or composer observer to clean up — React patcher
+    // handles button lifecycle via SLUtils.unregisterToolbarButton().
 
     if (this.skillTreeModal) {
       this.detachSkillTreeModalHandlers();
@@ -2955,106 +2931,9 @@ module.exports = class SkillTree {
     return svg;
   }
 
-  /**
-   * Create skill tree button in Discord UI (matching TitleManager style and position)
-   */
-  createSkillTreeButton() {
-    if (this._isStopped) return;
-
-    // Hide button entirely if user can't type in this channel
-    if (!this._canUserType()) {
-      document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
-      this.skillTreeButton = null;
-      return;
-    }
-
-    const toolbar = this.getToolbarContainer();
-    if (!toolbar) {
-      this._setTrackedTimeout(() => this.createSkillTreeButton(), 500);
-      return;
-    }
-
-    const existingInToolbar = toolbar.querySelector('.st-skill-tree-button');
-    if (existingInToolbar && document.body.contains(existingInToolbar)) {
-      this.skillTreeButton = existingInToolbar;
-      this.updateButtonText();
-      this.observeToolbar(toolbar);
-      return;
-    }
-
-    // Remove stale instances only after we have a valid toolbar target.
-    document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
-    document.querySelectorAll('.st-skill-tree-button').forEach((btn) => btn.remove());
-    this.skillTreeButton = null;
-
-    // Create button with skill tree/layers icon, wrapped to match Discord native buttons
-    const wrapper = document.createElement('div');
-    wrapper.className = 'st-skill-tree-button-wrapper';
-
-    const button = document.createElement('button');
-    button.className = 'st-skill-tree-button';
-    button.replaceChildren(this.createSkillTreeButtonIconSvg());
-    button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
-    button.addEventListener('click', () => this.showSkillTreeModal());
-
-    wrapper.appendChild(button);
-
-    // Insert wrapper after title button wrapper (or before apps button if no title button)
-    const titleBtnWrapper = toolbar.querySelector('.tm-title-button-wrapper');
-    const titleBtn = toolbar.querySelector('.tm-title-button');
-    const appsButton = Array.from(toolbar.children).find(
-      (el) =>
-        el.querySelector('[class*="apps"]') ||
-        el.getAttribute('aria-label')?.toLowerCase().includes('app')
-    );
-
-    const insertRef = titleBtnWrapper || titleBtn;
-    if (insertRef) {
-      toolbar.insertBefore(wrapper, insertRef.nextSibling);
-    } else if (appsButton) {
-      toolbar.insertBefore(wrapper, appsButton);
-    } else {
-      toolbar.appendChild(wrapper);
-    }
-
-    this.skillTreeButton = button;
-    this.updateButtonText();
-
-    // Watch for toolbar changes and reposition if needed
-    this.observeToolbar(toolbar);
-  }
-
-  /**
-   * Observe toolbar for changes and reposition button if needed
-   * @param {HTMLElement} toolbar - Toolbar element to observe
-   */
-  observeToolbar(toolbar) {
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-    }
-
-    this.toolbarObserver = new MutationObserver(() => {
-      // Enhanced check: Verify button still exists and is in DOM
-      if (
-        !this.skillTreeButton ||
-        !document.body.contains(this.skillTreeButton) ||
-        !toolbar.contains(this.skillTreeButton)
-      ) {
-        // Button was removed or moved, recreate it
-        if (!this._isStopped) {
-          this._queueEnsureSkillTreeButton(120);
-        }
-      }
-    });
-
-    this.toolbarObserver.observe(toolbar, {
-      childList: true,
-      subtree: true,
-      attributes: false,
-    });
-
-    this.stopPeriodicButtonCheck();
-  }
+  // NOTE: createSkillTreeButton() and observeToolbar() removed in v2.1.0.
+  // Toolbar button is now managed entirely via SLUtils React patcher.
+  // See _renderSkillTreeButtonReact() for the React implementation.
 
   /**
    * Update button text with current SP count
@@ -3410,16 +3289,9 @@ module.exports = class SkillTree {
       const currentUrl = window.location.href;
       if (currentUrl !== lastUrl) {
         lastUrl = currentUrl;
-        // Enhanced: Multiple retry attempts with increasing delays
-        const retryDelays = [200, 500, 1000];
-        retryDelays.forEach((delay, index) => {
-          this._setTrackedTimeout(() => {
-            // Check if button exists and is in DOM
-            if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-              this.createSkillTreeButton();
-            }
-          }, delay * (index + 1));
-        });
+        // React patcher handles button persistence on channel switch.
+        // Just update tooltip text if button ref exists.
+        this._setTrackedTimeout(() => this.updateButtonText(), 300);
       }
     };
 
@@ -3471,83 +3343,25 @@ module.exports = class SkillTree {
     this._boundHandleFocus = this._handleWindowFocus.bind(this);
     this._boundHandleVisibilityChange = () => {
       if (this._isStopped || document.hidden) return;
-      this._setTrackedTimeout(() => this._ensureSkillTreeButton(), 300);
+      // React patcher handles button persistence — just update tooltip
+      this._setTrackedTimeout(() => this.updateButtonText(), 300);
     };
 
     window.addEventListener('blur', this._boundHandleBlur);
     window.addEventListener('focus', this._boundHandleFocus);
     document.addEventListener('visibilitychange', this._boundHandleVisibilityChange);
 
-    // Periodic persistence check as fallback (only enabled when toolbar observer isn't active)
-    this.startPeriodicButtonCheck();
-
     // Store cleanup function
     this._windowFocusCleanup = () => {
       window.removeEventListener('blur', this._boundHandleBlur);
       window.removeEventListener('focus', this._boundHandleFocus);
       document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
-      this.stopPeriodicButtonCheck();
     };
   }
 
-  setupComposerMutationWatcher() {
-    if (this._composerObserver) {
-      this._composerObserver.disconnect();
-      this._composerObserver = null;
-    }
-
-    this._composerObserver = new MutationObserver((mutations) => {
-      if (this._isStopped) return;
-      const shouldCheck = mutations.some(
-        (mutation) =>
-          mutation.type === 'childList' &&
-          (mutation.addedNodes?.length > 0 || mutation.removedNodes?.length > 0)
-      );
-      shouldCheck && this._queueEnsureSkillTreeButton(120);
-    });
-
-    this._composerObserver.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: false,
-    });
-  }
-
-  _queueEnsureSkillTreeButton(delayMs = 120) {
-    if (this._isStopped || this._ensureButtonScheduled) return;
-    this._ensureButtonScheduled = true;
-    this._setTrackedTimeout(() => {
-      this._ensureButtonScheduled = false;
-      this._ensureSkillTreeButton();
-    }, delayMs);
-  }
-
-  _ensureSkillTreeButton() {
-    if (this._isStopped) return;
-    const toolbar = this.getToolbarContainer();
-    const exists =
-      this.skillTreeButton &&
-      document.body.contains(this.skillTreeButton) &&
-      !!toolbar &&
-      toolbar.contains(this.skillTreeButton);
-    !exists && this.createSkillTreeButton();
-  }
-
-  startPeriodicButtonCheck() {
-    if (this._periodicCheckInterval) return;
-    if (this.toolbarObserver) return;
-    this._periodicCheckInterval = setInterval(() => {
-      if (this._isStopped) return;
-      this._ensureSkillTreeButton();
-      this.toolbarObserver && this.stopPeriodicButtonCheck();
-    }, 15000);
-  }
-
-  stopPeriodicButtonCheck() {
-    if (!this._periodicCheckInterval) return;
-    clearInterval(this._periodicCheckInterval);
-    this._periodicCheckInterval = null;
-  }
+  // NOTE: setupComposerMutationWatcher(), _queueEnsureSkillTreeButton(),
+  // _ensureSkillTreeButton(), startPeriodicButtonCheck(), stopPeriodicButtonCheck()
+  // all removed in v2.1.0.  React patcher handles button persistence natively.
 
   /**
    * Handle window blur event (Discord window loses focus)
@@ -3564,11 +3378,7 @@ module.exports = class SkillTree {
    */
   _handleWindowFocus() {
     if (this._isStopped) return;
-
-    // Small delay to let Discord finish re-rendering after focus
-    this._setTrackedTimeout(() => {
-      this._ensureSkillTreeButton();
-    }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
+    // React patcher handles button persistence — no manual re-creation needed
   }
 
   // ============================================================================

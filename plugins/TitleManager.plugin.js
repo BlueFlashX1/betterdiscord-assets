@@ -102,12 +102,12 @@ module.exports = class SoloLevelingTitleManager {
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.titleButton = null;
     this.titleModal = null;
-    this.toolbarObserver = null;
+    // toolbarObserver removed — React patcher handles button persistence
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
     this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
-    this._periodicCheckInterval = null; // Periodic button persistence check
+    // _periodicCheckInterval removed — React patcher handles button persistence
 
     // Track all retry timeouts for proper cleanup
     this._retryTimeouts = new Set();
@@ -754,8 +754,7 @@ module.exports = class SoloLevelingTitleManager {
     // ============================================================================
     this.initializeWebpackModules();
 
-    // Register toolbar button via SLUtils React patcher.
-    // If SLUtils is unavailable, falls back to legacy createTitleButton.
+    // Register toolbar button via SLUtils React patcher (React-only, no DOM fallback).
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'tm-title-button-wrapper',
@@ -766,18 +765,7 @@ module.exports = class SoloLevelingTitleManager {
         },
       });
     } else {
-      // Legacy path — own observer (SLUtils unavailable)
-      this.createTitleButton();
-
-      this._retryTimeout1 = this._setTrackedTimeout(() => {
-        (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
-        this._retryTimeout1 = null;
-      }, 2000);
-
-      this._retryTimeout2 = this._setTrackedTimeout(() => {
-        (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
-        this._retryTimeout2 = null;
-      }, 5000);
+      console.error('[TitleManager] SLUtils not available — toolbar button inactive');
     }
 
     // Watch for channel changes and recreate button
@@ -816,9 +804,7 @@ module.exports = class SoloLevelingTitleManager {
       this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
       // FUNCTIONAL: Cleanup window focus watcher (short-circuit)
       this._windowFocusCleanup && (this._windowFocusCleanup(), (this._windowFocusCleanup = null));
-      // FUNCTIONAL: Clear periodic check interval
-      this._periodicCheckInterval &&
-        (clearInterval(this._periodicCheckInterval), (this._periodicCheckInterval = null));
+      // No periodic check interval to clear — React patcher handles persistence.
 
       // Clear webpack module references
       this.webpackModules = {
@@ -1373,104 +1359,12 @@ module.exports = class SoloLevelingTitleManager {
    * 3.4 UI MANAGEMENT
    */
 
-  /**
-   * Create title button in Discord UI
-   */
-  createTitleButton() {
-    // Remove any existing buttons/wrappers first (prevent duplicates)
-    const existingWrappers = document.querySelectorAll('.tm-title-button-wrapper');
-    existingWrappers.forEach((w) => w.remove());
-    const existingButtons = document.querySelectorAll('.tm-title-button');
-    existingButtons.forEach((btn) => btn.remove());
-    this.titleButton = null;
-
-    // Hide button entirely if user can't type in this channel
-    if (!this._canUserType()) return;
-
-    const toolbar = this.getToolbarContainer();
-    if (!toolbar) {
-      // Return early if plugin is stopped
-      if (this._isStopped) return;
-
-      this._setTrackedTimeout(() => this.createTitleButton(), 1000);
-      return;
-    }
-
-    // Create title button with SVG icon, wrapped to match Discord native buttons
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tm-title-button-wrapper';
-
-    const button = document.createElement('button');
-    button.className = 'tm-title-button';
-    button.replaceChildren(this.createTitleButtonIconSvg());
-    button.title = 'Titles';
-    button.addEventListener('click', () => this.openTitleModal());
-
-    wrapper.appendChild(button);
-
-    // Insert wrapper before skill tree button wrapper (or before apps button if no skill tree)
-    const skillTreeWrapper = toolbar.querySelector('.st-skill-tree-button-wrapper');
-    const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
-    const appsButton = Array.from(toolbar.children).find(
-      (el) =>
-        el.querySelector('[class*="apps"]') ||
-        el.getAttribute('aria-label')?.toLowerCase().includes('app')
-    );
-
-    const insertRef = skillTreeWrapper || skillTreeBtn;
-    if (insertRef) {
-      toolbar.insertBefore(wrapper, insertRef);
-    } else if (appsButton) {
-      toolbar.insertBefore(wrapper, appsButton);
-    } else {
-      toolbar.appendChild(wrapper);
-    }
-    this.titleButton = button;
-
-    // Watch for toolbar changes and reposition if needed
-    this.observeToolbar(toolbar);
-
-    this.debugLog('BUTTON', 'Title button created');
-  }
-
-  observeToolbar(toolbar) {
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-    }
-
-    this.toolbarObserver = new MutationObserver(() => {
-      // Enhanced check: Verify button still exists and is in DOM
-      if (
-        !this.titleButton ||
-        !document.body.contains(this.titleButton) ||
-        !toolbar.contains(this.titleButton)
-      ) {
-        // Button was removed or moved, recreate it
-        if (!this._isStopped) {
-          this.createTitleButton();
-        }
-      }
-    });
-
-    this.toolbarObserver.observe(toolbar, {
-      childList: true,
-      subtree: true,
-      attributes: false,
-    });
-
-    // If observer is active, periodic polling is no longer needed.
-    this.stopPeriodicButtonCheck();
-  }
+  // NOTE: createTitleButton(), observeToolbar(), removeTitleButton() removed in v1.3.0.
+  // Toolbar button is now managed entirely via SLUtils React patcher.
+  // See _renderTitleButtonReact() for the React implementation.
 
   removeTitleButton() {
-    if (this.titleButton) {
-      this.titleButton.remove();
-      this.titleButton = null;
-    }
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
+    this.titleButton = null;
   }
 
   /**
@@ -1588,20 +1482,10 @@ module.exports = class SoloLevelingTitleManager {
 
       const currentUrl = window.location.href;
       // FUNCTIONAL: Short-circuit for URL change (no if-else)
-      currentUrl !== lastUrl &&
-        ((lastUrl = currentUrl),
-        (() => {
-          // Enhanced: Multiple retry attempts with increasing delays
-          const retryDelays = [200, 500, 1000];
-          retryDelays.forEach((delay, index) => {
-            this._setTrackedTimeout(() => {
-              // Check if button exists and is in DOM
-              if (!this.titleButton || !document.body.contains(this.titleButton)) {
-                this.createTitleButton();
-              }
-            }, delay * (index + 1));
-          });
-        })());
+      if (currentUrl !== lastUrl) {
+        lastUrl = currentUrl;
+        // React patcher handles button persistence on channel switch — no manual re-creation needed.
+      }
     };
 
     // Listen to browser navigation events
@@ -1678,52 +1562,21 @@ module.exports = class SoloLevelingTitleManager {
     document.addEventListener(
       'visibilitychange',
       (this._boundHandleVisibilityChange = () => {
-        if (this._isStopped) return;
-        // User returned to tab (tab is now visible)
-        if (!document.hidden) {
-          this._setTrackedTimeout(() => {
-            if (!this.titleButton || !document.body.contains(this.titleButton)) {
-              this.debugLog('VISIBILITY', 'Button missing after visibility change, recreating...');
-              this.createTitleButton();
-            }
-          }, 300);
-        }
+        if (this._isStopped || document.hidden) return;
+        // React patcher handles button persistence — no manual re-creation needed.
       })
     );
-
-    // Periodic persistence check as fallback (only enabled when toolbar observer isn't active)
-    this.startPeriodicButtonCheck();
 
     // Store cleanup function
     this._windowFocusCleanup = () => {
       window.removeEventListener('blur', this._boundHandleBlur);
       window.removeEventListener('focus', this._boundHandleFocus);
       document.removeEventListener('visibilitychange', this._boundHandleVisibilityChange);
-      this.stopPeriodicButtonCheck();
     };
   }
 
-  startPeriodicButtonCheck() {
-    if (this._periodicCheckInterval) return;
-    // If MutationObserver is active, it will handle persistence without polling.
-    if (this.toolbarObserver) return;
-
-    this._periodicCheckInterval = setInterval(() => {
-      if (this._isStopped) return;
-      if (!this.titleButton || !document.body.contains(this.titleButton)) {
-        this.debugLog('PERIODIC_CHECK', 'Button missing, recreating...');
-        this.createTitleButton();
-      }
-      // Once observer is active, stop polling.
-      this.toolbarObserver && this.stopPeriodicButtonCheck();
-    }, 15000);
-  }
-
-  stopPeriodicButtonCheck() {
-    if (!this._periodicCheckInterval) return;
-    clearInterval(this._periodicCheckInterval);
-    this._periodicCheckInterval = null;
-  }
+  // NOTE: startPeriodicButtonCheck() and stopPeriodicButtonCheck() removed in v1.3.0.
+  // React patcher handles button persistence natively.
 
   /**
    * Handle window blur event (Discord window loses focus)
@@ -1741,16 +1594,7 @@ module.exports = class SoloLevelingTitleManager {
    */
   _handleWindowFocus() {
     if (this._isStopped) return;
-    this.debugLog('WINDOW_FOCUS', 'Discord window gained focus - checking button persistence');
-
-    // Small delay to let Discord finish re-rendering after focus
-    this._setTrackedTimeout(() => {
-      // Check if button still exists when user returns
-      if (!this.titleButton || !document.body.contains(this.titleButton)) {
-        this.debugLog('WINDOW_FOCUS', 'Button missing after window focus, recreating...');
-        this.createTitleButton();
-      }
-    }, 300); // Quick check after focus (same as AutoIdleOnAFK pattern)
+    // React patcher handles button persistence — no manual re-creation needed.
   }
 
   openTitleModal() {

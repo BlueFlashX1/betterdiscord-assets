@@ -53,8 +53,7 @@ module.exports = class ChatNavArrows {
       MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
     }
     if (!MainContent) {
-      console.warn('[ChatNavArrows] MainContent module not found — falling back to DOM');
-      this._fallbackDOM();
+      console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
       return;
     }
 
@@ -233,127 +232,14 @@ module.exports = class ChatNavArrows {
         );
       }
 
-      // Fallback: render at root level with fixed positioning
-      // (arrows still work, just positioned relative to viewport)
+      // No wrapper found yet — render nothing until scroller is detected
       if (!wrapper) return null;
 
-      return React.createElement(React.Fragment, null,
-        React.createElement(ArrowPortalFallback, {
-          direction: 'down',
-          visible: showDown,
-          onClick: handleDownClick,
-          wrapperRef,
-        }),
-        React.createElement(ArrowPortalFallback, {
-          direction: 'up',
-          visible: showUp,
-          onClick: handleUpClick,
-          wrapperRef,
-        })
-      );
-    };
-
-    // Fallback component that imperatively positions arrows in the wrapper
-    const ArrowPortalFallback = ({ direction, visible, onClick, wrapperRef }) => {
-      const React = BdApi.React;
-      const elRef = React.useRef(null);
-
-      React.useEffect(() => {
-        const wrapper = wrapperRef.current;
-        const el = elRef.current;
-        if (!wrapper || !el) return;
-
-        // Move the arrow into the wrapper if not already there
-        if (el.parentElement !== wrapper) {
-          wrapper.appendChild(el);
-        }
-
-        return () => {
-          if (el && el.parentElement) el.parentElement.removeChild(el);
-        };
-      }, [wrapperRef]);
-
-      const svgPath = direction === 'down'
-        ? 'M12 16l-6-6h12l-6 6z'
-        : 'M12 8l-6 6h12l-6-6z';
-
-      return React.createElement('div', {
-        ref: elRef,
-        className: `sl-chat-nav-arrow sl-chat-nav-${direction}${visible ? ' sl-visible' : ''}`,
-        title: direction === 'down' ? 'Jump to Present' : 'Jump to Top',
-        onClick,
-      }, React.createElement('svg', { viewBox: '0 0 24 24' },
-        React.createElement('path', { d: svgPath })
-      ));
+      // createPortal not available — render nothing (arrows need wrapper context)
+      return null;
     };
 
     return this.__ArrowManagerCached;
-  }
-
-  // ──────────────────────────────────────────────────────────────────────────
-  // DOM Fallback — only used if MainContent webpack module not found
-  // ──────────────────────────────────────────────────────────────────────────
-
-  _fallbackDOM() {
-    this._patchAllDOM();
-    const appMount = document.getElementById('app-mount') || document.body;
-    this._observer = new MutationObserver(() => this._patchAllDOM());
-    this._observer.observe(appMount, { childList: true, subtree: true });
-  }
-
-  _patchAllDOM() {
-    const wrappers = document.querySelectorAll('div[class*="messagesWrapper_"]');
-    wrappers.forEach((wrapper) => {
-      if (wrapper.querySelector('.sl-chat-nav-down')) return;
-      const scroller = wrapper.querySelector('div[class*="scroller_"]');
-      if (!scroller) return;
-
-      wrapper.style.position = 'relative';
-
-      const THRESHOLD = 100;
-
-      const downBtn = this._createArrowButtonDOM('down', () => {
-        const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
-        const nativeBtn = nativeBar ? nativeBar.querySelector('button') : null;
-        if (nativeBtn) {
-          nativeBar.style.display = '';
-          nativeBtn.click();
-          requestAnimationFrame(() => { nativeBar.style.display = 'none'; });
-        } else {
-          scroller.scrollTop = scroller.scrollHeight;
-        }
-      });
-
-      const upBtn = this._createArrowButtonDOM('up', () => {
-        scroller.scrollTop = 0;
-      });
-
-      wrapper.appendChild(downBtn);
-      wrapper.appendChild(upBtn);
-
-      const updateVisibility = () => {
-        const { scrollTop, scrollHeight, clientHeight } = scroller;
-        const atBottom = scrollHeight - scrollTop - clientHeight < THRESHOLD;
-        const atTop = scrollTop < THRESHOLD;
-        downBtn.classList.toggle('sl-visible', !atBottom);
-        upBtn.classList.toggle('sl-visible', !atTop);
-      };
-
-      scroller.addEventListener('scroll', updateVisibility, { passive: true });
-      updateVisibility();
-    });
-  }
-
-  _createArrowButtonDOM(direction, onClick) {
-    const btn = document.createElement('div');
-    btn.className = `sl-chat-nav-arrow sl-chat-nav-${direction}`;
-    btn.title = direction === 'down' ? 'Jump to Present' : 'Jump to Top';
-    const svgPath = direction === 'down'
-      ? 'M12 16l-6-6h12l-6 6z'
-      : 'M12 8l-6 6h12l-6-6z';
-    btn.innerHTML = `<svg viewBox="0 0 24 24"><path d="${svgPath}"/></svg>`;
-    btn.addEventListener('click', onClick);
-    return btn;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
