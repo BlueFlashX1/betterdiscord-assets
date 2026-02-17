@@ -8180,6 +8180,14 @@ module.exports = class ShadowArmy {
       e: shadow.extractedAt,
       s: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100,
       ol: shadow.ownerLevelAtExtraction || 1,
+
+      // IDB index fields — full-name properties so compressed shadows
+      // remain visible to IndexedDB secondary indexes (rank, role, etc.)
+      rank: shadow.rank,
+      role: shadow.role,
+      level: shadow.level || 1,
+      strength: shadow.strength || 0,
+      extractedAt: shadow.extractedAt,
     };
   }
 
@@ -8230,6 +8238,14 @@ module.exports = class ShadowArmy {
       nt: Math.round(totalNatGrowth), // Total natural growth stats sum (preserved)
       vs: Math.round((shadow.growthVarianceSeed || Math.random()) * 100) / 100, // Variance seed
       ol: shadow.ownerLevelAtExtraction || 1,
+
+      // IDB index fields — full-name properties so ultra-compressed shadows
+      // remain visible to IndexedDB secondary indexes (rank, role, etc.)
+      rank: shadow.rank || 'E',
+      role: shadow.role || 'unknown',
+      level: shadow.level || 1,
+      strength: shadow.strength || 0,
+      extractedAt: shadow.extractedAt || Date.now(),
     };
   }
 
