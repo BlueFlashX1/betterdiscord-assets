@@ -1,14 +1,14 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 1.1.0
+ * @version 1.2.0
  * @author matthewthompson
  */
 
 module.exports = class ShadowExchange {
   // ── Constants ──────────────────────────────────────────────────────────
   static PLUGIN_ID = "ShadowExchange";
-  static VERSION = "1.1.0";
+  static VERSION = "1.2.0";
   static STYLE_ID = "shadow-exchange-css";
   static SWIRL_ID = "se-swirl-icon";
   static PANEL_ID = "se-waypoint-panel";
@@ -158,13 +158,37 @@ module.exports = class ShadowExchange {
           const { message, channel } = props;
           if (!message || !channel) return;
 
+          // Check if this message is already marked
+          const existingWaypoint = this.settings.waypoints.find(
+            (w) => w.channelId === channel.id && w.messageId === message.id
+          );
+
           const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-          const item = BdApi.ContextMenu.buildItem({
-            type: "text",
-            label: "Shadow Mark",
-            id: "shadow-exchange-mark",
-            action: () => this.markMessage(channel, message),
-          });
+
+          let item;
+          if (existingWaypoint) {
+            // Already marked — show "Shadow Unmark" to recall the shadow
+            item = BdApi.ContextMenu.buildItem({
+              type: "text",
+              label: `Shadow Unmark (${existingWaypoint.shadowName})`,
+              id: "shadow-exchange-unmark",
+              action: () => {
+                this.removeWaypoint(existingWaypoint.id);
+                BdApi.UI.showToast(
+                  `${existingWaypoint.shadowName} recalled — available for deployment`,
+                  { type: "info" }
+                );
+              },
+            });
+          } else {
+            // Not marked — show "Shadow Mark"
+            item = BdApi.ContextMenu.buildItem({
+              type: "text",
+              label: "Shadow Mark",
+              id: "shadow-exchange-mark",
+              action: () => this.markMessage(channel, message),
+            });
+          }
 
           // tree.props.children may be a flat array or contain nested groups.
           // Walk to the actual array of menu groups/items.
@@ -225,6 +249,28 @@ module.exports = class ShadowExchange {
       ? `${guildName} \u00BB #${channelName}`
       : `DM \u00BB ${channelName}`;
 
+    // Capture message content preview (truncate to 120 chars)
+    let messagePreview = "";
+    try {
+      if (message.content) {
+        messagePreview = message.content.length > 120
+          ? message.content.slice(0, 120) + "…"
+          : message.content;
+      } else if (message.embeds?.length) {
+        messagePreview = "[Embed]";
+      } else if (message.attachments?.length) {
+        messagePreview = `[${message.attachments.length} attachment${message.attachments.length > 1 ? "s" : ""}]`;
+      }
+    } catch (_) {}
+
+    // Capture author info
+    let messageAuthor = "";
+    try {
+      if (message.author) {
+        messageAuthor = message.author.globalName || message.author.username || "";
+      }
+    } catch (_) {}
+
     const waypoint = {
       id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       label,
@@ -240,6 +286,8 @@ module.exports = class ShadowExchange {
       visitCount: 0,
       channelName,
       guildName,
+      messagePreview,
+      messageAuthor,
     };
 
     this.settings.waypoints.push(waypoint);
@@ -562,6 +610,8 @@ module.exports = class ShadowExchange {
       visitCount: 0,
       channelName: loc.channelName,
       guildName: loc.guildName,
+      messagePreview: "",
+      messageAuthor: "",
     };
 
     this.settings.waypoints.push(waypoint);
@@ -650,7 +700,7 @@ module.exports = class ShadowExchange {
     icon.id = ShadowExchange.SWIRL_ID;
     icon.className = "se-swirl-icon";
     icon.title = "Shadow Exchange — Waypoints";
-    icon.innerHTML = `<svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+    icon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
       <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>
       <path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>
       <circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>
@@ -817,10 +867,34 @@ module.exports = class ShadowExchange {
 
   renderWaypointCard(wp) {
     const rankColor = ShadowExchange.RANK_COLORS[wp.shadowRank] || "#808080";
-    const rankClass = wp.shadowRank.replace(/[^a-zA-Z]/g, "").toLowerCase();
     const typeBadge = wp.locationType === "dm" ? "DM" : wp.locationType === "thread" ? "Thread" : wp.locationType === "message" ? "Msg" : "Channel";
     const visits = wp.visitCount || 0;
     const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+    // Format the creation timestamp
+    let timeStr = "";
+    try {
+      const d = new Date(wp.createdAt);
+      timeStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " at " +
+        d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    } catch (_) {}
+
+    // Build full location path: Server » #channel (or DM » name)
+    const fullLocation = wp.guildName
+      ? `${esc(wp.guildName)} \u00BB #${esc(wp.channelName)}`
+      : `DM \u00BB ${esc(wp.channelName)}`;
+
+    // Message preview section (only for message-type waypoints)
+    let messageSection = "";
+    if (wp.locationType === "message") {
+      const preview = wp.messagePreview ? esc(wp.messagePreview) : "Message bookmark";
+      const author = wp.messageAuthor ? esc(wp.messageAuthor) : "";
+      messageSection = `
+        <div class="se-message-preview">
+          ${author ? `<span class="se-msg-author">${author}:</span>` : ""}
+          <span class="se-msg-text">${preview}</span>
+        </div>`;
+    }
 
     return `<div class="se-waypoint-card" data-wp-id="${esc(wp.id)}" style="border-left-color: ${rankColor};">
       <div class="se-card-top">
@@ -829,10 +903,12 @@ module.exports = class ShadowExchange {
         <button class="se-card-remove" data-action="remove" data-wp-id="${esc(wp.id)}" title="Recall shadow">\u2716</button>
       </div>
       <div class="se-card-body">
-        <div class="se-location-label">${esc(wp.label)}</div>
+        <div class="se-location-label">${fullLocation}</div>
+        ${messageSection}
         <div class="se-location-meta">
           <span class="se-type-badge">${typeBadge}</span>
           <span class="se-visit-count">${visits} visit${visits !== 1 ? "s" : ""}</span>
+          <span class="se-created-time">${esc(timeStr)}</span>
         </div>
       </div>
       <div class="se-card-footer">
@@ -907,8 +983,8 @@ module.exports = class ShadowExchange {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 30px;
-        height: 30px;
+        width: 26px;
+        height: 26px;
         border-radius: 50%;
         border: 2px solid rgba(155, 89, 182, 0.6);
         background: rgba(10, 10, 20, 0.7);
@@ -1182,6 +1258,37 @@ module.exports = class ShadowExchange {
       .se-visit-count {
         font-size: 11px;
         color: #777;
+      }
+      .se-created-time {
+        font-size: 10px;
+        color: #666;
+        margin-left: auto;
+      }
+
+      /* ── Message Preview ──────────────────────────────────────── */
+      .se-message-preview {
+        background: rgba(0, 0, 0, 0.2);
+        border-left: 2px solid rgba(155, 89, 182, 0.3);
+        border-radius: 0 4px 4px 0;
+        padding: 5px 8px;
+        margin: 4px 0 6px 0;
+        font-size: 12px;
+        color: #aaa;
+        max-height: 48px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        line-height: 1.4;
+      }
+      .se-msg-author {
+        color: #c39bd3;
+        font-weight: 600;
+        margin-right: 4px;
+      }
+      .se-msg-text {
+        color: #999;
       }
 
       .se-card-footer {
