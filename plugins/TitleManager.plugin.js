@@ -233,6 +233,77 @@ module.exports = class SoloLevelingTitleManager {
     this._retryTimeouts.delete(timeoutId);
   }
 
+  /**
+   * Load SoloLevelingUtils shared library (toolbar registry, React injection, etc.)
+   */
+  _loadSLUtils() {
+    this._SLUtils = null;
+    try {
+      if (typeof window !== 'undefined' && window.SoloLevelingUtils) {
+        this._SLUtils = window.SoloLevelingUtils;
+        return;
+      }
+      const path = require('path');
+      const pluginsDir = BdApi.Plugins?.folder || path.join(BdApi.getPath?.() || '', 'plugins');
+      const utilsPath = path.join(pluginsDir, 'SoloLevelingUtils.js');
+      delete require.cache[require.resolve?.(utilsPath)];
+      this._SLUtils = require(utilsPath);
+      if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
+    } catch (_) {
+      this._SLUtils = null;
+    }
+  }
+
+  /**
+   * Render Title button into a given toolbar container (for SLUtils toolbar registry).
+   * Extracted from createTitleButton() — only handles element creation + insertion.
+   * @param {HTMLElement} toolbar - The toolbar container to render into
+   */
+  _renderTitleButtonInto(toolbar) {
+    if (this._isStopped) return;
+    if (!this._canUserType()) return;
+
+    // If button already exists in this toolbar, just keep it
+    const existingInToolbar = toolbar.querySelector('.tm-title-button');
+    if (existingInToolbar && document.body.contains(existingInToolbar)) {
+      this.titleButton = existingInToolbar;
+      return;
+    }
+
+    // Create title button with SVG icon, wrapped to match Discord native buttons
+    const wrapper = document.createElement('div');
+    wrapper.className = 'tm-title-button-wrapper';
+
+    const button = document.createElement('button');
+    button.className = 'tm-title-button';
+    button.replaceChildren(this.createTitleButtonIconSvg());
+    button.title = 'Titles';
+    button.addEventListener('click', () => this.openTitleModal());
+
+    wrapper.appendChild(button);
+
+    // Insert before skill tree button wrapper (or before apps button if no skill tree)
+    const skillTreeWrapper = toolbar.querySelector('.st-skill-tree-button-wrapper');
+    const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
+    const appsButton = Array.from(toolbar.children).find(
+      (el) =>
+        el.querySelector('[class*="apps"]') ||
+        el.getAttribute('aria-label')?.toLowerCase().includes('app')
+    );
+
+    const insertRef = skillTreeWrapper || skillTreeBtn;
+    if (insertRef) {
+      toolbar.insertBefore(wrapper, insertRef);
+    } else if (appsButton) {
+      toolbar.insertBefore(wrapper, appsButton);
+    } else {
+      toolbar.appendChild(wrapper);
+    }
+
+    this.titleButton = button;
+    this.debugLog('BUTTON', 'Title button created via SLUtils toolbar registry');
+  }
+
   _getSoloPluginInstanceCached(now = Date.now()) {
     if (
       this._cache.soloPluginInstance &&
@@ -680,6 +751,7 @@ module.exports = class SoloLevelingTitleManager {
     this._isStopped = false;
 
     this.loadSettings();
+    this._loadSLUtils();
     this.injectCSS();
 
     // ============================================================================
@@ -687,19 +759,49 @@ module.exports = class SoloLevelingTitleManager {
     // ============================================================================
     this.initializeWebpackModules();
 
-    this.createTitleButton();
+    // Register toolbar button via shared SLUtils registry (shared observer)
+    // Falls back to legacy createTitleButton if SLUtils unavailable
+    if (this._SLUtils?.registerToolbarButton) {
+      this._SLUtils.registerToolbarButton({
+        id: 'tm-title-button-wrapper',
+        priority: 10, // Before SkillTree (20)
+        render: (toolbar) => this._renderTitleButtonInto(toolbar),
+        cleanup: () => {
+          document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
+          this.titleButton = null;
+        },
+      });
+      // Retry after 2s for timing
+      this._retryTimeout1 = this._setTrackedTimeout(() => {
+        if (!this.titleButton || !document.body.contains(this.titleButton)) {
+          this._SLUtils.registerToolbarButton({
+            id: 'tm-title-button-wrapper',
+            priority: 10,
+            render: (toolbar) => this._renderTitleButtonInto(toolbar),
+            cleanup: () => {
+              document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
+              this.titleButton = null;
+            },
+          });
+        }
+        this._retryTimeout1 = null;
+      }, 2000);
+    } else {
+      // Legacy path — own observer
+      this.createTitleButton();
 
-    // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
-    this._retryTimeout1 = this._setTrackedTimeout(() => {
-      (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
-      this._retryTimeout1 = null;
-    }, 2000);
+      // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
+      this._retryTimeout1 = this._setTrackedTimeout(() => {
+        (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
+        this._retryTimeout1 = null;
+      }, 2000);
 
-    // FUNCTIONAL: Additional retry (short-circuit, no if-else)
-    this._retryTimeout2 = this._setTrackedTimeout(() => {
-      (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
-      this._retryTimeout2 = null;
-    }, 5000);
+      // FUNCTIONAL: Additional retry (short-circuit, no if-else)
+      this._retryTimeout2 = this._setTrackedTimeout(() => {
+        (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
+        this._retryTimeout2 = null;
+      }, 5000);
+    }
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -713,6 +815,11 @@ module.exports = class SoloLevelingTitleManager {
   stop() {
     // Set stopped flag to prevent recreating watchers
     this._isStopped = true;
+
+    // Unregister from shared SLUtils toolbar registry (if registered)
+    try {
+      this._SLUtils?.unregisterToolbarButton?.('tm-title-button-wrapper');
+    } catch (_) { /* ignore */ }
 
     try {
       this.removeTitleButton();

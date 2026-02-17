@@ -526,28 +526,57 @@ module.exports = class SkillTree {
     this._isStopped = false;
 
     this.loadSettings();
+    this._loadSLUtils();
 
     // Calculate and save spent SP based on existing skill upgrades
     // This ensures accurate SP calculations if skills were already upgraded
     this.initializeSpentSP();
 
     this.injectCSS();
-    this.createSkillTreeButton();
+
+    // Register toolbar button via shared SLUtils registry (shared observer)
+    // Falls back to legacy createSkillTreeButton if SLUtils unavailable
+    if (this._SLUtils?.registerToolbarButton) {
+      this._SLUtils.registerToolbarButton({
+        id: 'st-skill-tree-button-wrapper',
+        priority: 20, // After TitleManager (10)
+        render: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
+        cleanup: () => {
+          document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
+          this.skillTreeButton = null;
+        },
+      });
+      // Still need initial render + retry for timing
+      this._retryTimeout1 = this._setTrackedTimeout(() => {
+        if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+          this._SLUtils.registerToolbarButton({
+            id: 'st-skill-tree-button-wrapper',
+            priority: 20,
+            render: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
+            cleanup: () => {
+              document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
+              this.skillTreeButton = null;
+            },
+          });
+        }
+        this._retryTimeout1 = null;
+      }, 2000);
+    } else {
+      // Legacy path — own observer
+      this.createSkillTreeButton();
+      this.saveSkillBonuses();
+      this._retryTimeout1 = this._setTrackedTimeout(() => {
+        (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
+          this.createSkillTreeButton();
+        this._retryTimeout1 = null;
+      }, 2000);
+      this._retryTimeout2 = this._setTrackedTimeout(() => {
+        (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
+          this.createSkillTreeButton();
+        this._retryTimeout2 = null;
+      }, 5000);
+    }
     this.saveSkillBonuses();
-
-    // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
-    this._retryTimeout1 = this._setTrackedTimeout(() => {
-      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
-        this.createSkillTreeButton();
-      this._retryTimeout1 = null;
-    }, 2000);
-
-    // FUNCTIONAL: Additional retry (short-circuit, no if-else)
-    this._retryTimeout2 = this._setTrackedTimeout(() => {
-      (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) &&
-        this.createSkillTreeButton();
-      this._retryTimeout2 = null;
-    }, 5000);
 
     // Watch for channel changes and recreate button
     this.setupChannelWatcher();
@@ -588,6 +617,78 @@ module.exports = class SkillTree {
     if (!Number.isFinite(timeoutId)) return;
     clearTimeout(timeoutId);
     this._retryTimeouts.delete(timeoutId);
+  }
+
+  /**
+   * Load SoloLevelingUtils shared library (toolbar registry, React injection, etc.)
+   */
+  _loadSLUtils() {
+    this._SLUtils = null;
+    try {
+      if (typeof window !== 'undefined' && window.SoloLevelingUtils) {
+        this._SLUtils = window.SoloLevelingUtils;
+        return;
+      }
+      const path = require('path');
+      const pluginsDir = BdApi.Plugins?.folder || path.join(BdApi.getPath?.() || '', 'plugins');
+      const utilsPath = path.join(pluginsDir, 'SoloLevelingUtils.js');
+      delete require.cache[require.resolve?.(utilsPath)];
+      this._SLUtils = require(utilsPath);
+      if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
+    } catch (_) {
+      this._SLUtils = null;
+    }
+  }
+
+  /**
+   * Render SkillTree button into a given toolbar container (for SLUtils toolbar registry).
+   * Extracted from createSkillTreeButton() — only handles element creation + insertion.
+   * @param {HTMLElement} toolbar - The toolbar container to render into
+   */
+  _renderSkillTreeButtonInto(toolbar) {
+    if (this._isStopped) return;
+    if (!this._canUserType()) return;
+
+    // If button already exists in this toolbar, just update it
+    const existingInToolbar = toolbar.querySelector('.st-skill-tree-button');
+    if (existingInToolbar && document.body.contains(existingInToolbar)) {
+      this.skillTreeButton = existingInToolbar;
+      this.updateButtonText();
+      return;
+    }
+
+    // Create button with skill tree/layers icon, wrapped to match Discord native buttons
+    const wrapper = document.createElement('div');
+    wrapper.className = 'st-skill-tree-button-wrapper';
+
+    const button = document.createElement('button');
+    button.className = 'st-skill-tree-button';
+    button.replaceChildren(this.createSkillTreeButtonIconSvg());
+    button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
+    button.addEventListener('click', () => this.showSkillTreeModal());
+
+    wrapper.appendChild(button);
+
+    // Insert after title button wrapper (or before apps button if no title button)
+    const titleBtnWrapper = toolbar.querySelector('.tm-title-button-wrapper');
+    const titleBtn = toolbar.querySelector('.tm-title-button');
+    const appsButton = Array.from(toolbar.children).find(
+      (el) =>
+        el.querySelector('[class*="apps"]') ||
+        el.getAttribute('aria-label')?.toLowerCase().includes('app')
+    );
+
+    const insertRef = titleBtnWrapper || titleBtn;
+    if (insertRef) {
+      toolbar.insertBefore(wrapper, insertRef.nextSibling);
+    } else if (appsButton) {
+      toolbar.insertBefore(wrapper, appsButton);
+    } else {
+      toolbar.appendChild(wrapper);
+    }
+
+    this.skillTreeButton = button;
+    this.updateButtonText();
   }
 
   startLevelPolling() {
@@ -656,6 +757,11 @@ module.exports = class SkillTree {
   stop() {
     // Set stopped flag to prevent recreating watchers
     this._isStopped = true;
+
+    // Unregister from shared SLUtils toolbar registry (if registered)
+    try {
+      this._SLUtils?.unregisterToolbarButton?.('st-skill-tree-button-wrapper');
+    } catch (_) { /* ignore */ }
 
     // Unsubscribe from events
     this.unsubscribeFromEvents();

@@ -2085,13 +2085,10 @@ module.exports = class SoloLevelingStats {
   }
 
   /**
-   * Attempt to inject chat UI into Discord's React tree
-   * Operations:
-   * 1. Find MainContent component via webpack
-   * 2. Patch component to inject chat UI panel
-   * 3. Use BdApi.Utils.findInTree to locate injection point
-   * 4. Create React element for chat UI
-   * 5. Set reactInjectionActive flag if successful
+   * Attempt to inject chat UI into Discord's React tree.
+   * Delegates to SLUtils.tryReactInjection() for shared MainContent.Z patching,
+   * with per-render guard to hide UI in threads/forums/locked channels.
+   * Falls back to inline implementation if SLUtils unavailable.
    * @returns {boolean} - True if React injection was successful
    */
   tryReactInjection() {
@@ -2102,40 +2099,63 @@ module.exports = class SoloLevelingStats {
         return false;
       }
 
-      // Find Discord's main content area React component
-      // Try multiple search patterns for better compatibility
+      const pluginInstance = this;
+
+      // Prefer SLUtils shared implementation (deduplicates MainContent.Z lookup)
+      if (this._SLUtils?.tryReactInjection) {
+        const success = this._SLUtils.tryReactInjection({
+          patcherId: 'SoloLevelingStats',
+          elementId: 'sls-chat-ui',
+          guard: () => pluginInstance._canShowChatUIInCurrentView(),
+          render: (React) => {
+            const chatUIHTML = pluginInstance.renderChatUI();
+            return React.createElement('div', {
+              id: 'sls-chat-ui',
+              className: 'sls-chat-panel',
+              dangerouslySetInnerHTML: { __html: chatUIHTML },
+            });
+          },
+          onMount: (domEl) => {
+            pluginInstance.initializeChatUIPanel(domEl, { onlyWhenDirty: true });
+          },
+          debugLog: this.debugLog.bind(this),
+          debugError: this.debugError.bind(this),
+        });
+
+        if (success) {
+          this.reactInjectionActive = true;
+          return true;
+        }
+        // SLUtils failed (MainContent not found), fall through to return false
+        return false;
+      }
+
+      // Fallback: inline implementation (SLUtils not loaded)
       let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
         searchExports: true,
       });
-
-      // Alternative: Search for app content wrapper
       if (!MainContent) {
         MainContent = BdApi.Webpack.getByStrings('appMount', {
           searchExports: true,
         });
       }
-
       if (!MainContent) {
         this.debugLog('REACT_INJECTION', 'Main content component not found, using DOM fallback');
         return false;
       }
 
-      const pluginInstance = this;
       const React = BdApi.React;
 
-      // Patch the React component to inject our chat UI
       BdApi.Patcher.after(
         'SoloLevelingStats',
         MainContent,
         'Z',
         (thisObject, args, returnValue) => {
           try {
-            // Guard every render so injected UI never appears in threads/forums/locked channels
             if (!pluginInstance._canShowChatUIInCurrentView()) {
               return returnValue;
             }
 
-            // Find body element in React tree
             const bodyPath = BdApi.Utils.findInTree(
               returnValue,
               (prop) =>
@@ -2148,7 +2168,6 @@ module.exports = class SoloLevelingStats {
             );
 
             if (bodyPath && bodyPath.props) {
-              // Check if chat UI already injected
               const hasChatUI = BdApi.Utils.findInTree(
                 returnValue,
                 (prop) => prop && prop.props && prop.props.id === 'sls-chat-ui',
@@ -2156,7 +2175,6 @@ module.exports = class SoloLevelingStats {
               );
 
               if (!hasChatUI && !pluginInstance.chatUIPanel) {
-                // Create React element for chat UI
                 const chatUIHTML = pluginInstance.renderChatUI();
                 const chatUIElement = React.createElement('div', {
                   id: 'sls-chat-ui',
@@ -2164,7 +2182,6 @@ module.exports = class SoloLevelingStats {
                   dangerouslySetInnerHTML: { __html: chatUIHTML },
                 });
 
-                // Inject at the beginning of body children
                 if (Array.isArray(bodyPath.props.children)) {
                   bodyPath.props.children.unshift(chatUIElement);
                 } else if (bodyPath.props.children) {
@@ -2174,9 +2191,8 @@ module.exports = class SoloLevelingStats {
                 }
 
                 pluginInstance.reactInjectionActive = true;
-                pluginInstance.debugLog('REACT_INJECTION', 'Chat UI injected via React');
+                pluginInstance.debugLog('REACT_INJECTION', 'Chat UI injected via React (inline fallback)');
 
-                // Set up DOM reference after injection
                 setTimeout(() => {
                   const domElement = document.getElementById('sls-chat-ui');
                   if (domElement) {
@@ -2187,13 +2203,13 @@ module.exports = class SoloLevelingStats {
             }
           } catch (error) {
             pluginInstance.debugError('REACT_INJECTION', error);
-            return returnValue; // Return original on error
+            return returnValue;
           }
         }
       );
 
       this.reactInjectionActive = true;
-      this.debugLog('REACT_INJECTION', 'React injection setup complete');
+      this.debugLog('REACT_INJECTION', 'React injection setup complete (inline fallback)');
       return true;
     } catch (error) {
       this.debugError('REACT_INJECTION', error, { phase: 'setup' });
@@ -3416,6 +3432,27 @@ module.exports = class SoloLevelingStats {
   // start(): Load settings → webpack → observers → activity → UI
   // stop():  Remove UI → unpatch → stop observers → save → cleanup
 
+  /**
+   * Load SoloLevelingUtils shared library (React injection, toolbar registry, etc.)
+   */
+  _loadSLUtils() {
+    this._SLUtils = null;
+    try {
+      if (typeof window !== 'undefined' && window.SoloLevelingUtils) {
+        this._SLUtils = window.SoloLevelingUtils;
+        return;
+      }
+      const path = require('path');
+      const pluginsDir = BdApi.Plugins?.folder || path.join(BdApi.getPath?.() || '', 'plugins');
+      const utilsPath = path.join(pluginsDir, 'SoloLevelingUtils.js');
+      delete require.cache[require.resolve?.(utilsPath)];
+      this._SLUtils = require(utilsPath);
+      if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
+    } catch (_) {
+      this._SLUtils = null;
+    }
+  }
+
   async start() {
     try {
       this.debugLog('START', 'Plugin starting...');
@@ -3423,6 +3460,7 @@ module.exports = class SoloLevelingStats {
       // Record plugin start time to prevent processing old messages
       this.pluginStartTime = Date.now();
       this._isRunning = true;
+      this._loadSLUtils();
       this.debugLog('START', 'Plugin start time recorded', { startTime: this.pluginStartTime });
 
       // ============================================================================

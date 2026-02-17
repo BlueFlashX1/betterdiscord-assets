@@ -65,7 +65,7 @@ function initWebpackModules(opts = {}) {
  * @returns {boolean} true if patch was installed
  */
 function tryReactInjection(opts) {
-  const { patcherId, elementId, render, onMount, debugLog, debugError } = opts;
+  const { patcherId, elementId, render, onMount, guard, debugLog, debugError } = opts;
   const log = debugLog || (() => {});
   const err = debugError || (() => {});
 
@@ -83,6 +83,9 @@ function tryReactInjection(opts) {
 
     BdApi.Patcher.after(patcherId, MainContent, 'Z', (_this, _args, returnValue) => {
       try {
+        // Optional per-render guard — if it returns false, skip injection for this render
+        if (guard && !guard()) return returnValue;
+
         const bodyPath = BdApi.Utils.findInTree(
           returnValue,
           (prop) =>
@@ -379,6 +382,164 @@ function showLevelUpBanner(overlay, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Toolbar Injection (for SkillTree, TitleManager, etc.)
+// ---------------------------------------------------------------------------
+
+/**
+ * Registry of toolbar buttons to inject.  Shared across plugins so a
+ * single MutationObserver handles re-injection for all registered buttons.
+ *
+ * Each entry: { id, render(toolbar), cleanup(), priority }
+ * Lower priority numbers are inserted first (leftmost).
+ */
+const _toolbarRegistry = [];
+let _toolbarObserver = null;
+let _toolbarReinjectTimer = null;
+
+/**
+ * Find the composer toolbar container in the DOM.
+ * Uses multiple selector strategies with scoring, matching
+ * the proven pattern from SkillTree/TitleManager.
+ *
+ * @returns {HTMLElement|null}
+ */
+function _findToolbarContainer() {
+  // Strategy 1: Find via composer action buttons (emoji, gif, sticker, attach)
+  const actionBtns = document.querySelectorAll(
+    '[class*="channelTextArea"] [aria-label*="emoji" i], ' +
+    '[class*="channelTextArea"] [aria-label*="gif" i], ' +
+    '[class*="channelTextArea"] [aria-label*="sticker" i], ' +
+    '[class*="channelTextArea"] [class*="emojiButton"], ' +
+    '[class*="channelTextArea"] [class*="attachButton"]'
+  );
+
+  const candidates = new Set();
+  actionBtns.forEach((btn) => {
+    if (btn.parentElement) candidates.add(btn.parentElement);
+    const container = btn.closest(
+      '[class*="buttons"], [class*="buttonContainer"], [class*="actionButtons"], [class*="inner"]'
+    );
+    if (container) candidates.add(container);
+  });
+
+  // Score candidates — prefer ones that already contain known action buttons
+  let best = null;
+  let bestScore = -1;
+  candidates.forEach((c) => {
+    const hasAction = !!c.querySelector(
+      '[aria-label*="emoji" i], [aria-label*="gif" i], [class*="emojiButton"]'
+    );
+    const btnCount = c.querySelectorAll('button, [class*="button"], [aria-label]').length;
+    const score = (hasAction ? 100 : 0) + btnCount;
+    if (score > bestScore) {
+      bestScore = score;
+      best = c;
+    }
+  });
+
+  return best;
+}
+
+/**
+ * Inject all registered toolbar buttons into the toolbar.
+ * Called on initial setup and whenever the toolbar DOM changes.
+ */
+function _injectAllToolbarButtons() {
+  const toolbar = _findToolbarContainer();
+  if (!toolbar) return;
+
+  // Sort by priority (lower = first / leftmost)
+  const sorted = [..._toolbarRegistry].sort((a, b) => a.priority - b.priority);
+
+  sorted.forEach((entry) => {
+    // Skip if already in toolbar
+    if (toolbar.querySelector(`#${entry.id}`)) return;
+    // Remove stale instances elsewhere in DOM
+    document.querySelectorAll(`#${entry.id}`).forEach((el) => el.remove());
+    // Render and insert
+    try {
+      entry.render(toolbar);
+    } catch (e) {
+      console.error(`[SLUtils:TOOLBAR] Failed to inject ${entry.id}:`, e);
+    }
+  });
+}
+
+/**
+ * Start a shared MutationObserver that watches the chat area for toolbar
+ * changes and re-injects all registered buttons when they disappear.
+ */
+function _ensureToolbarObserver() {
+  if (_toolbarObserver) return;
+
+  const chatArea = document.querySelector('[class*="channelTextArea"]');
+  const target = chatArea || document.body;
+
+  _toolbarObserver = new MutationObserver(() => {
+    // Debounce: only re-inject once per animation frame
+    if (_toolbarReinjectTimer) return;
+    _toolbarReinjectTimer = requestAnimationFrame(() => {
+      _toolbarReinjectTimer = null;
+      // Check if any registered button is missing
+      const anyMissing = _toolbarRegistry.some(
+        (entry) => !document.body.contains(document.getElementById(entry.id))
+      );
+      if (anyMissing) _injectAllToolbarButtons();
+    });
+  });
+
+  _toolbarObserver.observe(target, { childList: true, subtree: true });
+}
+
+/**
+ * Register a toolbar button for injection.
+ *
+ * @param {Object} opts
+ * @param {string}   opts.id       - Unique DOM id for the button wrapper
+ * @param {number}   opts.priority - Insertion order (lower = leftmost). E.g. TitleManager=10, SkillTree=20
+ * @param {Function} opts.render   - (toolbar: HTMLElement) => void. Must create & insert the button.
+ * @param {Function} opts.cleanup  - () => void. Called on unregister to remove DOM elements.
+ */
+function registerToolbarButton(opts) {
+  const { id, priority = 50, render, cleanup } = opts;
+  // Prevent duplicates
+  const existing = _toolbarRegistry.findIndex((e) => e.id === id);
+  if (existing >= 0) _toolbarRegistry.splice(existing, 1);
+
+  _toolbarRegistry.push({ id, priority, render, cleanup });
+  _ensureToolbarObserver();
+  _injectAllToolbarButtons();
+}
+
+/**
+ * Unregister a toolbar button.  Calls its cleanup function and removes
+ * it from the registry.  If no buttons remain, disconnects the observer.
+ *
+ * @param {string} id - The button wrapper id
+ */
+function unregisterToolbarButton(id) {
+  const idx = _toolbarRegistry.findIndex((e) => e.id === id);
+  if (idx >= 0) {
+    try {
+      _toolbarRegistry[idx].cleanup?.();
+    } catch (_) {}
+    _toolbarRegistry.splice(idx, 1);
+  }
+  // Remove from DOM
+  document.querySelectorAll(`#${id}`).forEach((el) => el.remove());
+
+  // If no buttons remain, disconnect observer
+  if (_toolbarRegistry.length === 0 && _toolbarObserver) {
+    _toolbarObserver.disconnect();
+    _toolbarObserver = null;
+    if (_toolbarReinjectTimer) {
+      cancelAnimationFrame(_toolbarReinjectTimer);
+      _toolbarReinjectTimer = null;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -394,5 +555,7 @@ if (typeof window !== 'undefined') {
     mergeSettings,
     getOrCreateOverlay,
     showLevelUpBanner,
+    registerToolbarButton,
+    unregisterToolbarButton,
   };
 }

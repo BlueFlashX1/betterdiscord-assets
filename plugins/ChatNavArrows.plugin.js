@@ -1,7 +1,7 @@
 /**
  * @name ChatNavArrows
  * @description Replaces the "Jump to Present" bar with a compact down-arrow button, and adds an up-arrow button to jump to the first message in the channel.
- * @version 1.1.0
+ * @version 1.2.0
  * @author Solo Leveling Theme Dev
  */
 
@@ -9,14 +9,16 @@ module.exports = class ChatNavArrows {
   constructor() {
     this.observer = null;
     this.scrollListeners = new Map();
-    this.styleEl = null;
   }
 
   start() {
-    this.injectStyles();
+    BdApi.DOM.addStyle("sl-chat-nav-arrows-css", this.getCSS());
     this.patchAll();
+
+    // Observe only the app content area, not entire body — much cheaper
+    const appMount = document.getElementById("app-mount") || document.body;
     this.observer = new MutationObserver(() => this.patchAll());
-    this.observer.observe(document.body, { childList: true, subtree: true });
+    this.observer.observe(appMount, { childList: true, subtree: true });
   }
 
   stop() {
@@ -24,10 +26,7 @@ module.exports = class ChatNavArrows {
       this.observer.disconnect();
       this.observer = null;
     }
-    if (this.styleEl) {
-      this.styleEl.remove();
-      this.styleEl = null;
-    }
+    BdApi.DOM.removeStyle("sl-chat-nav-arrows-css");
     // Remove scroll listeners
     this.scrollListeners.forEach((handler, scroller) => {
       scroller.removeEventListener("scroll", handler);
@@ -41,11 +40,8 @@ module.exports = class ChatNavArrows {
     document.querySelectorAll(".sl-chat-nav-arrow").forEach(el => el.remove());
   }
 
-  injectStyles() {
-    if (this.styleEl) return;
-    this.styleEl = document.createElement("style");
-    this.styleEl.id = "sl-chat-nav-arrows-css";
-    this.styleEl.textContent = `
+  getCSS() {
+    return `
       /* Hide native jump-to-present bars globally */
       div[class^="jumpToPresentBar_"] {
         display: none !important;
@@ -69,9 +65,8 @@ module.exports = class ChatNavArrows {
                     opacity 0.2s ease;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         right: 24px;
-        pointer-events: auto;
-        opacity: 0;
         pointer-events: none;
+        opacity: 0;
       }
       .sl-chat-nav-arrow.sl-visible {
         opacity: 1;
@@ -98,11 +93,10 @@ module.exports = class ChatNavArrows {
         bottom: 68px;
       }
     `;
-    document.head.appendChild(this.styleEl);
   }
 
   patchAll() {
-    const wrappers = document.querySelectorAll('div[class^="messagesWrapper_"]');
+    const wrappers = document.querySelectorAll('div[class*="messagesWrapper_"]');
     wrappers.forEach(wrapper => this.ensureArrows(wrapper));
   }
 
@@ -110,7 +104,7 @@ module.exports = class ChatNavArrows {
     // Don't double-inject
     if (wrapper.querySelector(".sl-chat-nav-down")) return;
 
-    const scroller = wrapper.querySelector('div[class^="scroller_"]');
+    const scroller = wrapper.querySelector('div[class*="scroller_"]');
     if (!scroller) return;
 
     wrapper.style.position = "relative";
