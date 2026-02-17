@@ -33,6 +33,7 @@ for f in \
   Overlay30sRecorder.plugin.js \
   LevelProgressBar.plugin.js \
   ShadowArmy.plugin.js \
+  ShadowExchange.plugin.js \
   SkillTree.plugin.js \
   SoloLevelingStats.plugin.js \
   SoloLevelingToasts.plugin.js \
