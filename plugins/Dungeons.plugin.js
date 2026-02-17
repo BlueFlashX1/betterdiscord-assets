@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.7.0
+ * @version 4.8.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================

@@ -2,7 +2,7 @@
  * @name SkillTree
  * @author BlueFlashX1
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
- * @version 2.0.1
+ * @version 2.1.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================

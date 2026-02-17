@@ -2,7 +2,7 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 3.4.0
+ * @version 3.5.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -3164,7 +3164,7 @@ module.exports = class ShadowArmy {
       }
 
       // Add metadata timestamp for newest-wins load strategy across all 3 tiers
-      settingsToSave._metadata = { lastSave: new Date().toISOString(), version: '3.4.0' };
+      settingsToSave._metadata = { lastSave: new Date().toISOString(), version: '3.5.0' };
 
       // Tier 1: Save to IndexedDB (crash-resistant, survives BD reinstall)
       if (this.saveManager) {

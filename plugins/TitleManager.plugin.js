@@ -2,7 +2,7 @@
  * @name SoloLevelingTitleManager
  * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.1.1
+ * @version 1.2.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================

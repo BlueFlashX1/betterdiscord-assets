@@ -2,7 +2,7 @@
  * @name LevelProgressBar
  * @author BlueFlashX1
  * @description Real-time progress bar showing your level, XP, and rank
- * @version 1.4.0
+ * @version 1.5.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -670,7 +670,7 @@ module.exports = class LevelProgressBar {
   async saveSettings() {
     try {
       const cleanSettings = JSON.parse(JSON.stringify(this.settings));
-      cleanSettings._metadata = { lastSave: new Date().toISOString(), version: '1.4.0' };
+      cleanSettings._metadata = { lastSave: new Date().toISOString(), version: '1.5.0' };
 
       // Tier 1: IndexedDB (crash-resistant, survives BD reinstall)
       if (this.saveManager) {

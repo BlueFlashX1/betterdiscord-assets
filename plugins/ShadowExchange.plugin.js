@@ -1,14 +1,14 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 1.0.0
+ * @version 1.1.0
  * @author matthewthompson
  */
 
 module.exports = class ShadowExchange {
   // ── Constants ──────────────────────────────────────────────────────────
   static PLUGIN_ID = "ShadowExchange";
-  static VERSION = "1.0.0";
+  static VERSION = "1.1.0";
   static STYLE_ID = "shadow-exchange-css";
   static SWIRL_ID = "se-swirl-icon";
   static PANEL_ID = "se-waypoint-panel";

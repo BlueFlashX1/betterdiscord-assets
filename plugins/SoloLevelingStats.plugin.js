@@ -2,7 +2,7 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
- * @version 2.4.0
+ * @version 2.5.0
  * @authorId
  * @authorLink
  * @website
@@ -4802,7 +4802,7 @@ module.exports = class SoloLevelingStats {
         // Add metadata for debugging
         _metadata: {
           lastSave: new Date().toISOString(),
-          version: '1.0.1',
+          version: '2.5.0',
         },
       };
 

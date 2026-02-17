@@ -2,7 +2,7 @@
  * @name SoloLevelingToasts
  * @author BlueFlashX1
  * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.1.0
+ * @version 1.1.1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * @changelog v1.1.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION

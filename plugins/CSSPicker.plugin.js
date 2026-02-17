@@ -17,7 +17,7 @@ module.exports = (() => {
           discord_id: '',
         },
       ],
-      version: '1.2.0',
+      version: '1.3.0',
       description:
         'Hover to inspect, click to capture. Integrates with Theme Auto Maintainer for class verification.',
     },
