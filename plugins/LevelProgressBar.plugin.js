@@ -101,7 +101,8 @@ try {
   const utilsPath = path.join(BdApi.Plugins.folder, 'SoloLevelingUtils.js');
   if (fs.existsSync(utilsPath)) {
     const code = fs.readFileSync(utilsPath, 'utf8');
-    eval(code);
+    // Use new Function() instead of eval() — same scope isolation as other plugins
+    (new Function(code))();
     SLUtils = window.SoloLevelingUtils;
   }
 } catch (error) {

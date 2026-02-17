@@ -1280,6 +1280,9 @@ module.exports = class Dungeons {
     const ResponseCtor = typeof window !== 'undefined' && window.Response ? window.Response : null;
     if (!ResponseCtor) return;
 
+    // Store original so stop() can restore it
+    this._origFetch = origFetch;
+
     window.fetch = (input, init) => {
       const url = typeof input === 'string' ? input : input?.url || '';
       if (url.startsWith('http://127.0.0.1:7242/ingest/')) {
@@ -1288,6 +1291,13 @@ module.exports = class Dungeons {
       return origFetch(input, init);
     };
     this._agentLogsPatched = true;
+  }
+
+  _restoreLocalAgentLogs() {
+    if (!this._agentLogsPatched || !this._origFetch) return;
+    window.fetch = this._origFetch;
+    this._origFetch = null;
+    this._agentLogsPatched = false;
   }
 
   // ==== DEBUG LOGGING ====
@@ -1992,6 +2002,9 @@ module.exports = class Dungeons {
       this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
       this._retryTimeouts = [];
     }
+
+    // Restore original window.fetch (patched by _disableLocalAgentLogs)
+    this._restoreLocalAgentLogs();
 
     // Flush any pending mob writes before fully stopping
     if (this.mobBossStorageManager?.flushAll) {

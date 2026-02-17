@@ -8931,13 +8931,13 @@ module.exports = class ShadowArmy {
           this._retryTimeouts?.add(closeConversionModalTimeoutId);
         } else {
           resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${
-            result.error || 'Failed to convert shadows'
+            this.escapeHtml(result.error || 'Failed to convert shadows')
           }</span>`;
           confirmBtn.disabled = false;
           confirmBtn.textContent = 'Convert';
         }
       } catch (error) {
-        resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${error.message}</span>`;
+        resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${this.escapeHtml(error.message)}</span>`;
         confirmBtn.disabled = false;
         confirmBtn.textContent = 'Convert';
       }

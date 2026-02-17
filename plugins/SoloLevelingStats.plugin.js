@@ -5004,7 +5004,7 @@ module.exports = class SoloLevelingStats {
       this.debugError('CREATE_CHAT_UI_PREVIEW_PANEL', error);
       const fallback = document.createElement('div');
       fallback.className = 'sls-chat-panel';
-      fallback.innerHTML = `<div style="padding: 20px; color: #fff;">Error creating chat UI preview: ${error.message}. Check console for details.</div>`;
+      fallback.innerHTML = `<div style="padding: 20px; color: #fff;">Error creating chat UI preview: ${this.escapeHtml(error.message)}. Check console for details.</div>`;
       return fallback;
     }
   }
