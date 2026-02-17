@@ -5669,7 +5669,7 @@ ${childSel} {
 
     try {
       try {
-        this.applyCritStyle(messageElement);
+        this.applyCritStyle(messageElement, { animate: true });
 
         // FIX: Find the actual message element that has the class (must match what applyCritStyle uses)
         let elementWithClass = messageElement;
@@ -6469,7 +6469,7 @@ ${childSel} {
     // Inline styles removed - now handled by dynamic CSS in injectCritCSS
   }
 
-  applyCritStyle(messageElement) {
+  applyCritStyle(messageElement, { animate = false } = {}) {
     // Re-entrancy guard — prevent cascade from observers detecting our own DOM mutations
     if (this._isApplyingGradient) return;
     this._isApplyingGradient = true;
@@ -6555,8 +6555,8 @@ ${childSel} {
           this.applyFontStyles(content);
           this.applyGlowToContentForStyling(content, useGradient);
 
-          // Add animation if enabled
-          if (this.settings?.critAnimation) {
+          // Add animation ONLY for genuinely new messages (never on restore/scroll)
+          if (animate && this.settings?.critAnimation) {
             content.style.animation = 'critPulse 0.5s ease-in-out';
           }
         }
@@ -9224,7 +9224,7 @@ ${childSel} {
       return;
     }
 
-    this.applyCritStyle(lastMessage);
+    this.applyCritStyle(lastMessage, { animate: true });
     this.critMessages.add(lastMessage);
     this._showToast('Test Critical Hit Applied!', { type: 'success' });
   }
