@@ -9460,6 +9460,14 @@ module.exports = class ShadowArmy {
       const eliteRanks = rankCounts.filter((r) => eliteRankNames.includes(r.rank));
       const standardRanks = rankCounts.filter((r) => !eliteRankNames.includes(r.rank));
 
+      // Get cached total power for display
+      const totalPowerRaw = this.settings.cachedTotalPower || 0;
+      const totalPowerFormatted = totalPowerRaw >= 1e6
+        ? (totalPowerRaw / 1e6).toFixed(1) + 'M'
+        : totalPowerRaw >= 1e3
+        ? (totalPowerRaw / 1e3).toFixed(1) + 'K'
+        : String(Math.floor(totalPowerRaw));
+
       // Generate HTML with proper structure
       widget.innerHTML = `
         <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
@@ -9469,6 +9477,17 @@ module.exports = class ShadowArmy {
           <div class="widget-total" style="color: #999; font-size: 11px;">
             ${totalCount} Total
           </div>
+        </div>
+        <div class="widget-power" style="
+          display: flex; align-items: center; justify-content: center;
+          margin-bottom: 8px; padding: 4px 8px;
+          background: rgba(138, 43, 226, 0.1);
+          border: 1px solid rgba(138, 43, 226, 0.25);
+          border-radius: 4px;
+        ">
+          <span style="color: #8a2be2; font-size: 11px; font-weight: 600; text-shadow: 0 0 4px rgba(138, 43, 226, 0.6); font-family: 'Orbitron', sans-serif;">
+            ⚔ Total Power: ${totalPowerFormatted}
+          </span>
         </div>
         <div class="elite-rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px;">
           ${eliteRanks

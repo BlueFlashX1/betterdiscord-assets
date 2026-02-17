@@ -268,6 +268,31 @@ module.exports = class ShadowExchange {
     }
   }
 
+  // ── Public API (for cross-plugin integration) ───────────────────────────
+
+  /**
+   * Returns a Set of shadow IDs currently stationed at waypoints.
+   * Other plugins (e.g., Dungeons) should exclude these from battle deployment.
+   * @returns {Set<string>}
+   */
+  getMarkedShadowIds() {
+    return new Set(
+      (this.settings?.waypoints || [])
+        .map((w) => w.shadowId)
+        .filter(Boolean)
+    );
+  }
+
+  /**
+   * Check if a specific shadow is stationed at a waypoint.
+   * @param {string} shadowId
+   * @returns {boolean}
+   */
+  isShadowMarked(shadowId) {
+    if (!shadowId || !this.settings?.waypoints) return false;
+    return this.settings.waypoints.some((w) => w.shadowId === shadowId);
+  }
+
   // ── Shadow Assignment ──────────────────────────────────────────────────
 
   async getWeakestAvailableShadow() {

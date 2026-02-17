@@ -5988,9 +5988,21 @@ module.exports = class Dungeons {
     const totalWeight = weightedDungeons.reduce((sum, dw) => sum + dw.weight, 0) || 1;
     const assignedIds = new Set();
 
+    // Shadows stationed at ShadowExchange waypoints are unavailable for battle
+    let exchangeMarkedIds = new Set();
+    try {
+      const sePlugin = BdApi.Plugins.get("ShadowExchange");
+      if (sePlugin?.instance?.getMarkedShadowIds) {
+        exchangeMarkedIds = sePlugin.instance.getMarkedShadowIds();
+      }
+    } catch (_) {}
+
     // Sort shadows once by combat score descending (strongest first)
     const shadowsSorted = [...allShadows]
-      .filter((s) => getShadowId(s))
+      .filter((s) => {
+        const id = getShadowId(s);
+        return id && !exchangeMarkedIds.has(id);
+      })
       .sort((a, b) => getShadowScore(b) - getShadowScore(a));
 
     const pickForDungeon = (dungeonRankIndex, count) => {
@@ -7293,11 +7305,21 @@ module.exports = class Dungeons {
    * @returns {Array} - Array of combat-ready shadows
    */
   getCombatReadyShadows(assignedShadows, deadShadows, shadowHP) {
+    // Defensive check: exclude shadows stationed at ShadowExchange waypoints
+    let exchangeMarkedIds;
+    try {
+      const sePlugin = BdApi.Plugins.get("ShadowExchange");
+      exchangeMarkedIds = sePlugin?.instance?.getMarkedShadowIds?.() || new Set();
+    } catch (_) {
+      exchangeMarkedIds = new Set();
+    }
+
     const combatReady = [];
     for (const shadow of assignedShadows) {
       const shadowId = this.getShadowIdValue(shadow);
       if (!shadowId) continue;
       if (deadShadows.has(shadowId)) continue;
+      if (exchangeMarkedIds.has(shadowId)) continue;
       const hpData = shadowHP[shadowId];
       hpData && hpData.hp > 0 && combatReady.push(shadow);
     }

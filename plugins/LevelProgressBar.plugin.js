@@ -1,7 +1,7 @@
 /**
  * @name LevelProgressBar
  * @author BlueFlashX1
- * @description Real-time progress bar showing your level, XP, rank, and Shadow Army power
+ * @description Real-time progress bar showing your level, XP, and rank
  * @version 1.4.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
@@ -307,7 +307,6 @@ module.exports = class LevelProgressBar {
         <div class="lpb-progress-track">
           <div class="lpb-progress-fill" id="lpb-progress-fill" style="transform: scaleX(0);"></div>
         </div>
-        <div class="lpb-shadow-power" id="lpb-shadow-power">Shadow Army Power: 0</div>
       </div>
     `;
     return bar;
@@ -346,11 +345,6 @@ module.exports = class LevelProgressBar {
           style: { transform: 'scaleX(0)' },
         })
       ),
-      React.createElement('div', {
-        className: 'lpb-shadow-power',
-        id: 'lpb-shadow-power',
-        children: 'Shadow Army Power: 0',
-      })
     );
   }
 
@@ -365,9 +359,6 @@ module.exports = class LevelProgressBar {
     this.lastXP = null;
     this.lastXPRequired = null;
     this.updateProgressBar();
-
-    // Start shadow power updates (event-driven preferred; polling only if needed)
-    this.updateShadowPower().catch(console.error);
 
     // Initialize milestone markers
     this._setTrackedTimeout(() => {
@@ -413,8 +404,6 @@ module.exports = class LevelProgressBar {
     this.lastXPRequired = 0;
     this.eventUnsubscribers = [];
     this.fallbackInterval = null;
-    this.cachedShadowPower = '0';
-    this.shadowPowerUpdateInterval = null;
     this._isStopped = true;
     // Shared tracked-timeout manager
     this._timeouts = SLUtils ? SLUtils.createTrackedTimeouts() : null;
@@ -422,8 +411,6 @@ module.exports = class LevelProgressBar {
     this._updateRafId = null;
     this._updateQueued = false;
     this._lastMilestoneMask = null;
-    this._shadowPowerRefreshRafId = null;
-    this._shadowPowerRefreshQueued = false;
     this._prefersReducedMotion = null;
     this.webpackModules = {
       UserStore: null,
@@ -523,15 +510,6 @@ module.exports = class LevelProgressBar {
       this._updateQueued = false;
     }
     this.detachLevelProgressBarSettingsPanelHandlers?.();
-    if (this.shadowPowerUpdateInterval) {
-      clearInterval(this.shadowPowerUpdateInterval);
-      this.shadowPowerUpdateInterval = null;
-    }
-    if (this._shadowPowerRefreshRafId) {
-      cancelAnimationFrame(this._shadowPowerRefreshRafId);
-      this._shadowPowerRefreshRafId = null;
-      this._shadowPowerRefreshQueued = false;
-    }
 
     // Cleanup webpack patches and React injection
     if (this.reactInjectionActive) {
@@ -964,20 +942,6 @@ module.exports = class LevelProgressBar {
         filter: none !important;
         align-self: center;
         flex-shrink: 0;
-      }
-
-      .lpb-shadow-power {
-        font-size: 12px;
-        font-weight: 600;
-        color: #8a2be2;
-        text-shadow: 0 0 4px rgba(138, 43, 226, 0.6);
-        white-space: nowrap;
-        display: flex;
-        align-items: center;
-        margin-left: 12px;
-        flex-shrink: 0;
-        font-family: 'Orbitron', sans-serif;
-        padding: 6px 12px;
       }
 
       /* Consolidated level-up animation (owned by LevelProgressBar) */
@@ -1520,17 +1484,6 @@ module.exports = class LevelProgressBar {
     return this._prefersReducedMotion;
   }
 
-  queueShadowPowerRefresh() {
-    if (this._isStopped) return;
-    if (this._shadowPowerRefreshQueued) return;
-    this._shadowPowerRefreshQueued = true;
-    this._shadowPowerRefreshRafId = requestAnimationFrame(() => {
-      this._shadowPowerRefreshQueued = false;
-      this._shadowPowerRefreshRafId = null;
-      !this._isStopped && this.refreshProgressText();
-    });
-  }
-
   /**
    * Update progress bar with current data
    */
@@ -1663,81 +1616,11 @@ module.exports = class LevelProgressBar {
    * 3.7 VISUAL EFFECTS & UPDATES
    */
 
-  // Get total shadow power from ShadowArmy plugin (synchronous, returns cached value)
-  // Returns string: Total power of all shadows (formatted)
-  getTotalShadowPower() {
-    return this.cachedShadowPower;
-  }
-
   /**
-   * Update shadow power cache asynchronously
-   */
-  async updateShadowPower() {
-    try {
-      // Check if plugin is enabled before accessing
-      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-        this.cachedShadowPower = '0';
-        await this.refreshProgressText();
-        return;
-      }
-
-      // Get shadow power from SoloLevelingStats plugin (it already calculates it correctly)
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin || !soloPlugin.instance) {
-        this.cachedShadowPower = '0';
-        await this.refreshProgressText();
-        return;
-      }
-
-      const soloStats = soloPlugin.instance;
-
-      // Use the cached shadow power from SoloLevelingStats (it updates it asynchronously)
-      if (typeof soloStats.getTotalShadowPower === 'function') {
-        const shadowPower = soloStats.getTotalShadowPower();
-        if (shadowPower && shadowPower !== '0') {
-          this.cachedShadowPower = shadowPower;
-          await this.refreshProgressText();
-          return;
-        }
-      }
-
-      // If SoloLevelingStats hasn't calculated it yet, trigger an update and retry
-      if (typeof soloStats.updateShadowPower === 'function') {
-        await soloStats.updateShadowPower();
-        // Retry getting the value after update
-        if (typeof soloStats.getTotalShadowPower === 'function') {
-          const shadowPower = soloStats.getTotalShadowPower();
-          this.cachedShadowPower = shadowPower || '0';
-          await this.refreshProgressText();
-          return;
-        }
-      }
-
-      this.cachedShadowPower = '0';
-      await this.refreshProgressText();
-    } catch (error) {
-      this.debugError('UPDATE_SHADOW_POWER', error);
-      this.cachedShadowPower = '0';
-      await this.refreshProgressText();
-    }
-  }
-
-  /**
-   * Refresh progress text with current cached shadow power
+   * Refresh progress text with current data
    */
   async refreshProgressText() {
     if (!this.progressBar) return;
-
-    // Update shadow power display (power only, no count)
-    const shadowPowerEl = this.getCachedElement('#lpb-shadow-power');
-
-    if (shadowPowerEl) {
-      const shadowPower = this.getTotalShadowPower();
-      const newText = `Shadow Army Power: ${shadowPower}`;
-      if (shadowPowerEl.textContent !== newText) {
-        shadowPowerEl.textContent = newText;
-      }
-    }
 
     // Refresh main progress text
     const soloData = this.getSoloLevelingData();
@@ -1752,7 +1635,6 @@ module.exports = class LevelProgressBar {
   /**
    * Update progress text with current rank, level, and XP
    * Format: "Rank: E Lv.1 0/100 XP"
-   * Shadow power is displayed separately to the right of the progress bar
    * @param {string} rank - Current rank
    * @param {number} level - Current level
    * @param {number} xp - Current XP in level
@@ -1766,19 +1648,14 @@ module.exports = class LevelProgressBar {
         return;
       }
 
-      // Format: "Rank: E Lv.1 0/100 XP" (shadow power is separate element)
       const text = `Rank: ${rank} Lv.${level} ${xp}/${xpRequired} XP`;
       progressText.textContent = text;
-
-      // Shadow power display is updated by refreshProgressText() only
-      // DO NOT update shadow power here - it would overwrite the shadow count format
 
       this.debugLog('UPDATE_TEXT', 'Progress text updated', {
         rank,
         level,
         xp,
         xpRequired,
-        shadowPower: this.getTotalShadowPower(),
         text,
       });
     } catch (error) {
@@ -1817,8 +1694,6 @@ module.exports = class LevelProgressBar {
         hasInstance: !!instance,
         hasOnMethod: !!(instance && typeof instance.on === 'function'),
       });
-      // Without events, enable shadow power polling as a fallback.
-      this.startShadowPowerPolling();
       // Still attach DOM CustomEvent listeners (works even if instance.on is unavailable)
       this.subscribeToDomEvents();
       return false;
@@ -1829,14 +1704,11 @@ module.exports = class LevelProgressBar {
     this.subscribeToDomEvents();
 
     // Subscribe to instance events using shared handlers
-    const events = ['xpChanged', 'levelChanged', 'rankChanged', 'statsChanged', 'shadowPowerChanged'];
+    const events = ['xpChanged', 'levelChanged', 'rankChanged', 'statsChanged'];
     for (const event of events) {
       const unsub = instance.on(event, (data) => this._handleEvent(event, data));
       this.eventUnsubscribers.push(unsub);
     }
-
-    // If we successfully subscribed to shadow power events, disable polling.
-    this.stopShadowPowerPolling();
 
     // Log successful subscription (always log, not just debug)
     console.log(
@@ -1855,7 +1727,7 @@ module.exports = class LevelProgressBar {
 
   /**
    * Shared event handler used by both instance.on() and DOM CustomEvent listeners.
-   * Centralises cache invalidation, level-change detection, and shadow power updates.
+   * Centralises cache invalidation and level-change detection.
    */
   _handleEvent(eventName, data) {
     // Invalidate data cache for every event
@@ -1872,20 +1744,6 @@ module.exports = class LevelProgressBar {
       return;
     }
 
-    if (eventName === 'shadowPowerChanged') {
-      try {
-        if (data && data.shadowPower) {
-          this.cachedShadowPower = data.shadowPower;
-          this.queueShadowPowerRefresh();
-        } else {
-          this.updateShadowPower();
-        }
-      } catch (error) {
-        this.debugError('EVENT_SHADOW_POWER', error);
-      }
-      return;
-    }
-
     // xpChanged, rankChanged, statsChanged — just refresh the bar
     this.queueProgressBarUpdate();
   }
@@ -1895,7 +1753,7 @@ module.exports = class LevelProgressBar {
     if (this._domEventSubscribed) return;
     this._domEventSubscribed = true;
 
-    const events = ['xpChanged', 'levelChanged', 'rankChanged', 'statsChanged', 'shadowPowerChanged'];
+    const events = ['xpChanged', 'levelChanged', 'rankChanged', 'statsChanged'];
     const handlers = {};
 
     for (const event of events) {
@@ -1946,7 +1804,6 @@ module.exports = class LevelProgressBar {
     this.debugLog('START_UPDATE', 'Fallback polling started', {
       interval: this.settings.updateInterval || 5000,
     });
-    this.startShadowPowerPolling();
   }
 
   stopUpdating() {
@@ -1955,21 +1812,6 @@ module.exports = class LevelProgressBar {
       this.updateInterval = null;
       this.debugLog('STOP_UPDATE', 'Update interval stopped');
     }
-  }
-
-  startShadowPowerPolling() {
-    if (this.shadowPowerUpdateInterval) return;
-    this.shadowPowerUpdateInterval = setInterval(() => {
-      this.updateShadowPower().catch(() => {});
-    }, 30000);
-    this.debugLog('SHADOW_POWER_POLL', 'Shadow power polling enabled', { intervalMs: 30000 });
-  }
-
-  stopShadowPowerPolling() {
-    if (!this.shadowPowerUpdateInterval) return;
-    clearInterval(this.shadowPowerUpdateInterval);
-    this.shadowPowerUpdateInterval = null;
-    this.debugLog('SHADOW_POWER_POLL', 'Shadow power polling disabled');
   }
 
   /**
