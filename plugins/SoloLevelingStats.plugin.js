@@ -6194,22 +6194,8 @@ module.exports = class SoloLevelingStats {
   }
 
   getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs) {
-    const breakdown = this.getStatBuffBreakdown(statKey, titleBonus, shadowBuffs);
-
-    // Build the HTML
-    let html = totalValue.toString();
-    if (breakdown.hasTitleBuff || breakdown.hasShadowBuff) {
-      let buffContent = '';
-      if (breakdown.hasTitleBuff && breakdown.titleDisplay !== null) {
-        buffContent += `+${breakdown.titleDisplay}%`;
-      }
-      if (breakdown.hasShadowBuff && breakdown.shadowDisplay !== null) {
-        buffContent += `+${breakdown.shadowDisplay}%`;
-      }
-      html += `<span class="sls-chat-stat-buff">${buffContent}</span>`;
-    }
-
-    return html;
+    // Show only the final computed total — buff breakdown is in the tooltip on hover
+    return totalValue.toString();
   }
 
   renderChatStatButtons() {
@@ -6313,13 +6299,6 @@ module.exports = class SoloLevelingStats {
         <div class="sls-chat-stat-item" data-stat="${key}">
           <span class="sls-chat-stat-name">${def.name}</span>
           <span class="sls-chat-stat-value">${totalValue}</span>
-          ${
-            hasTitleBuff
-              ? `<span class="sls-chat-stat-buff-indicator">+${(titlePercent * 100).toFixed(
-                  0
-                )}%</span>`
-              : ''
-          }
         </div>
       `;
       })
