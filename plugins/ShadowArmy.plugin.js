@@ -9418,7 +9418,9 @@ module.exports = class ShadowArmy {
             })
           );
           rankCounts = counts;
-          totalCount = counts.reduce((sum, r) => sum + r.count, 0);
+          // Use getTotalCount() for accurate total — store.count() sees ALL shadows
+          // including compressed ones whose 'rank' index field may not yet be backfilled
+          totalCount = (await this.storageManager.getTotalCount()) || counts.reduce((sum, r) => sum + r.count, 0);
         } catch (err) {
           // Fallback: try full load if index counts fail
           const shadows = this.settings.shadows || [];
