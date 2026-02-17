@@ -16,6 +16,7 @@ ASSETS_DIR="$DEV_DIR/../betterdiscord-assets"
 BLOCKED_PLUGINS=(
     "HSLDockNametagBridge.plugin.js"
     "HSLDockLocalDebug.plugin.js"
+    "UserPanelDockMover.plugin.js"
 )
 
 # Check if assets directory exists

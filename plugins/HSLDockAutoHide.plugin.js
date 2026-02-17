@@ -1,8 +1,8 @@
 /**
  * @name HSLDockAutoHide
- * @description Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift.
- * @version 2.0.3
- * @author Solo Leveling Theme Dev
+ * @description Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift. Includes user panel dock mover (originally by BlueFlashX1).
+ * @version 3.0.0
+ * @author Solo Leveling Theme Dev, BlueFlashX1
  */
 
 module.exports = class HSLDockAutoHide {
@@ -39,22 +39,27 @@ module.exports = class HSLDockAutoHide {
     try {
       this.setDebugHandle({
         boot: "starting",
-        version: "1.3.0",
+        version: "3.0.0",
         error: null,
         note: "Plugin is bootstrapping. If this persists, startup likely crashed.",
       });
     } catch (_) {}
 
     try {
-    const instanceKey = "__HSLDockAutoHideLiveInstance";
+    // Dedup key — only used internally for hot-reload cleanup, NOT a public API.
+    // (Previously __HSLDockAutoHideLiveInstance, used by UserPanelDockMover
+    // for monkey-patching. Now that UserPanelMover is merged, this is internal.)
+    const instanceKey = "__HSLDockAutoHideInstance";
     try {
       const prev = window[instanceKey];
       if (prev && prev !== this && typeof prev.stop === "function") prev.stop();
       window[instanceKey] = this;
     } catch (_) {}
+    // Clean up old global key from previous versions
+    try { delete window.__HSLDockAutoHideLiveInstance; } catch (_) {}
 
     this.pluginId = "HSLDockAutoHide";
-    this.version = "2.0.3";
+    this.version = "3.0.0";
     this.instanceKey = instanceKey;
     this.root = document.documentElement;
     // Dock state classes live on <body> instead of <html> — Discord's React
@@ -100,6 +105,19 @@ module.exports = class HSLDockAutoHide {
     this.debugLastNearBottom = null;
     this.debugFilePath = null;
     this.fs = null;
+    // ── User Panel Dock Mover state (merged from UserPanelDockMover) ──
+    this.panelSelector = "section[aria-label='User status and settings']";
+    this.userPanel = null;
+    this.isUserPanelPositioned = false;
+    this._panelHoverContainer = null;
+    this._onPanelEnter = null;
+    this._onPanelLeave = null;
+    // Collapse sidebar panels height so DM list fills the gap
+    this._origPanelsHeight = document.body.style.getPropertyValue("--custom-app-panels-height") || null;
+    document.body.style.setProperty("--custom-app-panels-height", "0px");
+    // Clean up stale CSS variable from previous versions of UserPanelDockMover
+    document.body.style.removeProperty("--sl-userpanel-width");
+
     this.typingLockMs = 2600;
     this.typingLockUntil = 0;
     this.composerContainerSelector = [
@@ -188,13 +206,13 @@ module.exports = class HSLDockAutoHide {
       }
     } catch (_) {}
 
-    BdApi.UI.showToast("HSLDockAutoHide active", { type: "success", timeout: 2200 });
+    BdApi.UI.showToast("HSLDockAutoHide v3.0.0 active (+ UserPanel)", { type: "success", timeout: 2200 });
     } catch (err) {
       try {
         const message = String(err?.stack || err?.message || err);
         this.setDebugHandle({
           boot: "failed",
-          version: "1.3.0",
+          version: "3.0.0",
           error: message,
           note: "Startup crashed before initialization completed.",
         });
@@ -241,6 +259,22 @@ module.exports = class HSLDockAutoHide {
     this.removeRail();
     this.stopRailFollow();
     this.removeDebugApi();
+
+    // ── User Panel Dock Mover cleanup ──
+    this.unbindUserPanelHover();
+    if (this.userPanel) {
+      this.userPanel.classList.remove("sl-userpanel-docked");
+      this.userPanel.style.removeProperty("right");
+      this.userPanel.style.removeProperty("left");
+    }
+    // Restore sidebar panels height
+    if (this._origPanelsHeight) {
+      document.body.style.setProperty("--custom-app-panels-height", this._origPanelsHeight);
+    } else {
+      document.body.style.removeProperty("--custom-app-panels-height");
+    }
+    this.userPanel = null;
+    this.isUserPanelPositioned = false;
 
     this.root = null;
     this.stateTarget = null;
@@ -296,6 +330,178 @@ module.exports = class HSLDockAutoHide {
 
       body.sl-dock-autohide.sl-dock-hidden .base__5e434[data-fullscreen="false"] .content__5e434 {
         margin-bottom: var(--sl-dock-peek) !important;
+      }
+
+      /* ─────────────────────────────────────────────────────────────────────
+         User Panel Dock Mover — right-side overlay on dock
+         Originally by BlueFlashX1 (UserPanelDockMover plugin), merged v3.0.0
+         pointer-events: none on the section so horizontal scroll passes
+         through to the dock underneath. Children re-enable pointer-events.
+         ───────────────────────────────────────────────────────────────────── */
+      section[aria-label="User status and settings"].sl-userpanel-docked {
+        position: fixed !important;
+        right: 0 !important;
+        left: auto !important;
+        z-index: 42 !important;
+        pointer-events: none !important;
+
+        /* Fixed width */
+        height: var(--sl-dock-height, 80px) !important;
+        width: 300px !important;
+        min-width: 300px !important;
+        max-width: 300px !important;
+
+        /* Transparent — scroll/click passes through to dock */
+        background: transparent !important;
+        background-color: transparent !important;
+        background-image: none !important;
+        border: none !important;
+        border-radius: 0 !important;
+        box-shadow: none !important;
+        padding: 4px 12px !important;
+        margin: 0 !important;
+
+        /* Row layout */
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 0 !important;
+        overflow: hidden !important;
+
+        /* Transition to follow dock show/hide */
+        transition: bottom 240ms cubic-bezier(0.2, 0.75, 0.25, 1),
+                    opacity 180ms ease !important;
+      }
+
+      /* When dock is hidden, push panel off-screen matching dock peek */
+      body.sl-dock-autohide.sl-dock-hidden section[aria-label="User status and settings"].sl-userpanel-docked {
+        bottom: calc(-1 * (var(--sl-dock-height, 80px) - var(--sl-dock-peek, 8px))) !important;
+      }
+
+      /* When dock is visible, panel sits at bottom */
+      body.sl-dock-autohide.sl-dock-visible section[aria-label="User status and settings"].sl-userpanel-docked {
+        bottom: 0 !important;
+      }
+
+      /* Kill transition during composer lock */
+      body.sl-dock-autohide.sl-dock-composer-lock section[aria-label="User status and settings"].sl-userpanel-docked {
+        transition: none !important;
+        bottom: calc(-1 * (var(--sl-dock-height, 80px) - var(--sl-dock-peek, 8px))) !important;
+      }
+
+      /* Voice/connection wrapper — hide when empty, compact when active */
+      section[aria-label="User status and settings"].sl-userpanel-docked > div[class^="wrapper_"]:empty {
+        display: none !important;
+      }
+
+      section[aria-label="User status and settings"].sl-userpanel-docked > div[class^="wrapper_"] {
+        pointer-events: auto !important;
+        margin: 0 6px 0 0 !important;
+        padding: 0 !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Avatar + name + buttons container — re-enable clicks, solid bg */
+      section[aria-label="User status and settings"].sl-userpanel-docked > div[class^="container_"] {
+        pointer-events: auto !important;
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        padding: 4px 12px !important;
+        margin: 0 !important;
+        border-radius: 8px !important;
+        background: rgba(8, 10, 20, 0.96) !important;
+        background-image: none !important;
+        border-left: 1px solid rgba(138, 43, 226, 0.22) !important;
+        box-shadow: -4px 0 12px rgba(0, 0, 0, 0.3) !important;
+        gap: 10px !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        flex: 1 1 0% !important;
+        height: auto !important;
+        max-height: calc(var(--sl-dock-height, 80px) - 10px) !important;
+        overflow: hidden !important;
+      }
+
+      /* Force ALL descendants to respect flex layout */
+      section[aria-label="User status and settings"].sl-userpanel-docked > div[class^="container_"] > * {
+        max-width: none !important;
+        min-width: 0 !important;
+      }
+
+      /* Username text — stretch to fill available space */
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="nameTag_"],
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelSubtextContainer_"],
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="panelTitleContainer_"] {
+        overflow: hidden !important;
+        text-overflow: ellipsis !important;
+        white-space: nowrap !important;
+        max-width: none !important;
+        width: auto !important;
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+      }
+
+      /* The clickable user-info wrapper that Discord constrains */
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="avatarWrapper_"],
+      section[aria-label="User status and settings"].sl-userpanel-docked [class*="withTagAsButton_"],
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="canCopy_"] {
+        flex: 1 1 0% !important;
+        min-width: 0 !important;
+        max-width: none !important;
+        width: auto !important;
+        overflow: hidden !important;
+      }
+
+      /* Avatar size */
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="avatar_"] {
+        width: 32px !important;
+        height: 32px !important;
+        min-width: 32px !important;
+        flex-shrink: 0 !important;
+      }
+
+      /* Action buttons — compact row, pushed to the right */
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="actionButtons_"],
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="actions_"] {
+        display: flex !important;
+        flex-direction: row !important;
+        align-items: center !important;
+        gap: 2px !important;
+        flex-shrink: 0 !important;
+        flex-grow: 0 !important;
+        margin-left: auto !important;
+      }
+
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="actionButtons_"] button,
+      section[aria-label="User status and settings"].sl-userpanel-docked [class^="actions_"] button {
+        width: 28px !important;
+        height: 28px !important;
+        min-width: 28px !important;
+        padding: 2px !important;
+      }
+
+      /* Reclaim sidebar space — panel is visually in the dock now.
+         The panels wrapper in the sidebar still reserves height for the
+         user panel. Collapse it so the DM list extends into the gap. */
+      div[class^="panels_"] section[aria-label="User status and settings"].sl-userpanel-docked {
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
+      }
+
+      /* Collapse the panels wrapper itself when panel is docked */
+      div[class^="panels_"]:has(section[aria-label="User status and settings"].sl-userpanel-docked) {
+        height: 0 !important;
+        min-height: 0 !important;
+        max-height: 0 !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        overflow: hidden !important;
       }
     `;
 
@@ -361,6 +567,7 @@ module.exports = class HSLDockAutoHide {
         this.stateTarget.classList.add("sl-dock-autohide");
       }
       this.syncDock();
+      this.trySetupUserPanel();
       // Immediately correct class state if actively typing — syncDock may
       // have called applyDockStateInline via a dock-change path, and any
       // stale state must be corrected before the rest of the tick runs.
@@ -479,6 +686,80 @@ module.exports = class HSLDockAutoHide {
     if (!this.dock) return;
     this.dock.removeEventListener("mouseenter", this.onDockEnter);
     this.dock.removeEventListener("mouseleave", this.onDockLeave);
+  }
+
+  // ── User Panel Dock Mover (merged from UserPanelDockMover by BlueFlashX1) ──
+
+  trySetupUserPanel() {
+    const panel = document.querySelector(this.panelSelector);
+    const dock = this.dock;
+
+    if (!panel || !dock) return;
+
+    // Already tracking these exact elements
+    if (this.isUserPanelPositioned && panel === this.userPanel) {
+      if (!panel.classList.contains("sl-userpanel-docked")) {
+        panel.classList.add("sl-userpanel-docked");
+      }
+      // Retry hover bind if the container_ appeared after initial setup
+      if (!this._panelHoverContainer) {
+        this.bindUserPanelHover(panel);
+      }
+      return;
+    }
+
+    // Clean up previous panel if element changed
+    if (this.userPanel && this.userPanel !== panel) {
+      this.userPanel.classList.remove("sl-userpanel-docked");
+      this.userPanel.style.removeProperty("right");
+      this.userPanel.style.removeProperty("left");
+    }
+
+    this.userPanel = panel;
+    panel.classList.add("sl-userpanel-docked");
+    this.isUserPanelPositioned = true;
+
+    // Bind dock-hover bridge so hovering nametag keeps dock open
+    this.bindUserPanelHover(panel);
+    this.debug("userpanel:setup", { found: true }, true);
+  }
+
+  bindUserPanelHover(panel) {
+    this.unbindUserPanelHover();
+
+    // Target the inner container (pointer-events: auto) — the outer section
+    // is pointer-events: none so it never fires mouse events.
+    const container = panel.querySelector("div[class^='container_']");
+    if (!container) return;
+
+    this._onPanelEnter = () => {
+      if (Date.now() < this.typingLockUntil) return;
+      this.pointerOverDock = true;
+      this.revealHoldUntil = 0;
+      this.clearHideTimer();
+      this.clearRevealTimer("userpanel-enter");
+      this.showDock("userpanel-enter");
+    };
+
+    this._onPanelLeave = () => {
+      this.pointerOverDock = false;
+      this.scheduleHide(this.hideDelayMs);
+    };
+
+    container.addEventListener("mouseenter", this._onPanelEnter);
+    container.addEventListener("mouseleave", this._onPanelLeave);
+    this._panelHoverContainer = container;
+    this.debug("userpanel:hover-bridge-bound", {}, true);
+  }
+
+  unbindUserPanelHover() {
+    if (this._panelHoverContainer) {
+      if (this._onPanelEnter) this._panelHoverContainer.removeEventListener("mouseenter", this._onPanelEnter);
+      if (this._onPanelLeave) this._panelHoverContainer.removeEventListener("mouseleave", this._onPanelLeave);
+    }
+    this._panelHoverContainer = null;
+    this._onPanelEnter = null;
+    this._onPanelLeave = null;
   }
 
   resolveDockMoveTarget(dock) {
@@ -1010,7 +1291,10 @@ module.exports = class HSLDockAutoHide {
     if (x < 0 || y < 0) return false;
     const hit = document.elementFromPoint(x, y);
     if (!hit || !(hit instanceof Element)) return false;
-    return hit === this.dock || this.dock.contains(hit);
+    if (hit === this.dock || this.dock.contains(hit)) return true;
+    // Extended check — is cursor on the docked user panel or its children?
+    if (this.userPanel && (hit === this.userPanel || this.userPanel.contains(hit))) return true;
+    return false;
   }
 
   isCursorNearBottom() {

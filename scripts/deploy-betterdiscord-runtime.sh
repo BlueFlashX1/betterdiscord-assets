@@ -11,6 +11,7 @@ BD_PLUGINS="$BD_ROOT/plugins"
 BLOCKED_PLUGINS=(
   "HSLDockNametagBridge.plugin.js"
   "HSLDockLocalDebug.plugin.js"
+  "UserPanelDockMover.plugin.js"
 )
 
 mkdir -p "$BD_THEMES" "$BD_PLUGINS"
