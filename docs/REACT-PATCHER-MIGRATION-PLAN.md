@@ -1,9 +1,38 @@
 # React Patcher Migration Plan
 
-> **Status**: PLAN ONLY — Do not implement until approved
+> **Status**: PARTIALLY IMPLEMENTED — Low/medium-risk phases complete, high-risk phases pending
 > **Created**: February 17, 2026
+> **Last Updated**: February 17, 2026
 > **Backup**: `plugins/_backups/20260217_041646/`
 > **Scope**: Migrate raw DOM injection → React patcher pattern across Solo Leveling BD plugins
+
+---
+
+## Implementation Status
+
+| Phase | Plugin(s) | Risk | Status | Commit |
+|-------|-----------|------|--------|--------|
+| Phase 0 | Deploy scripts | Low | ✅ Done | `bb4688d` |
+| Phase 1 | SoloLevelingUtils — toolbar registry + guard option | Low | ✅ Done | `1a41e6b` |
+| Phase 3 | ChatNavArrows — targeted observer + resilient selectors | Low | ✅ Done | `bb4688d` |
+| Phase 3.5 (partial) | SkillTree + TitleManager — shared observer registry | Medium | ✅ Done (observer only) | `1a41e6b` |
+| Phase 4 | HSLDockAutoHide — resilient CSS selectors | Low | ✅ Done | `bb4688d` |
+| Phase 6 | SoloLevelingStats — SLUtils.tryReactInjection() delegate | Medium | ✅ Done | `1a41e6b` |
+| Phase 3.5 (full) | SkillTree + TitleManager — **React toolbar patcher** | **HIGH** | ❌ Pending | — |
+| Phase 5 | Dungeons — HP bars → React message patcher | **CRITICAL/HIGH** | ❌ Pending | — |
+| Phase 2 | ShadowExchange — swirl icon (body-level is correct) | N/A | ⏭ Intentionally skipped | — |
+
+### What's Done vs What's Still Needed
+
+**SkillTree + TitleManager (Phase 3.5)**:
+- ✅ Shared `MutationObserver` via `SLUtils.registerToolbarButton()` — eliminates per-plugin observer duplication
+- ✅ Legacy fallback preserved if SLUtils unavailable
+- ❌ **Still DOM-based**: Buttons are `createElement` + `appendChild` into the toolbar, destroyed on every React re-render, re-injected by observer
+- ❌ **Need**: Patch the toolbar's React component via `BdApi.Patcher.after()` so buttons survive re-renders natively (no observer needed)
+
+**Dungeons (Phase 5)**:
+- ❌ Not started — 10k+ line plugin, HP bars deeply coupled with fight state management, restoration loop, throttled update queue
+- ❌ **Need**: Migrate HP bar injection from raw DOM into message containers to React-based message component patching
 
 ---
 
@@ -851,20 +880,20 @@ This is a better approach than the original plan suggested.
 
 ---
 
-### REVISED Priority Matrix (Post-Review)
+### REVISED Priority Matrix (Post-Review + Implementation Status)
 
-| Priority | Phase | Plugin(s) | What Changes | Effort |
-|----------|-------|-----------|-------------|--------|
-| **P0** | Phase 0 | Deploy scripts | Add SLUtils.js to deploy pipeline | 0.5 session |
-| **P1** | Phase 1 | SoloLevelingUtils | Add toolbar injection, consolidate patterns | 1 session |
-| **P2** | Phase 2 | ShadowExchange | Swirl icon → sibling React injection | 1 session |
-| **P3** | Phase 3 | ChatNavArrows | Message list → React patcher | 1-2 sessions |
-| **P3.5** | Phase 3.5 (NEW) | SkillTree + TitleManager | Toolbar → React patcher | 1-2 sessions |
-| **P4** | Phase 4 | HSLDockAutoHide | Resilient selectors via Webpack | 0.5 session |
-| **P5** | Phase 5 | Dungeons | HP bars → message patcher | 1-2 sessions |
-| **P6** | Phase 6 | SoloLevelingStats | Refactor to use SLUtils (consistency) | 0.5 session |
-| **P7** | Phase 7 | SoloLevelingToasts + CriticalHit | Audit only | 0.5 session |
-| | | **Total** | | **7-10 sessions** |
+| Priority | Phase | Plugin(s) | What Changes | Effort | Status |
+|----------|-------|-----------|-------------|--------|--------|
+| ~~**P0**~~ | ~~Phase 0~~ | ~~Deploy scripts~~ | ~~Add SLUtils.js to deploy pipeline~~ | ~~0.5 session~~ | ✅ Done |
+| ~~**P1**~~ | ~~Phase 1~~ | ~~SoloLevelingUtils~~ | ~~Add toolbar registry, guard option~~ | ~~1 session~~ | ✅ Done |
+| ~~**P3**~~ | ~~Phase 3~~ | ~~ChatNavArrows~~ | ~~Targeted observer + resilient selectors~~ | ~~0.5 session~~ | ✅ Done |
+| ~~**P3.5a**~~ | ~~Phase 3.5 (partial)~~ | ~~SkillTree + TitleManager~~ | ~~Shared observer registry~~ | ~~1 session~~ | ✅ Done |
+| ~~**P4**~~ | ~~Phase 4~~ | ~~HSLDockAutoHide~~ | ~~Resilient CSS selectors~~ | ~~0.5 session~~ | ✅ Done |
+| ~~**P6**~~ | ~~Phase 6~~ | ~~SoloLevelingStats~~ | ~~Refactor to use SLUtils~~ | ~~0.5 session~~ | ✅ Done |
+| **P3.5b** | Phase 3.5 (full) | SkillTree + TitleManager | **Toolbar → React patcher** (HIGH RISK) | 1-2 sessions | ❌ Pending |
+| **P5** | Phase 5 | Dungeons | **HP bars → message patcher** (CRITICAL/HIGH RISK) | 2-3 sessions | ❌ Pending |
+| **P7** | Phase 7 | SoloLevelingToasts + CriticalHit | Audit only | 0.5 session | ❌ Pending |
+| | | **Remaining** | | **4-6 sessions** | |
 
 ### Key Architectural Decision Needed
 

@@ -534,25 +534,34 @@ module.exports = class SkillTree {
 
     this.injectCSS();
 
-    // Register toolbar button via shared SLUtils registry (shared observer)
-    // Falls back to legacy createSkillTreeButton if SLUtils unavailable
+    // Register toolbar button via SLUtils — React patcher (Tier 1) with DOM fallback (Tier 2).
+    // If SLUtils is unavailable, falls back to legacy createSkillTreeButton.
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'st-skill-tree-button-wrapper',
         priority: 20, // After TitleManager (10)
-        render: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
+        // Tier 1: React injection — button lives in React tree, survives re-renders
+        renderReact: (React, _channel) => this._renderSkillTreeButtonReact(React),
+        // Tier 2: DOM fallback — createElement + appendChild (re-injected by MutationObserver)
+        renderDOM: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
         cleanup: () => {
           document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
           this.skillTreeButton = null;
         },
+        onDOMMount: (el) => {
+          const btn = el.querySelector?.('.st-skill-tree-button');
+          if (btn) { this.skillTreeButton = btn; this.updateButtonText(); }
+        },
       });
-      // Still need initial render + retry for timing
+      // Retry after 2s for timing (React patcher may not fire until next render cycle)
       this._retryTimeout1 = this._setTrackedTimeout(() => {
         if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
+          // Re-register triggers re-injection for whichever tier is active
           this._SLUtils.registerToolbarButton({
             id: 'st-skill-tree-button-wrapper',
             priority: 20,
-            render: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
+            renderReact: (React, _channel) => this._renderSkillTreeButtonReact(React),
+            renderDOM: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
             cleanup: () => {
               document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
               this.skillTreeButton = null;
@@ -689,6 +698,62 @@ module.exports = class SkillTree {
 
     this.skillTreeButton = button;
     this.updateButtonText();
+  }
+
+  /**
+   * Render SkillTree button as a React element (for SLUtils Tier 1 React toolbar patcher).
+   * Returns a React element that will be injected into ChatButtonsGroup.type children.
+   * @param {Object} React - BdApi.React
+   * @returns {ReactElement}
+   */
+  _renderSkillTreeButtonReact(React) {
+    if (this._isStopped) return null;
+
+    const pluginInstance = this;
+    const sp = this.settings?.skillPoints ?? 0;
+
+    // SVG paths for skill tree layers icon
+    const svgPaths = [
+      'M12 2L2 7L12 12L22 7L12 2Z',
+      'M2 17L12 22L22 17',
+      'M2 12L12 17L22 12',
+    ];
+
+    return React.createElement(
+      'div',
+      {
+        id: 'st-skill-tree-button-wrapper',
+        className: 'st-skill-tree-button-wrapper',
+        style: { display: 'flex', alignItems: 'center' },
+      },
+      React.createElement(
+        'button',
+        {
+          className: 'st-skill-tree-button',
+          title: `Skill Tree (${sp} SP)`,
+          onClick: () => pluginInstance.showSkillTreeModal(),
+          ref: (el) => {
+            if (el && el !== pluginInstance.skillTreeButton) {
+              pluginInstance.skillTreeButton = el;
+            }
+          },
+        },
+        React.createElement(
+          'svg',
+          {
+            width: '24',
+            height: '24',
+            viewBox: '0 0 24 24',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: '2',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          },
+          ...svgPaths.map((d, i) => React.createElement('path', { key: i, d }))
+        )
+      )
+    );
   }
 
   startLevelPolling() {

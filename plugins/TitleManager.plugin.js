@@ -304,6 +304,50 @@ module.exports = class SoloLevelingTitleManager {
     this.debugLog('BUTTON', 'Title button created via SLUtils toolbar registry');
   }
 
+  /**
+   * Render Title button as a React element (for SLUtils React toolbar patcher — Tier 1).
+   * @param {object} React - React instance from Discord's internals
+   * @returns {React.Element|null}
+   */
+  _renderTitleButtonReact(React) {
+    if (this._isStopped) return null;
+
+    const pluginInstance = this;
+
+    return React.createElement(
+      'div',
+      {
+        id: 'tm-title-button-wrapper',
+        className: 'tm-title-button-wrapper',
+        style: { display: 'flex', alignItems: 'center' },
+      },
+      React.createElement(
+        'button',
+        {
+          className: 'tm-title-button',
+          title: 'Titles',
+          onClick: () => pluginInstance.openTitleModal(),
+          ref: (el) => {
+            if (el) pluginInstance.titleButton = el;
+          },
+        },
+        React.createElement(
+          'svg',
+          {
+            className: 'tm-title-icon',
+            viewBox: '0 0 24 24',
+            width: '20',
+            height: '20',
+            fill: 'currentColor',
+          },
+          React.createElement('path', {
+            d: 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z',
+          })
+        )
+      )
+    );
+  }
+
   _getSoloPluginInstanceCached(now = Date.now()) {
     if (
       this._cache.soloPluginInstance &&
@@ -759,16 +803,23 @@ module.exports = class SoloLevelingTitleManager {
     // ============================================================================
     this.initializeWebpackModules();
 
-    // Register toolbar button via shared SLUtils registry (shared observer)
-    // Falls back to legacy createTitleButton if SLUtils unavailable
+    // Register toolbar button via SLUtils — React patcher (Tier 1) with DOM fallback (Tier 2).
+    // If SLUtils is unavailable, falls back to legacy createTitleButton.
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'tm-title-button-wrapper',
         priority: 10, // Before SkillTree (20)
-        render: (toolbar) => this._renderTitleButtonInto(toolbar),
+        // Tier 1: React injection — button lives in React tree, survives re-renders
+        renderReact: (React, _channel) => this._renderTitleButtonReact(React),
+        // Tier 2: DOM fallback — createElement + appendChild (re-injected by MutationObserver)
+        renderDOM: (toolbar) => this._renderTitleButtonInto(toolbar),
         cleanup: () => {
           document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
           this.titleButton = null;
+        },
+        onDOMMount: (el) => {
+          const btn = el.querySelector?.('.tm-title-button');
+          if (btn) this.titleButton = btn;
         },
       });
       // Retry after 2s for timing
@@ -777,7 +828,8 @@ module.exports = class SoloLevelingTitleManager {
           this._SLUtils.registerToolbarButton({
             id: 'tm-title-button-wrapper',
             priority: 10,
-            render: (toolbar) => this._renderTitleButtonInto(toolbar),
+            renderReact: (React, _channel) => this._renderTitleButtonReact(React),
+            renderDOM: (toolbar) => this._renderTitleButtonInto(toolbar),
             cleanup: () => {
               document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
               this.titleButton = null;
