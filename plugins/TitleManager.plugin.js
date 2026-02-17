@@ -255,56 +255,6 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   /**
-   * Render Title button into a given toolbar container (for SLUtils toolbar registry).
-   * Extracted from createTitleButton() — only handles element creation + insertion.
-   * @param {HTMLElement} toolbar - The toolbar container to render into
-   */
-  _renderTitleButtonInto(toolbar) {
-    if (this._isStopped) return;
-    if (!this._canUserType()) return;
-
-    // If button already exists in this toolbar, just keep it
-    const existingInToolbar = toolbar.querySelector('.tm-title-button');
-    if (existingInToolbar && document.body.contains(existingInToolbar)) {
-      this.titleButton = existingInToolbar;
-      return;
-    }
-
-    // Create title button with SVG icon, wrapped to match Discord native buttons
-    const wrapper = document.createElement('div');
-    wrapper.className = 'tm-title-button-wrapper';
-
-    const button = document.createElement('button');
-    button.className = 'tm-title-button';
-    button.replaceChildren(this.createTitleButtonIconSvg());
-    button.title = 'Titles';
-    button.addEventListener('click', () => this.openTitleModal());
-
-    wrapper.appendChild(button);
-
-    // Insert before skill tree button wrapper (or before apps button if no skill tree)
-    const skillTreeWrapper = toolbar.querySelector('.st-skill-tree-button-wrapper');
-    const skillTreeBtn = toolbar.querySelector('.st-skill-tree-button');
-    const appsButton = Array.from(toolbar.children).find(
-      (el) =>
-        el.querySelector('[class*="apps"]') ||
-        el.getAttribute('aria-label')?.toLowerCase().includes('app')
-    );
-
-    const insertRef = skillTreeWrapper || skillTreeBtn;
-    if (insertRef) {
-      toolbar.insertBefore(wrapper, insertRef);
-    } else if (appsButton) {
-      toolbar.insertBefore(wrapper, appsButton);
-    } else {
-      toolbar.appendChild(wrapper);
-    }
-
-    this.titleButton = button;
-    this.debugLog('BUTTON', 'Title button created via SLUtils toolbar registry');
-  }
-
-  /**
    * Render Title button as a React element (for SLUtils React toolbar patcher — Tier 1).
    * @param {object} React - React instance from Discord's internals
    * @returns {React.Element|null}
@@ -336,9 +286,10 @@ module.exports = class SoloLevelingTitleManager {
           {
             className: 'tm-title-icon',
             viewBox: '0 0 24 24',
-            width: '20',
-            height: '20',
+            width: '18',
+            height: '18',
             fill: 'currentColor',
+            style: { display: 'block' },
           },
           React.createElement('path', {
             d: 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z',
@@ -803,52 +754,26 @@ module.exports = class SoloLevelingTitleManager {
     // ============================================================================
     this.initializeWebpackModules();
 
-    // Register toolbar button via SLUtils — React patcher (Tier 1) with DOM fallback (Tier 2).
+    // Register toolbar button via SLUtils React patcher.
     // If SLUtils is unavailable, falls back to legacy createTitleButton.
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'tm-title-button-wrapper',
         priority: 10, // Before SkillTree (20)
-        // Tier 1: React injection — button lives in React tree, survives re-renders
         renderReact: (React, _channel) => this._renderTitleButtonReact(React),
-        // Tier 2: DOM fallback — createElement + appendChild (re-injected by MutationObserver)
-        renderDOM: (toolbar) => this._renderTitleButtonInto(toolbar),
         cleanup: () => {
-          document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
           this.titleButton = null;
         },
-        onDOMMount: (el) => {
-          const btn = el.querySelector?.('.tm-title-button');
-          if (btn) this.titleButton = btn;
-        },
       });
-      // Retry after 2s for timing
-      this._retryTimeout1 = this._setTrackedTimeout(() => {
-        if (!this.titleButton || !document.body.contains(this.titleButton)) {
-          this._SLUtils.registerToolbarButton({
-            id: 'tm-title-button-wrapper',
-            priority: 10,
-            renderReact: (React, _channel) => this._renderTitleButtonReact(React),
-            renderDOM: (toolbar) => this._renderTitleButtonInto(toolbar),
-            cleanup: () => {
-              document.querySelectorAll('.tm-title-button-wrapper').forEach((w) => w.remove());
-              this.titleButton = null;
-            },
-          });
-        }
-        this._retryTimeout1 = null;
-      }, 2000);
     } else {
-      // Legacy path — own observer
+      // Legacy path — own observer (SLUtils unavailable)
       this.createTitleButton();
 
-      // FUNCTIONAL: Retry button creation (short-circuit, no if-else)
       this._retryTimeout1 = this._setTrackedTimeout(() => {
         (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
         this._retryTimeout1 = null;
       }, 2000);
 
-      // FUNCTIONAL: Additional retry (short-circuit, no if-else)
       this._retryTimeout2 = this._setTrackedTimeout(() => {
         (!this.titleButton || !document.body.contains(this.titleButton)) && this.createTitleButton();
         this._retryTimeout2 = null;
@@ -1077,13 +1002,13 @@ module.exports = class SoloLevelingTitleManager {
         transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
         margin: 0;
         flex-shrink: 0;
-        padding: 2px;
+        padding: 0;
         box-sizing: border-box;
       }
 
       .tm-title-button svg {
-        width: 18px;
-        height: 18px;
+        width: 16px;
+        height: 16px;
         transition: color 0.15s ease;
         display: block;
       }

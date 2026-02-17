@@ -534,42 +534,17 @@ module.exports = class SkillTree {
 
     this.injectCSS();
 
-    // Register toolbar button via SLUtils — React patcher (Tier 1) with DOM fallback (Tier 2).
+    // Register toolbar button via SLUtils React patcher.
     // If SLUtils is unavailable, falls back to legacy createSkillTreeButton.
     if (this._SLUtils?.registerToolbarButton) {
       this._SLUtils.registerToolbarButton({
         id: 'st-skill-tree-button-wrapper',
         priority: 20, // After TitleManager (10)
-        // Tier 1: React injection — button lives in React tree, survives re-renders
         renderReact: (React, _channel) => this._renderSkillTreeButtonReact(React),
-        // Tier 2: DOM fallback — createElement + appendChild (re-injected by MutationObserver)
-        renderDOM: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
         cleanup: () => {
-          document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
           this.skillTreeButton = null;
         },
-        onDOMMount: (el) => {
-          const btn = el.querySelector?.('.st-skill-tree-button');
-          if (btn) { this.skillTreeButton = btn; this.updateButtonText(); }
-        },
       });
-      // Retry after 2s for timing (React patcher may not fire until next render cycle)
-      this._retryTimeout1 = this._setTrackedTimeout(() => {
-        if (!this.skillTreeButton || !document.body.contains(this.skillTreeButton)) {
-          // Re-register triggers re-injection for whichever tier is active
-          this._SLUtils.registerToolbarButton({
-            id: 'st-skill-tree-button-wrapper',
-            priority: 20,
-            renderReact: (React, _channel) => this._renderSkillTreeButtonReact(React),
-            renderDOM: (toolbar) => this._renderSkillTreeButtonInto(toolbar),
-            cleanup: () => {
-              document.querySelectorAll('.st-skill-tree-button-wrapper').forEach((w) => w.remove());
-              this.skillTreeButton = null;
-            },
-          });
-        }
-        this._retryTimeout1 = null;
-      }, 2000);
     } else {
       // Legacy path — own observer
       this.createSkillTreeButton();
@@ -647,57 +622,6 @@ module.exports = class SkillTree {
     } catch (_) {
       this._SLUtils = null;
     }
-  }
-
-  /**
-   * Render SkillTree button into a given toolbar container (for SLUtils toolbar registry).
-   * Extracted from createSkillTreeButton() — only handles element creation + insertion.
-   * @param {HTMLElement} toolbar - The toolbar container to render into
-   */
-  _renderSkillTreeButtonInto(toolbar) {
-    if (this._isStopped) return;
-    if (!this._canUserType()) return;
-
-    // If button already exists in this toolbar, just update it
-    const existingInToolbar = toolbar.querySelector('.st-skill-tree-button');
-    if (existingInToolbar && document.body.contains(existingInToolbar)) {
-      this.skillTreeButton = existingInToolbar;
-      this.updateButtonText();
-      return;
-    }
-
-    // Create button with skill tree/layers icon, wrapped to match Discord native buttons
-    const wrapper = document.createElement('div');
-    wrapper.className = 'st-skill-tree-button-wrapper';
-
-    const button = document.createElement('button');
-    button.className = 'st-skill-tree-button';
-    button.replaceChildren(this.createSkillTreeButtonIconSvg());
-    button.title = `Skill Tree (${this.settings.skillPoints} SP)`;
-    button.addEventListener('click', () => this.showSkillTreeModal());
-
-    wrapper.appendChild(button);
-
-    // Insert after title button wrapper (or before apps button if no title button)
-    const titleBtnWrapper = toolbar.querySelector('.tm-title-button-wrapper');
-    const titleBtn = toolbar.querySelector('.tm-title-button');
-    const appsButton = Array.from(toolbar.children).find(
-      (el) =>
-        el.querySelector('[class*="apps"]') ||
-        el.getAttribute('aria-label')?.toLowerCase().includes('app')
-    );
-
-    const insertRef = titleBtnWrapper || titleBtn;
-    if (insertRef) {
-      toolbar.insertBefore(wrapper, insertRef.nextSibling);
-    } else if (appsButton) {
-      toolbar.insertBefore(wrapper, appsButton);
-    } else {
-      toolbar.appendChild(wrapper);
-    }
-
-    this.skillTreeButton = button;
-    this.updateButtonText();
   }
 
   /**
@@ -2555,6 +2479,7 @@ module.exports = class SkillTree {
       .skilltree-skill-level {
         color: #00ff88;
         font-size: 12px;
+        margin-top: 10px;
         margin-bottom: 6px;
         font-weight: 600;
         text-shadow: 0 0 8px rgba(0, 255, 136, 0.5);

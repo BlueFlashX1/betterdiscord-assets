@@ -10009,7 +10009,8 @@ module.exports = class SoloLevelingStats {
       }
 
       .sls-levelup-subtitle {
-        margin-top: 2px;
+        margin-top: 6px;
+        padding-top: 4px;
         font-size: 12px;
         font-weight: 700;
         opacity: 0.92;

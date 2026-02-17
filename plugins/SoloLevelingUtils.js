@@ -382,27 +382,19 @@ function showLevelUpBanner(overlay, opts = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Toolbar Injection — React Patcher + DOM Fallback
+// Toolbar Injection — React Patcher
 // ---------------------------------------------------------------------------
 //
-// Two-tier system:
-//   Tier 1 (preferred): Patch ChatButtonsGroup.type via BdApi.Patcher.after()
-//     - Buttons live in React's tree → survive re-renders natively
-//     - Single patch handles all registered buttons
-//   Tier 2 (fallback):  DOM injection + shared MutationObserver
-//     - Used when the ChatButtonsGroup webpack module can't be found
-//     - Identical behaviour to the pre-React approach
+// Patches ChatButtonsGroup.type via BdApi.Patcher.after() so buttons live
+// in React's tree and survive re-renders natively.  Single patch handles
+// all registered buttons sorted by priority.
 //
-// Plugins call registerToolbarButton() with BOTH a renderReact callback
-// (for Tier 1) and a renderDOM callback (for Tier 2).  SLUtils picks the
-// best available strategy automatically.
+// Plugins call registerToolbarButton() with a renderReact callback.
 // ---------------------------------------------------------------------------
 
 // ── Shared state ──
-const _toolbarRegistry = [];       // { id, priority, renderReact?, renderDOM?, cleanup?, onDOMMount? }
-let _toolbarPatcherActive = false;  // true once Tier 1 React patcher is installed
-let _toolbarObserver = null;        // Tier 2 MutationObserver
-let _toolbarReinjectTimer = null;   // Tier 2 debounce RAF id
+const _toolbarRegistry = [];       // { id, priority, renderReact, cleanup? }
+let _toolbarPatcherActive = false;  // true once React patcher is installed
 const _TOOLBAR_PATCHER_ID = 'SLUtils_Toolbar';
 
 // ── Tier 1: React patcher ──
@@ -518,97 +510,27 @@ function _removeToolbarReactPatcher() {
   _toolbarPatcherActive = false;
 }
 
-// ── Tier 2: DOM fallback (unchanged from original) ──
-
-function _findToolbarContainer() {
-  const actionBtns = document.querySelectorAll(
-    '[class*="channelTextArea"] [aria-label*="emoji" i], ' +
-    '[class*="channelTextArea"] [aria-label*="gif" i], ' +
-    '[class*="channelTextArea"] [aria-label*="sticker" i], ' +
-    '[class*="channelTextArea"] [class*="emojiButton"], ' +
-    '[class*="channelTextArea"] [class*="attachButton"]'
-  );
-  const candidates = new Set();
-  actionBtns.forEach((btn) => {
-    if (btn.parentElement) candidates.add(btn.parentElement);
-    const container = btn.closest(
-      '[class*="buttons"], [class*="buttonContainer"], [class*="actionButtons"], [class*="inner"]'
-    );
-    if (container) candidates.add(container);
-  });
-  let best = null;
-  let bestScore = -1;
-  candidates.forEach((c) => {
-    const hasAction = !!c.querySelector(
-      '[aria-label*="emoji" i], [aria-label*="gif" i], [class*="emojiButton"]'
-    );
-    const btnCount = c.querySelectorAll('button, [class*="button"], [aria-label]').length;
-    const score = (hasAction ? 100 : 0) + btnCount;
-    if (score > bestScore) { bestScore = score; best = c; }
-  });
-  return best;
-}
-
-function _injectAllToolbarButtons() {
-  const toolbar = _findToolbarContainer();
-  if (!toolbar) return;
-  const sorted = [..._toolbarRegistry]
-    .filter((e) => typeof e.renderDOM === 'function')
-    .sort((a, b) => a.priority - b.priority);
-  sorted.forEach((entry) => {
-    if (toolbar.querySelector(`#${entry.id}`)) return;
-    document.querySelectorAll(`#${entry.id}`).forEach((el) => el.remove());
-    try {
-      entry.renderDOM(toolbar);
-      if (entry.onDOMMount) {
-        const el = document.getElementById(entry.id);
-        if (el) entry.onDOMMount(el);
-      }
-    } catch (e) {
-      console.error(`[SLUtils:TOOLBAR_DOM] Failed to inject ${entry.id}:`, e);
-    }
-  });
-}
-
-function _ensureToolbarObserver() {
-  if (_toolbarObserver) return;
-  const chatArea = document.querySelector('[class*="channelTextArea"]');
-  const target = chatArea || document.body;
-  _toolbarObserver = new MutationObserver(() => {
-    if (_toolbarReinjectTimer) return;
-    _toolbarReinjectTimer = requestAnimationFrame(() => {
-      _toolbarReinjectTimer = null;
-      const anyMissing = _toolbarRegistry.some(
-        (entry) => entry.renderDOM && !document.body.contains(document.getElementById(entry.id))
-      );
-      if (anyMissing) _injectAllToolbarButtons();
-    });
-  });
-  _toolbarObserver.observe(target, { childList: true, subtree: true });
-}
-
 // ── Public API ──
 
 /**
- * Register a toolbar button.
+ * Register a toolbar button via React patcher.
  *
- * Automatically uses React patcher (Tier 1) if the ChatButtonsGroup
- * webpack module is available, otherwise falls back to DOM injection
- * (Tier 2).  Both tiers can coexist — the DOM fallback acts as a
- * safety net if React patching fails silently.
+ * Injects into Discord's ChatButtonsGroup React component so the button
+ * lives in React's tree and survives re-renders natively.
  *
  * @param {Object} opts
- * @param {string}   opts.id          - Unique identifier (used as DOM id for Tier 2, React key for Tier 1)
+ * @param {string}   opts.id          - Unique identifier (used as React key)
  * @param {number}   opts.priority    - Insertion order (lower = leftmost). TitleManager=10, SkillTree=20
- * @param {Function} [opts.renderReact] - (React, channel) => ReactElement. For Tier 1 React injection.
- * @param {Function} [opts.renderDOM]   - (toolbar: HTMLElement) => void. For Tier 2 DOM fallback.
- *                                        If omitted, falls back to legacy `render` param.
- * @param {Function} [opts.render]      - DEPRECATED alias for renderDOM (backward compat)
- * @param {Function} [opts.cleanup]     - () => void. Called on unregister.
- * @param {Function} [opts.onDOMMount]  - (domElement) => void. Called after Tier 2 DOM insertion.
+ * @param {Function} opts.renderReact - (React, channel) => ReactElement
+ * @param {Function} [opts.cleanup]   - () => void. Called on unregister.
  */
 function registerToolbarButton(opts) {
-  const { id, priority = 50, renderReact, renderDOM, render, cleanup, onDOMMount } = opts;
+  const { id, priority = 50, renderReact, cleanup } = opts;
+
+  if (typeof renderReact !== 'function') {
+    console.error(`[SLUtils:TOOLBAR] registerToolbarButton('${id}') requires renderReact callback`);
+    return;
+  }
 
   // Prevent duplicates
   const existing = _toolbarRegistry.findIndex((e) => e.id === id);
@@ -617,28 +539,16 @@ function registerToolbarButton(opts) {
   _toolbarRegistry.push({
     id,
     priority,
-    renderReact: renderReact || null,
-    renderDOM: renderDOM || render || null,   // `render` is the legacy name
+    renderReact,
     cleanup: cleanup || null,
-    onDOMMount: onDOMMount || null,
   });
 
-  // Try React patcher first
-  const reactOk = renderReact ? _installToolbarReactPatcher() : false;
-
-  // Always set up DOM fallback as safety net
-  if (renderDOM || render) {
-    _ensureToolbarObserver();
-    // Only do DOM injection immediately if React patcher isn't active
-    if (!reactOk) {
-      _injectAllToolbarButtons();
-    }
-  }
+  _installToolbarReactPatcher();
 }
 
 /**
- * Unregister a toolbar button.  Calls cleanup, removes DOM elements,
- * and tears down patcher/observer if no buttons remain.
+ * Unregister a toolbar button.  Calls cleanup and tears down the React
+ * patcher if no buttons remain.
  *
  * @param {string} id
  */
@@ -648,20 +558,9 @@ function unregisterToolbarButton(id) {
     try { _toolbarRegistry[idx].cleanup?.(); } catch (_) {}
     _toolbarRegistry.splice(idx, 1);
   }
-  document.querySelectorAll(`#${id}`).forEach((el) => el.remove());
 
   if (_toolbarRegistry.length === 0) {
-    // Tear down React patcher
     _removeToolbarReactPatcher();
-    // Tear down DOM observer
-    if (_toolbarObserver) {
-      _toolbarObserver.disconnect();
-      _toolbarObserver = null;
-      if (_toolbarReinjectTimer) {
-        cancelAnimationFrame(_toolbarReinjectTimer);
-        _toolbarReinjectTimer = null;
-      }
-    }
   }
 }
 
