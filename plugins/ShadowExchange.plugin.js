@@ -147,6 +147,20 @@ module.exports = class ShadowExchange {
     } catch (_) {
       this.GuildStore = null;
     }
+    try {
+      this.MessageStore = BdApi.Webpack.getModule(
+        (m) => m?.getMessage && m?.getMessages
+      );
+    } catch (_) {
+      this.MessageStore = null;
+    }
+    try {
+      this.UserStore = BdApi.Webpack.getModule(
+        (m) => m?.getUser && m?.getCurrentUser
+      );
+    } catch (_) {
+      this.UserStore = null;
+    }
   }
 
   // ── Context Menu (right-click → Shadow Mark) ──────────────────────────
@@ -805,6 +819,10 @@ module.exports = class ShadowExchange {
     document.body.appendChild(overlay);
     this.panelEl = overlay;
     this.bindPanelEvents(overlay);
+
+    // Deferred save — backfill may have populated messagePreview/messageAuthor
+    // from Discord's cache during renderWaypointCard()
+    setTimeout(() => this.saveSettings(), 500);
   }
 
   closePanel() {
@@ -840,7 +858,9 @@ module.exports = class ShadowExchange {
           w.label.toLowerCase().includes(q) ||
           w.shadowName.toLowerCase().includes(q) ||
           w.channelName.toLowerCase().includes(q) ||
-          w.guildName.toLowerCase().includes(q)
+          w.guildName.toLowerCase().includes(q) ||
+          (w.messagePreview || "").toLowerCase().includes(q) ||
+          (w.messageAuthor || "").toLowerCase().includes(q)
       );
     }
 
@@ -887,12 +907,44 @@ module.exports = class ShadowExchange {
     // Message preview section (only for message-type waypoints)
     let messageSection = "";
     if (wp.locationType === "message") {
-      const preview = wp.messagePreview ? esc(wp.messagePreview) : "Message bookmark";
-      const author = wp.messageAuthor ? esc(wp.messageAuthor) : "";
+      let preview = wp.messagePreview || "";
+      let author = wp.messageAuthor || "";
+
+      // Try to fetch real content from Discord's message cache if stored preview is empty
+      if (!preview && wp.messageId && wp.channelId) {
+        try {
+          const cached = this.MessageStore?.getMessage(wp.channelId, wp.messageId);
+          if (cached) {
+            if (cached.content) {
+              preview = cached.content.length > 120 ? cached.content.slice(0, 120) + "\u2026" : cached.content;
+              wp.messagePreview = preview; // backfill for next render
+            } else if (cached.embeds?.length) {
+              preview = "[Embed]";
+            } else if (cached.attachments?.size || cached.attachments?.length) {
+              preview = "[Attachment]";
+            }
+            if (!author && cached.author) {
+              author = cached.author.globalName || cached.author.username || "";
+              wp.messageAuthor = author; // backfill
+            }
+          }
+        } catch (_) {}
+      }
+
+      // If still no preview, try to get author from UserStore
+      if (!author && wp.messageId) {
+        try {
+          // messageId doesn't directly map to userId, but we tried our best above
+        } catch (_) {}
+      }
+
+      const displayPreview = preview ? esc(preview) : `<em style="color:#666;">Navigate to load preview</em>`;
+      const displayAuthor = author ? esc(author) : "";
+
       messageSection = `
         <div class="se-message-preview">
-          ${author ? `<span class="se-msg-author">${author}:</span>` : ""}
-          <span class="se-msg-text">${preview}</span>
+          ${displayAuthor ? `<span class="se-msg-author">${displayAuthor}:</span>` : ""}
+          <span class="se-msg-text">${displayPreview}</span>
         </div>`;
     }
 
@@ -995,14 +1047,14 @@ module.exports = class ShadowExchange {
       }
       /* Position based on LPB top/bottom mode */
       .se-swirl-icon[data-lpb-position="top"] {
-        top: 9px;
+        top: 5px;
       }
       .se-swirl-icon[data-lpb-position="bottom"] {
-        bottom: 9px;
+        bottom: 5px;
       }
       /* Fallback if data attribute not set yet — default to top */
       .se-swirl-icon:not([data-lpb-position]) {
-        top: 9px;
+        top: 5px;
       }
       .se-swirl-icon:hover {
         opacity: 1;
@@ -1030,8 +1082,8 @@ module.exports = class ShadowExchange {
 
       /* ── Panel Container ───────────────────────────────────────────── */
       .se-panel-container {
-        width: 560px;
-        max-height: 78vh;
+        width: 650px;
+        max-height: 82vh;
         background: linear-gradient(145deg, #1a1a2e, #16213e);
         border: 2px solid rgba(155, 89, 182, 0.5);
         border-radius: 14px;
