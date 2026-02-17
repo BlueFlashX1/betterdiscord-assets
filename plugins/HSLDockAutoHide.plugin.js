@@ -1,7 +1,7 @@
 /**
  * @name HSLDockAutoHide
  * @description Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift. Includes user panel dock mover (originally by BlueFlashX1).
- * @version 3.0.0
+ * @version 3.0.1
  * @author Solo Leveling Theme Dev, BlueFlashX1
  */
 
@@ -39,7 +39,7 @@ module.exports = class HSLDockAutoHide {
     try {
       this.setDebugHandle({
         boot: "starting",
-        version: "3.0.0",
+        version: "3.0.1",
         error: null,
         note: "Plugin is bootstrapping. If this persists, startup likely crashed.",
       });
@@ -59,7 +59,7 @@ module.exports = class HSLDockAutoHide {
     try { delete window.__HSLDockAutoHideLiveInstance; } catch (_) {}
 
     this.pluginId = "HSLDockAutoHide";
-    this.version = "3.0.0";
+    this.version = "3.0.1";
     this.instanceKey = instanceKey;
     this.root = document.documentElement;
     // Dock state classes live on <body> instead of <html> — Discord's React
@@ -206,13 +206,13 @@ module.exports = class HSLDockAutoHide {
       }
     } catch (_) {}
 
-    BdApi.UI.showToast("HSLDockAutoHide v3.0.0 active (+ UserPanel)", { type: "success", timeout: 2200 });
+    BdApi.UI.showToast("HSLDockAutoHide v3.0.1 active (+ UserPanel)", { type: "success", timeout: 2200 });
     } catch (err) {
       try {
         const message = String(err?.stack || err?.message || err);
         this.setDebugHandle({
           boot: "failed",
-          version: "3.0.0",
+          version: "3.0.1",
           error: message,
           note: "Startup crashed before initialization completed.",
         });
@@ -322,13 +322,15 @@ module.exports = class HSLDockAutoHide {
         translate: 0 calc(var(--sl-dock-height) - var(--sl-dock-peek)) !important;
       }
 
-      /* Move content dynamically with dock visibility */
-      body.sl-dock-autohide .base__5e434[data-fullscreen="false"] .content__5e434 {
+      /* Move content dynamically with dock visibility.
+         Selectors use [data-fullscreen] attribute + [class*=] partial match
+         so they survive Discord class-hash changes across builds. */
+      body.sl-dock-autohide [class*="base_"][data-fullscreen="false"] > [class*="content_"] {
         transition: margin-bottom 240ms cubic-bezier(0.2, 0.75, 0.25, 1) !important;
         margin-bottom: var(--sl-dock-height) !important;
       }
 
-      body.sl-dock-autohide.sl-dock-hidden .base__5e434[data-fullscreen="false"] .content__5e434 {
+      body.sl-dock-autohide.sl-dock-hidden [class*="base_"][data-fullscreen="false"] > [class*="content_"] {
         margin-bottom: var(--sl-dock-peek) !important;
       }
 

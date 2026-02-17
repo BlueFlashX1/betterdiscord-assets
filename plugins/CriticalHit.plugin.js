@@ -10023,6 +10023,12 @@ ${childSel} {
       this.activeAnimations?.forEach((el) => this._cancelComboCountUp(el));
       this.activeAnimations && this.activeAnimations.clear();
 
+      // Remove persistent animation container from DOM
+      if (this.animationContainer) {
+        this.animationContainer.remove();
+        this.animationContainer = null;
+      }
+
       this.detachCriticalHitSettingsPanelHandlers();
 
       this.debugLog('PLUGIN_STOP', 'SUCCESS: CriticalHit plugin stopped successfully');

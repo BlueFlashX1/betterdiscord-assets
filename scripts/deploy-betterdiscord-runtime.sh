@@ -46,6 +46,15 @@ for f in \
   fi
 done
 
+# Deploy shared libraries (non-plugin JS files required by plugins)
+for lib in \
+  SoloLevelingUtils.js
+  do
+  if [[ -f "$ASSETS_PLUGINS/$lib" ]]; then
+    rsync -a "$ASSETS_PLUGINS/$lib" "$BD_PLUGINS/"
+  fi
+done
+
 # Enforce removal of blocked plugins so deploy never re-introduces them.
 for blocked in "${BLOCKED_PLUGINS[@]}"; do
   rm -f "$BD_PLUGINS/$blocked"

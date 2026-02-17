@@ -1,14 +1,14 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 1.2.0
+ * @version 1.3.0
  * @author matthewthompson
  */
 
 module.exports = class ShadowExchange {
   // ── Constants ──────────────────────────────────────────────────────────
   static PLUGIN_ID = "ShadowExchange";
-  static VERSION = "1.2.0";
+  static VERSION = "1.3.0";
   static STYLE_ID = "shadow-exchange-css";
   static SWIRL_ID = "se-swirl-icon";
   static PANEL_ID = "se-waypoint-panel";
@@ -55,12 +55,9 @@ module.exports = class ShadowExchange {
       this.panelOpen = false;
       this.swirlIcon = null;
       this.panelEl = null;
-      this.lpbObserver = null;
-      this.bodyObserver = null;
       this.escHandler = null;
       this.fallbackIdx = 0;
       this.fileBackupPath = null;
-
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
@@ -74,12 +71,8 @@ module.exports = class ShadowExchange {
       this.loadSettings();
       this.injectCSS();
 
-      // Swirl icon lives on document.body (outside React tree).
-      // Try immediate inject, retry after delay, and watch for LPB to appear.
+      // Swirl icon — simple body-level DOM injection (fixed-position overlay).
       this.injectSwirlIcon();
-      this._retryInject = setTimeout(() => this.injectSwirlIcon(), 1500);
-      this._retryInject2 = setTimeout(() => this.injectSwirlIcon(), 5000);
-      this.observeLPBChanges();
 
       // Right-click context menu on messages → "Shadow Mark"
       this.patchContextMenu();
@@ -105,8 +98,6 @@ module.exports = class ShadowExchange {
 
   stop() {
     try {
-      clearTimeout(this._retryInject);
-      clearTimeout(this._retryInject2);
       if (this.escHandler) {
         document.removeEventListener("keydown", this.escHandler, true);
       }
@@ -116,7 +107,6 @@ module.exports = class ShadowExchange {
       }
       this.closePanel();
       this.removeSwirlIcon();
-      if (this.bodyObserver) this.bodyObserver.disconnect();
       this.removeCSS();
     } catch (err) {
       console.error("[ShadowExchange] stop() failed:", err);
@@ -696,31 +686,29 @@ module.exports = class ShadowExchange {
 
   // ── Swirl Icon Injection ───────────────────────────────────────────────
 
+  // ── Swirl Icon (body-level DOM injection) ─────────────────────────────
+
   /**
-   * Inject the swirl icon as a fixed-position element on document.body.
-   *
-   * The LPB progress bar is entirely React-managed — any child appended to
-   * .lpb-progress-bar or #lpb-progress-container gets destroyed on the next
-   * React reconciliation cycle.  Instead, the swirl icon lives as its own
-   * independent fixed-position element anchored to the bar's visual location.
+   * Inject the swirl icon directly onto document.body as a fixed-position
+   * overlay.  Body-level injection is intentional — the icon must sit above
+   * all React stacking contexts (LPB container, Discord modals, etc.).
    */
   injectSwirlIcon() {
     if (document.getElementById(ShadowExchange.SWIRL_ID)) return;
-
-    const container = document.getElementById("lpb-progress-container");
-    if (!container) return;
 
     const icon = document.createElement("div");
     icon.id = ShadowExchange.SWIRL_ID;
     icon.className = "se-swirl-icon";
     icon.title = "Shadow Exchange — Waypoints";
-    icon.innerHTML = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>
-      <path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>
-      <circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>
-      <path d="M8 15c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2" stroke="#9b59b6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
-      <path d="M9.5 18c.8.7 1.6 1 2.5 1s1.7-.3 2.5-1" stroke="#7d3c98" stroke-width="1" fill="none" stroke-linecap="round"/>
-    </svg>`;
+    icon.innerHTML = [
+      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">',
+      '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>',
+      '<path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>',
+      '<circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>',
+      '<path d="M8 15c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2" stroke="#9b59b6" stroke-width="1.5" fill="none" stroke-linecap="round"/>',
+      '<path d="M9.5 18c.8.7 1.6 1 2.5 1s1.7-.3 2.5-1" stroke="#7d3c98" stroke-width="1" fill="none" stroke-linecap="round"/>',
+      "</svg>",
+    ].join("");
 
     icon.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -728,47 +716,18 @@ module.exports = class ShadowExchange {
       this.togglePanel();
     });
 
-    // Append to document.body — completely outside React's managed tree.
+    // Detect LPB position (top / bottom)
+    const lpb = document.getElementById("lpb-progress-container");
+    icon.dataset.lpbPosition = lpb?.classList.contains("bottom") ? "bottom" : "top";
+
     document.body.appendChild(icon);
     this.swirlIcon = icon;
-
-    // Position the icon to match LPB location
-    this._positionSwirlIcon();
-  }
-
-  /** Align the fixed-position swirl icon to the LPB progress bar's right side. */
-  _positionSwirlIcon() {
-    const icon = document.getElementById(ShadowExchange.SWIRL_ID);
-    const container = document.getElementById("lpb-progress-container");
-    if (!icon || !container) return;
-
-    const isBottom = container.classList.contains("bottom");
-    icon.dataset.lpbPosition = isBottom ? "bottom" : "top";
   }
 
   removeSwirlIcon() {
     const icon = document.getElementById(ShadowExchange.SWIRL_ID);
     if (icon) icon.remove();
     this.swirlIcon = null;
-  }
-
-  observeLPBChanges() {
-    // Wait for the LPB container to appear, then inject swirl icon.
-    // No need to observe React child changes since the icon lives on document.body.
-    if (document.getElementById("lpb-progress-container")) {
-      this.injectSwirlIcon();
-      return;
-    }
-
-    // LPB container not in DOM yet — watch body for it
-    this.bodyObserver = new MutationObserver(() => {
-      if (document.getElementById("lpb-progress-container")) {
-        this.bodyObserver.disconnect();
-        this.bodyObserver = null;
-        this.injectSwirlIcon();
-      }
-    });
-    this.bodyObserver.observe(document.body, { childList: true, subtree: true });
   }
 
   // ── Waypoint Panel ─────────────────────────────────────────────────────
@@ -1031,7 +990,7 @@ module.exports = class ShadowExchange {
       .se-swirl-icon {
         position: fixed;
         right: 20px;
-        z-index: 999998;
+        z-index: 999999;
         display: flex;
         align-items: center;
         justify-content: center;

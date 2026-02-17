@@ -609,7 +609,7 @@ module.exports = class SoloLevelingToasts {
     const cssContent = `
       .sl-toast-container {
         position: fixed;
-        z-index: 999998;
+        z-index: 999997;
         display: flex;
         flex-direction: column;
         gap: 10px;
@@ -617,13 +617,13 @@ module.exports = class SoloLevelingToasts {
       }
 
       .sl-toast-container.top-right {
-        top: 20px;
+        top: 40px;
         right: 20px;
         align-items: flex-end;
       }
 
       .sl-toast-container.top-left {
-        top: 20px;
+        top: 40px;
         left: 20px;
         align-items: flex-start;
       }
@@ -647,7 +647,7 @@ module.exports = class SoloLevelingToasts {
         min-height: 50px;
         max-height: fit-content;
         padding: 14px 18px;
-        background: rgba(10, 10, 15, 0.95);
+        background: rgb(10, 10, 15);
         border: 1px solid rgba(138, 43, 226, 0.3);
         border-radius: 8px;
         box-shadow: 0 4px 20px rgba(138, 43, 226, 0.4),

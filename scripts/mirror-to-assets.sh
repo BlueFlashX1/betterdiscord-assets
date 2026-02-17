@@ -128,6 +128,11 @@ if [ -f "$DEV_DIR/plugins/UnifiedSaveManager.js" ]; then
     cp "$DEV_DIR/plugins/UnifiedSaveManager.js" "$ASSETS_DIR/plugins/"
 fi
 
+if [ -f "$DEV_DIR/plugins/SoloLevelingUtils.js" ]; then
+    echo "Copying: SoloLevelingUtils.js"
+    cp "$DEV_DIR/plugins/SoloLevelingUtils.js" "$ASSETS_DIR/plugins/"
+fi
+
 # Copy all themes
 echo ""
 echo -e "${GREEN}=== Copying Themes ===${NC}"
