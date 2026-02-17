@@ -2200,13 +2200,12 @@ module.exports = class CriticalHit {
         critsByChannel[channelId] = (critsByChannel[channelId] || 0) + 1;
       });
 
-      this.debug?.verbose &&
-        this.debugLog('SAVE_MESSAGE_HISTORY', 'Saving message history to storage', {
-          historySize: this.messageHistory.length,
-          critCount: critCount,
-          critsByChannel: critsByChannel,
-          maxSize: this.maxHistorySize,
-        });
+      this.debugLog('SAVE_MESSAGE_HISTORY', 'CRITICAL: Saving message history to storage', {
+        historySize: this.messageHistory.length,
+        critCount: critCount,
+        critsByChannel: critsByChannel,
+        maxSize: this.maxHistorySize,
+      });
 
       // OPTIMIZED: Smart history trimming with crit prioritization
       this._trimHistoryIfNeeded();
@@ -2222,23 +2221,26 @@ module.exports = class CriticalHit {
         const verifyCritCount =
           verifyLoad && Array.isArray(verifyLoad) ? verifyLoad.filter((e) => e.isCrit).length : 0;
 
-        this.debug?.verbose &&
-          this.debugLog('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved successfully', {
-            messageCount: this.messageHistory.length,
-            critCount: critCount,
-            verifyLoadSuccess: Array.isArray(verifyLoad),
-            verifyMessageCount: verifyLoad ? verifyLoad.length : 0,
-            verifyCritCount: verifyCritCount,
-            saveVerified: verifyCritCount === critCount,
-          });
+        this.debugLog('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved successfully', {
+          messageCount: this.messageHistory.length,
+          critCount: critCount,
+          verifyLoadSuccess: Array.isArray(verifyLoad),
+          verifyMessageCount: verifyLoad ? verifyLoad.length : 0,
+          verifyCritCount: verifyCritCount,
+          saveVerified: verifyCritCount === critCount,
+        });
       } else {
-        this.debug?.verbose &&
-          this.debugLog('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved successfully', {
-            messageCount: this.messageHistory.length,
-            critCount: critCount,
-            pendingCritSaves: this._pendingCritSaves,
-          });
+        this.debugLog('SAVE_MESSAGE_HISTORY', 'SUCCESS: Message history saved successfully', {
+          messageCount: this.messageHistory.length,
+          critCount: critCount,
+          pendingCritSaves: this._pendingCritSaves,
+        });
       }
+      // Removed spammy console.log - use debugLog instead (only shows when debug mode enabled)
+      this.debugLog(
+        'SAVE_MESSAGE_HISTORY_SUMMARY',
+        `Saved ${this.messageHistory.length} messages (${critCount} crits) to history`
+      );
     } catch (error) {
       this.debugError('SAVE_MESSAGE_HISTORY', error, {
         historySize: this.messageHistory.length,
@@ -2538,8 +2540,9 @@ module.exports = class CriticalHit {
       // Normalize all IDs to Discord format
       const { messageId, authorId, channelId } = this.normalizeMessageData(messageData);
 
-      // Only log history additions in verbose mode
-      this.debug?.verbose &&
+      // Only log non-crit additions in verbose mode; always log crits
+      const shouldLogHistory = isCrit || this.debug?.verbose;
+      shouldLogHistory &&
         this.debugLog(
           'ADD_TO_HISTORY',
           isCrit ? 'CRITICAL: Adding CRIT message to history' : 'Adding message to history',
@@ -2588,13 +2591,12 @@ module.exports = class CriticalHit {
         author: messageData.author || null, // Author username (for display)
       };
       if (isCrit) {
-        this.debug?.verbose &&
-          this.diagLog('HISTORY_CRIT_SETTINGS', 'Persisting crit settings to history', {
-            messageId: historyEntry.messageId,
-            color: historyEntry.critSettings?.color || null,
-            gradient: historyEntry.critSettings?.gradient,
-            font: historyEntry.critSettings?.font || null,
-          });
+        this.diagLog('HISTORY_CRIT_SETTINGS', 'Persisting crit settings to history', {
+          messageId: historyEntry.messageId,
+          color: historyEntry.critSettings?.color || null,
+          gradient: historyEntry.critSettings?.gradient,
+          font: historyEntry.critSettings?.font || null,
+        });
       }
 
       // Invalidate crit history cache before adding to history
@@ -2702,11 +2704,10 @@ module.exports = class CriticalHit {
       // OPTIMIZED: Throttled auto-save to prevent lag
       // Save immediately on crit (but throttled), periodically for non-crits
       if (isCrit) {
-        this.debug?.verbose &&
-          this.debugLog('ADD_TO_HISTORY', 'Queueing save for crit message', {
-            messageId: messageData.messageId,
-            channelId: messageData.channelId,
-          });
+        this.debugLog('ADD_TO_HISTORY', 'CRITICAL: Queueing save for crit message', {
+          messageId: messageData.messageId,
+          channelId: messageData.channelId,
+        });
         this._pendingCritSaves++;
         this._throttledSaveHistory(true); // Queue save (throttled)
       } else if (this.messageHistory.length % 20 === 0) {
@@ -2715,18 +2716,17 @@ module.exports = class CriticalHit {
 
       // Use cached getCritHistory method
       const finalCritCount = this.getCritHistory().length;
-      this.debug?.verbose &&
-        this.debugLog(
-          'ADD_TO_HISTORY',
-          isCrit ? 'SUCCESS: Crit message added to history' : 'Message added to history',
-          {
-            historySize: this.messageHistory.length,
-            totalCritCount: finalCritCount,
-            isCrit: historyEntry.isCrit,
-            hasCritSettings: !!historyEntry.critSettings,
-            messageId: messageData.messageId,
-            authorId: messageData.authorId,
-            channelId: messageData.channelId,
+      this.debugLog(
+        'ADD_TO_HISTORY',
+        isCrit ? 'SUCCESS: Crit message added to history' : 'Message added to history',
+        {
+          historySize: this.messageHistory.length,
+          totalCritCount: finalCritCount,
+          isCrit: historyEntry.isCrit,
+          hasCritSettings: !!historyEntry.critSettings,
+          messageId: messageData.messageId,
+          authorId: messageData.authorId,
+          channelId: messageData.channelId,
         }
       );
     } catch (error) {
@@ -4517,23 +4517,21 @@ module.exports = class CriticalHit {
   performCritRestoration(historyEntry, normalizedMsgId, messageElement) {
     if (!historyEntry?.critSettings || !messageElement) return;
     this.applyCritStyleWithSettings(messageElement, historyEntry.critSettings);
-    this.debug?.verbose &&
-      this.debugLog('PERFORM_CRIT_RESTORATION', 'Crit restored from history', {
-        messageId: normalizedMsgId,
-      });
-    this.debug?.verbose &&
-      this.diagLog('STYLE_RESTORED', 'Restored crit style from history', {
-        messageId: normalizedMsgId,
-        mode:
-          historyEntry?.critSettings?.gradient !== undefined
-            ? historyEntry.critSettings.gradient
-              ? 'gradient'
-              : 'solid'
-            : this.settings?.critGradient !== false
+    this.debugLog('PERFORM_CRIT_RESTORATION', 'Crit restored from history', {
+      messageId: normalizedMsgId,
+    });
+    this.diagLog('STYLE_RESTORED', 'Restored crit style from history', {
+      messageId: normalizedMsgId,
+      mode:
+        historyEntry?.critSettings?.gradient !== undefined
+          ? historyEntry.critSettings.gradient
             ? 'gradient'
-            : 'solid',
-        color: historyEntry?.critSettings?.color || this.settings?.critColor || null,
-      });
+            : 'solid'
+          : this.settings?.critGradient !== false
+          ? 'gradient'
+          : 'solid',
+      color: historyEntry?.critSettings?.color || this.settings?.critColor || null,
+    });
   }
 
   /**
@@ -4799,17 +4797,16 @@ module.exports = class CriticalHit {
     const expectedVisuals = this.getExpectedCritVisuals(critSettings);
     const expectedMode = expectedVisuals.useGradient ? 'gradient' : 'solid';
     const reportRestoreReason = (reason, extra = {}) => {
-      this.debug?.verbose &&
-        this.diagLog(
-          'STYLE_RESTORE_NEEDED',
-          reason,
-          {
-            messageId,
-            expectedMode,
-            ...extra,
-          },
-          'warn'
-        );
+      this.diagLog(
+        'STYLE_RESTORE_NEEDED',
+        reason,
+        {
+          messageId,
+          expectedMode,
+          ...extra,
+        },
+        'warn'
+      );
       return true;
     };
 
@@ -5389,15 +5386,13 @@ module.exports = class CriticalHit {
     const channelId = this._getCurrentChannelId();
 
     if (!content || !author || !channelId) {
-      this.debug?.verbose &&
-        this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (missing data)', { messageId });
+      this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (missing data)', { messageId });
       return true;
     }
 
     const contentText = content.textContent?.trim() || '';
     if (!contentText) {
-      this.debug?.verbose &&
-        this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (no content)', { messageId });
+      this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (no content)', { messageId });
       return true;
     }
 
@@ -5426,8 +5421,7 @@ module.exports = class CriticalHit {
       return true;
     }
 
-    this.debug?.verbose &&
-      this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (likely unsent/pending message)', {
+    this.debugLog('CHECK_FOR_CRIT', 'Skipping hash ID (likely unsent/pending message)', {
       messageId,
       note: 'Hash IDs are created for messages without Discord IDs - crits are stored in pending queue and will be applied when real ID is assigned',
     });
@@ -5508,13 +5502,12 @@ module.exports = class CriticalHit {
     messageId && this._processingCrits.add(messageId);
 
     const effectiveCritChance = this.getEffectiveCritChance();
-    this.debug?.verbose &&
-      this.diagLog('CRIT_DETECTED', 'Critical hit detected', {
-        messageId,
-        roll,
-        effectiveCritChance,
-        totalCrits: this.stats.totalCrits,
-      });
+    this.diagLog('CRIT_DETECTED', 'Critical hit detected', {
+      messageId,
+      roll,
+      effectiveCritChance,
+      totalCrits: this.stats.totalCrits,
+    });
 
     try {
       try {
@@ -5896,12 +5889,11 @@ module.exports = class CriticalHit {
       if (historyEntry) {
         // Message already processed - use saved determination
         const isCrit = historyEntry.isCrit || false;
-        this.debug?.verbose &&
-          this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
-            messageId,
-            isCrit,
-            wasProcessed: true,
-          });
+        this.debugLog('CHECK_FOR_CRIT', 'Message already in history, using saved determination', {
+          messageId,
+          isCrit,
+          wasProcessed: true,
+        });
 
         if (isCrit) {
           // It's a crit - restore style with saved settings and trigger animation
@@ -6425,8 +6417,8 @@ module.exports = class CriticalHit {
     this._isApplyingGradient = true;
 
     try {
-      this.debug?.verbose &&
-        this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
+      // debug stripped
+      this.debugLog('APPLY_CRIT_STYLE', 'Applying crit style to message');
 
       // FIX: If we received a content element instead of message wrapper, find the parent message element
       let actualMessageElement = messageElement;
