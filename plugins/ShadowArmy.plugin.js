@@ -7195,7 +7195,7 @@ module.exports = class ShadowArmy {
       .sa-arise-text {
         font-family: '${
           this.settings?.ariseAnimation?.animationFont || 'Speedy Space Goat Oddity'
-        }', 'Orbitron', system-ui, sans-serif;
+        }', 'Orbitron', system-ui, sans-serif !important;
         font-weight: 700;
         font-size: 42px;
         line-height: 1.12;
@@ -7767,6 +7767,8 @@ module.exports = class ShadowArmy {
 
     const title = document.createElement('div');
     title.className = 'sa-arise-text';
+    // Apply font directly as inline style (guarantees correct font even if CSS hasn't loaded yet)
+    title.style.fontFamily = `'${fontName}', 'Orbitron', system-ui, sans-serif`;
     // Text should be "ARiSe" with much smaller R and moderately smaller i/S/e
     title.innerHTML =
       'A<span class="sa-small-r">R</span><span class="sa-mid-i">i</span><span class="sa-small-s">S</span><span class="sa-mid-e">e</span>';
