@@ -1625,13 +1625,13 @@ module.exports = class Dungeons {
   async _attemptCombatExtraction(channelKey, deadMob, isBoss = false) {
     const shadowArmy = this.shadowArmy || this.validatePluginReference('ShadowArmy', 'storageManager');
     if (!shadowArmy?.attemptDungeonExtraction) {
-      console.log(`[Dungeons] ARISE_TRACE: SKIP — ShadowArmy plugin not available or missing attemptDungeonExtraction (shadowArmy=${!!shadowArmy}, hasMethod=${!!shadowArmy?.attemptDungeonExtraction})`);
+      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: SKIP — ShadowArmy not available (shadowArmy=${!!shadowArmy}, hasMethod=${!!shadowArmy?.attemptDungeonExtraction})`);
       return null;
     }
 
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) {
-      console.log(`[Dungeons] ARISE_TRACE: SKIP — no active dungeon for ${channelKey}`);
+      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: SKIP — no active dungeon for ${channelKey}`);
       return null;
     }
 
@@ -1644,7 +1644,7 @@ module.exports = class Dungeons {
     const userLevel = this.soloLevelingStats?.settings?.level || 1;
     const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};
 
-    console.log(`[Dungeons] ARISE_TRACE: Attempting extraction — mob=${deadMob.id}, mobRank=${deadMob.rank}, isBoss=${isBoss}, hasBaseStats=${!!deadMob.baseStats}, strength=${deadMob.strength}, userRank=${userRank}, userLevel=${userLevel}`);
+    this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Attempting extraction — mob=${deadMob.id}, mobRank=${deadMob.rank}, isBoss=${isBoss}, strength=${deadMob.strength}, userRank=${userRank}`);
 
     try {
       const result = await shadowArmy.attemptDungeonExtraction(
@@ -1653,7 +1653,7 @@ module.exports = class Dungeons {
         dungeon.beastFamilies || [], isBoss
       );
 
-      console.log(`[Dungeons] ARISE_TRACE: Extraction result — success=${result?.success}, hasShadow=${!!result?.shadow}, reason=${result?.reason || 'none'}, mobRank=${deadMob.rank}`);
+      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Extraction result — success=${result?.success}, hasShadow=${!!result?.shadow}, reason=${result?.reason || 'none'}, mobRank=${deadMob.rank}`);
 
       if (result?.success && result?.shadow) {
         // Inject directly into SOURCE dungeon's allocation (deploy where mob died)
@@ -1673,9 +1673,11 @@ module.exports = class Dungeons {
           if (dungeon.boss) {
             dungeon.boss.expectedShadowCount = currentAllocation.length;
           }
+          // New shadow starts alive — update cached count
+          if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
         }
 
-        console.log(`[Dungeons] ARISE: ✅ Mid-combat extraction: ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → deployed to ${channelKey} (total allocated: ${(this.shadowAllocations.get(channelKey) || []).length})`);
+        this.settings.debug && console.log(`[Dungeons] ARISE: ✅ ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → ${channelKey} (allocated: ${(this.shadowAllocations.get(channelKey) || []).length})`);
         this.debugLog?.('ARISE', `Mid-combat extraction: ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → deployed to ${channelKey}`);
       }
       return result;
@@ -1693,19 +1695,29 @@ module.exports = class Dungeons {
    */
   _batchExtractDeadMobs(channelKey, deadMobs, isBoss = false) {
     if (!deadMobs || deadMobs.length === 0) return;
-    console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs called — ${deadMobs.length} dead mobs to extract for ${channelKey}`);
-    // Fire a single async microtask — does not block the combat tick
+    this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs — ${deadMobs.length} mobs for ${channelKey}`);
+    // Fire a single async microtask — does not block the combat tick.
+    // Process in batches of 10 with setTimeout(0) yield between batches
+    // to prevent 165+ sequential IDB writes from monopolizing the event loop.
+    const BATCH_SIZE = 10;
     Promise.resolve().then(async () => {
       let extracted = 0;
-      for (const mob of deadMobs) {
-        try {
-          const result = await this._attemptCombatExtraction(channelKey, mob, isBoss);
-          if (result?.success) extracted++;
-        } catch (err) {
-          console.error(`[Dungeons] ARISE_TRACE: ❌ Batch extraction error for mob ${mob?.id}:`, err?.message || err);
+      for (let i = 0; i < deadMobs.length; i += BATCH_SIZE) {
+        const batch = deadMobs.slice(i, i + BATCH_SIZE);
+        for (const mob of batch) {
+          try {
+            const result = await this._attemptCombatExtraction(channelKey, mob, isBoss);
+            if (result?.success) extracted++;
+          } catch (err) {
+            console.error(`[Dungeons] ARISE_TRACE: ❌ Batch error for mob ${mob?.id}:`, err?.message || err);
+          }
+        }
+        // Yield to main thread between batches so Dispatcher can flush
+        if (i + BATCH_SIZE < deadMobs.length) {
+          await new Promise(r => setTimeout(r, 0));
         }
       }
-      console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} extracted for ${channelKey}`);
+      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} for ${channelKey}`);
       if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
         BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: deadMobs.length, channelKey });
       }
@@ -1800,7 +1812,7 @@ module.exports = class Dungeons {
           const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
           const mobCount = dungeon.mobs?.activeMobs?.length || 0;
           const bossHp = dungeon.boss?.hp ?? 'N/A';
-          console.log(`[Dungeons] COMBAT_TRACE: Tick #${this._combatTickCount} — channel=${channelKey.slice(-8)}, shadows=${allocCount}, aliveMobs=${mobCount}, bossHP=${bossHp}, elapsed=${elapsed}ms, interval=${intervalTime}ms, willFire=${elapsed >= intervalTime}`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Tick #${this._combatTickCount} — ch=${channelKey.slice(-8)}, shadows=${allocCount}, mobs=${mobCount}, bossHP=${bossHp}, elapsed=${elapsed}ms, willFire=${elapsed >= intervalTime}`);
         }
 
         if (elapsed >= intervalTime) {
@@ -5200,6 +5212,11 @@ module.exports = class Dungeons {
         dungeon.successfulResurrections = (dungeon.successfulResurrections || 0) + resurrectedCount;
         this.saveSettings();
       }
+
+      // Update alive count cache: subtract deaths, add back resurrections
+      if (dungeon._cachedAliveCount != null) {
+        dungeon._cachedAliveCount = Math.max(0, dungeon._cachedAliveCount - newlyDead.length + resurrectedCount);
+      }
     }
 
     if (totalUserDamage > 0) {
@@ -6542,7 +6559,7 @@ module.exports = class Dungeons {
     this._shadowActiveIntervalMs.set(channelKey, activeInterval);
     this._shadowBackgroundIntervalMs.set(channelKey, backgroundInterval);
     this.shadowAttackIntervals.set(channelKey, true);
-    console.log(`[Dungeons] COMBAT_TRACE: startShadowAttacks complete — channelKey=${channelKey}, assignedShadows=${assignedShadows.length}, activeInterval=${activeInterval}ms, bgInterval=${backgroundInterval}ms`);
+    this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: startShadowAttacks — key=${channelKey}, shadows=${assignedShadows.length}, active=${activeInterval}ms, bg=${backgroundInterval}ms`);
     this._ensureCombatLoop();
   }
 
@@ -6708,7 +6725,7 @@ module.exports = class Dungeons {
       }
 
       if (!this.shadowArmy) {
-        console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — SKIP, no shadowArmy plugin ref`);
+        this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — SKIP, no shadowArmy ref`);
         return;
       }
 
@@ -6747,7 +6764,7 @@ module.exports = class Dungeons {
         const assignedShadows = this.shadowAllocations.get(channelKey);
         if (!assignedShadows || assignedShadows.length === 0) {
           // No shadows allocated to this dungeon (might be cleared or no shadows available)
-          console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — NO shadows allocated for ${channelKey}, allocationKeys=[${[...this.shadowAllocations.keys()].join(',')}]`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — NO shadows for ${channelKey}`);
           return;
         }
 
@@ -6875,6 +6892,7 @@ module.exports = class Dungeons {
                 // eslint-disable-next-line require-atomic-updates
                 shadowHP[shadowId] = { ...hpData };
                 deadShadows.delete(shadowId);
+                if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
                 delete dungeon._lastResurrectionAttempt[shadowId]; // Clear tracker on success
               }
               // If resurrection failed (no mana), shadow stays at 0 HP but remains in dungeon
@@ -6883,13 +6901,19 @@ module.exports = class Dungeons {
           }
         }
 
-        // Count alive shadows for combat readiness check
-        let aliveShadowCount = 0;
-        for (const s of assignedShadows) {
-          const shadowId = this.getShadowIdValue(s);
-          if (!shadowId) continue;
-          if (deadShadows.has(shadowId)) continue;
-          shadowHP[shadowId]?.hp > 0 && aliveShadowCount++;
+        // Count alive shadows — use cached count (recompute every 10th tick for accuracy)
+        let aliveShadowCount;
+        if (dungeon._cachedAliveCount != null && this._combatTickCount % 10 !== 0) {
+          aliveShadowCount = dungeon._cachedAliveCount;
+        } else {
+          aliveShadowCount = 0;
+          for (const s of assignedShadows) {
+            const shadowId = this.getShadowIdValue(s);
+            if (!shadowId) continue;
+            if (deadShadows.has(shadowId)) continue;
+            shadowHP[shadowId]?.hp > 0 && aliveShadowCount++;
+          }
+          dungeon._cachedAliveCount = aliveShadowCount;
         }
 
         // Shadow deployment status tracked internally (debug logs removed for performance)
@@ -6988,7 +7012,7 @@ module.exports = class Dungeons {
 
         // TRACE: Log combat state every 10th tick
         if (this._combatTickCount % 10 === 0) {
-          console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — assigned=${assignedShadows.length}, combatReady=${combatReadyShadows.length}, sampling=${maxShadowsToProcess}, aliveMobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: assigned=${assignedShadows.length}, ready=${combatReadyShadows.length}, sample=${maxShadowsToProcess}, mobs=${aliveMobs.length}, bossHP=${dungeon.boss.hp}, scale=${scaleFactor.toFixed(2)}, cycles=${cyclesMultiplier}`);
         }
 
         // HOISTED: These only depend on dungeon state, not per-shadow state
@@ -7022,8 +7046,10 @@ module.exports = class Dungeons {
 
         // AGGREGATED: Accumulate boss damage across ALL shadows, apply once after loop
         let aggregatedBossDamage = 0;
-        // Reusable mob damage map — cleared per shadow instead of allocating new Map() each time
-        const mobDamageMap = new Map();
+        // Pooled mob damage map — reuse across ticks to avoid per-tick allocation + GC
+        if (!dungeon._pooledMobDamageMap) dungeon._pooledMobDamageMap = new Map();
+        const mobDamageMap = dungeon._pooledMobDamageMap;
+        mobDamageMap.clear();
         // Ensure contributions object exists once before loop
         if (!dungeon.shadowContributions || typeof dungeon.shadowContributions !== 'object') {
           dungeon.shadowContributions = {};
@@ -7233,7 +7259,7 @@ module.exports = class Dungeons {
             deadMobsThisTick.push(mob);
           });
           if (deadMobsThisTick.length > 0) {
-            console.log(`[Dungeons] COMBAT_TRACE: Fast-path — ${deadMobsThisTick.length} mobs killed this tick (mobDamageMap size=${mobDamageMap.size}, channelKey=${channelKey})`);
+            this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Fast-path — ${deadMobsThisTick.length} mobs killed (dmgMap=${mobDamageMap.size})`);
           }
           // ARISE: Batch-extract all dead mobs (single microtask, sequential inside)
           this._batchExtractDeadMobs(channelKey, deadMobsThisTick, false);
@@ -7667,24 +7693,29 @@ module.exports = class Dungeons {
    * @param {Object} shadowHP - Shadow HP object
    * @returns {Array} - Array of combat-ready shadows
    */
-  getCombatReadyShadows(assignedShadows, deadShadows, shadowHP) {
-    // Defensive check: exclude shadows stationed at ShadowExchange waypoints
-    let exchangeMarkedIds;
-    try {
-      const sePlugin = BdApi.Plugins.get("ShadowExchange");
-      exchangeMarkedIds = sePlugin?.instance?.getMarkedShadowIds?.() || new Set();
-    } catch (_) {
-      exchangeMarkedIds = new Set();
+  /**
+   * Get cached exclusion sets (ShadowExchange + ShadowSenses) with 5s TTL.
+   * Avoids redundant BdApi.Plugins.get() calls across multiple getCombatReadyShadows invocations per tick.
+   */
+  _getCachedExclusionSets() {
+    const now = Date.now();
+    if (this._exclusionCache && now - this._exclusionCache.ts < 5000) {
+      return this._exclusionCache;
     }
+    let exchangeMarkedIds = new Set();
+    let sensesDeployedIds = new Set();
+    try {
+      exchangeMarkedIds = BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set();
+    } catch (_) {}
+    try {
+      sensesDeployedIds = BdApi.Plugins.get("ShadowSenses")?.instance?.getDeployedShadowIds?.() || new Set();
+    } catch (_) {}
+    this._exclusionCache = { exchangeMarkedIds, sensesDeployedIds, ts: now };
+    return this._exclusionCache;
+  }
 
-    // Shadows deployed to ShadowSenses monitoring are unavailable for battle
-    let sensesDeployedIds;
-    try {
-      const ssPlugin = BdApi.Plugins.get("ShadowSenses");
-      sensesDeployedIds = ssPlugin?.instance?.getDeployedShadowIds?.() || new Set();
-    } catch (_) {
-      sensesDeployedIds = new Set();
-    }
+  getCombatReadyShadows(assignedShadows, deadShadows, shadowHP) {
+    const { exchangeMarkedIds, sensesDeployedIds } = this._getCachedExclusionSets();
 
     const combatReady = [];
     for (const shadow of assignedShadows) {
@@ -8397,7 +8428,7 @@ module.exports = class Dungeons {
           this._onMobKilled(channelKey, dungeon, targetMob.rank);
 
           // ARISE: Extract every dead mob (fire-and-forget, no throttle)
-          console.log(`[Dungeons] COMBAT_TRACE: Slow-path mob killed — id=${targetMob.id}, rank=${targetMob.rank}, hasBaseStats=${!!targetMob.baseStats}`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Slow-path mob killed — id=${targetMob.id}, rank=${targetMob.rank}`);
           this._attemptCombatExtraction(channelKey, targetMob, false).catch((err) => {
             console.error(`[Dungeons] ARISE_TRACE: ❌ Slow-path extraction error:`, err?.message || err);
           });
