@@ -454,6 +454,18 @@ class DungeonStorageManager {
       // Shadow allocations may contain full shadow objects (very large); recompute on restore.
       next.shadowAllocation = undefined;
 
+      // Convert Map fields to plain objects for JSON serialization
+      if (next.shadowHP instanceof Map) {
+        const shadowHPObj = {};
+        next.shadowHP.forEach((value, key) => { shadowHPObj[key] = value; });
+        next.shadowHP = shadowHPObj;
+      }
+      if (next.shadowCombatData instanceof Map) {
+        const combatObj = {};
+        next.shadowCombatData.forEach((value, key) => { combatObj[key] = value; });
+        next.shadowCombatData = combatObj;
+      }
+
       return next;
     })();
 
@@ -467,6 +479,12 @@ class DungeonStorageManager {
         // Skip function values
         if (typeof value === 'function') {
           return undefined;
+        }
+        // Convert any remaining Maps to objects
+        if (value instanceof Map) {
+          const obj = {};
+          value.forEach((v, k) => { obj[k] = v; });
+          return obj;
         }
         return value;
       })
@@ -3736,7 +3754,7 @@ module.exports = class Dungeons {
    *   }
    * - shadowAttacks: Object<shadowId, timestamp>
    * - shadowContributions: Object<shadowId, {mobsKilled, bossDamage}>
-   * - shadowHP: Object<shadowId, {hp, maxHp}>
+   * - shadowHP: Map<shadowId, {hp, maxHp}>
    */
   async createDungeon(channelKey, channelInfo, rank) {
     // FINAL SAFETY CHECK: Forcefully reject if channel already has active dungeon
@@ -3935,7 +3953,7 @@ module.exports = class Dungeons {
       userParticipating: null,
       shadowAttacks: {},
       shadowContributions: {}, // Track XP contributions: { shadowId: { mobsKilled: 0, bossDamage: 0 } }
-      shadowHP: {}, // Track shadow HP: { shadowId: { hp, maxHp } } - Object for serialization
+      shadowHP: new Map(), // Track shadow HP: Map<shadowId, { hp, maxHp }>
       shadowRevives: 0, // Track total revives for summary
       bossGate: {
         enabled: this.settings?.bossGateEnabled !== false,
@@ -4617,10 +4635,10 @@ module.exports = class Dungeons {
     }
     if (
       assignedShadows.length > 0 &&
-      (!dungeon.shadowHP || Object.keys(dungeon.shadowHP).length === 0)
+      (!dungeon.shadowHP || dungeon.shadowHP.size === 0)
     ) {
       // Shadows not initialized yet - initialize them now
-      const shadowHP = {};
+      const shadowHP = new Map();
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       const shadowsToInitialize = this._collectShadowsNeedingHPInit(assignedShadows, deadShadows);
       await this._initializeShadowHPBatch(shadowsToInitialize, shadowHP, 'join');
@@ -5126,7 +5144,7 @@ module.exports = class Dungeons {
 
   _getDungeonShadowCombatContext(channelKey, dungeon) {
     const assignedShadows = this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
-    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
     const deadShadows = this.deadShadows.get(channelKey) || new Set();
     this.maybePruneDungeonShadowState({ dungeon, channelKey, assignedShadows, deadShadows });
     return { assignedShadows, shadowHP, deadShadows };
@@ -5159,11 +5177,11 @@ module.exports = class Dungeons {
     const newlyDead = [];
     for (const [shadowId, damage] of shadowDamageMap.entries()) {
       const targetShadow = shadowById.get(shadowId);
-      const shadowHPData = shadowHP[shadowId];
+      const shadowHPData = shadowHP.get(shadowId);
       if (!targetShadow || !shadowHPData) continue;
       const oldHP = shadowHPData.hp;
       shadowHPData.hp = Math.max(0, shadowHPData.hp - damage);
-      shadowHP[shadowId] = shadowHPData;
+      shadowHP.set(shadowId, shadowHPData);
 
       if (oldHP > 0 && shadowHPData.hp <= 0) {
         newlyDead.push({ shadowId, targetShadow, shadowHPData });
@@ -5198,7 +5216,7 @@ module.exports = class Dungeons {
             if (recalculatedHP) shadowHPData.maxHp = recalculatedHP.maxHp;
           }
           shadowHPData.hp = shadowHPData.maxHp || 1;
-          shadowHP[shadowId] = { ...shadowHPData };
+          shadowHP.set(shadowId, { ...shadowHPData });
           deadShadows.delete(shadowId);
           delete dungeon._lastResurrectionAttempt[shadowId];
         }
@@ -5646,12 +5664,12 @@ module.exports = class Dungeons {
     let shadowsWereAlive = false;
     if (dungeon) {
       const allShadows = await this.getAllShadows();
-      const shadowHP = dungeon.shadowHP || {};
+      const shadowHP = dungeon.shadowHP || new Map();
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       for (const s of allShadows) {
         if (!s || !s.id) continue;
         if (deadShadows.has(s.id)) continue;
-        if (shadowHP[s.id]?.hp > 0) {
+        if (shadowHP.get(s.id)?.hp > 0) {
           shadowsWereAlive = true;
           break;
         }
@@ -6499,9 +6517,8 @@ module.exports = class Dungeons {
     }
     if (assignedShadows.length > 0) {
       const wasShadowHPEmpty =
-        !dungeon.shadowHP ||
-        (typeof dungeon.shadowHP === 'object' && Object.keys(dungeon.shadowHP).length === 0);
-      const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+        !dungeon.shadowHP || dungeon.shadowHP.size === 0;
+      const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
       this.maybePruneDungeonShadowState({ dungeon, channelKey, assignedShadows, deadShadows });
       const shadowsToInitialize = this._collectShadowsNeedingHPInit(assignedShadows, deadShadows);
@@ -6513,7 +6530,7 @@ module.exports = class Dungeons {
         for (const shadow of assignedShadows) {
           const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
-          const hpData = shadowHP[shadowId];
+          const hpData = shadowHP.get(shadowId);
           if (!hpData || typeof hpData.maxHp !== 'number' || hpData.maxHp <= 0) continue;
           typeof hpData.hp === 'number' && hpData.hp < hpData.maxHp && (hpData.hp = hpData.maxHp);
         }
@@ -6731,11 +6748,11 @@ module.exports = class Dungeons {
 
       try {
         // Ensure combat state objects exist (defensive re-init)
-        if (!dungeon.shadowCombatData || typeof dungeon.shadowCombatData !== 'object') {
-          dungeon.shadowCombatData = {};
+        if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
+          dungeon.shadowCombatData = new Map();
         }
-        if (!dungeon.shadowHP || typeof dungeon.shadowHP !== 'object') {
-          dungeon.shadowHP = {};
+        if (!dungeon.shadowHP || !(dungeon.shadowHP instanceof Map)) {
+          dungeon.shadowHP = new Map();
           if (!dungeon.shadowAttacks || typeof dungeon.shadowAttacks !== 'object') {
             dungeon.shadowAttacks = {};
             this.debugLog?.('SHADOW_ATTACKS', 'shadowAttacks reinitialized (was null/invalid)', {
@@ -6795,13 +6812,13 @@ module.exports = class Dungeons {
         }
 
         const deadShadows = this.deadShadows.get(channelKey) || new Set();
-        const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {}); // Object, not Map
+        const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
         this.maybePruneDungeonShadowState({ dungeon, channelKey, assignedShadows, deadShadows });
 
         // Initialize shadow combat data if not exists
         // Each shadow has individual cooldowns and behaviors for chaotic combat
-        if (!dungeon.shadowCombatData) {
-          dungeon.shadowCombatData = {};
+        if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
+          dungeon.shadowCombatData = new Map();
         }
 
         // OPTIMIZATION: Batch initialize shadow HP and combat data using helper functions
@@ -6813,7 +6830,7 @@ module.exports = class Dungeons {
           const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
           if (deadShadows.has(shadowId)) continue;
-          if (!isWindowVisible && shadowHP[shadowId]) continue;
+          if (!isWindowVisible && shadowHP.has(shadowId)) continue;
           shadowsToInitialize.push(shadow);
         }
 
@@ -6841,8 +6858,8 @@ module.exports = class Dungeons {
 
               // Initialize combat data using helper function
               hpShadowId &&
-                !dungeon.shadowCombatData[hpShadowId] &&
-                (dungeon.shadowCombatData[hpShadowId] = this.initializeShadowCombatData(
+                !dungeon.shadowCombatData.has(hpShadowId) &&
+                dungeon.shadowCombatData.set(hpShadowId, this.initializeShadowCombatData(
                   shadow,
                   dungeon
                 ));
@@ -6871,7 +6888,7 @@ module.exports = class Dungeons {
           for (const shadow of assignedShadows) {
             const shadowId = this.getShadowIdValue(shadow);
             if (!shadowId) continue;
-            const hpData = shadowHP[shadowId];
+            const hpData = shadowHP.get(shadowId);
             if (hpData && hpData.hp <= 0) {
               // Skip if resurrection was already attempted this tick (within 2s window)
               const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
@@ -6890,7 +6907,7 @@ module.exports = class Dungeons {
                 hpData.hp = hpData.maxHp; // FULL HP restoration
                 // Create new object reference to prevent race condition
                 // eslint-disable-next-line require-atomic-updates
-                shadowHP[shadowId] = { ...hpData };
+                shadowHP.set(shadowId, { ...hpData });
                 deadShadows.delete(shadowId);
                 if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
                 delete dungeon._lastResurrectionAttempt[shadowId]; // Clear tracker on success
@@ -6911,7 +6928,7 @@ module.exports = class Dungeons {
             const shadowId = this.getShadowIdValue(s);
             if (!shadowId) continue;
             if (deadShadows.has(shadowId)) continue;
-            shadowHP[shadowId]?.hp > 0 && aliveShadowCount++;
+            shadowHP.get(shadowId)?.hp > 0 && aliveShadowCount++;
           }
           dungeon._cachedAliveCount = aliveShadowCount;
         }
@@ -7070,16 +7087,16 @@ module.exports = class Dungeons {
             continue; // Skip invalid shadow
           }
 
-          const shadowHPData = shadowHP[shadowId];
+          const shadowHPData = shadowHP.get(shadowId);
           // Double-check HP (should already be filtered by getCombatReadyShadows, but safety check)
           if (!shadowHPData || shadowHPData.hp <= 0) {
             continue; // Skip this shadow, continue to next
           }
 
-          const combatData = dungeon.shadowCombatData[shadowId];
+          let combatData = dungeon.shadowCombatData.get(shadowId);
           if (!combatData) {
             // Initialize combat data if missing
-            dungeon.shadowCombatData[shadowId] = {
+            combatData = {
               lastAttackTime: Date.now() - 2000, // Allow immediate attack
               attackInterval: 2000,
               personality: 'balanced',
@@ -7088,9 +7105,10 @@ module.exports = class Dungeons {
               comboHits: 0,
               lastTargetType: null,
             };
+            dungeon.shadowCombatData.set(shadowId, combatData);
           }
 
-          const finalCombatData = dungeon.shadowCombatData[shadowId];
+          const finalCombatData = combatData;
 
           // Calculate how many attacks this shadow would make in the time span
           const timeSinceLastAttack = now - finalCombatData.lastAttackTime;
@@ -7194,17 +7212,17 @@ module.exports = class Dungeons {
 
           analytics.totalMobDamage += totalMobDamage;
 
-          // Guard: Ensure shadowCombatData object exists
-          if (!dungeon.shadowCombatData) {
-            dungeon.shadowCombatData = {};
+          // Guard: Ensure shadowCombatData exists
+          if (!dungeon.shadowCombatData || !(dungeon.shadowCombatData instanceof Map)) {
+            dungeon.shadowCombatData = new Map();
           }
 
           // Update combat data
-          const combatDataToUpdate = dungeon.shadowCombatData[shadowId];
+          const combatDataToUpdate = dungeon.shadowCombatData.get(shadowId);
           if (!combatDataToUpdate) {
             // Reinitialize combat data defensively to avoid crash
             if (shadow) {
-               dungeon.shadowCombatData[shadowId] = this.initializeShadowCombatData(shadow);
+               dungeon.shadowCombatData.set(shadowId, this.initializeShadowCombatData(shadow));
             }
             continue;
           }
@@ -7432,8 +7450,8 @@ module.exports = class Dungeons {
 
     // If there are no assigned shadows, clear state completely.
     if (assignedIds.size === 0) {
-      dungeon.shadowHP && (dungeon.shadowHP = {});
-      dungeon.shadowCombatData && (dungeon.shadowCombatData = {});
+      dungeon.shadowHP && (dungeon.shadowHP = new Map());
+      dungeon.shadowCombatData && (dungeon.shadowCombatData = new Map());
       deadShadows?.clear?.();
       this.deadShadows.set(channelKey, deadShadows || new Set());
       return true;
@@ -7441,17 +7459,15 @@ module.exports = class Dungeons {
 
     const hasOwn = Object.prototype.hasOwnProperty;
 
-    if (dungeon.shadowHP && typeof dungeon.shadowHP === 'object') {
-      for (const shadowId in dungeon.shadowHP) {
-        if (!hasOwn.call(dungeon.shadowHP, shadowId)) continue;
-        assignedIds.has(shadowId) || delete dungeon.shadowHP[shadowId];
+    if (dungeon.shadowHP instanceof Map) {
+      for (const shadowId of dungeon.shadowHP.keys()) {
+        assignedIds.has(shadowId) || dungeon.shadowHP.delete(shadowId);
       }
     }
 
-    if (dungeon.shadowCombatData && typeof dungeon.shadowCombatData === 'object') {
-      for (const shadowId in dungeon.shadowCombatData) {
-        if (!hasOwn.call(dungeon.shadowCombatData, shadowId)) continue;
-        assignedIds.has(shadowId) || delete dungeon.shadowCombatData[shadowId];
+    if (dungeon.shadowCombatData instanceof Map) {
+      for (const shadowId of dungeon.shadowCombatData.keys()) {
+        assignedIds.has(shadowId) || dungeon.shadowCombatData.delete(shadowId);
       }
     }
 
@@ -7534,7 +7550,7 @@ module.exports = class Dungeons {
   /**
    * Initialize shadow HP if missing or corrupted (batch optimized)
    * @param {Object} shadow - Shadow object
-   * @param {Object} shadowHP - Shadow HP object
+   * @param {Map<string, {hp: number, maxHp: number}>} shadowHP - Shadow HP map
    * @returns {Promise<Object>} - Updated shadow HP data
    */
   async initializeShadowHP(shadow, shadowHP) {
@@ -7544,7 +7560,7 @@ module.exports = class Dungeons {
       return null;
     }
 
-    const existingHP = shadowHP[shadowId];
+    const existingHP = shadowHP.get(shadowId);
     const needsInit =
       !existingHP ||
       typeof existingHP.hp !== 'number' ||
@@ -7665,7 +7681,7 @@ module.exports = class Dungeons {
         // Atomic update: create new object to prevent race conditions
         const hpData = { hp: minHP, maxHp: minHP };
         // eslint-disable-next-line require-atomic-updates
-        shadowHP[shadowId] = hpData;
+        shadowHP.set(shadowId, hpData);
         return hpData;
       }
 
@@ -7675,14 +7691,14 @@ module.exports = class Dungeons {
       // Atomic update: create new object to prevent race conditions
       const hpData = { hp: finalMaxHP, maxHp: finalMaxHP };
       // eslint-disable-next-line require-atomic-updates
-      shadowHP[shadowId] = hpData;
+      shadowHP.set(shadowId, hpData);
       return hpData;
     } catch (error) {
       this.errorLog('SHADOW_HP', `Failed to initialize HP for shadow ${shadowId}`, error);
       // Set minimum HP to prevent shadow from being immediately dead
       const minHP = 100;
-      shadowHP[shadowId] = { hp: minHP, maxHp: minHP };
-      return shadowHP[shadowId];
+      shadowHP.set(shadowId, { hp: minHP, maxHp: minHP });
+      return shadowHP.get(shadowId);
     }
   }
 
@@ -7690,7 +7706,7 @@ module.exports = class Dungeons {
    * Get combat-ready shadows for dungeon (filtered and validated)
    * @param {Array} assignedShadows - Assigned shadows
    * @param {Set} deadShadows - Set of dead shadow IDs
-   * @param {Object} shadowHP - Shadow HP object
+   * @param {Map<string, {hp: number, maxHp: number}>} shadowHP - Shadow HP map
    * @returns {Array} - Array of combat-ready shadows
    */
   /**
@@ -7724,7 +7740,7 @@ module.exports = class Dungeons {
       if (deadShadows.has(shadowId)) continue;
       if (exchangeMarkedIds.has(shadowId)) continue;
       if (sensesDeployedIds.has(shadowId)) continue;
-      const hpData = shadowHP[shadowId];
+      const hpData = shadowHP.get(shadowId);
       hpData && hpData.hp > 0 && combatReady.push(shadow);
     }
     return combatReady;
@@ -8017,7 +8033,7 @@ module.exports = class Dungeons {
         const hitCounts = new Map();
         for (let h = 0; h < totalHits; h++) {
           const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
-          const hpData = shadowHP[target.id];
+          const hpData = shadowHP.get(target.id);
           if (!hpData || hpData.hp <= 0) continue;
           hitCounts.set(target.id, (hitCounts.get(target.id) || 0) + 1);
         }
@@ -8227,7 +8243,7 @@ module.exports = class Dungeons {
             if (!targetId) {
               const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
               if (!target) continue;
-              const hpData = shadowHP[target.id];
+              const hpData = shadowHP.get(target.id);
               if (!hpData || hpData.hp <= 0) continue;
               targetId = target.id;
             }
@@ -8241,7 +8257,7 @@ module.exports = class Dungeons {
           for (const [shadowId, hits] of hitsPerTarget) {
             const target = shadowByIdMap.get(shadowId);
             if (!target) continue;
-            const hpData = shadowHP[shadowId];
+            const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp <= 0) continue;
 
             const shadowStats = this.buildShadowStats(target);
@@ -8360,7 +8376,7 @@ module.exports = class Dungeons {
       const assignedShadows =
         this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [];
       const deadShadows = this.deadShadows.get(channelKey) || new Set();
-      const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+      const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
       const now = Date.now();
 
       // Filter alive mobs and shadows
@@ -8374,10 +8390,10 @@ module.exports = class Dungeons {
         const shadowId = this.getShadowIdValue(shadow);
         if (!shadowId) continue;
         if (deadShadows.has(shadowId)) continue;
-        const shadowHPData = shadowHP[shadowId];
+        const shadowHPData = shadowHP.get(shadowId);
         if (!shadowHPData || shadowHPData.hp <= 0) continue;
 
-        const combatData = dungeon.shadowCombatData?.[shadowId];
+        const combatData = dungeon.shadowCombatData?.get?.(shadowId);
         if (!combatData) continue;
 
         // Check individual shadow cooldown (chaotic timing)
@@ -10741,7 +10757,7 @@ module.exports = class Dungeons {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) return;
 
-    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
     const deadShadows = this.deadShadows.get(channelKey) || new Set();
     const assignedShadows = this.shadowAllocations.get(channelKey) || [];
 
@@ -10845,7 +10861,7 @@ module.exports = class Dungeons {
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (!bossUnlocked) return;
 
-    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
     const deadShadows = this.deadShadows.get(channelKey) || new Set();
     const assignedShadows = this.shadowAllocations.get(channelKey) || [];
 
@@ -10897,10 +10913,10 @@ module.exports = class Dungeons {
       const damagePerShadow = Math.floor(totalShadowDamage / aliveShadows.length);
       aliveShadows.forEach((shadow) => {
         const shadowId = this.getShadowIdValue(shadow);
-        const hpData = shadowId ? shadowHP[shadowId] : null;
+        const hpData = shadowId ? shadowHP.get(shadowId) : null;
         if (hpData) {
           hpData.hp = Math.max(0, hpData.hp - damagePerShadow);
-          shadowHP[shadowId] = hpData;
+          shadowHP.set(shadowId, hpData);
           // Shadow death handled - will be resurrected when window becomes visible
         }
       });
@@ -10934,7 +10950,7 @@ module.exports = class Dungeons {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon || !dungeon.mobs?.activeMobs) return;
 
-    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = {});
+    const shadowHP = dungeon.shadowHP || (dungeon.shadowHP = new Map());
     const deadShadows = this.deadShadows.get(channelKey) || new Set();
     const assignedShadows = this.shadowAllocations.get(channelKey) || [];
 
@@ -11010,10 +11026,10 @@ module.exports = class Dungeons {
       const damagePerShadow = Math.floor(totalShadowDamage / aliveShadows.length);
       aliveShadows.forEach((shadow) => {
         const shadowId = this.getShadowIdValue(shadow);
-        const hpData = shadowId ? shadowHP[shadowId] : null;
+        const hpData = shadowId ? shadowHP.get(shadowId) : null;
         if (hpData) {
           hpData.hp = Math.max(0, hpData.hp - damagePerShadow);
-          shadowHP[shadowId] = hpData;
+          shadowHP.set(shadowId, hpData);
         }
       });
     }
@@ -11481,17 +11497,20 @@ module.exports = class Dungeons {
           if (!dungeon.mobs.activeMobs) {
             dungeon.mobs.activeMobs = [];
           }
-          // Ensure shadowHP object exists
+          // Ensure shadowHP exists as a Map (convert from plain object if loaded from JSON)
           if (!dungeon.shadowHP) {
-            dungeon.shadowHP = {};
+            dungeon.shadowHP = new Map();
+          } else if (!(dungeon.shadowHP instanceof Map)) {
+            const loaded = dungeon.shadowHP;
+            dungeon.shadowHP = new Map(Object.entries(loaded));
           }
-          // Convert shadowHP from Map to Object if needed (for compatibility)
-          if (dungeon.shadowHP instanceof Map) {
-            const shadowHPObj = {};
-            dungeon.shadowHP.forEach((value, key) => {
-              shadowHPObj[key] = value;
-            });
-            dungeon.shadowHP = shadowHPObj;
+
+          // Ensure shadowCombatData exists as a Map (convert from plain object if loaded from JSON)
+          if (!dungeon.shadowCombatData) {
+            dungeon.shadowCombatData = new Map();
+          } else if (!(dungeon.shadowCombatData instanceof Map)) {
+            const loaded = dungeon.shadowCombatData;
+            dungeon.shadowCombatData = new Map(Object.entries(loaded));
           }
 
           // VALIDATE: Ensure boss stats match dungeon rank (fixes any corrupted data)
