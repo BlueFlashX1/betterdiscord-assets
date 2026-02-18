@@ -713,76 +713,14 @@ module.exports = class LevelProgressBar {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
-      <div style="margin-bottom: 20px;">
-        <h3 style="color: #8a2be2; margin-bottom: 10px;">Level Progress Bar Settings</h3>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.enabled ? 'checked' : ''
-          } data-lpb-setting="enabled">
-          <span style="margin-left: 10px;">Enable Progress Bar</span>
+      <div style="background: #1e1e2e; border-radius: 8px; padding: 20px;">
+        <h3 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 16px; font-weight: 600;">Level Progress Bar</h3>
+        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 6px; border: 1px solid #3a3a4e;">
+          <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} data-lpb-setting="debugMode"
+            style="accent-color: #8a2be2; width: 16px; height: 16px; margin: 0;">
+          <span style="margin-left: 10px; color: #e0e0e0; font-size: 14px;">Debug Mode</span>
         </label>
-
-        <label style="display: block; margin-bottom: 10px;">
-          <span style="display: block; margin-bottom: 5px;">Position:</span>
-          <select data-lpb-setting="position" style="width: 100%; padding: 5px;">
-            <option value="top" ${this.settings.position === 'top' ? 'selected' : ''}>Top</option>
-            <option value="bottom" ${
-              this.settings.position === 'bottom' ? 'selected' : ''
-            }>Bottom</option>
-          </select>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.showLevel ? 'checked' : ''
-          } data-lpb-setting="showLevel">
-          <span style="margin-left: 10px;">Show Level</span>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.showRank ? 'checked' : ''
-          } data-lpb-setting="showRank">
-          <span style="margin-left: 10px;">Show Rank</span>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${this.settings.showXP ? 'checked' : ''} data-lpb-setting="showXP">
-          <span style="margin-left: 10px;">Show XP</span>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.compact ? 'checked' : ''
-          } data-lpb-setting="compact">
-          <span style="margin-left: 10px;">Compact Mode</span>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.integratedLevelUpAnimation ? 'checked' : ''
-          } data-lpb-setting="integratedLevelUpAnimation">
-          <span style="margin-left: 10px;">Integrated Level Up Animation</span>
-        </label>
-
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.showShimmer ? 'checked' : ''
-          } data-lpb-setting="showShimmer">
-          <span style="margin-left: 10px;">Shimmer Effect</span>
-        </label>
-
-        <!-- Opacity removed - fixed at 100% (1.0) for better visibility -->
-        <hr style="margin: 20px 0; border: none; border-top: 1px solid rgba(138, 43, 226, 0.3);">
-        <h4 style="color: #8a2be2; margin-bottom: 10px;">Developer Options</h4>
-        <label style="display: flex; align-items: center; margin-bottom: 10px; cursor: pointer;">
-          <input type="checkbox" ${
-            this.settings.debugMode ? 'checked' : ''
-          } data-lpb-setting="debugMode">
-          <span style="margin-left: 10px;">Debug Mode</span>
-        </label>
-        <p style="font-size: 12px; color: rgba(255,255,255,0.35); margin-top: 5px;">
+        <p style="font-size: 12px; color: #6a6a8a; margin: 8px 0 0 0;">
           Show detailed console logs for troubleshooting. Reload Discord after changing.
         </p>
       </div>
@@ -796,53 +734,6 @@ module.exports = class LevelProgressBar {
       const nextValue = target.type === 'checkbox' ? target.checked : target.value;
 
       const handlers = {
-        enabled: (value) => {
-          this.settings.enabled = !!value;
-          this.saveSettings();
-          value
-            ? (this.createProgressBar(),
-              this.subscribeToEvents() || this.startUpdating(),
-              this.queueProgressBarUpdate())
-            : (this.unsubscribeFromEvents(),
-              this.stopUpdating(),
-              this.removeProgressBar(),
-              this.removeLevelUpOverlay());
-        },
-        position: (value) => {
-          this.settings.position = value;
-          this.saveSettings();
-          this.updateProgressBarPosition();
-          this.queueProgressBarUpdate();
-        },
-        showLevel: (value) => {
-          this.settings.showLevel = !!value;
-          this.saveSettings();
-          this.queueProgressBarUpdate();
-        },
-        showRank: (value) => {
-          this.settings.showRank = !!value;
-          this.saveSettings();
-          this.queueProgressBarUpdate();
-        },
-        showXP: (value) => {
-          this.settings.showXP = !!value;
-          this.saveSettings();
-          this.queueProgressBarUpdate();
-        },
-        compact: (value) => {
-          this.settings.compact = !!value;
-          this.saveSettings();
-          this.queueProgressBarUpdate();
-        },
-        integratedLevelUpAnimation: (value) => {
-          this.settings.integratedLevelUpAnimation = !!value;
-          this.saveSettings();
-        },
-        showShimmer: (value) => {
-          this.settings.showShimmer = !!value;
-          this.saveSettings();
-          this.queueProgressBarUpdate();
-        },
         debugMode: (value) => {
           this.settings.debugMode = !!value;
           this.saveSettings();

@@ -3390,6 +3390,8 @@ module.exports = class SkillTree {
     this.detachSkillTreeSettingsPanelHandlers();
     const panel = document.createElement('div');
     panel.style.padding = '20px';
+    panel.style.background = '#1e1e2e';
+    panel.style.borderRadius = '8px';
     panel.innerHTML = `
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Skill Tree Settings</h3>
@@ -3435,21 +3437,6 @@ module.exports = class SkillTree {
             </label>
           </div>
         </div>
-
-        <button id="st-reset-skills" style="
-          width: 100%;
-          padding: 12px;
-          background: linear-gradient(135deg, #cc2222 0%, #aa1818 100%);
-          border: 2px solid #ff4444;
-          border-radius: 8px;
-          color: white;
-          font-weight: bold;
-          cursor: pointer;
-          margin-bottom: 20px;
-          transition: all 0.3s ease;
-        ">
-          Reset All Skills & Recalculate SP
-        </button>
 
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="st-debug">
@@ -3513,15 +3500,9 @@ module.exports = class SkillTree {
       }
     };
 
-    const onClick = (event) => {
-      const reset = event.target?.closest?.('#st-reset-skills');
-      reset && this.showResetConfirmDialog();
-    };
-
     panel.addEventListener('change', onChange);
-    panel.addEventListener('click', onClick);
     this._settingsPanelRoot = panel;
-    this._settingsPanelHandlers = { onChange, onClick };
+    this._settingsPanelHandlers = { onChange };
 
     return panel;
   }

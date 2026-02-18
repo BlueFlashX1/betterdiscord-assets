@@ -12038,68 +12038,81 @@ module.exports = class Dungeons {
 
     const SettingsPanel = () => {
       const [isDebugEnabled, setIsDebugEnabled] = React.useState(Boolean(self.settings?.debug));
-      const [spawnChance, setSpawnChance] = React.useState(
-        Number.isFinite(self.settings?.spawnChance) ? self.settings.spawnChance : 15
-      );
 
       return React.createElement(
         'div',
-        { style: { padding: '20px' } },
-        React.createElement('h3', null, 'Dungeons Settings'),
+        {
+          style: {
+            padding: '24px',
+            background: '#1e1e2e',
+            borderRadius: '8px',
+            fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+          },
+        },
         React.createElement(
-          'div',
-          { style: { marginBottom: '15px' } },
-          React.createElement(
-            'label',
-            { style: { display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' } },
-            React.createElement('input', {
-              type: 'checkbox',
-              checked: isDebugEnabled,
-              onChange: (e) => {
-                const next = Boolean(e.target.checked);
-                setIsDebugEnabled(next);
-                self.settings.debug = next;
-                self.saveSettings();
-              },
-            }),
-            'Debug Mode (Verbose Console Logging)'
-          )
-        ),
-        React.createElement(
-          'div',
-          { style: { marginBottom: '15px' } },
-          React.createElement(
-            'label',
-            { style: { display: 'block', marginBottom: '5px' } },
-            'Spawn Chance (% per message):'
-          ),
-          React.createElement('input', {
-            type: 'number',
-            min: 0,
-            max: 100,
-            value: spawnChance,
-            onChange: (e) => {
-              const next = parseFloat(e.target.value);
-              const normalized = Number.isFinite(next) ? next : 15;
-              setSpawnChance(normalized);
-              self.settings.spawnChance = normalized;
-              self.saveSettings();
-            },
-            style: { width: '100px', padding: '5px' },
-          })
-        ),
-        React.createElement(
-          'div',
+          'h3',
           {
             style: {
-              marginTop: '20px',
-              padding: '10px',
-              background: '#1a1a1a',
-              borderRadius: '5px',
+              margin: '0 0 20px 0',
+              color: '#cdd6f4',
+              fontSize: '18px',
+              fontWeight: '600',
+              borderBottom: '1px solid #45475a',
+              paddingBottom: '12px',
             },
           },
-          React.createElement('strong', null, 'Active Dungeons: '),
-          self.activeDungeons.size
+          'Dungeons Settings'
+        ),
+        React.createElement(
+          'label',
+          {
+            style: {
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              cursor: 'pointer',
+              padding: '12px 16px',
+              background: '#181825',
+              borderRadius: '6px',
+              border: '1px solid #45475a',
+              transition: 'border-color 0.2s',
+              color: '#cdd6f4',
+              fontSize: '14px',
+            },
+          },
+          React.createElement('input', {
+            type: 'checkbox',
+            checked: isDebugEnabled,
+            onChange: (e) => {
+              const next = Boolean(e.target.checked);
+              setIsDebugEnabled(next);
+              self.settings.debug = next;
+              self.saveSettings();
+            },
+            style: {
+              accentColor: '#b4befe',
+              width: '18px',
+              height: '18px',
+              cursor: 'pointer',
+            },
+          }),
+          React.createElement(
+            'span',
+            null,
+            'Debug Mode',
+            React.createElement(
+              'span',
+              {
+                style: {
+                  display: 'block',
+                  fontSize: '12px',
+                  color: '#a6adc8',
+                  marginTop: '2px',
+                },
+              },
+              'Enables verbose console logging'
+            )
+          )
         )
       );
     };

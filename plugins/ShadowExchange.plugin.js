@@ -1,68 +1,382 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 1.3.0
+ * @version 2.0.0
  * @author matthewthompson
+ *
+ * ============================================================================
+ * REACT PANEL ARCHITECTURE (v2.0.0)
+ * ============================================================================
+ *
+ * The waypoint panel is now a React component tree rendered via
+ * BdApi.ReactDOM.createPortal into a body-level container.  This replaces
+ * the v1.x template-literal innerHTML approach that required manual event
+ * delegation, cloneNode listener dedup, and full innerHTML replacement on
+ * every search/sort change.
+ *
+ * What changed:
+ *   - Panel UI: React functional components with useState/useCallback
+ *   - Search/sort: React state → automatic re-render (no innerHTML replace)
+ *   - Event handling: React onClick props (no data-action delegation)
+ *   - Card list: React keys for identity (no cloneNode hack)
+ *
+ * What did NOT change:
+ *   - Swirl icon: still direct DOM on document.body (z-index escape)
+ *   - Context menu: still BdApi.ContextMenu.patch (already React-based)
+ *   - Persistence: identical BdApi.Data + file backup
+ *   - Navigation: identical NavigationUtils.transitionTo
+ *   - Shadow assignment: identical ShadowArmy integration
+ *   - CSS: identical stylesheet via BdApi.DOM.addStyle
+ *   - Public API: getMarkedShadowIds(), isShadowMarked()
  */
 
+// ─── Constants ─────────────────────────────────────────────────────────────
+
+const SE_PLUGIN_ID = "ShadowExchange";
+const SE_VERSION = "2.0.0";
+const SE_STYLE_ID = "shadow-exchange-css";
+const SE_SWIRL_ID = "se-swirl-icon";
+const SE_PANEL_CONTAINER_ID = "se-panel-root";
+
+const RANK_ORDER = [
+  "E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH",
+  "Monarch", "Monarch+", "Shadow Monarch",
+];
+
+const RANK_COLORS = {
+  E: "#808080", D: "#8B4513", C: "#FF6347", B: "#FFD700",
+  A: "#00CED1", S: "#FF69B4", SS: "#9b59b6", SSS: "#e74c3c",
+  "SSS+": "#f39c12", NH: "#1abc9c", Monarch: "#e91e63",
+  "Monarch+": "#ff5722", "Shadow Monarch": "#7c4dff",
+};
+
+const FALLBACK_SHADOWS = [
+  { name: "Shadow Scout", rank: "E" },
+  { name: "Shadow Sentry", rank: "E" },
+  { name: "Shadow Guard", rank: "E" },
+  { name: "Shadow Watcher", rank: "D" },
+  { name: "Shadow Patrol", rank: "D" },
+  { name: "Shadow Ranger", rank: "D" },
+  { name: "Shadow Knight", rank: "C" },
+  { name: "Shadow Striker", rank: "C" },
+  { name: "Shadow Warrior", rank: "B" },
+  { name: "Shadow Vanguard", rank: "B" },
+  { name: "Shadow Elite", rank: "A" },
+  { name: "Shadow Blade", rank: "A" },
+  { name: "Shadow Marshal", rank: "S" },
+  { name: "Shadow Commander", rank: "S" },
+  { name: "Shadow Overlord", rank: "SS" },
+  { name: "Shadow Arbiter", rank: "SS" },
+  { name: "Shadow Sovereign", rank: "SSS" },
+  { name: "Shadow Titan", rank: "SSS" },
+  { name: "Shadow Paragon", rank: "SSS+" },
+  { name: "Shadow Apex", rank: "Shadow Monarch" },
+];
+
+// ─── Utility ───────────────────────────────────────────────────────────────
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function formatTimestamp(ts) {
+  try {
+    const d = new Date(ts);
+    return (
+      d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) +
+      " at " +
+      d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })
+    );
+  } catch (_) {
+    return "";
+  }
+}
+
+function getTypeBadge(locationType) {
+  if (locationType === "dm") return "DM";
+  if (locationType === "thread") return "Thread";
+  if (locationType === "message") return "Msg";
+  return "Channel";
+}
+
+// ─── React Components ──────────────────────────────────────────────────────
+
+function buildPanelComponents(pluginInstance) {
+  const React = BdApi.React;
+  const ce = React.createElement;
+
+  // ── WaypointCard ────────────────────────────────────────────────────────
+
+  function WaypointCard({ wp, onTeleport, onRemove }) {
+    const rankColor = RANK_COLORS[wp.shadowRank] || "#808080";
+    const typeBadge = getTypeBadge(wp.locationType);
+    const visits = wp.visitCount || 0;
+    const timeStr = formatTimestamp(wp.createdAt);
+
+    const fullLocation = wp.guildName
+      ? `${wp.guildName} \u00BB #${wp.channelName}`
+      : `DM \u00BB ${wp.channelName}`;
+
+    // Message preview section
+    let messageSection = null;
+    if (wp.locationType === "message") {
+      let preview = wp.messagePreview || "";
+      let author = wp.messageAuthor || "";
+
+      // Backfill from Discord cache
+      if (!preview && wp.messageId && wp.channelId) {
+        try {
+          const cached = pluginInstance.MessageStore?.getMessage(wp.channelId, wp.messageId);
+          if (cached) {
+            if (cached.content) {
+              preview = cached.content.length > 120 ? cached.content.slice(0, 120) + "\u2026" : cached.content;
+              wp.messagePreview = preview;
+            } else if (cached.embeds?.length) {
+              preview = "[Embed]";
+            } else if (cached.attachments?.size || cached.attachments?.length) {
+              preview = "[Attachment]";
+            }
+            if (!author && cached.author) {
+              author = cached.author.globalName || cached.author.username || "";
+              wp.messageAuthor = author;
+            }
+          }
+        } catch (_) {}
+      }
+
+      messageSection = ce("div", { className: "se-message-preview" },
+        author ? ce("span", { className: "se-msg-author" }, author + ":") : null,
+        ce("span", { className: "se-msg-text" },
+          preview || ce("em", { style: { color: "#666" } }, "Navigate to load preview")
+        )
+      );
+    }
+
+    return ce("div", {
+      className: "se-waypoint-card",
+      style: { borderLeftColor: rankColor },
+    },
+      // Top row: rank badge, shadow name, remove button
+      ce("div", { className: "se-card-top" },
+        ce("span", { className: "se-shadow-rank", style: { background: rankColor } }, wp.shadowRank),
+        ce("span", { className: "se-shadow-name" }, wp.shadowName),
+        ce("button", {
+          className: "se-card-remove",
+          title: "Recall shadow",
+          onClick: (e) => { e.stopPropagation(); onRemove(wp.id); },
+        }, "\u2716")
+      ),
+      // Body: location, message preview, meta
+      ce("div", { className: "se-card-body" },
+        ce("div", { className: "se-location-label" }, fullLocation),
+        messageSection,
+        ce("div", { className: "se-location-meta" },
+          ce("span", { className: "se-type-badge" }, typeBadge),
+          ce("span", { className: "se-visit-count" }, `${visits} visit${visits !== 1 ? "s" : ""}`),
+          ce("span", { className: "se-created-time" }, timeStr)
+        )
+      ),
+      // Footer: teleport button
+      ce("div", { className: "se-card-footer" },
+        ce("button", {
+          className: "se-teleport-btn",
+          onClick: () => onTeleport(wp.id),
+        }, "Teleport")
+      )
+    );
+  }
+
+  // ── WaypointPanel ───────────────────────────────────────────────────────
+
+  function WaypointPanel({ onClose }) {
+    const [searchQuery, setSearchQuery] = React.useState("");
+    const [sortBy, setSortBy] = React.useState(pluginInstance.settings.sortBy || "created");
+    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+    const [availCount, setAvailCount] = React.useState(0);
+
+    // Load available shadow count on mount
+    React.useEffect(() => {
+      let cancelled = false;
+      pluginInstance.getAvailableShadowCount().then((count) => {
+        if (!cancelled) setAvailCount(count);
+      });
+      return () => { cancelled = true; };
+    }, []);
+
+    // Store refresh callback so business logic can trigger re-render
+    React.useEffect(() => {
+      pluginInstance._panelForceUpdate = forceUpdate;
+      return () => { pluginInstance._panelForceUpdate = null; };
+    }, [forceUpdate]);
+
+    // Escape key handler
+    React.useEffect(() => {
+      const handler = (e) => {
+        if (e.key === "Escape") {
+          e.stopPropagation();
+          onClose();
+        }
+      };
+      document.addEventListener("keydown", handler, true);
+      return () => document.removeEventListener("keydown", handler, true);
+    }, [onClose]);
+
+    // Deferred save for message preview backfill
+    React.useEffect(() => {
+      const timer = setTimeout(() => pluginInstance.saveSettings(), 500);
+      return () => clearTimeout(timer);
+    }, []);
+
+    // Filter + sort waypoints
+    const waypoints = React.useMemo(() => {
+      let wps = [...pluginInstance.settings.waypoints];
+
+      if (searchQuery) {
+        const q = searchQuery.toLowerCase();
+        wps = wps.filter(
+          (w) =>
+            w.label.toLowerCase().includes(q) ||
+            w.shadowName.toLowerCase().includes(q) ||
+            w.channelName.toLowerCase().includes(q) ||
+            w.guildName.toLowerCase().includes(q) ||
+            (w.messagePreview || "").toLowerCase().includes(q) ||
+            (w.messageAuthor || "").toLowerCase().includes(q)
+        );
+      }
+
+      if (sortBy === "created") wps.sort((a, b) => b.createdAt - a.createdAt);
+      else if (sortBy === "visited") wps.sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+      else if (sortBy === "name") wps.sort((a, b) => a.label.localeCompare(b.label));
+      else if (sortBy === "rank") {
+        wps.sort((a, b) => RANK_ORDER.indexOf(b.shadowRank) - RANK_ORDER.indexOf(a.shadowRank));
+      }
+
+      return wps;
+    }, [searchQuery, sortBy, pluginInstance.settings.waypoints.length]);
+
+    const handleSortChange = React.useCallback((e) => {
+      const val = e.target.value;
+      setSortBy(val);
+      pluginInstance.settings.sortBy = val;
+      pluginInstance.saveSettings();
+    }, []);
+
+    const handleMark = React.useCallback(() => {
+      pluginInstance.markCurrentLocation();
+    }, []);
+
+    const handleTeleport = React.useCallback((wpId) => {
+      pluginInstance.teleportTo(wpId);
+    }, []);
+
+    const handleRemove = React.useCallback((wpId) => {
+      pluginInstance.removeWaypoint(wpId);
+    }, []);
+
+    const handleOverlayClick = React.useCallback((e) => {
+      if (e.target.classList.contains("se-panel-overlay")) onClose();
+    }, [onClose]);
+
+    const totalWaypoints = pluginInstance.settings.waypoints.length;
+
+    // Build list content
+    let listContent;
+    if (waypoints.length === 0) {
+      listContent = ce("div", { className: "se-empty-state" },
+        ce("div", { className: "se-empty-icon" }, "\u2693"),
+        ce("div", { className: "se-empty-text" },
+          searchQuery ? "No waypoints match your search" : "No waypoints yet"
+        ),
+        ce("div", { className: "se-empty-hint" },
+          searchQuery ? "Try a different search" : 'Click "Mark Current Location" to station a shadow'
+        )
+      );
+    } else {
+      listContent = waypoints.map((wp) =>
+        ce(WaypointCard, {
+          key: wp.id,
+          wp,
+          onTeleport: handleTeleport,
+          onRemove: handleRemove,
+        })
+      );
+    }
+
+    return ce("div", { className: "se-panel-overlay", onClick: handleOverlayClick },
+      ce("div", { className: "se-panel-container" },
+        // Header
+        ce("div", { className: "se-panel-header" },
+          ce("h2", { className: "se-panel-title" }, "Shadow Exchange"),
+          ce("div", { className: "se-header-actions" },
+            ce("button", { className: "se-mark-btn", onClick: handleMark }, "Mark Current Location"),
+            ce("button", { className: "se-close-btn", onClick: onClose }, "\u00D7")
+          )
+        ),
+        // Controls: sort + search
+        ce("div", { className: "se-panel-controls" },
+          ce("select", {
+            className: "se-sort-select",
+            value: sortBy,
+            onChange: handleSortChange,
+          },
+            ce("option", { value: "created" }, "Newest First"),
+            ce("option", { value: "visited" }, "Recently Visited"),
+            ce("option", { value: "name" }, "Name"),
+            ce("option", { value: "rank" }, "Shadow Rank")
+          ),
+          ce("input", {
+            type: "text",
+            className: "se-search-input",
+            placeholder: "Search waypoints...",
+            value: searchQuery,
+            onChange: (e) => setSearchQuery(e.target.value),
+          })
+        ),
+        // Waypoint list
+        ce("div", { className: "se-waypoint-list" }, listContent),
+        // Footer
+        ce("div", { className: "se-panel-footer" },
+          ce("span", { className: "se-wp-count" },
+            `${totalWaypoints} waypoint${totalWaypoints !== 1 ? "s" : ""}`
+          ),
+          ce("span", { className: "se-shadow-avail" },
+            `${availCount} shadow${availCount !== 1 ? "s" : ""} available`
+          )
+        )
+      )
+    );
+  }
+
+  return { WaypointPanel, WaypointCard };
+}
+
+// ─── Plugin Class ──────────────────────────────────────────────────────────
+
 module.exports = class ShadowExchange {
-  // ── Constants ──────────────────────────────────────────────────────────
-  static PLUGIN_ID = "ShadowExchange";
-  static VERSION = "1.3.0";
-  static STYLE_ID = "shadow-exchange-css";
-  static SWIRL_ID = "se-swirl-icon";
-  static PANEL_ID = "se-waypoint-panel";
-
-  static RANK_ORDER = [
-    "E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH",
-    "Monarch", "Monarch+", "Shadow Monarch",
-  ];
-
-  static RANK_COLORS = {
-    E: "#808080", D: "#8B4513", C: "#FF6347", B: "#FFD700",
-    A: "#00CED1", S: "#FF69B4", SS: "#9b59b6", SSS: "#e74c3c",
-    "SSS+": "#f39c12", NH: "#1abc9c", Monarch: "#e91e63",
-    "Monarch+": "#ff5722", "Shadow Monarch": "#7c4dff",
-  };
-
-  static FALLBACK_SHADOWS = [
-    { name: "Shadow Scout", rank: "E" },
-    { name: "Shadow Sentry", rank: "E" },
-    { name: "Shadow Guard", rank: "E" },
-    { name: "Shadow Watcher", rank: "D" },
-    { name: "Shadow Patrol", rank: "D" },
-    { name: "Shadow Ranger", rank: "D" },
-    { name: "Shadow Knight", rank: "C" },
-    { name: "Shadow Striker", rank: "C" },
-    { name: "Shadow Warrior", rank: "B" },
-    { name: "Shadow Vanguard", rank: "B" },
-    { name: "Shadow Elite", rank: "A" },
-    { name: "Shadow Blade", rank: "A" },
-    { name: "Shadow Marshal", rank: "S" },
-    { name: "Shadow Commander", rank: "S" },
-    { name: "Shadow Overlord", rank: "SS" },
-    { name: "Shadow Arbiter", rank: "SS" },
-    { name: "Shadow Sovereign", rank: "SSS" },
-    { name: "Shadow Titan", rank: "SSS" },
-    { name: "Shadow Paragon", rank: "SSS+" },
-    { name: "Shadow Apex", rank: "Shadow Monarch" },
-  ];
-
   // ── Lifecycle ──────────────────────────────────────────────────────────
+
+  constructor() {
+    this._panelForceUpdate = null;
+    this._panelContainer = null;
+  }
 
   start() {
     try {
       this.panelOpen = false;
       this.swirlIcon = null;
-      this.panelEl = null;
-      this.escHandler = null;
       this.fallbackIdx = 0;
       this.fileBackupPath = null;
+      this._panelForceUpdate = null;
+      this._panelContainer = null;
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
         debug: false,
-        _metadata: { lastSave: null, version: ShadowExchange.VERSION },
+        _metadata: { lastSave: null, version: SE_VERSION },
       };
       this.settings = { ...this.defaultSettings, waypoints: [] };
 
@@ -71,23 +385,17 @@ module.exports = class ShadowExchange {
       this.loadSettings();
       this.injectCSS();
 
+      // Build React components (cached for this plugin instance)
+      this._components = buildPanelComponents(this);
+
       // Swirl icon — simple body-level DOM injection (fixed-position overlay).
       this.injectSwirlIcon();
 
       // Right-click context menu on messages → "Shadow Mark"
       this.patchContextMenu();
 
-      // Global Escape key to close panel
-      this.escHandler = (e) => {
-        if (e.key === "Escape" && this.panelOpen) {
-          e.stopPropagation();
-          this.closePanel();
-        }
-      };
-      document.addEventListener("keydown", this.escHandler, true);
-
       BdApi.UI.showToast(
-        `ShadowExchange v${ShadowExchange.VERSION} active`,
+        `ShadowExchange v${SE_VERSION} active`,
         { type: "success", timeout: 2200 }
       );
     } catch (err) {
@@ -98,9 +406,6 @@ module.exports = class ShadowExchange {
 
   stop() {
     try {
-      if (this.escHandler) {
-        document.removeEventListener("keydown", this.escHandler, true);
-      }
       if (this._unpatchContextMenu) {
         this._unpatchContextMenu();
         this._unpatchContextMenu = null;
@@ -162,7 +467,6 @@ module.exports = class ShadowExchange {
           const { message, channel } = props;
           if (!message || !channel) return;
 
-          // Check if this message is already marked
           const existingWaypoint = this.settings.waypoints.find(
             (w) => w.channelId === channel.id && w.messageId === message.id
           );
@@ -171,7 +475,6 @@ module.exports = class ShadowExchange {
 
           let item;
           if (existingWaypoint) {
-            // Already marked — show "Shadow Unmark" to recall the shadow
             item = BdApi.ContextMenu.buildItem({
               type: "text",
               label: `Shadow Unmark (${existingWaypoint.shadowName})`,
@@ -185,7 +488,6 @@ module.exports = class ShadowExchange {
               },
             });
           } else {
-            // Not marked — show "Shadow Mark"
             item = BdApi.ContextMenu.buildItem({
               type: "text",
               label: "Shadow Mark",
@@ -194,13 +496,10 @@ module.exports = class ShadowExchange {
             });
           }
 
-          // tree.props.children may be a flat array or contain nested groups.
-          // Walk to the actual array of menu groups/items.
           const children = tree?.props?.children;
           if (Array.isArray(children)) {
             children.push(separator, item);
           } else if (children?.props?.children && Array.isArray(children.props.children)) {
-            // Scroller wrapper — push into its children
             children.props.children.push(separator, item);
           }
         } catch (err) {
@@ -214,15 +513,12 @@ module.exports = class ShadowExchange {
 
   /**
    * Mark a specific message from the context menu.
-   * @param {object} channel - Discord channel object
-   * @param {object} message - Discord message object
    */
   async markMessage(channel, message) {
     const channelId = channel.id;
     const guildId = channel.guild_id || null;
     const messageId = message.id;
 
-    // Duplicate check
     const dup = this.settings.waypoints.find(
       (w) => w.channelId === channelId && w.messageId === messageId
     );
@@ -233,7 +529,6 @@ module.exports = class ShadowExchange {
 
     let channelName = channel.name || "DM";
     let guildName = guildId ? "Unknown Server" : "Direct Messages";
-    let locationType = "message";
 
     try {
       if (guildId) {
@@ -253,12 +548,11 @@ module.exports = class ShadowExchange {
       ? `${guildName} \u00BB #${channelName}`
       : `DM \u00BB ${channelName}`;
 
-    // Capture message content preview (truncate to 120 chars)
     let messagePreview = "";
     try {
       if (message.content) {
         messagePreview = message.content.length > 120
-          ? message.content.slice(0, 120) + "…"
+          ? message.content.slice(0, 120) + "\u2026"
           : message.content;
       } else if (message.embeds?.length) {
         messagePreview = "[Embed]";
@@ -267,7 +561,6 @@ module.exports = class ShadowExchange {
       }
     } catch (_) {}
 
-    // Capture author info
     let messageAuthor = "";
     try {
       if (message.author) {
@@ -278,7 +571,7 @@ module.exports = class ShadowExchange {
     const waypoint = {
       id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       label,
-      locationType,
+      locationType: "message",
       guildId,
       channelId,
       messageId,
@@ -296,7 +589,7 @@ module.exports = class ShadowExchange {
 
     this.settings.waypoints.push(waypoint);
     this.saveSettings();
-    this.refreshPanel();
+    this._triggerPanelRefresh();
 
     BdApi.UI.showToast(`${shadow.name} stationed at message in ${label}`, { type: "success" });
   }
@@ -319,15 +612,13 @@ module.exports = class ShadowExchange {
   loadSettings() {
     const candidates = [];
 
-    // BdApi.Data
     try {
-      const bd = BdApi.Data.load(ShadowExchange.PLUGIN_ID, "settings");
+      const bd = BdApi.Data.load(SE_PLUGIN_ID, "settings");
       if (bd && typeof bd === "object") {
         candidates.push({ source: "bdapi", data: bd });
       }
     } catch (_) {}
 
-    // External file backup
     try {
       const file = this.readFileBackup();
       if (file && typeof file === "object") {
@@ -340,7 +631,6 @@ module.exports = class ShadowExchange {
       return;
     }
 
-    // Pick highest-quality (most waypoints, then most recent)
     const score = (c) => {
       const wps = Array.isArray(c.data.waypoints) ? c.data.waypoints.length : 0;
       const ts = c.data._metadata?.lastSave
@@ -361,11 +651,11 @@ module.exports = class ShadowExchange {
   saveSettings() {
     this.settings._metadata = {
       lastSave: new Date().toISOString(),
-      version: ShadowExchange.VERSION,
+      version: SE_VERSION,
     };
 
     try {
-      BdApi.Data.save(ShadowExchange.PLUGIN_ID, "settings", this.settings);
+      BdApi.Data.save(SE_PLUGIN_ID, "settings", this.settings);
     } catch (err) {
       console.error("[ShadowExchange] BdApi.Data.save failed:", err);
     }
@@ -403,7 +693,6 @@ module.exports = class ShadowExchange {
     try {
       const fs = require("fs");
 
-      // Rotate backups: .bak4→.bak5, .bak3→.bak4, … main→.bak1
       for (let i = 4; i >= 0; i--) {
         const src = i === 0 ? this.fileBackupPath : `${this.fileBackupPath}.bak${i}`;
         const dest = `${this.fileBackupPath}.bak${i + 1}`;
@@ -423,12 +712,11 @@ module.exports = class ShadowExchange {
     }
   }
 
-  // ── Public API (for cross-plugin integration) ───────────────────────────
+  // ── Public API (for cross-plugin integration) ─────────────────────────
 
   /**
    * Returns a Set of shadow IDs currently stationed at waypoints.
    * Other plugins (e.g., Dungeons) should exclude these from battle deployment.
-   * @returns {Set<string>}
    */
   getMarkedShadowIds() {
     return new Set(
@@ -440,15 +728,13 @@ module.exports = class ShadowExchange {
 
   /**
    * Check if a specific shadow is stationed at a waypoint.
-   * @param {string} shadowId
-   * @returns {boolean}
    */
   isShadowMarked(shadowId) {
     if (!shadowId || !this.settings?.waypoints) return false;
     return this.settings.waypoints.some((w) => w.shadowId === shadowId);
   }
 
-  // ── Shadow Assignment ──────────────────────────────────────────────────
+  // ── Shadow Assignment ────────────────────────────────────────────────
 
   async getWeakestAvailableShadow() {
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
@@ -471,7 +757,6 @@ module.exports = class ShadowExchange {
         return this.getFallbackShadow();
       }
 
-      // Calculate total effective power for each shadow
       const withPower = available.map((shadow) => {
         let power = 0;
         try {
@@ -479,7 +764,6 @@ module.exports = class ShadowExchange {
             const stats = saInstance.getShadowEffectiveStats(shadow);
             power = Object.values(stats).reduce((sum, v) => sum + (Number(v) || 0), 0);
           } else {
-            // Fallback: use stored strength
             power = Number(shadow.strength) || 0;
           }
         } catch (_) {
@@ -488,7 +772,6 @@ module.exports = class ShadowExchange {
         return { shadow, power };
       });
 
-      // Sort ascending → weakest first
       withPower.sort((a, b) => a.power - b.power);
 
       const weakest = withPower[0].shadow;
@@ -505,12 +788,11 @@ module.exports = class ShadowExchange {
   }
 
   getFallbackShadow() {
-    const pool = ShadowExchange.FALLBACK_SHADOWS;
+    const pool = FALLBACK_SHADOWS;
     const assignedNames = new Set(this.settings.waypoints.map((w) => w.shadowName));
     const available = pool.filter((s) => !assignedNames.has(s.name));
     if (available.length > 0) return { ...available[0], id: `fallback_${Date.now()}`, source: "fallback" };
 
-    // All fallback names used — generate numbered one
     this.fallbackIdx += 1;
     return {
       id: `fallback_${Date.now()}`,
@@ -524,7 +806,7 @@ module.exports = class ShadowExchange {
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
     const saInstance = saPlugin?.instance;
     if (!saInstance || typeof saInstance.getAllShadows !== "function") {
-      return ShadowExchange.FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
     }
     try {
       const all = await saInstance.getAllShadows();
@@ -579,7 +861,6 @@ module.exports = class ShadowExchange {
       return;
     }
 
-    // Duplicate check
     const dup = this.settings.waypoints.find(
       (w) => w.channelId === loc.channelId && w.messageId === loc.messageId
     );
@@ -620,7 +901,7 @@ module.exports = class ShadowExchange {
 
     this.settings.waypoints.push(waypoint);
     this.saveSettings();
-    this.refreshPanel();
+    this._triggerPanelRefresh();
 
     BdApi.UI.showToast(`${shadow.name} stationed at ${label}`, { type: "success" });
   }
@@ -631,7 +912,7 @@ module.exports = class ShadowExchange {
     const wp = this.settings.waypoints[idx];
     this.settings.waypoints.splice(idx, 1);
     this.saveSettings();
-    this.refreshPanel();
+    this._triggerPanelRefresh();
     BdApi.UI.showToast(`${wp.shadowName} recalled from ${wp.label}`, { type: "info" });
   }
 
@@ -653,11 +934,9 @@ module.exports = class ShadowExchange {
     url += `/${wp.channelId}`;
     if (wp.messageId) url += `/${wp.messageId}`;
 
-    // Primary: use Discord's internal router (no reload)
     if (this.NavigationUtils?.transitionTo) {
       this.NavigationUtils.transitionTo(url);
     } else {
-      // Secondary: try alternative Webpack lookup
       try {
         const nav = BdApi.Webpack.getModule(
           (m) => m?.transitionTo && typeof m.transitionTo === "function",
@@ -666,7 +945,6 @@ module.exports = class ShadowExchange {
         if (nav?.transitionTo) {
           nav.transitionTo(url);
         } else {
-          // Last resort: push state + popstate (avoids full page reload)
           history.pushState({}, "", url);
           window.dispatchEvent(new PopStateEvent("popstate"));
         }
@@ -684,9 +962,15 @@ module.exports = class ShadowExchange {
     BdApi.UI.showToast(`Exchanged to ${wp.label}`, { type: "success", timeout: 2500 });
   }
 
-  // ── Swirl Icon Injection ───────────────────────────────────────────────
+  // ── Panel refresh bridge (imperative → React) ─────────────────────────
 
-  // ── Swirl Icon (body-level DOM injection) ─────────────────────────────
+  _triggerPanelRefresh() {
+    if (this._panelForceUpdate) {
+      this._panelForceUpdate();
+    }
+  }
+
+  // ── Swirl Icon (body-level DOM injection) ──────────────────────────────
 
   /**
    * Inject the swirl icon directly onto document.body as a fixed-position
@@ -694,10 +978,10 @@ module.exports = class ShadowExchange {
    * all React stacking contexts (LPB container, Discord modals, etc.).
    */
   injectSwirlIcon() {
-    if (document.getElementById(ShadowExchange.SWIRL_ID)) return;
+    if (document.getElementById(SE_SWIRL_ID)) return;
 
     const icon = document.createElement("div");
-    icon.id = ShadowExchange.SWIRL_ID;
+    icon.id = SE_SWIRL_ID;
     icon.className = "se-swirl-icon";
     icon.title = "Shadow Exchange — Waypoints";
     icon.innerHTML = [
@@ -725,261 +1009,114 @@ module.exports = class ShadowExchange {
   }
 
   removeSwirlIcon() {
-    const icon = document.getElementById(ShadowExchange.SWIRL_ID);
+    const icon = document.getElementById(SE_SWIRL_ID);
     if (icon) icon.remove();
     this.swirlIcon = null;
   }
 
-  // ── Waypoint Panel ─────────────────────────────────────────────────────
+  // ── Panel (React-rendered) ─────────────────────────────────────────────
 
   togglePanel() {
     if (this.panelOpen) this.closePanel();
     else this.openPanel();
   }
 
-  async openPanel() {
+  /**
+   * Get react-dom/client.createRoot (React 18+).
+   * Discord uses React 18, which removed ReactDOM.render() in favor of createRoot().
+   */
+  _getCreateRoot() {
+    // Try BdApi.ReactDOM.createRoot (if BdApi exposes it)
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    // Webpack: find react-dom/client module with createRoot
+    try {
+      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
+      if (client?.createRoot) return client.createRoot.bind(client);
+    } catch (_) {}
+    // Webpack: find createRoot as an individual export
+    try {
+      const createRoot = BdApi.Webpack.getModule(
+        (m) => typeof m === "function" && m?.name === "createRoot",
+        { searchExports: true }
+      );
+      if (createRoot) return createRoot;
+    } catch (_) {}
+    return null;
+  }
+
+  openPanel() {
     if (this.panelOpen) return;
     this.panelOpen = true;
 
-    const overlay = document.createElement("div");
-    overlay.id = ShadowExchange.PANEL_ID;
-    overlay.className = "se-panel-overlay";
+    try {
+      // Create container for React root
+      let container = document.getElementById(SE_PANEL_CONTAINER_ID);
+      if (!container) {
+        container = document.createElement("div");
+        container.id = SE_PANEL_CONTAINER_ID;
+        container.style.display = "contents";
+        document.body.appendChild(container);
+      }
+      this._panelContainer = container;
 
-    const availCount = await this.getAvailableShadowCount();
+      const React = BdApi.React;
+      const { WaypointPanel } = this._components;
+      const onClose = () => this.closePanel();
+      const element = React.createElement(WaypointPanel, { onClose });
 
-    overlay.innerHTML = `
-      <div class="se-panel-container">
-        <div class="se-panel-header">
-          <h2 class="se-panel-title">Shadow Exchange</h2>
-          <div class="se-header-actions">
-            <button class="se-mark-btn" data-action="mark">Mark Current Location</button>
-            <button class="se-close-btn" data-action="close">\u00D7</button>
-          </div>
-        </div>
-        <div class="se-panel-controls">
-          <select class="se-sort-select" data-action="sort">
-            <option value="created"${this.settings.sortBy === "created" ? " selected" : ""}>Newest First</option>
-            <option value="visited"${this.settings.sortBy === "visited" ? " selected" : ""}>Recently Visited</option>
-            <option value="name"${this.settings.sortBy === "name" ? " selected" : ""}>Name</option>
-            <option value="rank"${this.settings.sortBy === "rank" ? " selected" : ""}>Shadow Rank</option>
-          </select>
-          <input type="text" class="se-search-input" placeholder="Search waypoints..." data-action="search" />
-        </div>
-        <div class="se-waypoint-list">
-          ${this.renderWaypointList()}
-        </div>
-        <div class="se-panel-footer">
-          <span class="se-wp-count">${this.settings.waypoints.length} waypoint${this.settings.waypoints.length !== 1 ? "s" : ""}</span>
-          <span class="se-shadow-avail">${availCount} shadow${availCount !== 1 ? "s" : ""} available</span>
-        </div>
-      </div>
-    `;
+      // React 18: createRoot API
+      const createRoot = this._getCreateRoot();
+      if (createRoot) {
+        const root = createRoot(container);
+        this._reactRoot = root;
+        root.render(element);
+        return;
+      }
 
-    document.body.appendChild(overlay);
-    this.panelEl = overlay;
-    this.bindPanelEvents(overlay);
+      // React 17 fallback: legacy ReactDOM.render
+      const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule(
+        (m) => m?.render && m?.unmountComponentAtNode
+      );
+      if (ReactDOM?.render) {
+        ReactDOM.render(element, container);
+        return;
+      }
 
-    // Deferred save — backfill may have populated messagePreview/messageAuthor
-    // from Discord's cache during renderWaypointCard()
-    setTimeout(() => this.saveSettings(), 500);
+      // Last resort: manual DOM rendering (non-React fallback)
+      console.error("[ShadowExchange] Neither createRoot nor ReactDOM.render available");
+      this.panelOpen = false;
+      container.remove();
+      BdApi.UI.showToast("ShadowExchange: React rendering unavailable", { type: "error" });
+    } catch (err) {
+      console.error("[ShadowExchange] openPanel() failed:", err);
+      this.panelOpen = false;
+      BdApi.UI.showToast("ShadowExchange: panel error", { type: "error" });
+    }
   }
 
   closePanel() {
     if (!this.panelOpen) return;
     this.panelOpen = false;
-    const panel = document.getElementById(ShadowExchange.PANEL_ID);
-    if (panel) panel.remove();
-    this.panelEl = null;
-  }
 
-  refreshPanel() {
-    if (!this.panelOpen || !this.panelEl) return;
-    const list = this.panelEl.querySelector(".se-waypoint-list");
-    if (list) list.innerHTML = this.renderWaypointList();
-
-    const countEl = this.panelEl.querySelector(".se-wp-count");
-    if (countEl) {
-      countEl.textContent = `${this.settings.waypoints.length} waypoint${this.settings.waypoints.length !== 1 ? "s" : ""}`;
+    // React 18: unmount via root
+    if (this._reactRoot) {
+      try { this._reactRoot.unmount(); } catch (_) {}
+      this._reactRoot = null;
     }
 
-    // Re-bind card events
-    this.bindCardEvents(this.panelEl);
-  }
-
-  renderWaypointList(filter = "") {
-    let wps = [...this.settings.waypoints];
-
-    // Filter
-    if (filter) {
-      const q = filter.toLowerCase();
-      wps = wps.filter(
-        (w) =>
-          w.label.toLowerCase().includes(q) ||
-          w.shadowName.toLowerCase().includes(q) ||
-          w.channelName.toLowerCase().includes(q) ||
-          w.guildName.toLowerCase().includes(q) ||
-          (w.messagePreview || "").toLowerCase().includes(q) ||
-          (w.messageAuthor || "").toLowerCase().includes(q)
-      );
+    const container = document.getElementById(SE_PANEL_CONTAINER_ID);
+    if (container) {
+      // React 17 fallback cleanup
+      try {
+        const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule(
+          (m) => m?.unmountComponentAtNode
+        );
+        if (ReactDOM?.unmountComponentAtNode) ReactDOM.unmountComponentAtNode(container);
+      } catch (_) {}
+      container.remove();
     }
-
-    // Sort
-    const sortBy = this.settings.sortBy || "created";
-    if (sortBy === "created") wps.sort((a, b) => b.createdAt - a.createdAt);
-    else if (sortBy === "visited") wps.sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
-    else if (sortBy === "name") wps.sort((a, b) => a.label.localeCompare(b.label));
-    else if (sortBy === "rank") {
-      const ro = ShadowExchange.RANK_ORDER;
-      wps.sort((a, b) => ro.indexOf(b.shadowRank) - ro.indexOf(a.shadowRank));
-    }
-
-    if (wps.length === 0) {
-      return `<div class="se-empty-state">
-        <div class="se-empty-icon">\u2693</div>
-        <div class="se-empty-text">${filter ? "No waypoints match your search" : "No waypoints yet"}</div>
-        <div class="se-empty-hint">${filter ? "Try a different search" : 'Click "Mark Current Location" to station a shadow'}</div>
-      </div>`;
-    }
-
-    return wps.map((wp) => this.renderWaypointCard(wp)).join("");
-  }
-
-  renderWaypointCard(wp) {
-    const rankColor = ShadowExchange.RANK_COLORS[wp.shadowRank] || "#808080";
-    const typeBadge = wp.locationType === "dm" ? "DM" : wp.locationType === "thread" ? "Thread" : wp.locationType === "message" ? "Msg" : "Channel";
-    const visits = wp.visitCount || 0;
-    const esc = (s) => String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-    // Format the creation timestamp
-    let timeStr = "";
-    try {
-      const d = new Date(wp.createdAt);
-      timeStr = d.toLocaleDateString("en-US", { month: "short", day: "numeric" }) + " at " +
-        d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-    } catch (_) {}
-
-    // Build full location path: Server » #channel (or DM » name)
-    const fullLocation = wp.guildName
-      ? `${esc(wp.guildName)} \u00BB #${esc(wp.channelName)}`
-      : `DM \u00BB ${esc(wp.channelName)}`;
-
-    // Message preview section (only for message-type waypoints)
-    let messageSection = "";
-    if (wp.locationType === "message") {
-      let preview = wp.messagePreview || "";
-      let author = wp.messageAuthor || "";
-
-      // Try to fetch real content from Discord's message cache if stored preview is empty
-      if (!preview && wp.messageId && wp.channelId) {
-        try {
-          const cached = this.MessageStore?.getMessage(wp.channelId, wp.messageId);
-          if (cached) {
-            if (cached.content) {
-              preview = cached.content.length > 120 ? cached.content.slice(0, 120) + "\u2026" : cached.content;
-              wp.messagePreview = preview; // backfill for next render
-            } else if (cached.embeds?.length) {
-              preview = "[Embed]";
-            } else if (cached.attachments?.size || cached.attachments?.length) {
-              preview = "[Attachment]";
-            }
-            if (!author && cached.author) {
-              author = cached.author.globalName || cached.author.username || "";
-              wp.messageAuthor = author; // backfill
-            }
-          }
-        } catch (_) {}
-      }
-
-      // If still no preview, try to get author from UserStore
-      if (!author && wp.messageId) {
-        try {
-          // messageId doesn't directly map to userId, but we tried our best above
-        } catch (_) {}
-      }
-
-      const displayPreview = preview ? esc(preview) : `<em style="color:#666;">Navigate to load preview</em>`;
-      const displayAuthor = author ? esc(author) : "";
-
-      messageSection = `
-        <div class="se-message-preview">
-          ${displayAuthor ? `<span class="se-msg-author">${displayAuthor}:</span>` : ""}
-          <span class="se-msg-text">${displayPreview}</span>
-        </div>`;
-    }
-
-    return `<div class="se-waypoint-card" data-wp-id="${esc(wp.id)}" style="border-left-color: ${rankColor};">
-      <div class="se-card-top">
-        <span class="se-shadow-rank" style="background: ${rankColor};">${esc(wp.shadowRank)}</span>
-        <span class="se-shadow-name">${esc(wp.shadowName)}</span>
-        <button class="se-card-remove" data-action="remove" data-wp-id="${esc(wp.id)}" title="Recall shadow">\u2716</button>
-      </div>
-      <div class="se-card-body">
-        <div class="se-location-label">${fullLocation}</div>
-        ${messageSection}
-        <div class="se-location-meta">
-          <span class="se-type-badge">${typeBadge}</span>
-          <span class="se-visit-count">${visits} visit${visits !== 1 ? "s" : ""}</span>
-          <span class="se-created-time">${esc(timeStr)}</span>
-        </div>
-      </div>
-      <div class="se-card-footer">
-        <button class="se-teleport-btn" data-action="teleport" data-wp-id="${esc(wp.id)}">Teleport</button>
-      </div>
-    </div>`;
-  }
-
-  bindPanelEvents(overlay) {
-    // Overlay click to close
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) this.closePanel();
-    });
-
-    // Header actions
-    overlay.addEventListener("click", (e) => {
-      const action = e.target.closest("[data-action]")?.dataset.action;
-      if (action === "close") this.closePanel();
-      if (action === "mark") this.markCurrentLocation();
-    });
-
-    // Sort
-    const sortEl = overlay.querySelector(".se-sort-select");
-    if (sortEl) {
-      sortEl.addEventListener("change", () => {
-        this.settings.sortBy = sortEl.value;
-        this.saveSettings();
-        this.refreshPanel();
-      });
-    }
-
-    // Search
-    const searchEl = overlay.querySelector(".se-search-input");
-    if (searchEl) {
-      searchEl.addEventListener("input", () => {
-        const list = overlay.querySelector(".se-waypoint-list");
-        if (list) list.innerHTML = this.renderWaypointList(searchEl.value);
-        this.bindCardEvents(overlay);
-      });
-    }
-
-    this.bindCardEvents(overlay);
-  }
-
-  bindCardEvents(overlay) {
-    // Teleport + Remove (event delegation on list)
-    const list = overlay.querySelector(".se-waypoint-list");
-    if (!list) return;
-
-    // Remove old listener by replacing node (simple dedup)
-    const clone = list.cloneNode(true);
-    list.parentNode.replaceChild(clone, list);
-
-    clone.addEventListener("click", (e) => {
-      const btn = e.target.closest("[data-action]");
-      if (!btn) return;
-      const { action, wpId } = btn.dataset;
-      if (action === "teleport" && wpId) this.teleportTo(wpId);
-      if (action === "remove" && wpId) this.removeWaypoint(wpId);
-    });
+    this._panelContainer = null;
+    this._panelForceUpdate = null;
   }
 
   // ── CSS ────────────────────────────────────────────────────────────────
@@ -1335,10 +1472,10 @@ module.exports = class ShadowExchange {
     `;
 
     try {
-      BdApi.DOM.addStyle(ShadowExchange.STYLE_ID, css);
+      BdApi.DOM.addStyle(SE_STYLE_ID, css);
     } catch (_) {
       const style = document.createElement("style");
-      style.id = ShadowExchange.STYLE_ID;
+      style.id = SE_STYLE_ID;
       style.textContent = css;
       document.head.appendChild(style);
     }
@@ -1346,9 +1483,9 @@ module.exports = class ShadowExchange {
 
   removeCSS() {
     try {
-      BdApi.DOM.removeStyle(ShadowExchange.STYLE_ID);
+      BdApi.DOM.removeStyle(SE_STYLE_ID);
     } catch (_) {
-      const el = document.getElementById(ShadowExchange.STYLE_ID);
+      const el = document.getElementById(SE_STYLE_ID);
       if (el) el.remove();
     }
   }

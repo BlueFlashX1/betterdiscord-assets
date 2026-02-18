@@ -7308,6 +7308,8 @@ module.exports = class ShadowArmy {
         max-width: 600px;
         width: 100%;
         box-sizing: border-box;
+        background: #1e1e2e;
+        border-radius: 8px;
       }
 
       .shadow-army-settings h2,
@@ -8743,205 +8745,206 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Show manual essence conversion modal
+   * Cached React component getter for Essence Conversion Modal.
+   * Returns a functional component rendered via React.createElement.
+   */
+  get _EssenceConversionModal() {
+    if (this.__EssenceConversionModalCached) return this.__EssenceConversionModalCached;
+    const pluginRef = this;
+    const React = BdApi.React;
+    const { useState, useEffect, useCallback } = React;
+    const ce = React.createElement;
+
+    const RANKS = ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+','Shadow Monarch'];
+
+    const EssenceConversionModal = ({ onClose }) => {
+      const config = pluginRef.settings.shadowEssence || pluginRef.defaultSettings.shadowEssence;
+      const [rank, setRank] = useState('E');
+      const [quantity, setQuantity] = useState(1);
+      const [currentEssence, setCurrentEssence] = useState(config.essence || 0);
+      const [converting, setConverting] = useState(false);
+      const [result, setResult] = useState(null);
+
+      // Escape key + overlay click close
+      useEffect(() => {
+        const handleKey = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
+        };
+        document.addEventListener('keydown', handleKey);
+        return () => document.removeEventListener('keydown', handleKey);
+      }, [onClose]);
+
+      // Preview calculation
+      const essencePerShadow = config.essencePerShadow?.[rank] || 1;
+      const totalEssence = essencePerShadow * (quantity || 0);
+
+      const handleConvert = useCallback(async () => {
+        if (!quantity || quantity <= 0) {
+          setResult({ success: false, error: 'Please enter a valid quantity' });
+          return;
+        }
+        setConverting(true);
+        setResult({ success: false, error: null, message: 'Converting shadows...' });
+        try {
+          const convResult = await pluginRef.convertShadowsToEssence(rank, quantity);
+          if (convResult.success) {
+            const newConfig = pluginRef.settings.shadowEssence || pluginRef.defaultSettings.shadowEssence;
+            setCurrentEssence(newConfig.essence || 0);
+            setResult({
+              success: true,
+              message: `Successfully converted ${convResult.converted} shadow${convResult.converted !== 1 ? 's' : ''} to ${convResult.totalEssence.toLocaleString()} essence! New total: ${convResult.newTotal.toLocaleString()} essence`,
+            });
+            // Auto-close after 2 seconds and refresh army modal if open
+            const closeId = setTimeout(() => {
+              pluginRef._retryTimeouts?.delete(closeId);
+              if (pluginRef._isStopped) return;
+              onClose();
+              if (pluginRef.shadowArmyModal && document.body.contains(pluginRef.shadowArmyModal)) {
+                pluginRef.closeShadowArmyModal();
+                const reopenId = setTimeout(() => {
+                  pluginRef._retryTimeouts?.delete(reopenId);
+                  if (pluginRef._isStopped) return;
+                  pluginRef.openShadowArmyUI();
+                }, 100);
+                pluginRef._retryTimeouts?.add(reopenId);
+              }
+            }, 2000);
+            pluginRef._retryTimeouts?.add(closeId);
+          } else {
+            setResult({ success: false, error: pluginRef.escapeHtml(convResult.error || 'Failed to convert shadows') });
+            setConverting(false);
+          }
+        } catch (error) {
+          setResult({ success: false, error: pluginRef.escapeHtml(error.message) });
+          setConverting(false);
+        }
+      }, [rank, quantity, onClose]);
+
+      // Overlay click
+      const handleOverlayClick = useCallback((e) => {
+        if (e.target === e.currentTarget) onClose();
+      }, [onClose]);
+
+      return ce('div', {
+        id: 'shadow-essence-convert-modal',
+        onClick: handleOverlayClick,
+        style: {
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0, 0, 0, 0.8)', zIndex: 10000,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        },
+      },
+        ce('div', {
+          style: {
+            background: '#2f3136', borderRadius: '8px', padding: '24px',
+            minWidth: '400px', maxWidth: '500px',
+            border: '1px solid rgba(138, 43, 226, 0.5)',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          },
+        },
+          // Title
+          ce('h2', { style: { color: '#8a2be2', margin: '0 0 16px 0', fontSize: '20px' } }, 'Convert Shadows to Essence'),
+          // Current essence info
+          ce('div', { style: { marginBottom: '16px', padding: '12px', background: 'rgba(138, 43, 226, 0.1)', borderRadius: '4px', fontSize: '12px' } },
+            ce('div', { style: { color: '#9370db', fontWeight: 'bold', marginBottom: '4px' } }, `Current Essence: ${currentEssence.toLocaleString()}`),
+            ce('div', { style: { opacity: 0.8 } }, 'Select rank and quantity of shadows to convert')
+          ),
+          // Rank select
+          ce('label', { style: { display: 'block', marginBottom: '12px' } },
+            ce('span', { style: { display: 'block', marginBottom: '6px', color: '#dcddde', fontSize: '13px', fontWeight: '600' } }, 'Rank:'),
+            ce('select', {
+              value: rank,
+              onChange: (e) => setRank(e.target.value),
+              style: { width: '100%', padding: '8px', background: '#202225', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '4px', color: '#dcddde', fontSize: '13px' },
+            }, RANKS.map((r) => ce('option', { key: r, value: r }, r)))
+          ),
+          // Quantity input
+          ce('label', { style: { display: 'block', marginBottom: '16px' } },
+            ce('span', { style: { display: 'block', marginBottom: '6px', color: '#dcddde', fontSize: '13px', fontWeight: '600' } }, 'Quantity:'),
+            ce('input', {
+              type: 'number', min: 1, value: quantity,
+              onChange: (e) => setQuantity(parseInt(e.target.value) || 0),
+              style: { width: '100%', padding: '8px', background: '#202225', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '4px', color: '#dcddde', fontSize: '13px' },
+            })
+          ),
+          // Preview (show when quantity > 0)
+          quantity > 0 ? ce('div', { style: { marginBottom: '16px', padding: '12px', background: 'rgba(138, 43, 226, 0.1)', borderRadius: '4px', fontSize: '12px', color: '#9370db' } },
+            ce('div', { style: { fontWeight: 'bold', marginBottom: '4px' } }, 'Preview:'),
+            ce('div', null,
+              ce('span', null, `Converting `),
+              ce('strong', null, quantity),
+              ce('span', null, ` ${rank}-rank shadow${quantity !== 1 ? 's' : ''}`),
+              ce('br'),
+              ce('span', null, 'Essence per shadow: '),
+              ce('strong', null, essencePerShadow),
+              ce('br'),
+              ce('span', null, 'Total essence: '),
+              ce('strong', null, totalEssence.toLocaleString())
+            )
+          ) : null,
+          // Buttons
+          ce('div', { style: { display: 'flex', gap: '8px', justifyContent: 'flex-end' } },
+            ce('button', {
+              onClick: onClose,
+              style: { padding: '8px 16px', background: '#4f545c', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+            }, 'Cancel'),
+            ce('button', {
+              onClick: handleConvert,
+              disabled: converting,
+              style: { padding: '8px 16px', background: '#8a2be2', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: '600' },
+            }, converting ? 'Converting...' : 'Convert')
+          ),
+          // Result
+          result ? ce('div', { style: { marginTop: '12px', fontSize: '12px' } },
+            result.message && !result.error ? ce('span', { style: { color: result.success ? '#34d399' : '#9370db' } }, result.message) : null,
+            result.error ? ce('span', { style: { color: '#ef4444' } }, `Error: ${result.error}`) : null
+          ) : null
+        )
+      );
+    };
+
+    this.__EssenceConversionModalCached = EssenceConversionModal;
+    return EssenceConversionModal;
+  }
+
+  /**
+   * Show manual essence conversion modal (React 18 createRoot)
    * Allows user to select rank and quantity of shadows to convert
    */
   showEssenceConversionModal() {
     // Remove existing modal if present
-    const existingModal = document.getElementById('shadow-essence-convert-modal');
-    if (existingModal) {
-      existingModal.remove();
+    if (this._essenceConversionRoot) {
+      try { this._essenceConversionRoot.unmount(); } catch (_) {}
+      this._essenceConversionRoot = null;
+    }
+    document.getElementById('shadow-essence-convert-modal-root')?.remove();
+
+    const container = document.createElement('div');
+    container.id = 'shadow-essence-convert-modal-root';
+    container.style.display = 'contents';
+    document.body.appendChild(container);
+
+    const createRoot = this._getCreateRoot();
+    if (!createRoot) {
+      // Fallback: remove container if createRoot unavailable
+      container.remove();
+      this.debugError('UI', 'createRoot not available for essence conversion modal');
+      return;
     }
 
-    const config = this.settings.shadowEssence || this.defaultSettings.shadowEssence;
-    const ranks = [
-      'E',
-      'D',
-      'C',
-      'B',
-      'A',
-      'S',
-      'SS',
-      'SSS',
-      'SSS+',
-      'NH',
-      'Monarch',
-      'Monarch+',
-      'Shadow Monarch',
-    ];
+    const root = createRoot(container);
+    this._essenceConversionRoot = root;
 
-    // Create modal overlay
-    const modal = document.createElement('div');
-    modal.id = 'shadow-essence-convert-modal';
-    modal.style.cssText = `
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.8);
-      z-index: 10000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    `;
-
-    // Create modal content
-    const modalContent = document.createElement('div');
-    modalContent.style.cssText = `
-      background: #2f3136;
-      border-radius: 8px;
-      padding: 24px;
-      min-width: 400px;
-      max-width: 500px;
-      border: 1px solid rgba(138, 43, 226, 0.5);
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-    `;
-
-    modalContent.innerHTML = `
-      <h2 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 20px;">Convert Shadows to Essence</h2>
-      <div style="margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 12px;">
-        <div style="color: #9370db; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
-          config.essence || 0
-        ).toLocaleString()}</div>
-        <div style="opacity: 0.8;">Select rank and quantity of shadows to convert</div>
-      </div>
-      <label style="display: block; margin-bottom: 12px;">
-        <span style="display: block; margin-bottom: 6px; color: #dcddde; font-size: 13px; font-weight: 600;">Rank:</span>
-        <select id="essence-convert-rank" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
-          ${ranks.map((rank) => `<option value="${rank}">${rank}</option>`).join('')}
-        </select>
-      </label>
-      <label style="display: block; margin-bottom: 16px;">
-        <span style="display: block; margin-bottom: 6px; color: #dcddde; font-size: 13px; font-weight: 600;">Quantity:</span>
-        <input type="number" id="essence-convert-quantity" min="1" value="1" style="width: 100%; padding: 8px; background: #202225; border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 4px; color: #dcddde; font-size: 13px;">
-      </label>
-      <div id="essence-convert-preview" style="margin-bottom: 16px; padding: 12px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 12px; color: #9370db; display: none;">
-        <div style="font-weight: bold; margin-bottom: 4px;">Preview:</div>
-        <div id="essence-convert-preview-text"></div>
-      </div>
-      <div style="display: flex; gap: 8px; justify-content: flex-end;">
-        <button id="essence-convert-cancel" style="padding: 8px 16px; background: #4f545c; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
-          Cancel
-        </button>
-        <button id="essence-convert-confirm" style="padding: 8px 16px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; font-weight: 600;">
-          Convert
-        </button>
-      </div>
-      <div id="essence-convert-result" style="margin-top: 12px; font-size: 12px; display: none;"></div>
-    `;
-
-    modal.appendChild(modalContent);
-    document.body.appendChild(modal);
-
-    // Update preview on change
-    const rankSelect = document.getElementById('essence-convert-rank');
-    const quantityInput = document.getElementById('essence-convert-quantity');
-    const previewDiv = document.getElementById('essence-convert-preview');
-    const previewText = document.getElementById('essence-convert-preview-text');
-
-    const updatePreview = () => {
-      const rank = rankSelect.value;
-      const quantity = parseInt(quantityInput.value) || 0;
-      if (quantity > 0) {
-        const essencePerShadow = config.essencePerShadow[rank] || 1;
-        const totalEssence = essencePerShadow * quantity;
-        previewText.innerHTML = `
-          Converting <strong>${quantity}</strong> ${rank}-rank shadow${
-          quantity !== 1 ? 's' : ''
-        }<br>
-          Essence per shadow: <strong>${essencePerShadow}</strong><br>
-          Total essence: <strong>${totalEssence.toLocaleString()}</strong>
-        `;
-        previewDiv.style.display = 'block';
-      } else {
-        previewDiv.style.display = 'none';
+    const onClose = () => {
+      if (this._essenceConversionRoot) {
+        try { this._essenceConversionRoot.unmount(); } catch (_) {}
+        this._essenceConversionRoot = null;
       }
+      document.getElementById('shadow-essence-convert-modal-root')?.remove();
     };
 
-    rankSelect.addEventListener('change', updatePreview);
-    quantityInput.addEventListener('input', updatePreview);
-    updatePreview();
-
-    // Cancel button
-    document.getElementById('essence-convert-cancel').addEventListener('click', () => {
-      modal.remove();
-    });
-
-    // Close on overlay click
-    modal.addEventListener('click', (e) => {
-      if (e.target === modal) {
-        modal.remove();
-      }
-    });
-
-    // Confirm button
-    document.getElementById('essence-convert-confirm').addEventListener('click', async () => {
-      const rank = rankSelect.value;
-      const quantity = parseInt(quantityInput.value) || 0;
-      const resultDiv = document.getElementById('essence-convert-result');
-      const confirmBtn = document.getElementById('essence-convert-confirm');
-
-      if (quantity <= 0) {
-        resultDiv.innerHTML = '<span style="color: #ef4444;">Please enter a valid quantity</span>';
-        resultDiv.style.display = 'block';
-        return;
-      }
-
-      confirmBtn.disabled = true;
-      confirmBtn.textContent = 'Converting...';
-      resultDiv.style.display = 'block';
-      resultDiv.innerHTML = '<span style="color: #9370db;">Converting shadows...</span>';
-
-      try {
-        const result = await this.convertShadowsToEssence(rank, quantity);
-        if (result.success) {
-          resultDiv.innerHTML = `
-            <span style="color: #34d399;">
-              Successfully converted ${result.converted} shadow${
-            result.converted !== 1 ? 's' : ''
-          } to ${result.totalEssence.toLocaleString()} essence!<br>
-              New total: ${result.newTotal.toLocaleString()} essence
-            </span>
-          `;
-          // Update preview with new total
-          const newConfig = this.settings.shadowEssence || this.defaultSettings.shadowEssence;
-          const currentEssenceEl = modalContent.querySelector('div[style*="Current Essence"]');
-          if (currentEssenceEl) {
-            currentEssenceEl.innerHTML = currentEssenceEl.innerHTML.replace(
-              /Current Essence: \d+/,
-              `Current Essence: ${(newConfig.essence || 0).toLocaleString()}`
-            );
-          }
-          const closeConversionModalTimeoutId = setTimeout(() => {
-            this._retryTimeouts?.delete(closeConversionModalTimeoutId);
-            if (this._isStopped) return;
-            modal.remove();
-            // Refresh settings panel if open
-            if (this.shadowArmyModal && document.body.contains(this.shadowArmyModal)) {
-              this.closeShadowArmyModal();
-              const reopenUiTimeoutId = setTimeout(() => {
-                this._retryTimeouts?.delete(reopenUiTimeoutId);
-                if (this._isStopped) return;
-                this.openShadowArmyUI();
-              }, 100);
-              this._retryTimeouts?.add(reopenUiTimeoutId);
-            }
-          }, 2000);
-          this._retryTimeouts?.add(closeConversionModalTimeoutId);
-        } else {
-          resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${
-            this.escapeHtml(result.error || 'Failed to convert shadows')
-          }</span>`;
-          confirmBtn.disabled = false;
-          confirmBtn.textContent = 'Convert';
-        }
-      } catch (error) {
-        resultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${this.escapeHtml(error.message)}</span>`;
-        confirmBtn.disabled = false;
-        confirmBtn.textContent = 'Convert';
-      }
-    });
+    const React = BdApi.React;
+    root.render(React.createElement(this._EssenceConversionModal, { onClose }));
   }
 
   /**
@@ -9555,6 +9558,26 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Resolve React 18 createRoot across BdApi versions and Webpack exports.
+   * Returns a bound createRoot function, or null when unavailable.
+   */
+  _getCreateRoot() {
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    try {
+      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
+      if (client?.createRoot) return client.createRoot.bind(client);
+    } catch (_) {}
+    try {
+      const createRoot = BdApi.Webpack.getModule(
+        (m) => typeof m === 'function' && m?.name === 'createRoot',
+        { searchExports: true }
+      );
+      if (createRoot) return createRoot;
+    } catch (_) {}
+    return null;
+  }
+
+  /**
    * Format combat time dynamically (seconds, minutes, or hours)
    * Internal calculations stay in hours, display adapts to magnitude
    */
@@ -9830,21 +9853,336 @@ module.exports = class ShadowArmy {
       .join('');
   }
 
+  /**
+   * Cached React component getter for the Shadow Army Generals Modal.
+   * Uses React.createElement (no JSX) with hooks for state & auto-refresh.
+   */
+  get _ShadowArmyModal() {
+    if (this.__ShadowArmyModalCached) return this.__ShadowArmyModalCached;
+    const pluginRef = this;
+    const React = BdApi.React;
+    const { useState, useEffect, useCallback, useRef } = React;
+    const ce = React.createElement;
+
+    const RANKS_SA = ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+'];
+    const RANK_COLORS_SA = {
+      E: '#999', D: '#a0a0a0', C: '#22c55e', B: '#3b82f6', A: '#8a2be2',
+      S: '#f59e0b', SS: '#ef4444', SSS: '#ec4899', 'SSS+': '#f50057',
+      NH: '#e040fb', Monarch: '#ff4500', 'Monarch+': '#ff6b2b',
+    };
+
+    // ---- Sub-component: Stat Card ----
+    const StatCard = ({ value, label, color }) =>
+      ce('div', { style: { textAlign: 'center' } },
+        ce('div', { style: { color, fontSize: '20px', fontWeight: 'bold' } }, value),
+        ce('div', { style: { color: '#999', fontSize: '11px' } }, label)
+      );
+
+    // ---- Sub-component: Rank Distribution Cell ----
+    const RankCell = ({ rank, count, total }) => {
+      const color = RANK_COLORS_SA[rank] || '#999';
+      const pct = total > 0 ? ((count / total) * 100).toFixed(1) : '0';
+      return ce('div', { style: { textAlign: 'center', padding: '6px', background: 'rgba(0, 0, 0, 0.3)', borderRadius: '4px', border: `1px solid ${color}40` } },
+        ce('div', { style: { color, fontSize: '14px', fontWeight: 'bold' } }, rank),
+        ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', margin: '2px 0' } }, count),
+        ce('div', { style: { color: '#888', fontSize: '9px' } }, `${pct}%`)
+      );
+    };
+
+    // ---- Sub-component: Role Distribution Card ----
+    const RoleCard = ({ role, data }) =>
+      ce('div', { style: { background: 'rgba(138, 43, 226, 0.1)', borderRadius: '6px', padding: '8px' } },
+        ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' } },
+          ce('span', { style: { color: data.isMagicBeast ? '#f59e0b' : '#8a2be2', fontSize: '12px', fontWeight: 'bold' } }, role),
+          ce('span', { style: { color: '#34d399', fontSize: '11px', fontWeight: 'bold' } }, data.count)
+        ),
+        ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '4px', fontSize: '9px', color: '#999' } },
+          ce('div', null, 'Lvl: ', ce('span', { style: { color: '#34d399' } }, data.avgLevel)),
+          ce('div', null, 'Pwr: ', ce('span', { style: { color: '#8a2be2' } }, data.avgPower)),
+          ce('div', null, 'STR: ', ce('span', { style: { color: '#ef4444' } }, data.avgStats?.strength ?? 0))
+        )
+      );
+
+    // ---- Sub-component: General Card ----
+    const GeneralCard = ({ shadow, index }) => {
+      const safeShadow = shadow || {};
+      const generalRank = (index || 0) + 1;
+      const rawId = String(safeShadow.id || safeShadow.i || '');
+      const shortId = rawId.slice(-8);
+
+      const effectiveStats = pluginRef.getShadowEffectiveStats(safeShadow);
+      const level = Number.isFinite(safeShadow.level) ? safeShadow.level : (parseInt(safeShadow.level, 10) || 1);
+
+      const totalPower =
+        typeof pluginRef.calculateShadowStrength === 'function'
+          ? pluginRef.calculateShadowStrength(effectiveStats, level)
+          : typeof pluginRef.calculateShadowPower === 'function'
+          ? pluginRef.calculateShadowPower(effectiveStats, 1)
+          : 0;
+
+      const xp = Number.isFinite(safeShadow.xp) ? safeShadow.xp : (parseInt(safeShadow.xp, 10) || 0);
+      const xpNeeded = pluginRef.getShadowXpForNextLevel(level, safeShadow.rank);
+      const xpProgress = xpNeeded > 0 ? Math.max(0, Math.min(100, (xp / xpNeeded) * 100)) : 0;
+      const combatTime = pluginRef.formatCombatHours(safeShadow.totalCombatTime || 0);
+      const role = safeShadow.role || safeShadow.roleName || 'Unknown';
+      const isMagicBeast = pluginRef.shadowRoles?.[role]?.isMagicBeast || false;
+      const roleColor = isMagicBeast ? '#f59e0b' : '#fff';
+
+      const statEntries = [
+        { label: 'STR', color: '#ef4444', value: effectiveStats.strength || 0 },
+        { label: 'AGI', color: '#22c55e', value: effectiveStats.agility || 0 },
+        { label: 'INT', color: '#3b82f6', value: effectiveStats.intelligence || 0 },
+        { label: 'VIT', color: '#a855f7', value: effectiveStats.vitality || 0 },
+        { label: 'PER', color: '#fbbf24', value: effectiveStats.perception || 0 },
+      ];
+
+      return ce('div', {
+        className: 'sa-general-card',
+        'data-shadow-id': shortId,
+        style: {
+          background: 'rgba(251, 191, 36, 0.15)', border: '2px solid #fbbf24',
+          borderRadius: '8px', padding: '14px', marginBottom: '12px',
+          boxShadow: '0 0 15px rgba(251, 191, 36, 0.3)', overflow: 'hidden',
+        },
+      },
+        ce('div', { style: { display: 'flex', gap: '12px' } },
+          // Rank badge
+          ce('div', {
+            style: {
+              background: 'linear-gradient(135deg, #fbbf24, #f59e0b)', color: '#000',
+              fontSize: '20px', fontWeight: 'bold', padding: '8px', borderRadius: '8px',
+              width: '48px', height: '48px', display: 'flex', flexDirection: 'column',
+              alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.3)',
+            },
+          }, ce('div', { style: { fontSize: '10px' } }, `#${generalRank}`)),
+          // Details
+          ce('div', { style: { flex: 1, minWidth: 0, overflow: 'hidden' } },
+            // Header
+            ce('div', { style: { display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' } },
+              ce('span', { style: { color: '#8a2be2', fontWeight: 'bold', fontSize: '14px', flexShrink: 0 } }, `[${safeShadow.rank || 'E'}]`),
+              ce('span', { style: { color: roleColor, fontSize: '14px', fontWeight: 'bold', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, role),
+              ce('span', { style: { color: '#34d399', marginLeft: 'auto', fontSize: '14px', fontWeight: 'bold', flexShrink: 0 } }, Math.floor(totalPower || 0).toLocaleString())
+            ),
+            // Level & XP bar
+            ce('div', { style: { marginBottom: '8px' } },
+              ce('div', { style: { display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#999', marginBottom: '2px' } },
+                ce('span', null, `Level ${level}`),
+                ce('span', null, `${xp.toLocaleString()} / ${xpNeeded.toLocaleString()} XP`)
+              ),
+              ce('div', { style: { background: 'rgba(0,0,0,0.3)', height: '6px', borderRadius: '3px', overflow: 'hidden' } },
+                ce('div', { style: { background: 'linear-gradient(90deg, #fbbf24, #f59e0b)', width: `${xpProgress}%`, height: '100%', transition: 'width 0.3s' } })
+              )
+            ),
+            // Stats grid
+            ce('div', { style: { background: 'rgba(0, 0, 0, 0.3)', borderRadius: '6px', padding: '8px', marginBottom: '8px' } },
+              ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '4px' } },
+                statEntries.map((stat) =>
+                  ce('div', { key: stat.label, style: { textAlign: 'center' } },
+                    ce('div', { style: { color: stat.color, fontSize: '9px', fontWeight: '600', marginBottom: '2px', textTransform: 'uppercase', letterSpacing: '0.5px' } }, stat.label),
+                    ce('div', { style: { color: '#fff', fontSize: '16px', fontWeight: 'bold', lineHeight: '1.2' } }, (stat.value).toLocaleString())
+                  )
+                )
+              )
+            ),
+            // Combat info
+            ce('div', { style: { display: 'flex', gap: '12px', fontSize: '11px' } },
+              ce('div', { style: { color: '#34d399' } }, `${combatTime} Combat`),
+              ce('div', { style: { color: '#8a2be2' } }, `Level ${level}`),
+              ce('div', { style: { color: '#fbbf24', marginLeft: 'auto' } }, `ID: ${shortId}`)
+            )
+          )
+        )
+      );
+    };
+
+    // ---- Main Modal Component ----
+    const ShadowArmyModal = ({ initialShadows, onClose }) => {
+      const [shadows, setShadows] = useState(initialShadows || []);
+      const refreshInFlightRef = useRef(false);
+
+      // Escape key handler
+      useEffect(() => {
+        const handleKey = (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); onClose(); }
+        };
+        document.addEventListener('keydown', handleKey);
+        return () => document.removeEventListener('keydown', handleKey);
+      }, [onClose]);
+
+      // Auto-refresh interval (replaces manual setInterval)
+      useEffect(() => {
+        const intervalId = setInterval(async () => {
+          if (document.hidden) return;
+          if (refreshInFlightRef.current) return;
+          if (!pluginRef._widgetDirty) return;
+
+          try {
+            refreshInFlightRef.current = true;
+            pluginRef._widgetDirty = false;
+            if (pluginRef.storageManager?.getShadows) {
+              const freshShadows = await pluginRef.storageManager.getShadows({}, 0, 10000);
+              if (freshShadows && freshShadows.length > 0) {
+                setShadows(freshShadows.map((s) => pluginRef.getShadowData(s)));
+              }
+            }
+          } catch (error) {
+            pluginRef.debugError('UI', 'Error refreshing UI', error);
+          } finally {
+            refreshInFlightRef.current = false;
+          }
+        }, 15000);
+        return () => clearInterval(intervalId);
+      }, []);
+
+      // Overlay click
+      const handleOverlayClick = useCallback((e) => {
+        if (e.target === e.currentTarget) onClose();
+      }, [onClose]);
+
+      // Empty state
+      if (!shadows || shadows.length === 0) {
+        return ce('div', {
+          className: 'shadow-army-modal',
+          onClick: handleOverlayClick,
+          style: {
+            position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+            background: 'rgba(0, 0, 0, 0.85)', zIndex: 10002,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            backdropFilter: 'blur(5px)',
+          },
+        },
+          ce('div', { style: { width: '90%', maxWidth: '900px', background: '#1e1e1e', border: '2px solid #8a2be2', borderRadius: '12px', padding: '20px' } },
+            ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
+              ce('h2', { style: { color: '#8a2be2', margin: 0 } }, 'Shadow Army Command'),
+              ce('button', { onClick: onClose, style: { background: 'transparent', border: 'none', color: '#999', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' } }, '\u00d7')
+            ),
+            ce('div', { style: { textAlign: 'center', padding: '40px', color: '#999' } }, 'No shadows in army yet. Extract shadows from dungeons!')
+          )
+        );
+      }
+
+      // Compute derived data
+      const compressionStats = shadows.reduce(
+        (stats, shadow) => {
+          if (shadow._compressed || shadow._ultraCompressed) { stats.compressed++; } else { stats.elite++; }
+          return stats;
+        },
+        { compressed: 0, elite: 0 }
+      );
+      const { compressed: compressedCount, elite: eliteCount } = compressionStats;
+      const { generals, totalArmyPower, sortedRoles } = pluginRef.computeShadowArmyUiData(shadows);
+      const totalCombatTime = pluginRef.formatCombatHours(
+        shadows.reduce((sum, shadow) => sum + (shadow.totalCombatTime || 0), 0)
+      );
+      const essenceTotal = (pluginRef.settings.shadowEssence?.essence || 0).toLocaleString();
+
+      // Rank distribution data
+      const rankCounts = shadows.reduce((counts, shadow) => {
+        const r = shadow.rank || 'E';
+        counts[r] = (counts[r] || 0) + 1;
+        return counts;
+      }, {});
+
+      return ce('div', {
+        className: 'shadow-army-modal',
+        onClick: handleOverlayClick,
+        style: {
+          position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+          background: 'rgba(0, 0, 0, 0.85)', zIndex: 10002,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          backdropFilter: 'blur(5px)',
+        },
+      },
+        ce('div', {
+          style: {
+            width: '90%', maxWidth: '900px', maxHeight: '90vh',
+            background: '#1e1e1e', border: '2px solid #8a2be2', borderRadius: '12px',
+            padding: '20px', overflowY: 'auto',
+            boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
+          },
+        },
+          // Header
+          ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
+            ce('h2', { style: { color: '#8a2be2', margin: 0 } }, 'Shadow Army Command'),
+            ce('button', {
+              onClick: onClose,
+              style: { background: 'transparent', border: 'none', color: '#999', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' },
+            }, '\u00d7')
+          ),
+
+          // Army Overview
+          ce('div', {
+            style: {
+              background: 'linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(168, 85, 247, 0.1))',
+              border: '1px solid #8a2be2', borderRadius: '8px', padding: '12px', marginBottom: '16px',
+            },
+          },
+            // 6-stat grid
+            ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px', marginBottom: '12px' } },
+              ce(StatCard, { value: shadows.length, label: 'Total Shadows', color: '#8a2be2' }),
+              ce(StatCard, { value: eliteCount, label: 'Elite Force', color: '#34d399' }),
+              ce(StatCard, { value: compressedCount, label: 'Legion', color: '#64748b' }),
+              ce(StatCard, { value: totalCombatTime, label: 'Total Combat', color: '#ef4444' }),
+              ce(StatCard, { value: totalArmyPower.toLocaleString(), label: 'Total Power', color: '#fbbf24' }),
+              ce(StatCard, { value: essenceTotal, label: 'Essence', color: '#9370db' })
+            ),
+
+            // Rank Distribution
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px', marginBottom: '12px' } },
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Shadow Rank Distribution'),
+              ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' } },
+                RANKS_SA.map((rank) => ce(RankCell, { key: rank, rank, count: rankCounts[rank] || 0, total: shadows.length }))
+              )
+            ),
+
+            // Role Distribution
+            ce('div', { style: { background: 'rgba(20, 20, 40, 0.6)', border: '1px solid rgba(138, 43, 226, 0.3)', borderRadius: '8px', padding: '12px' } },
+              ce('div', { style: { color: '#8a2be2', fontSize: '13px', fontWeight: 'bold', marginBottom: '8px', textAlign: 'center' } }, 'Army Composition by Role/Class'),
+              ce('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px' } },
+                sortedRoles.map(([role, data]) => ce(RoleCard, { key: role, role, data }))
+              )
+            )
+          ),
+
+          // Generals Section
+          ce('div', { style: { marginBottom: '12px' } },
+            ce('h3', { style: { color: '#fbbf24', fontSize: '16px', marginBottom: '12px', textAlign: 'center', textShadow: '0 0 10px rgba(251, 191, 36, 0.5)' } }, 'Shadow Generals')
+          ),
+
+          // Generals List
+          ce('div', { style: { maxHeight: '50vh', overflowY: 'auto' } },
+            generals.length === 0
+              ? ce('div', { style: { textAlign: 'center', padding: '40px', color: '#999' } }, 'No shadows in army yet. Extract shadows from dungeons!')
+              : generals.map((shadow, i) => ce(GeneralCard, { key: pluginRef.getCacheKey(shadow) || i, shadow, index: i }))
+          )
+        )
+      );
+    };
+
+    this.__ShadowArmyModalCached = ShadowArmyModal;
+    return ShadowArmyModal;
+  }
+
+  /**
+   * Open Shadow Army Generals Modal (React 18 createRoot).
+   * Renders the _ShadowArmyModal component into a portal container on document.body.
+   */
   async openShadowArmyUI() {
     // Guard clause: Toggle modal if already open
-    if (this.shadowArmyModal) {
+    if (this._armyModalOpen) {
       this.closeShadowArmyModal();
       return;
     }
+    this._armyModalOpen = true;
 
     try {
       // Get all shadows from IndexedDB or localStorage
       let shadows = [];
-      if (this.storageManager && this.storageManager.getShadows) {
+      if (this.storageManager?.getShadows) {
         try {
           shadows = await this.storageManager.getShadows({}, 0, 10000);
         } catch (err) {
-          // debugError method is in SECTION 4
           this.debugError('UI', 'Could not get shadows from IndexedDB', err);
           shadows = this.settings.shadows || [];
         }
@@ -9852,378 +10190,66 @@ module.exports = class ShadowArmy {
         shadows = this.settings.shadows || [];
       }
 
-      // Guard clause: Return early if no shadows
-      if (!shadows || shadows.length === 0) {
-        // Show empty state modal
-        const modal = document.createElement('div');
-        modal.className = 'shadow-army-modal';
-        modal.style.cssText = `
-          position: fixed;
-          top: 0;
-          left: 0;
-          width: 100%;
-          height: 100%;
-          background: rgba(0, 0, 0, 0.85);
-          z-index: 10002;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          backdrop-filter: blur(5px);
-        `;
-        modal.innerHTML = `
-          <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8a2be2; border-radius: 12px; padding: 20px;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-              <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
-              <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
-            </div>
-            <div style="text-align: center; padding: 40px; color: #999;">
-              No shadows in army yet. Extract shadows from dungeons!
-            </div>
-          </div>
-        `;
-        modal.querySelector('#close-shadow-army-modal')?.addEventListener('click', () => {
-          this.closeShadowArmyModal();
-        });
-        modal.addEventListener('click', (e) => {
-          if (e.target === modal) {
-            this.closeShadowArmyModal();
-          }
-        });
-        // Use BdApi.DOM utilities if available for better integration
-        if (BdApi && BdApi.DOM && typeof BdApi.DOM.append === 'function') {
-          BdApi.DOM.append(document.body, modal);
-        } else {
-          document.body.appendChild(modal);
-        }
-        this.shadowArmyModal = modal;
+      // Decompress for UI display
+      shadows = shadows.map((s) => this.getShadowData(s));
+
+      const container = document.createElement('div');
+      container.id = 'shadow-army-modal-root';
+      container.style.display = 'contents';
+      document.body.appendChild(container);
+
+      // Backward-compat: set shadowArmyModal for checks elsewhere in the codebase
+      this.shadowArmyModal = container;
+
+      const createRoot = this._getCreateRoot();
+      if (!createRoot) {
+        container.remove();
+        this._armyModalOpen = false;
+        this.shadowArmyModal = null;
+        this.debugError('UI', 'createRoot not available for shadow army modal');
         return;
       }
 
-      // HYBRID COMPRESSION: Decompress all shadows for UI display
-      // Ensures calculations work correctly regardless of compression state
-      shadows = shadows.map((s) => this.getShadowData(s));
+      const root = createRoot(container);
+      this._armyModalRoot = root;
 
-      // Count compressed vs full for stats using reduce
-      const compressionStats = shadows.reduce(
-        (stats, shadow) => {
-          if (shadow._compressed || shadow._ultraCompressed) {
-            stats.compressed++;
-          } else {
-            stats.elite++;
-          }
-          return stats;
-        },
-        { compressed: 0, elite: 0 }
-      );
-      const { compressed: compressedCount, elite: eliteCount } = compressionStats;
-
-      // Create modal similar to TitleManager/SkillTree
-      const modal = document.createElement('div');
-      modal.className = 'shadow-army-modal';
-      modal.style.cssText = `
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: rgba(0, 0, 0, 0.85);
-        z-index: 10002;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        backdrop-filter: blur(5px);
-      `;
-
-      const renderModal = () => {
-        // Guard clause: Return early if no shadows
-        if (!shadows || shadows.length === 0) {
-          modal.innerHTML = `
-            <div style="width: 90%; max-width: 900px; background: #1e1e1e; border: 2px solid #8a2be2; border-radius: 12px; padding: 20px;">
-              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-                <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
-                <button id="close-shadow-army-modal" style="background: transparent; border: none; color: #999; font-size: 24px; cursor: pointer; padding: 0; width: 30px; height: 30px;">×</button>
-              </div>
-              <div style="text-align: center; padding: 40px; color: #999;">
-                No shadows in army yet. Extract shadows from dungeons!
-              </div>
-            </div>
-          `;
-          return;
-        }
-
-        const { generals, totalArmyPower, sortedRoles } = this.computeShadowArmyUiData(shadows);
-        const totalCombatTime = this.formatCombatHours(
-          shadows.reduce((sum, shadow) => sum + (shadow.totalCombatTime || 0), 0)
-        );
-        const essenceTotal = (this.settings.shadowEssence?.essence || 0).toLocaleString();
-        const roleDistributionHtml = sortedRoles
-          .map(
-            ([role, data]) => `
-                    <div style="background: rgba(138, 43, 226, 0.1); border-radius: 6px; padding: 8px;">
-                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-                        <span style="color: ${
-                          data.isMagicBeast ? '#f59e0b' : '#8a2be2'
-                        }; font-size: 12px; font-weight: bold;">
-                          ${role}
-                        </span>
-                        <span style="color: #34d399; font-size: 11px; font-weight: bold;">${
-                          data.count
-                        }</span>
-                </div>
-                      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; font-size: 9px; color: #999;">
-                        <div>Lvl: <span style="color: #34d399;">${data.avgLevel}</span></div>
-                        <div>Pwr: <span style="color: #8a2be2;">${data.avgPower}</span></div>
-                        <div>STR: <span style="color: #ef4444;">${
-                          data.avgStats.strength
-                        }</span></div>
-                      </div>
-                    </div>
-                  `
-          )
-          .join('');
-
-        modal.innerHTML = `
-          <div style="
-            width: 90%;
-            max-width: 900px;
-            max-height: 90vh;
-            background: #1e1e1e;
-            border: 2px solid #8a2be2;
-            border-radius: 12px;
-            padding: 20px;
-            overflow-y: auto;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
-          ">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
-              <h2 style="color: #8a2be2; margin: 0;">Shadow Army Command</h2>
-              <button id="close-shadow-army-modal" style="
-                background: transparent;
-                border: none;
-                color: #999;
-                font-size: 24px;
-                cursor: pointer;
-                padding: 0;
-                width: 30px;
-                height: 30px;
-              ">×</button>
-            </div>
-
-            <!-- Army Overview -->
-            <div style="
-              background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(168, 85, 247, 0.1));
-              border: 1px solid #8a2be2;
-              border-radius: 8px;
-              padding: 12px;
-              margin-bottom: 16px;
-            ">
-              <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 12px;">
-                <div style="text-align: center;">
-                  <div style="color: #8a2be2; font-size: 20px; font-weight: bold;">${
-                    shadows.length
-                  }</div>
-                  <div style="color: #999; font-size: 11px;">Total Shadows</div>
-                </div>
-                <div style="text-align: center;">
-                  <div style="color: #34d399; font-size: 20px; font-weight: bold;">${eliteCount}</div>
-                  <div style="color: #999; font-size: 11px;">Elite Force</div>
-                </div>
-                <div style="text-align: center;">
-                  <div style="color: #64748b; font-size: 20px; font-weight: bold;">${compressedCount}</div>
-                  <div style="color: #999; font-size: 11px;">Legion</div>
-                </div>
-                <div style="text-align: center;">
-                  <div style="color: #ef4444; font-size: 20px; font-weight: bold;">${totalCombatTime}</div>
-                  <div style="color: #999; font-size: 11px;">Total Combat</div>
-                </div>
-                <div style="text-align: center;">
-                  <div style="color: #fbbf24; font-size: 20px; font-weight: bold;">${totalArmyPower.toLocaleString()}</div>
-                  <div style="color: #999; font-size: 11px;">Total Power</div>
-                </div>
-                <div style="text-align: center;">
-                  <div style="color: #9370db; font-size: 20px; font-weight: bold;">${essenceTotal}</div>
-                  <div style="color: #999; font-size: 11px;">Essence</div>
-                </div>
-              </div>
-
-              <!-- Shadow Rank Distribution -->
-              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 8px; padding: 12px; margin-bottom: 12px;">
-                <div style="color: #8a2be2; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
-                  Shadow Rank Distribution
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
-                  ${this.generateRankDistribution(shadows)}
-              </div>
-            </div>
-
-              <!-- Shadow Role/Class Distribution -->
-              <div style="background: rgba(20, 20, 40, 0.6); border: 1px solid rgba(138, 43, 226, 0.3); border-radius: 8px; padding: 12px;">
-                <div style="color: #8a2be2; font-size: 13px; font-weight: bold; margin-bottom: 8px; text-align: center;">
-                  Army Composition by Role/Class
-                </div>
-                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px;">
-                  ${roleDistributionHtml}
-                </div>
-              </div>
-            </div>
-
-            <!-- Generals Section -->
-            <div style="margin-bottom: 12px;">
-              <h3 style="color: #fbbf24; font-size: 16px; margin-bottom: 12px; text-align: center; text-shadow: 0 0 10px rgba(251, 191, 36, 0.5);">
-                Shadow Generals
-              </h3>
-            </div>
-
-            <div style="max-height: 50vh; overflow-y: auto;">
-              ${
-                generals.length === 0
-                  ? `<div style="text-align: center; padding: 40px; color: #999;">
-                      No shadows in army yet. Extract shadows from dungeons!
-                    </div>`
-                  : this.getShadowArmyGeneralsHtml(generals)
-              }
-            </div>
-          </div>
-        `;
-      };
-
-      renderModal();
-
-      // Attach modal listeners ONCE (renderModal() only updates innerHTML)
-      // 1) Close button + backdrop click (event delegation)
-      if (this._shadowArmyModalClickHandler) {
-        modal.removeEventListener('click', this._shadowArmyModalClickHandler);
-      }
-      this._shadowArmyModalClickHandler = (e) => {
-        if (!this.shadowArmyModal) return;
-        const target = e?.target;
-        if (target && target.id === 'close-shadow-army-modal') {
-          e.preventDefault?.();
-          e.stopPropagation?.();
-          this.closeShadowArmyModal();
-          return;
-        }
-        if (target === modal) {
-          this.closeShadowArmyModal();
-        }
-      };
-      modal.addEventListener('click', this._shadowArmyModalClickHandler);
-
-      // 2) Escape key to close (with lag protection)
-      if (this._modalEscapeHandler) {
-        document.removeEventListener('keydown', this._modalEscapeHandler);
-      }
-      this._modalEscapeHandler = (e) => {
-        if (e.key === 'Escape' && this.shadowArmyModal) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.closeShadowArmyModal();
-        }
-      };
-      document.addEventListener('keydown', this._modalEscapeHandler);
-
-      document.body.appendChild(modal);
-      this.shadowArmyModal = modal;
-
-      // Real-time updates: Re-fetch and re-render periodically.
-      // NOTE: Fetching thousands of shadows is expensive; keep cadence conservative to avoid CPU spikes.
-      // Store interval ID for proper cleanup
-      this.autoRefreshInterval = setInterval(async () => {
-        if (document.hidden) return;
-        if (this._modalRefreshInFlight) return;
-        if (!this._widgetDirty) return; // PERF: Skip refresh when no data changed
-        // Guard clause: Clear interval if modal no longer exists
-        if (!this.shadowArmyModal || !document.body.contains(modal)) {
-          if (this.autoRefreshInterval) {
-            clearInterval(this.autoRefreshInterval);
-            this.autoRefreshInterval = null;
-          }
-          return;
-        }
-
-        try {
-          this._modalRefreshInFlight = true;
-          this._widgetDirty = false;
-          // Re-fetch shadows for real-time stats
-          if (this.storageManager && this.storageManager.getShadows) {
-            const freshShadows = await this.storageManager.getShadows({}, 0, 10000);
-            // Guard clause: Only update if we got shadows
-            if (freshShadows && freshShadows.length > 0) {
-              shadows = freshShadows.map((s) => this.getShadowData(s));
-              renderModal();
-            }
-          }
-        } catch (error) {
-          // debugError method is in SECTION 4
-          this.debugError('UI', 'Error refreshing UI', error);
-        } finally {
-          this._modalRefreshInFlight = false;
-        }
-      }, 15000); // Refresh every 15 seconds for real-time updates (lower CPU)
+      const React = BdApi.React;
+      root.render(React.createElement(this._ShadowArmyModal, {
+        pluginInstance: this,
+        initialShadows: shadows,
+        onClose: () => this.closeShadowArmyModal(),
+      }));
     } catch (error) {
-      // debugError method is in SECTION 4
       this.debugError('UI', 'Failed to open UI', error);
+      this._armyModalOpen = false;
     }
   }
 
   /**
-   * Close ShadowArmy UI modal
-   * Cleans up modal element and auto-refresh interval to prevent memory leaks
+   * Close ShadowArmy UI modal (React 18 unmount).
+   * Cleans up React root and DOM container to prevent memory leaks.
    */
   closeShadowArmyModal() {
-    // Clear auto-refresh interval immediately (prevent memory leak)
-    if (this.autoRefreshInterval) {
-      clearInterval(this.autoRefreshInterval);
-      this.autoRefreshInterval = null;
+    this._armyModalOpen = false;
+
+    // Unmount React root
+    if (this._armyModalRoot) {
+      try { this._armyModalRoot.unmount(); } catch (_) {}
+      this._armyModalRoot = null;
     }
 
-    // Remove modal click handler (event delegation)
-    if (this.shadowArmyModal && this._shadowArmyModalClickHandler) {
-      try {
-        this.shadowArmyModal.removeEventListener('click', this._shadowArmyModalClickHandler);
-      } catch (_) {
-        // Ignore removal errors (non-critical)
-      }
-    }
-    this._shadowArmyModalClickHandler = null;
+    // Remove DOM container
+    document.getElementById('shadow-army-modal-root')?.remove();
 
-    // Remove Escape key handler
-    if (this._modalEscapeHandler) {
-      document.removeEventListener('keydown', this._modalEscapeHandler);
-      this._modalEscapeHandler = null;
-    }
+    // Clear backward-compat reference
+    this.shadowArmyModal = null;
 
-    // Force remove modal from DOM (robust under lag)
-    if (this.shadowArmyModal) {
-      try {
-        // Try graceful removal first
-        if (this.shadowArmyModal.parentNode) {
-          this.shadowArmyModal.parentNode.removeChild(this.shadowArmyModal);
-        } else {
-          // Fallback: direct remove
-          this.shadowArmyModal.remove();
-        }
-      } catch (error) {
-        // Under heavy lag, force remove with querySelector
-        const existingModal = document.querySelector('.shadow-army-modal');
-        if (existingModal) {
-          existingModal.remove();
-        }
-        // debugError method is in SECTION 4
-        this.debugError('UI', 'Error removing modal during close', error);
-      }
-      this.shadowArmyModal = null;
-    }
-
-    // Cleanup: Remove any orphaned modals (lag protection) using functional pattern
+    // Cleanup: Remove any orphaned modals (lag protection)
     try {
       Array.from(document.querySelectorAll('.shadow-army-modal')).forEach((modal) => {
-        if (modal?.parentNode) {
-          modal.parentNode.removeChild(modal);
-        }
+        if (modal?.parentNode) modal.parentNode.removeChild(modal);
       });
     } catch (error) {
-      // Ignore cleanup errors (non-critical)
-      // debugError method is in SECTION 4
       this.debugError('UI', 'Error during modal cleanup', error);
     }
   }
@@ -10264,11 +10290,11 @@ module.exports = class ShadowArmy {
   /**
    * Generate settings panel HTML for BetterDiscord settings UI
    * Operations:
-   * 1. Get total shadow count and top generals
-   * 2. Identify top 7 generals by power for display
-   * 3. Generate list items for first 50 shadows
-   * 4. Format extraction config display
-   * 5. Return HTML string with stats, config, and shadow list
+   * 1. Get total shadow count and generals count for stats
+   * 2. Render View Shadow Army button (opens React Generals modal)
+   * 3. Render diagnostic, extraction config, ARISE settings, debug toggle
+   * 4. Render essence conversion button (opens React Essence modal)
+   * 5. Return DOM container with delegated click/change handlers
    */
   getSettingsPanel() {
     // CRITICAL: BetterDiscord settings panels MUST be synchronous.
@@ -10283,9 +10309,7 @@ module.exports = class ShadowArmy {
         ? this.settings.cachedTotalPowerShadowCount
         : null;
 
-    const maxList = 50;
-
-    // Compute strength and sort to identify generals (top 7) using local cache only (sync)
+    // Compute strength and sort to determine generals count for stats display
     const shadowsWithPower =
       localCacheCount > 0
         ? shadowsForDisplay.map((shadow) => {
@@ -10296,48 +10320,6 @@ module.exports = class ShadowArmy {
         : [];
 
     shadowsWithPower.sort((a, b) => b.strength - a.strength);
-    const generalIds = new Set(
-      shadowsWithPower
-        .slice(0, 7)
-        .map((x) => this.getCacheKey(x.shadow))
-        .filter(Boolean)
-    );
-
-    const listItems = shadowsForDisplay
-      .slice(0, maxList)
-      .map((shadow) => {
-        const shadowId = this.getCacheKey(shadow) || '';
-        const rank = this.escapeHtml(shadow.rank || 'E');
-        const role = this.escapeHtml(shadow.roleName || shadow.role || 'Unknown');
-        const isGeneral = shadowId && generalIds.has(shadowId);
-        const generalBadge = isGeneral
-          ? '<span style="background: rgba(138, 43, 226, 0.3); color: #8a2be2; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-left: 8px;">GENERAL</span>'
-          : '';
-
-        const level = Number.isFinite(shadow.level) ? shadow.level : shadow.level || 1;
-        const xp = Number.isFinite(shadow.xp) ? shadow.xp : shadow.xp || 0;
-        const xpNext = this.getShadowXpForNextLevel(level, shadow.rank || 'E');
-        const strength = Number.isFinite(shadow.strength) ? shadow.strength : shadow.strength || 0;
-
-        return `
-          <div class="shadow-list-item">
-            <div class="shadow-list-main">
-              <div class="shadow-list-header">
-                <span class="shadow-list-rank">${rank}-Rank</span>
-                <span class="shadow-list-role">${role}</span>
-                ${generalBadge}
-                <span class="shadow-list-strength">Power: ${strength}</span>
-              </div>
-              <div class="shadow-list-meta">
-                <span>Level ${level}</span>
-                <span>${xp.toLocaleString()} / ${Number(xpNext || 0).toLocaleString()} XP</span>
-                <span>${Math.floor((level / 2000) * 100)}% to Monarch</span>
-              </div>
-            </div>
-          </div>
-        `;
-      })
-      .join('');
 
     const storageInfo = this.storageManager
       ? '<div style="color: #34d399; font-size: 11px; margin-top: 4px;">Primary storage: IndexedDB</div>'
@@ -10361,6 +10343,13 @@ module.exports = class ShadowArmy {
           <div>Total Extracted: ${(this.settings.totalShadowsExtracted || 0).toLocaleString()}</div>
           <div style="color: #8a2be2; font-weight: bold;">Generals: ${generalsCount} / 7 (Auto-selected strongest)</div>
           <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Generals provide full buffs • Other shadows provide diminishing returns</div>
+        </div>
+
+        <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.15)); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 6px;">
+          <button type="button" data-sa-action="view-army" style="width: 100%; padding: 10px 20px; background: linear-gradient(135deg, #8a2be2, #6a0dad); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; transition: opacity 0.2s;">
+            View Shadow Army
+          </button>
+          <div style="font-size: 10px; opacity: 0.7; margin-top: 6px; text-align: center;">Open the Generals modal to manage and inspect your full army</div>
         </div>
 
         <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
@@ -10451,15 +10440,6 @@ module.exports = class ShadowArmy {
             Convert Shadows to Essence
           </button>
         </div>
-
-        <div class="shadow-army-list">
-          <h3>Shadows (first ${maxList})</h3>
-          ${
-            localCacheCount === 0
-              ? '<div class="shadow-list-empty">No shadows in local settings cache. Use diagnostic to verify IndexedDB contents.</div>'
-              : listItems
-          }
-        </div>
       </div>
     `;
 
@@ -10470,6 +10450,12 @@ module.exports = class ShadowArmy {
     this.detachShadowArmySettingsPanelHandlers();
 
     const clickHandlers = {
+      'view-army': () => {
+        if (typeof this.openShadowArmyUI === 'function') {
+          this.openShadowArmyUI();
+        }
+      },
+
       diagnostic: async () => {
         const resultDiv = container.querySelector('#shadow-army-diagnostic-result');
         if (!resultDiv) return;

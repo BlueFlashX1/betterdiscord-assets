@@ -125,9 +125,9 @@ module.exports = class CriticalHit {
       // History settings
       historyRetentionDays: 30, // Keep history for 30 days
       autoCleanupHistory: true, // Automatically clean up old history
-      maxHistorySize: 2000, // Maximum total messages (memory optimization)
-      maxCritHistory: 1000, // Maximum crit messages to keep (prioritized over non-crits)
-      maxHistoryPerChannel: 500, // Maximum messages per channel (prevents one channel from dominating)
+      maxHistorySize: 500, // Maximum total messages (reduced from 2000 to prevent config bloat)
+      maxCritHistory: 500, // Maximum crit messages to keep (prioritized over non-crits)
+      maxHistoryPerChannel: 200, // Maximum messages per channel (prevents one channel from dominating)
       // Animation settings (from CriticalHitAnimation)
       animationEnabled: true, // Enable animated "CRITICAL HIT!" notifications
       cssEnabled: true, // Enable CSS injection for crit styling (independent from animations)
@@ -289,6 +289,7 @@ module.exports = class CriticalHit {
     // Settings panel lifecycle (for delegated handlers + cleanup)
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
+    this._settingsRoot = null; // React 18 createRoot instance
   }
 
   // ============================================================================
@@ -368,17 +369,19 @@ module.exports = class CriticalHit {
     try {
       this._navPushStateWrapper &&
         history.pushState === this._navPushStateWrapper &&
-        (history.pushState = this._navPrevPushState);
+        this.originalPushState &&
+        (history.pushState = this.originalPushState);
       this._navReplaceStateWrapper &&
         history.replaceState === this._navReplaceStateWrapper &&
-        (history.replaceState = this._navPrevReplaceState);
+        this.originalReplaceState &&
+        (history.replaceState = this.originalReplaceState);
     } catch (e) {
       // Ignore
     } finally {
-      this._navPrevPushState = null;
-      this._navPrevReplaceState = null;
       this._navPushStateWrapper = null;
       this._navReplaceStateWrapper = null;
+      this.originalPushState = null;
+      this.originalReplaceState = null;
     }
 
     try {
@@ -391,6 +394,12 @@ module.exports = class CriticalHit {
   }
 
   detachCriticalHitSettingsPanelHandlers() {
+    // Unmount React root if present
+    if (this._settingsRoot) {
+      try { this._settingsRoot.unmount(); } catch (_) {}
+      this._settingsRoot = null;
+    }
+    // Keep existing cleanup for backwards compatibility
     const root = this._settingsPanelRoot;
     const handlers = this._settingsPanelHandlers;
     if (root && handlers) {
@@ -1615,22 +1624,22 @@ module.exports = class CriticalHit {
     };
 
     // Also listen for Discord's navigation events.
-    // IMPORTANT: Chain safely with any existing wrappers from other plugins.
-    const prevPushState = history.pushState;
-    const prevReplaceState = history.replaceState;
-    this.originalPushState || (this.originalPushState = prevPushState);
-    this.originalReplaceState || (this.originalReplaceState = prevReplaceState);
+    // Store the true originals ONCE to avoid infinite recursion on hot reload.
+    // On reload, history.pushState may already be our wrapper, so we must not
+    // re-capture it as the "original".
+    if (!this.originalPushState) this.originalPushState = history.pushState;
+    if (!this.originalReplaceState) this.originalReplaceState = history.replaceState;
 
+    const originalPush = this.originalPushState;
+    const originalReplace = this.originalReplaceState;
     const handleNavigation = () => scheduleNavigationCheck(true);
 
-    this._navPrevPushState = prevPushState;
-    this._navPrevReplaceState = prevReplaceState;
     this._navPushStateWrapper = (...args) => {
-      prevPushState.apply(history, args);
+      originalPush.apply(history, args);
       handleNavigation();
     };
     this._navReplaceStateWrapper = (...args) => {
-      prevReplaceState.apply(history, args);
+      originalReplace.apply(history, args);
       handleNavigation();
     };
 
@@ -2217,9 +2226,17 @@ module.exports = class CriticalHit {
       // OPTIMIZED: Smart history trimming with crit prioritization
       this._trimHistoryIfNeeded();
 
-      // OPTIMIZED: Save to BetterDiscord Data storage
+      // OPTIMIZED: Strip bloat fields before saving to prevent config growth
+      // messageContent and author are never needed for restoration or stats
+      const leanHistory = this.messageHistory.map((entry) => {
+        if (!entry.messageContent && !entry.author) return entry; // Already lean
+        const { messageContent, author, ...lean } = entry;
+        return lean;
+      });
+
+      // Save lean history to BetterDiscord Data storage
       // Note: BdApi.Data.save() is synchronous and can block, but we've throttled calls
-      BdApi.Data.save('CriticalHit', 'messageHistory', this.messageHistory);
+      BdApi.Data.save('CriticalHit', 'messageHistory', leanHistory);
 
       // OPTIMIZED: Skip verification in production (reduces lag from extra load)
       // Only verify if debug mode enabled
@@ -2276,7 +2293,36 @@ module.exports = class CriticalHit {
       const saved = BdApi.Data.load('CriticalHit', 'messageHistory');
 
       if (Array.isArray(saved)) {
-        this.messageHistory = saved;
+        // Migration: strip bloat fields (messageContent, author) from legacy entries
+        // and enforce current maxHistorySize to prevent oversized configs from persisting
+        let migrated = false;
+        this.messageHistory = saved.map((entry) => {
+          if (entry.messageContent || entry.author) {
+            migrated = true;
+            const { messageContent, author, ...lean } = entry;
+            return lean;
+          }
+          return entry;
+        });
+
+        // Enforce max history size on load (handles configs saved with old higher limits)
+        if (this.messageHistory.length > this.maxHistorySize) {
+          const crits = this.messageHistory.filter((e) => e.isCrit);
+          const nonCrits = this.messageHistory.filter((e) => !e.isCrit);
+          const critsToKeep = crits.slice(-Math.min(crits.length, this.maxCritHistory));
+          const remainingSlots = this.maxHistorySize - critsToKeep.length;
+          const nonCritsToKeep = nonCrits.slice(-Math.max(0, remainingSlots));
+          this.messageHistory = [...critsToKeep, ...nonCritsToKeep]
+            .sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0))
+            .slice(-this.maxHistorySize);
+          migrated = true;
+        }
+
+        // If migration occurred, save the cleaned history immediately
+        if (migrated) {
+          BdApi.Data.save('CriticalHit', 'messageHistory', this.messageHistory);
+        }
+
         // Invalidate cache and compute crit history once
         this._cachedCritHistory = null;
         const critHistory = this.getCritHistory();
@@ -2575,27 +2621,24 @@ module.exports = class CriticalHit {
           }
         );
 
-      // Add message to history with all essential info
-      // Channel ID + Message ID is sufficient for uniqueness
-      // Guild ID stored for future use but not required for lookups
+      // Add message to history with LEAN schema — only fields needed for restoration + stats
+      // Stripped: messageContent, author (never used for restoration or stats, caused 80%+ config bloat)
       const historyEntry = {
-        messageId: messageId || null, // Normalized message ID (Discord ID format preferred)
-        authorId: authorId || null, // Normalized author/user ID (Discord ID format)
-        channelId: channelId || null, // Normalized channel ID
-        guildId: this.currentGuildId || 'dm', // Guild ID stored for reference (optional)
+        messageId: messageId || null,
+        authorId: authorId || null,
+        channelId: channelId || null,
+        guildId: this.currentGuildId || 'dm',
         timestamp: messageData.timestamp || Date.now(),
         isCrit: isCrit,
         critSettings: isCrit
           ? {
               color: this.settings.critColor,
-              gradient: this.settings.critGradient !== false, // Store gradient preference
+              gradient: this.settings.critGradient !== false,
               font: this.settings.critFont,
               animation: this.settings.critAnimation,
               glow: this.settings.critGlow,
             }
           : null,
-        messageContent: messageData.messageContent || null,
-        author: messageData.author || null, // Author username (for display)
       };
       if (isCrit) {
         this.diagLog('HISTORY_CRIT_SETTINGS', 'Persisting crit settings to history', {
@@ -4314,6 +4357,22 @@ ${childSel} {
             this.debug?.verbose && this.debugLog('PROCESS_NODE', 'Skipping - channel loading');
             return;
           }
+
+          // AGE GATE: Skip crit rolling for old messages (e.g., jump-to-message, scroll-back).
+          // Discord snowflake IDs encode timestamps: (id >> 22) + 1420070400000.
+          // Messages older than 5 minutes only get restoration (via checkForRestoration),
+          // not new crit rolls. This prevents flooding the main thread when hundreds
+          // of old messages load at once during a jump.
+          if (messageId && this.isValidDiscordId(messageId)) {
+            const DISCORD_EPOCH = 1420070400000;
+            const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000; // 5 minutes
+            const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
+            if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
+              this.processedMessages.add(messageId);
+              return; // Old message — skip crit roll, restoration handles it
+            }
+          }
+
           this.checkForCrit(messageElement);
         }
     } catch (error) {
@@ -5990,14 +6049,12 @@ ${childSel} {
               const isActuallyCrit = realRoll <= effectiveCritChance;
               // Only use pending crit if verification confirms it's actually a crit
               if (isActuallyCrit) {
-                // Create a history entry from pending crit
+                // Create a history entry from pending crit (lean schema — no messageContent/author)
                 historyEntry = {
                   messageId: messageId,
                   channelId: this.currentChannelId,
                   isCrit: true,
                   critSettings: pendingCrit.critSettings,
-                  messageContent: pendingCrit.messageContent,
-                  author: pendingCrit.author,
                 };
 
                 // Move from pending queue to history (update with real ID)
@@ -6014,8 +6071,6 @@ ${childSel} {
                   channelId: this.currentChannelId,
                   isCrit: true,
                   critSettings: pendingCrit.critSettings,
-                  messageContent: pendingCrit.messageContent,
-                  author: pendingCrit.author,
                   timestamp: Date.now(),
                 };
 
@@ -7622,6 +7677,8 @@ ${childSel} {
             .bd-crit-hit-settings {
                 padding: 0;
                 color: var(--text-normal);
+                background: #1e1e2e;
+                border-radius: 8px;
             }
 
             .crit-settings-header {
@@ -7910,8 +7967,620 @@ ${childSel} {
   // ============================================================================
 
   /**
+   * Resolves React 18 createRoot from BdApi or Webpack
+   * @returns {Function|null} createRoot function or null
+   */
+  _getCreateRoot() {
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    try {
+      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
+      if (client?.createRoot) return client.createRoot.bind(client);
+    } catch (_) {}
+    try {
+      const createRoot = BdApi.Webpack.getModule(
+        (m) => typeof m === "function" && m?.name === "createRoot",
+        { searchExports: true }
+      );
+      if (createRoot) return createRoot;
+    } catch (_) {}
+    return null;
+  }
+
+  /**
+   * Cached getter for the React settings panel component
+   * @returns {Function} React functional component
+   */
+  get _CritSettingsPanel() {
+    if (this.__CritSettingsPanelCached) return this.__CritSettingsPanelCached;
+
+    const React = BdApi.React;
+    const { useState, useEffect, useCallback, useRef } = React;
+    const ce = React.createElement;
+
+    // ---- Reusable sub-components ----
+
+    function RangeSlider({ label, value, min, max, step, unit, onChange, description }) {
+      return ce("div", { className: "crit-form-item" },
+        ce("label", { className: "crit-label" },
+          label,
+          ce("span", { className: "crit-label-value" }, `${value}${unit || ""}`)
+        ),
+        ce("div", { className: "crit-input-wrapper" },
+          ce("input", {
+            type: "range", min, max, step: step || 1, value,
+            className: "crit-slider",
+            onInput: (e) => onChange(Number(e.target.value))
+          }),
+          ce("input", {
+            type: "number", min, max, step: step || 1, value,
+            className: "crit-number-input",
+            onChange: (e) => onChange(Number(e.target.value))
+          })
+        ),
+        description && ce("div", { className: "crit-form-description" }, description)
+      );
+    }
+
+    function Checkbox({ label, checked, onChange, description }) {
+      return ce("div", { className: "crit-form-item crit-checkbox-group" },
+        ce("label", { className: "crit-checkbox-label" },
+          ce("input", {
+            type: "checkbox", checked,
+            className: "crit-checkbox",
+            onChange: (e) => onChange(e.target.checked)
+          }),
+          ce("span", { className: "crit-checkbox-custom" }),
+          ce("span", { className: "crit-checkbox-text" }, label)
+        ),
+        description && ce("div", { className: "crit-form-description" }, description)
+      );
+    }
+
+    // ---- Main panel component ----
+
+    function CritSettingsPanel({ pluginInstance }) {
+      const pi = pluginInstance;
+
+      // ---- State ----
+      const [critChance, setCritChance] = useState(pi.settings.critChance);
+      const [critColor, setCritColor] = useState(pi.settings.critColor);
+      const [critFont, setCritFont] = useState(pi.settings.critFont);
+      const [critAnimation, setCritAnimation] = useState(pi.settings.critAnimation);
+      const [critGradient, setCritGradient] = useState(pi.settings.critGradient !== false);
+      const [critGlow, setCritGlow] = useState(pi.settings.critGlow);
+
+      const [filterReplies, setFilterReplies] = useState(pi.settings.filterReplies);
+      const [filterSystem, setFilterSystem] = useState(pi.settings.filterSystemMessages);
+      const [filterBots, setFilterBots] = useState(pi.settings.filterBotMessages);
+      const [filterEmpty, setFilterEmpty] = useState(pi.settings.filterEmptyMessages);
+
+      const [retentionDays, setRetentionDays] = useState(pi.settings.historyRetentionDays || 30);
+      const [autoCleanup, setAutoCleanup] = useState(pi.settings.autoCleanupHistory !== false);
+
+      const [animDuration, setAnimDuration] = useState(pi.settings.animationDuration);
+      const [floatDist, setFloatDist] = useState(pi.settings.floatDistance);
+      const [fontSize, setFontSize] = useState(pi.settings.fontSize);
+      const [screenShake, setScreenShake] = useState(pi.settings.screenShake);
+      const [shakeIntensity, setShakeIntensity] = useState(pi.settings.shakeIntensity);
+      const [shakeDuration, setShakeDuration] = useState(pi.settings.shakeDuration);
+      const [showCombo, setShowCombo] = useState(pi.settings.showCombo);
+      const [maxCombo, setMaxCombo] = useState(pi.settings.maxCombo);
+
+      const [debugMode, setDebugMode] = useState(pi.settings.debugMode);
+
+      // ---- Live stats ----
+      const [totalCrits, setTotalCrits] = useState(pi.stats?.totalCrits ?? 0);
+      const [critRate, setCritRate] = useState(pi.stats?.critRate ?? 0);
+      const [historyCount, setHistoryCount] = useState(pi.messageHistory?.length ?? 0);
+
+      // Track effective crit for display
+      const [effectiveCrit, setEffectiveCrit] = useState(pi.getEffectiveCritChance());
+
+      // ---- Bonus display state ----
+      const [agilityBonus, setAgilityBonus] = useState(0);
+      const [skillBonus, setSkillBonus] = useState(0);
+      const [perceptionInfo, setPerceptionInfo] = useState(null);
+
+      // ---- Refs to avoid stale closures in interval ----
+      const piRef = useRef(pi);
+      piRef.current = pi;
+
+      // ---- Live stats polling ----
+      useEffect(() => {
+        const tick = () => {
+          const p = piRef.current;
+          p.updateStats();
+          setTotalCrits(p.stats?.totalCrits ?? 0);
+          setCritRate(p.stats?.critRate ?? 0);
+          setHistoryCount(p.messageHistory?.length ?? 0);
+          setEffectiveCrit(p.getEffectiveCritChance());
+
+          // Bonus display
+          try {
+            setAgilityBonus((BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ?? 0) * 100);
+            setSkillBonus((BdApi.Data.load('SkillTree', 'bonuses')?.critBonus ?? 0) * 100);
+          } catch (_) {
+            setAgilityBonus(0);
+            setSkillBonus(0);
+          }
+
+          // Perception burst info
+          try {
+            const perData = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
+            const perception = Math.max(0, Number(perData.effectivePerception ?? perData.perception ?? 0) || 0);
+            const chainChance = Math.min(82, Math.round((0.08 + perception * 0.007) * 100));
+            const maxHits = Math.min(99, Math.max(1, Number(perData.maxHits) || (1 + Math.floor(perception * 1.2))));
+            setPerceptionInfo({ perception, chainChance, maxHits });
+          } catch (_) {
+            setPerceptionInfo(null);
+          }
+        };
+        tick();
+        const id = setInterval(tick, 2000);
+        return () => clearInterval(id);
+      }, []);
+
+      // ---- Handlers ----
+
+      const handleCritChance = useCallback((v) => {
+        const clamped = Math.max(0, Math.min(100, parseFloat(v) || 0));
+        setCritChance(clamped);
+        pi.updateCritChance(clamped);
+        setEffectiveCrit(pi.getEffectiveCritChance());
+      }, [pi]);
+
+      const handleCritColor = useCallback((v) => {
+        setCritColor(v);
+        pi.updateCritColor(v);
+      }, [pi]);
+
+      const handleCritFont = useCallback((v) => {
+        setCritFont(v);
+        pi.updateCritFont(v);
+      }, [pi]);
+
+      const handleCritAnimation = useCallback((v) => {
+        setCritAnimation(v);
+        pi.updateCritAnimation(v);
+      }, [pi]);
+
+      const handleCritGradient = useCallback((v) => {
+        setCritGradient(v);
+        pi.updateCritGradient(v);
+      }, [pi]);
+
+      const handleCritGlow = useCallback((v) => {
+        setCritGlow(v);
+        pi.updateCritGlow(v);
+      }, [pi]);
+
+      const handleFilterReplies = useCallback((v) => {
+        setFilterReplies(v);
+        pi.settings.filterReplies = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleFilterSystem = useCallback((v) => {
+        setFilterSystem(v);
+        pi.settings.filterSystemMessages = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleFilterBots = useCallback((v) => {
+        setFilterBots(v);
+        pi.settings.filterBotMessages = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleFilterEmpty = useCallback((v) => {
+        setFilterEmpty(v);
+        pi.settings.filterEmptyMessages = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleRetentionDays = useCallback((v) => {
+        const clamped = Math.max(1, Math.min(90, parseInt(v, 10) || 30));
+        setRetentionDays(clamped);
+        pi.settings.historyRetentionDays = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleAutoCleanup = useCallback((v) => {
+        setAutoCleanup(v);
+        pi.settings.autoCleanupHistory = v;
+        pi.saveSettings();
+        if (v) {
+          pi.startPeriodicCleanup();
+        } else if (pi.historyCleanupInterval) {
+          pi._trackedIntervals.delete(pi.historyCleanupInterval);
+          clearInterval(pi.historyCleanupInterval);
+          pi.historyCleanupInterval = null;
+        }
+      }, [pi]);
+
+      const handleAnimDuration = useCallback((v) => {
+        const clamped = Math.max(1000, Math.min(10000, parseInt(v, 10) || 4000));
+        setAnimDuration(clamped);
+        pi.settings.animationDuration = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleFloatDist = useCallback((v) => {
+        const clamped = Math.max(50, Math.min(300, parseInt(v, 10) || 150));
+        setFloatDist(clamped);
+        pi.settings.floatDistance = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleFontSize = useCallback((v) => {
+        const clamped = Math.max(24, Math.min(72, parseInt(v, 10) || 36));
+        setFontSize(clamped);
+        pi.settings.fontSize = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleScreenShake = useCallback((v) => {
+        setScreenShake(v);
+        pi.settings.screenShake = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleShakeIntensity = useCallback((v) => {
+        const clamped = Math.max(1, Math.min(10, parseInt(v, 10) || 3));
+        setShakeIntensity(clamped);
+        pi.settings.shakeIntensity = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleShakeDuration = useCallback((v) => {
+        const clamped = Math.max(100, Math.min(500, parseInt(v, 10) || 250));
+        setShakeDuration(clamped);
+        pi.settings.shakeDuration = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleShowCombo = useCallback((v) => {
+        setShowCombo(v);
+        pi.settings.showCombo = v;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleMaxCombo = useCallback((v) => {
+        const clamped = Math.max(10, Math.min(999, parseInt(v, 10) || 999));
+        setMaxCombo(clamped);
+        pi.settings.maxCombo = clamped;
+        pi.saveSettings();
+      }, [pi]);
+
+      const handleDebugMode = useCallback((v) => {
+        setDebugMode(v);
+        pi.updateDebugMode(v);
+      }, [pi]);
+
+      const handleTestCrit = useCallback(() => {
+        pi.testCrit();
+      }, [pi]);
+
+      // ---- Bonus text computation ----
+      const totalBonus = effectiveCrit - critChance;
+      let bonusElement = null;
+      if (totalBonus > 0) {
+        const parts = [];
+        if (agilityBonus > 0) parts.push(`+${agilityBonus.toFixed(1)}% AGI`);
+        if (skillBonus > 0) parts.push(`+${skillBonus.toFixed(1)}% Skill`);
+        bonusElement = ce("span", {
+          className: "crit-agility-bonus",
+          style: { color: "#8a2be2", fontSize: "0.9em", marginLeft: "8px" }
+        }, `${parts.join(' + ')} = ${effectiveCrit.toFixed(1)}%`);
+      } else {
+        bonusElement = ce("span", {
+          className: "crit-agility-bonus",
+          style: { color: "#666", fontSize: "0.9em", marginLeft: "8px" }
+        }, `(Effective: ${effectiveCrit.toFixed(1)}%, max 50%)`);
+      }
+
+      // ---- Render ----
+      return ce("div", null,
+        // ---- Header ----
+        ce("div", { className: "crit-settings-header" },
+          ce("div", { className: "crit-settings-title" },
+            ce("h3", null, "Critical Hit Settings")
+          ),
+          ce("div", { className: "crit-settings-subtitle" }, "Customize your critical hit experience"),
+          ce("div", {
+            className: "crit-stats-display",
+            style: { marginTop: "16px", padding: "12px", background: "rgba(138, 43, 226, 0.1)", borderRadius: "8px", border: "1px solid rgba(138, 43, 226, 0.2)" }
+          },
+            ce("div", { style: { display: "flex", gap: "24px", fontSize: "13px" } },
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "Total Crits:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, totalCrits)
+              ),
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "Crit Rate:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `${critRate.toFixed(2)}%`)
+              ),
+              ce("div", null,
+                ce("span", { style: { opacity: 0.7 } }, "History:"),
+                ce("strong", { style: { color: "#ba55d3", marginLeft: "8px" } }, `${historyCount} messages`)
+              )
+            )
+          )
+        ),
+
+        // ---- Content ----
+        ce("div", { className: "crit-settings-content" },
+
+          // ---- Main Settings Group ----
+          ce("div", { className: "crit-form-group" },
+
+            // Crit Chance
+            ce("div", { className: "crit-form-item" },
+              ce("label", { className: "crit-label" },
+                "Critical Hit Chance",
+                ce("span", { className: "crit-label-value" }, `${critChance}%`),
+                bonusElement
+              ),
+              ce("div", { className: "crit-input-wrapper" },
+                ce("input", {
+                  type: "range", min: 0, max: 100, step: 1, value: critChance,
+                  className: "crit-slider",
+                  onInput: (e) => handleCritChance(Number(e.target.value))
+                }),
+                ce("input", {
+                  type: "number", min: 0, max: 100, step: 1, value: critChance,
+                  className: "crit-number-input",
+                  onChange: (e) => handleCritChance(Number(e.target.value))
+                })
+              ),
+              ce("div", { className: "crit-form-description", style: { marginTop: "8px" } },
+                "Base crit chance is 10% by default. AGI increases crit chance (effective max 50%). PER controls multi-hit crit burst size (xN), not chance.",
+                perceptionInfo && ce("div", {
+                  style: { marginTop: "6px", color: "#8a2be2", fontSize: "0.9em" }
+                }, `PER ${perceptionInfo.perception.toFixed(0)}: ${perceptionInfo.chainChance}% chain chance, max x${perceptionInfo.maxHits}`)
+              )
+            ),
+
+            // Crit Color
+            ce("div", { className: "crit-form-item" },
+              ce("label", { className: "crit-label" }, "Critical Hit Color"),
+              ce("div", { className: "crit-color-wrapper" },
+                ce("input", {
+                  type: "color", value: critColor,
+                  className: "crit-color-picker",
+                  onChange: (e) => handleCritColor(e.target.value)
+                }),
+                ce("div", {
+                  className: "crit-color-preview",
+                  style: { backgroundColor: critColor }
+                })
+              ),
+              ce("div", { className: "crit-form-description" }, "Choose the color for critical hit messages")
+            ),
+
+            // Crit Font
+            ce("div", { className: "crit-form-item" },
+              ce("label", { className: "crit-label" }, "Critical Hit Font"),
+              ce("input", {
+                type: "text", value: critFont,
+                placeholder: "'Press Start 2P', monospace",
+                className: "crit-text-input",
+                onChange: (e) => handleCritFont(e.target.value)
+              }),
+              ce("div", { className: "crit-form-description" }, "Font family for critical hit messages (Solo Leveling-style futuristic font)")
+            ),
+
+            // Checkboxes: Animation, Gradient, Glow
+            ce(Checkbox, { label: "Enable Animation", checked: critAnimation, onChange: handleCritAnimation }),
+            ce(Checkbox, {
+              label: "Enable Gradient (Purple-Black)", checked: critGradient,
+              onChange: handleCritGradient,
+              description: "Use a purple-to-black gradient instead of solid color"
+            }),
+            ce(Checkbox, { label: "Enable Glow Effect", checked: critGlow, onChange: handleCritGlow })
+          ),
+
+          // ---- Message Filters ----
+          ce("div", {
+            className: "crit-form-group",
+            style: { marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--background-modifier-accent)" }
+          },
+            ce("div", { className: "crit-settings-title", style: { marginBottom: "16px" } },
+              ce("h3", { style: { fontSize: "16px", margin: 0 } }, "Message Filters")
+            ),
+            ce("div", { className: "crit-form-description", style: { marginBottom: "16px" } },
+              "Choose which message types should be excluded from critical hits"
+            ),
+            ce(Checkbox, {
+              label: "Filter Reply Messages", checked: filterReplies,
+              onChange: handleFilterReplies,
+              description: "Don't apply crits to messages that are replies to other messages"
+            }),
+            ce(Checkbox, {
+              label: "Filter System Messages", checked: filterSystem,
+              onChange: handleFilterSystem,
+              description: "Don't apply crits to system messages (joins, leaves, pins, etc.)"
+            }),
+            ce(Checkbox, {
+              label: "Filter Bot Messages", checked: filterBots,
+              onChange: handleFilterBots,
+              description: "Don't apply crits to messages from bots"
+            }),
+            ce(Checkbox, {
+              label: "Filter Empty Messages", checked: filterEmpty,
+              onChange: handleFilterEmpty,
+              description: "Don't apply crits to messages with only embeds/attachments (no text)"
+            })
+          ),
+
+          // ---- History & Storage ----
+          ce("div", {
+            className: "crit-form-group",
+            style: { marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--background-modifier-accent)" }
+          },
+            ce("div", { className: "crit-settings-title", style: { marginBottom: "16px" } },
+              ce("h3", { style: { fontSize: "16px", margin: 0 } }, "History & Storage")
+            ),
+            ce(RangeSlider, {
+              label: "History Retention (Days)", value: retentionDays,
+              min: 1, max: 90, step: 1, unit: "",
+              onChange: handleRetentionDays,
+              description: "How long to keep message history (older entries are automatically cleaned up)"
+            }),
+            ce(Checkbox, {
+              label: "Auto-Cleanup Old History", checked: autoCleanup,
+              onChange: handleAutoCleanup,
+              description: "Automatically remove history entries older than retention period"
+            })
+          ),
+
+          // ---- Animation Settings ----
+          ce("div", {
+            className: "crit-form-group",
+            style: { marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--background-modifier-accent)" }
+          },
+            ce("div", { className: "crit-settings-title", style: { marginBottom: "16px" } },
+              ce("h3", { style: { fontSize: "16px", margin: 0 } }, "Animation Settings")
+            ),
+            ce("div", { className: "crit-form-description", style: { marginBottom: "16px" } },
+              'Customize the "CRITICAL HIT!" floating animation'
+            ),
+            ce(RangeSlider, {
+              label: "Animation Duration", value: animDuration,
+              min: 1000, max: 10000, step: 500, unit: "",
+              onChange: handleAnimDuration,
+              description: "How long the animation stays visible (1-10 seconds)"
+            }),
+            ce(RangeSlider, {
+              label: "Float Distance", value: floatDist,
+              min: 50, max: 300, step: 10, unit: "px",
+              onChange: handleFloatDist,
+              description: "How far the animation floats upward"
+            }),
+            ce(RangeSlider, {
+              label: "Animation Font Size", value: fontSize,
+              min: 24, max: 72, step: 2, unit: "px",
+              onChange: handleFontSize,
+              description: "Size of the animation text"
+            }),
+            ce(Checkbox, {
+              label: "Enable Screen Shake", checked: screenShake,
+              onChange: handleScreenShake,
+              description: "Shake the screen when a critical hit occurs"
+            }),
+            ce(RangeSlider, {
+              label: "Shake Intensity", value: shakeIntensity,
+              min: 1, max: 10, step: 1, unit: "px",
+              onChange: handleShakeIntensity,
+              description: "Intensity of the screen shake effect"
+            }),
+            ce(RangeSlider, {
+              label: "Shake Duration", value: shakeDuration,
+              min: 100, max: 500, step: 50, unit: "ms",
+              onChange: handleShakeDuration,
+              description: "How long the screen shake lasts"
+            }),
+            ce(Checkbox, {
+              label: "Show Combo Counter", checked: showCombo,
+              onChange: handleShowCombo,
+              description: 'Display combo count in the animation (e.g., "CRITICAL HIT! x5")'
+            }),
+            ce(RangeSlider, {
+              label: "Max Combo Display", value: maxCombo,
+              min: 10, max: 999, step: 10, unit: "",
+              onChange: handleMaxCombo,
+              description: "Maximum combo count to display"
+            })
+          ),
+
+          // ---- Debug & Troubleshooting ----
+          ce("div", {
+            className: "crit-form-group",
+            style: { marginTop: "32px", paddingTop: "24px", borderTop: "1px solid var(--background-modifier-accent)" }
+          },
+            ce("div", { className: "crit-settings-title", style: { marginBottom: "16px" } },
+              ce("h3", { style: { fontSize: "16px", margin: 0 } }, "Debug & Troubleshooting")
+            ),
+            ce("div", {
+              className: "crit-form-item crit-checkbox-group",
+              style: {
+                background: debugMode ? "rgba(255, 165, 0, 0.1)" : "var(--background-modifier-hover)",
+                border: debugMode ? "1px solid rgba(255, 165, 0, 0.3)" : "1px solid transparent"
+              }
+            },
+              ce("label", { className: "crit-checkbox-label" },
+                ce("input", {
+                  type: "checkbox", checked: debugMode,
+                  className: "crit-checkbox",
+                  onChange: (e) => handleDebugMode(e.target.checked)
+                }),
+                ce("span", { className: "crit-checkbox-custom" }),
+                ce("span", {
+                  className: "crit-checkbox-text",
+                  style: {
+                    fontWeight: debugMode ? "600" : "500",
+                    color: debugMode ? "var(--text-brand)" : "var(--text-normal)"
+                  }
+                }, "Enable Debug Mode")
+              ),
+              ce("div", {
+                className: "crit-form-description",
+                style: { marginTop: "8px", paddingLeft: "30px" }
+              },
+                "Show detailed debug logs in console (useful for troubleshooting). ",
+                ce("strong", {
+                  style: { color: debugMode ? "var(--text-brand)" : "var(--text-muted)" }
+                }, debugMode
+                  ? "WARNING: Currently enabled - check console for logs"
+                  : "Currently disabled - no console spam"
+                )
+              )
+            )
+          ),
+
+          // ---- Test Button ----
+          ce("div", { className: "crit-actions" },
+            ce("button", {
+              className: "crit-test-btn",
+              onClick: handleTestCrit
+            }, "Test Critical Hit")
+          ),
+
+          // ---- Font Credit ----
+          ce("div", {
+            className: "crit-font-credit",
+            style: {
+              marginTop: "32px", padding: "16px",
+              background: "rgba(138, 43, 226, 0.05)", borderRadius: "8px",
+              borderTop: "1px solid rgba(138, 43, 226, 0.2)",
+              textAlign: "center", fontSize: "12px",
+              color: "rgba(255, 255, 255, 0.6)"
+            }
+          },
+            ce("div", null,
+              "Icons made from ",
+              ce("a", {
+                href: "https://www.onlinewebfonts.com/icon",
+                target: "_blank", rel: "noopener noreferrer",
+                style: { color: "#8a2be2", textDecoration: "none" }
+              }, "svg icons"),
+              " is licensed by CC BY 4.0"
+            ),
+            ce("div", { style: { marginTop: "4px", opacity: 0.8 } },
+              'Font: "Friend or Foe BB" from OnlineWebFonts.com'
+            )
+          )
+        )
+      );
+    }
+
+    this.__CritSettingsPanelCached = CritSettingsPanel;
+    return CritSettingsPanel;
+  }
+
+  /**
    * Creates and returns the settings panel UI element
-   * Includes controls for crit chance, styling, filters, and stats display
+   * Uses React 18 createRoot for rendering
    * @returns {HTMLElement} Settings panel DOM element
    */
   getSettingsPanel() {
@@ -7920,878 +8589,28 @@ ${childSel} {
 
     const container = document.createElement('div');
     container.className = 'bd-crit-hit-settings';
-    container.innerHTML = `
-            <div class="crit-settings-header">
-                <div class="crit-settings-title">
-                    <h3>Critical Hit Settings</h3>
-                </div>
-                <div class="crit-settings-subtitle">Customize your critical hit experience</div>
-                <div class="crit-stats-display" style="margin-top: 16px; padding: 12px; background: rgba(138, 43, 226, 0.1); border-radius: 8px; border: 1px solid rgba(138, 43, 226, 0.2);">
-                    <div style="display: flex; gap: 24px; font-size: 13px;">
-                        <div>
-                            <span style="opacity: 0.7;">Total Crits:</span>
-                            <strong style="color: #ba55d3; margin-left: 8px;">${
-                              this.stats.totalCrits
-                            }</strong>
-                        </div>
-                        <div>
-                            <span style="opacity: 0.7;">Crit Rate:</span>
-                            <strong style="color: #ba55d3; margin-left: 8px;">${this.stats.critRate.toFixed(
-                              2
-                            )}%</strong>
-                        </div>
-                        <div>
-                            <span style="opacity: 0.7;">History:</span>
-                            <strong style="color: #ba55d3; margin-left: 8px;">${
-                              this.messageHistory.length
-                            } messages</strong>
-                        </div>
-                    </div>
-                </div>
-            </div>
 
-            <div class="crit-settings-content">
-                <div class="crit-form-group">
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Critical Hit Chance
-                            <span class="crit-label-value">${this.settings.critChance}%</span>
-                            ${(() => {
-                              const effectiveCrit = this.getEffectiveCritChance();
-                              const totalBonus = effectiveCrit - this.settings.critChance;
-
-                              // Get individual bonuses for display
-                              let agilityBonus = 0;
-                              let skillBonus = 0;
-                              try {
-                                agilityBonus =
-                                  (BdApi.Data.load('SoloLevelingStats', 'agilityBonus')?.bonus ??
-                                    0) * 100;
-                                skillBonus =
-                                  (BdApi.Data.load('SkillTree', 'bonuses')?.critBonus ?? 0) * 100;
-                              } catch (e) {
-                                // Silently ignore - bonuses are optional
-                              }
-
-                              if (totalBonus > 0) {
-                                const bonuses = [];
-                                if (agilityBonus > 0)
-                                  bonuses.push(`+${agilityBonus.toFixed(1)}% AGI`);
-                                if (skillBonus > 0) bonuses.push(`+${skillBonus.toFixed(1)}% Skill`);
-                                return `<span class="crit-agility-bonus" style="color: #8a2be2; font-size: 0.9em; margin-left: 8px;">${bonuses.join(
-                                  ' + '
-                                )} = ${effectiveCrit.toFixed(1)}%</span>`;
-                              }
-                              return `<span class="crit-agility-bonus" style="color: #666; font-size: 0.9em; margin-left: 8px;">(Effective: ${effectiveCrit.toFixed(
-                                1
-                              )}%, max 50%)</span>`;
-                            })()}
-                        </label>
-                        <div class="crit-form-description" style="margin-top: 8px;">
-                            Base crit chance is 10% by default. AGI increases crit chance (effective max 50%). PER controls multi-hit crit burst size (xN), not chance.
-                            ${(() => {
-                              try {
-                                const perData = BdApi.Data.load('SoloLevelingStats', 'perceptionBurst') || {};
-                                const perception = Math.max(
-                                  0,
-                                  Number(perData.effectivePerception ?? perData.perception ?? 0) || 0
-                                );
-                                const chainChance = Math.min(
-                                  82,
-                                  Math.round((0.08 + perception * 0.007) * 100)
-                                );
-                                const maxHits = Math.min(
-                                  99,
-                                  Math.max(1, Number(perData.maxHits) || (1 + Math.floor(perception * 1.2)))
-                                );
-                                return `<div style="margin-top: 6px; color: #8a2be2; font-size: 0.9em;">PER ${perception.toFixed(
-                                  0
-                                )}: ${chainChance}% chain chance, max x${maxHits}</div>`;
-                              } catch (_e) {
-                                return '';
-                              }
-                            })()}
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Critical Hit Color
-                        </label>
-                        <div class="crit-color-wrapper">
-                            <input
-                                type="color"
-                                id="crit-color"
-                                value="${this._escapeHTML(this.settings.critColor)}"
-                                class="crit-color-picker"
-                            />
-                            <div class="crit-color-preview" style="background-color: ${this._escapeHTML(
-                              this.settings.critColor
-                            )}"></div>
-                        </div>
-                        <div class="crit-form-description">
-                            Choose the color for critical hit messages
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Critical Hit Font
-                        </label>
-                        <input
-                            type="text"
-                            id="crit-font"
-                            value="${this._escapeHTML(this.settings.critFont)}"
-                            placeholder="'Press Start 2P', monospace"
-                            class="crit-text-input"
-                        />
-                        <div class="crit-form-description">
-                            Font family for critical hit messages (Solo Leveling-style futuristic font)
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="crit-animation"
-                                ${this.settings.critAnimation ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Enable Animation
-                            </span>
-                        </label>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="crit-gradient"
-                                ${this.settings.critGradient !== false ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Enable Gradient (Purple-Black)
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Use a purple-to-black gradient instead of solid color
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="crit-glow"
-                                ${this.settings.critGlow ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Enable Glow Effect
-                            </span>
-                        </label>
-                    </div>
-                </div>
-
-                <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
-                    <div class="crit-settings-title" style="margin-bottom: 16px;">
-                        <h3 style="font-size: 16px; margin: 0;">Message Filters</h3>
-                    </div>
-                    <div class="crit-form-description" style="margin-bottom: 16px;">
-                        Choose which message types should be excluded from critical hits
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="filter-replies"
-                                ${this.settings.filterReplies ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Filter Reply Messages
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Don't apply crits to messages that are replies to other messages
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="filter-system"
-                                ${this.settings.filterSystemMessages ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Filter System Messages
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Don't apply crits to system messages (joins, leaves, pins, etc.)
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="filter-bots"
-                                ${this.settings.filterBotMessages ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Filter Bot Messages
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Don't apply crits to messages from bots
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="filter-empty"
-                                ${this.settings.filterEmptyMessages ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Filter Empty Messages
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Don't apply crits to messages with only embeds/attachments (no text)
-                        </div>
-                    </div>
-                </div>
-
-                <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
-                    <div class="crit-settings-title" style="margin-bottom: 16px;">
-                        <h3 style="font-size: 16px; margin: 0;">History & Storage</h3>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            History Retention (Days)
-                            <span class="crit-label-value">${
-                              this.settings.historyRetentionDays || 30
-                            }</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="history-retention-slider"
-                                min="1"
-                                max="90"
-                                value="${this.settings.historyRetentionDays || 30}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="history-retention"
-                                min="1"
-                                max="90"
-                                value="${this.settings.historyRetentionDays || 30}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            How long to keep message history (older entries are automatically cleaned up)
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="auto-cleanup-history"
-                                ${this.settings.autoCleanupHistory !== false ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Auto-Cleanup Old History
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Automatically remove history entries older than retention period
-                        </div>
-                    </div>
-                </div>
-
-                <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
-                    <div class="crit-settings-title" style="margin-bottom: 16px;">
-                        <h3 style="font-size: 16px; margin: 0;">Animation Settings</h3>
-                    </div>
-                    <div class="crit-form-description" style="margin-bottom: 16px;">
-                        Customize the "CRITICAL HIT!" floating animation
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Animation Duration
-                            <span class="crit-label-value">${(
-                              this.settings.animationDuration / 1000
-                            ).toFixed(1)}s</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="animation-duration-slider"
-                                min="1000"
-                                max="10000"
-                                step="500"
-                                value="${this.settings.animationDuration}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="animation-duration"
-                                min="1000"
-                                max="10000"
-                                step="500"
-                                value="${this.settings.animationDuration}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            How long the animation stays visible (1-10 seconds)
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Float Distance
-                            <span class="crit-label-value">${this.settings.floatDistance}px</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="float-distance-slider"
-                                min="50"
-                                max="300"
-                                step="10"
-                                value="${this.settings.floatDistance}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="float-distance"
-                                min="50"
-                                max="300"
-                                step="10"
-                                value="${this.settings.floatDistance}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            How far the animation floats upward
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Animation Font Size
-                            <span class="crit-label-value">${this.settings.fontSize}px</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="animation-fontsize-slider"
-                                min="24"
-                                max="72"
-                                step="2"
-                                value="${this.settings.fontSize}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="animation-fontsize"
-                                min="24"
-                                max="72"
-                                step="2"
-                                value="${this.settings.fontSize}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            Size of the animation text
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="screen-shake"
-                                ${this.settings.screenShake ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Enable Screen Shake
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Shake the screen when a critical hit occurs
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Shake Intensity
-                            <span class="crit-label-value">${this.settings.shakeIntensity}px</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="shake-intensity-slider"
-                                min="1"
-                                max="10"
-                                step="1"
-                                value="${this.settings.shakeIntensity}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="shake-intensity"
-                                min="1"
-                                max="10"
-                                step="1"
-                                value="${this.settings.shakeIntensity}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            Intensity of the screen shake effect
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Shake Duration
-                            <span class="crit-label-value">${this.settings.shakeDuration}ms</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="shake-duration-slider"
-                                min="100"
-                                max="500"
-                                step="50"
-                                value="${this.settings.shakeDuration}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="shake-duration"
-                                min="100"
-                                max="500"
-                                step="50"
-                                value="${this.settings.shakeDuration}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            How long the screen shake lasts
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="show-combo"
-                                ${this.settings.showCombo ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text">
-                                Show Combo Counter
-                            </span>
-                        </label>
-                        <div class="crit-form-description">
-                            Display combo count in the animation (e.g., "CRITICAL HIT! x5")
-                        </div>
-                    </div>
-
-                    <div class="crit-form-item">
-                        <label class="crit-label">
-                            Max Combo Display
-                            <span class="crit-label-value">${this.settings.maxCombo}</span>
-                        </label>
-                        <div class="crit-input-wrapper">
-                            <input
-                                type="range"
-                                id="max-combo-slider"
-                                min="10"
-                                max="999"
-                                step="10"
-                                value="${this.settings.maxCombo}"
-                                class="crit-slider"
-                            />
-                            <input
-                                type="number"
-                                id="max-combo"
-                                min="10"
-                                max="999"
-                                step="10"
-                                value="${this.settings.maxCombo}"
-                                class="crit-number-input"
-                            />
-                        </div>
-                        <div class="crit-form-description">
-                            Maximum combo count to display
-                        </div>
-                    </div>
-                </div>
-
-                <div class="crit-form-group" style="margin-top: 32px; padding-top: 24px; border-top: 1px solid var(--background-modifier-accent);">
-                    <div class="crit-settings-title" style="margin-bottom: 16px;">
-                        <h3 style="font-size: 16px; margin: 0;">Debug & Troubleshooting</h3>
-                    </div>
-
-                    <div class="crit-form-item crit-checkbox-group" style="background: ${
-                      this.settings.debugMode
-                        ? 'rgba(255, 165, 0, 0.1)'
-                        : 'var(--background-modifier-hover)'
-                    }; border: 1px solid ${
-      this.settings.debugMode ? 'rgba(255, 165, 0, 0.3)' : 'transparent'
-    };">
-                        <label class="crit-checkbox-label">
-                            <input
-                                type="checkbox"
-                                id="debug-mode"
-                                ${this.settings.debugMode ? 'checked' : ''}
-                                class="crit-checkbox"
-                            />
-                            <span class="crit-checkbox-custom"></span>
-                            <span class="crit-checkbox-text" style="font-weight: ${
-                              this.settings.debugMode ? '600' : '500'
-                            }; color: ${
-      this.settings.debugMode ? 'var(--text-brand)' : 'var(--text-normal)'
-    };">
-                                Enable Debug Mode
-                            </span>
-                        </label>
-                        <div class="crit-form-description" style="margin-top: 8px; padding-left: 30px;">
-                            Show detailed debug logs in console (useful for troubleshooting).
-                            <strong style="color: ${
-                              this.settings.debugMode ? 'var(--text-brand)' : 'var(--text-muted)'
-                            };">
-                                ${
-                                  this.settings.debugMode
-                                    ? 'WARNING: Currently enabled - check console for logs'
-                                    : 'Currently disabled - no console spam'
-                                }
-                            </strong>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="crit-actions">
-                    <button id="test-crit-btn" class="crit-test-btn">
-                        Test Critical Hit
-                    </button>
-                </div>
-
-                <div class="crit-font-credit" style="margin-top: 32px; padding: 16px; background: rgba(138, 43, 226, 0.05); border-radius: 8px; border-top: 1px solid rgba(138, 43, 226, 0.2); text-align: center; font-size: 12px; color: rgba(255, 255, 255, 0.6);">
-                    <div>Icons made from <a href="https://www.onlinewebfonts.com/icon" target="_blank" rel="noopener noreferrer" style="color: #8a2be2; text-decoration: none;">svg icons</a> is licensed by CC BY 4.0</div>
-                    <div style="margin-top: 4px; opacity: 0.8;">Font: "Friend or Foe BB" from OnlineWebFonts.com</div>
-                </div>
-            </div>
-        `;
-
-    // Set up display update observer
-    this.setupSettingsDisplayObserver(container);
-
-    // Attach settings panel handlers (delegated, detachable)
-    this.attachCriticalHitSettingsPanelHandlers(container);
+    const createRoot = this._getCreateRoot();
+    if (createRoot) {
+      const root = createRoot(container);
+      this._settingsRoot = root;
+      const React = BdApi.React;
+      root.render(React.createElement(this._CritSettingsPanel, { pluginInstance: this }));
+    } else {
+      container.textContent = 'React 18 createRoot unavailable';
+    }
 
     return container;
   }
 
-  attachCriticalHitSettingsPanelHandlers(container) {
-    this.detachCriticalHitSettingsPanelHandlers();
-    if (!container) return;
-
-    const syncRangeAndInput = ({ rangeId, inputId, value }) => {
-      const range = container.querySelector(rangeId);
-      const input = container.querySelector(inputId);
-      range && (range.value = value);
-      input && (input.value = value);
-    };
-
-    const onInput = (event) => {
-      if (this._isStopped) return;
-      const target = event.target;
-      const id = target?.id;
-      if (!id) return;
-
-      const handlers = {
-        'crit-chance-slider': () => {
-          const numValue = parseFloat(target.value) || 0;
-          syncRangeAndInput({
-            rangeId: '#crit-chance-slider',
-            inputId: '#crit-chance',
-            value: numValue,
-          });
-          this.updateCritChance(numValue);
-        },
-        'history-retention-slider': () => {
-          const numValue = Math.max(1, Math.min(90, parseInt(target.value, 10) || 30));
-          syncRangeAndInput({
-            rangeId: '#history-retention-slider',
-            inputId: '#history-retention',
-            value: numValue,
-          });
-          this.settings.historyRetentionDays = numValue;
-          this.saveSettings();
-        },
-        'animation-duration-slider': () => {
-          const numValue = Math.max(1000, Math.min(10000, parseInt(target.value, 10) || 4000));
-          syncRangeAndInput({
-            rangeId: '#animation-duration-slider',
-            inputId: '#animation-duration',
-            value: numValue,
-          });
-          this.settings.animationDuration = numValue;
-          this.saveSettings();
-        },
-        'float-distance-slider': () => {
-          const numValue = Math.max(50, Math.min(300, parseInt(target.value, 10) || 150));
-          syncRangeAndInput({
-            rangeId: '#float-distance-slider',
-            inputId: '#float-distance',
-            value: numValue,
-          });
-          this.settings.floatDistance = numValue;
-          this.saveSettings();
-        },
-        'animation-fontsize-slider': () => {
-          const numValue = Math.max(24, Math.min(72, parseInt(target.value, 10) || 36));
-          syncRangeAndInput({
-            rangeId: '#animation-fontsize-slider',
-            inputId: '#animation-fontsize',
-            value: numValue,
-          });
-          this.settings.fontSize = numValue;
-          this.saveSettings();
-        },
-        'shake-intensity-slider': () => {
-          const numValue = Math.max(1, Math.min(10, parseInt(target.value, 10) || 3));
-          syncRangeAndInput({
-            rangeId: '#shake-intensity-slider',
-            inputId: '#shake-intensity',
-            value: numValue,
-          });
-          this.settings.shakeIntensity = numValue;
-          this.saveSettings();
-        },
-        'shake-duration-slider': () => {
-          const numValue = Math.max(100, Math.min(500, parseInt(target.value, 10) || 250));
-          syncRangeAndInput({
-            rangeId: '#shake-duration-slider',
-            inputId: '#shake-duration',
-            value: numValue,
-          });
-          this.settings.shakeDuration = numValue;
-          this.saveSettings();
-        },
-        'max-combo-slider': () => {
-          const numValue = Math.max(10, Math.min(999, parseInt(target.value, 10) || 999));
-          syncRangeAndInput({
-            rangeId: '#max-combo-slider',
-            inputId: '#max-combo',
-            value: numValue,
-          });
-          this.settings.maxCombo = numValue;
-          this.saveSettings();
-        },
-      };
-
-      handlers[id]?.();
-    };
-
-    const onChange = (event) => {
-      if (this._isStopped) return;
-      const target = event.target;
-      const id = target?.id;
-      if (!id) return;
-
-      const handlers = {
-        'crit-chance': () => {
-          const numValue = parseFloat(target.value) || 0;
-          syncRangeAndInput({
-            rangeId: '#crit-chance-slider',
-            inputId: '#crit-chance',
-            value: numValue,
-          });
-          this.updateCritChance(numValue);
-        },
-        'crit-color': () => this.updateCritColor(target.value),
-        'crit-font': () => this.updateCritFont(target.value),
-        'crit-gradient': () => this.updateCritGradient(!!target.checked),
-        'crit-glow': () => this.updateCritGlow(!!target.checked),
-        'crit-animation': () => this.updateCritAnimation(!!target.checked),
-
-        'filter-replies': () => (
-          (this.settings.filterReplies = !!target.checked), this.saveSettings()
-        ),
-        'filter-system': () => (
-          (this.settings.filterSystemMessages = !!target.checked), this.saveSettings()
-        ),
-        'filter-bots': () => (
-          (this.settings.filterBotMessages = !!target.checked), this.saveSettings()
-        ),
-        'filter-empty': () => (
-          (this.settings.filterEmptyMessages = !!target.checked), this.saveSettings()
-        ),
-
-        'history-retention': () => {
-          const numValue = Math.max(1, Math.min(90, parseInt(target.value, 10) || 30));
-          syncRangeAndInput({
-            rangeId: '#history-retention-slider',
-            inputId: '#history-retention',
-            value: numValue,
-          });
-          this.settings.historyRetentionDays = numValue;
-          this.saveSettings();
-        },
-        'auto-cleanup-history': () => {
-          this.settings.autoCleanupHistory = !!target.checked;
-          this.saveSettings();
-          if (target.checked) {
-            this.startPeriodicCleanup();
-            return;
-          }
-          if (this.historyCleanupInterval) {
-            this._trackedIntervals.delete(this.historyCleanupInterval);
-            clearInterval(this.historyCleanupInterval);
-            this.historyCleanupInterval = null;
-          }
-        },
-
-        'animation-duration': () => {
-          const numValue = Math.max(1000, Math.min(10000, parseInt(target.value, 10) || 4000));
-          syncRangeAndInput({
-            rangeId: '#animation-duration-slider',
-            inputId: '#animation-duration',
-            value: numValue,
-          });
-          this.settings.animationDuration = numValue;
-          this.saveSettings();
-        },
-        'float-distance': () => {
-          const numValue = Math.max(50, Math.min(300, parseInt(target.value, 10) || 150));
-          syncRangeAndInput({
-            rangeId: '#float-distance-slider',
-            inputId: '#float-distance',
-            value: numValue,
-          });
-          this.settings.floatDistance = numValue;
-          this.saveSettings();
-        },
-        'animation-fontsize': () => {
-          const numValue = Math.max(24, Math.min(72, parseInt(target.value, 10) || 36));
-          syncRangeAndInput({
-            rangeId: '#animation-fontsize-slider',
-            inputId: '#animation-fontsize',
-            value: numValue,
-          });
-          this.settings.fontSize = numValue;
-          this.saveSettings();
-        },
-        'screen-shake': () => ((this.settings.screenShake = !!target.checked), this.saveSettings()),
-        'glow-pulse': () => ((this.settings.glowPulse = !!target.checked), this.saveSettings()),
-        'shake-intensity': () => {
-          const numValue = Math.max(1, Math.min(10, parseInt(target.value, 10) || 3));
-          syncRangeAndInput({
-            rangeId: '#shake-intensity-slider',
-            inputId: '#shake-intensity',
-            value: numValue,
-          });
-          this.settings.shakeIntensity = numValue;
-          this.saveSettings();
-        },
-        'shake-duration': () => {
-          const numValue = Math.max(100, Math.min(500, parseInt(target.value, 10) || 250));
-          syncRangeAndInput({
-            rangeId: '#shake-duration-slider',
-            inputId: '#shake-duration',
-            value: numValue,
-          });
-          this.settings.shakeDuration = numValue;
-          this.saveSettings();
-        },
-        'show-combo': () => ((this.settings.showCombo = !!target.checked), this.saveSettings()),
-        'max-combo': () => {
-          const numValue = Math.max(10, Math.min(999, parseInt(target.value, 10) || 999));
-          syncRangeAndInput({
-            rangeId: '#max-combo-slider',
-            inputId: '#max-combo',
-            value: numValue,
-          });
-          this.settings.maxCombo = numValue;
-          this.saveSettings();
-        },
-
-        'debug-mode': () => {
-          const enabled = !!target.checked;
-          this.updateDebugMode(enabled);
-          const checkboxGroup = target.closest('.crit-checkbox-group');
-          if (checkboxGroup) {
-            checkboxGroup.style.background = enabled
-              ? 'rgba(255, 165, 0, 0.1)'
-              : 'var(--background-modifier-hover)';
-            checkboxGroup.style.border = enabled
-              ? '1px solid rgba(255, 165, 0, 0.3)'
-              : 'transparent';
-            const checkboxText = checkboxGroup.querySelector('.crit-checkbox-text');
-            checkboxText && (checkboxText.style.fontWeight = enabled ? '600' : '500');
-            checkboxText &&
-              (checkboxText.style.color = enabled ? 'var(--text-brand)' : 'var(--text-normal)');
-            const description = checkboxGroup.querySelector('.crit-form-description strong');
-            if (description) {
-              description.textContent = enabled
-                ? 'WARNING: Currently enabled - check console for logs'
-                : 'Currently disabled - no console spam';
-              description.style.color = enabled ? 'var(--text-brand)' : 'var(--text-muted)';
-            }
-          }
-        },
-      };
-
-      handlers[id]?.();
-    };
-
-    const onClick = (event) => {
-      if (this._isStopped) return;
-      const target = event.target;
-      const btn = target?.closest?.('#test-crit-btn');
-      btn && this.testCrit();
-    };
-
-    container.addEventListener('input', onInput);
-    container.addEventListener('change', onChange);
-    container.addEventListener('click', onClick);
-    this._settingsPanelRoot = container;
-    this._settingsPanelHandlers = { onInput, onChange, onClick };
+  /**
+   * Legacy handler attachment stub - kept for backwards compatibility
+   * React component now handles all events internally
+   * @param {HTMLElement} _container - Unused
+   */
+  attachCriticalHitSettingsPanelHandlers(_container) {
+    // No-op: React component handles all events internally via useState/useCallback
+    // Kept as stub for any external callers
   }
 
   // ============================================================================
@@ -9325,6 +9144,17 @@ ${childSel} {
    * @param {number|null} comboOverride - Optional combo count override
    */
   showAnimation(messageElement, messageId, comboOverride = null) {
+    // HARD SAFETY NET: Never animate old messages (e.g., jump-to-message, scroll-back).
+    // Only fresh messages (< 5 minutes) should get the "CRITICAL HIT!" animation.
+    if (messageId && this.isValidDiscordId(messageId)) {
+      const DISCORD_EPOCH = 1420070400000;
+      const MESSAGE_AGE_GATE_MS = 5 * 60 * 1000;
+      const messageTimestamp = Number(BigInt(messageId) >> 22n) + DISCORD_EPOCH;
+      if (Date.now() - messageTimestamp > MESSAGE_AGE_GATE_MS) {
+        return; // Old message — silent restore only, no animation
+      }
+    }
+
     // debug stripped
     if (messageId && this.animatedMessages.has(messageId)) {
       const existingData = this.animatedMessages.get(messageId);

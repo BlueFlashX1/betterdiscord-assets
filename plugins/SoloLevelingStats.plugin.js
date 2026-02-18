@@ -10891,8 +10891,8 @@ module.exports = class SoloLevelingStats {
     const container = document.createElement('div');
     container.style.cssText = `
       padding: 20px;
-      background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
-      border-radius: 10px;
+      background: #1e1e2e;
+      border-radius: 8px;
       border: 1px solid rgba(138, 43, 226, 0.5);
       color: #ffffff;
       font-family: 'Segoe UI', sans-serif;

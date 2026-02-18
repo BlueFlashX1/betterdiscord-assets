@@ -1538,7 +1538,7 @@ module.exports = class SoloLevelingToasts {
   getSettingsPanel() {
     this.detachSoloLevelingToastsSettingsPanelHandlers();
     const panel = document.createElement('div');
-    panel.style.padding = '20px';
+    panel.style.cssText = 'padding: 20px; background: #1e1e2e; border-radius: 8px;';
     panel.innerHTML = `
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Notification Settings</h3>

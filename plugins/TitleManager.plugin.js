@@ -853,8 +853,8 @@ module.exports = class SoloLevelingTitleManager {
     const panel = document.createElement('div');
     panel.style.cssText = `
       padding: 20px;
-      background: linear-gradient(135deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.85) 100%);
-      border-radius: 12px;
+      background: #1e1e2e;
+      border-radius: 8px;
       border: 2px solid rgba(138, 43, 226, 0.3);
       box-shadow: 0 0 30px rgba(138, 43, 226, 0.2);
     `;
