@@ -861,9 +861,6 @@ module.exports = class SoloLevelingStats {
     // Default empty shadow buffs — used by getShadowArmyBuffs fallback paths
     this.DEFAULT_SHADOW_BUFFS = { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 };
 
-    // Cached UI element references (avoids repeated querySelector)
-    this._chatUIElements = {};
-
     // Dirty flag for throttled UI updates (used by 2s chatUIUpdateInterval)
     this._chatUIDirty = false;
 
@@ -2069,32 +2066,7 @@ module.exports = class SoloLevelingStats {
     };
   }
 
-  getXPProgressFillElement() {
-    const cachedProgressFill = this._chatUIElements?.progressFill;
-    if (cachedProgressFill && cachedProgressFill.isConnected) return cachedProgressFill;
-
-    let progressFill = this.chatUIPanel?.querySelector('#sls-xp-progress-fill');
-    if (!progressFill) progressFill = this.chatUIPanel?.querySelector('.sls-chat-progress-fill');
-
-    if (!progressFill) {
-      const levelSection = this.chatUIPanel?.querySelector('.sls-chat-level');
-      progressFill =
-        levelSection?.querySelector('#sls-xp-progress-fill') ||
-        levelSection?.querySelector('.sls-chat-progress-fill') ||
-        null;
-    }
-
-    if (!progressFill) {
-      const progressBar = this.chatUIPanel?.querySelector('.sls-chat-progress-bar');
-      progressFill =
-        progressBar?.querySelector('#sls-xp-progress-fill') ||
-        progressBar?.querySelector('.sls-chat-progress-fill') ||
-        null;
-    }
-
-    progressFill && (this._chatUIElements.progressFill = progressFill);
-    return progressFill || null;
-  }
+  // getXPProgressFillElement() — REMOVED in v3.0.0 (React LevelInfo component owns XP bar)
 
   // ── §3.4 EVENT SYSTEM HELPERS ────────────────────────────────────────────
   // on(), off(), emit() — pub/sub for xpChanged, levelChanged, rankChanged,
@@ -3780,16 +3752,6 @@ module.exports = class SoloLevelingStats {
       };
 
       // Create throttled versions (4x per second max)
-      this.throttled.updateUserHPBar = bindIfExists(
-        'updateUserHPBar',
-        250,
-        this.throttle.bind(this)
-      );
-      this.throttled.updateShadowPowerDisplay = bindIfExists(
-        'updateShadowPowerDisplay',
-        250,
-        this.throttle.bind(this)
-      );
       this.throttled.checkDailyQuests = bindIfExists(
         'checkDailyQuests',
         500,
@@ -8711,47 +8673,19 @@ module.exports = class SoloLevelingStats {
   }
 
   updateShadowPowerDisplay() {
+    // v3.0.0: React LevelInfo component reads cachedShadowPower directly.
+    // Just trigger a re-render via the forceUpdate bridge + emit event for LevelProgressBar.
     if (!this._isRunning) return;
 
-    this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Updating shadow power display', {
+    this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Triggering React re-render for shadow power', {
       cachedShadowPower: this.cachedShadowPower,
-      hasChatUIPanel: !!this.chatUIPanel,
     });
 
-    if (this.chatUIPanel) {
-      const cachedShadowPowerEl = this._chatUIElements?.shadowPowerEl;
-      const shadowPowerEl =
-        cachedShadowPowerEl && cachedShadowPowerEl.isConnected
-          ? cachedShadowPowerEl
-          : this.chatUIPanel.querySelector('.sls-chat-shadow-power');
-      if (shadowPowerEl) {
-        this._chatUIElements.shadowPowerEl = shadowPowerEl;
-        const newText = `Shadow Power: ${this.cachedShadowPower}`;
-        shadowPowerEl.textContent = newText;
-        this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Shadow power text updated in progress bar', {
-          elementFound: true,
-          oldText: shadowPowerEl.textContent,
-          newText,
-          cachedShadowPower: this.cachedShadowPower,
-        });
-      } else {
-        this.debugLog(
-          'UPDATE_SHADOW_POWER_DISPLAY',
-          'Shadow power element not found in progress bar',
-          {
-            hasChatUIPanel: !!this.chatUIPanel,
-          }
-        );
-      }
-    } else {
-      this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Chat UI panel not available', {});
-    }
+    // Trigger React re-render — LevelInfo reads this.cachedShadowPower
+    this._chatUIForceUpdate?.();
 
     // Emit event for real-time updates in LevelProgressBar
     this.emit('shadowPowerChanged', {
-      shadowPower: this.cachedShadowPower,
-    });
-    this.debugLog('UPDATE_SHADOW_POWER_DISPLAY', 'Emitted shadowPowerChanged event', {
       shadowPower: this.cachedShadowPower,
     });
   }
@@ -8846,76 +8780,7 @@ module.exports = class SoloLevelingStats {
 
   // ── §3.21 HP/MANA SYSTEM ─────────────────────────────────────────────────
   // HP = 100 + 10*VIT + 50*rank_index | Mana = 100 + 10*INT
-  // updateHPManaBars(): Render gradient fill bars with percentage text
-  // Consumed/restored via Dungeons plugin integration
-
-  updateHPManaBars(totalStats = null) {
-    const cachedHpManaDisplay = this._chatUIElements?.hpManaDisplay;
-    const hpManaDisplay =
-      cachedHpManaDisplay && cachedHpManaDisplay.isConnected
-        ? cachedHpManaDisplay
-        : this.chatUIPanel?.querySelector('#sls-chat-hp-mana-display');
-    if (!hpManaDisplay) return;
-    this._chatUIElements.hpManaDisplay = hpManaDisplay;
-
-    const effectiveStats = totalStats || this.getTotalEffectiveStats();
-    this.recomputeHPManaFromStats(effectiveStats);
-
-    const hpPercentDisplay = (this.settings.userHP / this.settings.userMaxHP) * 100;
-    const manaPercentDisplay = (this.settings.userMana / this.settings.userMaxMana) * 100;
-
-    // Update HP bar fill and text (use IDs for reliable selection)
-    const cachedHpBarFill = this._chatUIElements?.hpBarFill;
-    const hpBarFill =
-      cachedHpBarFill && cachedHpBarFill.isConnected
-        ? cachedHpBarFill
-        : hpManaDisplay.querySelector('#sls-hp-bar-fill');
-
-    const cachedHpText = this._chatUIElements?.hpText;
-    const hpText =
-      cachedHpText && cachedHpText.isConnected
-        ? cachedHpText
-        : hpManaDisplay.querySelector('#sls-hp-text');
-
-    const cachedManaBarFill = this._chatUIElements?.manaBarFill;
-    const manaBarFill =
-      cachedManaBarFill && cachedManaBarFill.isConnected
-        ? cachedManaBarFill
-        : hpManaDisplay.querySelector('#sls-mp-bar-fill');
-
-    const cachedManaText = this._chatUIElements?.manaText;
-    const manaText =
-      cachedManaText && cachedManaText.isConnected
-        ? cachedManaText
-        : hpManaDisplay.querySelector('#sls-mp-text');
-
-    this._chatUIElements.hpBarFill = hpBarFill;
-    this._chatUIElements.hpText = hpText;
-    this._chatUIElements.manaBarFill = manaBarFill;
-    this._chatUIElements.manaText = manaText;
-
-    // Update HP bar
-    if (hpBarFill) {
-      hpBarFill.style.width = `${hpPercentDisplay}%`;
-    }
-    if (hpText) {
-      hpText.textContent = `${Math.floor(this.settings.userHP)}/${this.settings.userMaxHP}`;
-    }
-
-    // Update Mana bar fill and text
-    if (manaBarFill) {
-      manaBarFill.style.width = `${manaPercentDisplay}%`;
-    } else {
-      // Avoid console spam on frequent updates
-      if (!this._warnedMissingManaBarFill) {
-        this._warnedMissingManaBarFill = true;
-        this.debugLog('UPDATE_HP_MANA', 'Mana bar fill not found');
-      }
-    }
-    if (manaText) {
-      manaText.textContent = `${Math.floor(this.settings.userMana)}/${this.settings.userMaxMana}`;
-    }
-  }
+  // updateHPManaBars() — REMOVED in v3.0.0 (React HPManaDisplay component re-renders via forceUpdate)
 
   // ── §3.22 CHAT UI MANAGEMENT ─────────────────────────────────────────────
   // createChatUI(): Build collapsible panel (level, stats, quests, achievements)
@@ -9132,57 +8997,13 @@ module.exports = class SoloLevelingStats {
       this.chatUIObserver = null;
     }
 
-    // Clear chat UI element cache
-    this._chatUIElements = {};
     this._lastChatUIUpdateAt = 0;
-    this._warnedMissingManaBarFill = false;
 
     // Remove injected CSS so it doesn't persist after disable
     document.getElementById('sls-chat-ui-styles')?.remove();
   }
 
-  /**
-   * Build HTML string showing active title bonus buffs.
-   * Extracts the repeated IIFE pattern used in renderChatUI / updateChatUI.
-   * @param {Object} titleBonus - from getActiveTitleBonus()
-   * @param {string} cssClass   - CSS class for the wrapper span (default 'sls-chat-title-bonus')
-   * @returns {string} HTML or empty string
-   */
-  buildTitleBonusHTML(titleBonus, cssClass = 'sls-chat-title-bonus') {
-    if (!titleBonus) return '';
-    const buffs = [];
-
-    const percentRules = [
-      ['xp', 'XP'],
-      ['critChance', 'Crit'],
-      ['strengthPercent', 'STR'],
-      ['agilityPercent', 'AGI'],
-      ['intelligencePercent', 'INT'],
-      ['vitalityPercent', 'VIT'],
-      ['perceptionPercent', 'PER'],
-    ];
-    percentRules.forEach(([key, label]) => {
-      const value = titleBonus[key] || 0;
-      if (value > 0) buffs.push(`+${(value * 100).toFixed(0)}% ${label}`);
-    });
-
-    const rawRules = [
-      ['strength', 'strengthPercent', 'STR'],
-      ['agility', 'agilityPercent', 'AGI'],
-      ['intelligence', 'intelligencePercent', 'INT'],
-      ['vitality', 'vitalityPercent', 'VIT'],
-      ['perception', 'perceptionPercent', 'PER'],
-    ];
-    rawRules.forEach(([rawKey, percentKey, label]) => {
-      const rawValue = titleBonus[rawKey] || 0;
-      if (rawValue > 0 && !titleBonus[percentKey]) {
-        buffs.push(`+${rawValue} ${label}`);
-      }
-    });
-
-    return buffs.length > 0 ? `<span class="${cssClass}">${buffs.join(', ')}</span>` : '';
-  }
-
+  // buildTitleBonusHTML() — REMOVED in v3.0.0 (replaced by React ActiveTitle component)
   // renderChatUI() — REMOVED in v3.0.0 (replaced by React StatsPanel component)
   // attachChatUIListeners() — REMOVED in v3.0.0 (React components handle their own events)
 
