@@ -2782,9 +2782,32 @@ module.exports = class CriticalHit {
     const messageFont = critSettings.font || this.settings.critFont || "'Friend or Foe BB', 'Orbitron', sans-serif";
     const useGlow = critSettings.glow !== undefined ? critSettings.glow : this.settings.critGlow;
 
-    const sel = `[data-message-id="${messageId}"]`;
-    const contentSel = `${sel} [class*="messageContent"], ${sel} [class*="markup"]`;
-    const childSel = `${sel} [class*="messageContent"] *:not(code):not(pre):not(pre *), ${sel} [class*="markup"] *:not(code):not(pre):not(pre *)`;
+    // Target ALL Discord message identification patterns:
+    // 1. data-message-id="123" (direct attribute on some message wrappers)
+    // 2. id="chat-messages-123" (list item ID format)
+    // 3. data-list-item-id="chat-messages-123___..." (virtualized list item ID)
+    // 4. #message-content-123 (direct content element ID)
+    // This ensures CSS matches regardless of which extraction method found the ID.
+    const selA = `[data-message-id="${messageId}"]`;
+    const selB = `[id*="${messageId}"]`;
+    const selC = `[data-list-item-id*="${messageId}"]`;
+    // Direct content targeting (no descendant selector needed for this one)
+    const directContentSel = `#message-content-${messageId}`;
+    const contentSel = [
+      `${selA} [class*="messageContent"]`, `${selA} [class*="markup"]`,
+      `${selB} [class*="messageContent"]`, `${selB} [class*="markup"]`,
+      `${selC} [class*="messageContent"]`, `${selC} [class*="markup"]`,
+      directContentSel,
+    ].join(', ');
+    const childSel = [
+      `${selA} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
+      `${selA} [class*="markup"] *:not(code):not(pre):not(pre *)`,
+      `${selB} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
+      `${selB} [class*="markup"] *:not(code):not(pre):not(pre *)`,
+      `${selC} [class*="messageContent"] *:not(code):not(pre):not(pre *)`,
+      `${selC} [class*="markup"] *:not(code):not(pre):not(pre *)`,
+      `${directContentSel} *:not(code):not(pre):not(pre *)`,
+    ].join(', ');
 
     let glowValue = 'none';
     if (useGlow) {
@@ -2793,11 +2816,12 @@ module.exports = class CriticalHit {
         : `0 0 2px ${solidColor}, 0 0 3px ${solidColor}`;
     }
 
+    // v3.4.1: Removed redundant `background` shorthand — it resets background-clip to border-box
+    // which can interfere with the explicit background-clip: text needed for gradient text.
     return `
 /* CritHit: ${messageId} */
 ${contentSel} {
   background-image: ${useGradient ? gradientColor : 'none'} !important;
-  background: ${useGradient ? gradientColor : 'none'} !important;
   -webkit-background-clip: ${useGradient ? 'text' : 'border-box'} !important;
   background-clip: ${useGradient ? 'text' : 'border-box'} !important;
   -webkit-text-fill-color: ${useGradient ? 'transparent' : 'inherit'} !important;
@@ -5497,10 +5521,11 @@ ${childSel} {
           // Fix infinite loop: Check ONLY for the class. The inline style check was too aggressive
           // and caused re-application when DOM structure didn't match perfectly, triggering
           // a MutationObserver loop.
-          // ALSO check content element class - React may re-render content while keeping wrapper
-          const contentEl = this.findMessageContentElement(messageElement);
-          const contentNeedsRestore = contentEl && !contentEl.classList.contains('bd-crit-text-content');
-          const needsRestore = !messageElement.classList.contains('bd-crit-hit') || contentNeedsRestore;
+          // v3.4.0: Only check for bd-crit-hit class (bd-crit-text-content was removed)
+          // Also check if per-message CSS is missing (may have been cleaned up)
+          const msgIdForRestore = this.getMessageIdentifier(messageElement);
+          const cssNeedsRestore = msgIdForRestore && !this.critCSSRules.has(msgIdForRestore);
+          const needsRestore = !messageElement.classList.contains('bd-crit-hit') || cssNeedsRestore;
 
           if (needsRestore) {
             // Use saved critSettings for proper gradient restoration
