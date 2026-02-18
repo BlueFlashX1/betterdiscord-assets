@@ -3396,48 +3396,6 @@ module.exports = class SkillTree {
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Skill Tree Settings</h3>
 
-        <div style="margin-bottom: 20px; padding: 15px; background: #1a0e2e; border-radius: 8px; border-left: 3px solid #8a2be2;">
-          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 10px;">Visible Tiers (Toggle to Show/Hide)</div>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier1') !== false ? 'checked' : ''
-              } data-tier="tier1">
-              <span style="margin-left: 10px;">Tier 1: Basic</span>
-            </label>
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier2') !== false ? 'checked' : ''
-              } data-tier="tier2">
-              <span style="margin-left: 10px;">Tier 2: Intermediate</span>
-            </label>
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier3') !== false ? 'checked' : ''
-              } data-tier="tier3">
-              <span style="margin-left: 10px;">Tier 3: Advanced</span>
-            </label>
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier4') !== false ? 'checked' : ''
-              } data-tier="tier4">
-              <span style="margin-left: 10px;">Tier 4: Master</span>
-            </label>
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier5') !== false ? 'checked' : ''
-              } data-tier="tier5">
-              <span style="margin-left: 10px;">Tier 5: Transcendent</span>
-            </label>
-            <label style="display: flex; align-items: center;">
-              <input type="checkbox" ${
-                this.settings.visibleTiers?.includes('tier6') !== false ? 'checked' : ''
-              } data-tier="tier6">
-              <span style="margin-left: 10px;">Tier 6: Ultimate</span>
-            </label>
-          </div>
-        </div>
-
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} id="st-debug">
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
@@ -3462,36 +3420,6 @@ module.exports = class SkillTree {
 
     const onChange = (event) => {
       const target = event.target;
-
-      const tier = target?.getAttribute?.('data-tier');
-      if (tier) {
-        this.settings.visibleTiers = this.settings.visibleTiers || [
-          'tier1',
-          'tier2',
-          'tier3',
-          'tier4',
-          'tier5',
-          'tier6',
-        ];
-
-        target.checked
-          ? !this.settings.visibleTiers.includes(tier) && this.settings.visibleTiers.push(tier)
-          : (this.settings.visibleTiers = this.settings.visibleTiers.filter((t) => t !== tier));
-
-        this.saveSettings();
-
-        // Refresh modal if open (SMOOTH - no blink)
-        if (this.skillTreeModal) {
-          const modalContent = this.skillTreeModal.querySelector('.skilltree-modal-content');
-          modalContent && (modalContent.style.opacity = '0.5');
-          this._setTrackedTimeout(() => {
-            this.showSkillTreeModal();
-            const newModalContent = this.skillTreeModal?.querySelector('.skilltree-modal-content');
-            newModalContent && (newModalContent.style.opacity = '1');
-          }, 150);
-        }
-        return;
-      }
 
       if (target?.id === 'st-debug') {
         this.settings.debugMode = target.checked;

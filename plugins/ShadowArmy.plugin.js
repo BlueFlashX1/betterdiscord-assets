@@ -10291,17 +10291,13 @@ module.exports = class ShadowArmy {
    * Generate settings panel HTML for BetterDiscord settings UI
    * Operations:
    * 1. Get total shadow count and generals count for stats
-   * 2. Render View Shadow Army button (opens React Generals modal)
-   * 3. Render diagnostic, extraction config, ARISE settings, debug toggle
-   * 4. Render essence conversion button (opens React Essence modal)
-   * 5. Return DOM container with delegated click/change handlers
+   * 2. Render storage diagnostic button
+   * 3. Render debug mode toggle
+   * 4. Return DOM container with delegated click/change handlers
    */
   getSettingsPanel() {
     // CRITICAL: BetterDiscord settings panels MUST be synchronous.
     // Keep UI rendering synchronous; async work happens inside delegated handlers.
-    const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
-    const ariseConfig = this.settings.ariseAnimation || {};
-
     const shadowsForDisplay = this.settings.shadows || [];
     const localCacheCount = shadowsForDisplay.length;
     const cachedIndexedDbCount =
@@ -10345,13 +10341,6 @@ module.exports = class ShadowArmy {
           <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Generals provide full buffs • Other shadows provide diminishing returns</div>
         </div>
 
-        <div style="margin-top: 12px; padding: 12px; background: linear-gradient(135deg, rgba(138, 43, 226, 0.2), rgba(75, 0, 130, 0.15)); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 6px;">
-          <button type="button" data-sa-action="view-army" style="width: 100%; padding: 10px 20px; background: linear-gradient(135deg, #8a2be2, #6a0dad); color: white; border: none; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; transition: opacity 0.2s;">
-            View Shadow Army
-          </button>
-          <div style="font-size: 10px; opacity: 0.7; margin-top: 6px; text-align: center;">Open the Generals modal to manage and inspect your full army</div>
-        </div>
-
         <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
           <button type="button" data-sa-action="diagnostic" style="padding: 6px 12px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
             Check Actual Storage (Diagnostic)
@@ -10360,56 +10349,7 @@ module.exports = class ShadowArmy {
           <div id="shadow-army-diagnostic-result" style="margin-top: 8px; font-size: 11px; color: #9370db;"></div>
         </div>
 
-        <div class="shadow-army-config">
-          <h3>Extraction Config</h3>
-          <div>Min Base Chance: ${(cfg.minBaseChance * 100).toFixed(2)}%</div>
-          <div>Chance per INT: ${(cfg.chancePerInt * 100).toFixed(2)}% / INT</div>
-          <div>Max Extraction Chance (Hard Cap): ${(
-            (cfg.maxExtractionChance || 0.15) * 100 || 0
-          ).toFixed(1)}%</div>
-          <div>Max Extractions / Minute: ${Number(
-            cfg.maxExtractionsPerMinute || 0
-          ).toLocaleString()}</div>
-          <div>Queue Interval: ${Number(cfg.messageQueueIntervalMs || 0).toLocaleString()}ms</div>
-          <div>Queue Max Pending: ${Number(cfg.messageQueueMaxPending || 0).toLocaleString()}</div>
-          <div>Special ARISE Max Chance: ${(cfg.specialMaxChance * 100).toFixed(1)}%</div>
-          <div>Special ARISE Max / Day: ${Number(cfg.specialMaxPerDay || 0).toLocaleString()}</div>
-          <div style="margin-top: 8px; padding-top: 8px; border-top: 1px solid rgba(138, 43, 226, 0.3);">
-            <div style="font-size: 11px; opacity: 0.8;">Stats Influence: INT +1%, PER +0.5%, STR +0.3% per point</div>
-            <div style="font-size: 11px; opacity: 0.8;">Lore: Can't extract targets 2+ ranks stronger</div>
-            <div style="font-size: 11px; opacity: 0.8;">Max 3 extraction attempts per target</div>
-          </div>
-        </div>
-
         <div class="shadow-army-config" style="margin-top: 16px;">
-          <h3>ARISE Animation Settings</h3>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-            <input type="checkbox" id="sa-arise-enabled" ${
-              ariseConfig.enabled !== false ? 'checked' : ''
-            }>
-            <span>Enable ARISE animation</span>
-          </label>
-          <label style="display:block;margin-bottom:8px;">
-            <span style="display:block;margin-bottom:4px;">Animation duration (ms)</span>
-            <input type="number" id="sa-arise-duration" value="${Number(
-              ariseConfig.animationDuration || 2500
-            )}" min="800" max="6000" step="200" style="width:100%;padding:4px;">
-          </label>
-          <label style="display:block;margin-bottom:8px;">
-            <span style="display:block;margin-bottom:4px;">Scale</span>
-            <input type="number" id="sa-arise-scale" value="${Number(
-              ariseConfig.scale || 1.0
-            )}" min="0.5" max="2.0" step="0.1" style="width:100%;padding:4px;">
-          </label>
-          <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
-            <input type="checkbox" id="sa-arise-show-meta" ${
-              ariseConfig.showRankAndRole !== false ? 'checked' : ''
-            }>
-            <span>Show rank and role under ARISE</span>
-          </label>
-          <div style="font-size: 11px; opacity: 0.8; margin-bottom: 8px;">
-            ARISE cooldown: ${Number(ariseConfig.minGapMs || 0).toLocaleString()}ms
-          </div>
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="sa-debug-mode" ${
               this.settings?.debugMode === true ? 'checked' : ''
@@ -10427,19 +10367,6 @@ module.exports = class ShadowArmy {
             </ul>
           </div>
         </div>
-
-        <div class="shadow-army-config" style="margin-top: 16px;">
-          <h3>Shadow Essence Conversion</h3>
-          <div style="margin-bottom: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 11px;">
-            <div style="color: #9370db; font-weight: bold; margin-bottom: 4px;">Current Essence: ${(
-              this.settings.shadowEssence?.essence || 0
-            ).toLocaleString()}</div>
-            <div style="opacity: 0.8;">Convert shadows to essence manually. Select rank and quantity below.</div>
-          </div>
-          <button type="button" data-sa-action="convert-essence" style="padding: 8px 16px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600; margin-bottom: 12px;">
-            Convert Shadows to Essence
-          </button>
-        </div>
       </div>
     `;
 
@@ -10450,12 +10377,6 @@ module.exports = class ShadowArmy {
     this.detachShadowArmySettingsPanelHandlers();
 
     const clickHandlers = {
-      'view-army': () => {
-        if (typeof this.openShadowArmyUI === 'function') {
-          this.openShadowArmyUI();
-        }
-      },
-
       diagnostic: async () => {
         const resultDiv = container.querySelector('#shadow-army-diagnostic-result');
         if (!resultDiv) return;
@@ -10545,12 +10466,6 @@ module.exports = class ShadowArmy {
           resultDiv.textContent = `Error: ${error?.message || String(error)}`;
         }
       },
-
-      'convert-essence': async () => {
-        if (typeof this.showEssenceConversionModal === 'function') {
-          this.showEssenceConversionModal();
-        }
-      },
     };
 
     const clickHandler = (e) => {
@@ -10563,28 +10478,6 @@ module.exports = class ShadowArmy {
     };
 
     const changeHandlers = {
-      'sa-arise-enabled': (target) => {
-        this.settings.ariseAnimation = this.settings.ariseAnimation || {};
-        this.settings.ariseAnimation.enabled = !!target.checked;
-        this.saveSettings();
-      },
-      'sa-arise-duration': (target) => {
-        this.settings.ariseAnimation = this.settings.ariseAnimation || {};
-        const v = parseInt(target.value, 10);
-        this.settings.ariseAnimation.animationDuration = Number.isFinite(v) ? v : 2500;
-        this.saveSettings();
-      },
-      'sa-arise-scale': (target) => {
-        this.settings.ariseAnimation = this.settings.ariseAnimation || {};
-        const v = parseFloat(target.value);
-        this.settings.ariseAnimation.scale = Number.isFinite(v) ? v : 1.0;
-        this.saveSettings();
-      },
-      'sa-arise-show-meta': (target) => {
-        this.settings.ariseAnimation = this.settings.ariseAnimation || {};
-        this.settings.ariseAnimation.showRankAndRole = !!target.checked;
-        this.saveSettings();
-      },
       'sa-debug-mode': (target) => {
         this.settings.debugMode = !!target.checked;
         this.debug.enabled = !!target.checked;
