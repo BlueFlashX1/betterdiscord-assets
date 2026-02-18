@@ -21,6 +21,8 @@ const RANK_COLORS = {
   "Monarch+": "#f97316", "Shadow Monarch": "#8a2be2",
 };
 
+const GUILD_FEED_CAP = 5000;
+
 // ─── DeploymentManager ─────────────────────────────────────────────────────
 
 class DeploymentManager {
@@ -142,9 +144,10 @@ class DeploymentManager {
       const allShadows = await armyPlugin.instance.getAllShadows();
       if (!Array.isArray(allShadows)) return [];
 
-      // Get IDs to exclude: already deployed + exchange-marked
+      // Get IDs to exclude: already deployed + exchange-marked + dungeon-allocated
       const deployedIds = this._deployedShadowIds;
       let exchangeMarkedIds = new Set();
+      let dungeonAllocatedIds = new Set();
 
       try {
         const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
@@ -155,10 +158,26 @@ class DeploymentManager {
         this._debugLog("DeploymentManager", "ShadowExchange not available for exclusion", exErr);
       }
 
+      try {
+        const dungeonsPlugin = BdApi.Plugins.get("Dungeons");
+        if (dungeonsPlugin && dungeonsPlugin.instance && dungeonsPlugin.instance.shadowAllocations) {
+          for (const shadows of dungeonsPlugin.instance.shadowAllocations.values()) {
+            if (Array.isArray(shadows)) {
+              for (const s of shadows) {
+                if (s && s.id) dungeonAllocatedIds.add(s.id);
+              }
+            }
+          }
+        }
+      } catch (dErr) {
+        this._debugLog("DeploymentManager", "Dungeons not available for exclusion", dErr);
+      }
+
       const available = allShadows.filter(s => {
         if (!s || !s.id) return false;
         if (deployedIds.has(s.id)) return false;
         if (exchangeMarkedIds.has(s.id)) return false;
+        if (dungeonAllocatedIds.has(s.id)) return false;
         return true;
       });
 
@@ -167,6 +186,7 @@ class DeploymentManager {
         available: available.length,
         deployed: deployedIds.size,
         exchangeMarked: exchangeMarkedIds.size,
+        dungeonAllocated: dungeonAllocatedIds.size,
       });
 
       return available;
@@ -182,12 +202,29 @@ class DeploymentManager {
 class SensesEngine {
   constructor(pluginRef) {
     this._plugin = pluginRef;
-    this._activeFeed = [];
-    this._backgroundQueue = new Map();
+    this._guildFeeds = {};          // { guildId: entry[] } — per-guild persistent feeds
+    this._lastSeenCount = {};       // { guildId: number } — track what user has seen per guild
     this._currentGuildId = null;
     this._sessionMessageCount = 0;
+    this._totalDetections = 0;
+    this._dirty = false;
+    this._flushInterval = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
+
+    // Load persisted data
+    this._guildFeeds = BdApi.Data.load(PLUGIN_NAME, "guildFeeds") || {};
+    this._totalDetections = BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0;
+
+    // Count existing entries for lastSeenCount (mark all persisted as "seen")
+    for (const guildId of Object.keys(this._guildFeeds)) {
+      this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
+    }
+
+    this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
+      guilds: Object.keys(this._guildFeeds).length,
+      totalEntries: Object.values(this._guildFeeds).reduce((sum, f) => sum + f.length, 0),
+    });
   }
 
   subscribe() {
@@ -206,11 +243,22 @@ class SensesEngine {
       this._plugin.debugError("SensesEngine", "Failed to get initial guild ID", err);
     }
 
+    // Mark current guild as seen
+    if (this._currentGuildId && this._guildFeeds[this._currentGuildId]) {
+      this._lastSeenCount[this._currentGuildId] = this._guildFeeds[this._currentGuildId].length;
+    }
+
     this._handleMessageCreate = this._onMessageCreate.bind(this);
     this._handleChannelSelect = this._onChannelSelect.bind(this);
 
     Dispatcher.subscribe("MESSAGE_CREATE", this._handleMessageCreate);
     Dispatcher.subscribe("CHANNEL_SELECT", this._handleChannelSelect);
+
+    // Start debounced flush interval (30s)
+    this._flushInterval = setInterval(() => {
+      if (!this._dirty) return;
+      this._flushToDisk();
+    }, 30000);
 
     this._plugin.debugLog("SensesEngine", "Subscribed to MESSAGE_CREATE and CHANNEL_SELECT", {
       currentGuildId: this._currentGuildId,
@@ -231,7 +279,41 @@ class SensesEngine {
       this._handleChannelSelect = null;
     }
 
+    // Stop flush interval and do final flush
+    if (this._flushInterval) {
+      clearInterval(this._flushInterval);
+      this._flushInterval = null;
+    }
+    if (this._dirty) {
+      this._flushToDisk();
+    }
+
     this._plugin.debugLog("SensesEngine", "Unsubscribed from all events");
+  }
+
+  _flushToDisk() {
+    try {
+      BdApi.Data.save(PLUGIN_NAME, "guildFeeds", this._guildFeeds);
+      BdApi.Data.save(PLUGIN_NAME, "totalDetections", this._totalDetections);
+      this._dirty = false;
+      this._plugin.debugLog("SensesEngine", "Flushed to disk", {
+        guilds: Object.keys(this._guildFeeds).length,
+        totalDetections: this._totalDetections,
+      });
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to flush to disk", err);
+    }
+  }
+
+  _addToGuildFeed(guildId, entry) {
+    if (!this._guildFeeds[guildId]) {
+      this._guildFeeds[guildId] = [];
+    }
+    this._guildFeeds[guildId].push(entry);
+    if (this._guildFeeds[guildId].length > GUILD_FEED_CAP) {
+      this._guildFeeds[guildId].shift();
+    }
+    this._dirty = true;
   }
 
   _onMessageCreate(payload) {
@@ -265,6 +347,8 @@ class SensesEngine {
         this._plugin.debugError("SensesEngine", "Failed to resolve channel", chErr);
       }
 
+      if (!guildId) return;
+
       // Build feed entry
       const entry = {
         messageId: message.id,
@@ -279,23 +363,22 @@ class SensesEngine {
         shadowRank: deployment.shadowRank,
       };
 
-      // Route to active feed or background queue
-      if (guildId && guildId === this._currentGuildId) {
-        this._addToActiveFeed(entry);
-        const rankColor = RANK_COLORS[entry.shadowRank] || "#8a2be2";
-        BdApi.showToast(
+      // Add to the guild's feed (always, regardless of current guild)
+      this._addToGuildFeed(guildId, entry);
+
+      // Toast if this is the current guild
+      if (guildId === this._currentGuildId) {
+        BdApi.UI.showToast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in #${entry.channelName}`,
           { type: "info" }
         );
-      } else if (guildId) {
-        this._addToBackgroundQueue(guildId, entry);
+        // Keep lastSeenCount in sync for the active guild
+        this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       }
 
       // Update counters
       this._sessionMessageCount++;
-
-      const totalDetections = (BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0) + 1;
-      BdApi.Data.save(PLUGIN_NAME, "totalDetections", totalDetections);
+      this._totalDetections++;
 
       // Signal widget refresh
       this._plugin._widgetDirty = true;
@@ -323,30 +406,27 @@ class SensesEngine {
       // Same guild — no action
       if (newGuildId === this._currentGuildId) return;
 
-      // Check background queue for the new guild
-      if (newGuildId && this._backgroundQueue.has(newGuildId)) {
-        const queued = this._backgroundQueue.get(newGuildId);
-        if (queued && queued.length > 0) {
-          // Collect unique shadow names for the toast
-          const shadowNames = new Set(queued.map(e => e.shadowName));
+      // Check for unseen messages in the guild we're switching TO
+      if (newGuildId && this._guildFeeds[newGuildId]) {
+        const feed = this._guildFeeds[newGuildId];
+        const lastSeen = this._lastSeenCount[newGuildId] || 0;
+        const unseenCount = feed.length - lastSeen;
 
-          BdApi.showToast(
-            `Shadow Senses: ${queued.length} message${queued.length > 1 ? "s" : ""} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
+        if (unseenCount > 0) {
+          // Collect unique shadow names from unseen entries
+          const unseenEntries = feed.slice(lastSeen);
+          const shadowNames = new Set(unseenEntries.map(e => e.shadowName));
+
+          BdApi.UI.showToast(
+            `Shadow Senses: ${unseenCount} message${unseenCount > 1 ? "s" : ""} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
             { type: "info" }
           );
-
-          // Move queued entries to active feed
-          for (const entry of queued) {
-            this._addToActiveFeed(entry);
-          }
-
-          this._backgroundQueue.delete(newGuildId);
           this._plugin._widgetDirty = true;
         }
-      }
 
-      // Clear active feed on guild switch (fresh start)
-      this._activeFeed = [];
+        // Mark all as seen now that we're viewing this guild
+        this._lastSeenCount[newGuildId] = feed.length;
+      }
 
       // Update current guild
       this._currentGuildId = newGuildId;
@@ -357,39 +437,31 @@ class SensesEngine {
     }
   }
 
-  _addToActiveFeed(entry) {
-    this._activeFeed.push(entry);
-    if (this._activeFeed.length > 50) {
-      this._activeFeed.shift();
-    }
-  }
-
-  _addToBackgroundQueue(guildId, entry) {
-    if (!this._backgroundQueue.has(guildId)) {
-      this._backgroundQueue.set(guildId, []);
-    }
-    const queue = this._backgroundQueue.get(guildId);
-    queue.push(entry);
-    if (queue.length > 20) {
-      queue.shift();
-    }
-  }
-
   getActiveFeed() {
-    return [...this._activeFeed];
+    if (!this._currentGuildId) return [];
+    return [...(this._guildFeeds[this._currentGuildId] || [])];
   }
 
   getSessionMessageCount() {
     return this._sessionMessageCount;
   }
 
+  getTotalDetections() {
+    return this._totalDetections;
+  }
+
   clear() {
-    this._activeFeed = [];
-    this._backgroundQueue = new Map();
+    this._guildFeeds = {};
+    this._lastSeenCount = {};
     this._currentGuildId = null;
     this._sessionMessageCount = 0;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
+    this._dirty = false;
+    if (this._flushInterval) {
+      clearInterval(this._flushInterval);
+      this._flushInterval = null;
+    }
   }
 }
 
@@ -776,7 +848,7 @@ function buildComponents(pluginRef) {
           `[${deployment.shadowRank}]`
         ),
         ce("span", null, deployment.shadowName),
-        ce("span", { className: "shadow-senses-deploy-arrow" }, "\uD83D\uDC41"),
+        ce("span", { className: "shadow-senses-deploy-arrow" }, "\u2192"),
         ce("span", { className: "shadow-senses-deploy-target" }, deployment.targetUsername)
       ),
       ce("button", {
@@ -849,7 +921,7 @@ function buildComponents(pluginRef) {
           pluginRef._widgetDirty = true;
         }
       } catch (err) {
-        console.error(`[${PLUGIN_NAME}] Recall failed:`, err);
+        pluginRef.debugError("DeploymentsTab", "Recall failed:", err);
       }
       if (onRecall) onRecall(deployment);
     }, [onRecall]);
@@ -896,13 +968,13 @@ function buildComponents(pluginRef) {
           pluginRef._NavigationUtils.transitionTo(path);
         }
       } catch (err) {
-        console.error(`[${PLUGIN_NAME}] Navigate failed:`, err);
+        pluginRef.debugError("SensesPanel", "Navigate failed:", err);
       }
       onClose();
     }, [onClose]);
 
     const handleDeployNew = useCallback(() => {
-      BdApi.showToast("Right-click a user to deploy a shadow", { type: "info" });
+      BdApi.UI.showToast("Right-click a user to deploy a shadow", { type: "info" });
     }, []);
 
     const deployCount = pluginRef.deploymentManager
@@ -919,7 +991,7 @@ function buildComponents(pluginRef) {
       ce("div", { className: "shadow-senses-panel" },
         // Header
         ce("div", { className: "shadow-senses-panel-header" },
-          ce("h2", { className: "shadow-senses-panel-title" }, "\uD83D\uDC41 Shadow Senses"),
+          ce("h2", { className: "shadow-senses-panel-title" }, "Shadow Senses"),
           ce("button", {
             className: "shadow-senses-close-btn",
             onClick: onClose,
@@ -979,7 +1051,6 @@ function buildComponents(pluginRef) {
       onClick: () => pluginRef.openPanel(),
     },
       ce("span", { className: "shadow-senses-widget-label" },
-        "\uD83D\uDC41",
         `Shadow Senses: ${deployCount} deployed`
       ),
       feedCount > 0
@@ -1012,7 +1083,7 @@ function buildComponents(pluginRef) {
           }
         } catch (err) {
           if (!cancelled) {
-            console.error(`[${PLUGIN_NAME}] Failed to load shadows for picker:`, err);
+            pluginRef.debugError("ShadowPicker", "Failed to load shadows:", err);
             setLoading(false);
           }
         }
@@ -1101,15 +1172,14 @@ module.exports = class ShadowSenses {
     this.registerEscHandler();
     this.patchContextMenu();
 
-    BdApi.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
+    BdApi.UI.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
   }
 
   stop() {
     try {
-      // 1. Unsubscribe Dispatcher
+      // 1. Unsubscribe Dispatcher + final flush (persists feeds to disk)
       if (this.sensesEngine) {
         this.sensesEngine.unsubscribe();
-        this.sensesEngine.clear();
         this.sensesEngine = null;
       }
 
@@ -1150,22 +1220,20 @@ module.exports = class ShadowSenses {
       this._components = null;
       this.deploymentManager = null;
     } catch (err) {
-      console.error(`[${PLUGIN_NAME}] Error during stop:`, err);
+      this.debugError("Lifecycle", "Error during stop:", err);
     }
-    BdApi.showToast(`${PLUGIN_NAME} \u2014 Shadows recalled`, { type: "info" });
+    BdApi.UI.showToast(`${PLUGIN_NAME} \u2014 Shadows recalled`, { type: "info" });
   }
 
   initWebpack() {
     const { Webpack } = BdApi;
-    this._Dispatcher = Webpack.getModule(m => m?.subscribe && m?.dispatch && m?.unsubscribe);
-    this._UserStore = Webpack.getStore("UserStore");
+    // Use getByKeys("actionLogger") per BetterDiscord docs for FluxDispatcher
+    this._Dispatcher = Webpack.getByKeys("actionLogger") || Webpack.getModule(m => m?.subscribe && m?.dispatch && m?.unsubscribe);
     this._ChannelStore = Webpack.getStore("ChannelStore");
-    this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._NavigationUtils = Webpack.getModule(m => m?.transitionTo && m?.back && m?.forward);
     this.debugLog("Webpack", "Modules acquired", {
       Dispatcher: !!this._Dispatcher,
-      UserStore: !!this._UserStore,
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
       NavigationUtils: !!this._NavigationUtils,
@@ -1424,17 +1492,17 @@ module.exports = class ShadowSenses {
             const success = this.deploymentManager.deploy(shadow, targetUser);
             if (success) {
               const targetName = targetUser.globalName || targetUser.username || "User";
-              BdApi.showToast(
+              BdApi.UI.showToast(
                 `Deployed ${shadow.roleName || shadow.role || "Shadow"} [${shadow.rank || "E"}] to monitor ${targetName}`,
                 { type: "success" }
               );
               this._widgetDirty = true;
             } else {
-              BdApi.showToast("Shadow already deployed or target already monitored", { type: "warning" });
+              BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
             }
           } catch (err) {
             this.debugError("Picker", "Deploy failed", err);
-            BdApi.showToast("Failed to deploy shadow", { type: "error" });
+            BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
           }
           // Close picker after selection
           this._closePicker();
@@ -1504,11 +1572,11 @@ module.exports = class ShadowSenses {
             // Already monitored — show recall option
             menuItem = BdApi.ContextMenu.buildItem({
               type: "text",
-              label: `Recall ${deployment.shadowName} (${deployment.shadowRank})`,
+              label: "Recall",
               action: () => {
                 try {
                   this.deploymentManager.recall(deployment.shadowId);
-                  BdApi.showToast(
+                  BdApi.UI.showToast(
                     `Recalled ${deployment.shadowName} from ${deployment.targetUsername}`,
                     { type: "info" }
                   );
@@ -1519,12 +1587,41 @@ module.exports = class ShadowSenses {
               },
             });
           } else {
-            // Not monitored — show deploy option
+            // Not monitored — auto-deploy weakest available shadow
             menuItem = BdApi.ContextMenu.buildItem({
               type: "text",
               label: "Deploy Shadow",
-              action: () => {
-                this.openShadowPicker(user);
+              action: async () => {
+                try {
+                  const available = this.deploymentManager
+                    ? await this.deploymentManager.getAvailableShadows()
+                    : [];
+                  if (available.length === 0) {
+                    BdApi.UI.showToast("No available shadows. All are deployed, in dungeons, or marked for exchange.", { type: "warning" });
+                    return;
+                  }
+                  // Sort weakest first (ascending rank index)
+                  const sorted = [...available].sort((a, b) => {
+                    const aIdx = RANKS.indexOf(a.rank || "E");
+                    const bIdx = RANKS.indexOf(b.rank || "E");
+                    return aIdx - bIdx;
+                  });
+                  const weakest = sorted[0];
+                  const success = this.deploymentManager.deploy(weakest, user);
+                  if (success) {
+                    const targetName = user.globalName || user.username || "User";
+                    BdApi.UI.showToast(
+                      `Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`,
+                      { type: "success" }
+                    );
+                    this._widgetDirty = true;
+                  } else {
+                    BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
+                  }
+                } catch (err) {
+                  this.debugError("ContextMenu", "Auto-deploy failed", err);
+                  BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
+                }
               },
             });
           }
@@ -1553,7 +1650,7 @@ module.exports = class ShadowSenses {
 
     const deployCount = this.deploymentManager?.getDeployments()?.length || 0;
     const sessionCount = this.sensesEngine?.getSessionMessageCount() || 0;
-    const totalDetections = BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0;
+    const totalDetections = this.sensesEngine?.getTotalDetections() || 0;
 
     const statCardStyle = {
       background: "rgba(138, 43, 226, 0.1)",
