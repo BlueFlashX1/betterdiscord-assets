@@ -1468,8 +1468,8 @@ module.exports = class Dungeons {
   }
 
   async _deferredExtractionWorkerTick() {
-    // Skip if the user is currently in any active dungeon (keeps gameplay smooth)
-    if (this.settings?.userActiveDungeon) return;
+    // Extractions run regardless of active dungeon state.
+    // Mid-combat extraction throttling (500ms/dungeon) handles lag prevention.
 
     const channelKey = this._deferredExtractionQueue.shift();
     if (!channelKey) return;
@@ -1535,11 +1535,124 @@ module.exports = class Dungeons {
     this._mobSpawnLoopInFlight = false;
   }
 
-  _computeNextMobSpawnDelayMs() {
-    // Throttled: base 6s with ±20% variance (4.8-7.2s) to reduce bursts
-    const baseInterval = 6000;
-    const variance = baseInterval * 0.2;
+  _computeNextMobSpawnDelayMs(dungeonState) {
+    // Phased spawn rate: rapid fill → moderate → steady
+    const mobCount = dungeonState?.mobs?.activeMobs?.length || 0;
+    const targetCount = dungeonState?.mobs?.targetCount || 100;
+    const fillRatio = targetCount > 0 ? mobCount / targetCount : 0;
+
+    let baseInterval;
+    if (fillRatio < (this._spawnPhases?.rapid ?? 0.3)) {
+      baseInterval = 800;                                          // Rapid: 800ms
+    } else if (fillRatio < (this._spawnPhases?.moderate ?? 0.7)) {
+      baseInterval = 1500 + (fillRatio - 0.3) * 2500;             // 1500→2500ms
+    } else {
+      baseInterval = 3000 + (fillRatio - 0.7) * 3333;             // 3000→4000ms
+    }
+
+    const variance = baseInterval * 0.15;
     return baseInterval - variance + Math.random() * variance * 2;
+  }
+
+  /**
+   * Build precomputed O(1) typed-array lookup tables for rank-based values.
+   * Called once from start() and on dungeonRanks setting changes.
+   */
+  _buildRankLookupTables() {
+    const ranks = this.settings.dungeonRanks || ['E','D','C','B','A','S','SS','SSS','NH','Monarch','Monarch+','Shadow Monarch'];
+    const n = ranks.length;
+
+    // Flat resurrection costs (Step 1)
+    this._flatResCostTable = new Float32Array([5, 8, 12, 18, 25, 35, 50, 70, 95, 120, 150, 200].slice(0, n));
+
+    // Mob base stats — quadratic+linear scaling (Step 2a)
+    this._mobStatTable = {
+      strength:     new Float32Array(n),
+      agility:      new Float32Array(n),
+      intelligence: new Float32Array(n),
+      vitality:     new Float32Array(n),
+    };
+    for (let i = 0; i < n; i++) {
+      this._mobStatTable.strength[i]     = 100 + i * 50 + Math.floor(i * i * 15);
+      this._mobStatTable.agility[i]      = 80  + i * 40 + Math.floor(i * i * 12);
+      this._mobStatTable.intelligence[i] = 60  + i * 30 + Math.floor(i * i * 8);
+      this._mobStatTable.vitality[i]     = 150 + i * 100 + Math.floor(i * i * 40);
+    }
+
+    // Boss HP bonus — piecewise: polynomial early, logarithmic taper late (Step 2c)
+    this._bossHPBonusTable = new Float32Array(n);
+    for (let i = 0; i < n; i++) {
+      if (i <= 7) {
+        this._bossHPBonusTable[i] = Math.pow(i + 1, 2.5) * 50;
+      } else {
+        const sssValue = Math.pow(8, 2.5) * 50; // ~9051
+        this._bossHPBonusTable[i] = sssValue + 2000 * Math.log2(i - 6);
+      }
+    }
+
+    // Spawn phase boundaries (Step 3)
+    this._spawnPhases = { rapid: 0.3, moderate: 0.7 };
+
+    // Clear stale rank stats cache
+    this._rankStatsCache?.clear?.();
+  }
+
+  /**
+   * Attempt mid-combat extraction of a dead mob into the shadow army.
+   * Throttled: max 1 extraction attempt per 500ms per dungeon to prevent lag.
+   * Fire-and-forget — does not block combat tick.
+   */
+  async _attemptCombatExtraction(channelKey, deadMob, isBoss = false) {
+    const now = Date.now();
+    const lastAttempt = this._lastExtractionAttempt?.get(channelKey) || 0;
+    if (now - lastAttempt < 500) return null;
+    if (!this._lastExtractionAttempt) this._lastExtractionAttempt = new Map();
+    this._lastExtractionAttempt.set(channelKey, now);
+
+    const shadowArmy = this.getPluginInstance('ShadowArmy');
+    if (!shadowArmy?.attemptDungeonExtraction) return null;
+
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) return null;
+
+    const userRank = this.soloLevelingStats?.settings?.rank || 'E';
+    const userLevel = this.soloLevelingStats?.settings?.level || 1;
+    const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};
+
+    try {
+      const result = await shadowArmy.attemptDungeonExtraction(
+        deadMob.id, userRank, userLevel, userStats,
+        deadMob.rank, deadMob.stats, deadMob.strength,
+        dungeon.beastFamilies || [], isBoss
+      );
+      if (result?.success && result?.shadow) {
+        // Inject directly into SOURCE dungeon's allocation (deploy where mob died)
+        const normalized = this.normalizeShadowId(result.shadow);
+        if (normalized) {
+          const currentAllocation = this.shadowAllocations.get(channelKey) || [];
+          currentAllocation.push(normalized);
+          this.shadowAllocations.set(channelKey, currentAllocation);
+
+          // Sync dungeon-local view
+          if (dungeon.shadowAllocation) {
+            dungeon.shadowAllocation.shadows = currentAllocation;
+            dungeon.shadowAllocation.totalPower = (dungeon.shadowAllocation.totalPower || 0) +
+              (this.getShadowCombatScore?.(normalized) || 0);
+            dungeon.shadowAllocation.updatedAt = Date.now();
+          }
+          if (dungeon.boss) {
+            dungeon.boss.expectedShadowCount = currentAllocation.length;
+          }
+        }
+
+        // Next regular preSplitShadowArmy cycle (1-min TTL) will redistribute globally
+        this.debugLog?.('ARISE', `Mid-combat extraction: ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → deployed to ${channelKey}`);
+      }
+      return result;
+    } catch (e) {
+      this.errorLog('ARISE', 'Combat extraction failed:', e);
+      return null;
+    }
   }
 
   async _mobSpawnLoopTick(isVisible = true) {
@@ -1575,7 +1688,7 @@ module.exports = class Dungeons {
         }
 
         this.spawnMobs(channelKey);
-        this._mobSpawnNextAt.set(channelKey, now + this._computeNextMobSpawnDelayMs());
+        this._mobSpawnNextAt.set(channelKey, now + this._computeNextMobSpawnDelayMs(dungeon));
         spawns++;
       }
     }
@@ -1620,7 +1733,7 @@ module.exports = class Dungeons {
       // Shadow attacks
       if (this.shadowAttackIntervals.has(channelKey)) {
         const activeInterval = this._shadowActiveIntervalMs.get(channelKey) || 3000;
-        const backgroundInterval = this._shadowBackgroundIntervalMs.get(channelKey) || 15000;
+        const backgroundInterval = this._shadowBackgroundIntervalMs.get(channelKey) || 5000;
         const intervalTime = isActive ? activeInterval : backgroundInterval;
         const lastTime = this._lastShadowAttackTime.get(channelKey) || now;
         const elapsed = now - lastTime;
@@ -1636,7 +1749,7 @@ module.exports = class Dungeons {
       // Boss attacks
       if (this.bossAttackTimers.has(channelKey) && dungeon.boss?.hp > 0) {
         const activeInterval = 1000;
-        const backgroundInterval = this._bossBackgroundIntervalMs.get(channelKey) || 15000;
+        const backgroundInterval = this._bossBackgroundIntervalMs.get(channelKey) || 5000;
         const intervalTime = isActive ? activeInterval : backgroundInterval;
         const lastTime = this._lastBossAttackTime.get(channelKey) || now;
         const elapsed = now - lastTime;
@@ -1651,7 +1764,7 @@ module.exports = class Dungeons {
       // Mob attacks
       if (this.mobAttackTimers.has(channelKey)) {
         const activeInterval = 1000;
-        const backgroundInterval = this._mobBackgroundIntervalMs.get(channelKey) || 15000;
+        const backgroundInterval = this._mobBackgroundIntervalMs.get(channelKey) || 5000;
         const intervalTime = isActive ? activeInterval : backgroundInterval;
         const lastTime = this._lastMobAttackTime.get(channelKey) || now;
         const elapsed = now - lastTime;
@@ -1721,6 +1834,9 @@ module.exports = class Dungeons {
 
     // Load settings ONCE (uses IndexedDB if available, fallback to BdApi.Data)
     await this.loadSettings();
+
+    // Build O(1) lookup tables for rank-based values (resurrection costs, mob stats, boss HP)
+    this._buildRankLookupTables();
 
     // TESTING MODE: Force spawn chance to 100%
     if (this.settings.spawnChance !== 100) {
@@ -1889,6 +2005,7 @@ module.exports = class Dungeons {
     if (this._personalityCache) this._personalityCache.clear();
     if (this._memberWidthCache) this._memberWidthCache.clear();
     if (this._containerCache) this._containerCache.clear();
+    if (this._lastExtractionAttempt) this._lastExtractionAttempt.clear();
     if (this._mobSpawnQueue) this._mobSpawnQueue.clear();
     if (this.cache) {
       this.cache.clear();
@@ -3598,9 +3715,9 @@ module.exports = class Dungeons {
     const bossVitality = bossBaseStats.vitality;
     const bossPerception = bossBaseStats.perception;
 
-    // SIMPLE BOSS HP: remove extra HP scaling.
-    // Boss difficulty should come from stats/damage, not from inflated HP pools.
-    const finalBossHP = Math.floor(100 + bossVitality * 10);
+    // Boss HP: base + vitality + rank bonus (piecewise: polynomial early, logarithmic taper late)
+    const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
+    const finalBossHP = Math.floor(100 + bossVitality * 10 + rankBonus);
 
     // BOSS MAGIC BEAST TYPE (biome-appropriate)
     const bossBeastType = this.selectMagicBeastType(
@@ -3786,7 +3903,7 @@ module.exports = class Dungeons {
 
     // Start first spawn immediately (no delay), then schedule via global loop
     this.spawnMobs(channelKey);
-    this._mobSpawnNextAt.set(channelKey, Date.now() + this._computeNextMobSpawnDelayMs());
+    this._mobSpawnNextAt.set(channelKey, Date.now() + this._computeNextMobSpawnDelayMs(dungeon));
     this._ensureMobSpawnLoop();
 
     // Natural spawning handles capacity organically
@@ -5086,7 +5203,7 @@ module.exports = class Dungeons {
   /**
    * Calculate base boss stats based on rank.
    * Bosses are intentionally stronger than mobs of the same rank.
-   * Multiplier: 1.3–1.7× mob baseline to keep bosses 30–70% stronger.
+   * Multiplier: 2.2–3.0× mob baseline to keep bosses significantly stronger.
    * @param {number} rankIndex - Index of rank in dungeonRanks array
    * @returns {Object} Base boss stats { strength, agility, intelligence, vitality, perception }
    */
@@ -5114,21 +5231,23 @@ module.exports = class Dungeons {
    * @returns {Object} Base mob stats { strength, agility, intelligence, vitality }
    */
   calculateMobBaseStats(rankIndex) {
-    // PERFORMANCE: Cache rank-based calculations to avoid recomputation in hot paths
-    const cacheKey = `mob_${rankIndex}`;
-    if (this._rankStatsCache.has(cacheKey)) {
-      return this._rankStatsCache.get(cacheKey);
+    // O(1) lookup from precomputed typed arrays (quadratic+linear scaling)
+    const i = Math.min(rankIndex, (this._mobStatTable?.strength?.length || 12) - 1);
+    if (this._mobStatTable) {
+      return {
+        strength:     this._mobStatTable.strength[i],
+        agility:      this._mobStatTable.agility[i],
+        intelligence: this._mobStatTable.intelligence[i],
+        vitality:     this._mobStatTable.vitality[i],
+      };
     }
-
-    const stats = {
-      strength: 100 + rankIndex * 50, // E: 100, S: 350
-      agility: 80 + rankIndex * 40, // E: 80, S: 280
-      intelligence: 60 + rankIndex * 30, // E: 60, S: 210
-      vitality: 150 + rankIndex * 100, // E: 150, S: 650
+    // Fallback if tables not built yet
+    return {
+      strength:     100 + rankIndex * 50 + Math.floor(rankIndex * rankIndex * 15),
+      agility:      80  + rankIndex * 40 + Math.floor(rankIndex * rankIndex * 12),
+      intelligence: 60  + rankIndex * 30 + Math.floor(rankIndex * rankIndex * 8),
+      vitality:     150 + rankIndex * 100 + Math.floor(rankIndex * rankIndex * 40),
     };
-
-    this._rankStatsCache.set(cacheKey, stats);
-    return stats;
   }
 
   // ==== HP/MANA REGENERATION SYSTEM ====
@@ -5296,10 +5415,10 @@ module.exports = class Dungeons {
     // At any level: full pool refills in ~20s minimum. That means in a tough fight
     // you can burn through your pool and feel the pressure for 20s before full recovery.
     if (needsManaRegen) {
-      const baseRate = 0.005;
-      const statRate = (Math.sqrt(intelligence) / 12) * 0.005; // sqrt diminishing returns
-      const levelRate = (level / 10) * 0.002;
-      const totalRate = Math.min(0.05, baseRate + statRate + levelRate); // Hard cap: 5%/s (20s to full)
+      const baseRate = 0.008;
+      const statRate = (Math.sqrt(intelligence) / 12) * 0.007; // sqrt diminishing returns
+      const levelRate = (level / 10) * 0.003;
+      const totalRate = Math.min(0.10, baseRate + statRate + levelRate); // Hard cap: 10%/s (10s to full)
 
       const manaRegen = Math.max(1, Math.floor(this.settings.userMaxMana * totalRate));
       const oldMana = this.settings.userMana;
@@ -6050,7 +6169,7 @@ module.exports = class Dungeons {
       .sort((a, b) => getShadowScore(b) - getShadowScore(a));
 
     const pickForDungeon = (dungeonRankIndex, count) => {
-      const windows = [1, 2, 4, 999];
+      const windows = [0, 1, 2, 999]; // Exact → ±1 → ±2 → any
       const selected = [];
 
       for (const window of windows) {
@@ -6059,8 +6178,11 @@ module.exports = class Dungeons {
           if (selected.length >= count) break;
           const id = getShadowId(s);
           if (!id || assignedIds.has(id)) continue;
-          const diff = Math.abs(getRankIndex(s.rank) - dungeonRankIndex);
+          const shadowRank = getRankIndex(s.rank);
+          const diff = Math.abs(shadowRank - dungeonRankIndex);
           if (diff > window) continue;
+          // Rank floor: in tight windows (0-2), skip shadows >1 rank below dungeon
+          if (window <= 2 && shadowRank < dungeonRankIndex - 1) continue;
           assignedIds.add(id);
           selected.push(s);
         }
@@ -6225,7 +6347,7 @@ module.exports = class Dungeons {
         }
       }
     }
-    let backgroundInterval = 15000 + Math.random() * 5000; // 15-20s
+    let backgroundInterval = 5000 + Math.random() * 2000; // 5-7s
     const isWindowVisible = this.isWindowVisible();
     if (!isWindowVisible) {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
@@ -6276,7 +6398,7 @@ module.exports = class Dungeons {
 
     // Active: 1s, Background: 15-20s (randomized for variance)
     // If window is hidden, use much longer intervals to prevent crashes
-    let backgroundInterval = 15000 + Math.random() * 5000; // 15-20s
+    let backgroundInterval = 5000 + Math.random() * 2000; // 5-7s
     if (!isWindowVisible) {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
       backgroundInterval = 60000 + Math.random() * 60000; // 60-120s (much slower)
@@ -6328,7 +6450,7 @@ module.exports = class Dungeons {
 
     // Active: 1s, Background: 15-20s (randomized for variance)
     // If window is hidden, use much longer intervals to prevent crashes
-    let backgroundInterval = 15000 + Math.random() * 5000; // 15-20s
+    let backgroundInterval = 5000 + Math.random() * 2000; // 5-7s
     if (!isWindowVisible) {
       // Window hidden - use much longer intervals (60-120s) to prevent crashes
       backgroundInterval = 60000 + Math.random() * 60000; // 60-120s (much slower)
@@ -6653,7 +6775,7 @@ module.exports = class Dungeons {
             : 250;
         const maxShadowsToProcess = isWindowVisible
           ? Math.min(combatReadyShadows.length, maxSimulated)
-          : Math.min(10, Math.floor(combatReadyShadows.length * 0.2)); // background stays heavily throttled
+          : Math.min(20, Math.floor(combatReadyShadows.length * 0.5)); // background: 50% sample (min 20)
 
         const stride =
           maxShadowsToProcess > 0
@@ -8068,6 +8190,9 @@ module.exports = class Dungeons {
         if (targetMob.hp <= 0) {
           this._onMobKilled(channelKey, dungeon, targetMob.rank);
 
+          // ARISE: Attempt mid-combat extraction (fire-and-forget, throttled 500ms/dungeon)
+          this._attemptCombatExtraction(channelKey, targetMob, false).catch(() => {});
+
           // Track shadow contribution for XP (with guard clauses)
           const shadowId = this.getShadowIdValue(shadow);
           if (shadowId) {
@@ -8413,25 +8538,17 @@ module.exports = class Dungeons {
    * Higher rank shadows cost more mana to resurrect
    */
   getResurrectionCost(shadowRank) {
-    // Cost = maxMana * shadowRankPercent * (1 - userRankDiscount).
-    // Higher user rank = cheaper resurrections. Shadow Monarch = 100% discount (free).
-    const rankPercent = {
-      E: 0.005, D: 0.01, C: 0.015, B: 0.02, A: 0.03,
-      S: 0.04, SS: 0.05, SSS: 0.06, NH: 0.08,
-      Monarch: 0.10, 'Monarch+': 0.12, 'Shadow Monarch': 0.15,
-    };
+    // Flat mana cost per shadow rank (from precomputed lookup table).
+    // Higher user rank = up to 50% discount. Never free — prevents trivializing mana economy.
+    const rankIndex = this.getRankIndexValue(shadowRank);
+    const flatCost = this._flatResCostTable?.[rankIndex] ?? 10;
 
-    const pct = rankPercent[shadowRank] || 0.01;
-    const maxMana = this.settings.userMaxMana || 200;
-    const baseCost = maxMana * pct;
-
-    // User rank discount: E=0%, Shadow Monarch=100% (free revives)
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
-    const userRankIndex = this.getRankIndexValue(userRank); // 0 (E) to 11 (Shadow Monarch)
+    const userRankIndex = this.getRankIndexValue(userRank);
     const maxRankIndex = (this.settings.dungeonRanks?.length || 12) - 1;
     const discount = maxRankIndex > 0 ? userRankIndex / maxRankIndex : 0;
 
-    return Math.max(0, Math.ceil(baseCost * (1 - discount)));
+    return Math.max(1, Math.ceil(flatCost * (1 - discount * 0.5)));
   }
 
   /**

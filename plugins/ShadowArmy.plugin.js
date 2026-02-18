@@ -6188,7 +6188,7 @@ module.exports = class ShadowArmy {
    * Operations:
    * 1. Validate baseAmount > 0
    * 2. If shadowIds provided, grant XP to those specific shadows
-   * 3. Otherwise, get top 7 generals (only generals receive XP from messages)
+   * 3. Otherwise, all shadows receive XP from messages (shared experience)
    * 4. For each shadow:
    *    - Add XP to shadow
    *    - Check if XP exceeds level-up requirement
@@ -6209,8 +6209,8 @@ module.exports = class ShadowArmy {
       const allShadows = await this.getAllShadows();
       shadowsToGrant = allShadows.filter((s) => shadowIds.includes(s.id));
     } else {
-      // Default: grant XP to top 7 generals only (from messages)
-      shadowsToGrant = await this.getTopGenerals();
+      // All shadows receive XP from messages (shared experience)
+      shadowsToGrant = await this.getAllShadows();
     }
 
     // Guard clause: Return early if no shadows to grant XP to
@@ -6401,6 +6401,11 @@ module.exports = class ShadowArmy {
 
     // Guard clause: Can't rank up if already max rank
     if (!nextRank) {
+      return { success: false };
+    }
+
+    // Ceiling: Monarch+ and Shadow Monarch are player-exclusive ranks
+    if (nextRank === 'Monarch+' || nextRank === 'Shadow Monarch') {
       return { success: false };
     }
 
