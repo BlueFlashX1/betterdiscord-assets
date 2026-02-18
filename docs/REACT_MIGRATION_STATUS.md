@@ -25,7 +25,11 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 | CSSPicker | ⬜ SKIP | 0 | 23 refs | — |
 | UserPanelDockMover | ⬜ SKIP | 0 | 6 refs | — |
 
-### Summary: 8/14 done · 3 remaining · 3 skipped
+### Summary: 11/14 complete · 3 remaining to migrate
+
+- **8 migrated** to React (SkillTree, ShadowArmy, TitleManager, ChatNavArrows, HSLDockAutoHide, HSLWheelBridge, LevelProgressBar, ShadowExchange)
+- **3 intentionally skipped** — DOM is the correct approach for these plugins (see below)
+- **3 remaining** — Dungeons, CriticalHit, SoloLevelingStats
 
 ## Remaining Work
 
@@ -39,13 +43,15 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 
 **SoloLevelingStats** — Migrate stats panel overlay to React. Keep DOM for event system, XP calculations, and ephemeral level-up notifications. 12 MutationObservers could mostly be replaced.
 
-### ⬜ SKIP (DOM is correct)
+### ⬜ SKIP (DOM is the correct choice — no migration needed)
 
-**SoloLevelingToasts** — Toasts are intentionally short-lived floating overlays. React adds overhead with no stability benefit.
+These 3 plugins are **intentionally staying DOM-based** because React would add overhead with zero benefit:
 
-**CSSPicker** — Inspection overlay tool that intentionally operates outside Discord's React tree. DOM is the right tool.
+**SoloLevelingToasts** — Toast notifications are ephemeral floating overlays (~2-5 seconds lifespan). They appear over Discord's UI, never inside React's component tree. React's diffing/lifecycle would add latency to what needs to be instant fire-and-forget DOM insertion. Zero MutationObservers, no re-render conflicts.
 
-**UserPanelDockMover** — Pure CSS repositioning via class toggling. No UI rendering at all.
+**CSSPicker** — A CSS inspection overlay tool that operates *outside* Discord's React tree by design. It creates floating highlight boxes and info panels over arbitrary DOM elements. Needs direct DOM access to measure/position elements. React would fight against the very thing it's trying to inspect.
+
+**UserPanelDockMover** — Pure CSS repositioning via class toggling (`classList.add/remove`). Has zero UI rendering — it just moves Discord's existing user panel dock by toggling CSS classes. There's literally nothing to render with React.
 
 ## Migration Order
 
