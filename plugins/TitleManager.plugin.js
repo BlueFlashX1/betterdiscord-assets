@@ -1055,17 +1055,18 @@ module.exports = class SoloLevelingTitleManager {
     if (document.getElementById(styleId)) return;
 
     const cssContent = `
-      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji = 32×32) */
+      /* Main Button - Matching Discord native toolbar buttons (GIF, Stickers, Emoji) */
       .tm-title-button-wrapper {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 0 2px;
+        padding: 0;
+        margin: 0 1px;
         box-sizing: border-box;
       }
       .tm-title-button {
         background: transparent;
-        border: 1px solid rgba(138, 43, 226, 0.5);
+        border: none;
         border-radius: 4px;
         width: 32px;
         height: 32px;
@@ -1074,7 +1075,7 @@ module.exports = class SoloLevelingTitleManager {
         display: flex;
         align-items: center;
         justify-content: center;
-        transition: color 0.15s ease, border-color 0.15s ease, background-color 0.15s ease;
+        transition: color 0.15s ease, background-color 0.15s ease;
         margin: 0;
         flex-shrink: 0;
         padding: 0;
@@ -1090,13 +1091,12 @@ module.exports = class SoloLevelingTitleManager {
 
       .tm-title-button:hover {
         color: var(--interactive-hover, #dcddde);
-        border-color: rgba(138, 43, 226, 0.8);
-        background: rgba(138, 43, 226, 0.1);
+        background: rgba(138, 43, 226, 0.15);
       }
 
       .tm-title-button:active {
         color: var(--interactive-active, #fff);
-        border-color: rgba(138, 43, 226, 1);
+        background: rgba(138, 43, 226, 0.25);
       }
 
       .tm-title-modal {
