@@ -2085,6 +2085,7 @@ module.exports = class Dungeons {
     }
     this.allocationCache = null; // Clear allocation cache
     this.allocationCacheTime = null;
+    this._restoringDungeons = false; // Allow restore on next start()
 
     // Clear last attack time trackers
     if (this._lastShadowAttackTime) this._lastShadowAttackTime.clear();
@@ -2119,8 +2120,8 @@ module.exports = class Dungeons {
     this.hiddenComments.clear();
     this.removeDungeonButton();
     this.closeDungeonModal();
-    this.stopPanelWatcher();
-    this.stopChannelWatcher();
+    this.stopPanelWatcher?.();
+    this.stopChannelWatcher?.();
     this.currentChannelKey = null;
 
     // Clear HP bar update queue
@@ -2420,6 +2421,9 @@ module.exports = class Dungeons {
 
       if (saved) {
         this.settings = { ...this.defaultSettings, ...saved };
+        // MIGRATION: Force bossGate settings to code defaults (purge stale saved values)
+        this.settings.bossGateMinDurationMs = this.defaultSettings.bossGateMinDurationMs;
+        this.settings.bossGateRequiredMobKills = this.defaultSettings.bossGateRequiredMobKills;
         // Initialize user HP/Mana from stats if not set
         await this.initializeUserStats();
       } else {
@@ -11346,6 +11350,9 @@ module.exports = class Dungeons {
   // ==== RESTORE ACTIVE DUNGEONS ====
   async restoreActiveDungeons() {
     if (!this.storageManager) return;
+    // Guard against double-restore during rapid reload cycles
+    if (this._restoringDungeons) return;
+    this._restoringDungeons = true;
 
     // CRITICAL: Clean up any orphaned HP bars from previous session FIRST
     // This prevents lingering HP bars from old dungeons
@@ -11539,12 +11546,10 @@ module.exports = class Dungeons {
             });
           }
 
-          // MIGRATION: Sync bossGate with current settings (handles code updates mid-dungeon)
+          // MIGRATION: Force bossGate to code defaults (saved settings may have stale values)
           if (dungeon.bossGate) {
-            dungeon.bossGate.minDurationMs = Number.isFinite(this.settings?.bossGateMinDurationMs)
-              ? this.settings.bossGateMinDurationMs : 180000;
-            dungeon.bossGate.requiredMobKills = Number.isFinite(this.settings?.bossGateRequiredMobKills)
-              ? this.settings.bossGateRequiredMobKills : 0;
+            dungeon.bossGate.minDurationMs = this.defaultSettings.bossGateMinDurationMs;
+            dungeon.bossGate.requiredMobKills = this.defaultSettings.bossGateRequiredMobKills;
           }
 
           // MIGRATION: Sync mobCapacity with current formula (handles 15%→100% change)
@@ -11607,6 +11612,8 @@ module.exports = class Dungeons {
       }
     } catch (error) {
       this.errorLog('Failed to restore dungeons', error);
+    } finally {
+      this._restoringDungeons = false;
     }
   }
 
