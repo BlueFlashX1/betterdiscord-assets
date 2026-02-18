@@ -3008,14 +3008,8 @@ module.exports = class Dungeons {
         if (!this.messageObserver || !this._messageContainerRef) return;
         if (!document.body.contains(this._messageContainerRef)) {
           this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
-          this.messageObserver.disconnect();
-          this._observers.delete(this.messageObserver);
-          const newContainer = this._findMessageContainer();
-          if (newContainer) {
-            this._messageContainerRef = newContainer;
-            this.messageObserver.observe(newContainer, { childList: true, subtree: true });
-            this._observers.add(this.messageObserver);
-          }
+          this.stopMessageObserver();
+          this.startMessageObserver();
         }
       }, 3000);
       this._intervals?.add?.(this._messageContainerReattachId);
@@ -9643,9 +9637,12 @@ module.exports = class Dungeons {
       }
 
       this._bossBarCache.set(channelKey, payloadKey);
-      // Preserve HP state as data attribute for recovery after React re-render
+      // Preserve HP state + CSS var for recovery after React re-render
       const hpContainer = hpBar?.closest('.dungeon-boss-hp-container');
-      if (hpContainer) hpContainer.setAttribute('data-hp-percent', hpPercent);
+      if (hpContainer) {
+        hpContainer.setAttribute('data-hp-percent', hpPercent);
+        hpContainer.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+      }
 
       // Participation indicator
       const participationBadge = dungeon.userParticipating
@@ -9739,6 +9736,7 @@ module.exports = class Dungeons {
         margin-top: 4px !important;
       ">
         <div class="hp-bar-fill" style="
+          width: var(--boss-hp-percent, 0%) !important;
           height: 100% !important;
           background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 40%, #ec4899 80%, #f97316 100%) !important;
           border-radius: 8px !important;
@@ -9916,7 +9914,10 @@ module.exports = class Dungeons {
         bossHpContainer.className = 'dungeon-boss-hp-container';
         bossHpContainer.setAttribute('data-channel-key', channelKey);
         bossHpContainer.style.zIndex = '99';
-        bossHpContainer.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+        // Set initial HP percent from dungeon data
+        const dungeon = this.activeDungeons?.get(channelKey);
+        const initHpPercent = dungeon?.boss ? (dungeon.boss.hp / dungeon.boss.maxHp) * 100 : 100;
+        bossHpContainer.style.setProperty('--boss-hp-percent', `${initHpPercent}%`);
 
         // Verify container is still in DOM before inserting
         if (!container.isConnected) {
@@ -11815,19 +11816,29 @@ module.exports = class Dungeons {
 
       .dungeon-indicator { cursor: pointer; }
 
-      /* CSS-based dungeon channel indicator (survives React re-renders) */
-      [data-dungeon-active]::after {
-        content: '\u2694\uFE0F';
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        margin-left: 6px;
-        width: 16px;
-        height: 16px;
-        font-size: 14px;
-        animation: dungeonPulse 2s infinite;
-        flex-shrink: 0;
-        pointer-events: none;
+      /* CSS-based dungeon channel indicator — flame/aura glow (survives React re-renders) */
+      [data-dungeon-active] {
+        text-shadow:
+          0 0 6px rgba(139, 92, 246, 0.8),
+          0 0 12px rgba(139, 92, 246, 0.5),
+          0 0 20px rgba(124, 58, 237, 0.3);
+        animation: dungeonAura 2s ease-in-out infinite;
+      }
+      @keyframes dungeonAura {
+        0%, 100% {
+          text-shadow:
+            0 0 6px rgba(139, 92, 246, 0.8),
+            0 0 12px rgba(139, 92, 246, 0.5),
+            0 0 20px rgba(124, 58, 237, 0.3);
+          filter: brightness(1.1);
+        }
+        50% {
+          text-shadow:
+            0 0 8px rgba(236, 72, 153, 0.9),
+            0 0 16px rgba(139, 92, 246, 0.7),
+            0 0 28px rgba(124, 58, 237, 0.5);
+          filter: brightness(1.3);
+        }
       }
       .dungeons-plugin-button {
         width: 32px;
