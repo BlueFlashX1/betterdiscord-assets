@@ -2286,7 +2286,7 @@ module.exports = class SkillTree {
         width: 32px;
         height: 32px;
         background: transparent;
-        border: none;
+        border: 1px solid rgba(138, 43, 226, 0.3);
         border-radius: 4px;
         cursor: pointer;
         display: flex;
@@ -2301,10 +2301,12 @@ module.exports = class SkillTree {
       .st-skill-tree-button:hover {
         color: var(--interactive-hover, #dcddde);
         background: rgba(138, 43, 226, 0.15);
+        border-color: rgba(138, 43, 226, 0.5);
       }
       .st-skill-tree-button:active {
         color: var(--interactive-active, #fff);
         background: rgba(138, 43, 226, 0.25);
+        border-color: rgba(138, 43, 226, 0.7);
       }
       .st-skill-tree-button svg {
         width: 20px;
