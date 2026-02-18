@@ -9504,7 +9504,7 @@ module.exports = class Dungeons {
       const mobKillXP = contribution.mobsKilled * baseMobXP;
 
       // Calculate boss damage XP (proportional to damage dealt)
-      const bossMaxHP = dungeon.boss.maxHp || dungeon.boss.hp || 1000;
+      const bossMaxHP = dungeon.boss?.maxHp || dungeon.boss?.hp || 1000;
       const bossDamagePercent = Math.min(1.0, contribution.bossDamage / bossMaxHP);
       const bossDamageXP = bossDamagePercent * baseBossXP;
 
@@ -11494,6 +11494,22 @@ module.exports = class Dungeons {
                 }
               }
             });
+          }
+
+          // MIGRATION: Sync bossGate with current settings (handles code updates mid-dungeon)
+          if (dungeon.bossGate) {
+            dungeon.bossGate.minDurationMs = Number.isFinite(this.settings?.bossGateMinDurationMs)
+              ? this.settings.bossGateMinDurationMs : 180000;
+            dungeon.bossGate.requiredMobKills = Number.isFinite(this.settings?.bossGateRequiredMobKills)
+              ? this.settings.bossGateRequiredMobKills : 0;
+          }
+
+          // MIGRATION: Sync mobCapacity with current formula (handles 15%→100% change)
+          if (dungeon.mobs?.targetCount && dungeon.mobs.mobCapacity) {
+            const correctCap = Math.floor(Math.max(200, Math.min(10000, dungeon.mobs.targetCount)));
+            if (dungeon.mobs.mobCapacity < correctCap) {
+              dungeon.mobs.mobCapacity = correctCap;
+            }
           }
 
           this.activeDungeons.set(dungeon.channelKey, dungeon);
