@@ -938,7 +938,7 @@ module.exports = class Dungeons {
       shadowBossFocusLowHpThreshold: 0.4, // 40% boss HP execute threshold
       bossGateEnabled: true, // Prevent immediate boss burn on fresh dungeon spawn
       bossGateMinDurationMs: 180000, // Boss unlock requires at least 3 minutes elapsed
-      bossGateRequiredMobKills: 25, // And at least N mob kills before boss can be damaged
+      bossGateRequiredMobKills: 0, // No mob kill requirement — timer only
       shadowPressureMobScaleStep: 0.12, // mobHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureScaleMax: 2.75, // Safety cap for pressure scaling
@@ -953,6 +953,7 @@ module.exports = class Dungeons {
         'S',
         'SS',
         'SSS',
+        'SSS+',
         'NH',
         'Monarch',
         'Monarch+',
@@ -1470,7 +1471,7 @@ module.exports = class Dungeons {
 
   async _deferredExtractionWorkerTick() {
     // Extractions run regardless of active dungeon state.
-    // Mid-combat extraction throttling (500ms/dungeon) handles lag prevention.
+    // Every dead mob gets an extraction attempt (batched via microtask to avoid blocking).
 
     const channelKey = this._deferredExtractionQueue.shift();
     if (!channelKey) return;
@@ -1599,17 +1600,10 @@ module.exports = class Dungeons {
   }
 
   /**
-   * Attempt mid-combat extraction of a dead mob into the shadow army.
-   * Throttled: max 1 extraction attempt per 500ms per dungeon to prevent lag.
-   * Fire-and-forget — does not block combat tick.
+   * Attempt extraction of a single dead mob into the shadow army.
+   * No throttle — every dead mob gets a chance. Async fire-and-forget.
    */
   async _attemptCombatExtraction(channelKey, deadMob, isBoss = false) {
-    const now = Date.now();
-    const lastAttempt = this._lastExtractionAttempt?.get(channelKey) || 0;
-    if (now - lastAttempt < 500) return null;
-    if (!this._lastExtractionAttempt) this._lastExtractionAttempt = new Map();
-    this._lastExtractionAttempt.set(channelKey, now);
-
     const shadowArmy = this.getPluginInstance('ShadowArmy');
     if (!shadowArmy?.attemptDungeonExtraction) return null;
 
@@ -1646,7 +1640,6 @@ module.exports = class Dungeons {
           }
         }
 
-        // Next regular preSplitShadowArmy cycle (1-min TTL) will redistribute globally
         this.debugLog?.('ARISE', `Mid-combat extraction: ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → deployed to ${channelKey}`);
       }
       return result;
@@ -1654,6 +1647,23 @@ module.exports = class Dungeons {
       this.errorLog('ARISE', 'Combat extraction failed:', e);
       return null;
     }
+  }
+
+  /**
+   * Batch-extract all dead mobs from a combat tick. Queues as a single
+   * microtask to avoid blocking the combat loop — processes sequentially
+   * inside the microtask so we never fire N concurrent promises.
+   */
+  _batchExtractDeadMobs(channelKey, deadMobs, isBoss = false) {
+    if (!deadMobs || deadMobs.length === 0) return;
+    // Fire a single async microtask — does not block the combat tick
+    Promise.resolve().then(async () => {
+      for (const mob of deadMobs) {
+        try {
+          await this._attemptCombatExtraction(channelKey, mob, isBoss);
+        } catch (_) { /* fire-and-forget */ }
+      }
+    });
   }
 
   async _mobSpawnLoopTick(isVisible = true) {
@@ -3808,7 +3818,7 @@ module.exports = class Dungeons {
           : 180000,
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
-          : 25,
+          : 0,
         unlockedAt: null,
       },
       difficultyScale: {
@@ -4905,7 +4915,7 @@ module.exports = class Dungeons {
           : 180000,
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
-          : 25,
+          : 0,
         unlockedAt: null,
       };
     }
@@ -4918,11 +4928,11 @@ module.exports = class Dungeons {
     const kills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
     const minDurationMs = Math.max(
       0,
-      Number.isFinite(dungeon.bossGate.minDurationMs) ? dungeon.bossGate.minDurationMs : 60000
+      Number.isFinite(dungeon.bossGate.minDurationMs) ? dungeon.bossGate.minDurationMs : 180000
     );
     const requiredMobKills = Math.max(
       0,
-      Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 25
+      Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 0
     );
 
     if (elapsed < minDurationMs || kills < requiredMobKills) return false;
@@ -6188,7 +6198,9 @@ module.exports = class Dungeons {
     const reserveCount = Math.max(1, Math.floor(shadowsSorted.length * reservePercent));
 
     // Reserve = weakest shadows (end of the sorted array, since sorted strongest-first)
-    const reserveShadows = shadowsSorted.slice(-reserveCount);
+    // Normalize reserve shadows so ShadowSenses can match by .id (compressed shadows only have .i)
+    const reserveShadows = shadowsSorted.slice(-reserveCount)
+      .map(s => this.normalizeShadowId(s) || s);
     const reserveIds = new Set(reserveShadows.map(s => getShadowId(s)));
     const combatPool = shadowsSorted.filter(s => !reserveIds.has(getShadowId(s)));
 
@@ -7074,15 +7086,17 @@ module.exports = class Dungeons {
             combatSnapshot.mobById
           );
 
-          // Process killed mobs (XP, extraction, notifications)
+          // Process killed mobs (XP, notifications) and collect for batch extraction
+          const deadMobsThisTick = [];
           mobDamageMap.forEach((_damage, mobId) => {
             const mob = combatSnapshot.mobById.get(mobId);
             if (!mob || mob.hp > 0) return; // Only process dead mobs
             analytics.mobsKilledThisWave++;
             this._onMobKilled(channelKey, dungeon, mob.rank);
-            // ARISE: Attempt mid-combat extraction (throttled 500ms/dungeon)
-            this._attemptCombatExtraction(channelKey, mob, false).catch(() => {});
+            deadMobsThisTick.push(mob);
           });
+          // ARISE: Batch-extract all dead mobs (single microtask, sequential inside)
+          this._batchExtractDeadMobs(channelKey, deadMobsThisTick, false);
         }
 
         this._cleanupDungeonActiveMobs(dungeon);
@@ -8242,7 +8256,7 @@ module.exports = class Dungeons {
         if (targetMob.hp <= 0) {
           this._onMobKilled(channelKey, dungeon, targetMob.rank);
 
-          // ARISE: Attempt mid-combat extraction (fire-and-forget, throttled 500ms/dungeon)
+          // ARISE: Extract every dead mob (fire-and-forget, no throttle)
           this._attemptCombatExtraction(channelKey, targetMob, false).catch(() => {});
 
           // Track shadow contribution for XP (with guard clauses)

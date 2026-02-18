@@ -4613,8 +4613,9 @@ module.exports = class ShadowArmy {
       intelligence = userRank;
       perception = userStats;
       strength = targetRank;
-      userRank = targetStrength;
-      targetRank = userRank;
+      const legacyRank = targetStrength; // string rank was passed as 4th arg
+      userRank = legacyRank;
+      targetRank = legacyRank;
       targetStrength = 0;
       userStats = {
         strength: Number.isFinite(strength) ? strength : 0,
