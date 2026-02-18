@@ -1,6 +1,6 @@
 # React Migration Status
 
-> Last updated: Feb 17, 2026
+> Last updated: Feb 17, 2026 (CriticalHit v3.4.0 — CSS-only migration)
 
 ## Overview
 
@@ -19,17 +19,17 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 | ~~ShadowArmy~~ | ✅ Done (v3.6) | createRoot + factory | extraction toasts | — |
 | ~~TitleManager~~ | ✅ Done (v2.0) | createRoot + factory | button only | — |
 | **Dungeons** | ❌ DOM | 9 refs | 155 refs | 🔴 HIGH |
-| **CriticalHit** | ⚠️ Mixed | 29 refs (settings) | 194 refs + 38 observers | 🟡 PARTIAL |
+| ~~CriticalHit~~ | ✅ Done (v3.4) | CSS-only (per-message) | animation overlay | — |
 | ~~SoloLevelingStats~~ | ✅ Done (v3.0) | createRoot + factory | ephemeral overlays | — |
 | SoloLevelingToasts | ⬜ SKIP | 0 | 37 refs | — |
 | CSSPicker | ⬜ SKIP | 0 | 23 refs | — |
 | UserPanelDockMover | ⬜ SKIP | 0 | 6 refs | — |
 
-### Summary: 12/14 complete · 2 remaining to migrate
+### Summary: 13/14 complete · 1 remaining to migrate
 
-- **9 migrated** to React (SkillTree, ShadowArmy, TitleManager, SoloLevelingStats, ChatNavArrows, HSLDockAutoHide, HSLWheelBridge, LevelProgressBar, ShadowExchange)
+- **10 migrated** (SkillTree, ShadowArmy, TitleManager, SoloLevelingStats, ChatNavArrows, HSLDockAutoHide, HSLWheelBridge, LevelProgressBar, ShadowExchange, CriticalHit)
 - **3 intentionally skipped** — DOM is the correct approach for these plugins (see below)
-- **2 remaining** — Dungeons, CriticalHit
+- **1 remaining** — Dungeons
 
 ## Remaining Work
 
@@ -39,7 +39,7 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 
 ### 🟡 PARTIAL (migrate specific parts)
 
-**CriticalHit** — Migrate message gradient styling to React patcher (currently fights re-renders via 38 MutationObservers + CSS rules map). Keep DOM for floating "CRITICAL HIT!" animations (ephemeral overlay).
+~~**CriticalHit** — ✅ Done (v3.4.0) — CSS-only migration: removed 38 MutationObservers, eliminated inline style application, made per-message CSS (`[data-message-id]` targeting) the sole styling mechanism. ~1050 lines removed. DOM retained for floating "CRITICAL HIT!" animations (ephemeral overlay). Not a React Patcher migration — per-message CSS is superior for this use case.~~
 
 ~~**SoloLevelingStats** — ✅ Done (v3.0.0) — Chat UI panel migrated to React component tree. Stats, quests, activity, HP/MP bars all declarative. DOM retained only for event system, XP calculations, and ephemeral level-up notifications.~~
 
@@ -60,7 +60,7 @@ These 3 plugins are **intentionally staying DOM-based** because React would add 
 3. ~~**TitleManager** — ✅ Done (v2.0.0, Feb 17 2026)~~
 4. ~~**SoloLevelingStats** — ✅ Done (v3.0.0, Feb 17 2026)~~
 5. **Dungeons** — highest DOM count, most to gain, needs serious rework anyway
-6. **CriticalHit** (message styling only) — biggest observer count, stability win
+6. ~~**CriticalHit** — ✅ Done (v3.4.0, Feb 17 2026)~~
 
 ## Completed Migrations (Feb 17, 2026)
 
@@ -75,6 +75,7 @@ These 3 plugins are **intentionally staying DOM-based** because React would add 
 | ShadowArmy | v3.6 | createRoot + factory | Member list widget migrated |
 | TitleManager | v2.0 | createRoot + factory | Modal migrated |
 | SoloLevelingStats | v3.0 | createRoot + factory | Chat UI panel migrated |
+| CriticalHit | v3.4 | CSS-only (per-message) | 38 observers removed, ~1050 lines deleted |
 
 ## Settings Panels (Feb 17, 2026)
 
