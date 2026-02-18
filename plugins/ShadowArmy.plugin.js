@@ -9386,7 +9386,7 @@ module.exports = class ShadowArmy {
         border: 1px solid rgba(138, 43, 226, 0.4) !important;
         border-radius: 8px !important;
         padding: 12px !important;
-        margin: 12px 8px !important;
+        margin: 24px 8px 12px 8px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
