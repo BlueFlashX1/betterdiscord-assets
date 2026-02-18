@@ -1604,9 +1604,9 @@ module.exports = class Dungeons {
    * No throttle — every dead mob gets a chance. Async fire-and-forget.
    */
   async _attemptCombatExtraction(channelKey, deadMob, isBoss = false) {
-    const shadowArmy = this.getPluginInstance('ShadowArmy');
+    const shadowArmy = this.shadowArmy || this.validatePluginReference('ShadowArmy', 'storageManager');
     if (!shadowArmy?.attemptDungeonExtraction) {
-      console.log(`[Dungeons] ARISE_TRACE: SKIP — ShadowArmy plugin not available or missing attemptDungeonExtraction (shadowArmy=${!!shadowArmy})`);
+      console.log(`[Dungeons] ARISE_TRACE: SKIP — ShadowArmy plugin not available or missing attemptDungeonExtraction (shadowArmy=${!!shadowArmy}, hasMethod=${!!shadowArmy?.attemptDungeonExtraction})`);
       return null;
     }
 
