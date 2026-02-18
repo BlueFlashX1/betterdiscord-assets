@@ -226,6 +226,9 @@ function buildTitleComponents(pluginInstance) {
   return { TitleModal, TitleCard };
 }
 
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 module.exports = class SoloLevelingTitleManager {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -409,23 +412,11 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  /** React 18 createRoot with webpack fallbacks */
+  /** React 18 createRoot with shared utility + fallback */
   _getCreateRoot() {
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
     if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    try {
-      const ReactDOM = BdApi.Webpack?.getModule?.((m) => m?.createRoot && m?.createPortal);
-      if (ReactDOM?.createRoot) return ReactDOM.createRoot.bind(ReactDOM);
-    } catch (_) { /* ignore */ }
-    try {
-      const mod = BdApi.Webpack?.getModule?.((m) => {
-        const keys = Object.keys(m);
-        return keys.some((k) => typeof m[k]?.createRoot === 'function');
-      });
-      if (mod) {
-        const key = Object.keys(mod).find((k) => typeof mod[k]?.createRoot === 'function');
-        if (key) return mod[key].createRoot.bind(mod[key]);
-      }
-    } catch (_) { /* ignore */ }
     return null;
   }
 

@@ -48,6 +48,29 @@ module.exports = class ChatNavArrows {
   // ──────────────────────────────────────────────────────────────────────────
 
   _installReactPatcher() {
+    let ReactUtils;
+    try {
+      ReactUtils = require('./BetterDiscordReactUtils.js');
+    } catch (_) {
+      ReactUtils = null;
+    }
+
+    if (ReactUtils) {
+      const pluginInstance = this;
+      const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+        const component = React.createElement(pluginInstance._ArrowManager, {
+          key: 'sl-chat-nav-arrows',
+          pluginInstance,
+        });
+        ReactUtils.injectReactComponent(appNode, 'sl-chat-nav-arrows-root', component, returnValue);
+      });
+      if (!ok) {
+        console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
+      }
+      return;
+    }
+
+    // Inline fallback if BetterDiscordReactUtils.js is not available
     let MainContent = BdApi.Webpack.getByStrings('baseLayer', { defaultExport: false });
     if (!MainContent) {
       MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
@@ -64,7 +87,6 @@ module.exports = class ChatNavArrows {
       try {
         if (pluginInstance._isStopped) return returnValue;
 
-        // Find the app-mount container in the React tree
         const appNode = BdApi.Utils.findInTree(
           returnValue,
           (prop) =>
@@ -78,7 +100,6 @@ module.exports = class ChatNavArrows {
 
         if (!appNode || !appNode.props) return returnValue;
 
-        // Check for duplicate injection
         const already = BdApi.Utils.findInTree(
           returnValue,
           (prop) => prop && prop.props && prop.props.id === 'sl-chat-nav-arrows-root',
@@ -86,12 +107,10 @@ module.exports = class ChatNavArrows {
         );
         if (already) return returnValue;
 
-        // Inject our arrow manager component
         const arrowManager = React.createElement(pluginInstance._ArrowManager, {
           key: 'sl-chat-nav-arrows',
           pluginInstance,
         });
-
         const wrapper = React.createElement(
           'div',
           { id: 'sl-chat-nav-arrows-root', style: { display: 'contents' } },

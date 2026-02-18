@@ -12,11 +12,13 @@
  */
 
 class UnifiedSaveManager {
+  static SCHEMA_VERSION = 1;
+
   constructor(pluginName, userId = null) {
     this.pluginName = pluginName;
     this.userId = userId || this.getUserId();
     this.dbName = `UnifiedSaves_${this.userId}`;
-    this.dbVersion = 1;
+    this.dbVersion = UnifiedSaveManager.SCHEMA_VERSION;
     this.storeName = 'pluginData';
     this.backupStoreName = 'backups';
     this.db = null;
@@ -51,7 +53,7 @@ class UnifiedSaveManager {
         return;
       }
 
-      const request = indexedDB.open(this.dbName, this.dbVersion);
+      const request = indexedDB.open(this.dbName, UnifiedSaveManager.SCHEMA_VERSION);
 
       request.onerror = () => reject(request.error);
       request.onsuccess = () => {

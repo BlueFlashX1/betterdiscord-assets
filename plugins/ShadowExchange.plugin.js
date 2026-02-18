@@ -354,6 +354,10 @@ function buildPanelComponents(pluginInstance) {
   return { WaypointPanel, WaypointCard };
 }
 
+// ─── Shared Utilities ─────────────────────────────────────────────────────
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
 module.exports = class ShadowExchange {
@@ -1030,21 +1034,9 @@ module.exports = class ShadowExchange {
    * Discord uses React 18, which removed ReactDOM.render() in favor of createRoot().
    */
   _getCreateRoot() {
-    // Try BdApi.ReactDOM.createRoot (if BdApi exposes it)
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
     if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    // Webpack: find react-dom/client module with createRoot
-    try {
-      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
-      if (client?.createRoot) return client.createRoot.bind(client);
-    } catch (_) {}
-    // Webpack: find createRoot as an individual export
-    try {
-      const createRoot = BdApi.Webpack.getModule(
-        (m) => typeof m === "function" && m?.name === "createRoot",
-        { searchExports: true }
-      );
-      if (createRoot) return createRoot;
-    } catch (_) {}
     return null;
   }
 

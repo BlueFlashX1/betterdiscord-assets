@@ -22,6 +22,9 @@ const RANK_COLORS = {
 };
 
 const GUILD_FEED_CAP = 5000;
+const GLOBAL_FEED_CAP = 25000;
+const WIDGET_OBSERVER_DEBOUNCE_MS = 200;
+const WIDGET_REINJECT_DELAY_MS = 300;
 
 // ─── DeploymentManager ─────────────────────────────────────────────────────
 
@@ -60,7 +63,7 @@ class DeploymentManager {
     this._deployedShadowIds = new Set(this._deployments.map(d => d.shadowId));
   }
 
-  deploy(shadow, targetUser) {
+  async deploy(shadow, targetUser) {
     if (!shadow || !shadow.id || !targetUser) {
       this._debugError("DeploymentManager", "Invalid deploy args", { shadow, targetUser });
       return false;
@@ -80,6 +83,19 @@ class DeploymentManager {
     if (this._monitoredUserIds.has(targetUserId)) {
       this._debugLog("DeploymentManager", "User already monitored", targetUserId);
       return false;
+    }
+
+    // Re-verify shadow is still available before committing deployment
+    try {
+      const currentAvailable = await this.getAvailableShadows();
+      const stillAvailable = currentAvailable.find(s => s.id === shadow.id);
+      if (!stillAvailable) {
+        this._debugLog("DeploymentManager", `Shadow ${shadow.id} no longer available, aborting deployment`);
+        return false;
+      }
+    } catch (err) {
+      this._debugError("DeploymentManager", "Failed to re-verify shadow availability", err);
+      // Proceed with deployment if verification fails — better than blocking
     }
 
     const record = {
@@ -219,6 +235,23 @@ class DeploymentManager {
       return [];
     }
   }
+
+  async validateDeployments(getAvailableShadowsFn) {
+    if (!getAvailableShadowsFn) return;
+    try {
+      const available = await getAvailableShadowsFn();
+      const availableIds = new Set(available.map(s => s.id));
+      const before = this._deployments.length;
+      this._deployments = this._deployments.filter(d => availableIds.has(d.shadowId));
+      if (this._deployments.length < before) {
+        this._debugLog("DeploymentManager", `Pruned ${before - this._deployments.length} stale deployments`);
+        this._rebuildSets();
+        this._save();
+      }
+    } catch (err) {
+      this._debugError("DeploymentManager", "Failed to validate deployments", err);
+    }
+  }
 }
 
 // ─── SensesEngine ──────────────────────────────────────────────────────────
@@ -337,6 +370,21 @@ class SensesEngine {
     if (this._guildFeeds[guildId].length > GUILD_FEED_CAP) {
       this._guildFeeds[guildId].shift();
     }
+
+    // Global cap: prevent unbounded growth across all guilds
+    const totalEntries = Object.values(this._guildFeeds).reduce((sum, arr) => sum + arr.length, 0);
+    if (totalEntries > GLOBAL_FEED_CAP) {
+      let maxGuild = null, maxLen = 0;
+      for (const [gid, arr] of Object.entries(this._guildFeeds)) {
+        if (arr.length > maxLen) { maxGuild = gid; maxLen = arr.length; }
+      }
+      if (maxGuild) {
+        const trimTo = Math.max(100, Math.floor(maxLen / 2));
+        this._guildFeeds[maxGuild] = this._guildFeeds[maxGuild].slice(-trimTo);
+        this._plugin.debugLog?.("SensesEngine", `Global feed cap reached, trimmed guild ${maxGuild} from ${maxLen} to ${trimTo} entries`);
+      }
+    }
+
     this._dirty = true;
   }
 
@@ -475,6 +523,8 @@ class SensesEngine {
   }
 
   clear() {
+    // Note: Timer cleanup is handled by unsubscribe(), not here.
+    // clear() only resets data state.
     this._guildFeeds = {};
     this._lastSeenCount = {};
     this._currentGuildId = null;
@@ -482,10 +532,6 @@ class SensesEngine {
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._dirty = false;
-    if (this._flushInterval) {
-      clearInterval(this._flushInterval);
-      this._flushInterval = null;
-    }
   }
 }
 
@@ -895,12 +941,12 @@ function buildComponents(pluginRef) {
             ? pluginRef.sensesEngine.getActiveFeed()
             : [];
           setFeed(current);
-        } catch (_) {}
+        } catch (_) { pluginRef.debugLog?.('REACT', 'Feed poll error', _); }
       }, 2000);
       // Initial load
       try {
         setFeed(pluginRef.sensesEngine ? pluginRef.sensesEngine.getActiveFeed() : []);
-      } catch (_) {}
+      } catch (_) { pluginRef.debugLog?.('REACT', 'Feed initial load error', _); }
       return () => clearInterval(poll);
     }, []);
 
@@ -934,7 +980,7 @@ function buildComponents(pluginRef) {
     useEffect(() => {
       try {
         setDeployments(pluginRef.deploymentManager ? pluginRef.deploymentManager.getDeployments() : []);
-      } catch (_) {}
+      } catch (_) { pluginRef.debugLog?.('REACT', 'Deployments load error', _); }
     }, []);
 
     const handleRecall = useCallback((deployment) => {
@@ -1039,7 +1085,7 @@ function buildComponents(pluginRef) {
         // Footer
         ce("div", { className: "shadow-senses-footer" },
           ce("span", null, `${deployCount} shadow${deployCount !== 1 ? "s" : ""} deployed`),
-          ce("span", null, `${msgCount} message${msgCount !== 1 ? "s" : ""} this session`)
+          ce("span", null, `${msgCount} detection${msgCount !== 1 ? "s" : ""} (since restart)`)
         )
       )
     );
@@ -1159,51 +1205,62 @@ function buildComponents(pluginRef) {
   return { SensesWidget, SensesPanel, ShadowPicker };
 }
 
+// ─── Shared Utilities ─────────────────────────────────────────────────────
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
 module.exports = class ShadowSenses {
   start() {
-    this._debugMode = BdApi.Data.load(PLUGIN_NAME, "debugMode") ?? false;
-    this._stopped = false;
-    this._widgetDirty = true;
-    this._panelOpen = false;
-    this._pickerOpen = false;
+    try {
+      console.log(`[${PLUGIN_NAME}] Starting v1.0.0...`);
+      this._debugMode = BdApi.Data.load(PLUGIN_NAME, "debugMode") ?? false;
+      this._stopped = false;
+      this._widgetDirty = true;
+      this._panelOpen = false;
+      this._pickerOpen = false;
 
-    // DeploymentManager
-    this.deploymentManager = new DeploymentManager(
-      (...args) => this.debugLog(...args),
-      (...args) => this.debugError(...args)
-    );
-    this.deploymentManager.load();
+      // DeploymentManager
+      this.deploymentManager = new DeploymentManager(
+        (...args) => this.debugLog(...args),
+        (...args) => this.debugError(...args)
+      );
+      this.deploymentManager.load();
 
-    // Webpack modules
-    this.initWebpack();
+      // Webpack modules
+      this.initWebpack();
 
-    // SensesEngine
-    this.sensesEngine = new SensesEngine(this);
+      // SensesEngine
+      this.sensesEngine = new SensesEngine(this);
 
-    // Subscribe immediately if Dispatcher ready, otherwise use waitForModule
-    if (this._Dispatcher) {
-      this.sensesEngine.subscribe();
-    } else {
-      this._startDispatcherWait();
+      // Subscribe immediately if Dispatcher ready, otherwise use waitForModule
+      if (this._Dispatcher) {
+        this.sensesEngine.subscribe();
+      } else {
+        this._startDispatcherWait();
+      }
+
+      // CSS
+      this.injectCSS();
+
+      // React components
+      this._components = buildComponents(this);
+
+      // Widget
+      this.injectWidget();
+      this.setupWidgetObserver();
+
+      // ESC handler + context menu
+      this.registerEscHandler();
+      this.patchContextMenu();
+
+      console.log(`[${PLUGIN_NAME}] Started successfully`);
+      BdApi.UI.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
+    } catch (err) {
+      console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
+      BdApi.UI.showToast(`${PLUGIN_NAME} failed to start: ${err.message}`, { type: "error" });
     }
-
-    // CSS
-    this.injectCSS();
-
-    // React components
-    this._components = buildComponents(this);
-
-    // Widget
-    this.injectWidget();
-    this.setupWidgetObserver();
-
-    // ESC handler + context menu
-    this.registerEscHandler();
-    this.patchContextMenu();
-
-    BdApi.UI.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
   }
 
   stop() {
@@ -1223,14 +1280,14 @@ module.exports = class ShadowSenses {
 
       // 2. Unpatch context menu
       if (this._unpatchContextMenu) {
-        try { this._unpatchContextMenu(); } catch (_) {}
+        try { this._unpatchContextMenu(); } catch (_) { this.debugLog?.('CLEANUP', 'Context menu unpatch error', _); }
         this._unpatchContextMenu = null;
       }
 
       // 3. Close panel + picker
       this.closePanel();
       if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) {}
+        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in stop()', _); }
         this._pickerReactRoot = null;
       }
       const picker = document.getElementById("shadow-senses-picker-root");
@@ -1243,7 +1300,14 @@ module.exports = class ShadowSenses {
         this._widgetObserver = null;
       }
       clearTimeout(this._widgetReinjectTimeout);
+      this._widgetReinjectTimeout = null;
       this.removeWidget();
+
+      // 4b. Direct spacer cleanup (in case removeWidget didn't run)
+      try {
+        const spacer = document.getElementById(WIDGET_SPACER_ID);
+        if (spacer) spacer.remove();
+      } catch (_) { this.debugLog?.('CLEANUP', 'Spacer cleanup error', _); }
 
       // 5. ESC handler
       if (this._escHandler) {
@@ -1295,6 +1359,7 @@ module.exports = class ShadowSenses {
       try {
         // Attempt 1: strict filter with actionLogger key
         if (Webpack.waitForModule) {
+          const waitStart = Date.now();
           let result = await Webpack.waitForModule(filter, { timeout: 60000 });
           if (!result) {
             this.debugLog("Webpack", "Strict filter timed out, trying loose filter...");
@@ -1303,6 +1368,10 @@ module.exports = class ShadowSenses {
           if (result) {
             if (this._stopped) return; // Plugin was stopped while waiting
             this._Dispatcher = result;
+            const waitDuration = Date.now() - waitStart;
+            if (waitDuration > 5000) {
+              this.debugLog("Webpack", `Dispatcher took ${Math.round(waitDuration / 1000)}s to load — messages during this period were not tracked`);
+            }
             this.debugLog("Webpack", "Dispatcher acquired via waitForModule");
             if (this.sensesEngine) this.sensesEngine.subscribe();
             return;
@@ -1406,18 +1475,19 @@ module.exports = class ShadowSenses {
   }
 
   _getCreateRoot() {
-    try {
-      if (BdApi.ReactDOM && BdApi.ReactDOM.createRoot) return BdApi.ReactDOM.createRoot;
-      const mod = BdApi.Webpack.getModule(m => m?.createRoot && m?.hydrateRoot);
-      if (mod && mod.createRoot) return mod.createRoot;
-    } catch (err) {
-      this.debugError("Widget", "Failed to get createRoot", err);
-    }
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
     return null;
   }
 
   injectWidget() {
     try {
+      if (!this._components?.SensesWidget) {
+        this.debugError?.('Widget', 'Components not initialized');
+        return;
+      }
+
       // Clean up any existing widget
       this.removeWidget();
 
@@ -1471,7 +1541,7 @@ module.exports = class ShadowSenses {
   removeWidget() {
     try {
       if (this._widgetReactRoot) {
-        try { this._widgetReactRoot.unmount(); } catch (_) {}
+        try { this._widgetReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Widget unmount error', _); }
         this._widgetReactRoot = null;
       }
       const existing = document.getElementById(WIDGET_ID);
@@ -1494,7 +1564,7 @@ module.exports = class ShadowSenses {
       let lastCheck = 0;
       this._widgetObserver = new MutationObserver(() => {
         const now = Date.now();
-        if (now - lastCheck < 200) return;
+        if (now - lastCheck < WIDGET_OBSERVER_DEBOUNCE_MS) return;
         lastCheck = now;
 
         const membersWrap = this._getMembersWrap();
@@ -1507,7 +1577,7 @@ module.exports = class ShadowSenses {
             try { this.injectWidget(); } catch (err) {
               this.debugError("Widget", "Reinject failed", err);
             }
-          }, 300);
+          }, WIDGET_REINJECT_DELAY_MS);
         } else if (!membersWrap && widgetEl) {
           // Members gone but widget still in DOM — clean up
           this.removeWidget();
@@ -1525,6 +1595,17 @@ module.exports = class ShadowSenses {
 
   openPanel() {
     try {
+      if (!this._components?.SensesPanel) {
+        this.debugError?.('Panel', 'Components not initialized');
+        return;
+      }
+
+      // Force-close any existing panel to prevent overlap
+      if (this._panelReactRoot) {
+        try { this._panelReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Panel pre-close unmount error', _); }
+        this._panelReactRoot = null;
+      }
+
       // Toggle if already open
       if (this._panelOpen) {
         this.closePanel();
@@ -1558,7 +1639,7 @@ module.exports = class ShadowSenses {
   closePanel() {
     try {
       if (this._panelReactRoot) {
-        try { this._panelReactRoot.unmount(); } catch (_) {}
+        try { this._panelReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Panel unmount error', _); }
         this._panelReactRoot = null;
       }
       const container = document.getElementById(PANEL_CONTAINER_ID);
@@ -1574,6 +1655,11 @@ module.exports = class ShadowSenses {
 
   openShadowPicker(targetUser) {
     try {
+      if (!this._components?.ShadowPicker) {
+        this.debugError?.('Picker', 'Components not initialized');
+        return;
+      }
+
       const createRoot = this._getCreateRoot();
       if (!createRoot) {
         this.debugError("Picker", "createRoot not available");
@@ -1582,7 +1668,7 @@ module.exports = class ShadowSenses {
 
       // Close existing picker if open
       if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) {}
+        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in openShadowPicker()', _); }
         this._pickerReactRoot = null;
       }
       const existingPicker = document.getElementById("shadow-senses-picker-root");
@@ -1596,9 +1682,9 @@ module.exports = class ShadowSenses {
       const root = createRoot(container);
       root.render(BdApi.React.createElement(this._components.ShadowPicker, {
         targetUser,
-        onSelect: (shadow) => {
+        onSelect: async (shadow) => {
           try {
-            const success = this.deploymentManager.deploy(shadow, targetUser);
+            const success = await this.deploymentManager.deploy(shadow, targetUser);
             if (success) {
               const targetName = targetUser.globalName || targetUser.username || "User";
               BdApi.UI.showToast(
@@ -1630,7 +1716,7 @@ module.exports = class ShadowSenses {
   _closePicker() {
     try {
       if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) {}
+        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in _closePicker()', _); }
         this._pickerReactRoot = null;
       }
       const container = document.getElementById("shadow-senses-picker-root");
@@ -1669,82 +1755,88 @@ module.exports = class ShadowSenses {
   patchContextMenu() {
     try {
       this._unpatchContextMenu = BdApi.ContextMenu.patch("user-context", (tree, props) => {
-        try {
-          if (!props || !props.user) return;
-          const user = props.user;
-          const userId = user.id;
+        // No outer try-catch — let menu construction errors propagate visibly
+        if (!props || !props.user) return;
+        const user = props.user;
+        const userId = user.id;
 
-          const deployment = this.deploymentManager.getDeploymentForUser(userId);
+        const deployment = this.deploymentManager.getDeploymentForUser(userId);
 
-          let menuItem;
-          if (deployment) {
-            // Already monitored — show recall option
-            menuItem = BdApi.ContextMenu.buildItem({
-              type: "text",
-              label: "Recall",
-              action: () => {
-                try {
-                  this.deploymentManager.recall(deployment.shadowId);
+        let menuItem;
+        if (deployment) {
+          // Already monitored — show recall option
+          menuItem = BdApi.ContextMenu.buildItem({
+            type: "text",
+            label: "Recall",
+            action: () => {
+              try {
+                this.deploymentManager.recall(deployment.shadowId);
+                BdApi.UI.showToast(
+                  `Recalled ${deployment.shadowName} from ${deployment.targetUsername}`,
+                  { type: "info" }
+                );
+                this._widgetDirty = true;
+              } catch (err) {
+                this.debugError("ContextMenu", "Recall failed", err);
+              }
+            },
+          });
+        } else {
+          // Not monitored — auto-deploy weakest available shadow
+          menuItem = BdApi.ContextMenu.buildItem({
+            type: "text",
+            label: "Deploy Shadow",
+            action: async () => {
+              // Try-catch only around risky async shadow loading
+              let available;
+              try {
+                available = this.deploymentManager
+                  ? await this.deploymentManager.getAvailableShadows()
+                  : [];
+              } catch (err) {
+                this.debugError("ContextMenu", "Failed to load available shadows", err);
+                BdApi.UI.showToast("Failed to load shadows", { type: "error" });
+                return;
+              }
+
+              try {
+                if (available.length === 0) {
+                  BdApi.UI.showToast("No available shadows. All are deployed, in dungeons, or marked for exchange.", { type: "warning" });
+                  return;
+                }
+                // Sort weakest first (ascending rank index)
+                const sorted = [...available].sort((a, b) => {
+                  const aIdx = RANKS.indexOf(a.rank || "E");
+                  const bIdx = RANKS.indexOf(b.rank || "E");
+                  return aIdx - bIdx;
+                });
+                const weakest = sorted[0];
+                const success = await this.deploymentManager.deploy(weakest, user);
+                if (success) {
+                  const targetName = user.globalName || user.username || "User";
                   BdApi.UI.showToast(
-                    `Recalled ${deployment.shadowName} from ${deployment.targetUsername}`,
-                    { type: "info" }
+                    `Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`,
+                    { type: "success" }
                   );
                   this._widgetDirty = true;
-                } catch (err) {
-                  this.debugError("ContextMenu", "Recall failed", err);
+                } else {
+                  BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
                 }
-              },
-            });
-          } else {
-            // Not monitored — auto-deploy weakest available shadow
-            menuItem = BdApi.ContextMenu.buildItem({
-              type: "text",
-              label: "Deploy Shadow",
-              action: async () => {
-                try {
-                  const available = this.deploymentManager
-                    ? await this.deploymentManager.getAvailableShadows()
-                    : [];
-                  if (available.length === 0) {
-                    BdApi.UI.showToast("No available shadows. All are deployed, in dungeons, or marked for exchange.", { type: "warning" });
-                    return;
-                  }
-                  // Sort weakest first (ascending rank index)
-                  const sorted = [...available].sort((a, b) => {
-                    const aIdx = RANKS.indexOf(a.rank || "E");
-                    const bIdx = RANKS.indexOf(b.rank || "E");
-                    return aIdx - bIdx;
-                  });
-                  const weakest = sorted[0];
-                  const success = this.deploymentManager.deploy(weakest, user);
-                  if (success) {
-                    const targetName = user.globalName || user.username || "User";
-                    BdApi.UI.showToast(
-                      `Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`,
-                      { type: "success" }
-                    );
-                    this._widgetDirty = true;
-                  } else {
-                    BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
-                  }
-                } catch (err) {
-                  this.debugError("ContextMenu", "Auto-deploy failed", err);
-                  BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
-                }
-              },
-            });
-          }
+              } catch (err) {
+                this.debugError("ContextMenu", "Auto-deploy failed", err);
+                BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
+              }
+            },
+          });
+        }
 
-          const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+        const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
 
-          // Append to children
-          if (tree && tree.props && tree.props.children) {
-            if (Array.isArray(tree.props.children)) {
-              tree.props.children.push(separator, menuItem);
-            }
+        // Append to children
+        if (tree && tree.props && tree.props.children) {
+          if (Array.isArray(tree.props.children)) {
+            tree.props.children.push(separator, menuItem);
           }
-        } catch (err) {
-          this.debugError("ContextMenu", "Error in patch callback", err);
         }
       });
       this.debugLog("ContextMenu", "Patched user-context menu");
@@ -1781,7 +1873,7 @@ module.exports = class ShadowSenses {
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, sessionCount),
-          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Session Detections")
+          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Detections (since restart)")
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, totalDetections.toLocaleString()),

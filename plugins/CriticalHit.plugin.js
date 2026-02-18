@@ -95,6 +95,9 @@
 // ============================================
 // (Debug system organized below in class)
 
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 module.exports = class CriticalHit {
   // ============================================
   // SECTION 2: CONFIGURATION & HELPERS
@@ -6980,18 +6983,9 @@ ${childSel} {
    * @returns {Function|null} createRoot function or null
    */
   _getCreateRoot() {
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
     if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    try {
-      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
-      if (client?.createRoot) return client.createRoot.bind(client);
-    } catch (_) {}
-    try {
-      const createRoot = BdApi.Webpack.getModule(
-        (m) => typeof m === "function" && m?.name === "createRoot",
-        { searchExports: true }
-      );
-      if (createRoot) return createRoot;
-    } catch (_) {}
     return null;
   }
 

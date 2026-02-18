@@ -150,6 +150,29 @@ module.exports = class HSLWheelBridge {
   // ── React Patcher — MainContent.Z ─────────────────────────────────────────
 
   _installReactPatcher() {
+    let ReactUtils;
+    try {
+      ReactUtils = require('./BetterDiscordReactUtils.js');
+    } catch (_) {
+      ReactUtils = null;
+    }
+
+    if (ReactUtils) {
+      const pluginInstance = this;
+      const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+        const component = React.createElement(pluginInstance._WheelController, {
+          key: 'sl-wheel-bridge',
+          pluginInstance,
+        });
+        ReactUtils.injectReactComponent(appNode, 'sl-wheel-bridge-root', component, returnValue);
+      });
+      if (!ok) {
+        console.error('[HSLWheelBridge] MainContent module not found — plugin inactive');
+      }
+      return;
+    }
+
+    // Inline fallback if BetterDiscordReactUtils.js is not available
     let MainContent = BdApi.Webpack.getByStrings('baseLayer', { defaultExport: false });
     if (!MainContent) {
       MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
@@ -177,7 +200,6 @@ module.exports = class HSLWheelBridge {
 
         if (!appNode || !appNode.props) return returnValue;
 
-        // Duplicate check
         const already = BdApi.Utils.findInTree(
           returnValue,
           (prop) => prop && prop.props && prop.props.id === 'sl-wheel-bridge-root',

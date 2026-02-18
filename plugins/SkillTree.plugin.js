@@ -336,6 +336,9 @@ function buildSkillTreeComponents(pluginInstance) {
   return { SkillTreeModal, SkillTreeHeader, TierNavigation, PassiveSkillList, SkillCard, ActiveSkillsSection, ActiveSkillCard, ManaBar, ResetConfirmDialog };
 }
 
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 module.exports = class SkillTree {
   // ============================================================================
   // §1 CONSTRUCTOR & INITIALIZATION
@@ -910,18 +913,9 @@ module.exports = class SkillTree {
    * Get React 18 createRoot with webpack fallbacks (same pattern as ShadowExchange)
    */
   _getCreateRoot() {
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
     if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    try {
-      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
-      if (client?.createRoot) return client.createRoot.bind(client);
-    } catch (_) {}
-    try {
-      const createRoot = BdApi.Webpack.getModule(
-        (m) => typeof m === 'function' && m?.name === 'createRoot',
-        { searchExports: true }
-      );
-      if (createRoot) return createRoot;
-    } catch (_) {}
     return null;
   }
 

@@ -968,6 +968,7 @@ module.exports = class Dungeons {
       userMaxHP: null,
       userMana: null, // Will be calculated from intelligence
       userMaxMana: null,
+      settingsVersion: 1,
     };
 
     // Prevent noisy local agent-log network errors when the ingest endpoint is unavailable.
@@ -1004,15 +1005,12 @@ module.exports = class Dungeons {
     this._mobSpawnQueue = new Map(); // Micro-queue for batched mob spawning (250-500ms)
     // Legacy: used by older spawn-queue implementation (now centralized in global spawn loop)
     this.userHPBar = null;
-    this.dungeonButton = null;
     this.dungeonModal = null;
-    this.toolbarCheckInterval = null;
-    this._dungeonButtonRetryCount = 0;
     this.lastUserAttackTime = 0;
     this.storageManager = null;
     this.mobBossStorageManager = null; // Dedicated storage for mobs and bosses
     this.activeDungeons = new Map(); // Use Map for better performance
-    this.panelWatcher = null; // Watch for panel DOM changes
+
     this.hiddenComments = new Map(); // Track hidden comment elements per channel
 
     // CHANNEL LOCK SYSTEM: Prevents multiple dungeons in same channel (spam protection)
@@ -1146,9 +1144,6 @@ module.exports = class Dungeons {
     this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
     this._allocationSummary = new Map(); // channelKey -> { dungeonRank, assignedCount, avgShadowRankIndex }
 
-    // Retry timeout IDs for cleanup
-    this._retryTimeouts = [];
-
     // HP/Mana regeneration timer
     this.regenInterval = null;
 
@@ -1225,7 +1220,7 @@ module.exports = class Dungeons {
 
     // Event-based extraction verification
     this.extractionEvents = new Map(); // Track extraction attempts by mobId
-    this.setupExtractionEventListener();
+    // REMOVED: setupExtractionEventListener() — consolidated into _shadowExtractedListener in loadPluginReferences()
 
     // Extraction tracking (now uses MobBossStorageManager database instead of BdAPI)
     this.extractionInProgress = new Set(); // Track channels currently processing extractions
@@ -1345,6 +1340,25 @@ module.exports = class Dungeons {
     return timeoutId;
   }
 
+  /**
+   * Safely get a plugin instance with consistent error handling.
+   * @param {string} name - Plugin name
+   * @returns {object|null} Plugin instance or null
+   */
+  _getPluginSafe(name) {
+    try {
+      const plugin = BdApi.Plugins.get(name);
+      if (!plugin?.instance) {
+        this.debugLogOnce?.(`PLUGIN_MISSING:${name}`, 'PLUGIN', `Plugin ${name} not available`);
+        return null;
+      }
+      return plugin.instance;
+    } catch (e) {
+      this.errorLog?.('PLUGIN', `Failed to get plugin ${name}`, e);
+      return null;
+    }
+  }
+
   _ensureCombatLoop() {
     if (this._combatLoopInterval) return;
     const tick = () => {
@@ -1461,6 +1475,11 @@ module.exports = class Dungeons {
     }
 
     this._deferredExtractionQueued.add(channelKey);
+    if (this._deferredExtractionQueue.length >= 500) {
+      const droppedKey = this._deferredExtractionQueue.shift();
+      this._deferredExtractionQueued.delete(droppedKey);
+      this.debugLog?.('EXTRACT', `Extraction queue full, dropping oldest: ${droppedKey}`);
+    }
     this._deferredExtractionQueue.push(channelKey);
     this._ensureDeferredExtractionWorker();
 
@@ -1561,11 +1580,11 @@ module.exports = class Dungeons {
    * Called once from start() and on dungeonRanks setting changes.
    */
   _buildRankLookupTables() {
-    const ranks = this.settings.dungeonRanks || ['E','D','C','B','A','S','SS','SSS','NH','Monarch','Monarch+','Shadow Monarch'];
+    const ranks = this.settings.dungeonRanks || ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+','Shadow Monarch'];
     const n = ranks.length;
 
     // Flat resurrection costs (Step 1)
-    this._flatResCostTable = new Float32Array([5, 8, 12, 18, 25, 35, 50, 70, 95, 120, 150, 200].slice(0, n));
+    this._flatResCostTable = new Float32Array([5, 8, 12, 18, 25, 35, 50, 70, 85, 95, 120, 150, 200].slice(0, n));
 
     // Mob base stats — quadratic+linear scaling (Step 2a)
     this._mobStatTable = {
@@ -1613,6 +1632,11 @@ module.exports = class Dungeons {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) {
       console.log(`[Dungeons] ARISE_TRACE: SKIP — no active dungeon for ${channelKey}`);
+      return null;
+    }
+
+    // C10 FIX: Only extract shadows when user is actively participating
+    if (!dungeon.userParticipating) {
       return null;
     }
 
@@ -1682,6 +1706,9 @@ module.exports = class Dungeons {
         }
       }
       console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} extracted for ${channelKey}`);
+      if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
+        BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: deadMobs.length, channelKey });
+      }
     });
   }
 
@@ -1896,21 +1923,17 @@ module.exports = class Dungeons {
     }, 2000);
 
     // Retry loading plugin references (especially for toasts plugin)
-    this._retryTimeouts.push(
-      this._setTrackedTimeout(() => {
-        if (!this.toasts) {
-          this.loadPluginReferences();
-        }
-      }, 1000)
-    );
+    this._setTrackedTimeout(() => {
+      if (!this.toasts) {
+        this.loadPluginReferences();
+      }
+    }, 1000);
 
-    this._retryTimeouts.push(
-      this._setTrackedTimeout(() => {
-        if (!this.toasts) {
-          this.loadPluginReferences();
-        }
-      }, 3000)
-    );
+    this._setTrackedTimeout(() => {
+      if (!this.toasts) {
+        this.loadPluginReferences();
+      }
+    }, 3000);
 
     this.startMessageObserver();
     this.startDungeonCleanupLoop();
@@ -1946,6 +1969,18 @@ module.exports = class Dungeons {
       this.triggerGarbageCollection('periodic');
     }, 300000); // 5 minutes
     this._intervals.add(this.gcInterval);
+
+    // Invalidate plugin cache when plugins are toggled (prevents stale references)
+    this._pluginToggleHandler = () => {
+      if (this._cache) {
+        this._cache.pluginInstances = {};
+        this._cache.pluginInstancesTime = {};
+      }
+    };
+    if (typeof BdApi?.Events?.on === 'function') {
+      BdApi.Events.on('plugin-loaded', this._pluginToggleHandler);
+      BdApi.Events.on('plugin-unloaded', this._pluginToggleHandler);
+    }
   }
 
   async stop() {
@@ -2055,6 +2090,15 @@ module.exports = class Dungeons {
       this._mobGenerationCache.clear();
     }
 
+    // Remove plugin toggle event listeners
+    if (this._pluginToggleHandler) {
+      if (typeof BdApi?.Events?.off === 'function') {
+        BdApi.Events.off('plugin-loaded', this._pluginToggleHandler);
+        BdApi.Events.off('plugin-unloaded', this._pluginToggleHandler);
+      }
+      this._pluginToggleHandler = null;
+    }
+
     // Remove shadow extraction event listeners
     if (this._shadowExtractedListener) {
       if (typeof BdApi?.Events?.off === 'function') {
@@ -2109,6 +2153,7 @@ module.exports = class Dungeons {
 
     // Clear saveSettings debounce timer (flush happens below via saveSettings(true))
     if (this._saveSettingsTimer) {
+      this._timeouts.delete(this._saveSettingsTimer);
       clearTimeout(this._saveSettingsTimer);
       this._saveSettingsTimer = null;
     }
@@ -2118,9 +2163,9 @@ module.exports = class Dungeons {
       this.showChannelHeaderComments(channelKey);
     });
     this.hiddenComments.clear();
-    this.removeDungeonButton();
+
     this.closeDungeonModal();
-    this.stopPanelWatcher?.();
+
     this.stopChannelWatcher?.();
     this.currentChannelKey = null;
 
@@ -2171,11 +2216,6 @@ module.exports = class Dungeons {
       document.removeEventListener('shadowExtracted', this._shadowExtractedHandler);
       this._shadowExtractedHandler = null;
     }
-    if (this._retryTimeouts) {
-      this._retryTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
-      this._retryTimeouts = [];
-    }
-
     // Restore original window.fetch (patched by _disableLocalAgentLogs)
     this._restoreLocalAgentLogs();
 
@@ -2278,6 +2318,7 @@ module.exports = class Dungeons {
 
     // Capture to ensure Discord handlers can't swallow our clicks.
     document.addEventListener('click', this._delegatedUiClickHandler, true);
+    this._listeners.set('delegated_click', { target: document, event: 'click', handler: this._delegatedUiClickHandler, capture: true });
   }
 
   removeDelegatedUiHandlers() {
@@ -2287,6 +2328,7 @@ module.exports = class Dungeons {
     if (this._delegatedUiClickHandler) {
       document.removeEventListener('click', this._delegatedUiClickHandler, true);
       this._delegatedUiClickHandler = null;
+      this._listeners.delete('delegated_click');
     }
 
     const styleEl = document.getElementById('dungeons-delegated-ui-styles');
@@ -2421,9 +2463,33 @@ module.exports = class Dungeons {
 
       if (saved) {
         this.settings = { ...this.defaultSettings, ...saved };
-        // MIGRATION: Force bossGate settings to code defaults (purge stale saved values)
-        this.settings.bossGateMinDurationMs = this.defaultSettings.bossGateMinDurationMs;
-        this.settings.bossGateRequiredMobKills = this.defaultSettings.bossGateRequiredMobKills;
+
+        // Backup settings before migration in case of corruption
+        const preMigrationBackup = JSON.parse(JSON.stringify(this.settings));
+
+        try {
+          // Version-gated migrations (only run once, not every load)
+          const currentVersion = this.settings.settingsVersion || 0;
+          if (currentVersion < 1) {
+            // v1: Apply bossGate defaults only if not already set
+            this.settings.bossGateMinDurationMs ??= this.defaultSettings.bossGateMinDurationMs;
+            this.settings.bossGateRequiredMobKills ??= this.defaultSettings.bossGateRequiredMobKills;
+            this.settings.settingsVersion = 1;
+          }
+        } catch (migrationError) {
+          this.errorLog?.('SETTINGS', 'Migration failed, restoring backup', migrationError);
+          this.settings = preMigrationBackup;
+        }
+
+        // Remove unknown keys not in defaultSettings
+        const validKeys = new Set(Object.keys(this.defaultSettings));
+        for (const key of Object.keys(this.settings)) {
+          if (!validKeys.has(key)) {
+            this.debugLog?.('SETTINGS', `Removing unknown setting key: ${key}`);
+            delete this.settings[key];
+          }
+        }
+
         // Initialize user HP/Mana from stats if not set
         await this.initializeUserStats();
       } else {
@@ -2445,6 +2511,7 @@ module.exports = class Dungeons {
     if (immediate) {
       // Cancel any pending debounced save and write now
       if (this._saveSettingsTimer) {
+        this._timeouts.delete(this._saveSettingsTimer);
         clearTimeout(this._saveSettingsTimer);
         this._saveSettingsTimer = null;
       }
@@ -2454,12 +2521,14 @@ module.exports = class Dungeons {
     this._saveSettingsDirty = true;
     if (this._saveSettingsTimer) return; // Already scheduled
     this._saveSettingsTimer = setTimeout(() => {
+      this._timeouts.delete(this._saveSettingsTimer);
       this._saveSettingsTimer = null;
       if (this._saveSettingsDirty) {
         this._saveSettingsDirty = false;
         this._saveSettingsImmediate();
       }
     }, 3000);
+    this._timeouts.add(this._saveSettingsTimer);
   }
 
   async _saveSettingsImmediate() {
@@ -2732,7 +2801,23 @@ module.exports = class Dungeons {
         }
 
         // Listen for shadow extraction events (event-based sync)
+        // Consolidated: also handles extraction verification (previously in setupExtractionEventListener)
         this._shadowExtractedListener = (data) => {
+          // Extraction verification (merged from _shadowExtractedHandler)
+          const { shadowId, shadowData, mobId, success } = data?.detail || data || {};
+          if (success && mobId) {
+            this.extractionEvents.set(mobId, {
+              success: true,
+              shadowId: shadowId,
+              timestamp: Date.now(),
+            });
+            this.debugLog(
+              `[Event] Shadow extracted: ${shadowData?.name || 'Unknown'} (${
+                shadowData?.rank || '?'
+              }-rank)`
+            );
+          }
+
           const activeDungeonCount = this.activeDungeons?.size || 0;
           if (activeDungeonCount === 0) {
             return;
@@ -3198,7 +3283,6 @@ module.exports = class Dungeons {
         this._messageObserverRetryTimeoutId = null;
         if (this.started) this.startMessageObserver();
       }, retryDelayMs);
-      this._retryTimeouts.push(this._messageObserverRetryTimeoutId);
     }
   }
 
@@ -4267,6 +4351,11 @@ module.exports = class Dungeons {
 
           // Ensure minimum HP of 1 (mobs must be able to take damage and die)
           const finalMobHP = Math.max(1, mobHP);
+
+          if (!Number.isFinite(finalMobHP) || finalMobHP <= 0) {
+            this.errorLog?.('COMBAT', 'Invalid mob HP — skipping mob spawn', { finalMobHP });
+            continue;
+          }
 
           // Attack cooldown variance (some mobs attack faster than others)
           const cooldownVariance =
@@ -5724,7 +5813,10 @@ module.exports = class Dungeons {
     const cached = this._rankDamageCache.get(pairKey);
     if (cached !== undefined) return cached;
 
-    const ratio = this.getRankPowerValue(a) / (this.getRankPowerValue(d) || 1);
+    const defenderPower = this.getRankPowerValue(d);
+    const ratio = (Number.isFinite(defenderPower) && defenderPower > 0)
+      ? this.getRankPowerValue(a) / defenderPower
+      : 1;
     const computed = this.clampNumber(Math.pow(ratio, exponent), min, max);
     this._rankDamageCache.set(pairKey, computed);
     return computed;
@@ -6111,6 +6203,10 @@ module.exports = class Dungeons {
     // Apply role-based damage multiplier
     damage = this.applyRoleDamageMultiplier(shadow.role, damage);
 
+    if (!Number.isFinite(damage) || damage < 0) {
+      this.debugLog?.('COMBAT', 'NaN/invalid shadow damage, falling back to 1', { role: shadow?.role });
+      return 1;
+    }
     return Math.max(1, Math.floor(damage));
   }
 
@@ -6201,20 +6297,20 @@ module.exports = class Dungeons {
     // Shadows stationed at ShadowExchange waypoints are unavailable for battle
     let exchangeMarkedIds = new Set();
     try {
-      const sePlugin = BdApi.Plugins.get("ShadowExchange");
-      if (sePlugin?.instance?.getMarkedShadowIds) {
-        exchangeMarkedIds = sePlugin.instance.getMarkedShadowIds();
+      const seInstance = this._getPluginSafe("ShadowExchange");
+      if (seInstance?.getMarkedShadowIds) {
+        exchangeMarkedIds = seInstance.getMarkedShadowIds();
       }
-    } catch (_) {}
+    } catch (_) { this.debugLog?.('ERROR', 'Failed to get ShadowExchange marked IDs', _); }
 
     // Shadows deployed to ShadowSenses monitoring are unavailable for battle
     let sensesDeployedIds = new Set();
     try {
-      const ssPlugin = BdApi.Plugins.get("ShadowSenses");
-      if (ssPlugin?.instance?.getDeployedShadowIds) {
-        sensesDeployedIds = ssPlugin.instance.getDeployedShadowIds();
+      const ssInstance = this._getPluginSafe("ShadowSenses");
+      if (ssInstance?.getDeployedShadowIds) {
+        sensesDeployedIds = ssInstance.getDeployedShadowIds();
       }
-    } catch (_) {}
+    } catch (_) { this.debugLog?.('ERROR', 'Failed to get ShadowSenses deployed IDs', _); }
 
     // Sort shadows once by combat score descending (strongest first)
     const shadowsSorted = [...allShadows]
@@ -8452,33 +8548,8 @@ module.exports = class Dungeons {
    * Listens for custom 'shadowExtracted' events from Shadow Army plugin
    */
   setupExtractionEventListener() {
-    // Store handler reference for cleanup
-    this._shadowExtractedHandler = (event) => {
-      const { shadowId, shadowData, mobId, success } = event.detail || {};
-
-      if (success && mobId) {
-        // Mark mob extraction as verified in queue
-        this.extractionEvents.set(mobId, {
-          success: true,
-          shadowId: shadowId,
-          timestamp: Date.now(),
-        });
-
-        this.debugLog(
-          `[Event] Shadow extracted: ${shadowData?.name || 'Unknown'} (${
-            shadowData?.rank || '?'
-          }-rank)`
-        );
-      }
-    };
-
-    // Listen for custom extraction events from Shadow Army
-    document.addEventListener('shadowExtracted', this._shadowExtractedHandler);
-    // Track listener for cleanup
-    if (!this._listeners.has('shadowExtracted')) {
-      this._listeners.set('shadowExtracted', new Set());
-    }
-    this._listeners.get('shadowExtracted').add(this._shadowExtractedHandler);
+    // DEPRECATED: Consolidated into _shadowExtractedListener in loadPluginReferences()
+    return;
   }
 
   /**
@@ -8703,16 +8774,14 @@ module.exports = class Dungeons {
 
         // Award shadow essence on failed resurrection (1 essence per failure)
         try {
-          const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy')?.instance;
-          if (shadowArmyPlugin) {
-            if (!shadowArmyPlugin.settings.shadowEssence) {
-              shadowArmyPlugin.settings.shadowEssence = {
-                ...(shadowArmyPlugin.defaultSettings?.shadowEssence || {}),
-              };
+          if (typeof BdApi?.Events?.emit === 'function') {
+            BdApi.Events.emit('Dungeons:awardEssence', { amount: 1 });
+          } else {
+            // Fallback: direct mutation if BdApi.Events unavailable
+            const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy')?.instance;
+            if (shadowArmyPlugin?.addEssence) {
+              shadowArmyPlugin.addEssence(1);
             }
-            shadowArmyPlugin.settings.shadowEssence.essence =
-              (shadowArmyPlugin.settings.shadowEssence.essence || 0) + 1;
-            shadowArmyPlugin.saveSettings();
           }
         } catch (essenceError) {
           this.debugLog?.(`Failed to award shadow essence: ${essenceError.message}`);
@@ -8795,6 +8864,9 @@ module.exports = class Dungeons {
   async completeDungeon(channelKey, reason) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
+
+    if (dungeon._completing) return; // Prevent concurrent completion
+    dungeon._completing = true;
 
     // Track end time for spawn cooldowns (reliability when dungeons end early).
     this.settings.lastDungeonEndTime || (this.settings.lastDungeonEndTime = {});
@@ -9126,7 +9198,8 @@ module.exports = class Dungeons {
 
     // Shadow Level-Ups (only if significant - 3+ shadows)
     if (stats.shadowsLeveledUp && stats.shadowsLeveledUp.length >= 3) {
-      setTimeout(() => {
+      this._setTrackedTimeout(() => {
+        if (!this.started) return;
         const levelUpLine = `${stats.shadowsLeveledUp.length} shadows leveled up!`;
         this.showToast(levelUpLine, 'info');
       }, 750);
@@ -9356,12 +9429,19 @@ module.exports = class Dungeons {
     document.body.appendChild(overlay);
 
     // Auto-remove after 2.5 seconds (quicker for mobs)
-    setTimeout(() => {
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
       overlay.style.animation = 'arise-fade-out 0.5s ease';
-      setTimeout(() => overlay.remove(), 500);
+      this._setTrackedTimeout(() => {
+        if (!this.started) return;
+        overlay.remove();
+      }, 500);
     }, 2500);
     // Hard fail-safe removal in case animation timers fail
-    setTimeout(() => overlay.remove(), 4000);
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
+      overlay.remove();
+    }, 4000);
   }
 
   /**
@@ -9420,12 +9500,19 @@ module.exports = class Dungeons {
     document.body.appendChild(overlay);
 
     // Auto-remove after 2 seconds
-    setTimeout(() => {
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
       overlay.style.animation = 'arise-fade-out 0.5s ease';
-      setTimeout(() => overlay.remove(), 500);
+      this._setTrackedTimeout(() => {
+        if (!this.started) return;
+        overlay.remove();
+      }, 500);
     }, 2000);
     // Hard fail-safe removal in case animation timers fail
-    setTimeout(() => overlay.remove(), 3500);
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
+      overlay.remove();
+    }, 3500);
   }
 
   /**
@@ -9552,10 +9639,10 @@ module.exports = class Dungeons {
       const bossDamagePercent = Math.min(1.0, contribution.bossDamage / bossMaxHP);
       const bossDamageXP = bossDamagePercent * baseBossXP;
 
-      // Total XP = (mob kills + boss damage) * dungeon rank * shadow rank
-      const totalXP = Math.round(
+      // Total XP = (mob kills + boss damage) * dungeon rank * shadow rank (capped at 100k per shadow)
+      const totalXP = Math.min(100000, Math.round(
         (mobKillXP + bossDamageXP) * dungeonRankMultiplier * shadowRankMultiplier
-      );
+      ));
 
       if (totalXP > 0) {
         // Record before-state for level/rank change detection
@@ -9694,7 +9781,7 @@ module.exports = class Dungeons {
 
   removeDungeonIndicator(channelKey) {
     const channelElement = this.dungeonIndicators.get(channelKey);
-    if (channelElement) {
+    if (channelElement?.isConnected) {
       channelElement.removeAttribute('data-dungeon-active');
     }
     this.dungeonIndicators.delete(channelKey);
@@ -9702,7 +9789,7 @@ module.exports = class Dungeons {
 
   removeAllIndicators() {
     this.dungeonIndicators.forEach((channelElement) => {
-      if (channelElement) {
+      if (channelElement?.isConnected) {
         channelElement.removeAttribute('data-dungeon-active');
       }
     });
@@ -10389,31 +10476,6 @@ module.exports = class Dungeons {
   // All HP bar creation, positioning, and update code has been removed
   // HP/Mana calculations (calculateHP, calculateMana) are still used by resurrection system
 
-  createDungeonButton() {
-    // DISABLED: Dungeon UI button removed from chat toolbar
-    // Use channel indicators (fortress icon) and boss HP bar (JOIN/LEAVE) instead
-    return;
-  }
-
-  removeDungeonButton() {
-    if (this.dungeonButton) {
-      this.dungeonButton.remove();
-      this.dungeonButton = null;
-    }
-    if (this.toolbarObserver) {
-      this.toolbarObserver.disconnect();
-      this.toolbarObserver = null;
-    }
-    if (this.toolbarCheckInterval) {
-      clearInterval(this.toolbarCheckInterval);
-      this.toolbarCheckInterval = null;
-    }
-    if (this._recreateTimeout) {
-      clearTimeout(this._recreateTimeout);
-      this._recreateTimeout = null;
-    }
-  }
-
   closeDungeonModal() {
     if (this.dungeonModal) {
       this.dungeonModal.remove();
@@ -10535,6 +10597,11 @@ module.exports = class Dungeons {
     document.addEventListener('visibilitychange', this._visibilityChangeHandler);
     window.addEventListener('blur', this._visibilityChangeHandler);
     window.addEventListener('focus', this._visibilityChangeHandler);
+
+    // Track for cleanup
+    this._listeners.set('visibility_doc', { target: document, event: 'visibilitychange', handler: this._visibilityChangeHandler });
+    this._listeners.set('visibility_blur', { target: window, event: 'blur', handler: this._visibilityChangeHandler });
+    this._listeners.set('visibility_focus', { target: window, event: 'focus', handler: this._visibilityChangeHandler });
   }
 
   stopVisibilityTracking() {
@@ -10543,6 +10610,10 @@ module.exports = class Dungeons {
       window.removeEventListener('blur', this._visibilityChangeHandler);
       window.removeEventListener('focus', this._visibilityChangeHandler);
       this._visibilityChangeHandler = null;
+      // Remove from centralized listener tracking
+      this._listeners.delete('visibility_doc');
+      this._listeners.delete('visibility_blur');
+      this._listeners.delete('visibility_focus');
     }
     this._isWindowVisible = true; // Reset to visible state
   }
@@ -11196,12 +11267,10 @@ module.exports = class Dungeons {
     this._navPushStateWrapper = (...args) => {
       prevPushState.apply(history, args);
       scheduleCheckChannel();
-      this.dungeonButton || this.createDungeonButton();
     };
     this._navReplaceStateWrapper = (...args) => {
       prevReplaceState.apply(history, args);
       scheduleCheckChannel();
-      this.dungeonButton || this.createDungeonButton();
     };
     history.pushState = this._navPushStateWrapper;
     history.replaceState = this._navReplaceStateWrapper;
@@ -11209,7 +11278,6 @@ module.exports = class Dungeons {
     // Also listen to popstate for browser navigation
     this._popstateHandler = () => {
       scheduleCheckChannel();
-      this.dungeonButton || this.createDungeonButton();
     };
     window.addEventListener('popstate', this._popstateHandler);
     // Track listener for cleanup
@@ -11644,6 +11712,24 @@ module.exports = class Dungeons {
       this.debugLog('Cleared expired allocation cache');
     }
 
+    // Periodic cache cleanup — evict entries older than 30 seconds
+    const cacheCleanupTime = now;
+    if (this._personalityCache?.size > 0) {
+      for (const [key, val] of this._personalityCache) {
+        if (cacheCleanupTime - (val?.timestamp || 0) > 30000) this._personalityCache.delete(key);
+      }
+    }
+    if (this._memberWidthCache?.size > 0) {
+      for (const [key, val] of this._memberWidthCache) {
+        if (cacheCleanupTime - (val?.timestamp || 0) > 30000) this._memberWidthCache.delete(key);
+      }
+    }
+    if (this._containerCache?.size > 0) {
+      for (const [key, val] of this._containerCache) {
+        if (cacheCleanupTime - (val?.timestamp || 0) > 30000) this._containerCache.delete(key);
+      }
+    }
+
     // Clean up extraction events (keep only recent 500)
     if (this.extractionEvents && this.extractionEvents.size > 500) {
       const entries = Array.from(this.extractionEvents.entries());
@@ -11694,9 +11780,9 @@ module.exports = class Dungeons {
     }
     // Try to reload plugin reference if not available
     if (!this.toasts) {
-      const toastsPlugin = BdApi.Plugins.get('SoloLevelingToasts');
-      if (toastsPlugin?.instance) {
-        this.toasts = toastsPlugin.instance;
+      const toastsInstance = this._getPluginSafe('SoloLevelingToasts');
+      if (toastsInstance) {
+        this.toasts = toastsInstance;
       }
     }
 
@@ -11815,7 +11901,8 @@ module.exports = class Dungeons {
     }
 
     // Auto-remove after 4 seconds
-    setTimeout(() => {
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
       this.removeFallbackToast(toastId);
     }, 4000);
   }
@@ -11826,7 +11913,8 @@ module.exports = class Dungeons {
 
     const toast = this.fallbackToasts[toastIndex].element;
     toast.style.animation = 'dungeonsToastSlideOut 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)';
-    setTimeout(() => {
+    this._setTrackedTimeout(() => {
+      if (!this.started) return;
       if (toast.parentNode) {
         toast.parentNode.removeChild(toast);
       }

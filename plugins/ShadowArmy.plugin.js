@@ -1467,6 +1467,9 @@ function buildWidgetComponents(pluginInstance) {
   return { ShadowArmyWidget, RankBox };
 }
 
+let _ReactUtils;
+try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 module.exports = class ShadowArmy {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -2410,6 +2413,35 @@ module.exports = class ShadowArmy {
     }, 30000);
 
     // Chatbox button disabled - no removal needed
+
+    // Listen for Dungeons essence awards (C2 fix - no more direct mutation)
+    if (typeof BdApi?.Events?.on === 'function') {
+      this._dungeonEssenceListener = (data) => {
+        const amount = data?.amount || 0;
+        if (amount > 0 && this.settings?.shadowEssence) {
+          this.settings.shadowEssence.essence = (this.settings.shadowEssence.essence || 0) + amount;
+          this.saveSettings();
+        }
+      };
+      BdApi.Events.on('Dungeons:awardEssence', this._dungeonEssenceListener);
+
+      // Listen for batch extraction complete (C11 fix - immediate widget refresh)
+      this._batchExtractionListener = async (data) => {
+        if (data?.extracted > 0 && typeof this.updateShadowRankWidget === 'function') {
+          // Clear debounce and force immediate refresh
+          if (this._postExtractionDebounceTimer) {
+            clearTimeout(this._postExtractionDebounceTimer);
+            this._postExtractionDebounceTimer = null;
+          }
+          try {
+            await this.updateShadowRankWidget();
+          } catch (err) {
+            this.debugError?.('WIDGET', 'Batch extraction widget refresh failed', err);
+          }
+        }
+      };
+      BdApi.Events.on('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
+    }
   }
 
   /**
@@ -2577,6 +2609,18 @@ module.exports = class ShadowArmy {
     // Clear Solo Leveling data cache
     this._soloDataCache = null;
     this._soloDataCacheTime = 0;
+
+    // Cleanup cross-plugin event listeners (C2/C11 fixes)
+    if (typeof BdApi?.Events?.off === 'function') {
+      if (this._dungeonEssenceListener) {
+        BdApi.Events.off('Dungeons:awardEssence', this._dungeonEssenceListener);
+        this._dungeonEssenceListener = null;
+      }
+      if (this._batchExtractionListener) {
+        BdApi.Events.off('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
+        this._batchExtractionListener = null;
+      }
+    }
 
     // Close IndexedDB connection
     if (this.storageManager) {
@@ -3839,7 +3883,9 @@ module.exports = class ShadowArmy {
     fromDungeon = false,
     beastFamilies = null,
     maxAttempts = 3,
-    showAnimation = true // Show animation by default (messages and bosses), skip for mobs
+    showAnimation = true, // Show animation by default (messages and bosses), skip for mobs
+    guaranteedExtraction = false, // Dungeon mobs below user rank: skip RNG roll, always arise
+    sameRankBoost = false // Same-rank dungeon mobs: boosted chance (high but not guaranteed)
   ) {
     // Stats extracted but not used in current extraction logic (reserved for future use)
 
@@ -3958,38 +4004,55 @@ module.exports = class ShadowArmy {
         }
       );
 
-      // Calculate extraction chance based on stats
-      const extractionChance = this.calculateExtractionChance(
-        userRank,
-        userStats,
-        targetRank,
-        targetStrength,
-        intelligence,
-        perception,
-        strength,
-        skipCap
-      );
-
-      // Roll for extraction
-      const roll = Math.random();
-
-      this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Extraction roll`, {
-        attemptNum,
-        extractionChance: (extractionChance * 100).toFixed(2) + '%',
-        roll: (roll * 100).toFixed(2) + '%',
-        success: roll < extractionChance,
-      });
-
-      // Guard clause: Early return on failure
-      if (roll >= extractionChance) {
-        this.debugLog(
-          'EXTRACTION_RETRIES',
-          `Attempt ${attemptNum} - Roll failed, trying next attempt`,
-          {
-            attemptNum,
-          }
+      // Tier 1: Guaranteed extraction — user outranks mob (skip RNG entirely)
+      if (guaranteedExtraction) {
+        this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Guaranteed extraction (user outranks mob)`, {
+          attemptNum, targetRank, guaranteedExtraction: true,
+        });
+        // Fall through to extraction succeeded block
+      } else {
+        // Calculate base extraction chance from stats
+        const extractionChance = this.calculateExtractionChance(
+          userRank,
+          userStats,
+          targetRank,
+          targetStrength,
+          intelligence,
+          perception,
+          strength,
+          skipCap
         );
-        continue; // Failed extraction roll, try next attempt
+
+        // Tier 2: Same-rank boost — high chance but not guaranteed
+        // Applies a floor of 85% (the mob is your equal, you should usually arise it)
+        const effectiveChance = sameRankBoost
+          ? Math.max(0.85, extractionChance)
+          : extractionChance;
+
+        // Roll for extraction
+        const roll = Math.random();
+
+        this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - Extraction roll`, {
+          attemptNum,
+          baseChance: (extractionChance * 100).toFixed(2) + '%',
+          effectiveChance: (effectiveChance * 100).toFixed(2) + '%',
+          sameRankBoost,
+          roll: (roll * 100).toFixed(2) + '%',
+          success: roll < effectiveChance,
+        });
+
+        // Guard clause: Early return on failure
+        if (roll >= effectiveChance) {
+          this.debugLog(
+            'EXTRACTION_RETRIES',
+            `Attempt ${attemptNum} - Roll failed${sameRankBoost ? ' (same-rank boosted)' : ''}, trying next attempt`,
+            {
+              attemptNum,
+              sameRankBoost,
+            }
+          );
+          continue; // Failed extraction roll, try next attempt
+        }
       }
 
       // Extraction succeeded
@@ -4323,14 +4386,43 @@ module.exports = class ShadowArmy {
       }
     }
 
-    // Determine retry count: Bosses get 3 attempts, regular mobs get 1 attempt
-    // This prevents queue buildup and improves performance for mass mob extraction
-    // Use lookup map instead of ternary for clarity
-    const attemptMap = { boss: 3, mob: 1 };
-    const maxAttempts = attemptMap[isBoss ? 'boss' : 'mob'];
+    // Rank-based extraction tier (Solo Leveling lore):
+    //   - User outranks mob  → guaranteed ARISE (Shadow Monarch dominates weaker enemies)
+    //   - Same rank           → high chance but can still fail (worthy opponent, small resistance)
+    //   - Mob outranks user   → normal RNG extraction (uses full calculateExtractionChance system)
+    //   - Bosses              → always normal RNG with 3 retries (dramatic tension)
+    const userRankIdx = this.shadowRanks.indexOf(userRank);
+    const mobRankIdx = this.shadowRanks.indexOf(mobRank);
+    const rankDiff = mobRankIdx - userRankIdx; // negative = user higher, 0 = same, positive = mob higher
 
-    // Attempt extraction with appropriate retry count
-    // Mobs: no animation (silent), Bosses: show animation (ARISE button handles it, but keep for consistency)
+    let dungeonAutoArise = false; // Default: use RNG
+    let maxAttempts = 1;
+
+    if (isBoss) {
+      // Bosses always use chance-based extraction with 3 retries
+      dungeonAutoArise = false;
+      maxAttempts = 3;
+    } else if (rankDiff < 0) {
+      // User outranks mob → guaranteed extraction
+      dungeonAutoArise = true;
+      maxAttempts = 1;
+    } else if (rankDiff === 0) {
+      // Same rank → high chance via "same-rank" mode (handled in attemptExtractionWithRetries)
+      // Not guaranteed, but boosted. Give 2 attempts for a fair shot.
+      dungeonAutoArise = false;
+      maxAttempts = 2;
+    } else {
+      // Mob outranks user → normal RNG extraction, 1 attempt (hard to arise stronger enemies)
+      dungeonAutoArise = false;
+      maxAttempts = 1;
+    }
+
+    this.debugLog('DUNGEON_EXTRACTION', `Rank comparison: User[${userRank}] vs Mob[${mobRank}]`, {
+      userRankIdx, mobRankIdx, rankDiff, dungeonAutoArise, maxAttempts, isBoss,
+      tier: dungeonAutoArise ? 'GUARANTEED' : rankDiff === 0 ? 'SAME_RANK_BOOSTED' : rankDiff > 0 ? 'HIGHER_MOB_RNG' : 'BOSS_RNG',
+    });
+
+    // Attempt extraction with tier-appropriate settings
     const extractedShadow = await this.attemptExtractionWithRetries(
       userRank,
       userLevel,
@@ -4341,8 +4433,10 @@ module.exports = class ShadowArmy {
       true, // skipCap = true for dungeons
       true, // fromDungeon = true (enables magic beast extraction)
       beastFamilies, // Pass biome families for themed extraction
-      maxAttempts, // 1 for mobs, 3 for bosses
-      isBoss // showAnimation: true for bosses (ARISE), false for mobs (silent)
+      maxAttempts,
+      isBoss, // showAnimation: true for bosses (ARISE), false for mobs (silent)
+      dungeonAutoArise, // guaranteedExtraction: only true when user outranks mob
+      rankDiff === 0 && !isBoss // sameRankBoost: true for same-rank dungeon mobs
     );
 
     // Record boss attempt ONLY if this is a boss (counts toward daily limit)
@@ -9575,18 +9669,9 @@ module.exports = class ShadowArmy {
    * Returns a bound createRoot function, or null when unavailable.
    */
   _getCreateRoot() {
+    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
+    // Minimal inline fallback
     if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    try {
-      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
-      if (client?.createRoot) return client.createRoot.bind(client);
-    } catch (_) {}
-    try {
-      const createRoot = BdApi.Webpack.getModule(
-        (m) => typeof m === 'function' && m?.name === 'createRoot',
-        { searchExports: true }
-      );
-      if (createRoot) return createRoot;
-    } catch (_) {}
     return null;
   }
 
