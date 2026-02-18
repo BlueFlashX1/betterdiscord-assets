@@ -9385,8 +9385,8 @@ module.exports = class ShadowArmy {
         background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
         border: 1px solid rgba(138, 43, 226, 0.4) !important;
         border-radius: 8px !important;
-        padding: 24px 12px 12px 12px !important;
-        margin: 8px 8px 12px 8px !important;
+        padding: 12px !important;
+        margin: 8px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
@@ -9494,17 +9494,25 @@ module.exports = class ShadowArmy {
     if (!membersList) return;
 
     try {
+      // Spacer div to push widget below the channel header
+      const spacer = document.createElement('div');
+      spacer.id = 'shadow-army-widget-spacer';
+      spacer.style.cssText = 'height: 16px; flex-shrink: 0;';
+
       const widget = document.createElement('div');
       widget.id = 'shadow-army-widget';
       widget.addEventListener('click', () => this.openShadowArmyUI());
 
-      // Insert at top of member list
+      // Insert spacer + widget at top of member list
       const membersContent = memberElements?.membersContent || null;
       if (membersContent?.firstChild) {
         membersContent.insertBefore(widget, membersContent.firstChild);
+        membersContent.insertBefore(spacer, widget);
       } else if (membersList.firstChild) {
         membersList.insertBefore(widget, membersList.firstChild);
+        membersList.insertBefore(spacer, widget);
       } else {
+        membersList.appendChild(spacer);
         membersList.appendChild(widget);
       }
 
@@ -9546,6 +9554,8 @@ module.exports = class ShadowArmy {
       this._widgetReactRoot = null;
     }
     this._widgetForceUpdate = null;
+    const spacer = document.getElementById('shadow-army-widget-spacer');
+    if (spacer) spacer.remove();
     const widget = document.getElementById('shadow-army-widget');
     if (widget) widget.remove();
     this.removeWidgetCSS();
