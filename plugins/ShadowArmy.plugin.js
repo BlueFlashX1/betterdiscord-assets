@@ -1448,7 +1448,7 @@ function buildWidgetComponents(pluginInstance) {
         ce('div', { className: 'widget-total', style: { color: '#999', fontSize: '11px' } }, totalCount + ' Total')
       ),
       // Power bar
-      ce('div', { className: 'widget-power', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '4px 8px', background: 'rgba(138, 43, 226, 0.1)', border: '1px solid rgba(138, 43, 226, 0.25)', borderRadius: '4px' } },
+      ce('div', { className: 'widget-power', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '6px 8px', background: 'rgba(0, 0, 0, 0.8)', border: '1px solid rgba(138, 43, 226, 0.5)', borderRadius: '4px' } },
         ce('span', { style: { color: '#8a2be2', fontSize: '11px', fontWeight: '600', textShadow: '0 0 4px rgba(138, 43, 226, 0.6)', fontFamily: "'Orbitron', sans-serif" } }, '\u2694 Total Power: ' + totalPower)
       ),
       // Elite ranks grid
@@ -9386,7 +9386,7 @@ module.exports = class ShadowArmy {
         border: 1px solid rgba(138, 43, 226, 0.4) !important;
         border-radius: 8px !important;
         padding: 12px !important;
-        margin: 24px 8px 12px 8px !important;
+        margin: 48px 8px 12px 8px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
         cursor: pointer !important;
         transition: all 0.3s ease !important;
