@@ -1138,7 +1138,7 @@ module.exports = class ShadowExchange {
         width: 26px;
         height: 26px;
         border-radius: 50%;
-        border: 2px solid rgba(155, 89, 182, 0.6);
+        border: 2px solid rgba(138, 43, 226, 0.6);
         background: rgba(10, 10, 20, 0.7);
         cursor: pointer;
         opacity: 0.85;
@@ -1159,16 +1159,16 @@ module.exports = class ShadowExchange {
       .se-swirl-icon:hover {
         opacity: 1;
         transform: scale(1.15);
-        border-color: rgba(155, 89, 182, 1);
-        box-shadow: 0 0 12px rgba(155, 89, 182, 0.6);
+        border-color: rgba(138, 43, 226, 1);
+        box-shadow: 0 0 12px rgba(138, 43, 226, 0.6);
       }
 
       /* ── Panel Overlay ─────────────────────────────────────────────── */
       .se-panel-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.82);
-        backdrop-filter: blur(6px);
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(5px);
         z-index: 100001;
         display: flex;
         align-items: center;
@@ -1184,10 +1184,10 @@ module.exports = class ShadowExchange {
       .se-panel-container {
         width: 650px;
         max-height: 82vh;
-        background: linear-gradient(145deg, #1a1a2e, #16213e);
-        border: 2px solid rgba(155, 89, 182, 0.5);
+        background: #1e1e2e;
+        border: 2px solid rgba(138, 43, 226, 0.5);
         border-radius: 14px;
-        box-shadow: 0 0 40px rgba(155, 89, 182, 0.2), 0 8px 32px rgba(0, 0, 0, 0.6);
+        box-shadow: 0 0 40px rgba(138, 43, 226, 0.2), 0 8px 32px rgba(0, 0, 0, 0.6);
         display: flex;
         flex-direction: column;
         overflow: hidden;
@@ -1204,13 +1204,13 @@ module.exports = class ShadowExchange {
         align-items: center;
         justify-content: space-between;
         padding: 14px 18px;
-        border-bottom: 1px solid rgba(155, 89, 182, 0.25);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.25);
         background: rgba(0, 0, 0, 0.2);
       }
       .se-panel-title {
         font-size: 16px;
         font-weight: 700;
-        color: #c39bd3;
+        color: #a78bfa;
         margin: 0;
         letter-spacing: 0.5px;
       }
@@ -1220,7 +1220,7 @@ module.exports = class ShadowExchange {
         align-items: center;
       }
       .se-mark-btn {
-        background: linear-gradient(135deg, #7d3c98, #9b59b6);
+        background: linear-gradient(135deg, #7c3aed, #8a2be2);
         color: #fff;
         border: none;
         border-radius: 6px;
@@ -1231,7 +1231,7 @@ module.exports = class ShadowExchange {
         transition: box-shadow 0.2s ease, transform 0.15s ease;
       }
       .se-mark-btn:hover {
-        box-shadow: 0 0 12px rgba(155, 89, 182, 0.5);
+        box-shadow: 0 0 12px rgba(138, 43, 226, 0.5);
         transform: scale(1.03);
       }
       .se-close-btn {
@@ -1253,11 +1253,11 @@ module.exports = class ShadowExchange {
         display: flex;
         gap: 8px;
         padding: 10px 18px;
-        border-bottom: 1px solid rgba(155, 89, 182, 0.12);
+        border-bottom: 1px solid rgba(138, 43, 226, 0.12);
       }
       .se-sort-select, .se-search-input {
         background: rgba(0, 0, 0, 0.3);
-        border: 1px solid rgba(155, 89, 182, 0.2);
+        border: 1px solid rgba(138, 43, 226, 0.2);
         border-radius: 6px;
         color: #ddd;
         padding: 6px 10px;
@@ -1266,7 +1266,7 @@ module.exports = class ShadowExchange {
         transition: border-color 0.2s ease;
       }
       .se-sort-select:focus, .se-search-input:focus {
-        border-color: rgba(155, 89, 182, 0.5);
+        border-color: rgba(138, 43, 226, 0.5);
       }
       .se-search-input {
         flex: 1;
@@ -1275,7 +1275,7 @@ module.exports = class ShadowExchange {
         width: 140px;
       }
       .se-sort-select option {
-        background: #1a1a2e;
+        background: #1e1e2e;
         color: #ddd;
       }
 
@@ -1297,7 +1297,7 @@ module.exports = class ShadowExchange {
         background: transparent;
       }
       .se-waypoint-list::-webkit-scrollbar-thumb {
-        background: rgba(155, 89, 182, 0.3);
+        background: rgba(138, 43, 226, 0.3);
         border-radius: 3px;
       }
 
@@ -1329,15 +1329,15 @@ module.exports = class ShadowExchange {
       /* ── Waypoint Card ─────────────────────────────────────────────── */
       .se-waypoint-card {
         background: rgba(0, 0, 0, 0.25);
-        border: 1px solid rgba(155, 89, 182, 0.12);
+        border: 1px solid rgba(138, 43, 226, 0.12);
         border-left: 3px solid #808080;
         border-radius: 8px;
         padding: 10px 14px;
         transition: background 0.15s ease, border-color 0.15s ease;
       }
       .se-waypoint-card:hover {
-        background: rgba(155, 89, 182, 0.06);
-        border-color: rgba(155, 89, 182, 0.25);
+        background: rgba(138, 43, 226, 0.06);
+        border-color: rgba(138, 43, 226, 0.25);
       }
 
       .se-card-top {
@@ -1360,7 +1360,7 @@ module.exports = class ShadowExchange {
       .se-shadow-name {
         font-size: 13px;
         font-weight: 600;
-        color: #c39bd3;
+        color: #a78bfa;
         flex: 1;
         overflow: hidden;
         text-overflow: ellipsis;
@@ -1399,8 +1399,8 @@ module.exports = class ShadowExchange {
         align-items: center;
       }
       .se-type-badge {
-        background: rgba(155, 89, 182, 0.15);
-        color: #b388d9;
+        background: rgba(138, 43, 226, 0.15);
+        color: #a78bfa;
         padding: 1px 6px;
         border-radius: 3px;
         font-size: 10px;
@@ -1420,7 +1420,7 @@ module.exports = class ShadowExchange {
       /* ── Message Preview ──────────────────────────────────────── */
       .se-message-preview {
         background: rgba(0, 0, 0, 0.2);
-        border-left: 2px solid rgba(155, 89, 182, 0.3);
+        border-left: 2px solid rgba(138, 43, 226, 0.3);
         border-radius: 0 4px 4px 0;
         padding: 5px 8px;
         margin: 4px 0 6px 0;
@@ -1435,7 +1435,7 @@ module.exports = class ShadowExchange {
         line-height: 1.4;
       }
       .se-msg-author {
-        color: #c39bd3;
+        color: #a78bfa;
         font-weight: 600;
         margin-right: 4px;
       }
@@ -1448,7 +1448,7 @@ module.exports = class ShadowExchange {
         justify-content: flex-end;
       }
       .se-teleport-btn {
-        background: linear-gradient(135deg, #6c3483, #9b59b6);
+        background: linear-gradient(135deg, #6d28d9, #8a2be2);
         color: #fff;
         border: none;
         border-radius: 5px;
@@ -1460,7 +1460,7 @@ module.exports = class ShadowExchange {
         letter-spacing: 0.3px;
       }
       .se-teleport-btn:hover {
-        box-shadow: 0 0 12px rgba(155, 89, 182, 0.45);
+        box-shadow: 0 0 12px rgba(138, 43, 226, 0.45);
         transform: scale(1.04);
       }
 
@@ -1469,7 +1469,7 @@ module.exports = class ShadowExchange {
         display: flex;
         justify-content: space-between;
         padding: 10px 18px;
-        border-top: 1px solid rgba(155, 89, 182, 0.12);
+        border-top: 1px solid rgba(138, 43, 226, 0.12);
         font-size: 11px;
         color: #777;
       }

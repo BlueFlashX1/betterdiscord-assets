@@ -10061,7 +10061,7 @@ module.exports = class ShadowArmy {
             backdropFilter: 'blur(5px)',
           },
         },
-          ce('div', { style: { width: '90%', maxWidth: '900px', background: '#1e1e1e', border: '2px solid #8a2be2', borderRadius: '12px', padding: '20px' } },
+          ce('div', { style: { width: '90%', maxWidth: '900px', background: '#1e1e2e', border: '2px solid #8a2be2', borderRadius: '12px', padding: '20px' } },
             ce('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' } },
               ce('h2', { style: { color: '#8a2be2', margin: 0 } }, 'Shadow Army Command'),
               ce('button', { onClick: onClose, style: { background: 'transparent', border: 'none', color: '#999', fontSize: '24px', cursor: 'pointer', padding: 0, width: '30px', height: '30px' } }, '\u00d7')
@@ -10105,8 +10105,8 @@ module.exports = class ShadowArmy {
       },
         ce('div', {
           style: {
-            width: '90%', maxWidth: '900px', maxHeight: '90vh',
-            background: '#1e1e1e', border: '2px solid #8a2be2', borderRadius: '12px',
+            width: '90%', maxWidth: '900px', maxHeight: '80vh',
+            background: '#1e1e2e', border: '2px solid #8a2be2', borderRadius: '12px',
             padding: '20px', overflowY: 'auto',
             boxShadow: '0 8px 32px rgba(0, 0, 0, 0.5)',
           },
@@ -10160,7 +10160,7 @@ module.exports = class ShadowArmy {
           ),
 
           // Generals List
-          ce('div', { style: { maxHeight: '50vh', overflowY: 'auto' } },
+          ce('div', { style: { maxHeight: '35vh', overflowY: 'auto' } },
             generals.length === 0
               ? ce('div', { style: { textAlign: 'center', padding: '40px', color: '#999' } }, 'No shadows in army yet. Extract shadows from dungeons!')
               : generals.map((shadow, i) => ce(GeneralCard, { key: pluginRef.getCacheKey(shadow) || i, shadow, index: i }))

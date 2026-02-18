@@ -6160,11 +6160,20 @@ module.exports = class Dungeons {
       }
     } catch (_) {}
 
+    // Shadows deployed to ShadowSenses monitoring are unavailable for battle
+    let sensesDeployedIds = new Set();
+    try {
+      const ssPlugin = BdApi.Plugins.get("ShadowSenses");
+      if (ssPlugin?.instance?.getDeployedShadowIds) {
+        sensesDeployedIds = ssPlugin.instance.getDeployedShadowIds();
+      }
+    } catch (_) {}
+
     // Sort shadows once by combat score descending (strongest first)
     const shadowsSorted = [...allShadows]
       .filter((s) => {
         const id = getShadowId(s);
-        return id && !exchangeMarkedIds.has(id);
+        return id && !exchangeMarkedIds.has(id) && !sensesDeployedIds.has(id);
       })
       .sort((a, b) => getShadowScore(b) - getShadowScore(a));
 
@@ -7481,12 +7490,22 @@ module.exports = class Dungeons {
       exchangeMarkedIds = new Set();
     }
 
+    // Shadows deployed to ShadowSenses monitoring are unavailable for battle
+    let sensesDeployedIds;
+    try {
+      const ssPlugin = BdApi.Plugins.get("ShadowSenses");
+      sensesDeployedIds = ssPlugin?.instance?.getDeployedShadowIds?.() || new Set();
+    } catch (_) {
+      sensesDeployedIds = new Set();
+    }
+
     const combatReady = [];
     for (const shadow of assignedShadows) {
       const shadowId = this.getShadowIdValue(shadow);
       if (!shadowId) continue;
       if (deadShadows.has(shadowId)) continue;
       if (exchangeMarkedIds.has(shadowId)) continue;
+      if (sensesDeployedIds.has(shadowId)) continue;
       const hpData = shadowHP[shadowId];
       hpData && hpData.hp > 0 && combatReady.push(shadow);
     }
