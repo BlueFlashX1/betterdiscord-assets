@@ -1180,7 +1180,13 @@ module.exports = class ShadowSenses {
 
     // SensesEngine
     this.sensesEngine = new SensesEngine(this);
-    this.sensesEngine.subscribe();
+
+    // Subscribe immediately if Dispatcher ready, otherwise retry with backoff
+    if (this._Dispatcher) {
+      this.sensesEngine.subscribe();
+    } else {
+      this._startDispatcherRetry();
+    }
 
     // CSS
     this.injectCSS();
@@ -1201,6 +1207,12 @@ module.exports = class ShadowSenses {
 
   stop() {
     try {
+      // 0. Clear Dispatcher retry timer if still pending
+      if (this._dispatcherRetryTimer) {
+        clearTimeout(this._dispatcherRetryTimer);
+        this._dispatcherRetryTimer = null;
+      }
+
       // 1. Unsubscribe Dispatcher + final flush (persists feeds to disk)
       if (this.sensesEngine) {
         this.sensesEngine.unsubscribe();
@@ -1262,6 +1274,31 @@ module.exports = class ShadowSenses {
       SelectedGuildStore: !!this._SelectedGuildStore,
       NavigationUtils: !!this._NavigationUtils,
     });
+  }
+
+  _startDispatcherRetry() {
+    const { Webpack } = BdApi;
+    let attempt = 0;
+    const maxAttempts = 20; // 20 attempts over ~30s total
+    const delays = [500, 500, 1000, 1000, 1500, 2000]; // escalating backoff
+
+    const tryAcquire = () => {
+      attempt++;
+      this._Dispatcher = Webpack.getByKeys("actionLogger") || Webpack.getModule(m => m?.subscribe && m?.dispatch && m?.unsubscribe);
+      if (this._Dispatcher) {
+        this.debugLog("Webpack", `Dispatcher acquired on retry #${attempt}`);
+        if (this.sensesEngine) this.sensesEngine.subscribe();
+        return;
+      }
+      if (attempt >= maxAttempts) {
+        this.debugError("Webpack", `Dispatcher unavailable after ${maxAttempts} retries — SensesEngine will not detect messages`);
+        return;
+      }
+      const delay = delays[Math.min(attempt - 1, delays.length - 1)];
+      this._dispatcherRetryTimer = setTimeout(tryAcquire, delay);
+    };
+
+    this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
   }
 
   injectCSS() {
