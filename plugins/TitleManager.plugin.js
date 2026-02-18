@@ -1066,7 +1066,7 @@ module.exports = class SoloLevelingTitleManager {
       }
       .tm-title-button {
         background: transparent;
-        border: 1px solid rgba(138, 43, 226, 0.3);
+        border: 1px solid rgba(138, 43, 226, 1);
         border-radius: 4px;
         width: 32px;
         height: 32px;
@@ -1092,13 +1092,13 @@ module.exports = class SoloLevelingTitleManager {
       .tm-title-button:hover {
         color: var(--interactive-hover, #dcddde);
         background: rgba(138, 43, 226, 0.15);
-        border-color: rgba(138, 43, 226, 0.5);
+        border-color: rgba(138, 43, 226, 0.85);
       }
 
       .tm-title-button:active {
         color: var(--interactive-active, #fff);
         background: rgba(138, 43, 226, 0.25);
-        border-color: rgba(138, 43, 226, 0.7);
+        border-color: rgba(138, 43, 226, 1);
       }
 
       .tm-title-modal {
