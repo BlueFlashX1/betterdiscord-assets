@@ -136,10 +136,10 @@ empty/
 # Local workspace bucket (do not track)
 _local/
 
-# Ignored Plugin Source Files
-plugins/*.plugin.js
-plugins/*.json
-plugins/*.md
-plugins/*.css
-plugins/*.js
+# Ignored Plugin Source Files (temporarily tracked until dev is done)
+# plugins/*.plugin.js
+# plugins/*.json
+# plugins/*.md
+# plugins/*.css
+# plugins/*.js
 !plugins/README.md
