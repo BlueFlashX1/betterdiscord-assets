@@ -2,7 +2,7 @@
  * @name SoloLevelingTitleManager
  * @author BlueFlashX1
  * @description Title management system for Solo Leveling Stats - display and equip titles with buffs
- * @version 1.2.0
+ * @version 2.0.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -44,6 +44,15 @@
  * VERSION HISTORY
  * ============================================================================
  *
+ * @changelog v2.0.0 (2026-02-17) - REACT MODAL MIGRATION
+ * - Migrated title selection modal from innerHTML + event delegation to React components
+ * - Added buildTitleComponents() factory with TitleModal + TitleCard components
+ * - Uses BdApi.ReactDOM.createRoot() with webpack fallbacks (_getCreateRoot)
+ * - useReducer force-update bridge for imperative → React state sync
+ * - Equip/unequip now trigger React diffed update (no full modal rebuild)
+ * - Deleted: renderTitlesGrid, refreshModalSmooth, createTitleButtonIconSvg, escapeHtml
+ * - Zero visual regression — all existing CSS class names preserved
+ *
  * @changelog v1.1.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION
  * ADVANCED FEATURES:
  * - Added Webpack module access (ChannelStore) for better Discord integration
@@ -77,6 +86,146 @@
  * - Console log cleanup (removed verbose logs)
  */
 
+// ============================================================================
+// REACT COMPONENT FACTORY (v2.0.0 — replaces innerHTML modal rendering)
+// ============================================================================
+function buildTitleComponents(pluginInstance) {
+  const React = BdApi.React;
+  const ce = React.createElement;
+
+  const SORT_OPTIONS = [
+    { value: 'xpBonus', label: 'XP Gain (Highest)' },
+    { value: 'critBonus', label: 'Crit Chance (Highest)' },
+    { value: 'strBonus', label: 'Strength % (Highest)' },
+    { value: 'agiBonus', label: 'Agility % (Highest)' },
+    { value: 'intBonus', label: 'Intelligence % (Highest)' },
+    { value: 'vitBonus', label: 'Vitality % (Highest)' },
+    { value: 'perBonus', label: 'Perception % (Highest)' },
+  ];
+
+  // ── TitleCard ──
+  function TitleCard({ title, isActive, bonus, onEquip }) {
+    const buffs = pluginInstance.formatTitleBonusLines(bonus);
+    return ce('div', { className: `tm-title-card ${isActive ? 'active' : ''}`.trim() },
+      ce('div', { className: 'tm-title-icon' }, ''),
+      ce('div', { className: 'tm-title-name' }, title),
+      buffs.length > 0 ? ce('div', { className: 'tm-title-bonus' }, buffs.join(', ')) : null,
+      isActive
+        ? ce('div', { className: 'tm-title-status' }, 'Equipped')
+        : ce('button', { className: 'tm-equip-btn', onClick: () => onEquip(title) }, 'Equip')
+    );
+  }
+
+  // ── TitleModal ──
+  function TitleModal({ onClose }) {
+    const [sortBy, setSortBy] = React.useState(pluginInstance.settings.sortBy || 'xpBonus');
+    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+
+    // Expose forceUpdate
+    React.useEffect(() => {
+      pluginInstance._modalForceUpdate = forceUpdate;
+      return () => { pluginInstance._modalForceUpdate = null; };
+    }, [forceUpdate]);
+
+    // Escape key
+    React.useEffect(() => {
+      const handler = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+      document.addEventListener('keydown', handler, true);
+      return () => document.removeEventListener('keydown', handler, true);
+    }, [onClose]);
+
+    const soloData = pluginInstance.getSoloLevelingData();
+    const isTitleAllowed = (t) => !pluginInstance._unwantedTitles.has(t);
+    const titles = React.useMemo(() => {
+      const raw = (soloData?.titles || []).filter(isTitleAllowed);
+      pluginInstance.getSortedTitles({ titles: raw, sortBy });
+      return raw;
+    }, [soloData?.titles?.length, sortBy]);
+
+    const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
+
+    const handleSortChange = React.useCallback((e) => {
+      const val = e.target.value;
+      setSortBy(val);
+      pluginInstance.settings.sortBy = val;
+      pluginInstance.saveSettings();
+    }, []);
+
+    const handleEquip = React.useCallback((title) => {
+      pluginInstance.equipTitle(title);
+    }, []);
+
+    const handleUnequip = React.useCallback(() => {
+      pluginInstance.unequipTitle();
+    }, []);
+
+    const handleOverlayClick = React.useCallback((e) => {
+      if (e.target.className === 'tm-title-modal') onClose();
+    }, [onClose]);
+
+    // Active title section
+    let activeTitleSection;
+    if (activeTitle) {
+      const bonus = pluginInstance.getTitleBonus(activeTitle);
+      const buffs = pluginInstance.formatTitleBonusLines(bonus);
+      activeTitleSection = ce('div', { className: 'tm-active-title' },
+        ce('div', { className: 'tm-active-label' }, 'Active Title:'),
+        ce('div', { className: 'tm-active-name' }, activeTitle),
+        buffs.length > 0 ? ce('div', { className: 'tm-active-bonus' }, buffs.join(', ')) : null,
+        ce('button', { className: 'tm-unequip-btn', onClick: handleUnequip }, 'Unequip')
+      );
+    } else {
+      activeTitleSection = ce('div', { className: 'tm-no-title' },
+        ce('div', { className: 'tm-no-title-text' }, 'No title equipped')
+      );
+    }
+
+    // Titles grid
+    let gridContent;
+    if (titles.length === 0) {
+      gridContent = ce('div', { className: 'tm-empty-state' },
+        ce('div', { className: 'tm-empty-icon' }, ''),
+        ce('div', { className: 'tm-empty-text' }, 'No titles unlocked yet'),
+        ce('div', { className: 'tm-empty-hint' }, 'Complete achievements to earn titles')
+      );
+    } else {
+      gridContent = ce('div', { className: 'tm-titles-grid' },
+        titles.map((title) => ce(TitleCard, {
+          key: title,
+          title,
+          isActive: title === activeTitle,
+          bonus: pluginInstance.getTitleBonus(title),
+          onEquip: handleEquip,
+        }))
+      );
+    }
+
+    return ce('div', { className: 'tm-title-modal', onClick: handleOverlayClick },
+      ce('div', { className: 'tm-modal-content' },
+        ce('div', { className: 'tm-modal-header' },
+          ce('h2', null, 'Titles'),
+          ce('button', { className: 'tm-close-button', onClick: onClose }, '\u00D7')
+        ),
+        ce('div', { className: 'tm-filter-bar' },
+          ce('label', { className: 'tm-filter-label' }, 'Sort by:'),
+          ce('select', { id: 'tm-sort-select', className: 'tm-sort-dropdown', value: sortBy, onChange: handleSortChange },
+            SORT_OPTIONS.map((opt) => ce('option', { key: opt.value, value: opt.value }, opt.label))
+          )
+        ),
+        ce('div', { className: 'tm-modal-body' },
+          activeTitleSection,
+          ce('div', { className: 'tm-titles-section' },
+            ce('h3', { className: 'tm-section-title' }, `Available Titles (${titles.length})`),
+            gridContent
+          )
+        )
+      )
+    );
+  }
+
+  return { TitleModal, TitleCard };
+}
+
 module.exports = class SoloLevelingTitleManager {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -101,13 +250,19 @@ module.exports = class SoloLevelingTitleManager {
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
     this.titleButton = null;
-    this.titleModal = null;
+    this.titleModal = null; // legacy ref — kept for backward compat checks
     // toolbarObserver removed — React patcher handles button persistence
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
     this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     this._retryTimeout1 = null; // Timeout ID for first retry
     this._retryTimeout2 = null; // Timeout ID for second retry
     // _periodicCheckInterval removed — React patcher handles button persistence
+
+    // React modal refs (v2.0.0)
+    this._modalContainer = null;
+    this._modalReactRoot = null;
+    this._modalForceUpdate = null;
+    this._components = null;
 
     // Track all retry timeouts for proper cleanup
     this._retryTimeouts = new Set();
@@ -252,6 +407,26 @@ module.exports = class SoloLevelingTitleManager {
     } catch (_) {
       this._SLUtils = null;
     }
+  }
+
+  /** React 18 createRoot with webpack fallbacks */
+  _getCreateRoot() {
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    try {
+      const ReactDOM = BdApi.Webpack?.getModule?.((m) => m?.createRoot && m?.createPortal);
+      if (ReactDOM?.createRoot) return ReactDOM.createRoot.bind(ReactDOM);
+    } catch (_) { /* ignore */ }
+    try {
+      const mod = BdApi.Webpack?.getModule?.((m) => {
+        const keys = Object.keys(m);
+        return keys.some((k) => typeof m[k]?.createRoot === 'function');
+      });
+      if (mod) {
+        const key = Object.keys(mod).find((k) => typeof mod[k]?.createRoot === 'function');
+        if (key) return mod[key].createRoot.bind(mod[key]);
+      }
+    } catch (_) { /* ignore */ }
+    return null;
   }
 
   /**
@@ -439,17 +614,6 @@ module.exports = class SoloLevelingTitleManager {
     }
   }
 
-  /**
-   * HTML escaping utility for XSS prevention
-   * @param {string} text - Text to escape
-   * @returns {string} - Escaped HTML
-   */
-  escapeHtml(text) {
-    if (typeof text !== 'string') return text;
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
 
   _appendPercentBonusLine(lines, bonus, key, label) {
     if (bonus[key] > 0) {
@@ -498,62 +662,6 @@ module.exports = class SoloLevelingTitleManager {
     return lines;
   }
 
-  /**
-   * Render (or re-render) the title cards grid using DOM nodes (avoids innerHTML churn).
-   * @param {object} params
-   * @param {HTMLElement} params.titlesGrid
-   * @param {string[]} params.titles
-   * @param {string|null} params.activeTitle
-   */
-  renderTitlesGrid({ titlesGrid, titles, activeTitle }) {
-    if (!titlesGrid) return;
-    titlesGrid.replaceChildren();
-
-    const fragment = document.createDocumentFragment();
-    titles.forEach((title) => {
-      const isActive = title === activeTitle;
-      const bonus = this.getTitleBonus(title);
-      const buffs = this.formatTitleBonusLines(bonus);
-
-      const card = document.createElement('div');
-      card.className = `tm-title-card ${isActive ? 'active' : ''}`.trim();
-
-      const icon = document.createElement('div');
-      icon.className = 'tm-title-icon';
-      icon.textContent = '';
-
-      const name = document.createElement('div');
-      name.className = 'tm-title-name';
-      name.textContent = title;
-
-      card.appendChild(icon);
-      card.appendChild(name);
-
-      if (buffs.length > 0) {
-        const bonusEl = document.createElement('div');
-        bonusEl.className = 'tm-title-bonus';
-        bonusEl.textContent = buffs.join(', ');
-        card.appendChild(bonusEl);
-      }
-
-      if (isActive) {
-        const status = document.createElement('div');
-        status.className = 'tm-title-status';
-        status.textContent = 'Equipped';
-        card.appendChild(status);
-      } else {
-        const btn = document.createElement('button');
-        btn.className = 'tm-equip-btn';
-        btn.dataset.title = title;
-        btn.textContent = 'Equip';
-        card.appendChild(btn);
-      }
-
-      fragment.appendChild(card);
-    });
-
-    titlesGrid.appendChild(fragment);
-  }
 
   /**
    * Get human-readable sort label
@@ -713,26 +821,6 @@ module.exports = class SoloLevelingTitleManager {
     return this.isValidToolbarContainer(toolbar) ? toolbar : null;
   }
 
-  createTitleButtonIconSvg() {
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '24');
-    svg.setAttribute('height', '24');
-    svg.setAttribute('viewBox', '0 0 24 24');
-    svg.setAttribute('fill', 'none');
-    svg.setAttribute('stroke', 'currentColor');
-    svg.setAttribute('stroke-width', '2');
-    svg.setAttribute('stroke-linecap', 'round');
-    svg.setAttribute('stroke-linejoin', 'round');
-
-    const path = document.createElementNS(svgNS, 'path');
-    path.setAttribute(
-      'd',
-      'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z'
-    );
-    svg.appendChild(path);
-    return svg;
-  }
 
   // ============================================================================
   // SECTION 3: MAJOR OPERATIONS
@@ -747,6 +835,7 @@ module.exports = class SoloLevelingTitleManager {
 
     this.loadSettings();
     this._loadSLUtils();
+    this._components = buildTitleComponents(this);
     this.injectCSS();
 
     // ============================================================================
@@ -1413,7 +1502,7 @@ module.exports = class SoloLevelingTitleManager {
                   timeout: 3000,
                 });
               })();
-            result && this.refreshModalSmooth();
+            result && this._modalForceUpdate?.();
             return result;
           })()
         : false;
@@ -1454,7 +1543,7 @@ module.exports = class SoloLevelingTitleManager {
         if (BdApi && typeof BdApi.showToast === 'function') {
           BdApi.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
         }
-        this.refreshModalSmooth();
+        this._modalForceUpdate?.();
         return true;
       }
       return false;
@@ -1598,207 +1687,45 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   openTitleModal() {
-    if (this.titleModal) {
-      this.closeTitleModal();
+    // If already open, just force-update the React tree
+    if (this._modalReactRoot) {
+      this._modalForceUpdate?.();
       return;
     }
 
-    const soloData = this.getSoloLevelingData();
-    // Filter out unwanted titles
-    const isTitleAllowed = (title) => !this._unwantedTitles.has(title);
-    let titles = (soloData?.titles || []).filter(isTitleAllowed);
+    const createRoot = this._getCreateRoot();
+    if (!createRoot) {
+      console.error('[TitleManager] createRoot unavailable — cannot open modal');
+      return;
+    }
 
-    // FUNCTIONAL: Sort by selected filter option (highest to lowest)
-    const sortBy = this.settings.sortBy || 'xpBonus';
-    this.getSortedTitles({ titles, sortBy });
+    const container = document.createElement('div');
+    container.id = 'tm-modal-root';
+    container.style.display = 'contents';
+    document.body.appendChild(container);
 
-    const activeTitle =
-      soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
+    const root = createRoot(container);
+    this._modalContainer = container;
+    this._modalReactRoot = root;
 
-    const modal = document.createElement('div');
-    modal.className = 'tm-title-modal';
-    modal.innerHTML = `
-      <div class="tm-modal-content">
-        <div class="tm-modal-header">
-          <h2>Titles</h2>
-          <button class="tm-close-button">×</button>
-        </div>
-        <div class="tm-filter-bar">
-          <label class="tm-filter-label">Sort by:</label>
-          <select id="tm-sort-select" class="tm-sort-dropdown">
-            <option value="xpBonus" ${
-              this.settings.sortBy === 'xpBonus' ? 'selected' : ''
-            }>XP Gain (Highest)</option>
-            <option value="critBonus" ${
-              this.settings.sortBy === 'critBonus' ? 'selected' : ''
-            }>Crit Chance (Highest)</option>
-            <option value="strBonus" ${
-              this.settings.sortBy === 'strBonus' ? 'selected' : ''
-            }>Strength % (Highest)</option>
-            <option value="agiBonus" ${
-              this.settings.sortBy === 'agiBonus' ? 'selected' : ''
-            }>Agility % (Highest)</option>
-            <option value="intBonus" ${
-              this.settings.sortBy === 'intBonus' ? 'selected' : ''
-            }>Intelligence % (Highest)</option>
-            <option value="vitBonus" ${
-              this.settings.sortBy === 'vitBonus' ? 'selected' : ''
-            }>Vitality % (Highest)</option>
-            <option value="perBonus" ${
-              this.settings.sortBy === 'perBonus' ? 'selected' : ''
-            }>Perception % (Highest)</option>
-          </select>
-        </div>
-        <div class="tm-modal-body">
-          ${
-            activeTitle
-              ? `
-            <div class="tm-active-title">
-              <div class="tm-active-label">Active Title:</div>
-              <div class="tm-active-name">${this.escapeHtml(activeTitle)}</div>
-              ${(() => {
-                const bonus = this.getTitleBonus(activeTitle);
-                if (!bonus) return '';
-                const buffs = this.formatTitleBonusLines(bonus);
-                return buffs.length > 0
-                  ? `<div class="tm-active-bonus">${buffs.join(', ')}</div>`
-                  : '';
-              })()}
-              <button class="tm-unequip-btn" id="tm-unequip-btn">Unequip</button>
-            </div>
-          `
-              : `
-            <div class="tm-no-title">
-              <div class="tm-no-title-text">No title equipped</div>
-            </div>
-          `
-          }
-          <div class="tm-titles-section">
-            <h3 class="tm-section-title">Available Titles (${titles.length})</h3>
-            ${
-              titles.length === 0
-                ? `
-              <div class="tm-empty-state">
-                <div class="tm-empty-icon"></div>
-                <div class="tm-empty-text">No titles unlocked yet</div>
-                <div class="tm-empty-hint">Complete achievements to unlock titles!</div>
-              </div>
-            `
-                : `
-              <div class="tm-titles-grid"></div>
-            `
-            }
-          </div>
-        </div>
-      </div>
-    `;
+    const { TitleModal } = this._components;
+    root.render(BdApi.React.createElement(TitleModal, { onClose: () => this.closeTitleModal() }));
 
-    // Add event listeners (secure, no inline onclick)
-    modal.addEventListener('click', (e) => {
-      // Handle background click
-      if (e.target === modal) {
-        this.closeTitleModal();
-        return;
-      }
-
-      // Handle close button clicks (check both the button and its content)
-      if (
-        e.target.classList.contains('tm-close-button') ||
-        e.target.closest('.tm-close-button') ||
-        e.target.parentElement?.classList.contains('tm-close-button')
-      ) {
-        e.preventDefault();
-        e.stopPropagation();
-        this.closeTitleModal();
-        return;
-      }
-
-      // Handle equip button clicks
-      if (e.target.classList.contains('tm-equip-btn')) {
-        const title = e.target.getAttribute('data-title');
-        if (title) {
-          this.equipTitle(title);
-        }
-      }
-
-      // Handle unequip button
-      if (e.target.id === 'tm-unequip-btn' || e.target.closest('#tm-unequip-btn')) {
-        this.unequipTitle();
-      }
-    });
-
-    // Render titles grid via DOM nodes (avoids large innerHTML map/join)
-    const titlesGrid = modal.querySelector('.tm-titles-grid');
-    titles.length > 0 && titlesGrid && this.renderTitlesGrid({ titlesGrid, titles, activeTitle });
-
-    // Handle sort filter change (delegated)
-    const onModalChange = (e) => {
-      if (e.target?.id !== 'tm-sort-select') return;
-      this.settings.sortBy = e.target.value;
-      this.saveSettings();
-
-      const nextTitles = (soloData?.titles || []).filter(isTitleAllowed);
-      this.getSortedTitles({ titles: nextTitles, sortBy: e.target.value });
-
-      // Smooth transition
-      titlesGrid && (titlesGrid.style.opacity = '0.5');
-      this._setTrackedTimeout(() => {
-        titlesGrid && this.renderTitlesGrid({ titlesGrid, titles: nextTitles, activeTitle });
-        titlesGrid && (titlesGrid.style.opacity = '1');
-      }, 150);
-    };
-    modal.addEventListener('change', onModalChange);
-    this._titleModalHandlers = { onModalChange };
-
-    document.body.appendChild(modal);
-    this.titleModal = modal;
-
-    this.debugLog('MODAL', 'Title modal opened');
-  }
-
-  /**
-   * Smooth refresh without closing modal (no disappear)
-   */
-  refreshModalSmooth() {
-    if (!this.titleModal) return;
-
-    const modalBody = this.titleModal.querySelector('.tm-modal-body');
-    const titlesGrid = this.titleModal.querySelector('.tm-titles-grid');
-    const scrollPos = this.titleModal.querySelector('.tm-modal-content')?.scrollTop || 0;
-
-    // Fade out
-    modalBody &&
-      ((modalBody.style.transition = 'opacity 0.15s ease-out'), (modalBody.style.opacity = '0.5'));
-    titlesGrid &&
-      ((titlesGrid.style.transition = 'opacity 0.15s ease-out'),
-      (titlesGrid.style.opacity = '0.5'));
-
-    this._setTrackedTimeout(() => {
-      this.closeTitleModal();
-      this.openTitleModal();
-
-      // Restore scroll and fade in
-      this._setTrackedTimeout(() => {
-        const content = this.titleModal?.querySelector('.tm-modal-content');
-        const newModalBody = this.titleModal?.querySelector('.tm-modal-body');
-        const newTitlesGrid = this.titleModal?.querySelector('.tm-titles-grid');
-
-        content && (content.scrollTop = scrollPos);
-        newModalBody && (newModalBody.style.opacity = '1');
-        newTitlesGrid && (newTitlesGrid.style.opacity = '1');
-      }, 10);
-    }, 150);
+    this.debugLog('MODAL', 'Title modal opened (React)');
   }
 
   closeTitleModal() {
-    if (this.titleModal) {
-      this._titleModalHandlers?.onModalChange &&
-        this.titleModal.removeEventListener('change', this._titleModalHandlers.onModalChange);
-      this._titleModalHandlers = null;
-      this.titleModal.remove();
-      this.titleModal = null;
-      this.debugLog('MODAL', 'Title modal closed');
+    if (this._modalReactRoot) {
+      this._modalReactRoot.unmount();
+      this._modalReactRoot = null;
     }
+    if (this._modalContainer) {
+      this._modalContainer.remove();
+      this._modalContainer = null;
+    }
+    this._modalForceUpdate = null;
+    this.titleModal = null;
+    this.debugLog('MODAL', 'Title modal closed');
   }
 
   // ============================================================================

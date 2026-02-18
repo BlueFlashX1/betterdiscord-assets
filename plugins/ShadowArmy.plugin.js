@@ -2,7 +2,7 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 3.5.0
+ * @version 3.6.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -62,6 +62,13 @@
  * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v3.6.0 (2026-02-17) - REACT WIDGET MIGRATION
+ * - Migrated member list sidebar widget from innerHTML to React components
+ * - Added buildWidgetComponents() factory with ShadowArmyWidget + RankBox
+ * - Uses createRoot into widget container; MutationObserver injection unchanged
+ * - Widget updates via forceUpdate (React diffs only changed rank counts)
+ * - Deleted ~130 lines of innerHTML generation from updateShadowRankWidget
  *
  * @changelog v3.4.0 (2025-12-08) - EVENT-BASED SYNC & API DOCUMENTATION
  * SYNC IMPROVEMENTS:
@@ -1318,6 +1325,148 @@ try {
   UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
 }
 
+// ============================================================================
+// REACT COMPONENT FACTORY (v3.6.0 — replaces innerHTML widget rendering)
+// ============================================================================
+function buildWidgetComponents(pluginInstance) {
+  const React = BdApi.React;
+  const ce = React.createElement;
+
+  const RANKS = ['Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
+  const RANK_COLORS = {
+    'Monarch+': '#ff6b2b', Monarch: '#ff4500', NH: '#e040fb', 'SSS+': '#f50057',
+    SSS: '#ec4899', SS: '#ef4444', S: '#f59e0b', A: '#8a2be2',
+    B: '#3b82f6', C: '#22c55e', D: '#a0a0a0', E: '#999',
+  };
+  const RANK_LABELS = { 'Monarch+': 'M+', Monarch: 'M', NH: 'NH', 'SSS+': 'SSS+' };
+  const ELITE_RANKS = new Set(['Monarch+', 'Monarch', 'NH', 'SSS+']);
+
+  function formatPower(raw) {
+    if (!raw) return '0';
+    if (raw >= 1e6) return (raw / 1e6).toFixed(1) + 'M';
+    if (raw >= 1e3) return (raw / 1e3).toFixed(1) + 'K';
+    return String(Math.floor(raw));
+  }
+
+  // ── RankBox ──
+  function RankBox({ rank, count, color, isElite }) {
+    const label = RANK_LABELS[rank] || rank;
+    const boxStyle = {
+      textAlign: 'center',
+      padding: isElite ? '3px 2px' : '4px',
+      background: isElite ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.4)',
+      borderRadius: '4px',
+      border: `1px solid ${color}${isElite ? '60' : '40'}`,
+      boxShadow: isElite && count > 0 ? `0 0 6px ${color}30` : undefined,
+      transition: 'all 0.2s ease',
+    };
+    const labelStyle = {
+      color,
+      fontSize: isElite ? '8px' : '10px',
+      fontWeight: 'bold',
+      textShadow: isElite && count > 0 ? `0 0 4px ${color}` : 'none',
+    };
+    const countStyle = {
+      color: count > 0 ? '#fff' : '#555',
+      fontSize: isElite ? '12px' : '14px',
+      fontWeight: 'bold',
+    };
+    return ce('div', { className: 'rank-box', style: boxStyle },
+      ce('div', { className: 'rank-label', style: labelStyle }, label),
+      ce('div', { className: 'rank-count', style: countStyle }, count)
+    );
+  }
+
+  // ── ShadowArmyWidget ──
+  function ShadowArmyWidget() {
+    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+    const [data, setData] = React.useState(null);
+
+    // Expose forceUpdate to plugin
+    React.useEffect(() => {
+      pluginInstance._widgetForceUpdate = forceUpdate;
+      return () => { pluginInstance._widgetForceUpdate = null; };
+    }, [forceUpdate]);
+
+    // Fetch rank data on mount + whenever forceUpdate is called
+    const fetchIdRef = React.useRef(0);
+    React.useEffect(() => {
+      const id = ++fetchIdRef.current;
+      (async () => {
+        try {
+          let rankCounts, totalCount;
+          const sm = pluginInstance.storageManager;
+          if (sm?.getCountByRank) {
+            try {
+              const counts = await Promise.all(
+                RANKS.map(async (rank) => ({
+                  rank, count: await sm.getCountByRank(rank), color: RANK_COLORS[rank] || '#999',
+                }))
+              );
+              totalCount = (await sm.getTotalCount()) || counts.reduce((s, r) => s + r.count, 0);
+              rankCounts = counts;
+            } catch (_) {
+              const shadows = pluginInstance.settings.shadows || [];
+              totalCount = shadows.length;
+              const map = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
+              rankCounts = RANKS.map((rank) => ({ rank, count: map[rank] || 0, color: RANK_COLORS[rank] || '#999' }));
+            }
+          } else {
+            const shadows = pluginInstance.settings.shadows || [];
+            totalCount = shadows.length;
+            const map = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
+            rankCounts = RANKS.map((rank) => ({ rank, count: map[rank] || 0, color: RANK_COLORS[rank] || '#999' }));
+          }
+          if (id === fetchIdRef.current) setData({ rankCounts, totalCount });
+        } catch (err) {
+          pluginInstance.debugError?.('WIDGET', 'Error fetching widget data', err);
+        }
+      })();
+    });
+
+    if (!data) return null;
+    const { rankCounts, totalCount } = data;
+    const totalPower = formatPower(pluginInstance.settings.cachedTotalPower || 0);
+    const eliteRanks = rankCounts.filter((r) => ELITE_RANKS.has(r.rank));
+    const standardRanks = rankCounts.filter((r) => !ELITE_RANKS.has(r.rank));
+
+    // Empty state
+    if (totalCount === 0) {
+      return ce(React.Fragment, null,
+        ce('div', { className: 'widget-header', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
+          ce('div', { className: 'widget-title', style: { color: '#8a2be2', fontSize: '12px', fontWeight: 'bold' } }, 'MY SHADOW ARMY'),
+          ce('div', { className: 'widget-total', style: { color: '#999', fontSize: '11px' } }, '0 Total')
+        ),
+        ce('div', { style: { textAlign: 'center', padding: '20px', color: '#999', fontSize: '11px' } }, 'No shadows yet')
+      );
+    }
+
+    return ce(React.Fragment, null,
+      // Header
+      ce('div', { className: 'widget-header', style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' } },
+        ce('div', { className: 'widget-title', style: { color: '#8a2be2', fontSize: '12px', fontWeight: 'bold', textShadow: '0 0 8px rgba(138, 43, 226, 0.8)' } }, 'MY SHADOW ARMY'),
+        ce('div', { className: 'widget-total', style: { color: '#999', fontSize: '11px' } }, totalCount + ' Total')
+      ),
+      // Power bar
+      ce('div', { className: 'widget-power', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '4px 8px', background: 'rgba(138, 43, 226, 0.1)', border: '1px solid rgba(138, 43, 226, 0.25)', borderRadius: '4px' } },
+        ce('span', { style: { color: '#8a2be2', fontSize: '11px', fontWeight: '600', textShadow: '0 0 4px rgba(138, 43, 226, 0.6)', fontFamily: "'Orbitron', sans-serif" } }, '\u2694 Total Power: ' + totalPower)
+      ),
+      // Elite ranks grid
+      ce('div', { className: 'elite-rank-grid', style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px', marginBottom: '6px' } },
+        eliteRanks.map(({ rank, count, color }) => ce(RankBox, { key: rank, rank, count, color, isElite: true }))
+      ),
+      // Standard ranks grid
+      ce('div', { className: 'rank-grid', style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' } },
+        standardRanks.map(({ rank, count, color }) => ce(RankBox, { key: rank, rank, count, color, isElite: false }))
+      ),
+      // Footer
+      ce('div', { className: 'widget-footer', style: { marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(138, 43, 226, 0.2)', textAlign: 'center', color: '#888', fontSize: '9px' } }, 'Click to manage shadows')
+    );
+  }
+
+  return { ShadowArmyWidget, RankBox };
+}
+
 module.exports = class ShadowArmy {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -2001,6 +2150,11 @@ module.exports = class ShadowArmy {
     this._widgetDirty = true; // Start dirty so first update runs
     this._postExtractionDebounceTimer = null; // Debounce post-extraction cascade
 
+    // React widget refs (v3.6.0)
+    this._widgetReactRoot = null;
+    this._widgetForceUpdate = null;
+    this._widgetComponents = null;
+
     // ============================================================================
     // DEBUG SYSTEM - Property initialization (methods in SECTION 4)
     // ============================================================================
@@ -2043,6 +2197,7 @@ module.exports = class ShadowArmy {
     this._pendingAriseShadow = null;
     this._ariseDrainTimeout = null;
 
+    this._widgetComponents = buildWidgetComponents(this);
     this._setupDiscordMediaErrorSuppression();
 
     // Get user ID for storage isolation
@@ -2415,8 +2570,9 @@ module.exports = class ShadowArmy {
       this.memberListAttributeObserver = null;
     }
 
-    // Remove shadow rank widget
+    // Remove shadow rank widget (React unmount + DOM)
     this.removeShadowRankWidget();
+    this._widgetComponents = null;
 
     // Clear Solo Leveling data cache
     this._soloDataCache = null;
@@ -9318,242 +9474,80 @@ module.exports = class ShadowArmy {
    * Fast injection with smart retry logic
    */
   async injectShadowRankWidget() {
-    // debug stripped
-    // RE-ENABLED: Widget needed for member list display
-    // Guard clause: Prevent reinjection after plugin stop
-    if (this._isStopped) { return; }
+    if (this._isStopped) return;
     if (!this.canInjectWidgetInCurrentView()) {
-      // debug stripped
-      document.getElementById('shadow-army-widget')?.remove();
+      this.removeShadowRankWidget();
       return;
     }
 
-    // Guard clause: Check if widget already exists
+    // If widget already exists and is valid, just force-update the React tree
     const existingWidget = document.getElementById('shadow-army-widget');
-    if (existingWidget && this.isWidgetInValidMemberList(existingWidget)) { return; }
-    existingWidget && existingWidget.remove();
+    if (existingWidget && this.isWidgetInValidMemberList(existingWidget)) {
+      this._widgetForceUpdate?.();
+      return;
+    }
+    // Stale widget — clean up before reinserting
+    existingWidget && this.removeShadowRankWidget();
 
-    // Check for member list immediately (no delay), scoped to actual sidebar membersWrap
     const memberElements = this.getMemberListElements();
     const membersList = memberElements?.membersList || null;
-    if (!membersList) {
-      // debug stripped
-      // Avoid tight retry loops when member list is hidden; watcher will re-trigger on mount.
-      return;
-    }
+    if (!membersList) return;
 
     try {
-      // Create widget container
-      // debug stripped
       const widget = document.createElement('div');
       widget.id = 'shadow-army-widget';
+      widget.addEventListener('click', () => this.openShadowArmyUI());
 
-      // Click to open Shadow Army modal
-      widget.addEventListener('click', () => {
-        this.openShadowArmyUI();
-      });
-
-      // Insert at the top of member list
+      // Insert at top of member list
       const membersContent = memberElements?.membersContent || null;
-      if (membersContent && membersContent.firstChild) {
+      if (membersContent?.firstChild) {
         membersContent.insertBefore(widget, membersContent.firstChild);
       } else if (membersList.firstChild) {
         membersList.insertBefore(widget, membersList.firstChild);
       } else {
-        // Fallback: append to membersList if no firstChild
         membersList.appendChild(widget);
       }
 
-      // Initial update
-      // debug stripped
-      this.updateShadowRankWidget();
+      // Mount React component into widget container
+      const createRoot = this._getCreateRoot();
+      if (createRoot) {
+        const root = createRoot(widget);
+        this._widgetReactRoot = root;
+        const { ShadowArmyWidget } = this._widgetComponents;
+        root.render(BdApi.React.createElement(ShadowArmyWidget));
+        this.debugLog('WIDGET', 'Widget mounted (React)');
+      } else {
+        this.debugError('WIDGET', 'createRoot unavailable — widget will not render');
+      }
     } catch (error) {
-      // debug stripped
-      // debugError method is in SECTION 4
       this.debugError('WIDGET', 'Error injecting shadow rank widget', error);
     }
   }
 
   /**
-   * Update shadow rank widget content
+   * Update shadow rank widget content — triggers React forceUpdate
    */
-  async updateShadowRankWidget() {
-    // RE-ENABLED: Widget update for member list display
-    // Prevent updates after plugin stop
+  updateShadowRankWidget() {
     if (this._isStopped) return;
-
-    const widget = document.getElementById('shadow-army-widget');
-    if (!widget) return;
+    if (!document.getElementById('shadow-army-widget')) return;
     if (!this.canInjectWidgetInCurrentView()) {
-      widget.remove();
+      this.removeShadowRankWidget();
       return;
     }
-
-    try {
-      // PERF: Use getCountByRank() instead of loading all 10K shadows from IDB
-      // getCountByRank uses IDB index count() — orders of magnitude faster than full cursor scan
-      // 12-rank Solo Leveling hierarchy (highest first for widget display)
-      // Shadow Monarch excluded — that's the player's exclusive title, not a shadow rank
-      const ranks = ['Monarch+', 'Monarch', 'NH', 'SSS+', 'SSS', 'SS', 'S', 'A', 'B', 'C', 'D', 'E'];
-      const rankColors = {
-        'Monarch+': '#ff6b2b',       // Deep orange
-        Monarch: '#ff4500',           // Red-orange
-        NH: '#e040fb',               // Neon purple
-        'SSS+': '#f50057',           // Hot pink
-        SSS: '#ec4899',
-        SS: '#ef4444',
-        S: '#f59e0b',
-        A: '#8a2be2',
-        B: '#3b82f6',
-        C: '#22c55e',
-        D: '#a0a0a0',
-        E: '#999',
-      };
-
-      let rankCounts;
-      let totalCount = 0;
-      if (this.storageManager && this.storageManager.getCountByRank) {
-        try {
-          const counts = await Promise.all(
-            ranks.map(async (rank) => {
-              const count = await this.storageManager.getCountByRank(rank);
-              return { rank, count, color: rankColors[rank] || '#999' };
-            })
-          );
-          rankCounts = counts;
-          // Use getTotalCount() for accurate total — store.count() sees ALL shadows
-          // including compressed ones whose 'rank' index field may not yet be backfilled
-          totalCount = (await this.storageManager.getTotalCount()) || counts.reduce((sum, r) => sum + r.count, 0);
-        } catch (err) {
-          // Fallback: try full load if index counts fail
-          const shadows = this.settings.shadows || [];
-          totalCount = shadows.length;
-          const rankCountsMap = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
-          rankCounts = ranks.map((rank) => ({ rank, count: rankCountsMap[rank] || 0, color: rankColors[rank] || '#999' }));
-        }
-      } else {
-        const shadows = this.settings.shadows || [];
-        totalCount = shadows.length;
-        const rankCountsMap = shadows.reduce((c, s) => { c[s.rank || 'E'] = (c[s.rank || 'E'] || 0) + 1; return c; }, {});
-        rankCounts = ranks.map((rank) => ({ rank, count: rankCountsMap[rank] || 0, color: rankColors[rank] || '#999' }));
-      }
-
-      // Guard clause: Return early if no shadows
-      if (totalCount === 0) {
-        widget.innerHTML = `
-          <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold;">MY SHADOW ARMY</div>
-            <div class="widget-total" style="color: #999; font-size: 11px;">0 Total</div>
-          </div>
-          <div style="text-align: center; padding: 20px; color: #999; font-size: 11px;">No shadows yet</div>
-        `;
-        return;
-      }
-
-      // Short labels for display (long names don't fit in grid cells)
-      const rankLabels = {
-        'Monarch+': 'M+',
-        Monarch: 'M',
-        NH: 'NH',
-        'SSS+': 'SSS+',
-      };
-
-      // Split into elite tier (top 4) and standard tier (bottom 8)
-      const eliteRankNames = ['Monarch+', 'Monarch', 'NH', 'SSS+'];
-      const eliteRanks = rankCounts.filter((r) => eliteRankNames.includes(r.rank));
-      const standardRanks = rankCounts.filter((r) => !eliteRankNames.includes(r.rank));
-
-      // Get cached total power for display
-      const totalPowerRaw = this.settings.cachedTotalPower || 0;
-      const totalPowerFormatted = totalPowerRaw >= 1e6
-        ? (totalPowerRaw / 1e6).toFixed(1) + 'M'
-        : totalPowerRaw >= 1e3
-        ? (totalPowerRaw / 1e3).toFixed(1) + 'K'
-        : String(Math.floor(totalPowerRaw));
-
-      // Generate HTML with proper structure
-      widget.innerHTML = `
-        <div class="widget-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-          <div class="widget-title" style="color: #8a2be2; font-size: 12px; font-weight: bold; text-shadow: 0 0 8px rgba(138, 43, 226, 0.8);">
-            MY SHADOW ARMY
-          </div>
-          <div class="widget-total" style="color: #999; font-size: 11px;">
-            ${totalCount} Total
-          </div>
-        </div>
-        <div class="widget-power" style="
-          display: flex; align-items: center; justify-content: center;
-          margin-bottom: 8px; padding: 4px 8px;
-          background: rgba(138, 43, 226, 0.1);
-          border: 1px solid rgba(138, 43, 226, 0.25);
-          border-radius: 4px;
-        ">
-          <span style="color: #8a2be2; font-size: 11px; font-weight: 600; text-shadow: 0 0 4px rgba(138, 43, 226, 0.6); font-family: 'Orbitron', sans-serif;">
-            ⚔ Total Power: ${totalPowerFormatted}
-          </span>
-        </div>
-        <div class="elite-rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-bottom: 6px;">
-          ${eliteRanks
-            .map(
-              ({ rank, count, color }) => `
-            <div class="rank-box" style="
-              text-align: center;
-              padding: 3px 2px;
-              background: rgba(0, 0, 0, 0.5);
-              border-radius: 4px;
-              border: 1px solid ${color}60;
-              ${count > 0 ? `box-shadow: 0 0 6px ${color}30;` : ''}
-            ">
-              <div class="rank-label" style="color: ${color}; font-size: 8px; font-weight: bold; text-shadow: ${count > 0 ? `0 0 4px ${color}` : 'none'};">${rankLabels[rank] || rank}</div>
-              <div class="rank-count" style="color: ${count > 0 ? '#fff' : '#555'}; font-size: 12px; font-weight: bold;">${count}</div>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-        <div class="rank-grid" style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;">
-          ${standardRanks
-            .map(
-              ({ rank, count, color }) => `
-            <div class="rank-box" style="
-              text-align: center;
-              padding: 4px;
-              background: rgba(0, 0, 0, 0.4);
-              border-radius: 4px;
-              border: 1px solid ${color}40;
-            ">
-              <div class="rank-label" style="color: ${color}; font-size: 10px; font-weight: bold;">${rank}</div>
-              <div class="rank-count" style="color: #fff; font-size: 14px; font-weight: bold;">${count}</div>
-            </div>
-          `
-            )
-            .join('')}
-        </div>
-        <div class="widget-footer" style="
-          margin-top: 8px;
-          padding-top: 8px;
-          border-top: 1px solid rgba(138, 43, 226, 0.2);
-          text-align: center;
-          color: #888;
-          font-size: 9px;
-        ">
-          Click to manage shadows
-        </div>
-      `;
-    } catch (error) {
-      // debugError method is in SECTION 4
-      this.debugError('WIDGET', 'Error updating widget', error);
-    }
+    this._widgetForceUpdate?.();
   }
 
   /**
-   * Remove shadow rank widget
+   * Remove shadow rank widget (React unmount + DOM removal)
    */
   removeShadowRankWidget() {
-    const widget = document.getElementById('shadow-army-widget');
-    if (widget) {
-      widget.remove();
+    if (this._widgetReactRoot) {
+      this._widgetReactRoot.unmount();
+      this._widgetReactRoot = null;
     }
+    this._widgetForceUpdate = null;
+    const widget = document.getElementById('shadow-army-widget');
+    if (widget) widget.remove();
     this.removeWidgetCSS();
   }
 

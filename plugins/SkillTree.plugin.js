@@ -2,7 +2,7 @@
  * @name SkillTree
  * @author BlueFlashX1
  * @description Solo Leveling lore-appropriate skill tree system with upgradeable passive abilities
- * @version 2.1.0
+ * @version 3.0.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -22,31 +22,319 @@
  * remains primarily original work by BlueFlashX1.
  *
  * ============================================================================
- * FILE STRUCTURE (~3,500 lines)
- * ============================================================================
- *
- *   §1  Constructor & Initialization ................ L 38
- *   §2  Lifecycle Methods (start/stop) .............. L 503
- *   §3  Event Handling & Watchers ................... L 583
- *   §4  Level-Up & SP Management .................... L 746
- *   §5  Settings Management ......................... L 936
- *   §6  Skill Bonus Calculation ..................... L 994
- *   §7  Active Skills System (7 cooldown-based) ..... L 1068
- *   §8  Data Access Methods ......................... L 1393
- *   §9  Skill Data Access ........................... L 1524
- *   §10 Skill Upgrade Methods ....................... L 1617
- *   §11 UI Rendering (modal, toolbar, CSS) .......... L 1868
- *   §12 Debugging & Development ..................... L 3313
- *
- * ============================================================================
  * VERSION HISTORY
  * ============================================================================
+ *
+ * @changelog v3.0.0 (2026-02-17)
+ * - Migrated modal rendering from innerHTML to React (BdApi.React + createRoot)
+ * - Component factory: buildSkillTreeComponents() with closure access to plugin
+ * - useReducer force-update bridge for imperative plugin logic -> React re-renders
+ * - Reset dialog now a React sub-component inside modal
+ * - Removed ~320 lines of dead innerHTML + event delegation code
+ * - Zero visual regressions (all existing CSS classes preserved)
  *
  * @changelog v2.0.1 (2025-12-03)
  * - Code structure improvements (section headers, better organization)
  * - Console log cleanup (removed verbose debug logs)
  * - Performance optimizations
  */
+
+// ============================================================================
+// REACT COMPONENT FACTORY (v3.0.0 — replaces innerHTML modal rendering)
+// ============================================================================
+function buildSkillTreeComponents(pluginInstance) {
+  const React = BdApi.React;
+  const ce = React.createElement;
+
+  // ── Helper: format effect text for a skill ──
+  function formatEffectText(effect) {
+    if (!effect) return '';
+    const parts = [];
+    if (effect.xpBonus) parts.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
+    if (effect.critBonus) parts.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
+    if (effect.longMsgBonus) parts.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
+    if (effect.questBonus) parts.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
+    if (effect.allStatBonus) parts.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
+    return parts.join(' \u2022 ');
+  }
+
+  // ── ManaBar ──
+  function ManaBar({ current, max }) {
+    const pct = max > 0 ? (current / max) * 100 : 0;
+    return ce('div', { className: 'skilltree-mana-bar-container' },
+      ce('span', { className: 'skilltree-mana-bar-label' }, 'Mana'),
+      ce('div', { className: 'skilltree-mana-bar-track' },
+        ce('div', { className: 'skilltree-mana-bar-fill', style: { width: `${pct.toFixed(1)}%` } })
+      ),
+      ce('span', { className: 'skilltree-mana-bar-text' }, `${Math.floor(current)} / ${max}`)
+    );
+  }
+
+  // ── ActiveSkillCard ──
+  function ActiveSkillCard({ skillId, def, isUnlocked, isRunning, isOnCooldown, cooldownRemaining, state, manaInfo, onActivate }) {
+    const cardClasses = ['skilltree-active-skill', isRunning ? 'is-active' : '', !isUnlocked ? 'is-locked' : ''].filter(Boolean).join(' ');
+    const durationText = def.durationMs ? `${Math.round(def.durationMs / 60000)}m` : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
+    const cooldownText = `${Math.round(def.cooldownMs / 60000)}m`;
+
+    let statusEl = null;
+    if (isRunning) {
+      if (def.durationMs && state.expiresAt > 0) {
+        const remainMin = Math.max(0, Math.ceil((state.expiresAt - Date.now()) / 60000));
+        statusEl = ce('div', { className: 'skilltree-active-skill-status active-text' }, `ACTIVE - ${remainMin}m remaining`);
+      } else if (def.charges && state.chargesLeft > 0) {
+        statusEl = ce('div', { className: 'skilltree-active-skill-status active-text' }, `ACTIVE - ${state.chargesLeft} charge${state.chargesLeft > 1 ? 's' : ''} left`);
+      }
+    } else if (isOnCooldown) {
+      const cdMin = Math.ceil(cooldownRemaining / 60000);
+      statusEl = ce('div', { className: 'skilltree-active-skill-status cooldown-text' }, `Cooldown: ${cdMin}m`);
+    }
+
+    let actionEl = null;
+    if (!isUnlocked) {
+      const reqSkillDef = pluginInstance.findSkillAndTier(def.unlock.passiveSkill);
+      const reqName = reqSkillDef?.skill?.name || def.unlock.passiveSkill;
+      actionEl = ce('div', { className: 'skilltree-active-skill-unlock-req' }, `Requires ${reqName} Lv${def.unlock.passiveLevel}`);
+    } else if (isRunning) {
+      actionEl = ce('button', { className: 'skilltree-activate-btn', disabled: true }, 'Active');
+    } else {
+      const canActivate = !isOnCooldown && manaInfo.current >= def.manaCost;
+      actionEl = ce('button', {
+        className: 'skilltree-activate-btn',
+        disabled: !canActivate,
+        onClick: canActivate ? () => onActivate(skillId) : undefined,
+      }, isOnCooldown ? 'On Cooldown' : 'Activate');
+    }
+
+    return ce('div', { className: cardClasses },
+      ce('div', { className: 'skilltree-active-skill-header' },
+        ce('span', { className: 'skilltree-active-skill-name' }, def.name),
+        ce('span', { className: 'skilltree-active-skill-cost' }, `${def.manaCost} Mana`)
+      ),
+      ce('div', { className: 'skilltree-active-skill-desc' }, def.desc),
+      def.lore ? ce('div', { className: 'skilltree-active-skill-lore' }, def.lore) : null,
+      ce('div', { className: 'skilltree-active-skill-info' },
+        ce('span', null, `Duration: ${durationText}`),
+        ce('span', null, `Cooldown: ${cooldownText}`)
+      ),
+      statusEl,
+      actionEl
+    );
+  }
+
+  // ── ActiveSkillsSection ──
+  function ActiveSkillsSection({ onActivate }) {
+    const manaInfo = pluginInstance.getManaInfo();
+    return ce('div', { className: 'skilltree-active-section' },
+      ce('div', { className: 'skilltree-active-section-header' }, ce('span', null, 'Active Skills')),
+      ce(ManaBar, { current: manaInfo.current, max: manaInfo.max }),
+      pluginInstance.activeSkillOrder.map((skillId) => {
+        const def = pluginInstance.activeSkillDefs[skillId];
+        if (!def) return null;
+        return ce(ActiveSkillCard, {
+          key: skillId,
+          skillId,
+          def,
+          isUnlocked: pluginInstance.isActiveSkillUnlocked(skillId),
+          isRunning: pluginInstance.isActiveSkillRunning(skillId),
+          isOnCooldown: pluginInstance.isActiveSkillOnCooldown(skillId),
+          cooldownRemaining: pluginInstance.getActiveSkillCooldownRemaining(skillId),
+          state: pluginInstance.getActiveSkillState(skillId),
+          manaInfo,
+          onActivate,
+        });
+      })
+    );
+  }
+
+  // ── SkillCard ──
+  function SkillCard({ skill, level, maxLevel, canUpgrade, nextCost, effect, onUpgrade, onMaxUpgrade }) {
+    const canMax = level < maxLevel && canUpgrade;
+    const classes = `skilltree-skill ${level > 0 ? 'unlocked' : ''} ${level >= maxLevel ? 'max-level' : ''}`;
+    const effectStr = formatEffectText(effect);
+
+    return ce('div', { className: classes },
+      ce('div', { className: 'skilltree-skill-name' }, skill.name),
+      ce('div', { className: 'skilltree-skill-desc' }, skill.desc),
+      skill.lore ? ce('div', { className: 'skilltree-skill-lore' }, skill.lore) : null,
+      level > 0 ? ce('div', { className: 'skilltree-skill-level' }, `Level ${level}/${maxLevel}`) : null,
+      level > 0 && effectStr ? ce('div', { className: 'skilltree-skill-effects' }, `Current Effects: ${effectStr}`) : null,
+      level < maxLevel ? ce(React.Fragment, null,
+        ce('div', { className: 'skilltree-skill-cost' }, `Cost: ${nextCost || 'N/A'} SP`),
+        ce('div', { className: 'skilltree-btn-group' },
+          ce('button', { className: 'skilltree-upgrade-btn', disabled: !canUpgrade, onClick: canUpgrade ? () => onUpgrade(skill.id) : undefined }, level === 0 ? 'Unlock' : 'Upgrade'),
+          ce('button', { className: 'skilltree-max-btn', disabled: !canMax, onClick: canMax ? () => onMaxUpgrade(skill.id) : undefined }, 'Max')
+        )
+      ) : ce('div', { className: 'skilltree-skill-max' }, 'MAX LEVEL')
+    );
+  }
+
+  // ── PassiveSkillList ──
+  function PassiveSkillList({ tier, tierKey, onUpgrade, onMaxUpgrade }) {
+    if (!tier.skills) return null;
+    return ce('div', { className: 'skilltree-tier', id: `st-${tierKey}` },
+      ce('div', { className: 'skilltree-tier-header' },
+        ce('span', null, tier.name),
+        ce('span', { className: 'skilltree-tier-badge' }, `Tier ${tier.tier}`)
+      ),
+      tier.skills.map((skill) => {
+        const level = pluginInstance.getSkillLevel(skill.id);
+        const maxLevel = tier.maxLevel || 10;
+        return ce(SkillCard, {
+          key: skill.id,
+          skill,
+          level,
+          maxLevel,
+          canUpgrade: pluginInstance.canUnlockSkill(skill, tier),
+          nextCost: pluginInstance.getNextUpgradeCost(skill, tier),
+          effect: pluginInstance.getSkillEffect(skill, tier),
+          onUpgrade,
+          onMaxUpgrade,
+        });
+      })
+    );
+  }
+
+  // ── TierNavigation ──
+  function TierNavigation({ tiers, currentTier, onTierChange }) {
+    return ce('div', { className: 'skilltree-tier-nav' },
+      tiers.map((tierKey) =>
+        ce('button', {
+          key: tierKey,
+          className: `skilltree-tier-nav-btn ${tierKey === currentTier ? 'active' : ''}`,
+          onClick: () => onTierChange(tierKey),
+        }, `Tier ${tierKey.replace('tier', '')}`)
+      )
+    );
+  }
+
+  // ── SkillTreeHeader ──
+  function SkillTreeHeader({ sp, level, onReset }) {
+    return ce('div', { className: 'skilltree-header' },
+      ce('h2', null, 'Solo Leveling Skill Tree'),
+      ce('div', { className: 'skilltree-header-info' },
+        ce('div', { className: 'skilltree-stat' },
+          ce('span', null, 'Available SP:'),
+          ce('span', { className: 'skilltree-stat-value' }, String(sp))
+        ),
+        level != null ? ce('div', { className: 'skilltree-stat' },
+          ce('span', null, 'Level:'),
+          ce('span', { className: 'skilltree-stat-value' }, String(level))
+        ) : null,
+        ce('button', { className: 'skilltree-reset-btn', onClick: onReset }, 'Reset Skills')
+      )
+    );
+  }
+
+  // ── ResetConfirmDialog ──
+  function ResetConfirmDialog({ onConfirm, onCancel, expectedSP, currentLevel }) {
+    React.useEffect(() => {
+      const handler = (e) => { if (e.key === 'Escape') { e.stopPropagation(); onCancel(); } };
+      document.addEventListener('keydown', handler, true);
+      return () => document.removeEventListener('keydown', handler, true);
+    }, [onCancel]);
+
+    return ce('div', { className: 'st-confirm-dialog-overlay', onClick: (e) => { if (e.target.className === 'st-confirm-dialog-overlay') onCancel(); } },
+      ce('div', { className: 'st-confirm-dialog' },
+        ce('div', { className: 'st-confirm-header' }, ce('h3', null, 'Reset Skill Tree?')),
+        ce('div', { className: 'st-confirm-body' },
+          ce('p', null, 'This will reset all skills and refund your skill points.'),
+          ce('ul', null,
+            ce('li', null, 'Reset all skill levels to 0'),
+            ce('li', null, 'Clear all skill bonuses'),
+            ce('li', null, 'Refund ', ce('strong', null, String(expectedSP)), ' SP for level ', ce('strong', null, String(currentLevel)))
+          ),
+          ce('p', { style: { color: 'rgba(236, 72, 153, 0.85)', fontWeight: 600 } }, 'This action cannot be undone.')
+        ),
+        ce('div', { className: 'st-confirm-actions' },
+          ce('button', { className: 'st-confirm-btn st-confirm-cancel', onClick: onCancel }, 'Cancel'),
+          ce('button', { className: 'st-confirm-btn st-confirm-yes', onClick: onConfirm }, 'Reset')
+        )
+      )
+    );
+  }
+
+  // ── SkillTreeModal (top-level) ──
+  function SkillTreeModal({ onClose }) {
+    const [currentTierPage, setCurrentTierPage] = React.useState(pluginInstance.settings.currentTierPage || 'tier1');
+    const [isResetOpen, setIsResetOpen] = React.useState(false);
+    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+
+    // Expose forceUpdate to plugin instance
+    React.useEffect(() => {
+      pluginInstance._modalForceUpdate = forceUpdate;
+      return () => { pluginInstance._modalForceUpdate = null; };
+    }, [forceUpdate]);
+
+    // Escape key: close reset dialog first, then modal
+    React.useEffect(() => {
+      const handler = (e) => {
+        if (e.key === 'Escape') {
+          e.stopPropagation();
+          if (isResetOpen) setIsResetOpen(false);
+          else onClose();
+        }
+      };
+      document.addEventListener('keydown', handler, true);
+      return () => document.removeEventListener('keydown', handler, true);
+    }, [isResetOpen, onClose]);
+
+    const soloData = pluginInstance.getSoloLevelingData();
+    const allTierKeys = Object.keys(pluginInstance.skillTree);
+    const visibleTiers = (pluginInstance.settings.visibleTiers || allTierKeys).filter((k) => allTierKeys.includes(k));
+    const activeTier = allTierKeys.includes(currentTierPage) ? currentTierPage : visibleTiers[0] || 'tier1';
+    const tierData = pluginInstance.skillTree[activeTier];
+
+    const handleTierChange = React.useCallback((tierKey) => {
+      setCurrentTierPage(tierKey);
+      pluginInstance.settings.currentTierPage = tierKey;
+      pluginInstance.saveSettings();
+    }, []);
+
+    const handleUpgrade = React.useCallback((skillId) => {
+      if (pluginInstance.unlockOrUpgradeSkill(skillId)) forceUpdate();
+    }, []);
+
+    const handleMaxUpgrade = React.useCallback((skillId) => {
+      if (pluginInstance.maxUpgradeSkill(skillId)) forceUpdate();
+    }, []);
+
+    const handleActivate = React.useCallback((skillId) => {
+      const result = pluginInstance.activateSkill(skillId);
+      if (!result.success && BdApi?.showToast) BdApi.showToast(result.reason, { type: 'error', timeout: 2500 });
+      forceUpdate();
+    }, []);
+
+    const handleReset = React.useCallback(() => {
+      setIsResetOpen(true);
+    }, []);
+
+    const handleResetConfirm = React.useCallback(() => {
+      pluginInstance.resetSkills();
+      setIsResetOpen(false);
+      forceUpdate();
+    }, []);
+
+    const handleResetCancel = React.useCallback(() => {
+      setIsResetOpen(false);
+    }, []);
+
+    const resetSoloData = pluginInstance.getSoloLevelingData();
+    const expectedSP = resetSoloData?.level ? pluginInstance.calculateSPForLevel(resetSoloData.level) : 0;
+
+    return ce('div', { className: 'skilltree-modal' },
+      ce(SkillTreeHeader, { sp: pluginInstance.settings.skillPoints, level: soloData?.level, onReset: handleReset }),
+      ce(TierNavigation, { tiers: visibleTiers, currentTier: activeTier, onTierChange: handleTierChange }),
+      ce('div', { className: 'skilltree-modal-content' },
+        tierData ? ce(PassiveSkillList, { tier: tierData, tierKey: activeTier, onUpgrade: handleUpgrade, onMaxUpgrade: handleMaxUpgrade }) : null,
+        ce(ActiveSkillsSection, { onActivate: handleActivate })
+      ),
+      ce('button', { className: 'skilltree-close-btn', onClick: onClose }, '\u00D7'),
+      isResetOpen ? ce(ResetConfirmDialog, { onConfirm: handleResetConfirm, onCancel: handleResetCancel, expectedSP, currentLevel: resetSoloData?.level || 0 }) : null
+    );
+  }
+
+  return { SkillTreeModal, SkillTreeHeader, TierNavigation, PassiveSkillList, SkillCard, ActiveSkillsSection, ActiveSkillCard, ManaBar, ResetConfirmDialog };
+}
 
 module.exports = class SkillTree {
   // ============================================================================
@@ -79,7 +367,12 @@ module.exports = class SkillTree {
     // Stop-safe timeout helper usage + UI handler references for cleanup
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
-    this._skillTreeModalHandlers = null;
+
+    // React modal refs (v3.0.0)
+    this._modalContainer = null;
+    this._modalReactRoot = null;
+    this._modalForceUpdate = null;
+    this._components = null;
 
     // Toolbar cache (avoid repeated full-document scans)
     this._toolbarCache = {
@@ -528,6 +821,9 @@ module.exports = class SkillTree {
     this.loadSettings();
     this._loadSLUtils();
 
+    // Init React components factory (v3.0.0)
+    this._components = buildSkillTreeComponents(this);
+
     // Calculate and save spent SP based on existing skill upgrades
     // This ensures accurate SP calculations if skills were already upgraded
     this.initializeSpentSP();
@@ -608,6 +904,25 @@ module.exports = class SkillTree {
     } catch (_) {
       this._SLUtils = null;
     }
+  }
+
+  /**
+   * Get React 18 createRoot with webpack fallbacks (same pattern as ShadowExchange)
+   */
+  _getCreateRoot() {
+    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    try {
+      const client = BdApi.Webpack.getModule((m) => m?.createRoot && m?.hydrateRoot);
+      if (client?.createRoot) return client.createRoot.bind(client);
+    } catch (_) {}
+    try {
+      const createRoot = BdApi.Webpack.getModule(
+        (m) => typeof m === 'function' && m?.name === 'createRoot',
+        { searchExports: true }
+      );
+      if (createRoot) return createRoot;
+    } catch (_) {}
+    return null;
   }
 
   /**
@@ -803,16 +1118,10 @@ module.exports = class SkillTree {
     // No toolbar observer or composer observer to clean up — React patcher
     // handles button lifecycle via SLUtils.unregisterToolbarButton().
 
-    if (this.skillTreeModal) {
-      this.detachSkillTreeModalHandlers();
-      this.skillTreeModal.remove();
-      this.skillTreeModal = null;
-    }
-
-    document.querySelector('.st-confirm-dialog-overlay')?.remove();
+    // React modal cleanup (v3.0.0)
+    this.closeSkillTreeModal();
 
     this.detachSkillTreeSettingsPanelHandlers();
-    this.detachSkillTreeModalHandlers();
 
     // Remove CSS using BdApi (with fallback for compatibility)
     if (BdApi.DOM && BdApi.DOM.removeStyle) {
@@ -835,16 +1144,6 @@ module.exports = class SkillTree {
     }
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
-  }
-
-  detachSkillTreeModalHandlers() {
-    const modal = this.skillTreeModal;
-    const handlers = this._skillTreeModalHandlers;
-    if (modal && handlers) {
-      modal.removeEventListener('click', handlers.onClick);
-      modal.removeEventListener('change', handlers.onChange);
-    }
-    this._skillTreeModalHandlers = null;
   }
 
   // ============================================================================
@@ -1025,9 +1324,9 @@ module.exports = class SkillTree {
         timeout: 4000,
       });
 
-      // Refresh modal if open
-      if (this.skillTreeModal) {
-        this.showSkillTreeModal();
+      // Refresh modal if open (React v3.0.0: uses forceUpdate)
+      if (this._modalForceUpdate) {
+        this._modalForceUpdate();
       }
 
       return true;
@@ -2907,35 +3206,6 @@ module.exports = class SkillTree {
     return this.isValidToolbarContainer(toolbar, composerRoot) ? toolbar : null;
   }
 
-  createSkillTreeButtonIconSvg() {
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    const attributes = {
-      width: '24',
-      height: '24',
-      viewBox: '0 0 24 24',
-      fill: 'none',
-      stroke: 'currentColor',
-      'stroke-width': '2',
-      'stroke-linecap': 'round',
-      'stroke-linejoin': 'round',
-    };
-    Object.entries(attributes).forEach(([key, value]) => svg.setAttribute(key, value));
-
-    ['M12 2L2 7L12 12L22 7L12 2Z', 'M2 17L12 22L22 17', 'M2 12L12 17L22 12'].forEach(
-      (pathData) => {
-        const pathElement = document.createElementNS(svgNS, 'path');
-        pathElement.setAttribute('d', pathData);
-        svg.appendChild(pathElement);
-      }
-    );
-    return svg;
-  }
-
-  // NOTE: createSkillTreeButton() and observeToolbar() removed in v2.1.0.
-  // Toolbar button is now managed entirely via SLUtils React patcher.
-  // See _renderSkillTreeButtonReact() for the React implementation.
-
   /**
    * Update button text with current SP count
    */
@@ -2947,331 +3217,74 @@ module.exports = class SkillTree {
   }
 
   /**
-   * Show skill tree modal with scroll position preservation
+   * Show skill tree modal (React v3.0.0)
+   * If already open, forces a re-render. Otherwise creates root and renders.
    */
   showSkillTreeModal() {
-    // Always sync level before showing modal to ensure it's up-to-date
     this.recalculateSPFromLevel();
     this.checkForLevelUp();
 
-    // Save scroll position before refresh
-    let scrollPosition = 0;
-    if (this.skillTreeModal) {
-      this.detachSkillTreeModalHandlers();
-      const content = this.skillTreeModal.querySelector('.skilltree-modal-content');
-      if (content) {
-        scrollPosition = content.scrollTop;
-      }
-      this.skillTreeModal.remove();
+    // If already mounted, just force re-render
+    if (this._modalReactRoot && this._modalForceUpdate) {
+      this._modalForceUpdate();
+      return;
     }
 
-    // Create modal
-    this.skillTreeModal = document.createElement('div');
-    this.skillTreeModal.className = 'skilltree-modal';
-    this.skillTreeModal.innerHTML = this.renderSkillTree();
+    // Create container
+    let container = document.getElementById('st-modal-root');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'st-modal-root';
+      container.style.display = 'contents';
+      document.body.appendChild(container);
+    }
+    this._modalContainer = container;
 
-    // Add close button
-    const closeBtn = document.createElement('button');
-    closeBtn.textContent = '×';
-    closeBtn.className = 'skilltree-close-btn';
-    closeBtn.type = 'button';
-    this.skillTreeModal.appendChild(closeBtn);
+    const React = BdApi.React;
+    const { SkillTreeModal } = this._components;
+    const onClose = () => this.closeSkillTreeModal();
+    const element = React.createElement(SkillTreeModal, { onClose });
 
-    document.body.appendChild(this.skillTreeModal);
-
-    // Restore scroll position
-    if (scrollPosition > 0) {
-      const content = this.skillTreeModal.querySelector('.skilltree-modal-content');
-      if (content) {
-        content.scrollTop = scrollPosition;
-      }
+    // React 18: createRoot
+    const createRoot = this._getCreateRoot();
+    if (createRoot) {
+      const root = createRoot(container);
+      this._modalReactRoot = root;
+      root.render(element);
+      return;
     }
 
-    const onClick = (event) => {
-      const target = event.target;
+    // React 17 fallback
+    const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule((m) => m?.render && m?.unmountComponentAtNode);
+    if (ReactDOM?.render) {
+      ReactDOM.render(element, container);
+      return;
+    }
 
-      // Backdrop close isn't used here (modal isn't an overlay). Close button only.
-      if (
-        target?.classList?.contains('skilltree-close-btn') ||
-        target?.closest?.('.skilltree-close-btn')
-      ) {
-        this.skillTreeModal?.remove();
-        this.skillTreeModal = null;
-        return;
-      }
-
-      const resetBtn = target?.closest?.('#st-reset-modal-btn');
-      if (resetBtn) {
-        this.showResetConfirmDialog();
-        return;
-      }
-
-      const upgradeBtn = target?.closest?.('.skilltree-upgrade-btn');
-      if (upgradeBtn) {
-        const skillId = upgradeBtn.getAttribute('data-skill-id');
-        skillId && this.unlockOrUpgradeSkill(skillId) && this.showSkillTreeModal();
-        return;
-      }
-
-      const maxBtn = target?.closest?.('.skilltree-max-btn');
-      if (maxBtn) {
-        const skillId = maxBtn.getAttribute('data-skill-id');
-        skillId && this.maxUpgradeSkill(skillId) && this.showSkillTreeModal();
-        return;
-      }
-
-      const activateBtn = target?.closest?.('.skilltree-activate-btn');
-      if (activateBtn && !activateBtn.disabled) {
-        const activeSkillId = activateBtn.getAttribute('data-active-skill-id');
-        if (activeSkillId) {
-          const result = this.activateSkill(activeSkillId);
-          if (!result.success && BdApi?.showToast) {
-            BdApi.showToast(result.reason, { type: 'error', timeout: 2500 });
-          }
-          this.showSkillTreeModal();
-        }
-        return;
-      }
-
-      const tierBtn = target?.closest?.('.skilltree-tier-nav-btn');
-      if (tierBtn) {
-        const tierKey = tierBtn.getAttribute('data-tier');
-        tierKey &&
-          ((this.settings.currentTierPage = tierKey),
-          this.saveSettings(),
-          this.showSkillTreeModal());
-      }
-    };
-
-    this.skillTreeModal.addEventListener('click', onClick);
-    this._skillTreeModalHandlers = { onClick, onChange: null };
+    console.error('[SkillTree] Neither createRoot nor ReactDOM.render available');
+    container.remove();
+    BdApi.UI?.showToast?.('SkillTree: React rendering unavailable', { type: 'error' });
   }
 
   /**
-   * Render skill tree HTML
-   * @returns {string} - HTML string for skill tree modal
+   * Close and unmount skill tree modal (React v3.0.0)
    */
-  renderSkillTree() {
-    const soloData = this.getSoloLevelingData();
-    const allTierKeys = Object.keys(this.skillTree);
-    const visibleTiers = (this.settings.visibleTiers || allTierKeys).filter((tierKey) =>
-      allTierKeys.includes(tierKey)
-    );
-    const currentTier = allTierKeys.includes(this.settings.currentTierPage)
-      ? this.settings.currentTierPage
-      : visibleTiers[0] || 'tier1';
-
-    let html = `
-      <div class="skilltree-header">
-        <h2>Solo Leveling Skill Tree</h2>
-        <div class="skilltree-header-info">
-          <div class="skilltree-stat">
-            <span>Available SP:</span>
-            <span class="skilltree-stat-value">${this.settings.skillPoints}</span>
-        </div>
-          ${
-            soloData
-              ? `
-          <div class="skilltree-stat">
-            <span>Level:</span>
-            <span class="skilltree-stat-value">${soloData.level}</span>
-      </div>
-          `
-              : ''
-          }
-          <button class="skilltree-reset-btn" id="st-reset-modal-btn">
-            Reset Skills
-          </button>
-        </div>
-      </div>
-
-      <div class="skilltree-tier-nav">
-        ${visibleTiers
-          .map(
-            (tierKey) => `
-          <button class="skilltree-tier-nav-btn ${
-            tierKey === currentTier ? 'active' : ''
-          }" data-tier="${tierKey}">
-            Tier ${tierKey.replace('tier', '')}
-          </button>
-        `
-          )
-          .join('')}
-      </div>
-
-      <div class="skilltree-modal-content">
-    `;
-
-    // FUNCTIONAL: Render ONLY the current tier page
-    const tierEntry = Object.entries(this.skillTree).find(([key]) => key === currentTier);
-    if (tierEntry) {
-      const [tierKey, tier] = tierEntry;
-      if (tier.skills) {
-        html += `<div class="skilltree-tier" id="st-${tierKey}">`;
-        html += `<div class="skilltree-tier-header">
-        <span>${this.escapeHtml(tier.name)}</span>
-        <span class="skilltree-tier-badge">Tier ${tier.tier}</span>
-      </div>`;
-
-        tier.skills.forEach((skill) => {
-          const safeSkillId = this.escapeHtml(skill.id);
-          const level = this.getSkillLevel(skill.id);
-          const maxLevel = tier.maxLevel || 10;
-          const canUpgrade = this.canUnlockSkill(skill, tier);
-          const nextCost = this.getNextUpgradeCost(skill, tier);
-          const effect = this.getSkillEffect(skill, tier);
-
-          // Check if max upgrade is possible - reuse canUnlockSkill validation
-          // to ensure stat requirements and prerequisites are checked
-          const canMaxUpgrade = level < maxLevel && this.canUnlockSkill(skill, tier);
-
-          html += `<div class="skilltree-skill ${level > 0 ? 'unlocked' : ''} ${
-            level >= maxLevel ? 'max-level' : ''
-          }">`;
-          html += `<div class="skilltree-skill-name">${this.escapeHtml(skill.name)}</div>`;
-          html += `<div class="skilltree-skill-desc">${this.escapeHtml(skill.desc)}</div>`;
-          if (skill.lore) {
-            html += `<div class="skilltree-skill-lore">${this.escapeHtml(skill.lore)}</div>`;
-          }
-
-          if (level > 0) {
-            html += `<div class="skilltree-skill-level">Level ${level}/${maxLevel}</div>`;
-            if (effect) {
-              const effectText = [];
-              if (effect.xpBonus) effectText.push(`+${(effect.xpBonus * 100).toFixed(1)}% XP`);
-              if (effect.critBonus)
-                effectText.push(`+${(effect.critBonus * 100).toFixed(1)}% Crit`);
-              if (effect.longMsgBonus)
-                effectText.push(`+${(effect.longMsgBonus * 100).toFixed(1)}% Long Msg`);
-              if (effect.questBonus)
-                effectText.push(`+${(effect.questBonus * 100).toFixed(1)}% Quest`);
-              if (effect.allStatBonus)
-                effectText.push(`+${(effect.allStatBonus * 100).toFixed(1)}% All Stats`);
-              html += `<div class="skilltree-skill-effects">Current Effects: ${effectText.join(
-                ' • '
-              )}</div>`;
-            }
-          }
-
-          if (level < maxLevel) {
-            html += `<div class="skilltree-skill-cost">Cost: ${nextCost || 'N/A'} SP</div>`;
-            html += `<div class="skilltree-btn-group">`;
-            html += `<button class="skilltree-upgrade-btn" ${
-              !canUpgrade ? 'disabled' : ''
-            } data-skill-id="${safeSkillId}">${level === 0 ? 'Unlock' : 'Upgrade'}</button>`;
-            html += `<button class="skilltree-max-btn" ${
-              !canMaxUpgrade ? 'disabled' : ''
-            } data-skill-id="${safeSkillId}">Max</button>`;
-            html += `</div>`;
-          } else {
-            html += `<div class="skilltree-skill-max">MAX LEVEL</div>`;
-          }
-
-          html += `</div>`;
-        });
-
-        html += `</div>`;
-      }
+  closeSkillTreeModal() {
+    if (this._modalReactRoot) {
+      try { this._modalReactRoot.unmount(); } catch (_) {}
+      this._modalReactRoot = null;
     }
 
-    // ===== ACTIVE SKILLS SECTION (always visible below passive skills) =====
-    html += this.renderActiveSkills();
-
-    html += `</div>`;
-    return html;
-  }
-
-  /**
-   * Render active skills HTML section (mana bar + skill cards)
-   * @returns {string} - HTML string
-   */
-  renderActiveSkills() {
-    const manaInfo = this.getManaInfo();
-    const manaPercent = manaInfo.max > 0 ? (manaInfo.current / manaInfo.max) * 100 : 0;
-
-    let html = `
-      <div class="skilltree-active-section">
-        <div class="skilltree-active-section-header">
-          <span>Active Skills</span>
-        </div>
-        <div class="skilltree-mana-bar-container">
-          <span class="skilltree-mana-bar-label">Mana</span>
-          <div class="skilltree-mana-bar-track">
-            <div class="skilltree-mana-bar-fill" style="width: ${manaPercent.toFixed(1)}%"></div>
-          </div>
-          <span class="skilltree-mana-bar-text">${Math.floor(manaInfo.current)} / ${manaInfo.max}</span>
-        </div>
-    `;
-
-    this.activeSkillOrder.forEach((skillId) => {
-      const def = this.activeSkillDefs[skillId];
-      if (!def) return;
-
-      const isUnlocked = this.isActiveSkillUnlocked(skillId);
-      const isRunning = this.isActiveSkillRunning(skillId);
-      const isOnCooldown = this.isActiveSkillOnCooldown(skillId);
-      const cooldownRemaining = this.getActiveSkillCooldownRemaining(skillId);
-      const state = this.getActiveSkillState(skillId);
-
-      const cardClasses = [
-        'skilltree-active-skill',
-        isRunning ? 'is-active' : '',
-        !isUnlocked ? 'is-locked' : '',
-      ].filter(Boolean).join(' ');
-
-      // Duration text
-      const durationText = def.durationMs
-        ? `${Math.round(def.durationMs / 60000)}m`
-        : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
-      const cooldownText = `${Math.round(def.cooldownMs / 60000)}m`;
-
-      html += `<div class="${cardClasses}">`;
-      html += `<div class="skilltree-active-skill-header">`;
-      html += `<span class="skilltree-active-skill-name">${this.escapeHtml(def.name)}</span>`;
-      html += `<span class="skilltree-active-skill-cost">${def.manaCost} Mana</span>`;
-      html += `</div>`;
-      html += `<div class="skilltree-active-skill-desc">${this.escapeHtml(def.desc)}</div>`;
-      if (def.lore) {
-        html += `<div class="skilltree-active-skill-lore">${this.escapeHtml(def.lore)}</div>`;
-      }
-      html += `<div class="skilltree-active-skill-info">`;
-      html += `<span>Duration: ${durationText}</span>`;
-      html += `<span>Cooldown: ${cooldownText}</span>`;
-      html += `</div>`;
-
-      // Status line
-      if (isRunning) {
-        if (def.durationMs && state.expiresAt > 0) {
-          const remainMs = state.expiresAt - Date.now();
-          const remainMin = Math.max(0, Math.ceil(remainMs / 60000));
-          html += `<div class="skilltree-active-skill-status active-text">ACTIVE - ${remainMin}m remaining</div>`;
-        } else if (def.charges && state.chargesLeft > 0) {
-          html += `<div class="skilltree-active-skill-status active-text">ACTIVE - ${state.chargesLeft} charge${state.chargesLeft > 1 ? 's' : ''} left</div>`;
-        }
-      } else if (isOnCooldown) {
-        const cdMin = Math.ceil(cooldownRemaining / 60000);
-        html += `<div class="skilltree-active-skill-status cooldown-text">Cooldown: ${cdMin}m</div>`;
-      }
-
-      // Button or lock message
-      if (!isUnlocked) {
-        const reqSkillDef = this.findSkillAndTier(def.unlock.passiveSkill);
-        const reqName = reqSkillDef?.skill?.name || def.unlock.passiveSkill;
-        html += `<div class="skilltree-active-skill-unlock-req">Requires ${this.escapeHtml(reqName)} Lv${def.unlock.passiveLevel}</div>`;
-      } else if (isRunning) {
-        html += `<button class="skilltree-activate-btn" disabled>Active</button>`;
-      } else {
-        const canActivate = !isOnCooldown && manaInfo.current >= def.manaCost;
-        html += `<button class="skilltree-activate-btn" ${!canActivate ? 'disabled' : ''} data-active-skill-id="${this.escapeHtml(skillId)}">`;
-        html += isOnCooldown ? 'On Cooldown' : 'Activate';
-        html += `</button>`;
-      }
-
-      html += `</div>`;
-    });
-
-    html += `</div>`;
-    return html;
+    const container = document.getElementById('st-modal-root');
+    if (container) {
+      try {
+        const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule((m) => m?.unmountComponentAtNode);
+        if (ReactDOM?.unmountComponentAtNode) ReactDOM.unmountComponentAtNode(container);
+      } catch (_) {}
+      container.remove();
+    }
+    this._modalContainer = null;
+    this._modalForceUpdate = null;
   }
 
   /**
@@ -3435,69 +3448,4 @@ module.exports = class SkillTree {
     return panel;
   }
 
-  /**
-   * Show reset confirmation dialog
-   * Uses Discord's native confirm dialog or custom modal
-   */
-  showResetConfirmDialog() {
-    try {
-      const soloData = this.getSoloLevelingData();
-      if (!soloData || !soloData.level) {
-        BdApi?.showToast?.('Cannot reset: SoloLevelingStats not available', {
-          type: 'error',
-          timeout: 3000,
-        });
-        return;
-      }
-
-      const currentLevel = soloData.level;
-      const expectedSP = this.calculateSPForLevel(currentLevel);
-
-      // Remove any existing dialog to avoid duplicates
-      document.querySelector('.st-confirm-dialog-overlay')?.remove();
-
-      const overlay = document.createElement('div');
-      overlay.className = 'st-confirm-dialog-overlay';
-      overlay.innerHTML = `
-        <div class="st-confirm-dialog">
-          <div class="st-confirm-header">
-            <h3>Reset Skill Tree?</h3>
-          </div>
-          <div class="st-confirm-body">
-            <p>This will reset all skills and refund your skill points.</p>
-            <ul>
-              <li>Reset all skill levels to 0</li>
-              <li>Clear all skill bonuses</li>
-              <li>Refund <strong>${expectedSP}</strong> SP for level <strong>${currentLevel}</strong></li>
-            </ul>
-            <p style="color: rgba(236, 72, 153, 0.85); font-weight: 600;">This action cannot be undone.</p>
-          </div>
-          <div class="st-confirm-actions">
-            <button class="st-confirm-btn st-confirm-cancel" id="st-reset-cancel">Cancel</button>
-            <button class="st-confirm-btn st-confirm-yes" id="st-reset-confirm">Reset</button>
-          </div>
-        </div>
-      `;
-
-      const closeDialog = () => overlay.remove();
-      overlay.addEventListener('click', (e) => {
-        if (e.target === overlay) closeDialog();
-      });
-
-      overlay.querySelector('#st-reset-cancel')?.addEventListener('click', closeDialog);
-      overlay.querySelector('#st-reset-confirm')?.addEventListener('click', () => {
-        const success = this.resetSkills();
-        if (success && this.skillTreeModal) {
-          this.showSkillTreeModal();
-        }
-        closeDialog();
-      });
-
-      document.body.appendChild(overlay);
-    } catch (error) {
-      console.error('SkillTree: Error showing reset dialog', error);
-      // Fallback: try direct reset
-      this.resetSkills();
-    }
-  }
 };
