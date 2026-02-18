@@ -937,7 +937,7 @@ module.exports = class Dungeons {
       shadowBossTargetShareLowBossHp: 0.6, // When boss low HP, shift to boss focus
       shadowBossFocusLowHpThreshold: 0.4, // 40% boss HP execute threshold
       bossGateEnabled: true, // Prevent immediate boss burn on fresh dungeon spawn
-      bossGateMinDurationMs: 60000, // Boss unlock requires at least 60s elapsed
+      bossGateMinDurationMs: 180000, // Boss unlock requires at least 3 minutes elapsed
       bossGateRequiredMobKills: 25, // And at least N mob kills before boss can be damaged
       shadowPressureMobScaleStep: 0.12, // mobHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
@@ -1623,7 +1623,7 @@ module.exports = class Dungeons {
     try {
       const result = await shadowArmy.attemptDungeonExtraction(
         deadMob.id, userRank, userLevel, userStats,
-        deadMob.rank, deadMob.stats, deadMob.strength,
+        deadMob.rank, deadMob.baseStats, deadMob.strength,
         dungeon.beastFamilies || [], isBoss
       );
       if (result?.success && result?.shadow) {
@@ -3805,7 +3805,7 @@ module.exports = class Dungeons {
         enabled: this.settings?.bossGateEnabled !== false,
         minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
           ? this.settings.bossGateMinDurationMs
-          : 60000,
+          : 180000,
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
           : 25,
@@ -4902,7 +4902,7 @@ module.exports = class Dungeons {
         enabled: this.settings?.bossGateEnabled !== false,
         minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
           ? this.settings.bossGateMinDurationMs
-          : 60000,
+          : 180000,
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
           : 25,
