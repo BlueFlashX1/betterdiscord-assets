@@ -2279,7 +2279,7 @@ module.exports = class SkillTree {
         align-items: center;
         justify-content: center;
         padding: 0;
-        margin: 0 1px 0 -4px;
+        margin: 0;
         box-sizing: border-box;
       }
       .st-skill-tree-button {
