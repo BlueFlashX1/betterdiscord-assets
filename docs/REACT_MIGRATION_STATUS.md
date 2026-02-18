@@ -10,22 +10,24 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 
 | Plugin | Status | React | DOM | Priority |
 |--------|--------|-------|-----|----------|
-| ChatNavArrows | ✅ Done | Patcher | minimal | — |
-| HSLDockAutoHide | ✅ Done (v4.0) | Patcher | minimal | — |
-| HSLWheelBridge | ✅ Done (v2.0) | Patcher | minimal | — |
-| LevelProgressBar | ✅ Done (v1.4) | Patcher + React injection | bar UI | — |
-| ShadowExchange | ✅ Done (v2.0) | createPortal | minimal | — |
+| ~~ChatNavArrows~~ | ✅ Done | Patcher | minimal | — |
+| ~~HSLDockAutoHide~~ | ✅ Done (v4.0) | Patcher | minimal | — |
+| ~~HSLWheelBridge~~ | ✅ Done (v2.0) | Patcher | minimal | — |
+| ~~LevelProgressBar~~ | ✅ Done (v1.4) | Patcher + React injection | bar UI | — |
+| ~~ShadowExchange~~ | ✅ Done (v2.0) | createPortal | minimal | — |
+| ~~SkillTree~~ | ✅ Done (v3.0) | createRoot + factory | minimal | — |
+| ~~ShadowArmy~~ | ✅ Done (v3.6) | createRoot + factory | extraction toasts | — |
+| ~~TitleManager~~ | ✅ Done (v2.0) | createRoot + factory | button only | — |
 | **Dungeons** | ❌ DOM | 9 refs | 155 refs | 🔴 HIGH |
-| SkillTree | ✅ Done (v3.0) | createRoot + factory | minimal | — |
 | **CriticalHit** | ⚠️ Mixed | 29 refs (settings) | 194 refs + 38 observers | 🟡 PARTIAL |
-| ShadowArmy | ✅ Done (v3.6) | createRoot + factory | extraction toasts | — |
 | **SoloLevelingStats** | ⚠️ Mixed | 3 refs | 203 refs + 12 observers | 🟡 PARTIAL |
-| TitleManager | ✅ Done (v2.0) | createRoot + factory | button only | — |
-| SoloLevelingToasts | ⚠️ Patcher only | 0 | 37 refs | ⬜ SKIP |
-| CSSPicker | ❌ DOM | 0 | 23 refs | ⬜ SKIP |
-| UserPanelDockMover | ❌ DOM | 0 | 6 refs | ⬜ SKIP |
+| SoloLevelingToasts | ⬜ SKIP | 0 | 37 refs | — |
+| CSSPicker | ⬜ SKIP | 0 | 23 refs | — |
+| UserPanelDockMover | ⬜ SKIP | 0 | 6 refs | — |
 
-## Verdicts
+### Summary: 8/14 done · 3 remaining · 3 skipped
+
+## Remaining Work
 
 ### 🔴 MIGRATE (high benefit)
 
@@ -48,11 +50,24 @@ BetterDiscord plugins are migrating from raw DOM manipulation to React (BdApi.Re
 ## Migration Order
 
 1. ~~**SkillTree** — ✅ Done (v3.0.0, Feb 17 2026)~~
-2. **Dungeons** — highest DOM count, most to gain, needs serious rework anyway
-3. **CriticalHit** (message styling only) — biggest observer count, stability win
-4. ~~**ShadowArmy** — ✅ Done (v3.6.0, Feb 17 2026)~~
-5. **SoloLevelingStats** (stats panel) — medium priority
-6. ~~**TitleManager** — ✅ Done (v2.0.0, Feb 17 2026)~~
+2. ~~**ShadowArmy** — ✅ Done (v3.6.0, Feb 17 2026)~~
+3. ~~**TitleManager** — ✅ Done (v2.0.0, Feb 17 2026)~~
+4. **Dungeons** — highest DOM count, most to gain, needs serious rework anyway
+5. **CriticalHit** (message styling only) — biggest observer count, stability win
+6. **SoloLevelingStats** (stats panel) — medium priority
+
+## Completed Migrations (Feb 17, 2026)
+
+| Plugin | Version | Pattern | Notes |
+|--------|---------|---------|-------|
+| ChatNavArrows | — | Patcher | Already React |
+| HSLDockAutoHide | v4.0 | Patcher | Already React |
+| HSLWheelBridge | v2.0 | Patcher | Already React |
+| LevelProgressBar | v1.4 | Patcher + React injection | Already React |
+| ShadowExchange | v2.0 | createPortal | Already React |
+| SkillTree | v3.0 | createRoot + factory | Modal migrated |
+| ShadowArmy | v3.6 | createRoot + factory | Member list widget migrated |
+| TitleManager | v2.0 | createRoot + factory | Modal migrated |
 
 ## Settings Panels (Feb 17, 2026)
 
