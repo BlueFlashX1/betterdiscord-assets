@@ -3860,10 +3860,9 @@ module.exports = class ShadowArmy {
     const targetRankIndex = this.shadowRanks.indexOf(targetRank);
     const rankDiff = targetRankIndex - userRankIndex;
 
-    // Guard clause: STRICT ENFORCEMENT - Cannot extract more than 1 rank above
-    if (rankDiff > 1) {
-      return null; // Impossible to extract
-    }
+    // High rank gap: exponentially harder but never impossible (Solo Leveling lore:
+    // Sung Jin-Woo arose the Ant King and Beru despite massive power gaps)
+    // The exponential penalty in calculateExtractionChance handles the difficulty scaling.
 
     // Generate shadow first (with target stats if provided)
     let shadow;
@@ -4652,18 +4651,14 @@ module.exports = class ShadowArmy {
     const userRankIndex = this.shadowRanks.indexOf(safeUserRank);
     const targetRankIndex = this.shadowRanks.indexOf(safeTargetRank);
 
-    // Guard clause: STRICT RANK ENFORCEMENT - Cannot extract shadows more than 1 rank above you
-    // B-rank hunter: Can extract up to A-rank (1 above), CANNOT extract S-rank (2 above)
+    // Rank difference: exponentially harder but never truly impossible.
+    // Solo Leveling lore: Sung Jin-Woo arose shadows far above his rank (Igris, Beru).
     const rankDiff = targetRankIndex - userRankIndex;
     if (rankDiff > 1) {
-      // debugLog method is in SECTION 4
       this.debugLog(
         'EXTRACTION_RANK_CHECK',
-        `Cannot extract [${safeTargetRank}] shadow - too high! (User rank: ${safeUserRank}, Max: ${
-          this.shadowRanks[Math.min(userRankIndex + 1, this.shadowRanks.length - 1)]
-        })`
+        `Extracting [${safeTargetRank}] shadow is extremely difficult (User: ${safeUserRank}, gap: +${rankDiff})`
       );
-      return 0; // Target too strong - impossible extraction
     }
 
     const cfg = this.settings.extractionConfig || this.defaultSettings.extractionConfig;
@@ -4686,8 +4681,16 @@ module.exports = class ShadowArmy {
     // Rank probability multiplier (lower ranks easier)
     const rankMultiplier = this.rankProbabilityMultipliers[safeTargetRank] || 1.0;
 
-    // Rank difference penalty (if target is stronger)
-    const rankPenalty = rankDiff > 0 ? Math.pow(0.5, rankDiff) : 1.0; // 50% reduction per rank above
+    // Rank difference penalty (exponential decay — very hard but not impossible)
+    // Same rank: 1.0 | +1: 0.5 | +2: 0.05 | +3: 0.005 | +4: 0.0005 | +5: 0.00005
+    // Each rank above the first applies a 10x penalty (not 2x), creating an exponential cliff.
+    let rankPenalty = 1.0;
+    if (rankDiff > 0) {
+      rankPenalty = 0.5; // First rank above = 50%
+      if (rankDiff > 1) {
+        rankPenalty *= Math.pow(0.1, rankDiff - 1); // Each additional rank = 10x harder
+      }
+    }
 
     // Target strength resistance (improved - uses actual target strength if provided)
     // Use dictionary pattern for resistance calculation

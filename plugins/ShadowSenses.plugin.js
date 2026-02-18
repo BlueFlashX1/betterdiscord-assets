@@ -145,9 +145,13 @@ class DeploymentManager {
       if (!Array.isArray(allShadows)) return [];
 
       // Get IDs to exclude: already deployed + exchange-marked + dungeon-allocated
+      // Dungeons now keeps a reserve pool (weakest shadows) idle for ShadowSenses.
+      // Reserve shadows are available. Dungeon-allocated shadows are NOT (lore: one place at a time).
+      // Fallback: if zero available, pull the weakest shadow from a dungeon silently.
       const deployedIds = this._deployedShadowIds;
       let exchangeMarkedIds = new Set();
       let dungeonAllocatedIds = new Set();
+      let dungeonReserve = [];
 
       try {
         const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
@@ -160,26 +164,45 @@ class DeploymentManager {
 
       try {
         const dungeonsPlugin = BdApi.Plugins.get("Dungeons");
-        if (dungeonsPlugin && dungeonsPlugin.instance && dungeonsPlugin.instance.shadowAllocations) {
-          for (const shadows of dungeonsPlugin.instance.shadowAllocations.values()) {
-            if (Array.isArray(shadows)) {
-              for (const s of shadows) {
-                if (s && s.id) dungeonAllocatedIds.add(s.id);
+        if (dungeonsPlugin && dungeonsPlugin.instance) {
+          // Get reserve pool (idle shadows held back by Dungeons)
+          dungeonReserve = Array.isArray(dungeonsPlugin.instance.shadowReserve)
+            ? dungeonsPlugin.instance.shadowReserve : [];
+          // Build set of all dungeon-allocated shadow IDs
+          if (dungeonsPlugin.instance.shadowAllocations instanceof Map) {
+            for (const shadows of dungeonsPlugin.instance.shadowAllocations.values()) {
+              if (Array.isArray(shadows)) {
+                for (const s of shadows) {
+                  const sid = s?.id || s?.extractedData?.id;
+                  if (sid) dungeonAllocatedIds.add(sid);
+                }
               }
             }
           }
         }
-      } catch (dErr) {
-        this._debugLog("DeploymentManager", "Dungeons not available for exclusion", dErr);
+      } catch (dgErr) {
+        this._debugLog("DeploymentManager", "Dungeons not available for exclusion", dgErr);
       }
 
+      const reserveIds = new Set(dungeonReserve.map(s => s?.id || s?.extractedData?.id).filter(Boolean));
+
+      // Available = not deployed, not exchange-marked, and either in reserve OR not in any dungeon
       const available = allShadows.filter(s => {
         if (!s || !s.id) return false;
         if (deployedIds.has(s.id)) return false;
         if (exchangeMarkedIds.has(s.id)) return false;
-        if (dungeonAllocatedIds.has(s.id)) return false;
+        if (reserveIds.has(s.id)) return true;           // Reserve = idle = available
+        if (dungeonAllocatedIds.has(s.id)) return false;  // In dungeon = not available
         return true;
       });
+
+      // Fallback: if no idle shadows, pull weakest from dungeon silently
+      if (available.length === 0 && dungeonAllocatedIds.size > 0) {
+        const dungeonShadows = allShadows
+          .filter(s => s && s.id && dungeonAllocatedIds.has(s.id) && !deployedIds.has(s.id) && !exchangeMarkedIds.has(s.id))
+          .sort((a, b) => RANKS.indexOf(a.rank || "E") - RANKS.indexOf(b.rank || "E"));
+        if (dungeonShadows.length > 0) available.push(dungeonShadows[0]);
+      }
 
       this._debugLog("DeploymentManager", "Available shadows", {
         total: allShadows.length,
@@ -187,6 +210,7 @@ class DeploymentManager {
         deployed: deployedIds.size,
         exchangeMarked: exchangeMarkedIds.size,
         dungeonAllocated: dungeonAllocatedIds.size,
+        reservePool: reserveIds.size,
       });
 
       return available;

@@ -1137,6 +1137,7 @@ module.exports = class Dungeons {
 
     // Shadow army pre-allocation cache (optimization: split shadows once, reuse assignments)
     this.shadowAllocations = new Map(); // Map<channelKey, assignedShadows[]>
+    this.shadowReserve = []; // Weakest shadows held back for ShadowSenses deployment
     this.allocationCache = null; // Cache of all shadows
     this.allocationCacheTime = null; // When cache was created
     this.allocationCacheTTL = 60000; // 1 minute TTL
@@ -6108,6 +6109,7 @@ module.exports = class Dungeons {
     const allShadows = await this.getAllShadows();
     if (!allShadows || allShadows.length === 0) {
       this.shadowAllocations.clear();
+      this.shadowReserve = [];
       return;
     }
 
@@ -6118,6 +6120,7 @@ module.exports = class Dungeons {
 
     if (activeDungeonsList.length === 0) {
       this.shadowAllocations.clear();
+      this.shadowReserve = [];
       return;
     }
 
@@ -6177,6 +6180,29 @@ module.exports = class Dungeons {
       })
       .sort((a, b) => getShadowScore(b) - getShadowScore(a));
 
+    // Reserve pool: hold back weakest shadows for ShadowSenses deployment.
+    // Base 10% reserve, reduced to 5% if all active dungeons are A-rank or above.
+    const aRankIndex = getRankIndex('A');
+    const allHighRank = activeDungeonsList.every(d => getRankIndex(d.rank) >= aRankIndex);
+    const reservePercent = allHighRank ? 0.05 : 0.10;
+    const reserveCount = Math.max(1, Math.floor(shadowsSorted.length * reservePercent));
+
+    // Reserve = weakest shadows (end of the sorted array, since sorted strongest-first)
+    const reserveShadows = shadowsSorted.slice(-reserveCount);
+    const reserveIds = new Set(reserveShadows.map(s => getShadowId(s)));
+    const combatPool = shadowsSorted.filter(s => !reserveIds.has(getShadowId(s)));
+
+    // Store reserve on instance for ShadowSenses to query
+    this.shadowReserve = reserveShadows;
+
+    this.debugLog('ALLOCATION', 'Reserve pool', {
+      total: shadowsSorted.length,
+      reserveCount,
+      reservePercent: Math.round(reservePercent * 100) + '%',
+      combatPool: combatPool.length,
+      allHighRank,
+    });
+
     const pickForDungeon = (dungeonRankIndex, count) => {
       const windows = [0, 1, 2, 999]; // Exact → ±1 → ±2 → any
       const selected = [];
@@ -6199,13 +6225,18 @@ module.exports = class Dungeons {
       return selected;
     };
 
+    // Pre-mark reserve shadows as assigned so pickForDungeon skips them
+    for (const id of reserveIds) {
+      assignedIds.add(id);
+    }
+
     // Allocate (unique) shadows across dungeons by proportional weight.
-    let remaining = shadowsSorted.length;
+    let remaining = combatPool.length;
     weightedDungeons.forEach((dw, idx) => {
       const isLast = idx === weightedDungeons.length - 1;
       const proportional = Math.max(
         1,
-        Math.round((dw.weight / totalWeight) * shadowsSorted.length)
+        Math.round((dw.weight / totalWeight) * combatPool.length)
       );
       const targetCount = isLast
         ? Math.max(1, remaining)
@@ -7049,6 +7080,8 @@ module.exports = class Dungeons {
             if (!mob || mob.hp > 0) return; // Only process dead mobs
             analytics.mobsKilledThisWave++;
             this._onMobKilled(channelKey, dungeon, mob.rank);
+            // ARISE: Attempt mid-combat extraction (throttled 500ms/dungeon)
+            this._attemptCombatExtraction(channelKey, mob, false).catch(() => {});
           });
         }
 
