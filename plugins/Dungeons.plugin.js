@@ -4214,10 +4214,7 @@ module.exports = class Dungeons {
             spawnedAt, // Update spawn time
           };
         }
-        this.debugLog('MOB_CACHE', `Using cached mob generation for ${actualSpawnCount} mobs`, {
-          cacheKey,
-          cachedAt: cached.timestamp,
-        });
+        // MOB_CACHE log stripped — spawning works, no need to trace
       } else {
         // Generate new mobs and cache them
         // BATCH MOB GENERATION with INDIVIDUAL VARIANCE
