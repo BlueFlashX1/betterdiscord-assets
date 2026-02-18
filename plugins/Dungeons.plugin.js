@@ -3753,16 +3753,15 @@ module.exports = class Dungeons {
         targetCount: totalMobCount, // Target mob count for this dungeon
         spawnRate: 2 + rankIndex,
         activeMobs: [], // Array of mob objects with HP and stats
-        // Per-dungeon mob capacity: Scales directly with target mob count
-        // Capacity is 15% of targetCount to allow proper spawning for large dungeons
-        // Examples: 2k target = 300 cap, 20k target = 3k cap, 50k target = 7.5k cap
-        // Formula: 15% of targetCount, with minimum 200 and maximum 10,000 for safety
+        // Per-dungeon mob capacity: Matches target count up to performance ceiling
+        // Shadows kill mobs continuously so the full target can be alive simultaneously.
+        // Safety ceiling of 10,000 prevents excessive memory/GC pressure.
         mobCapacity: Math.floor(
           Math.max(
             200, // Minimum capacity (prevents too low for any dungeon)
             Math.min(
               10000, // Maximum capacity (prevents excessive mobs causing lag)
-              Math.floor(totalMobCount * 0.15) // 15% of target count (scales with dungeon size)
+              totalMobCount // Full target count (capped by max above)
             )
           )
         ),
@@ -4462,11 +4461,15 @@ module.exports = class Dungeons {
     dungeon.userParticipating = true;
     this.settings.userActiveDungeon = channelKey;
 
-    // CRITICAL: Ensure shadow HP is initialized before starting combat
-    // This prevents false "all shadows defeated" messages
+    // CRITICAL: Ensure shadows are allocated before starting combat.
+    // After plugin reload, shadowAllocations map is empty — force reallocation.
+    if (!this.shadowAllocations.has(channelKey) || (this.shadowAllocations.get(channelKey)?.length || 0) === 0) {
+      await this.preSplitShadowArmy(true);
+    }
+
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
 
-    // Throttled warning for missing deployments (helps debug “no shadows deployed” reports).
+    // Throttled warning for missing deployments (helps debug "no shadows deployed" reports).
     if (assignedShadows.length === 0) {
       this._deployWarnings ??= new Map();
       const last = this._deployWarnings.get(channelKey) || 0;
@@ -4512,7 +4515,7 @@ module.exports = class Dungeons {
     this.stopShadowAttacks(channelKey);
     this.stopBossAttacks(channelKey);
     this.stopMobAttacks(channelKey);
-    this.startShadowAttacks(channelKey);
+    await this.startShadowAttacks(channelKey);
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
 
@@ -11496,15 +11499,7 @@ module.exports = class Dungeons {
           this.activeDungeons.set(dungeon.channelKey, dungeon);
           const channelInfo = { channelId: dungeon.channelId, guildId: dungeon.guildId };
           this.showDungeonIndicator(dungeon.channelKey, channelInfo);
-          this.startShadowAttacks(dungeon.channelKey);
-          this.startBossAttacks(dungeon.channelKey);
-          this.startMobAttacks(dungeon.channelKey);
-          this.startMobKillNotifications(dungeon.channelKey);
-          this.startMobSpawning(dungeon.channelKey);
-
-          // Always show boss HP bar (whether participating or watching)
-          this.updateBossHPBar(dungeon.channelKey);
-
+          // Combat intervals are started AFTER shadow allocation below
           return;
         }
 
@@ -11532,9 +11527,20 @@ module.exports = class Dungeons {
         this.activeDungeons.delete(dungeon.channelKey);
       });
 
-      // Only log if dungeons were actually restored
+      // Only start combat AFTER all dungeons are restored and shadows are allocated
       if (this.activeDungeons.size > 0) {
         this.debugLog(`Restored ${this.activeDungeons.size} active dungeons`);
+        // Allocate shadows across all restored dungeons in one pass
+        await this.preSplitShadowArmy(true);
+        // Now start combat intervals for each restored dungeon
+        for (const [channelKey] of this.activeDungeons) {
+          await this.startShadowAttacks(channelKey);
+          this.startBossAttacks(channelKey);
+          this.startMobAttacks(channelKey);
+          this.startMobKillNotifications(channelKey);
+          this.startMobSpawning(channelKey);
+          this.updateBossHPBar(channelKey);
+        }
       }
     } catch (error) {
       this.errorLog('Failed to restore dungeons', error);
