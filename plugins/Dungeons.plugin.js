@@ -454,6 +454,9 @@ class DungeonStorageManager {
       // Shadow allocations may contain full shadow objects (very large); recompute on restore.
       next.shadowAllocation = undefined;
 
+      // Runtime-only flags — must not persist (would block completeDungeon on restore)
+      delete next._completing;
+
       // Convert Map fields to plain objects for JSON serialization
       if (next.shadowHP instanceof Map) {
         const shadowHPObj = {};
@@ -4634,6 +4637,12 @@ module.exports = class Dungeons {
     this.queueHPBarUpdate(channelKey);
     this.showToast(`Joined ${dungeon.name}!`, 'info');
     this.saveSettings();
+    // Persist userParticipating to IDB so it survives hot-reload
+    if (this.storageManager) {
+      this.storageManager.saveDungeon(dungeon).catch((err) =>
+        this.errorLog('Failed to save dungeon after join', err)
+      );
+    }
     this.closeDungeonModal();
   }
 
@@ -4733,6 +4742,14 @@ module.exports = class Dungeons {
 
     this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
     this.saveSettings();
+
+    // CRITICAL: Persist dungeon state to IDB immediately — shadowsDeployed must survive hot-reload.
+    // Without this, a reload before the first combat save cycle would lose the deployed flag.
+    if (this.storageManager) {
+      this.storageManager.saveDungeon(dungeon).catch((err) =>
+        this.errorLog('Failed to save dungeon after deploy', err)
+      );
+    }
 
     // Update HP bar to show LEAVE button instead of DEPLOY
     this.queueHPBarUpdate(channelKey);
@@ -11746,6 +11763,9 @@ module.exports = class Dungeons {
               }
             });
           }
+
+          // Clear runtime-only flags that should never persist across restarts
+          delete dungeon._completing;
 
           // MIGRATION: Force bossGate to code defaults (saved settings may have stale values)
           if (dungeon.bossGate) {
