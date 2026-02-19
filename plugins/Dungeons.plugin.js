@@ -1584,29 +1584,31 @@ module.exports = class Dungeons {
     const total = pile.length;
     let extracted = 0;
     let attempted = 0;
-    const BATCH_SIZE = 20;
+    const BATCH_SIZE = 50; // Parallel batch — all extractions in a batch fire concurrently
 
     // ALWAYS-ON: Extraction is a critical event — never gate behind debug
     console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
       const batch = pile.slice(i, i + BATCH_SIZE);
+      attempted += batch.length;
 
-      for (const corpse of batch) {
-        attempted++;
-        try {
-          const result = await shadowArmy.attemptDungeonExtraction(
+      // Fire all extractions in this batch concurrently
+      const results = await Promise.allSettled(
+        batch.map((corpse) =>
+          shadowArmy.attemptDungeonExtraction(
             corpse.id, userRank, userLevel, userStats,
             corpse.rank, corpse.baseStats, corpse.strength,
             beastFamilies, corpse.isBoss
-          );
-          if (result?.success) extracted++;
-        } catch (err) {
-          this.settings.debug && console.error(`[Dungeons] ARISE: ❌ Corpse extraction error (${corpse.id}):`, err?.message || err);
-        }
+          )
+        )
+      );
+
+      for (const r of results) {
+        if (r.status === 'fulfilled' && r.value?.success) extracted++;
       }
 
-      // Yield to event loop between batches
+      // Yield to event loop between batches (keeps UI responsive)
       if (i + BATCH_SIZE < total) {
         await new Promise(r => setTimeout(r, 0));
       }
