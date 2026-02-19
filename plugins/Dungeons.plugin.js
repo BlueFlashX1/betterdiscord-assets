@@ -1418,10 +1418,7 @@ module.exports = class Dungeons {
   }
 
   _ensureMobSpawnLoop() {
-    if (this._mobSpawnLoopInterval) {
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — loop already running`);
-      return;
-    }
+    if (this._mobSpawnLoopInterval) return;
     this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — STARTING loop (tickMs=${this._mobSpawnLoopTickMs})`);
 
     const tick = () => {
@@ -1557,13 +1554,16 @@ module.exports = class Dungeons {
   async _processCorpsePile(channelKey, dungeon) {
     const pile = this._corpsePile?.get(channelKey);
     if (!pile || pile.length === 0) {
+      // ALWAYS-ON: Empty pile means combat didn't produce corpses — indicates a problem
+      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon?.shadowsDeployed}, mobs killed: ${dungeon?.mobs?.killed || 0})`);
       this._corpsePile?.delete(channelKey);
       return { extracted: 0, attempted: 0 };
     }
 
     const shadowArmy = this.shadowArmy || this.validatePluginReference('ShadowArmy', 'storageManager');
     if (!shadowArmy?.attemptDungeonExtraction) {
-      this.debugLog?.('ARISE', `SKIP corpse pile — ShadowArmy not available`);
+      // ALWAYS-ON: Missing ShadowArmy means zero extractions — user needs to know
+      console.warn(`[Dungeons] ⚠️ ARISE SKIPPED: ShadowArmy plugin not available — ${pile.length} corpses lost (${channelKey})`);
       this._corpsePile.delete(channelKey);
       return { extracted: 0, attempted: 0 };
     }
@@ -1578,7 +1578,8 @@ module.exports = class Dungeons {
     let attempted = 0;
     const BATCH_SIZE = 20;
 
-    this.debugLog?.('ARISE', `Processing corpse pile: ${total} bodies in ${channelKey}`);
+    // ALWAYS-ON: Extraction is a critical event — never gate behind debug
+    console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
     for (let i = 0; i < total; i += BATCH_SIZE) {
       const batch = pile.slice(i, i + BATCH_SIZE);
@@ -1606,7 +1607,8 @@ module.exports = class Dungeons {
     // Clear the pile — all corpses processed
     this._corpsePile.delete(channelKey);
 
-    this.debugLog?.('ARISE', `Corpse pile complete: ${extracted}/${attempted} extracted from ${channelKey}`);
+    // ALWAYS-ON: Extraction result
+    console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
 
     // Notify ShadowArmy of batch completion (cache invalidation, UI updates)
     if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
@@ -1623,17 +1625,13 @@ module.exports = class Dungeons {
 
     const queueSize = this._mobSpawnQueueNextAt?.size || 0;
     const spawnSize = this._mobSpawnNextAt?.size || 0;
-    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: visible=${isVisible}, queuedFlushes=${queueSize}, pendingWaves=${spawnSize}`);
 
     // Flush queued mobs (batch append) when ready
     if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
       let flushes = 0;
       for (const [channelKey, nextAt] of this._mobSpawnQueueNextAt.entries()) {
         if (flushes >= MAX_QUEUE_FLUSH_PER_TICK) break;
-        if (now < nextAt) {
-          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: queue flush NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
-          continue;
-        }
+        if (now < nextAt) continue;
         this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
         this.processMobSpawnQueue(channelKey);
         this._mobSpawnQueueNextAt.delete(channelKey);
@@ -1648,10 +1646,7 @@ module.exports = class Dungeons {
       let spawns = 0;
       for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
         if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
-        if (now < nextAt) {
-          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: wave NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
-          continue;
-        }
+        if (now < nextAt) continue;
 
         const dungeon = this._getActiveDungeon(channelKey);
         if (!dungeon) {
@@ -1666,7 +1661,7 @@ module.exports = class Dungeons {
         this.spawnMobs(channelKey);
         const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
         this._mobSpawnNextAt.set(channelKey, now + nextDelay);
-        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: next wave in ${Math.round(nextDelay)}ms for ${channelKey}`);
+        // Next wave timing log stripped
         spawns++;
       }
     }
@@ -1674,9 +1669,6 @@ module.exports = class Dungeons {
     const hasWork =
       (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
       (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
-    if (!hasWork) {
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: no more work — STOPPING loop`);
-    }
     !hasWork && this._stopMobSpawnLoop();
   }
 
@@ -4014,7 +4006,7 @@ module.exports = class Dungeons {
     this.spawnMobs(channelKey);
     const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
     this._mobSpawnNextAt.set(channelKey, Date.now() + nextDelay);
-    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: next wave scheduled in ${Math.round(nextDelay)}ms for ${channelKey}`);
+    // Next wave timing log stripped
     this._ensureMobSpawnLoop();
 
     // Natural spawning handles capacity organically
@@ -4206,7 +4198,7 @@ module.exports = class Dungeons {
       // PER-DUNGEON CAPACITY: Use dungeon's own capacity instead of global cap
       // Each dungeon has its own capacity based on rank and biome
       const mobCap = dungeon.mobs.mobCapacity || this.settings.mobMaxActiveCap || 600;
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — alive=${_aliveMobs}, mobCap=${mobCap}, total=${dungeon.mobs.total}, target=${dungeon.mobs.targetCount}`);
+      // Verbose spawn stats stripped — use MOB_CAP debugLog for capacity warnings
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4252,7 +4244,7 @@ module.exports = class Dungeons {
       const capacityRemaining = Math.max(0, mobCap - _aliveMobs);
       const actualSpawnCount = Math.min(capacityRemaining, plannedSpawn);
 
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — planned=${plannedSpawn}, capacity=${capacityRemaining}, actual=${actualSpawnCount}`);
+      // Verbose planned/capacity log stripped — use MOB_CAP debugLog for capacity warnings
       if (actualSpawnCount <= 0) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4443,7 +4435,7 @@ module.exports = class Dungeons {
         }
       }
 
-      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — generated ${newMobs.length} mobs, queueing for batch flush`);
+      // Generated mobs log stripped — FLUSHING log in processMobSpawnQueue covers this
 
       // PERFORMANCE: Queue mobs for batched spawning (250-500ms) to smooth DOM updates and reduce GC churn
       if (!this._mobSpawnQueue.has(channelKey)) {
@@ -4455,7 +4447,7 @@ module.exports = class Dungeons {
       if (!this._mobSpawnQueueNextAt.has(channelKey)) {
         const batchDelay = 250 + Math.random() * 250; // 250-500ms random delay
         this._mobSpawnQueueNextAt.set(channelKey, Date.now() + batchDelay);
-        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — batch flush scheduled in ${Math.round(batchDelay)}ms`);
+        // Batch flush scheduled log stripped — covered by FLUSHING log
         this._ensureMobSpawnLoop();
       }
 
@@ -8724,6 +8716,8 @@ module.exports = class Dungeons {
     this.queueHPBarUpdate(channelKey);
 
     if (dungeon.boss.hp <= 0) {
+      // ALWAYS-ON: Boss death is a critical event — never gate behind debug
+      console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
       await this.completeDungeon(channelKey, 'boss');
       // Save immediately on boss death (important state change)
       if (this.storageManager) {
@@ -9041,10 +9035,13 @@ module.exports = class Dungeons {
     // ARISE: Process corpse pile — extract ALL dead enemies from the dungeon
     // Lore-accurate: Jin-Woo extracts after the battle, not mid-combat.
     // Only for dungeons the user actively participated in.
+    const pileSize = this._corpsePile?.get(channelKey)?.length || 0;
     if (
       dungeon.userParticipating &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout')
     ) {
+      // ALWAYS-ON: Extraction trigger
+      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: ${dungeon.name} (${reason}) — corpse pile has ${pileSize} bodies, starting extraction...`);
       // Process corpse pile asynchronously (don't await - allows new dungeons to start)
       this._processCorpsePile(channelKey, dungeon)
         .then((results) => {
@@ -9064,7 +9061,8 @@ module.exports = class Dungeons {
           this.errorLog('Failed to process corpse pile extraction', error);
         });
     } else {
-      // Background dungeon — clear corpse pile without extracting
+      // ALWAYS-ON: Extraction skipped — user needs to know why
+      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user participating: ${dungeon.userParticipating}, reason: ${reason}, pile: ${pileSize} bodies (cleared without extracting)`);
       this._corpsePile?.delete(channelKey);
     }
 
