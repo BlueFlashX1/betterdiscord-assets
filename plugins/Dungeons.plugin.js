@@ -8979,6 +8979,35 @@ module.exports = class Dungeons {
     // Detach from the Map so stop() clearing won't affect our local copy
     this._corpsePile?.delete(channelKey);
 
+    // CRITICAL: Process corpse pile extraction FIRST — before any other async work.
+    // Hot-reloads from file sync can fire during any await, orphaning promise chains.
+    // By awaiting extraction here (before grantShadowDungeonXP), it completes before
+    // the plugin instance can be torn down.
+    let extractionResults = { extracted: 0, attempted: 0 };
+    const pileSize = corpsePileSnapshot.length;
+    if (
+      dungeon.userParticipating &&
+      (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
+      pileSize > 0
+    ) {
+      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: ${dungeon.name} (${reason}) — corpse pile has ${pileSize} bodies, starting extraction...`);
+      try {
+        extractionResults = await this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot);
+        if (extractionResults.attempted > 0) {
+          this.showToast(
+            `ARISE: ${extractionResults.extracted} shadows from ${extractionResults.attempted} fallen enemies`,
+            'info'
+          );
+        }
+      } catch (error) {
+        this.errorLog('Failed to process corpse pile extraction', error);
+      }
+    } else if (dungeon.userParticipating && pileSize === 0 && dungeon.shadowsDeployed) {
+      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon.shadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
+    } else if (!dungeon.userParticipating) {
+      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user participating: ${dungeon.userParticipating}, reason: ${reason}, pile: ${pileSize} bodies (cleared without extracting)`);
+    }
+
     // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
     const combatAnalytics = dungeon.combatAnalytics || {};
     const summaryStats = {
@@ -9095,39 +9124,9 @@ module.exports = class Dungeons {
       }
     }
 
-    // ARISE: Process corpse pile — extract ALL dead enemies from the dungeon
-    // Lore-accurate: Jin-Woo extracts after the battle, not mid-combat.
-    // Only for dungeons the user actively participated in.
-    // Uses corpsePileSnapshot captured at top of completeDungeon (immune to hot-reload wipes).
-    const pileSize = corpsePileSnapshot.length;
-    if (
-      dungeon.userParticipating &&
-      (reason === 'boss' || reason === 'complete' || reason === 'timeout')
-    ) {
-      // ALWAYS-ON: Extraction trigger
-      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: ${dungeon.name} (${reason}) — corpse pile has ${pileSize} bodies, starting extraction...`);
-      // Process corpse pile using the snapshot (not from _corpsePile Map which may be cleared)
-      this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot)
-        .then((results) => {
-          summaryStats.shadowsExtracted = results.extracted;
-          summaryStats.extractionAttempts = results.attempted;
-
-          if (results.attempted > 0) {
-            this._setTrackedTimeout(() => {
-              this.showToast(
-                `ARISE: ${results.extracted} shadows from ${results.attempted} fallen enemies`,
-                'info'
-              );
-            }, 500);
-          }
-        })
-        .catch((error) => {
-          this.errorLog('Failed to process corpse pile extraction', error);
-        });
-    } else {
-      // ALWAYS-ON: Extraction skipped — user needs to know why
-      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user participating: ${dungeon.userParticipating}, reason: ${reason}, pile: ${pileSize} bodies (cleared without extracting)`);
-    }
+    // Attach extraction results to summary (extraction already completed above)
+    summaryStats.shadowsExtracted = extractionResults.extracted;
+    summaryStats.extractionAttempts = extractionResults.attempted;
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
     if (reason !== 'timeout') {
