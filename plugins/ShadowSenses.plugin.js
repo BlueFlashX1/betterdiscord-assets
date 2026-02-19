@@ -286,6 +286,13 @@ class SensesEngine {
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
     this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
 
+    // Presence detection — in-memory only, resets on restart/reload
+    // Tracks last message timestamp per monitored user to detect:
+    //   1. First activity after restart → "user is active" toast
+    //   2. Return from AFK (1-3h silence) → "back from AFK" toast
+    this._userLastActivity = new Map();  // authorId → { timestamp, notifiedActive }
+    this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
+
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
     if (Array.isArray(feedGuildIds) && feedGuildIds.length > 0) {
@@ -451,6 +458,42 @@ class SensesEngine {
       const deployment = this._plugin.deploymentManager.getDeploymentForUser(authorId);
       if (!deployment) return;
 
+      // ── Presence Detection ──────────────────────────────────────────────
+      // Track user activity to generate presence toasts:
+      //   - First message after restart → "is now active"
+      //   - Message after 1h+ silence → "has returned (was AFK Xh)"
+      const now = Date.now();
+      const authorName = message.author.username || message.author.global_name || "Unknown";
+      const lastActivity = this._userLastActivity.get(authorId);
+
+      if (!lastActivity) {
+        // First message from this user since restart/reload
+        BdApi.UI.showToast(
+          `\u{1F7E2} [${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`,
+          { type: "success" }
+        );
+        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+      } else {
+        const silenceMs = now - lastActivity.timestamp;
+
+        if (silenceMs >= this._AFK_THRESHOLD_MS) {
+          // User was silent for 1h+ → AFK return toast
+          const silenceHours = Math.floor(silenceMs / (60 * 60 * 1000));
+          const silenceMins = Math.floor((silenceMs % (60 * 60 * 1000)) / (60 * 1000));
+          const timeStr = silenceHours > 0
+            ? `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`
+            : `${silenceMins}m`;
+
+          BdApi.UI.showToast(
+            `\u{1F7E1} [${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`,
+            { type: "warning" }
+          );
+        }
+
+        // Always update timestamp
+        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+      }
+
       // Resolve channel
       let channelName = "unknown";
       let guildId = message.guild_id || null;
@@ -469,6 +512,9 @@ class SensesEngine {
 
       if (!guildId) return;
 
+      // Resolve guild name for display
+      const guildName = this._plugin._getGuildName(guildId);
+
       // Build feed entry
       const entry = {
         messageId: message.id,
@@ -477,6 +523,7 @@ class SensesEngine {
         channelId: message.channel_id,
         channelName,
         guildId,
+        guildName,
         content: (message.content || "").slice(0, 200),
         timestamp: Date.now(),
         shadowName: deployment.shadowName,
@@ -486,13 +533,16 @@ class SensesEngine {
       // Add to the guild's feed (always, regardless of current guild)
       this._addToGuildFeed(guildId, entry);
 
-      // Toast if this is the current guild
-      if (guildId === this._currentGuildId) {
+      // Context-aware notifications:
+      // Toast for AWAY guilds only — if you're already viewing this guild, no need to alert.
+      // When you switch guilds, the batch summary toast covers what you missed.
+      if (guildId !== this._currentGuildId) {
         BdApi.UI.showToast(
-          `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in #${entry.channelName}`,
+          `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in ${guildName} #${entry.channelName}`,
           { type: "info" }
         );
-        // Keep lastSeenCount in sync for the active guild
+      } else {
+        // Current guild — silently track, keep lastSeen in sync
         this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       }
 
@@ -536,9 +586,10 @@ class SensesEngine {
           // Collect unique shadow names from unseen entries
           const unseenEntries = feed.slice(lastSeen);
           const shadowNames = new Set(unseenEntries.map(e => e.shadowName));
+          const guildName = this._plugin._getGuildName(newGuildId);
 
           BdApi.UI.showToast(
-            `Shadow Senses: ${unseenCount} message${unseenCount > 1 ? "s" : ""} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
+            `Shadow Senses: ${unseenCount} message${unseenCount > 1 ? "s" : ""} in ${guildName} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
             { type: "info" }
           );
           this._plugin._widgetDirty = true;
@@ -956,6 +1007,9 @@ function buildComponents(pluginRef) {
         ),
         ce("span", { style: { color: "#666" } }, "\u2192"),
         ce("span", { style: { color: "#ccc" } }, entry.authorName),
+        entry.guildName
+          ? ce("span", { style: { color: "#a78bfa", fontSize: "0.85em" } }, entry.guildName)
+          : null,
         ce("span", { style: { color: "#60a5fa" } }, `#${entry.channelName}`),
         ce("span", { style: { color: "#666", marginLeft: "auto" } }, timeStr)
       ),
@@ -1403,12 +1457,28 @@ module.exports = class ShadowSenses {
       Webpack.getByKeys("actionLogger");
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
+    this._GuildStore = Webpack.getStore("GuildStore");
     this._NavigationUtils = Webpack.getModule(m => m?.transitionTo && m?.back && m?.forward);
     this.debugLog("Webpack", "Modules acquired (sync)", {
       Dispatcher: !!this._Dispatcher,
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
+      GuildStore: !!this._GuildStore,
     });
+  }
+
+  /**
+   * Resolve a guild's display name from its ID.
+   * @param {string} guildId
+   * @returns {string} Guild name or truncated ID fallback
+   */
+  _getGuildName(guildId) {
+    try {
+      const guild = this._GuildStore?.getGuild(guildId);
+      return guild?.name || guildId?.slice(-6) || "Unknown";
+    } catch (_) {
+      return guildId?.slice(-6) || "Unknown";
+    }
   }
 
   _startDispatcherWait() {
