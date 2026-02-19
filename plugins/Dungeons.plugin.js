@@ -12205,25 +12205,18 @@ module.exports = class Dungeons {
 
       .dungeon-indicator { cursor: pointer; }
 
-      /* CSS-based dungeon channel indicator — SVG icon before channel name (survives React re-renders) */
-      [data-dungeon-active] {
-        position: relative;
-      }
-      [data-dungeon-active] a[class*="link"] > div:first-child,
-      [data-dungeon-active] a[class*="channel"] > div:first-child,
+      /* CSS-based dungeon channel indicator — SVG icon inside channel name (survives React re-renders) */
       [data-dungeon-active] [class*="name"] {
         display: flex !important;
         align-items: center !important;
+        gap: 4px;
       }
-      [data-dungeon-active]::before {
+      [data-dungeon-active] [class*="name"]::before {
         content: '';
         display: inline-block;
-        width: 16px;
-        height: 16px;
-        min-width: 16px;
-        margin-right: 4px;
-        margin-left: 2px;
-        vertical-align: middle;
+        flex-shrink: 0;
+        width: 14px;
+        height: 14px;
         /* SVG dungeon gate icon — two pillars with arch, no emoji */
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238b5cf6' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%237c3aed' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%23a78bfa' opacity='0.9'/%3E%3C/svg%3E");
         background-size: contain;
