@@ -1300,7 +1300,7 @@ module.exports = class ShadowSenses {
       // SensesEngine
       this.sensesEngine = new SensesEngine(this);
 
-      // Subscribe immediately if Dispatcher ready, otherwise use waitForModule
+      // Subscribe immediately if Dispatcher ready, otherwise poll until available
       if (this._Dispatcher) {
         this.sensesEngine.subscribe();
       } else {
@@ -1396,9 +1396,11 @@ module.exports = class ShadowSenses {
   initWebpack() {
     const { Webpack } = BdApi;
     // Sync attempt — fast path if modules already loaded
+    // Per doggybootsy (BD core dev): use Stores._dispatcher or getModule(m => m.dispatch && m.subscribe)
     this._Dispatcher =
-      Webpack.getByKeys("actionLogger") ||
-      Webpack.getModule(m => m?.subscribe && m?.dispatch && m?.unsubscribe);
+      Webpack.Stores?.UserStore?._dispatcher ||
+      Webpack.getModule(m => m.dispatch && m.subscribe) ||
+      Webpack.getByKeys("actionLogger");
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._NavigationUtils = Webpack.getModule(m => m?.transitionTo && m?.back && m?.forward);
@@ -1406,82 +1408,41 @@ module.exports = class ShadowSenses {
       Dispatcher: !!this._Dispatcher,
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
-      NavigationUtils: !!this._NavigationUtils,
     });
   }
 
   _startDispatcherWait() {
     const { Webpack } = BdApi;
-    // Use BdApi.Webpack.waitForModule — the official BetterDiscord API for
-    // lazily-loaded modules. Returns a Promise that resolves when the module
-    // matching the filter becomes available, no manual polling needed.
-    const filter = m => m?.subscribe && m?.dispatch && m?.unsubscribe && m?.actionLogger;
-    const filterLoose = m => m?.subscribe && m?.dispatch && m?.unsubscribe;
-
-    this.debugLog("Webpack", "Starting waitForModule for Dispatcher...");
-
-    // Try strict filter first (actionLogger), fall back to loose (subscribe+dispatch+unsubscribe)
-    const tryWait = async () => {
-      try {
-        // Attempt 1: strict filter with actionLogger key
-        if (Webpack.waitForModule) {
-          const waitStart = Date.now();
-          let result = await Webpack.waitForModule(filter, { timeout: 60000 });
-          if (!result) {
-            this.debugLog("Webpack", "Strict filter timed out, trying loose filter...");
-            result = await Webpack.waitForModule(filterLoose, { timeout: 60000 });
-          }
-          if (result) {
-            if (this._stopped) return; // Plugin was stopped while waiting
-            this._Dispatcher = result;
-            const waitDuration = Date.now() - waitStart;
-            if (waitDuration > 5000) {
-              this.debugLog("Webpack", `Dispatcher took ${Math.round(waitDuration / 1000)}s to load — messages during this period were not tracked`);
-            }
-            this.debugLog("Webpack", "Dispatcher acquired via waitForModule");
-            if (this.sensesEngine) this.sensesEngine.subscribe();
-            return;
-          }
-        }
-
-        // Fallback: manual polling if waitForModule is not available
-        // (older BetterDiscord versions)
-        this.debugLog("Webpack", "waitForModule unavailable or timed out, falling back to polling");
-        this._startDispatcherPoll();
-      } catch (err) {
-        this.debugError("Webpack", "waitForModule error:", err);
-        this._startDispatcherPoll();
-      }
-    };
-
-    tryWait();
-  }
-
-  _startDispatcherPoll() {
-    const { Webpack } = BdApi;
     let attempt = 0;
-    const maxAttempts = 60; // 60 attempts, ~2 minutes total
+    const maxAttempts = 30; // 30 × 500ms = 15s
 
     const tryAcquire = () => {
-      if (this._stopped) return; // Plugin was stopped
+      if (this._stopped) return;
       attempt++;
+
+      // Per doggybootsy (BD core dev, Dec 2025):
+      //   Webpack.Stores.UserStore._dispatcher  OR
+      //   Webpack.getModule(m => m.dispatch && m.subscribe)
       this._Dispatcher =
-        Webpack.getByKeys("actionLogger") ||
-        Webpack.getModule(m => m?.subscribe && m?.dispatch && m?.unsubscribe);
+        Webpack.Stores?.UserStore?._dispatcher ||
+        Webpack.getModule(m => m.dispatch && m.subscribe) ||
+        Webpack.getByKeys("actionLogger");
+
       if (this._Dispatcher) {
-        this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt}`);
+        this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt} (${attempt * 500}ms)`);
         if (this.sensesEngine) this.sensesEngine.subscribe();
         return;
       }
+
       if (attempt >= maxAttempts) {
-        this.debugError("Webpack", `Dispatcher unavailable after ${maxAttempts} poll attempts (~2min) — SensesEngine will not detect messages`);
+        console.error(`[${PLUGIN_NAME}] Dispatcher unavailable after ${maxAttempts} polls (~15s) — message detection will NOT work`);
+        BdApi.UI.showToast(`${PLUGIN_NAME}: Dispatcher not found — message detection disabled`, { type: "error" });
         return;
       }
-      // 2s intervals — slow but persistent
-      this._dispatcherRetryTimer = setTimeout(tryAcquire, 2000);
+      this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
     };
 
-    this._dispatcherRetryTimer = setTimeout(tryAcquire, 2000);
+    this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
   }
 
   injectCSS() {
