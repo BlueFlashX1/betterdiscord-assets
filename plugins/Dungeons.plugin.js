@@ -1738,6 +1738,9 @@ module.exports = class Dungeons {
    */
   async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget) {
     try {
+      // MANUAL DEPLOY: Skip combat entirely for dungeons where shadows haven't been deployed
+      if (!dungeon.shadowsDeployed) return;
+
       const isActive = this.isActiveDungeon(channelKey);
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
@@ -2219,6 +2222,11 @@ module.exports = class Dungeons {
     const style = document.createElement('style');
     style.id = styleId;
     style.textContent = `
+      .dungeon-deploy-btn:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.7) !important;
+        text-shadow: 0 0 10px rgba(139, 92, 246, 1) !important;
+      }
       .dungeon-join-btn:hover {
         transform: scale(1.05) !important;
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.6) !important;
@@ -2246,6 +2254,18 @@ module.exports = class Dungeons {
     this._delegatedUiClickHandler = (e) => {
       const target = /** @type {HTMLElement|null} */ (e.target);
       if (!target) return;
+
+      const deployBtn = target.closest?.('.dungeon-deploy-btn');
+      if (deployBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const channelKey = deployBtn.getAttribute('data-channel-key');
+        channelKey &&
+          Promise.resolve(this.deployShadows(channelKey)).catch((error) =>
+            this.errorLog('UI', 'Failed to deploy shadows', { channelKey, error })
+          );
+        return;
+      }
 
       const joinBtn = target.closest?.('.dungeon-join-btn');
       if (joinBtn) {
@@ -3879,6 +3899,7 @@ module.exports = class Dungeons {
       channelId: channelInfo.channelId,
       guildId: channelInfo.guildId,
       userParticipating: null,
+      shadowsDeployed: false, // Manual deploy: user must click "Deploy Shadows" to start combat
       shadowAttacks: {},
       shadowContributions: {}, // Track XP contributions: { shadowId: { mobsKilled: 0, bossDamage: 0 } }
       shadowHP: new Map(), // Track shadow HP: Map<shadowId, { hp, maxHp }>
@@ -3943,19 +3964,14 @@ module.exports = class Dungeons {
     // No initial burst - creates organic, non-overwhelming experience
     // Spawn system will begin immediately and continue with 4-8 second intervals
 
-    // Pre-split shadow army for optimal performance
-    // Force reallocation to include this new dungeon (bypass cache for dynamic deployment)
-    await this.preSplitShadowArmy(true);
+    // Sync difficulty scale for mob/boss stat scaling
     this.syncDungeonDifficultyScale(dungeon, channelKey);
 
-    // Shadows attack automatically (Solo Leveling lore: shadows sweep dungeons independently)
-    this.startShadowAttacks(channelKey);
+    // MANUAL DEPLOY: No mob spawning, no shadow allocation, no combat until user deploys.
+    // Prevents idle mob accumulation (7k+ mobs with nothing killing them = UI thread starvation).
+    // Mob spawning + combat all start together when deployShadows() is called.
     this.startMobKillNotifications(channelKey);
-    this.startMobSpawning(channelKey); // Continue spawning remaining mobs over time
-    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: joinDungeon called startMobSpawning for ${channelKey}, boss.hp=${dungeon.boss?.hp}, mobs.targetCount=${dungeon.mobs?.targetCount}, mobs.total=${dungeon.mobs?.total}`);
-    this.startBossAttacks(channelKey);
-    this.startMobAttacks(channelKey);
-    // Extraction: Mobs stored in BdAPI for deferred processing after dungeon completion
+    this.settings.debug && console.log(`[Dungeons] createDungeon — dungeon ready, awaiting manual deploy for ${channelKey}`);
 
     // Automatic completion is handled by the global cleanup loop (`cleanupExpiredDungeons`)
     // This avoids per-dungeon long-lived timers that can accumulate.
@@ -4627,11 +4643,115 @@ module.exports = class Dungeons {
     this.closeDungeonModal();
   }
 
+  /**
+   * Deploy shadows to a dungeon — combines allocation + join + combat start.
+   * Replaces the old auto-deploy flow. User must click "Deploy Shadows" to start combat.
+   */
+  async deployShadows(channelKey) {
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) {
+      this.showToast('Dungeon not found', 'error');
+      return;
+    }
+    if (dungeon.shadowsDeployed) {
+      this.showToast('Shadows already deployed here!', 'info');
+      return;
+    }
+    if (dungeon.completed || dungeon.failed) {
+      this.showToast('This dungeon is no longer active', 'error');
+      return;
+    }
+
+    // Validate active dungeon status first (clear invalid references)
+    this.validateActiveDungeonStatus();
+
+    // ENFORCE ONE DUNGEON AT A TIME
+    if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
+      const prevDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
+      const shouldClearPrev = !prevDungeon || prevDungeon.completed || prevDungeon.failed;
+      if (shouldClearPrev) {
+        this.settings.userActiveDungeon = null;
+        this.saveSettings();
+      }
+      const isPrevActive = prevDungeon && !prevDungeon.completed && !prevDungeon.failed;
+      if (isPrevActive) {
+        this.showToast(`Already in ${prevDungeon.name}! Complete it first.`, 'error');
+        return;
+      }
+      if (prevDungeon) {
+        prevDungeon.userParticipating = false;
+      }
+    }
+
+    // SYNC HP/MANA FROM STATS PLUGIN
+    const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
+    if (hpSynced || manaSynced) {
+      this.debugLog(
+        `HP/Mana synced: ${this.settings.userHP}/${this.settings.userMaxHP} HP, ${this.settings.userMana}/${this.settings.userMaxMana} Mana`
+      );
+    }
+
+    // Check if user has HP
+    if (this.settings.userHP <= 0) {
+      this.showToast('You need HP to deploy shadows! Wait for HP to regenerate.', 'error');
+      return;
+    }
+
+    // Mark deployed (shadows fight autonomously — user can optionally JOIN separately)
+    dungeon.shadowsDeployed = true;
+
+    // Allocate shadows and start combat
+    await this.preSplitShadowArmy(true);
+
+    const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
+    this.debugLog(`DEPLOY: Shadows deployed to ${dungeon.name} — ${assignedShadows.length} shadows allocated`);
+
+    // Initialize shadow HP if needed
+    if (
+      assignedShadows.length > 0 &&
+      (!dungeon.shadowHP || dungeon.shadowHP.size === 0)
+    ) {
+      const shadowHP = new Map();
+      const deadShadows = this.deadShadows.get(channelKey) || new Set();
+      const shadowsToInitialize = this._collectShadowsNeedingHPInit(assignedShadows, deadShadows);
+      await this._initializeShadowHPBatch(shadowsToInitialize, shadowHP, 'deploy');
+      dungeon.shadowHP = shadowHP;
+    }
+
+    // Initialize boss and mob attack times to prevent one-shot burst
+    const now = Date.now();
+    if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
+      dungeon.boss.lastAttackTime = now;
+    }
+    if (dungeon.mobs?.activeMobs) {
+      dungeon.mobs.activeMobs.forEach((mob) => {
+        if (!mob.lastAttackTime || mob.lastAttackTime === 0) {
+          mob.lastAttackTime = now;
+        }
+      });
+    }
+
+    // Start mob spawning + all combat systems together
+    this.startMobSpawning(channelKey);
+    await this.startShadowAttacks(channelKey);
+    this.startBossAttacks(channelKey);
+    this.startMobAttacks(channelKey);
+
+    this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
+    this.saveSettings();
+
+    // Update HP bar to show LEAVE button instead of DEPLOY
+    this.queueHPBarUpdate(channelKey);
+    this.closeDungeonModal();
+  }
+
   async processUserAttack(channelKey, messageElement = null) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
-    if (!dungeon.userParticipating) {
+    if (!dungeon.shadowsDeployed) {
+      await this.deployShadows(channelKey);
+    } else if (!dungeon.userParticipating) {
       await this.selectDungeon(channelKey);
     }
 
@@ -6256,9 +6376,9 @@ module.exports = class Dungeons {
       return;
     }
 
-    // Get active dungeons
+    // Get active dungeons — ONLY those where shadows are deployed (manual deploy)
     const activeDungeonsList = Array.from(this.activeDungeons.values()).filter(
-      (d) => !d.completed && !d.failed && d.boss.hp > 0
+      (d) => !d.completed && !d.failed && d.boss.hp > 0 && d.shadowsDeployed
     );
 
     if (activeDungeonsList.length === 0) {
@@ -9861,12 +9981,35 @@ module.exports = class Dungeons {
         hpContainer.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
       }
 
-      // Participation indicator
-      const participationBadge = dungeon.userParticipating
-        ? '<span style="color: #10b981; font-weight: 700;">FIGHTING</span>'
-        : '<span style="color: #8b5cf6; font-weight: 700;">WATCHING</span>';
+      // Participation indicator — 3 states: WAITING (no deploy), DEPLOYED (shadows fighting), FIGHTING (user joined)
+      const participationBadge = !dungeon.shadowsDeployed
+        ? '<span style="color: #8b5cf6; font-weight: 700;">WAITING</span>'
+        : dungeon.userParticipating
+          ? '<span style="color: #10b981; font-weight: 700;">FIGHTING</span>'
+          : '<span style="color: #f59e0b; font-weight: 700;">DEPLOYED</span>';
 
-      // JOIN button (only show if NOT participating)
+      // DEPLOY SHADOWS button (only show if shadows NOT deployed)
+      const deployButtonHTML = !dungeon.shadowsDeployed
+        ? `
+      <button class="dungeon-deploy-btn" data-channel-key="${channelKey}" style="
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
+        color: white;
+        border: none;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 6px rgba(139, 92, 246, 0.5);
+        text-shadow: 0 0 6px rgba(139, 92, 246, 0.8);
+      ">
+        DEPLOY SHADOWS
+      </button>
+    `
+        : '';
+
+      // JOIN button (show if user hasn't joined yet — can join before or after deploy)
       const joinButtonHTML = !dungeon.userParticipating
         ? `
       <button class="dungeon-join-btn" data-channel-key="${channelKey}" style="
@@ -9886,7 +10029,7 @@ module.exports = class Dungeons {
     `
         : '';
 
-      // LEAVE button (only show if IS participating)
+      // LEAVE button (only show if user IS participating)
       const leaveButtonHTML = dungeon.userParticipating
         ? `
       <button class="dungeon-leave-btn" data-channel-key="${channelKey}" style="
@@ -9914,6 +10057,7 @@ module.exports = class Dungeons {
             <div style="color: #a78bfa; font-weight: 700; font-size: 13px; text-shadow: 0 0 8px rgba(139, 92, 246, 0.8); white-space: nowrap;">
               ${participationBadge} | ${dungeon.name} [${dungeon.rank}]
         </div>
+            ${deployButtonHTML}
             ${joinButtonHTML}
             ${leaveButtonHTML}
           </div>
@@ -11559,23 +11703,35 @@ module.exports = class Dungeons {
         this.activeDungeons.delete(dungeon.channelKey);
       });
 
-      // Only start combat AFTER all dungeons are restored and shadows are allocated
+      // Restore dungeons — only start combat for dungeons where shadows were deployed
       if (this.activeDungeons.size > 0) {
-        console.log(`[Dungeons] INIT_TRACE: restoreActiveDungeons — ${this.activeDungeons.size} dungeons restored, allocating shadows...`);
+        console.log(`[Dungeons] INIT_TRACE: restoreActiveDungeons — ${this.activeDungeons.size} dungeons restored`);
         this.debugLog(`Restored ${this.activeDungeons.size} active dungeons`);
-        // Allocate shadows across all restored dungeons in one pass
-        await this.preSplitShadowArmy(true);
-        // Now start combat intervals for each restored dungeon
+
+        // Allocate shadows only across deployed dungeons
+        const deployedCount = [...this.activeDungeons.values()].filter(d => d.shadowsDeployed).length;
+        if (deployedCount > 0) {
+          await this.preSplitShadowArmy(true);
+        }
+
         for (const [channelKey] of this.activeDungeons) {
-          const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
           const dg = this.activeDungeons.get(channelKey);
-          console.log(`[Dungeons] INIT_TRACE: Starting combat for restored dungeon — channelKey=${channelKey}, rank=${dg?.rank}, shadows=${allocCount}, bossHP=${dg?.boss?.hp}, mobs=${dg?.mobs?.activeMobs?.length || 0}, bossGate={minMs:${dg?.bossGate?.minDurationMs},kills:${dg?.bossGate?.requiredMobKills}}`);
-          await this.startShadowAttacks(channelKey);
-          this.startBossAttacks(channelKey);
-          this.startMobAttacks(channelKey);
+
+          // HP bar + kill notifications always active
           this.startMobKillNotifications(channelKey);
-          this.startMobSpawning(channelKey);
           this.updateBossHPBar(channelKey);
+
+          // Only restart mob spawning + combat if shadows were deployed before reload
+          if (dg?.shadowsDeployed) {
+            const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
+            console.log(`[Dungeons] INIT_TRACE: Resuming combat for deployed dungeon — channelKey=${channelKey}, rank=${dg?.rank}, shadows=${allocCount}, bossHP=${dg?.boss?.hp}, mobs=${dg?.mobs?.activeMobs?.length || 0}`);
+            this.startMobSpawning(channelKey);
+            await this.startShadowAttacks(channelKey);
+            this.startBossAttacks(channelKey);
+            this.startMobAttacks(channelKey);
+          } else {
+            console.log(`[Dungeons] INIT_TRACE: Restored idle dungeon (no deploy) — channelKey=${channelKey}, rank=${dg?.rank}, bossHP=${dg?.boss?.hp}`);
+          }
         }
       }
     } catch (error) {
@@ -12137,6 +12293,72 @@ module.exports = class Dungeons {
           0 0 3px rgba(139, 92, 246, 0.5);
         pointer-events: none;
         letter-spacing: 0.8px;
+      }
+
+      /* Dungeon HP Bar Buttons */
+      .dungeon-deploy-btn {
+        padding: 4px 12px !important;
+        background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        transition: all 0.2s !important;
+        box-shadow: 0 2px 6px rgba(139, 92, 246, 0.5) !important;
+        text-shadow: 0 0 6px rgba(139, 92, 246, 0.8) !important;
+        pointer-events: auto !important;
+        display: inline-block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+      .dungeon-deploy-btn:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 12px rgba(139, 92, 246, 0.7) !important;
+        text-shadow: 0 0 10px rgba(139, 92, 246, 1) !important;
+      }
+
+      .dungeon-join-btn {
+        padding: 4px 12px !important;
+        background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        transition: all 0.2s !important;
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4) !important;
+        pointer-events: auto !important;
+        display: inline-block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+      .dungeon-join-btn:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.6) !important;
+      }
+
+      .dungeon-leave-btn {
+        padding: 4px 12px !important;
+        background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-size: 11px !important;
+        font-weight: 700 !important;
+        cursor: pointer !important;
+        transition: all 0.2s !important;
+        box-shadow: 0 2px 6px rgba(239, 68, 68, 0.4) !important;
+        pointer-events: auto !important;
+        display: inline-block !important;
+        visibility: visible !important;
+        opacity: 1 !important;
+      }
+      .dungeon-leave-btn:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 12px rgba(239, 68, 68, 0.6) !important;
       }
 
       /* User HP Bar */
