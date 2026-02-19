@@ -4850,21 +4850,21 @@ module.exports = class Dungeons {
   }
 
   async _initializeShadowHPBatch(shadowsToInitialize, shadowHP, context) {
-    await Promise.all(
-      shadowsToInitialize.map(async (shadow) => {
-        try {
-          const hpData = await this.initializeShadowHP(shadow, shadowHP);
-          const shadowId = this.getShadowIdValue(shadow);
-          const isValidHpData =
-            hpData &&
-            typeof hpData.hp === 'number' &&
-            !isNaN(hpData.hp) &&
-            typeof hpData.maxHp === 'number' &&
-            !isNaN(hpData.maxHp) &&
-            hpData.maxHp > 0 &&
-            hpData.hp >= 0;
-          !isValidHpData &&
-            this.debugLogOnce(`SHADOW_HP_INIT_INVALID:${shadowId}`, 'SHADOW_HP', {
+    // PERF: Use sync initializer — no Promise.all / microtask overhead for pure-math HP calc.
+    for (const shadow of shadowsToInitialize) {
+      try {
+        const hpData = this.initializeShadowHPSync(shadow, shadowHP);
+        const shadowId = this.getShadowIdValue(shadow);
+        const isValidHpData =
+          hpData &&
+          typeof hpData.hp === 'number' &&
+          !isNaN(hpData.hp) &&
+          typeof hpData.maxHp === 'number' &&
+          !isNaN(hpData.maxHp) &&
+          hpData.maxHp > 0 &&
+          hpData.hp >= 0;
+        !isValidHpData &&
+          this.debugLogOnce(`SHADOW_HP_INIT_INVALID:${shadowId}`, 'SHADOW_HP', {
               shadowId,
               hpData,
               context,
@@ -4876,8 +4876,7 @@ module.exports = class Dungeons {
             error
           );
         }
-      })
-    );
+    }
   }
 
   _cleanupDungeonActiveMobs(dungeon, maxSize = 3000, trimTo = 500) {
@@ -5279,9 +5278,17 @@ module.exports = class Dungeons {
    * Calculate HP from vitality stat and rank
    * Uses TOTAL EFFECTIVE STATS if SoloLevelingStats is available
    */
-  async calculateHP(vitality, rank = 'E', includeShadowBonus = false) {
+  /**
+   * Sync HP calculation (pure math, no I/O). Use this in hot paths like combat ticks.
+   * For user HP with shadow bonus, use the async calculateHP() instead.
+   */
+  calculateHPSync(vitality, rank = 'E') {
     const rankIndex = this.getRankIndexValue(rank);
-    const baseHP = 100 + vitality * 10 + rankIndex * 50;
+    return 100 + vitality * 10 + rankIndex * 50;
+  }
+
+  async calculateHP(vitality, rank = 'E', includeShadowBonus = false) {
+    const baseHP = this.calculateHPSync(vitality, rank);
 
     if (includeShadowBonus) {
       const shadowCount = await this.getShadowCount();
@@ -6762,8 +6769,8 @@ module.exports = class Dungeons {
         }
 
         // OPTIMIZATION: Use pre-split shadow allocations (cached)
-        // DYNAMIC DEPLOYMENT: Reallocate shadows if cache expired OR if this dungeon has no shadows
-        // This ensures shadows are deployed even when dungeons spawn midway
+        // DYNAMIC DEPLOYMENT: Reallocate shadows if cache expired OR if this dungeon has no shadows.
+        // PERF: preSplitShadowArmy is expensive (IDB read + sort). Call it AT MOST ONCE per tick.
         const hasAllocation =
           this.shadowAllocations.has(channelKey) &&
           this.shadowAllocations.get(channelKey)?.length > 0;
@@ -6772,43 +6779,48 @@ module.exports = class Dungeons {
           !this.allocationCacheTime ||
           Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
 
+        let didReallocate = false;
         if (cacheExpired || !hasAllocation) {
-          // Force reallocation to ensure this dungeon gets shadows dynamically
           await this.preSplitShadowArmy(true);
+          didReallocate = true;
         }
 
         // Get pre-allocated shadows for this dungeon
         const assignedShadows = this.shadowAllocations.get(channelKey);
         if (!assignedShadows || assignedShadows.length === 0) {
-          // No shadows allocated to this dungeon (might be cleared or no shadows available)
           this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: processShadowAttacks — NO shadows for ${channelKey}`);
           return;
         }
 
         this.syncDungeonDifficultyScale(dungeon, channelKey);
 
-        // Reinforcement: if this dungeon is underpowered for its rank/progress, reallocate stronger shadows.
-        // Throttled to avoid churn.
-        const nowRebalance = Date.now();
-        const lastRebalance = this._lastRebalanceAt.get(channelKey) || 0;
-        const rebalanceAllowed = nowRebalance - lastRebalance >= this._rebalanceCooldownMs;
-        const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
-        const avgAssignedRankIndex =
-          assignedShadows.reduce((sum, s) => sum + this.getRankIndexValue(s?.rank || 'E'), 0) /
-          Math.max(1, assignedShadows.length);
-        const expected = dungeon?.boss?.expectedShadowCount || 1;
-        const isBossAlive = (dungeon?.boss?.hp || 0) > 0;
-        const bossFraction =
-          dungeon?.boss?.maxHp && dungeon?.boss?.hp >= 0 ? dungeon.boss.hp / dungeon.boss.maxHp : 0;
-        const needsRebalance =
-          assignedShadows.length < Math.max(1, Math.floor(expected * 0.75)) ||
-          avgAssignedRankIndex < dungeonRankIndex - 0.9 ||
-          (isBossAlive && bossFraction > 0.6 && assignedShadows.length < expected);
+        // Reinforcement: if this dungeon is underpowered, reallocate stronger shadows.
+        // PERF: Skip if we already reallocated above (max 1 preSplit per tick).
+        if (!didReallocate) {
+          const nowRebalance = Date.now();
+          const lastRebalance = this._lastRebalanceAt.get(channelKey) || 0;
+          const rebalanceAllowed = nowRebalance - lastRebalance >= this._rebalanceCooldownMs;
 
-        if (rebalanceAllowed && needsRebalance) {
-          this._lastRebalanceAt.set(channelKey, nowRebalance);
-          await this.preSplitShadowArmy(true);
-          this.syncDungeonDifficultyScale(dungeon, channelKey, { scaleExistingMobs: true });
+          if (rebalanceAllowed) {
+            const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
+            const avgAssignedRankIndex =
+              assignedShadows.reduce((sum, s) => sum + this.getRankIndexValue(s?.rank || 'E'), 0) /
+              Math.max(1, assignedShadows.length);
+            const expected = dungeon?.boss?.expectedShadowCount || 1;
+            const isBossAlive = (dungeon?.boss?.hp || 0) > 0;
+            const bossFraction =
+              dungeon?.boss?.maxHp && dungeon?.boss?.hp >= 0 ? dungeon.boss.hp / dungeon.boss.maxHp : 0;
+            const needsRebalance =
+              assignedShadows.length < Math.max(1, Math.floor(expected * 0.75)) ||
+              avgAssignedRankIndex < dungeonRankIndex - 0.9 ||
+              (isBossAlive && bossFraction > 0.6 && assignedShadows.length < expected);
+
+            if (needsRebalance) {
+              this._lastRebalanceAt.set(channelKey, nowRebalance);
+              await this.preSplitShadowArmy(true);
+              this.syncDungeonDifficultyScale(dungeon, channelKey, { scaleExistingMobs: true });
+            }
+          }
         }
 
         const deadShadows = this.deadShadows.get(channelKey) || new Set();
@@ -6821,99 +6833,61 @@ module.exports = class Dungeons {
           dungeon.shadowCombatData = new Map();
         }
 
-        // OPTIMIZATION: Batch initialize shadow HP and combat data using helper functions
+        // OPTIMIZATION: Sync HP + combat data init (no async, no microtasks, no Promise.all).
         // CRITICAL: Initialize ALL assigned shadows (not just combat-ready ones)
         // getCombatReadyShadows filters out shadows without HP, which prevents initialization
-        // PERFORMANCE: Skip expensive initialization when window is hidden
-        const shadowsToInitialize = [];
+        // PERFORMANCE: Skip initialized shadows when window is hidden
         for (const shadow of assignedShadows) {
           const shadowId = this.getShadowIdValue(shadow);
           if (!shadowId) continue;
           if (deadShadows.has(shadowId)) continue;
           if (!isWindowVisible && shadowHP.has(shadowId)) continue;
-          shadowsToInitialize.push(shadow);
+
+          try {
+            this.initializeShadowHPSync(shadow, shadowHP);
+
+            // Initialize combat data if missing
+            !dungeon.shadowCombatData.has(shadowId) &&
+              dungeon.shadowCombatData.set(shadowId, this.initializeShadowCombatData(shadow, dungeon));
+          } catch (error) {
+            this.errorLog('SHADOW_INIT', `Failed to initialize shadow ${shadowId}`, error);
+          }
         }
-
-        await Promise.all(
-          shadowsToInitialize.map(async (shadow) => {
-            try {
-              // Initialize HP using helper function
-              const hpData = await this.initializeShadowHP(shadow, shadowHP);
-
-              // Validate HP data shape (hp=0 is valid for dead shadows)
-              const hpShadowId = this.getShadowIdValue(shadow);
-              const isValidHpData =
-                hpData &&
-                typeof hpData.hp === 'number' &&
-                !isNaN(hpData.hp) &&
-                typeof hpData.maxHp === 'number' &&
-                !isNaN(hpData.maxHp) &&
-                hpData.maxHp > 0 &&
-                hpData.hp >= 0;
-              !isValidHpData &&
-                this.debugLogOnce(`SHADOW_HP_INIT_INVALID:${hpShadowId}`, 'SHADOW_HP', {
-                  shadowId: hpShadowId,
-                  hpData,
-                });
-
-              // Initialize combat data using helper function
-              hpShadowId &&
-                !dungeon.shadowCombatData.has(hpShadowId) &&
-                dungeon.shadowCombatData.set(hpShadowId, this.initializeShadowCombatData(
-                  shadow,
-                  dungeon
-                ));
-            } catch (error) {
-              this.errorLog(
-                'SHADOW_INIT',
-                `Failed to initialize shadow ${this.getShadowIdValue(shadow)}`,
-                error
-              );
-            }
-          })
-        );
 
         // PERIODIC RESURRECTION CHECK: Attempt to resurrect shadows at 0 HP if mana is available
         // Shadows stay in dungeon at 0 HP until mana regenerates or dungeon ends
         // Shadows are stored in DB and persist - they only leave dungeon when it completes/ends
-        // PERFORMANCE: Skip resurrection checks when window is hidden (check less frequently)
+        // PERIODIC RESURRECTION CHECK: Capped at 5 per tick to prevent sequential-await stall.
+        // PERFORMANCE: Skip resurrection checks when window is hidden
         if (isWindowVisible) {
-          // Lazy-init per-dungeon resurrection attempt tracker to prevent double-attempts on same tick.
-          // On-death resurrection (processBossAttacks/processMobAttacks) runs first in the tick;
-          // this periodic check runs second. Without the guard, a shadow whose on-death resurrection
-          // FAILED (no mana) gets re-attempted here on the same tick, wasting syncManaFromStats calls.
           if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
           const nowResurrection = Date.now();
+          let resurrectionBudget = 5; // Max resurrections per tick — prevents 1000+ sequential awaits
 
           for (const shadow of assignedShadows) {
+            if (resurrectionBudget <= 0) break;
             const shadowId = this.getShadowIdValue(shadow);
             if (!shadowId) continue;
             const hpData = shadowHP.get(shadowId);
-            if (hpData && hpData.hp <= 0) {
-              // Skip if resurrection was already attempted this tick (within 2s window)
-              const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
-              if (nowResurrection - lastAttempt < 2000) continue;
+            if (!hpData || hpData.hp > 0) continue;
 
-              dungeon._lastResurrectionAttempt[shadowId] = nowResurrection;
-              const resurrected = await this.attemptAutoResurrection(shadow, channelKey);
-              if (resurrected) {
-                // Resurrection successful - restore HP to FULL maxHp
-                // CRITICAL: Ensure maxHp is valid, recalculate if missing
-                if (!hpData.maxHp || hpData.maxHp <= 0) {
-                  // Recalculate maxHp if missing or invalid
-                  const recalculatedHP = await this.initializeShadowHP(shadow, shadowHP);
-                  hpData.maxHp = recalculatedHP.maxHp;
-                }
-                hpData.hp = hpData.maxHp; // FULL HP restoration
-                // Create new object reference to prevent race condition
-                // eslint-disable-next-line require-atomic-updates
-                shadowHP.set(shadowId, { ...hpData });
-                deadShadows.delete(shadowId);
-                if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
-                delete dungeon._lastResurrectionAttempt[shadowId]; // Clear tracker on success
+            // Skip if resurrection was already attempted this tick (within 2s window)
+            const lastAttempt = dungeon._lastResurrectionAttempt[shadowId] || 0;
+            if (nowResurrection - lastAttempt < 2000) continue;
+
+            dungeon._lastResurrectionAttempt[shadowId] = nowResurrection;
+            resurrectionBudget--;
+            const resurrected = await this.attemptAutoResurrection(shadow, channelKey);
+            if (resurrected) {
+              if (!hpData.maxHp || hpData.maxHp <= 0) {
+                const recalculated = this.initializeShadowHPSync(shadow, shadowHP);
+                hpData.maxHp = recalculated?.maxHp || 100;
               }
-              // If resurrection failed (no mana), shadow stays at 0 HP but remains in dungeon
-              // Tracker prevents re-attempt until 2s window expires (next tick cycle)
+              hpData.hp = hpData.maxHp;
+              shadowHP.set(shadowId, { ...hpData });
+              deadShadows.delete(shadowId);
+              if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
+              delete dungeon._lastResurrectionAttempt[shadowId];
             }
           }
         }
@@ -7229,12 +7203,11 @@ module.exports = class Dungeons {
           combatDataToUpdate.attackCount += attacksInSpan;
           combatDataToUpdate.damageDealt += totalBossDamage + totalMobDamage;
 
-          // Calculate actual time spent — simple loop instead of Array.from().reduce()
-          let actualTimeSpent = timeSinceLastAttack < 0 ? Math.abs(timeSinceLastAttack) : 0;
-          for (let a = 0; a < attacksInSpan; a++) {
-            actualTimeSpent += effectiveCooldown * this._varianceNarrow();
-          }
-          combatDataToUpdate.lastAttackTime = now + Math.min(actualTimeSpent, totalTimeSpan);
+          // Calculate actual time spent — single multiply instead of per-attack RNG loop.
+          // Average of N narrow-variance samples ≈ 1.0, so total ≈ attacksInSpan * cooldown.
+          const baseTimeSpent = (timeSinceLastAttack < 0 ? Math.abs(timeSinceLastAttack) : 0)
+            + attacksInSpan * effectiveCooldown * this._varianceNarrow();
+          combatDataToUpdate.lastAttackTime = now + Math.min(baseTimeSpent, totalTimeSpan);
 
           // Update attack interval for next batch
           if (this.shadowArmy?.calculateShadowAttackInterval) {
@@ -7564,153 +7537,51 @@ module.exports = class Dungeons {
    * @param {Map<string, {hp: number, maxHp: number}>} shadowHP - Shadow HP map
    * @returns {Promise<Object>} - Updated shadow HP data
    */
-  async initializeShadowHP(shadow, shadowHP) {
+  /**
+   * Sync HP initializer — pure computation, no I/O, no microtasks.
+   * Use this in the combat tick hot path instead of the async version.
+   */
+  initializeShadowHPSync(shadow, shadowHP) {
     const shadowId = this.getShadowIdValue(shadow);
-    if (!shadowId) {
-      this.errorLog('SHADOW_HP', 'Cannot initialize HP: shadow identifier is missing', { shadow });
-      return null;
-    }
+    if (!shadowId) return null;
 
     const existingHP = shadowHP.get(shadowId);
-    const needsInit =
-      !existingHP ||
-      typeof existingHP.hp !== 'number' ||
-      isNaN(existingHP.hp) ||
-      existingHP.hp instanceof Promise;
-
-    if (!needsInit) {
+    if (existingHP && typeof existingHP.hp === 'number' && !isNaN(existingHP.hp) && !(existingHP.hp instanceof Promise)) {
       return existingHP;
     }
 
-    try {
-      // CRITICAL: Always use effective stats (baseStats + growthStats + naturalGrowthStats) for HP calculation
-      // This ensures accuracy by including ALL stat sources: base, level-up growth, and natural growth
-      // Effective stats = baseStats + growthStats + naturalGrowthStats
-      const effectiveStats = this.getShadowEffectiveStatsCached(shadow);
+    const effectiveStats = this.getShadowEffectiveStatsCached(shadow);
+    let shadowVitality = (effectiveStats?.vitality != null && !isNaN(effectiveStats.vitality))
+      ? effectiveStats.vitality
+      : ((shadow.baseStats?.vitality || 0) + (shadow.growthStats?.vitality || 0) + (shadow.naturalGrowthStats?.vitality || 0));
 
-      // Get vitality from effective stats (includes ALL stat sources)
-      let shadowVitality = null;
+    if (!shadowVitality || typeof shadowVitality !== 'number' || isNaN(shadowVitality)) {
+      shadowVitality = (typeof shadow.strength === 'number' && shadow.strength > 0) ? shadow.strength : 50;
+    }
+    if (shadowVitality < 0) shadowVitality = 0;
 
-      if (
-        effectiveStats &&
-        typeof effectiveStats.vitality === 'number' &&
-        !isNaN(effectiveStats.vitality)
-      ) {
-        shadowVitality = effectiveStats.vitality;
-      } else {
-        // Fallback: Calculate manually if effective stats unavailable
-        const baseStats = shadow.baseStats || {};
-        const growthStats = shadow.growthStats || {};
-        const naturalGrowthStats = shadow.naturalGrowthStats || {};
-        shadowVitality =
-          (baseStats.vitality || 0) +
-          (growthStats.vitality || 0) +
-          (naturalGrowthStats.vitality || 0);
+    const shadowRank = shadow.rank || 'E';
+    const baseHP = this.calculateHPSync(shadowVitality, shadowRank);
+    const shadowRankIndex = this.getRankIndexValue(shadowRank);
+    const shadowRankHpFactor = this.getShadowRankHpFactorByIndex(shadowRankIndex);
+    const finalMaxHP = Math.max(1, Math.floor(baseHP * 0.2 * shadowRankHpFactor));
 
-        this.debugLog('SHADOW_HP', 'Calculated vitality manually (fallback)', {
-          shadowId,
-          calculatedVitality: shadowVitality,
-          baseVitality: baseStats.vitality || 0,
-          growthVitality: growthStats.vitality || 0,
-          naturalGrowthVitality: naturalGrowthStats.vitality || 0,
-        });
-      }
-
-      // Final fallback: Use strength if vitality is still 0 or invalid
-      if (
-        shadowVitality === null ||
-        shadowVitality === 0 ||
-        typeof shadowVitality !== 'number' ||
-        isNaN(shadowVitality)
-      ) {
-        if (typeof shadow.strength === 'number' && !isNaN(shadow.strength) && shadow.strength > 0) {
-          shadowVitality = shadow.strength;
-          this.debugLog(
-            'SHADOW_HP',
-            `Vitality was 0/invalid, using strength as fallback for shadow ${shadowId}`,
-            {
-              strength: shadow.strength,
-            }
-          );
-        } else {
-          // Absolute minimum fallback
-          shadowVitality = 50;
-          this.debugLog(
-            'SHADOW_HP',
-            `No valid vitality found, using default 50 for shadow ${shadowId}`,
-            {
-              shadowVitality: shadow.vitality,
-              shadowStrength: shadow.strength,
-            }
-          );
-        }
-      }
-
-      // Ensure vitality is non-negative (0 is valid, but negative is not)
-      if (shadowVitality < 0) {
-        shadowVitality = 0;
-      }
-
-      // CRITICAL: Calculate HP using effective stats vitality (includes ALL stat sources)
-      // Formula: 100 + VIT × 10 + rankIndex × 50 (same as user HP)
-      // Then multiply by 0.10 (10%) so shadows have 10% of user HP
-      // Effective stats vitality = baseStats.vitality + growthStats.vitality + naturalGrowthStats.vitality
-      const shadowRank = shadow.rank || 'E';
-      const baseHP = await this.calculateHP(shadowVitality, shadowRank);
-
-      // Shadows have a fraction of calculated HP so they can die, but rank should still matter.
-      // 20% of user HP formula — high enough that they don't die every tick,
-      // low enough that resurrection mana budget is still meaningful.
-      const shadowRankIndex = this.getRankIndexValue(shadowRank);
-      const shadowRankHpFactor = this.getShadowRankHpFactorByIndex(shadowRankIndex);
-      const maxHP = Math.floor(baseHP * 0.2 * shadowRankHpFactor);
-
-      // CRITICAL: Ensure HP is at least 1 (shadows must be able to take damage and die)
-      // If calculated HP is 0, shadows would be immediately dead, which breaks combat
-      const finalMaxHP = Math.max(1, maxHP);
-
-      // Validate HP was calculated correctly
-      if (typeof finalMaxHP !== 'number' || isNaN(finalMaxHP) || finalMaxHP <= 0) {
-        const effectiveStatsForLog = this.getShadowEffectiveStatsCached(shadow);
-        this.errorLog('SHADOW_HP', `Invalid HP calculated for shadow ${shadowId}`, {
-          baseHP,
-          maxHP,
-          finalMaxHP,
-          shadowVitality,
-          rank: shadowRank,
-          formula: '(100 + VIT × 10 + rankIndex × 50) × 0.10',
-          effectiveStats: effectiveStatsForLog,
-          baseStats: shadow.baseStats,
-          growthStats: shadow.growthStats,
-          naturalGrowthStats: shadow.naturalGrowthStats,
-        });
-        // Set minimum HP to prevent shadow from being immediately dead
-        // Use formula with minimum VIT (50) as fallback, then 10%
-        const rankIndex = this.getRankIndexValue(shadowRank);
-        const minBaseHP = 100 + 50 * 10 + rankIndex * 50; // Formula with VIT=50
-        const minHP = Math.max(1, Math.floor(minBaseHP * 0.1)); // 10% of minimum, at least 1
-        // Atomic update: create new object to prevent race conditions
-        const hpData = { hp: minHP, maxHp: minHP };
-        // eslint-disable-next-line require-atomic-updates
-        shadowHP.set(shadowId, hpData);
-        return hpData;
-      }
-
-      // HP successfully calculated from effective stats vitality using formula: (100 + VIT × 10 + rankIndex × 50) × 0.10
-      // Effective stats vitality includes: baseStats.vitality + growthStats.vitality + naturalGrowthStats.vitality
-      // Shadows CAN die (HP can reach 0) - this is handled in combat damage logic
-      // Atomic update: create new object to prevent race conditions
-      const hpData = { hp: finalMaxHP, maxHp: finalMaxHP };
-      // eslint-disable-next-line require-atomic-updates
+    if (typeof finalMaxHP !== 'number' || isNaN(finalMaxHP) || finalMaxHP <= 0) {
+      const rankIndex = this.getRankIndexValue(shadowRank);
+      const minHP = Math.max(1, Math.floor((100 + 50 * 10 + rankIndex * 50) * 0.1));
+      const hpData = { hp: minHP, maxHp: minHP };
       shadowHP.set(shadowId, hpData);
       return hpData;
-    } catch (error) {
-      this.errorLog('SHADOW_HP', `Failed to initialize HP for shadow ${shadowId}`, error);
-      // Set minimum HP to prevent shadow from being immediately dead
-      const minHP = 100;
-      shadowHP.set(shadowId, { hp: minHP, maxHp: minHP });
-      return shadowHP.get(shadowId);
     }
+
+    const hpData = { hp: finalMaxHP, maxHp: finalMaxHP };
+    shadowHP.set(shadowId, hpData);
+    return hpData;
+  }
+
+  async initializeShadowHP(shadow, shadowHP) {
+    // Delegate to sync version — kept async for backward compatibility with callers outside the combat tick
+    return this.initializeShadowHPSync(shadow, shadowHP);
   }
 
   /**
