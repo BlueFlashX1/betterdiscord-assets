@@ -2985,16 +2985,36 @@ module.exports = class Dungeons {
     }
 
     const allChannels = this.getAllGuildChannels(channelInfo.guildId) || [];
+    const guildId = channelInfo.guildId;
+
+    // Acquire UserGuildSettingsStore for mute checks (lazy-cached)
+    if (!this._UserGuildSettingsStore) {
+      this._UserGuildSettingsStore =
+        BdApi.Webpack?.getStore?.('UserGuildSettingsStore') ||
+        BdApi.Webpack?.getModule?.((m) => m?.isChannelMuted && m?.isMuted) ||
+        null;
+    }
+    const muteStore = this._UserGuildSettingsStore;
+
     const textChannels = allChannels.filter((ch) => {
       // Discord text channel types: 0 (text), 5 (announcement), 11 (thread), 12 (private thread)
       const type = ch?.type;
       const isTextLike =
         type === 0 || type === 5 || type === 11 || type === 12 || type === undefined;
-      return ch && ch.id && isTextLike;
+      if (!ch || !ch.id || !isTextLike) return false;
+
+      // Skip muted channels — "Mute until I turn it back on" or any mute setting
+      if (muteStore) {
+        try {
+          if (muteStore.isChannelMuted?.(guildId, ch.id)) return false;
+        } catch (_) { /* store unavailable, allow channel */ }
+      }
+
+      return true;
     });
 
     const available = textChannels.filter((ch) => {
-      const key = `${channelInfo.guildId}_${ch.id}`;
+      const key = `${guildId}_${ch.id}`;
       return !this.channelLocks.has(key) && !this.activeDungeons.has(key);
     });
 
@@ -3617,6 +3637,17 @@ module.exports = class Dungeons {
 
     const now = Date.now();
     const guildId = channelInfo?.guildId;
+    const channelId = channelInfo?.channelId;
+
+    // Gate 1.5: Skip muted channels/guilds — user has "Mute until I turn it back on" or similar
+    if (guildId && this._UserGuildSettingsStore) {
+      try {
+        // Check guild-level mute (entire server muted)
+        if (this._UserGuildSettingsStore.isMuted?.(guildId)) return;
+        // Check channel-level mute
+        if (channelId && this._UserGuildSettingsStore.isChannelMuted?.(guildId, channelId)) return;
+      } catch (_) { /* store unavailable, allow spawn */ }
+    }
 
     // Gate 2: Per-channel cooldown — don't re-spawn in a channel too soon after a dungeon ended
     const channelCooldown = this.settings.channelSpawnCooldown || 300000; // 5 min
