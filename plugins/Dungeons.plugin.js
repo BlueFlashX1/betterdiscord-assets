@@ -1551,8 +1551,13 @@ module.exports = class Dungeons {
    * Batches of 20 with event loop yields to prevent blocking.
    * @returns {{ extracted: number, attempted: number }}
    */
-  async _processCorpsePile(channelKey, dungeon) {
-    const pile = this._corpsePile?.get(channelKey);
+  /**
+   * Process corpse pile for post-dungeon extraction.
+   * Accepts an optional pre-captured pile snapshot (immune to hot-reload wipes).
+   * Falls back to reading from this._corpsePile if no snapshot provided.
+   */
+  async _processCorpsePile(channelKey, dungeon, pileSnapshot = null) {
+    const pile = pileSnapshot || this._corpsePile?.get(channelKey);
     if (!pile || pile.length === 0) {
       // ALWAYS-ON: Empty pile means combat didn't produce corpses — indicates a problem
       console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon?.shadowsDeployed}, mobs killed: ${dungeon?.mobs?.killed || 0})`);
@@ -1564,7 +1569,7 @@ module.exports = class Dungeons {
     if (!shadowArmy?.attemptDungeonExtraction) {
       // ALWAYS-ON: Missing ShadowArmy means zero extractions — user needs to know
       console.warn(`[Dungeons] ⚠️ ARISE SKIPPED: ShadowArmy plugin not available — ${pile.length} corpses lost (${channelKey})`);
-      this._corpsePile.delete(channelKey);
+      this._corpsePile?.delete(channelKey);
       return { extracted: 0, attempted: 0 };
     }
 
@@ -1604,8 +1609,8 @@ module.exports = class Dungeons {
       }
     }
 
-    // Clear the pile — all corpses processed
-    this._corpsePile.delete(channelKey);
+    // Clear the pile entry if it still exists (snapshot path already detached)
+    this._corpsePile?.delete(channelKey);
 
     // ALWAYS-ON: Extraction result
     console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
@@ -8967,6 +8972,13 @@ module.exports = class Dungeons {
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
 
+    // CRITICAL: Snapshot the corpse pile IMMEDIATELY before any async work.
+    // Hot-reloads call stop() which clears _corpsePile — if we await anything first,
+    // the pile can be wiped before we extract. Capture the reference now.
+    const corpsePileSnapshot = this._corpsePile?.get(channelKey) || [];
+    // Detach from the Map so stop() clearing won't affect our local copy
+    this._corpsePile?.delete(channelKey);
+
     // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
     const combatAnalytics = dungeon.combatAnalytics || {};
     const summaryStats = {
@@ -9086,15 +9098,16 @@ module.exports = class Dungeons {
     // ARISE: Process corpse pile — extract ALL dead enemies from the dungeon
     // Lore-accurate: Jin-Woo extracts after the battle, not mid-combat.
     // Only for dungeons the user actively participated in.
-    const pileSize = this._corpsePile?.get(channelKey)?.length || 0;
+    // Uses corpsePileSnapshot captured at top of completeDungeon (immune to hot-reload wipes).
+    const pileSize = corpsePileSnapshot.length;
     if (
       dungeon.userParticipating &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout')
     ) {
       // ALWAYS-ON: Extraction trigger
       console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: ${dungeon.name} (${reason}) — corpse pile has ${pileSize} bodies, starting extraction...`);
-      // Process corpse pile asynchronously (don't await - allows new dungeons to start)
-      this._processCorpsePile(channelKey, dungeon)
+      // Process corpse pile using the snapshot (not from _corpsePile Map which may be cleared)
+      this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot)
         .then((results) => {
           summaryStats.shadowsExtracted = results.extracted;
           summaryStats.extractionAttempts = results.attempted;
@@ -9114,7 +9127,6 @@ module.exports = class Dungeons {
     } else {
       // ALWAYS-ON: Extraction skipped — user needs to know why
       console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user participating: ${dungeon.userParticipating}, reason: ${reason}, pile: ${pileSize} bodies (cleared without extracting)`);
-      this._corpsePile?.delete(channelKey);
     }
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
