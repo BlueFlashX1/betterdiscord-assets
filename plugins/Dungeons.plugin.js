@@ -7315,6 +7315,17 @@ module.exports = class Dungeons {
 
     if (!this.shadowArmy) return [];
 
+    // CROSS-PLUGIN SNAPSHOT: Check ShadowArmy's shared snapshot before hitting IDB.
+    // If ShadowArmy already has a fresh snapshot (<2s old), use it directly —
+    // avoids redundant IDB cursor + decompression that other consumers already triggered.
+    const snapshot = this.shadowArmy.getShadowSnapshot?.();
+    if (snapshot) {
+      // Normalize identifiers on snapshot (ShadowArmy's snapshot is already decompressed)
+      snapshot.forEach((s) => { if (s && !s.id) s.id = s.i; });
+      this._shadowsCache = { shadows: snapshot, timestamp: Date.now() };
+      return snapshot;
+    }
+
     // CRITICAL: Only use IndexedDB storageManager - no fallback to old settings.shadows
     if (!this.shadowArmy.storageManager) {
       // Return cached value immediately instead of blocking for 2.5s

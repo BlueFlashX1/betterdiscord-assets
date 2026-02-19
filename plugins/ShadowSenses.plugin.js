@@ -169,7 +169,8 @@ class DeploymentManager {
         return [];
       }
 
-      const allShadows = await armyPlugin.instance.getAllShadows();
+      // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
+      const allShadows = armyPlugin.instance.getShadowSnapshot?.() || await armyPlugin.instance.getAllShadows();
       if (!Array.isArray(allShadows)) return [];
 
       // Get IDs to exclude: already deployed + exchange-marked + dungeon-allocated

@@ -1511,6 +1511,9 @@ module.exports = class ShadowArmy {
       cachedTotalPowerTimestamp: 0, // Timestamp of when power was cached
       cachedTotalPowerShadowCount: 0, // Shadow count when power was cached (for validation)
       cachedTotalPowerVersion: 1, // Cache version (increment on full recalculation)
+      // SNAPSHOT CACHE: Shared shadow array snapshot for cross-plugin consumers (2s TTL)
+      _snapshotCache: null,
+      _snapshotTimestamp: 0,
       extractionConfig: {
         // Base extraction tuning (regular messages)
         minBaseChance: 0.01, // 1% minimum (reasonable starting chance)
@@ -4102,6 +4105,7 @@ module.exports = class ShadowArmy {
 
             const shadowToSave = this.prepareShadowForSave(shadow);
             await this.storageManager.saveShadow(shadowToSave);
+            this._invalidateSnapshot(); // New shadow extracted — snapshot stale
 
             // INCREMENTAL CACHE: Update total power cache by adding this shadow's power
             await this.incrementTotalPower(shadowToSave);
@@ -5160,12 +5164,47 @@ module.exports = class ShadowArmy {
         shadows = shadows.map((s) => this.getShadowData(s));
       }
 
+      // Update snapshot cache — cross-plugin consumers read this via getShadowSnapshot()
+      this._updateSnapshot(shadows);
+
       return shadows;
     } catch (error) {
       // debugError method is in SECTION 4
       this.debugError('STORAGE', 'Failed to get all shadows from IndexedDB', error);
       return this.settings.shadows || [];
     }
+  }
+
+  /**
+   * Returns cached shadow snapshot if <2s old, null otherwise.
+   * Cross-plugin consumers call this FIRST before falling back to getAllShadows().
+   * Eliminates redundant IDB reads — one authoritative source of truth.
+   * @returns {Array|null} Cached shadow array or null if stale/missing
+   */
+  getShadowSnapshot() {
+    if (this.settings._snapshotCache && Date.now() - this.settings._snapshotTimestamp < 2000) {
+      return this.settings._snapshotCache;
+    }
+    return null;
+  }
+
+  /**
+   * Update snapshot cache after a fresh IDB read.
+   * @param {Array} shadows - Fresh shadow array from getAllShadows()
+   * @private
+   */
+  _updateSnapshot(shadows) {
+    this.settings._snapshotCache = shadows;
+    this.settings._snapshotTimestamp = Date.now();
+  }
+
+  /**
+   * Invalidate snapshot cache — call after ANY shadow mutation.
+   * @private
+   */
+  _invalidateSnapshot() {
+    this.settings._snapshotCache = null;
+    this.settings._snapshotTimestamp = 0;
   }
 
   /**
@@ -6364,6 +6403,7 @@ module.exports = class ShadowArmy {
           // Fallback: parallel writes if batch not available
           await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
         }
+        this._invalidateSnapshot(); // XP/level/rank changed — snapshot stale
       } catch (error) {
         this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);
       }
@@ -8644,6 +8684,7 @@ module.exports = class ShadowArmy {
     try {
       await this.storageManager.deleteShadowsBatch(shadowIds);
       this.clearShadowPowerCache();
+      this._invalidateSnapshot(); // Shadows deleted — snapshot stale
       return true;
     } catch (error) {
       this.debugError(scope, 'Batch delete error', error);
@@ -9286,6 +9327,7 @@ module.exports = class ShadowArmy {
           try {
             if (this.storageManager?.deleteShadow) {
               await this.storageManager.deleteShadow(id);
+              this._invalidateSnapshot(); // Individual shadow deleted — snapshot stale
             } else {
               // Remove from localStorage
               this.settings.shadows = (this.settings.shadows || []).filter(

@@ -749,7 +749,8 @@ module.exports = class ShadowExchange {
     }
 
     try {
-      const allShadows = await saInstance.getAllShadows();
+      // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
+      const allShadows = saInstance.getShadowSnapshot?.() || await saInstance.getAllShadows();
       if (!Array.isArray(allShadows) || allShadows.length === 0) {
         return this.getFallbackShadow();
       }
@@ -813,7 +814,8 @@ module.exports = class ShadowExchange {
       return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
     }
     try {
-      const all = await saInstance.getAllShadows();
+      // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
+      const all = saInstance.getShadowSnapshot?.() || await saInstance.getAllShadows();
       const assignedIds = new Set(this.settings.waypoints.map((w) => w.shadowId));
       return all.filter((s) => s?.id && !assignedIds.has(s.id)).length;
     } catch (_) {
