@@ -1152,6 +1152,11 @@ module.exports = class Dungeons {
     // Defeated bosses awaiting shadow extraction (ARISE)
     this.defeatedBosses = new Map(); // { channelKey: { boss, dungeon, timestamp } }
 
+    // ARISE corpse pile: lightweight in-memory queue of dead mob metadata per dungeon.
+    // Mobs are collected here during combat and batch-extracted AFTER dungeon completion.
+    // No IDB writes during combat — just ~100 bytes per corpse record.
+    this._corpsePile = new Map(); // Map<channelKey, Array<{id, rank, baseStats, strength, isBoss}>>
+
     // Shadow army pre-allocation cache (optimization: split shadows once, reuse assignments)
     this.shadowAllocations = new Map(); // Map<channelKey, assignedShadows[]>
     this.shadowReserve = []; // Weakest shadows held back for ShadowSenses deployment
@@ -1240,15 +1245,8 @@ module.exports = class Dungeons {
     this.extractionEvents = new Map(); // Track extraction attempts by mobId
     // Extraction event handling consolidated into _shadowExtractedListener in loadPluginReferences()
 
-    // Extraction tracking (now uses MobBossStorageManager database instead of BdAPI)
+    // Extraction tracking
     this.extractionInProgress = new Set(); // Track channels currently processing extractions
-
-    // Deferred extraction global worker (prevents parallel heavy extraction bursts)
-    this._deferredExtractionQueue = [];
-    this._deferredExtractionQueued = new Set();
-    this._deferredExtractionResolvers = new Map(); // channelKey -> {resolve,reject}
-    this._deferredExtractionWorkerInterval = null;
-    this._deferredExtractionWorkerInFlight = false;
 
     // Spawn reliability state (bounded; not persisted)
     this._spawnPityByChannel = new Map(); // channelKey -> { pity, lastSeenAt }
@@ -1413,128 +1411,10 @@ module.exports = class Dungeons {
     this._combatLoopInFlight = false;
   }
 
-  _ensureDeferredExtractionWorker() {
-    if (this._deferredExtractionWorkerInterval) return;
-    const tick = () => {
-      if (!this.started) return;
-      if (this._deferredExtractionWorkerInFlight) return;
-      if (!this._deferredExtractionQueue || this._deferredExtractionQueue.length === 0) return;
-
-      // Don't run heavy extraction while the window is hidden (no user benefit; avoids spikes)
-      if (!this.isWindowVisible()) return;
-
-      this._deferredExtractionWorkerInFlight = true;
-      Promise.resolve()
-        .then(() => this._deferredExtractionWorkerTick())
-        .catch((error) => this.errorLog('CRITICAL', 'Deferred extraction worker error', error))
-        .finally(() => {
-          this._deferredExtractionWorkerInFlight = false;
-        });
-    };
-
-    this._deferredExtractionWorkerInterval = setInterval(tick, 600);
-    this._intervals.add(this._deferredExtractionWorkerInterval);
-  }
-
-  _stopDeferredExtractionWorker() {
-    if (!this._deferredExtractionWorkerInterval) return;
-    clearInterval(this._deferredExtractionWorkerInterval);
-    this._intervals.delete(this._deferredExtractionWorkerInterval);
-    this._deferredExtractionWorkerInterval = null;
-    this._deferredExtractionWorkerInFlight = false;
-  }
-
   _sleep(ms) {
     return new Promise((resolve) => {
       this._setTrackedTimeout(resolve, ms);
     });
-  }
-
-  queueDeferredExtractions(channelKey) {
-    if (!channelKey) return Promise.resolve({ extracted: 0, attempted: 0, paused: false });
-
-    if (!this._deferredExtractionQueue) this._deferredExtractionQueue = [];
-    if (!this._deferredExtractionQueued) this._deferredExtractionQueued = new Set();
-    if (!this._deferredExtractionResolvers) this._deferredExtractionResolvers = new Map();
-
-    if (this._deferredExtractionQueued.has(channelKey)) {
-      const existing = this._deferredExtractionResolvers.get(channelKey);
-      return existing
-        ? new Promise((resolve, reject) => {
-            // Chain additional waiters
-            const prevResolve = existing.resolve;
-            const prevReject = existing.reject;
-            existing.resolve = (value) => {
-              try {
-                prevResolve(value);
-              } finally {
-                resolve(value);
-              }
-            };
-            existing.reject = (error) => {
-              try {
-                prevReject(error);
-              } finally {
-                reject(error);
-              }
-            };
-          })
-        : Promise.resolve({ extracted: 0, attempted: 0, paused: false });
-    }
-
-    // Snapshot dungeon data before it gets deleted from activeDungeons
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (dungeon) {
-      if (!this._deferredExtractionDungeonSnapshots) this._deferredExtractionDungeonSnapshots = new Map();
-      this._deferredExtractionDungeonSnapshots.set(channelKey, {
-        rank: dungeon.rank,
-        beastFamilies: dungeon.beastFamilies,
-      });
-    }
-
-    this._deferredExtractionQueued.add(channelKey);
-    if (this._deferredExtractionQueue.length >= 500) {
-      const droppedKey = this._deferredExtractionQueue.shift();
-      this._deferredExtractionQueued.delete(droppedKey);
-      this.debugLog?.('EXTRACT', `Extraction queue full, dropping oldest: ${droppedKey}`);
-    }
-    this._deferredExtractionQueue.push(channelKey);
-    this._ensureDeferredExtractionWorker();
-
-    return new Promise((resolve, reject) => {
-      this._deferredExtractionResolvers.set(channelKey, { resolve, reject });
-    });
-  }
-
-  async _deferredExtractionWorkerTick() {
-    // Extractions run regardless of active dungeon state.
-    // Every dead mob gets an extraction attempt (batched via microtask to avoid blocking).
-
-    const channelKey = this._deferredExtractionQueue.shift();
-    if (!channelKey) return;
-    this._deferredExtractionQueued.delete(channelKey);
-
-    const resolver = this._deferredExtractionResolvers.get(channelKey);
-    this._deferredExtractionResolvers.delete(channelKey);
-
-    try {
-      const results = await this.processDeferredExtractions(channelKey);
-
-      // If we paused due to user entering another dungeon, requeue (low priority)
-      if (results?.paused) {
-        this._setTrackedTimeout(() => {
-          this.queueDeferredExtractions(channelKey).catch(() => {});
-        }, 3000);
-      }
-
-      resolver?.resolve(results);
-    } catch (error) {
-      resolver?.reject(error);
-    } finally {
-      // Auto-stop worker if queue empty
-      (!this._deferredExtractionQueue || this._deferredExtractionQueue.length === 0) &&
-        this._stopDeferredExtractionWorker();
-    }
   }
 
   _ensureMobSpawnLoop() {
@@ -1640,124 +1520,98 @@ module.exports = class Dungeons {
     this._rankStatsCache?.clear?.();
   }
 
+  // ==== ARISE CORPSE PILE — LORE-ACCURATE POST-DUNGEON EXTRACTION ====
+  // During combat: dead mobs are stashed as lightweight metadata (~100B each).
+  // After dungeon completion: the entire corpse pile is batch-extracted.
+  // This eliminates the mid-combat feedback loop that caused memory explosion.
+
   /**
-   * Attempt extraction of a single dead mob into the shadow army.
-   * No throttle — every dead mob gets a chance. Async fire-and-forget.
+   * Add a dead mob to the corpse pile for post-dungeon extraction.
+   * Zero-cost during combat — no IDB writes, no shadow creation, no async.
    */
-  async _attemptCombatExtraction(channelKey, deadMob, isBoss = false) {
+  _addToCorpsePile(channelKey, deadMob, isBoss = false) {
+    if (!deadMob) return;
+    if (!this._corpsePile) this._corpsePile = new Map();
+    let pile = this._corpsePile.get(channelKey);
+    if (!pile) {
+      pile = [];
+      this._corpsePile.set(channelKey, pile);
+    }
+    pile.push({
+      id: deadMob.id,
+      rank: deadMob.rank,
+      baseStats: deadMob.baseStats,
+      strength: deadMob.strength,
+      isBoss,
+    });
+  }
+
+  /**
+   * Process the corpse pile after dungeon completion — ARISE all dead enemies.
+   * Only called for dungeons the user participated in.
+   * Batches of 20 with event loop yields to prevent blocking.
+   * @returns {{ extracted: number, attempted: number }}
+   */
+  async _processCorpsePile(channelKey, dungeon) {
+    const pile = this._corpsePile?.get(channelKey);
+    if (!pile || pile.length === 0) {
+      this._corpsePile?.delete(channelKey);
+      return { extracted: 0, attempted: 0 };
+    }
+
     const shadowArmy = this.shadowArmy || this.validatePluginReference('ShadowArmy', 'storageManager');
     if (!shadowArmy?.attemptDungeonExtraction) {
-      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: SKIP — ShadowArmy not available (shadowArmy=${!!shadowArmy}, hasMethod=${!!shadowArmy?.attemptDungeonExtraction})`);
-      return null;
-    }
-
-    const dungeon = this.activeDungeons.get(channelKey);
-    if (!dungeon) {
-      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: SKIP — no active dungeon for ${channelKey}`);
-      return null;
-    }
-
-    // C10 FIX: Only extract shadows when user is actively participating
-    if (!dungeon.userParticipating) {
-      return null;
+      this.debugLog?.('ARISE', `SKIP corpse pile — ShadowArmy not available`);
+      this._corpsePile.delete(channelKey);
+      return { extracted: 0, attempted: 0 };
     }
 
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
     const userLevel = this.soloLevelingStats?.settings?.level || 1;
     const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};
+    const beastFamilies = dungeon?.beastFamilies || [];
 
-    this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Attempting extraction — mob=${deadMob.id}, mobRank=${deadMob.rank}, isBoss=${isBoss}, strength=${deadMob.strength}, userRank=${userRank}`);
+    const total = pile.length;
+    let extracted = 0;
+    let attempted = 0;
+    const BATCH_SIZE = 20;
 
-    try {
-      const result = await shadowArmy.attemptDungeonExtraction(
-        deadMob.id, userRank, userLevel, userStats,
-        deadMob.rank, deadMob.baseStats, deadMob.strength,
-        dungeon.beastFamilies || [], isBoss
-      );
+    this.debugLog?.('ARISE', `Processing corpse pile: ${total} bodies in ${channelKey}`);
 
-      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Extraction result — success=${result?.success}, hasShadow=${!!result?.shadow}, reason=${result?.reason || 'none'}, mobRank=${deadMob.rank}`);
+    for (let i = 0; i < total; i += BATCH_SIZE) {
+      const batch = pile.slice(i, i + BATCH_SIZE);
 
-      if (result?.success && result?.shadow) {
-        // Inject directly into SOURCE dungeon's allocation (deploy where mob died)
-        const normalized = this.normalizeShadowId(result.shadow);
-        if (normalized) {
-          const currentAllocation = this.shadowAllocations.get(channelKey) || [];
-          currentAllocation.push(normalized);
-          this.shadowAllocations.set(channelKey, currentAllocation);
-
-          // Sync dungeon-local view
-          if (dungeon.shadowAllocation) {
-            dungeon.shadowAllocation.shadows = currentAllocation;
-            dungeon.shadowAllocation.totalPower = (dungeon.shadowAllocation.totalPower || 0) +
-              (this.getShadowCombatScore?.(normalized) || 0);
-            dungeon.shadowAllocation.updatedAt = Date.now();
-          }
-          if (dungeon.boss) {
-            dungeon.boss.expectedShadowCount = currentAllocation.length;
-          }
-          // New shadow starts alive — update cached count
-          if (dungeon._cachedAliveCount != null) dungeon._cachedAliveCount++;
+      for (const corpse of batch) {
+        attempted++;
+        try {
+          const result = await shadowArmy.attemptDungeonExtraction(
+            corpse.id, userRank, userLevel, userStats,
+            corpse.rank, corpse.baseStats, corpse.strength,
+            beastFamilies, corpse.isBoss
+          );
+          if (result?.success) extracted++;
+        } catch (err) {
+          this.settings.debug && console.error(`[Dungeons] ARISE: ❌ Corpse extraction error (${corpse.id}):`, err?.message || err);
         }
-
-        this.settings.debug && console.log(`[Dungeons] ARISE: ✅ ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → ${channelKey} (allocated: ${(this.shadowAllocations.get(channelKey) || []).length})`);
-        this.debugLog?.('ARISE', `Mid-combat extraction: ${deadMob.rank} ${isBoss ? 'boss' : 'mob'} → deployed to ${channelKey}`);
       }
-      return result;
-    } catch (e) {
-      console.error(`[Dungeons] ARISE_TRACE: ❌ EXCEPTION in extraction:`, e?.message || e);
-      this.errorLog('ARISE', 'Combat extraction failed:', e);
-      return null;
-    }
-  }
 
-  /**
-   * Batch-extract all dead mobs from a combat tick. Queues as a single
-   * microtask to avoid blocking the combat loop — processes sequentially
-   * inside the microtask so we never fire N concurrent promises.
-   */
-  _batchExtractDeadMobs(channelKey, deadMobs, isBoss = false) {
-    if (!deadMobs || deadMobs.length === 0) return;
-
-    // Guard: if a previous tick's batch is still writing IDB for this channel, skip.
-    // The dead mobs still have hp<=0 in activeMobs, so the next tick will re-collect them.
-    if (!this._extractionBatchInFlight) this._extractionBatchInFlight = new Set();
-    if (this._extractionBatchInFlight.has(channelKey)) {
-      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs — SKIPPED (batch in flight for ${channelKey}, ${deadMobs.length} mobs deferred)`);
-      return;
-    }
-    this._extractionBatchInFlight.add(channelKey);
-
-    this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs — ${deadMobs.length} mobs for ${channelKey}`);
-    // Fire a single async microtask — does not block the combat tick.
-    // Process in batches of 10 with setTimeout(0) yield between batches
-    // to prevent 165+ sequential IDB writes from monopolizing the event loop.
-    const BATCH_SIZE = 10;
-    Promise.resolve().then(async () => {
-      try {
-        let extracted = 0;
-        for (let i = 0; i < deadMobs.length; i += BATCH_SIZE) {
-          const batch = deadMobs.slice(i, i + BATCH_SIZE);
-          for (const mob of batch) {
-            try {
-              const result = await this._attemptCombatExtraction(channelKey, mob, isBoss);
-              if (result?.success) extracted++;
-            } catch (err) {
-              console.error(`[Dungeons] ARISE_TRACE: ❌ Batch error for mob ${mob?.id}:`, err?.message || err);
-            }
-          }
-          // Yield to main thread between batches so Dispatcher can flush
-          if (i + BATCH_SIZE < deadMobs.length) {
-            await new Promise(r => setTimeout(r, 0));
-          }
-        }
-        this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} for ${channelKey}`);
-        if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
-          BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: deadMobs.length, channelKey });
-        }
-      } finally {
-        this._extractionBatchInFlight.delete(channelKey);
+      // Yield to event loop between batches
+      if (i + BATCH_SIZE < total) {
+        await new Promise(r => setTimeout(r, 0));
       }
-    });
+    }
+
+    // Clear the pile — all corpses processed
+    this._corpsePile.delete(channelKey);
+
+    this.debugLog?.('ARISE', `Corpse pile complete: ${extracted}/${attempted} extracted from ${channelKey}`);
+
+    // Notify ShadowArmy of batch completion (cache invalidation, UI updates)
+    if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
+      BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: attempted, channelKey });
+    }
+
+    return { extracted, attempted };
   }
 
   async _mobSpawnLoopTick(isVisible = true) {
@@ -2130,7 +1984,13 @@ module.exports = class Dungeons {
     this.stopAllMobAttacks();
     this._stopCombatLoop();
     this.stopAllDungeonCleanup();
-    this.stopAllExtractionProcessors();
+    // Clear corpse pile (no extraction on plugin stop)
+    if (this._corpsePile) this._corpsePile.clear();
+    // Clear legacy extraction processors
+    if (this.extractionProcessors) {
+      this.extractionProcessors.forEach((processor) => clearInterval(processor));
+      this.extractionProcessors.clear();
+    }
     this.removeAllIndicators();
     this.removeAllBossHPBars();
 
@@ -2263,9 +2123,8 @@ module.exports = class Dungeons {
       this._dungeonSaveTimers.clear();
     }
 
-    // Clear deferred extraction snapshots
-    if (this._deferredExtractionDungeonSnapshots) this._deferredExtractionDungeonSnapshots.clear();
-    if (this._extractionBatchInFlight) this._extractionBatchInFlight.clear();
+    // Clear corpse pile on stop
+    if (this._corpsePile) this._corpsePile.clear();
 
     // Clear guild channel cache
     if (this._guildChannelCache) this._guildChannelCache.clear();
@@ -4612,8 +4471,8 @@ module.exports = class Dungeons {
       // Clear active dungeon reference
       this.settings.userActiveDungeon = null;
 
-      // Stop extraction worker if running (legacy continuous processors removed)
-      this._stopDeferredExtractionWorker?.();
+      // Clear any pending corpse pile for this channel
+      this._corpsePile?.delete(channelKey);
 
       // Save settings
       this.saveSettings();
@@ -7449,8 +7308,10 @@ module.exports = class Dungeons {
           if (deadMobsThisTick.length > 0) {
             this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Fast-path — ${deadMobsThisTick.length} mobs killed (dmgMap=${mobDamageMap.size})`);
           }
-          // ARISE: Batch-extract all dead mobs (single microtask, sequential inside)
-          this._batchExtractDeadMobs(channelKey, deadMobsThisTick, false);
+          // ARISE: Stash dead mobs in corpse pile for post-dungeon extraction (lore-accurate)
+          for (const mob of deadMobsThisTick) {
+            this._addToCorpsePile(channelKey, mob, false);
+          }
         }
 
         this._cleanupDungeonActiveMobs(dungeon);
@@ -8624,11 +8485,8 @@ module.exports = class Dungeons {
         if (targetMob.hp <= 0) {
           this._onMobKilled(channelKey, dungeon, targetMob.rank);
 
-          // ARISE: Extract every dead mob (fire-and-forget, no throttle)
-          this.settings.debug && console.log(`[Dungeons] COMBAT_TRACE: Slow-path mob killed — id=${targetMob.id}, rank=${targetMob.rank}`);
-          this._attemptCombatExtraction(channelKey, targetMob, false).catch((err) => {
-            console.error(`[Dungeons] ARISE_TRACE: ❌ Slow-path extraction error:`, err?.message || err);
-          });
+          // ARISE: Stash dead mob in corpse pile for post-dungeon extraction (lore-accurate)
+          this._addToCorpsePile(channelKey, targetMob, false);
 
           // Track shadow contribution for XP (with guard clauses)
           const shadowId = this.getShadowIdValue(shadow);
@@ -8768,171 +8626,8 @@ module.exports = class Dungeons {
   }
 
   // ==== EXTRACTION SYSTEM HELPERS ====
-
-  // ==== MOB EXTRACTION SYSTEM - QUEUE & VERIFICATION ====
-
-  /**
-   * Process deferred extractions after dungeon completion
-   * Processes all stored mob extractions from MobBossStorageManager database in batches
-   * Non-blocking: Yields to event loop between batches to prevent interference with active dungeons
-   * Returns immediately with promise that resolves when complete
-   */
-  async processDeferredExtractions(channelKey) {
-    // Prevent concurrent extraction processing for same channel
-    if (this.extractionInProgress.has(channelKey)) {
-      this.debugLog('EXTRACTION', `Extraction already in progress for ${channelKey}, skipping`);
-      return { extracted: 0, attempted: 0, paused: false };
-    }
-
-    // Get mobs from database (not yet extracted)
-    if (!this.mobBossStorageManager) {
-      return { extracted: 0, attempted: 0, paused: false };
-    }
-
-    const mobsToExtract = await this.mobBossStorageManager.getMobsByDungeon(channelKey, false);
-
-    if (mobsToExtract.length === 0) return { extracted: 0, attempted: 0, paused: false };
-
-    const dungeon = this.activeDungeons.get(channelKey);
-    const dungeonSnapshot = this._deferredExtractionDungeonSnapshots?.get(channelKey);
-    const dungeonData = dungeon || dungeonSnapshot;
-    if (!dungeonData || !this.shadowArmy || !this.soloLevelingStats) {
-      // Dungeon/user data unavailable - mobs remain in database for later processing
-      return { extracted: 0, attempted: 0, paused: false };
-    }
-    // Clean up snapshot after use
-    this._deferredExtractionDungeonSnapshots?.delete(channelKey);
-
-    // Mark extraction as in progress
-    this.extractionInProgress.add(channelKey);
-
-    try {
-      // Get user data (snapshot at start)
-      const userStats = this.soloLevelingStats.settings?.stats || {};
-      const userRank = this.soloLevelingStats.settings?.rank || 'E';
-      const userLevel = this.soloLevelingStats.settings?.level || 1;
-
-      let extractedCount = 0;
-      let attemptedCount = 0;
-      let paused = false;
-
-      // Process in batches of 20 for performance (no chunk allocations)
-      const BATCH_SIZE = 20;
-      const total = mobsToExtract.length;
-
-      // Process sequentially with delays to yield to event loop
-      // This prevents blocking and allows new dungeons to start smoothly
-      for (let start = 0; start < total; start += BATCH_SIZE) {
-        // Check if user started a new active dungeon (safety check)
-        const currentActiveDungeon = this.settings.userActiveDungeon;
-        if (currentActiveDungeon && currentActiveDungeon !== channelKey) {
-          // User is in a different dungeon now - pause extraction processing
-          this.debugLog(
-            'EXTRACTION',
-            `User started new dungeon ${currentActiveDungeon}, pausing extraction for ${channelKey}`
-          );
-          // Don't clear pending extractions - will process later when user is idle
-          paused = true;
-          break;
-        }
-
-        const end = Math.min(start + BATCH_SIZE, total);
-        const chunk = mobsToExtract.slice(start, end);
-
-        await Promise.all(
-          chunk.map(async (mob) => {
-            attemptedCount++;
-            try {
-              const mobId = `dungeon_${channelKey}_mob_${mob.id}_${Date.now()}`;
-              const mobRank = mob.rank || dungeonData.rank;
-              const mobStats = mob.baseStats || {};
-              const normalizedMob = this.normalizeEnemyForCombat(mob, 'mob');
-              const mobStrength = normalizedMob.strength || mobStats.strength || 10;
-
-              const extractionResult = await this.shadowArmy.attemptDungeonExtraction(
-                mobId,
-                userRank,
-                userLevel,
-                userStats,
-                mobRank,
-                mobStats,
-                mobStrength,
-                dungeonData.beastFamilies,
-                false // isBoss=false: Mobs get 1 attempt
-              );
-
-              // CRITICAL: Mark mob as extracted in database (migration to ShadowArmy successful)
-              if (extractionResult && extractionResult.success && this.mobBossStorageManager) {
-                try {
-                  await this.mobBossStorageManager.markMobExtracted(mob.id);
-                  this.debugLog('MOB_MIGRATION', 'Mob successfully migrated to ShadowArmy', {
-                    mobId: mob.id,
-                    shadowId: extractionResult.shadowId,
-                  });
-                } catch (error) {
-                  this.errorLog('Failed to mark mob as extracted', error);
-                }
-                extractedCount++;
-              }
-
-              return { success: extractionResult?.success ?? false };
-            } catch (error) {
-              return { success: false };
-            }
-          })
-        );
-
-        // Yield to event loop between batches (allows new dungeons to start)
-        // Small delay prevents blocking while still processing efficiently
-        if (end < total) await this._sleep(50);
-      }
-
-      // Mobs are marked as extracted in database (no need to clear - they're already marked)
-      // Cleanup old extracted mobs periodically (handled by cleanupOldExtractedMobs)
-
-      return { extracted: extractedCount, attempted: attemptedCount, paused };
-    } finally {
-      // Always clear in-progress flag
-      this.extractionInProgress.delete(channelKey);
-    }
-  }
-
-  /**
-   * Stop all extraction processors
-   */
-  stopAllExtractionProcessors() {
-    // Legacy interval cleanup (should be empty, but keep for safety)
-    if (this.extractionProcessors) {
-      this.extractionProcessors.forEach((processor) => clearInterval(processor));
-      this.extractionProcessors.clear();
-    }
-
-    // Global deferred extraction worker cleanup
-    this._stopDeferredExtractionWorker?.();
-    this._deferredExtractionQueue && (this._deferredExtractionQueue.length = 0);
-    this._deferredExtractionQueued?.clear?.();
-    this._deferredExtractionResolvers?.forEach?.(({ reject }) => {
-      try {
-        reject(new Error('Extraction cancelled: plugin stopped'));
-      } catch (e) {
-        // ignore
-      }
-    });
-    this._deferredExtractionResolvers?.clear?.();
-  }
-
-  /**
-   * Process extraction queue (LEGACY CLEANUP ONLY)
-   *
-   * NO-OP for mobs: Mobs use immediate extraction only (single attempt, no retry queue)
-   * This function only clears stale queue entries to prevent memory leaks.
-   *
-   * Single-attempt semantics (mobs):
-   * - All mob extraction happens via extractImmediately() → processImmediateBatch()
-   * - Failed mobs are immediately removed (no retry, thousands more mobs coming)
-   * - This cleanup is for any residual queue entries from legacy code
-   */
-  // processExtractionQueue removed - no longer needed (mobs use database storage)
+  // Mid-combat extraction removed — ARISE now uses post-dungeon corpse pile (_processCorpsePile).
+  // See _addToCorpsePile / _processCorpsePile above.
 
   // ==== SHADOW REVIVE SYSTEM ====
   // ==== RESURRECTION SYSTEM - Auto-Resurrection with Rank-Based Costs ====
@@ -9210,37 +8905,34 @@ module.exports = class Dungeons {
       }
     }
 
-    // PROCESS DEFERRED EXTRACTIONS: Extract all stored mobs after dungeon completion
-    // This prevents crashes during combat by deferring extraction processing
-    // Non-blocking: Processes in background, doesn't delay dungeon completion
+    // ARISE: Process corpse pile — extract ALL dead enemies from the dungeon
+    // Lore-accurate: Jin-Woo extracts after the battle, not mid-combat.
+    // Only for dungeons the user actively participated in.
     if (
       dungeon.userParticipating &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout')
     ) {
-      // Process extractions asynchronously (don't await - allows new dungeons to start)
-      // Extraction will complete in background and update summary if still relevant
-      this.queueDeferredExtractions(channelKey)
+      // Process corpse pile asynchronously (don't await - allows new dungeons to start)
+      this._processCorpsePile(channelKey, dungeon)
         .then((results) => {
-          // Update summary if extraction completed quickly (within 2 seconds)
-          // Otherwise, extraction continues in background without blocking
           summaryStats.shadowsExtracted = results.extracted;
           summaryStats.extractionAttempts = results.attempted;
 
-          // Show extraction summary if significant results
           if (results.attempted > 0) {
             this._setTrackedTimeout(() => {
               this.showToast(
-                `Extracted ${results.extracted} shadows from ${results.attempted} mobs`,
+                `ARISE: ${results.extracted} shadows from ${results.attempted} fallen enemies`,
                 'info'
               );
-            }, 500); // Small delay to not interfere with completion summary
+            }, 500);
           }
         })
         .catch((error) => {
-          this.errorLog('Failed to process deferred extractions', error);
+          this.errorLog('Failed to process corpse pile extraction', error);
         });
-
-      // Set initial values for summary (will be updated if extraction completes quickly)
+    } else {
+      // Background dungeon — clear corpse pile without extracting
+      this._corpsePile?.delete(channelKey);
     }
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
@@ -9766,7 +9458,7 @@ module.exports = class Dungeons {
     this.channelLocks.delete(channelKey);
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
-    this._deferredExtractionDungeonSnapshots?.delete(channelKey);
+    this._corpsePile?.delete(channelKey);
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
     this.deadShadows.delete(channelKey);
     this.saveSettings();
