@@ -1538,7 +1538,11 @@ module.exports = class Dungeons {
   }
 
   _ensureMobSpawnLoop() {
-    if (this._mobSpawnLoopInterval) return;
+    if (this._mobSpawnLoopInterval) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — loop already running`);
+      return;
+    }
+    console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — STARTING loop (tickMs=${this._mobSpawnLoopTickMs})`);
 
     const tick = () => {
       if (!this.started) return;
@@ -1747,12 +1751,20 @@ module.exports = class Dungeons {
     const MAX_QUEUE_FLUSH_PER_TICK = 2; // lower per tick to reduce spikes
     const MAX_SPAWN_WAVES_PER_TICK = 1; // one wave per tick to smooth load
 
+    const queueSize = this._mobSpawnQueueNextAt?.size || 0;
+    const spawnSize = this._mobSpawnNextAt?.size || 0;
+    console.log(`[Dungeons] MOB_SPAWN_TICK: visible=${isVisible}, queuedFlushes=${queueSize}, pendingWaves=${spawnSize}`);
+
     // Flush queued mobs (batch append) when ready
     if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
       let flushes = 0;
       for (const [channelKey, nextAt] of this._mobSpawnQueueNextAt.entries()) {
         if (flushes >= MAX_QUEUE_FLUSH_PER_TICK) break;
-        if (now < nextAt) continue;
+        if (now < nextAt) {
+          console.log(`[Dungeons] MOB_SPAWN_TICK: queue flush NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
+          continue;
+        }
+        console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
         this.processMobSpawnQueue(channelKey);
         this._mobSpawnQueueNextAt.delete(channelKey);
         flushes++;
@@ -1766,18 +1778,25 @@ module.exports = class Dungeons {
       let spawns = 0;
       for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
         if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
-        if (now < nextAt) continue;
+        if (now < nextAt) {
+          console.log(`[Dungeons] MOB_SPAWN_TICK: wave NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
+          continue;
+        }
 
         const dungeon = this._getActiveDungeon(channelKey);
         if (!dungeon) {
+          console.log(`[Dungeons] MOB_SPAWN_TICK: NO DUNGEON for ${channelKey} — cleaning up`);
           this._mobSpawnNextAt.delete(channelKey);
           this._mobSpawnQueueNextAt?.delete?.(channelKey);
           this._mobSpawnQueue?.delete?.(channelKey);
           continue;
         }
 
+        console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
         this.spawnMobs(channelKey);
-        this._mobSpawnNextAt.set(channelKey, now + this._computeNextMobSpawnDelayMs(dungeon));
+        const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
+        this._mobSpawnNextAt.set(channelKey, now + nextDelay);
+        console.log(`[Dungeons] MOB_SPAWN_TICK: next wave in ${Math.round(nextDelay)}ms for ${channelKey}`);
         spawns++;
       }
     }
@@ -1785,6 +1804,9 @@ module.exports = class Dungeons {
     const hasWork =
       (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
       (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
+    if (!hasWork) {
+      console.log(`[Dungeons] MOB_SPAWN_TICK: no more work — STOPPING loop`);
+    }
     !hasWork && this._stopMobSpawnLoop();
   }
 
@@ -1837,8 +1859,11 @@ module.exports = class Dungeons {
 
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
+          const preAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
           await this.processShadowAttacks(channelKey, cyclesToProcess);
+          const postAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
           this._lastShadowAttackTime.set(channelKey, now);
+          console.log(`[Dungeons] COMBAT_MOB_TRACE: ch=${channelKey.slice(-8)}, isActive=${isActive}, mobsBefore=${preAttackMobs}, mobsAfter=${postAttackMobs}, bossHP=${dungeon.boss?.hp}, elapsed=${elapsed}ms`);
           isActive && this.queueHPBarUpdate(channelKey);
         }
       }
@@ -4026,6 +4051,7 @@ module.exports = class Dungeons {
     this.startShadowAttacks(channelKey);
     this.startMobKillNotifications(channelKey);
     this.startMobSpawning(channelKey); // Continue spawning remaining mobs over time
+    console.log(`[Dungeons] MOB_SPAWN_TRACE: joinDungeon called startMobSpawning for ${channelKey}, boss.hp=${dungeon.boss?.hp}, mobs.targetCount=${dungeon.mobs?.targetCount}, mobs.total=${dungeon.mobs?.total}`);
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
     // Extraction: Mobs stored in BdAPI for deferred processing after dungeon completion
@@ -4051,16 +4077,25 @@ module.exports = class Dungeons {
       this.mobSpawnTimers.delete(channelKey);
     }
 
-    if (this._mobSpawnNextAt.has(channelKey)) return;
+    if (this._mobSpawnNextAt.has(channelKey)) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — already scheduled for ${channelKey}`);
+      return;
+    }
 
     // NATURAL SPAWNING: Gradual, organic mob waves with high variance
     // Creates dynamic, unpredictable spawn patterns without overwhelming
     const dungeon = this._getActiveDungeon(channelKey);
-    if (!dungeon) return;
+    if (!dungeon) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — no dungeon for ${channelKey}`);
+      return;
+    }
 
     // Start first spawn immediately (no delay), then schedule via global loop
+    console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning calling spawnMobs(${channelKey}), boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}`);
     this.spawnMobs(channelKey);
-    this._mobSpawnNextAt.set(channelKey, Date.now() + this._computeNextMobSpawnDelayMs(dungeon));
+    const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
+    this._mobSpawnNextAt.set(channelKey, Date.now() + nextDelay);
+    console.log(`[Dungeons] MOB_SPAWN_TRACE: next wave scheduled in ${Math.round(nextDelay)}ms for ${channelKey}`);
     this._ensureMobSpawnLoop();
 
     // Natural spawning handles capacity organically
@@ -4183,6 +4218,7 @@ module.exports = class Dungeons {
   processMobSpawnQueue(channelKey) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — NO DUNGEON`);
       this._mobSpawnQueue.delete(channelKey);
       return;
     }
@@ -4193,14 +4229,17 @@ module.exports = class Dungeons {
 
     const queuedMobs = this._mobSpawnQueue.get(channelKey);
     if (!queuedMobs || queuedMobs.length === 0) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — EMPTY queue`);
       this._mobSpawnQueue.delete(channelKey);
       return;
     }
 
+    const beforeCount = dungeon.mobs.activeMobs.length;
     // Batch append to activeMobs array (more efficient than individual pushes)
     dungeon.mobs.activeMobs.push(...queuedMobs);
     dungeon.mobs.remaining += queuedMobs.length;
     dungeon.mobs.total += queuedMobs.length;
+    console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${queuedMobs.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total})`);
 
     // CRITICAL: Save mobs to dedicated database (cached for migration)
     if (this.mobBossStorageManager && queuedMobs.length > 0) {
@@ -4216,6 +4255,7 @@ module.exports = class Dungeons {
   spawnMobs(channelKey) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — NO DUNGEON, stopping`);
       this.stopMobSpawning(channelKey);
       return;
     }
@@ -4227,6 +4267,7 @@ module.exports = class Dungeons {
     // CONTINUOUS SPAWN: Dynamic rate based on current mob count (prevents infinite growth)
     // Stop spawning once total spawned mobs reaches targetCount
     if (dungeon.mobs.targetCount && dungeon.mobs.total >= dungeon.mobs.targetCount) {
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — TARGET REACHED (total=${dungeon.mobs.total} >= target=${dungeon.mobs.targetCount}), stopping`);
       this.stopMobSpawning(channelKey);
       return;
     }
@@ -4243,6 +4284,7 @@ module.exports = class Dungeons {
       // PER-DUNGEON CAPACITY: Use dungeon's own capacity instead of global cap
       // Each dungeon has its own capacity based on rank and biome
       const mobCap = dungeon.mobs.mobCapacity || this.settings.mobMaxActiveCap || 600;
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — alive=${_aliveMobs}, mobCap=${mobCap}, total=${dungeon.mobs.total}, target=${dungeon.mobs.targetCount}`);
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4288,6 +4330,7 @@ module.exports = class Dungeons {
       const capacityRemaining = Math.max(0, mobCap - _aliveMobs);
       const actualSpawnCount = Math.min(capacityRemaining, plannedSpawn);
 
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — planned=${plannedSpawn}, capacity=${capacityRemaining}, actual=${actualSpawnCount}`);
       if (actualSpawnCount <= 0) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4478,6 +4521,8 @@ module.exports = class Dungeons {
         }
       }
 
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — generated ${newMobs.length} mobs, queueing for batch flush`);
+
       // PERFORMANCE: Queue mobs for batched spawning (250-500ms) to smooth DOM updates and reduce GC churn
       if (!this._mobSpawnQueue.has(channelKey)) {
         this._mobSpawnQueue.set(channelKey, []);
@@ -4488,6 +4533,7 @@ module.exports = class Dungeons {
       if (!this._mobSpawnQueueNextAt.has(channelKey)) {
         const batchDelay = 250 + Math.random() * 250; // 250-500ms random delay
         this._mobSpawnQueueNextAt.set(channelKey, Date.now() + batchDelay);
+        console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — batch flush scheduled in ${Math.round(batchDelay)}ms`);
         this._ensureMobSpawnLoop();
       }
 
@@ -4495,6 +4541,7 @@ module.exports = class Dungeons {
       dungeon.spawnWaveCount++;
     } else {
       // Boss is dead, stop spawning
+      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — BOSS DEAD (hp=${dungeon.boss?.hp}), stopping`);
       this.stopMobSpawning(channelKey);
     }
   }
