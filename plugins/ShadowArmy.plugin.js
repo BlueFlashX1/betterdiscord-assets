@@ -1511,9 +1511,6 @@ module.exports = class ShadowArmy {
       cachedTotalPowerTimestamp: 0, // Timestamp of when power was cached
       cachedTotalPowerShadowCount: 0, // Shadow count when power was cached (for validation)
       cachedTotalPowerVersion: 1, // Cache version (increment on full recalculation)
-      // SNAPSHOT CACHE: Shared shadow array snapshot for cross-plugin consumers (2s TTL)
-      _snapshotCache: null,
-      _snapshotTimestamp: 0,
       extractionConfig: {
         // Base extraction tuning (regular messages)
         minBaseChance: 0.01, // 1% minimum (reasonable starting chance)
@@ -2196,6 +2193,9 @@ module.exports = class ShadowArmy {
   async start() {
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
+    // SNAPSHOT CACHE: Instance-level (NOT in this.settings — must not be persisted to disk)
+    this._snapshotCache = null;
+    this._snapshotTimestamp = 0;
     this._pendingMessageExtractionCount = 0;
     this._isProcessingMessageExtractionQueue = false;
     this._messageExtractionQueueTimeout = null;
@@ -3365,6 +3365,9 @@ module.exports = class ShadowArmy {
       if (settingsToSave.shadows && Array.isArray(settingsToSave.shadows)) {
         delete settingsToSave.shadows;
       }
+      // Remove transient snapshot cache if it leaked into settings (should be instance-level only)
+      delete settingsToSave._snapshotCache;
+      delete settingsToSave._snapshotTimestamp;
 
       // Add metadata timestamp for newest-wins load strategy across all 3 tiers
       settingsToSave._metadata = { lastSave: new Date().toISOString(), version: '3.5.0' };
@@ -5182,8 +5185,8 @@ module.exports = class ShadowArmy {
    * @returns {Array|null} Cached shadow array or null if stale/missing
    */
   getShadowSnapshot() {
-    if (this.settings._snapshotCache && Date.now() - this.settings._snapshotTimestamp < 2000) {
-      return this.settings._snapshotCache;
+    if (this._snapshotCache && Date.now() - this._snapshotTimestamp < 2000) {
+      return this._snapshotCache;
     }
     return null;
   }
@@ -5194,8 +5197,8 @@ module.exports = class ShadowArmy {
    * @private
    */
   _updateSnapshot(shadows) {
-    this.settings._snapshotCache = shadows;
-    this.settings._snapshotTimestamp = Date.now();
+    this._snapshotCache = shadows;
+    this._snapshotTimestamp = Date.now();
   }
 
   /**
@@ -5203,8 +5206,8 @@ module.exports = class ShadowArmy {
    * @private
    */
   _invalidateSnapshot() {
-    this.settings._snapshotCache = null;
-    this.settings._snapshotTimestamp = 0;
+    this._snapshotCache = null;
+    this._snapshotTimestamp = 0;
   }
 
   /**
