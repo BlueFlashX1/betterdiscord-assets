@@ -4529,30 +4529,30 @@ module.exports = class Dungeons {
       return;
     }
 
-    // CRITICAL: SYNC HP/MANA FROM STATS PLUGIN IMMEDIATELY BEFORE VALIDATION
-    // Ensures we have the freshest HP/Mana values (regeneration happens in Stats plugin)
-    const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
-    if (hpSynced || manaSynced) {
-      // Immediately update UI to show fresh values (handled by SoloLevelingStats)
-      this.debugLog(
-        `HP/Mana synced: ${this.settings.userHP}/${this.settings.userMaxHP} HP, ${this.settings.userMana}/${this.settings.userMaxMana} Mana`
-      );
-    }
-
-    // Check if user has HP to join (using FRESH values)
-    if (this.settings.userHP <= 0) {
-      this.showToast('You need HP to join a dungeon! Wait for HP to regenerate.', 'error');
-      return;
-    }
-
-    // Check if dungeon is still open
     if (dungeon.completed || dungeon.failed) {
       this.showToast('This dungeon is no longer active', 'error');
       return;
     }
 
-    // ENFORCE ONE DUNGEON AT A TIME: Prevent joining if already in another dungeon
-    // Validate again after clearing invalid references
+    if (dungeon.userParticipating) {
+      this.showToast('Already in this dungeon!', 'info');
+      return;
+    }
+
+    // SYNC HP/MANA FROM STATS PLUGIN
+    const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
+    if (hpSynced || manaSynced) {
+      this.debugLog(
+        `HP/Mana synced: ${this.settings.userHP}/${this.settings.userMaxHP} HP, ${this.settings.userMana}/${this.settings.userMaxMana} Mana`
+      );
+    }
+
+    if (this.settings.userHP <= 0) {
+      this.showToast('You need HP to join a dungeon! Wait for HP to regenerate.', 'error');
+      return;
+    }
+
+    // ENFORCE ONE DUNGEON AT A TIME
     if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
       const prevDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
       const shouldClearPrev = !prevDungeon || prevDungeon.completed || prevDungeon.failed;
@@ -4563,81 +4563,19 @@ module.exports = class Dungeons {
       const isPrevActive = prevDungeon && !prevDungeon.completed && !prevDungeon.failed;
       if (isPrevActive) {
         this.showToast(`Already in ${prevDungeon.name}! Complete it first.`, 'error');
-        return; // BLOCKED - can't join multiple dungeons
+        return;
       }
-      // Previous dungeon is completed/failed, can join new one
       if (prevDungeon) {
         prevDungeon.userParticipating = false;
       }
     }
 
+    // JOIN is lightweight — just mark participation. No shadow allocation, no combat start.
+    // All combat systems are handled by deployShadows().
     dungeon.userParticipating = true;
     this.settings.userActiveDungeon = channelKey;
 
-    // CRITICAL: Ensure shadows are allocated before starting combat.
-    // After plugin reload, shadowAllocations map is empty — force reallocation.
-    const preAllocCount = (this.shadowAllocations.get(channelKey) || []).length;
-    if (!this.shadowAllocations.has(channelKey) || preAllocCount === 0) {
-      console.log(`[Dungeons] INIT_TRACE: joinDungeon — forcing preSplitShadowArmy (preAllocCount=${preAllocCount})`);
-      await this.preSplitShadowArmy(true);
-    }
-
-    const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
-    console.log(`[Dungeons] INIT_TRACE: joinDungeon — channelKey=${channelKey}, rank=${dungeon.rank}, assignedShadows=${assignedShadows.length}, bossHP=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}`);
-
-    // Throttled warning for missing deployments (helps debug "no shadows deployed" reports).
-    if (assignedShadows.length === 0) {
-      this._deployWarnings ??= new Map();
-      const last = this._deployWarnings.get(channelKey) || 0;
-      const nowWarn = Date.now();
-      if (nowWarn - last > 30000) {
-        this._deployWarnings.set(channelKey, nowWarn);
-        this.debugLog('DEPLOY', 'No shadows allocated for dungeon on join', {
-          channelKey,
-          dungeonRank: dungeon.rank,
-          bossHp: dungeon.boss?.hp,
-        });
-      }
-    }
-    if (
-      assignedShadows.length > 0 &&
-      (!dungeon.shadowHP || dungeon.shadowHP.size === 0)
-    ) {
-      // Shadows not initialized yet - initialize them now
-      const shadowHP = new Map();
-      const deadShadows = this.deadShadows.get(channelKey) || new Set();
-      const shadowsToInitialize = this._collectShadowsNeedingHPInit(assignedShadows, deadShadows);
-      await this._initializeShadowHPBatch(shadowsToInitialize, shadowHP, 'join');
-
-      dungeon.shadowHP = shadowHP;
-    }
-
-    // CRITICAL: Initialize boss and mob attack times to prevent one-shot on join
-    // If lastAttackTime is 0 or undefined, set it to now to prevent calculating huge time spans
-    const now = Date.now();
-    if (!dungeon.boss.lastAttackTime || dungeon.boss.lastAttackTime === 0) {
-      dungeon.boss.lastAttackTime = now;
-    }
-    // Initialize mob attack times
-    if (dungeon.mobs?.activeMobs) {
-      dungeon.mobs.activeMobs.forEach((mob) => {
-        if (!mob.lastAttackTime || mob.lastAttackTime === 0) {
-          mob.lastAttackTime = now;
-        }
-      });
-    }
-
-    // Restart intervals with active frequency when user joins
-    this.stopShadowAttacks(channelKey);
-    this.stopBossAttacks(channelKey);
-    this.stopMobAttacks(channelKey);
-    await this.startShadowAttacks(channelKey);
-    this.startBossAttacks(channelKey);
-    this.startMobAttacks(channelKey);
-
-    // Extraction: Mobs stored in BdAPI for deferred processing after dungeon completion
-
-    this.updateBossHPBar(channelKey);
+    this.queueHPBarUpdate(channelKey);
     this.showToast(`Joined ${dungeon.name}!`, 'info');
     this.saveSettings();
     this.closeDungeonModal();
