@@ -6358,7 +6358,6 @@ module.exports = class Dungeons {
       })
       .sort((a, b) => b.weight - a.weight);
 
-    const totalWeight = weightedDungeons.reduce((sum, dw) => sum + dw.weight, 0) || 1;
     const assignedIds = new Set();
 
     // Shadows stationed at ShadowExchange waypoints are unavailable for battle
@@ -6412,49 +6411,105 @@ module.exports = class Dungeons {
       allHighRank,
     });
 
-    const pickForDungeon = (dungeonRankIndex, count) => {
-      const windows = [0, 1, 2, 999]; // Exact → ±1 → ±2 → any
-      const selected = [];
-
-      for (const window of windows) {
-        if (selected.length >= count) break;
-        for (const s of shadowsSorted) {
-          if (selected.length >= count) break;
-          const id = getShadowId(s);
-          if (!id || assignedIds.has(id)) continue;
-          const shadowRank = getRankIndex(s.rank);
-          const diff = Math.abs(shadowRank - dungeonRankIndex);
-          if (diff > window) continue;
-          // Rank floor: in tight windows (0-2), skip shadows >1 rank below dungeon
-          if (window <= 2 && shadowRank < dungeonRankIndex - 1) continue;
-          assignedIds.add(id);
-          selected.push(s);
-        }
-      }
-      return selected;
-    };
-
-    // Pre-mark reserve shadows as assigned so pickForDungeon skips them
+    // Pre-mark reserve shadows as assigned so they're excluded from allocation
     for (const id of reserveIds) {
       assignedIds.add(id);
     }
 
-    // Allocate (unique) shadows across dungeons by proportional weight.
-    let remaining = combatPool.length;
-    weightedDungeons.forEach((dw, idx) => {
-      const isLast = idx === weightedDungeons.length - 1;
-      const proportional = Math.max(
-        1,
-        Math.round((dw.weight / totalWeight) * combatPool.length)
-      );
-      const targetCount = isLast
-        ? Math.max(1, remaining)
-        : Math.max(1, Math.min(remaining, proportional));
-      const assigned = pickForDungeon(dw.rankIndex, targetCount);
-      remaining = Math.max(0, remaining - assigned.length);
+    // ──────────────────────────────────────────────────────────────
+    // RANK-TIERED ALLOCATION: Deploy shadows by rank proximity
+    //   • 90% of same-rank shadows → dungeon of that rank
+    //   • 25% of one-rank-higher shadows → supplement the dungeon
+    //   • Lower-rank shadows fill remaining gaps (spillover)
+    //   • Multiple dungeons of the same rank share proportionally
+    // This preserves high-rank shadows for high-rank dungeons.
+    // ──────────────────────────────────────────────────────────────
+
+    // Step 1: Bucket available combat-pool shadows by rank index
+    const rankBuckets = new Map(); // rankIndex → [shadow, ...]
+    for (const s of combatPool) {
+      const id = getShadowId(s);
+      if (!id || assignedIds.has(id)) continue;
+      const ri = getRankIndex(s.rank);
+      if (!rankBuckets.has(ri)) rankBuckets.set(ri, []);
+      rankBuckets.get(ri).push(s);
+    }
+
+    // Step 2: Group dungeons by rank so same-rank dungeons share a bucket proportionally
+    const dungeonsByRank = new Map(); // rankIndex → [dw, ...]
+    for (const dw of weightedDungeons) {
+      if (!dungeonsByRank.has(dw.rankIndex)) dungeonsByRank.set(dw.rankIndex, []);
+      dungeonsByRank.get(dw.rankIndex).push(dw);
+    }
+
+    // Step 3: For each dungeon, pick from same-rank (90%) + one-higher (25%) + spillover
+    const SAME_RANK_PERCENT = 0.90;
+    const HIGHER_RANK_PERCENT = 0.25;
+
+    const pickFromBucket = (bucket, count) => {
+      // Pick strongest-first (bucket inherits combatPool sort order: strongest first)
+      const picked = [];
+      for (let i = 0; i < bucket.length && picked.length < count; i++) {
+        const s = bucket[i];
+        const id = getShadowId(s);
+        if (!id || assignedIds.has(id)) continue;
+        assignedIds.add(id);
+        picked.push(s);
+      }
+      return picked;
+    };
+
+    // Allocate rank-tiered shadows to each dungeon
+    weightedDungeons.forEach((dw) => {
+      const selected = [];
+      const dungeonRI = dw.rankIndex;
+
+      // How many same-rank dungeons share this rank bucket?
+      const sameRankDungeons = dungeonsByRank.get(dungeonRI) || [dw];
+      const shareWeight = dw.weight / (sameRankDungeons.reduce((s, d) => s + d.weight, 0) || 1);
+
+      // === Same-rank shadows: take 90% of the bucket (proportional if shared) ===
+      const sameRankBucket = rankBuckets.get(dungeonRI) || [];
+      const sameRankAvailable = sameRankBucket.filter(s => !assignedIds.has(getShadowId(s)));
+      const sameRankTotal = Math.max(0, Math.floor(sameRankAvailable.length * SAME_RANK_PERCENT));
+      const sameRankTarget = sameRankDungeons.length > 1
+        ? Math.max(1, Math.round(sameRankTotal * shareWeight))
+        : sameRankTotal;
+      selected.push(...pickFromBucket(sameRankBucket, sameRankTarget));
+
+      // === One-rank-higher shadows: take 25% of the higher bucket ===
+      const higherRI = dungeonRI + 1;
+      const higherBucket = rankBuckets.get(higherRI) || [];
+      const higherAvailable = higherBucket.filter(s => !assignedIds.has(getShadowId(s)));
+      const higherRankDungeons = dungeonsByRank.get(higherRI) || [];
+      // If there are dungeons AT the higher rank, they get priority — only take 25%
+      // If NO dungeons at the higher rank, we can still take 25% to supplement
+      const higherTotal = Math.max(0, Math.floor(higherAvailable.length * HIGHER_RANK_PERCENT));
+      const higherTarget = higherRankDungeons.length > 0
+        ? Math.max(0, Math.round(higherTotal * shareWeight * 0.5))  // Reduced if higher-rank dungeons exist
+        : higherTotal;
+      if (higherTarget > 0) {
+        selected.push(...pickFromBucket(higherBucket, higherTarget));
+      }
+
+      // === Spillover: fill from lower-rank shadows (one rank below, then two below, etc.) ===
+      // Only fill if we got fewer shadows than expected for combat viability
+      const minViable = Math.max(3, Math.floor(sameRankTarget * 0.5));
+      if (selected.length < minViable) {
+        // Pull from ranks below the dungeon rank (weakest shadows for fodder)
+        for (let ri = Math.max(0, dungeonRI - 1); ri >= 0 && selected.length < minViable; ri--) {
+          const lowerBucket = rankBuckets.get(ri) || [];
+          const lowerAvailable = lowerBucket.filter(s => !assignedIds.has(getShadowId(s)));
+          const spillCount = Math.min(lowerAvailable.length, minViable - selected.length);
+          if (spillCount > 0) {
+            selected.push(...pickFromBucket(lowerBucket, spillCount));
+          }
+        }
+      }
+
       // Normalize IDs: older shadow records sometimes use `i` instead of `id`.
       // Some combat paths require `shadow.id`, so ensure it always exists when possible.
-      const normalizedAssigned = assigned.map((s) => this.normalizeShadowId(s)).filter(Boolean);
+      const normalizedAssigned = selected.map((s) => this.normalizeShadowId(s)).filter(Boolean);
       this.shadowAllocations.set(dw.channelKey, normalizedAssigned);
 
       // Keep dungeon-local view in sync (some paths initialize HP from `dungeon.shadowAllocation`).
@@ -6472,10 +6527,17 @@ module.exports = class Dungeons {
       }
     });
 
-    // Allocation summary (debug-only): helps validate rank-based deployment decisions quickly.
+    // Allocation summary (debug-only): helps validate rank-tiered deployment decisions quickly.
     this._allocationSummary = new Map();
+    const rankNames = this.settings.dungeonRanks || [];
     weightedDungeons.forEach((dw) => {
       const assigned = this.shadowAllocations.get(dw.channelKey) || [];
+      // Build per-rank breakdown of assigned shadows
+      const rankBreakdown = {};
+      for (const s of assigned) {
+        const r = s?.rank || 'E';
+        rankBreakdown[r] = (rankBreakdown[r] || 0) + 1;
+      }
       const avgRankIndex =
         assigned.reduce((sum, s) => sum + getRankIndex(s?.rank || 'E'), 0) /
         Math.max(1, assigned.length);
@@ -6483,9 +6545,14 @@ module.exports = class Dungeons {
         dungeonRank: dw.dungeon.rank,
         assignedCount: assigned.length,
         avgShadowRankIndex: avgRankIndex,
+        rankBreakdown,
       });
     });
-    this.debugLog('ALLOCATION', 'Shadow allocation summary', {
+    this.debugLog('ALLOCATION', 'Rank-tiered allocation summary', {
+      strategy: `${Math.round(SAME_RANK_PERCENT * 100)}% same-rank + ${Math.round(HIGHER_RANK_PERCENT * 100)}% higher-rank`,
+      rankBucketSizes: Object.fromEntries(
+        Array.from(rankBuckets.entries()).map(([ri, arr]) => [rankNames[ri] || ri, arr.length])
+      ),
       dungeons: Array.from(this._allocationSummary.entries()).map(([channelKey, meta]) => ({
         channelKey,
         ...meta,
