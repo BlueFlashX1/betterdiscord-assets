@@ -457,6 +457,12 @@ class DungeonStorageManager {
       // Runtime-only flags — must not persist (would block completeDungeon on restore)
       delete next._completing;
 
+      // Cap corpse pile to last 500 entries for IDB storage (each ~100 bytes ≈ 50KB max).
+      // Later mobs tend to be higher rank, so keep the tail.
+      if (Array.isArray(next.corpsePile) && next.corpsePile.length > 500) {
+        next.corpsePile = next.corpsePile.slice(-500);
+      }
+
       // Convert Map fields to plain objects for JSON serialization
       if (next.shadowHP instanceof Map) {
         const shadowHPObj = {};
@@ -1155,10 +1161,8 @@ module.exports = class Dungeons {
     // Defeated bosses awaiting shadow extraction (ARISE)
     this.defeatedBosses = new Map(); // { channelKey: { boss, dungeon, timestamp } }
 
-    // ARISE corpse pile: lightweight in-memory queue of dead mob metadata per dungeon.
-    // Mobs are collected here during combat and batch-extracted AFTER dungeon completion.
-    // No IDB writes during combat — just ~100 bytes per corpse record.
-    this._corpsePile = new Map(); // Map<channelKey, Array<{id, rank, baseStats, strength, isBoss}>>
+    // ARISE corpse pile is stored on each dungeon object (dungeon.corpsePile = [])
+    // so it persists to IDB and survives hot-reloads/restarts.
 
     // Shadow army pre-allocation cache (optimization: split shadows once, reuse assignments)
     this.shadowAllocations = new Map(); // Map<channelKey, assignedShadows[]>
@@ -1533,13 +1537,12 @@ module.exports = class Dungeons {
    */
   _addToCorpsePile(channelKey, deadMob, isBoss = false) {
     if (!deadMob) return;
-    if (!this._corpsePile) this._corpsePile = new Map();
-    let pile = this._corpsePile.get(channelKey);
-    if (!pile) {
-      pile = [];
-      this._corpsePile.set(channelKey, pile);
-    }
-    pile.push({
+    // Store corpse pile ON the dungeon object so it persists to IDB with periodic saves.
+    // No separate in-memory Map — dungeon.corpsePile survives hot-reloads.
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) return;
+    if (!dungeon.corpsePile) dungeon.corpsePile = [];
+    dungeon.corpsePile.push({
       id: deadMob.id,
       rank: deadMob.rank,
       baseStats: deadMob.baseStats,
@@ -1556,15 +1559,14 @@ module.exports = class Dungeons {
    */
   /**
    * Process corpse pile for post-dungeon extraction.
-   * Accepts an optional pre-captured pile snapshot (immune to hot-reload wipes).
-   * Falls back to reading from this._corpsePile if no snapshot provided.
+   * Accepts a pre-captured pile snapshot (from dungeon.corpsePile).
+   * Falls back to dungeon.corpsePile if no snapshot provided.
    */
   async _processCorpsePile(channelKey, dungeon, pileSnapshot = null) {
-    const pile = pileSnapshot || this._corpsePile?.get(channelKey);
+    const pile = pileSnapshot || dungeon?.corpsePile;
     if (!pile || pile.length === 0) {
       // ALWAYS-ON: Empty pile means combat didn't produce corpses — indicates a problem
       console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon?.shadowsDeployed}, mobs killed: ${dungeon?.mobs?.killed || 0})`);
-      this._corpsePile?.delete(channelKey);
       return { extracted: 0, attempted: 0 };
     }
 
@@ -1572,7 +1574,6 @@ module.exports = class Dungeons {
     if (!shadowArmy?.attemptDungeonExtraction) {
       // ALWAYS-ON: Missing ShadowArmy means zero extractions — user needs to know
       console.warn(`[Dungeons] ⚠️ ARISE SKIPPED: ShadowArmy plugin not available — ${pile.length} corpses lost (${channelKey})`);
-      this._corpsePile?.delete(channelKey);
       return { extracted: 0, attempted: 0 };
     }
 
@@ -1614,8 +1615,8 @@ module.exports = class Dungeons {
       }
     }
 
-    // Clear the pile entry if it still exists (snapshot path already detached)
-    this._corpsePile?.delete(channelKey);
+    // Clear the dungeon's corpse pile (already snapshotted, don't process again)
+    if (dungeon) dungeon.corpsePile = [];
 
     // ALWAYS-ON: Extraction result
     console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
@@ -2011,8 +2012,7 @@ module.exports = class Dungeons {
     this.stopAllMobAttacks();
     this._stopCombatLoop();
     this.stopAllDungeonCleanup();
-    // Clear corpse pile (no extraction on plugin stop)
-    if (this._corpsePile) this._corpsePile.clear();
+    // Corpse pile lives on dungeon objects (persisted to IDB) — no separate cleanup needed.
     // Clear legacy extraction processors
     if (this.extractionProcessors) {
       this.extractionProcessors.forEach((processor) => clearInterval(processor));
@@ -2150,8 +2150,7 @@ module.exports = class Dungeons {
       this._dungeonSaveTimers.clear();
     }
 
-    // Clear corpse pile on stop
-    if (this._corpsePile) this._corpsePile.clear();
+    // Corpse pile persists on dungeon objects in IDB — intentionally NOT cleared on stop.
 
     // Clear guild channel cache
     if (this._guildChannelCache) this._guildChannelCache.clear();
@@ -3955,6 +3954,7 @@ module.exports = class Dungeons {
       guildId: channelInfo.guildId,
       userParticipating: null,
       shadowsDeployed: false, // Manual deploy: user must click "Deploy Shadows" to start combat
+      corpsePile: [], // Dead mobs collected during combat for post-dungeon ARISE extraction (persisted to IDB)
       shadowAttacks: {},
       shadowContributions: {}, // Track XP contributions: { shadowId: { mobsKilled: 0, bossDamage: 0 } }
       shadowHP: new Map(), // Track shadow HP: Map<shadowId, { hp, maxHp }>
@@ -8991,12 +8991,10 @@ module.exports = class Dungeons {
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
 
-    // CRITICAL: Snapshot the corpse pile IMMEDIATELY before any async work.
-    // Hot-reloads call stop() which clears _corpsePile — if we await anything first,
-    // the pile can be wiped before we extract. Capture the reference now.
-    const corpsePileSnapshot = this._corpsePile?.get(channelKey) || [];
-    // Detach from the Map so stop() clearing won't affect our local copy
-    this._corpsePile?.delete(channelKey);
+    // Snapshot the corpse pile from the dungeon object (persisted to IDB, survives restarts).
+    const corpsePileSnapshot = dungeon.corpsePile || [];
+    // Clear from dungeon so it's not processed again on a second completeDungeon call
+    dungeon.corpsePile = [];
 
     // CRITICAL: Process corpse pile extraction FIRST — before any other async work.
     // Hot-reloads from file sync can fire during any await, orphaning promise chains.
