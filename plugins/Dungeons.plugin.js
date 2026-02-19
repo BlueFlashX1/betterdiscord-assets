@@ -4487,8 +4487,9 @@ module.exports = class Dungeons {
       // Clear active dungeon reference
       this.settings.userActiveDungeon = null;
 
-      // Clear any pending corpse pile for this channel
-      this._corpsePile?.delete(channelKey);
+      // NOTE: Do NOT delete corpse pile here — _processCorpsePile runs async after
+      // completeDungeon sets completed=true, so deleting here would race and nuke it.
+      // Corpse pile is cleaned up by _processCorpsePile itself after extraction.
 
       // Save settings
       this.saveSettings();
@@ -4575,6 +4576,8 @@ module.exports = class Dungeons {
     dungeon.userParticipating = true;
     this.settings.userActiveDungeon = channelKey;
 
+    // Force cache bust so HP bar re-renders with updated button states
+    this._bossBarCache?.delete?.(channelKey);
     this.queueHPBarUpdate(channelKey);
     this.showToast(`Joined ${dungeon.name}!`, 'info');
     this.saveSettings();
@@ -9512,11 +9515,12 @@ module.exports = class Dungeons {
     this.settings.lastDungeonEndTime[channelKey] = Date.now();
 
     // Clean up all dungeon data for this channel
+    // NOTE: Do NOT delete corpse pile — _processCorpsePile runs async and may still be processing.
+    // It cleans up after itself when done.
     this.activeDungeons.delete(channelKey);
     this.channelLocks.delete(channelKey);
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
-    this._corpsePile?.delete(channelKey);
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
     this.deadShadows.delete(channelKey);
     this.saveSettings();
@@ -9893,6 +9897,7 @@ module.exports = class Dungeons {
         aliveMobs,
         totalMobs,
         participating: dungeon.userParticipating,
+        deployed: dungeon.shadowsDeployed,
         type: dungeon.type,
         rank: dungeon.rank,
         name: dungeon.name,
