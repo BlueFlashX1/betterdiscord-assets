@@ -1004,8 +1004,8 @@ module.exports = class Dungeons {
     this._mobSpawnQueueNextAt = new Map(); // channelKey -> next queue flush timestamp
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
-    // 1s base tick: spawning is QoL; slower tick reduces baseline CPU
-    this._mobSpawnLoopTickMs = 1000; // Throttled to reduce UI load
+    // 500ms base tick: fast enough for responsive queue flushes, light enough for CPU
+    this._mobSpawnLoopTickMs = 500;
     this.bossAttackTimers = new Map(); // Boss attack timers per dungeon
     this.mobAttackTimers = new Map(); // Mob attack timers per dungeon
     this.dungeonIndicators = new Map();
@@ -1759,8 +1759,10 @@ module.exports = class Dungeons {
       }
     }
 
-    // Trigger spawn waves when due (skip while window hidden to reduce load)
-    if (isVisible && this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
+    // Trigger spawn waves when due.
+    // PERF: Still spawn while hidden but at reduced rate (1 wave per tick, already throttled by delay).
+    // Previously skipping entirely while hidden caused "frozen" mob counts on dungeon creation.
+    if (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
       let spawns = 0;
       for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
         if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
