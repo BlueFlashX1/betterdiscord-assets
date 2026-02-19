@@ -278,14 +278,27 @@ class SensesEngine {
     this._sessionMessageCount = 0;
     this._totalDetections = 0;
     this._dirty = false;
+    this._dirtyGuilds = new Set();  // Per-guild dirty tracking — flush only changed guilds
     this._flushInterval = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
     this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
 
-    // Load persisted data
-    this._guildFeeds = BdApi.Data.load(PLUGIN_NAME, "guildFeeds") || {};
+    // Load persisted data — per-guild keys first, legacy monolithic fallback
+    const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
+    if (Array.isArray(feedGuildIds) && feedGuildIds.length > 0) {
+      this._guildFeeds = {};
+      for (const gid of feedGuildIds) {
+        const feed = BdApi.Data.load(PLUGIN_NAME, `feed_${gid}`);
+        if (Array.isArray(feed) && feed.length > 0) {
+          this._guildFeeds[gid] = feed;
+        }
+      }
+    } else {
+      // Legacy: single monolithic key (pre-Opt6 data)
+      this._guildFeeds = BdApi.Data.load(PLUGIN_NAME, "guildFeeds") || {};
+    }
     this._totalDetections = BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0;
 
     // Count existing entries for lastSeenCount (mark all persisted as "seen")
@@ -367,12 +380,22 @@ class SensesEngine {
 
   _flushToDisk() {
     try {
-      BdApi.Data.save(PLUGIN_NAME, "guildFeeds", this._guildFeeds);
+      const dirtyCount = this._dirtyGuilds.size;
+      if (dirtyCount === 0 && !this._dirty) return;
+
+      // Save only dirty guilds (O(1 guild) instead of O(all guilds))
+      for (const guildId of this._dirtyGuilds) {
+        BdApi.Data.save(PLUGIN_NAME, `feed_${guildId}`, this._guildFeeds[guildId] || []);
+      }
+      // Save guild index for load-time discovery + detection counter
+      BdApi.Data.save(PLUGIN_NAME, "feedGuildIds", Object.keys(this._guildFeeds));
       BdApi.Data.save(PLUGIN_NAME, "totalDetections", this._totalDetections);
+
+      this._dirtyGuilds.clear();
       this._dirty = false;
       this._plugin.debugLog("SensesEngine", "Flushed to disk", {
-        guilds: Object.keys(this._guildFeeds).length,
-        totalDetections: this._totalDetections,
+        dirtyGuilds: dirtyCount,
+        totalGuilds: Object.keys(this._guildFeeds).length,
       });
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to flush to disk", err);
@@ -402,11 +425,13 @@ class SensesEngine {
         const trimmed = maxLen - trimTo;
         this._guildFeeds[maxGuild] = this._guildFeeds[maxGuild].slice(-trimTo);
         this._totalFeedEntries -= trimmed;
+        this._dirtyGuilds.add(maxGuild);
         this._plugin.debugLog?.("SensesEngine", `Global cap: trimmed guild ${maxGuild} from ${maxLen} to ${trimTo}`);
       }
     }
 
     this._feedVersion++;
+    this._dirtyGuilds.add(guildId);
     this._dirty = true;
   }
 
@@ -560,6 +585,9 @@ class SensesEngine {
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._dirty = false;
+    this._dirtyGuilds = new Set();
+    this._totalFeedEntries = 0;
+    this._feedVersion = 0;
   }
 }
 
