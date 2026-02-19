@@ -35,6 +35,7 @@ class DeploymentManager {
     this._deployments = [];
     this._monitoredUserIds = new Set();
     this._deployedShadowIds = new Set();
+    this._availableCache = null; // { shadows: [], timestamp: number } — 5s TTL
   }
 
   load() {
@@ -109,6 +110,7 @@ class DeploymentManager {
 
     this._deployments.push(record);
     this._rebuildSets();
+    this._availableCache = null; // Invalidate — deployment state changed
     this._save();
     this._debugLog("DeploymentManager", "Deployed shadow", record);
     return true;
@@ -120,6 +122,7 @@ class DeploymentManager {
 
     this._deployments.splice(idx, 1);
     this._rebuildSets();
+    this._availableCache = null; // Invalidate — deployment state changed
     this._save();
     this._debugLog("DeploymentManager", "Recalled shadow", shadowId);
     return true;
@@ -145,11 +148,20 @@ class DeploymentManager {
     return [...this._deployments];
   }
 
+  getDeploymentCount() {
+    return this._deployments.length;
+  }
+
   getMonitoredUserIds() {
     return this._monitoredUserIds;
   }
 
   async getAvailableShadows() {
+    // 5s TTL cache — avoids redundant IDB reads + 3 cross-plugin lookups
+    const now = Date.now();
+    if (this._availableCache && now - this._availableCache.timestamp < 5000) {
+      return this._availableCache.shadows;
+    }
     try {
       const armyPlugin = BdApi.Plugins.get("ShadowArmy");
       if (!armyPlugin || !armyPlugin.instance) {
@@ -229,6 +241,7 @@ class DeploymentManager {
         reservePool: reserveIds.size,
       });
 
+      this._availableCache = { shadows: available, timestamp: Date.now() };
       return available;
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to get available shadows", err);
@@ -268,19 +281,23 @@ class SensesEngine {
     this._flushInterval = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
+    this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
+    this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
 
     // Load persisted data
     this._guildFeeds = BdApi.Data.load(PLUGIN_NAME, "guildFeeds") || {};
     this._totalDetections = BdApi.Data.load(PLUGIN_NAME, "totalDetections") || 0;
 
     // Count existing entries for lastSeenCount (mark all persisted as "seen")
+    // and initialize _totalFeedEntries from persisted data
     for (const guildId of Object.keys(this._guildFeeds)) {
       this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
+      this._totalFeedEntries += this._guildFeeds[guildId].length;
     }
 
     this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
       guilds: Object.keys(this._guildFeeds).length,
-      totalEntries: Object.values(this._guildFeeds).reduce((sum, f) => sum + f.length, 0),
+      totalEntries: this._totalFeedEntries,
     });
   }
 
@@ -367,24 +384,29 @@ class SensesEngine {
       this._guildFeeds[guildId] = [];
     }
     this._guildFeeds[guildId].push(entry);
+    this._totalFeedEntries++;
+
     if (this._guildFeeds[guildId].length > GUILD_FEED_CAP) {
       this._guildFeeds[guildId].shift();
+      this._totalFeedEntries--;
     }
 
-    // Global cap: prevent unbounded growth across all guilds
-    const totalEntries = Object.values(this._guildFeeds).reduce((sum, arr) => sum + arr.length, 0);
-    if (totalEntries > GLOBAL_FEED_CAP) {
+    // Global cap: O(1) check via incremental counter (was O(G×F) reduce)
+    if (this._totalFeedEntries > GLOBAL_FEED_CAP) {
       let maxGuild = null, maxLen = 0;
       for (const [gid, arr] of Object.entries(this._guildFeeds)) {
         if (arr.length > maxLen) { maxGuild = gid; maxLen = arr.length; }
       }
       if (maxGuild) {
         const trimTo = Math.max(100, Math.floor(maxLen / 2));
+        const trimmed = maxLen - trimTo;
         this._guildFeeds[maxGuild] = this._guildFeeds[maxGuild].slice(-trimTo);
-        this._plugin.debugLog?.("SensesEngine", `Global feed cap reached, trimmed guild ${maxGuild} from ${maxLen} to ${trimTo} entries`);
+        this._totalFeedEntries -= trimmed;
+        this._plugin.debugLog?.("SensesEngine", `Global cap: trimmed guild ${maxGuild} from ${maxLen} to ${trimTo}`);
       }
     }
 
+    this._feedVersion++;
     this._dirty = true;
   }
 
@@ -512,6 +534,12 @@ class SensesEngine {
   getActiveFeed() {
     if (!this._currentGuildId) return [];
     return [...(this._guildFeeds[this._currentGuildId] || [])];
+  }
+
+  /** O(1) count — no array copy. Use when only .length is needed. */
+  getActiveFeedCount() {
+    if (!this._currentGuildId) return 0;
+    return (this._guildFeeds[this._currentGuildId] || []).length;
   }
 
   getSessionMessageCount() {
@@ -935,17 +963,26 @@ function buildComponents(pluginRef) {
     const prevLenRef = useRef(0);
 
     useEffect(() => {
+      let lastVersion = -1;
       const poll = setInterval(() => {
         try {
-          const current = pluginRef.sensesEngine
-            ? pluginRef.sensesEngine.getActiveFeed()
-            : [];
-          setFeed(current);
+          const engine = pluginRef.sensesEngine;
+          if (!engine) return;
+          // Only copy the feed array when _feedVersion changes (~95% of polls skip)
+          const currentVersion = engine._feedVersion;
+          if (currentVersion !== lastVersion) {
+            lastVersion = currentVersion;
+            setFeed(engine.getActiveFeed());
+          }
         } catch (_) { pluginRef.debugLog?.('REACT', 'Feed poll error', _); }
       }, 2000);
       // Initial load
       try {
-        setFeed(pluginRef.sensesEngine ? pluginRef.sensesEngine.getActiveFeed() : []);
+        const engine = pluginRef.sensesEngine;
+        if (engine) {
+          setFeed(engine.getActiveFeed());
+          lastVersion = engine._feedVersion;
+        }
       } catch (_) { pluginRef.debugLog?.('REACT', 'Feed initial load error', _); }
       return () => clearInterval(poll);
     }, []);
@@ -1048,7 +1085,7 @@ function buildComponents(pluginRef) {
     }, []);
 
     const deployCount = pluginRef.deploymentManager
-      ? pluginRef.deploymentManager.getDeployments().length
+      ? pluginRef.deploymentManager.getDeploymentCount()
       : 0;
     const msgCount = pluginRef.sensesEngine
       ? pluginRef.sensesEngine.getSessionMessageCount()
@@ -1110,10 +1147,10 @@ function buildComponents(pluginRef) {
     }, []);
 
     const deployCount = pluginRef.deploymentManager
-      ? pluginRef.deploymentManager.getDeployments().length
+      ? pluginRef.deploymentManager.getDeploymentCount()
       : 0;
     const feedCount = pluginRef.sensesEngine
-      ? pluginRef.sensesEngine.getActiveFeed().length
+      ? pluginRef.sensesEngine.getActiveFeedCount()
       : 0;
 
     return ce("div", {
@@ -1255,7 +1292,7 @@ module.exports = class ShadowSenses {
       this.registerEscHandler();
       this.patchContextMenu();
 
-      console.log(`[${PLUGIN_NAME}] Started successfully`);
+      this.debugLog("Lifecycle", "Started successfully");
       BdApi.UI.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
@@ -1561,10 +1598,18 @@ module.exports = class ShadowSenses {
         return;
       }
 
+      // Narrow target: observe layout container instead of entire Discord DOM.
+      // Chromium creates O(depth) ancestor walks per mutation with subtree:true.
+      // app-mount captures ALL mutations (typing, presence, popups, tooltips).
+      // Layout container only captures channel/member list structural changes.
+      const layoutContainer = appMount.querySelector('[class*="base_"][class*="container_"]')
+        || appMount.querySelector('[class*="app_"]')
+        || appMount; // fallback if Discord class names change
+
       let lastCheck = 0;
       this._widgetObserver = new MutationObserver(() => {
         const now = Date.now();
-        if (now - lastCheck < WIDGET_OBSERVER_DEBOUNCE_MS) return;
+        if (now - lastCheck < 500) return; // 500ms — widget reinject is not time-critical
         lastCheck = now;
 
         const membersWrap = this._getMembersWrap();
@@ -1584,8 +1629,8 @@ module.exports = class ShadowSenses {
         }
       });
 
-      this._widgetObserver.observe(appMount, { childList: true, subtree: true });
-      this.debugLog("Widget", "MutationObserver attached to app-mount");
+      this._widgetObserver.observe(layoutContainer, { childList: true, subtree: true });
+      this.debugLog("Widget", `MutationObserver attached to ${layoutContainer === appMount ? "app-mount (fallback)" : "layout container"}`);
     } catch (err) {
       this.debugError("Widget", "Failed to setup observer", err);
     }
@@ -1849,7 +1894,7 @@ module.exports = class ShadowSenses {
     const React = BdApi.React;
     const ce = React.createElement;
 
-    const deployCount = this.deploymentManager?.getDeployments()?.length || 0;
+    const deployCount = this.deploymentManager?.getDeploymentCount() || 0;
     const sessionCount = this.sensesEngine?.getSessionMessageCount() || 0;
     const totalDetections = this.sensesEngine?.getTotalDetections() || 0;
 
