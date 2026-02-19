@@ -12162,29 +12162,34 @@ module.exports = class Dungeons {
 
       .dungeon-indicator { cursor: pointer; }
 
-      /* CSS-based dungeon channel indicator — flame/aura glow (survives React re-renders) */
+      /* CSS-based dungeon channel indicator — SVG icon before channel name (survives React re-renders) */
       [data-dungeon-active] {
-        text-shadow:
-          0 0 6px rgba(139, 92, 246, 0.8),
-          0 0 12px rgba(139, 92, 246, 0.5),
-          0 0 20px rgba(124, 58, 237, 0.3);
-        animation: dungeonAura 2s ease-in-out infinite;
+        position: relative;
       }
-      @keyframes dungeonAura {
-        0%, 100% {
-          text-shadow:
-            0 0 6px rgba(139, 92, 246, 0.8),
-            0 0 12px rgba(139, 92, 246, 0.5),
-            0 0 20px rgba(124, 58, 237, 0.3);
-          filter: brightness(1.1);
-        }
-        50% {
-          text-shadow:
-            0 0 8px rgba(236, 72, 153, 0.9),
-            0 0 16px rgba(139, 92, 246, 0.7),
-            0 0 28px rgba(124, 58, 237, 0.5);
-          filter: brightness(1.3);
-        }
+      [data-dungeon-active] a[class*="link"] > div:first-child,
+      [data-dungeon-active] a[class*="channel"] > div:first-child,
+      [data-dungeon-active] [class*="name"] {
+        display: flex !important;
+        align-items: center !important;
+      }
+      [data-dungeon-active]::before {
+        content: '';
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        min-width: 16px;
+        margin-right: 4px;
+        margin-left: 2px;
+        vertical-align: middle;
+        /* SVG dungeon gate icon — two pillars with arch, no emoji */
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none'%3E%3Crect x='1' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Crect x='12' y='4' width='3' height='11' rx='0.5' fill='%238b5cf6'/%3E%3Cpath d='M2.5 4 C2.5 1.5 8 0 8 0 C8 0 13.5 1.5 13.5 4' stroke='%238b5cf6' stroke-width='1.5' fill='none'/%3E%3Crect x='6' y='8' width='4' height='7' rx='0.5' fill='%237c3aed' opacity='0.7'/%3E%3Ccircle cx='8' cy='3' r='1.2' fill='%23a78bfa' opacity='0.9'/%3E%3C/svg%3E");
+        background-size: contain;
+        background-repeat: no-repeat;
+        animation: dungeonIconPulse 2.5s ease-in-out infinite;
+      }
+      @keyframes dungeonIconPulse {
+        0%, 100% { opacity: 0.85; filter: drop-shadow(0 0 2px rgba(139, 92, 246, 0.6)); }
+        50% { opacity: 1; filter: drop-shadow(0 0 5px rgba(139, 92, 246, 0.9)) drop-shadow(0 0 10px rgba(124, 58, 237, 0.4)); }
       }
       .dungeons-plugin-button {
         width: 32px;
