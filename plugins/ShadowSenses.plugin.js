@@ -329,7 +329,7 @@ class SensesEngine {
       return;
     }
 
-    // Store current guild
+    // Store current guild — try immediately, retry if null (Discord may not be ready yet)
     try {
       this._currentGuildId = this._plugin._SelectedGuildStore
         ? this._plugin._SelectedGuildStore.getGuildId()
@@ -337,6 +337,7 @@ class SensesEngine {
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to get initial guild ID", err);
     }
+    console.log(`[ShadowSenses] subscribe: _currentGuildId=${this._currentGuildId}`);
 
     // Mark current guild as seen
     if (this._currentGuildId && this._guildFeeds[this._currentGuildId]) {
@@ -458,43 +459,20 @@ class SensesEngine {
       const deployment = this._plugin.deploymentManager.getDeploymentForUser(authorId);
       if (!deployment) return;
 
-      // ── Presence Detection ──────────────────────────────────────────────
-      // Track user activity to generate presence toasts:
-      //   - First message after restart → "is now active"
-      //   - Message after 1h+ silence → "has returned (was AFK Xh)"
-      const now = Date.now();
-      const authorName = message.author.username || message.author.global_name || "Unknown";
-      const lastActivity = this._userLastActivity.get(authorId);
-
-      if (!lastActivity) {
-        // First message from this user since restart/reload
-        BdApi.UI.showToast(
-          `\u{1F7E2} [${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`,
-          { type: "success" }
-        );
-        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
-      } else {
-        const silenceMs = now - lastActivity.timestamp;
-
-        if (silenceMs >= this._AFK_THRESHOLD_MS) {
-          // User was silent for 1h+ → AFK return toast
-          const silenceHours = Math.floor(silenceMs / (60 * 60 * 1000));
-          const silenceMins = Math.floor((silenceMs % (60 * 60 * 1000)) / (60 * 1000));
-          const timeStr = silenceHours > 0
-            ? `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`
-            : `${silenceMins}m`;
-
-          BdApi.UI.showToast(
-            `\u{1F7E1} [${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`,
-            { type: "warning" }
-          );
-        }
-
-        // Always update timestamp
-        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+      // Lazy guild resolution — if subscribe() fired before Discord was ready,
+      // _currentGuildId may be null. Try to resolve it now.
+      if (!this._currentGuildId) {
+        try {
+          this._currentGuildId = this._plugin._SelectedGuildStore
+            ? this._plugin._SelectedGuildStore.getGuildId()
+            : null;
+          if (this._currentGuildId) {
+            console.log(`[ShadowSenses] Lazy guild resolve: _currentGuildId=${this._currentGuildId}`);
+          }
+        } catch (_) { /* silent */ }
       }
 
-      // Resolve channel
+      // Resolve channel + guild FIRST (needed for presence toast context)
       let channelName = "unknown";
       let guildId = message.guild_id || null;
 
@@ -514,18 +492,56 @@ class SensesEngine {
 
       // Resolve guild name for display
       const guildName = this._plugin._getGuildName(guildId);
+      const isAwayGuild = guildId !== this._currentGuildId;
+      const authorName = message.author.username || message.author.global_name || "Unknown";
+
+      // ── Presence Detection ──────────────────────────────────────────────
+      // Track user activity to generate one-time presence toasts:
+      //   - First message after restart → "is now active" (once per user, any guild)
+      //   - Message after 2h+ silence → "has returned" (once per user, any guild)
+      // These fire regardless of current guild — presence is user-level awareness.
+      const now = Date.now();
+      const lastActivity = this._userLastActivity.get(authorId);
+
+      if (!lastActivity) {
+        // First message from this user since restart/reload
+        BdApi.UI.showToast(
+          `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`,
+          { type: "info" }
+        );
+        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+      } else {
+        const silenceMs = now - lastActivity.timestamp;
+
+        if (silenceMs >= this._AFK_THRESHOLD_MS) {
+          // User was silent for 2h+ → AFK return toast
+          const silenceHours = Math.floor(silenceMs / (60 * 60 * 1000));
+          const silenceMins = Math.floor((silenceMs % (60 * 60 * 1000)) / (60 * 1000));
+          const timeStr = silenceHours > 0
+            ? `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`
+            : `${silenceMins}m`;
+
+          BdApi.UI.showToast(
+            `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`,
+            { type: "info" }
+          );
+        }
+
+        // Always update timestamp
+        this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+      }
 
       // Build feed entry
       const entry = {
         messageId: message.id,
         authorId,
-        authorName: message.author.username || message.author.global_name || "Unknown",
+        authorName,
         channelId: message.channel_id,
         channelName,
         guildId,
         guildName,
         content: (message.content || "").slice(0, 200),
-        timestamp: Date.now(),
+        timestamp: now,
         shadowName: deployment.shadowName,
         shadowRank: deployment.shadowRank,
       };
@@ -533,10 +549,10 @@ class SensesEngine {
       // Add to the guild's feed (always, regardless of current guild)
       this._addToGuildFeed(guildId, entry);
 
-      // Context-aware notifications:
+      // Context-aware message notifications:
       // Toast for AWAY guilds only — if you're already viewing this guild, no need to alert.
       // When you switch guilds, the batch summary toast covers what you missed.
-      if (guildId !== this._currentGuildId) {
+      if (isAwayGuild) {
         BdApi.UI.showToast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in ${guildName} #${entry.channelName}`,
           { type: "info" }
@@ -608,15 +624,32 @@ class SensesEngine {
     }
   }
 
+  /**
+   * Returns merged feed from all guilds EXCEPT the one you're currently viewing,
+   * sorted by timestamp (newest last). This gives you a cross-server "what did I miss"
+   * view that automatically excludes the guild you're already looking at.
+   */
   getActiveFeed() {
-    if (!this._currentGuildId) return [];
-    return [...(this._guildFeeds[this._currentGuildId] || [])];
+    const merged = [];
+    for (const [guildId, feed] of Object.entries(this._guildFeeds)) {
+      if (guildId === this._currentGuildId) continue; // Skip current guild
+      for (let i = 0; i < feed.length; i++) {
+        merged.push(feed[i]);
+      }
+    }
+    // Sort by timestamp ascending (oldest first, newest at bottom for scroll)
+    merged.sort((a, b) => a.timestamp - b.timestamp);
+    return merged;
   }
 
-  /** O(1) count — no array copy. Use when only .length is needed. */
+  /** Count of away-guild feed entries — no array copy. */
   getActiveFeedCount() {
-    if (!this._currentGuildId) return 0;
-    return (this._guildFeeds[this._currentGuildId] || []).length;
+    let count = 0;
+    for (const [guildId, feed] of Object.entries(this._guildFeeds)) {
+      if (guildId === this._currentGuildId) continue;
+      count += feed.length;
+    }
+    return count;
   }
 
   getSessionMessageCount() {

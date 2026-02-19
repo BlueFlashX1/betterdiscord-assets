@@ -1238,7 +1238,7 @@ module.exports = class Dungeons {
 
     // Event-based extraction verification
     this.extractionEvents = new Map(); // Track extraction attempts by mobId
-    // REMOVED: setupExtractionEventListener() — consolidated into _shadowExtractedListener in loadPluginReferences()
+    // Extraction event handling consolidated into _shadowExtractedListener in loadPluginReferences()
 
     // Extraction tracking (now uses MobBossStorageManager database instead of BdAPI)
     this.extractionInProgress = new Set(); // Track channels currently processing extractions
@@ -1539,10 +1539,10 @@ module.exports = class Dungeons {
 
   _ensureMobSpawnLoop() {
     if (this._mobSpawnLoopInterval) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — loop already running`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — loop already running`);
       return;
     }
-    console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — STARTING loop (tickMs=${this._mobSpawnLoopTickMs})`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — STARTING loop (tickMs=${this._mobSpawnLoopTickMs})`);
 
     const tick = () => {
       if (!this.started) return;
@@ -1717,31 +1717,45 @@ module.exports = class Dungeons {
    */
   _batchExtractDeadMobs(channelKey, deadMobs, isBoss = false) {
     if (!deadMobs || deadMobs.length === 0) return;
+
+    // Guard: if a previous tick's batch is still writing IDB for this channel, skip.
+    // The dead mobs still have hp<=0 in activeMobs, so the next tick will re-collect them.
+    if (!this._extractionBatchInFlight) this._extractionBatchInFlight = new Set();
+    if (this._extractionBatchInFlight.has(channelKey)) {
+      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs — SKIPPED (batch in flight for ${channelKey}, ${deadMobs.length} mobs deferred)`);
+      return;
+    }
+    this._extractionBatchInFlight.add(channelKey);
+
     this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: _batchExtractDeadMobs — ${deadMobs.length} mobs for ${channelKey}`);
     // Fire a single async microtask — does not block the combat tick.
     // Process in batches of 10 with setTimeout(0) yield between batches
     // to prevent 165+ sequential IDB writes from monopolizing the event loop.
     const BATCH_SIZE = 10;
     Promise.resolve().then(async () => {
-      let extracted = 0;
-      for (let i = 0; i < deadMobs.length; i += BATCH_SIZE) {
-        const batch = deadMobs.slice(i, i + BATCH_SIZE);
-        for (const mob of batch) {
-          try {
-            const result = await this._attemptCombatExtraction(channelKey, mob, isBoss);
-            if (result?.success) extracted++;
-          } catch (err) {
-            console.error(`[Dungeons] ARISE_TRACE: ❌ Batch error for mob ${mob?.id}:`, err?.message || err);
+      try {
+        let extracted = 0;
+        for (let i = 0; i < deadMobs.length; i += BATCH_SIZE) {
+          const batch = deadMobs.slice(i, i + BATCH_SIZE);
+          for (const mob of batch) {
+            try {
+              const result = await this._attemptCombatExtraction(channelKey, mob, isBoss);
+              if (result?.success) extracted++;
+            } catch (err) {
+              console.error(`[Dungeons] ARISE_TRACE: ❌ Batch error for mob ${mob?.id}:`, err?.message || err);
+            }
+          }
+          // Yield to main thread between batches so Dispatcher can flush
+          if (i + BATCH_SIZE < deadMobs.length) {
+            await new Promise(r => setTimeout(r, 0));
           }
         }
-        // Yield to main thread between batches so Dispatcher can flush
-        if (i + BATCH_SIZE < deadMobs.length) {
-          await new Promise(r => setTimeout(r, 0));
+        this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} for ${channelKey}`);
+        if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
+          BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: deadMobs.length, channelKey });
         }
-      }
-      this.settings.debug && console.log(`[Dungeons] ARISE_TRACE: Batch complete — ${extracted}/${deadMobs.length} for ${channelKey}`);
-      if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
-        BdApi.Events.emit('ShadowArmy:batchExtractionComplete', { extracted, total: deadMobs.length, channelKey });
+      } finally {
+        this._extractionBatchInFlight.delete(channelKey);
       }
     });
   }
@@ -1753,7 +1767,7 @@ module.exports = class Dungeons {
 
     const queueSize = this._mobSpawnQueueNextAt?.size || 0;
     const spawnSize = this._mobSpawnNextAt?.size || 0;
-    console.log(`[Dungeons] MOB_SPAWN_TICK: visible=${isVisible}, queuedFlushes=${queueSize}, pendingWaves=${spawnSize}`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: visible=${isVisible}, queuedFlushes=${queueSize}, pendingWaves=${spawnSize}`);
 
     // Flush queued mobs (batch append) when ready
     if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
@@ -1761,10 +1775,10 @@ module.exports = class Dungeons {
       for (const [channelKey, nextAt] of this._mobSpawnQueueNextAt.entries()) {
         if (flushes >= MAX_QUEUE_FLUSH_PER_TICK) break;
         if (now < nextAt) {
-          console.log(`[Dungeons] MOB_SPAWN_TICK: queue flush NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: queue flush NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
           continue;
         }
-        console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
+        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
         this.processMobSpawnQueue(channelKey);
         this._mobSpawnQueueNextAt.delete(channelKey);
         flushes++;
@@ -1779,24 +1793,24 @@ module.exports = class Dungeons {
       for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
         if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
         if (now < nextAt) {
-          console.log(`[Dungeons] MOB_SPAWN_TICK: wave NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: wave NOT DUE for ${channelKey} (${nextAt - now}ms remaining)`);
           continue;
         }
 
         const dungeon = this._getActiveDungeon(channelKey);
         if (!dungeon) {
-          console.log(`[Dungeons] MOB_SPAWN_TICK: NO DUNGEON for ${channelKey} — cleaning up`);
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: NO DUNGEON for ${channelKey} — cleaning up`);
           this._mobSpawnNextAt.delete(channelKey);
           this._mobSpawnQueueNextAt?.delete?.(channelKey);
           this._mobSpawnQueue?.delete?.(channelKey);
           continue;
         }
 
-        console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
+        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
         this.spawnMobs(channelKey);
         const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
         this._mobSpawnNextAt.set(channelKey, now + nextDelay);
-        console.log(`[Dungeons] MOB_SPAWN_TICK: next wave in ${Math.round(nextDelay)}ms for ${channelKey}`);
+        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: next wave in ${Math.round(nextDelay)}ms for ${channelKey}`);
         spawns++;
       }
     }
@@ -1805,7 +1819,7 @@ module.exports = class Dungeons {
       (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
       (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
     if (!hasWork) {
-      console.log(`[Dungeons] MOB_SPAWN_TICK: no more work — STOPPING loop`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: no more work — STOPPING loop`);
     }
     !hasWork && this._stopMobSpawnLoop();
   }
@@ -1814,6 +1828,37 @@ module.exports = class Dungeons {
     const now = Date.now();
     this._combatTickCount = ((this._combatTickCount || 0) + 1) % 1000;
 
+    // PERF: Hoist shared computations — compute ONCE per tick, not per-dungeon × per-function
+    const isWindowVisible = this.isWindowVisible();
+    if (isWindowVisible) {
+      this._syncVitalsForVisibleCombat(true);
+      this.syncHPAndManaFromStats();
+    }
+
+    // PERF T2-1: Global combat budget — divide fixed sample cap across dungeons so total
+    // CPU stays constant regardless of dungeon count. Without this, 5 dungeons = 5× sampling cost.
+    const activeDungeonCount = Math.max(1, this.activeDungeons.size);
+    const globalShadowBudget = Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) && this.settings.maxSimulatedShadowsPerTick > 0
+      ? this.settings.maxSimulatedShadowsPerTick
+      : 500; // Total shadow samples across ALL dungeons
+    const globalMobBudget = 1000; // Total mob samples across ALL dungeons
+    const perDungeonShadowBudget = Math.max(20, Math.floor(globalShadowBudget / activeDungeonCount));
+    const perDungeonMobBudget = Math.max(50, Math.floor(globalMobBudget / activeDungeonCount));
+
+    // PERF T1-1: Pre-ensure shadow allocations exist before parallel processing.
+    // preSplitShadowArmy is expensive (IDB read + sort), so call it once here instead of
+    // letting each parallel dungeon race to call it.
+    const cacheExpired = !this.allocationCache || !this.allocationCacheTime ||
+      Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
+    if (cacheExpired) {
+      await this.preSplitShadowArmy(true);
+    }
+
+    // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
+    // Each dungeon has isolated shadow allocations, deadShadows, and dungeon state.
+    // Shared state (userHP, userMana) has minor race potential but is self-correcting via
+    // periodic SoloLevelingStats sync and debounced saveSettings.
+    const dungeonPromises = [];
     for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
       if (!dungeon || dungeon.completed || dungeon.failed) {
         this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
@@ -1822,6 +1867,23 @@ module.exports = class Dungeons {
         continue;
       }
 
+      dungeonPromises.push(this._processDungeonCombatTick(
+        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget
+      ));
+    }
+
+    if (dungeonPromises.length > 0) {
+      await Promise.all(dungeonPromises);
+    }
+  }
+
+  /**
+   * Process a single dungeon's combat for one tick. Extracted from _combatLoopTick for parallel execution.
+   * IMPORTANT: Within each dungeon, shadow→boss→mob order is preserved (sequential await).
+   * Cross-dungeon parallelism is safe because each dungeon has isolated allocations and state.
+   */
+  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget) {
+    try {
       const isActive = this.isActiveDungeon(channelKey);
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
@@ -1860,10 +1922,10 @@ module.exports = class Dungeons {
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
           const preAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
-          await this.processShadowAttacks(channelKey, cyclesToProcess);
+          await this.processShadowAttacks(channelKey, cyclesToProcess, isWindowVisible, shadowBudget);
           const postAttackMobs = dungeon.mobs?.activeMobs?.length || 0;
           this._lastShadowAttackTime.set(channelKey, now);
-          console.log(`[Dungeons] COMBAT_MOB_TRACE: ch=${channelKey.slice(-8)}, isActive=${isActive}, mobsBefore=${preAttackMobs}, mobsAfter=${postAttackMobs}, bossHP=${dungeon.boss?.hp}, elapsed=${elapsed}ms`);
+          this.settings.debug && console.log(`[Dungeons] COMBAT_MOB_TRACE: ch=${channelKey.slice(-8)}, isActive=${isActive}, mobsBefore=${preAttackMobs}, mobsAfter=${postAttackMobs}, bossHP=${dungeon.boss?.hp}, elapsed=${elapsed}ms`);
           isActive && this.queueHPBarUpdate(channelKey);
         }
       }
@@ -1878,7 +1940,7 @@ module.exports = class Dungeons {
 
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
-          await this.processBossAttacks(channelKey, cyclesToProcess);
+          await this.processBossAttacks(channelKey, cyclesToProcess, isWindowVisible);
           this._lastBossAttackTime.set(channelKey, now);
         }
       }
@@ -1893,10 +1955,12 @@ module.exports = class Dungeons {
 
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
-          await this.processMobAttacks(channelKey, cyclesToProcess);
+          await this.processMobAttacks(channelKey, cyclesToProcess, isWindowVisible, mobBudget);
           this._lastMobAttackTime.set(channelKey, now);
         }
       }
+    } catch (error) {
+      this.errorLog('CRITICAL', 'Error in parallel dungeon combat tick', { channelKey, error });
     }
   }
 
@@ -2201,6 +2265,7 @@ module.exports = class Dungeons {
 
     // Clear deferred extraction snapshots
     if (this._deferredExtractionDungeonSnapshots) this._deferredExtractionDungeonSnapshots.clear();
+    if (this._extractionBatchInFlight) this._extractionBatchInFlight.clear();
 
     // Clear guild channel cache
     if (this._guildChannelCache) this._guildChannelCache.clear();
@@ -3563,29 +3628,6 @@ module.exports = class Dungeons {
   }
 
   // ==== DUNGEON SPAWNING ====
-  /**
-   * Get server member count for dynamic spawn rate calculation
-   */
-  getServerMemberCount(guildId) {
-    if (!guildId || guildId === 'DM') return null;
-
-    try {
-      const GuildStore =
-        BdApi.Webpack?.getStore?.('GuildStore') || BdApi.Webpack?.getModule?.((m) => m?.getGuild);
-
-      if (GuildStore?.getGuild) {
-        const guild = GuildStore.getGuild(guildId);
-        if (guild) {
-          // Try multiple property names for member count
-          return guild.memberCount || guild.members?.size || guild.approximateMemberCount || null;
-        }
-      }
-    } catch (error) {
-      this.debugLog('Error getting server member count:', error);
-    }
-
-    return null;
-  }
 
   /**
    * Fallback channel info parser (does not rely on Discord DOM/Webpack).
@@ -4051,7 +4093,7 @@ module.exports = class Dungeons {
     this.startShadowAttacks(channelKey);
     this.startMobKillNotifications(channelKey);
     this.startMobSpawning(channelKey); // Continue spawning remaining mobs over time
-    console.log(`[Dungeons] MOB_SPAWN_TRACE: joinDungeon called startMobSpawning for ${channelKey}, boss.hp=${dungeon.boss?.hp}, mobs.targetCount=${dungeon.mobs?.targetCount}, mobs.total=${dungeon.mobs?.total}`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: joinDungeon called startMobSpawning for ${channelKey}, boss.hp=${dungeon.boss?.hp}, mobs.targetCount=${dungeon.mobs?.targetCount}, mobs.total=${dungeon.mobs?.total}`);
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
     // Extraction: Mobs stored in BdAPI for deferred processing after dungeon completion
@@ -4078,7 +4120,7 @@ module.exports = class Dungeons {
     }
 
     if (this._mobSpawnNextAt.has(channelKey)) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — already scheduled for ${channelKey}`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — already scheduled for ${channelKey}`);
       return;
     }
 
@@ -4086,16 +4128,16 @@ module.exports = class Dungeons {
     // Creates dynamic, unpredictable spawn patterns without overwhelming
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — no dungeon for ${channelKey}`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — no dungeon for ${channelKey}`);
       return;
     }
 
     // Start first spawn immediately (no delay), then schedule via global loop
-    console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning calling spawnMobs(${channelKey}), boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning calling spawnMobs(${channelKey}), boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}`);
     this.spawnMobs(channelKey);
     const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
     this._mobSpawnNextAt.set(channelKey, Date.now() + nextDelay);
-    console.log(`[Dungeons] MOB_SPAWN_TRACE: next wave scheduled in ${Math.round(nextDelay)}ms for ${channelKey}`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: next wave scheduled in ${Math.round(nextDelay)}ms for ${channelKey}`);
     this._ensureMobSpawnLoop();
 
     // Natural spawning handles capacity organically
@@ -4218,7 +4260,7 @@ module.exports = class Dungeons {
   processMobSpawnQueue(channelKey) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — NO DUNGEON`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — NO DUNGEON`);
       this._mobSpawnQueue.delete(channelKey);
       return;
     }
@@ -4229,7 +4271,7 @@ module.exports = class Dungeons {
 
     const queuedMobs = this._mobSpawnQueue.get(channelKey);
     if (!queuedMobs || queuedMobs.length === 0) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — EMPTY queue`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — EMPTY queue`);
       this._mobSpawnQueue.delete(channelKey);
       return;
     }
@@ -4239,7 +4281,7 @@ module.exports = class Dungeons {
     dungeon.mobs.activeMobs.push(...queuedMobs);
     dungeon.mobs.remaining += queuedMobs.length;
     dungeon.mobs.total += queuedMobs.length;
-    console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${queuedMobs.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total})`);
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${queuedMobs.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total})`);
 
     // CRITICAL: Save mobs to dedicated database (cached for migration)
     if (this.mobBossStorageManager && queuedMobs.length > 0) {
@@ -4255,7 +4297,7 @@ module.exports = class Dungeons {
   spawnMobs(channelKey) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — NO DUNGEON, stopping`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — NO DUNGEON, stopping`);
       this.stopMobSpawning(channelKey);
       return;
     }
@@ -4267,7 +4309,7 @@ module.exports = class Dungeons {
     // CONTINUOUS SPAWN: Dynamic rate based on current mob count (prevents infinite growth)
     // Stop spawning once total spawned mobs reaches targetCount
     if (dungeon.mobs.targetCount && dungeon.mobs.total >= dungeon.mobs.targetCount) {
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — TARGET REACHED (total=${dungeon.mobs.total} >= target=${dungeon.mobs.targetCount}), stopping`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — TARGET REACHED (total=${dungeon.mobs.total} >= target=${dungeon.mobs.targetCount}), stopping`);
       this.stopMobSpawning(channelKey);
       return;
     }
@@ -4284,7 +4326,7 @@ module.exports = class Dungeons {
       // PER-DUNGEON CAPACITY: Use dungeon's own capacity instead of global cap
       // Each dungeon has its own capacity based on rank and biome
       const mobCap = dungeon.mobs.mobCapacity || this.settings.mobMaxActiveCap || 600;
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — alive=${_aliveMobs}, mobCap=${mobCap}, total=${dungeon.mobs.total}, target=${dungeon.mobs.targetCount}`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — alive=${_aliveMobs}, mobCap=${mobCap}, total=${dungeon.mobs.total}, target=${dungeon.mobs.targetCount}`);
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4330,7 +4372,7 @@ module.exports = class Dungeons {
       const capacityRemaining = Math.max(0, mobCap - _aliveMobs);
       const actualSpawnCount = Math.min(capacityRemaining, plannedSpawn);
 
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — planned=${plannedSpawn}, capacity=${capacityRemaining}, actual=${actualSpawnCount}`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — planned=${plannedSpawn}, capacity=${capacityRemaining}, actual=${actualSpawnCount}`);
       if (actualSpawnCount <= 0) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
         if (!this._mobCapWarningShown[channelKey]) {
@@ -4521,7 +4563,7 @@ module.exports = class Dungeons {
         }
       }
 
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — generated ${newMobs.length} mobs, queueing for batch flush`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — generated ${newMobs.length} mobs, queueing for batch flush`);
 
       // PERFORMANCE: Queue mobs for batched spawning (250-500ms) to smooth DOM updates and reduce GC churn
       if (!this._mobSpawnQueue.has(channelKey)) {
@@ -4533,7 +4575,7 @@ module.exports = class Dungeons {
       if (!this._mobSpawnQueueNextAt.has(channelKey)) {
         const batchDelay = 250 + Math.random() * 250; // 250-500ms random delay
         this._mobSpawnQueueNextAt.set(channelKey, Date.now() + batchDelay);
-        console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — batch flush scheduled in ${Math.round(batchDelay)}ms`);
+        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — batch flush scheduled in ${Math.round(batchDelay)}ms`);
         this._ensureMobSpawnLoop();
       }
 
@@ -4541,7 +4583,7 @@ module.exports = class Dungeons {
       dungeon.spawnWaveCount++;
     } else {
       // Boss is dead, stop spawning
-      console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — BOSS DEAD (hp=${dungeon.boss?.hp}), stopping`);
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: spawnMobs(${channelKey}) — BOSS DEAD (hp=${dungeon.boss?.hp}), stopping`);
       this.stopMobSpawning(channelKey);
     }
   }
@@ -5214,6 +5256,7 @@ module.exports = class Dungeons {
     dungeon,
     userDamageToast = null,
     shadowByIdMap = null, // Optional pre-built Map for O(1) lookup (avoids O(N) .find per entry)
+    damageAlreadyApplied = false, // When true, HP already deducted (per-round processing); skip Phase 1 damage, only collect deaths
   }) {
     // NUMPY-STYLE: O(1) Map lookup instead of O(N) linear scan per damaged shadow.
     // Without this, 180 damaged shadows × 5000 assigned = 900,000 comparisons per tick.
@@ -5222,17 +5265,27 @@ module.exports = class Dungeons {
     );
 
     // Phase 1: Apply damage to all shadows (pure state update, no async)
+    // When damageAlreadyApplied=true (boss AOE per-round processing), skip HP deduction
+    // but still scan for newly dead shadows that need resurrection.
     const newlyDead = [];
     for (const [shadowId, damage] of shadowDamageMap.entries()) {
       const targetShadow = shadowById.get(shadowId);
       const shadowHPData = shadowHP.get(shadowId);
       if (!targetShadow || !shadowHPData) continue;
-      const oldHP = shadowHPData.hp;
-      shadowHPData.hp = Math.max(0, shadowHPData.hp - damage);
-      shadowHP.set(shadowId, shadowHPData);
 
-      if (oldHP > 0 && shadowHPData.hp <= 0) {
-        newlyDead.push({ shadowId, targetShadow, shadowHPData });
+      if (damageAlreadyApplied) {
+        // Damage already applied per-round — just check if dead
+        if (shadowHPData.hp <= 0) {
+          newlyDead.push({ shadowId, targetShadow, shadowHPData });
+        }
+      } else {
+        const oldHP = shadowHPData.hp;
+        shadowHPData.hp = Math.max(0, shadowHPData.hp - damage);
+        shadowHP.set(shadowId, shadowHPData);
+
+        if (oldHP > 0 && shadowHPData.hp <= 0) {
+          newlyDead.push({ shadowId, targetShadow, shadowHPData });
+        }
       }
     }
 
@@ -6762,16 +6815,16 @@ module.exports = class Dungeons {
   }
 
   // ==== COMBAT SYSTEM - Shadow Attacks (Dynamic & Chaotic) ====
-  async processShadowAttacks(channelKey, cyclesMultiplier = 1) {
+  async processShadowAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, shadowBudget = 250) {
     try {
-      // PERFORMANCE: Aggressively reduce processing when window is hidden
-      const isWindowVisible = this.isWindowVisible();
+      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
         // Window hidden - reduce cycles multiplier significantly (75% reduction)
         cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
       }
 
-      this._syncVitalsForVisibleCombat(isWindowVisible);
+      // NOTE: _syncVitalsForVisibleCombat hoisted to _combatLoopTick (once per tick)
 
       // Validate active dungeon status periodically
       // PERFORMANCE: Skip validation when window is hidden
@@ -7016,13 +7069,10 @@ module.exports = class Dungeons {
 
         // PERFORMANCE: Sampling — do not process thousands of shadows every tick.
         // We simulate a subset and scale damage up. This keeps gameplay responsive and prevents CPU pegging.
-        const maxSimulated =
-          Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) &&
-          this.settings.maxSimulatedShadowsPerTick > 0
-            ? this.settings.maxSimulatedShadowsPerTick
-            : 250;
+        // T2-1: shadowBudget is computed per-tick in _combatLoopTick as globalBudget / activeDungeonCount,
+        // so total CPU stays constant regardless of how many dungeons are running.
         const maxShadowsToProcess = isWindowVisible
-          ? Math.min(combatReadyShadows.length, maxSimulated)
+          ? Math.min(combatReadyShadows.length, shadowBudget)
           : Math.min(20, Math.floor(combatReadyShadows.length * 0.5)); // background: 50% sample (min 20)
 
         const stride =
@@ -7065,23 +7115,60 @@ module.exports = class Dungeons {
           ? 1.0
           : 0;
 
-        // HOISTED: Representative mob stats computed once per tick (not per shadow)
-        const mobSampleN = Math.min(12, aliveMobs.length);
-        let mobTarget = null;
-        if (hasMobs && mobSampleN > 0) {
-          const mobSample = aliveMobs.slice(0, mobSampleN);
-          const avgStat = (key, fallback) =>
-            mobSample.reduce((sum, m) => sum + (Number.isFinite(m?.[key]) ? m[key] : 0), 0) /
-              mobSampleN || fallback;
-          mobTarget = {
-            type: 'mob',
-            rank: dungeon.rank,
-            strength: Math.max(1, Math.floor(avgStat('strength', 10))),
-            agility: Math.max(0, Math.floor(avgStat('agility', 0))),
-            intelligence: Math.max(0, Math.floor(avgStat('intelligence', 0))),
-            vitality: Math.max(0, Math.floor(avgStat('vitality', 0))),
-            perception: Math.max(0, Math.floor(avgStat('perception', 0))),
-          };
+        // HOISTED: Rank-stratified mob targets — one representative per rank for accurate damage calc.
+        // Instead of averaging ALL mobs into one fake entity (inaccurate when rank-E and rank-S mix),
+        // group mobs by rank and build per-rank representative stats. Shadows then calculate damage
+        // against each rank group separately and distribute proportionally.
+        const mobRankGroups = new Map(); // rank -> { count, representative: { type, rank, strength, ... }, mobsInGroup: [] }
+        if (hasMobs) {
+          for (let m = 0; m < aliveMobs.length; m++) {
+            const mob = aliveMobs[m];
+            if (!mob || mob.hp <= 0) continue;
+            const rank = mob.rank || dungeon.rank || 'E';
+            const existing = mobRankGroups.get(rank);
+            if (existing) {
+              existing.count++;
+              // Running average: accumulate then divide at the end
+              existing._sumStr += (Number.isFinite(mob.strength) ? mob.strength : 0);
+              existing._sumAgi += (Number.isFinite(mob.agility) ? mob.agility : 0);
+              existing._sumInt += (Number.isFinite(mob.intelligence) ? mob.intelligence : 0);
+              existing._sumVit += (Number.isFinite(mob.vitality) ? mob.vitality : 0);
+              existing._sumPer += (Number.isFinite(mob.perception) ? mob.perception : 0);
+              existing.mobsInGroup.push(mob);
+            } else {
+              mobRankGroups.set(rank, {
+                count: 1,
+                _sumStr: Number.isFinite(mob.strength) ? mob.strength : 0,
+                _sumAgi: Number.isFinite(mob.agility) ? mob.agility : 0,
+                _sumInt: Number.isFinite(mob.intelligence) ? mob.intelligence : 0,
+                _sumVit: Number.isFinite(mob.vitality) ? mob.vitality : 0,
+                _sumPer: Number.isFinite(mob.perception) ? mob.perception : 0,
+                representative: null, // computed below
+                mobsInGroup: [mob],
+              });
+            }
+          }
+          // Finalize: compute average stats per rank group → representative mob target
+          let totalMobCount = 0;
+          for (const [rank, group] of mobRankGroups) {
+            const n = group.count;
+            totalMobCount += n;
+            group.representative = {
+              type: 'mob',
+              rank,
+              strength: Math.max(1, Math.floor(group._sumStr / n) || 10),
+              agility: Math.max(0, Math.floor(group._sumAgi / n)),
+              intelligence: Math.max(0, Math.floor(group._sumInt / n)),
+              vitality: Math.max(0, Math.floor(group._sumVit / n)),
+              perception: Math.max(0, Math.floor(group._sumPer / n)),
+            };
+            // Fraction of total mobs this rank group represents (for proportional attack split)
+            group.fraction = 0; // assigned after totalMobCount is known
+          }
+          // Second pass: assign fractions
+          for (const [, group] of mobRankGroups) {
+            group.fraction = totalMobCount > 0 ? group.count / totalMobCount : 0;
+          }
         }
 
         // AGGREGATED: Accumulate boss damage across ALL shadows, apply once after loop
@@ -7204,22 +7291,83 @@ module.exports = class Dungeons {
             totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
           }
 
-          if (hasMobs && mobAttacks > 0 && mobTarget) {
-            const perHitMob = this.shadowArmy?.calculateShadowDamage
-              ? this.shadowArmy.calculateShadowDamage(shadow, mobTarget)
-              : this.applyBehaviorModifier(
-                  finalCombatData.behavior || 'balanced',
-                  this.calculateShadowDamage(shadow, mobTarget, dungeon.rank)
-                );
-            totalMobDamage = Math.floor(mobAttacks * perHitMob * shadowVariance * scaleFactor * comboMultiplier);
-            totalMobDamage > 0 && analytics.shadowsAttackedMobs++;
+          if (hasMobs && mobAttacks > 0 && mobRankGroups.size > 0) {
+            // RANK-STRATIFIED MOB DAMAGE WITH REALISTIC KILL DISTRIBUTION:
+            // Each sampled shadow represents `scaleFactor` shadows. Spread scaled damage across
+            // multiple mobs so kill count is realistic (not overkill on one mob).
+            //
+            // PERFORMANCE: Uses indexed round-robin traversal per rank group instead of
+            // random picks. Each rank group maintains an `aliveIdx` pointer that advances
+            // through mobs sequentially. O(1) per target instead of O(5) random retries.
+            // Worst case: 250 shadows × 5 rank groups × ~25 mobs per shadow = 31,250 ops.
+            let mobDamageApplied = false;
+            for (const [, rankGroup] of mobRankGroups) {
+              const groupAttacks = Math.max(0, Math.round(mobAttacks * rankGroup.fraction));
+              if (groupAttacks <= 0) continue;
 
-            // Put mob damage onto a single random mob (cheap) so kills/extraction still function.
-            const targetMob = aliveMobs[Math.floor(Math.random() * aliveMobs.length)];
-            const mobId = this.getEnemyKey(targetMob, 'mob');
-            if (mobId) {
-              mobDamageMap.set(mobId, (mobDamageMap.get(mobId) || 0) + totalMobDamage);
+              const perHitMob = this.shadowArmy?.calculateShadowDamage
+                ? this.shadowArmy.calculateShadowDamage(shadow, rankGroup.representative)
+                : this.applyBehaviorModifier(
+                    finalCombatData.behavior || 'balanced',
+                    this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank)
+                  );
+              const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier);
+              if (unscaledDamage <= 0) continue;
+
+              const totalScaledDamage = Math.floor(unscaledDamage * scaleFactor);
+              let remainingDamage = totalScaledDamage;
+              const groupMobs = rankGroup.mobsInGroup;
+              const groupLen = groupMobs.length;
+
+              // Initialize round-robin pointer on first use (persists across shadows within this tick)
+              if (rankGroup._rrIdx == null) rankGroup._rrIdx = 0;
+
+              // Hard cap: don't iterate more than (scaleFactor + 5) mobs OR the group size, whichever is smaller
+              const maxIter = Math.min(groupLen, Math.ceil(scaleFactor) + 5);
+              let iter = 0;
+              let fullLoopWithoutHit = false;
+
+              while (remainingDamage > 0 && iter < maxIter && !fullLoopWithoutHit) {
+                iter++;
+                // Round-robin: advance to next mob in group
+                const idx = rankGroup._rrIdx % groupLen;
+                rankGroup._rrIdx = (rankGroup._rrIdx + 1) % groupLen;
+                const mob = groupMobs[idx];
+                if (!mob || mob.hp <= 0) {
+                  // Check if we've looped the full group without finding a live mob
+                  if (iter >= groupLen) fullLoopWithoutHit = true;
+                  continue;
+                }
+                const mobId = this.getEnemyKey(mob, 'mob');
+                if (!mobId) continue;
+
+                const accumulatedDmg = mobDamageMap.get(mobId) || 0;
+                const effectiveHP = mob.hp - accumulatedDmg;
+                if (effectiveHP <= 0) {
+                  if (iter >= groupLen) fullLoopWithoutHit = true;
+                  continue;
+                }
+
+                // Apply at most enough damage to kill this mob
+                const damageToApply = Math.min(remainingDamage, effectiveHP + 1);
+                mobDamageMap.set(mobId, accumulatedDmg + damageToApply);
+                remainingDamage -= damageToApply;
+                totalMobDamage += damageToApply;
+              }
+
+              // Dump any remaining (all mobs in group dead) on last mob for extraction tracking
+              if (remainingDamage > 0 && groupLen > 0) {
+                const fallback = groupMobs[rankGroup._rrIdx % groupLen];
+                const fallbackId = this.getEnemyKey(fallback, 'mob');
+                if (fallbackId) {
+                  mobDamageMap.set(fallbackId, (mobDamageMap.get(fallbackId) || 0) + remainingDamage);
+                  totalMobDamage += remainingDamage;
+                }
+              }
+
+              mobDamageApplied = true;
             }
+            if (mobDamageApplied) analytics.shadowsAttackedMobs++;
           }
 
           // AGGREGATE boss damage (apply once after loop instead of per-shadow)
@@ -7884,16 +8032,16 @@ module.exports = class Dungeons {
   }
 
   // ==== BOSS & MOB ATTACKS ====
-  async processBossAttacks(channelKey, cyclesMultiplier = 1) {
+  async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null) {
     try {
-      // PERFORMANCE: Aggressively reduce processing when window is hidden
-      const isWindowVisible = this.isWindowVisible();
+      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
         // Window hidden - reduce cycles multiplier significantly (75% reduction)
         cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
       }
 
-      this._syncVitalsForVisibleCombat(isWindowVisible);
+      // NOTE: _syncVitalsForVisibleCombat hoisted to _combatLoopTick (once per tick)
 
       const dungeon = this._getActiveDungeon(channelKey);
       if (!dungeon || !dungeon.boss || dungeon.boss.hp <= 0) {
@@ -7953,42 +8101,82 @@ module.exports = class Dungeons {
       const maxTargetsPerAttack = Dungeons.RANK_MULTIPLIERS[dungeon.boss?.rank] || 1;
 
       if (aliveShadows.length > 0) {
-        // NUMPY-STYLE VECTORIZED AOE: Instead of per-attack-per-target nested loop,
-        // batch the total hit count per shadow and compute damage once per unique target.
-        // Old: attacksInSpan × maxTargets iterations, each calling calculateBossDamageToShadow.
-        // New: attacksInSpan × maxTargets random picks (cheap), then 1 damage calc per unique shadow.
-        const actualTargets = Math.min(maxTargetsPerAttack, aliveShadows.length);
-        const totalHits = attacksInSpan * actualTargets;
+        // ACCURATE AOE: Per-attack-round processing with intermediate death tracking.
+        // Boss attacks N shadows per round (AOE). After each round, shadows that died
+        // are removed from the target pool so they don't absorb subsequent attacks.
+        // This prevents overkill: a shadow that dies in round 1 can't be hit in round 2.
+        //
+        // Performance: O(attacksInSpan × targets) random picks + O(unique shadows hit) damage calcs.
+        // For rank-S boss: ~5 attacks × 12 targets = 60 picks + ~30 unique calcs. Very fast.
 
-        // Accumulate hit counts per shadow (random target selection — O(totalHits), no damage calc yet)
-        const hitCounts = new Map();
-        for (let h = 0; h < totalHits; h++) {
-          const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
-          const hpData = shadowHP.get(target.id);
-          if (!hpData || hpData.hp <= 0) continue;
-          hitCounts.set(target.id, (hitCounts.get(target.id) || 0) + 1);
-        }
+        // Mutable alive set — shadows are removed when killed during this tick
+        const aliveSet = new Set(aliveShadows.map(s => s.id));
+        // Cache: one damage calc per unique shadow (reuse across attack rounds)
+        const damageCache = new Map(); // shadowId -> baseDamage
 
-        // One damage calculation per unique shadow hit (not per individual hit).
-        // Multiply base damage × hitCount × variance to get aggregate.
-        // This is the numpy concept: compute scalar once, broadcast across N hits.
-        for (const [shadowId, hits] of hitCounts) {
-          const target = shadowByIdMap.get(shadowId);
-          if (!target) continue;
+        for (let atk = 0; atk < attacksInSpan; atk++) {
+          // How many targets this attack round can hit (capped by living shadows)
+          const actualTargets = Math.min(maxTargetsPerAttack, aliveSet.size);
+          if (actualTargets <= 0) break; // All shadows dead
 
-          const shadowStats = this.buildShadowStats(target);
-          const shadowRank = target.rank || 'E';
+          // Build alive array for this round (only living shadows)
+          // For small target counts, pick from the full array and check aliveSet
+          const roundHits = new Map(); // shadowId -> hitCount this round
 
-          // Single damage calc for this shadow, then multiply by hit count with per-hit variance
-          const baseDamage = this.calculateBossDamageToShadow(
-            bossStats, shadowStats, dungeon.boss.rank, shadowRank
-          );
-          // Aggregate: hits × baseDamage, with √hits variance smoothing (central limit theorem)
-          // Individual hits vary ±25%, but aggregated N hits converge toward mean.
-          const aggregateVariance = this._varianceWide();
-          const totalDamage = Math.floor(baseDamage * hits * aggregateVariance);
+          // Pick targets for this single attack round
+          let picks = 0;
+          let attempts = 0;
+          const maxAttempts = actualTargets * 3; // prevent infinite loop on sparse alive set
+          while (picks < actualTargets && attempts < maxAttempts) {
+            attempts++;
+            const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
+            if (!aliveSet.has(target.id)) continue; // Skip dead shadows
+            const hpData = shadowHP.get(target.id);
+            if (!hpData || hpData.hp <= 0) {
+              aliveSet.delete(target.id);
+              continue;
+            }
+            roundHits.set(target.id, (roundHits.get(target.id) || 0) + 1);
+            picks++;
+          }
 
-          shadowDamageMap.set(shadowId, (shadowDamageMap.get(shadowId) || 0) + totalDamage);
+          // Apply damage for this attack round immediately
+          const roundVariance = this._varianceWide();
+          for (const [shadowId, hits] of roundHits) {
+            const target = shadowByIdMap.get(shadowId);
+            if (!target) continue;
+
+            // Cache damage calc (shadow stats don't change within a tick)
+            let baseDamage = damageCache.get(shadowId);
+            if (baseDamage == null) {
+              const shadowStats = this.buildShadowStats(target);
+              const shadowRank = target.rank || 'E';
+              baseDamage = this.calculateBossDamageToShadow(
+                bossStats, shadowStats, dungeon.boss.rank, shadowRank
+              );
+              damageCache.set(shadowId, baseDamage);
+            }
+
+            const roundDamage = Math.floor(baseDamage * hits * roundVariance);
+            if (roundDamage <= 0) continue;
+
+            // Apply damage immediately to track intermediate deaths
+            const hpData = shadowHP.get(shadowId);
+            if (!hpData || hpData.hp <= 0) {
+              aliveSet.delete(shadowId);
+              continue;
+            }
+            hpData.hp = Math.max(0, hpData.hp - roundDamage);
+            shadowHP.set(shadowId, hpData);
+
+            // Accumulate for death processing and resurrection
+            shadowDamageMap.set(shadowId, (shadowDamageMap.get(shadowId) || 0) + roundDamage);
+
+            // Shadow died this round — remove from future target pool
+            if (hpData.hp <= 0) {
+              aliveSet.delete(shadowId);
+            }
+          }
         }
       } else if (dungeon.userParticipating) {
         // ALL shadows dead — batch user damage across all attacks in one go
@@ -8016,6 +8204,7 @@ module.exports = class Dungeons {
         dungeon,
         userDamageToast: (damage) => `Boss attacked you for ${damage} damage!`,
         shadowByIdMap,
+        damageAlreadyApplied: true, // Boss AOE applies damage per-round for accurate death tracking
       });
 
       // Atomic update: create new object reference to prevent race conditions
@@ -8029,21 +8218,16 @@ module.exports = class Dungeons {
     }
   }
 
-  async processMobAttacks(channelKey, cyclesMultiplier = 1) {
+  async processMobAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, mobBudget = 500) {
     try {
-      // PERFORMANCE: Aggressively reduce processing when window is hidden
-      const isWindowVisible = this.isWindowVisible();
+      // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
+      if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
       if (!isWindowVisible) {
         // Window hidden - reduce cycles multiplier significantly (75% reduction)
         cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
       }
 
-      // CRITICAL: Sync HP/Mana from Stats plugin FIRST (get freshest values)
-      // This ensures we're using the latest HP/Mana including regeneration
-      // PERFORMANCE: Skip sync when window is hidden (less frequent updates)
-      if (isWindowVisible) {
-        this.syncHPAndManaFromStats();
-      }
+      // NOTE: syncHPAndManaFromStats hoisted to _combatLoopTick (once per tick)
 
       const dungeon = this._getActiveDungeon(channelKey);
       if (!dungeon || !dungeon.mobs?.activeMobs?.length) {
@@ -8087,7 +8271,8 @@ module.exports = class Dungeons {
       // Old worst case: 10,000 mobs × 15 attacks/mob = 150,000 inner loop iterations.
       // New: max 500 sampled mobs × 1 damage calc each = 500 iterations + O(1) scale factor.
       const allActiveMobs = dungeon.mobs.activeMobs;
-      const maxMobsToSimulate = isWindowVisible ? 500 : 100;
+      // T2-1: mobBudget is computed per-tick in _combatLoopTick as globalBudget / activeDungeonCount
+      const maxMobsToSimulate = isWindowVisible ? mobBudget : Math.min(100, Math.floor(mobBudget * 0.2));
 
       // Phase 1: Count alive mobs and compute total attacks (lightweight scan — no damage calc)
       let totalAliveMobs = 0;
@@ -8172,11 +8357,27 @@ module.exports = class Dungeons {
             }
 
             if (!targetId) {
-              const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
-              if (!target) continue;
-              const hpData = shadowHP.get(target.id);
-              if (!hpData || hpData.hp <= 0) continue;
-              targetId = target.id;
+              // ACCURATE TARGETING: Skip shadows whose accumulated damage already exceeds HP.
+              // Try up to 3 picks to find a shadow that's still "alive" after queued damage.
+              for (let pick = 0; pick < 3; pick++) {
+                const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
+                if (!target) continue;
+                const hpData = shadowHP.get(target.id);
+                if (!hpData || hpData.hp <= 0) continue;
+                const accumulatedDmg = shadowDamageMap.get(target.id) || 0;
+                if (hpData.hp - accumulatedDmg > 0) {
+                  targetId = target.id;
+                  break;
+                }
+              }
+              // Fallback: if all tried shadows are "dead", pick any living one (avoid total miss)
+              if (!targetId) {
+                const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
+                if (target) {
+                  const hpData = shadowHP.get(target.id);
+                  if (hpData && hpData.hp > 0) targetId = target.id;
+                }
+              }
             }
 
             if (targetId) {
@@ -8184,7 +8385,11 @@ module.exports = class Dungeons {
             }
           }
 
-          // VECTORIZED DAMAGE: One calculateMobDamageToShadow per unique shadow hit in this rank group
+          // VECTORIZED DAMAGE WITH OVERFLOW REDISTRIBUTION:
+          // Calculate damage per unique shadow, but cap at effective HP remaining.
+          // Excess damage (overkill) is redistributed as additional hits to other shadows.
+          // This ensures scaled mob hits produce realistic shadow death counts.
+          let overflowHits = 0;
           for (const [shadowId, hits] of hitsPerTarget) {
             const target = shadowByIdMap.get(shadowId);
             if (!target) continue;
@@ -8195,10 +8400,55 @@ module.exports = class Dungeons {
             const baseDamage = this.calculateMobDamageToShadow(
               mobStats, shadowStats, rank, target.rank || 'E'
             );
-            // Aggregate: N hits × baseDamage with smoothed variance (central limit)
             const aggregateVariance = this._varianceWide();
-            const totalDamage = Math.floor(baseDamage * hits * aggregateVariance);
-            shadowDamageMap.set(shadowId, (shadowDamageMap.get(shadowId) || 0) + totalDamage);
+            const rawDamage = Math.floor(baseDamage * hits * aggregateVariance);
+
+            // Cap damage at shadow's effective HP to prevent overkill waste
+            const accumulatedDmg = shadowDamageMap.get(shadowId) || 0;
+            const effectiveHP = Math.max(0, hpData.hp - accumulatedDmg);
+            if (effectiveHP <= 0) {
+              // Shadow already "dead" from prior rank groups — all hits overflow
+              overflowHits += hits;
+              continue;
+            }
+
+            const cappedDamage = Math.min(rawDamage, effectiveHP + 1); // +1 to ensure kill
+            shadowDamageMap.set(shadowId, accumulatedDmg + cappedDamage);
+
+            // Convert excess damage back into overflow hits for redistribution
+            if (rawDamage > cappedDamage && baseDamage > 0) {
+              const excessDamage = rawDamage - cappedDamage;
+              overflowHits += Math.floor(excessDamage / baseDamage);
+            }
+          }
+
+          // REDISTRIBUTE overflow hits to other alive shadows (second pass)
+          if (overflowHits > 0 && aliveShadows.length > 0) {
+            const redistributionCap = Math.min(overflowHits, aliveShadows.length * 2); // limit iterations
+            for (let r = 0; r < redistributionCap; r++) {
+              // Find a shadow that's still alive after accumulated damage
+              let found = false;
+              for (let pick = 0; pick < 3; pick++) {
+                const target = aliveShadows[Math.floor(Math.random() * aliveShadows.length)];
+                if (!target) continue;
+                const hpData = shadowHP.get(target.id);
+                if (!hpData || hpData.hp <= 0) continue;
+                const accDmg = shadowDamageMap.get(target.id) || 0;
+                if (hpData.hp - accDmg <= 0) continue;
+
+                // Apply one hit worth of damage
+                const shadowStats = this.buildShadowStats(target);
+                const baseDmg = this.calculateMobDamageToShadow(
+                  mobStats, shadowStats, rank, target.rank || 'E'
+                );
+                const effectiveHP = hpData.hp - accDmg;
+                const dmg = Math.min(Math.floor(baseDmg * this._varianceWide()), effectiveHP + 1);
+                shadowDamageMap.set(target.id, accDmg + dmg);
+                found = true;
+                break;
+              }
+              if (!found) break; // All shadows effectively dead
+            }
           }
         }
 
@@ -8520,15 +8770,6 @@ module.exports = class Dungeons {
   // ==== EXTRACTION SYSTEM HELPERS ====
 
   // ==== MOB EXTRACTION SYSTEM - QUEUE & VERIFICATION ====
-
-  /**
-   * Setup event listener for Shadow Army extractions
-   * Listens for custom 'shadowExtracted' events from Shadow Army plugin
-   */
-  setupExtractionEventListener() {
-    // DEPRECATED: Consolidated into _shadowExtractedListener in loadPluginReferences()
-    return;
-  }
 
   /**
    * Process deferred extractions after dungeon completion
@@ -9733,17 +9974,6 @@ module.exports = class Dungeons {
     }
 
     return null;
-  }
-
-  getChannelIndicatorMount(channelElement) {
-    if (!channelElement) return null;
-
-    return (
-      channelElement.querySelector('[class*="children"]') ||
-      channelElement.querySelector('[class*="link"]') ||
-      channelElement.querySelector('[class*="name"]')?.parentElement ||
-      channelElement
-    );
   }
 
   showDungeonIndicator(channelKey, channelInfo) {
@@ -11950,110 +12180,6 @@ module.exports = class Dungeons {
       }
       return false;
     }
-  }
-
-  /**
-   * Detect active theme and extract CSS variables
-   * Operations:
-   * 1. Check for theme meta tags
-   * 2. Extract CSS variables from :root
-   * 3. Return theme variables object
-   * @returns {Object} - Theme variables object
-   */
-  detectThemeVariables() {
-    try {
-      const root = document.documentElement;
-      const computedStyle = window.getComputedStyle(root);
-      const themeVars = {};
-
-      // Common Discord/BetterDiscord CSS variables
-      const commonVars = [
-        '--background-primary',
-        '--background-secondary',
-        '--background-tertiary',
-        '--background-accent',
-        '--text-normal',
-        '--text-muted',
-        '--text-link',
-        '--interactive-normal',
-        '--interactive-hover',
-        '--interactive-active',
-        '--brand-experiment',
-        '--header-primary',
-        '--header-secondary',
-      ];
-
-      // Extract variables
-      commonVars.forEach((varName) => {
-        const value = computedStyle.getPropertyValue(varName).trim();
-        if (value) {
-          themeVars[varName] = value;
-        }
-      });
-
-      // Check for theme name in meta or class
-      const themeMeta = document.querySelector('meta[name="theme"]');
-      const themeName = themeMeta?.content || root.getAttribute('data-theme') || 'default';
-
-      return {
-        name: themeName,
-        variables: themeVars,
-        hasVariables: Object.keys(themeVars).length > 0,
-      };
-    } catch (error) {
-      if (this.errorLog) {
-        this.errorLog('CSS', 'Failed to detect theme variables', error);
-      }
-      return { name: 'default', variables: {}, hasVariables: false };
-    }
-  }
-
-  /**
-   * Merge CSS content with theme variables
-   * Replaces CSS variable placeholders with actual theme values
-   * Operations:
-   * 1. Detect theme variables
-   * 2. Replace placeholders in CSS
-   * 3. Add fallback values
-   * @param {string} cssContent - CSS content with variable placeholders
-   * @returns {string} - CSS with theme variables merged
-   */
-  mergeCSSWithThemeVars(cssContent) {
-    const theme = this.detectThemeVariables();
-
-    // Guard clause: Return original if no theme variables
-    if (!theme.hasVariables) {
-      return cssContent;
-    }
-
-    // Create variable map with fallbacks
-    const varMap = {
-      '--bg-primary': theme.variables['--background-primary'] || 'rgba(32, 34, 37, 1)',
-      '--bg-secondary': theme.variables['--background-secondary'] || 'rgba(24, 25, 28, 1)',
-      '--bg-tertiary': theme.variables['--background-tertiary'] || 'rgba(18, 19, 22, 1)',
-      '--text-normal': theme.variables['--text-normal'] || 'rgba(220, 221, 222, 1)',
-      '--text-muted': theme.variables['--text-muted'] || 'rgba(142, 146, 151, 1)',
-      '--brand-color': theme.variables['--brand-experiment'] || 'rgba(88, 101, 242, 1)',
-      '--interactive-normal': theme.variables['--interactive-normal'] || 'rgba(185, 187, 190, 1)',
-      '--interactive-hover': theme.variables['--interactive-hover'] || 'rgba(220, 221, 222, 1)',
-    };
-
-    // Replace placeholders in CSS
-    let mergedCSS = cssContent;
-    Object.entries(varMap).forEach(([placeholder, value]) => {
-      const regex = new RegExp(`\\$\\{${placeholder}\\}`, 'g');
-      mergedCSS = mergedCSS.replace(regex, value);
-    });
-
-    // Inject theme variables as CSS custom properties if not already present
-    if (!mergedCSS.includes(':root') && theme.hasVariables) {
-      const themeVarsCSS = `:root {\n  ${Object.entries(varMap)
-        .map(([key, value]) => `${key}: ${value};`)
-        .join('\n  ')}\n}\n\n`;
-      mergedCSS = themeVarsCSS + mergedCSS;
-    }
-
-    return mergedCSS;
   }
 
   /**
