@@ -946,7 +946,7 @@ module.exports = class Dungeons {
       mobSpawnInterval: 10000, // Spawn new mobs every 10 seconds (slower, less lag)
       mobSpawnCount: 750, // Base spawn count (will have variable scaling based on mob count)
       mobMaxActiveCap: 600, // Hard limit on simultaneously active mobs per dungeon
-      mobWaveBaseCount: 70, // Per-wave spawn target before variance/cap checks
+      mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
       mobTierNormalShare: 0.7, // Spawn mix: normal mobs
       mobTierEliteShare: 0.25, // Spawn mix: elite mobs
@@ -1460,17 +1460,19 @@ module.exports = class Dungeons {
 
   _computeNextMobSpawnDelayMs(dungeonState) {
     // Phased spawn rate: rapid fill → moderate → steady
+    // OPTIMIZATION: Larger batches (200/wave) with longer intervals = fewer spawn events,
+    // fewer queue flushes, fewer HP bar triggers. Same total mob throughput.
     const mobCount = dungeonState?.mobs?.activeMobs?.length || 0;
     const targetCount = dungeonState?.mobs?.targetCount || 100;
     const fillRatio = targetCount > 0 ? mobCount / targetCount : 0;
 
     let baseInterval;
     if (fillRatio < (this._spawnPhases?.rapid ?? 0.3)) {
-      baseInterval = 800;                                          // Rapid: 800ms
+      baseInterval = 2500;                                         // Rapid: 2.5s (was 800ms — 3x fewer events)
     } else if (fillRatio < (this._spawnPhases?.moderate ?? 0.7)) {
-      baseInterval = 1500 + (fillRatio - 0.3) * 2500;             // 1500→2500ms
+      baseInterval = 4000 + (fillRatio - 0.3) * 4000;             // 4s→5.6s (moderate fill)
     } else {
-      baseInterval = 3000 + (fillRatio - 0.7) * 3333;             // 3000→4000ms
+      baseInterval = 6000 + (fillRatio - 0.7) * 6667;             // 6s→8s (steady/full)
     }
 
     const variance = baseInterval * 0.15;
