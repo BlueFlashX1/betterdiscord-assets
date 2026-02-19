@@ -4167,6 +4167,9 @@ module.exports = class Dungeons {
 
     // Clear the queue
     this._mobSpawnQueue.delete(channelKey);
+
+    // Update HP bar so mob count reflects in real-time
+    this.queueHPBarUpdate(channelKey);
   }
 
   spawnMobs(channelKey) {
@@ -9931,7 +9934,7 @@ module.exports = class Dungeons {
           ? '<span style="color: #10b981; font-weight: 700;">FIGHTING</span>'
           : '<span style="color: #f59e0b; font-weight: 700;">DEPLOYED</span>';
 
-      // DEPLOY SHADOWS button (only show if shadows NOT deployed)
+      // DEPLOY SHADOWS button / DEPLOYED indicator
       const deployButtonHTML = !dungeon.shadowsDeployed
         ? `
       <button class="dungeon-deploy-btn" data-channel-key="${channelKey}" style="
@@ -9950,7 +9953,21 @@ module.exports = class Dungeons {
         DEPLOY SHADOWS
       </button>
     `
-        : '';
+        : `
+      <span style="
+        padding: 4px 12px;
+        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        color: white;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 700;
+        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.4);
+        text-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
+        display: inline-block;
+      ">
+        DEPLOYED
+      </span>
+    `;
 
       // JOIN button (show if user hasn't joined yet — can join before or after deploy)
       const joinButtonHTML = !dungeon.userParticipating
