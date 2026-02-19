@@ -3644,13 +3644,13 @@ module.exports = class Dungeons {
     const guildId = channelInfo?.guildId;
     const channelId = channelInfo?.channelId;
 
-    // Gate 1.5: Skip muted channels/guilds — user has "Mute until I turn it back on" or similar
-    if (guildId && this._UserGuildSettingsStore) {
+    // Gate 1.5: Skip muted channels — user has "Mute until I turn it back on" or similar
+    // NOTE: Guild-level mute is NOT checked here — if the guild is muted but individual
+    // channels are unmuted, dungeons should still spawn in those unmuted channels.
+    // pickSpawnChannel() handles per-channel mute filtering for the candidate pool.
+    if (guildId && channelId && this._UserGuildSettingsStore) {
       try {
-        // Check guild-level mute (entire server muted)
-        if (this._UserGuildSettingsStore.isMuted?.(guildId)) return;
-        // Check channel-level mute
-        if (channelId && this._UserGuildSettingsStore.isChannelMuted?.(guildId, channelId)) return;
+        if (this._UserGuildSettingsStore.isChannelMuted?.(guildId, channelId)) return;
       } catch (_) { /* store unavailable, allow spawn */ }
     }
 
