@@ -1723,6 +1723,26 @@ module.exports = class Dungeons {
     if (dungeonPromises.length > 0) {
       await Promise.all(dungeonPromises);
     }
+
+    // ALWAYS-ON: Periodic combat status log (every 30s) — mob kills, shadow deaths, resurrections
+    if (this._combatTickCount % 30 === 0) {
+      for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+        if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) continue;
+        const deadSet = this.deadShadows.get(channelKey);
+        const permanentDeaths = deadSet?.size || 0;
+        const totalRevives = dungeon.shadowRevives || 0;
+        const totalDeaths = permanentDeaths + totalRevives; // Total deaths ever = still dead + successfully revived
+        const assigned = this.shadowAllocations.get(channelKey)?.length || 0;
+        const alive = assigned - permanentDeaths;
+        console.log(
+          `[Dungeons] 📊 COMBAT STATUS: ${dungeon.name} (${dungeon.rank}) | ` +
+          `Mobs killed: ${dungeon.mobs?.killed || 0}/${dungeon.mobs?.targetCount || '?'} | ` +
+          `Boss HP: ${dungeon.boss?.hp?.toLocaleString() || 0}/${dungeon.boss?.maxHp?.toLocaleString() || '?'} | ` +
+          `Shadows: ${alive}/${assigned} alive | ` +
+          `Deaths: ${totalDeaths} total (${permanentDeaths} still dead, ${totalRevives} resurrected)`
+        );
+      }
+    }
   }
 
   /**
