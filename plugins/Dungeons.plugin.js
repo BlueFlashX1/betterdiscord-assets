@@ -1573,14 +1573,12 @@ module.exports = class Dungeons {
   async _processCorpsePile(channelKey, dungeon, pileSnapshot = null) {
     const pile = pileSnapshot || dungeon?.corpsePile;
     if (!pile || pile.length === 0) {
-      // ALWAYS-ON: Empty pile means combat didn't produce corpses — indicates a problem
       console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon?.shadowsDeployed}, mobs killed: ${dungeon?.mobs?.killed || 0})`);
       return { extracted: 0, attempted: 0 };
     }
 
     const shadowArmy = this.shadowArmy || this.validatePluginReference('ShadowArmy', 'storageManager');
     if (!shadowArmy?.attemptDungeonExtraction) {
-      // ALWAYS-ON: Missing ShadowArmy means zero extractions — user needs to know
       console.warn(`[Dungeons] ⚠️ ARISE SKIPPED: ShadowArmy plugin not available — ${pile.length} corpses lost (${channelKey})`);
       return { extracted: 0, attempted: 0 };
     }
@@ -1589,12 +1587,10 @@ module.exports = class Dungeons {
     const userLevel = this.soloLevelingStats?.settings?.level || 1;
     const userStats = this.soloLevelingStats?.getTotalEffectiveStats?.() || {};
     const beastFamilies = dungeon?.beastFamilies || [];
-
     const total = pile.length;
     let extracted = 0;
     let attempted = 0;
 
-    // ALWAYS-ON: Extraction is a critical event — never gate behind debug
     console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
     // Use ShadowArmy's streaming bulk extractor when available.
@@ -1645,7 +1641,6 @@ module.exports = class Dungeons {
     // Clear the dungeon's corpse pile (already snapshotted, don't process again)
     if (dungeon) dungeon.corpsePile = [];
 
-    // ALWAYS-ON: Extraction result
     console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
 
     // Notify ShadowArmy of batch completion (cache invalidation, UI updates)
@@ -2722,7 +2717,7 @@ module.exports = class Dungeons {
         count = await this.shadowArmy.storageManager.getTotalCount();
       } else {
         // Fallback: fetch all and count (legacy storageManager without getTotalCount)
-        const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, 10000);
+        const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
         count = Array.isArray(shadows) ? shadows.length : 0;
       }
 
@@ -3920,6 +3915,12 @@ module.exports = class Dungeons {
       biome: dungeonBiome, // Store complete biome data
       beastFamilies: dungeonBiome.beastFamilies, // Allowed beast families for this biome
       channelName: channelInfo.channelName || `Channel ${channelInfo.channelId}`, // Store channel name
+      guildName: (() => {
+        try {
+          const gs = BdApi.Webpack?.getStore?.('GuildStore');
+          return gs?.getGuild?.(channelInfo.guildId)?.name || `Guild ${channelInfo.guildId}`;
+        } catch (_) { return `Guild ${channelInfo.guildId}`; }
+      })(),
       mobs: {
         total: 0,
         remaining: 0,
@@ -4039,12 +4040,14 @@ module.exports = class Dungeons {
 
     this.saveSettings();
     this.showDungeonIndicator(channelKey, channelInfo);
-    // Simple spawn notification
     this.showToast(`${dungeonName} [${rank}] Spawned!`, 'info');
 
-    // NATURAL SPAWNING ONLY: Mobs spawn gradually over time with variance
-    // No initial burst - creates organic, non-overwhelming experience
-    // Spawn system will begin immediately and continue with 4-8 second intervals
+    // ALWAYS-ON: Dungeon spawn log with full context (guild, channel, rank, biome)
+    console.log(
+      `[Dungeons] 🏰 SPAWN: "${dungeonName}" [${rank}] in #${dungeon.channelName} (${dungeon.guildName}) — ` +
+      `Biome: ${dungeonType} | Boss: ${dungeon.boss?.name || '?'} [${dungeon.boss?.rank}] | ` +
+      `Mobs: ${dungeon.mobs?.targetCount?.toLocaleString()} | Key: ${channelKey}`
+    );
 
     // Sync difficulty scale for mob/boss stat scaling
     this.syncDungeonDifficultyScale(dungeon, channelKey);
@@ -4053,7 +4056,6 @@ module.exports = class Dungeons {
     // Prevents idle mob accumulation (7k+ mobs with nothing killing them = UI thread starvation).
     // Mob spawning + combat all start together when deployShadows() is called.
     this.startMobKillNotifications(channelKey);
-    this.settings.debug && console.log(`[Dungeons] createDungeon — dungeon ready, awaiting manual deploy for ${channelKey}`);
 
     // Automatic completion is handled by the global cleanup loop (`cleanupExpiredDungeons`)
     // This avoids per-dungeon long-lived timers that can accumulate.
@@ -4659,6 +4661,7 @@ module.exports = class Dungeons {
     // JOIN is lightweight — just mark participation. No shadow allocation, no combat start.
     // All combat systems are handled by deployShadows().
     dungeon.userParticipating = true;
+    dungeon.userJoined = true; // Permanent flag — never flipped back. Used for ARISE eligibility.
     this.settings.userActiveDungeon = channelKey;
 
     // Force cache bust so HP bar re-renders with updated button states
@@ -4697,23 +4700,10 @@ module.exports = class Dungeons {
     // Validate active dungeon status first (clear invalid references)
     this.validateActiveDungeonStatus();
 
-    // ENFORCE ONE DUNGEON AT A TIME
-    if (this.settings.userActiveDungeon && this.settings.userActiveDungeon !== channelKey) {
-      const prevDungeon = this.activeDungeons.get(this.settings.userActiveDungeon);
-      const shouldClearPrev = !prevDungeon || prevDungeon.completed || prevDungeon.failed;
-      if (shouldClearPrev) {
-        this.settings.userActiveDungeon = null;
-        this.saveSettings();
-      }
-      const isPrevActive = prevDungeon && !prevDungeon.completed && !prevDungeon.failed;
-      if (isPrevActive) {
-        this.showToast(`Already in ${prevDungeon.name}! Complete it first.`, 'error');
-        return;
-      }
-      if (prevDungeon) {
-        prevDungeon.userParticipating = false;
-      }
-    }
+    // DEPLOY ≠ JOIN: Deploying shadows is autonomous — your army fights without you.
+    // You can deploy shadows to MULTIPLE dungeons simultaneously.
+    // Joining (selectDungeon) is the one-at-a-time restriction.
+    // preSplitShadowArmy() handles distributing your finite shadow army across all deployed dungeons.
 
     // SYNC HP/MANA FROM STATS PLUGIN
     const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
@@ -4736,7 +4726,12 @@ module.exports = class Dungeons {
     await this.preSplitShadowArmy(true);
 
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
-    this.debugLog(`DEPLOY: Shadows deployed to ${dungeon.name} — ${assignedShadows.length} shadows allocated`);
+
+    // ALWAYS-ON: Deploy log with full context
+    console.log(
+      `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
+      `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | Key: ${channelKey}`
+    );
 
     // Initialize shadow HP if needed
     if (
@@ -6588,17 +6583,33 @@ module.exports = class Dungeons {
         selected.push(...pickFromBucket(higherBucket, higherTarget));
       }
 
-      // === Spillover: fill from lower-rank shadows (one rank below, then two below, etc.) ===
-      // Only fill if we got fewer shadows than expected for combat viability
-      const minViable = Math.max(3, Math.floor(sameRankTarget * 0.5));
+      // === Spillover: fill from other rank buckets if under minimum viable count ===
+      // minViable = at least 3, or a fair share of the combat pool across active dungeons
+      const fairShare = Math.floor(combatPool.length / weightedDungeons.length);
+      const minViable = Math.max(3, Math.floor(Math.max(sameRankTarget, fairShare) * 0.5));
       if (selected.length < minViable) {
-        // Pull from ranks below the dungeon rank (weakest shadows for fodder)
+        // Pull DOWN: lower-rank shadows first (weakest shadows as fodder)
         for (let ri = Math.max(0, dungeonRI - 1); ri >= 0 && selected.length < minViable; ri--) {
           const lowerBucket = rankBuckets.get(ri) || [];
           const lowerAvailable = lowerBucket.filter(s => !assignedIds.has(getShadowId(s)));
           const spillCount = Math.min(lowerAvailable.length, minViable - selected.length);
           if (spillCount > 0) {
             selected.push(...pickFromBucket(lowerBucket, spillCount));
+          }
+        }
+      }
+      if (selected.length < minViable) {
+        // Pull UP: higher-rank shadows (stronger than needed, but better than 0)
+        // Start from one above dungeon rank (higherRI was already partially tapped at 25%)
+        const maxRI = Math.max(...Array.from(rankBuckets.keys()));
+        for (let ri = dungeonRI + 1; ri <= maxRI && selected.length < minViable; ri++) {
+          const upperBucket = rankBuckets.get(ri) || [];
+          const spillCount = Math.min(
+            upperBucket.filter(s => !assignedIds.has(getShadowId(s))).length,
+            minViable - selected.length
+          );
+          if (spillCount > 0) {
+            selected.push(...pickFromBucket(upperBucket, spillCount));
           }
         }
       }
@@ -7592,7 +7603,7 @@ module.exports = class Dungeons {
 
     try {
       // Get shadows from IndexedDB only (no fallback to old storage)
-      const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, 10000);
+      const shadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
       if (!shadows || !Array.isArray(shadows)) {
         this.debugLog('GET_ALL_SHADOWS', 'No shadows returned from storageManager');
         return [];
@@ -9029,12 +9040,14 @@ module.exports = class Dungeons {
     // the plugin instance can be torn down.
     let extractionResults = { extracted: 0, attempted: 0 };
     const pileSize = corpsePileSnapshot.length;
+    // ARISE only if user is still actively participating (survived to the end).
+    // If defeated mid-dungeon, corpse pile is cleaned up — you lost, no extraction.
     if (
       dungeon.userParticipating &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
       pileSize > 0
     ) {
-      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: ${dungeon.name} (${reason}) — corpse pile has ${pileSize} bodies, starting extraction...`);
+      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
       try {
         extractionResults = await this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot);
         if (extractionResults.attempted > 0) {
@@ -9049,7 +9062,7 @@ module.exports = class Dungeons {
     } else if (dungeon.userParticipating && pileSize === 0 && dungeon.shadowsDeployed) {
       console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon.shadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
     } else if (!dungeon.userParticipating) {
-      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user participating: ${dungeon.userParticipating}, reason: ${reason}, pile: ${pileSize} bodies (cleared without extracting)`);
+      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
     }
 
     // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
@@ -9171,6 +9184,15 @@ module.exports = class Dungeons {
     // Attach extraction results to summary (extraction already completed above)
     summaryStats.shadowsExtracted = extractionResults.extracted;
     summaryStats.extractionAttempts = extractionResults.attempted;
+
+    // ALWAYS-ON: Dungeon completion log with full context
+    const duration = dungeon.startTime ? Math.round((Date.now() - dungeon.startTime) / 1000) : 0;
+    const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+    console.log(
+      `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
+      `${durationStr} | Mobs: ${summaryStats.totalMobsKilled} | Deaths: ${summaryStats.totalShadowDeaths || 0} | ` +
+      `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey}`
+    );
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
     if (reason !== 'timeout') {
@@ -9815,7 +9837,7 @@ module.exports = class Dungeons {
     if (this.shadowArmy.applyNaturalGrowth && combatHours > 0 && beforeStates.size > 0) {
       try {
         const freshShadows = this.shadowArmy.storageManager
-          ? await this.shadowArmy.storageManager.getShadows({}, 0, 10000)
+          ? await this.shadowArmy.storageManager.getShadows({}, 0, Infinity)
           : [];
         const freshMap = new Map();
         for (const raw of freshShadows) {
@@ -9843,7 +9865,7 @@ module.exports = class Dungeons {
     // BATCH: Check level/rank changes — ONE re-fetch for all shadows
     if (beforeStates.size > 0 && this.shadowArmy.storageManager) {
       try {
-        const updatedShadows = await this.shadowArmy.storageManager.getShadows({}, 0, 10000);
+        const updatedShadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
         for (const raw of updatedShadows) {
           const s = this.shadowArmy.getShadowData ? this.shadowArmy.getShadowData(raw) : raw;
           const sid = s.id || s.i;
@@ -11505,6 +11527,13 @@ module.exports = class Dungeons {
    */
   updateAllIndicators() {
     this.activeDungeons.forEach((dungeon, channelKey) => {
+      if (dungeon.completed || dungeon.failed) return;
+      const cached = this.dungeonIndicators.get(channelKey);
+
+      // Fast path: cached element still connected and has the attribute → skip DOM work
+      if (cached?.isConnected && cached.hasAttribute('data-dungeon-active')) return;
+
+      // Element disconnected or attribute stripped by React re-render → re-apply
       const channelInfo = { channelId: dungeon.channelId, guildId: dungeon.guildId };
       this.removeDungeonIndicator(channelKey);
       this.showDungeonIndicator(channelKey, channelInfo);
@@ -11857,16 +11886,28 @@ module.exports = class Dungeons {
           this.startMobKillNotifications(channelKey);
           this.updateBossHPBar(channelKey);
 
+          // Re-apply dungeon channel indicator (lost on hot-reload / React re-render)
+          if (dg?.channelId) {
+            this.showDungeonIndicator(channelKey, { channelId: dg.channelId, guildId: dg.guildId });
+          }
+
           // Only restart mob spawning + combat if shadows were deployed before reload
           if (dg?.shadowsDeployed) {
             const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
-            console.log(`[Dungeons] INIT_TRACE: Resuming combat for deployed dungeon — channelKey=${channelKey}, rank=${dg?.rank}, shadows=${allocCount}, bossHP=${dg?.boss?.hp}, mobs=${dg?.mobs?.activeMobs?.length || 0}`);
+            console.log(
+              `[Dungeons] 🏰 RESTORE: "${dg.name}" [${dg.rank}] in #${dg.channelName || '?'} (${dg.guildName || '?'}) — ` +
+              `Shadows: ${allocCount} | Boss HP: ${dg.boss?.hp?.toLocaleString()}/${dg.boss?.maxHp?.toLocaleString()} | ` +
+              `Mobs killed: ${dg.mobs?.killed || 0}/${dg.mobs?.targetCount?.toLocaleString() || '?'} | Key: ${channelKey}`
+            );
             this.startMobSpawning(channelKey);
             await this.startShadowAttacks(channelKey);
             this.startBossAttacks(channelKey);
             this.startMobAttacks(channelKey);
           } else {
-            console.log(`[Dungeons] INIT_TRACE: Restored idle dungeon (no deploy) — channelKey=${channelKey}, rank=${dg?.rank}, bossHP=${dg?.boss?.hp}`);
+            console.log(
+              `[Dungeons] 🏰 RESTORE (idle): "${dg?.name}" [${dg?.rank}] in #${dg?.channelName || '?'} (${dg?.guildName || '?'}) — ` +
+              `Boss HP: ${dg?.boss?.hp?.toLocaleString()}/${dg?.boss?.maxHp?.toLocaleString()} | Key: ${channelKey}`
+            );
           }
         }
       }
