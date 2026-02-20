@@ -644,7 +644,10 @@ class ShadowStorageManager {
   async _withStore(mode, fn) {
     if (!this.db) await this.init();
     return new Promise((resolve, reject) => {
-      const transaction = this.db.transaction([this.storeName], mode);
+      // Relaxed durability: don't wait for disk flush before resolving oncomplete.
+      // Shadow data isn't mission-critical — reduces write latency and memory pressure.
+      // Supported since Chrome 121 (Electron/Discord uses modern Chromium).
+      const transaction = this.db.transaction([this.storeName], mode, { durability: 'relaxed' });
       const store = transaction.objectStore(this.storeName);
       transaction.onerror = () => reject(transaction.error);
       fn(store, transaction, resolve, reject);
@@ -929,6 +932,42 @@ class ShadowStorageManager {
   }
 
   /**
+   * Chunked batch save — writes shadows in small sequential IDB transactions with
+   * event-loop yields between chunks. Prevents OOM by letting V8 GC structured-clone
+   * buffers after each chunk commits, instead of holding everything in one mega-transaction.
+   *
+   * Chromium's IDB holds the ENTIRE write buffer in memory until transaction commit.
+   * A single transaction with 50+ shadows can spike 2-3x the raw data size in memory.
+   * Chunking at 10 shadows/tx keeps peak write buffer at ~50 KB per chunk.
+   *
+   * @param {Array} shadows - Array of shadow objects to save
+   * @param {number} chunkSize - Shadows per IDB transaction (default: 10)
+   * @returns {Promise<number>} Total shadows saved
+   */
+  async saveShadowsChunked(shadows, chunkSize = 10) {
+    if (!shadows || !Array.isArray(shadows) || shadows.length === 0) return 0;
+
+    // Small batches can go through the single-transaction path safely
+    if (shadows.length <= chunkSize) {
+      return this.saveShadowsBatch(shadows);
+    }
+
+    let totalSaved = 0;
+    for (let i = 0; i < shadows.length; i += chunkSize) {
+      const chunk = shadows.slice(i, i + chunkSize);
+      const saved = await this.saveShadowsBatch(chunk);
+      totalSaved += saved;
+
+      // Yield to event loop between chunks — lets V8 GC the previous chunk's
+      // structured-clone write buffers before allocating the next batch
+      if (i + chunkSize < shadows.length) {
+        await new Promise(r => setTimeout(r, 0));
+      }
+    }
+    return totalSaved;
+  }
+
+  /**
    * Get shadows with pagination and filters (optimized with indexes)
    * Uses BdAPI patterns: Indexed queries, efficient filtering, proper error handling
    * Operations:
@@ -950,10 +989,34 @@ class ShadowStorageManager {
   ) {
     if (offset < 0) offset = 0;
     if (limit < 1) limit = 50;
-    if (limit > 10000) limit = 10000;
+    // No hard cap — getAll() loads everything anyway (single native IDB call).
+    // Callers that need ALL shadows (power calc, compression, army display)
+    // should get ALL shadows. The OOM fix is getAll() vs cursor, not truncation.
+
+    // Check if any filters are actually active
+    const hasFilters = !!(filters.rank || filters.role || filters.minLevel || filters.maxLevel || filters.minStrength);
 
     return this._withStore('readonly', (store, _tx, resolve, reject) => {
-      // Select optimal index based on filters
+      // FAST PATH: No filters — use IDB getAll() which is native, memory-efficient,
+      // and avoids cursor iteration. Handles the vast majority of calls
+      // (getAllShadowsForAggregation, getTotalShadowPower, widget refresh, etc.)
+      if (!hasFilters) {
+        const request = store.getAll();
+        request.onsuccess = () => {
+          let results = request.result || [];
+          // Sort in-memory (still needed for pagination correctness)
+          results.sort((a, b) => {
+            const aVal = a[sortBy] || 0;
+            const bVal = b[sortBy] || 0;
+            return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+          });
+          resolve(results.slice(offset, offset + limit));
+        };
+        request.onerror = () => reject(request.error);
+        return;
+      }
+
+      // FILTERED PATH: Use cursor with index optimization
       let index = store;
       if (filters.rank && filters.role) {
         try {
@@ -4460,6 +4523,261 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Streaming bulk extraction for dungeon corpse piles.
+   * Processes corpses in bounded chunks and persists successes in tiny IDB write batches.
+   * Peak memory stays flat regardless of pile size.
+   *
+   * Why tiny write batches? Chromium keeps the entire IDB write buffer in memory
+   * until transaction commit. Large `put` batches can still spike memory even when
+   * corpse processing is chunked.
+   *
+   * @param {Array} corpsePile - Array of corpse objects from dungeon (can be thousands)
+   * @param {string} userRank - User's current rank
+   * @param {number} userLevel - User's current level
+   * @param {Object} userStats - User's stats
+   * @param {Array} beastFamilies - Biome beast families
+   * @returns {Promise<{extracted: number, attempted: number}>}
+   */
+  async bulkDungeonExtraction(corpsePile, userRank, userLevel, userStats, beastFamilies = []) {
+    if (!corpsePile || corpsePile.length === 0) {
+      return { extracted: 0, attempted: 0 };
+    }
+
+    const total = corpsePile.length;
+    const tuning = (() => {
+      // Adaptive profile: as corpse volume rises, shrink chunk sizes and yield more
+      // aggressively to keep memory pressure stable.
+      if (total >= 20000) {
+        return { corpseChunkSize: 12, writeChunkSize: 4, chunkYieldMs: 3, profile: 'extreme_safe' };
+      }
+      if (total >= 10000) {
+        return { corpseChunkSize: 18, writeChunkSize: 6, chunkYieldMs: 2, profile: 'high_safe' };
+      }
+      if (total >= 5000) {
+        return { corpseChunkSize: 25, writeChunkSize: 8, chunkYieldMs: 1, profile: 'balanced' };
+      }
+      return { corpseChunkSize: 35, writeChunkSize: 10, chunkYieldMs: 0, profile: 'fast' };
+    })();
+    const CORPSE_CHUNK_SIZE = tuning.corpseChunkSize;
+    const WRITE_CHUNK_SIZE = tuning.writeChunkSize;
+    const CHUNK_YIELD_MS = tuning.chunkYieldMs;
+    let totalExtracted = 0;
+    let totalAttempted = 0;
+    let totalPowerDelta = 0;
+    const rankCounts = {}; // For summary toast
+
+    // Pre-compute constants once
+    const userRankIdx = this.shadowRanks.indexOf(userRank);
+    const intelligence = userStats?.intelligence || 0;
+    const perception = userStats?.perception || 0;
+    const strength = userStats?.strength || 0;
+
+    console.log(
+      `[ShadowArmy] ⚔️ ARISE STREAM: Starting extraction of ${total} corpses ` +
+      `(profile=${tuning.profile}, corpseChunk=${CORPSE_CHUNK_SIZE}, writeChunk=${WRITE_CHUNK_SIZE}, yield=${CHUNK_YIELD_MS}ms)`
+    );
+
+    // ── STREAMING PIPELINE: Process corpses in bounded chunks ──
+    for (let i = 0; i < total; i += CORPSE_CHUNK_SIZE) {
+      const chunk = corpsePile.slice(i, Math.min(i + CORPSE_CHUNK_SIZE, total));
+      const chunkShadows = []; // Only lives for this iteration — GC'd after yield
+
+      // ── RNG + shadow generation for this chunk (pure JS, no IDB) ──
+      for (const corpse of chunk) {
+        totalAttempted++;
+
+        const mobRank = corpse.rank || 'E';
+        const mobRankIdx = this.shadowRanks.indexOf(mobRank);
+        const rankDiff = mobRankIdx - userRankIdx;
+        const isBoss = !!corpse.isBoss;
+
+        // Boss attempt limit check (in-memory)
+        if (isBoss) {
+          const canExtract = this.canExtractFromBoss(corpse.id);
+          if (!canExtract.allowed) continue;
+        }
+
+        // Extraction tier
+        let guaranteedExtraction = false;
+        let maxAttempts = 1;
+        let sameRankBoost = false;
+
+        if (isBoss) {
+          maxAttempts = 3;
+        } else if (rankDiff < 0) {
+          guaranteedExtraction = true;
+        } else if (rankDiff === 0) {
+          maxAttempts = 2;
+          sameRankBoost = true;
+        }
+
+        // Generate shadow (pure JS)
+        let shadow;
+        if (corpse.baseStats && corpse.strength != null) {
+          const availableBeastRoles = this._getAvailableDungeonBeastRoles(mobRank, beastFamilies);
+          const roleKey = availableBeastRoles[Math.floor(Math.random() * availableBeastRoles.length)];
+          const role = this.shadowRoles[roleKey];
+          const calculatedStrength = corpse.strength || (corpse.baseStats ? this.calculateShadowPower(corpse.baseStats, 1) : 0);
+
+          shadow = {
+            id: `shadow_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+            rank: mobRank,
+            role: roleKey,
+            roleName: role.name,
+            strength: calculatedStrength,
+            extractedAt: Date.now(),
+            level: 1,
+            xp: 0,
+            baseStats: corpse.baseStats,
+            growthStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 },
+            naturalGrowthStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 },
+            totalCombatTime: 0,
+            lastNaturalGrowth: Date.now(),
+            ownerLevelAtExtraction: userLevel,
+            growthVarianceSeed: Math.random(),
+          };
+        } else {
+          shadow = this.generateShadow(mobRank, userLevel, userStats);
+        }
+
+        if (!shadow) continue;
+
+        // RNG extraction roll
+        let extracted = false;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (guaranteedExtraction) { extracted = true; break; }
+          const extractionChance = this.calculateExtractionChance(
+            userRank, userStats, mobRank,
+            shadow.strength || corpse.strength,
+            intelligence, perception, strength, true
+          );
+          const effectiveChance = sameRankBoost ? Math.max(0.85, extractionChance) : extractionChance;
+          if (Math.random() < effectiveChance) { extracted = true; break; }
+        }
+
+        if (!extracted) continue;
+
+        // Ensure strength
+        if (!shadow.strength || shadow.strength === 0) {
+          const decompressed = this.getShadowData(shadow);
+          const effective = this.getShadowEffectiveStats(decompressed);
+          if (effective) shadow.strength = this.calculateShadowPower(effective, 1);
+        }
+
+        // Prepare + track
+        const shadowToSave = this.prepareShadowForSave(shadow);
+        chunkShadows.push(shadowToSave);
+        totalPowerDelta += (shadowToSave.strength || shadowToSave.s || 0);
+        const r = shadowToSave.rank || shadowToSave.r || '?';
+        rankCounts[r] = (rankCounts[r] || 0) + 1;
+
+        if (isBoss) this.recordBossExtractionAttempt(corpse.id, true);
+      }
+
+      // ── Persist this chunk's successes in tiny IDB write batches ──
+      if (chunkShadows.length > 0 && this.storageManager) {
+        try {
+          let savedCount = 0;
+          if (typeof this.storageManager.saveShadowsChunked === 'function') {
+            savedCount = await this.storageManager.saveShadowsChunked(
+              chunkShadows,
+              WRITE_CHUNK_SIZE
+            );
+          } else {
+            savedCount = await this.storageManager.saveShadowsBatch(chunkShadows);
+          }
+
+          totalExtracted += Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
+        } catch (e) {
+          this.debugError(
+            'BULK_EXTRACTION',
+            `Chunk ${Math.floor(i / CORPSE_CHUNK_SIZE) + 1} save failed`,
+            e
+          );
+        }
+      }
+
+      // ── Yield to event loop — V8 GCs this chunk's shadow objects + IDB write buffers ──
+      if (i + CORPSE_CHUNK_SIZE < total) {
+        await new Promise(r => setTimeout(r, CHUNK_YIELD_MS));
+      }
+    }
+    // chunkShadows from each iteration is now out of scope and GC-eligible
+
+    console.log(`[ShadowArmy] ⚔️ ARISE STREAM COMPLETE: ${totalExtracted}/${totalAttempted} extracted from ${total} corpses`);
+
+    // ── Post-extraction bookkeeping (ONE of each, uses only counters not shadow objects) ──
+    if (totalExtracted > 0) {
+      try {
+        this._invalidateSnapshot();
+
+        // Power cache
+        if (totalPowerDelta > 0) {
+          try {
+            await this._applyTotalPowerDelta({ strength: totalPowerDelta }, 'increment');
+          } catch (e) {
+            this.debugError('BULK_EXTRACTION', 'Failed to update power cache', e);
+          }
+        }
+
+        // Counters + XP
+        this.settings.totalShadowsExtracted = (this.settings.totalShadowsExtracted || 0) + totalExtracted;
+        this.settings.lastExtractionTime = Date.now();
+        await this.grantShadowXP(2 * totalExtracted, 'extraction');
+        this.saveSettings();
+
+        // Invalidate caches
+        this._armyStatsCache = null;
+        this._armyStatsCacheTime = null;
+        this._shadowPowerCache = null; // Full invalidation — too many shadows to invalidate individually
+
+        // ONE batch event
+        const eventData = {
+          shadowCount: totalExtracted,
+          rankCounts,
+          timestamp: Date.now(),
+          source: 'dungeon_bulk',
+        };
+        if (typeof BdApi?.Events?.emit === 'function') {
+          BdApi.Events.emit('ShadowArmy:batchExtractionComplete', eventData);
+        }
+        if (typeof window?.dispatchEvent === 'function') {
+          window.dispatchEvent(new CustomEvent('shadowExtracted', { detail: eventData, bubbles: true }));
+          document.dispatchEvent(new CustomEvent('shadowExtracted', { detail: eventData, bubbles: true }));
+        }
+
+        // ONE summary toast
+        if (BdApi?.showToast) {
+          const rankSummary = Object.entries(rankCounts).map(([r, c]) => `${c}x ${r}`).join(', ');
+          BdApi.showToast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, { type: 'success', timeout: 4000 });
+        }
+
+        // Debounced widget update
+        this._widgetDirty = true;
+        if (this._postExtractionDebounceTimer) clearTimeout(this._postExtractionDebounceTimer);
+        this._postExtractionDebounceTimer = setTimeout(async () => {
+          this._postExtractionDebounceTimer = null;
+          if (this._isStopped) return;
+          if (typeof this.updateShadowRankWidget === 'function') {
+            try {
+              this._widgetDirty = false;
+              await this.updateShadowRankWidget();
+            } catch (e) {
+              this.debugError('WIDGET', 'Failed to update widget after bulk extraction', e);
+            }
+          }
+        }, 500);
+
+        this.updateUI();
+      } catch (error) {
+        this.debugError('BULK_EXTRACTION', 'Post-extraction bookkeeping failed', error);
+      }
+    }
+
+    return { extracted: totalExtracted, attempted: totalAttempted };
+  }
+
+  /**
    * Check if can extract from boss (Solo Leveling lore: max 3 attempts per corpse per day)
    * Operations:
    * 1. Initialize dungeonExtractionAttempts if needed
@@ -5157,7 +5475,7 @@ module.exports = class ShadowArmy {
     }
 
     try {
-      let shadows = await this.storageManager.getShadows({}, 0, 100000);
+      let shadows = await this.storageManager.getShadows({}, 0, Infinity);
 
       // HYBRID COMPRESSION: Decompress all shadows transparently
       // This ensures all operations (XP, level-ups, stats) work correctly
@@ -5228,7 +5546,7 @@ module.exports = class ShadowArmy {
       if (this.storageManager) {
         try {
           // Get all shadows from IndexedDB
-          shadows = await this.storageManager.getShadows({}, 0, 10000);
+          shadows = await this.storageManager.getShadows({}, 0, Infinity);
         } catch (error) {
           // debugError method is in SECTION 4
           this.debugError('STORAGE', 'Failed to get shadows from IndexedDB', error);
@@ -5579,45 +5897,12 @@ module.exports = class ShadowArmy {
 
     if (this.storageManager) {
       try {
-        // Get total count first to check if we need pagination
-        const totalCount = (await this.storageManager.getTotalCount()) || 0;
+        // getAll() fast path loads everything in one native IDB call — no need to paginate
+        const allShadows = await this.storageManager.getShadows({}, 0, Infinity);
 
-        // CRITICAL: If we have more than 10k shadows, we need to paginate
-        // The 10k limit is for retrieval performance, not storage limit
-        // IndexedDB can store millions, but getShadows() caps at 10k per call
-        if (totalCount > 10000) {
-          this.debugLog('POWER', 'Shadow count exceeds 10k limit, using pagination', {
-            totalCount,
-            willProcessInBatches: true,
-          });
-
-          // Process in batches of 10k
-          let batchOffset = 0;
-          const batchSize = 10000;
-
-          while (batchOffset < totalCount) {
-            const batchShadows = await this.storageManager.getShadows({}, batchOffset, batchSize);
-
-            for (const shadow of batchShadows) {
-              this._accumulateShadowPower(shadow, totals);
-            }
-
-            batchOffset += batchSize;
-            this.debugLog('POWER', 'Processed batch', {
-              batchOffset,
-              totalCount,
-              processedSoFar: totals.processedCount,
-              powerSoFar: totals.totalPower,
-            });
-          }
-        } else {
-          // Normal case: Get all shadows at once (under 10k)
-          const allShadows = await this.storageManager.getShadows({}, 0, 10000);
-
-          for (const shadow of allShadows) {
-            this._accumulateShadowPower(shadow, totals);
-          }
-        } // End else block (normal case < 10k shadows)
+        for (const shadow of allShadows) {
+          this._accumulateShadowPower(shadow, totals);
+        }
 
         // Update incremental cache
         const currentCount = (await this.storageManager.getTotalCount()) || 0;
@@ -5662,8 +5947,12 @@ module.exports = class ShadowArmy {
       this.debugError('POWER', 'Failed to increment total power', error);
     }
 
-    // If increment fails, force full recalculation
-    return await this.getTotalShadowPower(true);
+    // SAFETY: Do NOT force full recalculation here — getTotalShadowPower(true)
+    // triggers a full getShadows() IDB cursor scan loading ALL shadows into memory.
+    // During batch extraction (corpse pile ARISE), multiple concurrent calls would
+    // each spawn a full-table scan → OOM crash. Instead, return cached value and
+    // let the next natural power recalc (widget refresh, combat tick) fix the cache.
+    return this.settings.cachedTotalPower || 0;
   }
 
   async getAllShadowsForAggregation() {
@@ -5671,7 +5960,6 @@ module.exports = class ShadowArmy {
     let totalCount = 0;
 
     if (!this.storageManager) {
-      // CRITICAL: No storage manager means no shadows - don't use old settings.shadows
       this.debugLog('COMBAT', 'No storage manager available - returning empty array', {
         hasStorageManager: false,
       });
@@ -5685,30 +5973,22 @@ module.exports = class ShadowArmy {
         await this.storageManager.init();
       }
 
+      // FAST PATH: Use snapshot cache if fresh (avoids IDB read entirely)
+      const snapshot = this.getShadowSnapshot();
+      if (snapshot && snapshot.length > 0) {
+        this.debugLog('COMBAT', 'Using snapshot cache for aggregation', {
+          snapshotSize: snapshot.length,
+        });
+        return { allShadows: snapshot, totalCount: snapshot.length };
+      }
+
       // Verify IndexedDB is working by checking count first
       totalCount = await this.storageManager.getTotalCount();
-      this.debugLog('COMBAT', 'IndexedDB status check', {
-        totalCount,
-        dbName: this.storageManager?.dbName || 'unknown',
-        dbInitialized: !!this.storageManager?.db,
-        storeName: this.storageManager?.storeName || 'unknown',
-        dbVersion: this.storageManager?.db?.version,
-      });
-
-      // CRITICAL: If count > 0 but we get 0 shadows, this is a critical bug
-      // Log this immediately for diagnosis
-      if (totalCount > 0) {
-        this.debugLog('COMBAT', 'IndexedDB has shadows - attempting retrieval', {
-          totalCount,
-          willRequestLimit: 1000000,
-          actualLimitAfterCap: 10000, // getShadows caps at 10000
-        });
-      }
 
       // CRITICAL: Only use IndexedDB - no fallback to old settings.shadows
       if (totalCount > 0) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
+          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
 
           // CRITICAL DIAGNOSTIC: If IndexedDB has shadows but getShadows returned empty
           if (!allShadows || allShadows.length === 0) {
@@ -6776,7 +7056,7 @@ module.exports = class ShadowArmy {
 
     if (this.storageManager) {
       try {
-        allShadows = await this.storageManager.getShadows({}, 0, 100000);
+        allShadows = await this.storageManager.getShadows({}, 0, Infinity);
       } catch (error) {
         this.debugError('MIGRATION', 'Error getting shadows from IndexedDB', error);
       }
@@ -8720,11 +9000,11 @@ module.exports = class ShadowArmy {
         return; // Feature disabled
       }
 
-      // Get all shadows (support up to 1M+)
+      // Get all shadows via getAll() fast path
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
+          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
         } catch (error) {
           // debugError method is in SECTION 4
           this.debugError('COMPRESSION', 'Error getting shadows', error);
@@ -8915,11 +9195,11 @@ module.exports = class ShadowArmy {
         return; // Feature disabled
       }
 
-      // Get all shadows (support up to 1M+)
+      // Get all shadows via getAll() fast path
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
+          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
         } catch (error) {
           // debugError method is in SECTION 4
           this.debugError('ESSENCE', 'Error getting shadows', error);
@@ -9264,7 +9544,7 @@ module.exports = class ShadowArmy {
       let allShadows = [];
       if (this.storageManager) {
         try {
-          allShadows = await this.storageManager.getShadows({}, 0, 1000000);
+          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
         } catch (error) {
           this.debugError('ESSENCE', 'Error getting shadows', error);
           return { success: false, error: 'Failed to load shadows' };
@@ -10164,7 +10444,7 @@ module.exports = class ShadowArmy {
             refreshInFlightRef.current = true;
             pluginRef._widgetDirty = false;
             if (pluginRef.storageManager?.getShadows) {
-              const freshShadows = await pluginRef.storageManager.getShadows({}, 0, 10000);
+              const freshShadows = await pluginRef.storageManager.getShadows({}, 0, Infinity);
               if (freshShadows && freshShadows.length > 0) {
                 setShadows(freshShadows.map((s) => pluginRef.getShadowData(s)));
               }
@@ -10324,7 +10604,7 @@ module.exports = class ShadowArmy {
       let shadows = [];
       if (this.storageManager?.getShadows) {
         try {
-          shadows = await this.storageManager.getShadows({}, 0, 10000);
+          shadows = await this.storageManager.getShadows({}, 0, Infinity);
         } catch (err) {
           this.debugError('UI', 'Could not get shadows from IndexedDB', err);
           shadows = this.settings.shadows || [];
