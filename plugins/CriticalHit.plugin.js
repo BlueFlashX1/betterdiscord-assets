@@ -2635,10 +2635,19 @@ module.exports = class CriticalHit {
 
     if (isCacheValid) return this._cachedCritHistory.data;
 
-    // Filter crits: only crit messages, optionally filtered by channel
-    const crits = this.messageHistory.filter(
-      (entry) => entry.isCrit && (!channelId || entry.channelId === channelId)
-    );
+    // Filter crits: only crit messages, optionally filtered by channel.
+    // USER-ONLY: never restore crits from other users (prevents stale foreign reapply).
+    let ownUserId = this.currentUserId || this.settings?.ownUserId || null;
+    if (!ownUserId && typeof this.getCurrentUserId === 'function') {
+      this.getCurrentUserId();
+      ownUserId = this.currentUserId || this.settings?.ownUserId || null;
+    }
+    const crits = this.messageHistory.filter((entry) => {
+      if (!entry?.isCrit) return false;
+      if (channelId && entry.channelId !== channelId) return false;
+      if (!ownUserId) return true;
+      return !!entry.authorId && String(entry.authorId) === String(ownUserId);
+    });
 
     // Cache result
     this._cachedCritHistory = { data: crits, channelId: cacheKey };
@@ -5664,6 +5673,18 @@ ${childSel} {
       // Guard clauses: early returns for invalid states
       if (this.isLoadingChannel) return;
       if (this.shouldFilterMessage(messageElement)) return;
+
+      // USER-ONLY: Only roll crits on your own messages — no styling other people's messages.
+      // The crit system is personal (Solo Leveling: only the Monarch sees the System).
+      // This also reduces DOM mutations and MutationObserver overhead significantly.
+      {
+        const msgAuthorId = this.getAuthorId(messageElement);
+        if (msgAuthorId && !this.isOwnMessage(messageElement, msgAuthorId)) {
+          // Not our message — skip crit roll entirely, mark as processed
+          messageId && this.processedMessages.add(messageId);
+          return;
+        }
+      }
 
       // Verify it's actually a message (has some text content)
       const hasText =
