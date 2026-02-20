@@ -1542,11 +1542,19 @@ module.exports = class Dungeons {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
     if (!dungeon.corpsePile) dungeon.corpsePile = [];
+    const baseStats = deadMob.baseStats || {};
     dungeon.corpsePile.push({
       id: deadMob.id,
       rank: deadMob.rank,
-      baseStats: deadMob.baseStats,
-      strength: deadMob.strength,
+      // Keep corpse payload compact and deterministic for large kill counts.
+      baseStats: {
+        strength: Number(baseStats.strength) || 0,
+        agility: Number(baseStats.agility) || 0,
+        intelligence: Number(baseStats.intelligence) || 0,
+        vitality: Number(baseStats.vitality) || 0,
+        perception: Number(baseStats.perception) || 0,
+      },
+      strength: Number(deadMob.strength) || 0,
       isBoss,
     });
   }
@@ -1585,33 +1593,52 @@ module.exports = class Dungeons {
     const total = pile.length;
     let extracted = 0;
     let attempted = 0;
-    const BATCH_SIZE = 50; // Parallel batch — all extractions in a batch fire concurrently
 
     // ALWAYS-ON: Extraction is a critical event — never gate behind debug
     console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
-    for (let i = 0; i < total; i += BATCH_SIZE) {
-      const batch = pile.slice(i, i + BATCH_SIZE);
-      attempted += batch.length;
-
-      // Fire all extractions in this batch concurrently
-      const results = await Promise.allSettled(
-        batch.map((corpse) =>
-          shadowArmy.attemptDungeonExtraction(
-            corpse.id, userRank, userLevel, userStats,
-            corpse.rank, corpse.baseStats, corpse.strength,
-            beastFamilies, corpse.isBoss
-          )
-        )
-      );
-
-      for (const r of results) {
-        if (r.status === 'fulfilled' && r.value?.success) extracted++;
+    // Use ShadowArmy's streaming bulk extractor when available.
+    // It keeps peak memory flat for 10k+ corpse piles.
+    if (typeof shadowArmy.bulkDungeonExtraction === 'function') {
+      try {
+        const result = await shadowArmy.bulkDungeonExtraction(
+          pile,
+          userRank,
+          userLevel,
+          userStats,
+          beastFamilies
+        );
+        extracted = Number(result?.extracted) || 0;
+        attempted = Number(result?.attempted) || 0;
+      } catch (error) {
+        this.errorLog('Bulk corpse extraction failed; falling back to sequential batches', error);
       }
+    }
 
-      // Yield to event loop between batches (keeps UI responsive)
-      if (i + BATCH_SIZE < total) {
-        await new Promise(r => setTimeout(r, 0));
+    // Fallback path if bulk extraction is unavailable or failed.
+    if (attempted === 0 && extracted === 0) {
+      const BATCH_SIZE = 12; // Lower concurrency to minimize memory spikes in fallback mode
+      for (let i = 0; i < total; i += BATCH_SIZE) {
+        const batch = pile.slice(i, i + BATCH_SIZE);
+        attempted += batch.length;
+
+        const results = await Promise.allSettled(
+          batch.map((corpse) =>
+            shadowArmy.attemptDungeonExtraction(
+              corpse.id, userRank, userLevel, userStats,
+              corpse.rank, corpse.baseStats, corpse.strength,
+              beastFamilies, corpse.isBoss
+            )
+          )
+        );
+
+        for (const r of results) {
+          if (r.status === 'fulfilled' && r.value?.success) extracted++;
+        }
+
+        if (i + BATCH_SIZE < total) {
+          await new Promise(r => setTimeout(r, 1));
+        }
       }
     }
 
