@@ -23,7 +23,7 @@ AI MAINTENANCE RULES
 ║  └─────────────────────────────────────────────────────────┘     ║
 ║                                                                  ║
 ║  §1  IMPORTS & VARIABLES .................. @import, :root       ║
-║      └─ HSL dock, ClearVision base, Orbitron font, colors, bg   ║
+║      └─ HSL dock, ClearVision base, Friend or Foe font, bg      ║
 ║                                                                  ║
 ║  §2  ANIMATED WALLPAPER (LOCKED) ......... body::before/::after  ║
 ║      └─ Full-screen GIF background + readability overlay         ║
@@ -101,7 +101,8 @@ AI MAINTENANCE RULES
 ║      ├─ §9j+ Purple border on VC video tiles                    ║
 ║      ├─ §9j+ Hide noise suppression + disconnect buttons        ║
 ║      ├─ §9j+ Hide VC action buttons (cam/screen/activity)       ║
-║      └─ §9k  Notice banner (purple theme)                       ║
+║      ├─ §9k  Notice banner (purple theme)                       ║
+║      └─ §9l  Tooltips (solid black + purple border)             ║
 ║                                                                  ║
 ║  ┌─────────────────────────────────────────────────────────┐     ║
 ║  │  CHATBOX                                                │     ║
@@ -176,7 +177,7 @@ AI MAINTENANCE RULES
 
 @import url('https://clearvision.github.io/ClearVision-v7/main.css');
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+@import url('https://db.onlinewebfonts.com/c/262e61977221d8478c4e05291da30122?family=Friend+or+Foe+BB');
 
 /* §14e — Role-Colored Mentions (import must be near top — see §14e note below)
    Credit: dav (2024-05-30) */
@@ -206,14 +207,28 @@ AI MAINTENANCE RULES
   --danger-color: #ff4444;
   --sl-color-primary-rgb: 138, 43, 226;
 
-  /* Typography */
-  --font-primary: 'Orbitron', sans-serif;
+  /* Typography — Friend or Foe BB (Blambot) */
+  --font-primary: 'Friend or Foe BB', sans-serif;
+  --font-display: 'Friend or Foe BB', sans-serif;
+  --font-headline: 'Friend or Foe BB', sans-serif;
+  --font-code: 'Consolas', 'Courier New', monospace;
 
   /* Animated wallpaper controls */
   --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
   --sl-bg-overlay: rgba(0, 0, 0, 0);
   --sl-bg-opacity: 1.0;
   --background-position: center 0%;
+}
+
+/* §1 (continued) — Universal font override.
+   Discord hardcodes font-family:"gg sans" on many elements.
+   This catches everything the CSS variables miss. */
+*:not(code):not(pre):not([class*="codeLine"]):not([class*="codeBlock"]):not([class*="markup_"] code) {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+/* Bump base font size ~12% to compensate for Friend or Foe's smaller x-height */
+html {
+  font-size: 112% !important;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1031,16 +1046,12 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
   display: none !important;
 }
 
-/* §8f — Home icon: replace Discord logo with Shadow Monarch icon.
-   The home button is the first treeitem in the server list (tutorialContainer_).
-   Hide the original img and set the shadow_icon.png as background on the wrapper. */
-nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] img {
-  display: none !important;
-}
-nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
+/* §8f — Home icon: replace Discord/ClearVision logo with Shadow Monarch icon.
+   Discord renders the home icon as svg[role="img"] inside childWrapper_.
+   ClearVision sets its own discord.svg background on this SVG — we override it.
+   The SVG path (Discord logo) is already display:none from ClearVision. */
+div[class^="tutorialContainer_"] div[class^="childWrapper_"] > svg[role="img"] {
   background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
-  width: 48px !important;
-  height: 48px !important;
 }
 
 /* §6f (override) — Error dialog tip row: using .bd-error-modal class selector
@@ -1577,6 +1588,17 @@ div[class^="notice_"] div[class^="closeButton_"]:hover svg,
 div[class^="notice_"] div[class^="closeButton_"]:hover path {
   color: #ffffff !important;
   fill: #ffffff !important;
+}
+
+/* §9l — Tooltips: solid black bg + purple border for readability.
+   Applies to server hover tooltips, button tooltips, etc. */
+div[class^="tooltip_"] {
+  background: #000 !important;
+  border: 1.5px solid var(--sl-color-primary, #7b2cbf) !important;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+}
+div[class^="tooltip_"] div[class^="tooltipPointer_"] {
+  border-top-color: #000 !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
