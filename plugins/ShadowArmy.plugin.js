@@ -988,35 +988,58 @@ class ShadowStorageManager {
     sortOrder = 'desc'
   ) {
     if (offset < 0) offset = 0;
-    if (limit < 1) limit = 50;
-    // No hard cap — getAll() loads everything anyway (single native IDB call).
-    // Callers that need ALL shadows (power calc, compression, army display)
-    // should get ALL shadows. The OOM fix is getAll() vs cursor, not truncation.
+    if (limit !== Infinity && (!Number.isFinite(limit) || limit < 1)) limit = 50;
+    const wantsUnlimited = limit === Infinity || !Number.isFinite(limit);
+    const cursorDirection = sortOrder === 'asc' ? 'next' : 'prev';
 
     // Check if any filters are actually active
     const hasFilters = !!(filters.rank || filters.role || filters.minLevel || filters.maxLevel || filters.minStrength);
 
     return this._withStore('readonly', (store, _tx, resolve, reject) => {
-      // FAST PATH: No filters — use IDB getAll() which is native, memory-efficient,
-      // and avoids cursor iteration. Handles the vast majority of calls
-      // (getAllShadowsForAggregation, getTotalShadowPower, widget refresh, etc.)
-      if (!hasFilters) {
-        const request = store.getAll();
-        request.onsuccess = () => {
-          let results = request.result || [];
-          // Sort in-memory (still needed for pagination correctness)
-          results.sort((a, b) => {
-            const aVal = a[sortBy] || 0;
-            const bVal = b[sortBy] || 0;
-            return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
-          });
-          resolve(results.slice(offset, offset + limit));
-        };
-        request.onerror = () => reject(request.error);
-        return;
+      // PAGED FAST PATH: no filters + finite limit.
+      // Uses index cursor and early-exits after (offset + limit) rows.
+      if (!hasFilters && !wantsUnlimited && Number.isFinite(limit) && limit > 0) {
+        let source = store;
+        let canUseCursorPage = true;
+        if (sortBy && sortBy !== 'id') {
+          try {
+            source = store.index(sortBy);
+          } catch (_) {
+            source = store;
+            canUseCursorPage = false; // Unknown index; preserve correctness with fallback path.
+          }
+        }
+        if (!canUseCursorPage) {
+          // Fallback to full sort path below.
+        } else {
+          const request = source.openCursor(null, cursorDirection);
+          const results = [];
+          let scanned = 0;
+          request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (!cursor) {
+              resolve(results);
+              return;
+            }
+            if (scanned < offset) {
+              scanned++;
+              cursor.continue();
+              return;
+            }
+            results.push(cursor.value);
+            if (results.length >= limit) {
+              resolve(results);
+              return;
+            }
+            cursor.continue();
+          };
+          request.onerror = () => reject(request.error);
+          return;
+        }
       }
 
-      // FILTERED PATH: Use cursor with index optimization
+      // FILTERED PATH: Use cursor with index optimization.
+      // Also used as fallback for sorts that don't map cleanly to an index.
       let index = store;
       if (filters.rank && filters.role) {
         try {
@@ -1054,16 +1077,108 @@ class ShadowStorageManager {
           if (matches) results.push(shadow);
           cursor.continue();
         } else {
+          // No-filter + unlimited fallback still uses in-memory sort + full slice.
+          if (!hasFilters && wantsUnlimited && sortBy && sortBy !== 'id') {
+            results.sort((a, b) => {
+              const aVal = a[sortBy] || 0;
+              const bVal = b[sortBy] || 0;
+              return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
+            });
+            resolve(results.slice(offset));
+            return;
+          }
           results.sort((a, b) => {
             const aVal = a[sortBy] || 0;
             const bVal = b[sortBy] || 0;
             return sortOrder === 'desc' ? bVal - aVal : aVal - bVal;
           });
-          resolve(results.slice(offset, offset + limit));
+          if (wantsUnlimited) {
+            resolve(results.slice(offset));
+          } else {
+            resolve(results.slice(offset, offset + limit));
+          }
         }
       };
       request.onerror = () => reject(request.error);
     });
+  }
+
+  /**
+   * Stream shadows in fixed-size batches without materializing the whole table.
+   * IMPORTANT: `onBatch` must be synchronous (no awaits) because IndexedDB cursor
+   * callbacks run inside a live transaction.
+   *
+   * @param {Function} onBatch - Called with Array<shadow> for each batch.
+   * @param {Object} options
+   * @param {number} options.batchSize - Rows per batch (default 200)
+   * @param {string} options.sortBy - Indexed field to traverse (default extractedAt)
+   * @param {string} options.sortOrder - asc|desc (default desc)
+   * @returns {Promise<{scanned:number,batches:number}>}
+   */
+  async forEachShadowBatch(
+    onBatch,
+    { batchSize = 200, sortBy = 'extractedAt', sortOrder = 'desc' } = {}
+  ) {
+    if (typeof onBatch !== 'function') {
+      throw new Error('forEachShadowBatch requires an onBatch callback');
+    }
+
+    const safeBatchSize = Math.max(25, Math.floor(batchSize) || 200);
+    const cursorDirection = sortOrder === 'asc' ? 'next' : 'prev';
+
+    let scanned = 0;
+    let batches = 0;
+
+    await this._withStore('readonly', (store, _tx, resolve, reject) => {
+      let source = store;
+      if (sortBy && sortBy !== 'id') {
+        try {
+          source = store.index(sortBy);
+        } catch (_) {
+          source = store;
+        }
+      }
+
+      const request = source.openCursor(null, cursorDirection);
+      let batch = [];
+      const emitBatch = () => {
+        if (batch.length === 0) return true;
+        try {
+          const maybePromise = onBatch(batch);
+          if (maybePromise && typeof maybePromise.then === 'function') {
+            reject(new Error('forEachShadowBatch callback must be synchronous'));
+            return false;
+          }
+          batches++;
+          batch = [];
+          return true;
+        } catch (error) {
+          reject(error);
+          return false;
+        }
+      };
+
+      request.onsuccess = (event) => {
+        const cursor = event.target.result;
+        if (!cursor) {
+          emitBatch();
+          resolve({ scanned, batches });
+          return;
+        }
+
+        batch.push(cursor.value);
+        scanned++;
+
+        if (batch.length >= safeBatchSize && !emitBatch()) {
+          return;
+        }
+
+        cursor.continue();
+      };
+      request.onerror = () => reject(request.error);
+    });
+
+    return { scanned, batches };
   }
 
   // getShadowEffectiveStats: Primary definition is in Section 3.11 (with null guard + zero-stats fallback)
@@ -1083,6 +1198,63 @@ class ShadowStorageManager {
       request.onsuccess = () => resolve(request.result);
       request.onerror = () => resolve(0);
     });
+  }
+
+  /**
+   * Fetch a targeted set of shadows by ID in bounded chunks.
+   * Avoids full-table reads when callers only need a subset.
+   *
+   * @param {Array<string>} ids
+   * @param {Object} options
+   * @param {number} options.chunkSize - IDs per transaction chunk (default: 200)
+   * @returns {Promise<Array<Object>>}
+   */
+  async getShadowsByIds(ids = [], { chunkSize = 200 } = {}) {
+    if (!Array.isArray(ids) || ids.length === 0) return [];
+
+    const uniqueIds = Array.from(
+      new Set(
+        ids
+          .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
+          .filter(Boolean)
+      )
+    );
+    if (uniqueIds.length === 0) return [];
+
+    const safeChunkSize = Math.max(25, Math.floor(chunkSize) || 200);
+    const results = [];
+
+    for (let i = 0; i < uniqueIds.length; i += safeChunkSize) {
+      const idChunk = uniqueIds.slice(i, i + safeChunkSize);
+      const chunkResults = await this._withStore('readonly', (store, _tx, resolve) => {
+        const found = [];
+        let remaining = idChunk.length;
+
+        if (remaining === 0) {
+          resolve(found);
+          return;
+        }
+
+        const finalize = () => {
+          remaining -= 1;
+          if (remaining <= 0) {
+            resolve(found);
+          }
+        };
+
+        idChunk.forEach((id) => {
+          const request = store.get(id);
+          request.onsuccess = () => {
+            request.result && found.push(request.result);
+            finalize();
+          };
+          request.onerror = () => finalize();
+        });
+      });
+      chunkResults.length > 0 && results.push(...chunkResults);
+    }
+
+    return results;
   }
 
   /**
@@ -2214,7 +2386,11 @@ module.exports = class ShadowArmy {
     this._isStopped = false;
     // PERF: Dirty flag — skip widget/modal IDB queries when no data has changed
     this._widgetDirty = true; // Start dirty so first update runs
-    this._postExtractionDebounceTimer = null; // Debounce post-extraction cascade
+    this._widgetRefreshTimer = null; // Single coalesced refresh timer
+    this._widgetRefreshInFlight = false;
+    this._widgetRefreshQueued = false;
+    this._lastWidgetRefreshAt = 0;
+    this._widgetRefreshMinIntervalMs = 800;
 
     // React widget refs (v3.6.0)
     this._widgetReactRoot = null;
@@ -2474,8 +2650,7 @@ module.exports = class ShadowArmy {
     // Update widget every 30 seconds (only if data changed)
     this.widgetUpdateInterval = setInterval(() => {
       if (!this._widgetDirty) return; // PERF: Skip IDB query when nothing changed
-      this._widgetDirty = false;
-      this.updateShadowRankWidget();
+      this.scheduleWidgetRefresh({ reason: 'interval', delayMs: 0 });
     }, 30000);
 
     // Chatbox button disabled - no removal needed
@@ -2494,16 +2669,7 @@ module.exports = class ShadowArmy {
       // Listen for batch extraction complete (C11 fix - immediate widget refresh)
       this._batchExtractionListener = async (data) => {
         if (data?.extracted > 0 && typeof this.updateShadowRankWidget === 'function') {
-          // Clear debounce and force immediate refresh
-          if (this._postExtractionDebounceTimer) {
-            clearTimeout(this._postExtractionDebounceTimer);
-            this._postExtractionDebounceTimer = null;
-          }
-          try {
-            await this.updateShadowRankWidget();
-          } catch (err) {
-            this.debugError?.('WIDGET', 'Batch extraction widget refresh failed', err);
-          }
+          this.scheduleWidgetRefresh({ reason: 'batch_extraction_event', delayMs: 250 });
         }
       };
       BdApi.Events.on('ShadowArmy:batchExtractionComplete', this._batchExtractionListener);
@@ -2613,11 +2779,13 @@ module.exports = class ShadowArmy {
       this.autoRefreshInterval = null;
     }
 
-    // Clear post-extraction debounce timer
-    if (this._postExtractionDebounceTimer) {
-      clearTimeout(this._postExtractionDebounceTimer);
-      this._postExtractionDebounceTimer = null;
+    // Clear coalesced widget refresh timer
+    if (this._widgetRefreshTimer) {
+      clearTimeout(this._widgetRefreshTimer);
+      this._widgetRefreshTimer = null;
     }
+    this._widgetRefreshInFlight = false;
+    this._widgetRefreshQueued = false;
 
     // Clear member list observer health check
     if (this._memberListHealthCheck) {
@@ -3906,7 +4074,10 @@ module.exports = class ShadowArmy {
     const now = Date.now();
     this.settings.totalShadowsExtracted++;
     this.settings.lastExtractionTime = now;
-    await this.grantShadowXP(2, 'extraction');
+    const extractedShadowId = shadow?.id || shadow?.i;
+    await this.grantShadowXP(2, 'extraction', extractedShadowId ? [String(extractedShadowId)] : null, {
+      skipPowerRecalc: true,
+    });
     this.updateUI();
 
     this.debugLog('EXTRACTION_RETRIES', `Attempt ${attemptNum} - ${reasonLabel}`, {
@@ -4248,21 +4419,9 @@ module.exports = class ShadowArmy {
               );
             }
 
-            // PERF: Mark widget dirty + debounce update (500ms) to coalesce burst extractions
+            // PERF: Mark widget dirty + coalesce to one refresh task
             this._widgetDirty = true;
-            if (this._postExtractionDebounceTimer) clearTimeout(this._postExtractionDebounceTimer);
-            this._postExtractionDebounceTimer = setTimeout(async () => {
-              this._postExtractionDebounceTimer = null;
-              if (this._isStopped) return;
-              if (typeof this.updateShadowRankWidget === 'function') {
-                try {
-                  this._widgetDirty = false;
-                  await this.updateShadowRankWidget();
-                } catch (error) {
-                  this.debugError('WIDGET', 'Failed to update widget after extraction', error);
-                }
-              }
-            }, 500);
+            this.scheduleWidgetRefresh({ reason: 'single_extraction', delayMs: 300 });
 
             // Shadow extraction completed - logged above in EXTRACTION_RETRIES completion log
 
@@ -4291,7 +4450,10 @@ module.exports = class ShadowArmy {
             this.settings.lastExtractionTime = now;
 
             // Grant XP
-            await this.grantShadowXP(2, 'extraction');
+            const extractedShadowId = shadow?.id || shadow?.i;
+            await this.grantShadowXP(2, 'extraction', extractedShadowId ? [String(extractedShadowId)] : null, {
+              skipPowerRecalc: true,
+            });
 
             this.saveSettings();
 
@@ -4565,6 +4727,7 @@ module.exports = class ShadowArmy {
     let totalAttempted = 0;
     let totalPowerDelta = 0;
     const rankCounts = {}; // For summary toast
+    const extractedShadowIds = [];
 
     // Pre-compute constants once
     const userRankIdx = this.shadowRanks.indexOf(userRank);
@@ -4670,6 +4833,8 @@ module.exports = class ShadowArmy {
         totalPowerDelta += (shadowToSave.strength || shadowToSave.s || 0);
         const r = shadowToSave.rank || shadowToSave.r || '?';
         rankCounts[r] = (rankCounts[r] || 0) + 1;
+        const extractedShadowId = shadowToSave?.id || shadowToSave?.i;
+        extractedShadowId && extractedShadowIds.push(String(extractedShadowId));
 
         if (isBoss) this.recordBossExtractionAttempt(corpse.id, true);
       }
@@ -4687,7 +4852,8 @@ module.exports = class ShadowArmy {
             savedCount = await this.storageManager.saveShadowsBatch(chunkShadows);
           }
 
-          totalExtracted += Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
+          const effectiveSavedCount = Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
+          totalExtracted += effectiveSavedCount;
         } catch (e) {
           this.debugError(
             'BULK_EXTRACTION',
@@ -4723,7 +4889,13 @@ module.exports = class ShadowArmy {
         // Counters + XP
         this.settings.totalShadowsExtracted = (this.settings.totalShadowsExtracted || 0) + totalExtracted;
         this.settings.lastExtractionTime = Date.now();
-        await this.grantShadowXP(2 * totalExtracted, 'extraction');
+        const uniqueExtractedIds = Array.from(new Set(extractedShadowIds));
+        if (uniqueExtractedIds.length > 0) {
+          await this.grantShadowXP(2, 'extraction', uniqueExtractedIds, {
+            skipPowerRecalc: true,
+            fetchChunkSize: 250,
+          });
+        }
         this.saveSettings();
 
         // Invalidate caches
@@ -4752,21 +4924,9 @@ module.exports = class ShadowArmy {
           BdApi.showToast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, { type: 'success', timeout: 4000 });
         }
 
-        // Debounced widget update
+        // Coalesced widget refresh
         this._widgetDirty = true;
-        if (this._postExtractionDebounceTimer) clearTimeout(this._postExtractionDebounceTimer);
-        this._postExtractionDebounceTimer = setTimeout(async () => {
-          this._postExtractionDebounceTimer = null;
-          if (this._isStopped) return;
-          if (typeof this.updateShadowRankWidget === 'function') {
-            try {
-              this._widgetDirty = false;
-              await this.updateShadowRankWidget();
-            } catch (e) {
-              this.debugError('WIDGET', 'Failed to update widget after bulk extraction', e);
-            }
-          }
-        }, 500);
+        this.scheduleWidgetRefresh({ reason: 'bulk_extraction', delayMs: 300 });
 
         this.updateUI();
       } catch (error) {
@@ -5897,12 +6057,15 @@ module.exports = class ShadowArmy {
 
     if (this.storageManager) {
       try {
-        // getAll() fast path loads everything in one native IDB call — no need to paginate
-        const allShadows = await this.storageManager.getShadows({}, 0, Infinity);
-
-        for (const shadow of allShadows) {
-          this._accumulateShadowPower(shadow, totals);
-        }
+        // Constant-memory scan: stream shadows in small batches.
+        const streamResult = await this.storageManager.forEachShadowBatch(
+          (batch) => {
+            for (let i = 0; i < batch.length; i++) {
+              this._accumulateShadowPower(batch[i], totals);
+            }
+          },
+          { batchSize: 250, sortBy: 'extractedAt', sortOrder: 'desc' }
+        );
 
         // Update incremental cache
         const currentCount = (await this.storageManager.getTotalCount()) || 0;
@@ -5911,6 +6074,8 @@ module.exports = class ShadowArmy {
         this.debugLog('POWER', 'Total power calculated', {
           totalPower: totals.totalPower,
           processedShadows: totals.processedCount,
+          scannedShadows: streamResult?.scanned || 0,
+          streamBatches: streamResult?.batches || 0,
           totalShadows: currentCount,
           cacheUpdated: true,
         });
@@ -6103,162 +6268,196 @@ module.exports = class ShadowArmy {
     }
   }
 
-  aggregateShadowsForArmyStats(allShadows) {
-    // Use reduce for functional aggregation
-    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+  createArmyStatsAccumulator(statKeys) {
+    const keys = Array.isArray(statKeys)
+      ? statKeys
+      : ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
 
-    return allShadows.reduce(
-      (acc, shadow) => {
-        // Decompress if needed - use getShadowData if available, otherwise use shadow directly
-        let decompressed = shadow;
-        if (this.getShadowData && typeof this.getShadowData === 'function') {
-          decompressed = this.getShadowData(shadow);
-        }
+    return {
+      totalShadows: 0,
+      totalPower: 0,
+      totalLevel: 0,
+      totalStats: this.createZeroStatsBucket(keys),
+      byRank: {},
+      byRole: {},
+    };
+  }
 
-        // If getShadowData returned null/undefined, use original shadow
-        if (!decompressed) {
-          decompressed = shadow;
-        }
+  createZeroStatsBucket(statKeys) {
+    const keys = Array.isArray(statKeys)
+      ? statKeys
+      : ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    return keys.reduce((stats, key) => {
+      stats[key] = 0;
+      return stats;
+    }, {});
+  }
 
-        // Guard clause: Skip if shadow is still invalid
-        if (!decompressed || (!decompressed.id && !decompressed.i)) {
-          const shadowId = this.getCacheKey(shadow);
-          this.debugLog('COMBAT', 'Invalid shadow data, skipping', {
-            shadowId,
-            hasGetShadowData: !!this.getShadowData,
-          });
-          return acc; // Skip invalid shadow
-        }
+  _accumulateArmyStatsForShadow(acc, shadow, statKeys) {
+    // Decompress if needed - use getShadowData if available, otherwise use shadow directly
+    let decompressed = shadow;
+    if (this.getShadowData && typeof this.getShadowData === 'function') {
+      decompressed = this.getShadowData(shadow);
+    }
 
-        // CRITICAL: Always use effective stats (baseStats + growthStats + naturalGrowthStats)
-        // This ensures accuracy by including ALL stat sources: base, level-up growth, and natural growth
-        const effective = this.getShadowEffectiveStats(decompressed);
+    // If getShadowData returned null/undefined, use original shadow
+    if (!decompressed) {
+      decompressed = shadow;
+    }
 
-        // Guard clause: Skip shadow if we can't calculate effective stats
-        // This should rarely happen, but ensures data integrity
-        if (!effective) {
-          this.debugLog('COMBAT', 'Cannot calculate effective stats, skipping shadow', {
-            shadowId: this.getCacheKey(decompressed),
-            hasBaseStats: !!decompressed.baseStats,
-            hasGrowthStats: !!decompressed.growthStats,
-            hasNaturalGrowthStats: !!decompressed.naturalGrowthStats,
-          });
-          return acc; // Skip invalid shadow
-        }
+    // Guard clause: Skip if shadow is still invalid
+    if (!decompressed || (!decompressed.id && !decompressed.i)) {
+      const shadowId = this.getCacheKey(shadow);
+      this.debugLog('COMBAT', 'Invalid shadow data, skipping', {
+        shadowId,
+        hasGetShadowData: !!this.getShadowData,
+      });
+      return;
+    }
 
-        // CRITICAL: Check if effective stats are all zeros (invalid shadow data)
-        const totalEffectiveStats = statKeys.reduce((sum, key) => sum + (effective[key] || 0), 0);
-        if (totalEffectiveStats === 0) {
-          // Shadow has no stats - this is a data integrity issue
-          // Try to use stored strength as fallback
-          const fallbackStrength = decompressed.strength || shadow.strength || 0;
-          if (fallbackStrength > 0) {
-            // Use stored strength as power
-            this.debugLog(
-              'COMBAT',
-              'Using stored strength as fallback (effective stats are all 0)',
-              {
-                shadowId: this.getCacheKey(decompressed),
-                storedStrength: fallbackStrength,
-                effectiveStats: effective,
-                baseStats: decompressed.baseStats,
-              }
-            );
-            const power = fallbackStrength;
-            acc.totalShadows++;
-            acc.totalPower += power;
-            acc.totalLevel += decompressed.level || 1;
-            // Estimate stats from strength (rough approximation)
-            statKeys.forEach((stat) => {
-              acc.totalStats[stat] += Math.floor(power / 5); // Distribute evenly
-            });
-            return acc;
-          }
+    // CRITICAL: Always use effective stats (baseStats + growthStats + naturalGrowthStats)
+    // This ensures accuracy by including ALL stat sources: base, level-up growth, and natural growth
+    const effective = this.getShadowEffectiveStats(decompressed);
 
-          // No valid stats or strength - skip this shadow
-          this.debugLog('COMBAT', 'Skipping shadow with no valid stats or strength', {
-            shadowId: this.getCacheKey(decompressed),
-            effectiveStats: effective,
-            storedStrength: fallbackStrength,
-            baseStats: decompressed.baseStats,
-            rank: decompressed?.rank,
-          });
-          return acc; // Skip invalid shadow
-        }
+    // Guard clause: Skip shadow if we can't calculate effective stats
+    if (!effective) {
+      this.debugLog('COMBAT', 'Cannot calculate effective stats, skipping shadow', {
+        shadowId: this.getCacheKey(decompressed),
+        hasBaseStats: !!decompressed.baseStats,
+        hasGrowthStats: !!decompressed.growthStats,
+        hasNaturalGrowthStats: !!decompressed.naturalGrowthStats,
+      });
+      return;
+    }
 
-        // CRITICAL: Always calculate power from effective stats for accuracy
-        // Effective stats = baseStats + growthStats + naturalGrowthStats
-        // This ensures we include ALL stat sources, not just baseStats or stored strength
-        const power = this.calculateShadowPower(effective, 1);
-
-        // Debug log if power is 0 (shouldn't happen with valid effective stats)
-        // Only log first few to avoid spam
-        if (power === 0 && acc.totalShadows < 3) {
-          this.debugLog('COMBAT', 'Power is 0 despite having effective stats', {
-            shadowId: this.getCacheKey(decompressed),
-            effectiveStats: effective,
-            totalEffectiveStats,
-            baseStats: decompressed.baseStats,
-            growthStats: decompressed.growthStats,
-            naturalGrowthStats: decompressed.naturalGrowthStats,
-            rank: decompressed?.rank,
-            level: decompressed?.level,
-            calculatedPower: power,
-          });
-        }
-
-        // Aggregate totals using effective stats (includes ALL stat sources)
+    // CRITICAL: Check if effective stats are all zeros (invalid shadow data)
+    const totalEffectiveStats = statKeys.reduce((sum, key) => sum + (effective[key] || 0), 0);
+    if (totalEffectiveStats === 0) {
+      // Try stored strength fallback
+      const fallbackStrength = decompressed.strength || shadow.strength || 0;
+      if (fallbackStrength > 0) {
+        this.debugLog('COMBAT', 'Using stored strength as fallback (effective stats are all 0)', {
+          shadowId: this.getCacheKey(decompressed),
+          storedStrength: fallbackStrength,
+          effectiveStats: effective,
+          baseStats: decompressed.baseStats,
+        });
+        const power = fallbackStrength;
         acc.totalShadows++;
-        acc.totalPower += power; // Power calculated from effective stats
+        acc.totalPower += power;
         acc.totalLevel += decompressed.level || 1;
-
-        // CRITICAL: Always aggregate stats from effective stats (baseStats + growthStats + naturalGrowthStats)
-        // This ensures we include ALL stat sources for accurate total stats
+        // Estimate stats from strength (rough approximation)
         statKeys.forEach((stat) => {
-          acc.totalStats[stat] += effective[stat] || 0;
+          acc.totalStats[stat] += Math.floor(power / 5);
         });
-
-        // Group by rank using effective stats
-        const rank = decompressed.rank || 'E';
-        if (!acc.byRank[rank]) {
-          acc.byRank[rank] = {
-            count: 0,
-            totalPower: 0,
-            totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
-          };
-        }
-        acc.byRank[rank].count++;
-        acc.byRank[rank].totalPower += power; // Power from effective stats
-        statKeys.forEach((stat) => {
-          acc.byRank[rank].totalStats[stat] += effective[stat] || 0;
+      } else {
+        this.debugLog('COMBAT', 'Skipping shadow with no valid stats or strength', {
+          shadowId: this.getCacheKey(decompressed),
+          effectiveStats: effective,
+          storedStrength: fallbackStrength,
+          baseStats: decompressed.baseStats,
+          rank: decompressed?.rank,
         });
-
-        // Group by role using effective stats
-        const role = decompressed.role || decompressed.roleName || 'Unknown';
-        if (!acc.byRole[role]) {
-          acc.byRole[role] = {
-            count: 0,
-            totalPower: 0,
-            totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
-          };
-        }
-        acc.byRole[role].count++;
-        acc.byRole[role].totalPower += power; // Power from effective stats
-        statKeys.forEach((stat) => {
-          acc.byRole[role].totalStats[stat] += effective[stat] || 0;
-        });
-
-        return acc;
-      },
-      {
-        totalShadows: 0,
-        totalPower: 0,
-        totalLevel: 0,
-        totalStats: statKeys.reduce((s, k) => ({ ...s, [k]: 0 }), {}),
-        byRank: {},
-        byRole: {},
       }
+      return;
+    }
+
+    // CRITICAL: Always calculate power from effective stats for accuracy
+    const power = this.calculateShadowPower(effective, 1);
+
+    // Debug log if power is 0 (shouldn't happen with valid effective stats)
+    if (power === 0 && acc.totalShadows < 3) {
+      this.debugLog('COMBAT', 'Power is 0 despite having effective stats', {
+        shadowId: this.getCacheKey(decompressed),
+        effectiveStats: effective,
+        totalEffectiveStats,
+        baseStats: decompressed.baseStats,
+        growthStats: decompressed.growthStats,
+        naturalGrowthStats: decompressed.naturalGrowthStats,
+        rank: decompressed?.rank,
+        level: decompressed?.level,
+        calculatedPower: power,
+      });
+    }
+
+    // Aggregate totals using effective stats (includes ALL stat sources)
+    acc.totalShadows++;
+    acc.totalPower += power;
+    acc.totalLevel += decompressed.level || 1;
+    statKeys.forEach((stat) => {
+      acc.totalStats[stat] += effective[stat] || 0;
+    });
+
+    // Group by rank using effective stats
+    const rank = decompressed.rank || 'E';
+    if (!acc.byRank[rank]) {
+      acc.byRank[rank] = {
+        count: 0,
+        totalPower: 0,
+        totalStats: this.createZeroStatsBucket(statKeys),
+      };
+    }
+    acc.byRank[rank].count++;
+    acc.byRank[rank].totalPower += power;
+    statKeys.forEach((stat) => {
+      acc.byRank[rank].totalStats[stat] += effective[stat] || 0;
+    });
+
+    // Group by role using effective stats
+    const role = decompressed.role || decompressed.roleName || 'Unknown';
+    if (!acc.byRole[role]) {
+      acc.byRole[role] = {
+        count: 0,
+        totalPower: 0,
+        totalStats: this.createZeroStatsBucket(statKeys),
+      };
+    }
+    acc.byRole[role].count++;
+    acc.byRole[role].totalPower += power;
+    statKeys.forEach((stat) => {
+      acc.byRole[role].totalStats[stat] += effective[stat] || 0;
+    });
+  }
+
+  aggregateShadowsForArmyStats(allShadows) {
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const aggregatedData = this.createArmyStatsAccumulator(statKeys);
+    const safeShadows = Array.isArray(allShadows) ? allShadows : [];
+
+    for (let i = 0; i < safeShadows.length; i++) {
+      this._accumulateArmyStatsForShadow(aggregatedData, safeShadows[i], statKeys);
+    }
+
+    return aggregatedData;
+  }
+
+  async aggregateShadowsForArmyStatsStreamed(batchSize = 200) {
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const aggregatedData = this.createArmyStatsAccumulator(statKeys);
+    let sampleShadow = null;
+
+    if (!this.storageManager?.forEachShadowBatch) {
+      return { aggregatedData, sampleShadow, scanned: 0, batches: 0 };
+    }
+
+    const streamResult = await this.storageManager.forEachShadowBatch(
+      (batch) => {
+        if (!sampleShadow && batch.length > 0) {
+          sampleShadow = batch[0];
+        }
+        for (let i = 0; i < batch.length; i++) {
+          this._accumulateArmyStatsForShadow(aggregatedData, batch[i], statKeys);
+        }
+      },
+      { batchSize, sortBy: 'extractedAt', sortOrder: 'desc' }
     );
+
+    return {
+      aggregatedData,
+      sampleShadow,
+      scanned: streamResult?.scanned || aggregatedData.totalShadows,
+      batches: streamResult?.batches || 0,
+    };
   }
 
   async finalizeAggregatedArmyStats({ aggregatedData, allShadowsLength }) {
@@ -6376,10 +6575,10 @@ module.exports = class ShadowArmy {
     }
 
     try {
-      const { allShadows, totalCount } = await this.getAllShadowsForAggregation();
+      const totalCount = this.storageManager ? await this.storageManager.getTotalCount() : 0;
 
-      // Guard clause: Return empty stats if no shadows
-      if (!allShadows || allShadows.length === 0) {
+      // Guard clause: Return empty stats if no shadows in IndexedDB
+      if (!totalCount || totalCount <= 0) {
         this.debugLog('COMBAT', 'No shadows found in storage', {
           hasStorageManager: !!this.storageManager,
           dbInitialized: !!this.storageManager?.db,
@@ -6387,7 +6586,7 @@ module.exports = class ShadowArmy {
           storageManagerDbName: this.storageManager?.dbName,
         });
 
-        // Preserve the existing diagnostic log (but avoid a second IndexedDB count call)
+        // Preserve the existing diagnostic log
         if (this.storageManager) {
           this.debugLog('COMBAT', 'IndexedDB total count check', {
             totalCount,
@@ -6396,30 +6595,38 @@ module.exports = class ShadowArmy {
         }
 
         const emptyStats = this.createEmptyArmyStats();
-
-        // CRITICAL FIX: Don't cache empty results if IndexedDB shows shadows exist
-        // This prevents caching 0 when shadows are being loaded/migrated
-        if (totalCount > 0) {
-          this.debugLog(
-            'COMBAT',
-            'IndexedDB has shadows but getShadows returned empty - not caching empty result',
-            {
-              totalCount,
-              reason: 'Possible timing issue during migration or initialization',
-            }
-          );
-          return emptyStats;
-        }
-
         return emptyStats;
       }
 
-      this.logShadowAggregationSamples(allShadows);
+      const snapshot = this.getShadowSnapshot();
+      let aggregatedData;
+      if (snapshot && snapshot.length > 0 && snapshot.length === totalCount) {
+        this.debugLog('COMBAT', 'Using snapshot cache for aggregation', {
+          snapshotSize: snapshot.length,
+          totalCount,
+        });
+        this.logShadowAggregationSamples(snapshot);
+        aggregatedData = this.aggregateShadowsForArmyStats(snapshot);
+      } else {
+        const streamed = await this.aggregateShadowsForArmyStatsStreamed(200);
+        aggregatedData = streamed.aggregatedData;
+        this.debugLog('COMBAT', 'Streamed shadow aggregation complete', {
+          scanned: streamed.scanned,
+          batches: streamed.batches,
+          totalCount,
+          sampleShadow: streamed.sampleShadow
+            ? {
+                id: streamed.sampleShadow.id || streamed.sampleShadow.i,
+                rank: streamed.sampleShadow.rank,
+                hasStrength: !!streamed.sampleShadow.strength,
+              }
+            : null,
+        });
+      }
 
-      const aggregatedData = this.aggregateShadowsForArmyStats(allShadows);
       const { aggregated, shouldCache } = await this.finalizeAggregatedArmyStats({
         aggregatedData,
-        allShadowsLength: allShadows.length,
+        allShadowsLength: totalCount,
       });
 
       if (
@@ -6618,67 +6825,79 @@ module.exports = class ShadowArmy {
    *    - Save updated shadow to IndexedDB
    * 5. Save settings (config only)
    */
-  async grantShadowXP(baseAmount, reason = 'message', shadowIds = null) {
-    // Guard clause: Return early if invalid baseAmount
-    if (baseAmount <= 0) return;
+  async grantShadowXP(baseAmount, reason = 'message', shadowIds = null, options = {}) {
+    const perShadowAmounts =
+      options && typeof options === 'object' && options.perShadowAmounts && typeof options.perShadowAmounts === 'object'
+        ? options.perShadowAmounts
+        : null;
+    const skipPowerRecalc = Boolean(options?.skipPowerRecalc);
+    const targetFetchChunkSize = Math.max(25, Math.floor(Number(options?.fetchChunkSize) || 300));
+
+    // Guard clause: Return early if invalid baseAmount and no per-shadow overrides
+    if (baseAmount <= 0 && !perShadowAmounts) return;
 
     let shadowsToGrant = [];
-
-    // Guard clause: Grant XP to specific shadows if provided
-    if (shadowIds && Array.isArray(shadowIds) && shadowIds.length > 0) {
-      const allShadows = await this.getAllShadows();
-      shadowsToGrant = allShadows.filter((s) => shadowIds.includes(s.id));
-    } else {
-      // All shadows receive XP from messages (shared experience)
-      shadowsToGrant = await this.getAllShadows();
-    }
-
-    // Guard clause: Return early if no shadows to grant XP to
-    if (!shadowsToGrant.length) return;
+    let hasPersistedUpdates = false;
+    const targetShadowIds =
+      Array.isArray(shadowIds) && shadowIds.length > 0
+        ? shadowIds
+        : perShadowAmounts
+        ? Object.keys(perShadowAmounts)
+        : null;
 
     const MAX_LEVEL = 9999; // Safety cap to prevent infinite level-up loops
     const perShadow = baseAmount;
 
-    // Process all shadows in-memory first (CPU-only, no I/O)
-    const updatedShadows = [];
-    for (const shadow of shadowsToGrant) {
-      shadow.xp = (shadow.xp || 0) + perShadow;
-      let level = shadow.level || 1;
+    const processXpBatch = async (batchShadows) => {
+      if (!Array.isArray(batchShadows) || batchShadows.length === 0) return 0;
 
-      // Level up loop in case of big XP grants (with safety cap)
-      const shadowRank = shadow.rank || 'E';
-      let leveledUp = false;
-      while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank) && level < MAX_LEVEL) {
-        shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
-        level += 1;
-        shadow.level = level;
-        this.applyShadowLevelUpStats(shadow);
-        leveledUp = true;
-        // Recompute strength after level up
-        const effectiveStats = this.getShadowEffectiveStats(shadow);
-        shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
-      }
+      // Process this batch in-memory first (CPU-only, no I/O)
+      const updatedShadows = [];
+      for (const shadow of batchShadows) {
+        const shadowId = shadow?.id || shadow?.i;
+        const xpOverride = perShadowAmounts && shadowId != null
+          ? Number(perShadowAmounts[String(shadowId)]) || 0
+          : null;
+        const xpGrant = xpOverride != null ? xpOverride : perShadow;
+        if (!(xpGrant > 0)) continue;
 
-      // AUTO RANK-UP: Check if shadow qualifies for rank promotion after level-up
-      if (leveledUp) {
-        const rankUpResult = this.attemptAutoRankUp(shadow);
-        if (rankUpResult.success) {
-          this.debugLog(
-            'RANK_UP',
-            `AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${
-              rankUpResult.newRank
-            }!`
-          );
+        shadow.xp = (shadow.xp || 0) + xpGrant;
+        let level = shadow.level || 1;
+
+        // Level up loop in case of big XP grants (with safety cap)
+        const shadowRank = shadow.rank || 'E';
+        let leveledUp = false;
+        while (shadow.xp >= this.getShadowXpForNextLevel(level, shadowRank) && level < MAX_LEVEL) {
+          shadow.xp -= this.getShadowXpForNextLevel(level, shadowRank);
+          level += 1;
+          shadow.level = level;
+          this.applyShadowLevelUpStats(shadow);
+          leveledUp = true;
+          // Recompute strength after level up
+          const effectiveStats = this.getShadowEffectiveStats(shadow);
+          shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
         }
+
+        // AUTO RANK-UP: Check if shadow qualifies for rank promotion after level-up
+        if (leveledUp) {
+          const rankUpResult = this.attemptAutoRankUp(shadow);
+          if (rankUpResult.success) {
+            this.debugLog(
+              'RANK_UP',
+              `AUTO RANK-UP: ${shadow.name || 'Shadow'} promoted ${rankUpResult.oldRank} -> ${
+                rankUpResult.newRank
+              }!`
+            );
+          }
+        }
+
+        // Invalidate individual shadow power cache before saving (prevents stale cache)
+        this.invalidateShadowPowerCache(shadow);
+        updatedShadows.push(this.prepareShadowForSave(shadow));
       }
 
-      // Invalidate individual shadow power cache before saving (prevents stale cache)
-      this.invalidateShadowPowerCache(shadow);
-      updatedShadows.push(this.prepareShadowForSave(shadow));
-    }
+      if (!this.storageManager || updatedShadows.length === 0) return 0;
 
-    // Single batched IDB write for all shadows (was: sequential await per shadow)
-    if (this.storageManager && updatedShadows.length > 0) {
       try {
         if (this.storageManager.updateShadowsBatch) {
           await this.storageManager.updateShadowsBatch(updatedShadows);
@@ -6686,11 +6905,61 @@ module.exports = class ShadowArmy {
           // Fallback: parallel writes if batch not available
           await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
         }
-        this._invalidateSnapshot(); // XP/level/rank changed — snapshot stale
+        hasPersistedUpdates = true;
+        return updatedShadows.length;
       } catch (error) {
         this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);
+        return 0;
       }
+    };
+
+    // Targeted path (for dungeon/bulk extraction): fetch + process in bounded ID chunks.
+    if (targetShadowIds && targetShadowIds.length > 0 && this.storageManager?.getShadowsByIds) {
+      const uniqueTargetIds = Array.from(
+        new Set(
+          targetShadowIds
+            .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
+            .filter(Boolean)
+        )
+      );
+      if (uniqueTargetIds.length === 0) return;
+
+      for (let i = 0; i < uniqueTargetIds.length; i += targetFetchChunkSize) {
+        const idChunk = uniqueTargetIds.slice(i, i + targetFetchChunkSize);
+        let shadowsChunk = await this.storageManager.getShadowsByIds(idChunk, {
+          chunkSize: idChunk.length,
+        });
+        if (this.getShadowData && shadowsChunk.length > 0) {
+          shadowsChunk = shadowsChunk.map((s) => this.getShadowData(s));
+        }
+        await processXpBatch(shadowsChunk);
+
+        // Yield between large chunks to keep UI responsive under heavy updates.
+        if (i + targetFetchChunkSize < uniqueTargetIds.length) {
+          await new Promise((r) => setTimeout(r, 0));
+        }
+      }
+    } else {
+      // Legacy/all-shadows path.
+      if (targetShadowIds && targetShadowIds.length > 0) {
+        const targetIds = new Set(targetShadowIds.map((id) => String(id)));
+        const allShadows = await this.getAllShadows();
+        shadowsToGrant = allShadows.filter((s) => {
+          const sid = s?.id || s?.i;
+          return sid && targetIds.has(String(sid));
+        });
+      } else {
+        // All shadows receive XP from messages (shared experience)
+        shadowsToGrant = await this.getAllShadows();
+      }
+
+      // Guard clause: Return early if no shadows to grant XP to
+      if (!shadowsToGrant.length) return;
+      await processXpBatch(shadowsToGrant);
     }
+
+    if (!hasPersistedUpdates) return;
+    this._invalidateSnapshot(); // XP/level/rank changed — snapshot stale
 
     // When shadow XP/level changes, we need to recalculate that shadow's power and update cache
     // Invalidate incremental cache to force full recalculation
@@ -6699,7 +6968,9 @@ module.exports = class ShadowArmy {
 
     // Trigger background recalculation (don't wait - async update)
     // This will recalculate total power with fresh shadow power values
-    this.getTotalShadowPower(true).catch(() => {}); // Force full recalculation
+    if (!skipPowerRecalc) {
+      this.getTotalShadowPower(true).catch(() => {}); // Force full recalculation
+    }
 
     this.saveSettings();
   }
@@ -9973,6 +10244,57 @@ module.exports = class ShadowArmy {
     this._widgetForceUpdate?.();
   }
 
+  scheduleWidgetRefresh({ reason = 'unknown', delayMs = 250 } = {}) {
+    this._widgetDirty = true;
+    if (this._isStopped) return;
+
+    if (this._widgetRefreshTimer) {
+      return;
+    }
+
+    const now = Date.now();
+    const elapsed = now - (this._lastWidgetRefreshAt || 0);
+    const minWait = Math.max(0, (this._widgetRefreshMinIntervalMs || 0) - elapsed);
+    const waitMs = Math.max(0, delayMs || 0, minWait);
+
+    this._widgetRefreshTimer = setTimeout(() => {
+      this._widgetRefreshTimer = null;
+      this._runScheduledWidgetRefresh(reason).catch((error) => {
+        this.debugError('WIDGET', 'Scheduled refresh failed', error);
+      });
+    }, waitMs);
+  }
+
+  async _runScheduledWidgetRefresh(reason = 'unknown') {
+    if (this._isStopped) return;
+    if (!this._widgetDirty) return;
+
+    if (this._widgetRefreshInFlight) {
+      this._widgetRefreshQueued = true;
+      return;
+    }
+
+    this._widgetRefreshInFlight = true;
+    try {
+      this._widgetDirty = false;
+      await Promise.resolve(this.updateShadowRankWidget());
+      this._lastWidgetRefreshAt = Date.now();
+      this.debugLog('WIDGET', 'Coalesced widget refresh complete', {
+        reason,
+        refreshedAt: this._lastWidgetRefreshAt,
+      });
+    } catch (error) {
+      this._widgetDirty = true;
+      this.debugError('WIDGET', 'Coalesced widget refresh error', { reason, error });
+    } finally {
+      this._widgetRefreshInFlight = false;
+      if (this._widgetRefreshQueued && !this._isStopped) {
+        this._widgetRefreshQueued = false;
+        this.scheduleWidgetRefresh({ reason: 'queued_followup', delayMs: this._widgetRefreshMinIntervalMs });
+      }
+    }
+  }
+
   /**
    * Remove shadow rank widget (React unmount + DOM removal)
    */
@@ -10444,7 +10766,19 @@ module.exports = class ShadowArmy {
             refreshInFlightRef.current = true;
             pluginRef._widgetDirty = false;
             if (pluginRef.storageManager?.getShadows) {
-              const freshShadows = await pluginRef.storageManager.getShadows({}, 0, Infinity);
+              const totalCount = (await pluginRef.storageManager.getTotalCount()) || 0;
+              if (totalCount <= 0) {
+                setShadows([]);
+                return;
+              }
+              // Guardrail: avoid periodic full-table hydration in large armies.
+              if (totalCount > 2500) {
+                pluginRef.debugLog('UI', 'Modal auto-refresh skipped for large army', {
+                  totalCount,
+                });
+                return;
+              }
+              const freshShadows = await pluginRef.storageManager.getShadows({}, 0, totalCount);
               if (freshShadows && freshShadows.length > 0) {
                 setShadows(freshShadows.map((s) => pluginRef.getShadowData(s)));
               }

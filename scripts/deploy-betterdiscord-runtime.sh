@@ -1,11 +1,12 @@
 #!/bin/bash
 set -euo pipefail
 
-ASSETS_ROOT="${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets}"
+# Canonical source is betterdiscord-dev. Keep ASSETS_ROOT override for backwards compatibility.
+SOURCE_ROOT="${SOURCE_ROOT:-${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev}}"
 BD_ROOT="${BD_ROOT:-$HOME/Library/Application Support/BetterDiscord}"
 
-ASSETS_THEMES="$ASSETS_ROOT/themes"
-ASSETS_PLUGINS="$ASSETS_ROOT/plugins"
+ASSETS_THEMES="$SOURCE_ROOT/themes"
+ASSETS_PLUGINS="$SOURCE_ROOT/plugins"
 BD_THEMES="$BD_ROOT/themes"
 BD_PLUGINS="$BD_ROOT/plugins"
 BLOCKED_PLUGINS=(
@@ -60,4 +61,4 @@ for blocked in "${BLOCKED_PLUGINS[@]}"; do
   rm -f "$BD_PLUGINS/$blocked"
 done
 
-echo "Deployed BetterDiscord runtime from $ASSETS_ROOT -> $BD_ROOT"
+echo "Deployed BetterDiscord runtime from $SOURCE_ROOT -> $BD_ROOT"

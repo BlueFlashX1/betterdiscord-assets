@@ -3,8 +3,9 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-ASSETS_ROOT="${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets}"
-DEPLOY_SCRIPT="$ASSETS_ROOT/scripts/deploy-betterdiscord-runtime.sh"
+# Canonical source is betterdiscord-dev. Keep ASSETS_ROOT override for backwards compatibility.
+SOURCE_ROOT="${SOURCE_ROOT:-${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev}}"
+DEPLOY_SCRIPT="${DEPLOY_SCRIPT:-$SOURCE_ROOT/scripts/deploy-betterdiscord-runtime.sh}"
 LOG_DIR="$HOME/Library/Logs/BetterDiscord"
 LOG_FILE="$LOG_DIR/auto-rsync-watch.log"
 
@@ -28,9 +29,9 @@ fi
 echo "$(date '+%Y-%m-%d %H:%M:%S') watcher started (fswatch: $FSWATCH_BIN)" >> "$LOG_FILE"
 
 watch_paths=(
-  "$ASSETS_ROOT/plugins"
-  "$ASSETS_ROOT/themes/SoloLeveling-ClearVision.theme.css"
-  "$ASSETS_ROOT/themes/variables"
+  "$SOURCE_ROOT/plugins"
+  "$SOURCE_ROOT/themes/SoloLeveling-ClearVision.theme.css"
+  "$SOURCE_ROOT/themes/variables"
 )
 
 "$FSWATCH_BIN" -o -r --latency 0.8 \

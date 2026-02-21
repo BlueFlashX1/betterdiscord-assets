@@ -1170,9 +1170,16 @@ module.exports = class Dungeons {
     this.allocationCache = null; // Cache of all shadows
     this.allocationCacheTime = null; // When cache was created
     this.allocationCacheTTL = 60000; // 1 minute TTL
+    this._allocationDirty = true; // Recompute allocations on first use
+    this._allocationDirtyReason = 'init';
+    this._allocationShadowSetDirty = true; // Rebuild sorted shadow pool when army composition/stats changed
+    this._allocationSortedShadowsCache = null; // Cached strongest->weakest sorted army
+    this._allocationSortedShadowsCacheTime = null;
+    this._allocationScoreCache = null; // Map<shadowId, combatScore>
     this._lastRebalanceAt = new Map(); // channelKey -> timestamp (throttle reinforcement)
     this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
     this._allocationSummary = new Map(); // channelKey -> { dungeonRank, assignedCount, avgShadowRankIndex }
+    this._pendingDungeonXpPostProcess = new Map(); // taskKey -> metadata
 
     // HP/Mana regeneration timer
     this.regenInterval = null;
@@ -1731,8 +1738,8 @@ module.exports = class Dungeons {
     // letting each parallel dungeon race to call it.
     const cacheExpired = !this.allocationCache || !this.allocationCacheTime ||
       Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
-    if (cacheExpired) {
-      await this.preSplitShadowArmy(true);
+    if (cacheExpired || this._allocationDirty) {
+      await this.preSplitShadowArmy();
     }
 
     // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
@@ -2159,6 +2166,12 @@ module.exports = class Dungeons {
     }
     this.allocationCache = null; // Clear allocation cache
     this.allocationCacheTime = null;
+    this._allocationSortedShadowsCache = null;
+    this._allocationSortedShadowsCacheTime = null;
+    this._allocationScoreCache = null;
+    this._allocationDirty = true;
+    this._allocationDirtyReason = 'stop';
+    this._allocationShadowSetDirty = true;
     this._restoringDungeons = false; // Allow restore on next start()
 
     // Clear last attack time trackers
@@ -2864,15 +2877,15 @@ module.exports = class Dungeons {
             );
           }
 
-          const activeDungeonCount = this.activeDungeons?.size || 0;
-          if (activeDungeonCount === 0) {
-            return;
-          }
-
           // Invalidate shadow count cache
           this.invalidateShadowCountCache();
           // Invalidate shadows cache
           this.invalidateShadowsCache();
+
+          const activeDungeonCount = this.activeDungeons?.size || 0;
+          if (activeDungeonCount === 0) {
+            return;
+          }
 
           // Recalculate HP/Mana if needed
           this.recalculateUserHP();
@@ -2906,7 +2919,10 @@ module.exports = class Dungeons {
         const saInstance = saPlugin?.instance;
         if (!this.shadowArmy || (saInstance && this.shadowArmy !== saInstance)) {
           this.shadowArmy = this.validatePluginReference('ShadowArmy', 'storageManager');
-          if (this.shadowArmy) this.invalidateShadowCountCache();
+          if (this.shadowArmy) {
+            this.invalidateShadowCountCache();
+            this.invalidateShadowsCache();
+          }
         }
       }, 30000);
       this._intervals.add(this._pluginValidationInterval);
@@ -4721,9 +4737,10 @@ module.exports = class Dungeons {
 
     // Mark deployed (shadows fight autonomously — user can optionally JOIN separately)
     dungeon.shadowsDeployed = true;
+    this._markAllocationDirty('deploy-shadows');
 
     // Allocate shadows and start combat
-    await this.preSplitShadowArmy(true);
+    await this.preSplitShadowArmy();
 
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
 
@@ -4732,18 +4749,6 @@ module.exports = class Dungeons {
       `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
       `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | Key: ${channelKey}`
     );
-
-    // Initialize shadow HP if needed
-    if (
-      assignedShadows.length > 0 &&
-      (!dungeon.shadowHP || dungeon.shadowHP.size === 0)
-    ) {
-      const shadowHP = new Map();
-      const deadShadows = this.deadShadows.get(channelKey) || new Set();
-      const shadowsToInitialize = this._collectShadowsNeedingHPInit(assignedShadows, deadShadows);
-      await this._initializeShadowHPBatch(shadowsToInitialize, shadowHP, 'deploy');
-      dungeon.shadowHP = shadowHP;
-    }
 
     // Initialize boss and mob attack times to prevent one-shot burst
     const now = Date.now();
@@ -6389,26 +6394,203 @@ module.exports = class Dungeons {
 
   // ==== SHADOW ARMY ATTACKS WITH DEATH SYSTEM ====
 
+  _markAllocationDirty(reason = 'unknown', { shadowSetChanged = false } = {}) {
+    this._allocationDirty = true;
+    this._allocationDirtyReason = reason || 'unknown';
+    if (shadowSetChanged) {
+      this._allocationShadowSetDirty = true;
+      this._allocationSortedShadowsCache = null;
+      this._allocationSortedShadowsCacheTime = null;
+      this._allocationScoreCache = null;
+    }
+  }
+
+  _normalizeShadowIds(ids = []) {
+    return Array.from(
+      new Set(
+        (Array.isArray(ids) ? ids : [])
+          .map((id) => (id === null || id === undefined ? '' : String(id).trim()))
+          .filter(Boolean)
+      )
+    );
+  }
+
+  async _fetchDungeonShadowsByIds(ids) {
+    const uniqueIds = this._normalizeShadowIds(ids);
+    if (uniqueIds.length === 0 || !this.shadowArmy) return [];
+
+    const shadowStorage = this.shadowArmy.storageManager;
+    let shadows = [];
+
+    if (shadowStorage?.getShadowsByIds) {
+      shadows = await shadowStorage.getShadowsByIds(uniqueIds);
+    } else {
+      const allShadows = await this.getAllShadows();
+      const idSet = new Set(uniqueIds);
+      shadows = allShadows.filter((shadow) => {
+        const sid = this.getShadowIdValue(shadow);
+        return sid && idSet.has(String(sid));
+      });
+    }
+
+    if (this.shadowArmy.getShadowData && shadows.length > 0) {
+      shadows = shadows.map((raw) => this.shadowArmy.getShadowData(raw));
+    }
+    return shadows;
+  }
+
+  _queueDeferredDungeonXpPostProcess({
+    channelKey,
+    dungeonName,
+    dungeonRank,
+    xpTargetIds,
+    beforeStatesEntries,
+    combatHours,
+  }) {
+    const uniqueIds = this._normalizeShadowIds(xpTargetIds);
+    if (uniqueIds.length === 0) return false;
+
+    const taskKey = `${channelKey}:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+    this._pendingDungeonXpPostProcess.set(taskKey, {
+      channelKey,
+      dungeonName,
+      dungeonRank,
+      queuedAt: Date.now(),
+      targets: uniqueIds.length,
+    });
+
+    this._setTrackedTimeout(() => {
+      if (!this.started) {
+        this._pendingDungeonXpPostProcess.delete(taskKey);
+        return;
+      }
+      this._runDeferredDungeonXpPostProcess({
+        taskKey,
+        channelKey,
+        dungeonName,
+        dungeonRank,
+        xpTargetIds: uniqueIds,
+        beforeStatesEntries,
+        combatHours,
+      }).catch((error) => {
+        this.errorLog('Deferred dungeon shadow XP post-processing failed', error);
+      });
+    }, 0);
+
+    return true;
+  }
+
+  async _runDeferredDungeonXpPostProcess({
+    taskKey,
+    channelKey,
+    dungeonName,
+    dungeonRank,
+    xpTargetIds,
+    beforeStatesEntries,
+    combatHours,
+  }) {
+    const startMs = Date.now();
+    const beforeStates = new Map(beforeStatesEntries || []);
+    const shadowStorage = this.shadowArmy?.storageManager;
+
+    try {
+      const updatedShadows = await this._fetchDungeonShadowsByIds(xpTargetIds);
+      const updatedMap = new Map();
+      for (const shadow of updatedShadows) {
+        const sid = String(this.getShadowIdValue(shadow) || '');
+        if (sid && beforeStates.has(sid)) {
+          updatedMap.set(sid, shadow);
+        }
+      }
+
+      const leveledUpShadows = [];
+      const rankedUpShadows = [];
+      for (const [sid, before] of beforeStates.entries()) {
+        const shadow = updatedMap.get(sid);
+        if (!shadow) continue;
+
+        const levelAfter = shadow.level || 1;
+        if (levelAfter > before.level) {
+          leveledUpShadows.push({
+            name: shadow.name || before.name || 'Shadow',
+            levelBefore: before.level,
+            levelAfter,
+          });
+        }
+
+        const rankAfter = shadow.rank;
+        if (rankAfter && rankAfter !== before.rank) {
+          rankedUpShadows.push({
+            name: shadow.name || before.name || 'Shadow',
+            oldRank: before.rank,
+            newRank: rankAfter,
+          });
+        }
+      }
+
+      let growthSaved = 0;
+      if (this.shadowArmy?.applyNaturalGrowth && combatHours > 0 && updatedMap.size > 0) {
+        const growthUpdates = [];
+        for (const shadow of updatedMap.values()) {
+          const growthApplied = await this.shadowArmy.applyNaturalGrowth(shadow, combatHours);
+          if (!growthApplied || !shadowStorage) continue;
+
+          const prepared = this.shadowArmy.prepareShadowForSave
+            ? this.shadowArmy.prepareShadowForSave(shadow)
+            : shadow;
+          prepared && growthUpdates.push(prepared);
+        }
+
+        if (growthUpdates.length > 0 && shadowStorage) {
+          if (typeof shadowStorage.saveShadowsChunked === 'function') {
+            await shadowStorage.saveShadowsChunked(growthUpdates, 10);
+          } else if (typeof shadowStorage.updateShadowsBatch === 'function') {
+            await shadowStorage.updateShadowsBatch(growthUpdates);
+          } else {
+            await Promise.all(growthUpdates.map((shadow) => shadowStorage.saveShadow(shadow)));
+          }
+          growthSaved = growthUpdates.length;
+        }
+      }
+
+      const hasStatChanges =
+        leveledUpShadows.length > 0 || rankedUpShadows.length > 0 || growthSaved > 0;
+      if (hasStatChanges) {
+        this.invalidateShadowsCache();
+        this.shadowArmy?.getTotalShadowPower?.(true).catch(() => {});
+      }
+
+      const elapsedMs = Date.now() - startMs;
+      console.log(
+        `[Dungeons] ⏱️ SHADOW XP POST: "${dungeonName || channelKey}" [${dungeonRank || '?'}] | ` +
+        `targets=${xpTargetIds.length} | leveled=${leveledUpShadows.length} | ranked=${rankedUpShadows.length} | ` +
+        `growthSaved=${growthSaved} | ${elapsedMs}ms`
+      );
+
+      if (leveledUpShadows.length > 0) {
+        this.showToast(`${leveledUpShadows.length} shadows leveled up after dungeon XP`, 'success');
+      }
+      if (rankedUpShadows.length > 0) {
+        this.showToast(`${rankedUpShadows.length} shadows ranked up after dungeon XP`, 'success');
+      }
+    } finally {
+      this._pendingDungeonXpPostProcess.delete(taskKey);
+    }
+  }
+
   /**
    * Pre-split shadow army across active dungeons (OPTIMIZATION)
    * Called once when dungeon state changes, cached for reuse
    * Eliminates recalculating splits on every attack tick (3s interval)
    */
   async preSplitShadowArmy(forceRecalculate = false) {
-    // Check cache validity (1 minute TTL) - unless forced
-    if (
-      !forceRecalculate &&
-      this.allocationCacheTime &&
-      Date.now() - this.allocationCacheTime < this.allocationCacheTTL
-    ) {
-      return; // Cache still valid
-    }
+    const now = Date.now();
+    const cacheFresh =
+      this.allocationCacheTime && now - this.allocationCacheTime < this.allocationCacheTTL;
 
-    const allShadows = await this.getAllShadows();
-    if (!allShadows || allShadows.length === 0) {
-      this.shadowAllocations.clear();
-      this.shadowReserve = [];
-      return;
+    // Check cache validity unless forced/dirty
+    if (!forceRecalculate && !this._allocationDirty && cacheFresh) {
+      return; // Cache still valid
     }
 
     // Get active dungeons — ONLY those where shadows are deployed (manual deploy)
@@ -6419,6 +6601,13 @@ module.exports = class Dungeons {
     if (activeDungeonsList.length === 0) {
       this.shadowAllocations.clear();
       this.shadowReserve = [];
+      const cachedShadowCount = Array.isArray(this._allocationSortedShadowsCache)
+        ? this._allocationSortedShadowsCache.length
+        : this.allocationCache?.count || 0;
+      this.allocationCache = { count: cachedShadowCount };
+      this.allocationCacheTime = now;
+      this._allocationDirty = false;
+      this._allocationDirtyReason = null;
       return;
     }
 
@@ -6439,7 +6628,6 @@ module.exports = class Dungeons {
       const mobUrgency = 0.6 + getMobFraction(d) * 0.5;
       return bossUrgency * mobUrgency;
     };
-    const getShadowScore = (shadow) => this.getShadowCombatScore(shadow);
 
     const weightedDungeons = activeDungeonsList
       .map((d) => {
@@ -6469,13 +6657,71 @@ module.exports = class Dungeons {
       }
     } catch (_) { this.debugLog?.('ERROR', 'Failed to get ShadowSenses deployed IDs', _); }
 
-    // Sort shadows once by combat score descending (strongest first)
-    const shadowsSorted = [...allShadows]
+    let shadowsSortedAll = this._allocationSortedShadowsCache;
+    const canReuseSortedCache =
+      !forceRecalculate &&
+      !this._allocationShadowSetDirty &&
+      Array.isArray(shadowsSortedAll) &&
+      this._allocationSortedShadowsCacheTime &&
+      now - this._allocationSortedShadowsCacheTime < this.allocationCacheTTL;
+
+    if (!canReuseSortedCache) {
+      const allShadows = await this.getAllShadows();
+      if (!allShadows || allShadows.length === 0) {
+        this.shadowAllocations.clear();
+        this.shadowReserve = [];
+        this.allocationCache = { count: 0 };
+        this.allocationCacheTime = now;
+        this._allocationDirty = false;
+        this._allocationDirtyReason = null;
+        this._allocationShadowSetDirty = false;
+        this._allocationSortedShadowsCache = [];
+        this._allocationSortedShadowsCacheTime = now;
+        this._allocationScoreCache = new Map();
+        return;
+      }
+
+      const scoreCache = new Map();
+      const readScore = (shadow) => {
+        const sid = getShadowId(shadow);
+        if (!sid) return this.getShadowCombatScore(shadow);
+        const key = String(sid);
+        if (scoreCache.has(key)) return scoreCache.get(key);
+        const score = this.getShadowCombatScore(shadow);
+        scoreCache.set(key, score);
+        return score;
+      };
+
+      shadowsSortedAll = allShadows
+        .map((shadow) => this.normalizeShadowId(shadow) || shadow)
+        .filter(Boolean)
+        .sort((a, b) => readScore(b) - readScore(a));
+
+      this._allocationSortedShadowsCache = shadowsSortedAll;
+      this._allocationSortedShadowsCacheTime = now;
+      this._allocationScoreCache = scoreCache;
+      this._allocationShadowSetDirty = false;
+    }
+
+    const allocationScoreCache =
+      this._allocationScoreCache instanceof Map ? this._allocationScoreCache : new Map();
+    this._allocationScoreCache = allocationScoreCache;
+    const getShadowScore = (shadow) => {
+      const sid = getShadowId(shadow);
+      if (!sid) return this.getShadowCombatScore(shadow);
+      const key = String(sid);
+      if (allocationScoreCache.has(key)) return allocationScoreCache.get(key);
+      const score = this.getShadowCombatScore(shadow);
+      allocationScoreCache.set(key, score);
+      return score;
+    };
+
+    // Filter cached sorted army by real-time exclusions.
+    const shadowsSorted = shadowsSortedAll
       .filter((s) => {
         const id = getShadowId(s);
         return id && !exchangeMarkedIds.has(id) && !sensesDeployedIds.has(id);
-      })
-      .sort((a, b) => getShadowScore(b) - getShadowScore(a));
+      });
 
     // Reserve pool: hold back weakest shadows for ShadowSenses deployment.
     // Base 10% reserve, reduced to 5% if all active dungeons are A-rank or above.
@@ -6488,7 +6734,11 @@ module.exports = class Dungeons {
     // Normalize reserve shadows so ShadowSenses can match by .id (compressed shadows only have .i)
     const reserveShadows = shadowsSorted.slice(-reserveCount)
       .map(s => this.normalizeShadowId(s) || s);
-    const reserveIds = new Set(reserveShadows.map(s => getShadowId(s)));
+    const reserveIds = new Set(
+      reserveShadows
+        .map((s) => getShadowId(s))
+        .filter(Boolean)
+    );
     const combatPool = shadowsSorted.filter(s => !reserveIds.has(getShadowId(s)));
 
     // Store reserve on instance for ShadowSenses to query
@@ -6667,8 +6917,10 @@ module.exports = class Dungeons {
     });
 
     // Update cache (store only lightweight metadata to avoid retaining huge arrays)
-    this.allocationCache = { count: allShadows.length };
-    this.allocationCacheTime = Date.now();
+    this.allocationCache = { count: shadowsSortedAll.length };
+    this.allocationCacheTime = now;
+    this._allocationDirty = false;
+    this._allocationDirtyReason = null;
   }
 
   // ==== SHADOW ATTACK SYSTEM ====
@@ -6692,7 +6944,8 @@ module.exports = class Dungeons {
     // Self-heal: allocation can be empty due to restore/timing. Force a one-time reallocation and retry.
     if (assignedShadows.length === 0) {
       try {
-        await this.preSplitShadowArmy(true);
+        this._markAllocationDirty('start-shadow-attacks-missing-allocation');
+        await this.preSplitShadowArmy();
         assignedFromMap = this.shadowAllocations.get(channelKey) || [];
         assignedShadows = assignedFromMap.length > 0 ? assignedFromMap : assignedFromDungeon;
         assignedFromMap.length > 0 &&
@@ -6980,7 +7233,8 @@ module.exports = class Dungeons {
 
         let didReallocate = false;
         if (cacheExpired || !hasAllocation) {
-          await this.preSplitShadowArmy(true);
+          this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
+          await this.preSplitShadowArmy();
           didReallocate = true;
         }
 
@@ -7016,7 +7270,8 @@ module.exports = class Dungeons {
 
             if (needsRebalance) {
               this._lastRebalanceAt.set(channelKey, nowRebalance);
-              await this.preSplitShadowArmy(true);
+              this._markAllocationDirty('combat-rebalance');
+              await this.preSplitShadowArmy();
               this.syncDungeonDifficultyScale(dungeon, channelKey, { scaleExistingMobs: true });
             }
           }
@@ -7638,6 +7893,7 @@ module.exports = class Dungeons {
    */
   invalidateShadowsCache() {
     this._shadowsCache = null;
+    this._markAllocationDirty('invalidate-shadows-cache', { shadowSetChanged: true });
   }
 
   // ==== COMBAT DATA HELPER FUNCTIONS (Performance Optimization) ====
@@ -8633,6 +8889,7 @@ module.exports = class Dungeons {
 
           if (mob.hp <= 0) {
             this._onMobKilled(channelKey, dungeon, mob.rank);
+            this._addToCorpsePile(channelKey, mob, false);
           }
         });
 
@@ -9026,8 +9283,12 @@ module.exports = class Dungeons {
     this.settings.lastDungeonEndTime || (this.settings.lastDungeonEndTime = {});
     this.settings.lastDungeonEndTime[channelKey] = Date.now();
 
+    const hadShadowsDeployed = Boolean(dungeon.shadowsDeployed);
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
+    dungeon.shadowsDeployed = false;
+    this.shadowAllocations.delete(channelKey);
+    this._markAllocationDirty(`dungeon-complete:${reason}`);
 
     // Snapshot the corpse pile from the dungeon object (persisted to IDB, survives restarts).
     const corpsePileSnapshot = dungeon.corpsePile || [];
@@ -9059,8 +9320,8 @@ module.exports = class Dungeons {
       } catch (error) {
         this.errorLog('Failed to process corpse pile extraction', error);
       }
-    } else if (dungeon.userParticipating && pileSize === 0 && dungeon.shadowsDeployed) {
-      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${dungeon.shadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
+    } else if (dungeon.userParticipating && pileSize === 0 && hadShadowsDeployed) {
+      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
     } else if (!dungeon.userParticipating) {
       console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
     }
@@ -9086,13 +9347,16 @@ module.exports = class Dungeons {
       shadowsAttackedMobs: combatAnalytics.shadowsAttackedMobs || 0,
     };
 
-    // Grant XP to shadows based on their contributions (collects level-up and rank-up data)
+    // Grant XP to shadows based on their contributions (level/rank post-processing is deferred)
     if (reason === 'boss' || reason === 'complete') {
       const shadowResults = await this.grantShadowDungeonXP(channelKey, dungeon);
       if (shadowResults) {
         summaryStats.shadowTotalXP = shadowResults.totalXP;
         summaryStats.shadowsLeveledUp = shadowResults.leveledUp;
         summaryStats.shadowsRankedUp = shadowResults.rankedUp;
+        if (shadowResults.deferredPostProcess) {
+          this.showToast('Shadow XP growth processing in background...', 'info');
+        }
       }
     }
 
@@ -9240,6 +9504,7 @@ module.exports = class Dungeons {
       if (this.shadowAllocations) {
         this.shadowAllocations.delete(channelKey);
       }
+      this._markAllocationDirty('dungeon-cleanup');
 
       // Clear extraction in-progress flag
       if (this.extractionInProgress) {
@@ -9719,6 +9984,7 @@ module.exports = class Dungeons {
     this.channelLocks.delete(channelKey);
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
+    this._markAllocationDirty('dungeon-arise-cleanup');
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
     this.deadShadows.delete(channelKey);
     this.saveSettings();
@@ -9742,13 +10008,14 @@ module.exports = class Dungeons {
    *    - Calculate boss damage XP (bossDamage / bossMaxHP * baseBossXP)
    *    - Scale by shadow rank (higher ranks get more XP)
    *    - Grant XP to shadow
-   * 4. Show toast notification for shadows that leveled up
+   * 4. Queue deferred post-processing for level/rank/growth updates and notifications
    */
   async grantShadowDungeonXP(channelKey, dungeon) {
     if (!this.shadowArmy) return null;
 
     const contributions = dungeon.shadowContributions || {};
-    if (Object.keys(contributions).length === 0) return null;
+    const contributionEntries = Object.entries(contributions);
+    if (contributionEntries.length === 0) return null;
 
     // Get dungeon rank multiplier (higher rank = more XP)
     const dungeonRankIndex = this.getRankIndexValue(dungeon.rank);
@@ -9758,27 +10025,27 @@ module.exports = class Dungeons {
     const baseMobXP = 10; // Base XP per mob kill
     const baseBossXP = 100; // Base XP for full boss kill
 
-    // Get all shadows to calculate XP
-    const allShadows = await this.getAllShadows();
+    // Fetch only shadows that actually contributed in this dungeon.
+    const contributionShadowIds = contributionEntries.map(([shadowId]) => String(shadowId));
+    const allShadows = await this._fetchDungeonShadowsByIds(contributionShadowIds);
     const shadowMap = new Map(
-      allShadows.map((s) => [this.getShadowIdValue(s), s]).filter(([id]) => !!id)
+      allShadows
+        .map((s) => [String(this.getShadowIdValue(s) || ''), s])
+        .filter(([id]) => !!id)
     );
 
     let totalXPGranted = 0;
-    const leveledUpShadows = [];
-    const rankedUpShadows = [];
-
     // Track before-state for level/rank change detection after batch processing
     const beforeStates = new Map(); // shadowId -> { level, rank }
+    const xpByShadowId = {}; // shadowId -> xp
 
     // Calculate dungeon duration once (shared across all shadows)
     const dungeonDuration = Date.now() - dungeon.startTime;
     const combatHours = dungeonDuration / (1000 * 60 * 60);
 
     // Process shadow contributions (functional approach)
-    for (const [shadowId, contribution] of Object.entries(contributions).filter(([shadowId]) =>
-      shadowMap.has(shadowId)
-    )) {
+    for (const [rawShadowId, contribution] of contributionEntries) {
+      const shadowId = String(rawShadowId);
       const shadow = shadowMap.get(shadowId);
       if (!shadow) continue;
 
@@ -9823,85 +10090,69 @@ module.exports = class Dungeons {
           name: shadow.name || 'Shadow',
         });
 
-        // Grant XP using ShadowArmy's method (handles rank-up internally)
-        await this.shadowArmy.grantShadowXP(totalXP, `dungeon_${dungeon.rank}_${channelKey}`, [
-          shadowId,
-        ]);
-
+        xpByShadowId[shadowId] = totalXP;
         totalXPGranted += totalXP;
       }
     }
 
-    // BATCH: Apply natural growth to all shadows that received XP
-    // Re-fetch ALL shadows once from IDB (post-XP-grant) to get fresh data
-    if (this.shadowArmy.applyNaturalGrowth && combatHours > 0 && beforeStates.size > 0) {
-      try {
-        const freshShadows = this.shadowArmy.storageManager
-          ? await this.shadowArmy.storageManager.getShadows({}, 0, Infinity)
-          : [];
-        const freshMap = new Map();
-        for (const raw of freshShadows) {
-          const s = this.shadowArmy.getShadowData ? this.shadowArmy.getShadowData(raw) : raw;
-          const sid = s.id || s.i;
-          if (sid && beforeStates.has(sid)) freshMap.set(sid, s);
-        }
-
-        for (const [shadowId, freshShadow] of freshMap) {
-          const growthApplied = await this.shadowArmy.applyNaturalGrowth(freshShadow, combatHours);
-          if (growthApplied && this.shadowArmy?.storageManager) {
-            const prepared = this.shadowArmy.prepareShadowForSave
-              ? this.shadowArmy.prepareShadowForSave(freshShadow)
-              : freshShadow;
-            if (prepared) {
-              await this.shadowArmy.storageManager.saveShadow(prepared);
-            }
-          }
-        }
-      } catch (err) {
-        this.errorLog('Failed to apply natural growth batch', err);
-      }
+    const xpTargetIds = Object.keys(xpByShadowId);
+    if (xpTargetIds.length === 0) {
+      return {
+        totalXP: 0,
+        leveledUp: [],
+        rankedUp: [],
+      };
     }
 
-    // BATCH: Check level/rank changes — ONE re-fetch for all shadows
-    if (beforeStates.size > 0 && this.shadowArmy.storageManager) {
-      try {
-        const updatedShadows = await this.shadowArmy.storageManager.getShadows({}, 0, Infinity);
-        for (const raw of updatedShadows) {
-          const s = this.shadowArmy.getShadowData ? this.shadowArmy.getShadowData(raw) : raw;
-          const sid = s.id || s.i;
-          const before = beforeStates.get(sid);
-          if (!before) continue;
+    const grantStartedAt = Date.now();
+    let xpGrantSucceeded = false;
 
-          const levelAfter = s.level || 1;
-          if (levelAfter > before.level) {
-            leveledUpShadows.push({
-              shadow: s,
-              levelBefore: before.level,
-              levelAfter,
-              name: s.name || before.name,
-              rank: s.rank || before.rank,
-            });
-          }
-
-          const rankAfter = s.rank;
-          if (rankAfter && rankAfter !== before.rank) {
-            rankedUpShadows.push({
-              name: s.name || before.name,
-              oldRank: before.rank,
-              newRank: rankAfter,
-            });
-          }
+    // One XP batch grant for all contributing shadows (avoids repeated full-table scans).
+    try {
+      await this.shadowArmy.grantShadowXP(
+        0,
+        `dungeon_${dungeon.rank}_${channelKey}`,
+        xpTargetIds,
+        {
+          perShadowAmounts: xpByShadowId,
+          skipPowerRecalc: true,
         }
-      } catch (err) {
-        this.errorLog('Failed to check shadow level/rank changes', err);
-      }
+      );
+      xpGrantSucceeded = true;
+    } catch (err) {
+      this.errorLog('Failed to grant dungeon shadow XP batch', err);
     }
 
-    // Return stats instead of showing notifications
+    if (!xpGrantSucceeded) {
+      return {
+        totalXP: 0,
+        leveledUp: [],
+        rankedUp: [],
+        deferredPostProcess: false,
+      };
+    }
+
+    const deferredPostProcess = this._queueDeferredDungeonXpPostProcess({
+      channelKey,
+      dungeonName: dungeon?.name,
+      dungeonRank: dungeon?.rank,
+      xpTargetIds,
+      beforeStatesEntries: Array.from(beforeStates.entries()),
+      combatHours,
+    });
+
+    const elapsedMs = Date.now() - grantStartedAt;
+    console.log(
+      `[Dungeons] ⏱️ SHADOW XP GRANT: "${dungeon?.name || channelKey}" [${dungeon?.rank || '?'}] | ` +
+      `targets=${xpTargetIds.length} | totalXP=${totalXPGranted.toLocaleString()} | ` +
+      `deferred=${deferredPostProcess} | ${elapsedMs}ms`
+    );
+
     return {
       totalXP: totalXPGranted,
-      leveledUp: leveledUpShadows,
-      rankedUp: rankedUpShadows,
+      leveledUp: [],
+      rankedUp: [],
+      deferredPostProcess,
     };
   }
 
@@ -10971,6 +11222,10 @@ module.exports = class Dungeons {
     // Apply boss damage
     if (totalBossDamageOverTime > 0) {
       dungeon.boss.hp = Math.max(0, dungeon.boss.hp - totalBossDamageOverTime);
+      if (dungeon.boss.hp <= 0) {
+        await this.completeDungeon(channelKey, 'boss');
+        return;
+      }
     }
 
     // Apply mob damage (distribute across alive mobs)
@@ -10987,7 +11242,10 @@ module.exports = class Dungeons {
           if (!mob || mob.hp <= 0) continue;
           mob.hp = Math.max(0, mob.hp - damagePerMob);
           if (mob.hp > 0) nextActiveMobs.push(mob);
-          else dungeon.mobs.killed = (dungeon.mobs.killed || 0) + 1;
+          else {
+            this._onMobKilled(channelKey, dungeon, mob.rank);
+            this._addToCorpsePile(channelKey, mob, false);
+          }
         }
         dungeon.mobs.activeMobs = nextActiveMobs;
       }
@@ -11272,6 +11530,8 @@ module.exports = class Dungeons {
     // Simulate shadow attacks (damage to boss and mobs) - ONE batch calculation
     if (shadowCycles > 0) {
       await this.simulateShadowAttacks(channelKey, shadowCycles);
+      const postShadowDungeon = this._getActiveDungeon(channelKey);
+      if (!postShadowDungeon || postShadowDungeon.completed || postShadowDungeon.failed) return;
     }
 
     // Simulate boss attacks (damage to shadows and user) - ONE batch calculation
@@ -11860,6 +12120,7 @@ module.exports = class Dungeons {
         // Release channel lock if held
         this.channelLocks.delete(dungeon.channelKey);
         this.shadowAllocations.delete(dungeon.channelKey);
+        this._markAllocationDirty('restore-cleanup-stale-dungeon');
 
         // Delete from IndexedDB
         this.storageManager.deleteDungeon(dungeon.channelKey);
@@ -11876,7 +12137,8 @@ module.exports = class Dungeons {
         // Allocate shadows only across deployed dungeons
         const deployedCount = [...this.activeDungeons.values()].filter(d => d.shadowsDeployed).length;
         if (deployedCount > 0) {
-          await this.preSplitShadowArmy(true);
+          this._markAllocationDirty('restore-active-dungeons');
+          await this.preSplitShadowArmy();
         }
 
         for (const [channelKey] of this.activeDungeons) {
