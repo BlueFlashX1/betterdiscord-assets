@@ -5616,6 +5616,180 @@ module.exports = class SoloLevelingStats {
   // checkRankPromotion(): E→D→C→B→A→S→SS→SSS→SSS+→NH→Monarch→Monarch+→SM
   // showLevelUpNotification(): Banner + sound overlay
 
+  getRankPromotionBonusTable() {
+    return {
+      D: 4,
+      C: 6,
+      B: 9,
+      A: 13,
+      S: 19,
+      SS: 27,
+      SSS: 38,
+      'SSS+': 54,
+      NH: 76,
+      Monarch: 110,
+      'Monarch+': 165,
+      'Shadow Monarch': 280,
+    };
+  }
+
+  getLegacyRankPromotionBonusTableForBackfill() {
+    // Previous live values (pre-exponential rank tuning).
+    return {
+      D: 2,
+      C: 3,
+      B: 4,
+      A: 5,
+      S: 7,
+      SS: 9,
+      SSS: 11,
+      'SSS+': 13,
+      NH: 16,
+      Monarch: 20,
+      'Monarch+': 24,
+      'Shadow Monarch': 30,
+    };
+  }
+
+  calculateRankPromotionDampener(averageStat) {
+    const safeAverage = Math.max(0, Number(averageStat) || 0);
+    if (safeAverage >= 1200) return 0.5;
+    if (safeAverage >= 800) return 0.62;
+    if (safeAverage >= 500) return 0.75;
+    if (safeAverage >= 300) return 0.88;
+    return 1;
+  }
+
+  getPromotedRanksForRank(rank = this.settings?.rank) {
+    const fallbackRanks =
+      this.defaultSettings?.ranks || ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+', 'Shadow Monarch'];
+    const ranks =
+      Array.isArray(this.settings?.ranks) && this.settings.ranks.length
+        ? this.settings.ranks
+        : fallbackRanks;
+    const rankIndex = ranks.indexOf(rank);
+    if (rankIndex <= 0) return [];
+    return ranks.slice(1, rankIndex + 1);
+  }
+
+  async applyRankPromotionBonusBackfill() {
+    try {
+      if (this.settings?._rankBonusBackfillV2Applied) {
+        return { applied: false, reason: 'already_applied' };
+      }
+
+      if (!this.settings?.stats || typeof this.settings.stats !== 'object') {
+        return { applied: false, reason: 'missing_stats' };
+      }
+
+      const promotedRanks = this.getPromotedRanksForRank();
+      if (!promotedRanks.length) {
+        return { applied: false, reason: 'no_promotions' };
+      }
+
+      const currentTable = this.getRankPromotionBonusTable();
+      const legacyTable = this.getLegacyRankPromotionBonusTableForBackfill();
+      const deltaBase = promotedRanks.reduce((sum, rank) => {
+        const currentValue = Number(currentTable[rank] || 0);
+        const legacyValue = Number(legacyTable[rank] || 0);
+        return sum + Math.max(0, currentValue - legacyValue);
+      }, 0);
+
+      if (deltaBase <= 0) {
+        return { applied: false, reason: 'no_delta', promotedRanks, deltaBase };
+      }
+
+      const backupKey = `rankBonusBackfillV2_pre_${Date.now()}`;
+      const snapshot = JSON.parse(JSON.stringify(this.settings));
+      try {
+        BdApi.Data.save('SoloLevelingStats', backupKey, snapshot);
+      } catch (error) {
+        this.debugError('RANK_BACKFILL', error, { phase: 'backup_failed', backupKey });
+        return { applied: false, reason: 'backup_failed', backupKey, error };
+      }
+
+      const statKeys = this.STAT_KEYS || ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+      const previousState = {
+        stats: { ...this.settings.stats },
+        userHP: this.settings.userHP,
+        userMaxHP: this.settings.userMaxHP,
+        userMana: this.settings.userMana,
+        userMaxMana: this.settings.userMaxMana,
+        markerApplied: this.settings._rankBonusBackfillV2Applied,
+        markerAppliedAt: this.settings._rankBonusBackfillV2AppliedAt,
+        markerBackupKey: this.settings._rankBonusBackfillV2BackupKey,
+        markerMeta: this.settings._rankBonusBackfillV2Meta,
+      };
+
+      try {
+        const statSum = statKeys.reduce((sum, key) => sum + (Number(this.settings.stats[key]) || 0), 0);
+        const averageStat = statSum / statKeys.length;
+        const dampener = this.calculateRankPromotionDampener(averageStat);
+        const perStatDelta = Math.max(1, Math.round(deltaBase * dampener));
+
+        statKeys.forEach((key) => {
+          this.settings.stats[key] = (Number(this.settings.stats[key]) || 0) + perStatDelta;
+        });
+
+        this.settings._rankBonusBackfillV2Applied = true;
+        this.settings._rankBonusBackfillV2AppliedAt = Date.now();
+        this.settings._rankBonusBackfillV2BackupKey = backupKey;
+        this.settings._rankBonusBackfillV2Meta = {
+          promotedRanks,
+          deltaBase,
+          dampener,
+          perStatDelta,
+          rankAtApply: this.settings.rank,
+        };
+
+        this.recomputeHPManaFromStats();
+        await this.saveSettings(true);
+        this.updateChatUI();
+
+        this.debugLog('RANK_BACKFILL', 'Rank promotion backfill applied', {
+          rank: this.settings.rank,
+          promotedRanks,
+          deltaBase,
+          dampener,
+          perStatDelta,
+          backupKey,
+        });
+
+        return {
+          applied: true,
+          rank: this.settings.rank,
+          promotedRanks,
+          deltaBase,
+          dampener,
+          perStatDelta,
+          backupKey,
+        };
+      } catch (error) {
+        this.settings.stats = { ...previousState.stats };
+        this.settings.userHP = previousState.userHP;
+        this.settings.userMaxHP = previousState.userMaxHP;
+        this.settings.userMana = previousState.userMana;
+        this.settings.userMaxMana = previousState.userMaxMana;
+        this.settings._rankBonusBackfillV2Applied = previousState.markerApplied;
+        this.settings._rankBonusBackfillV2AppliedAt = previousState.markerAppliedAt;
+        this.settings._rankBonusBackfillV2BackupKey = previousState.markerBackupKey;
+        this.settings._rankBonusBackfillV2Meta = previousState.markerMeta;
+
+        try {
+          await this.saveSettings(true);
+        } catch (rollbackError) {
+          this.debugError('RANK_BACKFILL', rollbackError, { phase: 'rollback_save_failed' });
+        }
+
+        this.debugError('RANK_BACKFILL', error, { phase: 'apply_failed' });
+        return { applied: false, reason: 'apply_failed', backupKey, error };
+      }
+    } catch (error) {
+      this.debugError('RANK_BACKFILL', error, { phase: 'unexpected' });
+      return { applied: false, reason: 'unexpected_error', error };
+    }
+  }
+
   checkLevelUp(oldLevel) {
     try {
       // #region agent log
@@ -5814,20 +5988,7 @@ module.exports = class SoloLevelingStats {
 
         // Grant rank promotion stat bonuses on an exponential-ish curve.
         // Late tiers (Monarch+) are intentionally dramatic; damping prevents runaway inflation.
-        const rankPromotionBonuses = {
-          D: 4,
-          C: 6,
-          B: 9,
-          A: 13,
-          S: 19,
-          SS: 27,
-          SSS: 38,
-          'SSS+': 54,
-          NH: 76,
-          Monarch: 110,
-          'Monarch+': 165,
-          'Shadow Monarch': 280,
-        };
+        const rankPromotionBonuses = this.getRankPromotionBonusTable();
 
         const baseBonus = rankPromotionBonuses[nextRank] || 0;
         const statSum =
@@ -5837,11 +5998,7 @@ module.exports = class SoloLevelingStats {
           (this.settings.stats.vitality || 0) +
           (this.settings.stats.perception || 0);
         const averageStat = statSum / 5;
-        const dampener =
-          averageStat >= 1200 ? 0.5 :
-          averageStat >= 800 ? 0.62 :
-          averageStat >= 500 ? 0.75 :
-          averageStat >= 300 ? 0.88 : 1;
+        const dampener = this.calculateRankPromotionDampener(averageStat);
         const bonus = Math.max(1, Math.round(baseBonus * dampener));
         if (bonus > 0) {
           // Apply bonus to all stats
@@ -10410,6 +10567,18 @@ module.exports = class SoloLevelingStats {
     `;
     container.appendChild(info);
 
+    // One-time rank backfill action
+    const backfillApplied = !!this.settings?._rankBonusBackfillV2Applied;
+    const rankBackfillAction = this.createActionButton(
+      'recalculateRankBonuses',
+      backfillApplied ? 'Rank Bonus Backfill Applied' : 'Recalculate Rank Bonuses',
+      backfillApplied
+        ? 'One-time rank-bonus backfill is already applied on this profile.'
+        : 'Safely applies a one-time retroactive rank-bonus recalculation using the latest exponential curve. A backup snapshot is saved first.',
+      backfillApplied
+    );
+    container.appendChild(rankBackfillAction);
+
     // Chat UI preview (kept as a helper for readability)
     try {
       const previewHeader = document.createElement('h3');
@@ -10436,6 +10605,13 @@ module.exports = class SoloLevelingStats {
         // Ignore removal errors
       }
     }
+    if (this._settingsPanelRoot && this._settingsPanelHandlers?.click) {
+      try {
+        this._settingsPanelRoot.removeEventListener('click', this._settingsPanelHandlers.click);
+      } catch (_) {
+        // Ignore removal errors
+      }
+    }
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
 
@@ -10458,9 +10634,91 @@ module.exports = class SoloLevelingStats {
         const fn = handlers[key];
         fn && fn();
       },
+      click: (e) => {
+        const actionButton = e?.target?.closest?.('button[data-sls-action]');
+        if (!actionButton) return;
+        const actionKey = actionButton.getAttribute('data-sls-action');
+        if (!actionKey) return;
+
+        const handlers = {
+          recalculateRankBonuses: async () => {
+            if (this.settings?._rankBonusBackfillV2Applied) {
+              this.showNotification('Rank bonus backfill already applied on this profile.', 'info', 5000);
+              actionButton.disabled = true;
+              actionButton.textContent = 'Rank Bonus Backfill Applied';
+              return;
+            }
+
+            const confirmed = window.confirm(
+              'Apply one-time rank bonus recalculation?\n\n' +
+                'This will create a backup snapshot first, then apply a one-time stat backfill. ' +
+                'It should only be run once per profile.'
+            );
+            if (!confirmed) return;
+
+            const statusNode = container.querySelector?.(
+              `[data-sls-action-status="${actionKey}"]`
+            );
+            const originalLabel = actionButton.textContent;
+            actionButton.disabled = true;
+            actionButton.textContent = 'Applying Backfill...';
+            statusNode &&
+              (statusNode.textContent =
+                'Creating backup and applying one-time rank bonus backfill...');
+
+            try {
+              const result = await this.applyRankPromotionBonusBackfill();
+              if (result?.applied) {
+                actionButton.textContent = 'Rank Bonus Backfill Applied';
+                statusNode &&
+                  (statusNode.textContent =
+                    `Applied successfully. +${result.perStatDelta} to each stat. Backup: ${result.backupKey}`);
+                this.showNotification(
+                  `Rank bonus backfill complete (+${result.perStatDelta} each stat).`,
+                  'success',
+                  7000
+                );
+                return;
+              }
+
+              const reason = result?.reason || 'unknown';
+              const recoverable = reason === 'backup_failed' || reason === 'apply_failed' || reason === 'unexpected_error';
+              actionButton.disabled = !recoverable;
+              actionButton.textContent = recoverable ? originalLabel : 'Rank Bonus Backfill Applied';
+              const failureText =
+                reason === 'already_applied'
+                  ? 'Backfill was already applied previously.'
+                  : reason === 'no_promotions'
+                    ? 'No rank promotions found for this profile. No changes made.'
+                    : reason === 'no_delta'
+                      ? 'No bonus delta detected between legacy and current tables. No changes made.'
+                      : reason === 'missing_stats'
+                        ? 'Stats object missing. No changes made.'
+                        : `Backfill failed (${reason}). No data loss: restore via backup key ${result?.backupKey || 'N/A'}.`;
+              statusNode && (statusNode.textContent = failureText);
+              this.showNotification(failureText, recoverable ? 'error' : 'info', 7000);
+            } catch (error) {
+              actionButton.disabled = false;
+              actionButton.textContent = originalLabel;
+              statusNode &&
+                (statusNode.textContent =
+                  'Backfill failed unexpectedly. No data loss expected. Check console logs.');
+              this.debugError('SETTINGS_PANEL_ACTION', error, { actionKey });
+              this.showNotification('Backfill failed unexpectedly. Check console logs.', 'error', 7000);
+            }
+          },
+        };
+
+        const fn = handlers[actionKey];
+        fn &&
+          fn().catch((error) => {
+            this.debugError('SETTINGS_PANEL_ACTION', error, { actionKey, phase: 'handler_invoke' });
+          });
+      },
     };
 
     container.addEventListener('change', this._settingsPanelHandlers.change);
+    container.addEventListener('click', this._settingsPanelHandlers.click);
     this._settingsPanelRoot = container;
 
     return container;
@@ -10519,6 +10777,60 @@ module.exports = class SoloLevelingStats {
     wrapper.appendChild(toggleContainer);
     wrapper.appendChild(desc);
 
+    return wrapper;
+  }
+
+  createActionButton(actionKey, label, description, disabled = false) {
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+      margin-top: 16px;
+      margin-bottom: 8px;
+      padding: 15px;
+      background: rgba(138, 43, 226, 0.05);
+      border-radius: 8px;
+      border: 1px solid rgba(138, 43, 226, 0.2);
+    `;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.textContent = label;
+    button.disabled = !!disabled;
+    button.setAttribute('data-sls-action', actionKey);
+    button.style.cssText = `
+      padding: 10px 14px;
+      border-radius: 8px;
+      border: 1px solid rgba(138, 43, 226, 0.55);
+      background: ${disabled ? 'rgba(120, 120, 120, 0.35)' : 'rgba(138, 43, 226, 0.25)'};
+      color: #ffffff;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: ${disabled ? 'not-allowed' : 'pointer'};
+      margin-bottom: 8px;
+    `;
+
+    const desc = document.createElement('div');
+    desc.textContent = description;
+    desc.style.cssText = `
+      font-size: 13px;
+      color: #b894e6;
+      line-height: 1.5;
+    `;
+
+    const status = document.createElement('div');
+    status.setAttribute('data-sls-action-status', actionKey);
+    status.textContent = disabled
+      ? 'Already applied for this profile.'
+      : 'Not applied yet.';
+    status.style.cssText = `
+      margin-top: 8px;
+      font-size: 12px;
+      color: #d4a5ff;
+      line-height: 1.4;
+    `;
+
+    wrapper.appendChild(button);
+    wrapper.appendChild(desc);
+    wrapper.appendChild(status);
     return wrapper;
   }
 
