@@ -5738,42 +5738,220 @@ module.exports = class ShadowArmy {
    */
   async getTopGenerals() {
     try {
-      let shadows = [];
-
-      // Guard clause: Use IndexedDB if available, fallback to localStorage
-      if (this.storageManager) {
-        try {
-          // Get all shadows from IndexedDB
-          shadows = await this.storageManager.getShadows({}, 0, Infinity);
-        } catch (error) {
-          // debugError method is in SECTION 4
-          this.debugError('STORAGE', 'Failed to get shadows from IndexedDB', error);
-          shadows = this.settings.shadows || [];
-        }
-      } else {
-        shadows = this.settings.shadows || [];
+      const now = Date.now();
+      const cacheKey = this.getArmyStatsCacheKey();
+      const cacheTtlMs = 1500;
+      if (
+        this._topGeneralsCache &&
+        this._topGeneralsCacheKey === cacheKey &&
+        this._topGeneralsCacheTime &&
+        now - this._topGeneralsCacheTime < cacheTtlMs
+      ) {
+        return this._topGeneralsCache;
       }
 
-      // Guard clause: Return empty array if no shadows
-      if (!shadows || shadows.length === 0) return [];
+      const TOP_K = 7;
+      const top = [];
 
-      // Compute strength on the fly without mutating stored shadows
-      // (strength = sum of all effective stats: base + growth + natural)
-      const withPower = shadows.map((shadow) => {
-        const effective = this.getShadowEffectiveStats(shadow);
-        const strength = this.calculateShadowStrength(effective, 1);
-        return { shadow, strength };
-      });
+      const insertTop = (shadow, strength) => {
+        if (!(strength > 0) || !shadow) return;
+        if (top.length < TOP_K) {
+          top.push({ shadow, strength });
+          top.sort((a, b) => a.strength - b.strength);
+          return;
+        }
+        if (strength <= top[0].strength) return;
+        top[0] = { shadow, strength };
+        top.sort((a, b) => a.strength - b.strength);
+      };
 
-      // Sort by strength (total power) descending
-      withPower.sort((a, b) => b.strength - a.strength);
+      if (this.storageManager?.forEachShadowBatch) {
+        try {
+          await this.storageManager.forEachShadowBatch(
+            (batch) => {
+              for (let i = 0; i < batch.length; i++) {
+                const shadow = this.getShadowData(batch[i]) || batch[i];
+                const effective = this.getShadowEffectiveStats(shadow);
+                if (!effective) continue;
+                const strength = this.calculateShadowStrength(effective, 1);
+                insertTop(shadow, strength);
+              }
+            },
+            { batchSize: 250, sortBy: 'extractedAt', sortOrder: 'desc' }
+          );
+        } catch (error) {
+          this.debugError('STORAGE', 'Failed to stream shadows for top generals', error);
+        }
+      } else {
+        const shadows = this.settings.shadows || [];
+        for (let i = 0; i < shadows.length; i++) {
+          const shadow = this.getShadowData(shadows[i]) || shadows[i];
+          const effective = this.getShadowEffectiveStats(shadow);
+          if (!effective) continue;
+          const strength = this.calculateShadowStrength(effective, 1);
+          insertTop(shadow, strength);
+        }
+      }
 
-      // Return top 7 strongest (generals)
-      return withPower.slice(0, 7).map((x) => x.shadow);
+      top.sort((a, b) => b.strength - a.strength);
+      const generals = top.map((x) => x.shadow);
+      this._topGeneralsCache = generals;
+      this._topGeneralsCacheKey = cacheKey;
+      this._topGeneralsCacheTime = Date.now();
+      return generals;
     } catch (error) {
       // debugError method is in SECTION 4
       this.debugError('STORAGE', 'Error getting top generals', error);
       return [];
+    }
+  }
+
+  getShadowBuffModelConfig() {
+    return {
+      generalDuplicateDiminishStep: 0.22,
+      roleMixPowerExponent: 0.5,
+      roleMixBaseWeight: 0.08,
+      aggregatedBuffScale: 0.01,
+      aggregatedBuffPowerDivisor: 10000,
+      aggregatedBaseBuffMax: 0.42,
+      diversityCountThreshold: 10,
+      diversityPerRoleBonus: 0.03,
+      diversityMaxBonus: 0.18,
+      statSoftCaps: {
+        strength: { soft: 0.5, hard: 0.72 },
+        agility: { soft: 0.5, hard: 0.72 },
+        intelligence: { soft: 0.54, hard: 0.76 },
+        vitality: { soft: 0.56, hard: 0.8 },
+        perception: { soft: 0.48, hard: 0.68 },
+      },
+      minBuff: -0.15,
+    };
+  }
+
+  getRoleBuffWeightVector(roleKey) {
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const role = this.shadowRoles?.[roleKey];
+    const buffs = role?.buffs || null;
+    const vector = this.createZeroStatsBucket(statKeys);
+
+    if (!buffs) return vector;
+
+    for (let i = 0; i < statKeys.length; i++) {
+      const key = statKeys[i];
+      const value = Number(buffs[key] || 0);
+      if (value > 0) {
+        vector[key] = value;
+      }
+    }
+
+    return vector;
+  }
+
+  calculateRoleMixFromPowerMap(rolePowerMap) {
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const config = this.getShadowBuffModelConfig();
+    const safeMap = rolePowerMap && typeof rolePowerMap === 'object' ? rolePowerMap : {};
+    const weightedTotals = this.createZeroStatsBucket(statKeys);
+    let totalRoleWeight = 0;
+
+    const entries = Object.entries(safeMap);
+    for (let i = 0; i < entries.length; i++) {
+      const [roleKey, powerValue] = entries[i];
+      const power = Math.max(0, Number(powerValue) || 0);
+      if (!(power > 0)) continue;
+
+      const roleWeight = Math.pow(power, config.roleMixPowerExponent);
+      const roleVector = this.getRoleBuffWeightVector(roleKey);
+      totalRoleWeight += roleWeight;
+
+      for (let j = 0; j < statKeys.length; j++) {
+        const stat = statKeys[j];
+        weightedTotals[stat] += roleWeight * (config.roleMixBaseWeight + (roleVector[stat] || 0));
+      }
+    }
+
+    if (!(totalRoleWeight > 0)) {
+      return {
+        strength: 1,
+        agility: 1,
+        intelligence: 1,
+        vitality: 1,
+        perception: 1,
+      };
+    }
+
+    const averages = this.createZeroStatsBucket(statKeys);
+    let averageOfAverages = 0;
+    for (let i = 0; i < statKeys.length; i++) {
+      const stat = statKeys[i];
+      averages[stat] = weightedTotals[stat] / totalRoleWeight;
+      averageOfAverages += averages[stat];
+    }
+    averageOfAverages = averageOfAverages / statKeys.length;
+
+    if (!(averageOfAverages > 0)) {
+      return {
+        strength: 1,
+        agility: 1,
+        intelligence: 1,
+        vitality: 1,
+        perception: 1,
+      };
+    }
+
+    const mix = this.createZeroStatsBucket(statKeys);
+    for (let i = 0; i < statKeys.length; i++) {
+      const stat = statKeys[i];
+      mix[stat] = averages[stat] / averageOfAverages;
+    }
+    return mix;
+  }
+
+  calculateShadowArmyDiversityMultiplier(rolePowerMap) {
+    const config = this.getShadowBuffModelConfig();
+    const entries = Object.entries(rolePowerMap || {});
+    let activeRoles = 0;
+    for (let i = 0; i < entries.length; i++) {
+      const power = Math.max(0, Number(entries[i][1]) || 0);
+      if (power >= config.diversityCountThreshold) {
+        activeRoles++;
+      }
+    }
+
+    if (activeRoles <= 1) return 1;
+    const bonus = Math.min(
+      config.diversityMaxBonus,
+      (activeRoles - 1) * config.diversityPerRoleBonus
+    );
+    return 1 + bonus;
+  }
+
+  applyShadowBuffSoftCaps(buffs) {
+    if (!buffs || typeof buffs !== 'object') return;
+
+    const config = this.getShadowBuffModelConfig();
+    const caps = config.statSoftCaps || {};
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+
+    for (let i = 0; i < statKeys.length; i++) {
+      const stat = statKeys[i];
+      const rawValue = Number(buffs[stat] || 0);
+      const cap = caps[stat];
+
+      if (!cap) {
+        buffs[stat] = Math.max(config.minBuff, rawValue);
+        continue;
+      }
+
+      if (rawValue <= cap.soft) {
+        buffs[stat] = Math.max(config.minBuff, rawValue);
+        continue;
+      }
+
+      const gap = Math.max(0.0001, cap.hard - cap.soft);
+      const overflow = rawValue - cap.soft;
+      const compressed = cap.soft + gap * (1 - Math.exp(-overflow / gap));
+      buffs[stat] = Math.max(config.minBuff, Math.min(cap.hard, compressed));
     }
   }
 
@@ -6701,22 +6879,25 @@ module.exports = class ShadowArmy {
 
   /**
    * Calculate total buffs from all shadows
-   * Top 7 strongest shadows (generals) give full buffs, others aggregated for performance
+   * Top 7 strongest shadows (generals) preserve role identity; remaining army
+   * contributes through role-weighted aggregation for scalable performance.
    *
-   * BALANCING: Implements caps and diminishing returns to prevent OP buffs from millions of shadows
-   * - Top 7 strongest shadows (GENERALS): Full buffs, no cap
-   * - Aggregated weak shadows: Diminishing returns + hard cap
-   * - Total buff cap: Max +50% per stat from all shadows combined
+   * BALANCING:
+   * - General buffs: duplicate-role diminishing to reward composition diversity
+   * - Aggregated buffs: role-weighted mix derived from army role power
+   * - Final buffs: per-stat soft caps with asymptotic hard ceilings
    *
    * Operations:
    * 1. Initialize buffs object (STR, AGI, INT, VIT, PER all 0)
-   * 2. Get top 7 generals (strongest by total power) - full buffs
-   * 3. Get user rank for aggregation threshold
-   * 4. Aggregate weak shadows (2+ ranks below) with diminishing returns
-   * 5. Apply caps to prevent overpowered buffs
+   * 2. Get top 7 generals (strongest by total power)
+   * 3. Apply role buffs with duplicate-role diminishing
+   * 4. Aggregate non-general role power and compute role-weighted stat mix
+   * 5. Apply diversity multiplier and soft caps
    * 6. Return total buffs object
    */
   async calculateTotalBuffs() {
+    const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const config = this.getShadowBuffModelConfig();
     const buffs = {
       strength: 0,
       agility: 0,
@@ -6727,16 +6908,30 @@ module.exports = class ShadowArmy {
 
     // Get top 7 generals (strongest shadows) - full buffs, no cap
     const generals = await this.getTopGenerals();
+    const generalRoleCounts = {};
+    const generalRolePowerMap = {};
 
-    // Use reduce for functional pattern to accumulate general buffs
+    // Generals provide full role buffs with duplicate-role diminishing.
     generals.reduce((accBuffs, shadow) => {
-      const role = this.shadowRoles[shadow.role];
+      const decompressed = this.getShadowData(shadow) || shadow;
+      const roleKey = decompressed?.role || decompressed?.roleName || null;
+      if (!roleKey) return accBuffs;
+      const role = this.shadowRoles[roleKey];
       // Guard clause: Skip if no role or buffs
       if (!role || !role.buffs) return accBuffs;
 
-      // Accumulate buffs using reduce
+      const roleCount = (generalRoleCounts[roleKey] || 0) + 1;
+      generalRoleCounts[roleKey] = roleCount;
+      const roleDiminish = 1 / (1 + config.generalDuplicateDiminishStep * (roleCount - 1));
+
+      const effective = this.getShadowEffectiveStats(decompressed);
+      const power = effective ? this.calculateShadowStrength(effective, 1) : 0;
+      if (power > 0) {
+        generalRolePowerMap[roleKey] = (generalRolePowerMap[roleKey] || 0) + power;
+      }
+
       Object.keys(role.buffs).reduce((stats, stat) => {
-        const amount = role.buffs[stat] * 1.0; // Full buffs for top 7 generals
+        const amount = (role.buffs[stat] || 0) * roleDiminish;
         stats[stat] = (stats[stat] || 0) + amount;
         return stats;
       }, accBuffs);
@@ -6744,69 +6939,54 @@ module.exports = class ShadowArmy {
       return accBuffs;
     }, buffs);
 
-    // Get user rank for aggregation
-    const soloData = this.getSoloLevelingData();
-    // Guard clause: Apply caps and return early if no solo data
-    if (!soloData) {
-      this.applyBuffCaps(buffs);
-      this.cachedBuffs = buffs;
-      this.cachedBuffsTime = Date.now();
-      return buffs;
-    }
-
-    const userRank = soloData.rank;
-    const userRankIndex = this.shadowRanks.indexOf(userRank);
-    const weakRankThreshold = Math.max(0, userRankIndex - 2);
-
-    // Guard clause: Aggregate weak shadows (2+ ranks below) for performance
-    // Individual stats preserved in IndexedDB, but we use aggregated power for buffs
-    if (
-      this.storageManager &&
-      weakRankThreshold >= 0 &&
-      typeof this.storageManager.getAggregatedPower === 'function'
-    ) {
+    // Role-weighted aggregation for non-general army.
+    if (this.storageManager) {
       try {
-        const aggregated = await this.storageManager.getAggregatedPower(userRank, this.shadowRanks);
+        const armyStats = await this.getAggregatedArmyStats();
+        const rolePowerMap = {};
+        const roleEntries = Object.entries(armyStats?.byRole || {});
+        for (let i = 0; i < roleEntries.length; i++) {
+          const [roleKey, data] = roleEntries[i];
+          const totalPower = Math.max(0, Number(data?.totalPower || 0));
+          const generalPower = Math.max(0, Number(generalRolePowerMap[roleKey] || 0));
+          const nonGeneralPower = Math.max(0, totalPower - generalPower);
+          if (nonGeneralPower > 0) {
+            rolePowerMap[roleKey] = nonGeneralPower;
+          }
+        }
 
-        // Apply aggregated buffs with DIMINISHING RETURNS to prevent OP scaling
-        // Formula: sqrt(totalPower / 10000) * 0.01
-        // This means:
-        // - 10,000 power = sqrt(1) * 0.01 = 0.01 (1% buff)
-        // - 100,000 power = sqrt(10) * 0.01 = 0.0316 (3.16% buff)
-        // - 1,000,000 power = sqrt(100) * 0.01 = 0.1 (10% buff)
-        // - 10,000,000 power = sqrt(1000) * 0.01 = 0.316 (31.6% buff, but capped at 50%)
-        // This prevents linear scaling while still rewarding large armies
+        const totalRolePower = Object.values(rolePowerMap).reduce(
+          (sum, value) => sum + (Number(value) || 0),
+          0
+        );
 
-        const baseAggregatedBuff = Math.sqrt(aggregated.totalPower / 10000) * 0.01;
+        if (totalRolePower > 0) {
+          const baseAggregatedBuff = Math.sqrt(
+            totalRolePower / config.aggregatedBuffPowerDivisor
+          ) * config.aggregatedBuffScale;
+          const cappedAggregatedBuff = Math.min(config.aggregatedBaseBuffMax, baseAggregatedBuff);
+          const roleMix = this.calculateRoleMixFromPowerMap(rolePowerMap);
+          const diversityMultiplier = this.calculateShadowArmyDiversityMultiplier(rolePowerMap);
 
-        // Cap aggregated buffs at 0.4 (40%) to leave room for generals
-        const cappedAggregatedBuff = Math.min(0.4, baseAggregatedBuff);
+          for (let i = 0; i < statKeys.length; i++) {
+            const stat = statKeys[i];
+            const mixFactor = Math.max(0.4, Number(roleMix[stat] || 1));
+            const weighted = cappedAggregatedBuff * mixFactor * diversityMultiplier;
+            buffs[stat] = (buffs[stat] || 0) + weighted;
+          }
 
-        // Use reduce for functional pattern to build aggregated buffs object
-        const statKeys = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
-        const aggregatedBuffs = statKeys.reduce((stats, key) => {
-          stats[key] = cappedAggregatedBuff;
-          return stats;
-        }, {});
-
-        // Accumulate aggregated buffs using reduce
-        Object.keys(aggregatedBuffs).reduce((accBuffs, stat) => {
-          accBuffs[stat] = (accBuffs[stat] || 0) + aggregatedBuffs[stat];
-          return accBuffs;
-        }, buffs);
+          this.debugLog('BUFFS', 'Role-weighted army buffs applied', {
+            generals: generals.length,
+            totalRolePower,
+            baseAggregatedBuff: Number(baseAggregatedBuff.toFixed(4)),
+            cappedAggregatedBuff: Number(cappedAggregatedBuff.toFixed(4)),
+            diversityMultiplier: Number(diversityMultiplier.toFixed(3)),
+            roleMix,
+          });
+        }
       } catch (error) {
-        // debugError method is in SECTION 4
-        this.debugError('STORAGE', 'Failed to get aggregated power', error);
+        this.debugError('STORAGE', 'Failed to calculate role-weighted buffs', error);
       }
-    } else {
-      // CRITICAL: Only use IndexedDB - no fallback to old settings.shadows
-      // If storageManager is not available, skip aggregated buffs (generals already processed)
-      this.debugLog(
-        'BUFFS',
-        'storageManager not available, skipping aggregated buffs (generals already processed)'
-      );
-      // No fallback code - aggregated buffs skipped if storageManager unavailable
-      // Only generals (top 7) will provide buffs in this case
     }
 
     // Guard clause: Ensure perception is set (for compatibility)
@@ -6814,8 +6994,8 @@ module.exports = class ShadowArmy {
       buffs.perception = 0;
     }
 
-    // Apply hard caps to prevent overpowered buffs
-    this.applyBuffCaps(buffs);
+    // Apply soft caps to prevent runaway scaling while preserving progression.
+    this.applyShadowBuffSoftCaps(buffs);
 
     // Cache buffs for synchronous access by SoloLevelingStats
     this.cachedBuffs = buffs;
@@ -6825,20 +7005,14 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Apply hard caps to shadow buffs to prevent overpowered stats
-   * Max +50% per stat from all shadows combined
+   * Legacy wrapper retained for compatibility.
+   * Applies current soft-cap buff compression model.
    */
   applyBuffCaps(buffs) {
     // Guard clause: Return early if no buffs provided
     if (!buffs) return;
 
-    const maxBuff = 0.5; // Max +50% per stat
-
-    // Use reduce for functional pattern to apply caps
-    Object.keys(buffs).reduce((cappedBuffs, stat) => {
-      cappedBuffs[stat] = Math.min(maxBuff, buffs[stat] || 0);
-      return cappedBuffs;
-    }, buffs);
+    this.applyShadowBuffSoftCaps(buffs);
   }
 
   // ============================================================================
