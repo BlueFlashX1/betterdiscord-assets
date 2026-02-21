@@ -2552,3 +2552,9 @@ span[class*="edited_"]::before {
 div[class^="buttonsInner_"][class*="popover_"] {
   display: none !important;
 }
+
+/* §14j — BD Toast White Text
+   Force all BetterDiscord toast notifications to use white text for readability. */
+.bd-toast {
+  color: #ffffff !important;
+}
