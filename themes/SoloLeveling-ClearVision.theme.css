@@ -259,7 +259,6 @@ div[class^="base_"] > div[class^="bar_"],
 div[class^="bar_"].theme-dark,
 div[class^="bar_"] {
   background: rgba(8, 10, 20, 0.94) !important;
-  background-color: rgba(8, 10, 20, 0.94) !important;
   background-image: none !important;
   border-bottom: none !important;
 }
@@ -273,14 +272,12 @@ div[class^="bar_"] {
 main[aria-label="Friends"] div[class^="peopleColumn_"],
 div[class^="sidebar_"].theme-dark {
   background: rgba(0, 0, 0, 0.3) !important;
-  background-color: rgba(0, 0, 0, 0.3) !important;
   background-image: none !important;
 }
 
 main[aria-label="Friends"] aside[class^="container_"],
 main[aria-label="Friends"] aside.refresh-active-now {
   background: rgba(0, 0, 0, 0.3) !important;
-  background-color: rgba(0, 0, 0, 0.3) !important;
   background-image: none !important;
 }
 
@@ -288,7 +285,6 @@ main[aria-label="Friends"] aside.refresh-active-now {
 div[class^="members_"],
 div[class^="membersWrap_"] {
   background: rgba(0, 0, 0, 0.4) !important;
-  background-color: rgba(0, 0, 0, 0.4) !important;
   background-image: none !important;
 }
 
@@ -305,7 +301,6 @@ div[class^="members_"] div[class^="member_"] {
 /* Disable white highlight on hover, add purple border instead */
 div[class^="members_"] div[class^="member_"]:hover {
   background: rgba(0, 0, 0, 0.5) !important;
-  background-color: rgba(0, 0, 0, 0.5) !important;
   border-color: rgba(var(--sl-color-primary-rgb), 0.55) !important;
 }
 
@@ -362,7 +357,6 @@ main[aria-label="Friends"] div[class^="grid_"] {
 main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"] {
   width: 100% !important;
   background: rgba(10, 10, 16, 0.85) !important;
-  background-color: rgba(10, 10, 16, 0.85) !important;
   background-image: none !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
   border-radius: 10px !important;
@@ -372,7 +366,6 @@ main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"] {
 
 main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"]:hover {
   background: rgba(10, 10, 16, 0.95) !important;
-  background-color: rgba(10, 10, 16, 0.95) !important;
   border-color: rgba(var(--sl-color-primary-rgb), 0.65) !important;
 }
 
@@ -401,7 +394,6 @@ main[aria-label="Friends"] div[class^="itemCard_"][role="button"]:not(:hover) {
 div[class^="userPopoutOuter_"],
 div[class*="userPopoutOuter_"] {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 12px !important;
@@ -420,7 +412,6 @@ div[class^="userPopoutOuter_"] div[class^="rolesList_"],
 div[class^="userPopoutOuter_"] div[class^="note_"],
 div[class^="userPopoutOuter_"] div[class^="connectedAccounts_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 
@@ -429,7 +420,6 @@ div[class^="userPopoutOuter_"] div[class^="connectedAccounts_"] {
 div[role="menu"],
 #now-playing-menu {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 8px !important;
@@ -603,7 +593,6 @@ main[aria-label="Friends"] aside div[class^="scroller_"]::-webkit-scrollbar {
    Same opacity as server sidebar (0.7) for visual harmony */
 div[class^="sidebar_"][class*="theme-dark"]:has(nav[aria-label="Private channels"]) {
   background: rgba(0, 0, 0, 0.7) !important;
-  background-color: rgba(0, 0, 0, 0.7) !important;
   background-image: none !important;
 }
 
@@ -612,7 +601,6 @@ div[class^="sidebar_"][class*="theme-dark"]:has(nav[aria-label="Private channels
    Located at the top of the Private channels sidebar */
 nav[aria-label="Private channels"] div[class^="searchBar_"] {
   background: rgba(0, 0, 0, 0.5) !important;
-  background-color: rgba(0, 0, 0, 0.5) !important;
   background-image: none !important;
 }
 
@@ -740,7 +728,6 @@ div[class^="layer_"]:has(div[class*="bd-error-modal" i]) {
 main[aria-label="Friends"] div[class^="itemCard_"][role="button"],
 .refresh-active-now div[class^="itemCard_"] {
   background: #000000 !important;
-  background-color: #000000 !important;
   background-image: none !important;
   opacity: 1 !important;
 }
@@ -784,7 +771,6 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selec
 .bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
 .bd-modal-root:has(details.bd-addon-error) button.bd-button.bd-button-color-brand {
   background: #7b2be2 !important;
-  background-color: #7b2be2 !important;
   background-image: none !important;
   border: 1px solid rgba(168, 85, 247, 0.6) !important;
   box-shadow: none !important;
@@ -793,8 +779,7 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selec
 /* Hover: brighten to primary purple */
 .bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand:hover,
 .bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand:hover {
-  background: #8a2be2 !important;
-  background-color: #8a2be2 !important;
+  background: var(--sl-color-primary) !important;
   background-image: none !important;
   border-color: rgba(168, 85, 247, 0.85) !important;
   box-shadow: none !important;
@@ -803,7 +788,6 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selec
 .bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
 .bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content {
   background: #7b2be2 !important;
-  background-color: #7b2be2 !important;
   background-image: none !important;
   border: none !important;
   text-shadow: none !important;
@@ -939,7 +923,6 @@ section[aria-label="User status and settings"] button[aria-label="Output Options
 .bd-modal-root:has(details.bd-addon-error) .bd-header-secondary,
 .bd-modal-root:has(details.bd-addon-error) .bd-header-secondary * {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
 }
 
@@ -959,7 +942,6 @@ nav[aria-label="Servers sidebar"] div[class^="itemsContainer_"],
 nav[aria-label="Servers sidebar"] div[class^="scroller_"],
 nav[aria-label="Servers sidebar"] div[class^="none_"] {
   background: rgba(8, 10, 20, 0.94) !important;
-  background-color: rgba(8, 10, 20, 0.94) !important;
   background-image: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -975,11 +957,11 @@ nav[class^="wrapper_"][class*="guilds_"],
 nav.sl-hsl-dock-target,
 body.sl-dock-visible nav[aria-label="Servers sidebar"],
 body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
-  border-top: 2px solid #8a2be2 !important;
+  border-top: 2px solid var(--sl-color-primary) !important;
   border-bottom: none !important;
   border-left: none !important;
   border-right: none !important;
-  box-shadow: inset 0 2px 0 0 #8a2be2 !important;
+  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
   transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
@@ -987,8 +969,8 @@ body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
    is the only visible element at the bottom viewport. Apply the purple top border
    to that strip so the accent line shows even when the nav is off-screen. */
 body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
-  border-top: 2px solid #8a2be2 !important;
-  box-shadow: inset 0 2px 0 0 #8a2be2 !important;
+  border-top: 2px solid var(--sl-color-primary) !important;
+  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
   transition: border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease !important;
 }
 
@@ -1048,7 +1030,6 @@ nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="c
 .bd-modal-root.bd-error-modal .bd-header-secondary,
 .bd-modal-root.bd-error-modal .bd-header-secondary * {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
 }
 
@@ -1059,9 +1040,8 @@ nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="c
    Apply solid bg to outer root, header, content scroller, and footer. */
 div[class^="root_"][class*="rootWithShadow_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 12px !important;
   overflow: hidden !important;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
@@ -1069,21 +1049,18 @@ div[class^="root_"][class*="rootWithShadow_"] {
 /* §6g (continued) — Header area: solid bg, inherit top border-radius */
 div[class^="root_"][class*="rootWithShadow_"] div[class^="header_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 /* §6g (continued) — Content/body scroller area: solid bg */
 div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 /* §6g (continued) — Footer area: solid bg + purple top separator */
 div[class^="root_"][class*="rootWithShadow_"] div[class^="footer_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+  border-top: 1px solid rgba(var(--sl-color-primary-rgb), 0.2) !important;
 }
 /* §6g (continued) — Hide scrollbar in the template/content scroller */
 div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
@@ -1111,7 +1088,6 @@ div[role="dialog"] div[data-mana-component="modal"][class^="container_"] header[
 div[role="dialog"] div[data-mana-component="modal"][class^="container_"] div[class^="sectionHidden_"],
 div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[class^="actionBar_"] {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -1129,15 +1105,13 @@ div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[
    channelTextArea_ is the actual input container with border + box-shadow. */
 div[class^="page_"] div[class^="channelTextArea_"] {
   background: rgba(0, 0, 0, 1.0) !important;
-  background-color: rgba(0, 0, 0, 1.0) !important;
   background-image: none !important;
-  border: 1px solid #8a2be2 !important;
+  border: 1px solid var(--sl-color-primary) !important;
   box-shadow: none !important;
 }
 div[class^="page_"] div[class^="scrollableContainer_"][class*="themedBackground_"],
 div[class^="page_"] form[class^="form_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 /* Kill the gradient ::before on the form that Discord uses for fade effect */
@@ -1158,7 +1132,7 @@ div[class^="buttons_"] div[aria-label="Open GIF picker"],
 div[class^="buttons_"] div[aria-label="Open sticker picker"],
 div[class^="buttons_"] div[class*="emojiButton_"] {
   background: rgba(8, 10, 20, 0.96) !important;
-  border: 1px solid #8a2be2 !important;
+  border: 1px solid var(--sl-color-primary) !important;
   border-radius: 6px !important;
   padding: 4px !important;
   margin: 0 2px !important;
@@ -1166,8 +1140,8 @@ div[class^="buttons_"] div[class*="emojiButton_"] {
 div[class^="buttons_"] div[aria-label="Open GIF picker"]:hover,
 div[class^="buttons_"] div[aria-label="Open sticker picker"]:hover,
 div[class^="buttons_"] div[class*="emojiButton_"]:hover {
-  background: rgba(138, 43, 226, 0.25) !important;
-  border-color: #a855f7 !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+  border-color: var(--sl-color-accent-light) !important;
 }
 
 /* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): solid + purple border
@@ -1176,9 +1150,8 @@ div[class^="positionContainer_"] > div[class^="container_"],
 div[id^="uid_"][role="dialog"],
 div[class^="positionContainer_"] div[class^="contentWrapper_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 2px solid #8a2be2 !important;
+  border: 2px solid var(--sl-color-primary) !important;
   border-radius: 8px !important;
 }
 /* Inner surfaces of expression picker: no border, solid bg only */
@@ -1187,7 +1160,6 @@ section[class^="stickerPicker_"],
 div[class^="categoryList_"],
 div[class^="header_"][class*="stickerPicker_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: none !important;
   border-radius: 0 !important;
@@ -1201,7 +1173,6 @@ section[class^="stickerPicker_"] div[class^="searchBar_"],
 div[class^="positionContainer_"] div[class^="contentWrapper_"] div[class^="header_"],
 div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
   border: none !important;
 }
@@ -1228,14 +1199,13 @@ div[class^="positionContainer_"] *::-webkit-scrollbar {
    solid dark bg + purple outer border, matching expression picker style */
 div[class^="buttonsInner_"][class*="popover_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 2px solid #8a2be2 !important;
+  border: 2px solid var(--sl-color-primary) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
 }
 div[class^="buttonsInner_"][class*="popover_"]:hover {
-  border-color: #a855f7 !important;
+  border-color: var(--sl-color-accent-light) !important;
 }
 
 /* §9c — Server channel list sidebar: dark wash for readability
@@ -1244,7 +1214,6 @@ div[class^="buttonsInner_"][class*="popover_"]:hover {
    won't match it. 0.7 opacity lets a hint of the GIF through */
 div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
   background: rgba(0, 0, 0, 0.7) !important;
-  background-color: rgba(0, 0, 0, 0.7) !important;
   background-image: none !important;
 }
 
@@ -1275,11 +1244,10 @@ ul[aria-label="Channels"] li:has(div[aria-label="Browse Channels"]) {
    scope so Discord's own rule applies our purple. Also add a direct override on
    the link element for full coverage. Selected channels are excluded */
 ul[aria-label="Channels"] {
-  --interactive-background-hover: rgba(138, 43, 226, 0.25) !important;
+  --interactive-background-hover: rgba(var(--sl-color-primary-rgb), 0.25) !important;
 }
 ul[aria-label="Channels"] li[class*="containerDefault_"]:not([class*="selected_"]) div[class*="wrapper_"]:hover [class*="link_"] {
-  background: rgba(138, 43, 226, 0.25) !important;
-  background-color: rgba(138, 43, 226, 0.25) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
 }
 
 /* §9g — Hide scrollbar on server channel list (keep scroll functional)
@@ -1314,9 +1282,8 @@ div[class^="searchAnswer_"],
 div[class^="queryContainer_"],
 div[class^="resultsWrapper_"] {
   background: rgba(10, 10, 16, 0.98) !important;
-  background-color: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
-  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 8px !important;
 }
 
@@ -1325,7 +1292,7 @@ div[class^="resultsWrapper_"] {
    Border on the OUTER container, not the inner gradient/wrapper */
 section[aria-label="Search Results"] div[class^="searchResult_"]:hover,
 div[class^="searchResultsWrap_"] div[class^="searchResult_"]:hover {
-  border: 3px solid rgba(138, 43, 226, 0.55) !important;
+  border: 3px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
   border-radius: 8px !important;
 }
 
@@ -1334,8 +1301,7 @@ div[class^="searchResultsWrap_"] div[class^="option_"]:hover,
 div[class^="searchResultsWrap_"] div[class*="focused"],
 div[role="search"] div[class^="option_"]:hover,
 div[role="search"] div[class*="focused"] {
-  background: rgba(138, 43, 226, 0.15) !important;
-  background-color: rgba(138, 43, 226, 0.15) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.15) !important;
 }
 
 /* §9h (continued) — Remove border from inner gradient/wrapper so only outer has it */
@@ -1353,7 +1319,6 @@ div[class^="resizeHandle_"] {
   padding: 0 !important;
   margin: 0 !important;
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
   border: none !important;
   outline: none !important;
@@ -1366,14 +1331,12 @@ div[class^="resizeHandle_"] {
    Children stay transparent to prevent double-stacking */
 div[class^="chatLayerWrapper_"] {
   background: rgba(0, 0, 0, 0.7) !important;
-  background-color: rgba(0, 0, 0, 0.7) !important;
   background-image: none !important;
 }
 div[class^="chatLayerWrapper_"] div[class^="container_"],
 div[class^="chatLayerWrapper_"] section[role="complementary"],
 div[class^="chatLayerWrapper_"] div[class^="chat_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 
@@ -1381,14 +1344,12 @@ div[class^="chatLayerWrapper_"] div[class^="chat_"] {
    0.1 opacity — very light wash to let wallpaper show through */
 div[class^="chat_"][class*="threadSidebarOpen_"] {
   background: rgba(0, 0, 0, 0.1) !important;
-  background-color: rgba(0, 0, 0, 0.1) !important;
   background-image: none !important;
 }
 div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"],
 div[data-list-id^="forum-channel-list"],
 div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 
@@ -1433,7 +1394,6 @@ div[class^="chatLayerWrapper_"] div[class^="thin_"]::-webkit-scrollbar {
    so video feeds, screen shares, and webcams are visible */
 div[class^="callContainer_"] {
   background: rgba(0, 0, 0, 1.0) !important;
-  background-color: rgba(0, 0, 0, 1.0) !important;
   background-image: none !important;
   border-radius: 0 !important;
 }
@@ -1441,7 +1401,6 @@ div[class^="callContainer_"] div[class^="root_"],
 div[class^="callContainer_"] div[class^="root_"] > div,
 div[class^="callContainer_"] div[class^="root_"] div[class^="container_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
   border-radius: 0 !important;
 }
@@ -1456,7 +1415,6 @@ div[class^="channelChatWrapper_"] div[class^="scroller_"],
 div[class^="channelChatWrapper_"] div[class^="scrollerContent_"],
 div[class^="channelChatWrapper_"] ol[class^="scrollerInner_"] {
   background: rgba(0, 0, 0, 1.0) !important;
-  background-color: rgba(0, 0, 0, 1.0) !important;
   background-image: none !important;
   border-radius: 0 !important;
 }
@@ -1469,7 +1427,6 @@ div[class^="callContainer_"] div[class^="resizeHandle_"] {
   padding: 0 !important;
   margin: 0 !important;
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
   border: none !important;
   outline: none !important;
@@ -1497,7 +1454,6 @@ div[class^="callContainer_"] div[class^="scroller_"]::-webkit-scrollbar {
    voice/connection wrapper (first direct child div[class^="wrapper_"]) and its contents. */
 section[aria-label="User status and settings"] > div[class^="wrapper_"] {
   background: rgba(8, 10, 20, 0.96) !important;
-  background-color: rgba(8, 10, 20, 0.96) !important;
   background-image: none !important;
   border-radius: 8px !important;
   border: none !important;
@@ -1508,7 +1464,6 @@ section[aria-label="User status and settings"] > div[class^="wrapper_"] {
 }
 section[aria-label="User status and settings"] > div[class^="wrapper_"] > div[class^="container_"] {
   background: rgba(8, 10, 20, 0.96) !important;
-  background-color: rgba(8, 10, 20, 0.96) !important;
   background-image: none !important;
   border-radius: 8px !important;
   border: none !important;
@@ -1540,13 +1495,13 @@ section[aria-label="User status and settings"] > div[class^="wrapper_"] div[clas
    border so each cam stands out against the black callContainer_ bg.
    On hover: slightly thicker + brighter purple glow. */
 div[class^="callContainer_"] div[class^="tileChild_"] {
-  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 4px !important;
   transition: border 0.15s ease, box-shadow 0.15s ease !important;
 }
 div[class^="callContainer_"] div[class^="tileChild_"]:hover {
-  border: 2px solid rgba(138, 43, 226, 0.8) !important;
-  box-shadow: 0 0 6px rgba(138, 43, 226, 0.35) !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.8) !important;
+  box-shadow: 0 0 6px rgba(var(--sl-color-primary-rgb), 0.35) !important;
 }
 
 /* §9j (continued) — Hide noise suppression + disconnect buttons
@@ -1583,8 +1538,7 @@ div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollba
    Override default green with Solo Leveling purple. */
 div[class^="notice_"] {
   background: rgba(75, 0, 160, 0.85) !important;
-  background-color: rgba(75, 0, 160, 0.85) !important;
-  border-bottom: 2px solid #8a2be2 !important;
+  border-bottom: 2px solid var(--sl-color-primary) !important;
 }
 div[class^="notice_"],
 div[class^="notice_"] span,
@@ -1598,7 +1552,7 @@ div[class^="notice_"] button {
 div[class^="notice_"] button:hover {
   color: #ffffff !important;
   border-color: #ffffff !important;
-  background: rgba(138, 43, 226, 0.4) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.4) !important;
 }
 div[class^="notice_"] div[class^="closeButton_"] svg,
 div[class^="notice_"] div[class^="closeButton_"] path {
@@ -1636,17 +1590,15 @@ div[class^="messagesWrapper_"] div[class^="scroller_"]::-webkit-scrollbar {
 article[class^="embedFull_"],
 article[class^="embed_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 1px solid rgba(138, 43, 226, 0.3) !important;
-  border-left: 4px solid #8a2be2 !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
+  border-left: 4px solid var(--sl-color-primary) !important;
   border-radius: 4px !important;
 }
 /* Embed inner grid container: transparent so parent bg shows through */
 article[class^="embedFull_"] div[class^="gridContainer_"],
 article[class^="embed_"] div[class^="gridContainer_"] {
   background: transparent !important;
-  background-color: transparent !important;
 }
 
 /* §11c — Mentioned messages: purple tint bg + purple left bar
@@ -1655,27 +1607,24 @@ article[class^="embed_"] div[class^="gridContainer_"] {
    Override both to purple to match Solo Leveling theme. */
 div[class*="mentioned_"][class*="message_"],
 div[class^="message_"][class*="mentioned_"] {
-  background: rgba(138, 43, 226, 0.08) !important;
-  background-color: rgba(138, 43, 226, 0.08) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.08) !important;
 }
 /* Mentioned ::before left accent bar: purple instead of yellow */
 div[class*="mentioned_"][class*="message_"]::before,
 div[class^="message_"][class*="mentioned_"]::before {
-  background: #8a2be2 !important;
-  background-color: #8a2be2 !important;
+  background: var(--sl-color-primary) !important;
 }
 /* Mentioned hover: slightly brighter purple tint */
 div[class*="mentioned_"][class*="message_"]:hover,
 div[class^="message_"][class*="mentioned_"]:hover {
-  background: rgba(138, 43, 226, 0.12) !important;
-  background-color: rgba(138, 43, 226, 0.12) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
 }
 
 /* §11d — Reply context bar: purple spine connector
    The repliedMessage_ div has a ::before pseudo that draws the reply
    connector line (the L-shaped pipe). Override its color to purple. */
 div[class^="repliedMessage_"]::before {
-  border-color: rgba(138, 43, 226, 0.5) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
 }
 
 /* §11e — Timestamps: muted purple tone
@@ -1696,8 +1645,8 @@ div[class^="messagesWrapper_"] time {
 div[class^="messagesWrapper_"] div[class^="message_"]:hover {
   background: radial-gradient(
     ellipse at center,
-    rgba(138, 43, 226, 0.14) 0%,
-    rgba(138, 43, 226, 0.07) 60%,
+    rgba(var(--sl-color-primary-rgb), 0.14) 0%,
+    rgba(var(--sl-color-primary-rgb), 0.07) 60%,
     transparent 100%
   ) !important;
   background-color: transparent !important;
@@ -1744,7 +1693,6 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
 .user-profile-popout div[class^="body_"],
 .user-profile-modal-v2 div[class^="profileBody_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
 }
 
 /* Section dividers inside the body — thin purple lines */
@@ -1753,7 +1701,7 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
 .user-profile-popout div[class^="body_"] div[class^="connectedAccountsSection_"],
 .user-profile-modal-v2 div[class^="profileBody_"] section[class^="section_"],
 .user-profile-modal-v2 div[class^="profileBody_"] section[class^="markup_"] {
-  border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
+  border-top: 1px solid rgba(var(--sl-color-primary-rgb), 0.2) !important;
 }
 
 /* Role pills: subtle purple-tinted background */
@@ -1761,29 +1709,27 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
 .user-profile-popout div[class^="roleTag_"],
 .user-profile-modal-v2 div[class^="role_"],
 .user-profile-modal-v2 div[class^="roleTag_"] {
-  background: rgba(138, 43, 226, 0.1) !important;
-  border-color: rgba(138, 43, 226, 0.3) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.1) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.3) !important;
 }
 
 /* §12c — Footer: message input area at the bottom of the popout.
    Solid dark bg with a purple border ring matching the chatbox input style. */
 .user-profile-popout div[class^="footer_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
 }
 .user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"],
 .user-profile-popout div[class^="footer_"] div[class^="input_"],
 .user-profile-popout div[class^="footer_"] textarea {
   background: rgba(15, 17, 30, 0.95) !important;
-  background-color: rgba(15, 17, 30, 0.95) !important;
-  border: 1px solid rgba(138, 43, 226, 0.3) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
   border-radius: 8px !important;
   color: #e0e0e0 !important;
 }
 .user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"]:focus-within,
 .user-profile-popout div[class^="footer_"] div[class^="input_"]:focus-within {
-  border-color: #8a2be2 !important;
-  box-shadow: 0 0 6px rgba(138, 43, 226, 0.3) !important;
+  border-color: var(--sl-color-primary) !important;
+  box-shadow: 0 0 6px rgba(var(--sl-color-primary-rgb), 0.3) !important;
 }
 
 /* §12d — Full modal tab bar: convert underline tabs to pill style.
@@ -1791,7 +1737,7 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
    uses role="tablist" with tabBarItem_ children. Replace the bottom-border
    indicator with rounded pill backgrounds. */
 .user-profile-modal-v2 div[role="tablist"] {
-  border-bottom: 1px solid rgba(138, 43, 226, 0.15) !important;
+  border-bottom: 1px solid rgba(var(--sl-color-primary-rgb), 0.15) !important;
   gap: 4px !important;
 }
 .user-profile-modal-v2 div[class^="tabBarItem_"] {
@@ -1807,12 +1753,12 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
   color: rgba(180, 140, 255, 0.5) !important;
 }
 .user-profile-modal-v2 div[class^="tabBarItem_"]:not([class*="selected_"]):hover {
-  background: rgba(138, 43, 226, 0.1) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.1) !important;
   color: rgba(180, 140, 255, 0.8) !important;
 }
 /* Selected tab: purple pill */
 .user-profile-modal-v2 div[class^="tabBarItem_"][class*="selected_"] {
-  background: rgba(138, 43, 226, 0.2) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.2) !important;
   color: #b48cff !important;
   border-bottom: none !important;
 }
@@ -1861,7 +1807,6 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
 .user-profile-modal-v2 div[class^="tabPanelScroller_"] div[class^="card_"],
 .user-profile-modal-v2 div[class^="tabPanelScroller_"] section {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 
@@ -1869,7 +1814,7 @@ div[class^="messagesWrapper_"] div[class^="message_"]:hover {
    This is the card that appears when clicking someone's game/activity
    status in the member list or chat. Uses popout_af3b89 class. */
 div[id^="popout_"] div[class^="popout_"]:has(div[class^="popoutContentWrapper_"]) {
-  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 12px !important;
   overflow: hidden !important;
 }
@@ -1890,7 +1835,6 @@ div[class^="children_"][class*="headerBarInner_"],
 div[class^="headerBarInner_"],
 div[class^="children_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
 }
 /* Kill the right-edge gradient fade on the header bar */
@@ -1907,7 +1851,6 @@ div[class^="headerBarInner_"]::after {
    Force it fully transparent so the animated wallpaper shows through. */
 div[class^="backdrop_"] {
   background: transparent !important;
-  background-color: transparent !important;
   background-image: none !important;
   opacity: 1 !important;
 }
@@ -1932,7 +1875,7 @@ div[class^="children_"] div[class^="headerBarTabItem_"]:hover,
 div[class^="children_"] div[class^="tabBarItem_"]:hover,
 div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]:hover,
 div[class^="headerBarInner_"] div[class^="tabBarItem_"]:hover {
-  background: rgba(138, 43, 226, 0.12) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
   border-color: rgba(180, 140, 255, 0.25) !important;
 }
 /* Selected: purple pill fill */
@@ -1947,10 +1890,10 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"] {
   background: linear-gradient(
     135deg,
     rgba(75, 0, 160, 0.92),
-    rgba(138, 43, 226, 0.72)
+    rgba(var(--sl-color-primary-rgb), 0.72)
   ) !important;
   border-color: rgba(180, 140, 255, 0.35) !important;
-  box-shadow: 0 0 22px rgba(138, 43, 226, 0.34),
+  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
     inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
 }
@@ -1966,7 +1909,7 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"]:hover {
   background: linear-gradient(
     135deg,
     rgba(75, 0, 160, 0.96),
-    rgba(138, 43, 226, 0.78)
+    rgba(var(--sl-color-primary-rgb), 0.78)
   ) !important;
 }
 /* Kill the default underline indicator on Discover tabs */
@@ -1993,7 +1936,6 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
    Keep it semi-transparent so the GIF background still peeks through. */
 div[class^="outerContainer_"] {
   background: rgba(0, 0, 0, 0.75) !important;
-  background-color: rgba(0, 0, 0, 0.75) !important;
   background-image: none !important;
 }
 
@@ -2002,7 +1944,6 @@ div[class^="outerContainer_"] {
    Already at 0.3 opacity from existing rules — override to solid. */
 div[class^="container_"] > div[class^="sidebar_"] {
   background: rgba(2, 3, 8, 0.98) !important;
-  background-color: rgba(2, 3, 8, 0.98) !important;
   background-image: none !important;
 }
 /* Settings sidebar scrollbar hidden */
@@ -2021,19 +1962,16 @@ div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"]::-w
    contentBody_ is the scrollable content below. Both go solid. */
 div[class^="contentHeader_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 div[class^="contentBody_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 /* Settings content scroller + panel: solid bg */
 div[class^="contentBody_"] div[class^="scroller_"],
 div[class^="contentBody_"] div[class^="panel_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2043,7 +1981,6 @@ div[class^="contentBody_"] div[class^="panel_"] {
 div[class^="modalContent_"],
 div[class^="modalContentInner_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2053,12 +1990,11 @@ div[class^="modalContentInner_"] {
 div[class^="contentBody_"] div[class^="cardPrimary_"],
 div[class^="contentBody_"] div[class*="card_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 /* Purple outline only on the message preview card */
 div[class^="contentBody_"] div[class^="preview_"] {
-  border: 1px solid rgba(138, 43, 226, 0.45) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 8px !important;
 }
 /* §10c (continued) — Account profile card bg + credential list: match container */
@@ -2066,7 +2002,6 @@ div[class^="contentBody_"] div[class^="background_"],
 div[class^="contentBody_"] div[class^="accountProfileCard_"],
 div[class^="contentBody_"] div[class^="credentialList_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2115,7 +2050,7 @@ div[class^="contentColumn_"] div[role="tablist"] div[role="tab"]:hover,
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"]:hover,
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"]:hover,
 div[role="tablist"][aria-label="Friends"] div[role="tab"]:hover {
-  background: rgba(138, 43, 226, 0.12) !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
   border-color: rgba(180, 140, 255, 0.25) !important;
 }
 
@@ -2136,10 +2071,10 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"] 
   background: linear-gradient(
     135deg,
     rgba(75, 0, 160, 0.92),
-    rgba(138, 43, 226, 0.72)
+    rgba(var(--sl-color-primary-rgb), 0.72)
   ) !important;
   border-color: rgba(180, 140, 255, 0.35) !important;
-  box-shadow: 0 0 22px rgba(138, 43, 226, 0.34),
+  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
     inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
   color: #ffffff !important;
 }
@@ -2160,7 +2095,7 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"]:
   background: linear-gradient(
     135deg,
     rgba(75, 0, 160, 0.96),
-    rgba(138, 43, 226, 0.78)
+    rgba(var(--sl-color-primary-rgb), 0.78)
   ) !important;
 }
 
@@ -2188,9 +2123,8 @@ div[class^="selectFieldPopout_"],
 div[class^="popout_"] div[role="listbox"],
 div[id^="popout_"] div[role="listbox"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 1px solid #8a2be2 !important;
+  border: 1px solid var(--sl-color-primary) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
 }
@@ -2209,7 +2143,6 @@ div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
 div[class^="popout_"] div[role="listbox"] div[role="option"],
 div[class^="popout_"] div[role="listbox"] div[class^="option_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 /* §10e (continued) — Dropdown scrollbar hidden
@@ -2251,7 +2184,6 @@ div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"]::-webkit-s
 div[class^="contentBody_"] div[class*="card_"][class*="5cea9"],
 div[class^="contentBody_"] div[class^="settingsBackgroundFlashElement_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2307,7 +2239,6 @@ ul[class^="guildsList_"] > li div[class^="control_"] {
    scrolling server items bleed through underneath. Give it a solid bg to match. */
 div[class^="headerContainer_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2326,15 +2257,14 @@ div[class^="contentBody_"] div[class^="stack_"][data-direction="horizontal"][dat
 div[class^="container_"] div[class*="selectField_"],
 div[class^="container_"] div[class*="wrapper_"][class*="selectField_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
-  border: 1px solid #8a2be2 !important;
+  border: 1px solid var(--sl-color-primary) !important;
   border-radius: 8px !important;
   box-shadow: none !important;
 }
 div[class^="container_"] div[class*="selectField_"]:hover,
 div[class^="container_"] div[class*="wrapper_"][class*="selectField_"]:hover {
-  border-color: #a855f7 !important;
+  border-color: var(--sl-color-accent-light) !important;
 }
 
 /* §10i — Family Center container (box_ surface): match container bg.
@@ -2342,7 +2272,6 @@ div[class^="container_"] div[class*="wrapper_"][class*="selectField_"]:hover {
    Match to theme bg but leave inner row_ cards untouched. */
 div[class^="contentBody_"] div[class^="box_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2351,16 +2280,13 @@ div[class^="contentBody_"] div[class^="box_"] {
    Leave inner recommendedServerCard_ and guildContainer_ cards alone. */
 div[class^="contentBody_"] div[class^="guildBoostingSettings_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 div[class^="contentBody_"] div[class^="guildBoostingSettings_"] > div[class^="wrapper_"] {
   background: transparent !important;
-  background-color: transparent !important;
 }
 div[class^="contentBody_"] div[class^="faq_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2368,7 +2294,6 @@ div[class^="contentBody_"] div[class^="faq_"] {
    These groups use --background-surface-higher (grey tint). */
 div[class^="contentBody_"] div[class^="defaultKeybindGroup_"] {
   background: rgba(8, 10, 20, 0.98) !important;
-  background-color: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
 }
 
@@ -2393,5 +2318,5 @@ div[id^="popout_"] > div[class^="popout_"],
 div[class^="selectFieldPopout_"],
 div[class^="popout_"] div[role="listbox"],
 div[id^="popout_"] div[role="listbox"] {
-  border: 1px solid #8a2be2 !important;
+  border: 1px solid var(--sl-color-primary) !important;
 }
