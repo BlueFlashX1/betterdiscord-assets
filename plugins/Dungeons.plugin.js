@@ -3972,6 +3972,7 @@ module.exports = class Dungeons {
         beastType: bossBeastType.type,
         beastName: bossBeastType.name,
         beastFamily: bossBeastType.family,
+        role: this.deriveMonsterRoleFromBeast(bossBeastType.type, bossBeastType.family),
         isMagicBeast: true,
 
         // Combat stats (for compatibility)
@@ -4397,6 +4398,7 @@ module.exports = class Dungeons {
             id: `mob_${spawnedAt}_${Math.random().toString(36).slice(2, 11)}`, // New unique ID
             spawnedAt, // Update spawn time
           };
+          this.ensureMonsterRole(newMobs[i]);
         }
         // MOB_CACHE log stripped — spawning works, no need to trace
       } else {
@@ -4472,6 +4474,10 @@ module.exports = class Dungeons {
           // SHADOW ARMY COMPATIBLE STRUCTURE
           // Mobs store full stats compatible with shadow extraction system
           // When extracted, these stats transfer directly to shadow baseStats
+          const mobRole = this.deriveMonsterRoleFromBeast(
+            magicBeastType.type,
+            magicBeastType.family
+          );
           newMobs[i] = {
             // Core mob identity
             id: `mob_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
@@ -4481,6 +4487,7 @@ module.exports = class Dungeons {
             beastType: magicBeastType.type, // 'ant', 'dragon', 'naga', etc.
             beastName: magicBeastType.name, // 'Ant', 'Dragon', 'Naga', etc.
             beastFamily: magicBeastType.family, // 'insect', 'dragon', 'reptile', etc.
+            role: mobRole,
             isMagicBeast: true, // All dungeon mobs are magic beasts
 
             // Combat stats (current HP)
@@ -6265,6 +6272,80 @@ module.exports = class Dungeons {
   normalizeShadowPersonalityKey(personality) {
     if (typeof personality !== 'string') return '';
     return personality.trim().toLowerCase();
+  }
+
+  deriveMonsterRoleFromBeast(beastType, beastFamily) {
+    const normalizedType = this.normalizeShadowRoleKey(beastType);
+    const normalizedFamily = typeof beastFamily === 'string' ? beastFamily.trim().toLowerCase() : '';
+    const familyFallbacks = {
+      insect: 'ant',
+      beast: 'wolf',
+      reptile: 'naga',
+      ice: 'yeti',
+      dragon: 'dragon',
+      giant: 'giant',
+      demon: 'demon',
+      undead: 'ghoul',
+      construct: 'golem',
+      ancient: 'elf',
+      'humanoid-beast': 'orc',
+    };
+
+    if (normalizedType && normalizedType !== 'beast' && normalizedType !== 'magic-beast') {
+      return normalizedType;
+    }
+
+    const fallbackRole = familyFallbacks[normalizedFamily] || '';
+    if (fallbackRole) return fallbackRole;
+
+    if (normalizedType === 'beast' || normalizedType === 'magic-beast') {
+      return 'wolf';
+    }
+
+    return normalizedType || 'balanced';
+  }
+
+  ensureMonsterRole(entity) {
+    if (!entity || typeof entity !== 'object') return '';
+    const resolvedRole = this.deriveMonsterRoleFromBeast(
+      entity.role || entity.beastType || entity.type || '',
+      entity.beastFamily || entity.family || ''
+    );
+    if (resolvedRole && entity.role !== resolvedRole) {
+      entity.role = resolvedRole;
+    }
+    return resolvedRole;
+  }
+
+  getMonsterOutgoingDamageMultiplier(monsterRole, beastFamily, targetType = 'shadow') {
+    if (!this.isRoleCombatModelEnabled()) return 1;
+    const roleKey = this.deriveMonsterRoleFromBeast(monsterRole, beastFamily);
+    const personalityKey = this.derivePersonalityKeyFromRole(roleKey);
+    const archetype = this.getRoleCombatArchetype(roleKey, personalityKey);
+
+    let multiplier = 1;
+    switch (archetype) {
+      case 'tank':
+        multiplier = targetType === 'user' ? 0.93 : 0.88;
+        break;
+      case 'support':
+        multiplier = 0.95;
+        break;
+      case 'caster':
+        multiplier = targetType === 'user' ? 1.12 : 1.04;
+        break;
+      case 'striker':
+        multiplier = targetType === 'user' ? 1.09 : 1.14;
+        break;
+      case 'ranger':
+        multiplier = 1.06;
+        break;
+      default:
+        multiplier = 1;
+        break;
+    }
+
+    return this.clampNumber(multiplier, 0.8, 1.2);
   }
 
   derivePersonalityKeyFromRole(roleKey) {
@@ -8655,14 +8736,24 @@ module.exports = class Dungeons {
    * @param {Object} userStats - User stats object
    * @param {string} bossRank - Boss rank
    * @param {string} userRank - User rank
+   * @param {string} bossRole - Boss combat role key
+   * @param {string} bossFamily - Boss beast family
    * @returns {number} Final damage to user
    */
-  calculateBossDamageToUser(bossStats, userStats, bossRank, userRank) {
+  calculateBossDamageToUser(
+    bossStats,
+    userStats,
+    bossRank,
+    userRank,
+    bossRole = '',
+    bossFamily = ''
+  ) {
     let rawDamage = this.calculateEnemyDamage(bossStats, userStats, bossRank, userRank);
     rawDamage = this.applyBossDamageVariance(rawDamage);
+    const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(bossRole, bossFamily, 'user');
     // Apply minimal reduction (10%) - user takes most of the damage when shadows are dead
     // This ensures proper damage scaling based on boss stats
-    return Math.max(1, Math.floor(rawDamage * 0.9));
+    return Math.max(1, Math.floor(rawDamage * 0.9 * roleMultiplier));
   }
 
   /**
@@ -8671,14 +8762,17 @@ module.exports = class Dungeons {
    * @param {Object} userStats - User stats object
    * @param {string} mobRank - Mob rank
    * @param {string} userRank - User rank
+   * @param {string} mobRole - Mob combat role key
+   * @param {string} mobFamily - Mob beast family
    * @returns {number} Final damage to user
    */
-  calculateMobDamageToUser(mobStats, userStats, mobRank, userRank) {
+  calculateMobDamageToUser(mobStats, userStats, mobRank, userRank, mobRole = '', mobFamily = '') {
     let rawDamage = this.calculateEnemyDamage(mobStats, userStats, mobRank, userRank);
     rawDamage = this.applyMobDamageVariance(rawDamage);
+    const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(mobRole, mobFamily, 'user');
     // Apply minimal reduction (15%) - mobs are slightly weaker but still deal proper damage
     // This ensures proper damage scaling based on mob stats
-    return Math.max(1, Math.floor(rawDamage * 0.85));
+    return Math.max(1, Math.floor(rawDamage * 0.85 * roleMultiplier));
   }
 
   /**
@@ -8688,12 +8782,33 @@ module.exports = class Dungeons {
    * @param {Object} shadowStats - Shadow stats object
    * @param {string} bossRank - Boss rank
    * @param {string} shadowRank - Shadow rank
+   * @param {string} bossRole - Boss combat role key
+   * @param {string} shadowRole - Shadow combat role key
+   * @param {string} bossFamily - Boss beast family
    * @returns {number} Final damage to shadow
    */
-  calculateBossDamageToShadow(bossStats, shadowStats, bossRank, shadowRank) {
+  calculateBossDamageToShadow(
+    bossStats,
+    shadowStats,
+    bossRank,
+    shadowRank,
+    bossRole = '',
+    shadowRole = '',
+    bossFamily = ''
+  ) {
     let damage = this.calculateEnemyDamage(bossStats, shadowStats, bossRank, shadowRank);
     damage = Math.floor(damage * 0.6); // 40% damage reduction (was 60%)
-    return this.applyBossDamageVariance(damage);
+    damage = this.applyBossDamageVariance(damage);
+    const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(bossRole, bossFamily, 'shadow');
+    // Slight protection for tank/support shadows against heavy monster archetypes.
+    const shadowRoleKey = this.normalizeShadowRoleKey(shadowRole);
+    const shadowArchetype = this.getRoleCombatArchetype(
+      shadowRoleKey,
+      this.derivePersonalityKeyFromRole(shadowRoleKey)
+    );
+    const defenderMultiplier =
+      shadowArchetype === 'tank' ? 0.92 : shadowArchetype === 'support' ? 0.96 : 1;
+    return Math.max(1, Math.floor(damage * roleMultiplier * defenderMultiplier));
   }
 
   /**
@@ -8703,12 +8818,32 @@ module.exports = class Dungeons {
    * @param {Object} shadowStats - Shadow stats object
    * @param {string} mobRank - Mob rank
    * @param {string} shadowRank - Shadow rank
+   * @param {string} mobRole - Mob combat role key
+   * @param {string} shadowRole - Shadow combat role key
+   * @param {string} mobFamily - Mob beast family
    * @returns {number} Final damage to shadow
    */
-  calculateMobDamageToShadow(mobStats, shadowStats, mobRank, shadowRank) {
+  calculateMobDamageToShadow(
+    mobStats,
+    shadowStats,
+    mobRank,
+    shadowRank,
+    mobRole = '',
+    shadowRole = '',
+    mobFamily = ''
+  ) {
     let damage = this.calculateEnemyDamage(mobStats, shadowStats, mobRank, shadowRank);
     damage = Math.floor(damage * 0.5); // 50% damage reduction (was 70%)
-    return this.applyMobDamageVariance(damage);
+    damage = this.applyMobDamageVariance(damage);
+    const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(mobRole, mobFamily, 'shadow');
+    const shadowRoleKey = this.normalizeShadowRoleKey(shadowRole);
+    const shadowArchetype = this.getRoleCombatArchetype(
+      shadowRoleKey,
+      this.derivePersonalityKeyFromRole(shadowRoleKey)
+    );
+    const defenderMultiplier =
+      shadowArchetype === 'tank' ? 0.9 : shadowArchetype === 'support' ? 0.95 : 1;
+    return Math.max(1, Math.floor(damage * roleMultiplier * defenderMultiplier));
   }
 
   /**
@@ -8873,6 +9008,7 @@ module.exports = class Dungeons {
       }
 
       const now = Date.now();
+      const bossRole = this.ensureMonsterRole(dungeon.boss);
       const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
       if (!bossUnlocked) {
         // Keep cooldown state fresh so unlocking doesn't burst-apply stale attacks.
@@ -8979,8 +9115,16 @@ module.exports = class Dungeons {
             if (baseDamage == null) {
               const shadowStats = this.buildShadowStats(target);
               const shadowRank = target.rank || 'E';
+              const shadowRole =
+                target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
               baseDamage = this.calculateBossDamageToShadow(
-                bossStats, shadowStats, dungeon.boss.rank, shadowRank
+                bossStats,
+                shadowStats,
+                dungeon.boss.rank,
+                shadowRank,
+                bossRole,
+                shadowRole,
+                dungeon.boss.beastFamily
               );
               damageCache.set(shadowId, baseDamage);
             }
@@ -9012,7 +9156,12 @@ module.exports = class Dungeons {
         const userRank = this.soloLevelingStats?.settings?.rank || 'E';
 
         const baseDamage = this.calculateBossDamageToUser(
-          bossStats, userStats, dungeon.boss.rank, userRank
+          bossStats,
+          userStats,
+          dungeon.boss.rank,
+          userRank,
+          bossRole,
+          dungeon.boss.beastFamily
         );
         // Same aggregation: N hits × base × smoothed variance
         const aggregateVariance = this._varianceWide();
@@ -9129,13 +9278,13 @@ module.exports = class Dungeons {
         ? Math.min(25, totalAliveMobs / mobsToProcess)
         : 1;
 
-      // Phase 3: VECTORIZED RANK-GROUP BATCHING
-      // Instead of per-mob per-hit damage calc, group sampled mobs by rank and compute
-      // one representative damage per rank, then scale by (hitCount × scaleFactor).
-      // This is the numpy broadcast concept: compute damage vector once per rank, apply to all.
+      // Phase 3: VECTORIZED RANK/ROLE-GROUP BATCHING
+      // Instead of per-mob per-hit damage calc, group sampled mobs by rank+role and compute
+      // one representative damage per group, then scale by (hitCount × scaleFactor).
+      // This preserves role personality while keeping the hot path bounded.
       if (aliveShadows.length > 0) {
-        // Collect sampled mob attacks grouped by rank for vectorized damage calc
-        const rankGroups = new Map(); // rank -> { totalHits, representativeMob }
+        // Collect sampled mob attacks grouped by rank+role for vectorized damage calc
+        const rankGroups = new Map(); // `${rank}|${role}` -> { rank, role, totalHits, representativeMob }
         let aliveIdx = 0;
         let sampled = 0;
         for (let m = 0; m < allActiveMobs.length && sampled < mobsToProcess; m++) {
@@ -9150,19 +9299,29 @@ module.exports = class Dungeons {
           if (attacksInSpan <= 0) continue;
 
           const rank = mob.rank || 'E';
-          const existing = rankGroups.get(rank);
+          const mobRole = this.ensureMonsterRole(mob);
+          const groupKey = `${rank}|${mobRole}`;
+          const existing = rankGroups.get(groupKey);
           if (existing) {
             existing.totalHits += attacksInSpan;
             existing.mobCount++;
           } else {
-            rankGroups.set(rank, { totalHits: attacksInSpan, mobCount: 1, representativeMob: mob });
+            rankGroups.set(groupKey, {
+              rank,
+              role: mobRole,
+              totalHits: attacksInSpan,
+              mobCount: 1,
+              representativeMob: mob,
+            });
           }
 
           mob.lastAttackTime = now + totalTimeSpan;
         }
 
-        // One damage calculation per rank group × random shadow targets
-        for (const [rank, group] of rankGroups) {
+        // One damage calculation per rank+role group × random shadow targets
+        for (const group of rankGroups.values()) {
+          const rank = group.rank;
+          const mobRole = group.role;
           const mob = group.representativeMob;
           const scaledHits = Math.ceil(group.totalHits * mobScaleFactor);
 
@@ -9232,8 +9391,16 @@ module.exports = class Dungeons {
             if (!hpData || hpData.hp <= 0) continue;
 
             const shadowStats = this.buildShadowStats(target);
+            const shadowRole =
+              target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
             const baseDamage = this.calculateMobDamageToShadow(
-              mobStats, shadowStats, rank, target.rank || 'E'
+              mobStats,
+              shadowStats,
+              rank,
+              target.rank || 'E',
+              mobRole,
+              shadowRole,
+              mob.beastFamily
             );
             const aggregateVariance = this._varianceWide();
             const rawDamage = Math.floor(
@@ -9275,8 +9442,16 @@ module.exports = class Dungeons {
 
                 // Apply one hit worth of damage
                 const shadowStats = this.buildShadowStats(target);
+                const shadowRole =
+                  target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
                 const baseDmg = this.calculateMobDamageToShadow(
-                  mobStats, shadowStats, rank, target.rank || 'E'
+                  mobStats,
+                  shadowStats,
+                  rank,
+                  target.rank || 'E',
+                  mobRole,
+                  shadowRole,
+                  mob.beastFamily
                 );
                 const effectiveHP = hpData.hp - accDmg;
                 const dmg = Math.min(
@@ -9308,6 +9483,7 @@ module.exports = class Dungeons {
             if (mob && mob.hp > 0) { representativeMob = mob; break; }
           }
           if (representativeMob) {
+            const mobRole = this.ensureMonsterRole(representativeMob);
             const mobStatVariance = this._varianceNarrow();
             const mobStats = {
               strength: Math.floor(representativeMob.strength * mobStatVariance),
@@ -9316,7 +9492,12 @@ module.exports = class Dungeons {
               vitality: Math.floor(representativeMob.vitality * mobStatVariance),
             };
             const baseDamage = this.calculateMobDamageToUser(
-              mobStats, userStats, representativeMob.rank, userRank
+              mobStats,
+              userStats,
+              representativeMob.rank,
+              userRank,
+              mobRole,
+              representativeMob.beastFamily
             );
             const aggregateVariance = this._varianceWide();
             totalUserDamage = Math.floor(
@@ -11783,6 +11964,7 @@ module.exports = class Dungeons {
   async simulateBossAttacks(channelKey, cycles) {
     const dungeon = this._getActiveDungeon(channelKey);
     if (!dungeon || dungeon.boss.hp <= 0) return;
+    const bossRole = this.ensureMonsterRole(dungeon.boss);
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (!bossUnlocked) return;
 
@@ -11810,11 +11992,19 @@ module.exports = class Dungeons {
       const sampleShadow = aliveShadows[0];
       const shadowStats = this.buildShadowStats(sampleShadow);
       const shadowRank = sampleShadow.rank || 'E';
+      const shadowRole =
+        sampleShadow.role ||
+        sampleShadow.roleName ||
+        sampleShadow.ro ||
+        this.normalizeShadowRoleKey(sampleShadow.type);
       const avgShadowDamage = this.calculateBossDamageToShadow(
         bossStats,
         shadowStats,
         dungeon.boss.rank,
-        shadowRank
+        shadowRank,
+        bossRole,
+        shadowRole,
+        dungeon.boss.beastFamily
       );
 
       // Calculate total shadow damage (boss attacks multiple shadows per attack)
@@ -11828,7 +12018,9 @@ module.exports = class Dungeons {
         bossStats,
         userStats,
         dungeon.boss.rank,
-        userRank
+        userRank,
+        bossRole,
+        dungeon.boss.beastFamily
       );
       totalUserDamage = Math.floor(avgUserDamage * cycles);
     }
@@ -11904,17 +12096,26 @@ module.exports = class Dungeons {
       const shadowRank = sampleShadow.rank || 'E';
 
       for (const mob of sampleMobs) {
+        const mobRole = this.ensureMonsterRole(mob);
         const mobStats = {
           strength: mob.strength,
           agility: mob.agility,
           intelligence: mob.intelligence,
           vitality: mob.vitality,
         };
+        const shadowRole =
+          sampleShadow.role ||
+          sampleShadow.roleName ||
+          sampleShadow.ro ||
+          this.normalizeShadowRoleKey(sampleShadow.type);
         const avgShadowDamage = this.calculateMobDamageToShadow(
           mobStats,
           shadowStats,
           mob.rank,
-          shadowRank
+          shadowRank,
+          mobRole,
+          shadowRole,
+          mob.beastFamily
         );
         totalShadowDamage += avgShadowDamage;
       }
@@ -11927,6 +12128,7 @@ module.exports = class Dungeons {
       const userRank = this.soloLevelingStats?.settings?.rank || 'E';
 
       for (const mob of sampleMobs) {
+        const mobRole = this.ensureMonsterRole(mob);
         const mobStats = {
           strength: mob.strength,
           agility: mob.agility,
@@ -11937,7 +12139,9 @@ module.exports = class Dungeons {
           mobStats,
           userStats,
           mob.rank,
-          userRank
+          userRank,
+          mobRole,
+          mob.beastFamily
         );
         totalUserDamage += avgUserDamage;
       }
@@ -12449,6 +12653,7 @@ module.exports = class Dungeons {
 
           // VALIDATE: Ensure boss stats match dungeon rank (fixes any corrupted data)
           if (dungeon.boss && dungeon.rank) {
+            this.ensureMonsterRole(dungeon.boss);
             const rankIndex = this.findRankIndex(dungeon.rank);
             if (rankIndex >= 0) {
               // Expected boss stats based on rank (using centralized calculation)
@@ -12531,6 +12736,7 @@ module.exports = class Dungeons {
           // VALIDATE: Ensure mob stats match their rank (fixes any corrupted data)
           if (dungeon.mobs && dungeon.mobs.activeMobs && Array.isArray(dungeon.mobs.activeMobs)) {
             dungeon.mobs.activeMobs.forEach((mob) => {
+              this.ensureMonsterRole(mob);
               if (mob.rank) {
                 const mobRankIndex = this.findRankIndex(mob.rank);
                 if (mobRankIndex >= 0) {
