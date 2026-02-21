@@ -1766,7 +1766,8 @@ module.exports = class CriticalHit {
    */
   _getComboCountUpDuration(targetCombo) {
     const safeTarget = Math.max(1, Math.floor(Number(targetCombo) || 1));
-    return Math.min(380, 120 + (Math.min(40, safeTarget) - 1) * 9);
+    // Slow combo count-up to ~1/3 speed (about 3x longer) so players can read the chain.
+    return Math.min(1140, 360 + (Math.min(40, safeTarget) - 1) * 27);
   }
 
   /**

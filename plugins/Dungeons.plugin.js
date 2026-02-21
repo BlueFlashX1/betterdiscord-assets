@@ -1125,11 +1125,10 @@ module.exports = class Dungeons {
         const shadowBonus = shadowCount * 25;
         return baseHP + shadowBonus;
       },
-      // Calculate Mana from stats
-      calculateMana: (intelligence, shadowCount = 0) => {
-        const baseMana = 100 + intelligence * 10;
-        const shadowBonus = shadowCount * 50;
-        return baseMana + shadowBonus;
+      // Calculate Mana from stats (lore: mostly INT + level, not army size)
+      calculateMana: (intelligence, level = 1) => {
+        const safeLevel = Number.isFinite(level) ? Math.max(1, level) : 1;
+        return 100 + intelligence * 12 + safeLevel * 8;
       },
       // Get effective stats (with fallback)
       getEffectiveStats: (plugin, settings) => {
@@ -2662,6 +2661,7 @@ module.exports = class Dungeons {
     const vitality = totalStats.vitality || 0;
     const intelligence = totalStats.intelligence || 0;
     const rank = this.soloLevelingStats?.settings?.rank || 'E';
+    const level = this.soloLevelingStats?.settings?.level || 1;
 
     // Get shadow count ONCE (cached for 5 seconds)
     const shadowCount = this.shadowArmy ? await this.getShadowCount() : 0;
@@ -2682,15 +2682,13 @@ module.exports = class Dungeons {
       }
     }
 
-    // Calculate user mana from TOTAL EFFECTIVE INTELLIGENCE (including buffs) + SHADOW ARMY SIZE
+    // Calculate user mana from TOTAL EFFECTIVE INTELLIGENCE (including buffs) + level
     if (!this.settings.userMaxMana || this.settings.userMaxMana === null) {
-      // ENHANCED MANA FORMULA: Scales with INT + Shadow Army Size
-      // Base: 100 + INT × 10 (original)
-      // Shadow Army Bonus: shadowCount × 50 (NEW!)
-      // This ensures you can resurrect your shadows!
-      const baseMana = 100 + intelligence * 10;
-      const shadowArmyBonus = shadowCount * 50;
-      this.settings.userMaxMana = baseMana + shadowArmyBonus;
+      // LORE MANA FORMULA:
+      // - Main scaling: INT (including buffs)
+      // - Secondary scaling: level
+      // - No shadow-count scaling
+      this.settings.userMaxMana = 100 + intelligence * 12 + level * 8;
 
       if (!this.settings.userMana || this.settings.userMana === null) {
         this.settings.userMana = this.settings.userMaxMana;
@@ -5456,19 +5454,16 @@ module.exports = class Dungeons {
   }
 
   /**
-   * Calculate max mana from intelligence stat + shadow army size
-   * Uses TOTAL EFFECTIVE STATS if SoloLevelingStats is available
-   * Scales with shadow army to afford resurrections!
+   * Calculate max mana from intelligence + level.
+   * Uses TOTAL EFFECTIVE INTELLIGENCE when SoloLevelingStats is available.
    */
-  async calculateMana(intelligence, shadowCount = 0) {
-    const baseMana = 100 + intelligence * 10;
-    const shadowArmyBonus = shadowCount * 50; // 50 mana per shadow
-    return baseMana + shadowArmyBonus;
+  async calculateMana(intelligence, level = 1) {
+    const safeLevel = Number.isFinite(level) ? Math.max(1, level) : 1;
+    return 100 + intelligence * 12 + safeLevel * 8;
   }
 
   /**
-   * Recalculate user mana pool based on current stats and shadow count
-   * Called when shadow army size changes
+   * Recalculate user mana pool based on current effective stats and level.
    */
   /**
    * Recalculate user HP pool based on current stats and shadow count
@@ -5511,10 +5506,10 @@ module.exports = class Dungeons {
 
     const totalStats = this.getUserEffectiveStats();
     const intelligence = totalStats.intelligence || 0;
-    const shadowCount = await this.getShadowCount();
+    const level = this.soloLevelingStats?.settings?.level || 1;
 
     const oldMaxMana = this.settings.userMaxMana || 0;
-    this.settings.userMaxMana = await this.calculateMana(intelligence, shadowCount);
+    this.settings.userMaxMana = await this.calculateMana(intelligence, level);
 
     // If max mana increased, increase current mana proportionally
     if (this.settings.userMaxMana > oldMaxMana) {
@@ -5524,6 +5519,9 @@ module.exports = class Dungeons {
         this.settings.userMana + manaIncrease
       );
       // Mana pool updated silently
+    } else {
+      // Clamp current mana if max dropped (e.g., buff expired)
+      this.settings.userMana = Math.min(this.settings.userMaxMana, this.settings.userMana || 0);
     }
 
     // CRITICAL: Push Mana to Stats plugin and update UI in real-time
@@ -5609,6 +5607,19 @@ module.exports = class Dungeons {
       this.regenInterval = null;
       // Stopped (logging removed)
     }
+  }
+
+  _hasActiveDungeonCombat() {
+    if (!this.activeDungeons || this.activeDungeons.size === 0) return false;
+    for (const dungeon of this.activeDungeons.values()) {
+      if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) continue;
+      const bossAlive = (dungeon?.boss?.hp || 0) > 0;
+      const mobsRemaining = Number.isFinite(dungeon?.mobs?.remaining)
+        ? dungeon.mobs.remaining
+        : dungeon?.mobs?.activeMobs?.length || 0;
+      if (bossAlive || mobsRemaining > 0) return true;
+    }
+    return false;
   }
 
   /**
@@ -5743,14 +5754,18 @@ module.exports = class Dungeons {
     }
 
     // MANA REGENERATION: Execute if Mana is below max
-    // Uses sqrt scaling for INT with a 5% hard cap so mana stays meaningful as a resource.
-    // At any level: full pool refills in ~20s minimum. That means in a tough fight
-    // you can burn through your pool and feel the pressure for 20s before full recovery.
+    // Uses sqrt scaling for INT with mode-aware caps:
+    // - In combat: intentionally low regen so resurrection costs matter.
+    // - Out of combat: faster refill for QoL between fights.
     if (needsManaRegen) {
-      const baseRate = 0.008;
-      const statRate = (Math.sqrt(intelligence) / 12) * 0.007; // sqrt diminishing returns
-      const levelRate = (level / 10) * 0.003;
-      const totalRate = Math.min(0.10, baseRate + statRate + levelRate); // Hard cap: 10%/s (10s to full)
+      const inCombat = this._hasActiveDungeonCombat();
+      const baseRate = inCombat ? 0.0015 : 0.008;
+      const statRate = inCombat
+        ? (Math.sqrt(intelligence) / 18) * 0.0015
+        : (Math.sqrt(intelligence) / 12) * 0.007; // sqrt diminishing returns
+      const levelRate = inCombat ? (level / 20) * 0.0005 : (level / 10) * 0.003;
+      const capRate = inCombat ? 0.02 : 0.10; // Combat regen intentionally much lower
+      const totalRate = Math.min(capRate, baseRate + statRate + levelRate);
 
       const manaRegen = Math.max(1, Math.floor(this.settings.userMaxMana * totalRate));
       const oldMana = this.settings.userMana;
