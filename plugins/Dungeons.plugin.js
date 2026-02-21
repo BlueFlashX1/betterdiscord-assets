@@ -4011,6 +4011,7 @@ module.exports = class Dungeons {
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
           : 0,
+        deployedAt: null, // Set on first Deploy Shadows; boss vulnerability timer starts from deploy time
         unlockedAt: null,
       },
       difficultyScale: {
@@ -4737,6 +4738,21 @@ module.exports = class Dungeons {
 
     // Mark deployed (shadows fight autonomously — user can optionally JOIN separately)
     dungeon.shadowsDeployed = true;
+    if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
+      dungeon.bossGate = {
+        enabled: this.settings?.bossGateEnabled !== false,
+        minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
+          ? this.settings.bossGateMinDurationMs
+          : 180000,
+        requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
+          ? this.settings.bossGateRequiredMobKills
+          : 0,
+        deployedAt: null,
+        unlockedAt: null,
+      };
+    }
+    dungeon.bossGate.deployedAt = Date.now();
+    dungeon.bossGate.unlockedAt = null;
     this._markAllocationDirty('deploy-shadows');
 
     // Allocate shadows and start combat
@@ -4765,9 +4781,19 @@ module.exports = class Dungeons {
 
     // Start mob spawning + all combat systems together
     this.startMobSpawning(channelKey);
+
+    // Deploy responsiveness: flush first queued spawn wave immediately so shadows have targets now.
+    if (this._mobSpawnQueue?.has?.(channelKey)) {
+      this.processMobSpawnQueue(channelKey);
+      this._mobSpawnQueueNextAt?.delete?.(channelKey);
+    }
+
     await this.startShadowAttacks(channelKey);
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
+
+    // Deploy responsiveness: run one immediate shadow attack pass (don't wait for cadence tick).
+    await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
 
     this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
     this.saveSettings();
@@ -5178,15 +5204,23 @@ module.exports = class Dungeons {
         requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
           ? this.settings.bossGateRequiredMobKills
           : 0,
+        deployedAt: null,
         unlockedAt: null,
       };
     }
 
     if (dungeon.bossGate.enabled === false) return true;
-    if (dungeon.bossGate.unlockedAt) return true;
+    if (!dungeon.shadowsDeployed) return false;
 
     const now = Date.now();
-    const elapsed = Math.max(0, now - (Number.isFinite(dungeon.startTime) ? dungeon.startTime : now));
+    if (!Number.isFinite(dungeon.bossGate.deployedAt) || dungeon.bossGate.deployedAt <= 0) {
+      // Migration/self-heal: old dungeons without deployedAt start timer now.
+      dungeon.bossGate.deployedAt = now;
+      dungeon.bossGate.unlockedAt = null;
+    }
+    if (dungeon.bossGate.unlockedAt) return true;
+
+    const elapsed = Math.max(0, now - dungeon.bossGate.deployedAt);
     const kills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
     const minDurationMs = Math.max(
       0,
@@ -5209,6 +5243,7 @@ module.exports = class Dungeons {
         kills,
         minDurationMs,
         requiredMobKills,
+        deployedAt: dungeon.bossGate.deployedAt,
       });
       this.showToast(`${dungeon.name}: Boss is now vulnerable!`, 'success');
     }
@@ -12084,9 +12119,27 @@ module.exports = class Dungeons {
           delete dungeon._completing;
 
           // MIGRATION: Force bossGate to code defaults (saved settings may have stale values)
-          if (dungeon.bossGate) {
+          if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
+            dungeon.bossGate = {
+              enabled: this.settings?.bossGateEnabled !== false,
+              minDurationMs: this.defaultSettings.bossGateMinDurationMs,
+              requiredMobKills: this.defaultSettings.bossGateRequiredMobKills,
+              deployedAt: null,
+              unlockedAt: null,
+            };
+          } else {
             dungeon.bossGate.minDurationMs = this.defaultSettings.bossGateMinDurationMs;
             dungeon.bossGate.requiredMobKills = this.defaultSettings.bossGateRequiredMobKills;
+          }
+          if (dungeon.shadowsDeployed) {
+            // Preserve existing deployedAt when present; otherwise self-heal so boss never unlocks immediately on restore.
+            if (!Number.isFinite(dungeon.bossGate.deployedAt) || dungeon.bossGate.deployedAt <= 0) {
+              dungeon.bossGate.deployedAt = Date.now();
+              dungeon.bossGate.unlockedAt = null;
+            }
+          } else {
+            dungeon.bossGate.deployedAt = null;
+            dungeon.bossGate.unlockedAt = null;
           }
 
           // MIGRATION: Sync mobCapacity with current formula (handles 15%→100% change)
