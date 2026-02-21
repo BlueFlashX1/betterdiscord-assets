@@ -373,6 +373,7 @@ betterdiscord-assets/
 │   ├── ShadowArmy.plugin.js           # Shadow extraction & army
 │   ├── ShadowSenses.plugin.js         # Shadow activity feed
 │   ├── ShadowExchange.plugin.js       # Shadow trading
+│   ├── ShadowStep.plugin.js           # Channel teleportation
 │   ├── Dungeons.plugin.js             # Dungeon raids
 │   ├── HSLDockAutoHide.plugin.js      # Dock auto-hide
 │   ├── HSLWheelBridge.plugin.js       # HSL wheel bridge

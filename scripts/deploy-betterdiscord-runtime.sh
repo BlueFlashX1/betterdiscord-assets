@@ -35,6 +35,8 @@ for f in \
   LevelProgressBar.plugin.js \
   ShadowArmy.plugin.js \
   ShadowExchange.plugin.js \
+  ShadowSenses.plugin.js \
+  ShadowStep.plugin.js \
   SkillTree.plugin.js \
   SoloLevelingStats.plugin.js \
   SoloLevelingToasts.plugin.js \
