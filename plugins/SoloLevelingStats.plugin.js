@@ -795,18 +795,18 @@ module.exports = class SoloLevelingStats {
       },
       xpMultipliers: {
         E: 1.0,
-        D: 1.05,
-        C: 1.1,
-        B: 1.16,
-        A: 1.24,
-        S: 1.32,
-        SS: 1.4,
-        SSS: 1.5,
-        'SSS+': 1.62,
-        NH: 1.76,
-        Monarch: 1.92,
-        'Monarch+': 2.1,
-        'Shadow Monarch': 2.3,
+        D: 1.12,
+        C: 1.28,
+        B: 1.48,
+        A: 1.72,
+        S: 2.02,
+        SS: 2.4,
+        SSS: 2.88,
+        'SSS+': 3.46,
+        NH: 4.18,
+        Monarch: 5.1,
+        'Monarch+': 6.3,
+        'Shadow Monarch': 9.0,
       },
       statPoints: {
         E: 2,
@@ -5812,21 +5812,21 @@ module.exports = class SoloLevelingStats {
           achievements: this.settings.achievements.unlocked.length,
         });
 
-        // Grant rank promotion stat bonuses with damping at high stat totals.
-        // Keeps promotion feeling meaningful without causing runaway inflation.
+        // Grant rank promotion stat bonuses on an exponential-ish curve.
+        // Late tiers (Monarch+) are intentionally dramatic; damping prevents runaway inflation.
         const rankPromotionBonuses = {
-          D: 2,
-          C: 3,
-          B: 4,
-          A: 5,
-          S: 7,
-          SS: 9,
-          SSS: 11,
-          'SSS+': 13,
-          NH: 16,
-          Monarch: 20,
-          'Monarch+': 24,
-          'Shadow Monarch': 30,
+          D: 4,
+          C: 6,
+          B: 9,
+          A: 13,
+          S: 19,
+          SS: 27,
+          SSS: 38,
+          'SSS+': 54,
+          NH: 76,
+          Monarch: 110,
+          'Monarch+': 165,
+          'Shadow Monarch': 280,
         };
 
         const baseBonus = rankPromotionBonuses[nextRank] || 0;
@@ -5837,7 +5837,11 @@ module.exports = class SoloLevelingStats {
           (this.settings.stats.vitality || 0) +
           (this.settings.stats.perception || 0);
         const averageStat = statSum / 5;
-        const dampener = averageStat >= 800 ? 0.5 : averageStat >= 500 ? 0.65 : averageStat >= 300 ? 0.8 : 1;
+        const dampener =
+          averageStat >= 1200 ? 0.5 :
+          averageStat >= 800 ? 0.62 :
+          averageStat >= 500 ? 0.75 :
+          averageStat >= 300 ? 0.88 : 1;
         const bonus = Math.max(1, Math.round(baseBonus * dampener));
         if (bonus > 0) {
           // Apply bonus to all stats
