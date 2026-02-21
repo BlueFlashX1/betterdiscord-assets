@@ -1,0 +1,2496 @@
+/**
+ * @name Solo Leveling (Rebuild)
+ * @author Curio
+ * @version 0.1.1
+ * @description Fresh rebuild baseline for Solo Leveling theme
+ */
+
+/*
+AI MAINTENANCE RULES
+1) Keep @import lines at top and keep :root variables grouped.
+2) Do not change Animated Wallpaper - Verified unless user explicitly requests it.
+3) Do not add Verified to section titles unless user explicitly says so.
+4) Prefer scoped additions or overrides; avoid broad rewrites unless requested.
+*/
+
+/*
+╔══════════════════════════════════════════════════════════════════╗
+║                    TABLE OF CONTENTS                            ║
+╠══════════════════════════════════════════════════════════════════╣
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  GLOBAL / ALWAYS VISIBLE                                │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §1  IMPORTS & VARIABLES .................. @import, :root       ║
+║      └─ HSL dock, ClearVision base, Orbitron font, colors, bg   ║
+║                                                                  ║
+║  §2  ANIMATED WALLPAPER (LOCKED) ......... body::before/::after  ║
+║      └─ Full-screen GIF background + readability overlay         ║
+║                                                                  ║
+║  §7  NAMETAG (User Panel) ............... Bottom-left controls   ║
+║      ├─ §7a  Hide mute/deafen buttons                            ║
+║      └─ §7b  Hide input/output option buttons                    ║
+║                                                                  ║
+║  §8  SERVER LIST (Dock) ................. Left sidebar / HSL     ║
+║      ├─ §8a  Solid background (no transparency)                  ║
+║      ├─ §8b  Scroll behavior (hide scrollbar, gestures)          ║
+║      ├─ §8c  Layout (width, overflow containment)                ║
+║      ├─ §8d  Bottom strip (dark fill for panels gap)            ║
+║      ├─ §8e  Purple top-edge border (accent line)               ║
+║      └─ §8f  Home icon → Shadow Monarch logo                    ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  HOME / FRIENDS VIEW  (Discord logo → Friends tab)      │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §3  HOME SCREEN ......................... Friends / DM view     ║
+║      ├─ §3a  Title bar cleanup + hide Message btn + hide calls   ║
+║      ├─ §3b  Activity card styling (hover borders, solid bg)     ║
+║      ├─ §3c  User popout styling (avatar click popup)            ║
+║      ├─ §3d  Context menus (all popups — solid bg + purple)      ║
+║      ├─ §3e  Search bar ("Find or start a conversation")         ║
+║      ├─ §3f  Panel overlays (dark wash) + member list + cards    ║
+║      └─ §3g  Explore Discoverable Servers button                ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  DM SIDEBAR  (left panel with DM list)                  │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §5  SIDEBAR: PRIVATE CHANNELS .......... DM list left panel     ║
+║      ├─ §5a  Hide Nitro/Shop/Quests nav entries                  ║
+║      ├─ §5b  Fill full height (reclaim user panel gap)           ║
+║      ├─ §5c  Hide scrollbar (keep scroll functional)            ║
+║      └─ §5d  DM sidebar dark wash (0.7 opacity, matches guild) ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  DIALOGS & OVERLAYS                                     │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §4  QUICK SWITCHER ...................... Ctrl+K dialog         ║
+║      ├─ §4a  Dialog surfaces (background, border, shadow)        ║
+║      ├─ §4b  Input field styling                                 ║
+║      ├─ §4c  Result items (hover/selected states)                ║
+║      ├─ §4d  Single-border shell + backdrop dim                  ║
+║      └─ §4e  Hide protip footer                                  ║
+║                                                                  ║
+║  §6  DIALOG BOXES ....................... Modal popups            ║
+║      ├─ §6a  Addon/Plugin/Theme error dialogs (surfaces)         ║
+║      ├─ §6b  Error dialog backdrop dim                           ║
+║      ├─ §6c  Error dialog internals (borders, colors)            ║
+║      ├─ §6d  Error dialog action buttons (purple brand)          ║
+║      ├─ §6e  Error dialog header/footer chrome                   ║
+║      ├─ §6f  Error dialog tip/details rows                       ║
+║      └─ §6g  Generic modal popups (solid bg + purple border)     ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  SERVER / GUILD                                         │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §9  SERVER GUILD DIALOGS ............... VC perms, modals       ║
+║      ├─ §9a  Solid dialog surfaces for guild/channel modals      ║
+║      ├─ §9b  Message input box (solid dark for readability)      ║
+║      ├─ §9c  Channel list sidebar (dark wash)                    ║
+║      ├─ §9d  Hide boost progress widget                          ║
+║      ├─ §9e  Hide "Browse Channels" button                       ║
+║      ├─ §9f  Purple glow hover on channel rows                   ║
+║      ├─ §9g  Hide scrollbar on channel list                      ║
+║      ├─ §9h  Search popup containers (purple border)             ║
+║      ├─ §9i  Forum channel: dark wash + resize handle            ║
+║      ├─ §9j  Voice channel view + VC info box (solid bg)         ║
+║      ├─ §9j+ Purple border on VC video tiles                    ║
+║      ├─ §9j+ Hide noise suppression + disconnect buttons        ║
+║      ├─ §9j+ Hide VC action buttons (cam/screen/activity)       ║
+║      └─ §9k  Notice banner (purple theme)                       ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  CHATBOX                                                │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §11 CHATBOX .............................. Message area styling  ║
+║      ├─ §11a  Hide scrollbar (keep scroll functional)               ║
+║      ├─ §11b  Embed cards (solid bg + purple left accent)           ║
+║      ├─ §11c  Mentioned messages (purple tint + purple left bar)    ║
+║      ├─ §11d  Reply context bar (purple spine connector)            ║
+║      ├─ §11e  Timestamps (muted purple tone)                                       ║
+║      └─ §11f  Message hover highlight (soft purple wash)                           ║
+║                                                                  ║
+║  §12 USER PROFILE ........................ Popout + full modal    ║
+║      ├─ §12a  Banner/header (purple vignette overlay)            ║
+║      ├─ §12b  Body section (solid bg, purple dividers)           ║
+║      ├─ §12c  Footer message input (solid dark + purple border)  ║
+║      ├─ §12d  Full modal: tab bar → pill style                   ║
+║      ├─ §12e  Full modal: hide scrollbars (body + tab panel)     ║
+║      ├─ §12f  Full modal: hide Notes section                     ║
+║      ├─ §12g  Full modal: activity tab transparent cards         ║
+║      └─ §12h  Guild activity popout (purple border)              ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  DISCOVER / QUESTS                                      │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §13 DISCOVER MENU ........................ Quests, Server/App    ║
+║      ├─ §13a  Header bar (transparent bg, kill ::after fade)     ║
+║      ├─ §13b  Backdrop (transparent, no gradient)                ║
+║      └─ §13c  Tab pills (purple pill style, match §10d)         ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  SETTINGS                                               │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §10 SETTINGS ............................ Full-screen modal      ║
+║      ├─ §10a  Settings backdrop (dimmed overlay)                  ║
+║      ├─ §10b  Settings sidebar (left menu, solid dark bg)         ║
+║      ├─ §10c  Settings content area (right panel, solid bg)       ║
+║      ├─ §10d  Tab headers (pill style)                            ║
+║      ├─ §10e  Settings close button (purple)                      ║
+║      ├─ §10f  Dropdown selects (purple border)                    ║
+║      ├─ §10g  Toggle switches (purple brand)                      ║
+║      ├─ §10h  Slider controls (purple)                            ║
+║      ├─ §10i  Family Center box_ container                        ║
+║      ├─ §10j  Guild Boosting settings + FAQ                       ║
+║      ├─ §10k  Keybinds settings                                   ║
+║      └─ §10l  Dropdown popout inner borders                       ║
+║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  COMMUNITY SNIPPETS                                     │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §14 CUSTOM SNIPPETS .................... Community CSS           ║
+║      ├─ §14a  BD Settings on Top (SyndiShanX)                    ║
+║      ├─ §14b  Re-Iconify Search (Aurora)                         ║
+║      ├─ §14c  Hide Channel Invite Button (Aurora)                ║
+║      ├─ §14d  Disabled Channel Textarea Redesign (Aurora)        ║
+║      ├─ §14e  Role-Colored Mentions (dav) [@import at top]       ║
+║      ├─ §14f  Hide Threads Until Hover (vortex_chaos)            ║
+║      ├─ §14g  Improved Links + Masked Links (Aurora) [@import]   ║
+║      ├─ §14h  Simplified Edited Icon (Aurora)                    ║
+║      └─ §14i  Hide Reaction Popup on Hover                       ║
+║                                                                  ║
+╚══════════════════════════════════════════════════════════════════╝
+*/
+
+/* HorizontalServerList — makes the server list a bottom dock */
+@import url("https://discordstyles.github.io/HorizontalServerList/HorizontalServerList.css");
+@import url("https://discordstyles.github.io/HorizontalServerList/bottomhsl.css");
+
+@import url('https://clearvision.github.io/ClearVision-v7/main.css');
+@import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
+/* §14e — Role-Colored Mentions (import must be near top — see §14e note below)
+   Credit: dav (2024-05-30) */
+@import url('https://davart154.github.io/Themes/Snippets/Colored%20Mentions/ColoredMentionsSource.css');
+
+/* §14g — Improved Links + Masked Links addon (imports must be near top)
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinks.css');
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
+
+/* ═══════════════════════════════════════════════════════════
+   §1  IMPORTS & VARIABLES
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+:root {
+  /* HorizontalServerList layout */
+  --HSL-server-icon-size: 42px;
+  --HSL-server-spacing: 10px;
+  --HSL-server-direction: column;
+  --HSL-server-alignment: flex-start;
+
+  /* Core brand colors (used throughout — purple Solo Leveling palette) */
+  --main-color: #8a2be2;
+  --hover-color: #a855f7;
+  --success-color: #00ff88;
+  --danger-color: #ff4444;
+  --sl-color-primary-rgb: 138, 43, 226;
+
+  /* Typography */
+  --font-primary: 'Orbitron', sans-serif;
+
+  /* Animated wallpaper controls */
+  --sl-bg-gif: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/SLEndingBest.gif');
+  --sl-bg-overlay: rgba(0, 0, 0, 0);
+  --sl-bg-opacity: 1.0;
+  --background-position: center 0%;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §2  ANIMATED WALLPAPER (LOCKED — do not edit without user request)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* SECTION LOCK: Do not change anything in this section unless explicitly requested by user. */
+
+/* §2 — App shell layers → make transparent so the GIF wallpaper shows through
+   Targets: .appMount, .app, .bg, .layer, .layers, .container, .base, .content
+   These are Discord's outermost wrapper divs that normally have solid backgrounds */
+.appMount__51fd7,
+.app__160d8,
+.bg__960e4,
+.layer__960e4,
+.layers__960e4,
+.container__5e434,
+.base__5e434,
+.content__5e434 {
+  background: transparent !important;
+}
+
+/* §2 — body::before = the actual GIF wallpaper layer
+   Fixed positioning so it doesn't scroll. z-index:-2 puts it behind everything.
+   Uses CSS vars from :root for the image URL, position, and opacity */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image: var(--sl-bg-gif);
+  background-position: var(--background-position);
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: var(--sl-bg-opacity);
+}
+
+/* §2 — body::after = optional dark overlay for text readability on top of the GIF
+   z-index:-1 sits between the wallpaper and Discord UI. Currently transparent (rgba 0,0,0,0)
+   Increase --sl-bg-overlay opacity in :root to darken the wallpaper */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background: var(--sl-bg-overlay);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §3  HOME SCREEN (Friends tab / DM list view)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §3a — Top title bar background: match dock/sidebar tone
+   The bar_ div spans the full width at the very top of the Friends/DM/channel view.
+   All its children (leading_, title_, trailing_) are hidden below, so this is just
+   the empty strip — solid dark to match the dock (rgba(8, 10, 20, 0.94)).
+   Multiple specificity layers to defeat ClearVision's base CSS transparent overrides:
+   1. Ancestry chain: container_ > base_ > bar_
+   2. Direct bar_ selector
+   3. theme-dark class qualifier */
+div[class^="container_"] div[class^="base_"] > div[class^="bar_"],
+div[class^="base_"] > div[class^="bar_"],
+div[class^="bar_"].theme-dark,
+div[class^="bar_"] {
+  background: rgba(8, 10, 20, 0.94) !important;
+  background-image: none !important;
+  border-bottom: none !important;
+}
+
+/* §3f — Content panel overlays: very light dark wash (0.3) for text readability
+   Applied uniformly to all three main content areas so the GIF wallpaper still
+   shows through but text has enough contrast to read comfortably.
+   - Friends list (center): peopleColumn_ — overrides ClearVision's default 0.4 to 0.3
+   - DM sidebar (left): sidebar_ wrapper — the entire left DM panel
+   - Active Now (right): the aside container with activity cards */
+main[aria-label="Friends"] div[class^="peopleColumn_"],
+div[class^="sidebar_"].theme-dark {
+  background: rgba(0, 0, 0, 0.3) !important;
+  background-image: none !important;
+}
+
+main[aria-label="Friends"] aside[class^="container_"],
+main[aria-label="Friends"] aside.refresh-active-now {
+  background: rgba(0, 0, 0, 0.3) !important;
+  background-image: none !important;
+}
+
+/* Server/group-DM member list (right panel) — light wash on panel */
+div[class^="members_"],
+div[class^="membersWrap_"] {
+  background: rgba(0, 0, 0, 0.4) !important;
+  background-image: none !important;
+}
+
+/* Boxed member rows — each user entry gets a subtle card look */
+div[class^="members_"] div[class^="member_"] {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-radius: 8px !important;
+  margin: 10px 8px !important;
+  padding: 8px 8px !important;
+  border: 2px solid transparent !important;
+  transition: border-color 0.15s ease !important;
+}
+
+/* Disable white highlight on hover, add purple border instead */
+div[class^="members_"] div[class^="member_"]:hover {
+  background: rgba(0, 0, 0, 0.5) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.55) !important;
+}
+
+/* §3a (continued) — Hide top title bar clutter in Home/Friends view
+   Removes: Inbox button, Help button, Support link, title text, Quick Switcher shortcut
+   These are in the horizontal bar at the very top of the Friends/DM area */
+div[aria-label='Inbox'],
+div[aria-label='Help'],
+div[class^='trailing_'] a[href^='https://support.discord.com'],
+div[class^='bar_'] div[aria-label='Inbox'],
+div[class^='bar_'] div[aria-label='Help'] {
+  display: none !important;
+}
+
+div[class^='bar_'] div[class^='title_'],
+div[class^='bar_'] div[aria-label='Open Quick Switcher'] {
+  display: none !important;
+}
+
+div[class^='leading_'] > :not(div[class^='backForwardButtons_']) {
+  display: none !important;
+}
+
+div[class^='leading_'] div[class^='backForwardButtons_'] {
+  display: none !important;
+}
+
+div[class^='leading_']::before,
+div[class^='leading_']::after {
+  content: none !important;
+  display: none !important;
+}
+
+/* §3a (continued) — Hide Message button on friend rows (clicking name already opens DM) */
+div[class^="peopleListItem_"] div[aria-label="Message"][role="button"] {
+  display: none !important;
+}
+
+/* §3d (continued) — Hide video/voice call items from friend row context menu
+   Keeps "Remove Friend" visible */
+#friend-row-start-video-call,
+#friend-row-start-voice-call {
+  display: none !important;
+}
+
+/* §3g — "Explore Discoverable Servers" button: full-width + themed styling
+   The grid_ parent and button stretch to fill the peopleColumn_ center panel.
+   Solid dark background with purple border accent to match the theme. */
+main[aria-label="Friends"] div[class^="grid_"] {
+  width: 100% !important;
+  padding: 16px 20px !important;
+}
+
+main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"] {
+  width: 100% !important;
+  background: rgba(10, 10, 16, 0.85) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
+  border-radius: 10px !important;
+  padding: 12px 16px !important;
+  transition: border-color 0.2s ease, background-color 0.2s ease !important;
+}
+
+main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"]:hover {
+  background: rgba(10, 10, 16, 0.95) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.65) !important;
+}
+
+/* §3b — Friends > Active Now activity cards: hover border effect
+   When you hover over a friend's activity card, shows a purple outline.
+   Targets: itemCard_ buttons inside the Friends main content area */
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"] {
+  border: 2px solid transparent !important;
+  box-shadow: none !important;
+  transition: border-color 0.16s ease !important;
+}
+
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"]:hover {
+  border-color: rgba(var(--sl-color-primary-rgb), 0.82) !important;
+  box-shadow: none !important;
+}
+
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"]:not(:hover) {
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+
+/* §3c — User popout card (appears when you click someone's avatar/activity card)
+   Solid dark background with purple border instead of Discord's semi-transparent blur.
+   Also strips backgrounds from inner sections: banner, body, footer, activity, roles, notes */
+div[class^="userPopoutOuter_"],
+div[class*="userPopoutOuter_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[class^="userPopoutOuter_"] div[class^="banner_"],
+div[class^="userPopoutOuter_"] div[class^="body_"],
+div[class^="userPopoutOuter_"] div[class^="footer_"],
+div[class^="userPopoutOuter_"] section[class^="section_"],
+div[class^="userPopoutOuter_"] div[class^="activitySection_"],
+div[class^="userPopoutOuter_"] div[class^="activity_"],
+div[class^="userPopoutOuter_"] div[class^="rolesList_"],
+div[class^="userPopoutOuter_"] div[class^="note_"],
+div[class^="userPopoutOuter_"] div[class^="connectedAccounts_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §3d — Context menus (all role="menu" popups: activity cards, friend row, etc.)
+   Solid dark background + purple border. Also styles menu item hover states */
+div[role="menu"],
+#now-playing-menu {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 8px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[role="menu"] div[role="menuitem"],
+#now-playing-menu div[role="menuitem"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+div[role="menu"] div[role="menuitem"]:hover,
+div[role="menu"] div[class^="item_"][class*="focused"],
+#now-playing-menu div[role="menuitem"]:hover,
+#now-playing-menu div[class^="item_"][class*="focused"] {
+  background: rgba(123, 43, 226, 0.45) !important;
+  background-image: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §4  QUICK SWITCHER (Ctrl+K search dialog)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §4a — Quick Switcher container surfaces
+   The outer shell, inner container, and quickswitcher body all get solid dark bg.
+   NOTE: Multiple specificity layers below because ClearVision base injects competing styles */
+div[aria-label='Quick Switcher'] div[class^='outerContainer_'],
+div[aria-label='Quick Switcher'] div[class^='container_'],
+div[aria-label='Quick Switcher'] div[class^='quickswitcher_'] {
+  background: rgba(10, 10, 16, 0.96) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[aria-label='Quick Switcher'] div[class^='resultsArea_'],
+div[aria-label='Quick Switcher'] div[class^='protip_'],
+div[aria-label='Quick Switcher'] div[class^='tutorial_'] {
+  background: rgba(10, 10, 16, 0.96) !important;
+}
+
+/* §4b — Quick Switcher search input field: dark bg with purple border */
+div[aria-label='Quick Switcher'] input[aria-label='Quick Switcher'] {
+  background: rgba(20, 20, 28, 1) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.42) !important;
+  box-shadow: none !important;
+}
+
+/* §4a (continued) — Higher specificity override using role="dialog" attribute
+   Needed because ClearVision's base CSS wins over the aria-label selectors above */
+div[role="dialog"][aria-label="Quick Switcher"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="outerContainer_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="container_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="quickswitcher_"] {
+  background-color: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  opacity: 1 !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.38) !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="resultsArea_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="protip_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="tutorial_"] {
+  background-color: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] input[aria-label="Quick Switcher"] {
+  background-color: rgba(18, 18, 26, 1) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+}
+
+/* §4d — Quick Switcher: single border shell + backdrop dim
+   Strips border/shadow from outer wrappers so only quickswitcher_ has the visible border.
+   The :has() rule dims the background overlay behind the dialog */
+div[role="dialog"][aria-label="Quick Switcher"] {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="outerContainer_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="container_"] {
+  border: none !important;
+  box-shadow: none !important;
+  background: transparent !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="quickswitcher_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.48) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.52) !important;
+}
+
+div[class^="layer_"]:has(div[role="dialog"][aria-label="Quick Switcher"]) {
+  background: rgba(2, 4, 10, 0.62) !important;
+}
+
+/* §4e — Hide the "PROTIP:" footer text at the bottom of Quick Switcher */
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="protip_"] {
+  display: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §5  SIDEBAR: PRIVATE CHANNELS (DM list left panel)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §5a — Hide Nitro, Shop, and Quests links from the DM sidebar navigation
+   These are the promotional links Discord puts above your DM conversations list.
+   Uses multiple selectors (href, aria-label, :has()) for resilience against class renames */
+nav[aria-label="Private channels"] a[href="/store"],
+nav[aria-label="Private channels"] a[href="/shop"],
+nav[aria-label="Private channels"] a[href="/quests"],
+nav[aria-label="Private channels"] [aria-label="Nitro"],
+nav[aria-label="Private channels"] [aria-label="Nitro Home"],
+nav[aria-label="Private channels"] [aria-label="Shop"],
+nav[aria-label="Private channels"] [aria-label="Quests"],
+nav[aria-label="Private channels"] li:has(a[href="/store"]),
+nav[aria-label="Private channels"] li:has(a[href="/shop"]),
+nav[aria-label="Private channels"] li:has(a[href="/quests"]),
+nav[aria-label="Private channels"] li:has([aria-label="Nitro"]),
+nav[aria-label="Private channels"] li:has([aria-label="Nitro Home"]),
+nav[aria-label="Private channels"] li:has([aria-label="Shop"]),
+nav[aria-label="Private channels"] li:has([aria-label="Quests"]) {
+  display: none !important;
+}
+
+/* §5c — Hide scrollbars on DM sidebar, Friends/people list, and Active Now panel */
+nav[aria-label="Private channels"] div[class^="scroller_"],
+div[class^="peopleColumn_"] div[class^="scroller_"],
+div[class^="peopleColumn_"] div[class^="peopleList_"],
+div[class^="peopleColumn_"],
+div[class^="peopleList_"],
+main[aria-label="Friends"] div[class^="scroller_"],
+main[aria-label="Friends"] div[class^="scrollerBase_"],
+main[aria-label="Friends"] div[class^="thin_"],
+main[aria-label="Friends"] div[class^="peopleList_"],
+main[aria-label="Friends"] aside div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+nav[aria-label="Private channels"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"] div[class^="peopleList_"]::-webkit-scrollbar,
+div[class^="peopleColumn_"]::-webkit-scrollbar,
+div[class^="peopleList_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="scroller_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="thin_"]::-webkit-scrollbar,
+main[aria-label="Friends"] div[class^="peopleList_"]::-webkit-scrollbar,
+main[aria-label="Friends"] aside div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §5d — DM sidebar: dark wash matching server guild sidebar
+   Targets ONLY the DM sidebar by requiring a "Private channels" nav descendant.
+   Same opacity as server sidebar (0.7) for visual harmony */
+div[class^="sidebar_"][class*="theme-dark"]:has(nav[aria-label="Private channels"]) {
+  background: rgba(0, 0, 0, 0.7) !important;
+  background-image: none !important;
+}
+
+/* §3e — DM sidebar search bar ("Find or start a conversation")
+   Makes the search field background opaque black instead of transparent/blurred.
+   Located at the top of the Private channels sidebar */
+nav[aria-label="Private channels"] div[class^="searchBar_"] {
+  background: rgba(0, 0, 0, 0.5) !important;
+  background-image: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §6  DIALOG BOXES (Modal popups — BetterDiscord addon errors, etc.)
+   UNVERIFIED
+   ═══════════════════════════════════════════════════════════ */
+
+/* §6a — BetterDiscord addon/plugin/theme error dialog: outer shell
+   Solid dark background with purple border when BD shows errors on startup.
+   Matches by aria-label containing "Addon", "Plugin Error", "Theme Error",
+   and BD-specific class names like bd-addon-error / bd-error-modal */
+div[role="dialog"][aria-label*="Addon" i],
+div[role="dialog"][aria-label*="Add-on" i],
+div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i],
+div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i],
+div[class*="bd-addon-error" i],
+div[class*="bd-error-modal" i] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.42) !important;
+  border-radius: 12px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+div[role="dialog"][aria-label*="Addon" i] div,
+div[role="dialog"][aria-label*="Add-on" i] div,
+div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i] div,
+div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i] div,
+div[class*="bd-addon-error" i] div,
+div[class*="bd-error-modal" i] div {
+  background-color: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §6b — Error dialog backdrop: dims the area behind the modal
+   Uses :has() to target the layer_ wrapper only when it contains an error dialog */
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Addon" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Add-on" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Plugin" i][aria-label*="Error" i]),
+div[class^="layer_"]:has(div[role="dialog"][aria-label*="Theme" i][aria-label*="Error" i]),
+div[class^="layer_"]:has(div[class*="bd-addon-error" i]),
+div[class^="layer_"]:has(div[class*="bd-error-modal" i]) {
+  background: rgba(2, 4, 10, 0.35) !important;
+}
+
+/* §6c — Error dialog internals: remove excess borders/outlines
+   BD's modal root, content area, error list, error details, header, and icon
+   all get stripped of their default borders so only the outer shell has one */
+.bd-modal-root:has(.bd-addon-errors),
+.bd-modal-root:has(details.bd-addon-error) {
+  border: none !important;
+  outline: none !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
+.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) details.bd-addon-error,
+.bd-modal-root:has(details.bd-addon-error) summary.bd-addon-error-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-icon {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* §6c (continued) — Error dialog inner surface colors:
+   consolidated in §6c nuclear block below (around §7) */
+
+/* §6d — Error dialog "Okay" button: consolidated in nuclear block below (line ~832) */
+
+/* §6e — Error dialog header/footer chrome: strip borders from header and footer rows
+   So the modal looks seamless without inner divider lines */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-header,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-header,
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer {
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* §6e (continued) — Center-align the "Okay" button in the footer row */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer {
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-footer .bd-button,
+.bd-modal-root:has(.bd-addon-errors) .bd-error-modal-footer .bd-button,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-footer .bd-button,
+.bd-modal-root:has(details.bd-addon-error) .bd-error-modal-footer .bd-button {
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* §6f — Error dialog tip/details row: match background to card
+   The "tip" text and secondary headers inside error details get solid dark bg */
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details .bd-header-secondary,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details .bd-header-secondary *,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner .bd-addon-error-details * {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+/* §3b (continued) — Active Now activity cards: solid black background
+   Prevents wallpaper from bleeding through the card surface */
+main[aria-label="Friends"] div[class^="itemCard_"][role="button"],
+.refresh-active-now div[class^="itemCard_"] {
+  background: #000000 !important;
+  background-image: none !important;
+  opacity: 1 !important;
+}
+
+/* §6d (continued) — Error dialog button: consolidated in nuclear block below */
+
+/* §4c — Quick Switcher result items: hover/selected state colors
+   Purple highlight background + white text for the active/hovered result.
+   Also styles the misc text, note text, and icons for high contrast */
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] {
+  background: rgba(123, 43, 226, 0.62) !important;
+  background-image: none !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="name_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="name_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="contentDefault_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="contentDefault_"] {
+  color: #ffffff !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="misc_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="misc_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[class^="note_"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[class^="note_"] {
+  color: #ede9fe !important;
+}
+
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover svg,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] svg,
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"]:hover div[role="img"],
+div[role="dialog"][aria-label="Quick Switcher"] div[class^="result_"][aria-selected="true"] div[role="img"] {
+  color: #f3e8ff !important;
+}
+
+/* §6d — Error dialog "Okay" button: solid purple, kill ClearVision gradient injections
+   Single consolidated block — replaces 3 earlier duplicate passes */
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand,
+.bd-modal-root:has(.bd-addon-errors) button.bd-button.bd-button-color-brand,
+.bd-modal-root:has(details.bd-addon-error) button.bd-button.bd-button-color-brand {
+  background: #7b2be2 !important;
+  background-image: none !important;
+  border: 1px solid rgba(168, 85, 247, 0.6) !important;
+  box-shadow: none !important;
+  text-shadow: none !important;
+}
+/* Hover: brighten to primary purple */
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand:hover,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand:hover {
+  background: var(--sl-color-primary) !important;
+  background-image: none !important;
+  border-color: rgba(168, 85, 247, 0.85) !important;
+  box-shadow: none !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content {
+  background: #7b2be2 !important;
+  background-image: none !important;
+  border: none !important;
+  text-shadow: none !important;
+}
+
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand::before,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand::before,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand::after,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand::after,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content::before,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content::before,
+.bd-modal-root:has(.bd-addon-errors) .bd-button.bd-button-color-brand .bd-button-content::after,
+.bd-modal-root:has(details.bd-addon-error) .bd-button.bd-button-color-brand .bd-button-content::after {
+  background: none !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  content: none !important;
+}
+
+/* §5b — DM sidebar: fill full height (reclaim gap left by UserPanelDockMover)
+   Root cause: ClearVision or Discord sets --custom-app-panels-height (e.g. 80px)
+   in a stylesheet with !important, which beats the inline style set by
+   UserPanelDockMover's JS. Force it to 0px via CSS !important so the sidebar
+   stretches all the way down to where the user panel used to be.
+   Also collapse the panels_ wrapper itself, and make the sidebar fill 100%. */
+
+/* Force the CSS variable to 0 — this is the root fix */
+body {
+  --custom-app-panels-height: 0px !important;
+}
+
+/* Sidebar stretches full height */
+div[class^="sidebar_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: 100% !important;
+  bottom: 0 !important;
+}
+
+div[class^="sidebar_"] div[class^="sidebarList_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+/* Force panels wrapper to 0 height via CSS (backup for UserPanelDockMover's JS) */
+div[class^="sidebar_"] div[class^="panels_"],
+div[class^="panels_"] {
+  height: 0px !important;
+  min-height: 0px !important;
+  max-height: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  overflow: hidden !important;
+}
+
+/* Also target the content_ wrapper that may reserve space for panels */
+div[class^="sidebar_"] div[class^="content_"] {
+  height: 100% !important;
+  min-height: 0 !important;
+  flex: 1 1 auto !important;
+}
+
+/* §8d — Bottom strip: dark fill for the dock peek gap
+   HSLDockAutoHide sets margin-bottom on .content__5e434 to make room for the dock.
+   When dock is hidden, this becomes var(--sl-dock-peek) = 8px — a transparent gap
+   at the viewport bottom where the wallpaper bleeds through. Since margin can't have
+   a background, we use a ::after pseudo-element on the parent .base__5e434 to fill
+   that gap with a solid dark bar. The pseudo sits at the bottom, below the content.
+   The alert rail (#sl-hsl-alert-rail) purple glow is INTENTIONALLY left alone. */
+body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
+  content: '' !important;
+  display: block !important;
+  position: fixed !important;
+  left: 0 !important;
+  right: 0 !important;
+  bottom: 0 !important;
+  height: var(--sl-dock-peek, 8px) !important;
+  background: rgba(8, 10, 20, 0.94) !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  transition: opacity 0.3s ease, height 0.3s ease !important;
+  opacity: 1 !important;
+}
+
+/* When dock is fully visible, fade out the dark fill strip instead of
+   display:none so the purple border transitions smoothly */
+body.sl-dock-autohide.sl-dock-visible .base__5e434[data-fullscreen="false"]::after {
+  opacity: 0 !important;
+  height: 0 !important;
+  pointer-events: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §7  NAMETAG / USER PANEL (bottom-left user status & settings)
+   VERIFIED — 2026-02-13
+   Note: The panel itself is visually repositioned to the dock
+   by the UserPanelDockMover plugin. These rules hide certain buttons.
+   ═══════════════════════════════════════════════════════════ */
+
+/* §7a — Hide mute/deafen buttons from the user panel
+   Removes the Mute/Unmute and Deafen/Undeafen toggle buttons
+   from the bottom user controls area */
+[class*="panels"] button[aria-label*="Mute" i],
+[class*="panels"] button[aria-label*="Unmute" i],
+[class*="panels"] button[aria-label*="Deafen" i],
+[class*="panels"] button[aria-label*="Undeafen" i] {
+  display: none !important;
+}
+
+/* §7b — Hide input/output device option buttons from the user panel
+   Removes the "Input Options" and "Output Options" gear buttons
+   that appear next to the mute/deafen controls */
+section[aria-label="User status and settings"] button[aria-label="Input Options"],
+section[aria-label="User status and settings"] button[aria-label="Output Options"],
+[class*="panels"] button[aria-label="Input Options"],
+[class*="panels"] button[aria-label="Output Options"] {
+  display: none !important;
+}
+
+/* §6c (nuclear) — Error dialog: force ALL inner surfaces to solid dark
+   Consolidated block — replaces 3 earlier duplicate/overridden passes.
+   Covers modal content, error list, details, headers, icons, secondary headers */
+.bd-modal-root:has(.bd-addon-errors) .bd-modal-content,
+.bd-modal-root:has(.bd-addon-errors) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) .bd-modal-content,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-errors,
+.bd-modal-root:has(details.bd-addon-error) details.bd-addon-error,
+.bd-modal-root:has(details.bd-addon-error) summary.bd-addon-error-header,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-header-inner,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-details,
+.bd-modal-root:has(details.bd-addon-error) .bd-addon-error-icon,
+.bd-modal-root:has(details.bd-addon-error) .bd-header-secondary,
+.bd-modal-root:has(details.bd-addon-error) .bd-header-secondary * {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   §8  SERVER LIST (Dock — horizontal layout via HSLDockAutoHide plugin)
+   VERIFIED — 2026-02-13
+   ═══════════════════════════════════════════════════════════ */
+
+/* §8a — Server list: solid dark background instead of transparent/blurred
+   Targets the <nav> "Servers sidebar" and its inner scrollers/containers.
+   The horizontal layout comes from HorizontalServerList CSS (§1 imports),
+   auto-hide/show from HSLDockAutoHide plugin. This gives the solid dark surface. */
+nav[aria-label="Servers sidebar"],
+nav[aria-label="Servers sidebar"] ul[role="tree"],
+nav[aria-label="Servers sidebar"] [data-list-id="guildsnav"],
+nav[aria-label="Servers sidebar"] div[class^="itemsContainer_"],
+nav[aria-label="Servers sidebar"] div[class^="scroller_"],
+nav[aria-label="Servers sidebar"] div[class^="none_"] {
+  background: rgba(8, 10, 20, 0.94) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* §8e — Purple accent line on top edge of the dock
+   Uses both border-top AND inset box-shadow for full coverage.
+   border-top works when the nav isn't clipped; inset shadow works even
+   when the top edge is tucked under the content area above.
+   Applies in BOTH dock states: visible (sl-dock-visible) and hidden (peek). */
+nav[aria-label="Servers sidebar"],
+nav[class^="wrapper_"][class*="guilds_"],
+nav.sl-hsl-dock-target,
+body.sl-dock-visible nav[aria-label="Servers sidebar"],
+body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
+  border-top: 2px solid var(--sl-color-primary) !important;
+  border-bottom: none !important;
+  border-left: none !important;
+  border-right: none !important;
+  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+/* §8e (continued) — When dock is hidden/peeking, the §8d dark fill strip (::after)
+   is the only visible element at the bottom viewport. Apply the purple top border
+   to that strip so the accent line shows even when the nav is off-screen. */
+body.sl-dock-autohide .base__5e434[data-fullscreen="false"]::after {
+  border-top: 2px solid var(--sl-color-primary) !important;
+  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
+  transition: border-color 0.3s ease, box-shadow 0.3s ease, opacity 0.3s ease !important;
+}
+
+/* Notification rail is handled by HSLDockAutoHide plugin via
+   .sl-hsl-dock-host / .sl-dock-alert runtime classes. */
+
+/* §8c — Server list layout: width/overflow containment
+   Ensures the items container fills width and doesn't overflow horizontally */
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] {
+  width: 100% !important;
+  min-width: 0 !important;
+  overflow: hidden !important;
+}
+
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+  overflow: hidden scroll !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  overscroll-behavior-y: contain !important;
+  touch-action: pan-y !important;
+  -webkit-overflow-scrolling: touch !important;
+  scrollbar-width: thin !important;
+}
+
+/* §8b — Hide the scrollbar visually while preserving wheel/gesture scroll
+   Uses scrollbar-width:none for Firefox and ::-webkit-scrollbar for Chrome/Electron */
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"] > div[class^="stack_"][class*="scroller_"][class*="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §8f — Home icon: replace Discord logo with Shadow Monarch icon.
+   The home button is the first treeitem in the server list (tutorialContainer_).
+   Hide the original img and set the shadow_icon.png as background on the wrapper. */
+nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] img {
+  display: none !important;
+}
+nav[aria-label="Servers sidebar"] div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
+  background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  width: 48px !important;
+  height: 48px !important;
+}
+
+/* §6f (override) — Error dialog tip row: using .bd-error-modal class selector
+   Alternate selector path for the same tip/details elements as §6f above.
+   Needed when BD uses .bd-error-modal class instead of :has() matching */
+.bd-modal-root.bd-error-modal .bd-addon-error-details,
+.bd-modal-root.bd-error-modal .bd-addon-error-details *,
+.bd-modal-root.bd-error-modal .bd-addon-error-header-inner .bd-addon-error-details,
+.bd-modal-root.bd-error-modal .bd-addon-error-header-inner .bd-addon-error-details *,
+.bd-modal-root.bd-error-modal .bd-addon-error-details-icon,
+.bd-modal-root.bd-error-modal .bd-header-secondary,
+.bd-modal-root.bd-error-modal .bd-header-secondary * {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §6g — Generic modal popups (Create Server, etc.): solid dark bg + purple border.
+   Discord's generic modal uses root_ → focusLock_ (role="dialog") → anonymous div →
+   content wrapper with header_, content_, footer_ children (all share same hash).
+   The rootWithShadow_ class identifies popup dialogs with shadow styling.
+   Apply solid bg to outer root, header, content scroller, and footer. */
+div[class^="root_"][class*="rootWithShadow_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+}
+/* §6g (continued) — Header area: solid bg, inherit top border-radius */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="header_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Content/body scroller area: solid bg */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* §6g (continued) — Footer area: solid bg + purple top separator */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="footer_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border-top: 1px solid rgba(var(--sl-color-primary-rgb), 0.2) !important;
+}
+/* §6g (continued) — Hide scrollbar in the template/content scroller */
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="root_"][class*="rootWithShadow_"] div[class^="content_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   §9  SERVER GUILD DIALOGS (VC permissions, channel settings, etc.)
+   VERIFIED — 2026-02-14
+   ═══════════════════════════════════════════════════════════ */
+
+/* §9a — Voice channel permission / guild settings dialog
+   The "mana component" modal family used for VC permission popups,
+   channel settings, and other server-level dialogs.
+   Solid dark background on the container, header, hidden sections, and footer */
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] header[class^="section_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] div[class^="sectionHidden_"],
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[class^="actionBar_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+/* §9a (continued) — Strip background-image from footer buttons
+   Keeps the action bar buttons readable without transparency bleed-through */
+div[role="dialog"] div[data-mana-component="modal"][class^="container_"] footer[class^="actionBar_"] button {
+  background-image: none !important;
+}
+
+/* §9b — Message input box: solid for guild server channels ONLY
+   Scoped to page_ parent so it doesn't leak into VC text (channelChatWrapper_)
+   or forum thread sidebar (chatLayerWrapper_).
+   channelTextArea_ is the actual input container with border + box-shadow. */
+div[class^="page_"] div[class^="channelTextArea_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  box-shadow: none !important;
+}
+div[class^="page_"] div[class^="scrollableContainer_"][class*="themedBackground_"],
+div[class^="page_"] form[class^="form_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Kill the gradient ::before on the form that Discord uses for fade effect */
+div[class^="page_"] form[class^="form_"]::before {
+  background: none !important;
+  display: none !important;
+}
+
+/* §9b (continued) — Hide Nitro "Send a gift" + Apps button in message input */
+div[aria-label="Send a gift"],
+div[aria-label="Apps"] {
+  display: none !important;
+}
+
+/* §9b (continued) — GIF, Stickers, Emoji buttons: solid bg + purple border
+   Uses aria-label for GIF/stickers, emojiButton_ class for emoji (label varies) */
+div[class^="buttons_"] div[aria-label="Open GIF picker"],
+div[class^="buttons_"] div[aria-label="Open sticker picker"],
+div[class^="buttons_"] div[class*="emojiButton_"] {
+  background: rgba(8, 10, 20, 0.96) !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 6px !important;
+  padding: 4px !important;
+  margin: 0 2px !important;
+}
+div[class^="buttons_"] div[aria-label="Open GIF picker"]:hover,
+div[class^="buttons_"] div[aria-label="Open sticker picker"]:hover,
+div[class^="buttons_"] div[class*="emojiButton_"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+  border-color: var(--sl-color-accent-light) !important;
+}
+
+/* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): solid + purple border
+   Only the outermost wrapper gets the border — everything inside is transparent/borderless */
+div[class^="positionContainer_"] > div[class^="container_"],
+div[id^="uid_"][role="dialog"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid var(--sl-color-primary) !important;
+  border-radius: 8px !important;
+}
+/* Inner surfaces of expression picker: no border, solid bg only */
+div[class^="emojiPicker_"],
+section[class^="stickerPicker_"],
+div[class^="categoryList_"],
+div[class^="header_"][class*="stickerPicker_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: none !important;
+  border-radius: 0 !important;
+}
+div[class^="emojiPicker_"] div[class^="wrapper_"],
+div[class^="emojiPicker_"] div[class^="searchBar_"],
+div[class^="emojiPicker_"] div[class^="inspector_"],
+div[class^="emojiPicker_"] nav,
+section[class^="stickerPicker_"] div[class^="wrapper_"],
+section[class^="stickerPicker_"] div[class^="searchBar_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"] div[class^="header_"],
+div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+}
+
+/* §9b (continued) — Hide scrollbars in GIF/Stickers/Emoji picker popups
+   Nuclear approach: hide scrollbars on ALL scrollable elements inside the picker */
+div[class^="emojiPicker_"] *,
+section[class^="stickerPicker_"] *,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] *,
+div[class^="positionContainer_"] * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="emojiPicker_"] *::-webkit-scrollbar,
+section[class^="stickerPicker_"] *::-webkit-scrollbar,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] *::-webkit-scrollbar,
+div[class^="positionContainer_"] *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9b (continued) — Message actions popup styling removed;
+   popup is now hidden entirely by §14i */
+
+/* §9c — Server channel list sidebar: dark wash for readability
+   Targets ONLY the server guild sidebar by requiring a Channels list descendant.
+   The DM sidebar uses aria-label="Private channels", not "Channels", so this
+   won't match it. 0.7 opacity lets a hint of the GIF through */
+div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
+  background: rgba(0, 0, 0, 0.7) !important;
+  background-image: none !important;
+}
+
+/* §9d — Hide server boost progress widget + spacer divs from channel list
+   The boost widget is a div.container_.containerWithMargin_ direct child of the
+   channel <ul>. Also catch classless spacer divs (height: 12px padding elements)
+   that Discord inserts as direct children of the channel list */
+ul[aria-label="Channels"] > div[class*="containerWithMargin"] {
+  display: none !important;
+}
+ul[aria-label="Channels"] div[class*="progressContainer"] {
+  display: none !important;
+}
+ul[aria-label="Channels"] > div:not([class]) {
+  display: none !important;
+}
+
+/* §9e — Hide "Browse Channels" button from server channel list
+   The Browse Channels entry lives inside a wrapper with aria-label.
+   Targeting the parent li so the entire row disappears cleanly */
+ul[aria-label="Channels"] li:has(div[aria-label="Browse Channels"]) {
+  display: none !important;
+}
+
+/* §9f — Purple highlight fill on channel rows when hovered
+   Discord's hover rule: .wrapper_:hover .link_ { background: var(--interactive-background-hover) }
+   Instead of fighting that rule, we override the CSS variable on the channel list
+   scope so Discord's own rule applies our purple. Also add a direct override on
+   the link element for full coverage. Selected channels are excluded */
+ul[aria-label="Channels"] {
+  --interactive-background-hover: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+}
+ul[aria-label="Channels"] li[class*="containerDefault_"]:not([class*="selected_"]) div[class*="wrapper_"]:hover [class*="link_"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+}
+
+/* §9g — Hide scrollbar on server channel list (keep scroll functional)
+   Targets the #channels scroller wrapper that contains the channel list */
+#channels,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"],
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+#channels::-webkit-scrollbar,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="sidebar_"]:has(ul[aria-label="Channels"]) div[class^="thin_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9h — Search bar popup containers: solid dark bg + purple border
+   Targets the search popover dropdown (top-right message search), the search
+   results panel, and autocomplete/filter containers. Covers both the dropdown
+   that appears when clicking the search bar and the expanded results panel */
+div[class^="searchBar_"] div[class^="popout_"],
+div[class^="searchBar_"] div[class^="container_"],
+div[class^="search_"] div[class^="popout_"],
+div[class^="search_"] div[class^="container_"],
+div[role="search"] div[class^="popout_"],
+div[role="search"] div[class^="container_"],
+div[class^="searchResultsWrap_"],
+div[class^="searchHeader_"],
+div[class^="searchAnswer_"],
+div[class^="queryContainer_"],
+div[class^="resultsWrapper_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 8px !important;
+}
+
+/* §9h (continued) — Search result outer wrapper: 3px purple border on hover
+   Targets the searchResult_ div[role="button"] that wraps each result message.
+   Border on the OUTER container, not the inner gradient/wrapper */
+section[aria-label="Search Results"] div[class^="searchResult_"]:hover,
+div[class^="searchResultsWrap_"] div[class^="searchResult_"]:hover {
+  border: 3px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 8px !important;
+}
+
+/* §9h (continued) — Search dropdown option rows: purple hover highlight */
+div[class^="searchResultsWrap_"] div[class^="option_"]:hover,
+div[class^="searchResultsWrap_"] div[class*="focused"],
+div[role="search"] div[class^="option_"]:hover,
+div[role="search"] div[class*="focused"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.15) !important;
+}
+
+/* §9h (continued) — Remove border from inner gradient/wrapper so only outer has it */
+section[aria-label="Search Results"] div[class^="searchResult_"] div[class*="gradient_"],
+div[class^="searchResultsWrap_"] div[class^="searchResult_"] div[class*="gradient_"] {
+  border: none !important;
+}
+
+/* §9i — Forum channel: eliminate structural gap between panels
+   resizeHandle_ set to 0px width to remove the visible seam entirely */
+div[class^="resizeHandle_"] {
+  width: 0px !important;
+  min-width: 0px !important;
+  max-width: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+  cursor: col-resize !important;
+}
+
+/* §9i (continued) — Forum thread sidebar (active post view on the right)
+   Apply 0.7 wash directly on chatLayerWrapper_ itself.
+   Children stay transparent to prevent double-stacking */
+div[class^="chatLayerWrapper_"] {
+  background: rgba(0, 0, 0, 0.7) !important;
+  background-image: none !important;
+}
+div[class^="chatLayerWrapper_"] div[class^="container_"],
+div[class^="chatLayerWrapper_"] section[role="complementary"],
+div[class^="chatLayerWrapper_"] div[class^="chat_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §9i (continued) — Forum post list (left panel with thread cards)
+   0.1 opacity — very light wash to let wallpaper show through */
+div[class^="chat_"][class*="threadSidebarOpen_"] {
+  background: rgba(0, 0, 0, 0.1) !important;
+  background-image: none !important;
+}
+div[class^="chat_"][class*="threadSidebarOpen_"] > div[class^="content_"],
+div[data-list-id^="forum-channel-list"],
+div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §9i (continued) — Sharp corners on forum header bars
+   The "Thread header" (right panel) and "Channel header" (left panel)
+   must have no rounded corners at the top. Also force sharp corners
+   on their parent wrappers to prevent visual-refresh rounding */
+section[aria-label="Thread header"],
+section[aria-label="Channel header"],
+div[class^="chatLayerWrapper_"],
+div[class^="chat_"][class*="threadSidebarOpen_"],
+div[class^="chatLayerWrapper_"] > div[class^="container_"] {
+  border-radius: 0 !important;
+}
+
+/* §9i (continued) — Hide scrollbars on forum post list and thread sidebar */
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scroller_"],
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scrollerBase_"],
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="thin_"],
+div[class^="chatLayerWrapper_"] div[class^="scroller_"],
+div[class^="chatLayerWrapper_"] div[class^="scrollerBase_"],
+div[class^="chatLayerWrapper_"] div[class^="thin_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="chat_"][class*="threadSidebarOpen_"] div[class^="thin_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="chatLayerWrapper_"] div[class^="thin_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9j — Voice channel view: solid dark background + sharp corners
+   callContainer_ wraps the video grid side. channelChatWrapper_ is the VC text
+   chat pane — it's a SIBLING of callContainer_, not a child.
+   Target channelChatWrapper_ and all descendants directly for full coverage. */
+/* Only callContainer_ itself gets solid bg — everything inside stays transparent
+   so video feeds, screen shares, and webcams are visible */
+div[class^="callContainer_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+div[class^="callContainer_"] div[class^="root_"],
+div[class^="callContainer_"] div[class^="root_"] > div,
+div[class^="callContainer_"] div[class^="root_"] div[class^="container_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+div[class^="channelChatWrapper_"],
+div[class^="channelChatWrapper_"] > div,
+div[class^="channelChatWrapper_"] div[class^="wrapper_"],
+div[class^="channelChatWrapper_"] div[class^="chat_"],
+div[class^="channelChatWrapper_"] div[class^="content_"],
+div[class^="channelChatWrapper_"] div[class^="container_"],
+div[class^="channelChatWrapper_"] main[class^="chatContent_"],
+div[class^="channelChatWrapper_"] div[class^="scroller_"],
+div[class^="channelChatWrapper_"] div[class^="scrollerContent_"],
+div[class^="channelChatWrapper_"] ol[class^="scrollerInner_"] {
+  background: rgba(0, 0, 0, 1.0) !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+}
+
+/* §9j (continued) — VC resize handle: 0px width to eliminate gap (same as §9i) */
+div[class^="callContainer_"] div[class^="resizeHandle_"] {
+  width: 0px !important;
+  min-width: 0px !important;
+  max-width: 0px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+/* §9j (continued) — Video grid scroller: sharp corners + no scrollbar */
+div[class^="callContainer_"] div[class^="scroller_"],
+div[class^="callContainer_"] div[class^="videoGrid_"] {
+  border-radius: 0 !important;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="callContainer_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9j (continued) — Voice connection info box (shows "Video Connected", action buttons)
+   This is the wrapper_/container_ pair inside the user panel that appears when in a VC.
+   Scoped via the user-panel section so it does NOT affect the nametag container_ sibling
+   or any other container_/wrapper_ elements elsewhere in Discord.
+   The nametag box is styled by UserPanelDockMover plugin — this only targets the
+   voice/connection wrapper (first direct child div[class^="wrapper_"]) and its contents. */
+section[aria-label="User status and settings"] > div[class^="wrapper_"] {
+  background: rgba(8, 10, 20, 0.96) !important;
+  background-image: none !important;
+  border-radius: 8px !important;
+  border: none !important;
+  border-bottom: none !important;
+  position: relative !important;
+  top: 0px !important;
+  left: -40px !important;
+}
+section[aria-label="User status and settings"] > div[class^="wrapper_"] > div[class^="container_"] {
+  background: rgba(8, 10, 20, 0.96) !important;
+  background-image: none !important;
+  border-radius: 8px !important;
+  border: none !important;
+  border-bottom: none !important;
+}
+
+/* §9j (continued) — Voice channel name link: replace with "Rejoin VC"
+   Hide original text via visibility + zero height, then show replacement via ::after.
+   Targets the subtext_/channel_ div and its lineClamp1 child. */
+section[aria-label="User status and settings"] > div[class^="wrapper_"] div[class^="subtext_"] {
+  visibility: hidden !important;
+  height: 0 !important;
+  overflow: hidden !important;
+  position: relative !important;
+}
+section[aria-label="User status and settings"] > div[class^="wrapper_"] div[class^="subtext_"]::after {
+  content: "Rejoin VC" !important;
+  visibility: visible !important;
+  font-size: 11px !important;
+  line-height: 14px !important;
+  color: var(--text-subtle) !important;
+  display: block !important;
+  height: auto !important;
+  overflow: visible !important;
+}
+
+/* §9j (continued) — Purple outline border on each VC video cam tile
+   tileChild_ wraps each participant's video feed. Apply a subtle purple
+   border so each cam stands out against the black callContainer_ bg.
+   On hover: slightly thicker + brighter purple glow. */
+div[class^="callContainer_"] div[class^="tileChild_"] {
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 4px !important;
+  transition: border 0.15s ease, box-shadow 0.15s ease !important;
+}
+div[class^="callContainer_"] div[class^="tileChild_"]:hover {
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.8) !important;
+  box-shadow: 0 0 6px rgba(var(--sl-color-primary-rgb), 0.35) !important;
+}
+
+/* §9j (continued) — Hide noise suppression + disconnect buttons
+   voiceButtonsContainer_ holds the Krisp toggle and Disconnect call button.
+   Hidden to keep the VC info box minimal. */
+div[class*="voiceButtonsContainer_"] {
+  display: none !important;
+}
+
+/* §9j (continued) — Hide VC action buttons (Camera, Screen Share, Activity)
+   actionButtons_ inside the voice connection info box (user panel area).
+   Multiple selector paths for coverage: scoped + exact class match. */
+section[aria-label="User status and settings"] div[class^="actionButtons_"],
+section[class^="panels_"] div[class^="actionButtons_"],
+div[class^="wrapper_e131"] > div[class^="container_"] > div[class^="actionButtons_"],
+div[class*="actionButtons_e131"] {
+  display: none !important;
+}
+
+/* §9j (continued) — Hide scrollbar on VC preview dialog (pre-join video settings)
+   The body__8a031 scroller inside the dialog has a visible scrollbar. Hide it. */
+div[role="dialog"] div[class^="body_"][class*="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §9k — Notice banner: purple theme
+   The "You were in a voice channel last time..." reconnect banner at the top.
+   Override default green with Solo Leveling purple. */
+div[class^="notice_"] {
+  background: rgba(75, 0, 160, 0.85) !important;
+  border-bottom: 2px solid var(--sl-color-primary) !important;
+}
+div[class^="notice_"],
+div[class^="notice_"] span,
+div[class^="notice_"] div {
+  color: #d4b0ff !important;
+}
+div[class^="notice_"] button {
+  color: #d4b0ff !important;
+  border-color: #d4b0ff !important;
+}
+div[class^="notice_"] button:hover {
+  color: #ffffff !important;
+  border-color: #ffffff !important;
+  background: rgba(var(--sl-color-primary-rgb), 0.4) !important;
+}
+div[class^="notice_"] div[class^="closeButton_"] svg,
+div[class^="notice_"] div[class^="closeButton_"] path {
+  color: #d4b0ff !important;
+  fill: #d4b0ff !important;
+}
+div[class^="notice_"] div[class^="closeButton_"]:hover svg,
+div[class^="notice_"] div[class^="closeButton_"]:hover path {
+  color: #ffffff !important;
+  fill: #ffffff !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §11  CHATBOX (Message area styling)
+   UNVERIFIED
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §11a — Chatbox scroller: hide scrollbar (keep scroll functional)
+   The message scroller is div[class^="messagesWrapper_"] div[class^="scroller_"]
+   which is the main chat message list. Hide scrollbar across all browsers. */
+div[class^="messagesWrapper_"] div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="messagesWrapper_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §11b — Embed cards: solid dark bg + purple left-border accent
+   Discord default: background: var(--background-surface-high) → rgba(0,0,0,0.3)
+   and border-left: 4px solid white. Override to theme-matched solid dark bg
+   with purple left accent. Targets all embed types (link previews, rich embeds). */
+article[class^="embedFull_"],
+article[class^="embed_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
+  border-left: 4px solid var(--sl-color-primary) !important;
+  border-radius: 4px !important;
+}
+/* Embed inner grid container: transparent so parent bg shows through */
+article[class^="embedFull_"] div[class^="gridContainer_"],
+article[class^="embed_"] div[class^="gridContainer_"] {
+  background: transparent !important;
+}
+
+/* §11c — Mentioned messages: purple tint bg + purple left bar
+   Discord default: bg var(--message-mentioned-background-default) (yellowish)
+   and ::before bar uses var(--icon-feedback-warning) (yellow/orange).
+   Override both to purple to match Solo Leveling theme. */
+div[class*="mentioned_"][class*="message_"],
+div[class^="message_"][class*="mentioned_"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.08) !important;
+}
+/* Mentioned ::before left accent bar: purple instead of yellow */
+div[class*="mentioned_"][class*="message_"]::before,
+div[class^="message_"][class*="mentioned_"]::before {
+  background: var(--sl-color-primary) !important;
+}
+/* Mentioned hover: slightly brighter purple tint */
+div[class*="mentioned_"][class*="message_"]:hover,
+div[class^="message_"][class*="mentioned_"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+}
+
+/* §11d — Reply context bar: purple spine connector
+   The repliedMessage_ div has a ::before pseudo that draws the reply
+   connector line (the L-shaped pipe). Override its color to purple. */
+div[class^="repliedMessage_"]::before {
+  border-color: rgba(var(--sl-color-primary-rgb), 0.5) !important;
+}
+
+/* §11e — Timestamps: muted purple tone
+   Both inline timestamps (next to username in header) and hover timestamps
+   (compact left-margin times). Default is grey ~srgb(0.58, 0.58, 0.61).
+   Override to a muted purple that fits the Solo Leveling palette. */
+div[class^="messagesWrapper_"] span[class^="timestamp_"],
+div[class^="messagesWrapper_"] span[class*="timestampInline_"],
+div[class^="messagesWrapper_"] time {
+  color: rgba(180, 140, 255, 0.5) !important;
+}
+
+/* §11f — Message hover highlight: soft purple wash
+   Discord shows a toolbar (react / reply / more) on message hover with a
+   subtle grey bg.  Replace with a very faint purple that fades in softly.
+   Using a gradient mask from transparent edges → center so the highlight
+   has soft edges rather than a hard rectangular block. */
+div[class^="messagesWrapper_"] div[class^="message_"]:hover {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(var(--sl-color-primary-rgb), 0.14) 0%,
+    rgba(var(--sl-color-primary-rgb), 0.07) 60%,
+    transparent 100%
+  ) !important;
+  background-color: transparent !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §12 — USER PROFILE (Popout + Full Modal) — UNVERIFIED
+   Covers both the small popout (.user-profile-popout) when clicking an
+   avatar, AND the full-screen modal (.user-profile-modal-v2) opened via
+   "View Full Profile". Both share outer_/inner_ structure.
+   Popout: outer_ → inner_ → [wrapper_, header_, body_, footer_]
+   Modal:  outer_ → inner_ → [profile_ (left), container_ (right tabs)]
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §12a — Banner/header: purple vignette overlay on the banner strip.
+   The header_ region contains the user's banner image (or profile color
+   gradient). Add a subtle purple vignette so it blends into the dark
+   body below, while still showing the banner content through. */
+.user-profile-popout div[class^="header_"],
+.user-profile-modal-v2 div[class^="header_"] {
+  position: relative !important;
+}
+.user-profile-popout div[class^="header_"]::after,
+.user-profile-modal-v2 div[class^="header_"]::after {
+  content: "" !important;
+  position: absolute !important;
+  inset: 0 !important;
+  background: linear-gradient(
+    to bottom,
+    rgba(8, 10, 20, 0.45) 0%,
+    rgba(8, 10, 20, 0.35) 40%,
+    rgba(8, 10, 20, 0.7) 100%
+  ) !important;
+  pointer-events: none !important;
+  z-index: 1 !important;
+  border-radius: inherit !important;
+}
+
+/* §12b — Body section: solid dark bg, purple-tinted section dividers,
+   and ensure text stays readable on the dark surface.
+   The body_ contains username, pronouns, "Add Note", mutual friends/servers,
+   and role pills. */
+.user-profile-popout div[class^="body_"],
+.user-profile-modal-v2 div[class^="profileBody_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+}
+
+/* Section dividers inside the body — thin purple lines */
+.user-profile-popout div[class^="body_"] div[class^="section_"],
+.user-profile-popout div[class^="body_"] div[class^="userInfoSection_"],
+.user-profile-popout div[class^="body_"] div[class^="connectedAccountsSection_"],
+.user-profile-modal-v2 div[class^="profileBody_"] section[class^="section_"],
+.user-profile-modal-v2 div[class^="profileBody_"] section[class^="markup_"] {
+  border-top: 1px solid rgba(var(--sl-color-primary-rgb), 0.2) !important;
+}
+
+/* Role pills: subtle purple-tinted background */
+.user-profile-popout div[class^="role_"],
+.user-profile-popout div[class^="roleTag_"],
+.user-profile-modal-v2 div[class^="role_"],
+.user-profile-modal-v2 div[class^="roleTag_"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.1) !important;
+  border-color: rgba(var(--sl-color-primary-rgb), 0.3) !important;
+}
+
+/* §12c — Footer: message input area at the bottom of the popout.
+   Solid dark bg with a purple border ring matching the chatbox input style. */
+.user-profile-popout div[class^="footer_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+}
+.user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"],
+.user-profile-popout div[class^="footer_"] div[class^="input_"],
+.user-profile-popout div[class^="footer_"] textarea {
+  background: rgba(15, 17, 30, 0.95) !important;
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
+  border-radius: 8px !important;
+  color: #e0e0e0 !important;
+}
+.user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"]:focus-within,
+.user-profile-popout div[class^="footer_"] div[class^="input_"]:focus-within {
+  border-color: var(--sl-color-primary) !important;
+  box-shadow: 0 0 6px rgba(var(--sl-color-primary-rgb), 0.3) !important;
+}
+
+/* §12d — Full modal tab bar: convert underline tabs to pill style.
+   The tab bar (Board, Activity, Wishlist, Mutual Friends, Mutual Servers)
+   uses role="tablist" with tabBarItem_ children. Replace the bottom-border
+   indicator with rounded pill backgrounds. */
+.user-profile-modal-v2 div[role="tablist"] {
+  border-bottom: 1px solid rgba(var(--sl-color-primary-rgb), 0.15) !important;
+  gap: 4px !important;
+}
+.user-profile-modal-v2 div[class^="tabBarItem_"] {
+  border-radius: 16px !important;
+  padding: 6px 14px !important;
+  margin: 0 !important;
+  margin-bottom: -1px !important;
+  transition: background 0.15s ease, color 0.15s ease !important;
+}
+/* Unselected tab: transparent, muted text */
+.user-profile-modal-v2 div[class^="tabBarItem_"]:not([class*="selected_"]) {
+  background: transparent !important;
+  color: rgba(180, 140, 255, 0.5) !important;
+}
+.user-profile-modal-v2 div[class^="tabBarItem_"]:not([class*="selected_"]):hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.1) !important;
+  color: rgba(180, 140, 255, 0.8) !important;
+}
+/* Selected tab: purple pill */
+.user-profile-modal-v2 div[class^="tabBarItem_"][class*="selected_"] {
+  background: rgba(var(--sl-color-primary-rgb), 0.2) !important;
+  color: #b48cff !important;
+  border-bottom: none !important;
+}
+/* Kill the native underline indicator */
+.user-profile-modal-v2 div[class^="tabBarItem_"]::after {
+  display: none !important;
+}
+
+/* §12e — Full modal: hide scrollbars on profile body and tab panel scroller.
+   Both are scrollable divs that show thin scrollbars — hide them. */
+.user-profile-modal-v2 div[class^="profileBody_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"],
+.user-profile-modal-v2 div[class^="tabListScroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+.user-profile-modal-v2 div[class^="profileBody_"]::-webkit-scrollbar,
+.user-profile-modal-v2 div[class^="tabPanelScroller_"]::-webkit-scrollbar,
+.user-profile-modal-v2 div[class^="tabListScroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §12f — Full modal: hide the Notes section entirely.
+   The "Note (only visible to you)" section is never used — hide it.
+   In the popout it's inside body_, in the modal it's a section in profileBody_. */
+.user-profile-popout div[class^="body_"] section[aria-labelledby]:has(textarea[class*="note_"]),
+.user-profile-popout div[class^="body_"] section[aria-labelledby]:has(div[class*="note_"]),
+.user-profile-modal-v2 div[class^="profileBody_"] section[aria-labelledby]:has(textarea[class*="note_"]),
+.user-profile-modal-v2 div[class^="profileBody_"] section[aria-labelledby]:has(div[class*="note_"]) {
+  display: none !important;
+}
+/* Fallback: hide by matching the Note header text directly */
+.user-profile-popout div[class^="body_"] div[class*="note_"],
+.user-profile-modal-v2 div[class^="profileBody_"] div[class*="note_"] {
+  display: none !important;
+}
+
+/* §12g — Full modal: activity tab sections + cards fully transparent.
+   The Activity tab panel contains sections (Recent activity, etc.) with
+   card lists. Force everything transparent so the modal bg shows through. */
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] section[class^="section_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] ul[class^="cards_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] ul[class^="cards_"] li,
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] div[class^="card_"],
+.user-profile-modal-v2 div[class^="tabPanelScroller_"] section {
+  background: transparent !important;
+  background-image: none !important;
+}
+
+/* §12h — Guild activity popout card: purple border on the outer shell.
+   This is the card that appears when clicking someone's game/activity
+   status in the member list or chat. Uses popout_af3b89 class. */
+div[id^="popout_"] div[class^="popout_"]:has(div[class^="popoutContentWrapper_"]) {
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 12px !important;
+  overflow: hidden !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §13 — DISCOVER MENU
+   Quests, Server Discovery, and App Discovery header bars & backdrops.
+   Makes headers transparent so GIF wallpaper shows through, kills the
+   default ::after gradient fade, and styles tab items as purple pills.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §13a — Header bar: transparent bg, kill the ::after gradient fade.
+   children_ wraps the header bar content (tab buttons, search, etc.).
+   headerBarInner_ is the inner container. Both need transparent bg.
+   The ::after pseudo creates a gradient fade at the right edge — nuke it. */
+div[class^="children_"][class*="headerBarInner_"],
+div[class^="headerBarInner_"],
+div[class^="children_"] {
+  background: transparent !important;
+  background-image: none !important;
+}
+/* Kill the right-edge gradient fade on the header bar */
+div[class^="children_"]::after,
+div[class^="headerBarInner_"]::after {
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+  opacity: 0 !important;
+}
+
+/* §13b — Backdrop: transparent, no gradient.
+   backdrop_ sits behind the Discover content with a gradient bg.
+   Force it fully transparent so the animated wallpaper shows through. */
+div[class^="backdrop_"] {
+  background: transparent !important;
+  background-image: none !important;
+  opacity: 1 !important;
+}
+
+/* §13c — Discover tab pills: purple pill style matching §10d.
+   The Discover pages use headerBarTabItem_ and tabBarItem_ patterns
+   inside the header. Style them as rounded purple pills. */
+div[class^="children_"] div[class^="headerBarTabItem_"],
+div[class^="children_"] div[class^="tabBarItem_"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px 0 0 !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
+}
+/* Hover: subtle purple glow */
+div[class^="children_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+  border-color: rgba(180, 140, 255, 0.25) !important;
+}
+/* Selected: purple pill fill */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"],
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"] {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.92),
+    rgba(var(--sl-color-primary-rgb), 0.72)
+  ) !important;
+  border-color: rgba(180, 140, 255, 0.35) !important;
+  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+/* Selected + hover: brighter */
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="children_"] div[class^="tabBarItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"][class*="active"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="selected"]:hover,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"][class*="active"]:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.96),
+    rgba(var(--sl-color-primary-rgb), 0.78)
+  ) !important;
+}
+/* Kill the default underline indicator on Discover tabs */
+div[class^="children_"] div[class^="headerBarTabItem_"]::after,
+div[class^="children_"] div[class^="tabBarItem_"]::after,
+div[class^="headerBarInner_"] div[class^="headerBarTabItem_"]::after,
+div[class^="headerBarInner_"] div[class^="tabBarItem_"]::after {
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  height: 0 !important;
+}
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §10 — SETTINGS — VERIFIED — 2026-02-14
+   Full-screen Settings modal: solid panels, dimmed backdrop, pill tabs.
+   The settings modal lives inside layer_ → outerContainer_ → modal_
+   and is scoped via container__8a031 / modalContentInner_ ancestry.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §10a — Settings backdrop: dimmed overlay behind the modal
+   The outerContainer_ fills the viewport and acts as a dark scrim.
+   Keep it semi-transparent so the GIF background still peeks through. */
+div[class^="outerContainer_"] {
+  background: rgba(0, 0, 0, 0.75) !important;
+  background-image: none !important;
+}
+
+/* §10b — Settings sidebar (left menu list): solid dark bg
+   This is the navigation column with "My Account", "Nitro", etc.
+   Already at 0.3 opacity from existing rules — override to solid. */
+div[class^="container_"] > div[class^="sidebar_"] {
+  background: rgba(2, 3, 8, 0.98) !important;
+  background-image: none !important;
+}
+/* Settings sidebar scrollbar hidden */
+div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10c — Settings content area (right panel): solid dark bg
+   contentHeader_ is the top bar with page title + close button.
+   contentBody_ is the scrollable content below. Both go solid. */
+div[class^="contentHeader_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+div[class^="contentBody_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* Settings content scroller + panel: solid bg */
+div[class^="contentBody_"] div[class^="scroller_"],
+div[class^="contentBody_"] div[class^="panel_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10c (continued) — Inner content containers: solid
+   modalContent_, modalContentInner_, and the structural containers
+   all need to be solid or transparent to not break the chain. */
+div[class^="modalContent_"],
+div[class^="modalContentInner_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10c (continued) — Settings cards (account standing, profile, etc.): match container bg
+   These cardPrimary_ elements default to rgba(0,0,0,0.3) — force them to match the
+   solid content background so they blend seamlessly. */
+div[class^="contentBody_"] div[class^="cardPrimary_"],
+div[class^="contentBody_"] div[class*="card_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* Purple outline only on the message preview card */
+div[class^="contentBody_"] div[class^="preview_"] {
+  border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
+  border-radius: 8px !important;
+}
+/* §10c (continued) — Account profile card bg + credential list: match container */
+div[class^="contentBody_"] div[class^="background_"],
+div[class^="contentBody_"] div[class^="accountProfileCard_"],
+div[class^="contentBody_"] div[class^="credentialList_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10c (continued) — Settings content scrollbar hidden */
+div[class^="contentBody_"] div[class^="scroller_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+div[class^="contentBody_"] div[class^="scroller_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10d — Settings + Friends tab headers: pill style
+   Scoped to: Settings modal (contentBody_ / contentColumn_ / modalContentInner_)
+   and Friends tablist (aria-label="Friends").
+   Covers role="tab", item_, tab_ class patterns to catch ALL settings tab variants. */
+
+/* Base state: transparent pill, no visible border */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"],
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"],
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"],
+div[role="tablist"][aria-label="Friends"] div[role="tab"] {
+  background: transparent !important;
+  background-image: none !important;
+  border: 1px solid transparent !important;
+  border-radius: 8px !important;
+  padding: 6px 14px !important;
+  margin: 0 4px -1px 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
+}
+
+/* Hover state (inactive): subtle purple glow + faint border */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"]:hover,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"]:hover,
+div[role="tablist"][aria-label="Friends"] div[role="tab"]:hover {
+  background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
+  border-color: rgba(180, 140, 255, 0.25) !important;
+}
+
+/* Selected state: purple gradient pill + purple border
+   Handles aria-selected="true" and class-based selected_/active_ states */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="selected"],
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="active_"],
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"],
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"],
+div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"] {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.92),
+    rgba(var(--sl-color-primary-rgb), 0.72)
+  ) !important;
+  border-color: rgba(180, 140, 255, 0.35) !important;
+  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
+}
+
+/* Selected + hover: brighter purple */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="selected"]:hover,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class*="active_"]:hover,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selected="true"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"]:hover,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"]:hover,
+div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"]:hover {
+  background: linear-gradient(
+    135deg,
+    rgba(75, 0, 160, 0.96),
+    rgba(var(--sl-color-primary-rgb), 0.78)
+  ) !important;
+}
+
+/* Kill the default underline indicator on selected tabs */
+div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentBody_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"]::after,
+div[class^="contentBody_"] div[class^="tabBar_"] div[class^="tab_"]::after,
+div[class^="contentColumn_"] div[role="tablist"] div[role="tab"]::after,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="item_"]::after,
+div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"]::after,
+div[role="tablist"][aria-label="Friends"] div[role="tab"]::after {
+  display: none !important;
+  background: none !important;
+  border: none !important;
+  height: 0 !important;
+}
+
+/* §10e — Settings popout/dropdown menus: solid bg + purple border
+   Covers all popout types: role="listbox", id^="popout_", and layer_ popouts.
+   Also targets the select field dropdown (selectFieldPopout_). */
+div[class^="popout_"][role="listbox"],
+div[id^="popout_"] > div[class^="popout_"],
+div[class^="selectFieldPopout_"],
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+/* §10e (continued) — All inner elements of dropdown lists: solid bg
+   Covers scroller, list, individual options, and option_ elements. */
+div[id^="popout_"] div[class^="popout_"],
+div[id^="popout_"] div[class^="scroller_"],
+div[id^="popout_"] div[class^="list_"],
+div[id^="popout_"] div[role="option"],
+div[class^="popout_"][role="listbox"] div[class^="scroller_"],
+div[class^="popout_"][role="listbox"] div[role="option"],
+div[class^="selectFieldPopout_"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"] div[role="option"],
+div[class^="selectFieldPopout_"] div[class^="option_"],
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+/* §10e (continued) — Dropdown scrollbar hidden
+   Targets scroller_, scrollerBase_, auto_, and the popout/listbox containers themselves. */
+div[id^="popout_"] div[class^="scroller_"],
+div[id^="popout_"] div[class^="scrollerBase_"],
+div[id^="popout_"] div[class^="auto_"],
+div[class^="popout_"][role="listbox"],
+div[class^="popout_"][role="listbox"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"],
+div[class^="selectFieldPopout_"] div[class^="scroller_"],
+div[class^="selectFieldPopout_"] div[class^="scrollerBase_"],
+div[class^="popout_"] div[role="listbox"],
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow-y: auto !important;
+}
+div[id^="popout_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[id^="popout_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[id^="popout_"] div[class^="auto_"]::-webkit-scrollbar,
+div[class^="popout_"][role="listbox"]::-webkit-scrollbar,
+div[class^="popout_"][role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="selectFieldPopout_"] div[class^="scrollerBase_"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"]::-webkit-scrollbar,
+div[class^="popout_"] div[role="listbox"] div[class^="scrollerBase_"]::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+}
+
+/* §10f — Blocked/muted account cards: match container bg
+   card__5cea9 wraps the blocked accounts list + header.
+   settingsBackgroundFlashElement_ is the outer container wrapper. */
+div[class^="contentBody_"] div[class*="card_"][class*="5cea9"],
+div[class^="contentBody_"] div[class^="settingsBackgroundFlashElement_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10g — Settings server list: fix layout
+   The guildsList_ (ul, display:flex) inside myServersContainer_ lays out server
+   items as centered column stacks (icon on top, name below, toggle below that).
+   Override: make the ul a vertical list, and each li a horizontal row. */
+
+/* The ul itself: vertical column of rows, not a wrapping grid */
+ul[class^="guildsList_"] {
+  flex-direction: column !important;
+  align-items: stretch !important;
+  gap: 4px !important;
+}
+/* Each li: horizontal row — icon | name+members | toggle */
+ul[class^="guildsList_"] > li {
+  flex-direction: row !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  gap: 12px !important;
+  text-align: left !important;
+  padding: 8px 12px !important;
+}
+/* Inner stack_ divs inside each li: also row */
+ul[class^="guildsList_"] > li > div[class^="stack_"],
+ul[class^="guildsList_"] > li div[class^="container_"] {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+/* Server icon: fixed size in the row */
+ul[class^="guildsList_"] > li img {
+  width: 48px !important;
+  height: 48px !important;
+  border-radius: 12px !important;
+  flex-shrink: 0 !important;
+}
+/* Server name + member count wrapper: fill middle space, left align */
+ul[class^="guildsList_"] > li div[class^="guildDetails_"],
+ul[class^="guildsList_"] > li div[class^="guildName_"] {
+  text-align: left !important;
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+/* Toggle switch: push to right edge */
+ul[class^="guildsList_"] > li div[class^="control_"] {
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* §10g (continued) — Settings server list sticky header (Search + Sort by + Server Order):
+   This headerContainer_ is position:sticky z-index:1 but has transparent bg, so
+   scrolling server items bleed through underneath. Give it a solid bg to match. */
+div[class^="headerContainer_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10g (continued) — Settings option grids (In-app Icon, Color Themes, etc.):
+   These use stack_ with data-direction="horizontal" + data-wrap="true" and should
+   render as a wrapping grid. Force flex-wrap + row direction so they don't stack. */
+div[class^="contentBody_"] div[class^="stack_"][data-direction="horizontal"][data-wrap="true"] {
+  flex-direction: row !important;
+  flex-wrap: wrap !important;
+  align-items: stretch !important;
+  justify-content: flex-start !important;
+}
+
+/* §10h — Settings select field dropdowns (e.g. "All servers" filter):
+   solid dark bg + purple outer border, matching popout style from §10e. */
+div[class^="container_"] div[class*="selectField_"],
+div[class^="container_"] div[class*="wrapper_"][class*="selectField_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+  border: 1px solid var(--sl-color-primary) !important;
+  border-radius: 8px !important;
+  box-shadow: none !important;
+}
+div[class^="container_"] div[class*="selectField_"]:hover,
+div[class^="container_"] div[class*="wrapper_"][class*="selectField_"]:hover {
+  border-color: var(--sl-color-accent-light) !important;
+}
+
+/* §10i — Family Center container (box_ surface): match container bg.
+   The box_f8c98c wrapper uses --background-surface-high (grey tint).
+   Match to theme bg but leave inner row_ cards untouched. */
+div[class^="contentBody_"] div[class^="box_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10j — Guild Boosting settings: match wrapper + FAQ bg to container.
+   wrapper__51537 is the server cards container, wrapper__5b98e/faq_ is FAQ.
+   Leave inner recommendedServerCard_ and guildContainer_ cards alone. */
+div[class^="contentBody_"] div[class^="guildBoostingSettings_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+div[class^="contentBody_"] div[class^="guildBoostingSettings_"] > div[class^="wrapper_"] {
+  background: transparent !important;
+}
+div[class^="contentBody_"] div[class^="faq_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10k — Keybinds settings: defaultKeybindGroup_ match container bg.
+   These groups use --background-surface-higher (grey tint). */
+div[class^="contentBody_"] div[class^="defaultKeybindGroup_"] {
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
+}
+
+/* §10l — Dropdown popout inner borders: remove ALL inner borders.
+   Keep the outer popout border (from §10e), kill every inner border.
+   Uses wildcard descendants to catch all wrapper/list/item patterns. */
+div[class^="popout_"] > div,
+div[class^="popout_"] div[class^="popout_"] *,
+div[id^="popout_"] > div > div *,
+div[class^="selectFieldPopout_"] *,
+div[class^="popout_"] div[role="listbox"] > div,
+div[class^="popout_"] div[role="listbox"] div[class^="scroller_"],
+div[class^="popout_"] div[role="listbox"] div[class^="list_"],
+div[class^="popout_"] div[role="listbox"] div[class^="option_"],
+div[class^="popout_"] div[role="listbox"] div[role="option"] {
+  border: none !important;
+  border-color: transparent !important;
+}
+/* Re-apply the outer popout border since wildcard may strip it */
+div[class^="popout_"][role="listbox"],
+div[id^="popout_"] > div[class^="popout_"],
+div[class^="selectFieldPopout_"],
+div[class^="popout_"] div[role="listbox"],
+div[id^="popout_"] div[role="listbox"] {
+  border: 1px solid var(--sl-color-primary) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §14 — CUSTOM SNIPPETS
+   Community-contributed CSS snippets. Each snippet must credit
+   the original author.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §14a — BD Settings on Top
+   Moves BetterDiscord settings to the top of the sidebar navigation.
+   Credit: SyndiShanX (2025-11-25) */
+[class^=sidebar] [class^=nav] > ul:has(.bd-button) {
+  order: -1;
+}
+
+/* §14b — Re-Iconify Search
+   Collapses the toolbar search bar into a compact icon; expands on click/focus.
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-07-16) */
+div[class*="upperContainer_"] div[class*="toolbar_"] div[class*="search_"]:not([class*="searchBar_"]) {
+  order: -1;
+  div[class*="searchBar_"] {
+    transition: all ease 0.3s;
+    width: 25px;
+    box-sizing: unset;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    div[class*="icon_"] {
+      height: 32px;
+      width: 32px;
+      scale: 1.2;
+      cursor: pointer;
+    }
+  }
+  div[class*="focused_"] div[class*="searchBar_"],
+  div[class*="open_"] div[class*="searchBar_"] {
+    width: 225px;
+    box-sizing: border-box;
+    cursor: text;
+    background: var(--background-gradient-low, var(--input-background));
+    border: 1px solid var(--input-border);
+    padding: 2px 0;
+    div[class*="icon_"] {
+      height: 24px;
+      width: 24px;
+      scale: 1;
+      cursor: pointer;
+    }
+  }
+}
+
+/* §14c — Hide Channel Invite Button
+   Hides the invite-members button on channels until hovered.
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-03-01) */
+div[class*="containerDefault_"] {
+  div[class*="children_"] {
+    opacity: 0;
+    margin-right: -32px;
+  }
+  &:hover {
+    div[class*="children_"] {
+      opacity: 1;
+      margin-right: 0px;
+    }
+  }
+}
+
+/* §14d — Disabled Channel Textarea Redesign
+   Cleaner look for read-only channels (no send permission).
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2025-02-16) */
+div[class*="form_"]:has(div[class*="channelTextAreaDisabled_"]) {
+  border-top: 2px solid var(--app-border-frame);
+  height: 50px;
+  background-color: var(--background-primary);
+  cursor: not-allowed;
+  div[class*="channelTextAreaDisabled_"][class*="channelTextAreaDisabled_"] {
+    background-color: transparent;
+    border: none;
+    text-align: center;
+    div[class*="rightAccessories_"], div[class*="buttons_"] {
+      display: none;
+    }
+  }
+}
+
+/* §14e — Role-Colored Mentions
+   Colors @mentions based on the mentioned user's role color.
+   @import placed near top of file (line 167) per CSS spec requirement.
+   Credit: dav (2024-05-30) */
+
+/* §14f — Hide Threads Until Hover
+   Collapses thread lists under channels; slides down on hover.
+   Converted to attribute selectors for hash resilience.
+   Credit: vortex_chaos (via Aurora, 2024-04-13) */
+div[class*="containerDefault_"] + div[class^="container_"] {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+div[class*="containerDefault_"]:hover + div[class^="container_"],
+div[class*="containerDefault_"] + div[class^="container_"]:hover {
+  max-height: 1000px;
+  transition: max-height 1s ease;
+}
+
+/* §14g — Improved Links + Masked Links Addon
+   Styles plain links as mention-like pills with hover effects.
+   Masked Links addon shows the actual URL after masked link text.
+   @imports placed near top of file (line 182-183) per CSS spec requirement.
+   Overrides below: remove emoji, purple pill color, truncate long URLs.
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+
+/* §14g override — purple pill color + no emoji + truncation */
+[class^="message_"] [class^="contents_"] [class^="anchor_"],
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"] {
+  color: var(--sl-color-accent-light, #b388ff) !important;
+  background-color: rgba(123, 44, 191, 0.15) !important;
+  border-bottom-color: var(--sl-color-primary, #7b2cbf) !important;
+  max-width: 350px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]::before,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]::before {
+  content: "" !important;
+  margin-right: 0 !important;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]:hover,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]:hover {
+  background-color: var(--sl-color-primary, #7b2cbf) !important;
+  color: #fff !important;
+}
+
+/* §14h — Simplified Edited Icon
+   Replaces "(edited)" text with a compact pencil icon (✎).
+   Converted to attribute selectors for hash resilience.
+   Credit: Aurora (2023-10-27) */
+span[class*="edited_"] {
+  color: rgba(0, 0, 0, 0);
+}
+span[class*="edited_"]::before {
+  content: "(✎)";
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 1;
+}
+
+/* §14i — Hide Reaction Popup on Hover
+   Hides the reaction/reply/pin toolbar that appears when hovering messages.
+   Right-click still provides all these actions via context menu. */
+div[class^="buttonsInner_"][class*="popover_"] {
+  display: none !important;
+}
