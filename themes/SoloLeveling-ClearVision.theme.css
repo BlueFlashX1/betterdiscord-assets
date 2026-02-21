@@ -226,9 +226,11 @@ AI MAINTENANCE RULES
 *:not(code):not(pre):not([class*="codeLine"]):not([class*="codeBlock"]):not([class*="markup_"] code) {
   font-family: 'Friend or Foe BB', sans-serif !important;
 }
-/* Bump base font size ~12% to compensate for Friend or Foe's smaller x-height */
+
+/* §1 (continued) — Global font-size boost for Friend or Foe readability.
+   FoF has a smaller x-height than gg sans, so scale everything up. */
 html {
-  font-size: 112% !important;
+  font-size: 130% !important;
 }
 
 /* ═══════════════════════════════════════════════════════════
@@ -1162,10 +1164,15 @@ div[aria-label="Apps"] {
 }
 
 /* §9b (continued) — GIF, Stickers, Emoji buttons: solid bg + purple border
-   Uses aria-label for GIF/stickers, emojiButton_ class for emoji (label varies) */
+   Uses aria-label for GIF/stickers, emojiButton_ class for emoji (label varies).
+   Dual selectors: buttons_ prefix + channelTextArea_ parent for resilience. */
 div[class^="buttons_"] div[aria-label="Open GIF picker"],
 div[class^="buttons_"] div[aria-label="Open sticker picker"],
-div[class^="buttons_"] div[class*="emojiButton_"] {
+div[class^="buttons_"] div[class*="emojiButton_"],
+div[class^="channelTextArea_"] div[aria-label="Open GIF picker"],
+div[class^="channelTextArea_"] div[aria-label="Open sticker picker"],
+div[class^="channelTextArea_"] div[class*="emojiButton_"],
+div[class^="channelTextArea_"] button[class*="emojiButton_"] {
   background: rgba(8, 10, 20, 0.96) !important;
   border: 1px solid var(--sl-color-primary) !important;
   border-radius: 6px !important;
@@ -1174,7 +1181,11 @@ div[class^="buttons_"] div[class*="emojiButton_"] {
 }
 div[class^="buttons_"] div[aria-label="Open GIF picker"]:hover,
 div[class^="buttons_"] div[aria-label="Open sticker picker"]:hover,
-div[class^="buttons_"] div[class*="emojiButton_"]:hover {
+div[class^="buttons_"] div[class*="emojiButton_"]:hover,
+div[class^="channelTextArea_"] div[aria-label="Open GIF picker"]:hover,
+div[class^="channelTextArea_"] div[aria-label="Open sticker picker"]:hover,
+div[class^="channelTextArea_"] div[class*="emojiButton_"]:hover,
+div[class^="channelTextArea_"] button[class*="emojiButton_"]:hover {
   background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
   border-color: var(--sl-color-accent-light) !important;
 }
