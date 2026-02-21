@@ -225,8 +225,12 @@ AI MAINTENANCE RULES
 /* §1 (continued) — Universal font override.
    Discord hardcodes font-family:"gg sans" on many elements.
    This catches everything the CSS variables miss. */
-*:not(code):not(pre):not([class*="codeLine"]):not([class*="codeBlock"]):not([class*="markup_"] code) {
+*:not(code):not(pre):not([class*="codeLine"]):not([class*="codeBlock"]):not([class*="markup_"] code):not(.shadow-extraction-title):not(.shadow-extraction-overlay *) {
   font-family: 'Friend or Foe BB', sans-serif !important;
+}
+/* §1 (continued) — ARISE animation uses Speedy Space Goat Oddity; exempt from global font */
+.shadow-extraction-title {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
 }
 
 /* §1 (continued) — Global font-size boost for Friend or Foe readability.
@@ -1165,16 +1169,18 @@ div[aria-label="Apps"] {
   display: none !important;
 }
 
-/* §9b (continued) — GIF, Stickers, Emoji buttons: solid bg + purple border
-   Uses aria-label for GIF/stickers, emojiButton_ class for emoji (label varies).
-   Dual selectors: buttons_ prefix + channelTextArea_ parent for resilience. */
+/* §9b (continued) — GIF, Stickers, Emoji, Translate buttons: solid bg + purple border
+   Uses aria-label for GIF/stickers, emojiButton_ for emoji, translateButton_ for translate.
+   Dual parent selectors (buttons_ + channelTextArea_) for resilience. */
 div[class^="buttons_"] div[aria-label="Open GIF picker"],
 div[class^="buttons_"] div[aria-label="Open sticker picker"],
 div[class^="buttons_"] div[class*="emojiButton_"],
+div[class^="buttons_"] div[class^="buttonContainer_"],
 div[class^="channelTextArea_"] div[aria-label="Open GIF picker"],
 div[class^="channelTextArea_"] div[aria-label="Open sticker picker"],
 div[class^="channelTextArea_"] div[class*="emojiButton_"],
-div[class^="channelTextArea_"] button[class*="emojiButton_"] {
+div[class^="channelTextArea_"] button[class*="emojiButton_"],
+div[class^="channelTextArea_"] div[class^="buttonContainer_"] {
   background: rgba(8, 10, 20, 0.96) !important;
   border: 1px solid var(--sl-color-primary) !important;
   border-radius: 6px !important;
@@ -1184,10 +1190,12 @@ div[class^="channelTextArea_"] button[class*="emojiButton_"] {
 div[class^="buttons_"] div[aria-label="Open GIF picker"]:hover,
 div[class^="buttons_"] div[aria-label="Open sticker picker"]:hover,
 div[class^="buttons_"] div[class*="emojiButton_"]:hover,
+div[class^="buttons_"] div[class^="buttonContainer_"]:hover,
 div[class^="channelTextArea_"] div[aria-label="Open GIF picker"]:hover,
 div[class^="channelTextArea_"] div[aria-label="Open sticker picker"]:hover,
 div[class^="channelTextArea_"] div[class*="emojiButton_"]:hover,
-div[class^="channelTextArea_"] button[class*="emojiButton_"]:hover {
+div[class^="channelTextArea_"] button[class*="emojiButton_"]:hover,
+div[class^="channelTextArea_"] div[class^="buttonContainer_"]:hover {
   background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
   border-color: var(--sl-color-accent-light) !important;
 }
