@@ -17,6 +17,7 @@ pnpm-lock.yaml
 # Backups (keep local, don't commit)
 backups/
 **/backups/
+**/_backups/
 *.backup
 *.bak
 *.old
@@ -132,6 +133,18 @@ empty/
 
 # Keep docs markdown tracked (re-assert at end due rule order)
 !docs/**/*.md
+
+# Stale migration artifacts (no longer needed)
+themes/organized/
+themes/MIGRATION-GUIDE.md
+themes/migrate-to-modular.sh
+
+# Obsolete dual-repo scripts
+scripts/mirror-to-assets.sh
+
+# Analysis artifacts (stale)
+plugins/BYTEROVER_KNOWLEDGE.json
+plugins/PYTHON_RULES_BYTEROVER.json
 
 # Local workspace bucket (do not track)
 _local/

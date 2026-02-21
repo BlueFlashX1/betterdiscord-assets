@@ -135,13 +135,16 @@ Find your BetterDiscord installation folder:
 
 ```bash
 # Navigate to repository
-cd /path/to/betterdiscord-dev
+cd ~/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets
 
 # Copy plugins
 cp plugins/*.plugin.js ~/Library/Application\ Support/BetterDiscord/plugins/
 
 # Copy theme
 cp themes/SoloLeveling-ClearVision.theme.css ~/Library/Application\ Support/BetterDiscord/themes/
+
+# Or use the deploy script:
+./scripts/deploy-betterdiscord-runtime.sh
 
 # Reload Discord (Ctrl+R or Cmd+R)
 ```
@@ -359,16 +362,30 @@ SoloLevelingStats (Core)
 ## File Structure
 
 ```
-betterdiscord-dev/
+betterdiscord-assets/
 ├── plugins/
-│   ├── SoloLevelingStats.plugin.js
-│   ├── CriticalHit.plugin.js
-│   ├── SkillTree.plugin.js
-│   ├── TitleManager.plugin.js
-│   ├── LevelProgressBar.plugin.js
-│   ├── SoloLevelingToasts.plugin.js
+│   ├── SoloLevelingStats.plugin.js    # Core stats engine
+│   ├── CriticalHit.plugin.js          # Crit effects
+│   ├── SkillTree.plugin.js            # Skill tree system
+│   ├── TitleManager.plugin.js         # Title management
+│   ├── LevelProgressBar.plugin.js     # Progress bar UI
+│   ├── SoloLevelingToasts.plugin.js   # Toast notifications
+│   ├── ShadowArmy.plugin.js           # Shadow extraction & army
+│   ├── ShadowSenses.plugin.js         # Shadow activity feed
+│   ├── ShadowExchange.plugin.js       # Shadow trading
+│   ├── Dungeons.plugin.js             # Dungeon raids
+│   ├── HSLDockAutoHide.plugin.js      # Dock auto-hide
+│   ├── HSLWheelBridge.plugin.js       # HSL wheel bridge
+│   ├── ChatNavArrows.plugin.js        # Chat nav arrows
+│   ├── CSSPicker.plugin.js            # CSS inspector
+│   ├── UserPanelDockMover.plugin.js   # Panel dock mover
+│   ├── SoloLevelingUtils.js           # Shared utilities
+│   └── _backups/                      # Timestamped backups (local only)
 ├── themes/
-│   └── SoloLeveling-ClearVision.theme.css
+│   ├── SoloLeveling-ClearVision.theme.css
+│   └── variables/                     # Modular CSS variables
+├── scripts/                           # Deploy & automation scripts
+├── docs/                              # Design & implementation docs
 └── README.md
 ```
 
