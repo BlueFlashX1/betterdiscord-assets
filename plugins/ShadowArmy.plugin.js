@@ -7001,6 +7001,28 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Preserve progression when promoting rank:
+   * - Keep current level
+   * - Carry the same in-level XP progress percentage into the new rank curve
+   */
+  _applyRankPromotionProgressCarry(shadow, oldRank, newRank) {
+    if (!shadow) return;
+
+    const currentLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
+    const currentXp = Math.max(0, Number(shadow.xp) || 0);
+
+    const oldReq = Math.max(1, this.getShadowXpForNextLevel(currentLevel, oldRank));
+    const newReq = Math.max(1, this.getShadowXpForNextLevel(currentLevel, newRank));
+
+    // Clamp to <100% so promotion never causes an immediate accidental level-up loop.
+    const progress = Math.max(0, Math.min(0.99, currentXp / oldReq));
+    const carriedXp = Math.floor(newReq * progress);
+
+    shadow.level = currentLevel;
+    shadow.xp = Math.max(0, Math.min(newReq - 1, carriedXp));
+  }
+
+  /**
    * Get effective stats for a shadow (base + growth + natural growth)
    * Operations:
    * 1. Get base stats from shadow.baseStats
@@ -7149,11 +7171,12 @@ module.exports = class ShadowArmy {
     // Guard clause: Check if shadow qualifies
     if (totalEffective >= requiredTotal) {
       // PERFORM RANK-UP
+      const oldLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
+      const oldXp = Math.max(0, Number(shadow.xp) || 0);
       shadow.rank = nextRank;
 
-      // Reset level to 1 for new rank (fresh start at new tier)
-      shadow.level = 1;
-      shadow.xp = 0;
+      // True upgrade path: preserve level and carry in-level progress to new rank curve.
+      this._applyRankPromotionProgressCarry(shadow, currentRank, nextRank);
 
       // Recalculate strength with new rank
       const newEffectiveStats = this.getShadowEffectiveStats(shadow);
@@ -7175,6 +7198,10 @@ module.exports = class ShadowArmy {
         success: true,
         oldRank: currentRank,
         newRank: nextRank,
+        oldLevel,
+        newLevel: shadow.level || oldLevel,
+        oldXp,
+        newXp: shadow.xp || 0,
       };
     }
 
