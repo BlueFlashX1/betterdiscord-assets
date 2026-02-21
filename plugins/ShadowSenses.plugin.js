@@ -1244,15 +1244,38 @@ function buildComponents(pluginRef) {
     }, [onClose]);
 
     const handleNavigate = useCallback((entry) => {
+      if (!entry.guildId || !entry.channelId) { onClose(); return; }
+      const path = entry.messageId
+        ? `/channels/${entry.guildId}/${entry.channelId}/${entry.messageId}`
+        : `/channels/${entry.guildId}/${entry.channelId}`;
       try {
-        if (pluginRef._NavigationUtils && entry.guildId && entry.channelId) {
-          const path = entry.messageId
-            ? `/channels/${entry.guildId}/${entry.channelId}/${entry.messageId}`
-            : `/channels/${entry.guildId}/${entry.channelId}`;
+        // Try primary: Webpack NavigationUtils
+        if (pluginRef._NavigationUtils) {
           pluginRef._NavigationUtils.transitionTo(path);
+          onClose();
+          return;
         }
+        // Fallback: lazy re-acquire then try again
+        const { Webpack } = BdApi;
+        const nav = Webpack.getByKeys("transitionTo", "back", "forward")
+          || Webpack.getModule(m => m.transitionTo && m.back);
+        if (nav) {
+          pluginRef._NavigationUtils = nav;
+          nav.transitionTo(path);
+          onClose();
+          return;
+        }
+        // Last resort: push into browser history (navigates channel but may not scroll to msg)
+        if (window.history && window.history.pushState) {
+          window.history.pushState({}, "", path);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+          onClose();
+          return;
+        }
+        BdApi.UI.showToast("Could not navigate — NavigationUtils unavailable", { type: "error" });
       } catch (err) {
         pluginRef.debugError("SensesPanel", "Navigate failed:", err);
+        BdApi.UI.showToast("Navigation failed — check console", { type: "error" });
       }
       onClose();
     }, [onClose]);
@@ -1552,12 +1575,15 @@ module.exports = class ShadowSenses {
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
-    this._NavigationUtils = Webpack.getModule(m => m?.transitionTo && m?.back && m?.forward);
+    this._NavigationUtils =
+      Webpack.getByKeys("transitionTo", "back", "forward") ||
+      Webpack.getModule(m => m.transitionTo && m.back && m.forward);
     this.debugLog("Webpack", "Modules acquired (sync)", {
       Dispatcher: !!this._Dispatcher,
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
       GuildStore: !!this._GuildStore,
+      NavigationUtils: !!this._NavigationUtils,
     });
   }
 
