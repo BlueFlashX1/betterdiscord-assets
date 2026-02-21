@@ -3,8 +3,8 @@ set -euo pipefail
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
-# Canonical source is betterdiscord-dev. Keep ASSETS_ROOT override for backwards compatibility.
-SOURCE_ROOT="${SOURCE_ROOT:-${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev}}"
+# Canonical source is betterdiscord-assets (single repo since Feb 2026).
+SOURCE_ROOT="${SOURCE_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets}"
 DEPLOY_SCRIPT="${DEPLOY_SCRIPT:-$SOURCE_ROOT/scripts/deploy-betterdiscord-runtime.sh}"
 LOG_DIR="$HOME/Library/Logs/BetterDiscord"
 LOG_FILE="$LOG_DIR/auto-rsync-watch.log"

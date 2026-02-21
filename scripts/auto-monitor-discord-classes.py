@@ -358,7 +358,7 @@ def main():
     if not args.themes:
         default_theme = (
             Path.home()
-            / "Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev/themes/SoloLeveling-ClearVision.theme.css"
+            / "Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/themes/SoloLeveling-ClearVision.theme.css"
         )
         args.themes = [default_theme] if default_theme.exists() else []
 

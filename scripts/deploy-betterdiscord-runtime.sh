@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-# Canonical source is betterdiscord-dev. Keep ASSETS_ROOT override for backwards compatibility.
-SOURCE_ROOT="${SOURCE_ROOT:-${ASSETS_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-dev}}"
+# Canonical source is betterdiscord-assets (single repo since Feb 2026).
+SOURCE_ROOT="${SOURCE_ROOT:-$HOME/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets}"
 BD_ROOT="${BD_ROOT:-$HOME/Library/Application Support/BetterDiscord}"
 
 ASSETS_THEMES="$SOURCE_ROOT/themes"
