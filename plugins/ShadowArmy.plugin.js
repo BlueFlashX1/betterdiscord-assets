@@ -4892,14 +4892,6 @@ module.exports = class ShadowArmy {
 
           const effectiveSavedCount = Number.isFinite(savedCount) ? savedCount : chunkShadows.length;
           totalExtracted += effectiveSavedCount;
-
-          if (effectiveSavedCount > 0) {
-            const savedShadows = chunkShadows.slice(0, Math.min(effectiveSavedCount, chunkShadows.length));
-            for (const saved of savedShadows) {
-              const sid = saved?.id || saved?.i;
-              sid && extractedShadowIds.push(String(sid));
-            }
-          }
         } catch (e) {
           this.debugError(
             'BULK_EXTRACTION',
