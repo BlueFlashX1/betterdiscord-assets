@@ -1765,6 +1765,24 @@ module.exports = class ShadowArmy {
         maxBossAttemptsPerDay: 3, // Max extraction attempts per boss per day
         bossAttemptResetHour: 0, // Reset at midnight (0-23)
       },
+      rankPromotionConfig: {
+        enabled: true,
+        // Light pacing gates by target rank (promotion destination).
+        // Keeps progression smooth without making promotions feel grind-locked.
+        minLevelByRank: {
+          D: 5,
+          C: 10,
+          B: 18,
+          A: 30,
+          S: 45,
+          SS: 65,
+          SSS: 90,
+          'SSS+': 120,
+          NH: 160,
+          Monarch: 210,
+          'Monarch+': 280,
+        },
+      },
       dungeonExtractionAttempts: {
         // Tracks per-boss extraction attempts: { bossId: { count, lastAttempt, lastReset } }
         // Example: "dungeon_ice_cavern_boss_frost_dragon": { count: 2, lastAttempt: timestamp, lastReset: "2025-12-03" }
@@ -3480,6 +3498,26 @@ module.exports = class ShadowArmy {
         this.settings.extractionConfig = {
           ...this.defaultSettings.extractionConfig,
           ...this.settings.extractionConfig,
+        };
+      }
+      if (!this.settings.rankPromotionConfig || typeof this.settings.rankPromotionConfig !== 'object') {
+        this.settings.rankPromotionConfig = {
+          ...this.defaultSettings.rankPromotionConfig,
+          minLevelByRank: { ...this.defaultSettings.rankPromotionConfig.minLevelByRank },
+        };
+      } else {
+        const loadedMinLevelByRank =
+          this.settings.rankPromotionConfig.minLevelByRank &&
+          typeof this.settings.rankPromotionConfig.minLevelByRank === 'object'
+            ? this.settings.rankPromotionConfig.minLevelByRank
+            : {};
+        this.settings.rankPromotionConfig = {
+          ...this.defaultSettings.rankPromotionConfig,
+          ...this.settings.rankPromotionConfig,
+          minLevelByRank: {
+            ...this.defaultSettings.rankPromotionConfig.minLevelByRank,
+            ...loadedMinLevelByRank,
+          },
         };
       }
       if (!this.settings.specialArise) {
@@ -7151,6 +7189,23 @@ module.exports = class ShadowArmy {
     // Shadows may naturally promote up to Monarch+.
     if (nextRank === 'Shadow Monarch') {
       return { success: false };
+    }
+
+    // Optional promotion pacing gate by target rank.
+    const promotionConfig = this.settings?.rankPromotionConfig || this.defaultSettings.rankPromotionConfig;
+    if (promotionConfig?.enabled !== false) {
+      const currentLevel = Math.max(1, Math.floor(Number(shadow.level) || 1));
+      const requiredLevelRaw = promotionConfig?.minLevelByRank?.[nextRank];
+      const requiredLevel = Math.max(1, Math.floor(Number(requiredLevelRaw) || 0));
+      if (requiredLevel > 0 && currentLevel < requiredLevel) {
+        return {
+          success: false,
+          reason: 'level_gate',
+          currentLevel,
+          requiredLevel,
+          targetRank: nextRank,
+        };
+      }
     }
 
     // Get shadow's effective stats
