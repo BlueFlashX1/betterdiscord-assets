@@ -231,13 +231,21 @@ AI MAINTENANCE RULES
 /* §1 (continued) — ARISE animation uses Speedy Space Goat Oddity; exempt from global font.
    Specificity (0,1,0) beats the :where()-wrapped * selector (0,0,0) above.
    Covers main animation (sa-arise-*) and fallback (shadow-extraction-*). */
-.sa-arise-wrapper,
-.sa-arise-wrapper * {
+/* Only the "ARiSe" title text gets Speedy Space Goat — rank/role stays Friend or Foe */
+.sa-arise-text,
+.sa-arise-text span {
   font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
 }
-.shadow-extraction-content,
-.shadow-extraction-content * {
+.sa-arise-meta {
+  font-family: 'Friend or Foe BB', sans-serif !important;
+}
+.shadow-extraction-title {
   font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+}
+.shadow-extraction-info,
+.shadow-rank,
+.shadow-role {
+  font-family: 'Friend or Foe BB', sans-serif !important;
 }
 
 /* §1 (continued) — Global font-size boost for Friend or Foe readability.
