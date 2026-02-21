@@ -152,6 +152,19 @@ AI MAINTENANCE RULES
 ║      ├─ §10k  Keybinds settings                                   ║
 ║      └─ §10l  Dropdown popout inner borders                       ║
 ║                                                                  ║
+║  ┌─────────────────────────────────────────────────────────┐     ║
+║  │  COMMUNITY SNIPPETS                                     │     ║
+║  └─────────────────────────────────────────────────────────┘     ║
+║                                                                  ║
+║  §14 CUSTOM SNIPPETS .................... Community CSS           ║
+║      ├─ §14a  BD Settings on Top (SyndiShanX)                    ║
+║      ├─ §14b  Re-Iconify Search (Aurora)                         ║
+║      ├─ §14c  Hide Channel Invite Button (Aurora)                ║
+║      ├─ §14d  Disabled Channel Textarea Redesign (Aurora)        ║
+║      ├─ §14e  Role-Colored Mentions (dav) [@import at top]       ║
+║      ├─ §14f  Hide Threads Until Hover (vortex_chaos)            ║
+║      └─ §14g  Improved Links + Masked Links (Aurora) [@import]   ║
+║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 */
 
@@ -162,6 +175,15 @@ AI MAINTENANCE RULES
 @import url('https://clearvision.github.io/ClearVision-v7/main.css');
 @import url('https://clearvision.github.io/ClearVision-v7/betterdiscord.css');
 @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&display=swap');
+
+/* §14e — Role-Colored Mentions (import must be near top — see §14e note below)
+   Credit: dav (2024-05-30) */
+@import url('https://davart154.github.io/Themes/Snippets/Colored%20Mentions/ColoredMentionsSource.css');
+
+/* §14g — Improved Links + Masked Links addon (imports must be near top)
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+@import url('https://riddim-glitch.github.io/Discord-CSS-Snippets/snippets/CSS/ImprovedLinks.css');
+@import url('https://riddim-glitch.github.io/Discord-CSS-Snippets/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
 
 /* ═══════════════════════════════════════════════════════════
    §1  IMPORTS & VARIABLES
@@ -2319,4 +2341,149 @@ div[class^="selectFieldPopout_"],
 div[class^="popout_"] div[role="listbox"],
 div[id^="popout_"] div[role="listbox"] {
   border: 1px solid var(--sl-color-primary) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   §14 — CUSTOM SNIPPETS
+   Community-contributed CSS snippets. Each snippet must credit
+   the original author.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* §14a — BD Settings on Top
+   Moves BetterDiscord settings to the top of the sidebar navigation.
+   Credit: SyndiShanX (2025-11-25) */
+[class^=sidebar] [class^=nav] > ul:has(.bd-button) {
+  order: -1;
+}
+
+/* §14b — Re-Iconify Search
+   Collapses the toolbar search bar into a compact icon; expands on click/focus.
+   Uses CSS nesting + hashed classes (may need hash updates on Discord releases).
+   Credit: Aurora (2025-07-16) */
+.upperContainer__9293f .toolbar__9293f .search__49676 {
+  order: -1;
+  .searchBar__97492 {
+    transition: all ease 0.3s;
+    width: 25px;
+    box-sizing: unset;
+    cursor: pointer;
+    background: none;
+    border: none;
+    padding: 0;
+    .icon__97492 {
+      height: 32px;
+      width: 32px;
+      scale: 1.2;
+      cursor: pointer;
+    }
+  }
+  .focused__97492 .searchBar__97492,
+  .open__97492 .searchBar__97492 {
+    width: 225px;
+    box-sizing: border-box;
+    cursor: text;
+    background: var(--background-gradient-low, var(--input-background));
+    border: 1px solid var(--input-border);
+    padding: 2px 0;
+    .icon__97492 {
+      height: 24px;
+      width: 24px;
+      scale: 1;
+      cursor: pointer;
+    }
+  }
+}
+
+/* §14c — Hide Channel Invite Button
+   Hides the invite-members button on channels until hovered.
+   Credit: Aurora (2025-03-01) */
+.containerDefault_c69b6d {
+  .children__2ea32 {
+    opacity: 0;
+    margin-right: -32px;
+  }
+  &:hover {
+    .children__2ea32 {
+      opacity: 1;
+      margin-right: 0px;
+    }
+  }
+}
+
+/* §14d — Disabled Channel Textarea Redesign
+   Cleaner look for read-only channels (no send permission).
+   Credit: Aurora (2025-02-16) */
+.form_f75fb0:has(.channelTextAreaDisabled__74017) {
+  border-top: 2px solid var(--app-border-frame);
+  height: 50px;
+  background-color: var(--background-primary);
+  cursor: not-allowed;
+  .channelTextAreaDisabled__74017.channelTextAreaDisabled__74017 {
+    background-color: transparent;
+    border: none;
+    text-align: center;
+    .rightAccessories__74017, .buttons__74017 {
+      display: none;
+    }
+  }
+}
+
+/* §14e — Role-Colored Mentions
+   Colors @mentions based on the mentioned user's role color.
+   @import placed near top of file (line 167) per CSS spec requirement.
+   Credit: dav (2024-05-30) */
+
+/* §14f — Hide Threads Until Hover
+   Collapses thread lists under channels; slides down on hover.
+   Credit: vortex_chaos (via Aurora, 2024-04-13) */
+.container__342a0 {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.25s ease;
+}
+.containerDefault_ae2ea4:hover + .container__342a0,
+.container__342a0:hover {
+  max-height: 1000px;
+  transition: max-height 1s ease;
+}
+
+/* §14g — Improved Links + Masked Links Addon
+   Styles plain links as mention-like pills with hover effects.
+   Masked Links addon shows the actual URL after masked link text.
+   @imports placed near top of file (line 182-183) per CSS spec requirement.
+   Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+
+/* §14h — Compact Member List (expand on hover)
+   Collapses member list to avatar strip; expands with role headers on hover.
+   Note: margin shift may cause minor layout reflow lag.
+   Credit: Aurora (2024-01-14) */
+.container_b2ce9c {
+  transition: 0.3s ease-in-out;
+  margin-right: -180px;
+}
+.container_b2ce9c .membersGroup__85843 {
+  transition: 0.3s ease-in-out;
+  height: 0px !important;
+  margin-top: -25px;
+}
+.container_b2ce9c:hover .membersGroup__85843 {
+  height: unset !important;
+  margin-top: unset !important;
+}
+.container_b2ce9c:hover {
+  margin-right: unset !important;
+}
+
+/* §14i — Simplified Edited Icon
+   Replaces "(edited)" text with a compact pencil icon (✎).
+   Credit: Aurora (2023-10-27) */
+.edited_b20dd9 {
+  color: rgba(0, 0, 0, 0);
+}
+.edited_b20dd9::before {
+  content: "(✎)";
+  color: var(--text-muted);
+  font-size: 0.625rem;
+  font-weight: 400;
+  line-height: 1;
 }
