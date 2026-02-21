@@ -163,7 +163,9 @@ AI MAINTENANCE RULES
 ║      ├─ §14d  Disabled Channel Textarea Redesign (Aurora)        ║
 ║      ├─ §14e  Role-Colored Mentions (dav) [@import at top]       ║
 ║      ├─ §14f  Hide Threads Until Hover (vortex_chaos)            ║
-║      └─ §14g  Improved Links + Masked Links (Aurora) [@import]   ║
+║      ├─ §14g  Improved Links + Masked Links (Aurora) [@import]   ║
+║      ├─ §14h  Simplified Edited Icon (Aurora)                    ║
+║      └─ §14i  Hide Reaction Popup on Hover                       ║
 ║                                                                  ║
 ╚══════════════════════════════════════════════════════════════════╝
 */
@@ -182,8 +184,8 @@ AI MAINTENANCE RULES
 
 /* §14g — Improved Links + Masked Links addon (imports must be near top)
    Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
-@import url('https://riddim-glitch.github.io/Discord-CSS-Snippets/snippets/CSS/ImprovedLinks.css');
-@import url('https://riddim-glitch.github.io/Discord-CSS-Snippets/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinks.css');
+@import url('https://cdn.jsdelivr.net/gh/Riddim-GLiTCH/Discord-CSS-Snippets@main/snippets/CSS/ImprovedLinksMaskedLinksAddon.css');
 
 /* ═══════════════════════════════════════════════════════════
    §1  IMPORTS & VARIABLES
@@ -1217,18 +1219,8 @@ div[class^="positionContainer_"] *::-webkit-scrollbar {
   display: none !important;
 }
 
-/* §9b (continued) — Message actions popup (reaction/reply/pin toolbar on hover):
-   solid dark bg + purple outer border, matching expression picker style */
-div[class^="buttonsInner_"][class*="popover_"] {
-  background: rgba(8, 10, 20, 0.98) !important;
-  background-image: none !important;
-  border: 2px solid var(--sl-color-primary) !important;
-  border-radius: 8px !important;
-  box-shadow: none !important;
-}
-div[class^="buttonsInner_"][class*="popover_"]:hover {
-  border-color: var(--sl-color-accent-light) !important;
-}
+/* §9b (continued) — Message actions popup styling removed;
+   popup is now hidden entirely by §14i */
 
 /* §9c — Server channel list sidebar: dark wash for readability
    Targets ONLY the server guild sidebar by requiring a Channels list descendant.
@@ -2456,28 +2448,7 @@ div[class*="containerDefault_"] + div[class^="container_"]:hover {
    @imports placed near top of file (line 182-183) per CSS spec requirement.
    Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
 
-/* §14h — Compact Member List (expand on hover)
-   Collapses member list to avatar strip; expands with role headers on hover.
-   Note: margin shift may cause minor layout reflow lag.
-   Credit: Aurora (2024-01-14) */
-div[class^="membersWrap_"] {
-  transition: 0.3s ease-in-out;
-  margin-right: -180px;
-}
-div[class^="membersWrap_"] div[class^="membersGroup_"] {
-  transition: 0.3s ease-in-out;
-  height: 0px !important;
-  margin-top: -25px;
-}
-div[class^="membersWrap_"]:hover div[class^="membersGroup_"] {
-  height: unset !important;
-  margin-top: unset !important;
-}
-div[class^="membersWrap_"]:hover {
-  margin-right: unset !important;
-}
-
-/* §14i — Simplified Edited Icon
+/* §14h — Simplified Edited Icon
    Replaces "(edited)" text with a compact pencil icon (✎).
    Converted to attribute selectors for hash resilience.
    Credit: Aurora (2023-10-27) */
@@ -2490,4 +2461,11 @@ span[class*="edited_"]::before {
   font-size: 0.625rem;
   font-weight: 400;
   line-height: 1;
+}
+
+/* §14i — Hide Reaction Popup on Hover
+   Hides the reaction/reply/pin toolbar that appears when hovering messages.
+   Right-click still provides all these actions via context menu. */
+div[class^="buttonsInner_"][class*="popover_"] {
+  display: none !important;
 }
