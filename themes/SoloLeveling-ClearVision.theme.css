@@ -2446,7 +2446,32 @@ div[class*="containerDefault_"] + div[class^="container_"]:hover {
    Styles plain links as mention-like pills with hover effects.
    Masked Links addon shows the actual URL after masked link text.
    @imports placed near top of file (line 182-183) per CSS spec requirement.
+   Overrides below: remove emoji, purple pill color, truncate long URLs.
    Credit: Aurora / Riddim-GLiTCH (2024-02-20) */
+
+/* §14g override — purple pill color + no emoji + truncation */
+[class^="message_"] [class^="contents_"] [class^="anchor_"],
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"] {
+  color: var(--sl-color-accent-light, #b388ff) !important;
+  background-color: rgba(123, 44, 191, 0.15) !important;
+  border-bottom-color: var(--sl-color-primary, #7b2cbf) !important;
+  max-width: 350px;
+  display: inline-block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]::before,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]::before {
+  content: "" !important;
+  margin-right: 0 !important;
+}
+[class^="message_"] [class^="contents_"] [class^="anchor_"]:hover,
+[class^="message_"] [class^="repliedMessage_"] [class^="anchor_"]:hover {
+  background-color: var(--sl-color-primary, #7b2cbf) !important;
+  color: #fff !important;
+}
 
 /* §14h — Simplified Edited Icon
    Replaces "(edited)" text with a compact pencil icon (✎).
