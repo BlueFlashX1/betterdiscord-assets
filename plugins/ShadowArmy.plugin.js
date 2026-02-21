@@ -7058,6 +7058,35 @@ module.exports = class ShadowArmy {
     return effective;
   }
 
+  /**
+   * Role-aware rank-up normalization.
+   * Keeps role identity while reducing extreme long-term progression skew.
+   * Returns a threshold multiplier (lower = easier rank-up, higher = harder).
+   */
+  getRoleRankUpThresholdFactor(roleKey) {
+    const stats = ['strength', 'agility', 'intelligence', 'vitality', 'perception'];
+    const roleWeights = this.shadowRoleStatWeights?.[roleKey] || this.shadowRoleStatWeights?.knight;
+    if (!roleWeights) return 1;
+
+    // Cache average role weight sum (26-role roster) for stable normalization.
+    if (!Number.isFinite(this._avgRoleWeightSum) || this._avgRoleWeightSum <= 0) {
+      const allRoleWeights = Object.values(this.shadowRoleStatWeights || {});
+      const sums = allRoleWeights
+        .map((weights) => stats.reduce((sum, stat) => sum + (Number(weights?.[stat]) || 0), 0))
+        .filter((sum) => Number.isFinite(sum) && sum > 0);
+      this._avgRoleWeightSum =
+        sums.length > 0 ? sums.reduce((sum, v) => sum + v, 0) / sums.length : 1;
+    }
+
+    const roleSum = stats.reduce((sum, stat) => sum + (Number(roleWeights?.[stat]) || 0), 0);
+    if (!Number.isFinite(roleSum) || roleSum <= 0) return 1;
+
+    const rawFactor = roleSum / this._avgRoleWeightSum;
+    // Partial normalization (50%) preserves role flavor while removing extreme 10x grind deltas.
+    const softened = 1 + (rawFactor - 1) * 0.5;
+    return Math.max(0.8, Math.min(1.2, softened));
+  }
+
   // ============================================================================
   // 3.11.1 AUTO RANK-UP SYSTEM - Automatic Shadow Promotion
   // ============================================================================
@@ -7096,8 +7125,9 @@ module.exports = class ShadowArmy {
       return { success: false };
     }
 
-    // Ceiling: Monarch+ and Shadow Monarch are player-exclusive ranks
-    if (nextRank === 'Monarch+' || nextRank === 'Shadow Monarch') {
+    // Ceiling: Shadow Monarch is player-exclusive forever.
+    // Shadows may naturally promote up to Monarch+.
+    if (nextRank === 'Shadow Monarch') {
       return { success: false };
     }
 
@@ -7113,8 +7143,11 @@ module.exports = class ShadowArmy {
     const totalBaseline = statKeys.reduce((sum, stat) => sum + (baselineForNextRank[stat] || 0), 0);
     const totalEffective = statKeys.reduce((sum, stat) => sum + (effectiveStats[stat] || 0), 0);
 
-    // Guard clause: Check if shadow qualifies (80% of next rank's total baseline stats)
-    if (totalEffective >= totalBaseline * 0.8) {
+    const roleThresholdFactor = this.getRoleRankUpThresholdFactor(shadow.role);
+    const requiredTotal = totalBaseline * 0.8 * roleThresholdFactor;
+
+    // Guard clause: Check if shadow qualifies
+    if (totalEffective >= requiredTotal) {
       // PERFORM RANK-UP
       shadow.rank = nextRank;
 

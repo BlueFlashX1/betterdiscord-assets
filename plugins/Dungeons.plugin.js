@@ -6496,6 +6496,7 @@ module.exports = class Dungeons {
     xpTargetIds,
     beforeStatesEntries,
     combatHours,
+    growthHoursByShadowId,
   }) {
     const uniqueIds = this._normalizeShadowIds(xpTargetIds);
     if (uniqueIds.length === 0) return false;
@@ -6522,6 +6523,7 @@ module.exports = class Dungeons {
         xpTargetIds: uniqueIds,
         beforeStatesEntries,
         combatHours,
+        growthHoursByShadowId,
       }).catch((error) => {
         this.errorLog('Deferred dungeon shadow XP post-processing failed', error);
       });
@@ -6538,6 +6540,7 @@ module.exports = class Dungeons {
     xpTargetIds,
     beforeStatesEntries,
     combatHours,
+    growthHoursByShadowId,
   }) {
     const startMs = Date.now();
     const beforeStates = new Map(beforeStatesEntries || []);
@@ -6581,9 +6584,27 @@ module.exports = class Dungeons {
       let growthSaved = 0;
       if (this.shadowArmy?.applyNaturalGrowth && combatHours > 0 && updatedMap.size > 0) {
         const growthUpdates = [];
-        for (const shadow of updatedMap.values()) {
-          const growthApplied = await this.shadowArmy.applyNaturalGrowth(shadow, combatHours);
+        for (const [sid, shadow] of updatedMap.entries()) {
+          const requestedHours = Number(growthHoursByShadowId?.[sid]);
+          const shadowCombatHours = Number.isFinite(requestedHours)
+            ? Math.max(0, requestedHours)
+            : combatHours;
+          if (shadowCombatHours <= 0) continue;
+
+          const growthApplied = await this.shadowArmy.applyNaturalGrowth(shadow, shadowCombatHours);
           if (!growthApplied || !shadowStorage) continue;
+
+          // Natural growth can push a shadow over promotion thresholds.
+          if (typeof this.shadowArmy.attemptAutoRankUp === 'function') {
+            const growthRankUp = this.shadowArmy.attemptAutoRankUp(shadow);
+            if (growthRankUp?.success) {
+              rankedUpShadows.push({
+                name: shadow.name || beforeStates.get(sid)?.name || 'Shadow',
+                oldRank: growthRankUp.oldRank,
+                newRank: growthRankUp.newRank,
+              });
+            }
+          }
 
           const prepared = this.shadowArmy.prepareShadowForSave
             ? this.shadowArmy.prepareShadowForSave(shadow)
@@ -10088,10 +10109,16 @@ module.exports = class Dungeons {
     // Track before-state for level/rank change detection after batch processing
     const beforeStates = new Map(); // shadowId -> { level, rank }
     const xpByShadowId = {}; // shadowId -> xp
+    const rawContributionByShadowId = {}; // shadowId -> pre-multiplier participation score
 
-    // Calculate dungeon duration once (shared across all shadows)
-    const dungeonDuration = Date.now() - dungeon.startTime;
-    const combatHours = dungeonDuration / (1000 * 60 * 60);
+    // Combat-window duration only (lore): ignore pre-deploy idle time.
+    const combatStartAt =
+      dungeon?.bossGate?.deployedAt ||
+      dungeon?.deployedAt ||
+      dungeon?.startTime ||
+      Date.now();
+    const combatDuration = Math.max(0, Date.now() - combatStartAt);
+    const combatHours = combatDuration / (1000 * 60 * 60);
 
     // Process shadow contributions (functional approach)
     for (const [rawShadowId, contribution] of contributionEntries) {
@@ -10126,6 +10153,7 @@ module.exports = class Dungeons {
       const bossMaxHP = dungeon.boss?.maxHp || dungeon.boss?.hp || 1000;
       const bossDamagePercent = Math.min(1.0, contribution.bossDamage / bossMaxHP);
       const bossDamageXP = bossDamagePercent * baseBossXP;
+      const rawContribution = mobKillXP + bossDamageXP;
 
       // Total XP = (mob kills + boss damage) * dungeon rank * shadow rank (capped at 100k per shadow)
       const totalXP = Math.min(100000, Math.round(
@@ -10141,11 +10169,29 @@ module.exports = class Dungeons {
         });
 
         xpByShadowId[shadowId] = totalXP;
+        rawContributionByShadowId[shadowId] = rawContribution;
         totalXPGranted += totalXP;
       }
     }
 
     const xpTargetIds = Object.keys(xpByShadowId);
+    const growthHoursByShadowId = {};
+    const maxRawContribution = Math.max(
+      0,
+      ...xpTargetIds.map((sid) => Number(rawContributionByShadowId[sid]) || 0)
+    );
+    for (const sid of xpTargetIds) {
+      if (combatHours <= 0 || maxRawContribution <= 0) {
+        growthHoursByShadowId[sid] = 0;
+        continue;
+      }
+      // Participation-weighted growth: top contributor gets full combat window,
+      // lower contributors still get minimum growth if they participated.
+      const ratio = (Number(rawContributionByShadowId[sid]) || 0) / maxRawContribution;
+      const participationFactor = Math.max(0.15, Math.min(1, ratio));
+      growthHoursByShadowId[sid] = combatHours * participationFactor;
+    }
+
     if (xpTargetIds.length === 0) {
       return {
         totalXP: 0,
@@ -10189,6 +10235,7 @@ module.exports = class Dungeons {
       xpTargetIds,
       beforeStatesEntries: Array.from(beforeStates.entries()),
       combatHours,
+      growthHoursByShadowId,
     });
 
     const elapsedMs = Date.now() - grantStartedAt;
