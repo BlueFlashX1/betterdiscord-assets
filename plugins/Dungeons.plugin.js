@@ -970,6 +970,8 @@ module.exports = class Dungeons {
       shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureScaleMax: 2.75, // Safety cap for pressure scaling
       shadowReviveCost: 50, // Mana cost to revive a shadow
+      roleCombatModelEnabled: true, // Lore-role combat model (bounded state, low-overhead)
+      roleCombatModelVersion: 1, // Reserved for future behavior migrations
       // Dungeon ranks including SS, SSS
       dungeonRanks: [
         'E',
@@ -1037,6 +1039,7 @@ module.exports = class Dungeons {
     this.storageManager = null;
     this.mobBossStorageManager = null; // Dedicated storage for mobs and bosses
     this.activeDungeons = new Map(); // Use Map for better performance
+    this._roleCombatStates = new Map(); // channelKey -> bounded role-combat pressure state
 
     this.hiddenComments = new Map(); // Track hidden comment elements per channel
 
@@ -2154,6 +2157,9 @@ module.exports = class Dungeons {
     // Clear dead shadows tracking
     if (this.deadShadows) {
       this.deadShadows.clear();
+    }
+    if (this._roleCombatStates) {
+      this._roleCombatStates.clear();
     }
     // Clear defeated bosses tracking
     if (this.defeatedBosses) {
@@ -6239,6 +6245,342 @@ module.exports = class Dungeons {
     return Math.floor(attackDamage * (behaviorMultipliers[behavior] || 1.0));
   }
 
+  isRoleCombatModelEnabled() {
+    const version = Number.isFinite(this.settings?.roleCombatModelVersion)
+      ? this.settings.roleCombatModelVersion
+      : 1;
+    return this.settings?.roleCombatModelEnabled !== false && version >= 1;
+  }
+
+  normalizeShadowRoleKey(role) {
+    if (typeof role !== 'string') return '';
+    const normalized = role.trim().toLowerCase();
+    if (!normalized) return '';
+    if (normalized === 'warrior') return 'knight';
+    if (normalized === 'guardian') return 'tank';
+    if (normalized === 'priest') return 'healer';
+    return normalized;
+  }
+
+  normalizeShadowPersonalityKey(personality) {
+    if (typeof personality !== 'string') return '';
+    return personality.trim().toLowerCase();
+  }
+
+  derivePersonalityKeyFromRole(roleKey) {
+    switch (roleKey) {
+      case 'tank':
+      case 'golem':
+      case 'yeti':
+        return 'tank';
+      case 'healer':
+      case 'support':
+        return 'supportive';
+      case 'mage':
+      case 'spider':
+      case 'centipede':
+      case 'serpent':
+      case 'naga':
+      case 'elf':
+        return 'strategic';
+      case 'ranger':
+      case 'wolf':
+      case 'wyvern':
+        return 'tactical';
+      case 'assassin':
+      case 'berserker':
+      case 'ant':
+      case 'bear':
+      case 'dragon':
+      case 'titan':
+      case 'giant':
+      case 'demon':
+      case 'ghoul':
+      case 'orc':
+      case 'ogre':
+        return 'aggressive';
+      default:
+        return 'balanced';
+    }
+  }
+
+  getRoleCombatArchetype(roleKey, personalityKey = 'balanced') {
+    switch (roleKey) {
+      case 'tank':
+      case 'golem':
+      case 'yeti':
+        return 'tank';
+      case 'healer':
+      case 'support':
+        return 'support';
+      case 'mage':
+      case 'spider':
+      case 'centipede':
+      case 'serpent':
+      case 'naga':
+      case 'elf':
+        return 'caster';
+      case 'assassin':
+      case 'berserker':
+      case 'ant':
+      case 'bear':
+      case 'dragon':
+      case 'titan':
+      case 'giant':
+      case 'demon':
+      case 'ghoul':
+      case 'orc':
+      case 'ogre':
+        return 'striker';
+      case 'ranger':
+      case 'wolf':
+      case 'wyvern':
+        return 'ranger';
+      case 'knight':
+        return 'balanced';
+      default:
+        break;
+    }
+
+    switch (personalityKey) {
+      case 'tank':
+        return 'tank';
+      case 'supportive':
+        return 'support';
+      case 'strategic':
+        return 'caster';
+      case 'aggressive':
+        return 'striker';
+      case 'tactical':
+        return 'ranger';
+      default:
+        return 'balanced';
+    }
+  }
+
+  _createRoleCombatState(now = Date.now()) {
+    return {
+      updatedAt: now,
+      mark: 0, // Enemy vulnerability pressure from role coordination
+      guard: 0, // Incoming damage mitigation from tanks/support
+      weaken: 0, // Enemy output suppression from caster/support pressure
+    };
+  }
+
+  _decayRoleCombatStateInPlace(state, now = Date.now()) {
+    if (!state || !Number.isFinite(state.updatedAt)) return;
+    const elapsed = Math.max(0, now - state.updatedAt);
+    if (elapsed <= 0) return;
+
+    const decayWindowMs = 12000;
+    const decay = elapsed >= 60000 ? 0 : Math.max(0, 1 - elapsed / decayWindowMs);
+    state.mark *= decay;
+    state.guard *= decay;
+    state.weaken *= decay;
+    state.updatedAt = now;
+  }
+
+  getRoleCombatState(channelKey, now = Date.now()) {
+    if (!channelKey || !this.isRoleCombatModelEnabled()) return null;
+    let state = this._roleCombatStates.get(channelKey);
+    if (!state) {
+      state = this._createRoleCombatState(now);
+      this._roleCombatStates.set(channelKey, state);
+      return state;
+    }
+    this._decayRoleCombatStateInPlace(state, now);
+    return state;
+  }
+
+  clearRoleCombatState(channelKey = null) {
+    if (!this._roleCombatStates) return;
+    if (channelKey) {
+      this._roleCombatStates.delete(channelKey);
+      return;
+    }
+    this._roleCombatStates.clear();
+  }
+
+  buildRolePressureBucket() {
+    return {
+      tank: 0,
+      support: 0,
+      caster: 0,
+      striker: 0,
+      ranger: 0,
+      balanced: 0,
+    };
+  }
+
+  _addRolePressureSample(rolePressure, shadow, combatData, attacks, scaleFactor = 1) {
+    if (!rolePressure || !Number.isFinite(attacks) || attacks <= 0) return;
+
+    const roleKey = this.normalizeShadowRoleKey(
+      shadow?.role || shadow?.roleName || shadow?.ro || ''
+    );
+    const explicitPersonality = this.normalizeShadowPersonalityKey(
+      shadow?.personalityKey || shadow?.personality || combatData?.personality || combatData?.behavior || ''
+    );
+    const personalityKey = explicitPersonality || this.derivePersonalityKeyFromRole(roleKey);
+    const archetype = this.getRoleCombatArchetype(roleKey, personalityKey);
+    const weightedAttacks = attacks * Math.max(0.25, Number.isFinite(scaleFactor) ? scaleFactor : 1);
+    rolePressure[archetype] = (rolePressure[archetype] || 0) + weightedAttacks;
+  }
+
+  updateRoleCombatStateFromPressure(channelKey, rolePressure) {
+    if (!channelKey || !rolePressure || !this.isRoleCombatModelEnabled()) return null;
+
+    const state = this.getRoleCombatState(channelKey, Date.now());
+    if (!state) return null;
+
+    const pressure = (value) => Math.log10(1 + Math.max(0, Number(value) || 0));
+    const tankP = pressure(rolePressure.tank);
+    const supportP = pressure(rolePressure.support);
+    const casterP = pressure(rolePressure.caster);
+    const strikerP = pressure(rolePressure.striker);
+    const rangerP = pressure(rolePressure.ranger);
+    const balancedP = pressure(rolePressure.balanced);
+
+    state.mark = this.clampNumber(
+      state.mark + strikerP * 0.95 + rangerP * 0.65 + casterP * 0.35,
+      0,
+      8
+    );
+    state.guard = this.clampNumber(
+      state.guard + tankP * 0.05 + supportP * 0.04 + balancedP * 0.02,
+      0,
+      0.55
+    );
+    state.weaken = this.clampNumber(state.weaken + casterP * 0.04 + supportP * 0.03, 0, 0.35);
+    state.updatedAt = Date.now();
+    return state;
+  }
+
+  getRoleCombatTickContext(channelKey) {
+    if (!this.isRoleCombatModelEnabled() || !channelKey) {
+      return {
+        enabled: false,
+        bossMarkMultiplier: 1,
+        mobMarkMultiplier: 1,
+        incomingDamageMultiplier: 1,
+      };
+    }
+
+    const state = this.getRoleCombatState(channelKey);
+    if (!state) {
+      return {
+        enabled: false,
+        bossMarkMultiplier: 1,
+        mobMarkMultiplier: 1,
+        incomingDamageMultiplier: 1,
+      };
+    }
+
+    const bossMarkMultiplier = this.clampNumber(1 + state.mark * 0.03, 1, 1.24);
+    const mobMarkMultiplier = this.clampNumber(1 + state.mark * 0.015, 1, 1.12);
+    const incomingReduction = state.guard * 0.45 + state.weaken * 0.55;
+    const incomingDamageMultiplier = this.clampNumber(1 - incomingReduction, 0.55, 1);
+
+    return {
+      enabled: true,
+      state,
+      bossMarkMultiplier,
+      mobMarkMultiplier,
+      incomingDamageMultiplier,
+    };
+  }
+
+  getRoleCombatOutgoingDamageMultiplier({
+    shadow,
+    combatData,
+    targetType = 'mob',
+    bossHpFraction = 1,
+    roleCombatContext = null,
+  }) {
+    if (!this.isRoleCombatModelEnabled()) return 1;
+
+    const roleKey = this.normalizeShadowRoleKey(
+      shadow?.role || shadow?.roleName || shadow?.ro || ''
+    );
+    const explicitPersonality = this.normalizeShadowPersonalityKey(
+      shadow?.personalityKey || shadow?.personality || combatData?.personality || combatData?.behavior || ''
+    );
+    const personalityKey = explicitPersonality || this.derivePersonalityKeyFromRole(roleKey);
+    const archetype = this.getRoleCombatArchetype(roleKey, personalityKey);
+
+    let multiplier = 1;
+    switch (archetype) {
+      case 'tank':
+        multiplier = 0.88;
+        break;
+      case 'support':
+        multiplier = 0.93;
+        break;
+      case 'caster':
+        multiplier = 1.1;
+        break;
+      case 'striker':
+        multiplier = 1.14;
+        break;
+      case 'ranger':
+        multiplier = 1.07;
+        break;
+      default:
+        multiplier = 1;
+        break;
+    }
+
+    switch (personalityKey) {
+      case 'aggressive':
+        multiplier += 0.05;
+        break;
+      case 'strategic':
+        multiplier += 0.03;
+        break;
+      case 'tactical':
+        multiplier += 0.02;
+        break;
+      case 'supportive':
+        multiplier -= 0.03;
+        break;
+      case 'tank':
+        multiplier -= 0.02;
+        break;
+      default:
+        break;
+    }
+
+    if (targetType === 'boss' && archetype === 'striker' && bossHpFraction <= 0.45) {
+      multiplier += 0.08;
+    } else if (targetType === 'mob' && archetype === 'ranger') {
+      multiplier += 0.07;
+    } else if (targetType === 'mob' && archetype === 'caster') {
+      multiplier += 0.05;
+    } else if (targetType === 'boss' && archetype === 'support') {
+      multiplier -= 0.03;
+    }
+
+    const markMultiplier =
+      roleCombatContext?.enabled === true
+        ? targetType === 'boss'
+          ? roleCombatContext.bossMarkMultiplier
+          : roleCombatContext.mobMarkMultiplier
+        : 1;
+
+    return this.clampNumber(multiplier * markMultiplier, 0.7, 1.65);
+  }
+
+  getRoleCombatIncomingDamageMultiplier(channelKey, roleCombatContext = null) {
+    if (!this.isRoleCombatModelEnabled()) return 1;
+    if (roleCombatContext && Number.isFinite(roleCombatContext.incomingDamageMultiplier)) {
+      return roleCombatContext.incomingDamageMultiplier;
+    }
+    const context = this.getRoleCombatTickContext(channelKey);
+    return Number.isFinite(context?.incomingDamageMultiplier)
+      ? context.incomingDamageMultiplier
+      : 1;
+  }
+
   /**
    * Calculate damage dealt by attacker to defender
    * Uses stat interactions: strength (physical), intelligence (magic), agility (crit)
@@ -7537,6 +7879,12 @@ module.exports = class Dungeons {
           : bossAliveNow
           ? 1.0
           : 0;
+        const bossHpFraction =
+          dungeon?.boss?.maxHp && dungeon?.boss?.maxHp > 0
+            ? dungeon.boss.hp / dungeon.boss.maxHp
+            : 1;
+        const roleCombatContext = this.getRoleCombatTickContext(channelKey);
+        const rolePressure = this.buildRolePressureBucket();
 
         // HOISTED: Rank-stratified mob targets — one representative per rank for accurate damage calc.
         // Instead of averaging ALL mobs into one fake entity (inaccurate when rank-E and rank-S mix),
@@ -7633,6 +7981,7 @@ module.exports = class Dungeons {
               lastAttackTime: Date.now() - 2000, // Allow immediate attack
               attackInterval: 2000,
               personality: 'balanced',
+              behavior: 'balanced',
               attackCount: 0,
               damageDealt: 0,
               comboHits: 0,
@@ -7666,6 +8015,7 @@ module.exports = class Dungeons {
           if (attacksInSpan <= 0) {
             continue; // Shadow not ready yet, continue to next shadow
           }
+          this._addRolePressureSample(rolePressure, shadow, finalCombatData, attacksInSpan, scaleFactor);
 
           // FAST PATH: no per-attack loop. Compute attacks once, then apply personality-driven split + variance.
           let totalBossDamage = 0;
@@ -7696,7 +8046,7 @@ module.exports = class Dungeons {
           const comboMultiplier = Math.min(2.0, 1 + (finalCombatData.comboHits || 0) * shadowPerception * 0.002);
 
           if (bossAliveNow && bossAttacks > 0) {
-            const perHitBoss = this.shadowArmy?.calculateShadowDamage
+            const perHitBossRaw = this.shadowArmy?.calculateShadowDamage
               ? this.shadowArmy.calculateShadowDamage(shadow, {
                   type: 'boss',
                   rank: dungeon.boss.rank,
@@ -7710,6 +8060,14 @@ module.exports = class Dungeons {
                   finalCombatData.behavior || 'balanced',
                   this.calculateShadowDamage(shadow, bossStats, dungeon.boss.rank)
                 );
+            const roleBossMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
+              shadow,
+              combatData: finalCombatData,
+              targetType: 'boss',
+              bossHpFraction,
+              roleCombatContext,
+            });
+            const perHitBoss = Math.max(1, Math.floor(perHitBossRaw * roleBossMultiplier));
             totalBossDamage = Math.floor(bossAttacks * perHitBoss * shadowVariance * scaleFactor * comboMultiplier);
             totalBossDamage > 0 && analytics.shadowsAttackedBoss++;
           }
@@ -7728,12 +8086,20 @@ module.exports = class Dungeons {
               const groupAttacks = Math.max(0, Math.round(mobAttacks * rankGroup.fraction));
               if (groupAttacks <= 0) continue;
 
-              const perHitMob = this.shadowArmy?.calculateShadowDamage
+              const perHitMobRaw = this.shadowArmy?.calculateShadowDamage
                 ? this.shadowArmy.calculateShadowDamage(shadow, rankGroup.representative)
                 : this.applyBehaviorModifier(
                     finalCombatData.behavior || 'balanced',
                     this.calculateShadowDamage(shadow, rankGroup.representative, rankGroup.representative.rank)
                   );
+              const roleMobMultiplier = this.getRoleCombatOutgoingDamageMultiplier({
+                shadow,
+                combatData: finalCombatData,
+                targetType: 'mob',
+                bossHpFraction,
+                roleCombatContext,
+              });
+              const perHitMob = Math.max(1, Math.floor(perHitMobRaw * roleMobMultiplier));
               const unscaledDamage = Math.floor(groupAttacks * perHitMob * shadowVariance * comboMultiplier);
               if (unscaledDamage <= 0) continue;
 
@@ -7842,6 +8208,15 @@ module.exports = class Dungeons {
           }
 
           dungeon.shadowAttacks[shadowId] = now + totalTimeSpan;
+        }
+
+        if (this.isRoleCombatModelEnabled()) {
+          const updatedRoleState = this.updateRoleCombatStateFromPressure(channelKey, rolePressure);
+          if (updatedRoleState && this.settings.debug && this._combatTickCount % 20 === 0) {
+            console.log(
+              `[Dungeons] ROLE_COMBAT: key=${channelKey}, mark=${updatedRoleState.mark.toFixed(2)}, guard=${updatedRoleState.guard.toFixed(3)}, weaken=${updatedRoleState.weaken.toFixed(3)}`
+            );
+          }
         }
 
         // AGGREGATED BOSS DAMAGE: Apply once after all shadows processed (was per-shadow)
@@ -8005,6 +8380,7 @@ module.exports = class Dungeons {
       lastAttackTime: Date.now() - Math.random() * attackInterval, // Stagger initial attacks
       attackInterval, // Individual interval (from stored baseAttackInterval)
       personality, // Stored personality from ShadowArmy
+      behavior: personality, // Legacy field kept in sync for old fallback paths
       effectiveStats: effectiveStats || {
         strength: shadow.strength || 0,
         agility: shadow.agility || 0,
@@ -8448,13 +8824,34 @@ module.exports = class Dungeons {
    * @returns {number} Damage with role multiplier applied
    */
   applyRoleDamageMultiplier(role, damage) {
-    const roleMultipliers = {
-      Tank: 0.8,
-      Assassin: 1.3,
-      Mage: 1.2,
-      // Default: 1.0 (no multiplier)
-    };
-    return damage * (roleMultipliers[role] || 1.0);
+    const roleKey = this.normalizeShadowRoleKey(role);
+    const archetype = this.getRoleCombatArchetype(
+      roleKey,
+      this.derivePersonalityKeyFromRole(roleKey)
+    );
+
+    let multiplier = 1;
+    switch (archetype) {
+      case 'tank':
+        multiplier = 0.88;
+        break;
+      case 'support':
+        multiplier = 0.93;
+        break;
+      case 'caster':
+        multiplier = 1.1;
+        break;
+      case 'striker':
+        multiplier = 1.14;
+        break;
+      case 'ranger':
+        multiplier = 1.07;
+        break;
+      default:
+        multiplier = 1;
+        break;
+    }
+    return damage * multiplier;
   }
 
   // ==== BOSS & MOB ATTACKS ====
@@ -8499,6 +8896,11 @@ module.exports = class Dungeons {
       );
 
       if (attacksInSpan <= 0) return;
+      const roleCombatContext = this.getRoleCombatTickContext(channelKey);
+      const incomingDamageMultiplier = this.getRoleCombatIncomingDamageMultiplier(
+        channelKey,
+        roleCombatContext
+      );
 
       const bossStats = {
         strength: dungeon.boss.strength,
@@ -8583,7 +8985,7 @@ module.exports = class Dungeons {
               damageCache.set(shadowId, baseDamage);
             }
 
-            const roundDamage = Math.floor(baseDamage * hits * roundVariance);
+            const roundDamage = Math.floor(baseDamage * hits * roundVariance * incomingDamageMultiplier);
             if (roundDamage <= 0) continue;
 
             // Apply damage immediately to track intermediate deaths
@@ -8614,7 +9016,9 @@ module.exports = class Dungeons {
         );
         // Same aggregation: N hits × base × smoothed variance
         const aggregateVariance = this._varianceWide();
-        totalUserDamage = Math.floor(baseDamage * attacksInSpan * aggregateVariance);
+        totalUserDamage = Math.floor(
+          baseDamage * attacksInSpan * aggregateVariance * incomingDamageMultiplier
+        );
       }
 
       // REAL-TIME UPDATE: Queue throttled HP bar update after calculating all damage
@@ -8691,6 +9095,11 @@ module.exports = class Dungeons {
       // Pre-compute user stats once (not per-attack)
       const userStats = dungeon.userParticipating ? this.getUserEffectiveStats() : null;
       const userRank = dungeon.userParticipating ? (this.soloLevelingStats?.settings?.rank || 'E') : 'E';
+      const roleCombatContext = this.getRoleCombatTickContext(channelKey);
+      const incomingDamageMultiplier = this.getRoleCombatIncomingDamageMultiplier(
+        channelKey,
+        roleCombatContext
+      );
 
       // NUMPY-STYLE MOB SAMPLING: Instead of iterating ALL 10,000+ mobs, sample a representative
       // subset and scale damage proportionally — same pattern as shadow sampling in processShadowAttacks.
@@ -8827,7 +9236,9 @@ module.exports = class Dungeons {
               mobStats, shadowStats, rank, target.rank || 'E'
             );
             const aggregateVariance = this._varianceWide();
-            const rawDamage = Math.floor(baseDamage * hits * aggregateVariance);
+            const rawDamage = Math.floor(
+              baseDamage * hits * aggregateVariance * incomingDamageMultiplier
+            );
 
             // Cap damage at shadow's effective HP to prevent overkill waste
             const accumulatedDmg = shadowDamageMap.get(shadowId) || 0;
@@ -8868,7 +9279,10 @@ module.exports = class Dungeons {
                   mobStats, shadowStats, rank, target.rank || 'E'
                 );
                 const effectiveHP = hpData.hp - accDmg;
-                const dmg = Math.min(Math.floor(baseDmg * this._varianceWide()), effectiveHP + 1);
+                const dmg = Math.min(
+                  Math.floor(baseDmg * this._varianceWide() * incomingDamageMultiplier),
+                  effectiveHP + 1
+                );
                 shadowDamageMap.set(target.id, accDmg + dmg);
                 found = true;
                 break;
@@ -8905,7 +9319,9 @@ module.exports = class Dungeons {
               mobStats, userStats, representativeMob.rank, userRank
             );
             const aggregateVariance = this._varianceWide();
-            totalUserDamage = Math.floor(baseDamage * totalAttacksAll * aggregateVariance);
+            totalUserDamage = Math.floor(
+              baseDamage * totalAttacksAll * aggregateVariance * incomingDamageMultiplier
+            );
           }
         }
 
@@ -9570,6 +9986,7 @@ module.exports = class Dungeons {
       this.channelLocks.delete(channelKey);
       delete this.settings.mobKillNotifications[channelKey];
       this.deadShadows.delete(channelKey);
+      this.clearRoleCombatState(channelKey);
 
       // Clear shadow allocations for this dungeon
       if (this.shadowAllocations) {
@@ -10055,6 +10472,7 @@ module.exports = class Dungeons {
     this.channelLocks.delete(channelKey);
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
+    this.clearRoleCombatState(channelKey);
     this._markAllocationDirty('dungeon-arise-cleanup');
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
     this.deadShadows.delete(channelKey);
@@ -12371,6 +12789,12 @@ module.exports = class Dungeons {
         }
       }
     );
+    if (this._roleCombatStates && this._roleCombatStates.size > 0) {
+      const activeDungeonKeys = new Set(this.activeDungeons.keys());
+      this._roleCombatStates.forEach((_value, key) => {
+        if (!activeDungeonKeys.has(key)) this._roleCombatStates.delete(key);
+      });
+    }
 
     // Suggest garbage collection to V8 (if available)
     // eslint-disable-next-line no-undef
