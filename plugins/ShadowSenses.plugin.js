@@ -23,6 +23,8 @@ const RANK_COLORS = {
 
 const GUILD_FEED_CAP = 5000;
 const GLOBAL_FEED_CAP = 25000;
+const FEED_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const PURGE_INTERVAL_MS = 10 * 60 * 1000; // Check for stale entries every 10 minutes
 const WIDGET_OBSERVER_DEBOUNCE_MS = 200;
 const WIDGET_REINJECT_DELAY_MS = 300;
 
@@ -292,6 +294,7 @@ class SensesEngine {
     //   2. Return from AFK (1-3h silence) → "back from AFK" toast
     this._userLastActivity = new Map();  // authorId → { timestamp, notifiedActive }
     this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
+    this._subscribeTime = 0; // Set when subscribe() fires — used to defer early toasts
 
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
@@ -315,6 +318,9 @@ class SensesEngine {
       this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       this._totalFeedEntries += this._guildFeeds[guildId].length;
     }
+
+    // Purge entries older than 3 days on startup
+    this._purgeOldEntries();
 
     this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
       guilds: Object.keys(this._guildFeeds).length,
@@ -349,12 +355,16 @@ class SensesEngine {
 
     Dispatcher.subscribe("MESSAGE_CREATE", this._handleMessageCreate);
     Dispatcher.subscribe("CHANNEL_SELECT", this._handleChannelSelect);
+    this._subscribeTime = Date.now();
 
     // Start debounced flush interval (30s)
     this._flushInterval = setInterval(() => {
       if (!this._dirty) return;
       this._flushToDisk();
     }, 30000);
+
+    // Periodic purge of old entries (every 10 minutes)
+    this._purgeInterval = setInterval(() => this._purgeOldEntries(), PURGE_INTERVAL_MS);
 
     this._plugin.debugLog("SensesEngine", "Subscribed to MESSAGE_CREATE and CHANNEL_SELECT", {
       currentGuildId: this._currentGuildId,
@@ -375,10 +385,14 @@ class SensesEngine {
       this._handleChannelSelect = null;
     }
 
-    // Stop flush interval and do final flush
+    // Stop flush + purge intervals and do final flush
     if (this._flushInterval) {
       clearInterval(this._flushInterval);
       this._flushInterval = null;
+    }
+    if (this._purgeInterval) {
+      clearInterval(this._purgeInterval);
+      this._purgeInterval = null;
     }
     if (this._dirty) {
       this._flushToDisk();
@@ -444,6 +458,44 @@ class SensesEngine {
     this._dirty = true;
   }
 
+  /**
+   * Remove feed entries older than FEED_MAX_AGE_MS (3 days).
+   * Called on startup and periodically via _purgeInterval.
+   */
+  _purgeOldEntries() {
+    const cutoff = Date.now() - FEED_MAX_AGE_MS;
+    let totalPurged = 0;
+
+    for (const guildId of Object.keys(this._guildFeeds)) {
+      const feed = this._guildFeeds[guildId];
+      if (!feed || feed.length === 0) continue;
+
+      // Entries are chronological — find first entry newer than cutoff
+      let keepFrom = 0;
+      while (keepFrom < feed.length && feed[keepFrom].timestamp < cutoff) {
+        keepFrom++;
+      }
+
+      if (keepFrom > 0) {
+        this._guildFeeds[guildId] = feed.slice(keepFrom);
+        this._totalFeedEntries -= keepFrom;
+        totalPurged += keepFrom;
+        this._dirtyGuilds.add(guildId);
+        this._dirty = true;
+
+        // Remove empty guilds from feeds
+        if (this._guildFeeds[guildId].length === 0) {
+          delete this._guildFeeds[guildId];
+        }
+      }
+    }
+
+    if (totalPurged > 0) {
+      this._feedVersion++;
+      this._plugin.debugLog("SensesEngine", `Purged ${totalPurged} entries older than 3 days`);
+    }
+  }
+
   _onMessageCreate(payload) {
     try {
       if (!payload || !payload.message || !payload.message.author) return;
@@ -503,12 +555,19 @@ class SensesEngine {
       const now = Date.now();
       const lastActivity = this._userLastActivity.get(authorId);
 
+      // During early startup (<3s after subscribe), BdApi.UI.showToast can silently
+      // fail if Discord's DOM isn't fully rendered. Defer toasts in that window.
+      const msSinceSubscribe = now - this._subscribeTime;
+      const isEarlyStartup = this._subscribeTime > 0 && msSinceSubscribe < 3000;
+
       if (!lastActivity) {
         // First message from this user since restart/reload
-        BdApi.UI.showToast(
-          `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`,
-          { type: "info" }
-        );
+        const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`;
+        if (isEarlyStartup) {
+          setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }), 3000 - msSinceSubscribe);
+        } else {
+          BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 });
+        }
         this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
       } else {
         const silenceMs = now - lastActivity.timestamp;
@@ -521,10 +580,12 @@ class SensesEngine {
             ? `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`
             : `${silenceMins}m`;
 
-          BdApi.UI.showToast(
-            `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`,
-            { type: "info" }
-          );
+          const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`;
+          if (isEarlyStartup) {
+            setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }), 3000 - msSinceSubscribe);
+          } else {
+            BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 });
+          }
         }
 
         // Always update timestamp
