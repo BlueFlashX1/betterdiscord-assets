@@ -11395,6 +11395,13 @@ module.exports = class ShadowArmy {
           <div id="shadow-army-diagnostic-result" style="margin-top: 8px; font-size: 11px; color: #9370db;"></div>
         </div>
 
+        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
+          <button type="button" data-sa-action="test-arise" style="padding: 6px 12px; background: #6d28d9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
+            Test ARISE Animation
+          </button>
+          <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Triggers a test ARISE animation with a dummy shadow to verify font & styling</div>
+        </div>
+
         <div class="shadow-army-config" style="margin-top: 16px;">
           <label style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:8px;">
             <input type="checkbox" id="sa-debug-mode" ${
@@ -11423,6 +11430,24 @@ module.exports = class ShadowArmy {
     this.detachShadowArmySettingsPanelHandlers();
 
     const clickHandlers = {
+      'test-arise': () => {
+        const testShadow = {
+          id: 'test-arise-preview',
+          name: 'Igris',
+          rank: 'S',
+          role: 'knight',
+          roleName: 'Knight',
+          level: 100,
+          baseStats: { attack: 999, defense: 999, speed: 999 },
+        };
+        // Temporarily force arise enabled for the test
+        const wasEnabled = this.settings?.ariseAnimation?.enabled;
+        if (this.settings?.ariseAnimation) this.settings.ariseAnimation.enabled = true;
+        this.triggerArise(testShadow);
+        if (this.settings?.ariseAnimation && wasEnabled === false) {
+          this.settings.ariseAnimation.enabled = wasEnabled;
+        }
+      },
       diagnostic: async () => {
         const resultDiv = container.querySelector('#shadow-army-diagnostic-result');
         if (!resultDiv) return;
