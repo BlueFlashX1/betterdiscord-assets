@@ -525,11 +525,11 @@ module.exports = class SoloLevelingStats {
       debugMode: false, // Toggle debug console logs
       // Stat definitions
       stats: {
-        strength: 0, // Physical power: +2% XP per point (hits harder in combat)
+        strength: 0, // XP efficiency: +2% per point (diminishing returns after 20)
         agility: 0, // Reflexes/Speed: +2% crit chance per point (capped by CriticalHit at 50% effective)
-        intelligence: 0, // Mana/Magic: Tiered XP (100-200:+3%, 200-400:+7%, 400+:+12% per point), max mana (Dungeons)
-        vitality: 0, // HP/Stamina: +5% quest rewards, increases max HP (used in Dungeons for survival)
-        perception: 0, // Sense precision: increases critical burst hit count (multi-hit crit chains)
+        intelligence: 0, // Mana/Magic: long-message XP tiers (3/7/12), diminishing returns after 15
+        vitality: 0, // HP/Stamina: quest reward scaling and max HP
+        perception: 0, // Sense precision: controls crit burst chance + burst chain ceiling
       },
       perceptionBuffs: [], // Legacy field (old random PER buffs), retained for backward compatibility
       unallocatedStatPoints: 0,
@@ -795,18 +795,18 @@ module.exports = class SoloLevelingStats {
       },
       xpMultipliers: {
         E: 1.0,
-        D: 1.25,
-        C: 1.5,
-        B: 1.85,
-        A: 2.25,
-        S: 2.75,
-        SS: 3.5,
-        SSS: 4.25,
-        'SSS+': 5.25,
-        NH: 6.5,
-        Monarch: 8.0,
-        'Monarch+': 10.0,
-        'Shadow Monarch': 12.5,
+        D: 1.05,
+        C: 1.1,
+        B: 1.16,
+        A: 1.24,
+        S: 1.32,
+        SS: 1.4,
+        SSS: 1.5,
+        'SSS+': 1.62,
+        NH: 1.76,
+        Monarch: 1.92,
+        'Monarch+': 2.1,
+        'Shadow Monarch': 2.3,
       },
       statPoints: {
         E: 2,
@@ -851,11 +851,11 @@ module.exports = class SoloLevelingStats {
 
     // Single source of truth for stat metadata — replaces 3 inline statDefs
     this.STAT_METADATA = {
-      strength:     { name: 'STR', fullName: 'Strength',     desc: '+5% XP',                                     longDesc: '+5% XP/msg',                                            gain: 'Send messages' },
+      strength:     { name: 'STR', fullName: 'Strength',     desc: '+2% XP (DR)',                                longDesc: '+2% XP per point, diminishing after 20',                gain: 'Send messages' },
       agility:      { name: 'AGI', fullName: 'Agility',      desc: '+2% Crit Chance',                             longDesc: '+2% critical hit chance per point (effective cap handled by CriticalHit)', gain: 'Send messages' },
-      intelligence: { name: 'INT', fullName: 'Intelligence',  desc: '+10% Long Msg',                              longDesc: '+10% long msg XP',                                      gain: 'Long messages' },
-      vitality:     { name: 'VIT', fullName: 'Vitality',      desc: '+5% Quests',                                 longDesc: '+5% quest rewards',                                     gain: 'Complete quests' },
-      perception:   { name: 'PER', fullName: 'Perception',    desc: 'Crit Burst Hits',                            longDesc: 'Higher chance for multi-hit critical bursts (xN)',       gain: 'Allocate stat points' },
+      intelligence: { name: 'INT', fullName: 'Intelligence',  desc: 'Tiered Long Msg XP',                         longDesc: '3/7/12% long-msg XP tiers with diminishing after 15',   gain: 'Long messages' },
+      vitality:     { name: 'VIT', fullName: 'Vitality',      desc: 'Quest + HP Scaling',                          longDesc: 'Improves quest rewards and max HP',                     gain: 'Complete quests' },
+      perception:   { name: 'PER', fullName: 'Perception',    desc: 'Crit Burst Control',                          longDesc: 'Increases chance and ceiling for multi-hit crit bursts', gain: 'Allocate stat points' },
     };
 
     // Default empty shadow buffs — used by getShadowArmyBuffs fallback paths
@@ -1460,9 +1460,9 @@ module.exports = class SoloLevelingStats {
   getPerceptionBurstProfile() {
     const perceptionStat = this.settings?.stats?.perception ?? 0;
     const perception = Math.max(0, Number(perceptionStat) || 0);
-    const burstChance = Math.min(0.82, 0.08 + perception * 0.007); // 8% base, +0.7% per PER
-    const maxHits = Math.min(99, Math.max(1, 1 + Math.floor(perception * 1.2))); // 1..99
-    const jackpotChance = perception >= 25 ? Math.min(0.06, (perception - 24) * 0.0012) : 0;
+    const burstChance = Math.min(0.45, 0.05 + perception * 0.0035); // 5% base, +0.35% per PER
+    const maxHits = Math.min(40, Math.max(1, 1 + Math.floor(perception * 0.5))); // 1..40
+    const jackpotChance = perception >= 40 ? Math.min(0.02, (perception - 39) * 0.0004) : 0;
 
     return {
       perception,
@@ -1827,7 +1827,49 @@ module.exports = class SoloLevelingStats {
   }
 
   getStatPointsForLevel(level) {
-    return 5 + Math.floor(level / 10);
+    const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1));
+    if (normalizedLevel < 100) return 5;
+    if (normalizedLevel < 300) return 4;
+    if (normalizedLevel < 700) return 3;
+    if (normalizedLevel < 1200) return 2;
+    return 1;
+  }
+
+  getTitleXpCapForLevel(level) {
+    const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1));
+    if (normalizedLevel < 200) return 0.35;
+    if (normalizedLevel < 500) return 0.45;
+    if (normalizedLevel < 1000) return 0.55;
+    if (normalizedLevel < 1500) return 0.65;
+    return 0.75;
+  }
+
+  getPerMessageXpSoftCap(level) {
+    const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1));
+    return Math.round(220 + normalizedLevel * 2.8);
+  }
+
+  getPerMessageXpHardCap(level) {
+    const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1));
+    return Math.round(420 + normalizedLevel * 4.2);
+  }
+
+  applyXpGovernors(rawXp, level) {
+    let xp = Math.max(0, Math.round(Number(rawXp) || 0));
+    const softCap = this.getPerMessageXpSoftCap(level);
+    const hardCap = this.getPerMessageXpHardCap(level);
+
+    if (xp > softCap) {
+      const overflow = xp - softCap;
+      const capGap = Math.max(1, hardCap - softCap);
+      // Smooth overflow compression: tiny overages stay tiny, large spikes asymptotically
+      // approach the hard cap without jumping there immediately.
+      const compressionScale = Math.max(1, Math.round(capGap / 4));
+      const compressedOverflow = Math.min(capGap, Math.round(Math.sqrt(overflow * compressionScale)));
+      xp = softCap + compressedOverflow;
+    }
+
+    return Math.min(xp, hardCap);
   }
 
   getReactFiberKey(element) {
@@ -2571,11 +2613,10 @@ module.exports = class SoloLevelingStats {
       // Get agility stat for EXP multiplier
       const agilityStat = this.settings.stats?.agility || 0;
 
-      // Base crit bonus: 0.25 (25%)
-      // Agility bonus: +0.01 per point (1% per agility point)
-      // Example: 10 agility = +0.10 (10%) = total 0.35 (35% bonus)
-      const agilityBonus = agilityStat * 0.01;
-      const baseCritBonus = 0.25;
+      // Base crit bonus: 0.20 (20%)
+      // Agility bonus: +0.006 per point (0.6% per agility point), capped for stability.
+      const agilityBonus = Math.min(0.75, agilityStat * 0.006);
+      const baseCritBonus = 0.2;
       let critMultiplier = baseCritBonus + agilityBonus;
 
       // Check burst-hit multiplier produced by CriticalHit (PER-driven multi-crit)
@@ -2621,14 +2662,14 @@ module.exports = class SoloLevelingStats {
         if (burstHits > 1) {
           // PER burst bonus uses diminishing returns + hard caps.
           // This preserves burst reward identity without making leveling trivial.
-          const effectiveBurstHits = Math.min(40, burstHits); // ignore extreme jackpot tails for XP scaling
-          const logGain = Math.log2(effectiveBurstHits + 1) * 0.08;
-          const chainGain = (Math.min(20, effectiveBurstHits) - 1) * 0.012;
-          const burstBonus = Math.min(0.85, logGain + chainGain); // Max +85%
+          const effectiveBurstHits = Math.min(25, burstHits); // ignore extreme jackpot tails for XP scaling
+          const logGain = Math.log2(effectiveBurstHits + 1) * 0.045;
+          const chainGain = (Math.min(12, effectiveBurstHits) - 1) * 0.008;
+          const burstBonus = Math.min(0.45, logGain + chainGain); // Max +45%
           critMultiplier += burstBonus;
 
           // Light AGI synergy (kept modest to avoid runaway scaling)
-          const agilityBurstEnhancement = burstBonus * Math.min(0.2, agilityStat * 0.002);
+          const agilityBurstEnhancement = burstBonus * Math.min(0.12, agilityStat * 0.001);
           critMultiplier += agilityBurstEnhancement;
 
           this._cache.lastAppliedCritBurst = {
@@ -2651,6 +2692,9 @@ module.exports = class SoloLevelingStats {
       } catch (error) {
         // Burst data not available or error accessing
       }
+
+      // Hard cap total crit multiplier to avoid runaway XP spikes.
+      critMultiplier = Math.min(1.35, critMultiplier);
 
       this.debugLog('CHECK_CRIT_BONUS', 'Crit bonus calculated', {
         baseCritBonus: (baseCritBonus * 100).toFixed(0) + '%',
@@ -5592,9 +5636,8 @@ module.exports = class SoloLevelingStats {
         this.settings.level = newLevel;
         this.settings.xp = levelInfo.xp;
         const _statPointsBefore = this.settings.unallocatedStatPoints;
-        // IMPROVED: Award more stat points per level to ensure user stays ahead of shadows
-        // Base: 5 points per level
-        // Bonus: +1 point per 10 levels (level 10+ gets 6, level 20+ gets 7, etc.)
+        // Balanced stat point curve (front-loaded early, tapered late).
+        // Prevents runaway high-level stat inflation while preserving progression.
         const statPointsPerLevel = this.getStatPointsForLevel(newLevel);
         this.settings.unallocatedStatPoints += levelsGained * statPointsPerLevel;
         const _statPointsAfter = this.settings.unallocatedStatPoints;
@@ -5769,20 +5812,33 @@ module.exports = class SoloLevelingStats {
           achievements: this.settings.achievements.unlocked.length,
         });
 
-        // Grant rank promotion bonus stats to ensure user exceeds baseline
-        // This guarantees user is always stronger than baseline for their rank
+        // Grant rank promotion stat bonuses with damping at high stat totals.
+        // Keeps promotion feeling meaningful without causing runaway inflation.
         const rankPromotionBonuses = {
-          D: 15, // +15 to all stats (baseline: 25, user will have ~13, bonus → 28)
-          C: 20, // +20 to all stats (baseline: 50, user will have ~35, bonus → 55)
-          B: 25, // +25 to all stats (baseline: 100, user will have ~82, bonus → 107)
-          A: 30, // +30 to all stats (baseline: 200, user will have ~191, bonus → 221)
-          S: 50, // +50 to all stats (baseline: 400, user will have ~442, bonus → 492)
-          SS: 100, // +100 to all stats
-          SSS: 200, // +200 to all stats
-          Monarch: 400, // +400 to all stats
+          D: 2,
+          C: 3,
+          B: 4,
+          A: 5,
+          S: 7,
+          SS: 9,
+          SSS: 11,
+          'SSS+': 13,
+          NH: 16,
+          Monarch: 20,
+          'Monarch+': 24,
+          'Shadow Monarch': 30,
         };
 
-        const bonus = rankPromotionBonuses[nextRank] || 0;
+        const baseBonus = rankPromotionBonuses[nextRank] || 0;
+        const statSum =
+          (this.settings.stats.strength || 0) +
+          (this.settings.stats.agility || 0) +
+          (this.settings.stats.intelligence || 0) +
+          (this.settings.stats.vitality || 0) +
+          (this.settings.stats.perception || 0);
+        const averageStat = statSum / 5;
+        const dampener = averageStat >= 800 ? 0.5 : averageStat >= 500 ? 0.65 : averageStat >= 300 ? 0.8 : 1;
+        const bonus = Math.max(1, Math.round(baseBonus * dampener));
         if (bonus > 0) {
           // Apply bonus to all stats
           this.settings.stats.strength = (this.settings.stats.strength || 0) + bonus;
@@ -5975,16 +6031,18 @@ module.exports = class SoloLevelingStats {
         })();
 
       // ===== APPLY PERCENTAGE BONUSES (Additive) =====
-      // Cap total percentage bonus at 500% (6x multiplier max) to prevent exponential growth
-      const cappedPercentageBonus = Math.min(totalPercentageBonus, 500);
+      // Cap additive pool to prevent unbounded growth stacking.
+      const cappedPercentageBonus = Math.min(totalPercentageBonus, 220);
       let xp = Math.round(baseXP * (1 + cappedPercentageBonus / 100));
 
       // ===== TITLE BONUS (Multiplicative - Single Equipped Title) =====
       // Titles are MULTIPLICATIVE since you can only equip one title at a time
       // This makes title choice meaningful and powerful
       const titleBonus = this.getActiveTitleBonus();
-      if (titleBonus.xp > 0) {
-        xp = Math.round(xp * (1 + titleBonus.xp));
+      const titleXpCap = this.getTitleXpCapForLevel(currentLevel);
+      const appliedTitleXpBonus = Math.min(Math.max(0, titleBonus.xp || 0), titleXpCap);
+      if (appliedTitleXpBonus > 0) {
+        xp = Math.round(xp * (1 + appliedTitleXpBonus));
       }
 
       // ===== ACTIVE SKILL: Sprint XP Multiplier (Multiplicative) =====
@@ -5997,19 +6055,19 @@ module.exports = class SoloLevelingStats {
       // These are MULTIPLICATIVE since they're milestone rewards
       // Slightly nerfed but still impactful
       const milestoneMultipliers = {
-        25: 1.12, // +12% at level 25 (was 1.15)
-        50: 1.2, // +20% at level 50 (was 1.25)
-        75: 1.28, // +28% at level 75 (was 1.35)
-        100: 1.4, // +40% at level 100 (was 1.50)
-        150: 1.55, // +55% at level 150 (was 1.65)
-        200: 1.7, // +70% at level 200 (was 1.80)
-        300: 1.85, // +85% at level 300
-        400: 2.0, // +100% at level 400 (Double XP!)
-        500: 2.15, // +115% at level 500
-        700: 2.35, // +135% at level 700
-        1000: 2.6, // +160% at level 1000
-        1500: 2.9, // +190% at level 1500
-        2000: 3.25, // +225% at level 2000
+        25: 1.06,
+        50: 1.1,
+        75: 1.14,
+        100: 1.18,
+        150: 1.22,
+        200: 1.27,
+        300: 1.33,
+        400: 1.38,
+        500: 1.43,
+        700: 1.48,
+        1000: 1.54,
+        1500: 1.6,
+        2000: 1.68,
       };
 
       // Apply highest milestone multiplier reached (using .reduce() for cleaner code)
@@ -6037,18 +6095,11 @@ module.exports = class SoloLevelingStats {
       }
 
       // ===== LEVEL-BASED DIMINISHING RETURNS (Balanced) =====
-      // At higher levels, XP gains are reduced to prevent rapid leveling
-      // Floor: 75% ensures progression feels rewarding but balanced
+      // At higher levels, XP gains are reduced to prevent rapid leveling.
+      // Floor: 60% preserves forward motion without runaway acceleration.
       if (currentLevel > 10) {
-        // Balanced diminishing returns formula: multiplier = 1 / (1 + (level - 10) * 0.008)
-        // Minimum floor: 75% (never reduce below 75%)
-        // Level 10: 1.0x (no reduction)
-        // Level 20: ~0.93x (7% reduction)
-        // Level 50: ~0.76x (24% reduction)
-        // Level 100: ~0.75x (25% reduction - floor)
-        // Level 200: ~0.75x (still at floor)
-        const rawMultiplier = 1 / (1 + (currentLevel - 10) * 0.008);
-        const levelReductionMultiplier = Math.max(rawMultiplier, 0.75); // Floor at 75%
+        const rawMultiplier = 1 / (1 + (currentLevel - 10) * 0.01);
+        const levelReductionMultiplier = Math.max(rawMultiplier, 0.6); // Floor at 60%
         xp = Math.round(xp * levelReductionMultiplier);
 
         // Minimum XP floor: Always award at least 10 XP per message (ensures visible progress)
@@ -6071,13 +6122,13 @@ module.exports = class SoloLevelingStats {
         if (roll < activeBuffs.critChanceBonus) {
           // Bloodlust-triggered crit: use base crit multiplier from agility
           const agilityStat = this.settings.stats?.agility || 0;
-          critBonus = 0.25 + agilityStat * 0.01;
+          critBonus = Math.min(1.2, 0.2 + Math.min(0.75, agilityStat * 0.006));
         }
       }
       // Active skill: Mutilate — force crit if guaranteed
       if (activeSkillForcedCrit && critBonus <= 0) {
         const agilityStat = this.settings.stats?.agility || 0;
-        critBonus = 0.25 + agilityStat * 0.01;
+        critBonus = Math.min(1.2, 0.2 + Math.min(0.75, agilityStat * 0.006));
       }
 
       if (critBonus > 0) {
@@ -6086,20 +6137,20 @@ module.exports = class SoloLevelingStats {
         let isMegaCrit = false;
         let comboFlatBonusXP = 0;
 
-        // Check for Dagger Throw Master mega crit (special case - keep 1000x)
+        // Check for Dagger Throw Master mega crit (special case - high but capped burst)
         const activeTitle = this.settings.achievements?.activeTitle;
         if (activeTitle === 'Dagger Throw Master') {
           const agilityStat = this.settings.stats?.agility || 0;
-          const megaCritChance = agilityStat * 0.02;
+          const megaCritChance = Math.min(0.2, agilityStat * 0.001);
           const roll = Math.random();
 
           if (roll < megaCritChance) {
-            critMultiplier = 999; // 1000x total
+            critMultiplier = 149; // 150x total
             isMegaCrit = true;
             this.showNotification(
               ` MEGA CRITICAL HIT! \n` +
                 `Dagger Throw Master activated!\n` +
-                `1000x XP Multiplier!`,
+                `150x XP Multiplier!`,
               'success',
               8000
             );
@@ -6107,7 +6158,7 @@ module.exports = class SoloLevelingStats {
               agilityStat,
               megaCritChance: (megaCritChance * 100).toFixed(1) + '%',
               roll: roll.toFixed(4),
-              multiplier: '1000x',
+              multiplier: '150x',
             });
           }
         }
@@ -6119,13 +6170,13 @@ module.exports = class SoloLevelingStats {
         // Keeps higher combos rewarding while preventing easy over-leveling.
         const critBurstInfo = this._cache?.lastAppliedCritBurst || null;
         if (!isMegaCrit && critBurstInfo?.burstHits > 1) {
-          const effectiveBurstHits = Math.min(30, Number(critBurstInfo.effectiveBurstHits || 1));
+          const effectiveBurstHits = Math.min(20, Number(critBurstInfo.effectiveBurstHits || 1));
           const extraRatio = Math.min(
-            0.35,
-            Math.log2(effectiveBurstHits + 1) * 0.03 +
-              (Math.min(20, effectiveBurstHits) - 1) * 0.008
+            0.18,
+            Math.log2(effectiveBurstHits + 1) * 0.02 +
+              (Math.min(12, effectiveBurstHits) - 1) * 0.006
           );
-          const cappedFlatBonus = Math.max(6, Math.round(baseXPBeforeCrit * 0.35));
+          const cappedFlatBonus = Math.max(4, Math.round(baseXPBeforeCrit * 0.18));
           comboFlatBonusXP = Math.min(
             cappedFlatBonus,
             Math.max(2, Math.round(baseXPBeforeCrit * extraRatio))
@@ -6165,6 +6216,9 @@ module.exports = class SoloLevelingStats {
         xp = Math.round(xp * activeBuffs.globalMultiplier);
       }
 
+      // Final XP governor: soft-cap + hard-cap compression based on level.
+      xp = this.applyXpGovernors(xp, currentLevel);
+
       // Final rounding
       xp = Math.round(xp);
 
@@ -6175,13 +6229,14 @@ module.exports = class SoloLevelingStats {
         baseXP,
         totalPercentageBonus: totalPercentageBonus.toFixed(1) + '%',
         cappedPercentageBonus: cappedPercentageBonus.toFixed(1) + '%',
+        titleXpApplied: `${(appliedTitleXpBonus * 100).toFixed(1)}% (cap ${(titleXpCap * 100).toFixed(0)}%)`,
         skillTreeMultiplier:
           skillTreeMultiplier > 1.0 ? `${((skillTreeMultiplier - 1) * 100).toFixed(1)}%` : 'None',
         milestoneMultiplier:
           milestoneMultiplier > 1.0 ? `${((milestoneMultiplier - 1) * 100).toFixed(0)}%` : 'None',
         levelReduction:
           currentLevel > 10
-            ? (Math.max(1 / (1 + (currentLevel - 10) * 0.008), 0.75) * 100).toFixed(1) + '%'
+            ? (Math.max(1 / (1 + (currentLevel - 10) * 0.01), 0.6) * 100).toFixed(1) + '%'
             : 'N/A',
         rankMultiplier: `${((this.getRankMultiplier() - 1) * 100).toFixed(0)}%`,
         finalXP: xp,
@@ -6237,7 +6292,9 @@ module.exports = class SoloLevelingStats {
       // Check for level up and rank promotion
       try {
         this.checkLevelUp(oldLevel);
-        this.checkRankPromotion();
+        if ((this.settings.level || 1) === oldLevel) {
+          this.checkRankPromotion();
+        }
         this.debugLog('AWARD_XP', 'Level and rank checks completed');
       } catch (error) {
         this.debugError('AWARD_XP', error, { phase: 'level_rank_check' });
@@ -6551,17 +6608,9 @@ module.exports = class SoloLevelingStats {
         // Calculate total bonus from allocated points
         let totalBonus = 0;
         const statBonusMap = {
-          strength: (count) => count * 5, // +5% XP per point
+          strength: (count) => count * 2, // +2% XP per point (before diminishing returns)
           agility: (count) => count * 2, // +2% crit chance per point
-          intelligence: (count) => {
-            // Tiered: 100-200:+3%, 200-400:+7%, 400+:+12% per point
-            // For simplicity, calculate based on final value
-            const finalValue = data.newValue;
-            if (finalValue >= 400) return count * 12;
-            if (finalValue >= 200) return count * 7;
-            if (finalValue >= 100) return count * 3;
-            return count * 1; // Base bonus
-          },
+          intelligence: (count) => count * 3, // +3% long-message bonus baseline (higher tiers handled in XP calc)
           vitality: (count) => count * 5, // +5% quest rewards per point
         };
 
@@ -6711,12 +6760,9 @@ module.exports = class SoloLevelingStats {
 
     // Calculate new effect strength for feedback (for non-PER stats)
     const statEffects = {
-      strength: `+${(this.settings.stats[statName] * 5).toFixed(0)}% XP per message`,
-      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance`,
-      intelligence: `+${(
-        this.settings.stats[statName] * 10 +
-        Math.max(0, (this.settings.stats[statName] - 5) * 2)
-      ).toFixed(0)}% bonus XP (long messages)`,
+      strength: `+${(this.settings.stats[statName] * 2).toFixed(0)}% XP bonus (diminishing after 20)`,
+      agility: `+${(this.settings.stats[statName] * 2).toFixed(0)}% crit chance (up to cap)`,
+      intelligence: 'Tiered long-message XP bonus (3/7/12% per point, diminishing after 15)',
       vitality: `+${(this.settings.stats[statName] * 5).toFixed(0)}% quest rewards`,
       perception: `Increases critical burst hit chains (xN)`,
     };
@@ -6766,21 +6812,16 @@ module.exports = class SoloLevelingStats {
       const level = this.settings.level || 1;
       const _charactersTyped = this.settings.activity?.charactersTyped || 0;
 
-      // Calculate expected natural stat growth based on activity
-      // Formula: Each message has ~0.3% base chance, scaling with stats
-      // For retroactive: Estimate based on messages sent and level
-      // Higher level = more messages = more natural growth opportunities
-
-      // Base growth per 100 messages: ~0.3 stat points (0.3% chance per message)
-      // But it scales with current stats, so we'll use a progressive formula
-      const baseGrowthPer100Messages = 0.3;
-      const levelMultiplier = 1 + (level - 1) * 0.02; // +2% per level
+      // Calculate expected natural stat growth based on activity.
+      // Retroactive grant is intentionally conservative to avoid stat inflation on older saves.
+      const baseGrowthPer100Messages = 0.08;
+      const levelMultiplier = 1 + Math.min(2.5, (level - 1) * 0.002);
       const messageBasedGrowth = Math.floor(
         (messagesSent / 100) * baseGrowthPer100Messages * levelMultiplier
       );
 
-      // Also grant stats based on level (higher level = more activity = more growth)
-      const levelBasedGrowth = Math.floor((level - 1) * 0.15); // ~0.15 stats per level
+      // Also grant a light level-based base growth.
+      const levelBasedGrowth = Math.floor((level - 1) * 0.03);
 
       // Total retroactive growth to distribute
       const totalGrowth = messageBasedGrowth + levelBasedGrowth;
@@ -6843,27 +6884,24 @@ module.exports = class SoloLevelingStats {
       const userRank = this.settings.rank || 'E';
       const rankIndex = this.settings.ranks?.indexOf(userRank) || 0;
 
-      // Level-based bonus: +0.1% per level (caps at +10% at level 100)
-      const levelBonus = Math.min(0.1, userLevel * 0.001);
+      // Level-based bonus: +0.002% per level (caps at +2% at level 1000)
+      const levelBonus = Math.min(0.02, userLevel * 0.00002);
 
-      // Rank-based bonus: +0.05% per rank tier (E=0%, D=0.05%, ..., Shadow Monarch=0.6%)
-      const rankBonus = rankIndex * 0.0005;
+      // Rank-based bonus: +0.1% per rank tier (E=0%, ..., Shadow Monarch~1.2%)
+      const rankBonus = Math.min(0.012, rankIndex * 0.001);
 
       statNames.forEach((statName) => {
         const currentStat = this.settings.stats[statName] || 0;
 
-        // IMPROVED growth chance formula:
-        // Base: 0.5% (increased from 0.3%)
-        // Scaling: +0.1% per stat point (increased from 0.05%)
-        // Level bonus: +0.1% per level (up to +10% at level 100)
-        // Rank bonus: +0.05% per rank tier
-        // This ensures user stats grow faster than shadows
-        const baseChance = 0.005; // 0.5% base chance (increased from 0.3%)
-        const scalingFactor = 0.001; // +0.1% per stat point (increased from 0.05%)
-        const statScaling = currentStat * scalingFactor;
+        // Balanced growth chance formula (sublinear scaling to avoid runaway loops):
+        // Base: 0.12%
+        // Stat scaling: sqrt(stat)-based, capped contribution
+        // Level/rank add small additive boosts
+        const baseChance = 0.0012;
+        const statScaling = Math.min(0.018, Math.sqrt(currentStat) * 0.00045);
 
         // Total growth chance with bonuses
-        const growthChance = Math.min(0.5, baseChance + statScaling + levelBonus + rankBonus); // Cap at 50% max
+        const growthChance = Math.min(0.05, baseChance + statScaling + levelBonus + rankBonus); // Cap at 5% max
 
         // Roll for natural growth
         const roll = Math.random();
@@ -6871,14 +6909,12 @@ module.exports = class SoloLevelingStats {
           // Natural stat growth!
           const oldValue = currentStat;
 
-          // IMPROVED: Higher chance to grow multiple points at higher stats/levels
-          // At high stats (100+), 20% chance to grow by 2 points
-          // At very high stats (200+), 10% chance to grow by 3 points
+          // Small chance for multi-point procs at very high stats.
           let growthAmount = 1;
-          if (currentStat >= 200 && Math.random() < 0.1) {
-            growthAmount = 3; // Triple growth!
-          } else if (currentStat >= 100 && Math.random() < 0.2) {
-            growthAmount = 2; // Double growth!
+          if (currentStat >= 500 && Math.random() < 0.005) {
+            growthAmount = 3;
+          } else if (currentStat >= 250 && Math.random() < 0.02) {
+            growthAmount = 2;
           }
 
           this.settings.stats[statName] += growthAmount;
@@ -7507,7 +7543,7 @@ module.exports = class SoloLevelingStats {
         id: 'domain_expansion',
         name: 'Domain Expansion',
         description: 'Reach Level 100 and type 75,000 characters — territorial dominance amplifying all power within',
-        condition: { type: 'level', value: 100 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 100 }, { type: 'characters', value: 75000 }] },
         title: 'Domain Expansion',
         titleBonus: { xp: 0.3, intelligencePercent: 0.15, vitalityPercent: 0.1, perceptionPercent: 0.05, critChance: 0.02 }, // Domain: area control INT, endurance, battlefield awareness
       },
@@ -7515,7 +7551,7 @@ module.exports = class SoloLevelingStats {
         id: 'ruler_authority',
         name: "Ruler's Authority",
         description: 'Reach Level 200 and type 150,000 characters — the telekinetic power wielded by the Rulers',
-        condition: { type: 'level', value: 200 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 200 }, { type: 'characters', value: 150000 }] },
         title: "Ruler's Authority",
         titleBonus: { xp: 0.5, intelligencePercent: 0.2, perceptionPercent: 0.15, critChance: 0.03 }, // Ruler's Authority: telekinetic INT mastery, cosmic perception
       },
@@ -7943,7 +7979,7 @@ module.exports = class SoloLevelingStats {
         id: 'the_ruler',
         name: 'The Ruler',
         description: 'Reach National Hunter rank (Lv 700) and be active for 200 hours — emissary of the Absolute Being',
-        condition: { type: 'level', value: 700 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 700 }, { type: 'time', value: 12000 }] },
         title: 'The Ruler',
         titleBonus: {
           xp: 1.4,
@@ -7959,7 +7995,7 @@ module.exports = class SoloLevelingStats {
         id: 'sung_jin_woo',
         name: 'Sung Jin-Woo',
         description: 'Reach S-Rank (Lv 200) and send 10,000 messages — the Hunter who defied fate',
-        condition: { type: 'level', value: 200 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 200 }, { type: 'messages', value: 10000 }] },
         title: 'Sung Jin-Woo',
         titleBonus: { xp: 0.5, strengthPercent: 0.1, agilityPercent: 0.15, intelligencePercent: 0.1, critChance: 0.05 }, // Jin-Woo: assassin AGI/Crit, growing INT, balanced warrior
       },
@@ -7990,7 +8026,7 @@ module.exports = class SoloLevelingStats {
         id: 'shadow_sovereign',
         name: 'Shadow Sovereign',
         description: 'Reach Monarch+ rank (Lv 1500) and send 18,000 messages — heir to the shadow throne',
-        condition: { type: 'level', value: 1500 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1500 }, { type: 'messages', value: 18000 }] },
         title: 'Shadow Sovereign',
         titleBonus: { xp: 2.3, intelligencePercent: 0.4, agilityPercent: 0.3, strengthPercent: 0.25, critChance: 0.15 }, // Shadow heir: necromantic INT, shadow speed, growing power
       },
@@ -7998,7 +8034,7 @@ module.exports = class SoloLevelingStats {
         id: 'ashborn_successor',
         name: "Ashborn's Successor",
         description: 'Reach Monarch+ rank (Lv 1500) and type 500,000 characters — chosen vessel of the Shadow Monarch',
-        condition: { type: 'level', value: 1500 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1500 }, { type: 'characters', value: 500000 }] },
         title: "Ashborn's Successor",
         titleBonus: { xp: 2.4, intelligencePercent: 0.45, agilityPercent: 0.3, strengthPercent: 0.25, vitalityPercent: 0.2, critChance: 0.15 }, // Ashborn's vessel: inheriting shadow necromancy, combat prowess, shadow endurance
       },
@@ -8023,7 +8059,7 @@ module.exports = class SoloLevelingStats {
         id: 'dagger_throw_master',
         name: 'Dagger Throw Master',
         description:
-          'Land 1,000 critical hits. Special: Agility% chance for 1000x crit multiplier! — Jin-Woo\'s lethal ranged precision',
+          'Land 1,000 critical hits. Special: Agility-scaled (capped) chance for 150x crit multiplier! — Jin-Woo\'s lethal ranged precision',
         condition: { type: 'crits', value: 1000 },
         title: 'Dagger Throw Master',
         titleBonus: { xp: 0.25, critChance: 0.06, agilityPercent: 0.1, perceptionPercent: 0.1 }, // Dagger Throw: speed + precision + lethal accuracy
@@ -8137,7 +8173,7 @@ module.exports = class SoloLevelingStats {
         id: 'instant_dungeon_master',
         name: 'Instant Dungeon Master',
         description: 'Type 200,000 characters and be active for 75 hours — mastering the System\'s private training dimensions',
-        condition: { type: 'compound', conditions: [{ type: 'characters', value: 200000 }, { type: 'time', value: 75 }] },
+        condition: { type: 'compound', conditions: [{ type: 'characters', value: 200000 }, { type: 'time', value: 4500 }] },
         title: 'Instant Dungeon Master',
         titleBonus: { xp: 0.5, intelligencePercent: 0.1, vitalityPercent: 0.1, strengthPercent: 0.05, agilityPercent: 0.05 }, // Instant Dungeon: grinding master, balanced growth from endless training
       },
@@ -8206,7 +8242,7 @@ module.exports = class SoloLevelingStats {
         id: 'shadow_sovereign_heir',
         name: 'Shadow Sovereign Heir',
         description: 'Reach Monarch+ rank (Lv 1500) and land 5,000 critical hits — on the cusp of inheriting the shadow',
-        condition: { type: 'level', value: 1500 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 1500 }, { type: 'crits', value: 5000 }] },
         title: 'Shadow Sovereign Heir',
         titleBonus: { xp: 2.3, agilityPercent: 0.35, critChance: 0.2, intelligencePercent: 0.3, strengthPercent: 0.2 }, // Shadow heir through combat: assassin crits, shadow magic, dagger mastery
       },
@@ -8214,7 +8250,7 @@ module.exports = class SoloLevelingStats {
         id: 'ruler_of_chaos',
         name: 'Ruler of Chaos',
         description: 'Reach National Hunter rank (Lv 700) and be active for 300 hours — power beyond mortal comprehension',
-        condition: { type: 'level', value: 700 },
+        condition: { type: 'compound', conditions: [{ type: 'level', value: 700 }, { type: 'time', value: 18000 }] },
         title: 'Ruler of Chaos',
         titleBonus: {
           xp: 1.5,
