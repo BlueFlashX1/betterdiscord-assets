@@ -9271,7 +9271,9 @@ module.exports = class SoloLevelingStats {
         background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
         border: 1px solid rgba(138, 43, 226, 0.5);
         border-radius: 10px;
-        padding: 14px 12px;
+        padding: 18px 12px;
+        min-height: 120px;
+        box-sizing: border-box;
         box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         z-index: 1000;
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
