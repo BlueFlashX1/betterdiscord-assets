@@ -3843,13 +3843,13 @@ module.exports = class Dungeons {
         name: 'Mountains',
         description: 'Rocky peaks inhabited by giants and wyverns',
         mobMultiplier: 0.8, // Fewer but stronger
-        beastFamilies: ['giant', 'dragon'], // Giants, titans, wyverns, dragons (NH+)
+        beastFamilies: ['giant', 'dragon'], // Giants, titans (A+), wyverns (S+), dragons (NH+)
       },
       {
         name: 'Volcano',
         description: 'Molten hellscape of demons and dragons',
         mobMultiplier: 1.0, // Balanced
-        beastFamilies: ['demon', 'dragon'], // Demons, ogres, dragons (NH+)
+        beastFamilies: ['demon', 'humanoid-beast', 'dragon'], // Demons, ogres, dragons (NH+)
       },
       {
         name: 'Ancient Ruins',
@@ -4186,17 +4186,19 @@ module.exports = class Dungeons {
       // Ice family
       yeti: { type: 'yeti', name: 'Yeti', family: 'ice', minRank: null },
 
-      // Dragon family (NH+ only)
+      // Dragon family (wyverns S+, dragons NH+)
       dragon: { type: 'dragon', name: 'Dragon', family: 'dragon', minRank: 'NH' },
-      wyvern: { type: 'wyvern', name: 'Wyvern', family: 'dragon', minRank: 'A' },
+      wyvern: { type: 'wyvern', name: 'Wyvern', family: 'dragon', minRank: 'S' },
 
       // Giant family
       giant: { type: 'giant', name: 'Giant', family: 'giant', minRank: null },
-      titan: { type: 'titan', name: 'Titan', family: 'giant', minRank: 'S' },
+      titan: { type: 'titan', name: 'Titan', family: 'giant', minRank: 'A' },
 
       // Demon family
-      demon: { type: 'demon', name: 'Demon', family: 'demon', minRank: null },
-      ogre: { type: 'ogre', name: 'Ogre', family: 'demon', minRank: null },
+      demon: { type: 'demon', name: 'Demon', family: 'demon', minRank: 'B' },
+
+      // Humanoid-beast family
+      ogre: { type: 'ogre', name: 'Ogre', family: 'humanoid-beast', minRank: null },
 
       // Undead family
       ghoul: { type: 'ghoul', name: 'Ghoul', family: 'undead', minRank: null },
