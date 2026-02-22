@@ -1,18 +1,20 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.0.0
+ * @version 1.1.0
  * @author matthewthompson
  */
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
+const PLUGIN_VERSION = "1.1.0";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
 const PANEL_CONTAINER_ID = "shadow-senses-panel-root";
 const TRANSITION_ID = "shadow-senses-transition-overlay";
+const GLOBAL_UTILITY_FEED_ID = "__shadow_senses_global__";
 
 const RANKS = ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH", "Monarch", "Monarch+", "Shadow Monarch"];
 const RANK_COLORS = {
@@ -28,6 +30,38 @@ const FEED_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
 const PURGE_INTERVAL_MS = 10 * 60 * 1000; // Check for stale entries every 10 minutes
 const WIDGET_OBSERVER_DEBOUNCE_MS = 200;
 const WIDGET_REINJECT_DELAY_MS = 300;
+const STARTUP_TOAST_GRACE_MS = 3000;
+const DEFAULT_TYPING_ALERT_COOLDOWN_MS = 15000;
+const ONLINE_STATUSES = new Set(["online", "idle", "dnd"]);
+const PRESENCE_EVENT_NAMES = ["PRESENCE_UPDATES", "PRESENCE_UPDATE"];
+const RELATIONSHIP_EVENT_NAMES = ["FRIEND_REQUEST_ACCEPTED", "RELATIONSHIP_ADD", "RELATIONSHIP_UPDATE", "RELATIONSHIP_REMOVE"];
+const STATUS_LABELS = {
+  online: "Online",
+  idle: "Idle",
+  dnd: "Do Not Disturb",
+  offline: "Offline",
+  invisible: "Invisible",
+};
+const STATUS_TOAST_TYPES = {
+  online: "success",
+  idle: "warning",
+  dnd: "error",
+  offline: "info",
+  invisible: "info",
+};
+const DEFAULT_SETTINGS = {
+  animationEnabled: true,
+  respectReducedMotion: false,
+  animationDuration: 550,
+  statusAlerts: true,
+  typingAlerts: true,
+  removedFriendAlerts: true,
+  showMarkedOnlineCount: true,
+  includeStatusEventsInFeed: true,
+  includeTypingEventsInFeed: true,
+  includeRelationshipEventsInFeed: true,
+  typingAlertCooldownMs: DEFAULT_TYPING_ALERT_COOLDOWN_MS,
+};
 
 // ─── DeploymentManager ─────────────────────────────────────────────────────
 
@@ -286,6 +320,10 @@ class SensesEngine {
     this._flushInterval = null;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
+    this._handlePresenceUpdate = null;
+    this._handleTypingStart = null;
+    this._handleRelationshipChange = null;
+    this._subscribedEventHandlers = new Map(); // eventName -> handler
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
     this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
 
@@ -296,6 +334,9 @@ class SensesEngine {
     this._userLastActivity = new Map();  // authorId → { timestamp, notifiedActive }
     this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
     this._subscribeTime = 0; // Set when subscribe() fires — used to defer early toasts
+    this._statusByUserId = new Map(); // userId -> normalized status
+    this._relationshipFriendIds = new Set();
+    this._typingToastCooldown = new Map(); // userId:channelId -> timestamp
 
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
@@ -353,10 +394,22 @@ class SensesEngine {
 
     this._handleMessageCreate = this._onMessageCreate.bind(this);
     this._handleChannelSelect = this._onChannelSelect.bind(this);
+    this._handlePresenceUpdate = this._onPresenceUpdate.bind(this);
+    this._handleTypingStart = this._onTypingStart.bind(this);
+    this._handleRelationshipChange = this._onRelationshipChange.bind(this);
 
-    Dispatcher.subscribe("MESSAGE_CREATE", this._handleMessageCreate);
-    Dispatcher.subscribe("CHANNEL_SELECT", this._handleChannelSelect);
+    this._subscribeEvent("MESSAGE_CREATE", this._handleMessageCreate);
+    this._subscribeEvent("CHANNEL_SELECT", this._handleChannelSelect);
+    this._subscribeEvent("TYPING_START", this._handleTypingStart);
+    for (const eventName of PRESENCE_EVENT_NAMES) {
+      this._subscribeEvent(eventName, this._handlePresenceUpdate);
+    }
+    for (const eventName of RELATIONSHIP_EVENT_NAMES) {
+      this._subscribeEvent(eventName, this._handleRelationshipChange);
+    }
     this._subscribeTime = Date.now();
+    this._seedTrackedStatuses();
+    this._snapshotFriendRelationships();
 
     // Start debounced flush interval (30s)
     this._flushInterval = setInterval(() => {
@@ -367,24 +420,28 @@ class SensesEngine {
     // Periodic purge of old entries (every 10 minutes)
     this._purgeInterval = setInterval(() => this._purgeOldEntries(), PURGE_INTERVAL_MS);
 
-    this._plugin.debugLog("SensesEngine", "Subscribed to MESSAGE_CREATE and CHANNEL_SELECT", {
+    this._plugin.debugLog("SensesEngine", "Subscribed to dispatcher events", {
       currentGuildId: this._currentGuildId,
+      events: Array.from(this._subscribedEventHandlers.keys()),
     });
   }
 
   unsubscribe() {
     const Dispatcher = this._plugin._Dispatcher;
     if (!Dispatcher) return;
-
-    if (this._handleMessageCreate) {
-      Dispatcher.unsubscribe("MESSAGE_CREATE", this._handleMessageCreate);
-      this._handleMessageCreate = null;
+    for (const [eventName, handler] of this._subscribedEventHandlers.entries()) {
+      try {
+        Dispatcher.unsubscribe(eventName, handler);
+      } catch (err) {
+        this._plugin.debugError("SensesEngine", `Failed to unsubscribe ${eventName}`, err);
+      }
     }
-
-    if (this._handleChannelSelect) {
-      Dispatcher.unsubscribe("CHANNEL_SELECT", this._handleChannelSelect);
-      this._handleChannelSelect = null;
-    }
+    this._subscribedEventHandlers.clear();
+    this._handleMessageCreate = null;
+    this._handleChannelSelect = null;
+    this._handlePresenceUpdate = null;
+    this._handleTypingStart = null;
+    this._handleRelationshipChange = null;
 
     // Stop flush + purge intervals and do final flush
     if (this._flushInterval) {
@@ -399,7 +456,163 @@ class SensesEngine {
       this._flushToDisk();
     }
 
+    this._typingToastCooldown.clear();
+    this._statusByUserId.clear();
+    this._relationshipFriendIds.clear();
+
     this._plugin.debugLog("SensesEngine", "Unsubscribed from all events");
+  }
+
+  _subscribeEvent(eventName, handler) {
+    const Dispatcher = this._plugin._Dispatcher;
+    if (!Dispatcher || !eventName || typeof handler !== "function") return false;
+    if (this._subscribedEventHandlers.has(eventName)) return true;
+    try {
+      Dispatcher.subscribe(eventName, handler);
+      this._subscribedEventHandlers.set(eventName, handler);
+      return true;
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", `Failed to subscribe ${eventName}`, err);
+      return false;
+    }
+  }
+
+  _resolveUserStore() {
+    if (this._plugin._UserStore) return this._plugin._UserStore;
+    try {
+      this._plugin._UserStore =
+        BdApi.Webpack.getStore?.("UserStore") ||
+        BdApi.Webpack.getModule(m => m && typeof m.getCurrentUser === "function" && typeof m.getUser === "function");
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to resolve UserStore", err);
+    }
+    return this._plugin._UserStore;
+  }
+
+  _resolvePresenceStore() {
+    if (this._plugin._PresenceStore) return this._plugin._PresenceStore;
+    try {
+      this._plugin._PresenceStore =
+        BdApi.Webpack.getStore?.("PresenceStore") ||
+        BdApi.Webpack.getModule(m => m && typeof m.getStatus === "function");
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to resolve PresenceStore", err);
+    }
+    return this._plugin._PresenceStore;
+  }
+
+  _resolveRelationshipStore() {
+    if (this._plugin._RelationshipStore) return this._plugin._RelationshipStore;
+    try {
+      this._plugin._RelationshipStore =
+        BdApi.Webpack.getStore?.("RelationshipStore") ||
+        BdApi.Webpack.getModule(m => m && typeof m.getFriendIDs === "function");
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to resolve RelationshipStore", err);
+    }
+    return this._plugin._RelationshipStore;
+  }
+
+  _normalizeStatus(status) {
+    if (!status || typeof status !== "string") return "offline";
+    return status.toLowerCase();
+  }
+
+  _isOnlineStatus(status) {
+    return ONLINE_STATUSES.has(this._normalizeStatus(status));
+  }
+
+  _getStatusLabel(status) {
+    const normalized = this._normalizeStatus(status);
+    return STATUS_LABELS[normalized] || normalized;
+  }
+
+  _getFriendIdSet() {
+    const relationshipStore = this._resolveRelationshipStore();
+    if (!relationshipStore || typeof relationshipStore.getFriendIDs !== "function") return new Set();
+    try {
+      return new Set((relationshipStore.getFriendIDs() || []).map(String));
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Failed to read friend IDs", err);
+      return new Set();
+    }
+  }
+
+  _snapshotFriendRelationships() {
+    this._relationshipFriendIds = this._getFriendIdSet();
+  }
+
+  _resolveUserName(userId, fallbackName = "Unknown") {
+    const userStore = this._resolveUserStore();
+    if (!userStore || typeof userStore.getUser !== "function") return fallbackName;
+    try {
+      const user = userStore.getUser(userId);
+      return user?.globalName || user?.global_name || user?.username || fallbackName;
+    } catch (_) {
+      return fallbackName;
+    }
+  }
+
+  _seedTrackedStatuses() {
+    const presenceStore = this._resolvePresenceStore();
+    this._statusByUserId.clear();
+    if (!presenceStore || typeof presenceStore.getStatus !== "function") return;
+    const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+    for (const userId of monitoredIds) {
+      try {
+        const status = this._normalizeStatus(presenceStore.getStatus(userId));
+        this._statusByUserId.set(userId, status);
+      } catch (_) {}
+    }
+  }
+
+  _getTypingCooldownMs() {
+    const ms = Number(this._plugin.settings?.typingAlertCooldownMs);
+    if (!Number.isFinite(ms)) return DEFAULT_TYPING_ALERT_COOLDOWN_MS;
+    return Math.min(60000, Math.max(3000, Math.floor(ms)));
+  }
+
+  _extractPresenceUpdates(payload) {
+    if (!payload) return [];
+    const updates = [];
+    const push = (userId, status) => {
+      if (!userId) return;
+      updates.push({
+        userId: String(userId),
+        status: this._normalizeStatus(status),
+      });
+    };
+
+    if (Array.isArray(payload.updates)) {
+      for (const update of payload.updates) {
+        if (!update) continue;
+        const userId = update.userId || update.user_id || update.user?.id;
+        const status = update.status || update.presence?.status;
+        if (userId) push(userId, status);
+      }
+    }
+
+    const directUserId = payload.userId || payload.user_id || payload.user?.id || payload.id;
+    if (directUserId) {
+      const directStatus = payload.status || payload.presence?.status;
+      push(directUserId, directStatus);
+    }
+
+    return updates;
+  }
+
+  _addUtilityFeedEntry(entry, guildId = GLOBAL_UTILITY_FEED_ID) {
+    if (!entry || !entry.eventType || !entry.timestamp) return;
+    const eventType = entry.eventType;
+    const settings = this._plugin.settings || DEFAULT_SETTINGS;
+    if (
+      (eventType === "status" && !settings.includeStatusEventsInFeed) ||
+      (eventType === "typing" && !settings.includeTypingEventsInFeed) ||
+      (eventType === "relationship" && !settings.includeRelationshipEventsInFeed)
+    ) {
+      return;
+    }
+    this._addToGuildFeed(guildId, entry);
   }
 
   _flushToDisk() {
@@ -497,6 +710,204 @@ class SensesEngine {
     }
   }
 
+  _onPresenceUpdate(payload) {
+    try {
+      const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+      if (!monitoredIds || monitoredIds.size === 0) return;
+
+      const updates = this._extractPresenceUpdates(payload);
+      if (updates.length === 0) return;
+
+      const now = Date.now();
+      const msSinceSubscribe = now - this._subscribeTime;
+      const isEarlyStartup = this._subscribeTime > 0 && msSinceSubscribe < STARTUP_TOAST_GRACE_MS;
+
+      for (const update of updates) {
+        const userId = update.userId;
+        if (!userId || !monitoredIds.has(userId)) continue;
+
+        const deployment = this._plugin.deploymentManager.getDeploymentForUser(userId);
+        if (!deployment) continue;
+
+        const hasPriorStatus = this._statusByUserId.has(userId);
+        const previousStatus = hasPriorStatus ? this._normalizeStatus(this._statusByUserId.get(userId)) : null;
+        const nextStatus = this._normalizeStatus(update.status);
+        this._statusByUserId.set(userId, nextStatus);
+
+        if (!hasPriorStatus || previousStatus === nextStatus) continue;
+
+        const userName = this._resolveUserName(userId, deployment.targetUsername || "Unknown");
+        const previousLabel = this._getStatusLabel(previousStatus);
+        const nextLabel = this._getStatusLabel(nextStatus);
+
+        if (this._plugin.settings?.statusAlerts) {
+          const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${userName} ${previousLabel} \u2192 ${nextLabel}`;
+          const toastOpts = { type: STATUS_TOAST_TYPES[nextStatus] || "info", timeout: 5000 };
+          if (isEarlyStartup) {
+            setTimeout(() => BdApi.UI.showToast(toastMsg, toastOpts), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
+          } else {
+            BdApi.UI.showToast(toastMsg, toastOpts);
+          }
+        }
+
+        this._addUtilityFeedEntry({
+          eventType: "status",
+          messageId: `status-${userId}-${now}`,
+          authorId: userId,
+          authorName: userName,
+          guildId: GLOBAL_UTILITY_FEED_ID,
+          guildName: "Shadow Network",
+          channelId: null,
+          channelName: "presence",
+          content: `Status changed: ${previousLabel} \u2192 ${nextLabel}`,
+          timestamp: now,
+          shadowName: deployment.shadowName,
+          shadowRank: deployment.shadowRank,
+        });
+
+        this._plugin._widgetDirty = true;
+      }
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Error in PRESENCE_UPDATE handler", err);
+    }
+  }
+
+  _onTypingStart(payload) {
+    try {
+      if (!payload) return;
+      const userId = String(payload.userId || payload.user_id || "");
+      if (!userId) return;
+
+      const userStore = this._resolveUserStore();
+      const currentUserId = userStore?.getCurrentUser?.()?.id;
+      if (currentUserId && userId === currentUserId) return;
+
+      const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+      if (!monitoredIds || !monitoredIds.has(userId)) return;
+
+      const deployment = this._plugin.deploymentManager.getDeploymentForUser(userId);
+      if (!deployment) return;
+
+      const channelId = payload.channelId || payload.channel_id || null;
+      let guildId = payload.guildId || payload.guild_id || null;
+      let channelName = "unknown";
+      if (channelId && this._plugin._ChannelStore?.getChannel) {
+        try {
+          const channel = this._plugin._ChannelStore.getChannel(channelId);
+          if (channel) {
+            channelName = channel.name || channel.rawRecipients?.map(r => r?.username).filter(Boolean).join(", ") || "Direct Message";
+            if (!guildId && channel.guild_id) guildId = channel.guild_id;
+          }
+        } catch (err) {
+          this._plugin.debugError("SensesEngine", "Failed to resolve typing channel", err);
+        }
+      }
+
+      const eventScopeId = guildId || GLOBAL_UTILITY_FEED_ID;
+      const cooldownKey = `${userId}:${channelId || eventScopeId}`;
+      const now = Date.now();
+      const lastToastAt = this._typingToastCooldown.get(cooldownKey) || 0;
+      const cooldownMs = this._getTypingCooldownMs();
+      if (now - lastToastAt < cooldownMs) return;
+      this._typingToastCooldown.set(cooldownKey, now);
+      if (this._typingToastCooldown.size > 500) {
+        for (const [key, ts] of this._typingToastCooldown.entries()) {
+          if (now - ts > cooldownMs * 4) this._typingToastCooldown.delete(key);
+        }
+      }
+
+      const userName = this._resolveUserName(userId, deployment.targetUsername || "Unknown");
+      const guildName = guildId ? this._plugin._getGuildName(guildId) : "Shadow Network";
+      const locationLabel = channelId
+        ? `${guildName} #${channelName}`
+        : guildName;
+
+      if (this._plugin.settings?.typingAlerts) {
+        BdApi.UI.showToast(
+          `[${deployment.shadowRank}] ${deployment.shadowName} senses ${userName} typing in ${locationLabel}`,
+          { type: "info", timeout: 4000 }
+        );
+      }
+
+      this._addUtilityFeedEntry({
+        eventType: "typing",
+        messageId: `typing-${userId}-${channelId || "none"}-${now}`,
+        authorId: userId,
+        authorName: userName,
+        guildId: eventScopeId,
+        guildName,
+        channelId: channelId || null,
+        channelName,
+        content: `Typing detected in ${locationLabel}`,
+        timestamp: now,
+        shadowName: deployment.shadowName,
+        shadowRank: deployment.shadowRank,
+      }, eventScopeId);
+
+      if (guildId && guildId === this._currentGuildId && this._guildFeeds[guildId]) {
+        this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
+      }
+
+      this._plugin._widgetDirty = true;
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Error in TYPING_START handler", err);
+    }
+  }
+
+  _onRelationshipChange() {
+    try {
+      const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
+      if (!monitoredIds || monitoredIds.size === 0) {
+        this._snapshotFriendRelationships();
+        return;
+      }
+
+      const previousFriends = this._relationshipFriendIds || new Set();
+      const nextFriends = this._getFriendIdSet();
+      this._relationshipFriendIds = nextFriends;
+      if (previousFriends.size === 0) return;
+
+      const removedFriendIds = [];
+      for (const friendId of previousFriends) {
+        if (!nextFriends.has(friendId)) removedFriendIds.push(friendId);
+      }
+      if (removedFriendIds.length === 0) return;
+
+      const now = Date.now();
+      for (const removedId of removedFriendIds) {
+        if (!monitoredIds.has(removedId)) continue;
+        const deployment = this._plugin.deploymentManager.getDeploymentForUser(removedId);
+        if (!deployment) continue;
+
+        const userName = this._resolveUserName(removedId, deployment.targetUsername || "Unknown");
+        if (this._plugin.settings?.removedFriendAlerts) {
+          BdApi.UI.showToast(
+            `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${userName} removed your connection`,
+            { type: "warning", timeout: 5000 }
+          );
+        }
+
+        this._addUtilityFeedEntry({
+          eventType: "relationship",
+          messageId: `relationship-${removedId}-${now}`,
+          authorId: removedId,
+          authorName: userName,
+          guildId: GLOBAL_UTILITY_FEED_ID,
+          guildName: "Shadow Network",
+          channelId: null,
+          channelName: "relationships",
+          content: "Friend connection removed",
+          timestamp: now,
+          shadowName: deployment.shadowName,
+          shadowRank: deployment.shadowRank,
+        });
+        this._plugin._widgetDirty = true;
+      }
+    } catch (err) {
+      this._plugin.debugError("SensesEngine", "Error in relationship handler", err);
+    }
+  }
+
   _onMessageCreate(payload) {
     try {
       if (!payload || !payload.message || !payload.message.author) return;
@@ -559,13 +970,13 @@ class SensesEngine {
       // During early startup (<3s after subscribe), BdApi.UI.showToast can silently
       // fail if Discord's DOM isn't fully rendered. Defer toasts in that window.
       const msSinceSubscribe = now - this._subscribeTime;
-      const isEarlyStartup = this._subscribeTime > 0 && msSinceSubscribe < 3000;
+      const isEarlyStartup = this._subscribeTime > 0 && msSinceSubscribe < STARTUP_TOAST_GRACE_MS;
 
       if (!lastActivity) {
         // First message from this user since restart/reload
         const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`;
         if (isEarlyStartup) {
-          setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }), 3000 - msSinceSubscribe);
+          setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
         } else {
           BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 });
         }
@@ -583,7 +994,7 @@ class SensesEngine {
 
           const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`;
           if (isEarlyStartup) {
-            setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }), 3000 - msSinceSubscribe);
+            setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
           } else {
             BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 });
           }
@@ -595,6 +1006,7 @@ class SensesEngine {
 
       // Build feed entry
       const entry = {
+        eventType: "message",
         messageId: message.id,
         authorId,
         authorName,
@@ -667,7 +1079,7 @@ class SensesEngine {
           const guildName = this._plugin._getGuildName(newGuildId);
 
           BdApi.UI.showToast(
-            `Shadow Senses: ${unseenCount} message${unseenCount > 1 ? "s" : ""} in ${guildName} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
+            `Shadow Senses: ${unseenCount} signal${unseenCount > 1 ? "s" : ""} in ${guildName} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
             { type: "info" }
           );
           this._plugin._widgetDirty = true;
@@ -714,6 +1126,24 @@ class SensesEngine {
     return count;
   }
 
+  getMarkedOnlineCount() {
+    const monitoredIds = this._plugin.deploymentManager?.getMonitoredUserIds?.();
+    if (!monitoredIds || monitoredIds.size === 0) return 0;
+
+    const presenceStore = this._resolvePresenceStore();
+    if (!presenceStore || typeof presenceStore.getStatus !== "function") return 0;
+
+    let onlineCount = 0;
+    for (const userId of monitoredIds) {
+      try {
+        const status = this._normalizeStatus(presenceStore.getStatus(userId));
+        this._statusByUserId.set(userId, status);
+        if (this._isOnlineStatus(status)) onlineCount++;
+      } catch (_) {}
+    }
+    return onlineCount;
+  }
+
   getSessionMessageCount() {
     return this._sessionMessageCount;
   }
@@ -731,10 +1161,17 @@ class SensesEngine {
     this._sessionMessageCount = 0;
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
+    this._handlePresenceUpdate = null;
+    this._handleTypingStart = null;
+    this._handleRelationshipChange = null;
+    this._subscribedEventHandlers = new Map();
     this._dirty = false;
     this._dirtyGuilds = new Set();
     this._totalFeedEntries = 0;
     this._feedVersion = 0;
+    this._statusByUserId = new Map();
+    this._typingToastCooldown = new Map();
+    this._relationshipFriendIds = new Set();
   }
 }
 
@@ -1283,10 +1720,25 @@ function buildComponents(pluginRef) {
     const time = new Date(entry.timestamp);
     const timeStr = `${String(time.getHours()).padStart(2, "0")}:${String(time.getMinutes()).padStart(2, "0")}`;
     const rankColor = RANK_COLORS[entry.shadowRank] || "#8a2be2";
+    const eventType = entry.eventType || "message";
+    const isNavigable = !!(entry.guildId && entry.channelId && entry.guildId !== GLOBAL_UTILITY_FEED_ID);
+    const eventLabel =
+      eventType === "message" ? null :
+      eventType === "status" ? "STATUS" :
+      eventType === "typing" ? "TYPING" :
+      eventType === "relationship" ? "CONNECTION" :
+      eventType.toUpperCase();
+    const contentText = eventType === "message"
+      ? (entry.content ? `\u201C${entry.content}\u201D` : "\u2014 no text content \u2014")
+      : (entry.content || "\u2014 no details \u2014");
 
     return ce("div", {
       className: "shadow-senses-feed-card",
-      onClick: () => onNavigate && onNavigate(entry),
+      style: { cursor: isNavigable ? "pointer" : "default" },
+      onClick: () => {
+        if (!isNavigable) return;
+        if (onNavigate) onNavigate(entry);
+      },
     },
       ce("div", { className: "shadow-senses-feed-card-header" },
         ce("span", { style: { color: rankColor, fontWeight: 600 } },
@@ -1294,14 +1746,19 @@ function buildComponents(pluginRef) {
         ),
         ce("span", { style: { color: "#666" } }, "\u2192"),
         ce("span", { style: { color: "#ccc" } }, entry.authorName),
+        eventLabel
+          ? ce("span", { style: { color: "#fbbf24", fontSize: "0.8em", fontWeight: 700 } }, eventLabel)
+          : null,
         entry.guildName
           ? ce("span", { style: { color: "#a78bfa", fontSize: "0.85em" } }, entry.guildName)
           : null,
-        ce("span", { style: { color: "#60a5fa" } }, `#${entry.channelName}`),
+        entry.channelId
+          ? ce("span", { style: { color: "#60a5fa" } }, `#${entry.channelName}`)
+          : null,
         ce("span", { style: { color: "#666", marginLeft: "auto" } }, timeStr)
       ),
       ce("div", { className: "shadow-senses-feed-content" },
-        entry.content ? `\u201C${entry.content}\u201D` : "\u2014 no text content \u2014"
+        contentText
       )
     );
   }
@@ -1456,6 +1913,9 @@ function buildComponents(pluginRef) {
     const deployCount = pluginRef.deploymentManager
       ? pluginRef.deploymentManager.getDeploymentCount()
       : 0;
+    const onlineMarkedCount = pluginRef.sensesEngine
+      ? pluginRef.sensesEngine.getMarkedOnlineCount()
+      : 0;
     const msgCount = pluginRef.sensesEngine
       ? pluginRef.sensesEngine.getSessionMessageCount()
       : 0;
@@ -1490,7 +1950,11 @@ function buildComponents(pluginRef) {
           : ce(DeploymentsTab, { onRecall: null, onDeployNew: handleDeployNew }),
         // Footer
         ce("div", { className: "shadow-senses-footer" },
-          ce("span", null, `${deployCount} shadow${deployCount !== 1 ? "s" : ""} deployed`),
+          ce("span", null,
+            pluginRef.settings?.showMarkedOnlineCount
+              ? `${deployCount} deployed \u2022 ${onlineMarkedCount} online`
+              : `${deployCount} shadow${deployCount !== 1 ? "s" : ""} deployed`
+          ),
           ce("span", null, `${msgCount} detection${msgCount !== 1 ? "s" : ""} (since restart)`)
         )
       )
@@ -1518,16 +1982,22 @@ function buildComponents(pluginRef) {
     const deployCount = pluginRef.deploymentManager
       ? pluginRef.deploymentManager.getDeploymentCount()
       : 0;
+    const onlineMarkedCount = pluginRef.sensesEngine
+      ? pluginRef.sensesEngine.getMarkedOnlineCount()
+      : 0;
     const feedCount = pluginRef.sensesEngine
       ? pluginRef.sensesEngine.getActiveFeedCount()
       : 0;
+    const label = pluginRef.settings?.showMarkedOnlineCount
+      ? `Shadow Senses: ${deployCount} deployed / ${onlineMarkedCount} online`
+      : `Shadow Senses: ${deployCount} deployed`;
 
     return ce("div", {
       className: "shadow-senses-widget",
       onClick: () => pluginRef.openPanel(),
     },
       ce("span", { className: "shadow-senses-widget-label" },
-        `Shadow Senses: ${deployCount} deployed`
+        label
       ),
       feedCount > 0
         ? ce("span", { className: "shadow-senses-widget-badge" }, feedCount)
@@ -1619,11 +2089,7 @@ try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _Reac
 
 module.exports = class ShadowSenses {
   constructor() {
-    this.settings = {
-      animationEnabled: true,
-      respectReducedMotion: false,
-      animationDuration: 550,
-    };
+    this.settings = { ...DEFAULT_SETTINGS };
     this._transitionNavTimeout = null;
     this._transitionCleanupTimeout = null;
     this._transitionRunId = 0;
@@ -1636,8 +2102,9 @@ module.exports = class ShadowSenses {
 
   start() {
     try {
-      console.log(`[${PLUGIN_NAME}] Starting v1.0.0...`);
+      console.log(`[${PLUGIN_NAME}] Starting v${PLUGIN_VERSION}...`);
       this._debugMode = BdApi.Data.load(PLUGIN_NAME, "debugMode") ?? false;
+      this.loadSettings();
       this._stopped = false;
       this._widgetDirty = true;
       this._panelOpen = false;
@@ -1686,7 +2153,7 @@ module.exports = class ShadowSenses {
       this.patchContextMenu();
 
       this.debugLog("Lifecycle", "Started successfully");
-      BdApi.UI.showToast(`${PLUGIN_NAME} v1.0.0 \u2014 Shadow deployment online`, { type: "info" });
+      BdApi.UI.showToast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`, { type: "info" });
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
       BdApi.UI.showToast(`${PLUGIN_NAME} failed to start: ${err.message}`, { type: "error" });
@@ -1762,6 +2229,27 @@ module.exports = class ShadowSenses {
     BdApi.UI.showToast(`${PLUGIN_NAME} \u2014 Shadows recalled`, { type: "info" });
   }
 
+  loadSettings() {
+    try {
+      const saved = BdApi.Data.load(PLUGIN_NAME, "settings");
+      this.settings = {
+        ...DEFAULT_SETTINGS,
+        ...(saved && typeof saved === "object" ? saved : {}),
+      };
+    } catch (err) {
+      this.debugError("Settings", "Failed to load settings; using defaults", err);
+      this.settings = { ...DEFAULT_SETTINGS };
+    }
+  }
+
+  saveSettings() {
+    try {
+      BdApi.Data.save(PLUGIN_NAME, "settings", this.settings);
+    } catch (err) {
+      this.debugError("Settings", "Failed to save settings", err);
+    }
+  }
+
   initWebpack() {
     const { Webpack } = BdApi;
     // Sync attempt — fast path if modules already loaded
@@ -1773,6 +2261,15 @@ module.exports = class ShadowSenses {
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
+    this._UserStore =
+      Webpack.getStore("UserStore") ||
+      Webpack.getModule(m => m && typeof m.getCurrentUser === "function" && typeof m.getUser === "function");
+    this._PresenceStore =
+      Webpack.getStore("PresenceStore") ||
+      Webpack.getModule(m => m && typeof m.getStatus === "function");
+    this._RelationshipStore =
+      Webpack.getStore("RelationshipStore") ||
+      Webpack.getModule(m => m && typeof m.getFriendIDs === "function");
     this._NavigationUtils =
       Webpack.getByKeys("transitionTo", "back", "forward") ||
       Webpack.getModule(m => m.transitionTo && m.back && m.forward);
@@ -1781,6 +2278,9 @@ module.exports = class ShadowSenses {
       ChannelStore: !!this._ChannelStore,
       SelectedGuildStore: !!this._SelectedGuildStore,
       GuildStore: !!this._GuildStore,
+      UserStore: !!this._UserStore,
+      PresenceStore: !!this._PresenceStore,
+      RelationshipStore: !!this._RelationshipStore,
       NavigationUtils: !!this._NavigationUtils,
     });
   }
@@ -1818,6 +2318,7 @@ module.exports = class ShadowSenses {
 
       if (this._Dispatcher) {
         this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt} (${attempt * 500}ms)`);
+        this.initWebpack();
         if (this.sensesEngine) this.sensesEngine.subscribe();
         return;
       }
@@ -2301,6 +2802,7 @@ module.exports = class ShadowSenses {
     const ce = React.createElement;
 
     const deployCount = this.deploymentManager?.getDeploymentCount() || 0;
+    const onlineMarkedCount = this.sensesEngine?.getMarkedOnlineCount?.() || 0;
     const sessionCount = this.sensesEngine?.getSessionMessageCount() || 0;
     const totalDetections = this.sensesEngine?.getTotalDetections() || 0;
 
@@ -2311,16 +2813,34 @@ module.exports = class ShadowSenses {
       padding: "12px",
       textAlign: "center",
     };
+    const rowStyle = {
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: "12px",
+      marginTop: "10px",
+    };
+
+    const updateSetting = (key, value) => {
+      this.settings[key] = value;
+      this.saveSettings();
+      this._widgetDirty = true;
+      if (typeof this._widgetForceUpdate === "function") this._widgetForceUpdate();
+    };
 
     return ce("div", { style: { padding: "16px", background: "#1e1e2e", borderRadius: "8px", color: "#ccc" } },
       // Statistics header
       ce("h3", { style: { color: "#8a2be2", marginTop: 0, marginBottom: "12px" } }, "Shadow Senses Statistics"),
 
       // Stat cards grid
-      ce("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px", marginBottom: "16px" } },
+      ce("div", { style: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", marginBottom: "16px" } },
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, deployCount),
           ce("div", { style: { color: "#999", fontSize: "11px" } }, "Deployed")
+        ),
+        ce("div", { style: statCardStyle },
+          ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, onlineMarkedCount),
+          ce("div", { style: { color: "#999", fontSize: "11px" } }, "Marked Online")
         ),
         ce("div", { style: statCardStyle },
           ce("div", { style: { color: "#8a2be2", fontSize: "20px", fontWeight: "700" } }, sessionCount),
@@ -2332,12 +2852,111 @@ module.exports = class ShadowSenses {
         )
       ),
 
-      // Debug toggle
-      ce("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      ce("h3", { style: { color: "#8a2be2", marginTop: 0, marginBottom: "8px", fontSize: "14px" } }, "Marked Utility Alerts"),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Status Change Alerts"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.statusAlerts,
+          onChange: (e) => updateSetting("statusAlerts", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Typing Alerts"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.typingAlerts,
+          onChange: (e) => updateSetting("typingAlerts", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Removed Friend Alerts"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.removedFriendAlerts,
+          onChange: (e) => updateSetting("removedFriendAlerts", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Show Marked Online Count"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.showMarkedOnlineCount,
+          onChange: (e) => updateSetting("showMarkedOnlineCount", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Typing Alert Cooldown (seconds)"),
+        ce("input", {
+          type: "number",
+          min: 3,
+          max: 60,
+          step: 1,
+          defaultValue: Math.round((this.settings.typingAlertCooldownMs || DEFAULT_TYPING_ALERT_COOLDOWN_MS) / 1000),
+          onChange: (e) => {
+            const seconds = Number(e.target.value);
+            if (!Number.isFinite(seconds)) return;
+            updateSetting("typingAlertCooldownMs", Math.min(60000, Math.max(3000, Math.floor(seconds * 1000))));
+          },
+          style: {
+            width: "80px",
+            padding: "4px 6px",
+            borderRadius: "6px",
+            border: "1px solid rgba(138, 43, 226, 0.4)",
+            background: "#111827",
+            color: "#ccc",
+          },
+        })
+      ),
+
+      ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Feed Visibility"),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Status Events in Feed"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.includeStatusEventsInFeed,
+          onChange: (e) => updateSetting("includeStatusEventsInFeed", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Typing Events in Feed"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.includeTypingEventsInFeed,
+          onChange: (e) => updateSetting("includeTypingEventsInFeed", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Connection Events in Feed"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.includeRelationshipEventsInFeed,
+          onChange: (e) => updateSetting("includeRelationshipEventsInFeed", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
+      ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Diagnostics"),
+
+      ce("div", { style: rowStyle },
         ce("span", { style: { color: "#999", fontSize: "13px" } }, "Debug Mode"),
         ce("input", {
           type: "checkbox",
-          checked: this._debugMode,
+          defaultChecked: this._debugMode,
           onChange: (e) => {
             this._debugMode = e.target.checked;
             BdApi.Data.save(PLUGIN_NAME, "debugMode", this._debugMode);
