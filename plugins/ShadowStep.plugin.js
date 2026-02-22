@@ -621,6 +621,23 @@ module.exports = class ShadowStep {
     anchor.useCount = (anchor.useCount || 0) + 1;
     this.saveSettings();
 
+    if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
+      _ensureShadowPortalCoreApplied(this.constructor);
+    }
+
+    // Fail-safe: never crash teleport if shared core failed to load.
+    if (typeof this.playTransition !== "function" || typeof this._navigate !== "function") {
+      this.debugError("Teleport", "Shared portal core missing; using direct navigation fallback");
+      if (this._NavigationUtils?.transitionTo) {
+        this._NavigationUtils.transitionTo(path);
+      } else if (window.history?.pushState) {
+        window.history.pushState({}, "", path);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      }
+      BdApi.UI.showToast(`Shadow Step \u2192 #${anchor.channelName}`, { type: "warning" });
+      return;
+    }
+
     // Play transition then navigate
     this.playTransition(() => {
       const fadeToken = this._beginChannelViewFadeOut();
@@ -1361,6 +1378,7 @@ module.exports = class ShadowStep {
 const _loadShadowPortalCore = () => {
   try {
     const path = require("path");
+    const fs = require("fs");
     const candidates = [];
     if (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === "string") {
       candidates.push(path.join(BdApi.Plugins.folder, "ShadowPortalCore.js"));
@@ -1374,18 +1392,43 @@ const _loadShadowPortalCore = () => {
         const mod = require(resolved);
         if (mod?.applyPortalCoreToClass) return mod;
       } catch (_) {}
+      try {
+        const absolute = path.isAbsolute(candidate)
+          ? candidate
+          : path.join(BdApi?.Plugins?.folder || "", candidate.replace(/^\.\//, ""));
+        if (!absolute || !fs.existsSync(absolute)) continue;
+        const source = fs.readFileSync(absolute, "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "window",
+          "BdApi",
+          `${source}\nreturn module.exports || exports || (window && window.ShadowPortalCore) || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, typeof window !== "undefined" ? window : null, BdApi);
+        const mod = loaded || moduleObj.exports || (typeof window !== "undefined" ? window.ShadowPortalCore : null);
+        if (mod?.applyPortalCoreToClass) return mod;
+      } catch (_) {}
     }
   } catch (_) {}
-  return null;
+  return typeof window !== "undefined" ? window.ShadowPortalCore || null : null;
 };
 
-const ShadowPortalCore = _loadShadowPortalCore();
-if (ShadowPortalCore?.applyPortalCoreToClass) {
-  ShadowPortalCore.applyPortalCoreToClass(module.exports, {
-    transitionId: TRANSITION_ID,
-    navigationFailureToast: "Shadow Step failed to switch channel",
-    contextLabelKeys: ["anchorName", "label", "name"],
-  });
-} else {
+const SHADOW_PORTAL_CONFIG = {
+  transitionId: TRANSITION_ID,
+  navigationFailureToast: "Shadow Step failed to switch channel",
+  contextLabelKeys: ["anchorName", "label", "name"],
+};
+
+const _ensureShadowPortalCoreApplied = (PluginClass = module.exports) => {
+  const core = _loadShadowPortalCore();
+  if (!core?.applyPortalCoreToClass) return false;
+  core.applyPortalCoreToClass(PluginClass, SHADOW_PORTAL_CONFIG);
+  return true;
+};
+
+if (!_ensureShadowPortalCoreApplied(module.exports)) {
   console.warn(`[${PLUGIN_NAME}] Shared portal core unavailable. Navigation/transition patch will not be shared.`);
 }
