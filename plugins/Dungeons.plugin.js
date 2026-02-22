@@ -1032,6 +1032,7 @@ module.exports = class Dungeons {
     this._memberWidthCache = new Map(); // Short-lived cache for member list width
     this._containerCache = new Map(); // Cache for progress/header containers (short TTL)
     this._mobSpawnQueue = new Map(); // Micro-queue for batched mob spawning (250-500ms)
+    this._spawnPipelineGuardAt = new Map(); // channelKey -> last guard log timestamp
     // Legacy: used by older spawn-queue implementation (now centralized in global spawn loop)
     this.userHPBar = null;
     this.dungeonModal = null;
@@ -2553,10 +2554,150 @@ module.exports = class Dungeons {
       } else {
         await this.initializeUserStats();
       }
+
+      // Harden critical combat settings against stale/corrupt persisted values.
+      // Bad values here can silently produce zero-mob deploys or immediate boss burn.
+      const sanitizedKeys = this.sanitizeCriticalCombatSettings();
+      if (sanitizedKeys.length > 0) {
+        this.debugLog?.('SETTINGS', 'Sanitized combat setting keys', sanitizedKeys);
+        this.saveSettings();
+      }
     } catch (error) {
       this.errorLog('Failed to load settings', error);
       this.settings = { ...this.defaultSettings };
     }
+  }
+
+  /**
+   * Normalize high-impact combat settings loaded from persistence.
+   * @returns {Array<string>} keys that were changed
+   */
+  sanitizeCriticalCombatSettings() {
+    if (!this.settings || typeof this.settings !== 'object') return [];
+
+    const changedKeys = [];
+    const isSameValue = (a, b) => {
+      if (Array.isArray(a) && Array.isArray(b)) {
+        if (a.length !== b.length) return false;
+        for (let i = 0; i < a.length; i++) {
+          if (a[i] !== b[i]) return false;
+        }
+        return true;
+      }
+      return a === b;
+    };
+    const setIfChanged = (key, value) => {
+      if (isSameValue(this.settings[key], value)) return;
+      this.settings[key] = value;
+      changedKeys.push(key);
+    };
+
+    const bossGateEnabled = this.settings?.bossGateEnabled !== false;
+    setIfChanged('bossGateEnabled', bossGateEnabled);
+
+    const bossGateMinDurationMsRaw = Number(this.settings?.bossGateMinDurationMs);
+    const bossGateMinDurationMs =
+      Number.isFinite(bossGateMinDurationMsRaw) && bossGateMinDurationMsRaw >= 5000
+        ? Math.floor(bossGateMinDurationMsRaw)
+        : this.defaultSettings.bossGateMinDurationMs;
+    setIfChanged('bossGateMinDurationMs', bossGateMinDurationMs);
+
+    const bossGateRequiredMobKillsRaw = Number(this.settings?.bossGateRequiredMobKills);
+    const bossGateRequiredMobKills =
+      Number.isFinite(bossGateRequiredMobKillsRaw) && bossGateRequiredMobKillsRaw >= 0
+        ? Math.floor(bossGateRequiredMobKillsRaw)
+        : this.defaultSettings.bossGateRequiredMobKills;
+    setIfChanged('bossGateRequiredMobKills', bossGateRequiredMobKills);
+
+    const mobWaveBaseCountRaw = Number(this.settings?.mobWaveBaseCount);
+    const mobWaveBaseCount = Number.isFinite(mobWaveBaseCountRaw)
+      ? this.clampNumber(Math.floor(mobWaveBaseCountRaw), 1, 5000)
+      : this.defaultSettings.mobWaveBaseCount;
+    setIfChanged('mobWaveBaseCount', mobWaveBaseCount);
+
+    const mobWaveVariancePercentRaw = Number(this.settings?.mobWaveVariancePercent);
+    const mobWaveVariancePercent = Number.isFinite(mobWaveVariancePercentRaw)
+      ? this.clampNumber(mobWaveVariancePercentRaw, 0, 0.95)
+      : this.defaultSettings.mobWaveVariancePercent;
+    setIfChanged('mobWaveVariancePercent', mobWaveVariancePercent);
+
+    const mobMaxActiveCapRaw = Number(this.settings?.mobMaxActiveCap);
+    const mobMaxActiveCap = Number.isFinite(mobMaxActiveCapRaw)
+      ? this.clampNumber(Math.floor(mobMaxActiveCapRaw), 50, 50000)
+      : this.defaultSettings.mobMaxActiveCap;
+    setIfChanged('mobMaxActiveCap', mobMaxActiveCap);
+
+    const defaultRankList = Array.isArray(this.defaultSettings?.dungeonRanks)
+      ? this.defaultSettings.dungeonRanks
+      : ['E'];
+    const incomingRankList = Array.isArray(this.settings?.dungeonRanks)
+      ? this.settings.dungeonRanks
+      : [];
+    const normalizedRankList = [...new Set(
+      incomingRankList
+        .map((rank) => (typeof rank === 'string' ? rank.trim() : ''))
+        .filter(Boolean)
+    )];
+    setIfChanged(
+      'dungeonRanks',
+      normalizedRankList.length > 0 ? normalizedRankList : [...defaultRankList]
+    );
+
+    return changedKeys;
+  }
+
+  getDungeonRankList() {
+    const settingsRanks = Array.isArray(this.settings?.dungeonRanks)
+      ? this.settings.dungeonRanks
+      : [];
+    const normalizedSettingRanks = [...new Set(
+      settingsRanks
+        .map((rank) => (typeof rank === 'string' ? rank.trim() : ''))
+        .filter(Boolean)
+    )];
+    if (normalizedSettingRanks.length > 0) return normalizedSettingRanks;
+
+    const defaultRanks = Array.isArray(this.defaultSettings?.dungeonRanks)
+      ? this.defaultSettings.dungeonRanks
+      : [];
+    if (defaultRanks.length > 0) return [...defaultRanks];
+
+    return ['E'];
+  }
+
+  /**
+   * Resolve boss gate config with safety bounds.
+   */
+  getBossGateRuntimeConfig() {
+    const minDurationRaw = Number(this.settings?.bossGateMinDurationMs);
+    const requiredMobKillsRaw = Number(this.settings?.bossGateRequiredMobKills);
+    return {
+      enabled: this.settings?.bossGateEnabled !== false,
+      minDurationMs:
+        Number.isFinite(minDurationRaw) && minDurationRaw >= 5000
+          ? Math.floor(minDurationRaw)
+          : this.defaultSettings.bossGateMinDurationMs,
+      requiredMobKills:
+        Number.isFinite(requiredMobKillsRaw) && requiredMobKillsRaw >= 0
+          ? Math.floor(requiredMobKillsRaw)
+          : this.defaultSettings.bossGateRequiredMobKills,
+    };
+  }
+
+  /**
+   * Resolve mob wave config with safety bounds.
+   */
+  getMobWaveRuntimeConfig() {
+    const baseSpawnRaw = Number(this.settings?.mobWaveBaseCount);
+    const varianceRaw = Number(this.settings?.mobWaveVariancePercent);
+    return {
+      baseSpawnCount: Number.isFinite(baseSpawnRaw)
+        ? this.clampNumber(Math.floor(baseSpawnRaw), 1, 5000)
+        : this.defaultSettings.mobWaveBaseCount,
+      variancePercent: Number.isFinite(varianceRaw)
+        ? this.clampNumber(varianceRaw, 0, 0.95)
+        : this.defaultSettings.mobWaveVariancePercent,
+    };
   }
 
   /**
@@ -3735,9 +3876,10 @@ module.exports = class Dungeons {
    * @returns {string} Selected dungeon rank
    */
   calculateDungeonRank() {
+    const rankList = this.getDungeonRankList();
     const userRank = this.soloLevelingStats?.settings?.rank || 'E';
-    const rankIndex = this.getRankIndexValue(userRank);
-    const maxRankIndex = this.settings.dungeonRanks.length - 1;
+    const rankIndex = this.getRankIndexValue(userRank, rankList);
+    const maxRankIndex = rankList.length - 1;
 
     // Functional: Generate weights using Array.from and map
     const weights = Array.from({ length: maxRankIndex + 1 }, (_, i) =>
@@ -3753,7 +3895,7 @@ module.exports = class Dungeons {
       return random <= 0;
     });
 
-    return this.settings.dungeonRanks[selectedIndex >= 0 ? selectedIndex : 0];
+    return rankList[selectedIndex >= 0 ? selectedIndex : 0] || 'E';
   }
 
   /**
@@ -3805,7 +3947,8 @@ module.exports = class Dungeons {
       return; // Abort dungeon creation
     }
 
-    const rankIndex = this.getRankIndexValue(rank);
+    const rankList = this.getDungeonRankList();
+    const rankIndex = this.getRankIndexValue(rank, rankList);
     // THEMED BIOME DUNGEONS - Each biome spawns specific magic beast families
     // Biomes reflect natural habitats for magic beasts
     const dungeonBiomes = [
@@ -3917,8 +4060,9 @@ module.exports = class Dungeons {
     const bossBeastType = this.selectMagicBeastType(
       dungeonBiome.beastFamilies,
       rank,
-      this.settings.dungeonRanks
+      rankList
     );
+    const initialBossGate = this.getBossGateRuntimeConfig();
 
     const dungeon = {
       id: channelKey,
@@ -3997,19 +4141,16 @@ module.exports = class Dungeons {
       guildId: channelInfo.guildId,
       userParticipating: null,
       shadowsDeployed: false, // Manual deploy: user must click "Deploy Shadows" to start combat
+      deployedAt: null, // Canonical deploy timestamp used for boss gate timing
       corpsePile: [], // Dead mobs collected during combat for post-dungeon ARISE extraction (persisted to IDB)
       shadowAttacks: {},
       shadowContributions: {}, // Track XP contributions: { shadowId: { mobsKilled: 0, bossDamage: 0 } }
       shadowHP: new Map(), // Track shadow HP: Map<shadowId, { hp, maxHp }>
       shadowRevives: 0, // Track total revives for summary
       bossGate: {
-        enabled: this.settings?.bossGateEnabled !== false,
-        minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
-          ? this.settings.bossGateMinDurationMs
-          : 180000,
-        requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
-          ? this.settings.bossGateRequiredMobKills
-          : 0,
+        enabled: initialBossGate.enabled,
+        minDurationMs: initialBossGate.minDurationMs,
+        requiredMobKills: initialBossGate.requiredMobKills,
         deployedAt: null, // Set on first Deploy Shadows; boss vulnerability timer starts from deploy time
         unlockedAt: null,
       },
@@ -4096,6 +4237,8 @@ module.exports = class Dungeons {
 
     if (this._mobSpawnNextAt.has(channelKey)) {
       this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: startMobSpawning SKIPPED — already scheduled for ${channelKey}`);
+      this._ensureMobSpawnLoop();
+      this.ensureDeployedSpawnPipeline(channelKey, 'start_already_scheduled');
       return;
     }
 
@@ -4149,6 +4292,78 @@ module.exports = class Dungeons {
     this._mobSpawnNextAt && this._mobSpawnNextAt.clear();
     this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.clear();
     this._stopMobSpawnLoop?.();
+  }
+
+  _countLiveMobs(dungeon) {
+    const mobs = dungeon?.mobs?.activeMobs;
+    if (!Array.isArray(mobs) || mobs.length === 0) return 0;
+
+    let live = 0;
+    for (let i = 0; i < mobs.length; i++) {
+      if (mobs[i]?.hp > 0) live++;
+    }
+    return live;
+  }
+
+  _hasQueuedMobWave(channelKey) {
+    const queued = this._mobSpawnQueue?.get?.(channelKey);
+    return Array.isArray(queued) && queued.length > 0;
+  }
+
+  _logSpawnPipelineGuard(channelKey, message, cooldownMs = 5000) {
+    const now = Date.now();
+    const last = this._spawnPipelineGuardAt.get(channelKey) || 0;
+    if (now - last < cooldownMs) return;
+    this._spawnPipelineGuardAt.set(channelKey, now);
+    console.warn(`[Dungeons] MOB_SPAWN_GUARD: ${message} | Key: ${channelKey}`);
+  }
+
+  /**
+   * Ensure deployed dungeons always have a healthy mob-spawn pipeline.
+   * Recovers stale scheduler/queue state caused by channel/visibility transitions.
+   * @param {string} channelKey
+   * @param {string} reason
+   * @returns {boolean}
+   */
+  ensureDeployedSpawnPipeline(channelKey, reason = 'runtime_guard') {
+    const dungeon = this._getActiveDungeon(channelKey);
+    if (!dungeon || !dungeon.shadowsDeployed || dungeon.boss?.hp <= 0) return false;
+
+    if (!dungeon.mobs || typeof dungeon.mobs !== 'object') dungeon.mobs = {};
+    if (!Array.isArray(dungeon.mobs.activeMobs)) dungeon.mobs.activeMobs = [];
+    if (!Number.isFinite(dungeon.mobs.total)) dungeon.mobs.total = 0;
+    if (!Number.isFinite(dungeon.mobs.killed)) dungeon.mobs.killed = 0;
+    if (!Number.isFinite(dungeon.mobs.targetCount)) dungeon.mobs.targetCount = 0;
+
+    this._ensureMobSpawnLoop();
+
+    const targetCount = Math.max(0, Math.floor(Number(dungeon.mobs.targetCount) || 0));
+    const totalSpawned = Math.max(0, Math.floor(Number(dungeon.mobs.total) || 0));
+    const liveMobsBefore = this._countLiveMobs(dungeon);
+    const hasQueuedWave = this._hasQueuedMobWave(channelKey);
+    const spawnExhausted = targetCount > 0 && totalSpawned >= targetCount;
+
+    if (!spawnExhausted && !this._mobSpawnNextAt.has(channelKey)) {
+      const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
+      this._mobSpawnNextAt.set(channelKey, Date.now() + nextDelay);
+    }
+
+    if (spawnExhausted) return liveMobsBefore > 0 || hasQueuedWave;
+    if (liveMobsBefore > 0 || hasQueuedWave) return true;
+
+    this.spawnMobs(channelKey);
+    if (this._hasQueuedMobWave(channelKey)) {
+      this.processMobSpawnQueue(channelKey);
+      this._mobSpawnQueueNextAt?.delete?.(channelKey);
+    }
+
+    const liveMobsAfter = this._countLiveMobs(dungeon);
+    this._logSpawnPipelineGuard(
+      channelKey,
+      `rehydrated spawn pipeline (${reason}) | live ${liveMobsBefore} -> ${liveMobsAfter} | total=${dungeon.mobs.total}/${targetCount || '?'}`
+    );
+
+    return liveMobsAfter > 0;
   }
 
   // ==== BEAST TYPE SELECTION HELPERS ====
@@ -4257,6 +4472,75 @@ module.exports = class Dungeons {
     return availableBeasts[Math.floor(Math.random() * availableBeasts.length)];
   }
 
+  _buildFallbackMobWave(dungeon, desiredCount = 1, context = 'spawn_guard') {
+    const rankList = this.getDungeonRankList();
+    const mobRank = dungeon?.rank || rankList[0] || 'E';
+    const rankIndex = this.getRankIndexValue(mobRank, rankList);
+    const baseStats = this.calculateMobBaseStats(rankIndex) || {};
+
+    const baseStrength = Math.max(1, Math.floor(Number(baseStats.strength) || 100));
+    const baseAgility = Math.max(0, Math.floor(Number(baseStats.agility) || 80));
+    const baseIntelligence = Math.max(0, Math.floor(Number(baseStats.intelligence) || 60));
+    const baseVitality = Math.max(1, Math.floor(Number(baseStats.vitality) || 150));
+    const maxSpawn = this.clampNumber(Math.floor(Number(desiredCount) || 1), 1, 25);
+
+    const safeFamilies =
+      Array.isArray(dungeon?.beastFamilies) && dungeon.beastFamilies.length > 0
+        ? dungeon.beastFamilies
+        : this.getDefaultBeastFamilies();
+
+    const fallbackMobs = [];
+    const spawnedAt = Date.now();
+    for (let i = 0; i < maxSpawn; i++) {
+      const beast = this.selectMagicBeastType(safeFamilies, mobRank, rankList);
+      const role = this.deriveMonsterRoleFromBeast(beast.type, beast.family);
+      const hpVariance = 0.85 + Math.random() * 0.3;
+      const hp = Math.max(1, Math.floor((220 + baseVitality * 12 + rankIndex * 90) * hpVariance));
+
+      fallbackMobs.push({
+        id: `mob_fallback_${spawnedAt}_${i}_${Math.random().toString(36).slice(2, 8)}`,
+        rank: mobRank,
+        beastType: beast.type,
+        beastName: beast.name,
+        beastFamily: beast.family,
+        role,
+        isMagicBeast: true,
+        hp,
+        maxHp: hp,
+        lastAttackTime: 0,
+        attackCooldown: 1800 + Math.random() * 1200,
+        mobTier: 'normal',
+        isElite: false,
+        baseStats: {
+          strength: baseStrength,
+          agility: baseAgility,
+          intelligence: baseIntelligence,
+          vitality: baseVitality,
+          perception: Math.max(10, Math.floor((baseStrength + baseAgility + baseIntelligence) * 0.25)),
+        },
+        strength: baseStrength,
+        traits: {
+          strengthMod: 1,
+          agilityMod: 1,
+          intelligenceMod: 1,
+          vitalityMod: 1,
+          hpMod: hpVariance,
+        },
+        extractionData: {
+          dungeonRank: dungeon?.rank || mobRank,
+          dungeonType: dungeon?.type || 'Recovered',
+          biome: dungeon?.biome?.name || dungeon?.type || 'Recovered',
+          beastFamilies: safeFamilies,
+          spawnedAt,
+          context,
+        },
+        description: `${mobRank}-rank ${beast.name} (fallback)`,
+      });
+    }
+
+    return fallbackMobs;
+  }
+
   /**
    * Process queued mobs in batches (250-500ms intervals)
    * This smooths DOM updates and reduces GC churn
@@ -4298,6 +4582,24 @@ module.exports = class Dungeons {
     }
 
     if (validQueuedMobs.length === 0) {
+      const fallbackMobs = this._buildFallbackMobWave(
+        dungeon,
+        Math.max(1, Math.min(10, queuedMobs.length || 1)),
+        'queue_invalid'
+      );
+      if (fallbackMobs.length > 0) {
+        const beforeCount = dungeon.mobs.activeMobs.length;
+        dungeon.mobs.activeMobs.push(...fallbackMobs);
+        dungeon.mobs.remaining += fallbackMobs.length;
+        dungeon.mobs.total += fallbackMobs.length;
+        console.warn(
+          `[Dungeons] MOB_SPAWN_GUARD: queue invalid for ${channelKey}; injected fallback wave ` +
+          `(${fallbackMobs.length} mobs, active ${beforeCount} -> ${dungeon.mobs.activeMobs.length})`
+        );
+        this._mobSpawnQueue.delete(channelKey);
+        this.queueHPBarUpdate(channelKey);
+        return;
+      }
       this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — DROPPED invalid queued mobs (${queuedMobs.length})`);
       this._mobSpawnQueue.delete(channelKey);
       return;
@@ -4355,7 +4657,15 @@ module.exports = class Dungeons {
 
       // PER-DUNGEON CAPACITY: Use dungeon's own capacity instead of global cap
       // Each dungeon has its own capacity based on rank and biome
-      const mobCap = dungeon.mobs.mobCapacity || this.settings.mobMaxActiveCap || 600;
+      const dungeonMobCapacity = Number(dungeon.mobs.mobCapacity);
+      const settingMobCapacity = Number(this.settings?.mobMaxActiveCap);
+      const resolvedMobCapacity =
+        Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
+          ? dungeonMobCapacity
+          : Number.isFinite(settingMobCapacity) && settingMobCapacity > 0
+          ? settingMobCapacity
+          : this.defaultSettings.mobMaxActiveCap;
+      const mobCap = this.clampNumber(Math.floor(resolvedMobCapacity), 50, 50000);
       // Verbose spawn stats stripped — use MOB_CAP debugLog for capacity warnings
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
@@ -4380,27 +4690,23 @@ module.exports = class Dungeons {
         return;
       }
 
-      let baseSpawnCount;
-      let variancePercent;
-
       // MEMORY OPTIMIZED: Smaller waves reduce memory footprint
-      // Shadows naturally control mob population through combat
-      // Balanced for multiple simultaneous dungeons
-      baseSpawnCount = Number.isFinite(this.settings?.mobWaveBaseCount)
-        ? this.settings.mobWaveBaseCount
-        : 70;
-      variancePercent = Number.isFinite(this.settings?.mobWaveVariancePercent)
-        ? this.settings.mobWaveVariancePercent
-        : 0.2;
+      // Shadows naturally control mob population through combat.
+      // Runtime values are clamped to prevent silent zero-wave deploys.
+      const { baseSpawnCount, variancePercent } = this.getMobWaveRuntimeConfig();
 
       // Apply variance (e.g., 100 ±30% = 70-130)
       // Variance creates organic, unpredictable spawn waves
       const variance = baseSpawnCount * variancePercent;
-      const plannedSpawn = Math.floor(baseSpawnCount - variance + Math.random() * variance * 2);
+      const plannedSpawn = Math.max(
+        1,
+        Math.floor(baseSpawnCount - variance + Math.random() * variance * 2)
+      );
 
       // Respect remaining capacity
       const capacityRemaining = Math.max(0, mobCap - _aliveMobs);
-      const actualSpawnCount = Math.min(capacityRemaining, plannedSpawn);
+      const actualSpawnCount =
+        capacityRemaining > 0 ? Math.max(1, Math.min(capacityRemaining, plannedSpawn)) : 0;
 
       // Verbose planned/capacity log stripped — use MOB_CAP debugLog for capacity warnings
       if (actualSpawnCount <= 0) {
@@ -4426,6 +4732,7 @@ module.exports = class Dungeons {
 
       const pressureMobFactor = this.getShadowPressureMobFactor(dungeon);
       const pressureBucket = Math.round(pressureMobFactor * 100);
+      const rankList = this.getDungeonRankList();
 
       // CRITICAL: Check cache first to prevent excessive generation (prevents crashes)
       const cacheKey = `${channelKey}_${dungeon.rank}_${actualSpawnCount}_${pressureBucket}`;
@@ -4466,9 +4773,9 @@ module.exports = class Dungeons {
           const rankVariation = Math.floor(Math.random() * 3) - 1; // -1, 0, or +1
           const mobRankIndex = Math.max(
             0,
-            Math.min(this.settings.dungeonRanks.length - 1, dungeonRankIndex + rankVariation)
+            Math.min(rankList.length - 1, dungeonRankIndex + rankVariation)
           );
-          const mobRank = this.settings.dungeonRanks[mobRankIndex];
+          const mobRank = rankList[mobRankIndex] || dungeon.rank || rankList[0] || 'E';
           const mobTier = this._rollMobTier();
           const tierMultipliers = this._getMobTierMultipliers(mobTier);
 
@@ -4522,7 +4829,7 @@ module.exports = class Dungeons {
           const magicBeastType = this.selectMagicBeastType(
             dungeon.beastFamilies,
             mobRank,
-            this.settings.dungeonRanks
+            rankList
           );
 
           // SHADOW ARMY COMPATIBLE STRUCTURE
@@ -4594,7 +4901,6 @@ module.exports = class Dungeons {
             actualSpawnCount,
             pressureMobFactor,
           });
-          return;
         }
 
         // Cache generated mobs (template for future spawns to prevent crashes)
@@ -4617,13 +4923,26 @@ module.exports = class Dungeons {
       }
 
       if (!newMobs || newMobs.length === 0) {
-        this.errorLog?.('COMBAT', 'No valid mobs available after generation/cache pass; skipping spawn wave', {
-          channelKey,
-          cacheKey,
-          fromCache: !!cached,
-        });
-        if (cached) this._mobGenerationCache.delete(cacheKey);
-        return;
+        const fallbackMobs = this._buildFallbackMobWave(
+          dungeon,
+          Math.max(1, Math.min(actualSpawnCount || 1, 12)),
+          'generation_empty'
+        );
+        if (fallbackMobs.length > 0) {
+          console.warn(
+            `[Dungeons] MOB_SPAWN_GUARD: empty generation for ${channelKey}; injected fallback wave (${fallbackMobs.length})`
+          );
+          newMobs = fallbackMobs;
+          if (cached) this._mobGenerationCache.delete(cacheKey);
+        } else {
+          this.errorLog?.('COMBAT', 'No valid mobs available after generation/cache pass; skipping spawn wave', {
+            channelKey,
+            cacheKey,
+            fromCache: !!cached,
+          });
+          if (cached) this._mobGenerationCache.delete(cacheKey);
+          return;
+        }
       }
 
       // Generated mobs log stripped — FLUSHING log in processMobSpawnQueue covers this
@@ -4822,20 +5141,25 @@ module.exports = class Dungeons {
 
     // Mark deployed (shadows fight autonomously — user can optionally JOIN separately)
     dungeon.shadowsDeployed = true;
+    const bossGateConfig = this.getBossGateRuntimeConfig();
     if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
       dungeon.bossGate = {
-        enabled: this.settings?.bossGateEnabled !== false,
-        minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
-          ? this.settings.bossGateMinDurationMs
-          : 180000,
-        requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
-          ? this.settings.bossGateRequiredMobKills
-          : 0,
+        enabled: bossGateConfig.enabled,
+        minDurationMs: bossGateConfig.minDurationMs,
+        requiredMobKills: bossGateConfig.requiredMobKills,
         deployedAt: null,
         unlockedAt: null,
       };
+    } else {
+      // Refresh runtime gate values on deploy so stale persisted dungeon payloads
+      // can't bypass intended gate timing.
+      dungeon.bossGate.enabled = bossGateConfig.enabled;
+      dungeon.bossGate.minDurationMs = bossGateConfig.minDurationMs;
+      dungeon.bossGate.requiredMobKills = bossGateConfig.requiredMobKills;
     }
-    dungeon.bossGate.deployedAt = Date.now();
+    const deployedAt = Date.now();
+    dungeon.deployedAt = deployedAt;
+    dungeon.bossGate.deployedAt = deployedAt;
     dungeon.bossGate.unlockedAt = null;
     this._markAllocationDirty('deploy-shadows');
 
@@ -4845,9 +5169,13 @@ module.exports = class Dungeons {
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
 
     // ALWAYS-ON: Deploy log with full context
+    const gateSummary = dungeon.bossGate?.enabled === false
+      ? 'disabled'
+      : `${Math.floor((dungeon.bossGate?.minDurationMs || 0) / 1000)}s + ${dungeon.bossGate?.requiredMobKills || 0} kills`;
     console.log(
       `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
-      `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | Key: ${channelKey}`
+      `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | ` +
+      `Gate: ${gateSummary} | Key: ${channelKey}`
     );
 
     // Initialize boss and mob attack times to prevent one-shot burst
@@ -4871,6 +5199,16 @@ module.exports = class Dungeons {
       this.processMobSpawnQueue(channelKey);
       this._mobSpawnQueueNextAt?.delete?.(channelKey);
     }
+    this.ensureDeployedSpawnPipeline(channelKey, 'deploy_initial');
+    this._setTrackedTimeout(() => {
+      try {
+        const guardDungeon = this._getActiveDungeon(channelKey);
+        if (!guardDungeon || !guardDungeon.shadowsDeployed || guardDungeon.boss?.hp <= 0) return;
+        this.ensureDeployedSpawnPipeline(channelKey, 'deploy_watchdog');
+      } catch (error) {
+        this.errorLog('MOB_SPAWN_GUARD', 'Deploy watchdog failed', error);
+      }
+    }, 1000);
 
     await this.startShadowAttacks(channelKey);
     this.startBossAttacks(channelKey);
@@ -5279,32 +5617,68 @@ module.exports = class Dungeons {
   ensureBossEngagementUnlocked(dungeon, channelKey = null) {
     if (!dungeon?.boss) return false;
 
+    const bossGateConfig = this.getBossGateRuntimeConfig();
     if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
       dungeon.bossGate = {
-        enabled: this.settings?.bossGateEnabled !== false,
-        minDurationMs: Number.isFinite(this.settings?.bossGateMinDurationMs)
-          ? this.settings.bossGateMinDurationMs
-          : 180000,
-        requiredMobKills: Number.isFinite(this.settings?.bossGateRequiredMobKills)
-          ? this.settings.bossGateRequiredMobKills
-          : 0,
+        enabled: bossGateConfig.enabled,
+        minDurationMs: bossGateConfig.minDurationMs,
+        requiredMobKills: bossGateConfig.requiredMobKills,
         deployedAt: null,
         unlockedAt: null,
       };
+    } else {
+      // Self-heal stale/corrupt gate payloads from persisted dungeons.
+      if (typeof dungeon.bossGate.enabled !== 'boolean') {
+        dungeon.bossGate.enabled = bossGateConfig.enabled;
+      }
+      if (
+        !Number.isFinite(dungeon.bossGate.minDurationMs) ||
+        dungeon.bossGate.minDurationMs < 5000
+      ) {
+        dungeon.bossGate.minDurationMs = bossGateConfig.minDurationMs;
+      }
+      if (
+        !Number.isFinite(dungeon.bossGate.requiredMobKills) ||
+        dungeon.bossGate.requiredMobKills < 0
+      ) {
+        dungeon.bossGate.requiredMobKills = bossGateConfig.requiredMobKills;
+      }
     }
 
-    if (dungeon.bossGate.enabled === false) return true;
     if (!dungeon.shadowsDeployed) return false;
 
     const now = Date.now();
-    if (!Number.isFinite(dungeon.bossGate.deployedAt) || dungeon.bossGate.deployedAt <= 0) {
-      // Migration/self-heal: old dungeons without deployedAt start timer now.
-      dungeon.bossGate.deployedAt = now;
+    const gateDeployedAt = Number(dungeon.bossGate.deployedAt);
+    const dungeonDeployedAt = Number(dungeon.deployedAt);
+    let deployedAt = Math.max(
+      Number.isFinite(gateDeployedAt) ? gateDeployedAt : 0,
+      Number.isFinite(dungeonDeployedAt) ? dungeonDeployedAt : 0
+    );
+
+    if (!Number.isFinite(deployedAt) || deployedAt <= 0 || deployedAt > now) {
+      deployedAt = now;
       dungeon.bossGate.unlockedAt = null;
     }
-    if (dungeon.bossGate.unlockedAt) return true;
+    dungeon.deployedAt = deployedAt;
+    dungeon.bossGate.deployedAt = deployedAt;
 
-    const elapsed = Math.max(0, now - dungeon.bossGate.deployedAt);
+    const hasSpawnedMobs =
+      this._countLiveMobs(dungeon) > 0 ||
+      (Number.isFinite(dungeon?.mobs?.total) && dungeon.mobs.total > 0) ||
+      (Number.isFinite(dungeon?.mobs?.killed) && dungeon.mobs.killed > 0);
+
+    if (!hasSpawnedMobs && channelKey) {
+      this.ensureDeployedSpawnPipeline(channelKey, 'boss_gate_precheck');
+    }
+
+    if (dungeon.bossGate.enabled === false) {
+      // Even with gate disabled, require at least one successful spawn wave so
+      // deploys cannot insta-kill boss when spawn inputs silently collapse.
+      return hasSpawnedMobs;
+    }
+    if (!hasSpawnedMobs) return false;
+
+    const elapsed = Math.max(0, now - deployedAt);
     const kills = Number.isFinite(dungeon?.mobs?.killed) ? dungeon.mobs.killed : 0;
     const minDurationMs = Math.max(
       0,
@@ -5314,6 +5688,13 @@ module.exports = class Dungeons {
       0,
       Number.isFinite(dungeon.bossGate.requiredMobKills) ? dungeon.bossGate.requiredMobKills : 0
     );
+
+    const unlockedAt = Number(dungeon.bossGate.unlockedAt);
+    const hasValidUnlockStamp = Number.isFinite(unlockedAt) && unlockedAt >= deployedAt;
+    if (hasValidUnlockStamp) {
+      if (elapsed >= minDurationMs && kills >= requiredMobKills) return true;
+      dungeon.bossGate.unlockedAt = null;
+    }
 
     if (elapsed < minDurationMs || kills < requiredMobKills) return false;
 
@@ -9964,6 +10345,7 @@ module.exports = class Dungeons {
     if (!dungeon) return;
     const bossUnlocked = this.ensureBossEngagementUnlocked(dungeon, channelKey);
     if (!bossUnlocked) {
+      dungeon.shadowsDeployed && this.ensureDeployedSpawnPipeline(channelKey, 'boss_damage_blocked');
       if (source === 'user') {
         const now = Date.now();
         const lastNoticeAt = dungeon._bossGateNoticeAt || 0;
@@ -10220,6 +10602,11 @@ module.exports = class Dungeons {
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
     dungeon.shadowsDeployed = false;
+    dungeon.deployedAt = null;
+    if (dungeon.bossGate && typeof dungeon.bossGate === 'object') {
+      dungeon.bossGate.deployedAt = null;
+      dungeon.bossGate.unlockedAt = null;
+    }
     this.shadowAllocations.delete(channelKey);
     this._markAllocationDirty(`dungeon-complete:${reason}`);
 
@@ -12538,6 +12925,10 @@ module.exports = class Dungeons {
         if (pausedState.boss) this.startBossAttacks(channelKey);
         if (pausedState.mob) this.startMobAttacks(channelKey);
       }
+
+      // Visibility/channel transitions can leave spawn metadata stale.
+      // Rehydrate deployed dungeons so combat always has valid mob targets.
+      dungeon.shadowsDeployed && this.ensureDeployedSpawnPipeline(channelKey, 'resume_visibility');
     });
 
     this._pausedIntervals.clear();
@@ -12730,6 +13121,13 @@ module.exports = class Dungeons {
             (this.stopBossAttacks(channelKey), this.startBossAttacks(channelKey));
           this.mobAttackTimers.has(channelKey) &&
             (this.stopMobAttacks(channelKey), this.startMobAttacks(channelKey));
+        });
+
+        // Channel transitions can leave spawn metadata stale while the dungeon still appears "deployed".
+        // Force a lightweight spawn-pipeline health check for all deployed dungeons.
+        this.activeDungeons.forEach((dungeon, channelKey) => {
+          if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) return;
+          this.ensureDeployedSpawnPipeline(channelKey, 'channel_switch');
         });
 
         // Only update HP bars for dungeons in the current channel
@@ -13181,7 +13579,9 @@ module.exports = class Dungeons {
               dungeon.bossGate.deployedAt = Date.now();
               dungeon.bossGate.unlockedAt = null;
             }
+            dungeon.deployedAt = dungeon.bossGate.deployedAt;
           } else {
+            dungeon.deployedAt = null;
             dungeon.bossGate.deployedAt = null;
             dungeon.bossGate.unlockedAt = null;
           }
@@ -13259,6 +13659,7 @@ module.exports = class Dungeons {
               `Mobs killed: ${dg.mobs?.killed || 0}/${dg.mobs?.targetCount?.toLocaleString() || '?'} | Key: ${channelKey}`
             );
             this.startMobSpawning(channelKey);
+            this.ensureDeployedSpawnPipeline(channelKey, 'restore_deployed');
             await this.startShadowAttacks(channelKey);
             this.startBossAttacks(channelKey);
             this.startMobAttacks(channelKey);

@@ -22,18 +22,23 @@ module.exports = class ChatNavArrows {
   constructor() {
     this._patcherId = 'ChatNavArrows';
     this._isStopped = false;
+    this._domFallback = null;
   }
 
   start() {
     this._isStopped = false;
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', this.getCSS());
-    this._installReactPatcher();
+    const reactPatched = this._installReactPatcher();
+    if (!reactPatched) {
+      this._startDomFallback();
+    }
   }
 
   stop() {
     this._isStopped = true;
     BdApi.Patcher.unpatchAll(this._patcherId);
     BdApi.DOM.removeStyle('sl-chat-nav-arrows-css');
+    this._stopDomFallback();
 
     // Restore hidden jump bars
     document.querySelectorAll('div[class^="jumpToPresentBar_"]').forEach((bar) => {
@@ -66,8 +71,9 @@ module.exports = class ChatNavArrows {
       });
       if (!ok) {
         console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
+        return false;
       }
-      return;
+      return true;
     }
 
     // Inline fallback if BetterDiscordReactUtils.js is not available
@@ -77,7 +83,7 @@ module.exports = class ChatNavArrows {
     }
     if (!MainContent) {
       console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
-      return;
+      return false;
     }
 
     const React = BdApi.React;
@@ -129,6 +135,160 @@ module.exports = class ChatNavArrows {
       }
       return returnValue;
     });
+    return true;
+  }
+
+  _startDomFallback() {
+    this._stopDomFallback();
+    this._domFallback = {
+      currentWrapper: null,
+      currentScroller: null,
+      scrollHandler: null,
+      pollTimer: null,
+      downEl: null,
+      upEl: null,
+    };
+
+    const getScrollerPair = () => {
+      const wrapper = document.querySelector('div[class*="messagesWrapper_"]');
+      const scroller = wrapper?.querySelector('div[class*="scroller_"]') || null;
+      return { wrapper: wrapper || null, scroller };
+    };
+
+    const setArrowVisible = (el, isVisible) => {
+      if (!el) return;
+      if (isVisible) el.classList.add('sl-visible');
+      else el.classList.remove('sl-visible');
+    };
+
+    const updateArrowState = () => {
+      const state = this._domFallback;
+      const scroller = state?.currentScroller;
+      if (!state || !scroller) return;
+      const { scrollTop, scrollHeight, clientHeight } = scroller;
+      const threshold = 100;
+      const atBottom = scrollHeight - scrollTop - clientHeight < threshold;
+      const atTop = scrollTop < threshold;
+      setArrowVisible(state.downEl, !atBottom);
+      setArrowVisible(state.upEl, !atTop);
+    };
+
+    const handleDownClick = () => {
+      const state = this._domFallback;
+      const wrapper = state?.currentWrapper;
+      const scroller = state?.currentScroller;
+      if (!wrapper || !scroller) return;
+
+      const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
+      const nativeBtn = nativeBar ? nativeBar.querySelector('button') : null;
+      if (nativeBtn) {
+        nativeBar.style.display = '';
+        nativeBtn.click();
+        requestAnimationFrame(() => {
+          nativeBar.style.display = 'none';
+        });
+      } else {
+        scroller.scrollTop = scroller.scrollHeight;
+      }
+      updateArrowState();
+    };
+
+    const handleUpClick = () => {
+      const scroller = this._domFallback?.currentScroller;
+      if (!scroller) return;
+      scroller.scrollTop = 0;
+      updateArrowState();
+    };
+
+    const ensureArrowElements = (wrapper) => {
+      const state = this._domFallback;
+      if (!state || !wrapper) return;
+
+      wrapper.style.position = 'relative';
+
+      if (!state.downEl || !state.downEl.isConnected) {
+        state.downEl = document.createElement('div');
+        state.downEl.className = 'sl-chat-nav-arrow sl-chat-nav-down';
+        state.downEl.title = 'Jump to Present';
+        state.downEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
+        state.downEl.addEventListener('click', handleDownClick);
+      }
+
+      if (!state.upEl || !state.upEl.isConnected) {
+        state.upEl = document.createElement('div');
+        state.upEl.className = 'sl-chat-nav-arrow sl-chat-nav-up';
+        state.upEl.title = 'Jump to Top';
+        state.upEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
+        state.upEl.addEventListener('click', handleUpClick);
+      }
+
+      if (!wrapper.contains(state.downEl)) wrapper.appendChild(state.downEl);
+      if (!wrapper.contains(state.upEl)) wrapper.appendChild(state.upEl);
+    };
+
+    const unbindScroller = () => {
+      const state = this._domFallback;
+      if (!state?.currentScroller || !state.scrollHandler) return;
+      state.currentScroller.removeEventListener('scroll', state.scrollHandler);
+      state.currentScroller = null;
+      state.scrollHandler = null;
+    };
+
+    const bindScroller = (wrapper, scroller) => {
+      const state = this._domFallback;
+      if (!state) return;
+
+      if (state.currentScroller === scroller && state.currentWrapper === wrapper) {
+        updateArrowState();
+        return;
+      }
+
+      unbindScroller();
+
+      state.currentWrapper = wrapper;
+      state.currentScroller = scroller;
+
+      if (!wrapper || !scroller) {
+        if (state.downEl) setArrowVisible(state.downEl, false);
+        if (state.upEl) setArrowVisible(state.upEl, false);
+        return;
+      }
+
+      ensureArrowElements(wrapper);
+
+      state.scrollHandler = () => updateArrowState();
+      scroller.addEventListener('scroll', state.scrollHandler, { passive: true });
+      updateArrowState();
+    };
+
+    const tick = () => {
+      if (this._isStopped) return;
+      const { wrapper, scroller } = getScrollerPair();
+      bindScroller(wrapper, scroller);
+    };
+
+    tick();
+    this._domFallback.pollTimer = setInterval(tick, 500);
+    console.log('[ChatNavArrows] Using DOM fallback mode');
+  }
+
+  _stopDomFallback() {
+    const state = this._domFallback;
+    if (!state) return;
+
+    if (state.currentScroller && state.scrollHandler) {
+      state.currentScroller.removeEventListener('scroll', state.scrollHandler);
+    }
+    if (state.pollTimer) {
+      clearInterval(state.pollTimer);
+    }
+    if (state.downEl) {
+      state.downEl.remove();
+    }
+    if (state.upEl) {
+      state.upEl.remove();
+    }
+    this._domFallback = null;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -274,7 +434,7 @@ module.exports = class ChatNavArrows {
 
       .sl-chat-nav-arrow {
         position: absolute;
-        z-index: 3;
+        z-index: 500;
         width: 36px;
         height: 36px;
         border-radius: 50%;
