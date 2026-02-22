@@ -1,14 +1,14 @@
 /**
  * @name ShadowStep
  * @description Bookmark channels as Shadow Anchors and teleport to them instantly with a shadow transition. Solo Leveling themed.
- * @version 1.0.0
+ * @version 1.0.1
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const PLUGIN_NAME = "ShadowStep";
-const PLUGIN_VERSION = "1.0.0";
+const PLUGIN_VERSION = "1.0.1";
 const STYLE_ID = "shadow-step-css";
 const PANEL_CONTAINER_ID = "ss-panel-root";
 const TRANSITION_ID = "ss-transition-overlay";
@@ -76,7 +76,7 @@ function buildComponents(pluginRef) {
   const ce = React.createElement;
 
   // ── AnchorCard ──────────────────────────────────────────────
-  function AnchorCard({ anchor, index, onTeleport, onRemove, onRename }) {
+  function AnchorCard({ anchor, onTeleport, onRemove, onRename }) {
     const [editing, setEditing] = useState(false);
     const [editValue, setEditValue] = useState(anchor.name);
     const inputRef = useRef(null);
@@ -109,11 +109,6 @@ function buildComponents(pluginRef) {
       onClick: () => onTeleport(anchor.id),
       title: `${anchor.guildName} > #${anchor.channelName}\nUses: ${anchor.useCount}`,
     },
-      // Number badge (1-9)
-      index < 9
-        ? ce("span", { className: "ss-anchor-badge" }, String(index + 1))
-        : ce("span", { className: "ss-anchor-badge ss-anchor-badge-empty" }, "\u00B7"),
-
       // Guild icon (letter fallback)
       ce("div", { className: "ss-anchor-icon" }, guildInitial),
 
@@ -199,24 +194,21 @@ function buildComponents(pluginRef) {
       return list;
     }, [searchQuery, sortBy, pluginRef.settings.anchors]);
 
-    // Number key teleport (1-9)
-    useEffect(() => {
-      const handler = (e) => {
-        if (isEditableTarget(e.target)) return;
-        const num = parseInt(e.key);
-        if (num >= 1 && num <= 9 && !e.ctrlKey && !e.altKey && !e.metaKey) {
-          const target = anchors[num - 1];
-          if (target) {
-            e.preventDefault();
-            e.stopPropagation();
-            pluginRef.teleportTo(target.id);
-            onClose();
-          }
+    const groupedAnchors = useMemo(() => {
+      const groups = new Map();
+      for (const anchor of anchors) {
+        const groupKey = anchor.guildId ? `guild:${anchor.guildId}` : `dm:${anchor.guildName || "DM"}`;
+        if (!groups.has(groupKey)) {
+          groups.set(groupKey, {
+            key: groupKey,
+            guildName: anchor.guildName || "DM",
+            anchors: [],
+          });
         }
-      };
-      document.addEventListener("keydown", handler, true);
-      return () => document.removeEventListener("keydown", handler, true);
-    }, [anchors, onClose]);
+        groups.get(groupKey).anchors.push(anchor);
+      }
+      return Array.from(groups.values());
+    }, [anchors]);
 
     const handleTeleport = useCallback((anchorId) => {
       pluginRef.teleportTo(anchorId);
@@ -289,15 +281,19 @@ function buildComponents(pluginRef) {
                   ? "No anchors match your search"
                   : "No Shadow Anchors planted. Right-click a channel to plant one."
               )
-            : anchors.map((anchor, i) =>
-                ce(AnchorCard, {
-                  key: anchor.id,
-                  anchor,
-                  index: i,
-                  onTeleport: handleTeleport,
-                  onRemove: handleRemove,
-                  onRename: handleRename,
-                })
+            : groupedAnchors.map((group) =>
+                ce("div", { key: group.key, className: "ss-anchor-group" },
+                  ce("div", { className: "ss-anchor-group-header" }, group.guildName || "DM"),
+                  group.anchors.map((anchor) =>
+                    ce(AnchorCard, {
+                      key: anchor.id,
+                      anchor,
+                      onTeleport: handleTeleport,
+                      onRemove: handleRemove,
+                      onRename: handleRename,
+                    })
+                  )
+                )
               )
         ),
 
@@ -307,7 +303,7 @@ function buildComponents(pluginRef) {
             `${currentCount} / ${maxAnchors} anchors`,
             agiBonus > 0 ? ` (+${agiBonus} AGI)` : ""
           ),
-          ce("span", { className: "ss-panel-hint" }, "Press 1-9 to teleport")
+          ce("span", { className: "ss-panel-hint" }, "Grouped by guild")
         )
       )
     );
@@ -1096,6 +1092,23 @@ module.exports = class ShadowStep {
   line-height: 1.5;
 }
 
+.ss-anchor-group {
+  margin-bottom: 8px;
+}
+
+.ss-anchor-group:last-child {
+  margin-bottom: 0;
+}
+
+.ss-anchor-group-header {
+  color: #9f9faf;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 6px 10px 4px;
+}
+
 /* ── Anchor Card ─────────────────────────────────────────────── */
 
 .ss-anchor-card {
@@ -1113,24 +1126,6 @@ module.exports = class ShadowStep {
 }
 .ss-anchor-card:active {
   background: rgba(138, 43, 226, 0.2);
-}
-
-.ss-anchor-badge {
-  min-width: 18px;
-  height: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 4px;
-  background: rgba(138, 43, 226, 0.15);
-  color: #8a2be2;
-  font-size: 11px;
-  font-weight: 700;
-  flex-shrink: 0;
-}
-.ss-anchor-badge-empty {
-  color: #555;
-  background: rgba(255, 255, 255, 0.03);
 }
 
 .ss-anchor-icon {

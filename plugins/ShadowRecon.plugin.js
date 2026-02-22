@@ -1,12 +1,12 @@
 /**
  * @name ShadowRecon
  * @description Lore-accurate recon suite: mark guilds for dossiers, track staff authority, and inspect marked targets from ShadowSenses (platform + connections).
- * @version 1.0.0
+ * @version 1.0.3
  * @author matthewthompson
  */
 
 const PLUGIN_NAME = "ShadowRecon";
-const PLUGIN_VERSION = "1.0.0";
+const PLUGIN_VERSION = "1.0.3";
 const STYLE_ID = "shadow-recon-css";
 const WIDGET_ID = "shadow-recon-widget";
 const MEMBER_BANNER_ID = "shadow-recon-member-banner";
@@ -79,6 +79,7 @@ module.exports = class ShadowRecon {
     this._stopped = true;
 
     this._guildContextUnpatch = null;
+    this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
 
     this._domObserver = null;
@@ -99,6 +100,7 @@ module.exports = class ShadowRecon {
       this.injectCSS();
 
       this.patchGuildContextMenu();
+      this.patchChannelContextMenu();
       this.patchUserContextMenu();
 
       this.injectServerCounterWidget();
@@ -182,6 +184,27 @@ module.exports = class ShadowRecon {
     this.saveMarkedGuilds();
     this.refreshAllVisuals();
     return !marked;
+  }
+
+  _getCurrentGuildId() {
+    return this._SelectedGuildStore?.getGuildId?.() || null;
+  }
+
+  _toggleCurrentGuildMarkWithToast() {
+    const guildId = this._getCurrentGuildId();
+    if (!guildId) {
+      BdApi.UI.showToast("Select a guild first", { type: "warning" });
+      return null;
+    }
+    const marked = this.toggleGuildMark(guildId);
+    const guild = this._GuildStore?.getGuild?.(guildId);
+    BdApi.UI.showToast(
+      marked
+        ? `Recon enabled for guild: ${guild?.name || guildId}`
+        : `Recon removed for guild: ${guild?.name || guildId}`,
+      { type: marked ? "success" : "info" }
+    );
+    return marked;
   }
 
   // ---- Webpack ---------------------------------------------------------
@@ -272,33 +295,66 @@ module.exports = class ShadowRecon {
           const guildId = guild?.id || props?.guildId;
           if (!guildId) return;
 
-          const marked = this.isGuildMarked(guildId);
-          const items = [
-            BdApi.ContextMenu.buildItem({
-              type: "text",
-              label: marked ? "Shadow Recon: Unmark Guild" : "Shadow Recon: Mark Guild",
-              action: () => {
-                const nextMarked = this.toggleGuildMark(guildId);
-                BdApi.UI.showToast(
-                  nextMarked ? "Guild marked for shadow recon" : "Guild recon mark removed",
-                  { type: nextMarked ? "success" : "info" }
-                );
-              },
-            }),
-            BdApi.ContextMenu.buildItem({
-              type: "text",
-              label: "Shadow Recon: Open Guild Dossier",
-              action: () => this.openGuildDossier(guildId),
-            }),
-          ];
+          const items = this._buildGuildReconActions(guildId, guild);
+          let groupedItem = null;
+          try {
+            groupedItem = BdApi.ContextMenu.buildItem({
+              type: "submenu",
+              label: "Shadow Recon",
+              items,
+            });
+          } catch (_) {}
 
-          this._appendContextItems(tree, items);
+          this._appendContextItems(tree, groupedItem ? [groupedItem] : items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] guild-context patch error`, err);
         }
       });
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to patch guild-context`, err);
+    }
+  }
+
+  patchChannelContextMenu() {
+    try {
+      this._channelContextUnpatch = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
+        try {
+          const guildId =
+            props?.channel?.guild_id ||
+            props?.channel?.guildId ||
+            props?.guildId ||
+            this._getCurrentGuildId();
+          if (!guildId) return;
+
+          const guild = this._GuildStore?.getGuild?.(guildId);
+          const marked = this.isGuildMarked(guildId);
+          const items = [
+            BdApi.ContextMenu.buildItem({
+              type: "text",
+              label: marked ? "Shadow Recon: Unrecon Current Guild" : "Shadow Recon: Recon Current Guild",
+              action: () => {
+                const nextMarked = this.toggleGuildMark(guildId);
+                BdApi.UI.showToast(
+                  nextMarked
+                    ? `Recon enabled for guild: ${guild?.name || guildId}`
+                    : `Recon removed for guild: ${guild?.name || guildId}`,
+                  { type: nextMarked ? "success" : "info" }
+                );
+              },
+            }),
+            BdApi.ContextMenu.buildItem({
+              type: "text",
+              label: "Shadow Recon: Open Current Guild Dossier",
+              action: () => this.openGuildDossier(guildId),
+            }),
+          ];
+          this._appendContextItems(tree, items);
+        } catch (err) {
+          console.error(`[${PLUGIN_NAME}] channel-context patch error`, err);
+        }
+      });
+    } catch (err) {
+      console.error(`[${PLUGIN_NAME}] Failed to patch channel-context`, err);
     }
   }
 
@@ -325,7 +381,7 @@ module.exports = class ShadowRecon {
                 type: "text",
                 label: detailedUnlocked
                   ? "Shadow Recon: Open Staff Dossier"
-                  : "Shadow Recon: Staff Dossier (mark guild)",
+                  : "Shadow Recon: Staff Dossier (recon guild)",
                 action: detailedUnlocked
                   ? () => this.openStaffIntelModal(user.id, currentGuildId)
                   : undefined,
@@ -355,14 +411,76 @@ module.exports = class ShadowRecon {
 
   unpatchContextMenus() {
     try { if (this._guildContextUnpatch) this._guildContextUnpatch(); } catch (_) {}
+    try { if (this._channelContextUnpatch) this._channelContextUnpatch(); } catch (_) {}
     try { if (this._userContextUnpatch) this._userContextUnpatch(); } catch (_) {}
     this._guildContextUnpatch = null;
+    this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
   }
 
   _appendContextItems(tree, items) {
-    if (!tree?.props?.children || !Array.isArray(tree.props.children)) return;
-    tree.props.children.push(BdApi.ContextMenu.buildItem({ type: "separator" }), ...items);
+    if (!Array.isArray(items) || items.length === 0) return;
+    const target = this._resolveContextChildrenArray(tree);
+    if (!target || !Array.isArray(target)) return;
+    target.push(BdApi.ContextMenu.buildItem({ type: "separator" }), ...items);
+  }
+
+  _buildGuildReconActions(guildId, guild = null) {
+    if (!guildId) return [];
+    const marked = this.isGuildMarked(guildId);
+    const guildName = guild?.name || guildId;
+
+    return [
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: marked ? "Unrecon Guild" : "Recon Guild",
+        action: () => {
+          const nextMarked = this.toggleGuildMark(guildId);
+          BdApi.UI.showToast(
+            nextMarked
+              ? `Recon enabled for guild: ${guildName}`
+              : `Recon removed for guild: ${guildName}`,
+            { type: nextMarked ? "success" : "info" }
+          );
+        },
+      }),
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: "Open Guild Dossier",
+        action: () => this.openGuildDossier(guildId),
+      }),
+    ];
+  }
+
+  _resolveContextChildrenArray(node, depth = 0, seen = null) {
+    if (!node || depth > 7) return null;
+    if (!seen) seen = new Set();
+    if (typeof node !== "object") return null;
+    if (seen.has(node)) return null;
+    seen.add(node);
+
+    if (Array.isArray(node)) return node;
+
+    if (Array.isArray(node?.props?.children)) return node.props.children;
+    if (Array.isArray(node?.children)) return node.children;
+
+    const candidates = [];
+    if (node?.props?.children) candidates.push(node.props.children);
+    if (node?.children) candidates.push(node.children);
+
+    if (node?.props && typeof node.props === "object") {
+      for (const value of Object.values(node.props)) {
+        if (!value || value === node.props.children) continue;
+        if (typeof value === "object") candidates.push(value);
+      }
+    }
+
+    for (const candidate of candidates) {
+      const found = this._resolveContextChildrenArray(candidate, depth + 1, seen);
+      if (found) return found;
+    }
+
+    return null;
   }
 
   // ---- Visual Refresh --------------------------------------------------
@@ -422,6 +540,34 @@ module.exports = class ShadowRecon {
     );
   }
 
+  _isHorizontalGuildNav(target) {
+    if (!target || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return false;
+
+    const candidates = [target, target.firstElementChild, target.parentElement].filter(Boolean);
+    for (const node of candidates) {
+      try {
+        const style = window.getComputedStyle(node);
+        const direction = String(style?.flexDirection || "").toLowerCase();
+        if (direction.startsWith("row")) return true;
+      } catch (_) {}
+    }
+
+    try {
+      const rect = target.getBoundingClientRect();
+      if (rect.width > rect.height * 1.3) return true;
+    } catch (_) {}
+
+    return false;
+  }
+
+  _syncServerCounterWidgetOrientation(widget, target = null) {
+    if (!widget) return false;
+    const navTarget = target || this._getGuildsTarget();
+    const horizontal = this._isHorizontalGuildNav(navTarget);
+    widget.classList.toggle("shadow-recon-widget--rotated", horizontal);
+    return horizontal;
+  }
+
   injectServerCounterWidget() {
     if (!this.settings.showServerCounterWidget) {
       this.removeServerCounterWidget();
@@ -436,26 +582,35 @@ module.exports = class ShadowRecon {
       widget = document.createElement("div");
       widget.id = WIDGET_ID;
       widget.className = "shadow-recon-widget";
+      widget.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
       widget.addEventListener("click", () => {
-        const guildId = this._SelectedGuildStore?.getGuildId?.();
+        const guildId = this._getCurrentGuildId();
         if (guildId) this.openGuildDossier(guildId);
         else BdApi.UI.showToast("Select a guild first", { type: "warning" });
+      });
+      widget.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        this._toggleCurrentGuildMarkWithToast();
       });
 
       if (target.firstChild) target.insertBefore(widget, target.firstChild);
       else target.appendChild(widget);
     }
 
-    this.updateServerCounterWidget();
+    this._syncServerCounterWidgetOrientation(widget, target);
+    this.updateServerCounterWidget(target);
   }
 
-  updateServerCounterWidget() {
+  updateServerCounterWidget(target = null) {
     const widget = document.getElementById(WIDGET_ID);
     if (!widget) return;
+    const horizontal = this._syncServerCounterWidgetOrientation(widget, target);
     const guildCount = this.getServerCount();
     const markedGuildCount = this._markedGuildIds.size;
     const markedTargetCount = this._getShadowDeploymentMap().size;
-    widget.textContent = `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
+    widget.textContent = horizontal
+      ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}`
+      : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
   }
 
   removeServerCounterWidget() {
@@ -488,6 +643,15 @@ module.exports = class ShadowRecon {
       banner = document.createElement("div");
       banner.id = MEMBER_BANNER_ID;
       banner.className = "shadow-recon-member-banner";
+      banner.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
+      banner.addEventListener("click", () => {
+        const guildId = this._getCurrentGuildId();
+        if (guildId) this.openGuildDossier(guildId);
+      });
+      banner.addEventListener("contextmenu", (event) => {
+        event.preventDefault();
+        this._toggleCurrentGuildMarkWithToast();
+      });
       if (target.firstChild) target.insertBefore(banner, target.firstChild);
       else target.appendChild(banner);
     }
@@ -499,7 +663,7 @@ module.exports = class ShadowRecon {
     const banner = document.getElementById(MEMBER_BANNER_ID);
     if (!banner) return;
 
-    const guildId = this._SelectedGuildStore?.getGuildId?.();
+    const guildId = this._getCurrentGuildId();
     if (!guildId) {
       banner.textContent = "Shadow Recon - Member Intel unavailable outside guild channels";
       return;
@@ -510,14 +674,69 @@ module.exports = class ShadowRecon {
       || guild?.memberCount
       || guild?.member_count
       || 0;
-    const online = guild?.presenceCount || guild?.presence_count || 0;
-
+    const online = this._getGuildOnlineCount(guildId, guild);
     banner.textContent = `Shadow Recon - Members: ${this._formatNumber(total)} | Online: ${this._formatNumber(online)}`;
   }
 
   removeMemberCounterBanner() {
     const banner = document.getElementById(MEMBER_BANNER_ID);
     if (banner) banner.remove();
+  }
+
+  _getGuildOnlineCount(guildId, guild = null) {
+    if (!guildId) return 0;
+
+    const toSafeInt = (value) => {
+      const n = Number(value);
+      return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+    };
+
+    const fromObject = (obj) => {
+      if (!obj || typeof obj !== "object") return null;
+      const keys = [
+        "online",
+        "onlineCount",
+        "presence",
+        "presenceCount",
+        "approximatePresenceCount",
+        "approximate_presence_count",
+      ];
+      for (const key of keys) {
+        const parsed = toSafeInt(obj[key]);
+        if (parsed !== null) return parsed;
+      }
+      return null;
+    };
+
+    const countStore = this._GuildMemberCountStore;
+    const storeMethods = [
+      "getOnlineCount",
+      "getOnlineMemberCount",
+      "getPresenceCount",
+      "getMemberCounts",
+      "getCounts",
+      "getGuildCounts",
+    ];
+
+    if (countStore && typeof countStore === "object") {
+      for (const methodName of storeMethods) {
+        const fn = countStore?.[methodName];
+        if (typeof fn !== "function") continue;
+        try {
+          const result = fn.call(countStore, guildId);
+          const direct = toSafeInt(result);
+          if (direct !== null) return direct;
+          const nested = fromObject(result);
+          if (nested !== null) return nested;
+        } catch (_) {}
+      }
+    }
+
+    const activeGuild = guild || this._GuildStore?.getGuild?.(guildId);
+    const directGuildCount = fromObject(activeGuild);
+    if (directGuildCount !== null) return directGuildCount;
+
+    return 0;
   }
 
   // ---- Guild Hover Intel ----------------------------------------------
@@ -537,7 +756,7 @@ module.exports = class ShadowRecon {
         || guild?.memberCount
         || guild?.member_count
         || 0;
-      const online = guild?.presenceCount || guild?.presence_count || 0;
+      const online = this._getGuildOnlineCount(guildId, guild);
       const markedLabel = this.isGuildMarked(guildId) ? "[Marked]" : "[Unmarked]";
 
       const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
@@ -602,11 +821,11 @@ module.exports = class ShadowRecon {
     if (lockFull) {
       const notice = document.createElement("div");
       notice.className = "shadow-recon-notice";
-      notice.textContent = "Guild is not marked. Mark this guild to unlock full Shadow Recon intel (lore lock).";
+      notice.textContent = "Guild is not recon-marked. Recon this guild to unlock full Shadow Recon intel (lore lock).";
 
       const markBtn = document.createElement("button");
       markBtn.className = "shadow-recon-button";
-      markBtn.textContent = "Mark Guild Now";
+      markBtn.textContent = "Recon Guild Now";
       markBtn.addEventListener("click", () => {
         this.toggleGuildMark(guildId);
         this.closeModal();
@@ -643,7 +862,7 @@ module.exports = class ShadowRecon {
       || guild?.memberCount
       || guild?.member_count
       || 0;
-    const onlineCount = guild?.presenceCount || guild?.presence_count || 0;
+    const onlineCount = this._getGuildOnlineCount(guildId, guild);
 
     const permissionSummary = this.getCurrentUserPermissionSummary(guildId);
 
@@ -693,7 +912,7 @@ module.exports = class ShadowRecon {
       staff
         ? [
             ["Rank", staff.label],
-            ["Capabilities", detailedStaffUnlocked ? (staff.capabilities.join(", ") || "None") : "Locked - mark guild for full staff dossier"],
+            ["Capabilities", detailedStaffUnlocked ? (staff.capabilities.join(", ") || "None") : "Locked - recon guild for full staff dossier"],
           ]
         : [["Rank", "No elevated staff permissions detected"]]
     ));
@@ -849,11 +1068,11 @@ module.exports = class ShadowRecon {
     if (!unlocked) {
       const notice = document.createElement("div");
       notice.className = "shadow-recon-notice";
-      notice.textContent = "Detailed staff capability intel is lore-locked. Mark this guild to unlock full staff dossier.";
+      notice.textContent = "Detailed staff capability intel is lore-locked. Recon this guild to unlock full staff dossier.";
 
       const markBtn = document.createElement("button");
       markBtn.className = "shadow-recon-button";
-      markBtn.textContent = "Mark Guild and Reload Dossier";
+      markBtn.textContent = "Recon Guild and Reload Dossier";
       markBtn.addEventListener("click", () => {
         this.toggleGuildMark(guildId);
         this.closeModal();
@@ -1251,14 +1470,18 @@ module.exports = class ShadowRecon {
         ce("span", { style: statStyle }, this._formatNumber(markedTargets))
       ),
 
-      makeToggle("Lore Lock (mark guild for full dossier)", "loreLockedRecon", "When enabled, unmarked guild dossiers only show a limited briefing."),
+      makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),
       makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),
       makeToggle("Member Counter Banner", "showMemberCounterBanner", "Adds total + online counters in the member list area."),
       makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
-      makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without mark; detailed staff dossier unlocks when guild is marked."),
+      makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
       makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds platform/connections intel action for ShadowSenses targets."),
 
       ce("div", { style: { display: "flex", gap: "8px", marginTop: "14px" } },
+        ce("button", {
+          className: "shadow-recon-button",
+          onClick: () => this._toggleCurrentGuildMarkWithToast(),
+        }, currentGuildId && this.isGuildMarked(currentGuildId) ? "Unrecon Current Guild" : "Recon Current Guild"),
         ce("button", {
           className: "shadow-recon-button",
           onClick: () => {
@@ -1272,9 +1495,9 @@ module.exports = class ShadowRecon {
             this._markedGuildIds.clear();
             this.saveMarkedGuilds();
             this.refreshAllVisuals();
-            BdApi.UI.showToast("Shadow Recon marks cleared", { type: "info" });
+            BdApi.UI.showToast("Shadow Recon guild marks cleared", { type: "info" });
           },
-        }, "Clear Marked Guilds")
+        }, "Clear Recon Guilds")
       )
     );
   }
@@ -1284,6 +1507,9 @@ module.exports = class ShadowRecon {
   injectCSS() {
     BdApi.DOM.addStyle(STYLE_ID, `
 #${WIDGET_ID}.shadow-recon-widget {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin: 6px 8px;
   padding: 8px 10px;
   border: 1px solid rgba(96, 165, 250, 0.45);
@@ -1292,8 +1518,20 @@ module.exports = class ShadowRecon {
   color: #bfdbfe;
   font-size: 11px;
   line-height: 1.4;
+  white-space: nowrap;
   cursor: pointer;
   user-select: none;
+  transform-origin: center center;
+  transition: border-color 120ms ease, color 120ms ease, transform 140ms ease;
+}
+
+#${WIDGET_ID}.shadow-recon-widget.shadow-recon-widget--rotated {
+  transform: rotate(-90deg);
+  margin: 10px -12px;
+  padding: 7px 9px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1.2;
 }
 
 #${WIDGET_ID}.shadow-recon-widget:hover {

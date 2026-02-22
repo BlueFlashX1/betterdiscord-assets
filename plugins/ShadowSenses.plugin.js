@@ -1,14 +1,14 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.1.0
+ * @version 1.1.1
  * @author matthewthompson
  */
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
-const PLUGIN_VERSION = "1.1.0";
+const PLUGIN_VERSION = "1.1.1";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
@@ -42,13 +42,17 @@ const STATUS_LABELS = {
   offline: "Offline",
   invisible: "Invisible",
 };
-const STATUS_TOAST_TYPES = {
-  online: "success",
-  idle: "warning",
-  dnd: "error",
-  offline: "info",
-  invisible: "info",
+const STATUS_ACCENT_COLORS = {
+  online: "#22c55e",
+  idle: "#f59e0b",
+  dnd: "#ef4444",
+  offline: "#9ca3af",
+  invisible: "#9ca3af",
 };
+const STATUS_TOAST_ROOT_ID = "shadow-senses-status-toast-root";
+const STATUS_TOAST_TIMEOUT_MS = 5200;
+const STATUS_TOAST_EXIT_MS = 220;
+const STATUS_TOAST_MAX_VISIBLE = 4;
 const DEFAULT_SETTINGS = {
   animationEnabled: true,
   respectReducedMotion: false,
@@ -57,9 +61,6 @@ const DEFAULT_SETTINGS = {
   typingAlerts: true,
   removedFriendAlerts: true,
   showMarkedOnlineCount: true,
-  includeStatusEventsInFeed: true,
-  includeTypingEventsInFeed: true,
-  includeRelationshipEventsInFeed: true,
   typingAlertCooldownMs: DEFAULT_TYPING_ALERT_COOLDOWN_MS,
 };
 
@@ -337,6 +338,10 @@ class SensesEngine {
     this._statusByUserId = new Map(); // userId -> normalized status
     this._relationshipFriendIds = new Set();
     this._typingToastCooldown = new Map(); // userId:channelId -> timestamp
+    this._statusToastTimers = new Map(); // toastId -> timeout ID
+    this._statusToastExitTimers = new Map(); // toastId -> timeout ID
+    this._deferredStatusToastTimers = new Set(); // startup-deferred status toast timers
+    this._statusToastCounter = 0;
 
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
@@ -363,6 +368,9 @@ class SensesEngine {
 
     // Purge entries older than 3 days on startup
     this._purgeOldEntries();
+    // Keep history chat-only: status/typing/relationship events are toast-only intel
+    this._purgeUtilityEntries();
+    if (this._dirty) this._flushToDisk();
 
     this._plugin.debugLog("SensesEngine", "Loaded persisted feeds", {
       guilds: Object.keys(this._guildFeeds).length,
@@ -459,6 +467,13 @@ class SensesEngine {
     this._typingToastCooldown.clear();
     this._statusByUserId.clear();
     this._relationshipFriendIds.clear();
+    for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
+    this._deferredStatusToastTimers.clear();
+    for (const timer of this._statusToastTimers.values()) clearTimeout(timer);
+    for (const timer of this._statusToastExitTimers.values()) clearTimeout(timer);
+    this._statusToastTimers.clear();
+    this._statusToastExitTimers.clear();
+    this._clearStatusToastRoot();
 
     this._plugin.debugLog("SensesEngine", "Unsubscribed from all events");
   }
@@ -553,6 +568,216 @@ class SensesEngine {
     }
   }
 
+  _resolveUserAvatarUrl(userId) {
+    const userStore = this._resolveUserStore();
+    if (!userStore || typeof userStore.getUser !== "function") return null;
+    try {
+      const user = userStore.getUser(userId);
+      if (!user) return null;
+
+      const candidateCalls = [
+        () => user.getAvatarURL?.(null, 64, true),
+        () => user.getAvatarURL?.(),
+        () => user.getAvatarURL?.(64),
+        () => user.getDefaultAvatarURL?.(),
+      ];
+      for (const call of candidateCalls) {
+        try {
+          const value = call();
+          if (typeof value === "string" && value.length > 4) return value;
+        } catch (_) {}
+      }
+
+      if (typeof user.defaultAvatarURL === "string" && user.defaultAvatarURL.length > 4) {
+        return user.defaultAvatarURL;
+      }
+      if (user.avatar && user.id) {
+        return `https://cdn.discordapp.com/avatars/${user.id}/${user.avatar}.png?size=64`;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  _isFriend(userId) {
+    return this._relationshipFriendIds instanceof Set && this._relationshipFriendIds.has(String(userId));
+  }
+
+  _ensureStatusToastRoot() {
+    let root = document.getElementById(STATUS_TOAST_ROOT_ID);
+    if (root) return root;
+    root = document.createElement("div");
+    root.id = STATUS_TOAST_ROOT_ID;
+    root.className = "shadow-senses-status-toast-root";
+    document.body.appendChild(root);
+    return root;
+  }
+
+  _clearStatusToastRoot() {
+    const root = document.getElementById(STATUS_TOAST_ROOT_ID);
+    if (root) root.remove();
+  }
+
+  _dismissStatusToast(toastId, immediate = false) {
+    if (!toastId) return;
+
+    const showTimer = this._statusToastTimers.get(toastId);
+    if (showTimer) {
+      clearTimeout(showTimer);
+      this._statusToastTimers.delete(toastId);
+    }
+
+    const existingExitTimer = this._statusToastExitTimers.get(toastId);
+    if (existingExitTimer) {
+      clearTimeout(existingExitTimer);
+      this._statusToastExitTimers.delete(toastId);
+    }
+
+    const root = document.getElementById(STATUS_TOAST_ROOT_ID);
+    if (!root) return;
+    const toast = root.querySelector(`[data-ss-toast-id="${toastId}"]`);
+    if (!toast) return;
+
+    if (immediate) {
+      toast.remove();
+      if (!root.childElementCount) root.remove();
+      return;
+    }
+
+    toast.classList.add("is-leaving");
+    const exitTimer = setTimeout(() => {
+      this._statusToastExitTimers.delete(toastId);
+      toast.remove();
+      if (!root.childElementCount) root.remove();
+    }, STATUS_TOAST_EXIT_MS);
+    this._statusToastExitTimers.set(toastId, exitTimer);
+  }
+
+  _scheduleStatusToast(toastPayload, delayMs = 0) {
+    const emit = () => {
+      if (this._plugin._stopped) return;
+      this._showStatusToast(toastPayload);
+    };
+    if (!Number.isFinite(delayMs) || delayMs <= 0) {
+      emit();
+      return;
+    }
+    const timer = setTimeout(() => {
+      this._deferredStatusToastTimers.delete(timer);
+      emit();
+    }, Math.floor(delayMs));
+    this._deferredStatusToastTimers.add(timer);
+  }
+
+  _showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment }) {
+    const root = this._ensureStatusToastRoot();
+    if (!root) return;
+
+    while (root.childElementCount >= STATUS_TOAST_MAX_VISIBLE) {
+      const oldest = root.firstElementChild;
+      const oldId = oldest?.dataset?.ssToastId;
+      if (!oldId) {
+        oldest?.remove?.();
+        break;
+      }
+      this._dismissStatusToast(oldId, true);
+    }
+
+    const toastId = `status-${Date.now()}-${++this._statusToastCounter}`;
+    const accent = STATUS_ACCENT_COLORS[nextStatus] || "#8a2be2";
+    const rankColor = RANK_COLORS[deployment?.shadowRank] || "#8a2be2";
+
+    const toast = document.createElement("div");
+    toast.className = "shadow-senses-status-toast";
+    toast.dataset.ssToastId = toastId;
+    toast.dataset.status = nextStatus || "offline";
+    toast.style.setProperty("--ss-status-accent", accent);
+    toast.setAttribute("role", "status");
+    toast.setAttribute("aria-live", "polite");
+
+    const avatarWrap = document.createElement("div");
+    avatarWrap.className = "shadow-senses-status-toast-avatar-wrap";
+
+    const avatarUrl = this._resolveUserAvatarUrl(userId);
+    if (avatarUrl) {
+      const avatar = document.createElement("img");
+      avatar.className = "shadow-senses-status-toast-avatar";
+      avatar.src = avatarUrl;
+      avatar.alt = `${userName} avatar`;
+      avatarWrap.appendChild(avatar);
+    } else {
+      const fallback = document.createElement("div");
+      fallback.className = "shadow-senses-status-toast-avatar-fallback";
+      fallback.textContent = (userName || "?").charAt(0).toUpperCase();
+      avatarWrap.appendChild(fallback);
+    }
+
+    const dot = document.createElement("span");
+    dot.className = "shadow-senses-status-toast-dot";
+    dot.dataset.status = nextStatus || "offline";
+    avatarWrap.appendChild(dot);
+
+    const main = document.createElement("div");
+    main.className = "shadow-senses-status-toast-main";
+
+    const header = document.createElement("div");
+    header.className = "shadow-senses-status-toast-header";
+
+    const rank = document.createElement("span");
+    rank.className = "shadow-senses-status-toast-rank";
+    rank.style.color = rankColor;
+    rank.textContent = `[${deployment?.shadowRank || "E"}]`;
+    header.appendChild(rank);
+
+    const shadowName = document.createElement("span");
+    shadowName.textContent = `${deployment?.shadowName || "Shadow"} reports`;
+    header.appendChild(shadowName);
+
+    if (this._isFriend(userId)) {
+      const friendTag = document.createElement("span");
+      friendTag.className = "shadow-senses-status-toast-chip";
+      friendTag.textContent = "FRIEND";
+      header.appendChild(friendTag);
+    }
+
+    const body = document.createElement("div");
+    body.className = "shadow-senses-status-toast-message";
+
+    const user = document.createElement("span");
+    user.className = "shadow-senses-status-toast-user";
+    user.textContent = userName || "Unknown";
+    body.appendChild(user);
+
+    const prev = document.createElement("span");
+    prev.className = "shadow-senses-status-toast-prev";
+    prev.textContent = ` ${previousLabel}`;
+    body.appendChild(prev);
+
+    const arrow = document.createElement("span");
+    arrow.className = "shadow-senses-status-toast-arrow";
+    arrow.textContent = " -> ";
+    body.appendChild(arrow);
+
+    const next = document.createElement("span");
+    next.className = "shadow-senses-status-toast-next";
+    next.textContent = nextLabel;
+    body.appendChild(next);
+
+    main.appendChild(header);
+    main.appendChild(body);
+    toast.appendChild(avatarWrap);
+    toast.appendChild(main);
+    root.appendChild(toast);
+
+    requestAnimationFrame(() => toast.classList.add("is-visible"));
+
+    const timeout = setTimeout(
+      () => this._dismissStatusToast(toastId, false),
+      STATUS_TOAST_TIMEOUT_MS
+    );
+    this._statusToastTimers.set(toastId, timeout);
+    toast.addEventListener("click", () => this._dismissStatusToast(toastId, false), { once: true });
+  }
+
   _seedTrackedStatuses() {
     const presenceStore = this._resolvePresenceStore();
     this._statusByUserId.clear();
@@ -601,18 +826,10 @@ class SensesEngine {
     return updates;
   }
 
-  _addUtilityFeedEntry(entry, guildId = GLOBAL_UTILITY_FEED_ID) {
-    if (!entry || !entry.eventType || !entry.timestamp) return;
-    const eventType = entry.eventType;
-    const settings = this._plugin.settings || DEFAULT_SETTINGS;
-    if (
-      (eventType === "status" && !settings.includeStatusEventsInFeed) ||
-      (eventType === "typing" && !settings.includeTypingEventsInFeed) ||
-      (eventType === "relationship" && !settings.includeRelationshipEventsInFeed)
-    ) {
-      return;
-    }
-    this._addToGuildFeed(guildId, entry);
+  _addUtilityFeedEntry(_entry, _guildId = GLOBAL_UTILITY_FEED_ID) {
+    // By design: utility alerts are transient toast intel, not feed history.
+    // Active Feed remains chat-message history only.
+    return;
   }
 
   _flushToDisk() {
@@ -710,6 +927,35 @@ class SensesEngine {
     }
   }
 
+  /**
+   * Remove non-message utility events from persisted history.
+   * Utility alerts (status/typing/relationship) are toast-only.
+   */
+  _purgeUtilityEntries() {
+    let removed = 0;
+    for (const guildId of Object.keys(this._guildFeeds)) {
+      const feed = this._guildFeeds[guildId];
+      if (!Array.isArray(feed) || feed.length === 0) continue;
+
+      const filtered = feed.filter(entry => !entry?.eventType || entry.eventType === "message");
+      if (filtered.length === feed.length) continue;
+
+      const diff = feed.length - filtered.length;
+      this._guildFeeds[guildId] = filtered;
+      this._totalFeedEntries -= diff;
+      removed += diff;
+      this._dirtyGuilds.add(guildId);
+      this._dirty = true;
+
+      if (filtered.length === 0) delete this._guildFeeds[guildId];
+    }
+
+    if (removed > 0) {
+      this._feedVersion++;
+      this._plugin.debugLog("SensesEngine", `Purged ${removed} non-message utility entries`);
+    }
+  }
+
   _onPresenceUpdate(payload) {
     try {
       const monitoredIds = this._plugin.deploymentManager.getMonitoredUserIds();
@@ -741,12 +987,19 @@ class SensesEngine {
         const nextLabel = this._getStatusLabel(nextStatus);
 
         if (this._plugin.settings?.statusAlerts) {
-          const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${userName} ${previousLabel} \u2192 ${nextLabel}`;
-          const toastOpts = { type: STATUS_TOAST_TYPES[nextStatus] || "info", timeout: 5000 };
+          const delayMs = isEarlyStartup ? Math.max(0, STARTUP_TOAST_GRACE_MS - msSinceSubscribe) : 0;
+          const toastPayload = {
+            userId,
+            userName,
+            previousLabel,
+            nextLabel,
+            nextStatus,
+            deployment,
+          };
           if (isEarlyStartup) {
-            setTimeout(() => BdApi.UI.showToast(toastMsg, toastOpts), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
+            this._scheduleStatusToast(toastPayload, delayMs);
           } else {
-            BdApi.UI.showToast(toastMsg, toastOpts);
+            this._showStatusToast(toastPayload);
           }
         }
 
@@ -1155,6 +1408,15 @@ class SensesEngine {
   clear() {
     // Note: Timer cleanup is handled by unsubscribe(), not here.
     // clear() only resets data state.
+    if (this._statusToastTimers instanceof Map) {
+      for (const timer of this._statusToastTimers.values()) clearTimeout(timer);
+    }
+    if (this._statusToastExitTimers instanceof Map) {
+      for (const timer of this._statusToastExitTimers.values()) clearTimeout(timer);
+    }
+    if (this._deferredStatusToastTimers instanceof Set) {
+      for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
+    }
     this._guildFeeds = {};
     this._lastSeenCount = {};
     this._currentGuildId = null;
@@ -1172,6 +1434,11 @@ class SensesEngine {
     this._statusByUserId = new Map();
     this._typingToastCooldown = new Map();
     this._relationshipFriendIds = new Set();
+    this._statusToastTimers = new Map();
+    this._statusToastExitTimers = new Map();
+    this._deferredStatusToastTimers = new Set();
+    this._statusToastCounter = 0;
+    this._clearStatusToastRoot();
   }
 }
 
@@ -1692,6 +1959,167 @@ ${buildPortalTransitionCSS()}
   border-top: 1px solid rgba(138, 43, 226, 0.2);
   color: #666;
   font-size: 11px;
+}
+
+/* ─── Status Toasts ─────────────────────────────────────────────────────── */
+
+.shadow-senses-status-toast-root {
+  position: fixed;
+  top: 72px;
+  right: 18px;
+  width: min(360px, calc(100vw - 24px));
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 10010;
+  pointer-events: none;
+}
+
+.shadow-senses-status-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(138, 43, 226, 0.38);
+  border-left: 3px solid var(--ss-status-accent, #8a2be2);
+  background:
+    radial-gradient(120% 100% at 20% 12%, rgba(138, 43, 226, 0.18) 0%, rgba(12, 10, 22, 0) 56%),
+    linear-gradient(135deg, rgba(18, 14, 34, 0.96), rgba(11, 9, 18, 0.95));
+  box-shadow:
+    0 10px 26px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(138, 43, 226, 0.15) inset;
+  transform: translate3d(18px, 0, 0);
+  opacity: 0;
+  transition: transform 0.18s ease, opacity 0.18s ease;
+}
+
+.shadow-senses-status-toast.is-visible {
+  transform: translate3d(0, 0, 0);
+  opacity: 1;
+}
+
+.shadow-senses-status-toast.is-leaving {
+  transform: translate3d(18px, 0, 0);
+  opacity: 0;
+}
+
+.shadow-senses-status-toast-avatar-wrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.shadow-senses-status-toast-avatar {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.shadow-senses-status-toast-avatar-fallback {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #e9ddff;
+  background: linear-gradient(160deg, rgba(138, 43, 226, 0.55), rgba(71, 33, 127, 0.8));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.shadow-senses-status-toast-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: 999px;
+  border: 2px solid #100b1f;
+  background: #9ca3af;
+}
+
+.shadow-senses-status-toast-dot[data-status="online"] { background: #22c55e; }
+.shadow-senses-status-toast-dot[data-status="idle"] { background: #f59e0b; }
+.shadow-senses-status-toast-dot[data-status="dnd"] { background: #ef4444; }
+.shadow-senses-status-toast-dot[data-status="offline"],
+.shadow-senses-status-toast-dot[data-status="invisible"] { background: #9ca3af; }
+
+.shadow-senses-status-toast-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.shadow-senses-status-toast-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: #b8aacd;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.shadow-senses-status-toast-rank {
+  font-weight: 800;
+}
+
+.shadow-senses-status-toast-chip {
+  margin-left: auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(138, 43, 226, 0.48);
+  background: rgba(138, 43, 226, 0.2);
+  color: #d7c3ff;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+
+.shadow-senses-status-toast-message {
+  color: #e4e4ee;
+  font-size: 13px;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.shadow-senses-status-toast-user {
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.shadow-senses-status-toast-prev {
+  color: #c8cad8;
+}
+
+.shadow-senses-status-toast-arrow {
+  color: #8f94a8;
+  font-weight: 700;
+}
+
+.shadow-senses-status-toast-next {
+  color: var(--ss-status-accent, #8a2be2);
+  font-weight: 700;
+}
+
+@media (max-width: 520px) {
+  .shadow-senses-status-toast-root {
+    right: 10px;
+    left: 10px;
+    width: auto;
+    top: 68px;
+  }
 }
 
 /* ─── Empty State ───────────────────────────────────────────────────────── */
@@ -2918,36 +3346,21 @@ module.exports = class ShadowSenses {
         })
       ),
 
-      ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Feed Visibility"),
-
-      ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Status Events in Feed"),
-        ce("input", {
-          type: "checkbox",
-          defaultChecked: !!this.settings.includeStatusEventsInFeed,
-          onChange: (e) => updateSetting("includeStatusEventsInFeed", e.target.checked),
-          style: { accentColor: "#8a2be2" },
-        })
-      ),
-
-      ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Typing Events in Feed"),
-        ce("input", {
-          type: "checkbox",
-          defaultChecked: !!this.settings.includeTypingEventsInFeed,
-          onChange: (e) => updateSetting("includeTypingEventsInFeed", e.target.checked),
-          style: { accentColor: "#8a2be2" },
-        })
-      ),
-
-      ce("div", { style: rowStyle },
-        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Include Connection Events in Feed"),
-        ce("input", {
-          type: "checkbox",
-          defaultChecked: !!this.settings.includeRelationshipEventsInFeed,
-          onChange: (e) => updateSetting("includeRelationshipEventsInFeed", e.target.checked),
-          style: { accentColor: "#8a2be2" },
-        })
+      ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Feed Policy"),
+      ce("div", {
+        style: {
+          marginTop: "6px",
+          padding: "10px 12px",
+          borderRadius: "8px",
+          border: "1px solid rgba(138, 43, 226, 0.25)",
+          background: "rgba(138, 43, 226, 0.08)",
+          color: "#b8b8b8",
+          fontSize: "12px",
+          lineHeight: 1.45,
+        },
+      },
+      "Status, typing, and connection alerts are toast-only and are not saved in Active Feed history. ",
+      "Active Feed records chat message detections only."
       ),
 
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Diagnostics"),
