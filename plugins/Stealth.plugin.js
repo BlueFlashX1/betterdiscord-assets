@@ -1,7 +1,7 @@
 /**
  * @name Stealth
- * @description Conceal presence by suppressing typing, forcing invisible status, blocking read receipts, and hiding activity updates.
- * @version 1.0.0
+ * @description Conceal presence by suppressing typing, forcing invisible status, hiding activity updates, and erasing telemetry footprints.
+ * @version 1.1.1
  * @author matthewthompson
  */
 
@@ -12,8 +12,10 @@ const DEFAULT_SETTINGS = {
   enabled: true,
   suppressTyping: true,
   invisibleStatus: true,
-  suppressReadReceipts: true,
   suppressActivities: true,
+  suppressTelemetry: true,
+  disableProcessMonitor: true,
+  autoSilentMessages: false,
   restoreStatusOnStop: true,
   showToasts: true,
 };
@@ -26,6 +28,7 @@ module.exports = class Stealth {
     this._originalStatus = null;
     this._forcedInvisible = false;
     this._statusSetters = [];
+    this._processMonitorPatched = false;
 
     this._stores = {
       user: null,
@@ -34,13 +37,14 @@ module.exports = class Stealth {
 
     this._patchMetrics = {
       typing: 0,
-      receipts: 0,
       activities: 0,
+      telemetry: 0,
+      silent: 0,
+      process: 0,
     };
 
     this._suppressEventLog = {
       typing: 0,
-      receipts: 0,
       activities: 0,
     };
 
@@ -51,6 +55,14 @@ module.exports = class Stealth {
     this.loadSettings();
     this.injectCSS();
     this._initStores();
+    this._processMonitorPatched = false;
+    this._patchMetrics = {
+      typing: 0,
+      activities: 0,
+      telemetry: 0,
+      silent: 0,
+      process: 0,
+    };
 
     this._installPatches();
     this._syncStatusPolicy();
@@ -60,6 +72,7 @@ module.exports = class Stealth {
 
   stop() {
     this._stopStatusInterval();
+    this._processMonitorPatched = false;
 
     if (this.settings.restoreStatusOnStop) {
       this._restoreOriginalStatus();
@@ -106,13 +119,39 @@ module.exports = class Stealth {
 
   _installPatches() {
     this._patchTypingIndicators();
-    this._patchReadReceipts();
     this._patchActivityUpdates();
+    this._patchTelemetry();
+    this._patchAutoSilentMessages();
   }
 
   _patchTypingIndicators() {
+    let patched = 0;
+
+    // Primary patch path from InvisibleTyping's approach: patch TypingModule.startTyping directly.
+    try {
+      const typingModule =
+        BdApi.Webpack.getByKeys("startTyping", "stopTyping") ||
+        BdApi.Webpack.getByKeys("startTyping");
+      if (typingModule && typeof typingModule.startTyping === "function") {
+        BdApi.Patcher.instead(
+          STEALTH_PLUGIN_ID,
+          typingModule,
+          "startTyping",
+          (ctx, args, original) => {
+            if (this.settings.enabled && this.settings.suppressTyping) {
+              this._recordSuppressed("typing");
+              return undefined;
+            }
+            return original.apply(ctx, args);
+          }
+        );
+        patched += 1;
+      }
+    } catch (error) {
+      this._logWarning("TYPING", "Direct startTyping patch failed", error, "typing-direct");
+    }
+
     const fnNames = [
-      "startTyping",
       "sendTyping",
       "sendTypingStart",
       "triggerTyping",
@@ -126,7 +165,7 @@ module.exports = class Stealth {
       ["sendTyping"],
     ];
 
-    const patched = this._patchFunctions({
+    patched += this._patchFunctions({
       fnNames,
       keyCombos,
       shouldBlock: () => this.settings.enabled && this.settings.suppressTyping,
@@ -136,38 +175,6 @@ module.exports = class Stealth {
     });
 
     this._patchMetrics.typing = patched;
-  }
-
-  _patchReadReceipts() {
-    const fnNames = [
-      "ack",
-      "ackChannel",
-      "ackMessageId",
-      "bulkAck",
-      "markRead",
-      "markChannelRead",
-      "readStateAck",
-      "markGuildAsRead",
-    ];
-
-    const keyCombos = [
-      ["ack", "bulkAck"],
-      ["ack", "ackChannel"],
-      ["markRead", "markChannelRead"],
-      ["ackMessageId", "ack"],
-      ["ack"],
-    ];
-
-    const patched = this._patchFunctions({
-      fnNames,
-      keyCombos,
-      shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
-      onBlocked: () => this._recordSuppressed("receipts"),
-      tag: "receipts",
-      blockedReturnValue: undefined,
-    });
-
-    this._patchMetrics.receipts = patched;
   }
 
   _patchActivityUpdates() {
@@ -199,6 +206,177 @@ module.exports = class Stealth {
     });
 
     this._patchMetrics.activities = patched;
+  }
+
+  _patchTelemetry() {
+    let patched = 0;
+
+    try {
+      const analytics = BdApi.Webpack.getByKeys("AnalyticEventConfigs");
+      if (analytics?.default && typeof analytics.default.track === "function") {
+        BdApi.Patcher.instead(
+          STEALTH_PLUGIN_ID,
+          analytics.default,
+          "track",
+          (ctx, args, original) => {
+            if (this.settings.enabled && this.settings.suppressTelemetry) {
+              this._recordSuppressed("activities");
+              return undefined;
+            }
+            return original.apply(ctx, args);
+          }
+        );
+        patched += 1;
+      }
+    } catch (error) {
+      this._logWarning("TELEMETRY", "Failed to patch analytics tracker", error, "telemetry-analytics");
+    }
+
+    try {
+      const nativeModule =
+        BdApi.Webpack.getByKeys("getDiscordUtils", "ensureModule") ||
+        BdApi.Webpack.getByKeys("ensureModule");
+      if (nativeModule && typeof nativeModule.ensureModule === "function") {
+        BdApi.Patcher.instead(
+          STEALTH_PLUGIN_ID,
+          nativeModule,
+          "ensureModule",
+          (ctx, args, original) => {
+            const moduleName = args?.[0];
+            if (
+              this.settings.enabled &&
+              this.settings.disableProcessMonitor &&
+              typeof moduleName === "string" &&
+              moduleName.includes("discord_rpc")
+            ) {
+              return undefined;
+            }
+            return original.apply(ctx, args);
+          }
+        );
+        patched += 1;
+      }
+    } catch (error) {
+      this._logWarning("TELEMETRY", "Failed to patch native ensureModule", error, "telemetry-native");
+    }
+
+    this._patchMetrics.telemetry = patched;
+    this._applyStealthHardening();
+  }
+
+  _patchAutoSilentMessages() {
+    let patched = 0;
+    try {
+      const messageActions = BdApi.Webpack.getByKeys("sendMessage");
+      if (messageActions && typeof messageActions.sendMessage === "function") {
+        BdApi.Patcher.before(STEALTH_PLUGIN_ID, messageActions, "sendMessage", (_ctx, args) => {
+          if (!this.settings.enabled || !this.settings.autoSilentMessages) return;
+          const message = args?.[1];
+          if (!message || typeof message.content !== "string") return;
+
+          const content = message.content.trimStart();
+          if (!content || content.startsWith("@silent") || content.startsWith("/")) return;
+          message.content = `@silent ${message.content}`;
+          this._recordSuppressed("activities");
+        });
+        patched += 1;
+      }
+    } catch (error) {
+      this._logWarning("SILENT", "Failed to patch sendMessage for @silent mode", error, "silent-patch");
+    }
+
+    this._patchMetrics.silent = patched;
+  }
+
+  _applyStealthHardening() {
+    if (!this.settings.enabled) return;
+    if (this.settings.suppressTelemetry) this._disableSentryAndTelemetry();
+    if (this.settings.disableProcessMonitor) this._disableProcessMonitor();
+  }
+
+  _disableSentryAndTelemetry() {
+    try {
+      window?.__SENTRY__?.globalEventProcessors?.splice(
+        0,
+        window?.__SENTRY__?.globalEventProcessors?.length || 0
+      );
+      window?.__SENTRY__?.logger?.disable?.();
+
+      const sentryHub = window?.DiscordSentry?.getCurrentHub?.();
+      if (sentryHub) {
+        sentryHub.getClient?.()?.close?.(0);
+        const scope = sentryHub.getScope?.();
+        scope?.clear?.();
+        scope?.setFingerprint?.(null);
+        sentryHub.setUser?.(null);
+        sentryHub.setTags?.({});
+        sentryHub.setExtras?.({});
+        sentryHub.endSession?.();
+      }
+
+      for (const key in console) {
+        if (!Object.prototype.hasOwnProperty.call(console, key)) continue;
+        const current = console[key];
+        if (current && current.__sentry_original__) {
+          console[key] = current.__sentry_original__;
+        }
+      }
+    } catch (error) {
+      this._logWarning("TELEMETRY", "Failed while disabling Sentry hooks", error, "telemetry-sentry");
+    }
+  }
+
+  _disableProcessMonitor() {
+    let patched = 0;
+    try {
+      const settingsManager = BdApi.Webpack.getModule(
+        (m) => m?.updateAsync && m?.type === 1,
+        { searchExports: true }
+      );
+      const boolSetting = BdApi.Webpack.getModule(
+        (m) => m?.typeName?.includes("Bool"),
+        { searchExports: true }
+      );
+      settingsManager?.updateAsync(
+        "status",
+        (settings) => {
+          settings.showCurrentGame = boolSetting?.create
+            ? boolSetting.create({ value: false })
+            : false;
+        },
+        0
+      );
+    } catch (error) {
+      this._logWarning("PROCESS", "Failed to force disable current-game visibility", error, "process-status");
+    }
+
+    try {
+      const nativeModule = BdApi.Webpack.getByKeys("getDiscordUtils");
+      const discordUtils = nativeModule?.getDiscordUtils?.();
+      if (!discordUtils) {
+        this._patchMetrics.process = Math.max(this._patchMetrics.process, patched);
+        return;
+      }
+
+      discordUtils.setObservedGamesCallback?.([], () => {});
+      if (
+        typeof discordUtils.setObservedGamesCallback === "function" &&
+        !this._processMonitorPatched
+      ) {
+        BdApi.Patcher.instead(
+          STEALTH_PLUGIN_ID,
+          discordUtils,
+          "setObservedGamesCallback",
+          () => undefined
+        );
+        this._processMonitorPatched = true;
+        patched += 1;
+      }
+    } catch (error) {
+      this._logWarning("PROCESS", "Failed to neutralize observed-games callback", error, "process-observe");
+    }
+
+    this._patchMetrics.process = Math.max(this._patchMetrics.process, patched);
   }
 
   _patchFunctions({ fnNames, keyCombos, shouldBlock, onBlocked, tag, blockedReturnValue }) {
@@ -485,6 +663,7 @@ module.exports = class Stealth {
 
     if (key === "enabled" || key === "invisibleStatus") {
       this._syncStatusPolicy();
+      this._applyStealthHardening();
 
       if (key === "enabled") {
         this._toast(
@@ -496,6 +675,10 @@ module.exports = class Stealth {
     }
 
     if (key === "showToasts") return;
+    if ((key === "suppressTelemetry" || key === "disableProcessMonitor") && this.settings.enabled) {
+      this._applyStealthHardening();
+      return;
+    }
 
     if (key === "restoreStatusOnStop" && !this.settings.restoreStatusOnStop) {
       this._originalStatus = null;
@@ -574,12 +757,12 @@ module.exports = class Stealth {
             marginBottom: "6px",
           },
         },
-        "Shadow Stealth"
+        "Shadow Monarch Stealth"
       ),
       React.createElement(
         "div",
         { style: { color: "rgba(226, 232, 240, 0.82)", fontSize: "12px", lineHeight: 1.35 } },
-        "Conceal your presence: typing, status, read-state, and activity broadcasts. Read receipt suppression can keep channels unread on your side."
+        "Conceal your presence with Jinwoo-style stealth: hide typing, force Invisible, suppress activity broadcasts, erase telemetry footprints, and optionally whisper via @silent."
       )
     );
 
@@ -626,7 +809,7 @@ module.exports = class Stealth {
           lineHeight: 1.4,
         },
       },
-      `Patched methods: typing ${self._patchMetrics.typing}, read receipts ${self._patchMetrics.receipts}, activities ${self._patchMetrics.activities}`
+      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}`
     );
 
     const Panel = () => React.createElement(
@@ -659,14 +842,24 @@ module.exports = class Stealth {
         description: "Automatically keeps your presence status set to Invisible.",
       }),
       React.createElement(SettingRow, {
-        settingKey: "suppressReadReceipts",
-        title: "Suppress Read Receipts",
-        description: "Blocks read acknowledgements (side effect: some channels stay unread locally).",
-      }),
-      React.createElement(SettingRow, {
         settingKey: "suppressActivities",
         title: "Hide Activity Updates",
         description: "Suppresses outbound activity updates (custom status / game activity module calls).",
+      }),
+      React.createElement(SettingRow, {
+        settingKey: "suppressTelemetry",
+        title: "Erase Tracking Footprints",
+        description: "Blocks analytics tracking and disables Sentry telemetry hooks where possible.",
+      }),
+      React.createElement(SettingRow, {
+        settingKey: "disableProcessMonitor",
+        title: "Sever Process Monitor",
+        description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring.",
+      }),
+      React.createElement(SettingRow, {
+        settingKey: "autoSilentMessages",
+        title: "Silent Whisper (@silent)",
+        description: "Prefixes normal text messages with @silent automatically (slash commands are skipped).",
       }),
       React.createElement(SettingRow, {
         settingKey: "restoreStatusOnStop",
