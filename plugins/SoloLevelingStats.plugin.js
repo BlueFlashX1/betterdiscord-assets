@@ -6074,6 +6074,94 @@ module.exports = class SoloLevelingStats {
     }
   }
 
+  /**
+   * Public XP grant API for external plugins (for example Dungeons).
+   * This applies raw XP directly without message-based multipliers/governors.
+   *
+   * @param {number} amount - XP amount to add
+   * @param {Object} [options]
+   * @param {string} [options.source='external'] - Source label for debug logs
+   * @param {boolean} [options.shareShadowXP=false] - Mirror grant to ShadowArmy share pipeline
+   * @param {boolean} [options.saveImmediately=false] - Force immediate persistence
+   * @returns {number} Granted XP amount (0 when invalid)
+   */
+  addXP(amount, options = {}) {
+    try {
+      const rawAmount = Number(amount);
+      const xpAmount = Number.isFinite(rawAmount) ? Math.floor(rawAmount) : 0;
+      if (xpAmount <= 0) return 0;
+
+      const source =
+        typeof options.source === 'string' && options.source.trim().length > 0
+          ? options.source.trim()
+          : 'external';
+      const shareShadowXP = Boolean(options.shareShadowXP);
+      const saveImmediately = Boolean(options.saveImmediately);
+
+      this.ensureValidTotalXP(`ADD_XP:${source}`);
+
+      const oldLevel = this.settings.level || 1;
+      const oldTotalXP = this.settings.totalXP || 0;
+      this.settings.xp = (this.settings.xp || 0) + xpAmount;
+      this.settings.totalXP = oldTotalXP + xpAmount;
+
+      // Invalidate level cache since XP changed.
+      this.invalidatePerformanceCache(['currentLevel']);
+
+      // Normalize current XP bucket using canonical level resolver.
+      const newLevelInfo = this.getCurrentLevel();
+      if (this.settings.level !== newLevelInfo.level) {
+        this.settings.level = newLevelInfo.level;
+        this.settings.xp = newLevelInfo.xp;
+      } else {
+        this.settings.xp = newLevelInfo.xp;
+      }
+
+      // Emit XP changed event for real-time progress updates.
+      this.emitXPChanged();
+
+      // Keep level/rank progression behavior aligned with awardXP().
+      this.checkLevelUp(oldLevel);
+      if ((this.settings.level || 1) === oldLevel) {
+        this.checkRankPromotion();
+      }
+
+      if (saveImmediately) {
+        this.saveSettings(true);
+      } else {
+        setTimeout(() => {
+          try {
+            this.saveSettings();
+          } catch (error) {
+            this.debugError('ADD_XP', error, { phase: 'save_after_add_xp', source });
+          }
+        }, 0);
+      }
+
+      if (shareShadowXP) {
+        try {
+          this.shareShadowXP(xpAmount, source);
+        } catch (error) {
+          this.debugError('ADD_XP', error, { phase: 'shadow_xp_share', source });
+        }
+      }
+
+      this.debugLog('ADD_XP', 'External XP added', {
+        source,
+        xpAmount,
+        oldTotalXP,
+        newTotalXP: this.settings.totalXP,
+        oldLevel,
+        newLevel: this.settings.level,
+      });
+
+      return xpAmount;
+    } catch (error) {
+      this.debugError('ADD_XP', error, { amount, options });
+      return 0;
+    }
+  }
+
   awardXP(messageText, messageLength, messageContext = null) {
     try {
       this.debugLog('AWARD_XP', 'Calculating XP', { messageLength });

@@ -5364,10 +5364,190 @@ module.exports = class Dungeons {
 
     if (dungeon.userParticipating && this.soloLevelingStats) {
       const xpPerKill = this.calculateMobXP(mobRank, dungeon.userParticipating);
-      if (typeof this.soloLevelingStats.addXP === 'function') {
-        this.soloLevelingStats.addXP(xpPerKill * killCount);
+      this._grantUserDungeonXP(xpPerKill * killCount, 'dungeon_mob_kill', {
+        channelKey,
+        mobRank,
+        killCount,
+      });
+    }
+  }
+
+  _grantUserDungeonXP(amount, source = 'dungeon', context = {}) {
+    const xpAmount = Math.floor(Number(amount) || 0);
+    if (xpAmount <= 0) return false;
+    if (!this.soloLevelingStats) return false;
+
+    if (typeof this.soloLevelingStats.addXP === 'function') {
+      this.soloLevelingStats.addXP(xpAmount, {
+        source,
+        shareShadowXP: false,
+      });
+      return true;
+    }
+
+    this.errorLog(true, 'DUNGEON_XP_API_MISSING: SoloLevelingStats.addXP unavailable; XP not granted', {
+      source,
+      xpAmount,
+      ...context,
+    });
+    return false;
+  }
+
+  _getOrCreateShadowContributionEntry(dungeon, shadowId) {
+    if (!dungeon || shadowId === null || shadowId === undefined) return null;
+    const sid = String(shadowId).trim();
+    if (!sid) return null;
+
+    if (!dungeon.shadowContributions || typeof dungeon.shadowContributions !== 'object') {
+      dungeon.shadowContributions = {};
+    }
+
+    if (!dungeon.shadowContributions[sid] || typeof dungeon.shadowContributions[sid] !== 'object') {
+      dungeon.shadowContributions[sid] = { mobsKilled: 0, bossDamage: 0 };
+    }
+
+    const entry = dungeon.shadowContributions[sid];
+    if (!Number.isFinite(entry.mobsKilled)) entry.mobsKilled = 0;
+    if (!Number.isFinite(entry.bossDamage)) entry.bossDamage = 0;
+    return entry;
+  }
+
+  _addShadowContribution(dungeon, shadowId, field, amount) {
+    if (!(Number.isFinite(amount) && amount > 0)) return false;
+    if (field !== 'mobsKilled' && field !== 'bossDamage') return false;
+
+    const entry = this._getOrCreateShadowContributionEntry(dungeon, shadowId);
+    if (!entry) return false;
+    entry[field] += amount;
+    return true;
+  }
+
+  _getMobContributionLedger(dungeon, createIfMissing = false) {
+    if (!dungeon || typeof dungeon !== 'object') return null;
+
+    if (
+      dungeon._mobContributionByMobId &&
+      typeof dungeon._mobContributionByMobId === 'object' &&
+      !Array.isArray(dungeon._mobContributionByMobId)
+    ) {
+      return dungeon._mobContributionByMobId;
+    }
+
+    if (!createIfMissing) return null;
+    dungeon._mobContributionByMobId = Object.create(null);
+    return dungeon._mobContributionByMobId;
+  }
+
+  _recordShadowMobDamageContribution(dungeon, mobId, shadowId, damage) {
+    if (!(Number.isFinite(damage) && damage > 0)) return false;
+    if (!mobId || shadowId === null || shadowId === undefined) return false;
+    const sid = String(shadowId).trim();
+    if (!sid) return false;
+
+    const ledger = this._getMobContributionLedger(dungeon, true);
+    if (!ledger) return false;
+
+    const mid = String(mobId);
+    if (!ledger[mid] || typeof ledger[mid] !== 'object') {
+      ledger[mid] = Object.create(null);
+    }
+
+    ledger[mid][sid] = (Number(ledger[mid][sid]) || 0) + damage;
+    return true;
+  }
+
+  _applyMobKillContributionsFromLedger(dungeon, mobId, killCount = 1) {
+    if (!mobId || !(Number.isFinite(killCount) && killCount > 0)) return false;
+
+    const ledger = this._getMobContributionLedger(dungeon, false);
+    if (!ledger) return false;
+
+    const mid = String(mobId);
+    const contributionEntry = ledger[mid];
+    if (!contributionEntry || typeof contributionEntry !== 'object') return false;
+
+    const contributors = Object.entries(contributionEntry)
+      .map(([shadowId, dmg]) => [String(shadowId), Number(dmg)])
+      .filter(([shadowId, dmg]) => shadowId && Number.isFinite(dmg) && dmg > 0);
+
+    delete ledger[mid];
+    if (contributors.length === 0) return false;
+
+    const totalDamage = contributors.reduce((sum, [, dmg]) => sum + dmg, 0);
+    if (!(totalDamage > 0)) return false;
+
+    for (const [shadowId, damage] of contributors) {
+      const killShare = (damage / totalDamage) * killCount;
+      this._addShadowContribution(dungeon, shadowId, 'mobsKilled', killShare);
+    }
+
+    return true;
+  }
+
+  _pruneShadowMobContributionLedger(dungeon) {
+    const ledger = this._getMobContributionLedger(dungeon, false);
+    if (!ledger) return;
+
+    const activeMobIds = new Set();
+    const activeMobs = dungeon?.mobs?.activeMobs || [];
+    for (const mob of activeMobs) {
+      if (!mob || mob.hp <= 0) continue;
+      const mobId = this.getEnemyKey(mob, 'mob');
+      mobId && activeMobIds.add(String(mobId));
+    }
+
+    let remainingEntries = 0;
+    for (const mobId of Object.keys(ledger)) {
+      if (!activeMobIds.has(mobId)) {
+        delete ledger[mobId];
+      } else {
+        remainingEntries++;
       }
     }
+
+    if (remainingEntries === 0) {
+      delete dungeon._mobContributionByMobId;
+    }
+  }
+
+  _buildShadowContributionWeights(shadows = []) {
+    const normalized = Array.isArray(shadows) ? shadows : [];
+    const weights = [];
+    let totalWeight = 0;
+
+    for (const shadow of normalized) {
+      const shadowId = this.getShadowIdValue(shadow);
+      if (!shadowId) continue;
+
+      const score = this.getShadowCombatScore(shadow);
+      const weight = Number.isFinite(score) && score > 0 ? score : 1;
+      weights.push({ shadowId: String(shadowId), weight });
+      totalWeight += weight;
+    }
+
+    return { weights, totalWeight };
+  }
+
+  _distributeWeightedShadowContribution(dungeon, weights, totalWeight, field, totalAmount) {
+    if (!(Number.isFinite(totalAmount) && totalAmount > 0)) return false;
+    if (!Array.isArray(weights) || weights.length === 0) return false;
+
+    const safeTotalWeight = Number.isFinite(totalWeight) && totalWeight > 0 ? totalWeight : weights.length;
+    for (const entry of weights) {
+      if (!entry || !entry.shadowId) continue;
+      const weight = Number.isFinite(entry.weight) && entry.weight > 0 ? entry.weight : 1;
+      const share = totalAmount * (weight / safeTotalWeight);
+      this._addShadowContribution(dungeon, entry.shadowId, field, share);
+    }
+    return true;
+  }
+
+  _logMobContributionMiss(channelKey, mobId) {
+    this.errorLog(
+      true,
+      'MOB_CONTRIBUTION_MISS: Missing shadow damage attribution for mob kill',
+      { channelKey, mobId }
+    );
   }
 
   _getDungeonShadowCombatContext(channelKey, dungeon) {
@@ -8299,6 +8479,7 @@ module.exports = class Dungeons {
                 // Apply at most enough damage to kill this mob
                 const damageToApply = Math.min(remainingDamage, effectiveHP + 1);
                 mobDamageMap.set(mobId, accumulatedDmg + damageToApply);
+                this._recordShadowMobDamageContribution(dungeon, mobId, shadowId, damageToApply);
                 remainingDamage -= damageToApply;
                 totalMobDamage += damageToApply;
               }
@@ -8309,6 +8490,7 @@ module.exports = class Dungeons {
                 const fallbackId = this.getEnemyKey(fallback, 'mob');
                 if (fallbackId) {
                   mobDamageMap.set(fallbackId, (mobDamageMap.get(fallbackId) || 0) + remainingDamage);
+                  this._recordShadowMobDamageContribution(dungeon, fallbackId, shadowId, remainingDamage);
                   totalMobDamage += remainingDamage;
                 }
               }
@@ -8322,11 +8504,7 @@ module.exports = class Dungeons {
           if (totalBossDamage > 0) {
             aggregatedBossDamage += totalBossDamage;
             analytics.totalBossDamage += totalBossDamage;
-
-            if (!dungeon.shadowContributions[shadowId]) {
-              dungeon.shadowContributions[shadowId] = { mobsKilled: 0, bossDamage: 0 };
-            }
-            dungeon.shadowContributions[shadowId].bossDamage += totalBossDamage;
+            this._addShadowContribution(dungeon, shadowId, 'bossDamage', totalBossDamage);
           }
 
           analytics.totalMobDamage += totalMobDamage;
@@ -8380,12 +8558,12 @@ module.exports = class Dungeons {
 
         // AGGREGATED BOSS DAMAGE: Apply once after all shadows processed (was per-shadow)
         if (aggregatedBossDamage > 0) {
-          await this.applyDamageToBoss(channelKey, aggregatedBossDamage, 'shadow', 'aggregated');
+          await this.applyDamageToBoss(channelKey, aggregatedBossDamage, 'shadow', null);
         }
 
         // BATCH MOB DAMAGE: Apply accumulated mob damage from all shadows
         if (mobDamageMap.size > 0) {
-          const mobDamageResult = this.batchApplyDamage(
+          this.batchApplyDamage(
             mobDamageMap,
             aliveMobs,
             (mob, damage) => {
@@ -8400,6 +8578,10 @@ module.exports = class Dungeons {
             const mob = combatSnapshot.mobById.get(mobId);
             if (!mob || mob.hp > 0) return; // Only process dead mobs
             analytics.mobsKilledThisWave++;
+            const killAttributed = this._applyMobKillContributionsFromLedger(dungeon, mobId, 1);
+            if (!killAttributed) {
+              this._logMobContributionMiss(channelKey, mobId);
+            }
             this._onMobKilled(channelKey, dungeon, mob.rank);
             deadMobsThisTick.push(mob);
           });
@@ -8413,6 +8595,7 @@ module.exports = class Dungeons {
         }
 
         this._cleanupDungeonActiveMobs(dungeon);
+        this._pruneShadowMobContributionLedger(dungeon);
 
         // REAL-TIME UPDATE: Queue throttled HP bar update after all combat processing
         this.queueHPBarUpdate(channelKey);
@@ -9715,7 +9898,13 @@ module.exports = class Dungeons {
         };
         shadowDamage = Math.floor(shadowDamage * (behaviorMultipliers[combatData.behavior] || 1.0));
 
+        const targetMobId = this.getEnemyKey(targetMob, 'mob');
+        const targetMobHpBefore = targetMob.hp;
         targetMob.hp = Math.max(0, targetMob.hp - shadowDamage);
+        const damageApplied = Math.max(0, targetMobHpBefore - targetMob.hp);
+        if (damageApplied > 0 && targetMobId) {
+          this._recordShadowMobDamageContribution(dungeon, targetMobId, shadowId, damageApplied);
+        }
 
         // Update combat data
         combatData.lastAttackTime = now;
@@ -9733,16 +9922,13 @@ module.exports = class Dungeons {
           // ARISE: Stash dead mob in corpse pile for post-dungeon extraction (lore-accurate)
           this._addToCorpsePile(channelKey, targetMob, false);
 
-          // Track shadow contribution for XP (with guard clauses)
-          const shadowId = this.getShadowIdValue(shadow);
-          if (shadowId) {
-            if (!dungeon.shadowContributions || typeof dungeon.shadowContributions !== 'object') {
-              dungeon.shadowContributions = {};
-            }
-            if (!dungeon.shadowContributions[shadowId]) {
-              dungeon.shadowContributions[shadowId] = { mobsKilled: 0, bossDamage: 0 };
-            }
-            dungeon.shadowContributions[shadowId].mobsKilled += 1;
+          let killAttributed = false;
+          if (targetMobId) {
+            killAttributed = this._applyMobKillContributionsFromLedger(dungeon, targetMobId, 1);
+          }
+          if (!killAttributed && shadowId) {
+            this._addShadowContribution(dungeon, shadowId, 'mobsKilled', 1);
+            targetMobId && this._logMobContributionMiss(channelKey, targetMobId);
           }
         }
 
@@ -9757,6 +9943,7 @@ module.exports = class Dungeons {
           entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
         }
       }
+      this._pruneShadowMobContributionLedger(dungeon);
 
       // PERFORMANCE: Only save to storage every 5 attack cycles (not every 2 seconds)
       if (!this._saveCycleCount) this._saveCycleCount = 0;
@@ -9800,11 +9987,7 @@ module.exports = class Dungeons {
 
     // Track shadow contribution for XP
     if (source === 'shadow' && shadowId) {
-      if (!dungeon.shadowContributions) dungeon.shadowContributions = {};
-      if (!dungeon.shadowContributions[shadowId]) {
-        dungeon.shadowContributions[shadowId] = { mobsKilled: 0, bossDamage: 0 };
-      }
-      dungeon.shadowContributions[shadowId].bossDamage += damage;
+      this._addShadowContribution(dungeon, shadowId, 'bossDamage', damage);
     }
 
     // Track user damage with critical hits
@@ -10099,6 +10282,28 @@ module.exports = class Dungeons {
 
     // Grant XP to shadows based on their contributions (level/rank post-processing is deferred)
     if (reason === 'boss' || reason === 'complete') {
+      const contributionEntries = Object.values(dungeon.shadowContributions || {}).filter((entry) => {
+        const mobsKilled = Number(entry?.mobsKilled) || 0;
+        const bossDamage = Number(entry?.bossDamage) || 0;
+        return mobsKilled > 0 || bossDamage > 0;
+      });
+      if (
+        hadShadowsDeployed &&
+        (summaryStats.totalMobsKilled > 0 || summaryStats.totalBossDamage > 0) &&
+        contributionEntries.length === 0
+      ) {
+        this.errorLog(
+          true,
+          'SHADOW_CONTRIBUTIONS_EMPTY: Expected shadow contribution records but found none at completion',
+          {
+            channelKey,
+            reason,
+            totalMobsKilled: summaryStats.totalMobsKilled,
+            totalBossDamage: summaryStats.totalBossDamage,
+          }
+        );
+      }
+
       const shadowResults = await this.grantShadowDungeonXP(channelKey, dungeon);
       if (shadowResults) {
         summaryStats.shadowTotalXP = shadowResults.totalXP;
@@ -10108,6 +10313,9 @@ module.exports = class Dungeons {
           this.showToast('Shadow XP growth processing in background...', 'info');
         }
       }
+    }
+    if (dungeon._mobContributionByMobId) {
+      delete dungeon._mobContributionByMobId;
     }
 
     // CRITICAL CLEANUP: Stop all dungeon systems
@@ -10147,8 +10355,13 @@ module.exports = class Dungeons {
       // Grant bonus XP for completion (if participating)
       if (dungeon.userParticipating && this.soloLevelingStats) {
         const completionXP = 100 + rankIndex * 50; // E: 100, D: 150, C: 200, B: 250, A: 300, S: 350
-        if (typeof this.soloLevelingStats.addXP === 'function') {
-          this.soloLevelingStats.addXP(completionXP);
+        if (
+          this._grantUserDungeonXP(completionXP, 'dungeon_complete', {
+            channelKey,
+            dungeonRank: dungeon.rank,
+            reason,
+          })
+        ) {
           summaryStats.userXP = completionXP;
         }
       }
@@ -10159,8 +10372,14 @@ module.exports = class Dungeons {
         if (dungeon.userParticipating) {
           // Full XP if actively participating
           const bossXP = 200 + rankIndex * 100; // E: 200, D: 300, C: 400, B: 500, A: 600, S: 700
-          if (typeof this.soloLevelingStats.addXP === 'function') {
-            this.soloLevelingStats.addXP(bossXP);
+          if (
+            this._grantUserDungeonXP(bossXP, 'dungeon_boss_kill', {
+              channelKey,
+              dungeonRank: dungeon.rank,
+              reason,
+              userParticipating: true,
+            })
+          ) {
             summaryStats.userXP = bossXP;
           }
         } else {
@@ -10168,8 +10387,14 @@ module.exports = class Dungeons {
           const bossXP = Math.floor((200 + rankIndex * 100) * 0.5);
           const mobXP = Math.floor((10 + rankIndex * 5) * 0.3 * summaryStats.totalMobsKilled);
           const shadowVictoryXP = bossXP + mobXP;
-          if (typeof this.soloLevelingStats.addXP === 'function') {
-            this.soloLevelingStats.addXP(shadowVictoryXP);
+          if (
+            this._grantUserDungeonXP(shadowVictoryXP, 'dungeon_shadow_victory', {
+              channelKey,
+              dungeonRank: dungeon.rank,
+              reason,
+              userParticipating: false,
+            })
+          ) {
             summaryStats.userXP = shadowVictoryXP;
           }
         }
@@ -10296,6 +10521,9 @@ module.exports = class Dungeons {
       // Clear shadow contributions
       if (dungeon.shadowContributions) {
         dungeon.shadowContributions = null;
+      }
+      if (dungeon._mobContributionByMobId) {
+        dungeon._mobContributionByMobId = null;
       }
 
       // Clear shadow HP tracking
@@ -10766,7 +10994,11 @@ module.exports = class Dungeons {
     if (!this.shadowArmy) return null;
 
     const contributions = dungeon.shadowContributions || {};
-    const contributionEntries = Object.entries(contributions);
+    const contributionEntries = Object.entries(contributions).filter(([, contribution]) => {
+      const mobsKilled = Number(contribution?.mobsKilled) || 0;
+      const bossDamage = Number(contribution?.bossDamage) || 0;
+      return mobsKilled > 0 || bossDamage > 0;
+    });
     if (contributionEntries.length === 0) return null;
 
     // Get dungeon rank multiplier (higher rank = more XP)
@@ -10827,12 +11059,15 @@ module.exports = class Dungeons {
       const shadowRankIndex = shadowRanks.indexOf(shadowRank);
       const shadowRankMultiplier = 1.0 + shadowRankIndex * 0.3; // E=1.0, D=1.3, SSS=2.4, etc.
 
+      const mobsKilled = Number(contribution?.mobsKilled) || 0;
+      const bossDamage = Number(contribution?.bossDamage) || 0;
+
       // Calculate mob kill XP
-      const mobKillXP = contribution.mobsKilled * baseMobXP;
+      const mobKillXP = mobsKilled * baseMobXP;
 
       // Calculate boss damage XP (proportional to damage dealt)
       const bossMaxHP = dungeon.boss?.maxHp || dungeon.boss?.hp || 1000;
-      const bossDamagePercent = Math.min(1.0, contribution.bossDamage / bossMaxHP);
+      const bossDamagePercent = Math.min(1.0, bossDamage / bossMaxHP);
       const bossDamageXP = bossDamagePercent * baseBossXP;
       const rawContribution = mobKillXP + bossDamageXP;
 
@@ -11946,6 +12181,8 @@ module.exports = class Dungeons {
     const aliveShadows = this.getCombatReadyShadows(assignedShadows, deadShadows, shadowHP);
 
     if (aliveShadows.length === 0) return;
+    const { weights: contributionWeights, totalWeight: contributionTotalWeight } =
+      this._buildShadowContributionWeights(aliveShadows);
 
     const bossStats = {
       strength: dungeon.boss.strength,
@@ -11999,6 +12236,13 @@ module.exports = class Dungeons {
 
     // Apply boss damage
     if (totalBossDamageOverTime > 0) {
+      this._distributeWeightedShadowContribution(
+        dungeon,
+        contributionWeights,
+        contributionTotalWeight,
+        'bossDamage',
+        totalBossDamageOverTime
+      );
       dungeon.boss.hp = Math.max(0, dungeon.boss.hp - totalBossDamageOverTime);
       if (dungeon.boss.hp <= 0) {
         await this.completeDungeon(channelKey, 'boss');
@@ -12016,6 +12260,7 @@ module.exports = class Dungeons {
       if (aliveCount > 0) {
         const damagePerMob = Math.floor(totalMobDamageOverTime / aliveCount);
         const nextActiveMobs = [];
+        let simulatedMobKills = 0;
         for (const mob of dungeon.mobs.activeMobs) {
           if (!mob || mob.hp <= 0) continue;
           mob.hp = Math.max(0, mob.hp - damagePerMob);
@@ -12023,11 +12268,22 @@ module.exports = class Dungeons {
           else {
             this._onMobKilled(channelKey, dungeon, mob.rank);
             this._addToCorpsePile(channelKey, mob, false);
+            simulatedMobKills++;
           }
         }
         dungeon.mobs.activeMobs = nextActiveMobs;
+        if (simulatedMobKills > 0) {
+          this._distributeWeightedShadowContribution(
+            dungeon,
+            contributionWeights,
+            contributionTotalWeight,
+            'mobsKilled',
+            simulatedMobKills
+          );
+        }
       }
     }
+    this._pruneShadowMobContributionLedger(dungeon);
 
     // Update analytics
     if (!dungeon.combatAnalytics) dungeon.combatAnalytics = {};
