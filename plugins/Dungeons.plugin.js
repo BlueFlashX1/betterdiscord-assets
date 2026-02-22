@@ -1427,12 +1427,6 @@ module.exports = class Dungeons {
     this._combatLoopInFlight = false;
   }
 
-  _sleep(ms) {
-    return new Promise((resolve) => {
-      this._setTrackedTimeout(resolve, ms);
-    });
-  }
-
   _ensureMobSpawnLoop() {
     if (this._mobSpawnLoopInterval) return;
     this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: _ensureMobSpawnLoop — STARTING loop (tickMs=${this._mobSpawnLoopTickMs})`);
@@ -4160,6 +4154,26 @@ module.exports = class Dungeons {
   // ==== BEAST TYPE SELECTION HELPERS ====
 
   /**
+   * Canonical beast families used when legacy/corrupt dungeons are missing biome metadata.
+   * @returns {Array<string>}
+   */
+  getDefaultBeastFamilies() {
+    return [
+      'insect',
+      'beast',
+      'reptile',
+      'ice',
+      'dragon',
+      'giant',
+      'demon',
+      'humanoid-beast',
+      'undead',
+      'construct',
+      'ancient',
+    ];
+  }
+
+  /**
    * Select appropriate magic beast type based on biome families and rank
    * Returns beast type data compatible with Shadow Army extraction
    * @param {Array} allowedFamilies - Allowed beast families for this biome
@@ -4168,6 +4182,13 @@ module.exports = class Dungeons {
    * @returns {Object} Beast type object with type, name, family, minRank
    */
   selectMagicBeastType(allowedFamilies, mobRank, allRanks) {
+    const safeFamilies = Array.isArray(allowedFamilies) && allowedFamilies.length > 0
+      ? allowedFamilies
+      : this.getDefaultBeastFamilies();
+    const safeRanks = Array.isArray(allRanks) && allRanks.length > 0
+      ? allRanks
+      : this.settings?.dungeonRanks || this.defaultSettings?.dungeonRanks || [];
+
     // Magic beast type definitions (matches Shadow Army shadowRoles)
     const magicBeastTypes = {
       // Insect family
@@ -4215,14 +4236,15 @@ module.exports = class Dungeons {
 
     // Filter beasts by allowed families
     let availableBeasts = Object.values(magicBeastTypes).filter((beast) =>
-      allowedFamilies.includes(beast.family)
+      safeFamilies.includes(beast.family)
     );
 
     // Filter by rank restrictions
-    const mobRankIndex = allRanks.indexOf(mobRank);
+    const mobRankIndex = safeRanks.indexOf(mobRank);
     availableBeasts = availableBeasts.filter((beast) => {
       if (!beast.minRank) return true; // No restriction
-      const minRankIndex = allRanks.indexOf(beast.minRank);
+      const minRankIndex = safeRanks.indexOf(beast.minRank);
+      if (mobRankIndex < 0 || minRankIndex < 0) return true;
       return mobRankIndex >= minRankIndex; // Only if mob rank meets minimum
     });
 
@@ -4259,16 +4281,38 @@ module.exports = class Dungeons {
       return;
     }
 
+    // Queue hardening: ignore malformed placeholder entries so counters stay accurate.
+    const validQueuedMobs = [];
+    for (let i = 0; i < queuedMobs.length; i++) {
+      const mob = queuedMobs[i];
+      if (!mob || typeof mob !== 'object') continue;
+
+      const hp = Number(mob.hp);
+      const maxHp = Number(mob.maxHp);
+      if (!Number.isFinite(hp) || hp <= 0 || !Number.isFinite(maxHp) || maxHp <= 0) continue;
+
+      mob.hp = Math.max(1, Math.floor(hp));
+      mob.maxHp = Math.max(mob.hp, Math.floor(maxHp));
+      this.ensureMonsterRole(mob);
+      validQueuedMobs.push(mob);
+    }
+
+    if (validQueuedMobs.length === 0) {
+      this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — DROPPED invalid queued mobs (${queuedMobs.length})`);
+      this._mobSpawnQueue.delete(channelKey);
+      return;
+    }
+
     const beforeCount = dungeon.mobs.activeMobs.length;
     // Batch append to activeMobs array (more efficient than individual pushes)
-    dungeon.mobs.activeMobs.push(...queuedMobs);
-    dungeon.mobs.remaining += queuedMobs.length;
-    dungeon.mobs.total += queuedMobs.length;
-    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${queuedMobs.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total})`);
+    dungeon.mobs.activeMobs.push(...validQueuedMobs);
+    dungeon.mobs.remaining += validQueuedMobs.length;
+    dungeon.mobs.total += validQueuedMobs.length;
+    this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TRACE: processMobSpawnQueue(${channelKey}) — FLUSHED ${validQueuedMobs.length} mobs (activeMobs: ${beforeCount} → ${dungeon.mobs.activeMobs.length}, total=${dungeon.mobs.total})`);
 
     // CRITICAL: Save mobs to dedicated database (cached for migration)
-    if (this.mobBossStorageManager && queuedMobs.length > 0) {
-      this.mobBossStorageManager.enqueueMobs(queuedMobs, channelKey).catch((error) => {
+    if (this.mobBossStorageManager && validQueuedMobs.length > 0) {
+      this.mobBossStorageManager.enqueueMobs(validQueuedMobs, channelKey).catch((error) => {
         this.errorLog('Failed to queue mobs for caching', error);
       });
     }
@@ -4392,22 +4436,30 @@ module.exports = class Dungeons {
       if (cached && now - cached.timestamp < this._mobCacheTTL) {
         // Use cached mobs (reuse generation to prevent crashes)
         const spawnedAt = Date.now();
-        newMobs = new Array(cached.mobs.length);
+        newMobs = [];
         for (let i = 0; i < cached.mobs.length; i++) {
-          const mob = cached.mobs[i];
-          newMobs[i] = {
-            ...mob,
+          const mobTemplate = cached.mobs[i];
+          if (!mobTemplate || typeof mobTemplate !== 'object') continue;
+          const hp = Number(mobTemplate.hp);
+          const maxHp = Number(mobTemplate.maxHp);
+          if (!Number.isFinite(hp) || hp <= 0 || !Number.isFinite(maxHp) || maxHp <= 0) continue;
+
+          const mob = {
+            ...mobTemplate,
             id: `mob_${spawnedAt}_${Math.random().toString(36).slice(2, 11)}`, // New unique ID
             spawnedAt, // Update spawn time
           };
-          this.ensureMonsterRole(newMobs[i]);
+          mob.hp = Math.max(1, Math.floor(hp));
+          mob.maxHp = Math.max(mob.hp, Math.floor(maxHp));
+          this.ensureMonsterRole(mob);
+          newMobs.push(mob);
         }
         // MOB_CACHE log stripped — spawning works, no need to trace
       } else {
         // Generate new mobs and cache them
         // BATCH MOB GENERATION with INDIVIDUAL VARIANCE
         // PERF: avoid Array.from allocation/closure in a hot path.
-        newMobs = new Array(actualSpawnCount);
+        newMobs = [];
         for (let i = 0; i < actualSpawnCount; i++) {
           // Mob rank: dungeon rank ± 1 (can be 1 rank weaker, same, or 1 rank stronger)
           // Example: A rank dungeon → B, A, or S rank mobs
@@ -4480,7 +4532,7 @@ module.exports = class Dungeons {
             magicBeastType.type,
             magicBeastType.family
           );
-          newMobs[i] = {
+          newMobs.push({
             // Core mob identity
             id: `mob_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
             rank: mobRank,
@@ -4533,7 +4585,16 @@ module.exports = class Dungeons {
 
             // Magic beast description (for display/debugging)
             description: `${mobRank}-rank ${magicBeastType.name} (${mobTier}) from ${dungeon.biome.name}`,
-          };
+          });
+        }
+
+        if (newMobs.length === 0) {
+          this.errorLog?.('COMBAT', 'Mob generation produced no valid mobs; skipping spawn wave', {
+            channelKey,
+            actualSpawnCount,
+            pressureMobFactor,
+          });
+          return;
         }
 
         // Cache generated mobs (template for future spawns to prevent crashes)
@@ -4553,6 +4614,16 @@ module.exports = class Dungeons {
           const firstKey = this._mobGenerationCache.keys().next().value;
           this._mobGenerationCache.delete(firstKey);
         }
+      }
+
+      if (!newMobs || newMobs.length === 0) {
+        this.errorLog?.('COMBAT', 'No valid mobs available after generation/cache pass; skipping spawn wave', {
+          channelKey,
+          cacheKey,
+          fromCache: !!cached,
+        });
+        if (cached) this._mobGenerationCache.delete(cacheKey);
+        return;
       }
 
       // Generated mobs log stripped — FLUSHING log in processMobSpawnQueue covers this
@@ -4786,7 +4857,7 @@ module.exports = class Dungeons {
     }
     if (dungeon.mobs?.activeMobs) {
       dungeon.mobs.activeMobs.forEach((mob) => {
-        if (!mob.lastAttackTime || mob.lastAttackTime === 0) {
+        if (mob && (!mob.lastAttackTime || mob.lastAttackTime === 0)) {
           mob.lastAttackTime = now;
         }
       });
@@ -7053,7 +7124,12 @@ module.exports = class Dungeons {
         leveledUpShadows.length > 0 || rankedUpShadows.length > 0 || growthSaved > 0;
       if (hasStatChanges) {
         this.invalidateShadowsCache();
-        this.shadowArmy?.getTotalShadowPower?.(true).catch(() => {});
+        this.shadowArmy?.getTotalShadowPower?.(true).catch((error) => {
+          this.errorLog?.(true, 'Failed to refresh ShadowArmy total power after dungeon XP post-process', {
+            channelKey,
+            error,
+          });
+        });
       }
 
       const elapsedMs = Date.now() - startMs;
@@ -8686,10 +8762,14 @@ module.exports = class Dungeons {
     let sensesDeployedIds = new Set();
     try {
       exchangeMarkedIds = BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set();
-    } catch (_) {}
+    } catch (error) {
+      this.errorLog?.(true, 'Failed to read ShadowExchange exclusion set', error);
+    }
     try {
       sensesDeployedIds = BdApi.Plugins.get("ShadowSenses")?.instance?.getDeployedShadowIds?.() || new Set();
-    } catch (_) {}
+    } catch (error) {
+      this.errorLog?.(true, 'Failed to read ShadowSenses exclusion set', error);
+    }
     this._exclusionCache = { exchangeMarkedIds, sensesDeployedIds, ts: now };
     return this._exclusionCache;
   }
@@ -9545,7 +9625,7 @@ module.exports = class Dungeons {
     if (source === 'user') {
       // User attacks mobs
       dungeon.mobs.activeMobs
-        .filter((mob) => mob.hp > 0)
+        .filter((mob) => mob && mob.hp > 0)
         .forEach((mob) => {
           const mobStats = {
             strength: mob.strength,
@@ -12181,7 +12261,7 @@ module.exports = class Dungeons {
     if (dungeon.mobs?.activeMobs) {
       const now = Date.now();
       dungeon.mobs.activeMobs.forEach((mob) => {
-        if (mob.hp > 0) {
+        if (mob && mob.hp > 0) {
           mob.lastAttackTime = now;
         }
       });
@@ -12651,6 +12731,26 @@ module.exports = class Dungeons {
           } else if (!(dungeon.shadowCombatData instanceof Map)) {
             const loaded = dungeon.shadowCombatData;
             dungeon.shadowCombatData = new Map(Object.entries(loaded));
+          }
+
+          // MIGRATION: Legacy dungeons may lack biome/beastFamilies fields.
+          // Without this, deploy can fail before mob spawning starts.
+          if (!Array.isArray(dungeon.beastFamilies) || dungeon.beastFamilies.length === 0) {
+            if (Array.isArray(dungeon.biome?.beastFamilies) && dungeon.biome.beastFamilies.length > 0) {
+              dungeon.beastFamilies = [...new Set(dungeon.biome.beastFamilies.filter(Boolean))];
+            } else {
+              dungeon.beastFamilies = this.getDefaultBeastFamilies();
+            }
+          }
+          if (!dungeon.biome || typeof dungeon.biome !== 'object') {
+            dungeon.biome = {
+              name: dungeon.type || 'Recovered Biome',
+              description: 'Recovered legacy dungeon metadata',
+              mobMultiplier: 1,
+              beastFamilies: [...dungeon.beastFamilies],
+            };
+          } else if (!Array.isArray(dungeon.biome.beastFamilies) || dungeon.biome.beastFamilies.length === 0) {
+            dungeon.biome.beastFamilies = [...dungeon.beastFamilies];
           }
 
           // VALIDATE: Ensure boss stats match dungeon rank (fixes any corrupted data)
@@ -13181,9 +13281,7 @@ module.exports = class Dungeons {
   removeCSSById(styleId) {
     // Guard clause: Validate input
     if (!styleId) {
-      if (this.debugError) {
-        this.debugError('CSS', 'Invalid CSS removal: missing styleId');
-      }
+      this.errorLog?.('CSS', 'Invalid CSS removal: missing styleId');
       return false;
     }
 

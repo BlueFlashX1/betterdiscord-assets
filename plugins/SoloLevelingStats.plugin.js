@@ -863,6 +863,7 @@ module.exports = class SoloLevelingStats {
 
     // Dirty flag for throttled UI updates (used by 2s chatUIUpdateInterval)
     this._chatUIDirty = false;
+    this._chatUIForceUpdate = null; // React forceUpdate bridge (set by StatsPanel useEffect)
 
     // Quest definitions — single source of truth for names, descriptions, and rewards
     this.questData = {
@@ -1195,7 +1196,8 @@ module.exports = class SoloLevelingStats {
       this._cache.skillTreeBonuses = bonuses;
       this._cache.skillTreeBonusesTime = now;
       return bonuses;
-    } catch (_error) {
+    } catch (error) {
+      this.debugError('SKILL_TREE_BONUSES', error);
       this._cache.skillTreeBonuses = null;
       this._cache.skillTreeBonusesTime = now;
       return null;
@@ -1221,7 +1223,8 @@ module.exports = class SoloLevelingStats {
       this._cache.activeSkillBuffs = buffs;
       this._cache.activeSkillBuffsTime = now;
       return buffs;
-    } catch (_error) {
+    } catch (error) {
+      this.debugError('ACTIVE_SKILL_BUFFS', error);
       this._cache.activeSkillBuffs = null;
       this._cache.activeSkillBuffsTime = now;
       return null;
@@ -3562,7 +3565,9 @@ module.exports = class SoloLevelingStats {
   runMessageProcessingStage(stageFn) {
     try {
       stageFn();
-    } catch (_error) {}
+    } catch (error) {
+      this.debugError('MESSAGE_STAGE', error);
+    }
   }
 
   processMessageSent(messageText, messageContext = null) {
@@ -3614,7 +3619,9 @@ module.exports = class SoloLevelingStats {
       if (Date.now() - this.lastSaveTime > 5000) {
         this.runMessageProcessingStage(() => this.saveSettings());
       }
-    } catch (_error) {}
+    } catch (error) {
+      this.debugError('PROCESS_MESSAGE', error);
+    }
   }
 
   hashString(str) {
@@ -9152,7 +9159,11 @@ module.exports = class SoloLevelingStats {
   removeChatUI() {
     // Unmount React root if using createRoot fallback (v3.0.0)
     if (this._chatUIRoot) {
-      try { this._chatUIRoot.unmount(); } catch (_) {}
+      try {
+        this._chatUIRoot.unmount();
+      } catch (error) {
+        this.debugError('REMOVE_CHAT_UI', error);
+      }
       this._chatUIRoot = null;
     }
     // If React injection is active, the UI will be removed when patch is removed

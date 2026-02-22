@@ -370,21 +370,6 @@ module.exports = class SoloLevelingTitleManager {
         : console.error(`[TitleManager] ${tagOrMessage}`));
   }
 
-  /**
-   * Stop-safe timeout helper (prevents work-after-stop + centralizes cleanup).
-   * @param {() => void} callback - Work to run later
-   * @param {number} delayMs - Delay in ms
-   * @returns {number} timeoutId
-   */
-  _setTrackedTimeout(callback, delayMs) {
-    const timeoutId = setTimeout(() => {
-      this._retryTimeouts.delete(timeoutId);
-      !this._isStopped && callback();
-    }, delayMs);
-    this._retryTimeouts.add(timeoutId);
-    return timeoutId;
-  }
-
   _clearTrackedTimeout(timeoutId) {
     if (!Number.isFinite(timeoutId)) return;
     clearTimeout(timeoutId);
@@ -407,7 +392,8 @@ module.exports = class SoloLevelingTitleManager {
       delete require.cache[require.resolve?.(utilsPath)];
       this._SLUtils = require(utilsPath);
       if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
-    } catch (_) {
+    } catch (error) {
+      console.error('[TitleManager] Failed to load SoloLevelingUtils:', error);
       this._SLUtils = null;
     }
   }
@@ -708,22 +694,6 @@ module.exports = class SoloLevelingTitleManager {
     return !!nativeButtons && nativeButtons.length >= 2;
   }
 
-  /**
-   * Check if the user can type in the current channel.
-   * Returns false if the text area is missing, disabled, or shows a "no permission" state.
-   */
-  _canUserType() {
-    const textArea = document.querySelector('[class*="channelTextArea"]');
-    if (!textArea) return true; // No text area found yet — allow button, don't block
-
-    // Discord shows a disabled/locked text area or a "You do not have permission" notice
-    const noPermission =
-      textArea.querySelector('[class*="placeholder"][class*="disabled"]') ||
-      textArea.querySelector('[class*="upsellWrapper"]') ||
-      textArea.querySelector('[class*="locked"]');
-    return !noPermission;
-  }
-
   getToolbarContainer() {
     const now = Date.now();
     const cached = this._toolbarCache?.element;
@@ -864,7 +834,9 @@ module.exports = class SoloLevelingTitleManager {
     // Unregister from shared SLUtils toolbar registry (if registered)
     try {
       this._SLUtils?.unregisterToolbarButton?.('tm-title-button-wrapper');
-    } catch (_) { /* ignore */ }
+    } catch (error) {
+      console.error('[TitleManager] Failed to unregister toolbar button:', error);
+    }
 
     try {
       this.removeTitleButton();

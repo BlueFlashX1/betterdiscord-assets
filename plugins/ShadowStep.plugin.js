@@ -363,7 +363,11 @@ module.exports = class ShadowStep {
 
       // 2. Unpatch context menu
       if (this._unpatchContextMenu) {
-        try { this._unpatchContextMenu(); } catch (_) {}
+        try {
+          this._unpatchContextMenu();
+        } catch (error) {
+          this.debugError("ContextMenu", "Failed to unpatch context menu", error);
+        }
         this._unpatchContextMenu = null;
       }
 
@@ -683,7 +687,9 @@ module.exports = class ShadowStep {
       node.style.removeProperty("opacity");
       node.style.removeProperty("transition");
       node.style.removeProperty("will-change");
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to reset channel view fade styles", error);
+    }
   }
 
   _beginChannelViewFadeOut() {
@@ -702,7 +708,9 @@ module.exports = class ShadowStep {
         node.style.transition = "opacity 120ms ease-out";
         node.style.opacity = "0.2";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to start channel view fade out", error);
+    }
     return token;
   }
 
@@ -723,7 +731,9 @@ module.exports = class ShadowStep {
         node.style.transition = `opacity ${duration}ms cubic-bezier(.22,.61,.36,1)`;
         node.style.opacity = "1";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to finish channel view fade", error);
+    }
 
     if (this._channelFadeResetTimer) clearTimeout(this._channelFadeResetTimer);
     this._channelFadeResetTimer = setTimeout(() => {
@@ -733,7 +743,9 @@ module.exports = class ShadowStep {
         node.style.removeProperty("opacity");
         node.style.removeProperty("transition");
         node.style.removeProperty("will-change");
-      } catch (_) {}
+      } catch (error) {
+        this.debugError("Transition", "Failed to clean channel view fade styles after transition", error);
+      }
     }, duration + 80);
   }
 
@@ -773,7 +785,11 @@ module.exports = class ShadowStep {
     if (this._isPathActive(targetPath)) {
       this.debugLog("Navigate", `Already at ${targetPath}`);
       if (typeof hooks.onConfirmed === "function") {
-        try { hooks.onConfirmed({ attempt: 0, alreadyActive: true }); } catch (_) {}
+        try {
+          hooks.onConfirmed({ attempt: 0, alreadyActive: true });
+        } catch (error) {
+          this.debugError("Navigate", "onConfirmed hook failed for already-active target", error);
+        }
       }
       return;
     }
@@ -787,7 +803,11 @@ module.exports = class ShadowStep {
       if (this._isPathActive(targetPath)) {
         this.debugLog("Navigate", `Confirmed ${targetPath} on attempt ${attempt}`);
         if (typeof hooks.onConfirmed === "function") {
-          try { hooks.onConfirmed({ attempt, targetPath }); } catch (_) {}
+          try {
+            hooks.onConfirmed({ attempt, targetPath });
+          } catch (error) {
+            this.debugError("Navigate", "onConfirmed hook failed after navigation confirmation", error);
+          }
         }
         return;
       }
@@ -796,7 +816,11 @@ module.exports = class ShadowStep {
         const anchorName = context.anchorName ? ` (${context.anchorName})` : "";
         this.debugError("Navigate", `Failed to reach ${targetPath}${anchorName} after ${attempt} attempts`);
         if (typeof hooks.onFailed === "function") {
-          try { hooks.onFailed({ attempt, targetPath }); } catch (_) {}
+          try {
+            hooks.onFailed({ attempt, targetPath });
+          } catch (error) {
+            this.debugError("Navigate", "onFailed hook failed after navigation exhaustion", error);
+          }
         }
         BdApi.UI.showToast("Shadow Step failed to switch channel", { type: "error" });
         return;
@@ -817,7 +841,11 @@ module.exports = class ShadowStep {
     } catch (err) {
       this.debugError("Navigate", "Unexpected navigation failure:", err);
       if (typeof hooks.onFailed === "function") {
-        try { hooks.onFailed({ attempt: 0, targetPath, error: err }); } catch (_) {}
+        try {
+          hooks.onFailed({ attempt: 0, targetPath, error: err });
+        } catch (hookError) {
+          this.debugError("Navigate", "onFailed hook threw during navigation exception handling", hookError);
+        }
       }
       BdApi.UI.showToast("Navigation error \u2014 check console", { type: "error" });
     }
@@ -894,7 +922,11 @@ module.exports = class ShadowStep {
       const container = document.getElementById(PANEL_CONTAINER_ID);
       if (container) BdApi.ReactDOM.unmountComponentAtNode(container);
     } else if (this._panelReactRoot) {
-      try { this._panelReactRoot.unmount(); } catch (_) {}
+      try {
+        this._panelReactRoot.unmount();
+      } catch (error) {
+        this.debugError("Panel", "Failed to unmount panel React root", error);
+      }
     }
     this._panelReactRoot = null;
 
@@ -918,7 +950,11 @@ module.exports = class ShadowStep {
       this._transitionCleanupTimeout = null;
     }
     if (typeof this._transitionStopCanvas === "function") {
-      try { this._transitionStopCanvas(); } catch (_) {}
+      try {
+        this._transitionStopCanvas();
+      } catch (error) {
+        this.debugError("Transition", "Failed to stop active transition canvas", error);
+      }
       this._transitionStopCanvas = null;
     }
     const overlay = document.getElementById(TRANSITION_ID);

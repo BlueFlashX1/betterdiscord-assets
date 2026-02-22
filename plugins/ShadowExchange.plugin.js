@@ -336,7 +336,9 @@ function buildPanelComponents(pluginInstance) {
               wp.messageAuthor = author;
             }
           }
-        } catch (_) {}
+        } catch (error) {
+          this.debugError("Panel", "Failed to parse message metadata for preview", error);
+        }
       }
 
       messageSection = ce("div", { className: "se-message-preview" },
@@ -756,7 +758,9 @@ module.exports = class ShadowExchange {
         if (guild) guildName = guild.name;
       }
       if (!channel.name && channel.recipients?.length) channelName = "DM";
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Mark", "Failed to resolve guild/channel labels for message waypoint", error);
+    }
 
     const shadow = await this.getWeakestAvailableShadow();
     if (!shadow) {
@@ -779,14 +783,18 @@ module.exports = class ShadowExchange {
       } else if (message.attachments?.length) {
         messagePreview = `[${message.attachments.length} attachment${message.attachments.length > 1 ? "s" : ""}]`;
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Mark", "Failed to build message preview text", error);
+    }
 
     let messageAuthor = "";
     try {
       if (message.author) {
         messageAuthor = message.author.globalName || message.author.username || "";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Mark", "Failed to read message author for waypoint", error);
+    }
 
     const waypoint = {
       id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -837,14 +845,18 @@ module.exports = class ShadowExchange {
       if (bd && typeof bd === "object") {
         candidates.push({ source: "bdapi", data: bd });
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Settings", "Failed to load settings from BdApi.Data", error);
+    }
 
     try {
       const file = this.readFileBackup();
       if (file && typeof file === "object") {
         candidates.push({ source: "file", data: file });
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Settings", "Failed to load settings from file backup", error);
+    }
 
     if (candidates.length === 0) {
       this.settings = { ...this.defaultSettings, waypoints: [] };
@@ -898,7 +910,9 @@ module.exports = class ShadowExchange {
           const data = JSON.parse(raw);
           const wps = Array.isArray(data.waypoints) ? data.waypoints.length : 0;
           candidates.push({ data, quality: wps, path: p });
-        } catch (_) {}
+        } catch (error) {
+          this.debugError("Settings", `Failed to parse backup candidate ${p}`, error);
+        }
       }
       if (candidates.length === 0) return null;
       candidates.sort((a, b) => b.quality - a.quality);
@@ -920,7 +934,9 @@ module.exports = class ShadowExchange {
           if (fs.existsSync(src)) {
             fs.writeFileSync(dest, fs.readFileSync(src));
           }
-        } catch (_) {}
+        } catch (error) {
+          this.debugError("Settings", `Failed rotating backup ${src} -> ${dest}`, error);
+        }
       }
 
       const json = JSON.stringify(data, null, 2);
@@ -1068,14 +1084,18 @@ module.exports = class ShadowExchange {
         if (channel.isThread && channel.isThread()) locationType = "thread";
         else if (!guildId) locationType = "dm";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Location", "Failed to resolve channel metadata for current location", error);
+    }
 
     try {
       if (guildId) {
         const guild = this.GuildStore?.getGuild(guildId);
         if (guild) guildName = guild.name;
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Location", "Failed to resolve guild metadata for current location", error);
+    }
 
     if (messageId) locationType = "message";
 
@@ -1235,7 +1255,9 @@ module.exports = class ShadowExchange {
       node.style.removeProperty("opacity");
       node.style.removeProperty("transition");
       node.style.removeProperty("will-change");
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to reset channel view fade styles", error);
+    }
   }
 
   _beginChannelViewFadeOut() {
@@ -1254,7 +1276,9 @@ module.exports = class ShadowExchange {
         node.style.transition = "opacity 120ms ease-out";
         node.style.opacity = "0.2";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to start channel view fade out", error);
+    }
     return token;
   }
 
@@ -1275,7 +1299,9 @@ module.exports = class ShadowExchange {
         node.style.transition = `opacity ${duration}ms cubic-bezier(.22,.61,.36,1)`;
         node.style.opacity = "1";
       }
-    } catch (_) {}
+    } catch (error) {
+      this.debugError("Transition", "Failed to finish channel view fade", error);
+    }
 
     if (this._channelFadeResetTimer) clearTimeout(this._channelFadeResetTimer);
     this._channelFadeResetTimer = setTimeout(() => {
@@ -1285,7 +1311,9 @@ module.exports = class ShadowExchange {
         node.style.removeProperty("opacity");
         node.style.removeProperty("transition");
         node.style.removeProperty("will-change");
-      } catch (_) {}
+      } catch (error) {
+        this.debugError("Transition", "Failed to clean channel view fade styles after transition", error);
+      }
     }, duration + 80);
   }
 
@@ -1325,7 +1353,11 @@ module.exports = class ShadowExchange {
     if (this._isPathActive(targetPath)) {
       this.debugLog("Navigate", `Already at ${targetPath}`);
       if (typeof hooks.onConfirmed === "function") {
-        try { hooks.onConfirmed({ attempt: 0, alreadyActive: true }); } catch (_) {}
+        try {
+          hooks.onConfirmed({ attempt: 0, alreadyActive: true });
+        } catch (error) {
+          this.debugError("Navigate", "onConfirmed hook failed for already-active target", error);
+        }
       }
       return;
     }
@@ -1339,7 +1371,11 @@ module.exports = class ShadowExchange {
       if (this._isPathActive(targetPath)) {
         this.debugLog("Navigate", `Confirmed ${targetPath} on attempt ${attempt}`);
         if (typeof hooks.onConfirmed === "function") {
-          try { hooks.onConfirmed({ attempt, targetPath }); } catch (_) {}
+          try {
+            hooks.onConfirmed({ attempt, targetPath });
+          } catch (error) {
+            this.debugError("Navigate", "onConfirmed hook failed after navigation confirmation", error);
+          }
         }
         return;
       }
@@ -1348,7 +1384,11 @@ module.exports = class ShadowExchange {
         const anchorName = context.anchorName ? ` (${context.anchorName})` : "";
         this.debugError("Navigate", `Failed to reach ${targetPath}${anchorName} after ${attempt} attempts`);
         if (typeof hooks.onFailed === "function") {
-          try { hooks.onFailed({ attempt, targetPath }); } catch (_) {}
+          try {
+            hooks.onFailed({ attempt, targetPath });
+          } catch (error) {
+            this.debugError("Navigate", "onFailed hook failed after navigation exhaustion", error);
+          }
         }
         BdApi.UI.showToast("Shadow Exchange failed to switch channel", { type: "error" });
         return;
@@ -1369,7 +1409,11 @@ module.exports = class ShadowExchange {
     } catch (err) {
       this.debugError("Navigate", "Unexpected navigation failure:", err);
       if (typeof hooks.onFailed === "function") {
-        try { hooks.onFailed({ attempt: 0, targetPath, error: err }); } catch (_) {}
+        try {
+          hooks.onFailed({ attempt: 0, targetPath, error: err });
+        } catch (hookError) {
+          this.debugError("Navigate", "onFailed hook threw during navigation exception handling", hookError);
+        }
       }
       BdApi.UI.showToast("Navigation error \u2014 check console", { type: "error" });
     }
@@ -1385,7 +1429,11 @@ module.exports = class ShadowExchange {
       this._transitionCleanupTimeout = null;
     }
     if (typeof this._transitionStopCanvas === "function") {
-      try { this._transitionStopCanvas(); } catch (_) {}
+      try {
+        this._transitionStopCanvas();
+      } catch (error) {
+        this.debugError("Transition", "Failed to stop active transition canvas", error);
+      }
       this._transitionStopCanvas = null;
     }
     const overlay = document.getElementById(TRANSITION_ID);
@@ -2385,7 +2433,11 @@ module.exports = class ShadowExchange {
 
     // React 18: unmount via root
     if (this._reactRoot) {
-      try { this._reactRoot.unmount(); } catch (_) {}
+      try {
+        this._reactRoot.unmount();
+      } catch (error) {
+        this.debugError("Panel", "Failed to unmount panel React root", error);
+      }
       this._reactRoot = null;
     }
 
@@ -2397,7 +2449,9 @@ module.exports = class ShadowExchange {
           (m) => m?.unmountComponentAtNode
         );
         if (ReactDOM?.unmountComponentAtNode) ReactDOM.unmountComponentAtNode(container);
-      } catch (_) {}
+      } catch (error) {
+        this.debugError("Panel", "Failed to unmount legacy panel container", error);
+      }
       container.remove();
     }
     this._panelContainer = null;

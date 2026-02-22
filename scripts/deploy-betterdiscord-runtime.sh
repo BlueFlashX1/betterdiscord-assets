@@ -37,6 +37,7 @@ for f in \
   ShadowExchange.plugin.js \
   ShadowSenses.plugin.js \
   ShadowStep.plugin.js \
+  Stealth.plugin.js \
   SkillTree.plugin.js \
   SoloLevelingStats.plugin.js \
   SoloLevelingToasts.plugin.js \

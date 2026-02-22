@@ -12,7 +12,9 @@ module.exports = class UserPanelDockMover {
       const prev = window[instanceKey];
       if (prev && prev !== this && typeof prev.stop === "function") prev.stop();
       window[instanceKey] = this;
-    } catch (_) {}
+    } catch (error) {
+      console.warn("[UserPanelDockMover] Failed to register singleton instance:", error);
+    }
 
     this.instanceKey = instanceKey;
     this.pluginId = "UserPanelDockMover";
@@ -82,7 +84,11 @@ module.exports = class UserPanelDockMover {
     this.dock = null;
     this.isPositioned = false;
 
-    try { delete window[this.instanceKey]; } catch (_) {}
+    try {
+      delete window[this.instanceKey];
+    } catch (error) {
+      console.warn("[UserPanelDockMover] Failed to clear singleton instance key:", error);
+    }
 
     BdApi.UI.showToast("UserPanelDockMover stopped", { type: "info", timeout: 2200 });
   }

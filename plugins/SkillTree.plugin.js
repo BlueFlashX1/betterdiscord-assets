@@ -1046,7 +1046,9 @@ module.exports = class SkillTree {
     // Unregister from shared SLUtils toolbar registry (if registered)
     try {
       this._SLUtils?.unregisterToolbarButton?.('st-skill-tree-button-wrapper');
-    } catch (_) { /* ignore */ }
+    } catch (error) {
+      console.error('[SkillTree] Failed to unregister toolbar button:', error);
+    }
 
     // Unsubscribe from events
     this.unsubscribeFromEvents();
@@ -3110,35 +3112,6 @@ module.exports = class SkillTree {
     return hasComposerActionButton || buttonCount >= 2;
   }
 
-  /**
-   * Check if the user can type in the current channel.
-   * Returns false if the text area is missing, disabled, or shows a "no permission" state.
-   */
-  _canUserType() {
-    const composerRoot = this._getComposerRoot();
-    if (!composerRoot) return false;
-
-    const editor = composerRoot.querySelector(
-      '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
-    );
-    if (!editor) return false;
-
-    const isDisabled =
-      editor.getAttribute('aria-disabled') === 'true' ||
-      editor.getAttribute('disabled') !== null ||
-      editor.getAttribute('readonly') !== null ||
-      editor.getAttribute('contenteditable') === 'false' ||
-      !!editor.closest('[aria-disabled="true"]');
-    if (isDisabled) return false;
-
-    const blockedSelectors = [
-      '[class*="placeholder"][class*="disabled"]',
-      '[class*="upsellWrapper"]',
-      '[class*="cannotSend"]',
-    ];
-    return !blockedSelectors.some((selector) => composerRoot.querySelector(selector));
-  }
-
   getToolbarContainer() {
     const now = Date.now();
     const cache = this._toolbarCache || {};
@@ -3267,7 +3240,11 @@ module.exports = class SkillTree {
    */
   closeSkillTreeModal() {
     if (this._modalReactRoot) {
-      try { this._modalReactRoot.unmount(); } catch (_) {}
+      try {
+        this._modalReactRoot.unmount();
+      } catch (error) {
+        console.error('[SkillTree] Failed to unmount modal React root:', error);
+      }
       this._modalReactRoot = null;
     }
 
@@ -3276,7 +3253,9 @@ module.exports = class SkillTree {
       try {
         const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule((m) => m?.unmountComponentAtNode);
         if (ReactDOM?.unmountComponentAtNode) ReactDOM.unmountComponentAtNode(container);
-      } catch (_) {}
+      } catch (error) {
+        console.error('[SkillTree] Failed to unmount legacy modal container:', error);
+      }
       container.remove();
     }
     this._modalContainer = null;

@@ -869,7 +869,12 @@ class DockEngine {
   isAlertNodeActive(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
-    try { const style = getComputedStyle(el); if (style.display === "none") return false; } catch (_) {}
+    try {
+      const style = getComputedStyle(el);
+      if (style.display === "none") return false;
+    } catch (error) {
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to read computed style for alert node", error);
+    }
     const cls = String(el.className || "").toLowerCase();
     const label = String(el.getAttribute("aria-label") || "").toLowerCase();
     const text = String(el.textContent || "").trim().toLowerCase();
@@ -895,7 +900,13 @@ class DockEngine {
     this.debugBuffer.push(entry);
     if (this.debugBuffer.length > this.debugMaxEntries) this.debugBuffer.shift();
     this.writeDebugEntry(entry);
-    if (this.debugConsole) { try { console.debug("[HSLDockAutoHide]", entry); } catch (_) {} }
+    if (this.debugConsole) {
+      try {
+        console.debug("[HSLDockAutoHide]", entry);
+      } catch (error) {
+        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to write debug console entry", error);
+      }
+    }
   }
 
   installDebugApi() {
@@ -909,14 +920,32 @@ class DockEngine {
         filePath: () => engine.debugFilePath,
         clear: () => { engine.debugBuffer.length = 0; engine.debugSeq = 0; return true; },
       };
-      try { window.__HSLDockAutoHideDebug = handle; } catch (_) {}
-      try { globalThis.__HSLDockAutoHideDebug = handle; } catch (_) {}
-    } catch (_) {}
+      try {
+        window.__HSLDockAutoHideDebug = handle;
+      } catch (error) {
+        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on window", error);
+      }
+      try {
+        globalThis.__HSLDockAutoHideDebug = handle;
+      } catch (error) {
+        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on globalThis", error);
+      }
+    } catch (error) {
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API", error);
+    }
   }
 
   removeDebugApi() {
-    try { delete window.__HSLDockAutoHideDebug; } catch (_) {}
-    try { delete globalThis.__HSLDockAutoHideDebug; } catch (_) {}
+    try {
+      delete window.__HSLDockAutoHideDebug;
+    } catch (error) {
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from window", error);
+    }
+    try {
+      delete globalThis.__HSLDockAutoHideDebug;
+    } catch (error) {
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from globalThis", error);
+    }
   }
 
   initDebugFileSink() {
@@ -930,12 +959,20 @@ class DockEngine {
       const stamp = new Date().toISOString().replace(/[:.]/g, "-");
       this.debugFilePath = path.join(dir, `dock-autohide-${stamp}.jsonl`);
       this.fs = fs;
-    } catch (_) { this.debugFilePath = null; this.fs = null; }
+    } catch (error) {
+      this.debugFilePath = null;
+      this.fs = null;
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to initialize debug file sink", error);
+    }
   }
 
   writeDebugEntry(entry) {
     if (!this.debugFileEnabled || !this.fs || !this.debugFilePath) return;
-    try { this.fs.appendFileSync(this.debugFilePath, JSON.stringify(entry) + "\n"); } catch (_) {}
+    try {
+      this.fs.appendFileSync(this.debugFilePath, JSON.stringify(entry) + "\n");
+    } catch (error) {
+      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed writing debug entry to file", error);
+    }
   }
 
   snapshotState() {

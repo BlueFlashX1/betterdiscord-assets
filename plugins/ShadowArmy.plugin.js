@@ -6107,6 +6107,25 @@ module.exports = class ShadowArmy {
   }
 
   /**
+   * Clear combat/runtime caches that should not survive plugin stop/restart boundaries.
+   * This keeps widget + combat-derived state from leaking across sessions.
+   */
+  clearCombatCache() {
+    this.clearShadowPowerCache();
+    this._soloDataCache = null;
+    this._soloDataCacheTime = 0;
+    this._snapshotCache = null;
+    this._snapshotTimestamp = 0;
+    this._topGeneralsCache = null;
+    this._topGeneralsCacheKey = null;
+    this._topGeneralsCacheTime = 0;
+    this._armyStatsCache = null;
+    this._armyStatsCacheTime = null;
+    this._armyStatsCacheKey = null;
+    this._widgetDirty = true;
+  }
+
+  /**
    * Get a stable cache key for a shadow object.
    * Prefers full id, falls back to compressed i field.
    * @param {Object} shadow - Shadow object
@@ -6115,6 +6134,43 @@ module.exports = class ShadowArmy {
   getCacheKey(shadow) {
     if (!shadow) return null;
     return shadow.id || shadow.i || null;
+  }
+
+  /**
+   * Return all cache keys that may identify a shadow across compression states.
+   * Used when invalidating caches so both `id` and compressed `i` entries are purged.
+   * @param {Object} shadow - Shadow object
+   * @returns {string[]} Unique cache keys
+   */
+  getAllCacheKeys(shadow) {
+    if (!shadow) return [];
+
+    const keys = new Set();
+    const add = (value) => {
+      if (value === null || value === undefined) return;
+      const normalized = String(value).trim();
+      normalized && keys.add(normalized);
+    };
+
+    add(shadow.id);
+    add(shadow.i);
+
+    // Some extracted records keep identifiers inside metadata payloads.
+    add(shadow.extractedData?.id);
+    add(shadow.extractedData?.i);
+
+    // Final fallback: attempt decompression when only compressed payload is present.
+    if (keys.size === 0 && typeof this.decompressShadow === 'function') {
+      try {
+        const decompressed = this.decompressShadow(shadow);
+        add(decompressed?.id);
+        add(decompressed?.i);
+      } catch (error) {
+        this.debugError('CACHE', 'Failed to derive cache keys from compressed shadow payload', error);
+      }
+    }
+
+    return [...keys];
   }
 
   /**
@@ -7181,7 +7237,9 @@ module.exports = class ShadowArmy {
     // Trigger background recalculation (don't wait - async update)
     // This will recalculate total power with fresh shadow power values
     if (!skipPowerRecalc) {
-      this.getTotalShadowPower(true).catch(() => {}); // Force full recalculation
+      this.getTotalShadowPower(true).catch((error) => {
+        this.debugError('POWER_CALC', 'Failed to refresh total shadow power after XP grant', error);
+      }); // Force full recalculation
     }
 
     this.saveSettings();
@@ -7421,7 +7479,9 @@ module.exports = class ShadowArmy {
 
       // Trigger background recalculation (don't wait - async update)
       // This will recalculate total power with fresh shadow power values
-      this.getTotalShadowPower(true).catch(() => {}); // Force full recalculation
+      this.getTotalShadowPower(true).catch((error) => {
+        this.debugError('POWER_CALC', 'Failed to refresh total shadow power after rank up', error);
+      }); // Force full recalculation
 
       return {
         success: true,
@@ -10057,7 +10117,11 @@ module.exports = class ShadowArmy {
   showEssenceConversionModal() {
     // Remove existing modal if present
     if (this._essenceConversionRoot) {
-      try { this._essenceConversionRoot.unmount(); } catch (_) {}
+      try {
+        this._essenceConversionRoot.unmount();
+      } catch (error) {
+        this.debugError('UI', 'Failed to unmount existing essence conversion modal root', error);
+      }
       this._essenceConversionRoot = null;
     }
     document.getElementById('shadow-essence-convert-modal-root')?.remove();
@@ -10080,7 +10144,11 @@ module.exports = class ShadowArmy {
 
     const onClose = () => {
       if (this._essenceConversionRoot) {
-        try { this._essenceConversionRoot.unmount(); } catch (_) {}
+        try {
+          this._essenceConversionRoot.unmount();
+        } catch (error) {
+          this.debugError('UI', 'Failed to unmount essence conversion modal on close', error);
+        }
         this._essenceConversionRoot = null;
       }
       document.getElementById('shadow-essence-convert-modal-root')?.remove();
@@ -11280,7 +11348,11 @@ module.exports = class ShadowArmy {
 
     // Unmount React root
     if (this._armyModalRoot) {
-      try { this._armyModalRoot.unmount(); } catch (_) {}
+      try {
+        this._armyModalRoot.unmount();
+      } catch (error) {
+        this.debugError('UI', 'Failed to unmount army modal React root', error);
+      }
       this._armyModalRoot = null;
     }
 

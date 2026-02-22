@@ -398,7 +398,11 @@ module.exports = class CriticalHit {
   detachCriticalHitSettingsPanelHandlers() {
     // Unmount React root if present
     if (this._settingsRoot) {
-      try { this._settingsRoot.unmount(); } catch (_) {}
+      try {
+        this._settingsRoot.unmount();
+      } catch (error) {
+        this.debugError('SETTINGS_PANEL', 'Failed to unmount settings root', error);
+      }
       this._settingsRoot = null;
     }
     // Keep existing cleanup for backwards compatibility
@@ -536,23 +540,6 @@ module.exports = class CriticalHit {
       return acc & acc;
     }, 0);
     return `hash_${Math.abs(hash)}`;
-  }
-
-  /**
-   * Escape HTML special characters to prevent XSS
-   * @param {string} text - Text to escape
-   * @returns {string} Escaped text
-   */
-  _escapeHTML(text) {
-    if (!text) return '';
-    const map = {
-      '&': '&amp;',
-      '<': '&lt;',
-      '>': '&gt;',
-      '"': '&quot;',
-      "'": '&#039;',
-    };
-    return String(text).replace(/[&<>"']/g, (m) => map[m]);
   }
 
   // ============================================================================
@@ -732,7 +719,9 @@ module.exports = class CriticalHit {
             currentFiber = currentFiber.return;
           }
         }
-      } catch (e) {}
+      } catch (error) {
+        this.debugError('GET_MESSAGE_ID', 'Error while traversing React fiber tree', error);
+      }
     }
 
     // Method 4: Check for id attribute - extract pure message ID from composite formats
@@ -1346,20 +1335,6 @@ module.exports = class CriticalHit {
     return (
       firstMessage?.getAttribute('data-channel-id') ||
       firstMessage?.closest('[data-channel-id]')?.getAttribute('data-channel-id') ||
-      null
-    );
-  }
-
-  /**
-   * Gets message ID from element using multiple methods
-   * @param {HTMLElement} element - Element to extract ID from
-   * @returns {string|null} Message ID or null
-   */
-  _getMessageIdFromElement(element) {
-    return (
-      this.getMessageIdentifier(element) ||
-      element.getAttribute('data-message-id') ||
-      element.getAttribute('data-list-item-id') ||
       null
     );
   }
@@ -8596,39 +8571,6 @@ ${childSel} {
    * @param {string} message - Log message
    * @param {Object|null} data - Optional data object to log
    */
-  /**
-   * Debug helper: logs computed styles of markdown elements (em, strong, code) inside a content element.
-   * Only runs when debug mode is enabled. Used to diagnose style stripping during crit animation.
-   */
-  _debugMarkdownStyles(contentEl, context) {
-    if (!this.debug?.enabled || !contentEl) return;
-    const checks = [
-      { tag: 'em', expect: { fontStyle: 'italic' } },
-      { tag: 'strong', expect: { fontWeight: v => parseInt(v) >= 700 } },
-      { tag: 'code', expect: { fontFamily: v => /mono|consolas|courier/i.test(v) } },
-    ];
-    const results = {};
-    for (const { tag, expect } of checks) {
-      const el = contentEl.querySelector(tag);
-      if (!el) continue;
-      const cs = window.getComputedStyle(el);
-      const [prop] = Object.keys(expect);
-      const val = cs[prop];
-      const checker = expect[prop];
-      const ok = typeof checker === 'function' ? checker(val) : val === checker;
-      results[tag] = { [prop]: val, ok };
-      if (!ok) {
-        this.debugLog('CRIT_STYLE_DEBUG', `STYLE STRIPPED: <${tag}> ${prop}=${val} (${context})`, {
-          element: el.textContent?.substring(0, 30),
-          allFontProps: { fontStyle: cs.fontStyle, fontWeight: cs.fontWeight, fontFamily: cs.fontFamily?.substring(0, 40) },
-        });
-      }
-    }
-    if (Object.keys(results).length > 0) {
-      this.debugLog('CRIT_STYLE_DEBUG', `Markdown style check (${context})`, results);
-    }
-  }
-
   debugLog(operation, message, data = null) {
     // Guard clause: early return if debug disabled
     if (!this.debug?.enabled) return;

@@ -43,6 +43,8 @@ module.exports = class Stealth {
       receipts: 0,
       activities: 0,
     };
+
+    this._warningTimestamps = new Map();
   }
 
   start() {
@@ -74,7 +76,8 @@ module.exports = class Stealth {
         ...DEFAULT_SETTINGS,
         ...(saved && typeof saved === "object" ? saved : {}),
       };
-    } catch (_error) {
+    } catch (error) {
+      this._logWarning("SETTINGS", "Failed to load settings; using defaults", error, "settings-load");
       this.settings = { ...DEFAULT_SETTINGS };
     }
   }
@@ -82,8 +85,8 @@ module.exports = class Stealth {
   saveSettings() {
     try {
       BdApi.Data.save(STEALTH_PLUGIN_ID, "settings", this.settings);
-    } catch (_error) {
-      // Ignore save failures to avoid plugin crash loops.
+    } catch (error) {
+      this._logWarning("SETTINGS", "Failed to persist settings", error, "settings-save");
     }
   }
 
@@ -96,8 +99,8 @@ module.exports = class Stealth {
       this._stores.presence =
         BdApi.Webpack.getStore?.("PresenceStore") ||
         BdApi.Webpack.getModule((m) => m && typeof m.getStatus === "function");
-    } catch (_error) {
-      // Best effort only.
+    } catch (error) {
+      this._logWarning("WEBPACK", "Failed to initialize User/Presence stores", error, "stores-init");
     }
   }
 
@@ -241,8 +244,13 @@ module.exports = class Stealth {
         if (Array.isArray(keys) && keys.length) {
           add(BdApi.Webpack.getByKeys(...keys));
         }
-      } catch (_error) {
-        // Ignore module lookup failures.
+      } catch (error) {
+        this._logWarning(
+          "WEBPACK",
+          `Module lookup by keys failed: ${Array.isArray(keys) ? keys.join(",") : "unknown"}`,
+          error,
+          `collect-keys:${Array.isArray(keys) ? keys.join(",") : "unknown"}`
+        );
       }
     });
 
@@ -252,8 +260,8 @@ module.exports = class Stealth {
           (m) => m && fnNames.some((name) => typeof m[name] === "function")
         )
       );
-    } catch (_error) {
-      // Ignore module lookup failures.
+    } catch (error) {
+      this._logWarning("WEBPACK", "Fallback module scan failed", error, "collect-fallback-scan");
     }
 
     return this._dedupeModules(modules);
@@ -322,8 +330,13 @@ module.exports = class Stealth {
         const mod = BdApi.Webpack.getByKeys(...keys);
         if (!mod) return;
         keys.forEach((key) => add(mod, key));
-      } catch (_error) {
-        // Ignore.
+      } catch (error) {
+        this._logWarning(
+          "STATUS",
+          `Status setter lookup failed: ${keys.join(",")}`,
+          error,
+          `status-lookup:${keys.join(",")}`
+        );
       }
     };
 
@@ -337,8 +350,8 @@ module.exports = class Stealth {
         (m) => m && typeof m.setStatus === "function"
       );
       add(mod, "setStatus");
-    } catch (_error) {
-      // Ignore.
+    } catch (error) {
+      this._logWarning("STATUS", "Fallback setStatus module scan failed", error, "status-fallback-scan");
     }
 
     const unique = [];
@@ -384,6 +397,7 @@ module.exports = class Stealth {
       this._statusSetters = this._resolveStatusSetters();
     }
 
+    let lastError = null;
     for (const entry of this._statusSetters) {
       const { module, fnName } = entry;
       try {
@@ -403,9 +417,13 @@ module.exports = class Stealth {
 
         module[fnName].call(module, status);
         return true;
-      } catch (_error) {
-        // Try the next setter candidate.
+      } catch (error) {
+        lastError = error;
       }
+    }
+
+    if (lastError) {
+      this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
     }
 
     return false;
@@ -429,11 +447,26 @@ module.exports = class Stealth {
           return status.toLowerCase();
         }
       }
-    } catch (_error) {
-      // Ignore read failures.
+    } catch (error) {
+      this._logWarning("STATUS", "Failed reading current presence status", error, "status-read");
     }
 
     return null;
+  }
+
+  _logWarning(scope, message, error = null, throttleKey = null) {
+    const key = throttleKey || `${scope}:${message}`;
+    const now = Date.now();
+    const throttleMs = 15000;
+    const lastTs = this._warningTimestamps.get(key) || 0;
+    if (now - lastTs < throttleMs) return;
+    this._warningTimestamps.set(key, now);
+
+    if (error) {
+      console.warn(`[${STEALTH_PLUGIN_ID}][${scope}] ${message}`, error);
+    } else {
+      console.warn(`[${STEALTH_PLUGIN_ID}][${scope}] ${message}`);
+    }
   }
 
   _recordSuppressed(kind) {
