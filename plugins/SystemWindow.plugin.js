@@ -340,7 +340,10 @@ module.exports = class SystemWindow {
         border-left-color: rgba(${BLUE}, 1) !important;
       }
 
-      li.sw-self:hover {
+      li.sw-self.sw-group-solo:hover,
+      li.sw-self.sw-group-start:hover,
+      li.sw-self.sw-group-middle:hover,
+      li.sw-self.sw-group-end:hover {
         box-shadow: 0 0 18px rgba(${PURPLE}, 0.5),
                     0 0 40px rgba(${PURPLE}, 0.2),
                     inset 0 0 12px rgba(${PURPLE}, 0.1) !important;
@@ -472,7 +475,10 @@ module.exports = class SystemWindow {
       }
 
       /* Mentioned hover: crimson glow */
-      li.sw-mentioned:hover {
+      li.sw-mentioned.sw-group-solo:hover,
+      li.sw-mentioned.sw-group-start:hover,
+      li.sw-mentioned.sw-group-middle:hover,
+      li.sw-mentioned.sw-group-end:hover {
         box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
                     0 0 40px rgba(239, 68, 68, 0.2),
                     inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
