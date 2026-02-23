@@ -278,7 +278,7 @@ module.exports = class SystemWindow {
   _getCSS() {
     // ── Colors ──
     const BLUE = "59, 130, 246"; // #3b82f6 — System (others)
-    const PURPLE = "138, 43, 226"; // #8a2be2 — Monarch (self)
+    const PURPLE = "155, 50, 255"; // #9b32ff — Monarch (self), saturated violet
     const R = "6px";
     const BG = "rgba(0, 0, 0, 0.55)"; // Darker codeblock background
 
@@ -403,18 +403,21 @@ module.exports = class SystemWindow {
          ════════════════════════════════════════════ */
 
       li.sw-self {
-        border-left-color: rgba(${PURPLE}, 0.5) !important;
-        border-right-color: rgba(${PURPLE}, 0.2) !important;
+        border-left-color: rgba(${PURPLE}, 0.7) !important;
+        border-right-color: rgba(${PURPLE}, 0.3) !important;
+        box-shadow: 0 0 10px rgba(${PURPLE}, 0.15),
+                    inset 0 0 8px rgba(${PURPLE}, 0.06) !important;
+        background: rgba(${PURPLE}, 0.04) !important;
       }
 
       li.sw-self.sw-group-solo,
       li.sw-self.sw-group-start {
-        border-top-color: rgba(${PURPLE}, 0.2) !important;
+        border-top-color: rgba(${PURPLE}, 0.3) !important;
       }
 
       li.sw-self.sw-group-solo,
       li.sw-self.sw-group-end {
-        border-bottom-color: rgba(${PURPLE}, 0.2) !important;
+        border-bottom-color: rgba(${PURPLE}, 0.3) !important;
       }
 
       /* ════════════════════════════════════════════
@@ -435,8 +438,8 @@ module.exports = class SystemWindow {
       li.sw-self.sw-group-start:hover,
       li.sw-self.sw-group-middle:hover,
       li.sw-self.sw-group-end:hover {
-        box-shadow: 0 0 18px rgba(${PURPLE}, 0.5),
-                    0 0 40px rgba(${PURPLE}, 0.2),
+        box-shadow: 0 0 20px rgba(${PURPLE}, 0.6),
+                    0 0 45px rgba(${PURPLE}, 0.25),
                     inset 0 0 12px rgba(${PURPLE}, 0.1) !important;
         border-left-color: rgba(${PURPLE}, 1) !important;
       }
