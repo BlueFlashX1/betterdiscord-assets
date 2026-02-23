@@ -714,7 +714,13 @@ class DockEngine {
 
   isElementInMessageComposer(el) {
     if (!el || !(el instanceof Element)) return false;
-    return Boolean(el.closest(COMPOSER_CONTAINER_SELECTORS));
+    // PERF: Cache result — same element reference always gives same answer.
+    // Avoids closest() with 10 selectors walking up DOM 3-5x per keystroke.
+    if (el === this._cachedComposerEl) return this._cachedComposerResult;
+    const result = Boolean(el.closest(COMPOSER_CONTAINER_SELECTORS));
+    this._cachedComposerEl = el;
+    this._cachedComposerResult = result;
+    return result;
   }
 
   isComposerFocused() {

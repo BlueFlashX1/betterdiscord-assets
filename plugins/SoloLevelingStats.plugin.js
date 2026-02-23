@@ -3179,6 +3179,9 @@ module.exports = class SoloLevelingStats {
       let lastInputValue = '';
       let inputTimeout = null;
 
+      // PERF: Use textContent only — innerText forces full layout reflow on every keystroke.
+      // textContent is sufficient for detecting message content; it just lacks line breaks
+      // from <br> elements which don't matter for our send-detection logic.
       const handleInput = () => {
         let currentValue = '';
         if (messageInput.tagName === 'TEXTAREA') {
@@ -3186,12 +3189,11 @@ module.exports = class SoloLevelingStats {
         } else if (messageInput.contentEditable === 'true') {
           currentValue =
             messageInput.textContent ||
-            messageInput.innerText ||
             messageInput.querySelector('[class*="textValue"]')?.textContent ||
             '';
         } else {
           currentValue =
-            messageInput.value || messageInput.textContent || messageInput.innerText || '';
+            messageInput.value || messageInput.textContent || '';
         }
         lastInputValue = currentValue;
 
@@ -3206,9 +3208,10 @@ module.exports = class SoloLevelingStats {
           if (this.webpackModuleAccess && this.messageStorePatch) {
             let messageText = '';
             try {
+              // PERF: Use textContent only (innerText forces layout reflow).
+              // Enter key fires once so less critical, but consistent with handleInput.
               messageText =
                 (messageInput.textContent && messageInput.textContent.trim()) ||
-                (messageInput.innerText && messageInput.innerText.trim()) ||
                 lastInputValue.trim();
             } catch (e) {
               messageText = lastInputValue.trim();
@@ -3236,13 +3239,7 @@ module.exports = class SoloLevelingStats {
 
           let messageText = '';
           try {
-            if (messageInput.textContent) {
-              messageText = messageInput.textContent.trim();
-            } else if (messageInput.innerText) {
-              messageText = messageInput.innerText.trim();
-            } else {
-              messageText = lastInputValue.trim();
-            }
+            messageText = (messageInput.textContent && messageInput.textContent.trim()) || lastInputValue.trim();
           } catch (e) {
             messageText = lastInputValue.trim();
           }
@@ -3298,7 +3295,7 @@ module.exports = class SoloLevelingStats {
               if (messageInput.tagName === 'TEXTAREA') {
                 currentValue = messageInput.value || '';
               } else {
-                currentValue = messageInput.textContent || messageInput.innerText || '';
+                currentValue = messageInput.textContent || '';
               }
               if (!currentValue || currentValue.trim().length === 0) {
                 this.debugLog('INPUT_DETECTION', 'Input cleared, message confirmed sent');
@@ -3325,21 +3322,16 @@ module.exports = class SoloLevelingStats {
       };
       messageInput.addEventListener('paste', handlePaste, true);
 
-      // PERF: Only watch for structural changes (Discord recreating input element).
-      // characterData: true was removed — it fired on EVERY character typed, redundant
-      // with the input/keydown event listeners above which already track typing.
-      const inputObserver = new MutationObserver(() => {
-        const currentValue =
-          messageInput.value || messageInput.textContent || messageInput.innerText || '';
-        if (currentValue !== lastInputValue) lastInputValue = currentValue;
-      });
-      inputObserver.observe(messageInput, { childList: true, subtree: true });
+      // PERF: inputObserver removed entirely. It was observing the message input
+      // with childList+subtree, which fires on EVERY character in contentEditable
+      // (Discord modifies DOM tree structure per keystroke). The input/keydown event
+      // listeners above already track all typing — the observer was pure overhead.
 
       this.messageInputHandler = {
         handleInput,
         handleKeyDown,
         handlePaste,
-        observer: inputObserver,
+        observer: null,
         element: messageInput,
       };
       this.debugLog('SETUP_INPUT', 'Input monitoring set up successfully');
