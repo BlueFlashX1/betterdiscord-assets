@@ -2,7 +2,7 @@
  * @name SystemWindow
  * @author BlueFlashX1
  * @description Styles Discord messages as Solo Leveling System windows — codeblock-style grouped containers. Purple for your messages (Monarch), blue for others (System).
- * @version 2.4.0
+ * @version 2.5.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
@@ -164,35 +164,59 @@ module.exports = class SystemWindow {
 
     if (currentGroup.length) groups.push(currentGroup);
 
-    // Apply classes
-    const SW_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"];
+    // ── Non-destructive class application ──
+    // Only touch elements that actually need changes. For position
+    // swaps (e.g. solo→start when a new msg joins a group), add
+    // the new class BEFORE removing the old one so there's never
+    // a classless frame that causes a visual flash.
+
+    const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
 
     for (const group of groups) {
       const isSelf = group[0].article.getAttribute("data-is-self") === "true";
 
       for (let i = 0; i < group.length; i++) {
-        const { li } = group[i];
+        const { li, article: art } = group[i];
 
-        // Clear old classes
-        for (const cls of SW_CLASSES) li.classList.remove(cls);
-
-        // Position class
+        // Compute desired position class
+        let desiredPos;
         if (group.length === 1) {
-          li.classList.add("sw-group-solo");
+          desiredPos = "sw-group-solo";
         } else if (i === 0) {
-          li.classList.add("sw-group-start");
+          desiredPos = "sw-group-start";
         } else if (i === group.length - 1) {
-          li.classList.add("sw-group-end");
+          desiredPos = "sw-group-end";
         } else {
-          li.classList.add("sw-group-middle");
+          desiredPos = "sw-group-middle";
         }
 
-        // Self class
-        if (isSelf) li.classList.add("sw-self");
+        // Compute desired modifier classes
+        const wantSelf = isSelf;
+        const wantMentioned = /\bmentioned/.test(art.className);
 
-        // Mentioned class — check each message's article individually
-        const { article: art } = group[i];
-        if (/\bmentioned/.test(art.className)) li.classList.add("sw-mentioned");
+        // Skip entirely if this element already has the correct state
+        const hasPos = li.classList.contains(desiredPos);
+        const hasSelf = li.classList.contains("sw-self");
+        const hasMentioned = li.classList.contains("sw-mentioned");
+
+        if (hasPos && hasSelf === wantSelf && hasMentioned === wantMentioned) {
+          continue; // Nothing to do — skip this element entirely
+        }
+
+        // Position class: ADD first, THEN remove old — never classless
+        if (!hasPos) {
+          li.classList.add(desiredPos);
+          for (const cls of SW_POS_CLASSES) {
+            if (cls !== desiredPos) li.classList.remove(cls);
+          }
+        }
+
+        // Reconcile modifier classes (no-op if already correct)
+        if (wantSelf && !hasSelf) li.classList.add("sw-self");
+        else if (!wantSelf && hasSelf) li.classList.remove("sw-self");
+
+        if (wantMentioned && !hasMentioned) li.classList.add("sw-mentioned");
+        else if (!wantMentioned && hasMentioned) li.classList.remove("sw-mentioned");
       }
     }
 
@@ -213,7 +237,7 @@ module.exports = class SystemWindow {
      §4  CSS
      ═══════════════════════════════════════════════
 
-     v2.4.0: Styles the LI element directly (not the
+     v2.5.0: Styles the LI element directly (not the
      child article). This ensures the codeblock visually
      wraps EVERYTHING — avatar, username, timestamp, and
      message content — since the avatar may be a sibling
@@ -234,12 +258,58 @@ module.exports = class SystemWindow {
 
     return /* css */ `
       /* ═══════════════════════════════════════════════
-         SystemWindow v2.4.0 — LI-level codeblock wrapping
+         SystemWindow v2.5.0 — LI-level codeblock wrapping
          Wraps avatar + username + timestamp + message text
          ═══════════════════════════════════════════════ */
 
       /* ════════════════════════════════════════════
-         BASE: All classified messages get dark codeblock
+         PRE-STYLE: CSS-only base applied to ALL message
+         items BEFORE JS classification. Prevents the flash
+         when Discord replaces DOM nodes on re-render.
+
+         Specificity (0,1,1) with !important — same as the
+         sw-group-* rules below. Since equal !important +
+         equal specificity = last rule wins, the grouping
+         rules that come AFTER this block always override.
+         ════════════════════════════════════════════ */
+
+      li[class*="messageListItem_"] {
+        background: ${BG} !important;
+        border-left: 3px solid rgba(${BLUE}, 0.5) !important;
+        border-right: 1px solid rgba(${BLUE}, 0.2) !important;
+        border-top: 1px solid rgba(${BLUE}, 0.2) !important;
+        border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
+        border-radius: ${R} !important;
+        position: relative !important;
+        margin-left: 48px !important;
+        margin-right: 96px !important;
+        margin-top: 4px !important;
+        margin-bottom: 4px !important;
+        padding: 4px 12px 8px 8px !important;
+        transition: box-shadow 200ms ease,
+                    border-color 200ms ease !important;
+      }
+
+      /* Self messages pre-style (CSS-only, no JS class needed) */
+      li[class*="messageListItem_"]:has(div[data-is-self="true"]) {
+        border-left-color: rgba(${PURPLE}, 0.5) !important;
+        border-right-color: rgba(${PURPLE}, 0.2) !important;
+        border-top-color: rgba(${PURPLE}, 0.2) !important;
+        border-bottom-color: rgba(${PURPLE}, 0.2) !important;
+      }
+
+      /* Mentioned messages pre-style (CSS-only) */
+      li[class*="messageListItem_"]:has(div[class*="mentioned"]) {
+        border-left-color: rgba(239, 68, 68, 0.7) !important;
+        border-right-color: rgba(239, 68, 68, 0.25) !important;
+        border-top-color: rgba(239, 68, 68, 0.25) !important;
+        border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+        background: rgba(239, 68, 68, 0.08) !important;
+      }
+
+      /* ════════════════════════════════════════════
+         BASE: Classified messages (JS-applied) —
+         overrides pre-style with proper grouping
          ════════════════════════════════════════════ */
 
       li.sw-group-solo,
