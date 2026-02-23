@@ -400,24 +400,23 @@ module.exports = class SystemWindow {
 
       /* ════════════════════════════════════════════
          SELF: Purple accent (Monarch)
+         Same darkened bg as others — only border color
+         differs. Glow is hover-only.
          ════════════════════════════════════════════ */
 
       li.sw-self {
-        border-left-color: rgba(${PURPLE}, 0.7) !important;
-        border-right-color: rgba(${PURPLE}, 0.3) !important;
-        box-shadow: 0 0 10px rgba(${PURPLE}, 0.15),
-                    inset 0 0 8px rgba(${PURPLE}, 0.06) !important;
-        background: rgba(${PURPLE}, 0.04) !important;
+        border-left-color: rgba(${PURPLE}, 0.5) !important;
+        border-right-color: rgba(${PURPLE}, 0.2) !important;
       }
 
       li.sw-self.sw-group-solo,
       li.sw-self.sw-group-start {
-        border-top-color: rgba(${PURPLE}, 0.3) !important;
+        border-top-color: rgba(${PURPLE}, 0.2) !important;
       }
 
       li.sw-self.sw-group-solo,
       li.sw-self.sw-group-end {
-        border-bottom-color: rgba(${PURPLE}, 0.3) !important;
+        border-bottom-color: rgba(${PURPLE}, 0.2) !important;
       }
 
       /* ════════════════════════════════════════════
