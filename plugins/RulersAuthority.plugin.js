@@ -497,13 +497,22 @@ module.exports = class RulersAuthority {
   }
 
   // Find a DOM element using resolved selectors for a panel
+  // PERF: Caches element refs — panel elements rarely change (only on guild/channel switch).
+  // Eliminates up to 4 querySelector() calls per mousemove frame.
   _findPanelElement(panelName) {
+    const cached = this._panelElCache?.[panelName];
+    if (cached && cached.isConnected) return cached;
     const selectors = this._resolvedSelectors[panelName];
     if (!selectors) return null;
     for (const sel of selectors) {
       const el = document.querySelector(sel);
-      if (el && el.isConnected) return el;
+      if (el && el.isConnected) {
+        if (!this._panelElCache) this._panelElCache = {};
+        this._panelElCache[panelName] = el;
+        return el;
+      }
     }
+    if (this._panelElCache) this._panelElCache[panelName] = null;
     return null;
   }
 
@@ -574,6 +583,7 @@ module.exports = class RulersAuthority {
   setupGuildChangeListener() {
     if (!this._SelectedGuildStore) return;
     this._guildChangeHandler = () => {
+      this._panelElCache = null; // Invalidate panel element cache on guild/channel switch
       setTimeout(() => {
         this.applyMicroStateForCurrentGuild();
         this.setupChannelObserver();
@@ -1347,7 +1357,14 @@ module.exports = class RulersAuthority {
     const appMount = document.getElementById("app-mount") || document.body;
     if (!appMount) return;
 
+    // PERF: Throttle observer callback — app-mount subtree fires on every DOM mutation
+    // in the entire app (messages, typing indicators, animations). The icon check + DOM
+    // queries only need to run periodically, not per-mutation.
+    let lastToolbarCheck = 0;
     this._toolbarObserver = new MutationObserver(() => {
+      const now = Date.now();
+      if (now - lastToolbarCheck < 250) return;
+      lastToolbarCheck = now;
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       const toolbar = this._getChannelHeaderToolbar();
       if (!icon || !toolbar || icon.parentElement !== toolbar) {

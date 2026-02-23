@@ -3290,12 +3290,13 @@ module.exports = class ShadowArmy {
 
     this.memberListObserver = new MutationObserver(onMemberListMutated);
 
-    // Observe the common parent for both childList (mount/unmount) and attributes (visibility).
+    // PERF: Removed attributes: true — widget reinjection only needs to detect
+    // member list mount/unmount (childList changes), not class/style changes on
+    // existing elements. With subtree + attributes, every hover highlight, every
+    // presence update, every React className swap in the member list fires the callback.
     this.memberListObserver.observe(observeRoot, {
       childList: true,
       subtree: true,
-      attributes: true,
-      attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
     });
 
     // Periodic observer health check — if the observed root becomes disconnected

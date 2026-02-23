@@ -2862,7 +2862,11 @@ ${childSel} {
       }
     }
 
-    this.rebuildCritMessageStyles(true); // Sync — CSS must be active before Discord re-renders
+    // PERF: Use debounced path — RAF fires before browser paint so no visual flash.
+    // The sync path was doing removeStyle + addStyle (full DOM stylesheet rebuild)
+    // for EVERY crit message. With debounce, rapid crit injections (e.g., channel
+    // restore with 20+ crits) batch into a single rebuild instead of 20.
+    this.rebuildCritMessageStyles(false);
   }
 
   /**

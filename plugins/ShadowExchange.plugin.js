@@ -1289,7 +1289,14 @@ module.exports = class ShadowExchange {
     const appMount = document.getElementById("app-mount") || document.body;
     if (!appMount) return;
 
+    // PERF: Throttle observer callback — app-mount subtree fires on every DOM mutation
+    // in the entire app. scheduleSwirlIconReinject already debounces, but thousands of
+    // redundant timeout-set-then-clear cycles per second add up.
+    let lastSwirlCheck = 0;
     this._swirlObserver = new MutationObserver(() => {
+      const now = Date.now();
+      if (now - lastSwirlCheck < 250) return;
+      lastSwirlCheck = now;
       this._scheduleSwirlIconReinject();
     });
     this._swirlObserver.observe(appMount, { childList: true, subtree: true });
