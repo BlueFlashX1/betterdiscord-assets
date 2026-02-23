@@ -5048,12 +5048,12 @@ module.exports = class Dungeons {
 
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) {
-      this.showToast('Dungeon not found', 'error');
+      this.showToast('No active dungeon here — it may have already been cleared.', 'error');
       return;
     }
 
-    if (dungeon.completed || dungeon.failed) {
-      this.showToast('This dungeon is no longer active', 'error');
+    if (dungeon.completed || dungeon.failed || dungeon._completing) {
+      this.showToast('This dungeon has already been cleared.', 'info');
       return;
     }
 
@@ -5120,15 +5120,17 @@ module.exports = class Dungeons {
   async deployShadows(channelKey) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) {
-      this.showToast('Dungeon not found', 'error');
+      // FIX: More descriptive — distinguish "never existed" from "already cleared"
+      this.showToast('No active dungeon here — it may have already been cleared.', 'error');
+      return;
+    }
+    if (dungeon.completed || dungeon.failed || dungeon._completing) {
+      // FIX: Catch completed/failed/mid-completion dungeons that haven't been cleaned from Map yet
+      this.showToast('This dungeon has already been cleared.', 'info');
       return;
     }
     if (dungeon.shadowsDeployed) {
       this.showToast('Shadows already deployed here!', 'info');
-      return;
-    }
-    if (dungeon.completed || dungeon.failed) {
-      this.showToast('This dungeon is no longer active', 'error');
       return;
     }
 
@@ -10695,6 +10697,17 @@ module.exports = class Dungeons {
     if (dungeon.boss.hp <= 0) {
       // ALWAYS-ON: Boss death is a critical event — never gate behind debug
       console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
+
+      // PERF/FIX: Eagerly remove HP bar BEFORE async completeDungeon.
+      // completeDungeon has multiple awaits (extraction, XP, IDB) — the 2s HP bar
+      // restore interval can re-inject the bar during those gaps if we wait.
+      // Also mark completed synchronously so restore interval sees it immediately.
+      dungeon.completed = true;
+      this.removeBossHPBar(channelKey);
+      document
+        .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
+        .forEach((el) => el.remove());
+
       await this.completeDungeon(channelKey, 'boss');
       // Save immediately on boss death (important state change)
       if (this.storageManager) {
@@ -11923,7 +11936,7 @@ module.exports = class Dungeons {
       }
 
       const dungeon = this.activeDungeons.get(channelKey);
-      if (!dungeon || dungeon.boss.hp <= 0) {
+      if (!dungeon || dungeon.boss.hp <= 0 || dungeon.completed || dungeon.failed || dungeon._completing) {
         this.removeBossHPBar(channelKey);
         this._bossBarCache?.delete?.(channelKey);
         this.showChannelHeaderComments(channelKey);
@@ -12634,6 +12647,9 @@ module.exports = class Dungeons {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return false;
 
+    // FIX: Completed/failed/mid-completion dungeons are NOT active
+    if (dungeon.completed || dungeon.failed || dungeon._completing) return false;
+
     // Active if user is participating
     if (dungeon.userParticipating) return true;
 
@@ -12676,6 +12692,7 @@ module.exports = class Dungeons {
           !dungeon ||
           dungeon.completed ||
           dungeon.failed ||
+          dungeon._completing ||
           dungeon.boss.hp <= 0
         ) {
           return;
@@ -12924,6 +12941,13 @@ module.exports = class Dungeons {
       );
       dungeon.boss.hp = Math.max(0, dungeon.boss.hp - totalBossDamageOverTime);
       if (dungeon.boss.hp <= 0) {
+        // FIX: Eagerly mark completed + remove HP bar before async completeDungeon
+        // (same pattern as applyDamageToBoss — prevents restore interval re-injection)
+        dungeon.completed = true;
+        this.removeBossHPBar(channelKey);
+        document
+          .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
+          .forEach((el) => el.remove());
         await this.completeDungeon(channelKey, 'boss');
         return;
       }
@@ -13599,6 +13623,11 @@ module.exports = class Dungeons {
     const now = Date.now();
     const expiredChannels = [];
     this.activeDungeons.forEach((dungeon, channelKey) => {
+      // FIX: Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
+      // Without this, the expiry timer fires completeDungeon a SECOND time on dungeons
+      // that were boss-killed but still in the Map awaiting ARISE cleanup — causing
+      // double-delete and "dungeon not found" errors on shadow deploy.
+      if (dungeon.completed || dungeon.failed || dungeon._completing) return;
       const elapsed = now - dungeon.startTime;
       if (elapsed >= this.settings.dungeonDuration) {
         expiredChannels.push(channelKey);
