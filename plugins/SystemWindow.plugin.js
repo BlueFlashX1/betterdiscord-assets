@@ -29,6 +29,12 @@ module.exports = class SystemWindow {
       ...this._defaultSettings,
       ...(BdApi.Data.load("SystemWindow", "settings") || {}),
     };
+    // Cache current user ID for self-message detection (purple vs blue)
+    try {
+      this._currentUserId = BdApi.Webpack.getStore("UserStore")?.getCurrentUser()?.id || null;
+    } catch (e) {
+      this._currentUserId = null;
+    }
     if (this.settings.enabled) {
       this._injectCSS();
       this._attachObserver();
@@ -40,6 +46,7 @@ module.exports = class SystemWindow {
     BdApi.DOM.removeStyle(this._STYLE_ID);
     this._detachObserver();
     this._cleanupClasses();
+    this._currentUserId = null;
   }
 
   /* ═══════════════════════════════════════════════
@@ -173,7 +180,7 @@ module.exports = class SystemWindow {
     const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
 
     for (const group of groups) {
-      const isSelf = group[0].article.getAttribute("data-is-self") === "true";
+      const isSelf = this._isOwnMessage(group[0].article);
 
       for (let i = 0; i < group.length; i++) {
         const { li, article: art } = group[i];
@@ -223,6 +230,25 @@ module.exports = class SystemWindow {
     if (this.settings.debugMode) {
       console.log(`[SystemWindow] Classified ${items.length} messages into ${groups.length} groups`);
     }
+  }
+
+  /**
+   * Checks if a message article belongs to the current user via React fiber.
+   * Walks up fiber tree (max 15 levels) looking for message.author.id.
+   */
+  _isOwnMessage(article) {
+    if (!this._currentUserId || !article) return false;
+    try {
+      let fiber = BdApi.ReactUtils.getInternalInstance(article);
+      for (let i = 0; i < 15 && fiber; i++) {
+        const authorId =
+          fiber.memoizedProps?.message?.author?.id ||
+          fiber.memoizedState?.message?.author?.id;
+        if (authorId) return authorId === this._currentUserId;
+        fiber = fiber.return;
+      }
+    } catch (e) {}
+    return false;
   }
 
   _cleanupClasses() {
@@ -290,13 +316,8 @@ module.exports = class SystemWindow {
                     border-color 200ms ease !important;
       }
 
-      /* Self messages pre-style (CSS-only, no JS class needed) */
-      li[class*="messageListItem_"]:has(div[data-is-self="true"]) {
-        border-left-color: rgba(${PURPLE}, 0.5) !important;
-        border-right-color: rgba(${PURPLE}, 0.2) !important;
-        border-top-color: rgba(${PURPLE}, 0.2) !important;
-        border-bottom-color: rgba(${PURPLE}, 0.2) !important;
-      }
+      /* Self messages pre-style — handled by .sw-self class from JS classification.
+         data-is-self attribute was never set; now using React fiber detection. */
 
       /* Mentioned messages pre-style (CSS-only) */
       li[class*="messageListItem_"]:has(div[class*="mentioned"]) {
