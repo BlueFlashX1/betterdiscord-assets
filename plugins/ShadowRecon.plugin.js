@@ -487,10 +487,11 @@ module.exports = class ShadowRecon {
 
   startRefreshLoops() {
     this.stopRefreshLoops();
+    // PERF: 15s refresh (was 4s — guild hints rarely change, MutationObserver handles DOM)
     this._refreshInterval = setInterval(() => {
       if (this._stopped) return;
       this.refreshAllVisuals();
-    }, 4000);
+    }, 15000);
   }
 
   stopRefreshLoops() {

@@ -1,539 +1,192 @@
-# Performance Optimization Plan - SoloLevelingStats
+# BetterDiscord Plugin Suite — Performance Optimization Plan
 
-## 🔍 Analysis Results
-
-**Plugin Size**: 8,098 lines
-**Performance Issues Found**:
-
-- ❌ **84 DOM queries** (querySelector/querySelectorAll) - MAJOR LAG SOURCE
-- ❌ **29 intervals/timeouts** - Memory and CPU overhead
-- ❌ **381 if-else statements** - Can be optimized with lookup maps
-- ❌ **23 for-loops** - Can be replaced with functional methods
+> **Generated**: Feb 23, 2026
+> **Scope**: All 20 plugins audited for memory leaks, CSS thrashing, cross-plugin conflicts, and performance
+> **Goal**: Identical functionality, dramatically better performance
 
 ---
 
-## 🎯 Optimization Strategy (Priority Order)
+## Overall Health Scorecard
 
-### **Phase 1: DOM Optimization** (HIGHEST IMPACT - 70% lag reduction)
-
-#### Problem
-
-```javascript
-// Called frequently, queries DOM every time
-updateShadowPowerDisplay() {
-  const element = document.querySelector('.shadow-power-display'); // ❌ SLOW!
-  if (element) {
-    element.textContent = this.cachedShadowPower;
-  }
-}
-```
-
-#### Solution: DOM Caching
-
-```javascript
-// Cache DOM references once
-constructor() {
-  this.domCache = {
-    shadowPowerDisplay: null,
-    hpBar: null,
-    manaBar: null,
-    // ... cache all frequently accessed elements
-  };
-}
-
-// Query once, cache forever
-initDOMCache() {
-  this.domCache.shadowPowerDisplay = document.querySelector('.shadow-power-display');
-  this.domCache.hpBar = document.querySelector('.hp-bar');
-  // ... cache all elements
-}
-
-// Use cached reference (INSTANT!)
-updateShadowPowerDisplay() {
-  if (this.domCache.shadowPowerDisplay) {
-    this.domCache.shadowPowerDisplay.textContent = this.cachedShadowPower;
-  }
-}
-```
-
-**Impact**: 84 DOM queries → 0 queries per update = **90% faster!**
+| Plugin | Lines | Leaks | CSS | Conflicts | Perf | Grade |
+|--------|-------|-------|-----|-----------|------|-------|
+| ShadowArmy | 11,784 | A+ | A | None | A | **A+** |
+| HSLWheelBridge | 283 | A | N/A | None | A | **A** |
+| ChatNavArrows | 482 | A | A | Low | A | **A** |
+| Dungeons | 14,738 | A | A | None | B+ | **A-** |
+| SystemWindow | 613 | A | A | None | B+ | **A-** |
+| ShadowStep | 1,429 | A | A | None | B+ | **B+** |
+| Stealth | 909 | A | A | Low | B | **B+** |
+| ShadowExchange | 1,882 | B+ | B+ | Low | B | **B** |
+| TitleManager | 1,700 | A | A | Low | B- | **B** |
+| ShadowRecon | 1,693 | A | A | Low | B- | **B** |
+| LevelProgressBar | 1,971 | B | A | Low | B- | **B-** |
+| SoloLevelingToasts | 1,720 | C | B | None | B- | **C+** |
+| ShadowSenses | 3,462 | B | A | Med | C | **C+** |
+| SkillTree | 3,426 | C | C | Low | C | **C** |
+| SoloLevelingStats | 11,054 | C | A | Med | C | **C** |
+| CriticalHit | 8,664 | C | D | Med | D | **C-** |
+| RulersAuthority | 2,331 | D | D | Med | D | **D+** |
+| CSSPicker | 1,305 | B | A | None | F | **D** |
+| HSLDockAutoHide | 1,401 | B | D | High | C | **D+** |
+| UserPanelDockMover | 385 | B | A | Critical | B | **D+** |
 
 ---
 
-### **Phase 2: Throttling/Debouncing** (MEDIUM IMPACT - 20% lag reduction)
+## Phase 1: CRITICAL — Memory Leak Stoppers (Day 1)
 
-#### Problem
+These fixes prevent resource accumulation on every plugin reload.
 
-```javascript
-// Called on EVERY message, EVERY keystroke
-onMessage() {
-  this.updateStats();        // ❌ Too frequent!
-  this.updateDisplay();      // ❌ Too frequent!
-  this.checkQuests();        // ❌ Too frequent!
-}
-```
+### 1.1 SkillTree: history.pushState/replaceState Leak
+**File**: `SkillTree.plugin.js` ~L3288-3298
+**Problem**: Wrapped with local var, never restored in stop(). Stacks wrappers on each reload.
+**Fix**: Store as `this._originalPushState`/`this._originalReplaceState`, restore in stop().
 
-#### Solution: Throttle Updates
+### 1.2 SoloLevelingStats: Activity Tracking Listeners
+**File**: `SoloLevelingStats.plugin.js` ~L5487-5488
+**Problem**: `mousemove` and `keydown` listeners added but NOT removed in stop().
+**Fix**: Store handler refs, removeEventListener in stop().
 
-```javascript
-constructor() {
-  // Throttle functions (max once per 250ms)
-  this.updateStatsThrottled = this.throttle(this.updateStats.bind(this), 250);
-  this.updateDisplayThrottled = this.throttle(this.updateDisplay.bind(this), 250);
-}
+### 1.3 RulersAuthority: 8 Hover Timers Not Cleared
+**File**: `RulersAuthority.plugin.js` ~L267-274, L365-367
+**Problem**: All 8 hover/anim timers initialized but zero clearTimeout calls in stop().
+**Fix**: Loop all timer names, clearTimeout + null each in stop().
 
-// Throttle helper
-throttle(func, wait) {
-  let timeout = null;
-  let lastRun = 0;
+### 1.4 SoloLevelingToasts: Event Listener Leak on Toast DOM
+**File**: `SoloLevelingToasts.plugin.js` ~L1268-1275, L1389
+**Problem**: Click handler added on toast, but removeToast() uses `.remove()` without removeEventListener.
+**Fix**: Store handler ref on element, removeEventListener before .remove().
 
-  return function(...args) {
-    const now = Date.now();
-    const remaining = wait - (now - lastRun);
+### 1.5 CriticalHit: Untracked RAF/Idle Callbacks
+**File**: `CriticalHit.plugin.js` ~L3784, L4862
+**Problem**: requestIdleCallback and RAF not tracked. Fire after stop().
+**Fix**: Track IDs in Sets, cancelAnimationFrame/cancelIdleCallback all in stop().
 
-    if (remaining <= 0) {
-      lastRun = now;
-      func.apply(this, args);
-    } else if (!timeout) {
-      timeout = setTimeout(() => {
-        lastRun = Date.now();
-        timeout = null;
-        func.apply(this, args);
-      }, remaining);
-    }
-  };
-}
-
-// Use throttled version
-onMessage() {
-  this.updateStatsThrottled();    // ✅ Max 4x per second
-  this.updateDisplayThrottled();  // ✅ Max 4x per second
-}
-```
-
-**Impact**: 100+ calls/sec → 4 calls/sec = **96% fewer operations!**
+### 1.6 SoloLevelingStats: Retry Timeout Accumulation
+**File**: `SoloLevelingStats.plugin.js` ~L3162, L3355, L3989, L9236, L9249
+**Problem**: Multiple retry timeouts set without clearing previous ones.
+**Fix**: Always clearTimeout(this._xyzRetryTimeout) before setting new one.
 
 ---
 
-### **Phase 3: Replace If-Else with Lookup Maps** (LOW IMPACT - 5% improvement)
+## Phase 2: CRITICAL — Performance Killers (Day 1-2)
 
-#### Problem
+### 2.1 CSSPicker: DOM Query Explosion on Mousemove
+**File**: `CSSPicker.plugin.js` ~L569-645
+**Problem**: findMatchingCssRules iterates ALL stylesheets per element per mousemove. 100+ DOM queries per hover frame.
+**Fix**: Cache stylesheet rules on activation, debounce to 100ms, limit to 500 rules, skip CORS sheets.
 
-```javascript
-// 381 if-else statements like this:
-getRankColor(rank) {
-  if (rank === 'E') return '#808080';
-  else if (rank === 'D') return '#8B4513';
-  else if (rank === 'C') return '#4169E1';
-  else if (rank === 'B') return '#9370DB';
-  else if (rank === 'A') return '#FFD700';
-  else if (rank === 'S') return '#FF4500';
-  else if (rank === 'SS') return '#FF1493';
-  else if (rank === 'SSS') return '#8B00FF';
-  // ... 13 ranks total
-}
-```
+### 2.2 CriticalHit: Per-Message CSS Full Rebuild
+**File**: `CriticalHit.plugin.js` ~L2808-2841, L2874-2896
+**Problem**: Every crit does removeStyle + addStyle with ALL rules joined. O(n) rebuilds.
+**Fix**: Per-message style IDs — addStyle once per message, track in Set, cleanup all in stop().
 
-#### Solution: Lookup Map
+### 2.3 SoloLevelingStats: 1-Second Polling Intervals
+**File**: `SoloLevelingStats.plugin.js` ~L5446, L5621
+**Problem**: Activity + channel tracking both poll at 1s.
+**Fix**: Increase both to 5000ms.
 
-```javascript
-constructor() {
-  // Create lookup map once
-  this.rankColors = {
-    'E': '#808080',
-    'D': '#8B4513',
-    'C': '#4169E1',
-    'B': '#9370DB',
-    'A': '#FFD700',
-    'S': '#FF4500',
-    'SS': '#FF1493',
-    'SSS': '#8B00FF',
-    'SSS+': '#FF00FF',
-    'NH': '#00FFFF',
-    'Monarch': '#FF0000',
-    'Monarch+': '#FF69B4',
-    'Shadow Monarch': '#000000'
-  };
-}
+### 2.4 RulersAuthority: CSS Rebuilt on Every Panel Change
+**File**: `RulersAuthority.plugin.js` ~L1620, L2117
+**Problem**: buildCSS() called on every push/pull/resize.
+**Fix**: Cache built CSS, key by panel state. Only rebuild when state changes. Better: CSS custom properties for dynamic values.
 
-// O(1) lookup instead of O(n) if-else chain
-getRankColor(rank) {
-  return this.rankColors[rank] || '#808080'; // ✅ INSTANT!
-}
-```
-
-**Impact**: O(n) → O(1) lookup = **Constant time access!**
+### 2.5 ShadowSenses: Webpack Filter Fix
+**File**: `ShadowSenses.plugin.js` ~L2709
+**Problem**: `m?.dispatch && m?.subscribe` — optional chaining breaks BdApi.
+**Fix**: Use `Webpack.Stores?.UserStore?._dispatcher` pattern (no optional chaining in filter fns).
 
 ---
 
-### **Phase 4: Replace For-Loops with Functional Methods** (LOW IMPACT - 3% improvement)
+## Phase 3: HIGH — CSS Deconfliction (Day 2-3)
 
-#### Problem
+### 3.1 HSLDockAutoHide: !important Reduction
+~50 !important rules + global body classes. Scope under single body attribute, replace !important with higher specificity.
 
-```javascript
-// 23 for-loops like this:
-calculateTotalStats() {
-  let total = 0;
-  for (let i = 0; i < this.stats.length; i++) {  // ❌ Verbose
-    total += this.stats[i].value;
-  }
-  return total;
-}
+### 3.2 CriticalHit: !important Reduction
+30+ !important per crit rule. Use scoped `[data-crit-id]` attribute selectors instead.
 
-filterActiveShadows() {
-  const active = [];
-  for (let i = 0; i < shadows.length; i++) {  // ❌ Manual indexing
-    if (shadows[i].isActive) {
-      active.push(shadows[i]);
-    }
-  }
-  return active;
-}
-```
-
-#### Solution: Functional Methods
-
-```javascript
-// More readable, often faster (engine-optimized)
-calculateTotalStats() {
-  return this.stats.reduce((sum, stat) => sum + stat.value, 0); // ✅ Clean!
-}
-
-filterActiveShadows() {
-  return shadows.filter(shadow => shadow.isActive); // ✅ Expressive!
-}
-
-mapShadowNames() {
-  return shadows.map(shadow => shadow.name); // ✅ Concise!
-}
-```
-
-**Impact**: More readable, slightly faster, easier to maintain
+### 3.3 UserPanelDockMover: Decouple from HSLDockAutoHide
+Monkey-patches HSLDockAutoHide.isPointerOnDockHitTarget() directly. Replace with proper API (registerHitTestExtension).
 
 ---
 
-## 📊 Expected Performance Gains
+## Phase 4: HIGH — Observer Consolidation (Day 3-4)
 
-| Optimization       | Impact       | Reduction               |
-| ------------------ | ------------ | ----------------------- |
-| DOM Caching        | **CRITICAL** | 70% lag reduction       |
-| Throttling         | **HIGH**     | 20% lag reduction       |
-| Lookup Maps        | **LOW**      | 5% improvement          |
-| Functional Methods | **LOW**      | 3% improvement          |
-| **TOTAL**          |              | **~90% lag reduction!** |
+### 4.1 Narrow MutationObserver Targets
 
----
+| Plugin | Current | Recommended |
+|--------|---------|-------------|
+| SoloLevelingStats | msg container + subtree | msg container, childList only |
+| CriticalHit | msg container + subtree | msg list ol, childList only |
+| ShadowExchange | app-mount + subtree | channel header toolbar |
+| ShadowRecon | app-mount + subtree | guild list sidebar |
+| RulersAuthority | DM list + subtree | DM list, childList only |
 
-## 🚀 Implementation Plan
-
-### Step 1: DOM Caching System
-
-```javascript
-class SoloLevelingStats {
-  constructor() {
-    // DOM cache
-    this.domCache = {
-      // HP/Mana bars
-      hpBar: null,
-      hpText: null,
-      manaBar: null,
-      manaText: null,
-
-      // Stats display
-      levelDisplay: null,
-      xpDisplay: null,
-      rankDisplay: null,
-
-      // Shadow power
-      shadowPowerDisplay: null,
-
-      // Quest UI
-      questPanel: null,
-      questProgress: {},
-
-      // Panels
-      statsPanel: null,
-      achievementsPanel: null,
-    };
-
-    // Cache validity
-    this.domCacheValid = false;
-  }
-
-  // Initialize cache (call once on start)
-  initDOMCache() {
-    this.domCache.hpBar = document.querySelector('.sls-hp-bar-fill');
-    this.domCache.hpText = document.querySelector('.sls-hp-text');
-    this.domCache.manaBar = document.querySelector('.sls-mana-bar-fill');
-    // ... cache all elements
-
-    this.domCacheValid = true;
-  }
-
-  // Invalidate cache (call when DOM changes)
-  invalidateDOMCache() {
-    this.domCacheValid = false;
-  }
-
-  // Get cached element (with auto-refresh)
-  getCachedElement(key) {
-    if (!this.domCacheValid) {
-      this.initDOMCache();
-    }
-    return this.domCache[key];
-  }
-}
-```
-
-### Step 2: Throttling System
-
-```javascript
-class SoloLevelingStats {
-  constructor() {
-    // Throttle/debounce helpers
-    this.throttled = {};
-    this.debounced = {};
-
-    // Create throttled versions
-    this.throttled.updateStats = this.throttle(this.updateStats.bind(this), 250);
-    this.throttled.updateDisplay = this.throttle(this.updateDisplay.bind(this), 250);
-    this.throttled.checkQuests = this.throttle(this.checkQuests.bind(this), 500);
-
-    // Create debounced versions
-    this.debounced.saveSettings = this.debounce(this.saveSettings.bind(this), 1000);
-  }
-
-  throttle(func, wait) {
-    let timeout = null;
-    let lastRun = 0;
-
-    return function (...args) {
-      const now = Date.now();
-      const remaining = wait - (now - lastRun);
-
-      if (remaining <= 0) {
-        lastRun = now;
-        func.apply(this, args);
-      } else if (!timeout) {
-        timeout = setTimeout(() => {
-          lastRun = Date.now();
-          timeout = null;
-          func.apply(this, args);
-        }, remaining);
-      }
-    };
-  }
-
-  debounce(func, wait) {
-    let timeout = null;
-
-    return function (...args) {
-      clearTimeout(timeout);
-      timeout = setTimeout(() => func.apply(this, args), wait);
-    };
-  }
-}
-```
-
-### Step 3: Lookup Maps
-
-```javascript
-class SoloLevelingStats {
-  constructor() {
-    // Rank system lookups
-    this.rankData = {
-      colors: {
-        E: '#808080',
-        D: '#8B4513',
-        C: '#4169E1',
-        B: '#9370DB',
-        A: '#FFD700',
-        S: '#FF4500',
-        SS: '#FF1493',
-        SSS: '#8B00FF',
-        'SSS+': '#FF00FF',
-        NH: '#00FFFF',
-        Monarch: '#FF0000',
-        'Monarch+': '#FF69B4',
-        'Shadow Monarch': '#000000',
-      },
-      xpRequirements: {
-        E: 100,
-        D: 250,
-        C: 500,
-        B: 1000,
-        A: 2500,
-        S: 5000,
-        SS: 10000,
-        SSS: 25000,
-        'SSS+': 50000,
-        NH: 100000,
-        Monarch: 250000,
-        'Monarch+': 500000,
-        'Shadow Monarch': 1000000,
-      },
-      statMultipliers: {
-        E: 1.0,
-        D: 1.2,
-        C: 1.5,
-        B: 2.0,
-        A: 3.0,
-        S: 5.0,
-        SS: 8.0,
-        SSS: 12.0,
-        'SSS+': 18.0,
-        NH: 25.0,
-        Monarch: 40.0,
-        'Monarch+': 60.0,
-        'Shadow Monarch': 100.0,
-      },
-    };
-
-    // Quest type lookups
-    this.questData = {
-      messageMaster: { name: 'Message Master', icon: '💬', reward: 50 },
-      characterChampion: { name: 'Character Champion', icon: '📝', reward: 75 },
-      channelExplorer: { name: 'Channel Explorer', icon: '🗺️', reward: 100 },
-      activeAdventurer: { name: 'Active Adventurer', icon: '⏰', reward: 125 },
-      perfectStreak: { name: 'Perfect Streak', icon: '🔥', reward: 150 },
-    };
-  }
-
-  // O(1) lookups
-  getRankColor(rank) {
-    return this.rankData.colors[rank] || '#808080';
-  }
-
-  getRankXP(rank) {
-    return this.rankData.xpRequirements[rank] || 100;
-  }
-
-  getRankMultiplier(rank) {
-    return this.rankData.statMultipliers[rank] || 1.0;
-  }
-
-  getQuestData(questType) {
-    return this.questData[questType] || {};
-  }
-}
-```
-
-### Step 4: Functional Methods
-
-```javascript
-// BEFORE: For-loop
-calculateTotalStats() {
-  let total = 0;
-  for (let i = 0; i < this.stats.length; i++) {
-    total += this.stats[i].value;
-  }
-  return total;
-}
-
-// AFTER: Reduce
-calculateTotalStats() {
-  return this.stats.reduce((sum, stat) => sum + stat.value, 0);
-}
-
-// BEFORE: For-loop with filter
-getCompletedQuests() {
-  const completed = [];
-  for (let i = 0; i < this.quests.length; i++) {
-    if (this.quests[i].completed) {
-      completed.push(this.quests[i]);
-    }
-  }
-  return completed;
-}
-
-// AFTER: Filter
-getCompletedQuests() {
-  return this.quests.filter(quest => quest.completed);
-}
-
-// BEFORE: For-loop with map
-getQuestNames() {
-  const names = [];
-  for (let i = 0; i < this.quests.length; i++) {
-    names.push(this.quests[i].name);
-  }
-  return names;
-}
-
-// AFTER: Map
-getQuestNames() {
-  return this.quests.map(quest => quest.name);
-}
-```
+### 4.2 CriticalHit: Eliminate Double RAF
+Double `requestAnimationFrame` wrapping = 32ms delay per message. Use single RAF.
 
 ---
 
-## ✅ Testing Checklist
+## Phase 5: MODERATE — Performance Tuning (Day 4-5)
 
-After each optimization:
+### 5.1 ShadowSenses: O(n*m) Purge → Binary Search
+Two separate O(n*m) passes every 10min. Use binary search (feeds are chronological).
 
-- [ ] Plugin loads without errors
-- [ ] Stats update correctly
-- [ ] HP/Mana bars display correctly
-- [ ] Quests track progress
-- [ ] Level-ups work
-- [ ] Shadow power displays
-- [ ] No console errors
-- [ ] Performance improved (use browser DevTools)
+### 5.2 ShadowSenses: Cache _getMembersWrap()
+querySelectorAll + offsetParent on every widget reinject. Cache result, invalidate on guild change.
 
----
+### 5.3 LevelProgressBar: Throttle RAF Updates
+Every frame (16ms). Throttle to every 3rd frame (50ms).
 
-## 📈 Performance Monitoring
+### 5.4 TitleManager: Fix O(n^2) Sort
+getTitleBonus() called per comparison. Pre-cache bonuses in Map before sort.
 
-```javascript
-// Add performance tracking
-class SoloLevelingStats {
-  constructor() {
-    this.performance = {
-      domQueries: 0,
-      updates: 0,
-      lastUpdateTime: 0,
-      avgUpdateTime: 0,
-    };
-  }
+### 5.5 ShadowRecon: Reduce Guild Icon Refresh
+4s interval too aggressive. Change to 15s or event-driven.
 
-  trackPerformance(operation, func) {
-    const start = performance.now();
-    const result = func();
-    const end = performance.now();
+### 5.6 SkillTree: Memoize CSS for Modal
+CSS rebuilt on every modal open. Build once, cache.
 
-    this.performance[operation] = (this.performance[operation] || 0) + (end - start);
+### 5.7 Dungeons: Gate console.log Behind Debug
+Direct console.log bypasses debug check in 3+ places.
 
-    return result;
-  }
+### 5.8 useMemo Dependency Fixes
+ShadowStep + TitleManager use `.length` instead of array reference.
 
-  getPerformanceReport() {
-    return {
-      domQueries: this.performance.domQueries,
-      updates: this.performance.updates,
-      avgUpdateTime: this.performance.avgUpdateTime,
-      totalTime: Object.values(this.performance).reduce((sum, val) => sum + val, 0),
-    };
-  }
-}
-```
+### 5.9 Use BdApi.Patcher for window.fetch/history
+Dungeons (fetch), SoloLevelingStats + CriticalHit (history) — manual monkey-patch.
 
 ---
 
-## 🎯 Expected Results
+## Implementation Priority
 
-**Before Optimization:**
+| # | Fix | Plugin(s) | Impact | Time |
+|---|-----|-----------|--------|------|
+| 1 | history.pushState restore | SkillTree | CRITICAL | 5m |
+| 2 | Activity listener cleanup | SoloLevelingStats | CRITICAL | 10m |
+| 3 | Hover timer cleanup | RulersAuthority | CRITICAL | 5m |
+| 4 | Toast event listener cleanup | SoloLevelingToasts | CRITICAL | 10m |
+| 5 | Webpack filter fix | ShadowSenses | CRITICAL | 5m |
+| 6 | Cache stylesheet rules | CSSPicker | CRIT PERF | 30m |
+| 7 | Per-message CSS dedup | CriticalHit | HIGH PERF | 45m |
+| 8 | Track RAF/idle callbacks | CriticalHit | HIGH | 20m |
+| 9 | Increase poll intervals | SoloLevelingStats | HIGH PERF | 5m |
+| 10 | CSS caching | RulersAuthority | HIGH PERF | 30m |
+| 11 | Narrow observer targets | Multiple | HIGH PERF | 60m |
+| 12 | Eliminate double RAF | CriticalHit | HIGH PERF | 15m |
+| 13 | Retry timeout guards | SoloLevelingStats | HIGH | 15m |
+| 14 | !important reduction | HSLDockAutoHide | MEDIUM | 60m |
+| 15 | Decouple dock mover | UserPanelDockMover | MEDIUM | 45m |
+| 16 | Purge optimization | ShadowSenses | MEDIUM | 20m |
+| 17 | Cache getMembersWrap | ShadowSenses | MEDIUM | 10m |
+| 18 | Sort optimization | TitleManager | MEDIUM | 10m |
+| 19 | Reduce refresh interval | ShadowRecon | MEDIUM | 5m |
+| 20 | Memoize modal CSS | SkillTree | MEDIUM | 15m |
+| 21 | Throttle RAF | LevelProgressBar | MEDIUM | 10m |
+| 22 | Debug-gate console.log | Multiple | LOW | 30m |
+| 23 | BdApi.Patcher for patches | Multiple | LOW | 30m |
+| 24 | useMemo dep fixes | ShadowStep, TitleManager | LOW | 10m |
+| 25 | Data versioning | SoloLevelingStats | LOW | 20m |
 
-- DOM queries: 84 per update cycle
-- Updates: 100+ per second (unthrottled)
-- Lag: Noticeable on every message
-- Memory: High (many intervals)
-
-**After Optimization:**
-
-- DOM queries: 0 per update cycle (cached!)
-- Updates: 4 per second (throttled)
-- Lag: Minimal to none
-- Memory: Low (fewer intervals)
-
-**Total Performance Gain: ~90% lag reduction! 🚀**
+**Total estimated effort**: ~9-10 hours across all phases

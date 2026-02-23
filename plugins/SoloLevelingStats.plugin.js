@@ -5628,7 +5628,7 @@ module.exports = class SoloLevelingStats {
           state.lastUrl = currentUrl;
           state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
-      }, 1000); // Check every 1000ms (reduced from 500ms for better performance)
+      }, 3000); // PERF: 3s fallback poll (popstate/history hooks handle most navigation)
 
       this._channelTrackingHooks = {
         popstateHandler,

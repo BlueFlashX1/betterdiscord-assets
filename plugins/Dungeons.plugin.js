@@ -1604,7 +1604,7 @@ module.exports = class Dungeons {
     let extracted = 0;
     let attempted = 0;
 
-    console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
+    this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE: Processing corpse pile — ${total} bodies awaiting extraction in ${channelKey}`);
 
     // Use ShadowArmy's streaming bulk extractor when available.
     // It keeps peak memory flat for 10k+ corpse piles.
@@ -1654,7 +1654,7 @@ module.exports = class Dungeons {
     // Clear the dungeon's corpse pile (already snapshotted, don't process again)
     if (dungeon) dungeon.corpsePile = [];
 
-    console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
+    this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE COMPLETE: ${extracted}/${attempted} shadows extracted from corpse pile (${channelKey})`);
 
     // Notify ShadowArmy of batch completion (cache invalidation, UI updates)
     if (extracted > 0 && typeof BdApi?.Events?.emit === 'function') {
@@ -10920,7 +10920,7 @@ module.exports = class Dungeons {
       (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
       pileSize > 0
     ) {
-      console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
       try {
         extractionResults = await this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot);
         if (extractionResults.attempted > 0) {
@@ -10935,7 +10935,7 @@ module.exports = class Dungeons {
     } else if (dungeon.userParticipating && pileSize === 0 && hadShadowsDeployed) {
       console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
     } else if (!dungeon.userParticipating) {
-      console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
     }
 
     // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
@@ -13920,7 +13920,7 @@ module.exports = class Dungeons {
 
       // Restore dungeons — only start combat for dungeons where shadows were deployed
       if (this.activeDungeons.size > 0) {
-        console.log(`[Dungeons] INIT_TRACE: restoreActiveDungeons — ${this.activeDungeons.size} dungeons restored`);
+        this.settings.debug && console.log(`[Dungeons] INIT_TRACE: restoreActiveDungeons — ${this.activeDungeons.size} dungeons restored`);
         this.debugLog(`Restored ${this.activeDungeons.size} active dungeons`);
 
         // Allocate shadows only across deployed dungeons

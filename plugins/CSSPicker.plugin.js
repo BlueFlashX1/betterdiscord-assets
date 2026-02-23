@@ -566,80 +566,81 @@ module.exports = (() => {
     }
   };
 
+  // PERF: Cache flattened CSS rules to avoid re-scanning all stylesheets on every hover.
+  // Cache invalidates every 10 seconds (stylesheets rarely change during a session).
+  let _cachedFlatRules = null;
+  let _cachedFlatRulesTime = 0;
+  const RULE_CACHE_TTL_MS = 10000;
+
+  const _getFlatRules = () => {
+    const now = Date.now();
+    if (_cachedFlatRules && now - _cachedFlatRulesTime < RULE_CACHE_TTL_MS) return _cachedFlatRules;
+
+    const flat = [];
+    const sheets = Array.from(document.styleSheets || []);
+    sheets.forEach((sheet, sheetIndex) => {
+      let rules;
+      try { rules = sheet.cssRules; } catch (e) { return; } // Skip CORS sheets
+      const sheetLabel = getStylesheetLabel(sheet, sheetIndex);
+      iterCssRules(rules, (rule, ruleIndex) => {
+        if (rule.selectorText) {
+          flat.push({ rule, ruleIndex, sheetLabel, sheetIndex });
+        }
+      }, { shouldStop: false });
+    });
+
+    _cachedFlatRules = flat;
+    _cachedFlatRulesTime = now;
+    return flat;
+  };
+
   const findMatchingCssRules = (el, keys, maxMatches = 30) => {
     if (!el || !(el instanceof Element)) return [];
     const matches = [];
-    const sheets = Array.from(document.styleSheets || []);
+    const flatRules = _getFlatRules();
 
-    const state = { shouldStop: false };
+    for (let i = 0; i < flatRules.length; i++) {
+      if (matches.length >= maxMatches) break;
 
-    sheets.forEach((sheet, sheetIndex) => {
-      if (state.shouldStop) return;
+      const { rule, ruleIndex, sheetLabel, sheetIndex } = flatRules[i];
+      const selectorText = rule.selectorText;
+      const { selector, pseudo } = splitPseudo(selectorText);
+      if (!selector) continue;
 
-      let rules;
+      // Quick prefilter: only consider rules that set any of the keys
+      let hasAnyKey = false;
+      for (let k = 0; k < keys.length; k++) {
+        try {
+          if (rule.style?.getPropertyValue?.(keys[k])) { hasAnyKey = true; break; }
+        } catch (e) { /* skip */ }
+      }
+      if (!hasAnyKey) continue;
+
       try {
-        rules = sheet.cssRules;
-      } catch (e) {
-        // Cross-origin or restricted stylesheet
-        return;
+        if (!el.matches(selector)) continue;
+      } catch (e) { continue; } // Invalid selector
+
+      const props = {};
+      for (let k = 0; k < keys.length; k++) {
+        const value = rule.style.getPropertyValue(keys[k]);
+        if (value) {
+          props[keys[k]] = {
+            value,
+            priority: rule.style.getPropertyPriority(keys[k]) || null,
+          };
+        }
       }
 
-      const sheetLabel = getStylesheetLabel(sheet, sheetIndex);
-
-      iterCssRules(
-        rules,
-        (rule, ruleIndex) => {
-          if (state.shouldStop) return;
-
-          const selectorText = rule.selectorText;
-          const { selector, pseudo } = splitPseudo(selectorText);
-          if (!selector) return;
-
-          // Quick prefilter: only consider rules that set any of the keys
-          const hasAnyKey = keys.some((key) => {
-            try {
-              return !!rule.style?.getPropertyValue?.(key);
-            } catch (e) {
-              return false;
-            }
-          });
-          if (!hasAnyKey) return;
-
-          let isMatch = false;
-          try {
-            isMatch = el.matches(selector);
-          } catch (e) {
-            // Invalid selector for matches() (rare, but possible)
-            return;
-          }
-
-          if (!isMatch) return;
-
-          const props = keys.reduce((acc, key) => {
-            const value = rule.style.getPropertyValue(key);
-            if (!value) return acc;
-            acc[key] = {
-              value,
-              priority: rule.style.getPropertyPriority(key) || null,
-            };
-            return acc;
-          }, {});
-
-          matches.push({
-            stylesheet: sheetLabel,
-            sheetIndex,
-            ruleIndex,
-            selectorText,
-            selector: selector,
-            pseudo: pseudo,
-            properties: props,
-          });
-
-          if (matches.length >= maxMatches) state.shouldStop = true;
-        },
-        state
-      );
-    });
+      matches.push({
+        stylesheet: sheetLabel,
+        sheetIndex,
+        ruleIndex,
+        selectorText,
+        selector,
+        pseudo,
+        properties: props,
+      });
+    }
 
     return matches;
   };

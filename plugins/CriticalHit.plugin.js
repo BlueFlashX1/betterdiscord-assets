@@ -3426,10 +3426,9 @@ ${childSel} {
           channelId,
         });
 
+      // PERF: Single RAF (was double RAF = 32ms delay for no benefit)
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          channelId && this.restoreChannelCrits(channelId);
-        });
+        channelId && this.restoreChannelCrits(channelId);
       });
     };
 
@@ -3467,32 +3466,31 @@ ${childSel} {
       }
       if (addedElements.length === 0) return;
 
+      // PERF: Single RAF (was double RAF = unnecessary 32ms delay)
       requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          // PERF: Deduplicate processing by message element.
-          // Multiple child nodes in the same message may be added at once.
-          const uniqueMessageElements = new Set();
-          for (let k = 0; k < addedElements.length; k++) {
-             // Use closest() for robust upward traversal
-             const messageElement = addedElements[k].closest?.('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
-                              addedElements[k].closest?.('[class*="messageListItem"]') ||
-                              addedElements[k].closest?.('[data-message-id]');
+        // PERF: Deduplicate processing by message element.
+        // Multiple child nodes in the same message may be added at once.
+        const uniqueMessageElements = new Set();
+        for (let k = 0; k < addedElements.length; k++) {
+           // Use closest() for robust upward traversal
+           const messageElement = addedElements[k].closest?.('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
+                            addedElements[k].closest?.('[class*="messageListItem"]') ||
+                            addedElements[k].closest?.('[data-message-id]');
 
-            if (messageElement && messageElement.isConnected && !messageElement.classList.contains('messageContent')) {
-              uniqueMessageElements.add(messageElement);
-            } else if (addedElements[k].nodeType === 1 && addedElements[k].isConnected) {
-              // Fallback for nodes that might be messages themselves
-              const isMsg = addedElements[k].classList?.contains('message-2C84CH') ||
-                            addedElements[k].classList?.contains('messageListItem') ||
-                            Array.from(addedElements[k].classList || []).some(c => c.includes('message-') && !c.includes('Content'));
-              if (isMsg) uniqueMessageElements.add(addedElements[k]);
-            }
+          if (messageElement && messageElement.isConnected && !messageElement.classList.contains('messageContent')) {
+            uniqueMessageElements.add(messageElement);
+          } else if (addedElements[k].nodeType === 1 && addedElements[k].isConnected) {
+            // Fallback for nodes that might be messages themselves
+            const isMsg = addedElements[k].classList?.contains('message-2C84CH') ||
+                          addedElements[k].classList?.contains('messageListItem') ||
+                          Array.from(addedElements[k].classList || []).some(c => c.includes('message-') && !c.includes('Content'));
+            if (isMsg) uniqueMessageElements.add(addedElements[k]);
           }
+        }
 
-          uniqueMessageElements.forEach((messageElement) => {
-            this.processNode(messageElement);
-            this.checkForRestoration(messageElement);
-          });
+        uniqueMessageElements.forEach((messageElement) => {
+          this.processNode(messageElement);
+          this.checkForRestoration(messageElement);
         });
       });
     });
@@ -3745,12 +3743,9 @@ ${childSel} {
                     channelId === messageChannelId ||
                     channelId === pluginInstance.currentChannelId
                   ) {
-                    // Process the message for crit check using double requestAnimationFrame
-                    // This ensures DOM is fully ready before processing
+                    // PERF: Single RAF (was double RAF = unnecessary 32ms delay)
                     requestAnimationFrame(() => {
-                      requestAnimationFrame(() => {
-                        pluginInstance.processNode(sentMessage);
-                      });
+                      pluginInstance.processNode(sentMessage);
                     });
                   }
                 } else if (attempts < maxAttempts) {
@@ -3781,7 +3776,8 @@ ${childSel} {
    */
   processNode(node) {
     if (this._isStopped) return;
-    const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 1));
+    // PERF: 16ms fallback (was 1ms — too aggressive, thrashes CPU when requestIdleCallback unavailable)
+    const scheduleCallback = window.requestIdleCallback || ((cb) => setTimeout(cb, 16));
     scheduleCallback(() => {
     try {
       if (this._isStopped) return;
