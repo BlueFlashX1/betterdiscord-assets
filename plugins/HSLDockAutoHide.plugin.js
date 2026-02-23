@@ -658,13 +658,19 @@ class DockEngine {
       ? target
       : (document.activeElement instanceof Element ? document.activeElement : null);
     if (!this.isElementInMessageComposer(active)) return;
-    const nextLock = Date.now() + this.typingLockMs;
+    const now = Date.now();
+    const nextLock = now + this.typingLockMs;
     if (nextLock > this.typingLockUntil) this.typingLockUntil = nextLock;
+    // PERF: beforeinput + input + keydown all fire per keystroke (3-5x).
+    // Timestamp update above is cheap, but DOM work below is expensive.
+    // Throttle DOM manipulation to once per frame (~16ms).
+    if (this._lastTypingLockDOM && now - this._lastTypingLockDOM < 16) return;
+    this._lastTypingLockDOM = now;
     this.clearRevealTimer("typing-lock");
     this.clearHideTimer();
     this.pointerOverDock = false;
     this.revealHoldUntil = 0;
-    this.suppressOpenUntil = Math.max(this.suppressOpenUntil, Date.now() + this.composerHideSuppressMs);
+    this.suppressOpenUntil = Math.max(this.suppressOpenUntil, now + this.composerHideSuppressMs);
     this.requireRevealReset = true;
     if (this.stateTarget) {
       this.stateTarget.classList.add("sl-dock-composer-lock");

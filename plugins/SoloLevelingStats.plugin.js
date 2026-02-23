@@ -3325,12 +3325,15 @@ module.exports = class SoloLevelingStats {
       };
       messageInput.addEventListener('paste', handlePaste, true);
 
+      // PERF: Only watch for structural changes (Discord recreating input element).
+      // characterData: true was removed — it fired on EVERY character typed, redundant
+      // with the input/keydown event listeners above which already track typing.
       const inputObserver = new MutationObserver(() => {
         const currentValue =
           messageInput.value || messageInput.textContent || messageInput.innerText || '';
         if (currentValue !== lastInputValue) lastInputValue = currentValue;
       });
-      inputObserver.observe(messageInput, { childList: true, subtree: true, characterData: true });
+      inputObserver.observe(messageInput, { childList: true, subtree: true });
 
       this.messageInputHandler = {
         handleInput,
