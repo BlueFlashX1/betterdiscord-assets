@@ -1302,20 +1302,29 @@ class SensesEngine {
       // Add to the guild's feed (always, regardless of current guild)
       this._addToGuildFeed(guildId, entry);
 
-      // ALWAYS toast for tracked users — including invisible.
-      // MESSAGE_CREATE fires regardless of presence status, so this catches
-      // invisible users who send messages. Away guilds get server context,
-      // current guild gets channel-only context (you already know where you are).
+      // Invisible detection: PresenceStore reports invisible users as "offline".
+      // If someone with "offline" status sends a message, they're invisible — toast it.
+      // Visible users (online/idle/dnd) already get status change toasts, so only
+      // message-toast for invisible users to avoid double-notification spam.
+      const presenceStore = this._resolvePresenceStore();
+      const userStatus = presenceStore?.getStatus?.(authorId) || "offline";
+      const isInvisible = userStatus === "offline"; // sending msg while "offline" = invisible
+
       if (isAwayGuild) {
+        // Away guild — always toast (you can't see the message)
         BdApi.UI.showToast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in ${guildName} #${entry.channelName}`,
           { type: "info" }
         );
-      } else {
+      } else if (isInvisible) {
+        // Current guild + invisible — toast because status toasts won't fire for them
         BdApi.UI.showToast(
-          `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in #${entry.channelName}`,
-          { type: "info" }
+          `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} (invisible) in #${entry.channelName}`,
+          { type: "warning" }
         );
+        this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
+      } else {
+        // Current guild + visible — silently track (status toasts already cover them)
         this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       }
 
