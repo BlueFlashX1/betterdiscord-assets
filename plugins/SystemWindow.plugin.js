@@ -248,8 +248,7 @@ module.exports = class SystemWindow {
         position: relative !important;
         margin-left: 48px !important;
         margin-right: 96px !important;
-        padding-left: 8px !important;
-        padding-right: 8px !important;
+        padding: 4px 12px 8px 8px !important;
         transition: box-shadow 200ms ease,
                     border-color 200ms ease !important;
       }
@@ -262,8 +261,9 @@ module.exports = class SystemWindow {
         border-top: 1px solid rgba(${BLUE}, 0.2) !important;
         border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
         border-radius: ${R} !important;
-        margin-top: 4px !important;
-        margin-bottom: 4px !important;
+        margin-top: 12px !important;
+        margin-bottom: 12px !important;
+        padding-bottom: 10px !important;
       }
 
       /* ════════════════════════════════════════════
@@ -274,7 +274,7 @@ module.exports = class SystemWindow {
         border-top: 1px solid rgba(${BLUE}, 0.2) !important;
         border-bottom: none !important;
         border-radius: ${R} ${R} 0 0 !important;
-        margin-top: 4px !important;
+        margin-top: 12px !important;
         margin-bottom: 0 !important;
       }
 
@@ -299,7 +299,8 @@ module.exports = class SystemWindow {
         border-bottom: 1px solid rgba(${BLUE}, 0.2) !important;
         border-radius: 0 0 ${R} ${R} !important;
         margin-top: 0 !important;
-        margin-bottom: 4px !important;
+        margin-bottom: 12px !important;
+        padding-bottom: 10px !important;
       }
 
       /* ════════════════════════════════════════════
@@ -329,15 +330,17 @@ module.exports = class SystemWindow {
       li.sw-group-start:hover,
       li.sw-group-middle:hover,
       li.sw-group-end:hover {
-        box-shadow: 0 0 12px rgba(${BLUE}, 0.2),
-                    inset 0 0 8px rgba(${BLUE}, 0.05) !important;
-        border-left-color: rgba(${BLUE}, 0.75) !important;
+        box-shadow: 0 0 18px rgba(${BLUE}, 0.45),
+                    0 0 40px rgba(${BLUE}, 0.15),
+                    inset 0 0 12px rgba(${BLUE}, 0.1) !important;
+        border-left-color: rgba(${BLUE}, 1) !important;
       }
 
       li.sw-self:hover {
-        box-shadow: 0 0 12px rgba(${PURPLE}, 0.25),
-                    inset 0 0 8px rgba(${PURPLE}, 0.05) !important;
-        border-left-color: rgba(${PURPLE}, 0.75) !important;
+        box-shadow: 0 0 18px rgba(${PURPLE}, 0.5),
+                    0 0 40px rgba(${PURPLE}, 0.2),
+                    inset 0 0 12px rgba(${PURPLE}, 0.1) !important;
+        border-left-color: rgba(${PURPLE}, 1) !important;
       }
 
       /* ════════════════════════════════════════════
