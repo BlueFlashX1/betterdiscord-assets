@@ -2,7 +2,7 @@
  * @name LevelProgressBar
  * @author BlueFlashX1
  * @description Real-time progress bar showing your level, XP, and rank
- * @version 1.5.0
+ * @version 1.5.6
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -203,6 +203,20 @@ module.exports = class LevelProgressBar {
         this.webpackModuleAccess = false;
       }
     }
+
+    // Extra guild/presence stores for Shadow Recon title intel in the bar
+    try {
+      const getStore = BdApi?.Webpack?.getStore?.bind(BdApi.Webpack);
+      if (getStore) {
+        this.webpackModules.SelectedGuildStore = getStore('SelectedGuildStore');
+        this.webpackModules.SelectedChannelStore = getStore('SelectedChannelStore');
+        this.webpackModules.GuildStore = getStore('GuildStore');
+        this.webpackModules.GuildMemberCountStore = getStore('GuildMemberCountStore');
+        this.webpackModules.PresenceStore = getStore('PresenceStore');
+      }
+    } catch (error) {
+      this.debugError('WEBPACK_INIT', error, { phase: 'reconStores' });
+    }
   }
 
   /**
@@ -307,6 +321,7 @@ module.exports = class LevelProgressBar {
         <div class="lpb-progress-track">
           <div class="lpb-progress-fill" id="lpb-progress-fill" style="transform: scaleX(0);"></div>
         </div>
+        <div class="lpb-recon-text" id="lpb-recon-text"></div>
       </div>
     `;
     return bar;
@@ -345,6 +360,10 @@ module.exports = class LevelProgressBar {
           style: { transform: 'scaleX(0)' },
         })
       ),
+      React.createElement('div', {
+        className: 'lpb-recon-text',
+        id: 'lpb-recon-text',
+      })
     );
   }
 
@@ -402,8 +421,10 @@ module.exports = class LevelProgressBar {
     this.lastLevel = 0;
     this.lastXP = 0;
     this.lastXPRequired = 0;
+    this.lastReconText = '';
     this.eventUnsubscribers = [];
     this.fallbackInterval = null;
+    this.reconUpdateInterval = null;
     this._isStopped = true;
     // Shared tracked-timeout manager
     this._timeouts = SLUtils ? SLUtils.createTrackedTimeouts() : null;
@@ -415,6 +436,11 @@ module.exports = class LevelProgressBar {
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
+      SelectedGuildStore: null,
+      SelectedChannelStore: null,
+      GuildStore: null,
+      GuildMemberCountStore: null,
+      PresenceStore: null,
     };
     this.webpackModuleAccess = false;
     this.reactInjectionActive = false;
@@ -473,6 +499,7 @@ module.exports = class LevelProgressBar {
     await this.loadSettings();
     this.injectCSS();
     this.createProgressBar();
+    this.startReconUpdates();
 
     // Try to subscribe to events immediately, with retry if SoloLevelingStats not ready yet
     this.subscribeToEvents();
@@ -501,6 +528,7 @@ module.exports = class LevelProgressBar {
     this._isStopped = true;
     this.debugLog('STOP', 'Plugin stopping');
     this.unsubscribeFromEvents();
+    this.stopReconUpdates();
     this.stopUpdating();
     if (this._timeouts) this._timeouts.clearAll();
     else this._clearTrackedTimeouts();
@@ -526,6 +554,11 @@ module.exports = class LevelProgressBar {
     this.webpackModules = {
       UserStore: null,
       ChannelStore: null,
+      SelectedGuildStore: null,
+      SelectedChannelStore: null,
+      GuildStore: null,
+      GuildMemberCountStore: null,
+      PresenceStore: null,
     };
     this.webpackModuleAccess = false;
 
@@ -821,8 +854,37 @@ module.exports = class LevelProgressBar {
         line-height: 1;
       }
 
+      .lpb-recon-text {
+        color: #bfdbfe;
+        font-size: 13px;
+        font-weight: 600;
+        text-shadow: 0 0 6px rgba(191, 219, 254, 0.45);
+        white-space: nowrap;
+        line-height: 1;
+        font-family: 'Orbitron', sans-serif;
+        margin-left: auto;
+        margin-right: 110px;
+        max-width: min(42vw, 520px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-align: right;
+        display: none;
+      }
+
+      .lpb-recon-text.is-visible {
+        display: block;
+      }
+
+      .lpb-progress-bar.compact .lpb-recon-text {
+        font-size: 12px;
+        margin-right: 102px;
+      }
+
       .lpb-progress-track {
-        width: 800px;
+        width: auto;
+        flex: 1 1 auto;
+        min-width: 180px;
+        max-width: 980px;
         height: 12px;
         background: rgba(20, 20, 30, 0.8);
         border-radius: 999px;
@@ -1375,6 +1437,154 @@ module.exports = class LevelProgressBar {
     return this._prefersReducedMotion;
   }
 
+  _toNonNegativeInt(value) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= 0 ? Math.trunc(parsed) : 0;
+  }
+
+  _formatNumber(value) {
+    return this._toNonNegativeInt(value).toLocaleString();
+  }
+
+  _resolveCurrentGuildId() {
+    const selectedGuildId = this.webpackModules.SelectedGuildStore?.getGuildId?.();
+    if (selectedGuildId) return selectedGuildId;
+
+    const selectedChannelId = this.webpackModules.SelectedChannelStore?.getChannelId?.();
+    if (!selectedChannelId) return null;
+
+    const channel = this.webpackModules.ChannelStore?.getChannel?.(selectedChannelId);
+    return channel?.guild_id || channel?.guildId || null;
+  }
+
+  _readOnlineCountFromObject(value) {
+    if (!value || typeof value !== 'object') return null;
+    const keys = [
+      'online',
+      'onlineCount',
+      'presence',
+      'presenceCount',
+      'approximatePresenceCount',
+      'approximate_presence_count',
+    ];
+    for (const key of keys) {
+      const parsed = Number(value[key]);
+      if (Number.isFinite(parsed) && parsed >= 0) return Math.trunc(parsed);
+    }
+    return null;
+  }
+
+  _getGuildOnlineCount(guildId, guild = null) {
+    if (!guildId) return 0;
+
+    const countStore = this.webpackModules.GuildMemberCountStore;
+    const methodNames = [
+      'getOnlineCount',
+      'getOnlineMemberCount',
+      'getPresenceCount',
+      'getMemberCounts',
+      'getCounts',
+      'getGuildCounts',
+    ];
+
+    if (countStore && typeof countStore === 'object') {
+      for (const methodName of methodNames) {
+        const method = countStore[methodName];
+        if (typeof method !== 'function') continue;
+        try {
+          const result = method.call(countStore, guildId);
+          const direct = Number(result);
+          if (Number.isFinite(direct) && direct >= 0) return Math.trunc(direct);
+          const fromObject = this._readOnlineCountFromObject(result);
+          if (fromObject !== null) return fromObject;
+        } catch (_) {}
+      }
+    }
+
+    const fallbackGuild = guild || this.webpackModules.GuildStore?.getGuild?.(guildId);
+    const fromGuild = this._readOnlineCountFromObject(fallbackGuild);
+    return fromGuild !== null ? fromGuild : 0;
+  }
+
+  _getGuildReconCounts(guildId) {
+    if (!guildId) return { total: 0, online: 0 };
+
+    // Prefer ShadowRecon as source of truth when available (keeps count logic aligned).
+    try {
+      if (BdApi.Plugins.isEnabled('ShadowRecon')) {
+        const reconPlugin = BdApi.Plugins.get('ShadowRecon');
+        const reconInstance = reconPlugin?.instance || reconPlugin;
+        if (reconInstance && typeof reconInstance.getGuildIntel === 'function') {
+          const intel = reconInstance.getGuildIntel(guildId);
+          if (intel && typeof intel === 'object') {
+            return {
+              total: this._toNonNegativeInt(intel.memberCount),
+              online: this._toNonNegativeInt(intel.onlineCount),
+            };
+          }
+        }
+      }
+    } catch (error) {
+      this.debugError('RECON_INTEL', error, { phase: 'shadowReconBridge' });
+    }
+
+    const guild = this.webpackModules.GuildStore?.getGuild?.(guildId);
+    const total =
+      this._toNonNegativeInt(this.webpackModules.GuildMemberCountStore?.getMemberCount?.(guildId))
+      || this._toNonNegativeInt(guild?.memberCount)
+      || this._toNonNegativeInt(guild?.member_count);
+
+    return {
+      total,
+      online: this._getGuildOnlineCount(guildId, guild),
+    };
+  }
+
+  updateReconIntelText() {
+    const reconTextEl = this.getCachedElement('#lpb-recon-text');
+    if (!reconTextEl) return false;
+
+    const guildId = this._resolveCurrentGuildId();
+    if (!guildId) {
+      const wasVisible = reconTextEl.classList.contains('is-visible') || !!reconTextEl.textContent;
+      reconTextEl.textContent = '';
+      reconTextEl.classList.remove('is-visible');
+      this.lastReconText = '';
+      return wasVisible;
+    }
+
+    const { total, online } = this._getGuildReconCounts(guildId);
+    const nextText = `Members: ${this._formatNumber(total)} | Online: ${this._formatNumber(online)}`;
+    const changed =
+      nextText !== this.lastReconText
+      || reconTextEl.textContent !== nextText
+      || !reconTextEl.classList.contains('is-visible');
+
+    if (!changed) return false;
+
+    reconTextEl.textContent = nextText;
+    reconTextEl.classList.add('is-visible');
+    this.lastReconText = nextText;
+    return true;
+  }
+
+  startReconUpdates() {
+    if (this.reconUpdateInterval) return;
+    this.reconUpdateInterval = setInterval(() => {
+      if (this._isStopped || !this.settings.enabled || !this.progressBar) return;
+      this.updateReconIntelText();
+    }, 1200);
+    this._setTrackedTimeout(() => this.updateReconIntelText(), 60);
+  }
+
+  stopReconUpdates() {
+    if (this.reconUpdateInterval) {
+      clearInterval(this.reconUpdateInterval);
+      this.reconUpdateInterval = null;
+    }
+    this.lastReconText = '';
+  }
+
   /**
    * Update progress bar with current data
    */
@@ -1389,6 +1599,7 @@ module.exports = class LevelProgressBar {
     }
 
     try {
+      const reconChanged = this.updateReconIntelText();
       const soloData = this.getSoloLevelingData();
       if (!soloData) {
         this.debugLog('UPDATE_BAR', 'SoloLevelingStats data not available', {
@@ -1412,7 +1623,8 @@ module.exports = class LevelProgressBar {
         this.lastXP !== null &&
         currentLevel === this.lastLevel &&
         currentXP === this.lastXP &&
-        xpRequired === (this.lastXPRequired || 0)
+        xpRequired === (this.lastXPRequired || 0) &&
+        !reconChanged
       ) {
         return;
       }
@@ -1512,6 +1724,8 @@ module.exports = class LevelProgressBar {
    */
   async refreshProgressText() {
     if (!this.progressBar) return;
+
+    this.updateReconIntelText();
 
     // Refresh main progress text
     const soloData = this.getSoloLevelingData();

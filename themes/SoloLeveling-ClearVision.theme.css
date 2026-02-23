@@ -1,7 +1,7 @@
 /**
  * @name Solo Leveling (Rebuild)
  * @author Curio
- * @version 0.1.1
+ * @version 0.1.2
  * @description Fresh rebuild baseline for Solo Leveling theme
  */
 
@@ -1219,7 +1219,13 @@ div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
    Only the outermost wrapper gets the border — everything inside is transparent/borderless */
 div[class^="positionContainer_"] > div[class^="container_"],
 div[id^="uid_"][role="dialog"],
-div[class^="positionContainer_"] div[class^="contentWrapper_"] {
+div[class^="positionContainer_"] div[class^="contentWrapper_"],
+div[id^="popout_"] > div[class*="popout_"]:has(div[class*="emojiPicker_"]),
+div[id^="popout_"] > div[class*="popout_"]:has(section[class*="stickerPicker_"]),
+div[id^="popout_"] > div[class*="popout_"]:has(div[class*="gifPicker_"]),
+div[class*="contentWrapper_"]:has(div[class*="emojiPicker_"]),
+div[class*="contentWrapper_"]:has(section[class*="stickerPicker_"]),
+div[class*="contentWrapper_"]:has(div[class*="gifPicker_"]) {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 2px solid var(--sl-color-primary) !important;
@@ -1228,6 +1234,7 @@ div[class^="positionContainer_"] div[class^="contentWrapper_"] {
 /* Inner surfaces of expression picker: no border, solid bg only */
 div[class^="emojiPicker_"],
 section[class^="stickerPicker_"],
+div[class*="gifPicker_"],
 div[class^="categoryList_"],
 div[class^="header_"][class*="stickerPicker_"] {
   background: rgba(8, 10, 20, 0.98) !important;
@@ -1241,8 +1248,13 @@ div[class^="emojiPicker_"] div[class^="inspector_"],
 div[class^="emojiPicker_"] nav,
 section[class^="stickerPicker_"] div[class^="wrapper_"],
 section[class^="stickerPicker_"] div[class^="searchBar_"],
+div[class*="gifPicker_"] div[class^="wrapper_"],
+div[class*="gifPicker_"] div[class^="searchBar_"],
+div[class*="gifPicker_"] nav,
 div[class^="positionContainer_"] div[class^="contentWrapper_"] div[class^="header_"],
-div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"] {
+div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"],
+div[class*="contentWrapper_"] div[class*="header_"],
+div[class*="contentWrapper_"] nav[class*="nav_"] {
   background: transparent !important;
   background-image: none !important;
   border: none !important;
@@ -1252,6 +1264,7 @@ div[class^="positionContainer_"] div[class^="contentWrapper_"] nav[class^="nav_"
    Nuclear approach: hide scrollbars on ALL scrollable elements inside the picker */
 div[class^="emojiPicker_"] *,
 section[class^="stickerPicker_"] *,
+div[class*="gifPicker_"] *,
 div[class^="positionContainer_"] div[class^="contentWrapper_"] *,
 div[class^="positionContainer_"] * {
   scrollbar-width: none !important;
@@ -1259,6 +1272,7 @@ div[class^="positionContainer_"] * {
 }
 div[class^="emojiPicker_"] *::-webkit-scrollbar,
 section[class^="stickerPicker_"] *::-webkit-scrollbar,
+div[class*="gifPicker_"] *::-webkit-scrollbar,
 div[class^="positionContainer_"] div[class^="contentWrapper_"] *::-webkit-scrollbar,
 div[class^="positionContainer_"] *::-webkit-scrollbar {
   width: 0 !important;

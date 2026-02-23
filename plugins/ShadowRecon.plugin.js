@@ -1,12 +1,12 @@
 /**
  * @name ShadowRecon
  * @description Lore-accurate recon suite: mark guilds for dossiers, track staff authority, and inspect marked targets from ShadowSenses (platform + connections).
- * @version 1.0.3
+ * @version 1.0.5
  * @author matthewthompson
  */
 
 const PLUGIN_NAME = "ShadowRecon";
-const PLUGIN_VERSION = "1.0.3";
+const PLUGIN_VERSION = "1.0.5";
 const STYLE_ID = "shadow-recon-css";
 const WIDGET_ID = "shadow-recon-widget";
 const MEMBER_BANNER_ID = "shadow-recon-member-banner";
@@ -15,7 +15,7 @@ const MODAL_ID = "shadow-recon-modal-root";
 const DEFAULT_SETTINGS = {
   loreLockedRecon: true,
   showServerCounterWidget: true,
-  showMemberCounterBanner: true,
+  showMemberCounterBanner: false, // deprecated: member-list banner removed by request
   showGuildHoverIntel: true,
   showStaffIntelInContextMenu: true,
   showMarkedTargetIntelInContext: true,
@@ -104,7 +104,7 @@ module.exports = class ShadowRecon {
       this.patchUserContextMenu();
 
       this.injectServerCounterWidget();
-      this.injectMemberCounterBanner();
+      this.removeMemberCounterBanner();
       this.refreshGuildIconHints();
       this.startRefreshLoops();
       this.setupObserver();
@@ -500,7 +500,7 @@ module.exports = class ShadowRecon {
 
   refreshAllVisuals() {
     this.updateServerCounterWidget();
-    this.updateMemberCounterBanner();
+    this.removeMemberCounterBanner();
     this.refreshGuildIconHints();
   }
 
@@ -514,7 +514,7 @@ module.exports = class ShadowRecon {
         if (now - last < 500) return;
         last = now;
         this.injectServerCounterWidget();
-        this.injectMemberCounterBanner();
+        this.removeMemberCounterBanner();
         this.refreshGuildIconHints();
       });
       this._domObserver.observe(appMount, { childList: true, subtree: true });
@@ -1472,7 +1472,6 @@ module.exports = class ShadowRecon {
 
       makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),
       makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),
-      makeToggle("Member Counter Banner", "showMemberCounterBanner", "Adds total + online counters in the member list area."),
       makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
       makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
       makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds platform/connections intel action for ShadowSenses targets."),
@@ -1526,7 +1525,7 @@ module.exports = class ShadowRecon {
 }
 
 #${WIDGET_ID}.shadow-recon-widget.shadow-recon-widget--rotated {
-  transform: rotate(-90deg);
+  transform: rotate(90deg);
   margin: 10px -12px;
   padding: 7px 9px;
   border-radius: 8px;

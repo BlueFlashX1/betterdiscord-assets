@@ -1,14 +1,14 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.1.1
+ * @version 1.1.2
  * @author matthewthompson
  */
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
-const PLUGIN_VERSION = "1.1.1";
+const PLUGIN_VERSION = "1.1.2";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
@@ -2407,18 +2407,10 @@ function buildComponents(pluginRef) {
       };
     }, []);
 
-    const deployCount = pluginRef.deploymentManager
-      ? pluginRef.deploymentManager.getDeploymentCount()
-      : 0;
-    const onlineMarkedCount = pluginRef.sensesEngine
-      ? pluginRef.sensesEngine.getMarkedOnlineCount()
-      : 0;
     const feedCount = pluginRef.sensesEngine
       ? pluginRef.sensesEngine.getActiveFeedCount()
       : 0;
-    const label = pluginRef.settings?.showMarkedOnlineCount
-      ? `Shadow Senses: ${deployCount} deployed / ${onlineMarkedCount} online`
-      : `Shadow Senses: ${deployCount} deployed`;
+    const label = "Shadow Sense";
 
     return ce("div", {
       className: "shadow-senses-widget",

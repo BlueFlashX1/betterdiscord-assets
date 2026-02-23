@@ -1,11 +1,11 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 2.0.0
+ * @version 2.1.0
  * @author matthewthompson
  *
  * ============================================================================
- * REACT PANEL ARCHITECTURE (v2.0.0)
+ * REACT PANEL ARCHITECTURE (v2.1.0)
  * ============================================================================
  *
  * The waypoint panel is now a React component tree rendered via
@@ -21,7 +21,7 @@
  *   - Card list: React keys for identity (no cloneNode hack)
  *
  * What did NOT change:
- *   - Swirl icon: still direct DOM on document.body (z-index escape)
+ *   - Swirl icon interaction and behavior (still opens waypoint panel)
  *   - Context menu: still BdApi.ContextMenu.patch (already React-based)
  *   - Persistence: identical BdApi.Data + file backup
  *   - Navigation: identical NavigationUtils.transitionTo
@@ -33,11 +33,12 @@
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const SE_PLUGIN_ID = "ShadowExchange";
-const SE_VERSION = "2.0.0";
+const SE_VERSION = "2.1.0";
 const SE_STYLE_ID = "shadow-exchange-css";
 const SE_SWIRL_ID = "se-swirl-icon";
 const SE_PANEL_CONTAINER_ID = "se-panel-root";
 const TRANSITION_ID = "se-transition-overlay";
+const SWIRL_REINJECT_DELAY_MS = 140;
 
 const RANK_ORDER = [
   "E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH",
@@ -559,6 +560,9 @@ module.exports = class ShadowExchange {
   constructor() {
     this._panelForceUpdate = null;
     this._panelContainer = null;
+    this._swirlObserver = null;
+    this._swirlReinjectTimeout = null;
+    this._swirlResizeHandler = null;
     this._transitionNavTimeout = null;
     this._transitionCleanupTimeout = null;
     this._transitionRunId = 0;
@@ -578,6 +582,9 @@ module.exports = class ShadowExchange {
       this.fileBackupPath = null;
       this._panelForceUpdate = null;
       this._panelContainer = null;
+      this._swirlObserver = null;
+      this._swirlReinjectTimeout = null;
+      this._swirlResizeHandler = null;
       this._transitionNavTimeout = null;
       this._transitionCleanupTimeout = null;
       this._transitionRunId = 0;
@@ -605,8 +612,9 @@ module.exports = class ShadowExchange {
       // Build React components (cached for this plugin instance)
       this._components = buildPanelComponents(this);
 
-      // Swirl icon — simple body-level DOM injection (fixed-position overlay).
+      // Swirl icon — anchored to the channel header toolbar.
       this.injectSwirlIcon();
+      this.setupSwirlObserver();
 
       // Right-click context menu on messages → "Shadow Mark"
       this.patchContextMenu();
@@ -631,6 +639,7 @@ module.exports = class ShadowExchange {
       this._cancelPendingTransition();
       this._clearNavigateRetries();
       this._cancelChannelViewFade();
+      this.teardownSwirlObserver();
       this.removeSwirlIcon();
       this.removeCSS();
     } catch (err) {
@@ -1231,45 +1240,114 @@ module.exports = class ShadowExchange {
     }
   }
 
-  // ── Swirl Icon (body-level DOM injection) ──────────────────────────────
+  // ── Swirl Icon (channel-header anchored) ───────────────────────────────
 
-  /**
-   * Inject the swirl icon directly onto document.body as a fixed-position
-   * overlay.  Body-level injection is intentional — the icon must sit above
-   * all React stacking contexts (LPB container, Discord modals, etc.).
-   */
-  injectSwirlIcon() {
-    if (document.getElementById(SE_SWIRL_ID)) return;
+  _getChannelHeaderToolbar() {
+    const selectors = [
+      '[aria-label="Channel header"] [class*="toolbar_"]',
+      '[class*="titleWrapper_"] [class*="toolbar_"]',
+      'header [class*="toolbar_"]',
+    ];
 
-    const icon = document.createElement("div");
-    icon.id = SE_SWIRL_ID;
-    icon.className = "se-swirl-icon";
-    icon.title = "Shadow Exchange — Waypoints";
-    icon.innerHTML = [
-      '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">',
-      '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>',
-      '<path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>',
-      '<circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>',
-      '<path d="M8 15c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2" stroke="#9b59b6" stroke-width="1.5" fill="none" stroke-linecap="round"/>',
-      '<path d="M9.5 18c.8.7 1.6 1 2.5 1s1.7-.3 2.5-1" stroke="#7d3c98" stroke-width="1" fill="none" stroke-linecap="round"/>',
-      "</svg>",
-    ].join("");
-
-    icon.addEventListener("click", (e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      this.togglePanel();
-    });
-
-    // Inject into LPB container so icon is anchored to the progress bar
-    const lpb = document.getElementById("lpb-progress-container");
-    icon.dataset.lpbPosition = lpb?.classList.contains("bottom") ? "bottom" : "top";
-
-    if (lpb) {
-      lpb.appendChild(icon);
-    } else {
-      document.body.appendChild(icon);
+    for (const selector of selectors) {
+      const nodes = document.querySelectorAll(selector);
+      for (const node of nodes) {
+        if (!node || node.offsetParent === null) continue;
+        const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
+        if (host && host.offsetParent === null) continue;
+        return node;
+      }
     }
+    return null;
+  }
+
+  _attachSwirlIconToHeader(icon = null) {
+    const targetIcon = icon || document.getElementById(SE_SWIRL_ID);
+    if (!targetIcon) return false;
+
+    const toolbar = this._getChannelHeaderToolbar();
+    if (!toolbar) return false;
+
+    if (targetIcon.parentElement !== toolbar) {
+      toolbar.appendChild(targetIcon);
+    }
+    targetIcon.classList.remove("se-swirl-icon--hidden");
+    return true;
+  }
+
+  _scheduleSwirlIconReinject(delayMs = SWIRL_REINJECT_DELAY_MS) {
+    if (this._swirlReinjectTimeout) clearTimeout(this._swirlReinjectTimeout);
+    this._swirlReinjectTimeout = setTimeout(() => {
+      this._swirlReinjectTimeout = null;
+      this.injectSwirlIcon();
+    }, delayMs);
+  }
+
+  setupSwirlObserver() {
+    if (this._swirlObserver) return;
+
+    const appMount = document.getElementById("app-mount") || document.body;
+    if (!appMount) return;
+
+    this._swirlObserver = new MutationObserver(() => {
+      this._scheduleSwirlIconReinject();
+    });
+    this._swirlObserver.observe(appMount, { childList: true, subtree: true });
+
+    this._swirlResizeHandler = () => this._scheduleSwirlIconReinject(80);
+    window.addEventListener("resize", this._swirlResizeHandler, { passive: true });
+
+    this._scheduleSwirlIconReinject(60);
+  }
+
+  teardownSwirlObserver() {
+    if (this._swirlObserver) {
+      this._swirlObserver.disconnect();
+      this._swirlObserver = null;
+    }
+
+    if (this._swirlReinjectTimeout) {
+      clearTimeout(this._swirlReinjectTimeout);
+      this._swirlReinjectTimeout = null;
+    }
+
+    if (this._swirlResizeHandler) {
+      window.removeEventListener("resize", this._swirlResizeHandler);
+      this._swirlResizeHandler = null;
+    }
+  }
+
+  injectSwirlIcon() {
+    let icon = document.getElementById(SE_SWIRL_ID);
+
+    if (!icon) {
+      icon = document.createElement("div");
+      icon.id = SE_SWIRL_ID;
+      icon.className = "se-swirl-icon";
+      icon.title = "Shadow Exchange — Waypoints";
+      icon.innerHTML = [
+        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">',
+        '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>',
+        '<path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>',
+        '<circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>',
+        '<path d="M8 15c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2" stroke="#9b59b6" stroke-width="1.5" fill="none" stroke-linecap="round"/>',
+        '<path d="M9.5 18c.8.7 1.6 1 2.5 1s1.7-.3 2.5-1" stroke="#7d3c98" stroke-width="1" fill="none" stroke-linecap="round"/>',
+        "</svg>",
+      ].join("");
+
+      icon.addEventListener("click", (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        this.togglePanel();
+      });
+    }
+
+    const anchored = this._attachSwirlIconToHeader(icon);
+    if (!anchored) {
+      if (!icon.parentElement) document.body.appendChild(icon);
+      icon.classList.add("se-swirl-icon--hidden");
+    }
+
     this.swirlIcon = icon;
   }
 
@@ -1384,14 +1462,15 @@ module.exports = class ShadowExchange {
     const css = `
 ${buildPortalTransitionCSS()}
 
-      /* ── Swirl Icon (fixed-position, outside React tree) ───────── */
+      /* ── Swirl Icon (anchored in channel-header toolbar) ───────── */
       .se-swirl-icon {
-        position: absolute;
-        right: 20px;
-        z-index: 999999;
+        position: relative;
+        z-index: 1;
         display: flex;
         align-items: center;
         justify-content: center;
+        flex: 0 0 auto;
+        margin-left: 8px;
         width: 26px;
         height: 26px;
         border-radius: 50%;
@@ -1402,16 +1481,8 @@ ${buildPortalTransitionCSS()}
         transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         pointer-events: auto;
       }
-      /* Position based on LPB top/bottom mode */
-      .se-swirl-icon[data-lpb-position="top"] {
-        top: 5px;
-      }
-      .se-swirl-icon[data-lpb-position="bottom"] {
-        bottom: 10px;
-      }
-      /* Fallback if data attribute not set yet — default to top */
-      .se-swirl-icon:not([data-lpb-position]) {
-        top: 5px;
+      .se-swirl-icon--hidden {
+        display: none !important;
       }
       .se-swirl-icon:hover {
         opacity: 1;
