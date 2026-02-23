@@ -2556,8 +2556,9 @@ div[class^="buttonsInner_"][class*="popover_"] {
   display: none !important;
 }
 
-/* §14j — BD Toast White Text
-   Force all BetterDiscord toast notifications to use white text for readability. */
+/* §14j — BD Toast Style
+   Force all BetterDiscord toast notifications to use white text + sharp corners. */
 .bd-toast {
   color: #ffffff !important;
+  border-radius: 0 !important;
 }
