@@ -1302,16 +1302,20 @@ class SensesEngine {
       // Add to the guild's feed (always, regardless of current guild)
       this._addToGuildFeed(guildId, entry);
 
-      // Context-aware message notifications:
-      // Toast for AWAY guilds only — if you're already viewing this guild, no need to alert.
-      // When you switch guilds, the batch summary toast covers what you missed.
+      // ALWAYS toast for tracked users — including invisible.
+      // MESSAGE_CREATE fires regardless of presence status, so this catches
+      // invisible users who send messages. Away guilds get server context,
+      // current guild gets channel-only context (you already know where you are).
       if (isAwayGuild) {
         BdApi.UI.showToast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in ${guildName} #${entry.channelName}`,
           { type: "info" }
         );
       } else {
-        // Current guild — silently track, keep lastSeen in sync
+        BdApi.UI.showToast(
+          `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in #${entry.channelName}`,
+          { type: "info" }
+        );
         this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       }
 
@@ -2011,7 +2015,7 @@ ${buildPortalTransitionCSS()}
   align-items: center;
   gap: 10px;
   padding: 10px 12px;
-  border-radius: 12px;
+  border-radius: 0;
   border: 1px solid rgba(138, 43, 226, 0.38);
   border-left: 3px solid var(--ss-status-accent, #8a2be2);
   background:

@@ -649,7 +649,7 @@ module.exports = class SoloLevelingToasts {
         padding: 14px 18px;
         background: rgb(10, 10, 15);
         border: 1px solid rgba(138, 43, 226, 0.3);
-        border-radius: 8px;
+        border-radius: 0;
         box-shadow: 0 4px 20px rgba(138, 43, 226, 0.4),
                     0 0 40px rgba(138, 43, 226, 0.2);
         pointer-events: auto;
