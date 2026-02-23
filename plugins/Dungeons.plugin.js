@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.8.0
+ * @version 4.8.2
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -1033,6 +1033,7 @@ module.exports = class Dungeons {
     this._containerCache = new Map(); // Cache for progress/header containers (short TTL)
     this._mobSpawnQueue = new Map(); // Micro-queue for batched mob spawning (250-500ms)
     this._spawnPipelineGuardAt = new Map(); // channelKey -> last guard log timestamp
+    this._mobContributionMissLogState = new Map(); // channelKey -> throttled miss-log state
     // Legacy: used by older spawn-queue implementation (now centralized in global spawn loop)
     this.userHPBar = null;
     this.dungeonModal = null;
@@ -1182,6 +1183,8 @@ module.exports = class Dungeons {
     this._lastRebalanceAt = new Map(); // channelKey -> timestamp (throttle reinforcement)
     this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
     this._allocationSummary = new Map(); // channelKey -> { dungeonRank, assignedCount, avgShadowRankIndex }
+    this._deployRebalanceInFlight = new Set(); // channelKeys currently running async post-deploy full split
+    this._deployStarterShadowCap = 240; // Fast-start provisional shadow cap before full split completes
     this._pendingDungeonXpPostProcess = new Map(); // taskKey -> metadata
 
     // HP/Mana regeneration timer
@@ -1371,6 +1374,12 @@ module.exports = class Dungeons {
     }, delayMs);
     this._timeouts.add(timeoutId);
     return timeoutId;
+  }
+
+  _yieldToEventLoop(delayMs = 0) {
+    return new Promise((resolve) => {
+      this._setTrackedTimeout(resolve, delayMs);
+    });
   }
 
   /**
@@ -2163,6 +2172,12 @@ module.exports = class Dungeons {
     // Clear shadow allocations cache
     if (this.shadowAllocations) {
       this.shadowAllocations.clear();
+    }
+    if (this._deployRebalanceInFlight) {
+      this._deployRebalanceInFlight.clear();
+    }
+    if (this._mobContributionMissLogState) {
+      this._mobContributionMissLogState.clear();
     }
     this.allocationCache = null; // Clear allocation cache
     this.allocationCacheTime = null;
@@ -5162,11 +5177,20 @@ module.exports = class Dungeons {
     dungeon.bossGate.deployedAt = deployedAt;
     dungeon.bossGate.unlockedAt = null;
     this._markAllocationDirty('deploy-shadows');
+    const deployStartedAt = Date.now();
+    let starterAllocationCount = 0;
 
-    // Allocate shadows and start combat
-    await this.preSplitShadowArmy();
+    // Fast-start deploy: apply a small provisional allocation first so mobs/attacks can begin immediately.
+    // Full rank-tiered split is reconciled asynchronously right after combat starts.
+    try {
+      const starterShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
+      starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, starterShadows);
+    } catch (error) {
+      this.errorLog('DEPLOY', 'Failed to build starter allocation', { channelKey, error });
+    }
 
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
+    const deployMode = starterAllocationCount > 0 ? 'fast-start' : 'async-full-split';
 
     // ALWAYS-ON: Deploy log with full context
     const gateSummary = dungeon.bossGate?.enabled === false
@@ -5175,7 +5199,8 @@ module.exports = class Dungeons {
     console.log(
       `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
       `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | ` +
-      `Gate: ${gateSummary} | Key: ${channelKey}`
+      `Gate: ${gateSummary} | Mode: ${deployMode} | ` +
+      `Alloc: ${Date.now() - deployStartedAt}ms | Key: ${channelKey}`
     );
 
     // Initialize boss and mob attack times to prevent one-shot burst
@@ -5200,6 +5225,11 @@ module.exports = class Dungeons {
       this._mobSpawnQueueNextAt?.delete?.(channelKey);
     }
     this.ensureDeployedSpawnPipeline(channelKey, 'deploy_initial');
+    const liveMobsAfterDeployStart = this._countLiveMobs(dungeon);
+    if (liveMobsAfterDeployStart <= 0) {
+      // Hard guard: if no mobs are visible after initial deploy spawn/flush, force one more pipeline heal.
+      this.ensureDeployedSpawnPipeline(channelKey, 'deploy_initial_hard_guard');
+    }
     this._setTrackedTimeout(() => {
       try {
         const guardDungeon = this._getActiveDungeon(channelKey);
@@ -5210,12 +5240,17 @@ module.exports = class Dungeons {
       }
     }, 1000);
 
-    await this.startShadowAttacks(channelKey);
+    await this.startShadowAttacks(channelKey, { allowBlockingReallocation: false });
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
 
-    // Deploy responsiveness: run one immediate shadow attack pass (don't wait for cadence tick).
-    await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+    // Deploy responsiveness: run one immediate shadow attack pass only when starter allocation exists.
+    if (assignedShadows.length > 0) {
+      await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+    }
+
+    dungeon._deployPendingFullAllocation = true;
+    this._scheduleDeployRebalance(channelKey, deployStartedAt);
 
     this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
     this.saveSettings();
@@ -5228,9 +5263,10 @@ module.exports = class Dungeons {
       );
     }
 
-    // Update HP bar to show LEAVE button instead of DEPLOY
-    this.queueHPBarUpdate(channelKey);
     this.closeDungeonModal();
+    // Update HP bar after modal closes so header re-render isn't gated by transient overlay state.
+    this.queueHPBarUpdate(channelKey);
+    this._setTrackedTimeout(() => this.queueHPBarUpdate(channelKey), 34);
   }
 
   async processUserAttack(channelKey, messageElement = null) {
@@ -5379,6 +5415,192 @@ module.exports = class Dungeons {
       this.soloLevelingStats.updateUI,
     ].find((fn) => typeof fn === 'function');
     uiUpdater?.call(this.soloLevelingStats);
+  }
+
+  _buildDeployStarterAllocation(channelKey, dungeon) {
+    const starterCapSetting = Number(this.settings?.deployStarterShadowCap);
+    const starterCap = this.clampNumber(
+      Number.isFinite(starterCapSetting) && starterCapSetting > 0
+        ? Math.floor(starterCapSetting)
+        : this._deployStarterShadowCap,
+      24,
+      2000
+    );
+
+    const deployedDungeonCount = Math.max(
+      1,
+      Array.from(this.activeDungeons.values()).filter(
+        (d) => d && !d.completed && !d.failed && d.shadowsDeployed
+      ).length
+    );
+    const knownShadowCount = Number.isFinite(this.allocationCache?.count)
+      ? Math.max(0, Math.floor(this.allocationCache.count))
+      : 0;
+    const fairShare = knownShadowCount > 0 ? Math.floor(knownShadowCount / deployedDungeonCount) : starterCap;
+    const targetCount = this.clampNumber(fairShare || starterCap, 24, starterCap);
+
+    const usedIds = new Set();
+    for (const [otherKey, assigned] of this.shadowAllocations.entries()) {
+      if (otherKey === channelKey || !Array.isArray(assigned) || assigned.length === 0) continue;
+      const otherDungeon = this._getActiveDungeon(otherKey);
+      if (!otherDungeon || !otherDungeon.shadowsDeployed) continue;
+      for (const shadow of assigned) {
+        const sid = this.getShadowIdValue(shadow);
+        sid && usedIds.add(String(sid));
+      }
+    }
+
+    const blockedIds = new Set();
+    try {
+      const exchange = this._getPluginSafe('ShadowExchange');
+      const markedIds = exchange?.getMarkedShadowIds?.();
+      markedIds instanceof Set && markedIds.forEach((id) => id && blockedIds.add(String(id)));
+    } catch (_) {}
+    try {
+      const senses = this._getPluginSafe('ShadowSenses');
+      const deployedIds = senses?.getDeployedShadowIds?.();
+      deployedIds instanceof Set && deployedIds.forEach((id) => id && blockedIds.add(String(id)));
+    } catch (_) {}
+
+    let candidatePool =
+      Array.isArray(this._allocationSortedShadowsCache) && this._allocationSortedShadowsCache.length > 0
+        ? this._allocationSortedShadowsCache
+        : null;
+
+    if (!candidatePool) {
+      const snapshot = this.shadowArmy?.getShadowSnapshot?.();
+      Array.isArray(snapshot) && snapshot.length > 0 && (candidatePool = snapshot);
+    }
+
+    if (!candidatePool) {
+      const cached = this._shadowsCache?.shadows;
+      Array.isArray(cached) && cached.length > 0 && (candidatePool = cached);
+    }
+
+    if (!Array.isArray(candidatePool) || candidatePool.length === 0) {
+      return [];
+    }
+
+    const picked = [];
+    const pickedIds = new Set();
+    const dungeonRankIndex = this.getRankIndexValue(dungeon?.rank || 'E');
+
+    const tryPickShadow = (shadow) => {
+      const normalized = this.normalizeShadowId(shadow);
+      const shadowId = this.getShadowIdValue(normalized);
+      if (!shadowId) return null;
+      const sid = String(shadowId);
+      if (usedIds.has(sid) || blockedIds.has(sid) || pickedIds.has(sid)) return null;
+      pickedIds.add(sid);
+      return normalized;
+    };
+
+    // Pass 1: rank-adjacent shadows for fast combat fit.
+    const preferredRankDistance = 2;
+    for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
+      const normalized = this.normalizeShadowId(candidatePool[i]);
+      if (!normalized) continue;
+      const rankDistance = Math.abs(
+        this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex
+      );
+      if (rankDistance > preferredRankDistance) continue;
+      const accepted = tryPickShadow(normalized);
+      accepted && picked.push(accepted);
+    }
+
+    // Pass 2: fallback to any remaining available shadows.
+    if (picked.length < targetCount) {
+      for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
+        const accepted = tryPickShadow(candidatePool[i]);
+        accepted && picked.push(accepted);
+      }
+    }
+
+    return picked;
+  }
+
+  _applyDeployStarterAllocation(channelKey, dungeon, starterShadows) {
+    if (!Array.isArray(starterShadows) || starterShadows.length === 0 || !dungeon) return 0;
+
+    const assigned = [];
+    const seen = new Set();
+    for (let i = 0; i < starterShadows.length; i++) {
+      const normalized = this.normalizeShadowId(starterShadows[i]);
+      if (!normalized) continue;
+      const shadowId = this.getShadowIdValue(normalized);
+      if (!shadowId) continue;
+      const sid = String(shadowId);
+      if (seen.has(sid)) continue;
+      seen.add(sid);
+      assigned.push(normalized);
+    }
+
+    if (assigned.length === 0) return 0;
+
+    let totalPower = 0;
+    for (let i = 0; i < assigned.length; i++) {
+      totalPower += this.getShadowCombatScore(assigned[i]);
+    }
+
+    this.shadowAllocations.set(channelKey, assigned);
+    dungeon.shadowAllocation = {
+      shadows: assigned,
+      totalPower,
+      updatedAt: Date.now(),
+      source: 'deploy_starter',
+    };
+    if (dungeon.boss) {
+      dungeon.boss.expectedShadowCount = assigned.length;
+    }
+
+    const existingCount = Number.isFinite(this.allocationCache?.count)
+      ? this.allocationCache.count
+      : 0;
+    this.allocationCache = { count: Math.max(existingCount, assigned.length) };
+    this.allocationCacheTime = Date.now();
+
+    return assigned.length;
+  }
+
+  _scheduleDeployRebalance(channelKey, deployStartedAt = Date.now()) {
+    if (!channelKey || this._deployRebalanceInFlight.has(channelKey)) return;
+    this._deployRebalanceInFlight.add(channelKey);
+
+    this._setTrackedTimeout(() => {
+      Promise.resolve()
+        .then(async () => {
+          if (!this.started) return;
+          const dungeon = this._getActiveDungeon(channelKey);
+          if (!dungeon || !dungeon.shadowsDeployed || dungeon.boss?.hp <= 0) return;
+
+          const beforeCount = (this.shadowAllocations.get(channelKey) || []).length;
+          const rebalanceStartAt = Date.now();
+          await this.preSplitShadowArmy();
+
+          if (!this.started) return;
+          const refreshedDungeon = this._getActiveDungeon(channelKey);
+          if (!refreshedDungeon || !refreshedDungeon.shadowsDeployed) return;
+
+          const afterCount = (this.shadowAllocations.get(channelKey) || []).length;
+          this.ensureDeployedSpawnPipeline(channelKey, 'deploy_async_rebalance');
+          this.queueHPBarUpdate(channelKey);
+
+          console.log(
+            `[Dungeons] ⚔️ DEPLOY REBALANCE: "${refreshedDungeon.name}" [${refreshedDungeon.rank}] ` +
+              `starter=${beforeCount} -> full=${afterCount} shadows | ` +
+              `rebalance=${Date.now() - rebalanceStartAt}ms | total=${Date.now() - deployStartedAt}ms | ` +
+              `Key: ${channelKey}`
+          );
+        })
+        .catch((error) => this.errorLog('DEPLOY', 'Async deploy rebalance failed', { channelKey, error }))
+        .finally(() => {
+          const pendingDungeon = this._getActiveDungeon(channelKey);
+          if (pendingDungeon) {
+            pendingDungeon._deployPendingFullAllocation = false;
+          }
+          this._deployRebalanceInFlight.delete(channelKey);
+        });
+    }, 50);
   }
 
   _getAssignedShadowsForDungeon(channelKey, dungeon) {
@@ -5923,11 +6145,49 @@ module.exports = class Dungeons {
     return true;
   }
 
-  _logMobContributionMiss(channelKey, mobId) {
+  _applyFallbackMobKillContribution(dungeon, assignedShadows = [], fallbackShadowId = null, killCount = 1) {
+    const safeKillCount =
+      Number.isFinite(killCount) && killCount > 0 ? Math.floor(killCount) : 1;
+
+    if (
+      fallbackShadowId &&
+      this._addShadowContribution(dungeon, fallbackShadowId, 'mobsKilled', safeKillCount)
+    ) {
+      return true;
+    }
+
+    const { weights, totalWeight } = this._buildShadowContributionWeights(assignedShadows);
+    return this._distributeWeightedShadowContribution(
+      dungeon,
+      weights,
+      totalWeight,
+      'mobsKilled',
+      safeKillCount
+    );
+  }
+
+  _logMobContributionMiss(channelKey, mobId, extra = null) {
+    const logKey = String(channelKey || 'unknown');
+    const now = Date.now();
+    const cooldownMs = 15000;
+    const state = this._mobContributionMissLogState.get(logKey) || { lastAt: 0, suppressed: 0 };
+
+    if (now - state.lastAt < cooldownMs) {
+      state.suppressed += 1;
+      this._mobContributionMissLogState.set(logKey, state);
+      return;
+    }
+
+    this._mobContributionMissLogState.set(logKey, { lastAt: now, suppressed: 0 });
     this.errorLog(
       true,
       'MOB_CONTRIBUTION_MISS: Missing shadow damage attribution for mob kill',
-      { channelKey, mobId }
+      {
+        channelKey,
+        mobId,
+        suppressedSinceLast: state.suppressed || 0,
+        ...(extra && typeof extra === 'object' ? extra : {}),
+      }
     );
   }
 
@@ -7825,10 +8085,18 @@ module.exports = class Dungeons {
         return score;
       };
 
-      shadowsSortedAll = allShadows
-        .map((shadow) => this.normalizeShadowId(shadow) || shadow)
-        .filter(Boolean)
-        .sort((a, b) => readScore(b) - readScore(a));
+      // Build normalized list in one pass (avoids chained map/filter allocations on huge armies).
+      const normalizedShadows = [];
+      for (let i = 0; i < allShadows.length; i++) {
+        const normalized = this.normalizeShadowId(allShadows[i]) || allShadows[i];
+        normalized && normalizedShadows.push(normalized);
+        if ((i + 1) % 2500 === 0) {
+          await this._yieldToEventLoop();
+          if (!this.started) return;
+        }
+      }
+
+      shadowsSortedAll = normalizedShadows.sort((a, b) => readScore(b) - readScore(a));
 
       this._allocationSortedShadowsCache = shadowsSortedAll;
       this._allocationSortedShadowsCacheTime = now;
@@ -8062,8 +8330,9 @@ module.exports = class Dungeons {
    * Start shadow attacks for a dungeon
    * @param {string} channelKey - Channel key for the dungeon
    */
-  async startShadowAttacks(channelKey) {
+  async startShadowAttacks(channelKey, options = {}) {
     if (this.shadowAttackIntervals.has(channelKey)) return;
+    const allowBlockingReallocation = options?.allowBlockingReallocation !== false;
 
     // PERFORMANCE: Different intervals for active vs background dungeons
     const dungeon = this.activeDungeons.get(channelKey);
@@ -8075,7 +8344,7 @@ module.exports = class Dungeons {
       this._getAssignedShadowsForDungeon(channelKey, dungeon);
 
     // Self-heal: allocation can be empty due to restore/timing. Force a one-time reallocation and retry.
-    if (assignedShadows.length === 0) {
+    if (assignedShadows.length === 0 && allowBlockingReallocation) {
       try {
         this._markAllocationDirty('start-shadow-attacks-missing-allocation');
         await this.preSplitShadowArmy();
@@ -8363,12 +8632,20 @@ module.exports = class Dungeons {
           !this.allocationCache ||
           !this.allocationCacheTime ||
           Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
+        const deployRebalancePending =
+          dungeon?._deployPendingFullAllocation === true ||
+          this._deployRebalanceInFlight?.has?.(channelKey);
 
         let didReallocate = false;
         if (cacheExpired || !hasAllocation) {
-          this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
-          await this.preSplitShadowArmy();
-          didReallocate = true;
+          if (deployRebalancePending) {
+            // Keep combat loop responsive while async deploy rebalance computes full split.
+            !hasAllocation && this.ensureDeployedSpawnPipeline(channelKey, 'combat_waiting_for_rebalance');
+          } else {
+            this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
+            await this.preSplitShadowArmy();
+            didReallocate = true;
+          }
         }
 
         // Get pre-allocated shadows for this dungeon
@@ -8382,7 +8659,7 @@ module.exports = class Dungeons {
 
         // Reinforcement: if this dungeon is underpowered, reallocate stronger shadows.
         // PERF: Skip if we already reallocated above (max 1 preSplit per tick).
-        if (!didReallocate) {
+        if (!didReallocate && !deployRebalancePending) {
           const nowRebalance = Date.now();
           const lastRebalance = this._lastRebalanceAt.get(channelKey) || 0;
           const rebalanceAllowed = nowRebalance - lastRebalance >= this._rebalanceCooldownMs;
@@ -8961,7 +9238,15 @@ module.exports = class Dungeons {
             analytics.mobsKilledThisWave++;
             const killAttributed = this._applyMobKillContributionsFromLedger(dungeon, mobId, 1);
             if (!killAttributed) {
-              this._logMobContributionMiss(channelKey, mobId);
+              const fallbackAttributed = this._applyFallbackMobKillContribution(
+                dungeon,
+                this.shadowAllocations.get(channelKey) || dungeon.shadowAllocation?.shadows || [],
+                null,
+                1
+              );
+              if (!fallbackAttributed) {
+                this._logMobContributionMiss(channelKey, mobId, { phase: 'processShadowAttacks' });
+              }
             }
             this._onMobKilled(channelKey, dungeon, mob.rank);
             deadMobsThisTick.push(mob);
@@ -10307,9 +10592,16 @@ module.exports = class Dungeons {
           if (targetMobId) {
             killAttributed = this._applyMobKillContributionsFromLedger(dungeon, targetMobId, 1);
           }
-          if (!killAttributed && shadowId) {
-            this._addShadowContribution(dungeon, shadowId, 'mobsKilled', 1);
-            targetMobId && this._logMobContributionMiss(channelKey, targetMobId);
+          if (!killAttributed) {
+            const fallbackAttributed = this._applyFallbackMobKillContribution(
+              dungeon,
+              assignedShadows,
+              shadowId,
+              1
+            );
+            if (!fallbackAttributed && targetMobId) {
+              this._logMobContributionMiss(channelKey, targetMobId, { phase: 'attackMobs' });
+            }
           }
         }
 
