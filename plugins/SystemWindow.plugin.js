@@ -165,7 +165,7 @@ module.exports = class SystemWindow {
     if (currentGroup.length) groups.push(currentGroup);
 
     // Apply classes
-    const SW_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self"];
+    const SW_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"];
 
     for (const group of groups) {
       const isSelf = group[0].article.getAttribute("data-is-self") === "true";
@@ -189,6 +189,10 @@ module.exports = class SystemWindow {
 
         // Self class
         if (isSelf) li.classList.add("sw-self");
+
+        // Mentioned class — check each message's article individually
+        const { article: art } = group[i];
+        if (/\bmentioned/.test(art.className)) li.classList.add("sw-mentioned");
       }
     }
 
@@ -199,9 +203,9 @@ module.exports = class SystemWindow {
 
   _cleanupClasses() {
     document
-      .querySelectorAll(".sw-group-solo, .sw-group-start, .sw-group-middle, .sw-group-end, .sw-self")
+      .querySelectorAll(".sw-group-solo, .sw-group-start, .sw-group-middle, .sw-group-end, .sw-self, .sw-mentioned")
       .forEach((el) =>
-        el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self"),
+        el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"),
       );
   }
 
@@ -422,6 +426,57 @@ module.exports = class SystemWindow {
       li.sw-self [class*="embedWrapper"] {
         border-color: rgba(${PURPLE}, 0.15) !important;
         border-left-color: rgba(${PURPLE}, 0.3) !important;
+      }
+
+      /* ════════════════════════════════════════════
+         MENTIONED: Crimson "Emergency Quest" accent
+         Overrides blue/purple with System alert red
+         when the message mentions you (@you / @everyone)
+         ════════════════════════════════════════════ */
+
+      li.sw-mentioned {
+        border-left-color: rgba(239, 68, 68, 0.7) !important;
+        border-right-color: rgba(239, 68, 68, 0.25) !important;
+        background: rgba(239, 68, 68, 0.08) !important;
+      }
+
+      li.sw-mentioned.sw-group-solo,
+      li.sw-mentioned.sw-group-start {
+        border-top-color: rgba(239, 68, 68, 0.25) !important;
+      }
+
+      li.sw-mentioned.sw-group-solo,
+      li.sw-mentioned.sw-group-end {
+        border-bottom-color: rgba(239, 68, 68, 0.25) !important;
+      }
+
+      /* Kill the theme's mention bg + ::before bar inside codeblocks */
+      li.sw-mentioned div[class*="mentioned_"] {
+        background: transparent !important;
+      }
+      li.sw-mentioned div[class*="mentioned_"]::before {
+        display: none !important;
+      }
+
+      /* Kill Discord's native message hover highlight inside codeblocks —
+         the codeblock glow handles hover feedback instead */
+      li.sw-group-solo div[class*="message_"]:hover,
+      li.sw-group-start div[class*="message_"]:hover,
+      li.sw-group-middle div[class*="message_"]:hover,
+      li.sw-group-end div[class*="message_"]:hover,
+      li.sw-group-solo div[role="article"]:hover,
+      li.sw-group-start div[role="article"]:hover,
+      li.sw-group-middle div[role="article"]:hover,
+      li.sw-group-end div[role="article"]:hover {
+        background: transparent !important;
+      }
+
+      /* Mentioned hover: crimson glow */
+      li.sw-mentioned:hover {
+        box-shadow: 0 0 18px rgba(239, 68, 68, 0.5),
+                    0 0 40px rgba(239, 68, 68, 0.2),
+                    inset 0 0 12px rgba(239, 68, 68, 0.1) !important;
+        border-left-color: rgba(239, 68, 68, 1) !important;
       }
     `;
   }
