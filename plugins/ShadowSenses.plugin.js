@@ -1,14 +1,14 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.1.2
+ * @version 1.1.3
  * @author matthewthompson
  */
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
-const PLUGIN_VERSION = "1.1.2";
+const PLUGIN_VERSION = "1.1.3";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
@@ -341,6 +341,7 @@ class SensesEngine {
     this._statusToastTimers = new Map(); // toastId -> timeout ID
     this._statusToastExitTimers = new Map(); // toastId -> timeout ID
     this._deferredStatusToastTimers = new Set(); // startup-deferred status toast timers
+    this._deferredUtilityToastTimers = new Set(); // deferred non-status toasts (startup grace)
     this._statusToastCounter = 0;
 
     // Load persisted data — per-guild keys first, legacy monolithic fallback
@@ -469,6 +470,8 @@ class SensesEngine {
     this._relationshipFriendIds.clear();
     for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
     this._deferredStatusToastTimers.clear();
+    for (const timer of this._deferredUtilityToastTimers) clearTimeout(timer);
+    this._deferredUtilityToastTimers.clear();
     for (const timer of this._statusToastTimers.values()) clearTimeout(timer);
     for (const timer of this._statusToastExitTimers.values()) clearTimeout(timer);
     this._statusToastTimers.clear();
@@ -666,6 +669,23 @@ class SensesEngine {
       emit();
     }, Math.floor(delayMs));
     this._deferredStatusToastTimers.add(timer);
+  }
+
+  _scheduleDeferredUtilityToast(callback, delayMs = 0) {
+    if (typeof callback !== "function") return;
+    const emit = () => {
+      if (this._plugin._stopped) return;
+      callback();
+    };
+    if (!Number.isFinite(delayMs) || delayMs <= 0) {
+      emit();
+      return;
+    }
+    const timer = setTimeout(() => {
+      this._deferredUtilityToastTimers.delete(timer);
+      emit();
+    }, Math.floor(delayMs));
+    this._deferredUtilityToastTimers.add(timer);
   }
 
   _showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment }) {
@@ -1229,7 +1249,10 @@ class SensesEngine {
         // First message from this user since restart/reload
         const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`;
         if (isEarlyStartup) {
-          setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
+          this._scheduleDeferredUtilityToast(
+            () => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }),
+            STARTUP_TOAST_GRACE_MS - msSinceSubscribe
+          );
         } else {
           BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 });
         }
@@ -1247,7 +1270,10 @@ class SensesEngine {
 
           const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`;
           if (isEarlyStartup) {
-            setTimeout(() => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }), STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
+            this._scheduleDeferredUtilityToast(
+              () => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }),
+              STARTUP_TOAST_GRACE_MS - msSinceSubscribe
+            );
           } else {
             BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 });
           }
@@ -1417,6 +1443,9 @@ class SensesEngine {
     if (this._deferredStatusToastTimers instanceof Set) {
       for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
     }
+    if (this._deferredUtilityToastTimers instanceof Set) {
+      for (const timer of this._deferredUtilityToastTimers) clearTimeout(timer);
+    }
     this._guildFeeds = {};
     this._lastSeenCount = {};
     this._currentGuildId = null;
@@ -1437,6 +1466,7 @@ class SensesEngine {
     this._statusToastTimers = new Map();
     this._statusToastExitTimers = new Map();
     this._deferredStatusToastTimers = new Set();
+    this._deferredUtilityToastTimers = new Set();
     this._statusToastCounter = 0;
     this._clearStatusToastRoot();
   }

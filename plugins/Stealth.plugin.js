@@ -1,7 +1,7 @@
 /**
  * @name Stealth
  * @description Conceal presence by suppressing typing, forcing invisible status, hiding activity updates, and erasing telemetry footprints.
- * @version 1.1.1
+ * @version 1.1.2
  * @author matthewthompson
  */
 
@@ -73,6 +73,7 @@ module.exports = class Stealth {
   stop() {
     this._stopStatusInterval();
     this._processMonitorPatched = false;
+    this._warningTimestamps.clear();
 
     if (this.settings.restoreStatusOnStop) {
       this._restoreOriginalStatus();
@@ -636,6 +637,18 @@ module.exports = class Stealth {
     const key = throttleKey || `${scope}:${message}`;
     const now = Date.now();
     const throttleMs = 15000;
+    if (this._warningTimestamps.size > 256) {
+      const staleBefore = now - 5 * 60 * 1000;
+      for (const [mapKey, ts] of this._warningTimestamps) {
+        if (ts < staleBefore) this._warningTimestamps.delete(mapKey);
+        if (this._warningTimestamps.size <= 192) break;
+      }
+      while (this._warningTimestamps.size > 192) {
+        const oldestKey = this._warningTimestamps.keys().next().value;
+        if (oldestKey === undefined) break;
+        this._warningTimestamps.delete(oldestKey);
+      }
+    }
     const lastTs = this._warningTimestamps.get(key) || 0;
     if (now - lastTs < throttleMs) return;
     this._warningTimestamps.set(key, now);

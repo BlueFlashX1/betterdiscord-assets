@@ -2,7 +2,7 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
- * @version 3.0.0
+ * @version 3.0.1
  * @authorId
  * @authorLink
  * @website
@@ -672,6 +672,9 @@ module.exports = class SoloLevelingStats {
 
     // Activity tracking handlers (for cleanup)
     this._activityTrackingHandlers = null;
+    this._settingsPanelRoot = null;
+    this._settingsPanelHandlers = null;
+    this._settingsPreviewRoot = null;
 
     // Stat allocation aggregation (prevents spammy notifications)
     this._statAllocationQueue = [];
@@ -4249,8 +4252,23 @@ module.exports = class SoloLevelingStats {
         // Ignore removal errors
       }
     }
+    if (this._settingsPanelRoot && this._settingsPanelHandlers?.click) {
+      try {
+        this._settingsPanelRoot.removeEventListener('click', this._settingsPanelHandlers.click);
+      } catch (_) {
+        // Ignore removal errors
+      }
+    }
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
+    if (this._settingsPreviewRoot) {
+      try {
+        this._settingsPreviewRoot.unmount();
+      } catch (error) {
+        this.debugError('STOP', error, { phase: 'unmount-settings-preview-root' });
+      }
+      this._settingsPreviewRoot = null;
+    }
 
     this.debugLog('STOP', 'Plugin stopped');
   }
@@ -5337,6 +5355,18 @@ module.exports = class SoloLevelingStats {
 
   createChatUiPreviewPanel() {
     try {
+      // Ensure stale preview roots do not accumulate when settings are reopened.
+      if (this._settingsPreviewRoot) {
+        try {
+          this._settingsPreviewRoot.unmount();
+        } catch (error) {
+          this.debugError('CREATE_CHAT_UI_PREVIEW_PANEL', error, {
+            phase: 'unmount-previous-preview-root',
+          });
+        }
+        this._settingsPreviewRoot = null;
+      }
+
       // Ensure chat UI styles exist for the preview
       this.injectChatUICSS();
 

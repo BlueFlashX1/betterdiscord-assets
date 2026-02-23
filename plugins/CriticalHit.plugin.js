@@ -2,7 +2,7 @@
  * @name CriticalHit
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
- * @version 3.4.0
+ * @version 3.4.1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * Font Credit:
@@ -7196,6 +7196,9 @@ ${childSel} {
    * @returns {HTMLElement} Settings panel DOM element
    */
   getSettingsPanel() {
+    // Prevent orphaned React roots when settings are reopened repeatedly.
+    this.detachCriticalHitSettingsPanelHandlers();
+
     this.updateStats();
     this.injectSettingsCSS();
 
@@ -8263,7 +8266,7 @@ ${childSel} {
       console.log(`%c[CriticalHit] Plugin Started. Debug Mode: ${this.settings.debugMode ? 'ON' : 'OFF'}`, 'color: #ff0000; font-weight: bold; background: #222; padding: 4px; border-radius: 4px;');
 
       this.debugLog('PLUGIN_START', 'Starting CriticalHit plugin', {
-        version: '3.4.0',
+        version: '3.4.1',
         settings: {
           enabled: this.settings.enabled,
           critChance: this.settings.critChance,
