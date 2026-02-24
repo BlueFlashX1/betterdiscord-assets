@@ -257,8 +257,11 @@ module.exports = class RulersAuthority {
     this._dragging = null;
     this._dragPanel = null;
 
-    // Guild change handler
+    // Guild + channel change handlers
     this._guildChangeHandler = null;
+    this._channelChangeHandler = null;
+    this._guildChangeApplyTimer = null;
+    this._channelObserverRetryTimer = null;
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -306,6 +309,8 @@ module.exports = class RulersAuthority {
       clearTimeout(this._channelHideTimer);
       clearTimeout(this._pushAnimTimer);
       clearTimeout(this._pullAnimTimer);
+      clearTimeout(this._guildChangeApplyTimer);
+      clearTimeout(this._channelObserverRetryTimer);
 
       // 2. Abort all listeners registered via AbortController
       if (this._controller) {
@@ -348,10 +353,14 @@ module.exports = class RulersAuthority {
         this._onSkillExpired = null;
       }
 
-      // 9. Guild change listener
+      // 9. Guild + channel change listeners
       if (this._guildChangeHandler && this._SelectedGuildStore) {
         this._SelectedGuildStore.removeChangeListener(this._guildChangeHandler);
         this._guildChangeHandler = null;
+      }
+      if (this._channelChangeHandler && this._SelectedChannelStore) {
+        this._SelectedChannelStore.removeChangeListener(this._channelChangeHandler);
+        this._channelChangeHandler = null;
       }
 
       // 10. Restore hidden channels
@@ -554,13 +563,31 @@ module.exports = class RulersAuthority {
   setupGuildChangeListener() {
     if (!this._SelectedGuildStore) return;
     this._guildChangeHandler = () => {
-      this._panelElCache = null; // Invalidate panel element cache on guild/channel switch
-      setTimeout(() => {
+      this._panelElCache = null; // Invalidate panel element cache on guild switch
+      clearTimeout(this._guildChangeApplyTimer);
+      this._guildChangeApplyTimer = setTimeout(() => {
+        if (!this._controller) return;
         this.applyMicroStateForCurrentGuild();
         this.setupChannelObserver();
       }, 300);
     };
     this._SelectedGuildStore.addChangeListener(this._guildChangeHandler);
+
+    // Also listen for channel changes within the same guild — Discord can
+    // remount the sidebar when navigating to/from forums, stages, threads, etc.
+    // This re-applies micro state and reconnects the observer if orphaned.
+    if (this._SelectedChannelStore) {
+      this._channelChangeHandler = this._throttle(() => {
+        if (!this._controller) return;
+        this._panelElCache = null;
+        this.applyMicroStateForCurrentGuild();
+        // Reconnect observer only if it's missing or its target detached
+        if (!this._channelObserver) {
+          this.setupChannelObserver();
+        }
+      }, 500); // Throttle to 500ms — channel switches can fire rapidly
+      this._SelectedChannelStore.addChangeListener(this._channelChangeHandler);
+    }
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -2032,11 +2059,12 @@ body.ra-pulling [class*="chatContent_"] {
     }, { capture: true, signal: this._controller.signal });
   }
 
-  setupChannelObserver() {
+  setupChannelObserver(retries = 0) {
     if (this._channelObserver) {
       this._channelObserver.disconnect();
       this._channelObserver = null;
     }
+    clearTimeout(this._channelObserverRetryTimer);
 
     // Try Webpack-discovered selector first, then fallback
     const m = this._modules;
@@ -2044,10 +2072,25 @@ body.ra-pulling [class*="chatContent_"] {
       (m?.sidebar?.sidebarList && document.querySelector(`.${m.sidebar.sidebarList} [role="tree"]`)) ||
       document.querySelector('[class*="sidebar_"] [role="tree"]') ||
       document.querySelector('[class*="sidebar_"] [class*="scroller_"]');
-    if (!channelList) return;
+
+    if (!channelList) {
+      // Retry with increasing delay — DOM may not be ready after guild/channel switch
+      if (retries < 4 && this._controller) {
+        const delay = 300 * (retries + 1);
+        this._channelObserverRetryTimer = setTimeout(() => {
+          if (this._controller) this.setupChannelObserver(retries + 1);
+        }, delay);
+      }
+      return;
+    }
 
     const throttledApply = this._throttle(() => {
       if (!this._channelObserver) return;
+      // Self-heal: if Discord replaced the tree element, reconnect observer
+      if (!channelList.isConnected) {
+        this.setupChannelObserver();
+        return;
+      }
       this.applyMicroStateForCurrentGuild();
     }, RA_OBSERVER_THROTTLE_MS);
 
