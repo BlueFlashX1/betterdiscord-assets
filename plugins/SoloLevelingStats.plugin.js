@@ -1786,7 +1786,10 @@ module.exports = class SoloLevelingStats {
   }
 
   _canShowChatUIInCurrentView() {
-    return this._isGuildTextChannel() && this._hasWritableMessageInputInCurrentView();
+    // Show chat UI in all guild text channels unconditionally.
+    // Previously also required a writable message input, which caused the UI to
+    // disappear during transient DOM states or when the input wasn't yet rendered.
+    return this._isGuildTextChannel();
   }
 
   getRankMultiplier() {
