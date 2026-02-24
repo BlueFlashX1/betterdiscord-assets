@@ -1003,18 +1003,12 @@ module.exports = class SkillTree {
     }
 
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
-    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+    const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
+    if (!instance) {
+      // Retry after a delay - SoloLevelingStats might still be loading or disabled
       this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
       return;
     }
-    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-    if (!soloPlugin) {
-      // Retry after a delay - SoloLevelingStats might still be loading
-      this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
-      return;
-    }
-
-    const instance = soloPlugin.instance || soloPlugin;
     if (!instance || typeof instance.on !== 'function') {
       // Retry after a delay - Event system might not be ready yet
       this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
@@ -1823,23 +1817,14 @@ module.exports = class SkillTree {
       ) {
         instance = this._cache.soloPluginInstance;
       } else {
-        if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+        instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
+        if (!instance) {
           this._cache.soloLevelingData = null;
           this._cache.soloLevelingDataTime = now;
           this._cache.soloPluginInstance = null;
           this._cache.soloPluginInstanceTime = 0;
           return null;
         }
-        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-        if (!soloPlugin) {
-          this._cache.soloLevelingData = null;
-          this._cache.soloLevelingDataTime = now;
-          this._cache.soloPluginInstance = null;
-          this._cache.soloPluginInstanceTime = 0;
-          return null;
-        }
-
-        instance = soloPlugin.instance || soloPlugin;
         // Cache the instance
         this._cache.soloPluginInstance = instance;
         this._cache.soloPluginInstanceTime = now;

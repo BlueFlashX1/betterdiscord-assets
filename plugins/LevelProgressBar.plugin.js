@@ -381,16 +381,11 @@ module.exports = class LevelProgressBar {
     this._setTrackedTimeout(() => {
       const progressTrack = this.getCachedElement('.lpb-progress-track');
       if (progressTrack) {
-        if (BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-          const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-          if (soloPlugin) {
-            const instance = soloPlugin.instance || soloPlugin;
-            if (instance && instance.getCurrentLevel) {
-              const levelInfo = instance.getCurrentLevel();
-              const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
-              this.updateMilestoneMarkers(progressTrack, xpPercent);
-            }
-          }
+        const instance = SLUtils?.getPluginInstance?.('SoloLevelingStats');
+        if (instance && instance.getCurrentLevel) {
+          const levelInfo = instance.getCurrentLevel();
+          const xpPercent = (levelInfo.xp / levelInfo.xpRequired) * 100;
+          this.updateMilestoneMarkers(progressTrack, xpPercent);
         }
       }
     }, 100);
@@ -1271,29 +1266,19 @@ module.exports = class LevelProgressBar {
     }
 
     try {
-      // Check if plugin is enabled before accessing
-      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-        this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not enabled');
-        this._cache.soloLevelingData = null;
-        this._cache.soloLevelingDataTime = now;
-        return null;
-      }
-
       // Cache plugin instance to avoid repeated lookups
-      let soloPlugin = null;
       let instance = null;
 
       if (
         this._cache.soloPluginInstance &&
         this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL &&
-        BdApi.Plugins.isEnabled('SoloLevelingStats')
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
       ) {
         instance = this._cache.soloPluginInstance;
       } else {
-        soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-        if (!soloPlugin) {
-          this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not found');
+        instance = SLUtils?.getPluginInstance?.('SoloLevelingStats');
+        if (!instance) {
+          this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not available');
           this._cache.soloLevelingData = null;
           this._cache.soloLevelingDataTime = now;
           this._cache.soloPluginInstance = null;
@@ -1301,7 +1286,6 @@ module.exports = class LevelProgressBar {
           return null;
         }
 
-        instance = soloPlugin.instance || soloPlugin;
         // Cache the instance
         this._cache.soloPluginInstance = instance;
         this._cache.soloPluginInstanceTime = now;
@@ -1510,17 +1494,14 @@ module.exports = class LevelProgressBar {
 
     // Prefer ShadowRecon as source of truth when available (keeps count logic aligned).
     try {
-      if (BdApi.Plugins.isEnabled('ShadowRecon')) {
-        const reconPlugin = BdApi.Plugins.get('ShadowRecon');
-        const reconInstance = reconPlugin?.instance || reconPlugin;
-        if (reconInstance && typeof reconInstance.getGuildIntel === 'function') {
-          const intel = reconInstance.getGuildIntel(guildId);
-          if (intel && typeof intel === 'object') {
-            return {
-              total: this._toNonNegativeInt(intel.memberCount),
-              online: this._toNonNegativeInt(intel.onlineCount),
-            };
-          }
+      const reconInstance = SLUtils?.getPluginInstance?.('ShadowRecon');
+      if (reconInstance && typeof reconInstance.getGuildIntel === 'function') {
+        const intel = reconInstance.getGuildIntel(guildId);
+        if (intel && typeof intel === 'object') {
+          return {
+            total: this._toNonNegativeInt(intel.memberCount),
+            online: this._toNonNegativeInt(intel.onlineCount),
+          };
         }
       }
     } catch (error) {
@@ -1780,19 +1761,11 @@ module.exports = class LevelProgressBar {
       return true;
     }
 
-    // Check if plugin is enabled before accessing
-    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-      this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not enabled');
+    const instance = SLUtils?.getPluginInstance?.('SoloLevelingStats');
+    if (!instance) {
+      this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not available');
       return false;
     }
-
-    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-    if (!soloPlugin) {
-      this.debugLog('SUBSCRIBE_EVENTS', 'SoloLevelingStats plugin not found');
-      return false;
-    }
-
-    const instance = soloPlugin.instance || soloPlugin;
     if (!instance || typeof instance.on !== 'function') {
       this.debugLog('SUBSCRIBE_EVENTS', 'Event system not available', {
         hasInstance: !!instance,

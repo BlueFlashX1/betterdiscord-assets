@@ -561,6 +561,32 @@ function unregisterToolbarButton(id) {
 }
 
 // ---------------------------------------------------------------------------
+// Cross-plugin helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Get a plugin's live instance if it's enabled and loaded.
+ * Combines isEnabled + get + instance extraction in one safe call.
+ *
+ * Replaces the repeated 3-line pattern found across 12+ plugins:
+ *   if (!BdApi.Plugins.isEnabled('Name')) return null;
+ *   const plugin = BdApi.Plugins.get('Name');
+ *   const instance = plugin?.instance;
+ *
+ * @param {string} name - Plugin name (e.g. 'ShadowArmy')
+ * @returns {Object|null} The plugin instance, or null if disabled/unavailable
+ */
+function getPluginInstance(name) {
+  try {
+    if (!BdApi.Plugins.isEnabled(name)) return null;
+    const plugin = BdApi.Plugins.get(name);
+    return plugin?.instance || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
 
@@ -578,5 +604,6 @@ if (typeof window !== 'undefined') {
     showLevelUpBanner,
     registerToolbarButton,
     unregisterToolbarButton,
+    getPluginInstance,
   };
 }

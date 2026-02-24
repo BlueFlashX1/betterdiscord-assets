@@ -458,29 +458,16 @@ module.exports = class SoloLevelingTitleManager {
       this._cache.soloPluginInstanceTime &&
       now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
     ) {
-      // Guardrail: verify cached instance's plugin is still enabled
-      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-        this._cache.soloPluginInstance = null;
-        this._cache.soloPluginInstanceTime = 0;
-        return null;
-      }
       return this._cache.soloPluginInstance;
     }
 
-    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+    const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
+    if (!instance) {
       this._cache.soloPluginInstance = null;
       this._cache.soloPluginInstanceTime = 0;
       return null;
     }
 
-    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-    if (!soloPlugin) {
-      this._cache.soloPluginInstance = null;
-      this._cache.soloPluginInstanceTime = 0;
-      return null;
-    }
-
-    const instance = soloPlugin.instance || soloPlugin;
     this._cache.soloPluginInstance = instance;
     this._cache.soloPluginInstanceTime = now;
     return instance;
@@ -1454,9 +1441,8 @@ module.exports = class SoloLevelingTitleManager {
    */
   equipTitle(titleName) {
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return false;
-      const instance = soloPlugin.instance || soloPlugin;
+      const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
+      if (!instance) return false;
 
       if (this._unwantedTitles.has(titleName)) {
         BdApi.UI.showToast('This title has been removed', { type: 'error', timeout: 2000 });
@@ -1495,9 +1481,8 @@ module.exports = class SoloLevelingTitleManager {
    */
   unequipTitle() {
     try {
-      const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-      if (!soloPlugin) return false;
-      const instance = soloPlugin.instance || soloPlugin;
+      const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
+      if (!instance) return false;
 
       // Use setActiveTitle with null to unequip
       if (instance.setActiveTitle) {
