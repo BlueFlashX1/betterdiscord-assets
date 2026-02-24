@@ -1817,7 +1817,7 @@ module.exports = class ShadowArmy {
     // ============================================================================
     // CRITICAL: Deep copy prevents defaultSettings from being modified by user changes
     // This ensures defaultSettings always contains the original values for merging
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
 
     // Initialize UnifiedSaveManager for crash-resistant IndexedDB storage
     this.saveManager = null;
@@ -2627,12 +2627,9 @@ module.exports = class ShadowArmy {
     // }, 900000); // 15 minutes after start
     // this._retryTimeouts.add(emergencyTimeoutId);
 
-    // Then process every hour
+    // Then process every hour (natural growth removed — combat-based only now)
     this.naturalGrowthInterval = setInterval(() => {
-      this.processNaturalGrowthForAllShadows();
       this.processShadowCompression(); // Compress weak shadows (tiered system)
-      // Automatic essence conversion disabled - use manual conversion button instead
-      // this.processShadowEssenceConversion(); // Regular cleanup: Convert weakest shadows to essence
     }, 60 * 60 * 1000); // 1 hour
 
     // Shadow rank widget for member list display (chatbox button still disabled)
@@ -2643,8 +2640,9 @@ module.exports = class ShadowArmy {
     }, 100);
     this._retryTimeouts.add(widgetStartupTimeoutId);
 
-    // Update widget every 30 seconds (only if data changed)
+    // Update widget every 30 seconds (only if data changed and window visible)
     this.widgetUpdateInterval = setInterval(() => {
+      if (document.hidden) return; // PERF: Skip when window not visible
       if (!this._widgetDirty) return; // PERF: Skip IDB query when nothing changed
       this.scheduleWidgetRefresh({ reason: 'interval', delayMs: 0 });
     }, 30000);
@@ -3278,6 +3276,7 @@ module.exports = class ShadowArmy {
         this._memberListHealthCheck = null;
         return;
       }
+      if (document.hidden) return; // PERF: Skip when window not visible
       // If the observed root is no longer in the DOM, the observer is dead — rebuild it
       if (!observeRoot.isConnected) {
         // debug stripped
@@ -4733,10 +4732,8 @@ module.exports = class ShadowArmy {
     const perception = userStats?.perception || 0;
     const strength = userStats?.strength || 0;
 
-    console.log(
-      `[ShadowArmy] ⚔️ ARISE STREAM: Starting extraction of ${total} corpses ` +
-      `(profile=${tuning.profile}, corpseChunk=${CORPSE_CHUNK_SIZE}, writeChunk=${WRITE_CHUNK_SIZE}, yield=${CHUNK_YIELD_MS}ms)`
-    );
+    this.debugLog('ARISE', `⚔️ ARISE STREAM: Starting extraction of ${total} corpses ` +
+      `(profile=${tuning.profile}, corpseChunk=${CORPSE_CHUNK_SIZE}, writeChunk=${WRITE_CHUNK_SIZE}, yield=${CHUNK_YIELD_MS}ms)`);
 
     // ── STREAMING PIPELINE: Process corpses in bounded chunks ──
     for (let i = 0; i < total; i += CORPSE_CHUNK_SIZE) {
@@ -4868,7 +4865,7 @@ module.exports = class ShadowArmy {
     }
     // chunkShadows from each iteration is now out of scope and GC-eligible
 
-    console.log(`[ShadowArmy] ⚔️ ARISE STREAM COMPLETE: ${totalExtracted}/${totalAttempted} extracted from ${total} corpses`);
+    this.debugLog('ARISE', `⚔️ ARISE STREAM COMPLETE: ${totalExtracted}/${totalAttempted} extracted from ${total} corpses`);
 
     // ── Post-extraction bookkeeping (ONE of each, uses only counters not shadow objects) ──
     if (totalExtracted > 0) {
@@ -11098,7 +11095,7 @@ module.exports = class ShadowArmy {
           } finally {
             refreshInFlightRef.current = false;
           }
-        }, 15000);
+        }, 60000); // 60s (was 15s) — modal is not a real-time dashboard
         return () => clearInterval(intervalId);
       }, []);
 

@@ -792,7 +792,7 @@ module.exports = class SkillTree {
     ];
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings corruption
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
     this.skillTreeModal = null;
     this.skillTreeButton = null;
     this.levelCheckInterval = null; // Deprecated - using events instead
@@ -1267,9 +1267,9 @@ module.exports = class SkillTree {
       // Ensure available SP matches expected (always accurate)
       if (currentAvailable !== expectedAvailable) {
         this.settings.skillPoints = expectedAvailable;
-        this.saveSettings();
-      } else if (currentLevel !== lastLevel) {
-        // Save if level changed
+      }
+      // Single save if SP changed or level changed
+      if (currentAvailable !== expectedAvailable || currentLevel !== lastLevel) {
         this.saveSettings();
       }
     } catch (error) {
@@ -1377,6 +1377,7 @@ module.exports = class SkillTree {
     try {
       BdApi.Data.save('SkillTree', 'settings', this.settings);
       this.saveSkillBonuses(); // Update bonuses in shared storage
+      this.saveActiveBuffs();  // Update active buff effects in shared storage
     } catch (error) {
       console.error('SkillTree: Error saving settings', error);
     }
@@ -1524,6 +1525,7 @@ module.exports = class SkillTree {
 
     this._manaRegenInterval = setInterval(() => {
       if (this._isStopped) return;
+      if (document.hidden) return; // PERF: Skip when window not visible
       this.tickManaRegen();
     }, 30000); // Every 30 seconds
   }
@@ -1637,8 +1639,7 @@ module.exports = class SkillTree {
       this._setActiveSkillTimer(skillId, def.durationMs);
     }
 
-    this.saveSettings();
-    this.saveActiveBuffs();
+    this.saveSettings(); // Also saves activeBuffs internally
 
     // Notification
     const durationText = def.durationMs
@@ -1689,8 +1690,7 @@ module.exports = class SkillTree {
       chargesLeft: 0,
     };
 
-    this.saveSettings();
-    this.saveActiveBuffs();
+    this.saveSettings(); // Also saves activeBuffs internally
 
     const def = this.activeSkillDefs[skillId];
     if (BdApi?.UI?.showToast && def) {
@@ -1718,8 +1718,7 @@ module.exports = class SkillTree {
     if (state.chargesLeft <= 0) {
       this._deactivateSkill(skillId);
     } else {
-      this.saveSettings();
-      this.saveActiveBuffs();
+      this.saveSettings(); // Also saves activeBuffs internally
     }
 
     return true;

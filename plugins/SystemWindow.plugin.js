@@ -13,7 +13,7 @@ module.exports = class SystemWindow {
       enabled: true,
       debugMode: false,
     };
-    this.settings = JSON.parse(JSON.stringify(this._defaultSettings));
+    this.settings = structuredClone(this._defaultSettings);
     this._observer = null;
     this._pollInterval = null;
     this._throttleTimer = null;
@@ -65,19 +65,48 @@ module.exports = class SystemWindow {
     // Immediately find and observe the current scroller
     this._findAndObserve();
 
-    // Poll every 1s for channel switches (scroller element replacement)
+    // ── Event-driven channel detection (replaces 1s poll) ──
+    // Wrap pushState/replaceState to catch SPA navigation
+    this._originalPushState = history.pushState;
+    this._originalReplaceState = history.replaceState;
+
+    const onNav = () => this._checkChannelSwitch();
+    const origPush = this._originalPushState;
+    const origReplace = this._originalReplaceState;
+
+    history.pushState = function (...args) {
+      const result = origPush.apply(this, args);
+      onNav();
+      return result;
+    };
+    history.replaceState = function (...args) {
+      const result = origReplace.apply(this, args);
+      onNav();
+      return result;
+    };
+
+    this._popstateHandler = onNav;
+    window.addEventListener("popstate", this._popstateHandler);
+
+    // Safety-net fallback: 10s poll (catches edge cases the events miss)
     this._pollInterval = setInterval(() => {
-      const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
-      if (!scroller) return;
-      if (scroller !== this._lastScrollerEl) {
-        this._lastScrollerEl = scroller;
-        this._observeScroller(scroller);
-        this._classifyMessages();
-        if (this.settings.debugMode) {
-          console.log("[SystemWindow] Channel switch detected — re-classified");
-        }
+      if (document.hidden) return;
+      this._checkChannelSwitch();
+    }, 10000);
+  }
+
+  /** Check if scroller element changed (channel switch) */
+  _checkChannelSwitch() {
+    const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
+    if (!scroller) return;
+    if (scroller !== this._lastScrollerEl) {
+      this._lastScrollerEl = scroller;
+      this._observeScroller(scroller);
+      this._classifyMessages();
+      if (this.settings.debugMode) {
+        console.log("[SystemWindow] Channel switch detected — re-classified");
       }
-    }, 1000);
+    }
   }
 
   _findAndObserve(retryCount = 0) {
@@ -113,6 +142,19 @@ module.exports = class SystemWindow {
     if (this._findRetryTimer) {
       clearTimeout(this._findRetryTimer);
       this._findRetryTimer = null;
+    }
+    // Restore original navigation methods
+    if (this._originalPushState) {
+      history.pushState = this._originalPushState;
+      this._originalPushState = null;
+    }
+    if (this._originalReplaceState) {
+      history.replaceState = this._originalReplaceState;
+      this._originalReplaceState = null;
+    }
+    if (this._popstateHandler) {
+      window.removeEventListener("popstate", this._popstateHandler);
+      this._popstateHandler = null;
     }
     clearTimeout(this._throttleTimer);
     this._throttleTimer = null;

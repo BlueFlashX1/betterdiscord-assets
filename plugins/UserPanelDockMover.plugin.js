@@ -291,5 +291,12 @@ module.exports = class UserPanelDockMover {
 
     panel.classList.add("sl-userpanel-docked");
     this.isPositioned = true;
+
+    // PERF: Slow down poll after successful setup (900ms → 10s safety net)
+    if (this.pollInterval && !this._pollSlowed) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = setInterval(() => this.trySetup(), 10000);
+      this._pollSlowed = true;
+    }
   }
 };

@@ -982,7 +982,7 @@ module.exports = class Dungeons {
 
     // IMPORTANT: avoid sharing references between defaults and live settings.
     // Hot paths mutate `this.settings`; if it aliases `defaultSettings`, defaults get corrupted.
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
     this.messageObserver = null;
     this.shadowAttackIntervals = new Map();
     this.mobKillNotificationTimers = new Map();
@@ -2520,7 +2520,7 @@ module.exports = class Dungeons {
         this.settings = { ...this.defaultSettings, ...saved };
 
         // Backup settings before migration in case of corruption
-        const preMigrationBackup = JSON.parse(JSON.stringify(this.settings));
+        const preMigrationBackup = structuredClone(this.settings);
 
         try {
           // Version-gated migrations (only run once, not every load)

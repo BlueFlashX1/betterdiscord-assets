@@ -205,7 +205,7 @@ const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get
 
 module.exports = class RulersAuthority {
   constructor() {
-    this.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+    this.settings = structuredClone(DEFAULT_SETTINGS);
     this._amplifiedMode = false;
     this._amplifiedExpiresAt = 0;
 
@@ -2003,18 +2003,18 @@ body.ra-pulling [class*="chatContent_"] {
       if (typeof this.settings.guilds !== "object" || this.settings.guilds === null) this.settings.guilds = {};
       if (!this.settings.defaultWidths) this.settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
       if (!this.settings.panels || typeof this.settings.panels !== "object") {
-        this.settings.panels = JSON.parse(JSON.stringify(DEFAULT_SETTINGS.panels));
+        this.settings.panels = structuredClone(DEFAULT_SETTINGS.panels);
       }
       for (const [panelName, def] of Object.entries(PANEL_DEFS)) {
         if (!this.settings.panels[panelName] || typeof this.settings.panels[panelName] !== "object") {
-          this.settings.panels[panelName] = JSON.parse(JSON.stringify(DEFAULT_SETTINGS.panels[panelName] || {}));
+          this.settings.panels[panelName] = structuredClone(DEFAULT_SETTINGS.panels[panelName] || {});
         }
         if (def.hoverCapable && typeof this.settings.panels[panelName].hoverExpand !== "boolean") {
           this.settings.panels[panelName].hoverExpand = true;
         }
       }
     } catch (_) {
-      this.settings = JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      this.settings = structuredClone(DEFAULT_SETTINGS);
     }
   }
 

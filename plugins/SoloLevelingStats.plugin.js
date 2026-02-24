@@ -2813,7 +2813,7 @@ module.exports = class SoloLevelingStats {
       // Ensure stats object exists
       if (!this.settings.stats || typeof this.settings.stats !== 'object') {
         // CRITICAL: Use deep copy to prevent defaultSettings corruption
-        this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
+        this.settings.stats = structuredClone(this.defaultSettings.stats);
       } else {
         // Ensure all stat properties exist
         const defaultStats = this.defaultSettings.stats;
@@ -2830,7 +2830,7 @@ module.exports = class SoloLevelingStats {
       // Ensure activity object exists
       if (!this.settings.activity || typeof this.settings.activity !== 'object') {
         // CRITICAL: Use deep copy to prevent defaultSettings corruption
-        this.settings.activity = JSON.parse(JSON.stringify(this.defaultSettings.activity));
+        this.settings.activity = structuredClone(this.defaultSettings.activity);
       } else {
         // Ensure all activity properties exist
         const defaultActivity = this.defaultSettings.activity;
@@ -2875,8 +2875,8 @@ module.exports = class SoloLevelingStats {
       this.debugError('MIGRATE_DATA', error);
       // Fallback to defaults if migration fails
       // CRITICAL: Use deep copy to prevent defaultSettings corruption
-      this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
-      this.settings.activity = JSON.parse(JSON.stringify(this.defaultSettings.activity));
+      this.settings.stats = structuredClone(this.defaultSettings.stats);
+      this.settings.activity = structuredClone(this.defaultSettings.activity);
       this.settings.activity.channelsVisited = new Set();
       this.settings.perceptionBuffs = [];
       this.settings.unallocatedStatPoints = 0;
@@ -3879,6 +3879,7 @@ module.exports = class SoloLevelingStats {
 
       // Fallback: Update shadow power periodically (safe call with optional chaining)
       this.shadowPowerInterval = setInterval(() => {
+        if (document.hidden) return; // PERF: Skip when window not visible
         this.updateShadowPower?.();
       }, 5000);
 
@@ -4388,7 +4389,7 @@ module.exports = class SoloLevelingStats {
         return false;
       }
       // Use deep copy to avoid reference issues
-      this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...data }));
+      this.settings = structuredClone({ ...this.defaultSettings, ...data });
       this.recomputeHPManaFromStats();
       await this.saveSettings(true);
       this.debugLog('RESTORE_FILE_BACKUP', 'Restored from file backup and saved to stores', {
@@ -4464,7 +4465,7 @@ module.exports = class SoloLevelingStats {
     }
 
     // Save restored data to BdApi.Data and file for consistency
-    this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...data }));
+    this.settings = structuredClone({ ...this.defaultSettings, ...data });
     this.recomputeHPManaFromStats();
     await this.saveSettings(true);
     this.debugLog('RESTORE_INDEXEDDB', 'Restored from IndexedDB backup', { backupId: targetId });
@@ -4798,7 +4799,7 @@ module.exports = class SoloLevelingStats {
           // CRITICAL FIX: Deep merge to prevent nested object reference sharing
           // Shallow spread (...) only copies top-level, nested objects are still references!
           const merged = { ...this.defaultSettings, ...saved };
-          this.settings = JSON.parse(JSON.stringify(merged));
+          this.settings = structuredClone(merged);
           this.debugLog('LOAD_SETTINGS', 'Settings merged (deep copy)', {
             level: this.settings.level,
             rank: this.settings.rank,
@@ -4823,7 +4824,7 @@ module.exports = class SoloLevelingStats {
           // If stats are missing or empty, merge with defaults instead of overwriting
           if (!this.settings.stats || typeof this.settings.stats !== 'object') {
             // CRITICAL: Use deep copy to prevent defaultSettings corruption
-            this.settings.stats = JSON.parse(JSON.stringify(this.defaultSettings.stats));
+            this.settings.stats = structuredClone(this.defaultSettings.stats);
             this.debugLog('LOAD_SETTINGS', 'Stats object was missing, initialized from defaults');
           } else {
             // Merge stats with defaults to ensure all properties exist
@@ -4931,7 +4932,7 @@ module.exports = class SoloLevelingStats {
             if (legacyData && legacyData.level > 1) {
               this.debugLog('RESCUE', `Found real progress in legacy .data.json (level ${legacyData.level}) — refusing to use defaults`);
               const merged = { ...this.defaultSettings, ...legacyData };
-              this.settings = JSON.parse(JSON.stringify(merged));
+              this.settings = structuredClone(merged);
               if (Array.isArray(this.settings.activity?.channelsVisited)) {
                 this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
               } else {
@@ -4952,7 +4953,7 @@ module.exports = class SoloLevelingStats {
 
         if (!rescuedFromLegacy) {
           // Genuinely new user — no data anywhere
-          this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+          this.settings = structuredClone(this.defaultSettings);
           this.settings.activity.channelsVisited = new Set();
           this._hasRealProgress = false;
           this._startupProgressProbeComplete = false;
@@ -4963,7 +4964,7 @@ module.exports = class SoloLevelingStats {
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error, { phase: 'load_settings' });
       // CRITICAL: Use deep copy to prevent defaultSettings corruption
-      this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+      this.settings = structuredClone(this.defaultSettings);
       // Initialize Set for channelsVisited
       this.settings.activity.channelsVisited = new Set();
 
@@ -4977,7 +4978,7 @@ module.exports = class SoloLevelingStats {
           if (legacyData && legacyData.level > 1) {
             this.debugLog('RESCUE', 'ERROR-PATH RESCUE: Found real progress in legacy .data.json');
             const merged = { ...this.defaultSettings, ...legacyData };
-            this.settings = JSON.parse(JSON.stringify(merged));
+            this.settings = structuredClone(merged);
             if (Array.isArray(this.settings.activity?.channelsVisited)) {
               this.settings.activity.channelsVisited = new Set(this.settings.activity.channelsVisited);
             } else {
@@ -5140,7 +5141,7 @@ module.exports = class SoloLevelingStats {
       };
 
       // Remove any non-serializable properties (functions, undefined, etc.)
-      const cleanSettings = JSON.parse(JSON.stringify(settingsToSave));
+      const cleanSettings = structuredClone(settingsToSave);
       this._hasRealProgress = this._isRealProgressState(cleanSettings) || this._hasRealProgress;
 
       // CRITICAL: Validate critical data before saving to prevent level resets
@@ -5413,8 +5414,10 @@ module.exports = class SoloLevelingStats {
         this.settings.activity.timeActive += timeDiff;
         this.settings.activity.lastActiveTime = now;
 
-        // Debounced save — activity tracking fires every minute
-        this.saveSettings();
+        // Only save if meaningful time accumulated (>6 seconds)
+        if (timeDiff > 0.1) {
+          this.saveSettings();
+        }
 
         // Update daily quest: Active Adventurer
         this.updateQuestProgress('activeAdventurer', timeDiff);
@@ -5698,7 +5701,7 @@ module.exports = class SoloLevelingStats {
       }
 
       const backupKey = `rankBonusBackfillV2_pre_${Date.now()}`;
-      const snapshot = JSON.parse(JSON.stringify(this.settings));
+      const snapshot = structuredClone(this.settings);
       try {
         BdApi.Data.save('SoloLevelingStats', backupKey, snapshot);
       } catch (error) {
@@ -9072,6 +9075,7 @@ module.exports = class SoloLevelingStats {
     if (this.chatUIUpdateInterval) return;
 
     this.chatUIUpdateInterval = setInterval(() => {
+      if (document.hidden) return; // PERF: Skip when window not visible
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
       this.updateChatUI();

@@ -259,7 +259,7 @@ module.exports = class SoloLevelingTitleManager {
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
     this.titleButton = null;
     this.titleModal = null; // legacy ref — kept for backward compat checks
     // toolbarObserver removed — React patcher handles button persistence
@@ -287,7 +287,7 @@ module.exports = class SoloLevelingTitleManager {
     this._toolbarCache = {
       element: null,
       time: 0,
-      ttl: 1500,
+      ttl: 5000, // 5s (was 1.5s) — toolbar rarely moves
     };
 
     // Store original history methods for defensive restoration
@@ -889,7 +889,7 @@ module.exports = class SoloLevelingTitleManager {
     try {
       const saved = BdApi.Data.load('TitleManager', 'settings');
       // FUNCTIONAL: Short-circuit merge with deep copy (no if-else)
-      saved && (this.settings = JSON.parse(JSON.stringify({ ...this.defaultSettings, ...saved })));
+      saved && (this.settings = structuredClone({ ...this.defaultSettings, ...saved }));
     } catch (error) {
       this.debugError('SETTINGS', 'Error loading settings', error);
     }

@@ -2264,6 +2264,7 @@ function buildComponents(pluginRef) {
     useEffect(() => {
       let lastVersion = -1;
       const poll = setInterval(() => {
+        if (document.hidden) return; // PERF: Skip when window not visible
         try {
           const engine = pluginRef.sensesEngine;
           if (!engine) return;
@@ -2440,6 +2441,7 @@ function buildComponents(pluginRef) {
     useEffect(() => {
       pluginRef._widgetForceUpdate = forceUpdate;
       const poll = setInterval(() => {
+        if (document.hidden) return; // PERF: Skip when window not visible
         if (pluginRef._widgetDirty) {
           pluginRef._widgetDirty = false;
           forceUpdate();

@@ -389,7 +389,7 @@ module.exports = class LevelProgressBar {
     // Deep copy to prevent defaultSettings corruption
     this.settings = SLUtils
       ? SLUtils.mergeSettings(this.defaultSettings, {})
-      : JSON.parse(JSON.stringify(this.defaultSettings));
+      : structuredClone(this.defaultSettings);
     this.progressBar = null;
     this.updateInterval = null;
     this.lastLevel = 0;
@@ -668,7 +668,7 @@ module.exports = class LevelProgressBar {
         });
         this.settings = SLUtils
           ? SLUtils.mergeSettings(this.defaultSettings, best.data)
-          : JSON.parse(JSON.stringify({ ...this.defaultSettings, ...best.data }));
+          : structuredClone({ ...this.defaultSettings, ...best.data });
       } else {
         this.debugLog('LOAD_SETTINGS', 'No saved settings found, using defaults');
       }
@@ -679,7 +679,7 @@ module.exports = class LevelProgressBar {
 
   async saveSettings() {
     try {
-      const cleanSettings = JSON.parse(JSON.stringify(this.settings));
+      const cleanSettings = structuredClone(this.settings);
       cleanSettings._metadata = { lastSave: new Date().toISOString(), version: '1.5.0' };
 
       // Tier 1: IndexedDB (crash-resistant, survives BD reinstall)
@@ -1552,6 +1552,8 @@ module.exports = class LevelProgressBar {
     if (this.reconUpdateInterval) return;
     this.reconUpdateInterval = setInterval(() => {
       if (this._isStopped || !this.settings.enabled || !this.progressBar) return;
+      if (document.hidden) return; // PERF: Skip when window not visible
+      if (!this._resolveCurrentGuildId()) return; // PERF: Skip in DMs (no guild context)
       this.updateReconIntelText();
     }, 1200);
     this._setTrackedTimeout(() => this.updateReconIntelText(), 60);
@@ -1793,10 +1795,7 @@ module.exports = class LevelProgressBar {
       this.eventUnsubscribers.push(unsub);
     }
 
-    // Log successful subscription (always log, not just debug)
-    console.log(
-      '[LevelProgressBar]  Event-based updates enabled - progress bar will update in real-time'
-    );
+    this.debugLog('EVENTS', 'Event-based updates enabled - progress bar will update in real-time');
 
     this.debugLog('SUBSCRIBE_EVENTS', 'Successfully subscribed to events', {
       listenersCount: this.eventUnsubscribers.length,

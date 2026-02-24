@@ -633,6 +633,12 @@ module.exports = class ShadowExchange {
   }
 
   stop() {
+    // Flush any pending debounced save
+    if (this._saveDebounceTimer) {
+      clearTimeout(this._saveDebounceTimer);
+      this._saveDebounceTimer = null;
+      this._flushSaveSettings();
+    }
     try {
       if (this._unpatchContextMenu) {
         this._unpatchContextMenu();
@@ -869,7 +875,16 @@ module.exports = class ShadowExchange {
     };
   }
 
+  /** Debounced save — batches rapid actions (sort/navigate/mark) into one write */
   saveSettings() {
+    if (this._saveDebounceTimer) clearTimeout(this._saveDebounceTimer);
+    this._saveDebounceTimer = setTimeout(() => {
+      this._saveDebounceTimer = null;
+      this._flushSaveSettings();
+    }, 500);
+  }
+
+  _flushSaveSettings() {
     this.settings._metadata = {
       lastSave: new Date().toISOString(),
       version: SE_VERSION,

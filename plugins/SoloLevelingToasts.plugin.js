@@ -59,7 +59,7 @@ module.exports = class SoloLevelingToasts {
     };
 
     // Deep copy settings to prevent modification of defaults
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
 
     // Toast management
     this.toastContainer = null;

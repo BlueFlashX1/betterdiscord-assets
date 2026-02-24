@@ -154,7 +154,7 @@ module.exports = class CriticalHit {
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings modification
-    this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+    this.settings = structuredClone(this.defaultSettings);
     this.messageObserver = null;
     this.urlObserver = null;
     // styleObservers — REMOVED in v3.4.0 (per-message CSS replaces observer-based styling)
@@ -172,7 +172,7 @@ module.exports = class CriticalHit {
     // Cache crit history to avoid repeated filter operations
     this._cachedCritHistory = null;
     this._cachedCritHistoryTimestamp = 0;
-    this._cachedCritHistoryMaxAge = 1000; // 1 second cache validity
+    this._cachedCritHistoryMaxAge = 5000; // 5 second cache validity (was 1s)
     this._historyMap = new Map(); // O(1) lookup for message history (messageId -> historyEntry)
     // Throttle restoration checks to prevent spam
     this._restorationCheckThrottle = new Map(); // Map<messageId, lastCheckTime>
@@ -7015,7 +7015,7 @@ ${childSel} {
           }
         };
         tick();
-        const id = setInterval(tick, 2000);
+        const id = setInterval(tick, 5000); // 5s (was 2s) — settings panel data not time-critical
         return () => clearInterval(id);
       }, []);
 
@@ -8279,6 +8279,13 @@ ${childSel} {
       // Restore global navigation hooks + disconnect URL observer
       this.teardownChannelChangeListener();
 
+      // Flush any debounced settings save before stopping
+      if (this._saveDebounceTimer) {
+        clearTimeout(this._saveDebounceTimer);
+        this._saveDebounceTimer = null;
+        this._flushSaveSettings();
+      }
+
       // OPTIMIZED: Force immediate save before stopping (bypass throttle)
       // Clear any pending throttled save
       this._clearTrackedTimeout(this._saveHistoryThrottle);
@@ -8417,7 +8424,7 @@ ${childSel} {
         this.settings = { ...this.defaultSettings, ...saved };
       } else {
         // No saved settings, use defaults
-        this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+        this.settings = structuredClone(this.defaultSettings);
       }
 
       // Force debug off — re-enable manually via settings when needed
@@ -8444,7 +8451,7 @@ ${childSel} {
     } catch (error) {
       this.debugError('LOAD_SETTINGS', error);
       // Fallback to defaults on error
-      this.settings = JSON.parse(JSON.stringify(this.defaultSettings));
+      this.settings = structuredClone(this.defaultSettings);
       // Ensure debugMode is false (default)
       this.settings.debugMode = false;
       this.debug.enabled = false;
@@ -8455,18 +8462,32 @@ ${childSel} {
    * Saves settings to BetterDiscord storage
    * Syncs debug.enabled with settings.debugMode before saving
    */
+  /**
+   * Debounced save — batches rapid settings changes (e.g. slider adjustments)
+   * into a single disk write + CSS rebuild after 300ms of inactivity.
+   */
   saveSettings() {
-    try {
-      // Sync debug.enabled with settings.debugMode before saving
-      this.debug.enabled = this.settings.debugMode === true;
+    // Sync debug state immediately (in-memory, no disk I/O)
+    this.debug.enabled = this.settings.debugMode === true;
 
+    // Debounce actual disk write + CSS rebuild
+    if (this._saveDebounceTimer) clearTimeout(this._saveDebounceTimer);
+    this._saveDebounceTimer = setTimeout(() => {
+      this._saveDebounceTimer = null;
+      this._flushSaveSettings();
+    }, 300);
+  }
+
+  /** Immediate disk write + CSS rebuild — called by debounce timer */
+  _flushSaveSettings() {
+    try {
       BdApi.Data.save('CriticalHit', 'settings', this.settings);
 
-      // Force CSS refresh to apply new settings (colors, gradients, etc.)
+      // Only rebuild CSS if visual settings could have changed
       this._critCSSInjected = false;
       this.injectCritCSS();
 
-      this.debugLog('SAVE_SETTINGS', 'Settings saved', {
+      this.debugLog('SAVE_SETTINGS', 'Settings saved (debounced)', {
         debugMode: this.settings.debugMode,
         debugEnabled: this.debug.enabled,
       });

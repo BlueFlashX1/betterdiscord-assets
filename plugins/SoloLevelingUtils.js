@@ -336,7 +336,7 @@ function createTrackedTimeouts() {
  */
 function mergeSettings(defaults, saved) {
   const merged = { ...defaults, ...saved };
-  return JSON.parse(JSON.stringify(merged));
+  return structuredClone(merged);
 }
 
 // ---------------------------------------------------------------------------

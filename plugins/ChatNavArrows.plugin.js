@@ -275,12 +275,15 @@ module.exports = class ChatNavArrows {
 
     const tick = () => {
       if (this._isStopped) return;
+      if (document.hidden) return; // PERF: Skip when window not visible
       const { wrapper, scroller } = getScrollerPair();
+      // Early exit: skip if same scroller is still connected
+      if (scroller === state.currentScroller && scroller?.isConnected) return;
       bindScroller(wrapper, scroller);
     };
 
     tick();
-    this._domFallback.pollTimer = setInterval(tick, 500);
+    this._domFallback.pollTimer = setInterval(tick, 2000); // 2s (was 500ms)
     console.log('[ChatNavArrows] Using DOM fallback mode');
   }
 
@@ -312,7 +315,7 @@ module.exports = class ChatNavArrows {
     if (this.__ArrowManagerCached) return this.__ArrowManagerCached;
 
     const THRESHOLD = 100; // px from edge to show/hide arrows
-    const POLL_INTERVAL = 500; // ms to check for scroller changes (channel switch)
+    const POLL_INTERVAL = 2000; // ms to check for scroller changes (was 500ms)
 
     this.__ArrowManagerCached = ({ pluginInstance }) => {
       const React = BdApi.React;

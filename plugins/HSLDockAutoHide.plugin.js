@@ -191,7 +191,10 @@ class DockEngine {
     // Initial sync + tick
     this.syncDock();
     this.safeTick();
-    this.syncInterval = setInterval(this.safeTick, 850);
+    this.syncInterval = setInterval(() => {
+      if (document.hidden) return; // PERF: Skip when window not visible
+      this.safeTick();
+    }, 1500); // 1.5s (was 850ms) — dock state rarely changes
 
     this.debug("mount:ready", { syncIntervalMs: 850 }, true);
   }
