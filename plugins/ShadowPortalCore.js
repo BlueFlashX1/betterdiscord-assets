@@ -339,6 +339,17 @@ const methods = {
     const duration = Math.max(420, configuredDuration + 220);
     const totalDuration = duration + 320;
     const transitionStartedAt = performance.now();
+
+    // ── Portal Diagnostic Timeline ──
+    const _diag = { t0: transitionStartedAt, events: [] };
+    const _diagLog = (phase) => {
+      const ms = Math.round(performance.now() - _diag.t0);
+      _diag.events.push({ phase, ms });
+      console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
+    };
+    _diagLog("TRANSITION_START");
+    console.log(`%c[PortalDiag]%c configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+    console.log(`%c[PortalDiag]%c formComplete(34%)=${Math.round(totalDuration*0.34)}ms navDelay(42%)=${Math.max(340,Math.round(totalDuration*0.42))}ms revealStart(65%)=${Math.round(totalDuration*0.65)}ms fadeOut(78%)=${Math.round(totalDuration*0.78)}ms cleanup=${totalDuration+340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
     const prefersReducedMotion = respectReducedMotion && systemPrefersReducedMotion;
@@ -385,11 +396,13 @@ const methods = {
     }
 
     document.body.appendChild(overlay);
+    _diagLog("OVERLAY_APPENDED");
 
     this._transitionStopCanvas = null;
     if (!prefersReducedMotion) {
       const startCanvas = () => {
         if (runId !== this._transitionRunId) return;
+        _diagLog("CANVAS_ANIMATION_START");
         try {
           this._transitionStopCanvas = this.startPortalCanvasAnimation(canvas, totalDuration);
         } catch (error) {
@@ -407,6 +420,7 @@ const methods = {
     const canUseWaapi = typeof overlay.animate === "function";
 
     if (!prefersReducedMotion && canUseWaapi) {
+      _diagLog("WAAPI_OVERLAY_START");
       overlay.classList.add("ss-transition-overlay--waapi");
 
       overlay.animate(
@@ -452,13 +466,19 @@ const methods = {
     const runNavigation = () => {
       if (navigated) return;
       navigated = true;
+      _diagLog("NAVIGATE_FIRE");
       debugLog(this, "Transition", `Navigation callback fired at ${Math.round(performance.now() - transitionStartedAt)}ms`);
       callback();
+      // Log when Discord actually processes the navigation (next microtask)
+      Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
     };
 
+    // Navigate at 42% — formation done at 34%, portal solid ~80ms, then 230ms gap before
+    // reveal (65%) gives Discord time to settle after channel switch so rAF isn't starved.
     const navDelay = prefersReducedMotion
       ? 24
-      : Math.max(42, Math.min(78, Math.round(totalDuration * 0.06)));
+      : Math.max(340, Math.round(totalDuration * 0.42));
+    _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms)`);
 
     this._transitionNavTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -467,8 +487,10 @@ const methods = {
     }, navDelay);
 
     const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340;
+    _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
+      _diagLog("CLEANUP_FIRE");
       this._transitionCleanupTimeout = null;
       this._cancelPendingTransition();
     }, cleanupDelay);
@@ -598,6 +620,10 @@ const methods = {
     window.addEventListener("resize", onResize);
 
     const start = performance.now();
+    // ── Canvas phase diagnostics (log once per phase) ──
+    const _canvasDiag = { formDone: false, revealStarted: false, fadeStarted: false, done: false };
+    const _cdLog = (phase) => console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
+
     const draw = (now) => {
       if (stopped) return;
 
@@ -610,9 +636,15 @@ const methods = {
       const swirl = elapsed * 0.00125;
       const formT = Math.min(1, t / 0.34);
       const formEase = 1 - Math.pow(1 - formT, 3);
-      const portalForm = 0.24 + 0.76 * formEase;
-      const revealStart = 0.2;
+      const portalForm = 0.45 + 0.55 * formEase;
+      const revealStart = 0.65;
       const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
+
+      // Phase crossing diagnostics
+      if (!_canvasDiag.formDone && formT >= 1) { _canvasDiag.formDone = true; _cdLog("FORMATION_COMPLETE (formT=1)"); }
+      if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)})`); }
+      if (!_canvasDiag.fadeStarted && t >= 0.78) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.78)"); }
+      if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
       const revealEase = revealProgress < 0.5
         ? 2 * revealProgress * revealProgress
         : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
@@ -622,7 +654,7 @@ const methods = {
 
       ctx.clearRect(0, 0, width, height);
 
-      const ambientDim = (0.026 + 0.048 * formEase) * fadeOut;
+      const ambientDim = (0.04 + 0.07 * formEase) * fadeOut;
       ctx.fillStyle = `rgba(2, 2, 6, ${ambientDim.toFixed(4)})`;
       ctx.fillRect(0, 0, width, height);
 

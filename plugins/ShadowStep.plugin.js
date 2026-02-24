@@ -605,15 +605,29 @@ module.exports = class ShadowStep {
     }
 
     // Play transition then navigate
+    const _ssT0 = performance.now();
+    const _ssDiag = (phase) => console.log(`%c[PortalDiag:ShadowStep]%c ${phase} %c@ ${Math.round(performance.now() - _ssT0)}ms`, "color:#f59e0b;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
+    _ssDiag(`TELEPORT_START → ${anchor.name} (${path})`);
+
     this.playTransition(() => {
+      _ssDiag("NAV_CALLBACK_ENTERED (playTransition fired callback)");
       const fadeToken = this._beginChannelViewFadeOut();
+      _ssDiag("CHANNEL_FADE_OUT_STARTED");
       this._navigate(path, {
         anchorId: anchor.id,
         anchorName: anchor.name,
         channelId: anchor.channelId,
       }, {
-        onConfirmed: () => this._finishChannelViewFade(fadeToken, true),
-        onFailed: () => this._finishChannelViewFade(fadeToken, false),
+        onConfirmed: () => {
+          _ssDiag("NAVIGATE_CONFIRMED (Discord switched)");
+          this._finishChannelViewFade(fadeToken, true);
+          _ssDiag("CHANNEL_FADE_IN_STARTED (success)");
+        },
+        onFailed: () => {
+          _ssDiag("NAVIGATE_FAILED");
+          this._finishChannelViewFade(fadeToken, false);
+          _ssDiag("CHANNEL_FADE_IN_STARTED (failure)");
+        },
       });
     });
 
