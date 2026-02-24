@@ -73,7 +73,7 @@ class DeploymentManager {
     this._deployments = [];
     this._monitoredUserIds = new Set();
     this._deployedShadowIds = new Set();
-    this._availableCache = null; // { shadows: [], timestamp: number } — 5s TTL
+    this._availableCache = _ttl(5000); // 5s TTL — avoids redundant IDB reads
   }
 
   load() {
@@ -148,7 +148,7 @@ class DeploymentManager {
 
     this._deployments.push(record);
     this._rebuildSets();
-    this._availableCache = null; // Invalidate — deployment state changed
+    this._availableCache.invalidate(); // deployment state changed
     this._save();
     this._debugLog("DeploymentManager", "Deployed shadow", record);
     return true;
@@ -160,7 +160,7 @@ class DeploymentManager {
 
     this._deployments.splice(idx, 1);
     this._rebuildSets();
-    this._availableCache = null; // Invalidate — deployment state changed
+    this._availableCache.invalidate(); // deployment state changed
     this._save();
     this._debugLog("DeploymentManager", "Recalled shadow", shadowId);
     return true;
@@ -196,10 +196,8 @@ class DeploymentManager {
 
   async getAvailableShadows() {
     // 5s TTL cache — avoids redundant IDB reads + 3 cross-plugin lookups
-    const now = Date.now();
-    if (this._availableCache && now - this._availableCache.timestamp < 5000) {
-      return this._availableCache.shadows;
-    }
+    const cached = this._availableCache.get();
+    if (cached) return cached;
     try {
       if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
         this._debugError("DeploymentManager", "ShadowArmy plugin not enabled");
@@ -286,7 +284,7 @@ class DeploymentManager {
         reservePool: reserveIds.size,
       });
 
-      this._availableCache = { shadows: available, timestamp: Date.now() };
+      this._availableCache.set(available);
       return available;
     } catch (err) {
       this._debugError("DeploymentManager", "Failed to get available shadows", err);
@@ -2549,6 +2547,7 @@ let _ReactUtils;
 try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 let _PluginUtils;
 try { _PluginUtils = require('./BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
+const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 

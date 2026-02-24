@@ -341,53 +341,6 @@ function getOrCreateOverlay(id, className) {
   return overlay;
 }
 
-/**
- * Show a level-up banner inside an overlay element.
- *
- * @param {HTMLElement} overlay
- * @param {Object} opts
- * @param {string} opts.title
- * @param {string} opts.subtitle
- * @param {string} opts.bannerClass  - CSS class for the banner div
- * @param {string} opts.titleClass   - CSS class for the title div
- * @param {string} opts.subtitleClass - CSS class for the subtitle div
- * @param {number} opts.durationMs   - how long before auto-removal (default 1300)
- * @param {Function} opts.onTimeout  - optional callback receiving the timeout id for tracking
- */
-function showLevelUpBanner(overlay, opts = {}) {
-  if (!overlay) return;
-
-  const {
-    title = 'LEVEL UP',
-    subtitle = '',
-    bannerClass = 'sls-levelup-banner',
-    titleClass = 'sls-levelup-title',
-    subtitleClass = 'sls-levelup-subtitle',
-    durationMs = 1300,
-    onTimeout,
-  } = opts;
-
-  const banner = document.createElement('div');
-  banner.className = bannerClass;
-
-  const titleEl = document.createElement('div');
-  titleEl.className = titleClass;
-  titleEl.textContent = title;
-  banner.appendChild(titleEl);
-
-  if (subtitle) {
-    const subtitleEl = document.createElement('div');
-    subtitleEl.className = subtitleClass;
-    subtitleEl.textContent = subtitle;
-    banner.appendChild(subtitleEl);
-  }
-
-  overlay.appendChild(banner);
-
-  const tid = setTimeout(() => banner.remove(), durationMs);
-  if (onTimeout) onTimeout(tid);
-}
-
 // ---------------------------------------------------------------------------
 // Toolbar Injection — React Patcher
 // ---------------------------------------------------------------------------
@@ -613,7 +566,6 @@ if (typeof window !== 'undefined') {
     createTrackedTimeouts,
     mergeSettings,
     getOrCreateOverlay,
-    showLevelUpBanner,
     registerToolbarButton,
     unregisterToolbarButton,
     getPluginInstance,

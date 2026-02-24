@@ -194,6 +194,7 @@ const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
   matchesHotkey: () => false,
 };
+const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 
 // ═══════════════════════════════════════════════════════════════════════════
 // §5  Core Class
@@ -215,8 +216,7 @@ module.exports = class RulersAuthority {
     this._SelectedChannelStore = null;
 
     // Caches
-    this._statsCache = null;
-    this._statsCacheTime = 0;
+    this._statsCache = _ttl(RA_STATS_CACHE_TTL);
 
     // Resolved selectors (built from Webpack modules + fallbacks)
     this._resolvedSelectors = {};
@@ -363,7 +363,7 @@ module.exports = class RulersAuthority {
       this._GuildStore = null;
       this._SelectedGuildStore = null;
       this._SelectedChannelStore = null;
-      this._statsCache = null;
+      this._statsCache.invalidate();
       this._modules = null;
       this._resolvedSelectors = {};
       this._dragging = null;
@@ -489,10 +489,9 @@ module.exports = class RulersAuthority {
   // ═══════════════════════════════════════════════════════════════════════
 
   getSoloLevelingData() {
-    const now = Date.now();
-    if (this._statsCache && now - this._statsCacheTime < RA_STATS_CACHE_TTL &&
-        BdApi.Plugins.isEnabled("SoloLevelingStats")) {
-      return this._statsCache;
+    const cached = this._statsCache.get();
+    if (cached && BdApi.Plugins.isEnabled("SoloLevelingStats")) {
+      return cached;
     }
     if (!BdApi.Plugins.isEnabled("SoloLevelingStats")) return null;
 
@@ -506,8 +505,7 @@ module.exports = class RulersAuthority {
       stats: { ...instance.settings.stats },
     };
 
-    this._statsCache = data;
-    this._statsCacheTime = now;
+    this._statsCache.set(data);
     return data;
   }
 

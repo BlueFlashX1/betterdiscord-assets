@@ -129,8 +129,6 @@ function getCreateRoot() {
 }
 
 module.exports = {
-  findAppMountNode,
-  findMainContentModule,
   patchReactMainContent,
   injectReactComponent,
   getCreateRoot,

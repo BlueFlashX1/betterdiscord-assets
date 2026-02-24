@@ -35,6 +35,7 @@ const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
   matchesHotkey: () => false,
 };
+const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 
 // ─── React Components ───────────────────────────────────────────────────────
 
@@ -303,8 +304,7 @@ module.exports = class ShadowStep {
     this._panelForceUpdate = null;
     this._panelOpen = false;
     this._components = null;
-    this._statsCache = null;
-    this._statsCacheTime = 0;
+    this._statsCache = _ttl(STATS_CACHE_TTL);
   }
 
   // ── Lifecycle ───────────────────────────────────────────────
@@ -356,7 +356,7 @@ module.exports = class ShadowStep {
       this._ChannelStore = null;
       this._GuildStore = null;
       this._SelectedGuildStore = null;
-      this._statsCache = null;
+      this._statsCache.invalidate();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
@@ -537,10 +537,9 @@ module.exports = class ShadowStep {
   // ── Stats Integration ───────────────────────────────────────
 
   _getAgiStat() {
-    const now = Date.now();
-    if (this._statsCache && (now - this._statsCacheTime) < STATS_CACHE_TTL &&
-        BdApi.Plugins.isEnabled('SoloLevelingStats')) {
-      return this._statsCache.agility || 0;
+    const cached = this._statsCache.get();
+    if (cached && BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+      return cached.agility || 0;
     }
     try {
       const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
@@ -549,8 +548,7 @@ module.exports = class ShadowStep {
         soloPlugin.instance.getTotalEffectiveStats?.() ||
         soloPlugin.instance.settings?.stats ||
         {};
-      this._statsCache = stats;
-      this._statsCacheTime = now;
+      this._statsCache.set(stats);
       return stats.agility || 0;
     } catch (_) {
       return 0;
