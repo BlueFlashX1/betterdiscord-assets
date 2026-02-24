@@ -1643,9 +1643,6 @@ module.exports = class RulersAuthority {
         --ra-search-width: ${s.panels.search.width || s.defaultWidths.search}px;
         --ra-push-color: rgba(138, 43, 226, 0.25);
         --ra-members-bg: rgba(10, 14, 24, 0.44);
-        --ra-members-edge-shadow: rgba(24, 18, 42, 0.48);
-        --ra-members-edge-shadow-strong: rgba(52, 34, 92, 0.72);
-        --ra-members-edge-soft: rgba(84, 56, 142, 0.42);
         --ra-hover-fudge: ${s.hoverFudgePx}px;
       }
     `.replace(/\s+/g, " "));
@@ -1774,146 +1771,16 @@ ${membersSel} [class*="scrollerBase_"]::-webkit-scrollbar {
   display: none !important;
 }
 
+/* ── Members panel hard border edge ───────────────────────────── */
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel},
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel} > div[class*="members_"],
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel} > div[class*="container_"] {
-  backdrop-filter: blur(6px) !important;
-  -webkit-backdrop-filter: blur(6px) !important;
-  border-left: 0 !important;
+  border-left: 1px solid rgba(138, 43, 226, 0.55) !important;
   outline: none !important;
 }
 
-/* Soften the hard seam between chat and members column */
-body.ra-members-pushed.ra-members-hover-reveal ${membersSel}::before {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  left: -28px !important;
-  width: 36px !important;
-  pointer-events: none !important;
-  background: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 0) 0%,
-    rgba(44, 28, 78, 0.45) 40%,
-    var(--ra-members-edge-shadow) 70%,
-    var(--ra-members-edge-shadow-strong) 100%
-  ) !important;
-  filter: blur(8px) !important;
-  opacity: 0.78 !important;
-  z-index: 8 !important;
-}
-
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel} {
-  box-shadow:
-    inset 20px 0 34px -18px var(--ra-members-edge-shadow-strong),
-    -12px 0 30px var(--ra-members-edge-shadow),
-    -4px 0 20px var(--ra-push-color) !important;
-}
-
-/* Hard-edge killer: fade only inner scrollers so outer glow remains visible */
-body.ra-members-pushed.ra-members-hover-reveal aside[class^="membersWrap_"] > div[class^="members_"],
-body.ra-members-pushed.ra-members-hover-reveal aside[class^="membersWrap_"] > div[class^="members_"] > div[aria-label="Members"][role="list"] {
-  -webkit-mask-image: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 0.08) 0px,
-    rgba(0, 0, 0, 0.66) 11px,
-    rgba(0, 0, 0, 1) 26px
-  ) !important;
-  mask-image: linear-gradient(
-    to right,
-    rgba(0, 0, 0, 0.08) 0px,
-    rgba(0, 0, 0, 0.66) 11px,
-    rgba(0, 0, 0, 1) 26px
-  ) !important;
-  -webkit-mask-mode: alpha !important;
-  mask-mode: alpha !important;
-  -webkit-mask-repeat: no-repeat !important;
-  mask-repeat: no-repeat !important;
-  -webkit-mask-size: 100% 100% !important;
-  mask-size: 100% 100% !important;
-}
-
-/* Direct edge smoothing for live member scroller/content nodes */
-body.ra-members-pushed.ra-members-hover-reveal aside[class^="membersWrap_"] > div[class^="members_"],
-body.ra-members-pushed.ra-members-hover-reveal aside[class^="membersWrap_"] > div[class^="members_"] > div[aria-label="Members"][role="list"] {
-  position: relative !important;
-  background-image: linear-gradient(
-    to right,
-    rgba(64, 42, 110, 0.34) 0px,
-    rgba(46, 31, 82, 0.20) 18px,
-    rgba(10, 14, 24, 0) 54px
-  ) !important;
-  background-repeat: no-repeat !important;
-  background-size: 100% 100% !important;
-}
-
-body.ra-members-pushed.ra-members-hover-reveal aside[class^="membersWrap_"] > div[class^="members_"] > div[aria-label="Members"][role="list"]::before {
-  content: "" !important;
-  position: absolute !important;
-  left: 0 !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  width: 34px !important;
-  pointer-events: none !important;
-  background: linear-gradient(
-    to right,
-    var(--ra-members-edge-soft) 0%,
-    rgba(58, 38, 102, 0.28) 35%,
-    rgba(20, 14, 36, 0) 100%
-  ) !important;
-  filter: blur(8px) !important;
-  opacity: 0.8 !important;
-  z-index: 9 !important;
-}
-
-body.ra-members-pushed.ra-members-hover-reveal ${chatSel} {
-  position: relative !important;
-  overflow: visible !important;
-}
-
-body.ra-members-pushed.ra-members-hover-reveal ${chatSel}::after {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  right: -2px !important;
-  width: 28px !important;
-  pointer-events: none !important;
-  background: linear-gradient(
-    to right,
-    rgba(6, 8, 14, 0) 0%,
-    rgba(20, 14, 36, 0.56) 52%,
-    rgba(44, 28, 78, 0.78) 100%
-  ) !important;
-  filter: blur(7px) !important;
-  opacity: 0.78 !important;
-  z-index: 7 !important;
-}
-
-/* Fallback chat seam blend for builds where chatSel doesn't resolve to chat_* */
-body.ra-members-pushed.ra-members-hover-reveal div[class^="chat_"] {
-  position: relative !important;
-  overflow: visible !important;
-}
-
-body.ra-members-pushed.ra-members-hover-reveal div[class^="chat_"]::after {
-  content: "" !important;
-  position: absolute !important;
-  top: 0 !important;
-  bottom: 0 !important;
-  right: -2px !important;
-  width: 30px !important;
-  pointer-events: none !important;
-  background: linear-gradient(
-    to right,
-    rgba(6, 8, 14, 0) 0%,
-    rgba(24, 16, 42, 0.58) 50%,
-    rgba(58, 38, 102, 0.78) 100%
-  ) !important;
-  filter: blur(8px) !important;
-  opacity: 0.8 !important;
-  z-index: 7 !important;
+  box-shadow: -3px 0 12px rgba(138, 43, 226, 0.18) !important;
 }
 
 /* ── Hover-to-Expand (float overlay) ────────────────────────────── */
@@ -1936,10 +1803,8 @@ ${membersHover.join(",\n")} {
   overflow-y: auto !important;
   overflow-x: visible !important;
   position: relative !important;
-  box-shadow:
-    inset 20px 0 34px -18px var(--ra-members-edge-shadow-strong),
-    -14px 0 34px var(--ra-members-edge-shadow),
-    -4px 0 20px var(--ra-push-color) !important;
+  border-left: 1px solid rgba(138, 43, 226, 0.55) !important;
+  box-shadow: -3px 0 12px rgba(138, 43, 226, 0.18) !important;
   transition: width var(--ra-transition-speed) ease,
               min-width var(--ra-transition-speed) ease,
               max-width var(--ra-transition-speed) ease;
