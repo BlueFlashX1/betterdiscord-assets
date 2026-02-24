@@ -35,6 +35,10 @@ module.exports = class Stealth {
     this._statusSetters = [];
     this._processMonitorPatched = false;
 
+    this._Dispatcher = null;
+    this._dispatcherPollTimer = null;
+    this._fluxHandlers = new Map();
+
     this._stores = {
       user: null,
       presence: null,
@@ -64,6 +68,7 @@ module.exports = class Stealth {
     this.loadSettings();
     this.injectCSS();
     this._initStores();
+    this._initDispatcher();
     this._processMonitorPatched = false;
     this._patchMetrics = {
       typing: 0,
@@ -81,6 +86,11 @@ module.exports = class Stealth {
 
   stop() {
     this._stopStatusInterval();
+    this._unsubscribeFluxEvents();
+    if (this._dispatcherPollTimer) {
+      clearInterval(this._dispatcherPollTimer);
+      this._dispatcherPollTimer = null;
+    }
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
 
@@ -121,6 +131,103 @@ module.exports = class Stealth {
     } catch (error) {
       this._logWarning("WEBPACK", "Failed to initialize User/Presence stores", error, "stores-init");
     }
+  }
+
+  _initDispatcher() {
+    const { Webpack } = BdApi;
+
+    // Proven acquisition pattern — NO optional chaining in getModule filter
+    this._Dispatcher =
+      Webpack.Stores?.UserStore?._dispatcher ||
+      Webpack.getModule(m => m.dispatch && m.subscribe) ||
+      Webpack.getByKeys("actionLogger") ||
+      null;
+
+    if (this._Dispatcher) {
+      this._subscribeFluxEvents();
+      return;
+    }
+
+    // Poll for late-loading Dispatcher (same pattern as ShadowSenses)
+    let attempt = 0;
+    this._dispatcherPollTimer = setInterval(() => {
+      attempt++;
+      this._Dispatcher =
+        BdApi.Webpack.Stores?.UserStore?._dispatcher ||
+        BdApi.Webpack.getModule(m => m.dispatch && m.subscribe) ||
+        null;
+
+      if (this._Dispatcher) {
+        clearInterval(this._dispatcherPollTimer);
+        this._dispatcherPollTimer = null;
+        this._subscribeFluxEvents();
+        return;
+      }
+      if (attempt >= 30) {
+        clearInterval(this._dispatcherPollTimer);
+        this._dispatcherPollTimer = null;
+        this._logWarning("FLUX", "Dispatcher not found after 15s polling", null, "flux-poll-timeout");
+      }
+    }, 500);
+  }
+
+  _subscribeFluxEvents() {
+    if (!this._Dispatcher) return;
+
+    const events = {
+      PRESENCE_UPDATES: () => {
+        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        this._ensureInvisibleStatus();
+      },
+
+      IDLE: () => {
+        if (!this.settings.enabled || !this.settings.suppressIdle) return;
+        this._recordSuppressed("idle");
+        this._ensureInvisibleStatus();
+      },
+
+      AFK: () => {
+        if (!this.settings.enabled || !this.settings.suppressIdle) return;
+        this._recordSuppressed("idle");
+        this._ensureInvisibleStatus();
+      },
+
+      TRACK: () => {
+        if (!this.settings.enabled || !this.settings.suppressTelemetry) return;
+        this._recordSuppressed("telemetry");
+      },
+
+      CONNECTION_OPEN: () => {
+        if (this.settings.enabled && this.settings.suppressTelemetry) {
+          this._disableSentryAndTelemetry();
+        }
+        if (this.settings.enabled && this.settings.invisibleStatus) {
+          setTimeout(() => this._ensureInvisibleStatus(), 1000);
+        }
+      },
+    };
+
+    for (const [eventName, handler] of Object.entries(events)) {
+      try {
+        this._Dispatcher.subscribe(eventName, handler);
+        this._fluxHandlers.set(eventName, handler);
+      } catch (err) {
+        this._logWarning("FLUX", `Failed to subscribe to ${eventName}`, err, `flux-sub-${eventName}`);
+      }
+    }
+  }
+
+  _unsubscribeFluxEvents() {
+    if (!this._Dispatcher) return;
+
+    for (const [eventName, handler] of this._fluxHandlers.entries()) {
+      try {
+        this._Dispatcher.unsubscribe(eventName, handler);
+      } catch (err) {
+        this._logWarning("FLUX", `Failed to unsubscribe from ${eventName}`, err, `flux-unsub-${eventName}`);
+      }
+    }
+    this._fluxHandlers.clear();
   }
 
   _installPatches() {
