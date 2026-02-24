@@ -6620,7 +6620,7 @@ module.exports = class Dungeons {
       return; // Already running
     }
 
-    console.log('%c[Dungeons]%c ⏰ Regeneration interval started (auto-pauses when full)', 'color:#a855f7;font-weight:bold', 'color:inherit');
+    this.debugLog('⏰ Regeneration interval started (auto-pauses when full)');
     // Start HP/Mana regeneration interval
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
@@ -6635,7 +6635,8 @@ module.exports = class Dungeons {
     if (this.regenInterval) {
       clearInterval(this.regenInterval);
       this.regenInterval = null;
-      // Stopped (logging removed)
+      this._regenDebugShown = false;
+      this.debugLog('⏸️ Regeneration paused (HP & Mana full)');
     }
   }
 
