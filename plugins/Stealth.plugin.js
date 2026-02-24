@@ -979,7 +979,7 @@ module.exports = class Stealth {
       React.createElement(
         "div",
         { style: { color: "rgba(226, 232, 240, 0.82)", fontSize: "12px", lineHeight: 1.35 } },
-        "Conceal your presence with Jinwoo-style stealth: hide typing, force Invisible, suppress activity broadcasts, erase telemetry footprints, and optionally whisper via @silent."
+        "Total concealment: hide typing, force Invisible, block read receipts, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
       )
     );
 
@@ -1026,7 +1026,7 @@ module.exports = class Stealth {
           lineHeight: 1.4,
         },
       },
-      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}`
+      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}, read-receipts ${self._patchMetrics.readReceipts}`
     );
 
     const Panel = () => React.createElement(
@@ -1072,6 +1072,16 @@ module.exports = class Stealth {
         settingKey: "disableProcessMonitor",
         title: "Sever Process Monitor",
         description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring.",
+      }),
+      React.createElement(SettingRow, {
+        settingKey: "suppressReadReceipts",
+        title: "Block Read Receipts",
+        description: "Prevents Discord from knowing which messages you have read.",
+      }),
+      React.createElement(SettingRow, {
+        settingKey: "suppressIdle",
+        title: "Suppress Idle Detection",
+        description: "Blocks idle/AFK state transitions that can leak presence information.",
       }),
       React.createElement(SettingRow, {
         settingKey: "autoSilentMessages",
