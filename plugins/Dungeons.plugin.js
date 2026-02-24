@@ -1940,14 +1940,8 @@ module.exports = class Dungeons {
     // Start HP/Mana regeneration loop (every 1 second)
     this.startRegeneration();
 
-    // Periodic validation (every 10 seconds) to catch edge cases
-    // PERFORMANCE: Skip validation when window is hidden
-    this._statusValidationInterval = setInterval(() => {
-      if (this.isWindowVisible()) {
-        this.validateActiveDungeonStatus();
-      }
-    }, 10000);
-    this._intervals.add(this._statusValidationInterval);
+    // PERF: 10s status validation interval removed — validation is event-driven
+    // (called in selectDungeon, deployStarterAllocation, channel watcher, etc.)
 
     // GARBAGE COLLECTION: Periodic cleanup every 5 minutes
     this.gcInterval = setInterval(() => {
@@ -1955,11 +1949,28 @@ module.exports = class Dungeons {
     }, 300000); // 5 minutes
     this._intervals.add(this.gcInterval);
 
-    // Invalidate plugin cache when plugins are toggled (prevents stale references)
+    // PERF: Event-driven plugin re-validation (replaces old 30s polling interval)
     this._pluginToggleHandler = () => {
       if (this._cache) {
         this._cache.pluginInstances = {};
         this._cache.pluginInstancesTime = {};
+      }
+      // Re-acquire plugin references on toggle (was previously polled every 30s)
+      if (!this.soloLevelingStats?.settings) {
+        this.soloLevelingStats = this.validatePluginReference('SoloLevelingStats', 'settings');
+      }
+      if (!BdApi.Plugins.isEnabled('ShadowArmy')) {
+        this.shadowArmy = null;
+        return;
+      }
+      const saPlugin = BdApi.Plugins.get('ShadowArmy');
+      const saInstance = saPlugin?.instance;
+      if (!this.shadowArmy || (saInstance && this.shadowArmy !== saInstance)) {
+        this.shadowArmy = this.validatePluginReference('ShadowArmy', 'storageManager');
+        if (this.shadowArmy) {
+          this.invalidateShadowCountCache();
+          this.invalidateShadowsCache();
+        }
       }
     };
     if (typeof BdApi?.Events?.on === 'function') {
@@ -3034,31 +3045,7 @@ module.exports = class Dungeons {
         this.debugLogOnce('PLUGIN_REF_MISSING:ShadowArmy', 'ShadowArmy plugin not available');
       }
 
-      // Set up periodic plugin validation (every 30 seconds)
-      if (this._pluginValidationInterval) {
-        clearInterval(this._pluginValidationInterval);
-      }
-      this._pluginValidationInterval = setInterval(() => {
-        // Re-validate if missing OR if plugin was reloaded (stale reference detection)
-        if (!this.soloLevelingStats?.settings) {
-          this.soloLevelingStats = this.validatePluginReference('SoloLevelingStats', 'settings');
-        }
-        // ShadowArmy: re-validate if missing or if the plugin was disabled/re-enabled
-        if (!BdApi.Plugins.isEnabled('ShadowArmy')) {
-          this.shadowArmy = null;
-          return;
-        }
-        const saPlugin = BdApi.Plugins.get('ShadowArmy');
-        const saInstance = saPlugin?.instance;
-        if (!this.shadowArmy || (saInstance && this.shadowArmy !== saInstance)) {
-          this.shadowArmy = this.validatePluginReference('ShadowArmy', 'storageManager');
-          if (this.shadowArmy) {
-            this.invalidateShadowCountCache();
-            this.invalidateShadowsCache();
-          }
-        }
-      }, 30000);
-      this._intervals.add(this._pluginValidationInterval);
+      // PERF: 30s plugin validation interval removed — now event-driven via _pluginToggleHandler
 
       // Load SoloLevelingToasts plugin (with fallback support)
       const toastsPlugin = BdApi.Plugins.isEnabled('SoloLevelingToasts')
@@ -3457,16 +3444,18 @@ module.exports = class Dungeons {
       // Track observer for cleanup
       this._observers.add(this.messageObserver);
       this._messageContainerRef = messageContainer;
-      this.messageObserver.observe(messageContainer, { childList: true, subtree: true });
+      // PERF: attributes/characterData false — we only care about added/removed nodes
+      this.messageObserver.observe(messageContainer, { childList: true, subtree: true, attributes: false, characterData: false });
 
       // Periodic check: if React reconciliation replaces the container, reattach observer
       if (this._messageContainerReattachId) {
         clearInterval(this._messageContainerReattachId);
         this._intervals?.delete?.(this._messageContainerReattachId);
       }
+      // PERF: Use isConnected (O(1) native) instead of contains() (DOM traversal)
       this._messageContainerReattachId = setInterval(() => {
         if (!this.messageObserver || !this._messageContainerRef) return;
-        if (!document.body.contains(this._messageContainerRef)) {
+        if (!this._messageContainerRef.isConnected) {
           this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
           this.stopMessageObserver();
           this.startMessageObserver();
@@ -4162,6 +4151,7 @@ module.exports = class Dungeons {
     };
 
     this.activeDungeons.set(channelKey, dungeon);
+    this.startHPBarRestoration(); // PERF: restart if auto-stopped (idempotent)
 
     // Channel remains locked while dungeon is active (one occupied dungeon per channel).
 
@@ -12182,20 +12172,18 @@ module.exports = class Dungeons {
       const currentBossMaxHP = dungeon.boss?.maxHp || 0;
 
       // Boss bar diffing: skip rebuild if payload unchanged; still update fill/text
-      const payloadKey = JSON.stringify({
-        hp: Math.floor(currentBossHP),
-        maxHp: Math.floor(currentBossMaxHP),
-        hpPercent: Math.floor(hpPercent * 10) / 10,
-        aliveMobs,
-        totalMobs,
-        participating: dungeon.userParticipating,
-        deployed: dungeon.shadowsDeployed,
-        type: dungeon.type,
-        rank: dungeon.rank,
-        name: dungeon.name,
-      });
+      // PERF: Field comparison instead of JSON.stringify (avoids object+string creation per tick)
+      const hpFloor = Math.floor(currentBossHP);
+      const maxHpFloor = Math.floor(currentBossMaxHP);
+      const hpPctRound = Math.floor(hpPercent * 10) / 10;
+      const prev = this._bossBarCache.get(channelKey);
+      const unchanged = prev &&
+        prev.hp === hpFloor && prev.maxHp === maxHpFloor && prev.hpPct === hpPctRound &&
+        prev.alive === aliveMobs && prev.total === totalMobs &&
+        prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
+        prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name;
 
-      if (hpBar && this._bossBarCache.get(channelKey) === payloadKey) {
+      if (hpBar && unchanged) {
         const fillEl = hpBar.querySelector('.hp-bar-fill');
         const textEl = hpBar.querySelector('.hp-bar-text');
         const hpCont = hpBar.closest('.dungeon-boss-hp-container');
@@ -12208,7 +12196,12 @@ module.exports = class Dungeons {
         return;
       }
 
-      this._bossBarCache.set(channelKey, payloadKey);
+      this._bossBarCache.set(channelKey, {
+        hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
+        alive: aliveMobs, total: totalMobs,
+        part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+        type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+      });
       // Preserve HP state + CSS var for recovery after React re-render
       const hpContainer = hpBar?.closest('.dungeon-boss-hp-container');
       if (hpContainer) {
@@ -12807,8 +12800,11 @@ module.exports = class Dungeons {
     if (this._hpBarRestoreInterval) return;
 
     this._hpBarRestoreInterval = setInterval(() => {
-      // PERFORMANCE: Skip entirely when no dungeons are active
-      if (!this.activeDungeons || this.activeDungeons.size === 0) return;
+      // PERF: Stop interval entirely when no dungeons are active (restarts on dungeon creation)
+      if (!this.activeDungeons || this.activeDungeons.size === 0) {
+        this.stopHPBarRestoration();
+        return;
+      }
       // PERFORMANCE: Skip HP bar restoration when window is hidden
       if (!this.isWindowVisible()) {
         return; // Don't update UI when window is not visible
@@ -13662,11 +13658,11 @@ module.exports = class Dungeons {
     // popstate listener, and fallback interval below. Reduces DOM listener overhead.
     this.channelWatcher = {};
 
-    // Fallback polling — only fires when dungeons exist (pushState + observer handle idle state)
+    // PERF: Fallback polling extended to 15s — pushState/replaceState wrappers + popstate handle main path
     this.channelWatcherInterval = setInterval(() => {
       if (!this.activeDungeons || this.activeDungeons.size === 0) return;
       scheduleCheckChannel();
-    }, 2500);
+    }, 15000);
     this._intervals.add(this.channelWatcherInterval);
   }
 
@@ -13714,25 +13710,42 @@ module.exports = class Dungeons {
   }
 
   // ==== MOB KILL NOTIFICATIONS ====
+  // PERF: Single global timer instead of per-dungeon timers
   startMobKillNotifications(channelKey) {
-    if (this.mobKillNotificationTimers.has(channelKey)) return;
-    const timer = setInterval(() => {
-      this.showMobKillSummary(channelKey);
-    }, this.settings.mobKillNotificationInterval);
-    this.mobKillNotificationTimers.set(channelKey, timer);
+    // Track that this channel wants notifications (no per-channel timer needed)
+    this._mobKillChannels || (this._mobKillChannels = new Set());
+    this._mobKillChannels.add(channelKey);
+    // Start global timer if not already running
+    if (!this._mobKillGlobalTimer) {
+      this._mobKillGlobalTimer = setInterval(() => {
+        if (!this._mobKillChannels || this._mobKillChannels.size === 0) {
+          clearInterval(this._mobKillGlobalTimer);
+          this._mobKillGlobalTimer = null;
+          return;
+        }
+        this._mobKillChannels.forEach((ck) => this.showMobKillSummary(ck));
+      }, this.settings.mobKillNotificationInterval);
+      this._intervals.add(this._mobKillGlobalTimer);
+    }
   }
 
   stopMobKillNotifications(channelKey) {
-    const timer = this.mobKillNotificationTimers.get(channelKey);
-    if (timer) {
-      clearInterval(timer);
-      this.mobKillNotificationTimers.delete(channelKey);
+    if (this._mobKillChannels) this._mobKillChannels.delete(channelKey);
+    // Stop global timer if no channels left
+    if (this._mobKillChannels && this._mobKillChannels.size === 0 && this._mobKillGlobalTimer) {
+      clearInterval(this._mobKillGlobalTimer);
+      this._intervals.delete(this._mobKillGlobalTimer);
+      this._mobKillGlobalTimer = null;
     }
   }
 
   stopAllDungeonCleanup() {
-    this.mobKillNotificationTimers.forEach((timer) => clearInterval(timer));
-    this.mobKillNotificationTimers.clear();
+    if (this._mobKillChannels) this._mobKillChannels.clear();
+    if (this._mobKillGlobalTimer) {
+      clearInterval(this._mobKillGlobalTimer);
+      this._intervals.delete(this._mobKillGlobalTimer);
+      this._mobKillGlobalTimer = null;
+    }
     this.stopAllMobSpawning();
     if (this.dungeonCleanupInterval) {
       clearInterval(this.dungeonCleanupInterval);
@@ -13748,8 +13761,8 @@ module.exports = class Dungeons {
     const _count = notification.count; // Used in notification display
     notification.count = 0;
     notification.lastNotification = Date.now();
-    // Silent mob kills (no toast spam - count shown in completion summary)
-    this.saveSettings();
+    // PERF: No saveSettings() here — mob kill counts are ephemeral runtime data,
+    // persisted naturally by next debounced save from combat tick
   }
 
   // ==== CLEANUP LOOP ====
@@ -14066,6 +14079,7 @@ module.exports = class Dungeons {
           }
 
           this.activeDungeons.set(dungeon.channelKey, dungeon);
+          this.startHPBarRestoration(); // PERF: restart if auto-stopped (idempotent)
           const channelInfo = { channelId: dungeon.channelId, guildId: dungeon.guildId };
           this.showDungeonIndicator(dungeon.channelKey, channelInfo);
           // Combat intervals are started AFTER shadow allocation below
