@@ -80,19 +80,28 @@ module.exports = class ChatNavArrows {
     }
 
     // Inline fallback if BetterDiscordReactUtils.js is not available
-    let MainContent = BdApi.Webpack.getByStrings('baseLayer', { defaultExport: false });
-    if (!MainContent) {
-      MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
+    // Multi-strategy MainContent finder (resilient to Discord renames)
+    const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
+    let MainContent = null, _mcKey = 'Z';
+    if (typeof BdApi.Webpack.getWithKey === 'function') {
+      for (const s of _mcStrings) {
+        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
+      }
     }
     if (!MainContent) {
-      console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
+      for (const s of _mcStrings) {
+        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
+      }
+    }
+    if (!MainContent) {
+      console.error('[ChatNavArrows] MainContent module not found (all strategies exhausted) — using DOM fallback');
       return false;
     }
 
     const React = BdApi.React;
     const pluginInstance = this;
 
-    BdApi.Patcher.after(this._patcherId, MainContent, 'Z', (_this, _args, returnValue) => {
+    BdApi.Patcher.after(this._patcherId, MainContent, _mcKey, (_this, _args, returnValue) => {
       try {
         if (pluginInstance._isStopped) return returnValue;
 

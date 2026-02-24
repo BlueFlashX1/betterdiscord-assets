@@ -2428,16 +2428,21 @@ module.exports = class SoloLevelingStats {
       }
 
       // Fallback: inline implementation (SLUtils not loaded)
-      let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
-        searchExports: true,
-      });
-      if (!MainContent) {
-        MainContent = BdApi.Webpack.getByStrings('appMount', {
-          searchExports: true,
-        });
+      // Multi-strategy MainContent finder (resilient to Discord renames)
+      const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
+      let MainContent = null, _mcKey = 'Z';
+      if (typeof BdApi.Webpack.getWithKey === 'function') {
+        for (const s of _mcStrings) {
+          try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
+        }
       }
       if (!MainContent) {
-        this.debugLog('REACT_INJECTION', 'Main content component not found, using DOM fallback');
+        for (const s of _mcStrings) {
+          try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
+        }
+      }
+      if (!MainContent) {
+        this.debugLog('REACT_INJECTION', 'Main content component not found (all strategies exhausted), using DOM fallback');
         return false;
       }
 
@@ -2446,7 +2451,7 @@ module.exports = class SoloLevelingStats {
       BdApi.Patcher.after(
         'SoloLevelingStats',
         MainContent,
-        'Z',
+        _mcKey,
         (thisObject, args, returnValue) => {
           try {
             if (!pluginInstance._canShowChatUIInCurrentView()) {

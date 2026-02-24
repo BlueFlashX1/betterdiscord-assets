@@ -1,7 +1,7 @@
 /**
  * BetterDiscordReactUtils — Shared React utilities for BetterDiscord plugins.
  * Eliminates duplicate React patcher boilerplate across plugins.
- * @version 1.0.0
+ * @version 1.1.0
  */
 
 /**
@@ -23,16 +23,47 @@ function findAppMountNode(returnValue) {
 }
 
 /**
- * Find the MainContent webpack module (baseLayer / appMount).
- * Uses the same getByStrings approach all Solo Leveling plugins use.
- * @returns {object|null} The MainContent module, or null
+ * Candidate strings that may appear in Discord's main app container component.
+ * Discord renames these periodically — add new candidates here when discovered.
+ */
+const _MC_STRINGS = ['baseLayer', 'appMount', 'app-mount'];
+
+/**
+ * Find the MainContent webpack module (Discord's main app container).
+ * Uses multiple strategies for resilience against Discord internal renames.
+ * @returns {[object, string]|null} [moduleObject, exportKey] tuple, or null
  */
 function findMainContentModule() {
-  let MainContent = BdApi.Webpack.getByStrings('baseLayer', { defaultExport: false });
-  if (!MainContent) {
-    MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
+  const { Webpack } = BdApi;
+
+  // Strategy 1: getWithKey (BD 1.13+) — auto-resolves export key
+  if (typeof Webpack.getWithKey === 'function') {
+    for (const str of _MC_STRINGS) {
+      try {
+        const result = Webpack.getWithKey(
+          m => typeof m === 'function' && m.toString().includes(str)
+        );
+        if (result && result[0]) return result;
+      } catch (_) {}
+    }
   }
-  return MainContent ?? null;
+
+  // Strategy 2: getByStrings + dynamic key detection (legacy BD / fallback)
+  for (const str of _MC_STRINGS) {
+    try {
+      const mod = Webpack.getByStrings(str, { defaultExport: false });
+      if (mod) {
+        // Try common SWC-mangled export keys, then any function export
+        for (const k of ['Z', 'ZP', 'default']) {
+          if (typeof mod[k] === 'function') return [mod, k];
+        }
+        const key = Object.keys(mod).find(k => typeof mod[k] === 'function');
+        if (key) return [mod, key];
+      }
+    } catch (_) {}
+  }
+
+  return null;
 }
 
 /**
@@ -43,13 +74,15 @@ function findMainContentModule() {
  * @returns {boolean} Whether patching succeeded
  */
 function patchReactMainContent(pluginInstance, patcherId, renderCallback) {
-  const MainContent = findMainContentModule();
-  if (!MainContent) {
-    console.error('[BetterDiscordReactUtils] MainContent module not found');
+  const result = findMainContentModule();
+  if (!result) {
+    console.warn('[BetterDiscordReactUtils] MainContent module not found — all strategies exhausted. Plugins will use DOM fallback.');
     return false;
   }
 
-  BdApi.Patcher.after(patcherId, MainContent, 'Z', (_this, _args, returnValue) => {
+  const [mod, key] = result;
+
+  BdApi.Patcher.after(patcherId, mod, key, (_this, _args, returnValue) => {
     try {
       if (pluginInstance._isStopped) return returnValue;
 
