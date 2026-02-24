@@ -26,7 +26,7 @@ function findAppMountNode(returnValue) {
  * Candidate strings that may appear in Discord's main app container component.
  * Discord renames these periodically — add new candidates here when discovered.
  */
-const _MC_STRINGS = ['baseLayer', 'appMount', 'app-mount'];
+const _MC_STRINGS = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
 
 /**
  * Find the MainContent webpack module (Discord's main app container).

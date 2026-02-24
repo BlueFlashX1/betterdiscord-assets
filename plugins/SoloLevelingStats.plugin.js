@@ -1719,7 +1719,9 @@ module.exports = class SoloLevelingStats {
       document.querySelector('main[class*="chatContent"]') ||
       document.querySelector('section[class*="chatContent"][role="main"]') ||
       document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
-      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])')
+      document.querySelector('main[class*="chatContent-"]') ||
+      document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
+      document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])')
     );
   }
 
@@ -1728,6 +1730,8 @@ module.exports = class SoloLevelingStats {
     if (!mainChat) return null;
 
     const messageInputArea =
+      mainChat.querySelector('[class*="channelTextArea_"]') ||
+      mainChat.querySelector('[class*="channelTextArea-"]') ||
       mainChat.querySelector('[class*="channelTextArea"]') ||
       mainChat.querySelector('[class*="textArea"]')?.parentElement ||
       mainChat.querySelector('[class*="slateTextArea"]')?.parentElement;
@@ -2432,7 +2436,7 @@ module.exports = class SoloLevelingStats {
 
       // Fallback: inline implementation (SLUtils not loaded)
       // Multi-strategy MainContent finder (resilient to Discord renames)
-      const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
+      const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
       let MainContent = null, _mcKey = 'Z';
       if (typeof BdApi.Webpack.getWithKey === 'function') {
         for (const s of _mcStrings) {
@@ -9139,7 +9143,9 @@ module.exports = class SoloLevelingStats {
         const chatContainer =
           document.querySelector('main[class*="chatContent"]') ||
           document.querySelector('section[class*="chatContent"]') ||
+          document.querySelector('main[class*="chatContent-"]') ||
           document.querySelector('div[class*="messagesWrapper"]') ||
+          document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
           null;
 
         // IMPORTANT: Never observe document.body; Discord mutates it constantly and can peg CPU.

@@ -81,7 +81,7 @@ module.exports = class ChatNavArrows {
 
     // Inline fallback if BetterDiscordReactUtils.js is not available
     // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
+    const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
     let MainContent = null, _mcKey = 'Z';
     if (typeof BdApi.Webpack.getWithKey === 'function') {
       for (const s of _mcStrings) {
@@ -162,8 +162,15 @@ module.exports = class ChatNavArrows {
     };
 
     const getScrollerPair = () => {
-      const wrapper = document.querySelector('div[class*="messagesWrapper_"]');
-      const scroller = wrapper?.querySelector('div[class*="scroller_"]') || null;
+      const wrapper =
+        document.querySelector('div[class*="messagesWrapper_"]') ||
+        document.querySelector('div[class*="messagesWrapper-"]') ||
+        document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')?.parentElement;
+      const scroller =
+        wrapper?.querySelector('div[class*="scroller_"]') ||
+        wrapper?.querySelector('div[class*="scroller-"]') ||
+        wrapper?.querySelector('[class*="scrollerInner_"]')?.parentElement ||
+        null;
       return { wrapper: wrapper || null, scroller };
     };
 
@@ -278,7 +285,7 @@ module.exports = class ChatNavArrows {
       if (document.hidden) return; // PERF: Skip when window not visible
       const { wrapper, scroller } = getScrollerPair();
       // Early exit: skip if same scroller is still connected
-      if (scroller === state.currentScroller && scroller?.isConnected) return;
+      if (scroller === this._domFallback.currentScroller && scroller?.isConnected) return;
       bindScroller(wrapper, scroller);
     };
 
@@ -332,8 +339,14 @@ module.exports = class ChatNavArrows {
         let scrollHandler = null;
 
         const findAndBind = () => {
-          const wrapper = document.querySelector('div[class*="messagesWrapper_"]');
-          const scroller = wrapper?.querySelector('div[class*="scroller_"]');
+          const wrapper =
+            document.querySelector('div[class*="messagesWrapper_"]') ||
+            document.querySelector('div[class*="messagesWrapper-"]') ||
+            document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')?.parentElement;
+          const scroller =
+            wrapper?.querySelector('div[class*="scroller_"]') ||
+            wrapper?.querySelector('div[class*="scroller-"]') ||
+            wrapper?.querySelector('[class*="scrollerInner_"]')?.parentElement;
 
           if (!scroller || scroller === currentScroller) return;
 

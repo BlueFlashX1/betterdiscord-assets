@@ -78,7 +78,7 @@ function tryReactInjection(opts) {
 
   try {
     // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
+    const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
     let MainContent = null, _mcKey = 'Z';
 
     // Strategy 1: getWithKey (BD 1.13+) — auto-resolves export key
