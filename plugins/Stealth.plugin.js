@@ -612,7 +612,7 @@ module.exports = class Stealth {
       this._statusInterval = setInterval(() => {
         if (!this.settings.enabled || !this.settings.invisibleStatus) return;
         this._ensureInvisibleStatus();
-      }, 15000);
+      }, 5000);
     }
   }
 
