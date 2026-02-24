@@ -540,11 +540,21 @@ function unregisterToolbarButton(id) {
  * @param {string} name - Plugin name (e.g. 'ShadowArmy')
  * @returns {Object|null} The plugin instance, or null if disabled/unavailable
  */
+const _pluginCache = {};
+const _PLUGIN_CACHE_TTL = 2000;
+
 function getPluginInstance(name) {
   try {
-    if (!BdApi.Plugins.isEnabled(name)) return null;
-    const plugin = BdApi.Plugins.get(name);
-    return plugin?.instance || null;
+    const now = Date.now();
+    const c = _pluginCache[name];
+    if (c && now - c.t < _PLUGIN_CACHE_TTL) return c.v;
+    if (!BdApi.Plugins.isEnabled(name)) {
+      _pluginCache[name] = { v: null, t: now };
+      return null;
+    }
+    const inst = BdApi.Plugins.get(name)?.instance || null;
+    _pluginCache[name] = { v: inst, t: now };
+    return inst;
   } catch (_) {
     return null;
   }

@@ -512,6 +512,11 @@ module.exports = class ShadowRecon {
     try {
       const appMount = document.getElementById("app-mount");
       if (!appMount) return;
+      // PERF: Narrow scope — all callbacks target guild sidebar elements,
+      // no need to observe the entire app (messages, typing, popups, tooltips)
+      const observeTarget = appMount.querySelector('[class*="guilds_"]')
+        || appMount.querySelector('[class*="base_"][class*="container_"]')
+        || appMount;
       let last = 0;
       this._domObserver = new MutationObserver(() => {
         const now = Date.now();
@@ -521,7 +526,7 @@ module.exports = class ShadowRecon {
         this.removeMemberCounterBanner();
         this.refreshGuildIconHints();
       });
-      this._domObserver.observe(appMount, { childList: true, subtree: true });
+      this._domObserver.observe(observeTarget, { childList: true, subtree: true });
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed observer setup`, err);
     }

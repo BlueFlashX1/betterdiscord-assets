@@ -1324,9 +1324,14 @@ module.exports = class RulersAuthority {
     const appMount = document.getElementById("app-mount") || document.body;
     if (!appMount) return;
 
-    // PERF: Throttle observer callback — app-mount subtree fires on every DOM mutation
-    // in the entire app (messages, typing indicators, animations). The icon check + DOM
-    // queries only need to run periodically, not per-mutation.
+    // PERF: Narrow scope — toolbar lives in the channel header (main content area),
+    // no need to observe the entire app (guild sidebar, popups, tooltips)
+    const observeTarget = appMount.querySelector('[class*="base_"][class*="container_"]')
+      || appMount.querySelector('[class*="app_"]')
+      || appMount;
+
+    // Throttle observer callback — subtree fires on every DOM mutation in scope.
+    // The icon check + DOM queries only need to run periodically, not per-mutation.
     let lastToolbarCheck = 0;
     this._toolbarObserver = new MutationObserver(() => {
       const now = Date.now();
@@ -1338,7 +1343,7 @@ module.exports = class RulersAuthority {
         this._scheduleIconReinject();
       }
     });
-    this._toolbarObserver.observe(appMount, { childList: true, subtree: true });
+    this._toolbarObserver.observe(observeTarget, { childList: true, subtree: true });
 
     if (this._controller) {
       window.addEventListener("resize", () => this._scheduleIconReinject(80), {

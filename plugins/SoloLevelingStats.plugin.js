@@ -2472,6 +2472,10 @@ module.exports = class SoloLevelingStats {
               return returnValue;
             }
 
+            // PERF: Skip expensive findInTree walks when chat UI already exists in DOM.
+            // The chatUIObserver handles re-injection if React unmounts the element.
+            if (pluginInstance.chatUIPanel) return returnValue;
+
             const bodyPath = BdApi.Utils.findInTree(
               returnValue,
               (prop) =>
