@@ -1390,6 +1390,7 @@ module.exports = class Dungeons {
    */
   _getPluginSafe(name) {
     try {
+      if (!BdApi.Plugins.isEnabled(name)) return null;
       const plugin = BdApi.Plugins.get(name);
       if (!plugin?.instance) {
         this.debugLogOnce?.(`PLUGIN_MISSING:${name}`, 'PLUGIN', `Plugin ${name} not available`);
@@ -2946,6 +2947,11 @@ module.exports = class Dungeons {
       return this._cache.pluginInstances[cacheKey];
     }
 
+    if (!BdApi.Plugins.isEnabled(pluginName)) {
+      this._cache.pluginInstances[cacheKey] = null;
+      this._cache.pluginInstancesTime[cacheKey] = now;
+      return null;
+    }
     const plugin = BdApi.Plugins.get(pluginName);
     if (!plugin?.instance) {
       this.debugLogOnce(`PLUGIN_MISSING:${pluginName}`, `Plugin ${pluginName} not available`);
@@ -3087,6 +3093,10 @@ module.exports = class Dungeons {
           this.soloLevelingStats = this.validatePluginReference('SoloLevelingStats', 'settings');
         }
         // ShadowArmy: re-validate if missing or if the plugin was disabled/re-enabled
+        if (!BdApi.Plugins.isEnabled('ShadowArmy')) {
+          this.shadowArmy = null;
+          return;
+        }
         const saPlugin = BdApi.Plugins.get('ShadowArmy');
         const saInstance = saPlugin?.instance;
         if (!this.shadowArmy || (saInstance && this.shadowArmy !== saInstance)) {
@@ -3100,7 +3110,8 @@ module.exports = class Dungeons {
       this._intervals.add(this._pluginValidationInterval);
 
       // Load SoloLevelingToasts plugin (with fallback support)
-      const toastsPlugin = BdApi.Plugins.get('SoloLevelingToasts');
+      const toastsPlugin = BdApi.Plugins.isEnabled('SoloLevelingToasts')
+        ? BdApi.Plugins.get('SoloLevelingToasts') : null;
       if (toastsPlugin?.instance && typeof toastsPlugin.instance.showToast === 'function') {
         this.toasts = toastsPlugin.instance;
         this.debugLog('SoloLevelingToasts plugin loaded successfully');
@@ -9770,12 +9781,16 @@ module.exports = class Dungeons {
     let exchangeMarkedIds = new Set();
     let sensesDeployedIds = new Set();
     try {
-      exchangeMarkedIds = BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set();
+      if (BdApi.Plugins.isEnabled("ShadowExchange")) {
+        exchangeMarkedIds = BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set();
+      }
     } catch (error) {
       this.errorLog?.(true, 'Failed to read ShadowExchange exclusion set', error);
     }
     try {
-      sensesDeployedIds = BdApi.Plugins.get("ShadowSenses")?.instance?.getDeployedShadowIds?.() || new Set();
+      if (BdApi.Plugins.isEnabled("ShadowSenses")) {
+        sensesDeployedIds = BdApi.Plugins.get("ShadowSenses")?.instance?.getDeployedShadowIds?.() || new Set();
+      }
     } catch (error) {
       this.errorLog?.(true, 'Failed to read ShadowSenses exclusion set', error);
     }
@@ -10967,7 +10982,8 @@ module.exports = class Dungeons {
             BdApi.Events.emit('Dungeons:awardEssence', { amount: 1 });
           } else {
             // Fallback: direct mutation if BdApi.Events unavailable
-            const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy')?.instance;
+            const shadowArmyPlugin = BdApi.Plugins.isEnabled('ShadowArmy')
+              ? BdApi.Plugins.get('ShadowArmy')?.instance : null;
             if (shadowArmyPlugin?.addEssence) {
               shadowArmyPlugin.addEssence(1);
             }

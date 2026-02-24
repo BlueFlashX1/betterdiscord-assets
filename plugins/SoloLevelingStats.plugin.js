@@ -1241,6 +1241,7 @@ module.exports = class SoloLevelingStats {
    */
   consumeActiveSkillCharge(skillId) {
     try {
+      if (!BdApi.Plugins.isEnabled('SkillTree')) return false;
       const skillTreePlugin = BdApi.Plugins.get('SkillTree');
       const instance = skillTreePlugin?.instance || skillTreePlugin;
       if (instance && typeof instance.consumeActiveSkillCharge === 'function') {
@@ -1261,7 +1262,7 @@ module.exports = class SoloLevelingStats {
   getChannelStore() {
     let channelStore = this.webpackModules?.ChannelStore;
     if (!channelStore?.getChannel) {
-      channelStore = BdApi.Webpack.getModule((m) => m && m.getChannel && m.getLastSelectedChannelId);
+      channelStore = BdApi.Webpack.getStore('ChannelStore');
       if (channelStore) this.webpackModules.ChannelStore = channelStore;
     }
     return channelStore || null;
@@ -3708,25 +3709,27 @@ module.exports = class SoloLevelingStats {
 
   // ── §3.9 NOTIFICATION SYSTEM ─────────────────────────────────────────────
   // Toast-style notifications: success, error, warning, level-up
-  // Prefers SoloLevelingToasts plugin, falls back to BdApi.showToast
+  // Prefers SoloLevelingToasts plugin, falls back to BdApi.UI.showToast
 
   showNotification(message, type = 'info', timeout = 3000) {
     try {
       // Prefer SoloLevelingToasts for animated notifications if available.
-      // Fallback to BdApi.showToast otherwise.
+      // Fallback to BdApi.UI.showToast otherwise.
       const now = Date.now();
       const cacheTtlMs = 3000;
       if (!this._toastPluginCacheTime || now - this._toastPluginCacheTime > cacheTtlMs) {
         this._toastPluginCacheTime = now;
-        this._toastPluginCache = BdApi?.Plugins?.get?.('SoloLevelingToasts')?.instance || null;
+        this._toastPluginCache = BdApi.Plugins.isEnabled('SoloLevelingToasts')
+          ? BdApi?.Plugins?.get?.('SoloLevelingToasts')?.instance || null
+          : null;
       }
       const slToasts = this._toastPluginCache;
       if (slToasts?.showToast) {
         slToasts.showToast(message, type, timeout);
         return;
       }
-      if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(message, {
+      if (BdApi?.UI?.showToast) {
+        BdApi.UI.showToast(message, {
           type: type,
           timeout: timeout,
         });
@@ -3866,7 +3869,8 @@ module.exports = class SoloLevelingStats {
 
       // Initialize shadow power cache from saved settings or default to '0'
       // Also check ShadowArmy's cached value as fallback
-      const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
+      const shadowArmyPlugin = BdApi.Plugins.isEnabled('ShadowArmy')
+        ? BdApi.Plugins.get('ShadowArmy') : null;
       const shadowArmyCachedPower = shadowArmyPlugin?.instance?.settings?.cachedTotalPower;
 
       if (shadowArmyCachedPower !== undefined && shadowArmyCachedPower > 0) {
@@ -5043,6 +5047,7 @@ module.exports = class SoloLevelingStats {
     };
 
     try {
+      if (!BdApi.Plugins.isEnabled('ShadowArmy')) return null;
       const plugin = BdApi.Plugins.get('ShadowArmy');
       const hasShareFunction = typeof plugin?.instance?.shareShadowXP === 'function';
 
@@ -5391,6 +5396,7 @@ module.exports = class SoloLevelingStats {
     }
 
     // Watch for ShadowArmy plugin settings changes
+    if (!BdApi.Plugins.isEnabled('ShadowArmy')) return;
     const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
     if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
       return;
@@ -7543,6 +7549,7 @@ module.exports = class SoloLevelingStats {
   _loadFontFromCriticalHit() {
     try {
       // Try to load font from CriticalHit plugin using embedded base64 method
+      if (!BdApi.Plugins.isEnabled('CriticalHit')) return;
       const critPlugin = BdApi.Plugins.get('CriticalHit');
       if (critPlugin && critPlugin.instance) {
         const critInstance = critPlugin.instance;
@@ -8865,6 +8872,11 @@ module.exports = class SoloLevelingStats {
     try {
       if (!this._isRunning) return;
 
+      if (!BdApi.Plugins.isEnabled('ShadowArmy')) {
+        this.cachedShadowPower = '0';
+        this.updateShadowPowerDisplay();
+        return;
+      }
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin?.instance) {
         this.cachedShadowPower = '0';
@@ -9026,6 +9038,9 @@ module.exports = class SoloLevelingStats {
     }
 
     try {
+      if (!BdApi.Plugins.isEnabled('ShadowArmy')) {
+        return this.cacheShadowArmyBuffs(null, now);
+      }
       const shadowArmyPlugin = BdApi.Plugins.get('ShadowArmy');
       if (!shadowArmyPlugin || !shadowArmyPlugin.instance) {
         return this.cacheShadowArmyBuffs(null, now);

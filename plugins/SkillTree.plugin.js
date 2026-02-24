@@ -300,7 +300,7 @@ function buildSkillTreeComponents(pluginInstance) {
 
     const handleActivate = React.useCallback((skillId) => {
       const result = pluginInstance.activateSkill(skillId);
-      if (!result.success && BdApi?.showToast) BdApi.showToast(result.reason, { type: 'error', timeout: 2500 });
+      if (!result.success && BdApi?.UI?.showToast) BdApi.UI.showToast(result.reason, { type: 'error', timeout: 2500 });
       forceUpdate();
     }, []);
 
@@ -1003,6 +1003,10 @@ module.exports = class SkillTree {
     }
 
     // Subscribe to SoloLevelingStats levelChanged events for real-time updates
+    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+      this._setTrackedTimeout(() => this.setupLevelUpWatcher(), 2000);
+      return;
+    }
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
     if (!soloPlugin) {
       // Retry after a delay - SoloLevelingStats might still be loading
@@ -1652,8 +1656,8 @@ module.exports = class SkillTree {
     const durationText = def.durationMs
       ? `${Math.round(def.durationMs / 60000)}m`
       : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
-    if (BdApi?.showToast) {
-      BdApi.showToast(`${def.name} activated! (${durationText})`, { type: 'success', timeout: 3000 });
+    if (BdApi?.UI?.showToast) {
+      BdApi.UI.showToast(`${def.name} activated! (${durationText})`, { type: 'success', timeout: 3000 });
     }
 
     // Fire DOM event for other plugins
@@ -1701,8 +1705,8 @@ module.exports = class SkillTree {
     this.saveActiveBuffs();
 
     const def = this.activeSkillDefs[skillId];
-    if (BdApi?.showToast && def) {
-      BdApi.showToast(`${def.name} expired.`, { type: 'info', timeout: 2000 });
+    if (BdApi?.UI?.showToast && def) {
+      BdApi.UI.showToast(`${def.name} expired.`, { type: 'info', timeout: 2000 });
     }
 
     document.dispatchEvent(new CustomEvent('SkillTree:activeSkillExpired', {
@@ -1819,6 +1823,13 @@ module.exports = class SkillTree {
       ) {
         instance = this._cache.soloPluginInstance;
       } else {
+        if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+          this._cache.soloLevelingData = null;
+          this._cache.soloLevelingDataTime = now;
+          this._cache.soloPluginInstance = null;
+          this._cache.soloPluginInstanceTime = 0;
+          return null;
+        }
         soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
         if (!soloPlugin) {
           this._cache.soloLevelingData = null;
@@ -2167,13 +2178,13 @@ module.exports = class SkillTree {
 
       // Show notification
       const newLevel = this.getSkillLevel(skillId);
-      if (BdApi?.showToast) {
+      if (BdApi?.UI?.showToast) {
         const message =
           currentLevel === 0
             ? `Skill Unlocked: ${skill.name}`
             : `${skill.name} upgraded to Level ${newLevel}!`;
 
-        BdApi.showToast(message, {
+        BdApi.UI.showToast(message, {
           type: 'success',
           timeout: 3000,
         });
@@ -2245,13 +2256,13 @@ module.exports = class SkillTree {
       this._finalizeSkillUpgrade(skillId);
 
       // Show notification
-      if (BdApi?.showToast) {
+      if (BdApi?.UI?.showToast) {
         const message =
           currentLevel === 0
             ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
             : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
 
-        BdApi.showToast(message, {
+        BdApi.UI.showToast(message, {
           type: 'success',
           timeout: 3000,
         });
