@@ -587,12 +587,12 @@ const methods = {
           lineWidth: 1 + Math.random() * 2.5,
           phase: Math.random() * TAU,
         })),
-        outerLightning: Array.from({ length: Math.max(18, Math.round(36 * qualityScale)) }, () => ({
+        outerLightning: Array.from({ length: Math.max(28, Math.round(52 * qualityScale)) }, () => ({
           angle: Math.random() * TAU,
           speed: 0.32 + Math.random() * 0.88,
-          reach: 0.30 + Math.random() * 0.52,
-          width: 1.1 + Math.random() * 1.8,
-          jitter: 0.028 + Math.random() * 0.052,
+          reach: 0.40 + Math.random() * 0.60,
+          width: 1.4 + Math.random() * 2.2,
+          jitter: 0.05 + Math.random() * 0.09,
           phase: Math.random() * TAU,
         })),
       };
@@ -703,7 +703,7 @@ const methods = {
 
       for (let bi = 0; bi < darkBlots.length; bi += detailStep) {
         const blot = darkBlots[bi];
-        const ang = blot.angle - swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
+        const ang = blot.angle + swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
         const radius = innerRadius * (0.22 + blot.offset * 0.86);
         const x = cx + Math.cos(ang) * radius;
         const y = cy + Math.sin(ang) * radius * 0.82;
@@ -756,7 +756,7 @@ const methods = {
 
       for (let fi = 0; fi < coreFilaments.length; fi += detailStep) {
         const filament = coreFilaments[fi];
-        const base = filament.angle - swirl * filament.speed + Math.sin(swirl * 1.8 + filament.phase) * 0.26;
+        const base = filament.angle + swirl * filament.speed + Math.sin(swirl * 1.8 + filament.phase) * 0.26;
         ctx.beginPath();
         for (let i = 0; i <= 7; i++) {
           const p = i / 7;
@@ -765,7 +765,7 @@ const methods = {
             p * filament.length * 0.44 +
             0.06 * Math.sin(swirl * 2.9 + filament.phase + p * 2.2)
           );
-          const ang = base - p * filament.spread * 0.6 + Math.sin(swirl * 2.1 + filament.phase + p) * 0.06;
+          const ang = base + p * filament.spread * 0.6 + Math.sin(swirl * 2.1 + filament.phase + p) * 0.06;
           const x = cx + Math.cos(ang) * rr;
           const y = cy + Math.sin(ang) * rr * 0.88;
           if (i === 0) ctx.moveTo(x, y);
@@ -840,7 +840,7 @@ const methods = {
       // Large center vortex so formation reads as a portal, not a plain overlay.
       const coreVortexAlpha = (0.24 + 0.42 * (1 - revealProgress)) * fadeOut * portalForm;
       if (coreVortexAlpha > 0.004) {
-        const coreVortexRadius = innerRadius * (0.78 + 0.22 * formEase);
+        const coreVortexRadius = innerRadius * (1.0 + 0.52 * formEase);
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
 
@@ -861,37 +861,45 @@ const methods = {
         ctx.arc(cx, cy, coreVortexRadius, 0, TAU);
         ctx.fill();
 
-        const swirlCount = perfTier === 0 ? 5 : perfTier === 1 ? 7 : 9;
-        const swirlPoints = perfTier === 0 ? 11 : 13;
-        const turnBase = 1.8 + formEase * 0.7;
+        const swirlCount = 6;
+        const swirlPoints = perfTier === 0 ? 12 : 16;
+        // Each strand gets its own chaotic personality
+        const strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85];
+        const strandDirs = [1, -1, 1, -1, -1, 1];
+        const strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12];
+        const strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7];
         for (let s = 0; s < swirlCount; s++) {
-          const phase = swirl * (1.45 + s * 0.19);
-          const direction = s % 2 === 0 ? 1 : -1;
-          const base = (s / swirlCount) * TAU + phase * direction;
-          const laneNoise = Math.sin(phase * 1.7 + s * 0.8) * 0.10;
+          const phase = swirl * strandSpeeds[s];
+          const dir = strandDirs[s];
+          const base = strandSeeds[s] * TAU + phase * dir;
+          const wobbleFreq = 2.4 + s * 0.7;
+          const wobbleAmp = 0.14 + 0.08 * Math.sin(phase * 0.6 + s);
 
           ctx.beginPath();
           for (let i = 0; i <= swirlPoints; i++) {
             const p = i / swirlPoints;
             const rr = coreVortexRadius * (
-              0.1 +
-              0.86 * p +
-              0.04 * Math.sin(phase * 2.8 + p * 10.2 + s * 0.6)
+              0.08 +
+              1.48 * p +
+              0.12 * Math.sin(phase * 1.9 + p * 6.4 + s * 1.3) +
+              0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9)
             );
-            const twist = p * (turnBase + 0.12 * s) * direction;
-            const cork = Math.sin(phase * 3.2 + p * 7.4 + s * 0.4) * 0.07;
-            const ang = base + twist + cork + laneNoise * (1 - p * 0.45);
+            const twist = p * strandTurns[s] * dir;
+            const distort =
+              Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp +
+              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06;
+            const ang = base + twist + distort;
             const x = cx + Math.cos(ang) * rr;
-            const y = cy + Math.sin(ang) * rr * 0.88;
+            const y = cy + Math.sin(ang) * rr * 0.86;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
 
-          const strandAlpha = coreVortexAlpha * (0.64 + 0.36 * Math.sin(phase + s * 0.6));
+          const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
           ctx.strokeStyle = `rgba(210, 154, 255, ${Math.max(0.06, strandAlpha).toFixed(4)})`;
-          ctx.lineWidth = (1.7 + s * 0.24) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (14 + s * 1.8) * shadowScale;
-          ctx.shadowColor = `rgba(150, 92, 240, ${(strandAlpha * 0.8).toFixed(4)})`;
+          ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
+          ctx.shadowBlur = (16 + s * 2.0) * shadowScale;
+          ctx.shadowColor = `rgba(150, 92, 240, ${(strandAlpha * 0.9).toFixed(4)})`;
           ctx.stroke();
         }
 
@@ -917,9 +925,9 @@ const methods = {
         ctx.restore();
       }
 
-      // Chaotic lightning during early portal formation (no delayed start).
+      // Chaotic lightning — disabled
       const lightningRamp = Math.max(0, Math.min(1, t / 0.28));
-      if (lightningRamp > 0.01) {
+      if (false && lightningRamp > 0.01) {
         const boltStep = perfTier === 0 ? Math.max(2, detailStep) : detailStep;
         const creationBoost = Math.max(
           0,
@@ -934,7 +942,7 @@ const methods = {
         const lightningFade = Math.max(0, 1 - revealProgress * 0.28);
 
         ctx.save();
-        ctx.globalCompositeOperation = "screen";
+        ctx.globalCompositeOperation = "lighter";
 
         for (let li = 0; li < outerLightning.length; li += activeBoltStep) {
           const bolt = outerLightning[li];
@@ -947,7 +955,7 @@ const methods = {
           if (flicker < flickerGate) continue;
 
           const alpha =
-            (0.10 + 0.18 * (flicker * 0.5 + 0.5)) *
+            (0.22 + 0.34 * (flicker * 0.5 + 0.5)) *
             (1 + creationBoost * 0.55) *
             lightningRamp *
             lightningFade *
@@ -956,7 +964,7 @@ const methods = {
 
           const baseA = bolt.angle + drift * 0.24 + Math.sin(drift * 2.1) * 0.08;
           const startR = lightningRadius * (0.96 + 0.08 * Math.sin(drift * 1.8));
-          const reach = innerRadius * (0.18 + bolt.reach * (0.48 + 0.36 * lightningRamp));
+          const reach = innerRadius * (0.38 + bolt.reach * (0.82 + 0.52 * lightningRamp));
           const span = 0.10 + 0.05 * Math.sin(drift * 2.6 + bolt.phase);
 
           ctx.beginPath();
@@ -973,16 +981,16 @@ const methods = {
             else ctx.lineTo(x, y);
           }
 
-          ctx.strokeStyle = `rgba(112, 66, 206, ${(alpha * 0.88).toFixed(4)})`;
-          ctx.lineWidth = bolt.width + 1.6;
-          ctx.shadowBlur = (16 + (1 - revealProgress) * 16) * shadowScale;
-          ctx.shadowColor = `rgba(102, 56, 196, ${(alpha * 1.0).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(148, 88, 240, ${(alpha * 0.92).toFixed(4)})`;
+          ctx.lineWidth = bolt.width + 2.4;
+          ctx.shadowBlur = (22 + (1 - revealProgress) * 22) * shadowScale;
+          ctx.shadowColor = `rgba(132, 72, 228, ${(alpha * 1.0).toFixed(4)})`;
           ctx.stroke();
 
-          ctx.strokeStyle = `rgba(216, 172, 255, ${Math.min(0.52, alpha + 0.08).toFixed(4)})`;
-          ctx.lineWidth = Math.max(1.0, bolt.width * 0.68);
-          ctx.shadowBlur = (8 + (1 - revealProgress) * 10) * shadowScale;
-          ctx.shadowColor = `rgba(178, 130, 255, ${(alpha * 0.9).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(232, 192, 255, ${Math.min(0.68, alpha + 0.12).toFixed(4)})`;
+          ctx.lineWidth = Math.max(1.4, bolt.width * 0.82);
+          ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
+          ctx.shadowColor = `rgba(198, 152, 255, ${(alpha * 0.95).toFixed(4)})`;
           ctx.stroke();
 
           if (flicker > (0.08 - creationBoost * 0.32)) {
@@ -990,8 +998,8 @@ const methods = {
             const branchStartP = 0.34 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 1.5 + bolt.phase));
             const fromR = startR + reach * branchStartP;
             const fromA = baseA + dir * 0.04;
-            const branchReach = reach * (0.38 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
-            const branchSpan = dir * (0.12 + 0.06 * Math.sin(drift * 3 + bolt.phase));
+            const branchReach = reach * (0.48 + 0.32 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
+            const branchSpan = dir * (0.16 + 0.08 * Math.sin(drift * 3 + bolt.phase));
 
             ctx.beginPath();
             for (let b = 0; b <= branchSteps; b++) {
@@ -1007,11 +1015,11 @@ const methods = {
               else ctx.lineTo(x, y);
             }
 
-            const branchAlpha = alpha * 0.58;
-            ctx.strokeStyle = `rgba(124, 78, 220, ${branchAlpha.toFixed(4)})`;
-            ctx.lineWidth = Math.max(0.75, bolt.width * 0.64);
-            ctx.shadowBlur = (9 + (1 - revealProgress) * 9) * shadowScale;
-            ctx.shadowColor = `rgba(110, 68, 206, ${(branchAlpha * 0.86).toFixed(4)})`;
+            const branchAlpha = alpha * 0.72;
+            ctx.strokeStyle = `rgba(156, 108, 240, ${branchAlpha.toFixed(4)})`;
+            ctx.lineWidth = Math.max(1.0, bolt.width * 0.76);
+            ctx.shadowBlur = (12 + (1 - revealProgress) * 12) * shadowScale;
+            ctx.shadowColor = `rgba(138, 88, 228, ${(branchAlpha * 0.9).toFixed(4)})`;
             ctx.stroke();
           }
         }
@@ -1296,9 +1304,9 @@ const methods = {
           angle: rng() * TAU, speed: 0.24 + rng() * 0.92, length: 0.34 + rng() * 0.32,
           spread: 0.22 + rng() * 0.64, lineWidth: 1 + rng() * 2.5, phase: rng() * TAU,
         })),
-        outerLightning: Array.from({ length: Math.max(18, Math.round(36 * qualityScale)) }, () => ({
-          angle: rng() * TAU, speed: 0.32 + rng() * 0.88, reach: 0.30 + rng() * 0.52,
-          width: 1.1 + rng() * 1.8, jitter: 0.028 + rng() * 0.052, phase: rng() * TAU,
+        outerLightning: Array.from({ length: Math.max(28, Math.round(52 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.32 + rng() * 0.88, reach: 0.40 + rng() * 0.60,
+          width: 1.4 + rng() * 2.2, jitter: 0.05 + rng() * 0.09, phase: rng() * TAU,
         })),
       };
       this.__shadowPortalSeedCache.set(seedCacheKey, seeds);
@@ -1416,7 +1424,7 @@ function startDrawLoop() {
     // Dark blots
     for (let bi = 0; bi < darkBlots.length; bi += detailStep) {
       const blot = darkBlots[bi];
-      const ang = blot.angle - swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
+      const ang = blot.angle + swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
       const radius = innerRadius * (0.22 + blot.offset * 0.86);
       const x = cx + Math.cos(ang) * radius;
       const y = cy + Math.sin(ang) * radius * 0.82;
@@ -1461,7 +1469,7 @@ function startDrawLoop() {
 
     for (let fi = 0; fi < coreFilaments.length; fi += detailStep) {
       const filament = coreFilaments[fi];
-      const base = filament.angle - swirl * filament.speed + Math.sin(swirl * 1.8 + filament.phase) * 0.26;
+      const base = filament.angle + swirl * filament.speed + Math.sin(swirl * 1.8 + filament.phase) * 0.26;
       ctx.beginPath();
       for (let i = 0; i <= 7; i++) {
         const p = i / 7;
@@ -1509,7 +1517,7 @@ function startDrawLoop() {
     // Core vortex
     const coreVortexAlpha = (0.24 + 0.42 * (1 - revealProgress)) * fadeOut * portalForm;
     if (coreVortexAlpha > 0.004) {
-      const coreVortexRadius = innerRadius * (0.78 + 0.22 * formEase);
+      const coreVortexRadius = innerRadius * (1.0 + 0.52 * formEase);
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
       const vortexGlow = ctx.createRadialGradient(cx, cy, Math.max(2, coreVortexRadius * 0.08), cx, cy, coreVortexRadius);
@@ -1520,30 +1528,34 @@ function startDrawLoop() {
       ctx.fillStyle = vortexGlow;
       ctx.beginPath(); ctx.arc(cx, cy, coreVortexRadius, 0, TAU); ctx.fill();
 
-      const swirlCount = perfTier === 0 ? 5 : perfTier === 1 ? 7 : 9;
-      const swirlPoints = perfTier === 0 ? 11 : 13;
-      const turnBase = 1.8 + formEase * 0.7;
-      for (let s = 0; s < swirlCount; s++) {
-        const phase = swirl * (1.45 + s * 0.19);
-        const direction = s % 2 === 0 ? 1 : -1;
-        const base = (s / swirlCount) * TAU + phase * direction;
-        const laneNoise = Math.sin(phase * 1.7 + s * 0.8) * 0.10;
+      var swirlCount = 6;
+      var swirlPoints = perfTier === 0 ? 12 : 16;
+      var strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85];
+      var strandDirs = [1, -1, 1, -1, -1, 1];
+      var strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12];
+      var strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7];
+      for (var s = 0; s < swirlCount; s++) {
+        var phase = swirl * strandSpeeds[s];
+        var dir = strandDirs[s];
+        var base = strandSeeds[s] * TAU + phase * dir;
+        var wobbleFreq = 2.4 + s * 0.7;
+        var wobbleAmp = 0.14 + 0.08 * Math.sin(phase * 0.6 + s);
         ctx.beginPath();
-        for (let i = 0; i <= swirlPoints; i++) {
-          const p = i / swirlPoints;
-          const rr = coreVortexRadius * (0.1 + 0.86 * p + 0.04 * Math.sin(phase * 2.8 + p * 10.2 + s * 0.6));
-          const twist = p * (turnBase + 0.12 * s) * direction;
-          const cork = Math.sin(phase * 3.2 + p * 7.4 + s * 0.4) * 0.07;
-          const ang = base + twist + cork + laneNoise * (1 - p * 0.45);
-          const x = cx + Math.cos(ang) * rr;
-          const y = cy + Math.sin(ang) * rr * 0.88;
+        for (var i = 0; i <= swirlPoints; i++) {
+          var p = i / swirlPoints;
+          var rr = coreVortexRadius * (0.08 + 1.48 * p + 0.12 * Math.sin(phase * 1.9 + p * 6.4 + s * 1.3) + 0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9));
+          var twist = p * strandTurns[s] * dir;
+          var distort = Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp + Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06;
+          var ang = base + twist + distort;
+          var x = cx + Math.cos(ang) * rr;
+          var y = cy + Math.sin(ang) * rr * 0.86;
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
-        const strandAlpha = coreVortexAlpha * (0.64 + 0.36 * Math.sin(phase + s * 0.6));
+        var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
         ctx.strokeStyle = "rgba(210, 154, 255, " + Math.max(0.06, strandAlpha).toFixed(4) + ")";
-        ctx.lineWidth = (1.7 + s * 0.24) * (perfTier === 0 ? 0.9 : 1);
-        ctx.shadowBlur = (14 + s * 1.8) * shadowScale;
-        ctx.shadowColor = "rgba(150, 92, 240, " + (strandAlpha * 0.8).toFixed(4) + ")";
+        ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
+        ctx.shadowBlur = (16 + s * 2.0) * shadowScale;
+        ctx.shadowColor = "rgba(150, 92, 240, " + (strandAlpha * 0.9).toFixed(4) + ")";
         ctx.stroke();
       }
 
@@ -1564,9 +1576,9 @@ function startDrawLoop() {
       ctx.restore();
     }
 
-    // Chaotic lightning
+    // Chaotic lightning — disabled
     const lightningRamp = Math.max(0, Math.min(1, t / 0.28));
-    if (lightningRamp > 0.01) {
+    if (false && lightningRamp > 0.01) {
       const boltStep = perfTier === 0 ? Math.max(2, detailStep) : detailStep;
       const creationBoost = Math.max(0, Math.min(1, 1 - t / Math.max(0.01, revealStart + 0.08)));
       const activeBoltStep = creationBoost > 0.24 ? Math.max(1, boltStep - 1) : boltStep;
@@ -1576,7 +1588,7 @@ function startDrawLoop() {
       const lightningFade = Math.max(0, 1 - revealProgress * 0.28);
 
       ctx.save();
-      ctx.globalCompositeOperation = "screen";
+      ctx.globalCompositeOperation = "lighter";
 
       for (let li = 0; li < outerLightning.length; li += activeBoltStep) {
         const bolt = outerLightning[li];
@@ -1584,11 +1596,11 @@ function startDrawLoop() {
         const flicker = 0.5 + 0.5 * Math.sin(drift * 4.4 + t * 12.4) + 0.35 * Math.sin(drift * 7.2 + bolt.phase * 1.3);
         const flickerGate = -0.18 - creationBoost * 0.16;
         if (flicker < flickerGate) continue;
-        const alpha = (0.10 + 0.18 * (flicker * 0.5 + 0.5)) * (1 + creationBoost * 0.55) * lightningRamp * lightningFade * fadeOut;
+        const alpha = (0.22 + 0.34 * (flicker * 0.5 + 0.5)) * (1 + creationBoost * 0.55) * lightningRamp * lightningFade * fadeOut;
         if (alpha <= 0.004) continue;
         const baseA = bolt.angle + drift * 0.24 + Math.sin(drift * 2.1) * 0.08;
         const startR = lightningRadius * (0.96 + 0.08 * Math.sin(drift * 1.8));
-        const reach = innerRadius * (0.18 + bolt.reach * (0.48 + 0.36 * lightningRamp));
+        const reach = innerRadius * (0.38 + bolt.reach * (0.82 + 0.52 * lightningRamp));
         const span = 0.10 + 0.05 * Math.sin(drift * 2.6 + bolt.phase);
 
         ctx.beginPath();
@@ -1601,15 +1613,15 @@ function startDrawLoop() {
           const y = cy + Math.sin(ang) * rr * 0.88;
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
-        ctx.strokeStyle = "rgba(112, 66, 206, " + (alpha * 0.88).toFixed(4) + ")";
-        ctx.lineWidth = bolt.width + 1.6;
-        ctx.shadowBlur = (16 + (1 - revealProgress) * 16) * shadowScale;
-        ctx.shadowColor = "rgba(102, 56, 196, " + (alpha * 1.0).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(148, 88, 240, " + (alpha * 0.92).toFixed(4) + ")";
+        ctx.lineWidth = bolt.width + 2.4;
+        ctx.shadowBlur = (22 + (1 - revealProgress) * 22) * shadowScale;
+        ctx.shadowColor = "rgba(132, 72, 228, " + (alpha * 1.0).toFixed(4) + ")";
         ctx.stroke();
-        ctx.strokeStyle = "rgba(216, 172, 255, " + Math.min(0.52, alpha + 0.08).toFixed(4) + ")";
-        ctx.lineWidth = Math.max(1.0, bolt.width * 0.68);
-        ctx.shadowBlur = (8 + (1 - revealProgress) * 10) * shadowScale;
-        ctx.shadowColor = "rgba(178, 130, 255, " + (alpha * 0.9).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(232, 192, 255, " + Math.min(0.68, alpha + 0.12).toFixed(4) + ")";
+        ctx.lineWidth = Math.max(1.4, bolt.width * 0.82);
+        ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
+        ctx.shadowColor = "rgba(198, 152, 255, " + (alpha * 0.95).toFixed(4) + ")";
         ctx.stroke();
 
         if (flicker > (0.08 - creationBoost * 0.32)) {
@@ -1617,8 +1629,8 @@ function startDrawLoop() {
           const branchStartP = 0.34 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 1.5 + bolt.phase));
           const fromR = startR + reach * branchStartP;
           const fromA = baseA + dir * 0.04;
-          const branchReach = reach * (0.38 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
-          const branchSpan = dir * (0.12 + 0.06 * Math.sin(drift * 3 + bolt.phase));
+          const branchReach = reach * (0.48 + 0.32 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
+          const branchSpan = dir * (0.16 + 0.08 * Math.sin(drift * 3 + bolt.phase));
           ctx.beginPath();
           for (let b = 0; b <= branchSteps; b++) {
             const p = b / branchSteps;
@@ -1629,11 +1641,11 @@ function startDrawLoop() {
             const y = cy + Math.sin(ang) * rr * 0.88;
             if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
           }
-          const branchAlpha = alpha * 0.58;
-          ctx.strokeStyle = "rgba(124, 78, 220, " + branchAlpha.toFixed(4) + ")";
-          ctx.lineWidth = Math.max(0.75, bolt.width * 0.64);
-          ctx.shadowBlur = (9 + (1 - revealProgress) * 9) * shadowScale;
-          ctx.shadowColor = "rgba(110, 68, 206, " + (branchAlpha * 0.86).toFixed(4) + ")";
+          const branchAlpha = alpha * 0.72;
+          ctx.strokeStyle = "rgba(156, 108, 240, " + branchAlpha.toFixed(4) + ")";
+          ctx.lineWidth = Math.max(1.0, bolt.width * 0.76);
+          ctx.shadowBlur = (12 + (1 - revealProgress) * 12) * shadowScale;
+          ctx.shadowColor = "rgba(138, 88, 228, " + (branchAlpha * 0.9).toFixed(4) + ")";
           ctx.stroke();
         }
       }

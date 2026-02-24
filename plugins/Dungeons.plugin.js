@@ -6410,6 +6410,7 @@ module.exports = class Dungeons {
         dungeon.shadowRevives = (dungeon.shadowRevives || 0) + resurrectedCount;
         dungeon.successfulResurrections = (dungeon.successfulResurrections || 0) + resurrectedCount;
         this.saveSettings();
+        this.startRegeneration(); // PERF: restart regen if it was paused
       }
 
       // Update alive count cache: subtract deaths, add back resurrections
@@ -6423,6 +6424,7 @@ module.exports = class Dungeons {
       this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
       this.pushHPToStats(true);
       this.updateStatsUI();
+      this.startRegeneration(); // PERF: restart regen if it was paused
 
       if (userDamageToast && dungeon.userParticipating) {
         this.showToast(userDamageToast(totalUserDamage), 'error');
@@ -6618,11 +6620,11 @@ module.exports = class Dungeons {
       return; // Already running
     }
 
-    this.debugLog('⏰ Starting HP/Mana regeneration interval (every 1 second)');
+    console.log('%c[Dungeons]%c ⏰ Regeneration interval started (auto-pauses when full)', 'color:#a855f7;font-weight:bold', 'color:inherit');
     // Start HP/Mana regeneration interval
     this.regenInterval = setInterval(() => {
       this.regenerateHPAndMana();
-    }, 1000); // Regenerate every 1 second
+    }, 3000); // Regenerate every 3 seconds
     this._intervals.add(this.regenInterval);
   }
 
@@ -6729,10 +6731,9 @@ module.exports = class Dungeons {
     const needsHPRegen = this.settings.userHP < this.settings.userMaxHP;
     const needsManaRegen = this.settings.userMana < this.settings.userMaxMana;
 
-    // Stop regeneration if both HP and Mana are at max
+    // PERF: Stop interval entirely when both are full — restarts on damage/mana spend
     if (!needsHPRegen && !needsManaRegen) {
-      // Both are full - no need to continue regeneration interval
-      // Keep interval running for future regeneration needs (user might take damage)
+      this.stopRegeneration();
       return;
     }
 
@@ -10985,6 +10986,7 @@ module.exports = class Dungeons {
 
     // Sync mana to SoloLevelingStats in-memory (no immediate save — debounced saveSettings handles persistence)
     this.pushManaToStats(false);
+    this.startRegeneration(); // PERF: restart regen if it was paused
 
     // Track resurrection (reuse existing dungeon variable)
     if (dungeon) {
@@ -13224,6 +13226,7 @@ module.exports = class Dungeons {
       this.syncHPFromStats();
       this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
       this.pushHPToStats(true);
+      this.startRegeneration(); // PERF: restart regen if it was paused
 
       if (this.settings.userHP <= 0) {
         await this.handleUserDefeat(channelKey);
@@ -13346,6 +13349,7 @@ module.exports = class Dungeons {
       this.syncHPFromStats();
       this.settings.userHP = Math.max(0, this.settings.userHP - totalUserDamage);
       this.pushHPToStats(true);
+      this.startRegeneration(); // PERF: restart regen if it was paused
 
       if (this.settings.userHP <= 0) {
         await this.handleUserDefeat(channelKey);
