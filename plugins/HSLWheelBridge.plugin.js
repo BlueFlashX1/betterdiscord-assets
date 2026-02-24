@@ -21,24 +21,37 @@
  * { childList: true, subtree: true } — fired on every DOM change app-wide.
  */
 
-// Scroller selector — the actual scrolling container inside the HSL nav
-const HSL_SCROLLER_SELECTOR =
-  "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']";
-
-// Fallback selectors for when Discord changes class names
-const HSL_SCROLLER_FALLBACKS = [
+// Scroller selectors — primary + fallbacks for Discord class name changes
+const HSL_SCROLLER_SELECTORS = [
+  "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
   "nav[aria-label='Servers'] ul[role='tree'] [class*='scroller_']",
   "nav[class*='guilds_'] [class*='scroller_'][class*='scrollerBase_']",
 ];
 
+// TTL cache for scroller lookups — avoids 1-3 querySelector calls per render
+const _scrollerCache = {};
+
+let _PluginUtils;
+try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 function findHSLScroller() {
-  let scroller = document.querySelector(HSL_SCROLLER_SELECTOR);
-  if (scroller) return scroller;
-  for (const sel of HSL_SCROLLER_FALLBACKS) {
-    scroller = document.querySelector(sel);
-    if (scroller) return scroller;
+  if (_PluginUtils) {
+    return _PluginUtils.querySelectorFallback(HSL_SCROLLER_SELECTORS, {
+      cache: _scrollerCache, cacheKey: "hsl-scroller", ttlMs: 2000,
+    });
   }
-  return null;
+  // Inline fallback with cache
+  const entry = _scrollerCache["hsl-scroller"];
+  if (entry && Date.now() - entry.time < 2000 && entry.el && entry.el.isConnected) {
+    return entry.el;
+  }
+  let scroller = null;
+  for (const sel of HSL_SCROLLER_SELECTORS) {
+    scroller = document.querySelector(sel);
+    if (scroller) break;
+  }
+  _scrollerCache["hsl-scroller"] = scroller ? { el: scroller, time: Date.now() } : null;
+  return scroller;
 }
 
 function handleWheel(event) {

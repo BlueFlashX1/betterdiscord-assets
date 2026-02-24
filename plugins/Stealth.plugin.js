@@ -702,13 +702,21 @@ module.exports = class Stealth {
   _toast(message, type = "info") {
     if (!this.settings.showToasts) return;
 
-    if (typeof BdApi.showToast === "function") {
-      BdApi.showToast(message, { type, timeout: 2500 });
+    let PluginUtils;
+    try { PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { PluginUtils = null; }
+
+    if (PluginUtils) {
+      PluginUtils.showToast(message, { type, timeout: 2500 });
       return;
     }
 
+    // Inline fallback — modern API first, deprecated last
     if (typeof BdApi.UI?.showToast === "function") {
       BdApi.UI.showToast(message, { type, timeout: 2500 });
+      return;
+    }
+    if (typeof BdApi.showToast === "function") {
+      BdApi.showToast(message, { type, timeout: 2500 });
     }
   }
 

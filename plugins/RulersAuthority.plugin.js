@@ -1771,16 +1771,33 @@ ${membersSel} [class*="scrollerBase_"]::-webkit-scrollbar {
   display: none !important;
 }
 
-/* ── Members panel hard border edge ───────────────────────────── */
+/* ── Chat content dark overlay ───────────────────────────────── */
+body.ra-members-pushed.ra-members-hover-reveal ${chatSel} {
+  background: rgba(0, 0, 0, 0.4) !important;
+}
+
+/* ── Members: outer wrap has subtle purple glow, scroller transparent ── */
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel},
-body.ra-members-pushed.ra-members-hover-reveal ${membersSel} > div[class*="members_"],
-body.ra-members-pushed.ra-members-hover-reveal ${membersSel} > div[class*="container_"] {
-  border-left: 1px solid rgba(138, 43, 226, 0.55) !important;
+body.ra-members-pushed.ra-members-hover-reveal div[class^="membersWrap_"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: -2px 0 10px rgba(138, 43, 226, 0.15) !important;
+  border-left: 0 !important;
   outline: none !important;
 }
 
-body.ra-members-pushed.ra-members-hover-reveal ${membersSel} {
-  box-shadow: -3px 0 12px rgba(138, 43, 226, 0.18) !important;
+body.ra-members-pushed.ra-members-hover-reveal div[class^="members_"] {
+  background: transparent !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+  border-left: 0 !important;
+  outline: none !important;
+}
+
+body.ra-members-pushed.ra-members-hover-reveal div[aria-label="Members"][role="list"] {
+  background: rgba(0, 0, 0, 0.4) !important;
+  -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.7) 12px, black 24px) !important;
+  mask-image: linear-gradient(to right, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.7) 12px, black 24px) !important;
 }
 
 /* ── Hover-to-Expand (float overlay) ────────────────────────────── */
@@ -1803,8 +1820,8 @@ ${membersHover.join(",\n")} {
   overflow-y: auto !important;
   overflow-x: visible !important;
   position: relative !important;
-  border-left: 1px solid rgba(138, 43, 226, 0.55) !important;
-  box-shadow: -3px 0 12px rgba(138, 43, 226, 0.18) !important;
+  border-left: 0 !important;
+  box-shadow: none !important;
   transition: width var(--ra-transition-speed) ease,
               min-width var(--ra-transition-speed) ease,
               max-width var(--ra-transition-speed) ease;

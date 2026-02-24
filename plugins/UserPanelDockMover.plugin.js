@@ -1,7 +1,7 @@
 /**
  * @name UserPanelDockMover
  * @description Visually moves the user status/settings panel into the horizontal server list dock via CSS positioning.
- * @version 3.6.0
+ * @version 3.7.0
  * @author BlueFlashX1
  */
 
@@ -18,7 +18,7 @@ module.exports = class UserPanelDockMover {
 
     this.instanceKey = instanceKey;
     this.pluginId = "UserPanelDockMover";
-    this.version = "3.6.0";
+    this.version = "3.7.0";
 
     this.panelSelector = "section[aria-label='User status and settings']";
     this.dockSelector = "nav[aria-label='Servers sidebar']";
@@ -28,11 +28,10 @@ module.exports = class UserPanelDockMover {
     this.pollInterval = null;
     this.isPositioned = false;
 
-    // Dock-hover bridge: keep HSLDockAutoHide open while hovering nametag
-    this._onPanelEnter = null;
-    this._onPanelLeave = null;
-    this._bridgedContainer = null;
-    this._origHitTest = null; // saved original isPointerOnDockHitTarget
+    // NOTE: Dock-hover bridge code was removed in v3.7.0.
+    // HSLDockAutoHide v4.0.0+ handles user panel hover internally via
+    // DockEngine.bindUserPanelHover(). When this plugin runs standalone
+    // (without HSLDockAutoHide), there is no auto-hide dock to bridge to.
 
     // Clean up stale CSS variable from previous versions
     document.body.style.removeProperty("--sl-userpanel-width");
@@ -47,7 +46,7 @@ module.exports = class UserPanelDockMover {
     this.trySetup();
     this.pollInterval = setInterval(() => this.trySetup(), 900);
 
-    BdApi.UI.showToast("UserPanelDockMover v3.6.0 active", { type: "success", timeout: 2200 });
+    BdApi.UI.showToast("UserPanelDockMover v3.7.0 active", { type: "success", timeout: 2200 });
   }
 
   stop() {
@@ -55,9 +54,6 @@ module.exports = class UserPanelDockMover {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
     }
-
-    // Unbind dock-hover bridge
-    this.unbindDockHoverBridge();
 
     // Remove positioning class
     if (this.panel) {
@@ -269,89 +265,6 @@ module.exports = class UserPanelDockMover {
     if (BdApi?.DOM?.addStyle) BdApi.DOM.addStyle(this.pluginId, css);
   }
 
-  /**
-   * Tell HSLDockAutoHide that hovering the nametag = hovering the dock.
-   *
-   * Two-pronged approach:
-   * 1. mouseenter/mouseleave on the inner container for immediate response.
-   * 2. Monkey-patch isPointerOnDockHitTarget() so the 850ms tick in
-   *    refreshPointerState() also considers the nametag as "on dock".
-   *    Without this, the tick resets pointerOverDock = false every cycle.
-   */
-  bindDockHoverBridge(panel) {
-    this.unbindDockHoverBridge();
-
-    // Target the inner container (pointer-events: auto) — the outer section
-    // is pointer-events: none so it never fires mouse events.
-    const container = panel.querySelector("div[class^='container_']");
-    if (!container) return;
-
-    this._onPanelEnter = () => {
-      const inst = window.__HSLDockAutoHideLiveInstance;
-      if (!inst) return;
-      inst.pointerOverDock = true;
-      inst.revealHoldUntil = 0;
-      if (inst.hideTimer) { clearTimeout(inst.hideTimer); inst.hideTimer = null; }
-      if (inst.clearRevealTimer) inst.clearRevealTimer("userpanel-enter");
-      inst.showDock?.("userpanel-enter");
-    };
-
-    this._onPanelLeave = () => {
-      const inst = window.__HSLDockAutoHideLiveInstance;
-      if (!inst) return;
-      inst.pointerOverDock = false;
-      inst.scheduleHide?.(inst.hideDelayMs || 220);
-    };
-
-    container.addEventListener("mouseenter", this._onPanelEnter);
-    container.addEventListener("mouseleave", this._onPanelLeave);
-    this._bridgedContainer = container;
-
-    // Patch isPointerOnDockHitTarget so the periodic tick also sees the
-    // nametag panel as "on dock" — prevents refreshPointerState from
-    // overriding pointerOverDock back to false every 850ms.
-    this._patchHitTest(panel);
-  }
-
-  _patchHitTest(panel) {
-    const inst = window.__HSLDockAutoHideLiveInstance;
-    if (!inst || this._origHitTest) return; // already patched or no instance
-
-    this._origHitTest = inst.isPointerOnDockHitTarget.bind(inst);
-    const self = this;
-
-    inst.isPointerOnDockHitTarget = function (x, y) {
-      // Original check — is cursor on the actual dock?
-      if (self._origHitTest(x, y)) return true;
-
-      // Extended check — is cursor on the nametag panel or its children?
-      if (!self.panel || !document?.elementFromPoint) return false;
-      const cx = (x !== undefined) ? x : inst.lastMouseX;
-      const cy = (y !== undefined) ? y : inst.lastMouseY;
-      if (typeof cx !== "number" || typeof cy !== "number" || cx < 0 || cy < 0) return false;
-      const hit = document.elementFromPoint(cx, cy);
-      if (!hit || !(hit instanceof Element)) return false;
-      return hit === self.panel || self.panel.contains(hit);
-    };
-  }
-
-  unbindDockHoverBridge() {
-    if (this._bridgedContainer) {
-      if (this._onPanelEnter) this._bridgedContainer.removeEventListener("mouseenter", this._onPanelEnter);
-      if (this._onPanelLeave) this._bridgedContainer.removeEventListener("mouseleave", this._onPanelLeave);
-    }
-    this._bridgedContainer = null;
-    this._onPanelEnter = null;
-    this._onPanelLeave = null;
-
-    // Restore original hit test
-    if (this._origHitTest) {
-      const inst = window.__HSLDockAutoHideLiveInstance;
-      if (inst) inst.isPointerOnDockHitTarget = this._origHitTest;
-      this._origHitTest = null;
-    }
-  }
-
   trySetup() {
     const panel = document.querySelector(this.panelSelector);
     const dock = document.querySelector(this.dockSelector);
@@ -378,8 +291,5 @@ module.exports = class UserPanelDockMover {
 
     panel.classList.add("sl-userpanel-docked");
     this.isPositioned = true;
-
-    // Bind dock-hover bridge so hovering nametag keeps dock open
-    this.bindDockHoverBridge(panel);
   }
 };

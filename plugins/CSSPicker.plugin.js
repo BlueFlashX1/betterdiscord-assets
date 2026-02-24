@@ -39,51 +39,45 @@ module.exports = (() => {
     themePath: 'SoloLeveling-ClearVision.theme.css',
   };
 
-  const isEditableTarget = (target) => {
-    const el = target;
-    if (!el) return false;
-    const tag = el.tagName?.toLowerCase?.() || '';
+  // Hotkey + editable-target utilities — shared module with inline fallback
+  const isEditableTarget = _PluginUtils?.isEditableTarget || ((target) => {
+    if (!target) return false;
+    const tag = target.tagName?.toLowerCase?.() || '';
     if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
-    return !!el.isContentEditable;
-  };
+    return !!target.isContentEditable;
+  });
 
-  const normalizeHotkey = (hotkey) =>
-    String(hotkey || '')
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, '');
+  const normalizeHotkey = _PluginUtils?.normalizeHotkey || ((hotkey) =>
+    String(hotkey || '').trim().toLowerCase().replace(/\s+/g, ''));
 
-  const parseHotkey = (hotkey) => {
+  const parseHotkey = _PluginUtils?.parseHotkey || ((hotkey) => {
     const normalized = normalizeHotkey(hotkey);
     const parts = normalized.split('+').filter(Boolean);
     const mods = new Set(
       parts.filter((p) => ['ctrl', 'shift', 'alt', 'meta', 'cmd', 'command'].includes(p))
     );
     const key = parts.find((p) => !mods.has(p)) || '';
+    return {
+      key,
+      hasCtrl: mods.has('ctrl'),
+      hasShift: mods.has('shift'),
+      hasAlt: mods.has('alt'),
+      hasMeta: mods.has('meta') || mods.has('cmd') || mods.has('command'),
+    };
+  });
 
-    const hasCtrl = mods.has('ctrl');
-    const hasShift = mods.has('shift');
-    const hasAlt = mods.has('alt');
-    const hasMeta = mods.has('meta') || mods.has('cmd') || mods.has('command');
-
-    return { key, hasCtrl, hasShift, hasAlt, hasMeta };
-  };
-
-  const matchesHotkey = (event, hotkey) => {
+  const matchesHotkey = _PluginUtils?.matchesHotkey || ((event, hotkey) => {
     const spec = parseHotkey(hotkey);
     if (!spec.key) return false;
-
     const key = String(event.key || '').toLowerCase();
-    const isKeyMatch = key === spec.key || (spec.key.length === 1 && key === spec.key);
-
     return (
-      isKeyMatch &&
+      key === spec.key &&
       !!event.ctrlKey === spec.hasCtrl &&
       !!event.shiftKey === spec.hasShift &&
       !!event.altKey === spec.hasAlt &&
       !!event.metaKey === spec.hasMeta
     );
-  };
+  });
 
   const loadSettings = () => {
     try {
@@ -101,9 +95,22 @@ module.exports = (() => {
     }
   };
 
+  let _PluginUtils;
+  try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
   const safeToast = (message, options = {}) => {
     try {
-      BdApi.showToast(message, { timeout: 3000, ...options });
+      if (_PluginUtils) {
+        _PluginUtils.showToast(message, { timeout: 3000, ...options });
+        return;
+      }
+      // Inline fallback — modern API first, deprecated last
+      const opts = { timeout: 3000, ...options };
+      if (typeof BdApi.UI?.showToast === "function") {
+        BdApi.UI.showToast(message, opts);
+      } else if (typeof BdApi.showToast === "function") {
+        BdApi.showToast(message, opts);
+      }
     } catch (e) {
       // ignore
     }
