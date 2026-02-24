@@ -5430,13 +5430,9 @@ module.exports = class Dungeons {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
-    // Shadows must be explicitly deployed via the DEPLOY SHADOWS button.
-    // Don't auto-deploy on message — let the user choose when to start combat.
-    if (!dungeon.shadowsDeployed) return;
-
-    if (!dungeon.userParticipating) {
-      await this.selectDungeon(channelKey);
-    }
+    // User must explicitly deploy (DEPLOY SHADOWS button) AND join (JOIN button)
+    // before messages trigger attacks. No auto-deploy or auto-join on message.
+    if (!dungeon.shadowsDeployed || !dungeon.userParticipating) return;
 
     // Calculate base damage using TOTAL EFFECTIVE STATS (includes all buffs)
     // Boss can only be engaged after gate requirements are met.
