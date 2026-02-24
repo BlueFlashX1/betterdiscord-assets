@@ -328,9 +328,17 @@ module.exports = class ChatNavArrows {
       const React = BdApi.React;
       const [showDown, setShowDown] = React.useState(false);
       const [showUp, setShowUp] = React.useState(false);
+      // bindCount forces a re-render whenever findAndBind discovers a new scroller.
+      // Without this, the first render returns null (wrapperRef not set yet),
+      // and if the scroll handler's setState values match defaults (both false
+      // — e.g. short channel at bottom), no re-render ever happens and the
+      // portal never mounts.
+      const [bindCount, setBindCount] = React.useState(0);
       const scrollerRef = React.useRef(null);
       const wrapperRef = React.useRef(null);
       const pollRef = React.useRef(null);
+      // Track DOM-injected arrows for cleanup when createPortal unavailable
+      const domArrowsRef = React.useRef(null);
 
       React.useEffect(() => {
         if (pluginInstance._isStopped) return;
@@ -338,7 +346,7 @@ module.exports = class ChatNavArrows {
         let currentScroller = null;
         let scrollHandler = null;
 
-        const findAndBind = () => {
+        const findScroller = () => {
           const wrapper =
             document.querySelector('div[class*="messagesWrapper_"]') ||
             document.querySelector('div[class*="messagesWrapper-"]') ||
@@ -347,8 +355,14 @@ module.exports = class ChatNavArrows {
             wrapper?.querySelector('div[class*="scroller_"]') ||
             wrapper?.querySelector('div[class*="scroller-"]') ||
             wrapper?.querySelector('[class*="scrollerInner_"]')?.parentElement;
+          return { wrapper: wrapper || null, scroller: scroller || null };
+        };
 
-          if (!scroller || scroller === currentScroller) return;
+        const findAndBind = () => {
+          const { wrapper, scroller } = findScroller();
+          if (!scroller) return;
+          // Same scroller still connected — no rebind needed
+          if (scroller === currentScroller && scroller.isConnected) return;
 
           // Unbind previous
           if (currentScroller && scrollHandler) {
@@ -363,6 +377,7 @@ module.exports = class ChatNavArrows {
           if (wrapper) wrapper.style.position = 'relative';
 
           scrollHandler = () => {
+            if (!scroller.isConnected) return;
             const { scrollTop, scrollHeight, clientHeight } = scroller;
             const atBottom = scrollHeight - scrollTop - clientHeight < THRESHOLD;
             const atTop = scrollTop < THRESHOLD;
@@ -372,10 +387,15 @@ module.exports = class ChatNavArrows {
 
           scroller.addEventListener('scroll', scrollHandler, { passive: true });
           scrollHandler(); // Initial check
+          // Force re-render so the portal/DOM path can pick up the new wrapper
+          setBindCount(c => c + 1);
         };
 
-        // Find scroller immediately, then poll for channel switches
+        // Find scroller immediately; retry quickly if DOM isn't ready yet
         findAndBind();
+        if (!currentScroller) {
+          setTimeout(findAndBind, 150);
+        }
         pollRef.current = setInterval(findAndBind, POLL_INTERVAL);
 
         return () => {
@@ -412,12 +432,10 @@ module.exports = class ChatNavArrows {
         if (scroller) scroller.scrollTop = 0;
       }, []);
 
-      // Render arrows using React portals into the wrapper if available,
-      // otherwise render as fixed-position fallback
       const wrapper = wrapperRef.current;
 
-      // Use createPortal to render inside the messages wrapper
-      if (wrapper && BdApi.ReactDOM?.createPortal) {
+      // ── Portal path (preferred) ──
+      if (wrapper && wrapper.isConnected && BdApi.ReactDOM?.createPortal) {
         return BdApi.ReactDOM.createPortal(
           React.createElement(React.Fragment, null,
             React.createElement('div', {
@@ -439,10 +457,44 @@ module.exports = class ChatNavArrows {
         );
       }
 
-      // No wrapper found yet — render nothing until scroller is detected
-      if (!wrapper) return null;
+      // ── DOM injection fallback (createPortal unavailable or wrapper stale) ──
+      // Inject arrow elements directly into the wrapper via useEffect.
+      // This mirrors the DOM fallback mode but driven by React state.
+      React.useEffect(() => {
+        if (!wrapper || !wrapper.isConnected) return;
+        if (BdApi.ReactDOM?.createPortal) return; // Portal path handles it
 
-      // createPortal not available — render nothing (arrows need wrapper context)
+        // Create or reuse arrow elements
+        let arrows = domArrowsRef.current;
+        if (!arrows || !arrows.down.isConnected) {
+          const down = document.createElement('div');
+          down.className = 'sl-chat-nav-arrow sl-chat-nav-down';
+          down.title = 'Jump to Present';
+          down.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
+          down.addEventListener('click', handleDownClick);
+
+          const up = document.createElement('div');
+          up.className = 'sl-chat-nav-arrow sl-chat-nav-up';
+          up.title = 'Jump to Top';
+          up.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
+          up.addEventListener('click', handleUpClick);
+
+          arrows = { down, up };
+          domArrowsRef.current = arrows;
+        }
+
+        if (!wrapper.contains(arrows.down)) wrapper.appendChild(arrows.down);
+        if (!wrapper.contains(arrows.up)) wrapper.appendChild(arrows.up);
+
+        arrows.down.classList.toggle('sl-visible', showDown);
+        arrows.up.classList.toggle('sl-visible', showUp);
+
+        return () => {
+          if (arrows.down.isConnected) arrows.down.remove();
+          if (arrows.up.isConnected) arrows.up.remove();
+        };
+      }, [wrapper, showDown, showUp, bindCount, handleDownClick, handleUpClick]);
+
       return null;
     };
 
