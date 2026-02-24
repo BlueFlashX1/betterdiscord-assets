@@ -1683,6 +1683,9 @@ function buildWidgetComponents(pluginInstance) {
 let _ReactUtils;
 try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class ShadowArmy {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -2755,10 +2758,10 @@ module.exports = class ShadowArmy {
       this.naturalGrowthInterval = null;
     }
 
-    // Cleanup URL change watcher
-    if (this._urlChangeCleanup) {
-      this._urlChangeCleanup();
-      this._urlChangeCleanup = null;
+    // PERF(P5-1): Unsubscribe from shared NavigationBus
+    if (this._navBusUnsub) {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
     }
 
     // Clear widget update interval
@@ -2889,40 +2892,13 @@ module.exports = class ShadowArmy {
       this._retryTimeouts.add(timeoutId);
     };
 
-    // Listen to browser navigation events
-    window.addEventListener('popstate', handleUrlChange);
-
-    // Override pushState and replaceState to detect programmatic navigation.
-    // IMPORTANT: Chain safely with any existing wrappers from other plugins.
-    const originalPushState = history.pushState;
-    const originalReplaceState = history.replaceState;
-
-    const pushStateWrapper = function (...args) {
-      originalPushState.apply(history, args);
-      handleUrlChange();
-    };
-
-    const replaceStateWrapper = function (...args) {
-      originalReplaceState.apply(history, args);
-      handleUrlChange();
-    };
-
-    history.pushState = pushStateWrapper;
-    history.replaceState = replaceStateWrapper;
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => handleUrlChange());
+    }
 
     // Setup member list watcher for widget persistence
     this.setupMemberListWatcher();
-
-    // Store cleanup functions
-    this._urlChangeCleanup = () => {
-      window.removeEventListener('popstate', handleUrlChange);
-      pushStateWrapper &&
-        history.pushState === pushStateWrapper &&
-        (history.pushState = originalPushState);
-      replaceStateWrapper &&
-        history.replaceState === replaceStateWrapper &&
-        (history.replaceState = originalReplaceState);
-    };
   }
 
   /**

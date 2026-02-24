@@ -237,6 +237,9 @@ let _SLUtils;
 _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class SoloLevelingTitleManager {
   // ============================================================================
   // SECTION 1: IMPORTS & DEPENDENCIES
@@ -1530,58 +1533,18 @@ module.exports = class SoloLevelingTitleManager {
       }
     };
 
-    // Listen to browser navigation events
-    window.addEventListener('popstate', handleUrlChange);
-
-    // Override pushState and replaceState to detect programmatic navigation
-    // Store originals in private properties for defensive restoration
-    try {
-      this._originalPushState = history.pushState;
-      this._originalReplaceState = history.replaceState;
-
-      this._pushStateWrapper = function (...args) {
-        this._originalPushState.apply(history, args);
-        handleUrlChange();
-      }.bind(this);
-      history.pushState = this._pushStateWrapper;
-
-      this._replaceStateWrapper = function (...args) {
-        this._originalReplaceState.apply(history, args);
-        handleUrlChange();
-      }.bind(this);
-      history.replaceState = this._replaceStateWrapper;
-    } catch (error) {
-      this.debugError('WATCHER', 'Failed to override history methods', error);
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => handleUrlChange());
     }
 
-    // Store idempotent and defensive cleanup function
+    // Store idempotent cleanup function
     this._urlChangeCleanup = () => {
-      window.removeEventListener('popstate', handleUrlChange);
-
-      // FUNCTIONAL: Defensive restoration (short-circuit, no if-else)
-      try {
-        this._originalPushState &&
-          this._pushStateWrapper &&
-          history.pushState === this._pushStateWrapper &&
-          (history.pushState = this._originalPushState);
-      } catch (error) {
-        this.debugError('WATCHER', 'Failed to restore history.pushState', error);
+      // PERF(P5-1): Unsubscribe from shared NavigationBus
+      if (this._navBusUnsub) {
+        this._navBusUnsub();
+        this._navBusUnsub = null;
       }
-
-      try {
-        this._originalReplaceState &&
-          this._replaceStateWrapper &&
-          history.replaceState === this._replaceStateWrapper &&
-          (history.replaceState = this._originalReplaceState);
-      } catch (error) {
-        this.debugError('WATCHER', 'Failed to restore history.replaceState', error);
-      }
-
-      // Null out stored originals after successful restore
-      this._originalPushState = null;
-      this._originalReplaceState = null;
-      this._pushStateWrapper = null;
-      this._replaceStateWrapper = null;
     };
   }
 

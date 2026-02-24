@@ -346,6 +346,9 @@ let _SLUtils;
 _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class SkillTree {
   // ============================================================================
   // §1 CONSTRUCTOR & INITIALIZATION
@@ -975,7 +978,7 @@ module.exports = class SkillTree {
     if (this.eventUnsubscribers.length > 0) return;
     if (this.levelCheckInterval) return;
     this.levelCheckInterval = setInterval(() => {
-      if (this._isStopped) return;
+      if (this._isStopped || document.hidden) return;
       this.checkForLevelUp();
       this.recalculateSPFromLevel();
     }, 15000);
@@ -3273,52 +3276,17 @@ module.exports = class SkillTree {
       }
     };
 
-    // Listen to browser back/forward navigation
-    window.addEventListener('popstate', handleUrlChange);
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => handleUrlChange());
+    }
 
-    // Override pushState and replaceState to detect programmatic navigation.
-    // Store the true originals ONCE to avoid infinite recursion on hot reload.
-    // On reload, history.pushState may already be our wrapper, so we must not
-    // re-capture it as the "original".
-    if (!this._originalPushState) this._originalPushState = history.pushState;
-    if (!this._originalReplaceState) this._originalReplaceState = history.replaceState;
-
-    const originalPush = this._originalPushState;
-    const originalReplace = this._originalReplaceState;
-
-    this._navPushStateWrapper = (...args) => {
-      originalPush.apply(history, args);
-      handleUrlChange();
-    };
-    this._navReplaceStateWrapper = (...args) => {
-      originalReplace.apply(history, args);
-      handleUrlChange();
-    };
-
-    history.pushState = this._navPushStateWrapper;
-    history.replaceState = this._navReplaceStateWrapper;
-
-    // Store cleanup function with try/finally to guarantee restoration
+    // Store cleanup function
     this._urlChangeCleanup = () => {
-      try {
-        // Remove popstate listener
-        window.removeEventListener('popstate', handleUrlChange);
-        // Restore original history methods
-        this._navPushStateWrapper &&
-          history.pushState === this._navPushStateWrapper &&
-          this._originalPushState &&
-          (history.pushState = this._originalPushState);
-        this._navReplaceStateWrapper &&
-          history.replaceState === this._navReplaceStateWrapper &&
-          this._originalReplaceState &&
-          (history.replaceState = this._originalReplaceState);
-      } catch (e) {
-        console.error('[SkillTree] Error during URL watcher cleanup:', e);
-      } finally {
-        this._navPushStateWrapper = null;
-        this._navReplaceStateWrapper = null;
-        this._originalPushState = null;
-        this._originalReplaceState = null;
+      // PERF(P5-1): Unsubscribe from shared NavigationBus
+      if (this._navBusUnsub) {
+        this._navBusUnsub();
+        this._navBusUnsub = null;
       }
     };
   }

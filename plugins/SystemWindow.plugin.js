@@ -6,6 +6,12 @@
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class SystemWindow {
   constructor() {
     this._STYLE_ID = "system-window-css";
@@ -66,27 +72,10 @@ module.exports = class SystemWindow {
     this._findAndObserve();
 
     // ── Event-driven channel detection (replaces 1s poll) ──
-    // Wrap pushState/replaceState to catch SPA navigation
-    this._originalPushState = history.pushState;
-    this._originalReplaceState = history.replaceState;
-
-    const onNav = () => this._checkChannelSwitch();
-    const origPush = this._originalPushState;
-    const origReplace = this._originalReplaceState;
-
-    history.pushState = function (...args) {
-      const result = origPush.apply(this, args);
-      onNav();
-      return result;
-    };
-    history.replaceState = function (...args) {
-      const result = origReplace.apply(this, args);
-      onNav();
-      return result;
-    };
-
-    this._popstateHandler = onNav;
-    window.addEventListener("popstate", this._popstateHandler);
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => this._checkChannelSwitch());
+    }
 
     // Safety-net fallback: 10s poll (catches edge cases the events miss)
     this._pollInterval = setInterval(() => {
@@ -143,18 +132,10 @@ module.exports = class SystemWindow {
       clearTimeout(this._findRetryTimer);
       this._findRetryTimer = null;
     }
-    // Restore original navigation methods
-    if (this._originalPushState) {
-      history.pushState = this._originalPushState;
-      this._originalPushState = null;
-    }
-    if (this._originalReplaceState) {
-      history.replaceState = this._originalReplaceState;
-      this._originalReplaceState = null;
-    }
-    if (this._popstateHandler) {
-      window.removeEventListener("popstate", this._popstateHandler);
-      this._popstateHandler = null;
+    // PERF(P5-1): Unsubscribe from shared NavigationBus
+    if (this._navBusUnsub) {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
     }
     clearTimeout(this._throttleTimer);
     this._throttleTimer = null;

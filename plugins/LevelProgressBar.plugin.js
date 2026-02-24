@@ -1880,6 +1880,7 @@ module.exports = class LevelProgressBar {
 
     // Only use polling as fallback - slower interval since events should handle most updates
     this.updateInterval = setInterval(() => {
+      if (document.hidden) return;
       this.queueProgressBarUpdate();
     }, this.settings.updateInterval || 5000); // Default to 5 seconds for fallback
 

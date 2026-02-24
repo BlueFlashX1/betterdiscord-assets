@@ -277,6 +277,9 @@
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 function openIndexedDbDatabase({ dbName, dbVersion, onUpgrade, onBlocked }) {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) {
@@ -3454,6 +3457,7 @@ module.exports = class Dungeons {
       }
       // PERF: Use isConnected (O(1) native) instead of contains() (DOM traversal)
       this._messageContainerReattachId = setInterval(() => {
+        if (document.hidden) return; // PERF(P5-3): Skip health check when hidden
         if (!this.messageObserver || !this._messageContainerRef) return;
         if (!this._messageContainerRef.isConnected) {
           this.debugLog('MESSAGE_OBSERVER', 'Container removed from DOM, reattaching');
@@ -6613,6 +6617,7 @@ module.exports = class Dungeons {
     this.debugLog('⏰ Regeneration interval started (auto-pauses when full)');
     // Start HP/Mana regeneration interval
     this.regenInterval = setInterval(() => {
+      if (!this.isWindowVisible()) return; // PERF(P5-3): Skip regen when hidden
       this.regenerateHPAndMana();
     }, 3000); // Regenerate every 3 seconds
     this._intervals.add(this.regenInterval);
@@ -13626,33 +13631,10 @@ module.exports = class Dungeons {
     // Check immediately
     checkChannel();
 
-    // Trigger immediate check on channel changes (Discord uses pushState/replaceState, not popstate).
-    // IMPORTANT: Chain safely with any existing wrappers from other plugins.
-    const prevPushState = history.pushState;
-    const prevReplaceState = history.replaceState;
-    this._navPrevPushState = prevPushState;
-    this._navPrevReplaceState = prevReplaceState;
-    this._navPushStateWrapper = (...args) => {
-      prevPushState.apply(history, args);
-      scheduleCheckChannel();
-    };
-    this._navReplaceStateWrapper = (...args) => {
-      prevReplaceState.apply(history, args);
-      scheduleCheckChannel();
-    };
-    history.pushState = this._navPushStateWrapper;
-    history.replaceState = this._navReplaceStateWrapper;
-
-    // Also listen to popstate for browser navigation
-    this._popstateHandler = () => {
-      scheduleCheckChannel();
-    };
-    window.addEventListener('popstate', this._popstateHandler);
-    // Track listener for cleanup
-    if (!this._listeners.has('popstate')) {
-      this._listeners.set('popstate', new Set());
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => scheduleCheckChannel());
     }
-    this._listeners.get('popstate').add(this._popstateHandler);
 
     // Header MutationObserver removed — redundant with pushState/replaceState wrappers,
     // popstate listener, and fallback interval below. Reduces DOM listener overhead.
@@ -13660,6 +13642,7 @@ module.exports = class Dungeons {
 
     // PERF: Fallback polling extended to 15s — pushState/replaceState wrappers + popstate handle main path
     this.channelWatcherInterval = setInterval(() => {
+      if (!this.isWindowVisible()) return; // PERF(P5-3): Skip when hidden
       if (!this.activeDungeons || this.activeDungeons.size === 0) return;
       scheduleCheckChannel();
     }, 15000);
@@ -13673,21 +13656,10 @@ module.exports = class Dungeons {
       this.channelWatcherInterval = null;
     }
 
-    // Restore history wrappers if we're still the active wrapper (prevents clobbering newer wrappers).
-    try {
-      this._navPushStateWrapper &&
-        history.pushState === this._navPushStateWrapper &&
-        (history.pushState = this._navPrevPushState);
-      this._navReplaceStateWrapper &&
-        history.replaceState === this._navReplaceStateWrapper &&
-        (history.replaceState = this._navPrevReplaceState);
-    } catch (_) {
-      // Ignore restoration errors
-    } finally {
-      this._navPrevPushState = null;
-      this._navPrevReplaceState = null;
-      this._navPushStateWrapper = null;
-      this._navReplaceStateWrapper = null;
+    // PERF(P5-1): Unsubscribe from shared NavigationBus
+    if (this._navBusUnsub) {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
     }
   }
 
@@ -13718,6 +13690,7 @@ module.exports = class Dungeons {
     // Start global timer if not already running
     if (!this._mobKillGlobalTimer) {
       this._mobKillGlobalTimer = setInterval(() => {
+        if (!this.isWindowVisible()) return; // PERF(P5-3): Skip kill summaries when hidden
         if (!this._mobKillChannels || this._mobKillChannels.size === 0) {
           clearInterval(this._mobKillGlobalTimer);
           this._mobKillGlobalTimer = null;

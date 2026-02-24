@@ -235,6 +235,138 @@ function createThrottle(fn, waitMs) {
   };
 }
 
+// ── NavigationBus (P5-1) ────────────────────────────────────────────────────
+// Shared navigation event bus. Replaces 7 independent history.pushState/
+// replaceState wrapper chains with a single coordinated wrapper.
+// Eliminates decorator-chain race conditions when plugins start/stop in
+// different orders.
+//
+// Usage:
+//   const unsub = NavigationBus.subscribe(({ type, url }) => { ... });
+//   // In stop(): unsub();
+
+const NavigationBus = (() => {
+  // Window-level singleton — _bdLoad creates separate module copies per plugin,
+  // so module scope alone can't share state. All plugins must share ONE bus
+  // to avoid 7 independent pushState wrappers.
+  if (typeof window !== 'undefined' && window.__BD_NavigationBus) return window.__BD_NavigationBus;
+
+  let initialized = false;
+  let originalPushState = null;
+  let originalReplaceState = null;
+  let popstateHandler = null;
+  const subscribers = new Set();
+
+  function init() {
+    if (initialized) return;
+    initialized = true;
+    originalPushState = history.pushState;
+    originalReplaceState = history.replaceState;
+
+    history.pushState = function (...args) {
+      const result = originalPushState.apply(this, args);
+      notify('pushState', args);
+      return result;
+    };
+    history.replaceState = function (...args) {
+      const result = originalReplaceState.apply(this, args);
+      notify('replaceState', args);
+      return result;
+    };
+    popstateHandler = () => notify('popstate');
+    window.addEventListener('popstate', popstateHandler);
+  }
+
+  function notify(type, args) {
+    const url = window.location.href;
+    subscribers.forEach(cb => {
+      try { cb({ type, url, args }); } catch (_) { /* subscriber error isolation */ }
+    });
+  }
+
+  function subscribe(callback) {
+    init();
+    subscribers.add(callback);
+    return () => {
+      subscribers.delete(callback);
+      if (subscribers.size === 0) teardown();
+    };
+  }
+
+  function teardown() {
+    if (!initialized) return;
+    if (subscribers.size > 0) return; // Don't teardown while subscribers exist
+    if (originalPushState) history.pushState = originalPushState;
+    if (originalReplaceState) history.replaceState = originalReplaceState;
+    if (popstateHandler) window.removeEventListener('popstate', popstateHandler);
+    originalPushState = null;
+    originalReplaceState = null;
+    popstateHandler = null;
+    initialized = false;
+    if (typeof window !== 'undefined') delete window.__BD_NavigationBus;
+  }
+
+  const bus = { subscribe, teardown };
+  if (typeof window !== 'undefined') window.__BD_NavigationBus = bus;
+  return bus;
+})();
+
+// ── LayoutObserverBus (P5-4) ────────────────────────────────────────────────
+// Shared MutationObserver for the Discord layout container. Replaces 3-5
+// independent subtree observers with a single shared observer that dispatches
+// to subscribers with per-subscriber throttling.
+//
+// Usage:
+//   const unsub = LayoutObserverBus.subscribe('MyPlugin', () => { ... }, 500);
+//   // In stop(): unsub();
+
+const LayoutObserverBus = (() => {
+  // Window-level singleton — same reason as NavigationBus above.
+  if (typeof window !== 'undefined' && window.__BD_LayoutObserverBus) return window.__BD_LayoutObserverBus;
+
+  let observer = null;
+  let target = null;
+  const subscribers = new Map(); // id -> { callback, throttleMs, lastFired }
+
+  function ensure() {
+    if (observer) return !!target;
+    target =
+      document.querySelector('[class*="base_"][class*="container_"]') ||
+      document.querySelector('[class*="app_"]') ||
+      document.getElementById('app-mount');
+    if (!target) return false;
+
+    observer = new MutationObserver(() => {
+      const now = Date.now();
+      subscribers.forEach((sub) => {
+        if (now - sub.lastFired < sub.throttleMs) return;
+        sub.lastFired = now;
+        try { sub.callback(); } catch (_) { /* subscriber error isolation */ }
+      });
+    });
+    observer.observe(target, { childList: true, subtree: true });
+    return true;
+  }
+
+  function subscribe(id, callback, throttleMs = 500) {
+    ensure();
+    subscribers.set(id, { callback, throttleMs, lastFired: 0 });
+    return () => {
+      subscribers.delete(id);
+      if (subscribers.size === 0 && observer) {
+        observer.disconnect();
+        observer = null;
+        target = null;
+        if (typeof window !== 'undefined') delete window.__BD_LayoutObserverBus;
+      }
+    };
+  }
+
+  const bus = { subscribe, ensure };
+  if (typeof window !== 'undefined') window.__BD_LayoutObserverBus = bus;
+  return bus;
+})();
+
 // ── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -249,4 +381,6 @@ module.exports = {
   createTTLCache,
   getDispatcher,
   createThrottle,
+  NavigationBus,
+  LayoutObserverBus,
 };

@@ -336,6 +336,7 @@ module.exports = class RulersAuthority {
       if (this._channelObserver) { this._channelObserver.disconnect(); this._channelObserver = null; }
       if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
       if (this._settingsObserver) { this._settingsObserver.disconnect(); this._settingsObserver = null; }
+      if (this._settingsGuardInterval) { clearInterval(this._settingsGuardInterval); this._settingsGuardInterval = null; }
 
       // 8. SkillTree listeners
       if (this._onSkillActivated) {
@@ -1323,30 +1324,18 @@ module.exports = class RulersAuthority {
   }
 
   setupToolbarObserver() {
-    if (this._toolbarObserver) return;
-    const appMount = document.getElementById("app-mount") || document.body;
-    if (!appMount) return;
+    if (this._layoutBusUnsub) return;
 
-    // PERF: Narrow scope — toolbar lives in the channel header (main content area),
-    // no need to observe the entire app (guild sidebar, popups, tooltips)
-    const observeTarget = appMount.querySelector('[class*="base_"][class*="container_"]')
-      || appMount.querySelector('[class*="app_"]')
-      || appMount;
-
-    // Throttle observer callback — subtree fires on every DOM mutation in scope.
-    // The icon check + DOM queries only need to run periodically, not per-mutation.
-    let lastToolbarCheck = 0;
-    this._toolbarObserver = new MutationObserver(() => {
-      const now = Date.now();
-      if (now - lastToolbarCheck < 250) return;
-      lastToolbarCheck = now;
-      const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
-      const toolbar = this._getChannelHeaderToolbar();
-      if (!icon || !toolbar || icon.parentElement !== toolbar) {
-        this._scheduleIconReinject();
-      }
-    });
-    this._toolbarObserver.observe(observeTarget, { childList: true, subtree: true });
+    // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
+    if (_PluginUtils?.LayoutObserverBus) {
+      this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('RulersAuthority', () => {
+        const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
+        const toolbar = this._getChannelHeaderToolbar();
+        if (!icon || !toolbar || icon.parentElement !== toolbar) {
+          this._scheduleIconReinject();
+        }
+      }, 250);
+    }
 
     if (this._controller) {
       window.addEventListener("resize", () => this._scheduleIconReinject(80), {
@@ -1359,9 +1348,10 @@ module.exports = class RulersAuthority {
   }
 
   teardownToolbarObserver() {
-    if (this._toolbarObserver) {
-      this._toolbarObserver.disconnect();
-      this._toolbarObserver = null;
+    // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
+    if (this._layoutBusUnsub) {
+      this._layoutBusUnsub();
+      this._layoutBusUnsub = null;
     }
     if (this._iconReinjectTimeout) {
       clearTimeout(this._iconReinjectTimeout);
@@ -2065,23 +2055,28 @@ body.ra-pulling [class*="chatContent_"] {
     this._channelObserver.observe(channelList, { childList: true, subtree: true });
   }
 
+  // PERF(P5-5): Replaced document.body subtree MutationObserver with 1.5s polling.
+  // The observer fired on every DOM mutation in all of Discord (~50+/sec in active channels)
+  // just to detect settings modal open/close (a rare, latency-insensitive event).
+  // Polling at 1.5s is unnoticeable for this use case and eliminates the most expensive
+  // single observer in the plugin suite.
   setupSettingsGuard() {
+    // Clean up previous observer (if any from older version) or interval
     if (this._settingsObserver) {
       this._settingsObserver.disconnect();
       this._settingsObserver = null;
     }
+    if (this._settingsGuardInterval) {
+      clearInterval(this._settingsGuardInterval);
+      this._settingsGuardInterval = null;
+    }
 
     this._syncSettingsGuardState();
-    const root = document.body || document.documentElement;
-    if (!root) return;
-
-    const sync = this._throttle(() => {
+    this._settingsGuardInterval = setInterval(() => {
       if (!this._controller) return;
+      if (document.hidden) return;
       this._syncSettingsGuardState();
-    }, 80);
-
-    this._settingsObserver = new MutationObserver(sync);
-    this._settingsObserver.observe(root, { childList: true, subtree: true });
+    }, 1500);
   }
 
   _isSettingsModalOpen() {

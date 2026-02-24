@@ -2660,10 +2660,10 @@ module.exports = class ShadowSenses {
       if (picker) picker.remove();
       this._pickerOpen = false;
 
-      // 4. Widget + observer
-      if (this._widgetObserver) {
-        this._widgetObserver.disconnect();
-        this._widgetObserver = null;
+      // 4. Widget + observer — PERF(P5-4): Unsubscribe from shared LayoutObserverBus
+      if (this._layoutBusUnsub) {
+        this._layoutBusUnsub();
+        this._layoutBusUnsub = null;
       }
       clearTimeout(this._widgetReinjectTimeout);
       this._widgetReinjectTimeout = null;
@@ -2961,45 +2961,27 @@ module.exports = class ShadowSenses {
 
   setupWidgetObserver() {
     try {
-      const appMount = document.getElementById("app-mount");
-      if (!appMount) {
-        this.debugError("Widget", "app-mount not found for observer");
-        return;
+      // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
+      if (_PluginUtils?.LayoutObserverBus) {
+        this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowSenses', () => {
+          const membersWrap = this._getMembersWrap();
+          const widgetEl = document.getElementById(WIDGET_ID);
+
+          if (membersWrap && !widgetEl) {
+            clearTimeout(this._widgetReinjectTimeout);
+            this._widgetReinjectTimeout = setTimeout(() => {
+              try { this.injectWidget(); } catch (err) {
+                this.debugError("Widget", "Reinject failed", err);
+              }
+            }, WIDGET_REINJECT_DELAY_MS);
+          } else if (!membersWrap && widgetEl) {
+            this.removeWidget();
+          }
+        }, 500);
+        this.debugLog("Widget", "Subscribed to shared LayoutObserverBus (500ms throttle)");
+      } else {
+        this.debugError("Widget", "LayoutObserverBus not available — widget persistence disabled");
       }
-
-      // Narrow target: observe layout container instead of entire Discord DOM.
-      // Chromium creates O(depth) ancestor walks per mutation with subtree:true.
-      // app-mount captures ALL mutations (typing, presence, popups, tooltips).
-      // Layout container only captures channel/member list structural changes.
-      const layoutContainer = appMount.querySelector('[class*="base_"][class*="container_"]')
-        || appMount.querySelector('[class*="app_"]')
-        || appMount; // fallback if Discord class names change
-
-      let lastCheck = 0;
-      this._widgetObserver = new MutationObserver(() => {
-        const now = Date.now();
-        if (now - lastCheck < 500) return; // 500ms — widget reinject is not time-critical
-        lastCheck = now;
-
-        const membersWrap = this._getMembersWrap();
-        const widgetEl = document.getElementById(WIDGET_ID);
-
-        if (membersWrap && !widgetEl) {
-          // Members visible but widget gone — reinject after short delay
-          clearTimeout(this._widgetReinjectTimeout);
-          this._widgetReinjectTimeout = setTimeout(() => {
-            try { this.injectWidget(); } catch (err) {
-              this.debugError("Widget", "Reinject failed", err);
-            }
-          }, WIDGET_REINJECT_DELAY_MS);
-        } else if (!membersWrap && widgetEl) {
-          // Members gone but widget still in DOM — clean up
-          this.removeWidget();
-        }
-      });
-
-      this._widgetObserver.observe(layoutContainer, { childList: true, subtree: true });
-      this.debugLog("Widget", `MutationObserver attached to ${layoutContainer === appMount ? "app-mount (fallback)" : "layout container"}`);
     } catch (err) {
       this.debugError("Widget", "Failed to setup observer", err);
     }

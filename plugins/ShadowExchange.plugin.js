@@ -555,6 +555,9 @@ function buildPanelComponents(pluginInstance) {
 let _ReactUtils;
 try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
 module.exports = class ShadowExchange {
@@ -1283,26 +1286,14 @@ module.exports = class ShadowExchange {
   }
 
   setupSwirlObserver() {
-    if (this._swirlObserver) return;
+    if (this._layoutBusUnsub) return;
 
-    // PERF: Narrow observer scope to the base layout container instead of full app-mount.
-    // The swirl icon lives in the channel header toolbar, which only changes during
-    // channel navigation — no need to observe settings overlays, modals, or popouts.
-    const observeRoot =
-      document.querySelector('[class*="baseLayer_"]') ||
-      document.querySelector('[class*="base_"]') ||
-      document.getElementById("app-mount") ||
-      document.body;
-    if (!observeRoot) return;
-
-    let lastSwirlCheck = 0;
-    this._swirlObserver = new MutationObserver(() => {
-      const now = Date.now();
-      if (now - lastSwirlCheck < 250) return;
-      lastSwirlCheck = now;
-      this._scheduleSwirlIconReinject();
-    });
-    this._swirlObserver.observe(observeRoot, { childList: true, subtree: true });
+    // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
+    if (_PluginUtils?.LayoutObserverBus) {
+      this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowExchange', () => {
+        this._scheduleSwirlIconReinject();
+      }, 250);
+    }
 
     this._swirlResizeHandler = () => this._scheduleSwirlIconReinject(80);
     window.addEventListener("resize", this._swirlResizeHandler, { passive: true });
@@ -1311,9 +1302,10 @@ module.exports = class ShadowExchange {
   }
 
   teardownSwirlObserver() {
-    if (this._swirlObserver) {
-      this._swirlObserver.disconnect();
-      this._swirlObserver = null;
+    // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
+    if (this._layoutBusUnsub) {
+      this._layoutBusUnsub();
+      this._layoutBusUnsub = null;
     }
 
     if (this._swirlReinjectTimeout) {

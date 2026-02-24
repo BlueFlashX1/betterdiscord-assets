@@ -495,7 +495,7 @@ module.exports = class ShadowRecon {
     this.stopRefreshLoops();
     // PERF: 15s refresh (was 4s — guild hints rarely change, MutationObserver handles DOM)
     this._refreshInterval = setInterval(() => {
-      if (this._stopped) return;
+      if (this._stopped || document.hidden) return;
       this.refreshAllVisuals();
     }, 15000);
   }
@@ -513,32 +513,24 @@ module.exports = class ShadowRecon {
 
   setupObserver() {
     try {
-      const appMount = document.getElementById("app-mount");
-      if (!appMount) return;
-      // PERF: Narrow scope — all callbacks target guild sidebar elements,
-      // no need to observe the entire app (messages, typing, popups, tooltips)
-      const observeTarget = appMount.querySelector('[class*="guilds_"]')
-        || appMount.querySelector('[class*="base_"][class*="container_"]')
-        || appMount;
-      let last = 0;
-      this._domObserver = new MutationObserver(() => {
-        const now = Date.now();
-        if (now - last < 500) return;
-        last = now;
-        this.injectServerCounterWidget();
-        this.removeMemberCounterBanner();
-        this.refreshGuildIconHints();
-      });
-      this._domObserver.observe(observeTarget, { childList: true, subtree: true });
+      // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
+      if (_PluginUtils?.LayoutObserverBus) {
+        this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowRecon', () => {
+          this.injectServerCounterWidget();
+          this.removeMemberCounterBanner();
+          this.refreshGuildIconHints();
+        }, 500);
+      }
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed observer setup`, err);
     }
   }
 
   teardownObserver() {
-    if (this._domObserver) {
-      this._domObserver.disconnect();
-      this._domObserver = null;
+    // PERF(P5-4): Unsubscribe from shared LayoutObserverBus
+    if (this._layoutBusUnsub) {
+      this._layoutBusUnsub();
+      this._layoutBusUnsub = null;
     }
   }
 

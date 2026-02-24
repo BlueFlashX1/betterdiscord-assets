@@ -201,6 +201,9 @@ try {
 // Load SoloLevelingUtils at top level
 let _SLUtils;
 _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
 // ============================================================================
@@ -3868,7 +3871,7 @@ module.exports = class SoloLevelingStats {
           this.debugError('START', 'Failed to initialize shadow power', error);
         });
       }
-      this.setupShadowPowerObserver?.();
+      // PERF: shadowPowerObserver removed (P5-2) — redundant with event + 5s interval below
 
       // Listen for shadow extraction events from ShadowArmy
       this._shadowExtractedHandler = () => {
@@ -4070,18 +4073,13 @@ module.exports = class SoloLevelingStats {
       this.channelTrackingInterval = null;
       this.debugLog('STOP', 'Channel tracking stopped');
     }
-    if (this._channelTrackingHooks) {
-      window.removeEventListener('popstate', this._channelTrackingHooks.popstateHandler);
-      this._channelTrackingHooks.pushStateWrapper &&
-        history.pushState === this._channelTrackingHooks.pushStateWrapper &&
-        (history.pushState = this._channelTrackingHooks.originalPushState);
-      this._channelTrackingHooks.replaceStateWrapper &&
-        history.replaceState === this._channelTrackingHooks.replaceStateWrapper &&
-        (history.replaceState = this._channelTrackingHooks.originalReplaceState);
-      this._channelTrackingHooks = null;
-      this._channelTrackingState = null;
-      this.debugLog('STOP', 'Channel tracking listeners/hooks restored');
+    // PERF(P5-1): Unsubscribe from shared NavigationBus
+    if (this._navBusUnsub) {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
     }
+    this._channelTrackingState = null;
+    this.debugLog('STOP', 'Channel tracking listeners/hooks restored');
 
     // Remove event listeners
     if (this.messageInputHandler) {
@@ -5361,44 +5359,14 @@ module.exports = class SoloLevelingStats {
   // Shadow power observer, time-active counter (1-min poll),
   // mouse/keyboard activity (5-min timeout), channel visit tracking
 
+  // PERF(P5-2): shadowPowerObserver eliminated — was redundant with:
+  //   1. 'shadowExtracted' custom event (zero overhead, fires on extraction)
+  //   2. 5s polling interval with document.hidden gate (catches anything event misses)
+  // The MutationObserver fired on every message container mutation (~10+ times/sec
+  // in active channels) and churned clearTimeout/setTimeout for something that
+  // happens once every few minutes. Cleanup in stop() retained defensively.
   setupShadowPowerObserver() {
-    if (this.shadowPowerObserver) {
-      this.shadowPowerObserver.disconnect();
-    }
-
-    // Watch for ShadowArmy plugin settings changes
-    const shadowArmyInstance = this._SLUtils?.getPluginInstance?.('ShadowArmy');
-    if (!shadowArmyInstance) return;
-
-    // Observe ShadowArmy settings object for changes
-    // Since we can't directly observe object properties, we'll observe the plugin's storage
-    // and use a combination of polling (reduced frequency) and event-based updates
-
-    // Watch for DOM changes that might indicate shadow extraction (message elements)
-    // This is a fallback - primary method is event-based
-    this.shadowPowerObserver = new MutationObserver(() => {
-      // Debounce updates
-      if (this.shadowPowerUpdateTimeout) {
-        clearTimeout(this.shadowPowerUpdateTimeout);
-      }
-      this.shadowPowerUpdateTimeout = setTimeout(() => {
-        this.updateShadowPower?.();
-      }, 100); // Update 100ms after last mutation (faster updates)
-    });
-
-    // Observe message container for new messages (which might trigger shadow extraction)
-    const messageContainer = this.getMessageContainer();
-
-    if (messageContainer) {
-      this.shadowPowerObserver.observe(messageContainer, {
-        childList: true,
-        subtree: true,
-      });
-    }
-
-    // Note: Proxy wrapping ShadowArmy's settings is not reliable in BetterDiscord,
-    // and a failed attempt can be harder to reason about than polling/events.
-    // We rely on the ShadowArmy event + the DOM observer debounce above.
+    // No-op — retained as stub so any callers don't throw
   }
 
   // renderChatActivity() — REMOVED in v3.0.0 (replaced by React ActivityGrid component)
@@ -5538,51 +5506,24 @@ module.exports = class SoloLevelingStats {
         });
       }
 
-      // Method 1: Monitor URL changes via popstate (back/forward navigation)
-      const popstateHandler = () => {
-        const newUrl = window.location.href;
-        if (newUrl !== state.lastUrl) {
-          this.debugLog('START_CHANNEL_TRACKING', 'URL changed via popstate', {
-            oldUrl: state.lastUrl,
-            newUrl,
-          });
-          state.lastUrl = newUrl;
-          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
-        }
-      };
-      window.addEventListener('popstate', popstateHandler);
+      // PERF(P5-1): Use shared NavigationBus instead of independent pushState/popstate wrappers
+      // Replaces Methods 1+2 (popstate + pushState/replaceState) with single bus subscription
+      if (_PluginUtils?.NavigationBus) {
+        this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(({ url }) => {
+          if (url !== state.lastUrl) {
+            this.debugLog('START_CHANNEL_TRACKING', 'URL changed via NavigationBus', {
+              oldUrl: state.lastUrl,
+              newUrl: url,
+            });
+            state.lastUrl = url;
+            state.lastChannelId = this.handleChannelChange(state.lastChannelId);
+          }
+        });
+      }
 
-      // Method 2: Monitor URL changes via pushState/replaceState (Discord's navigation)
-      const originalPushState = history.pushState;
-      const originalReplaceState = history.replaceState;
-
-      const checkUrlChange = (newUrl) => {
-        if (newUrl !== state.lastUrl) {
-          this.debugLog('START_CHANNEL_TRACKING', 'URL changed via history API', {
-            oldUrl: state.lastUrl,
-            newUrl,
-          });
-          state.lastUrl = newUrl;
-          state.lastChannelId = this.handleChannelChange(state.lastChannelId);
-        }
-      };
-
-      const pushStateWrapper = function (...args) {
-        originalPushState.apply(history, args);
-        setTimeout(() => checkUrlChange(window.location.href), 0);
-      };
-      history.pushState = pushStateWrapper;
-
-      const replaceStateWrapper = function (...args) {
-        originalReplaceState.apply(history, args);
-        setTimeout(() => checkUrlChange(window.location.href), 0);
-      };
-      history.replaceState = replaceStateWrapper;
-
-      // Method 3: Poll URL changes (fallback for Discord's internal navigation)
-      // Optimized: Increased interval to reduce CPU usage (500ms -> 1000ms)
-      // Discord's navigation is usually caught by popstate/history API, so polling is rarely needed
+      // Method 3: Poll URL changes (safety-net fallback)
       this.channelTrackingInterval = setInterval(() => {
+        if (document.hidden) return;
         const currentUrl = window.location.href;
         if (currentUrl !== state.lastUrl) {
           this.debugLog('START_CHANNEL_TRACKING', 'URL changed via polling', {
@@ -5592,20 +5533,13 @@ module.exports = class SoloLevelingStats {
           state.lastUrl = currentUrl;
           state.lastChannelId = this.handleChannelChange(state.lastChannelId);
         }
-      }, 3000); // PERF: 3s fallback poll (popstate/history hooks handle most navigation)
+      }, 3000); // PERF: 3s fallback poll (NavigationBus handles most navigation)
 
-      this._channelTrackingHooks = {
-        popstateHandler,
-        originalPushState,
-        originalReplaceState,
-        pushStateWrapper,
-        replaceStateWrapper,
-      };
       this._channelTrackingState = state;
 
       this.debugLog('START_CHANNEL_TRACKING', 'Channel tracking started successfully', {
-        methods: ['popstate', 'history API', 'polling'],
-        pollInterval: '1000ms',
+        methods: ['NavigationBus', 'polling'],
+        pollInterval: '3000ms',
       });
     } catch (error) {
       this.debugError('START_CHANNEL_TRACKING', error);
@@ -9200,9 +9134,12 @@ module.exports = class SoloLevelingStats {
           }, 150);
         });
 
+        // PERF(P5-7): Narrowed selector — '[class*="chat"]' was too broad (matches any
+        // element with "chat" in any class), risking a wide-scope subtree observer
         const chatContainer =
-          document.querySelector('[class*="chat"]') ||
-          document.querySelector('[class*="messagesWrapper"]') ||
+          document.querySelector('main[class*="chatContent"]') ||
+          document.querySelector('section[class*="chatContent"]') ||
+          document.querySelector('div[class*="messagesWrapper"]') ||
           null;
 
         // IMPORTANT: Never observe document.body; Discord mutates it constantly and can peg CPU.

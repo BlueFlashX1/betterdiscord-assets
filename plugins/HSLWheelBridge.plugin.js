@@ -135,7 +135,7 @@ module.exports = class HSLWheelBridge {
         engine.syncScroller();
         // Poll for scroller changes (replaces MutationObserver, much cheaper)
         this._fallbackPoll = setInterval(() => {
-          if (this._isStopped) return;
+          if (this._isStopped || document.hidden) return;
           engine.syncScroller();
         }, 2000);
       }

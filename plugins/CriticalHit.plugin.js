@@ -101,6 +101,9 @@ const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','expo
 let _ReactUtils;
 try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
+let _PluginUtils;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class CriticalHit {
   // ============================================
   // SECTION 2: CONFIGURATION & HELPERS
@@ -370,31 +373,10 @@ module.exports = class CriticalHit {
       this.urlObserver = null;
     }
 
-    // Restore history methods to avoid global side effects after stop()
-    try {
-      this._navPushStateWrapper &&
-        history.pushState === this._navPushStateWrapper &&
-        this.originalPushState &&
-        (history.pushState = this.originalPushState);
-      this._navReplaceStateWrapper &&
-        history.replaceState === this._navReplaceStateWrapper &&
-        this.originalReplaceState &&
-        (history.replaceState = this.originalReplaceState);
-    } catch (e) {
-      // Ignore
-    } finally {
-      this._navPushStateWrapper = null;
-      this._navReplaceStateWrapper = null;
-      this.originalPushState = null;
-      this.originalReplaceState = null;
-    }
-
-    try {
-      this._popstateHandler && window.removeEventListener('popstate', this._popstateHandler);
-    } catch (e) {
-      // Ignore
-    } finally {
-      this._popstateHandler = null;
+    // PERF(P5-1): Unsubscribe from shared NavigationBus
+    if (this._navBusUnsub) {
+      this._navBusUnsub();
+      this._navBusUnsub = null;
     }
   }
 
@@ -1425,32 +1407,10 @@ module.exports = class CriticalHit {
       }, 150);
     };
 
-    // Also listen for Discord's navigation events.
-    // Store the true originals ONCE to avoid infinite recursion on hot reload.
-    // On reload, history.pushState may already be our wrapper, so we must not
-    // re-capture it as the "original".
-    if (!this.originalPushState) this.originalPushState = history.pushState;
-    if (!this.originalReplaceState) this.originalReplaceState = history.replaceState;
-
-    const originalPush = this.originalPushState;
-    const originalReplace = this.originalReplaceState;
-    const handleNavigation = () => scheduleNavigationCheck(true);
-
-    this._navPushStateWrapper = (...args) => {
-      originalPush.apply(history, args);
-      handleNavigation();
-    };
-    this._navReplaceStateWrapper = (...args) => {
-      originalReplace.apply(history, args);
-      handleNavigation();
-    };
-
-    history.pushState = this._navPushStateWrapper;
-    history.replaceState = this._navReplaceStateWrapper;
-
-    // Back/forward navigation
-    this._popstateHandler = () => handleNavigation();
-    window.addEventListener('popstate', this._popstateHandler);
+    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
+    if (_PluginUtils?.NavigationBus) {
+      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => scheduleNavigationCheck(true));
+    }
   }
 
   // ============================================================================
