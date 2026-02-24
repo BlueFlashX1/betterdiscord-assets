@@ -462,6 +462,8 @@ class DungeonStorageManager {
 
       // Runtime-only flags — must not persist (would block completeDungeon on restore)
       delete next._completing;
+      // Runtime-only pooled Map caches — not useful across sessions, cause TypeError on restore
+      delete next._pooledMobDamageMap;
 
       // Cap corpse pile to last 500 entries for IDB storage (each ~100 bytes ≈ 50KB max).
       // Later mobs tend to be higher rank, so keep the tail.
@@ -9064,7 +9066,7 @@ module.exports = class Dungeons {
         // AGGREGATED: Accumulate boss damage across ALL shadows, apply once after loop
         let aggregatedBossDamage = 0;
         // Pooled mob damage map — reuse across ticks to avoid per-tick allocation + GC
-        if (!dungeon._pooledMobDamageMap) dungeon._pooledMobDamageMap = new Map();
+        if (!(dungeon._pooledMobDamageMap instanceof Map)) dungeon._pooledMobDamageMap = new Map();
         const mobDamageMap = dungeon._pooledMobDamageMap;
         mobDamageMap.clear();
         // Ensure contributions object exists once before loop
