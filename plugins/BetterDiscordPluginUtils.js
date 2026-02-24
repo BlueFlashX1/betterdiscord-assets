@@ -3,8 +3,8 @@
  * Eliminates duplicate patterns across standalone and connected plugins.
  *
  * Provides: toast, settings, hotkey, editable-target, cached-query, TTL cache,
- *           dispatcher, CSS injection, throttle helpers.
- * @version 1.1.0
+ *           dispatcher, throttle helpers.
+ * @version 1.2.0
  */
 
 // ── Toast ────────────────────────────────────────────────────────────────────
@@ -207,38 +207,6 @@ function getDispatcher() {
   }
 }
 
-// ── CSS Injection ───────────────────────────────────────────────────────────
-
-/**
- * Inject CSS with BdApi.DOM.addStyle, falling back to manual <style> element.
- * @param {string} id - Style element id (for dedup and removal)
- * @param {string} css - CSS content
- */
-function injectStyle(id, css) {
-  try {
-    BdApi.DOM.addStyle(id, css);
-    return;
-  } catch (_) {}
-  // Manual fallback
-  const style = document.createElement("style");
-  style.id = id;
-  style.textContent = css;
-  document.head.appendChild(style);
-}
-
-/**
- * Remove injected CSS by id.
- * @param {string} id - Style element id
- */
-function removeStyle(id) {
-  try {
-    BdApi.DOM.removeStyle(id);
-  } catch (_) {
-    const el = document.getElementById(id);
-    if (el) el.remove();
-  }
-}
-
 // ── Throttle ────────────────────────────────────────────────────────────────
 
 /**
@@ -280,7 +248,5 @@ module.exports = {
   querySelectorFallback,
   createTTLCache,
   getDispatcher,
-  injectStyle,
-  removeStyle,
   createThrottle,
 };
