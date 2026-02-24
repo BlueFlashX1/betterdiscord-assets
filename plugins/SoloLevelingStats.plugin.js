@@ -182,45 +182,26 @@
  * - Future: Achievement (15%), Dungeon (20%), Milestone (25%) sharing
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
 try {
   if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
     UnifiedSaveManager = window.UnifiedSaveManager;
   } else {
-    const fs = require('fs');
-    const path = require('path');
-    const pluginFolder =
-      (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
-        ? BdApi.Plugins.folder
-        : null) ||
-      (typeof __dirname === 'string' ? __dirname : null);
-    if (pluginFolder) {
-      const saveManagerPath = path.join(pluginFolder, 'UnifiedSaveManager.js');
-      if (fs.existsSync(saveManagerPath)) {
-        const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
-        const moduleSandbox = { exports: {} };
-        const exportsSandbox = moduleSandbox.exports;
-        const loader = new Function(
-          'window',
-          'module',
-          'exports',
-          `${saveManagerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || window?.UnifiedSaveManager || null;`
-        );
-        UnifiedSaveManager = loader(
-          typeof window !== 'undefined' ? window : undefined,
-          moduleSandbox,
-          exportsSandbox
-        );
-        if (UnifiedSaveManager && typeof window !== 'undefined') {
-          window.UnifiedSaveManager = UnifiedSaveManager;
-        }
-      }
-    }
+    UnifiedSaveManager = _bdLoad("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
+    if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {
   console.warn('[SoloLevelingStats] Failed to load UnifiedSaveManager:', error);
 }
+
+// Load SoloLevelingUtils at top level
+let _SLUtils;
+_SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
 // ============================================================================
 // REACT COMPONENT FACTORY (v3.0.0 — replaces innerHTML chat UI rendering)
@@ -3757,21 +3738,8 @@ module.exports = class SoloLevelingStats {
    * Load SoloLevelingUtils shared library (React injection, toolbar registry, etc.)
    */
   _loadSLUtils() {
-    this._SLUtils = null;
-    try {
-      if (typeof window !== 'undefined' && window.SoloLevelingUtils) {
-        this._SLUtils = window.SoloLevelingUtils;
-        return;
-      }
-      const path = require('path');
-      const pluginsDir = BdApi.Plugins?.folder || path.join(BdApi.getPath?.() || '', 'plugins');
-      const utilsPath = path.join(pluginsDir, 'SoloLevelingUtils.js');
-      delete require.cache[require.resolve?.(utilsPath)];
-      this._SLUtils = require(utilsPath);
-      if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
-    } catch (_) {
-      this._SLUtils = null;
-    }
+    // Use top-level _SLUtils (loaded during module evaluation via require)
+    this._SLUtils = _SLUtils || window.SoloLevelingUtils || null;
   }
 
   async start() {

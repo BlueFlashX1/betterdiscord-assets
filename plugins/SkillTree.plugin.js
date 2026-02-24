@@ -39,6 +39,9 @@
  * - Performance optimizations
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // ============================================================================
 // REACT COMPONENT FACTORY (v3.0.0 — replaces innerHTML modal rendering)
 // ============================================================================
@@ -337,7 +340,11 @@ function buildSkillTreeComponents(pluginInstance) {
 }
 
 let _ReactUtils;
-try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
+let _SLUtils;
+_SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
 module.exports = class SkillTree {
   // ============================================================================
@@ -892,21 +899,8 @@ module.exports = class SkillTree {
    * Load SoloLevelingUtils shared library (toolbar registry, React injection, etc.)
    */
   _loadSLUtils() {
-    this._SLUtils = null;
-    try {
-      if (typeof window !== 'undefined' && window.SoloLevelingUtils) {
-        this._SLUtils = window.SoloLevelingUtils;
-        return;
-      }
-      const path = require('path');
-      const pluginsDir = BdApi.Plugins?.folder || path.join(BdApi.getPath?.() || '', 'plugins');
-      const utilsPath = path.join(pluginsDir, 'SoloLevelingUtils.js');
-      delete require.cache[require.resolve?.(utilsPath)];
-      this._SLUtils = require(utilsPath);
-      if (!window.SoloLevelingUtils) window.SoloLevelingUtils = this._SLUtils;
-    } catch (_) {
-      this._SLUtils = null;
-    }
+    // Use top-level _SLUtils (loaded during module evaluation via require)
+    this._SLUtils = _SLUtils || window.SoloLevelingUtils || null;
   }
 
   /**

@@ -274,6 +274,9 @@
  */
 /* global CustomEvent */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 function openIndexedDbDatabase({ dbName, dbVersion, onUpgrade, onBlocked }) {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) {
@@ -900,33 +903,10 @@ const UnifiedSaveManager = (() => {
     if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
       return window.UnifiedSaveManager;
     }
-
-    const path = require('path');
-    const fs = require('fs');
-    const pluginFolder =
-      (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
-        ? BdApi.Plugins.folder
-        : null) ||
-      (typeof __dirname === 'string' ? __dirname : null);
-    if (!pluginFolder) return null;
-
-    const managerPath = path.join(pluginFolder, 'UnifiedSaveManager.js');
-    if (!fs.existsSync(managerPath)) return null;
-
-    const managerCode = fs.readFileSync(managerPath, 'utf8');
-    const moduleSandbox = { exports: {} };
-    const exportsSandbox = moduleSandbox.exports;
-    const loader = new Function(
-      'window',
-      'module',
-      'exports',
-      `${managerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || window?.UnifiedSaveManager || null;`
-    );
-    const loaded = loader(typeof window !== 'undefined' ? window : undefined, moduleSandbox, exportsSandbox);
-    if (loaded && typeof window !== 'undefined') {
-      window.UnifiedSaveManager = loaded;
-    }
-    return loaded || (typeof window !== 'undefined' ? window.UnifiedSaveManager : null) || null;
+    // BD require() only handles Node built-ins; use _bdLoad for local shared modules
+    const _USM = _bdLoad("UnifiedSaveManager.js") || (typeof window !== 'undefined' ? window.UnifiedSaveManager : null) || null;
+    if (_USM && typeof window !== 'undefined' && !window.UnifiedSaveManager) window.UnifiedSaveManager = _USM;
+    return _USM;
   } catch (error) {
     console.warn('[Dungeons] Failed to load UnifiedSaveManager:', error);
     return typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
@@ -999,10 +979,6 @@ module.exports = class Dungeons {
       userMaxMana: null,
       settingsVersion: 1,
     };
-
-    // Prevent noisy local agent-log network errors when the ingest endpoint is unavailable.
-    this._agentLogsPatched = false;
-    this._disableLocalAgentLogs();
 
     // IMPORTANT: avoid sharing references between defaults and live settings.
     // Hot paths mutate `this.settings`; if it aliases `defaultSettings`, defaults get corrupted.
@@ -1301,37 +1277,10 @@ module.exports = class Dungeons {
     };
   }
 
-  /**
-   * Disable agent log network calls to local ingest when unavailable.
-   * Swallows calls to 127.0.0.1:7242/ingest to avoid console ERR_CONNECTION_REFUSED.
-   */
-  _disableLocalAgentLogs() {
-    if (this._agentLogsPatched) return;
-    const origFetch =
-      typeof window !== 'undefined' && window.fetch ? window.fetch.bind(window) : null;
-    if (!origFetch) return;
-    const ResponseCtor = typeof window !== 'undefined' && window.Response ? window.Response : null;
-    if (!ResponseCtor) return;
-
-    // Store original so stop() can restore it
-    this._origFetch = origFetch;
-
-    window.fetch = (input, init) => {
-      const url = typeof input === 'string' ? input : input?.url || '';
-      if (url.startsWith('http://127.0.0.1:7242/ingest/')) {
-        return Promise.resolve(new ResponseCtor(null, { status: 204 }));
-      }
-      return origFetch(input, init);
-    };
-    this._agentLogsPatched = true;
-  }
-
-  _restoreLocalAgentLogs() {
-    if (!this._agentLogsPatched || !this._origFetch) return;
-    window.fetch = this._origFetch;
-    this._origFetch = null;
-    this._agentLogsPatched = false;
-  }
+  // _disableLocalAgentLogs / _restoreLocalAgentLogs REMOVED (Sprint 3)
+  // Globally monkey-patching window.fetch to suppress ERR_CONNECTION_REFUSED
+  // from a local agent endpoint is architecturally unsafe — it affects all
+  // code in the renderer process and risks breaking Discord or other plugins.
 
   // ==== DEBUG LOGGING ====
   /**
@@ -2278,8 +2227,7 @@ module.exports = class Dungeons {
       document.removeEventListener('shadowExtracted', this._shadowExtractedHandler);
       this._shadowExtractedHandler = null;
     }
-    // Restore original window.fetch (patched by _disableLocalAgentLogs)
-    this._restoreLocalAgentLogs();
+    // _restoreLocalAgentLogs removed (Sprint 3) — window.fetch no longer monkey-patched
 
     // Flush any pending mob writes before fully stopping
     if (this.mobBossStorageManager?.flushAll) {

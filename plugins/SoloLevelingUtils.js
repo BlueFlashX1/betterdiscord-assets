@@ -564,20 +564,28 @@ function getPluginInstance(name) {
 // Exports
 // ---------------------------------------------------------------------------
 
-// BetterDiscord plugins are loaded via eval/require in a shared scope.
-// We attach to `window` so other plugins can import.
+// Shared export object used by both module.exports and window global.
+const _SoloLevelingUtils = {
+  RANKS,
+  initWebpackModules,
+  tryReactInjection,
+  createDebugLogger,
+  createDOMCache,
+  createTrackedTimeouts,
+  mergeSettings,
+  getOrCreateOverlay,
+  registerToolbarButton,
+  unregisterToolbarButton,
+  getPluginInstance,
+};
+
+// module.exports for require() — BD's require uses vm.compileFunction where
+// `window` may not be the real browser window, so module.exports is essential.
+if (typeof module !== 'undefined') {
+  module.exports = _SoloLevelingUtils;
+}
+
+// Also attach to window for plugins that check window.SoloLevelingUtils directly.
 if (typeof window !== 'undefined') {
-  window.SoloLevelingUtils = {
-    RANKS,
-    initWebpackModules,
-    tryReactInjection,
-    createDebugLogger,
-    createDOMCache,
-    createTrackedTimeouts,
-    mergeSettings,
-    getOrCreateOverlay,
-    registerToolbarButton,
-    unregisterToolbarButton,
-    getPluginInstance,
-  };
+  window.SoloLevelingUtils = _SoloLevelingUtils;
 }

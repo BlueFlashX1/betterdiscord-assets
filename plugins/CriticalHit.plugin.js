@@ -75,6 +75,9 @@
  * - Console clean for normal users, full logging available via debug mode
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // ============================================
 // SECTION 1: IMPORTS & DEPENDENCIES
 // ============================================
@@ -96,7 +99,7 @@
 // (Debug system organized below in class)
 
 let _ReactUtils;
-try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
 module.exports = class CriticalHit {
   // ============================================

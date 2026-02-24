@@ -5,6 +5,9 @@
  * @author matthewthompson
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
@@ -2544,9 +2547,9 @@ function buildComponents(pluginRef) {
 
 // ─── Shared Utilities ─────────────────────────────────────────────────────
 let _ReactUtils;
-try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 let _PluginUtils;
-try { _PluginUtils = require('./BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = _bdLoad('BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
 const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 
 // ─── Plugin Class ──────────────────────────────────────────────────────────
@@ -2716,8 +2719,13 @@ module.exports = class ShadowSenses {
 
   initWebpack() {
     const { Webpack } = BdApi;
-    // Sync attempt — fast path if modules already loaded
-    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+    // Dispatcher: extract from Flux store (most reliable), then filter fallback, then legacy key
+    // IMPORTANT: NO optional chaining in Webpack.getModule filter — breaks BD matching
+    this._Dispatcher =
+      Webpack.Stores?.UserStore?._dispatcher ||
+      Webpack.getModule(m => m.dispatch && m.subscribe) ||
+      Webpack.getByKeys("actionLogger") ||
+      null;
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
@@ -2761,7 +2769,12 @@ module.exports = class ShadowSenses {
       if (this._stopped) return;
       attempt++;
 
-      this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+      // Dispatcher: extract from Flux store (most reliable) — NO optional chaining in filter
+      this._Dispatcher =
+        BdApi.Webpack.Stores?.UserStore?._dispatcher ||
+        BdApi.Webpack.getModule(m => m.dispatch && m.subscribe) ||
+        BdApi.Webpack.getByKeys("actionLogger") ||
+        null;
 
       if (this._Dispatcher) {
         this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt} (${attempt * 500}ms)`);

@@ -187,6 +187,9 @@
 /* eslint-env browser */
 /* global CustomEvent */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 const SHADOW_PERSONALITY_ROLE_MAP = {
   tank: 'tank',
   healer: 'supportive',
@@ -1521,39 +1524,9 @@ try {
   if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
     UnifiedSaveManager = window.UnifiedSaveManager;
   } else {
-    const fs = require('fs');
-    const path = require('path');
-    const pluginFolder =
-      (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
-        ? BdApi.Plugins.folder
-        : null) ||
-      (typeof __dirname === 'string' ? __dirname : null);
-    if (pluginFolder) {
-      const saveManagerPath = path.join(pluginFolder, 'UnifiedSaveManager.js');
-      if (fs.existsSync(saveManagerPath)) {
-        const saveManagerCode = fs.readFileSync(saveManagerPath, 'utf8');
-        const moduleSandbox = { exports: {} };
-        const exportsSandbox = moduleSandbox.exports;
-        const loader = new Function(
-          'window',
-          'module',
-          'exports',
-          `${saveManagerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || (window && window.UnifiedSaveManager) || null;`
-        );
-        UnifiedSaveManager = loader(
-          typeof window !== 'undefined' ? window : undefined,
-          moduleSandbox,
-          exportsSandbox
-        );
-        if (UnifiedSaveManager && typeof window !== 'undefined') {
-          window.UnifiedSaveManager = UnifiedSaveManager;
-        }
-      } else {
-        UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
-      }
-    } else {
-      UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
-    }
+    // BD require() only handles Node built-ins; use _bdLoad for local shared modules
+    UnifiedSaveManager = _bdLoad("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
+    if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {
   console.warn('[ShadowArmy] Failed to load UnifiedSaveManager:', error);
@@ -1708,7 +1681,7 @@ function buildWidgetComponents(pluginInstance) {
 }
 
 let _ReactUtils;
-try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 
 module.exports = class ShadowArmy {
   // ============================================================================

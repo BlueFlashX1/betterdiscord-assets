@@ -5,6 +5,9 @@
  * @author matthewthompson
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 const STEALTH_PLUGIN_ID = "Stealth";
 const STEALTH_STYLE_ID = "stealth-plugin-css";
 
@@ -700,7 +703,7 @@ module.exports = class Stealth {
     if (!this.settings.showToasts) return;
 
     let PluginUtils;
-    try { PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { PluginUtils = null; }
+    try { PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { PluginUtils = null; }
 
     if (PluginUtils) {
       PluginUtils.showToast(message, { type, timeout: 2500 });

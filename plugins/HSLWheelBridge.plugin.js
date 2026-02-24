@@ -21,6 +21,9 @@
  * { childList: true, subtree: true } — fired on every DOM change app-wide.
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // Scroller selectors — primary + fallbacks for Discord class name changes
 const HSL_SCROLLER_SELECTORS = [
   "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
@@ -32,7 +35,7 @@ const HSL_SCROLLER_SELECTORS = [
 const _scrollerCache = {};
 
 let _PluginUtils;
-try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 function findHSLScroller() {
   if (_PluginUtils) {
@@ -165,7 +168,7 @@ module.exports = class HSLWheelBridge {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = require('./BetterDiscordReactUtils.js');
+      ReactUtils = _bdLoad('BetterDiscordReactUtils.js');
     } catch (_) {
       ReactUtils = null;
     }

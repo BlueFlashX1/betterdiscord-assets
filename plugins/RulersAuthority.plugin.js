@@ -48,6 +48,9 @@
  *   §18 Utilities ....................................... ~L 1660
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §1  Constants + Fallback Selectors
 // ═══════════════════════════════════════════════════════════════════════════
@@ -188,7 +191,7 @@ const DEFAULT_SETTINGS = {
 // §4  Hotkey Utilities (from BetterDiscordPluginUtils)
 // ═══════════════════════════════════════════════════════════════════════════
 let _PluginUtils;
-try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },

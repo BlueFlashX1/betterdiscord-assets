@@ -93,21 +93,13 @@
  * - Better integration with SoloLevelingStats plugin
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // Load SoloLevelingUtils shared module
 let SLUtils;
-try {
-  const fs = require('fs');
-  const path = require('path');
-  const utilsPath = path.join(BdApi.Plugins.folder, 'SoloLevelingUtils.js');
-  if (fs.existsSync(utilsPath)) {
-    const code = fs.readFileSync(utilsPath, 'utf8');
-    // Use new Function() instead of eval() — same scope isolation as other plugins
-    (new Function(code))();
-    SLUtils = window.SoloLevelingUtils;
-  }
-} catch (error) {
-  console.warn('[LevelProgressBar] Failed to load SoloLevelingUtils:', error);
-}
+SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+if (SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = SLUtils;
 
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
@@ -115,41 +107,9 @@ try {
   if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
     UnifiedSaveManager = window.UnifiedSaveManager;
   } else {
-  const path = require('path');
-  const fs = require('fs');
-  const pluginFolder =
-    (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string'
-      ? BdApi.Plugins.folder
-      : null) ||
-    (typeof __dirname === 'string' ? __dirname : null);
-  if (pluginFolder) {
-    const managerFile = path.join(pluginFolder, 'UnifiedSaveManager.js');
-    if (fs.existsSync(managerFile)) {
-      const managerCode = fs.readFileSync(managerFile, 'utf8');
-      const moduleSandbox = { exports: {} };
-      const exportsSandbox = moduleSandbox.exports;
-      const loader = new Function(
-        'window',
-        'module',
-        'exports',
-        `${managerCode}\nreturn module.exports || (typeof UnifiedSaveManager !== 'undefined' ? UnifiedSaveManager : null) || window?.UnifiedSaveManager || null;`
-      );
-      const maybeLoaded = loader(
-        typeof window !== 'undefined' ? window : undefined,
-        moduleSandbox,
-        exportsSandbox
-      );
-      UnifiedSaveManager =
-        maybeLoaded || (typeof window !== 'undefined' ? window.UnifiedSaveManager : null) || null;
-      if (UnifiedSaveManager && typeof window !== 'undefined') {
-        window.UnifiedSaveManager = UnifiedSaveManager;
-      }
-    } else {
-      UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
-    }
-  } else {
-    UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
-  }
+    // BD require() only handles Node built-ins; use _bdLoad for local shared modules
+    UnifiedSaveManager = _bdLoad("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
+    if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {
   console.warn('[LevelProgressBar] Failed to load UnifiedSaveManager:', error);

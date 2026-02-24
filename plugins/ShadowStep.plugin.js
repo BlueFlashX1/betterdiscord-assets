@@ -6,6 +6,9 @@
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 // ─── Constants ──────────────────────────────────────────────────────────────
 const PLUGIN_NAME = "ShadowStep";
 const PLUGIN_VERSION = "1.0.1";
@@ -29,7 +32,7 @@ const DEFAULT_SETTINGS = {
 
 // ─── Hotkey Utilities (from BetterDiscordPluginUtils) ────────────────────────
 let _PluginUtils;
-try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
@@ -621,17 +624,24 @@ module.exports = class ShadowStep {
   // ── Hotkey ──────────────────────────────────────────────────
 
   _registerHotkey() {
+    const isMac = navigator.platform?.startsWith("Mac") || navigator.userAgent?.includes("Mac");
     this._hotkeyHandler = (e) => {
       if (!this.settings.hotkey) return;
       if (isEditableTarget(e.target)) return;
-      if (matchesHotkey(e, this.settings.hotkey)) {
+      // On macOS, also match Cmd (metaKey) when hotkey specifies Ctrl
+      const directMatch = matchesHotkey(e, this.settings.hotkey);
+      const macAlias = isMac && e.metaKey && !e.ctrlKey && matchesHotkey(
+        { key: e.key, ctrlKey: true, shiftKey: e.shiftKey, altKey: e.altKey, metaKey: false },
+        this.settings.hotkey
+      );
+      if (directMatch || macAlias) {
         e.preventDefault();
         e.stopPropagation();
         this.togglePanel();
       }
     };
     document.addEventListener("keydown", this._hotkeyHandler);
-    this.debugLog("Hotkey", `Registered: ${this.settings.hotkey}`);
+    this.debugLog("Hotkey", `Registered: ${this.settings.hotkey} (macOS Cmd alias: ${isMac})`);
   }
 
   _unregisterHotkey() {

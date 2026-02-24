@@ -7,6 +7,9 @@
  */
 /* global CSS, Element */
 
+/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
+const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+
 module.exports = (() => {
   const config = {
     info: {
@@ -41,7 +44,7 @@ module.exports = (() => {
 
   // Load shared utilities BEFORE referencing them (avoids TDZ ReferenceError)
   let _PluginUtils;
-  try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+  try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
   // Hotkey + editable-target utilities — shared module with inline fallback
   const isEditableTarget = _PluginUtils?.isEditableTarget || ((target) => {
