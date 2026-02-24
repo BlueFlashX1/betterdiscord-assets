@@ -8,6 +8,17 @@
 
 /* global BdApi */
 
+// ---------------------------------------------------------------------------
+// Shared constants
+// ---------------------------------------------------------------------------
+
+/**
+ * Canonical rank hierarchy (ascending). Used across ShadowArmy, ShadowSenses,
+ * ShadowExchange for iteration, validation, and display ordering.
+ * RANK_COLORS intentionally vary per plugin for visual theming — keep those local.
+ */
+const RANKS = ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH", "Monarch", "Monarch+", "Shadow Monarch"];
+
 /**
  * Initialize BdApi webpack modules used across plugins.
  * Returns an object with resolved modules and an `ok` flag.
@@ -594,6 +605,7 @@ function getPluginInstance(name) {
 // We attach to `window` so other plugins can import.
 if (typeof window !== 'undefined') {
   window.SoloLevelingUtils = {
+    RANKS,
     initWebpackModules,
     tryReactInjection,
     createDebugLogger,

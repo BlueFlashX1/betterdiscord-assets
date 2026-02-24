@@ -185,46 +185,14 @@ const DEFAULT_SETTINGS = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// §4  Hotkey Utilities (from ShadowStep)
+// §4  Hotkey Utilities (from BetterDiscordPluginUtils)
 // ═══════════════════════════════════════════════════════════════════════════
+let _PluginUtils;
+try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
-const isEditableTarget = (target) => {
-  if (!target) return false;
-  const tag = target.tagName?.toLowerCase?.() || "";
-  if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  return !!target.isContentEditable;
-};
-
-const normalizeHotkey = (hotkey) =>
-  String(hotkey || "").trim().toLowerCase().replace(/\s+/g, "");
-
-const parseHotkey = (hotkey) => {
-  const normalized = normalizeHotkey(hotkey);
-  const parts = normalized.split("+").filter(Boolean);
-  const mods = new Set(
-    parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p))
-  );
-  const key = parts.find((p) => !mods.has(p)) || "";
-  return {
-    key,
-    hasCtrl: mods.has("ctrl"),
-    hasShift: mods.has("shift"),
-    hasAlt: mods.has("alt"),
-    hasMeta: mods.has("meta") || mods.has("cmd") || mods.has("command"),
-  };
-};
-
-const matchesHotkey = (event, hotkey) => {
-  const spec = parseHotkey(hotkey);
-  if (!spec.key) return false;
-  const key = String(event.key || "").toLowerCase();
-  return (
-    key === spec.key &&
-    !!event.ctrlKey === spec.hasCtrl &&
-    !!event.shiftKey === spec.hasShift &&
-    !!event.altKey === spec.hasAlt &&
-    !!event.metaKey === spec.hasMeta
-  );
+const { isEditableTarget, matchesHotkey } = _PluginUtils || {
+  isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
+  matchesHotkey: () => false,
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -2181,23 +2149,14 @@ body.ra-pulling [class*="chatContent_"] {
   // ── General Helpers ──
 
   _throttle(fn, wait) {
+    if (_PluginUtils?.createThrottle) return _PluginUtils.createThrottle(fn, wait);
     let lastTime = 0;
     let timer = null;
     return function (...args) {
       const now = Date.now();
       const remaining = wait - (now - lastTime);
-      if (remaining <= 0) {
-        clearTimeout(timer);
-        timer = null;
-        lastTime = now;
-        fn(...args);
-      } else if (!timer) {
-        timer = setTimeout(() => {
-          lastTime = Date.now();
-          timer = null;
-          fn(...args);
-        }, remaining);
-      }
+      if (remaining <= 0) { clearTimeout(timer); timer = null; lastTime = now; fn(...args); }
+      else if (!timer) { timer = setTimeout(() => { lastTime = Date.now(); timer = null; fn(...args); }, remaining); }
     };
   }
 

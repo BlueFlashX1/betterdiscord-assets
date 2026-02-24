@@ -9937,7 +9937,7 @@ module.exports = class ShadowArmy {
     const { useState, useEffect, useCallback } = React;
     const ce = React.createElement;
 
-    const RANKS = ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+','Shadow Monarch'];
+    const RANKS = window.SoloLevelingUtils?.RANKS || ['E','D','C','B','A','S','SS','SSS','SSS+','NH','Monarch','Monarch+','Shadow Monarch'];
 
     const EssenceConversionModal = ({ onClose }) => {
       const config = pluginRef.settings.shadowEssence || pluginRef.defaultSettings.shadowEssence;

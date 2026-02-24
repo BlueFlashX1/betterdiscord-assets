@@ -71,6 +71,8 @@ const STATUS_LABELS = {
 
 let _ReactUtils;
 try { _ReactUtils = require("./BetterDiscordReactUtils.js"); } catch (_) { _ReactUtils = null; }
+let _PluginUtils;
+try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 module.exports = class ShadowRecon {
   constructor() {
@@ -212,10 +214,7 @@ module.exports = class ShadowRecon {
   initWebpack() {
     const { Webpack } = BdApi;
 
-    this._Dispatcher =
-      Webpack.Stores?.UserStore?._dispatcher ||
-      Webpack.getModule(m => m && typeof m.dispatch === "function" && typeof m.subscribe === "function") ||
-      null;
+    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
 
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");

@@ -16,7 +16,7 @@ const PANEL_CONTAINER_ID = "shadow-senses-panel-root";
 const TRANSITION_ID = "shadow-senses-transition-overlay";
 const GLOBAL_UTILITY_FEED_ID = "__shadow_senses_global__";
 
-const RANKS = ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH", "Monarch", "Monarch+", "Shadow Monarch"];
+const RANKS = window.SoloLevelingUtils?.RANKS || ["E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH", "Monarch", "Monarch+", "Shadow Monarch"];
 const RANK_COLORS = {
   E: "#9ca3af", D: "#60a5fa", C: "#34d399", B: "#a78bfa",
   A: "#f59e0b", S: "#ef4444", SS: "#ec4899", SSS: "#8b5cf6",
@@ -2547,6 +2547,8 @@ function buildComponents(pluginRef) {
 // ─── Shared Utilities ─────────────────────────────────────────────────────
 let _ReactUtils;
 try { _ReactUtils = require('./BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+let _PluginUtils;
+try { _PluginUtils = require('./BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
 
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
@@ -2716,11 +2718,7 @@ module.exports = class ShadowSenses {
   initWebpack() {
     const { Webpack } = BdApi;
     // Sync attempt — fast path if modules already loaded
-    // Per doggybootsy (BD core dev): use Stores._dispatcher or getModule(m => m.dispatch && m.subscribe)
-    this._Dispatcher =
-      Webpack.Stores?.UserStore?._dispatcher ||
-      Webpack.getModule(m => m.dispatch && m.subscribe) ||
-      Webpack.getByKeys("actionLogger");
+    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
@@ -2757,7 +2755,6 @@ module.exports = class ShadowSenses {
   }
 
   _startDispatcherWait() {
-    const { Webpack } = BdApi;
     let attempt = 0;
     const maxAttempts = 30; // 30 × 500ms = 15s
 
@@ -2765,13 +2762,7 @@ module.exports = class ShadowSenses {
       if (this._stopped) return;
       attempt++;
 
-      // Per doggybootsy (BD core dev, Dec 2025):
-      //   Webpack.Stores.UserStore._dispatcher  OR
-      //   Webpack.getModule(m => m.dispatch && m.subscribe)
-      this._Dispatcher =
-        Webpack.Stores?.UserStore?._dispatcher ||
-        Webpack.getModule(m => m.dispatch && m.subscribe) ||
-        Webpack.getByKeys("actionLogger");
+      this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
 
       if (this._Dispatcher) {
         this.debugLog("Webpack", `Dispatcher acquired on poll #${attempt} (${attempt * 500}ms)`);

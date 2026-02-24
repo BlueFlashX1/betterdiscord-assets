@@ -40,7 +40,7 @@ const SE_PANEL_CONTAINER_ID = "se-panel-root";
 const TRANSITION_ID = "se-transition-overlay";
 const SWIRL_REINJECT_DELAY_MS = 140;
 
-const RANK_ORDER = [
+const RANK_ORDER = window.SoloLevelingUtils?.RANKS || [
   "E", "D", "C", "B", "A", "S", "SS", "SSS", "SSS+", "NH",
   "Monarch", "Monarch+", "Shadow Monarch",
 ];
