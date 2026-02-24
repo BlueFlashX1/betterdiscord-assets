@@ -1420,6 +1420,14 @@ module.exports = class SoloLevelingToasts {
       return;
     }
 
+    // Guard against unbounded retries (max 10 attempts = 20s)
+    if (!this._hookRetryCount) this._hookRetryCount = 0;
+    if (this._hookRetryCount >= 10) {
+      this.debugLog('HOOK_ABORT', 'Max retry attempts (10) reached for SoloLevelingStats hook — giving up');
+      return;
+    }
+    this._hookRetryCount++;
+
     try {
       // Check cache first
       const now = Date.now();
@@ -1488,6 +1496,7 @@ module.exports = class SoloLevelingToasts {
           this._clearTrackedTimeout(this._hookRetryId);
           this._hookRetryId = null;
         }
+        this._hookRetryCount = 0; // Reset retry counter on success
 
         this.debugLog(
           'HOOK_SUCCESS',

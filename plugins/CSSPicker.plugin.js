@@ -39,6 +39,10 @@ module.exports = (() => {
     themePath: 'SoloLeveling-ClearVision.theme.css',
   };
 
+  // Load shared utilities BEFORE referencing them (avoids TDZ ReferenceError)
+  let _PluginUtils;
+  try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
   // Hotkey + editable-target utilities — shared module with inline fallback
   const isEditableTarget = _PluginUtils?.isEditableTarget || ((target) => {
     if (!target) return false;
@@ -94,9 +98,6 @@ module.exports = (() => {
       // ignore
     }
   };
-
-  let _PluginUtils;
-  try { _PluginUtils = require("./BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
   const safeToast = (message, options = {}) => {
     try {

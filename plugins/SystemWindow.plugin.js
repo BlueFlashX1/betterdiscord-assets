@@ -80,16 +80,16 @@ module.exports = class SystemWindow {
     }, 1000);
   }
 
-  _findAndObserve() {
+  _findAndObserve(retryCount = 0) {
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (scroller) {
       this._lastScrollerEl = scroller;
       this._observeScroller(scroller);
       this._classifyMessages();
-    } else {
-      // Discord hasn't loaded yet — retry
-      setTimeout(() => {
-        if (this.settings.enabled) this._findAndObserve();
+    } else if (retryCount < 10) {
+      // Discord hasn't loaded yet — retry (max 10 attempts = 20s)
+      this._findRetryTimer = setTimeout(() => {
+        if (this.settings.enabled) this._findAndObserve(retryCount + 1);
       }, 2000);
     }
   }
@@ -109,6 +109,10 @@ module.exports = class SystemWindow {
     if (this._pollInterval) {
       clearInterval(this._pollInterval);
       this._pollInterval = null;
+    }
+    if (this._findRetryTimer) {
+      clearTimeout(this._findRetryTimer);
+      this._findRetryTimer = null;
     }
     clearTimeout(this._throttleTimer);
     this._throttleTimer = null;

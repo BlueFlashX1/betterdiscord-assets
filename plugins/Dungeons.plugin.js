@@ -1943,12 +1943,8 @@ module.exports = class Dungeons {
     // Build O(1) lookup tables for rank-based values (resurrection costs, mob stats, boss HP)
     this._buildRankLookupTables();
 
-    // TESTING MODE: Force spawn chance to 100%
-    if (this.settings.spawnChance !== 100) {
-      this.debugLog('START', `Updating spawn chance from ${this.settings.spawnChance}% to 100% (TESTING MODE)`);
-      this.settings.spawnChance = 100;
-      this.saveSettings();
-    }
+    // NOTE: Testing spawn override removed — spawn chance now respects user settings
+    // To test with 100% spawn, set spawnChance in plugin settings manually
 
     // Inject CSS using BdApi.DOM.addStyle (official API, persistent)
     this.injectCSS();
@@ -2242,15 +2238,22 @@ module.exports = class Dungeons {
     this.saveSettings(true);
 
     // CENTRALIZED CLEANUP: Remove all tracked resources to prevent memory leaks
-    // Remove all event listeners
-    this._listeners.forEach((handlers, eventType) => {
-      handlers.forEach((handler) => {
-        if (eventType === 'popstate') {
-          window.removeEventListener(eventType, handler);
-        } else {
-          document.removeEventListener(eventType, handler);
-        }
-      });
+    // Remove all event listeners (handles both Set<handler> and {target,event,handler,capture} shapes)
+    this._listeners.forEach((value, key) => {
+      if (value instanceof Set) {
+        // Set<handler> shape (e.g., popstate handlers)
+        value.forEach((handler) => {
+          if (key === 'popstate') {
+            window.removeEventListener(key, handler);
+          } else {
+            document.removeEventListener(key, handler);
+          }
+        });
+      } else if (value && typeof value === 'object' && value.handler) {
+        // Object shape { target, event, handler, capture }
+        const target = value.target || document;
+        target.removeEventListener(value.event || key, value.handler, !!value.capture);
+      }
     });
     this._listeners.clear();
 

@@ -338,7 +338,7 @@ function buildPanelComponents(pluginInstance) {
             }
           }
         } catch (error) {
-          this.debugError("Panel", "Failed to parse message metadata for preview", error);
+          pluginInstance.debugError("Panel", "Failed to parse message metadata for preview", error);
         }
       }
 
@@ -653,7 +653,7 @@ module.exports = class ShadowExchange {
     const { Webpack } = BdApi;
     try {
       this._NavigationUtils = Webpack.getModule(
-        (m) => m?.transitionTo && m?.back && m?.forward
+        (m) => m && m.transitionTo && m.back && m.forward
       );
       this.NavigationUtils = this._NavigationUtils;
     } catch (_) {
@@ -1398,7 +1398,7 @@ module.exports = class ShadowExchange {
 
       // React 17 fallback: legacy ReactDOM.render
       const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule(
-        (m) => m?.render && m?.unmountComponentAtNode
+        (m) => m && m.render && m.unmountComponentAtNode
       );
       if (ReactDOM?.render) {
         ReactDOM.render(element, container);
@@ -1436,7 +1436,7 @@ module.exports = class ShadowExchange {
       // React 17 fallback cleanup
       try {
         const ReactDOM = BdApi.ReactDOM || BdApi.Webpack.getModule(
-          (m) => m?.unmountComponentAtNode
+          (m) => m && m.unmountComponentAtNode
         );
         if (ReactDOM?.unmountComponentAtNode) ReactDOM.unmountComponentAtNode(container);
       } catch (error) {

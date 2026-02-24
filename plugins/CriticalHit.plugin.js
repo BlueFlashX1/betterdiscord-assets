@@ -4560,8 +4560,16 @@ ${childSel} {
 
     const timers = [];
     const recheckDelays = [120, 420, 900];
+    const totalRechecks = recheckDelays.length;
+    let completedRechecks = 0;
     recheckDelays.forEach((delayMs) => {
       const timerId = this._setTrackedTimeout(() => {
+        completedRechecks++;
+        // Clean up Map entry after last timer fires to prevent unbounded growth
+        if (completedRechecks >= totalRechecks && this._pendingRechecks) {
+          this._pendingRechecks.delete(messageId);
+        }
+
         if (this._isStopped) return;
 
         const requeried = (messageId && this.requeryMessageElement(messageId, messageElement)) || messageElement;
@@ -8280,6 +8288,22 @@ ${childSel} {
       if (this.messageObserver) {
         this.messageObserver.disconnect();
         this.messageObserver = null;
+      }
+
+      // Disconnect all transient observers (visual recheck observers, etc.)
+      if (this._transientObservers?.size) {
+        this._transientObservers.forEach((obs) => {
+          try { obs.disconnect(); } catch (_) {}
+        });
+        this._transientObservers.clear();
+      }
+
+      // Clear pending recheck timers and map
+      if (this._pendingRechecks?.size) {
+        this._pendingRechecks.forEach((timers) => {
+          timers.forEach((id) => clearTimeout(id));
+        });
+        this._pendingRechecks.clear();
       }
 
       // Stop periodic cleanup

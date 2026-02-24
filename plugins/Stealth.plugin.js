@@ -46,6 +46,7 @@ module.exports = class Stealth {
     this._suppressEventLog = {
       typing: 0,
       activities: 0,
+      telemetry: 0,
     };
 
     this._warningTimestamps = new Map();
@@ -217,7 +218,7 @@ module.exports = class Stealth {
           "track",
           (ctx, args, original) => {
             if (this.settings.enabled && this.settings.suppressTelemetry) {
-              this._recordSuppressed("activities");
+              this._recordSuppressed("telemetry");
               return undefined;
             }
             return original.apply(ctx, args);

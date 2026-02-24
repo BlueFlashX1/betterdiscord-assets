@@ -1617,14 +1617,19 @@ function buildWidgetComponents(pluginInstance) {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [data, setData] = React.useState(null);
 
-    // Expose forceUpdate to plugin
-    React.useEffect(() => {
-      pluginInstance._widgetForceUpdate = forceUpdate;
-      return () => { pluginInstance._widgetForceUpdate = null; };
-    }, [forceUpdate]);
+    // NOTE: forceUpdate wiring moved to refreshCounter useEffect below
 
     // Fetch rank data on mount + whenever forceUpdate is called
+    const [refreshCounter, setRefreshCounter] = React.useState(0);
     const fetchIdRef = React.useRef(0);
+
+    // Wire up forceUpdate to increment refreshCounter (triggers re-fetch)
+    React.useEffect(() => {
+      const origForceUpdate = pluginInstance._widgetForceUpdate;
+      pluginInstance._widgetForceUpdate = () => setRefreshCounter((c) => c + 1);
+      return () => { pluginInstance._widgetForceUpdate = origForceUpdate || null; };
+    }, []);
+
     React.useEffect(() => {
       const id = ++fetchIdRef.current;
       (async () => {
@@ -1657,7 +1662,7 @@ function buildWidgetComponents(pluginInstance) {
           pluginInstance.debugError?.('WIDGET', 'Error fetching widget data', err);
         }
       })();
-    });
+    }, [refreshCounter]);
 
     if (!data) return null;
     const { rankCounts, totalCount } = data;
@@ -2823,9 +2828,9 @@ module.exports = class ShadowArmy {
     this.cachedBuffsTime = null;
 
     // Clear extraction timestamps
-    if (this.extractionTimestamps) {
-      this.extractionTimestamps.length = 0;
-      this.extractionTimestamps = null;
+    if (this._extractionTimestamps) {
+      this._extractionTimestamps.length = 0;
+      this._extractionTimestamps = null;
     }
 
     // Clear dungeon extraction attempts tracking
@@ -4456,19 +4461,8 @@ module.exports = class ShadowArmy {
 
             // Shadow extraction completed - logged above in EXTRACTION_RETRIES completion log
 
-            // Emit shadowExtracted event for Dungeons plugin verification
-            try {
-              const event = new CustomEvent('shadowExtracted', {
-                detail: {
-                  shadow,
-                  timestamp: Date.now(),
-                  source: 'message',
-                },
-              });
-              document.dispatchEvent(event);
-            } catch (error) {
-              this.debugError('EXTRACTION_RETRIES', 'Failed to emit shadowExtracted event', error);
-            }
+            // NOTE: shadowExtracted event already dispatched above (lines 4428-4440)
+            // Duplicate dispatch removed to prevent double-counting in downstream plugins
 
             // Show extraction animation (only for messages and bosses, not mobs)
             if (showAnimation) {
@@ -4932,7 +4926,7 @@ module.exports = class ShadowArmy {
         // Invalidate caches
         this._armyStatsCache = null;
         this._armyStatsCacheTime = null;
-        this._shadowPowerCache = null; // Full invalidation — too many shadows to invalidate individually
+        this._shadowPowerCache = new Map(); // Full invalidation — too many shadows to invalidate individually
 
         // ONE batch event
         const eventData = {

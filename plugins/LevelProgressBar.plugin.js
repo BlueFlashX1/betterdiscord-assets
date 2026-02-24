@@ -948,14 +948,10 @@ module.exports = class LevelProgressBar {
         }
       }
 
-      /* XP glow animation disabled */
-      .lpb-progress-fill.lpb-xp-gain {
-        animation: none !important;
-        box-shadow: none !important;
-      }
+      /* XP glow animation - pulse handled by lpb-xp-pulse keyframes below */
 
       @keyframes lpb-xp-glow {
-        /* Disabled - no glow animation */
+        /* Reserved for future glow effects */
       }
 
       .lpb-compact .lpb-progress-track {

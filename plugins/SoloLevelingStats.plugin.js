@@ -966,7 +966,7 @@ module.exports = class SoloLevelingStats {
       this.domCache.valid = true;
       this.domCache.lastUpdate = Date.now();
     } catch (error) {
-      this.errorLog('DOM_CACHE', 'DOM cache initialization failed:', error);
+      this.debugError('DOM_CACHE', 'DOM cache initialization failed:', error);
       this.domCache.valid = false;
     }
   }
@@ -4411,7 +4411,7 @@ module.exports = class SoloLevelingStats {
     try {
       const data = this.readFileBackup();
       if (!data) {
-        this.warnLog('RESTORE_FILE_BACKUP', 'No file backup found to restore.');
+        this.debugLog('RESTORE_FILE_BACKUP', 'No file backup found to restore.');
         return false;
       }
       // Use deep copy to avoid reference issues
@@ -4430,7 +4430,7 @@ module.exports = class SoloLevelingStats {
 
   async checkIndexedDBBackups() {
     if (!UnifiedSaveManager) {
-      this.warnLog('INDEXEDDB_CHECK', 'UnifiedSaveManager not available for IndexedDB checks.');
+      this.debugLog('INDEXEDDB_CHECK', 'UnifiedSaveManager not available for IndexedDB checks.');
       return null;
     }
     const manager = new UnifiedSaveManager('SoloLevelingStats');
@@ -4468,7 +4468,7 @@ module.exports = class SoloLevelingStats {
 
   async restoreFromIndexedDBBackup(backupId = null) {
     if (!UnifiedSaveManager) {
-      this.warnLog('INDEXEDDB_RESTORE', 'UnifiedSaveManager not available for IndexedDB restore.');
+      this.debugLog('INDEXEDDB_RESTORE', 'UnifiedSaveManager not available for IndexedDB restore.');
       return false;
     }
     const manager = new UnifiedSaveManager('SoloLevelingStats');
@@ -4478,7 +4478,7 @@ module.exports = class SoloLevelingStats {
     if (!targetId) {
       const backups = await manager.getBackups('settings', 1);
       if (!backups.length) {
-        this.errorLog('INDEXEDDB_RESTORE', 'No IndexedDB backups found.');
+        this.debugError('INDEXEDDB_RESTORE', 'No IndexedDB backups found.');
         return false;
       }
       targetId = backups[0].id;
@@ -4486,7 +4486,7 @@ module.exports = class SoloLevelingStats {
 
     const data = await manager.restoreFromBackup('settings', targetId);
     if (!data) {
-      this.errorLog('INDEXEDDB_RESTORE', 'Failed to restore from IndexedDB backup.');
+      this.debugError('INDEXEDDB_RESTORE', 'Failed to restore from IndexedDB backup.');
       return false;
     }
 
@@ -4956,7 +4956,7 @@ module.exports = class SoloLevelingStats {
             const legacyRaw = fs.readFileSync(legacyPath, 'utf8');
             const legacyData = JSON.parse(legacyRaw);
             if (legacyData && legacyData.level > 1) {
-              this.warnLog('RESCUE', `Found real progress in legacy .data.json (level ${legacyData.level}) — refusing to use defaults`);
+              this.debugLog('RESCUE', `Found real progress in legacy .data.json (level ${legacyData.level}) — refusing to use defaults`);
               const merged = { ...this.defaultSettings, ...legacyData };
               this.settings = JSON.parse(JSON.stringify(merged));
               if (Array.isArray(this.settings.activity?.channelsVisited)) {
@@ -5002,7 +5002,7 @@ module.exports = class SoloLevelingStats {
         if (fs.existsSync(legacyPath)) {
           const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
           if (legacyData && legacyData.level > 1) {
-            this.warnLog('RESCUE', 'ERROR-PATH RESCUE: Found real progress in legacy .data.json');
+            this.debugLog('RESCUE', 'ERROR-PATH RESCUE: Found real progress in legacy .data.json');
             const merged = { ...this.defaultSettings, ...legacyData };
             this.settings = JSON.parse(JSON.stringify(merged));
             if (Array.isArray(this.settings.activity?.channelsVisited)) {
@@ -5108,7 +5108,7 @@ module.exports = class SoloLevelingStats {
 
       const currentLooksFresh = !this._isRealProgressState(this.settings);
       if (probeResult.found && currentLooksFresh) {
-        this.warnLog('SAVE_GUARD', `BLOCKED save: found persisted progress in ${probeResult.source} (level ${probeResult.level}, totalXP ${probeResult.totalXP}) while current state looks fresh. Reloading instead of overwriting.`);
+        this.debugLog('SAVE_GUARD', `BLOCKED save: found persisted progress in ${probeResult.source} (level ${probeResult.level}, totalXP ${probeResult.totalXP}) while current state looks fresh. Reloading instead of overwriting.`);
         try {
           await this.loadSettings();
         } catch (_) {
@@ -7320,7 +7320,7 @@ module.exports = class SoloLevelingStats {
     try {
       this.shareShadowXP(xpReward, 'quest');
     } catch (error) {
-      this.errorLog('QUEST_XP', 'Quest shadow XP share error:', error);
+      this.debugError('QUEST_XP', 'Quest shadow XP share error:', error);
     }
   }
 
