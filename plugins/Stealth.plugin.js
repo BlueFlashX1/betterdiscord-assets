@@ -1,7 +1,7 @@
 /**
  * @name Stealth
- * @description Conceal presence by suppressing typing, forcing invisible status, hiding activity updates, and erasing telemetry footprints.
- * @version 1.1.2
+ * @description Total concealment: suppress typing, force invisible, block read receipts, suppress idle detection, hide activities, erase telemetry, and neutralize tracking.
+ * @version 2.0.0
  * @author matthewthompson
  */
 
@@ -18,7 +18,9 @@ const DEFAULT_SETTINGS = {
   suppressActivities: true,
   suppressTelemetry: true,
   disableProcessMonitor: true,
-  autoSilentMessages: false,
+  autoSilentMessages: true,
+  suppressReadReceipts: true,
+  suppressIdle: true,
   restoreStatusOnStop: true,
   showToasts: true,
 };
@@ -50,6 +52,9 @@ module.exports = class Stealth {
       typing: 0,
       activities: 0,
       telemetry: 0,
+      readReceipts: 0,
+      idle: 0,
+      silent: 0,
     };
 
     this._warningTimestamps = new Map();
@@ -148,8 +153,22 @@ module.exports = class Stealth {
         );
         patched += 1;
       }
+      if (typingModule && typeof typingModule.stopTyping === "function") {
+        BdApi.Patcher.instead(
+          STEALTH_PLUGIN_ID,
+          typingModule,
+          "stopTyping",
+          (ctx, args, original) => {
+            if (this.settings.enabled && this.settings.suppressTyping) {
+              return undefined;
+            }
+            return original.apply(ctx, args);
+          }
+        );
+        patched += 1;
+      }
     } catch (error) {
-      this._logWarning("TYPING", "Direct startTyping patch failed", error, "typing-direct");
+      this._logWarning("TYPING", "Direct startTyping/stopTyping patch failed", error, "typing-direct");
     }
 
     const fnNames = [
@@ -157,6 +176,7 @@ module.exports = class Stealth {
       "sendTypingStart",
       "triggerTyping",
       "startTypingNow",
+      "stopTyping",
     ];
 
     const keyCombos = [
@@ -278,7 +298,7 @@ module.exports = class Stealth {
           const content = message.content.trimStart();
           if (!content || content.startsWith("@silent") || content.startsWith("/")) return;
           message.content = `@silent ${message.content}`;
-          this._recordSuppressed("activities");
+          this._recordSuppressed("silent");
         });
         patched += 1;
       }
@@ -583,7 +603,8 @@ module.exports = class Stealth {
         if (fnName === "setPresence") {
           try {
             module[fnName].call(module, { status });
-          } catch (_error) {
+          } catch (presenceError) {
+            this._logWarning("STATUS", `setPresence({status}) failed, trying plain string`, presenceError, "status-presence-obj");
             module[fnName].call(module, status);
           }
           return true;
