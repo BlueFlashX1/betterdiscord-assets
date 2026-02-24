@@ -6081,11 +6081,10 @@ module.exports = class Dungeons {
     this.settings.mobKillNotifications[channelKey].count += killCount;
 
     if (this.soloLevelingStats) {
-      // Grant XP for mob kills — full XP if participating, reduced (30%) if shadows fighting alone.
-      // This ensures the player grows through their shadows' combat even after being defeated.
-      const xpPerKill = this.calculateMobXP(mobRank, dungeon.userParticipating);
+      // Shadow Monarch receives full mob XP regardless of participation — your army is your strength.
+      const xpPerKill = this.calculateMobXP(mobRank, true);
       if (xpPerKill > 0) {
-        this._grantUserDungeonXP(xpPerKill * killCount, dungeon.userParticipating ? 'dungeon_mob_kill' : 'dungeon_shadow_mob_kill', {
+        this._grantUserDungeonXP(xpPerKill * killCount, 'dungeon_mob_kill', {
           channelKey,
           mobRank,
           killCount,
@@ -11171,8 +11170,8 @@ module.exports = class Dungeons {
     const rankIndex = this.getRankIndexValue(dungeon.rank);
 
     if (reason === 'complete') {
-      // Grant bonus XP for completion (if participating)
-      if (dungeon.userParticipating && this.soloLevelingStats) {
+      // Shadow Monarch gets completion XP regardless — shadows clearing = you clearing.
+      if (this.soloLevelingStats) {
         const completionXP = 100 + rankIndex * 50; // E: 100, D: 150, C: 200, B: 250, A: 300, S: 350
         if (
           this._grantUserDungeonXP(completionXP, 'dungeon_complete', {
@@ -11197,35 +11196,17 @@ module.exports = class Dungeons {
         );
         this.showToast(`${dungeon.name}: No XP earned — no combat contribution.`, 'info');
       } else if (this.soloLevelingStats) {
-      // Grant XP for boss kill (even if not participating - shadows cleared it for you!)
-      if (dungeon.userParticipating) {
-          // Full XP if actively participating
-          const bossXP = 200 + rankIndex * 100; // E: 200, D: 300, C: 400, B: 500, A: 600, S: 700
-          if (
-            this._grantUserDungeonXP(bossXP, 'dungeon_boss_kill', {
-              channelKey,
-              dungeonRank: dungeon.rank,
-              reason,
-              userParticipating: true,
-            })
-          ) {
-            summaryStats.userXP = bossXP;
-          }
-        } else {
-          // Reduced XP if shadows cleared it without you (50% boss XP + 30% mob XP)
-          const bossXP = Math.floor((200 + rankIndex * 100) * 0.5);
-          const mobXP = Math.floor((10 + rankIndex * 5) * 0.3 * summaryStats.totalMobsKilled);
-          const shadowVictoryXP = bossXP + mobXP;
-          if (
-            this._grantUserDungeonXP(shadowVictoryXP, 'dungeon_shadow_victory', {
-              channelKey,
-              dungeonRank: dungeon.rank,
-              reason,
-              userParticipating: false,
-            })
-          ) {
-            summaryStats.userXP = shadowVictoryXP;
-          }
+        // Shadow Monarch gets full boss XP regardless of participation — your shadows are you.
+        const bossXP = 200 + rankIndex * 100; // E: 200, D: 300, C: 400, B: 500, A: 600, S: 700
+        if (
+          this._grantUserDungeonXP(bossXP, 'dungeon_boss_kill', {
+            channelKey,
+            dungeonRank: dungeon.rank,
+            reason,
+            userParticipating: dungeon.userParticipating,
+          })
+        ) {
+          summaryStats.userXP = bossXP;
         }
       }
 
@@ -11249,11 +11230,10 @@ module.exports = class Dungeons {
       }
     }
 
-    // Shadow Commander XP: Player earns a share of their shadows' dungeon performance.
-    // This represents growth through commanding an army — the stronger your shadows fight,
-    // the more XP flows back to you. Applies regardless of completion reason or participation.
+    // Shadow Monarch XP Mirror: All shadow dungeon XP is mirrored to the player.
+    // Your army's strength is your strength — no reduction for either party.
     if (summaryStats.shadowTotalXP > 0 && this.soloLevelingStats) {
-      const shadowSharePercent = 0.15; // 15% of total shadow dungeon XP flows to player
+      const shadowSharePercent = 1.0; // 100% mirror — same XP as shadows received
       const shadowShareXP = Math.floor(summaryStats.shadowTotalXP * shadowSharePercent);
       if (shadowShareXP > 0) {
         if (
