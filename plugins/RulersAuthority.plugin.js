@@ -522,7 +522,8 @@ module.exports = class RulersAuthority {
 
   getSoloLevelingData() {
     const now = Date.now();
-    if (this._statsCache && now - this._statsCacheTime < RA_STATS_CACHE_TTL) {
+    if (this._statsCache && now - this._statsCacheTime < RA_STATS_CACHE_TTL &&
+        BdApi.Plugins.isEnabled("SoloLevelingStats")) {
       return this._statsCache;
     }
     if (!BdApi.Plugins.isEnabled("SoloLevelingStats")) return null;

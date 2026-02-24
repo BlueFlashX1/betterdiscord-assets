@@ -570,7 +570,8 @@ module.exports = class ShadowStep {
 
   _getAgiStat() {
     const now = Date.now();
-    if (this._statsCache && (now - this._statsCacheTime) < STATS_CACHE_TTL) {
+    if (this._statsCache && (now - this._statsCacheTime) < STATS_CACHE_TTL &&
+        BdApi.Plugins.isEnabled('SoloLevelingStats')) {
       return this._statsCache.agility || 0;
     }
     try {

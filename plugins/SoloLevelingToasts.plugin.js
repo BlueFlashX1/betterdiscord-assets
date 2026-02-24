@@ -183,13 +183,9 @@ module.exports = class SoloLevelingToasts {
    */
   initializeWebpackModules() {
     try {
-      // Fetch webpack modules for better Discord integration
-      this.webpackModules.UserStore = BdApi.Webpack.getModule(
-        BdApi.Webpack.Filters.byProps('getCurrentUser', 'getUser')
-      );
-      this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
-        BdApi.Webpack.Filters.byProps('getChannel', 'getChannels')
-      );
+      // Fetch webpack stores — getStore() is the modern, preferred API
+      this.webpackModules.UserStore = BdApi.Webpack.getStore('UserStore');
+      this.webpackModules.ChannelStore = BdApi.Webpack.getStore('ChannelStore');
 
       this.webpackModuleAccess =
         !!this.webpackModules.UserStore && !!this.webpackModules.ChannelStore;
@@ -1208,8 +1204,8 @@ module.exports = class SoloLevelingToasts {
 
     if (!this.settings.enabled) {
       this.debugLog('SHOW_TOAST', 'Plugin disabled, using fallback toast');
-      if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
+      if (BdApi?.UI?.showToast) {
+        BdApi.UI.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
       }
       return;
     }
@@ -1312,8 +1308,8 @@ module.exports = class SoloLevelingToasts {
         timeout,
       });
       // Fallback to default toast
-      if (BdApi && typeof BdApi.showToast === 'function') {
-        BdApi.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
+      if (BdApi?.UI?.showToast) {
+        BdApi.UI.showToast(message, { type, timeout: this._getToastTimeout(timeout) });
         this.debugLog('SHOW_TOAST', 'Fallback toast shown');
       }
     }
@@ -1343,15 +1339,13 @@ module.exports = class SoloLevelingToasts {
 
     toast.style.animation = 'none';
     toast.style.transition = 'none';
-    void toast.offsetHeight;
-
     if (currentTransform && currentTransform !== 'none') {
       toast.style.transform = currentTransform;
     }
     if (currentOpacity) {
       toast.style.opacity = currentOpacity;
     }
-
+    // Single reflow commits animation:none + transition:none + inline values
     void toast.offsetHeight;
 
     toast.style.animation = '';
@@ -1434,7 +1428,8 @@ module.exports = class SoloLevelingToasts {
       if (
         this._cache.soloPluginInstance &&
         this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL &&
+        BdApi.Plugins.isEnabled('SoloLevelingStats')
       ) {
         instance = this._cache.soloPluginInstance;
       } else {

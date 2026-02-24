@@ -148,7 +148,7 @@
  * - Member list widget system refactored and stabilized
  * - Widget persistence fixes (survives channel/guild switching)
  * - BdApi.DOM migration (injectCSS → DOM.addStyle/removeStyle)
- * - BdApi.showToast for user notifications (extraction success, essence conversion)
+ * - BdApi.UI.showToast for user notifications (extraction success, essence conversion)
  * - BdApi.Plugins.get for plugin integration (SoloLevelingStats)
  * - ARISE Animation system integrated (merged from ShadowAriseAnimation plugin)
  * - BdApi.Webpack.getStore/getModule for Discord API access (UserStore)
@@ -3684,9 +3684,13 @@ module.exports = class ShadowArmy {
   integrateWithSoloLeveling() {
     try {
       // Get SoloLevelingStats plugin via BdApi
+      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+        this.debugLog('INTEGRATION', 'SoloLevelingStats plugin not enabled');
+        this.soloPlugin = null;
+        return;
+      }
       this.soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
       if (!this.soloPlugin) {
-        // debugLog method is in SECTION 4
         this.debugLog('INTEGRATION', 'SoloLevelingStats plugin not found');
       }
     } catch (error) {
@@ -4448,8 +4452,8 @@ module.exports = class ShadowArmy {
             }
 
             // Show success toast notification using BdApi
-            if (BdApi && BdApi.showToast) {
-              BdApi.showToast(
+            if (BdApi?.UI?.showToast) {
+              BdApi.UI.showToast(
                 `Shadow Extracted: ${shadow.rank}-Rank ${shadow.roleName || shadow.role}`,
                 {
                   type: 'success',
@@ -4958,9 +4962,9 @@ module.exports = class ShadowArmy {
         }
 
         // ONE summary toast
-        if (BdApi?.showToast) {
+        if (BdApi?.UI?.showToast) {
           const rankSummary = Object.entries(rankCounts).map(([r, c]) => `${c}x ${r}`).join(', ');
-          BdApi.showToast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, { type: 'success', timeout: 4000 });
+          BdApi.UI.showToast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, { type: 'success', timeout: 4000 });
         }
 
         // Coalesced widget refresh
@@ -8161,6 +8165,7 @@ module.exports = class ShadowArmy {
     const attemptLoad = () => {
       if (this._isStopped) return false;
       try {
+        if (!BdApi.Plugins.isEnabled('CriticalHit')) return false;
         const criticalHitPlugin = BdApi.Plugins.get('CriticalHit');
         if (criticalHitPlugin) {
           const instance = criticalHitPlugin.instance || criticalHitPlugin;
@@ -8734,20 +8739,9 @@ module.exports = class ShadowArmy {
    */
   initializeWebpackModules() {
     try {
-      const byProps = BdApi.Webpack.Filters?.byProps;
-      const storeQueries = byProps
-        ? [
-            ['UserStore', byProps('getCurrentUser', 'getUser')],
-            ['ChannelStore', byProps('getChannel', 'getChannelId')],
-          ]
-        : [
-            ['UserStore', (m) => m && typeof m.getCurrentUser === 'function'],
-            ['ChannelStore', (m) => m && typeof m.getChannel === 'function'],
-          ];
-
-      storeQueries.forEach(([key, filter]) => {
-        this.webpackModules[key] = BdApi.Webpack.getModule(filter);
-      });
+      const { Webpack } = BdApi;
+      this.webpackModules.UserStore = Webpack.getStore('UserStore');
+      this.webpackModules.ChannelStore = Webpack.getStore('ChannelStore');
 
       const { UserStore, ChannelStore } = this.webpackModules;
       this.webpackModuleAccess = Boolean(UserStore && ChannelStore);
@@ -9921,8 +9915,8 @@ module.exports = class ShadowArmy {
       );
 
       // Show toast if available
-      if (BdApi.showToast) {
-        BdApi.showToast(`Converted ${toConvert.length} weak shadows to ${totalEssence} essence.`, {
+      if (BdApi?.UI?.showToast) {
+        BdApi.UI.showToast(`Converted ${toConvert.length} weak shadows to ${totalEssence} essence.`, {
           type: 'info',
           timeout: 5000,
         });
@@ -10267,8 +10261,8 @@ module.exports = class ShadowArmy {
       this.cachedBuffsTime = null;
 
       // Show notification
-      if (BdApi.showToast) {
-        BdApi.showToast(
+      if (BdApi?.UI?.showToast) {
+        BdApi.UI.showToast(
           `Converted ${quantity} ${rank}-rank shadow${
             quantity !== 1 ? 's' : ''
           } to ${totalEssence.toLocaleString()} essence!`,

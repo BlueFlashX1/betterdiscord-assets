@@ -1288,7 +1288,8 @@ module.exports = class LevelProgressBar {
       if (
         this._cache.soloPluginInstance &&
         this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL &&
+        BdApi.Plugins.isEnabled('SoloLevelingStats')
       ) {
         instance = this._cache.soloPluginInstance;
       } else {
@@ -1659,7 +1660,7 @@ module.exports = class LevelProgressBar {
       if (progressTrack) {
         const milestones = [25, 50, 75];
         const mask = milestones.reduce(
-          (acc, milestone, index) => (xpPercent >= milestone - 1 ? acc | (1 << index) : acc),
+          (acc, milestone, index) => (xpPercent >= milestone ? acc | (1 << index) : acc),
           0
         );
         if (mask !== this._lastMilestoneMask) {
@@ -1945,7 +1946,7 @@ module.exports = class LevelProgressBar {
     // FUNCTIONAL: Add markers at 25%, 50%, 75% using filter (NO IF-ELSE!)
     const milestones = [25, 50, 75];
     milestones
-      .filter((milestone) => xpPercent >= milestone - 1)
+      .filter((milestone) => xpPercent >= milestone)
       .forEach((milestone) => {
         const marker = document.createElement('div');
         marker.className = 'lpb-milestone';

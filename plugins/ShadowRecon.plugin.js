@@ -244,6 +244,11 @@ module.exports = class ShadowRecon {
       Webpack.getByKeys("ADMINISTRATOR", "VIEW_CHANNEL");
 
     this._sortedGuildStore = Webpack.getStore("SortedGuildStore");
+
+    // Cache stores used in per-guild counting methods (avoid repeated getStore calls)
+    this._EmojiStore = Webpack.getStore("EmojiStore");
+    this._StickersStore = Webpack.getStore("StickersStore");
+    this._SoundboardStore = Webpack.getStore("SoundboardStore");
   }
 
   _getCreateRoot() {
@@ -256,7 +261,8 @@ module.exports = class ShadowRecon {
 
   _getShadowDeploymentMap() {
     const now = Date.now();
-    if (now - this._shadowCache.timestamp < 3000) return this._shadowCache.map;
+    if (now - this._shadowCache.timestamp < 3000 &&
+        BdApi.Plugins.isEnabled("ShadowSenses")) return this._shadowCache.map;
 
     const nextMap = new Map();
     try {
@@ -1345,8 +1351,7 @@ module.exports = class ShadowRecon {
 
   _countGuildEmojis(guildId, guild) {
     try {
-      const emojiStore = BdApi.Webpack.getStore("EmojiStore");
-      const guildEmojis = emojiStore?.getGuilds?.()?.[guildId];
+      const guildEmojis = this._EmojiStore?.getGuilds?.()?.[guildId];
       if (Array.isArray(guildEmojis)) return guildEmojis.length;
     } catch (_) {}
     return Array.isArray(guild?.emojis) ? guild.emojis.length : 0;
@@ -1354,19 +1359,15 @@ module.exports = class ShadowRecon {
 
   _countGuildStickers(guildId, guild) {
     try {
-      const stickersStore = BdApi.Webpack.getStore("StickersStore");
-      if (typeof stickersStore?.getGuildStickers === "function") {
-        const stickers = stickersStore.getGuildStickers(guildId);
-        if (Array.isArray(stickers)) return stickers.length;
-      }
+      const stickers = this._StickersStore?.getGuildStickers?.(guildId);
+      if (Array.isArray(stickers)) return stickers.length;
     } catch (_) {}
     return Array.isArray(guild?.stickers) ? guild.stickers.length : 0;
   }
 
   _countGuildSoundboard(guildId) {
     try {
-      const soundboardStore = BdApi.Webpack.getStore("SoundboardStore");
-      const sounds = soundboardStore?.getGuildSounds?.(guildId);
+      const sounds = this._SoundboardStore?.getGuildSounds?.(guildId);
       if (Array.isArray(sounds)) return sounds.length;
     } catch (_) {}
     return 0;

@@ -136,11 +136,12 @@ function buildTitleComponents(pluginInstance) {
 
     const soloData = pluginInstance.getSoloLevelingData();
     const isTitleAllowed = (t) => !pluginInstance._unwantedTitles.has(t);
+    const titlesKey = (soloData?.titles || []).join('\x00');
     const titles = React.useMemo(() => {
       const raw = (soloData?.titles || []).filter(isTitleAllowed);
       pluginInstance.getSortedTitles({ titles: raw, sortBy });
       return raw;
-    }, [soloData?.titles?.length, sortBy]);
+    }, [titlesKey, sortBy]);
 
     const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
 
@@ -457,7 +458,19 @@ module.exports = class SoloLevelingTitleManager {
       this._cache.soloPluginInstanceTime &&
       now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
     ) {
+      // Guardrail: verify cached instance's plugin is still enabled
+      if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+        this._cache.soloPluginInstance = null;
+        this._cache.soloPluginInstanceTime = 0;
+        return null;
+      }
       return this._cache.soloPluginInstance;
+    }
+
+    if (!BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+      this._cache.soloPluginInstance = null;
+      this._cache.soloPluginInstanceTime = 0;
+      return null;
     }
 
     const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
@@ -547,6 +560,17 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   _cacheTitleBonusResult(titleName, result, now = Date.now()) {
+    // Evict oldest entries if cache exceeds 50 titles
+    const keys = Object.keys(this._cache.titleBonuses);
+    if (keys.length >= 50) {
+      let oldestKey = keys[0], oldestTime = this._cache.titleBonusesTime[keys[0]] || 0;
+      for (let i = 1; i < keys.length; i++) {
+        const t = this._cache.titleBonusesTime[keys[i]] || 0;
+        if (t < oldestTime) { oldestTime = t; oldestKey = keys[i]; }
+      }
+      delete this._cache.titleBonuses[oldestKey];
+      delete this._cache.titleBonusesTime[oldestKey];
+    }
     this._cache.titleBonuses[titleName] = result;
     this._cache.titleBonusesTime[titleName] = now;
     return result;
@@ -1436,41 +1460,31 @@ module.exports = class SoloLevelingTitleManager {
       if (!soloPlugin) return false;
       const instance = soloPlugin.instance || soloPlugin;
 
-      // FUNCTIONAL: Guard clauses (keep for early returns)
       if (this._unwantedTitles.has(titleName)) {
-        BdApi?.showToast?.('This title has been removed', { type: 'error', timeout: 2000 });
+        BdApi.UI.showToast('This title has been removed', { type: 'error', timeout: 2000 });
         return false;
       }
 
       const soloData = this.getSoloLevelingData();
       if (!soloData || !soloData.titles.includes(titleName)) {
-        BdApi?.showToast?.('Title not unlocked', { type: 'error', timeout: 2000 });
+        BdApi.UI.showToast('Title not unlocked', { type: 'error', timeout: 2000 });
         return false;
       }
 
-      // FUNCTIONAL: Optional chaining (no nested if-else)
-      return instance.setActiveTitle
-        ? (() => {
-            const result = instance.setActiveTitle(titleName);
-            result &&
-              BdApi?.showToast &&
-              (() => {
-                // Invalidate cache since title was equipped
-                this._cache.soloLevelingData = null;
-                this._cache.soloLevelingDataTime = 0;
+      if (!instance.setActiveTitle) return false;
 
-                const bonus = this.getTitleBonus(titleName);
-                const buffs = this.formatTitleBonusLines(bonus);
-                const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
-                BdApi.showToast(`Title Equipped: ${titleName}${bonusText}`, {
-                  type: 'success',
-                  timeout: 3000,
-                });
-              })();
-            result && this._modalForceUpdate?.();
-            return result;
-          })()
-        : false;
+      const result = instance.setActiveTitle(titleName);
+      if (result) {
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = 0;
+
+        const bonus = this.getTitleBonus(titleName);
+        const buffs = this.formatTitleBonusLines(bonus);
+        const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
+        BdApi.UI.showToast(`Title Equipped: ${titleName}${bonusText}`, { type: 'success', timeout: 3000 });
+        this._modalForceUpdate?.();
+      }
+      return result;
     } catch (error) {
       this.debugError('EQUIP', 'Error equipping title', error);
       return false;
@@ -1505,9 +1519,7 @@ module.exports = class SoloLevelingTitleManager {
         // Invalidate cache since title was unequipped
         this._cache.soloLevelingData = null;
         this._cache.soloLevelingDataTime = 0;
-        if (BdApi && typeof BdApi.showToast === 'function') {
-          BdApi.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
-        }
+        BdApi.UI.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
         this._modalForceUpdate?.();
         return true;
       }

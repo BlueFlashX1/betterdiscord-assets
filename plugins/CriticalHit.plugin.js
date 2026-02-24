@@ -3534,51 +3534,25 @@ ${childSel} {
    */
   initializeWebpackModules() {
     try {
-      // Try to get MessageStore (for receiving messages)
-      this.webpackModules.MessageStore = BdApi.Webpack.getModule(
-        (m) => m && (m.getMessage || m.getMessages || m.receiveMessage)
-      );
+      const { Webpack } = BdApi;
 
-      // UserStore already accessed in getCurrentUserId(), but store reference
+      // Stores — getStore() is the modern, reliable API
+      this.webpackModules.MessageStore = Webpack.getStore('MessageStore');
       if (!this.webpackModules.UserStore) {
-        this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
+        this.webpackModules.UserStore = Webpack.getStore('UserStore');
+      }
+      if (!this.webpackModules.SelectedChannelStore) {
+        this.webpackModules.SelectedChannelStore = Webpack.getStore('SelectedChannelStore');
+      }
+      if (!this.webpackModules.SelectedGuildStore) {
+        this.webpackModules.SelectedGuildStore = Webpack.getStore('SelectedGuildStore');
       }
 
-      // MessageActions already accessed in setupMessageSendHook(), but store reference
+      // MessageActions is NOT a store — getModule is correct here
       if (!this.webpackModules.MessageActions) {
-        this.webpackModules.MessageActions = BdApi.Webpack.getModule(
+        this.webpackModules.MessageActions = Webpack.getModule(
           (m) => m && m.sendMessage && (m.receiveMessage || m.editMessage)
         );
-      }
-
-      // SelectedChannelStore for active channel/thread ID resolution
-      if (!this.webpackModules.SelectedChannelStore) {
-        this.webpackModules.SelectedChannelStore = BdApi.Webpack.getModule((m) => {
-          if (!m) return false;
-          const hasChannelGetter =
-            typeof m.getChannelId === 'function' ||
-            typeof m.getCurrentlySelectedChannelId === 'function' ||
-            typeof m.getLastSelectedChannelId === 'function';
-          const hasStoreShape =
-            typeof m.addChangeListener === 'function' ||
-            typeof m.removeChangeListener === 'function';
-          return hasChannelGetter && hasStoreShape;
-        });
-      }
-
-      // SelectedGuildStore for reliable guild resolution (URL fallback remains)
-      if (!this.webpackModules.SelectedGuildStore) {
-        this.webpackModules.SelectedGuildStore = BdApi.Webpack.getModule((m) => {
-          if (!m) return false;
-          const hasGuildGetter =
-            typeof m.getGuildId === 'function' ||
-            typeof m.getCurrentGuildId === 'function' ||
-            typeof m.getLastSelectedGuildId === 'function';
-          const hasStoreShape =
-            typeof m.addChangeListener === 'function' ||
-            typeof m.removeChangeListener === 'function';
-          return hasGuildGetter && hasStoreShape;
-        });
       }
 
       this.debugLog('WEBPACK_INIT', 'Webpack modules initialized', {
@@ -3600,52 +3574,12 @@ ${childSel} {
   setupMessageSendHook() {
     try {
       if (this._isStopped) return;
-      // Try multiple methods to find MessageActions module
-      // Method 1: Standard search
-      let MessageActions = BdApi.Webpack.getModule(
-        (m) => m.sendMessage && (m.receiveMessage || m.editMessage)
-      );
 
-      // Method 2: Alternative search patterns
-      if (!MessageActions) {
-        MessageActions = BdApi.Webpack.getModule((m) => {
-          return (
-            m.sendMessage &&
-            typeof m.sendMessage === 'function' &&
-            (m.receiveMessage || m.editMessage || m.deleteMessage || m.updateMessage)
-          );
-        });
-      }
-
-      // Method 3: Search by function signature (sendMessage with specific properties)
-      if (!MessageActions) {
-        MessageActions = BdApi.Webpack.getModule((m) => {
-          if (!m.sendMessage || typeof m.sendMessage !== 'function') return false;
-          // Check if it's likely MessageActions by looking for other message-related functions
-          const messageFunctions = [
-            'sendMessage',
-            'editMessage',
-            'deleteMessage',
-            'receiveMessage',
-          ];
-          const foundFunctions = messageFunctions.filter(
-            (fn) => m[fn] && typeof m[fn] === 'function'
-          );
-          return foundFunctions.length >= 2; // At least 2 message functions
-        });
-      }
-
-      // Method 4: Get all modules and search manually
-      if (!MessageActions) {
-        const allModules = BdApi.Webpack.getAllModules();
-        MessageActions = allModules.find((m) => {
-          return (
-            m.sendMessage &&
-            typeof m.sendMessage === 'function' &&
-            (m.receiveMessage || m.editMessage || m.deleteMessage)
-          );
-        });
-      }
+      // Use cached reference from initializeWebpackModules, fallback to fresh lookup
+      let MessageActions = this.webpackModules.MessageActions ||
+        BdApi.Webpack.getModule(
+          (m) => m && m.sendMessage && (m.receiveMessage || m.editMessage)
+        );
 
       if (!MessageActions) {
         this.debugLog('MESSAGE_SEND_HOOK', 'MessageActions module not found - retrying...');
@@ -7492,12 +7426,10 @@ ${childSel} {
 
     const effectiveCrit = this.getEffectiveCritChance();
     try {
-      if (BdApi?.showToast) {
-        BdApi.showToast(this._createCritChanceToastMessage(effectiveCrit), {
-          type: 'info',
-          timeout: this.TOAST_TIMEOUT_MS,
-        });
-      }
+      BdApi.UI.showToast(this._createCritChanceToastMessage(effectiveCrit), {
+        type: 'info',
+        timeout: this.TOAST_TIMEOUT_MS,
+      });
     } catch (error) {
       this.debugError('SHOW_TOAST', error);
     }
@@ -7615,7 +7547,7 @@ ${childSel} {
    */
   _showToast(message, options = {}) {
     try {
-      BdApi?.showToast?.(message, { timeout: this.TOAST_TIMEOUT_MS, ...options });
+      BdApi.UI.showToast(message, { timeout: this.TOAST_TIMEOUT_MS, ...options });
     } catch (error) {
       this.debugError('SHOW_TOAST', error);
     }
@@ -7654,18 +7586,14 @@ ${childSel} {
    */
   getCurrentUserId() {
     try {
-      const UserStore = BdApi.Webpack.getModule((m) => m.getCurrentUser);
-      if (UserStore) {
-        const user = UserStore.getCurrentUser();
-        if (user?.id) {
-          this.currentUserId = user.id;
-          this.settings.ownUserId = user.id;
-          this.saveSettings();
-        }
+      const UserStore = this.webpackModules.UserStore || BdApi.Webpack.getStore('UserStore');
+      const user = UserStore?.getCurrentUser();
+      if (user?.id) {
+        this.currentUserId = user.id;
+        this.settings.ownUserId = user.id;
+        this.saveSettings();
       }
-    } catch (error) {
-      // Silently fail - user ID not critical for functionality
-    }
+    } catch (_) {}
   }
 
   /**
@@ -8536,15 +8464,11 @@ ${childSel} {
 
     // Show toast notification
     try {
-      if (BdApi?.showToast) {
-        BdApi.showToast(`Debug mode ${enabled ? 'enabled' : 'disabled'}`, {
-          type: enabled ? 'warning' : 'info',
-          timeout: 2000,
-        });
-      }
-    } catch (error) {
-      // Toast failed, continue
-    }
+      BdApi.UI.showToast(`Debug mode ${enabled ? 'enabled' : 'disabled'}`, {
+        type: enabled ? 'warning' : 'info',
+        timeout: 2000,
+      });
+    } catch (_) {}
   }
 
   // ============================================================================

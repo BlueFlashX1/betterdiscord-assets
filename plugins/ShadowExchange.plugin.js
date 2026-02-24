@@ -650,8 +650,9 @@ module.exports = class ShadowExchange {
   // ── Webpack Modules ────────────────────────────────────────────────────
 
   initWebpack() {
+    const { Webpack } = BdApi;
     try {
-      this._NavigationUtils = BdApi.Webpack.getModule(
+      this._NavigationUtils = Webpack.getModule(
         (m) => m?.transitionTo && m?.back && m?.forward
       );
       this.NavigationUtils = this._NavigationUtils;
@@ -659,34 +660,10 @@ module.exports = class ShadowExchange {
       this._NavigationUtils = null;
       this.NavigationUtils = null;
     }
-    try {
-      this.ChannelStore = BdApi.Webpack.getModule(
-        (m) => m?.getChannel && m?.getDMFromUserId
-      );
-    } catch (_) {
-      this.ChannelStore = null;
-    }
-    try {
-      this.GuildStore = BdApi.Webpack.getModule(
-        (m) => m?.getGuild && m?.getGuilds
-      );
-    } catch (_) {
-      this.GuildStore = null;
-    }
-    try {
-      this.MessageStore = BdApi.Webpack.getModule(
-        (m) => m?.getMessage && m?.getMessages
-      );
-    } catch (_) {
-      this.MessageStore = null;
-    }
-    try {
-      this.UserStore = BdApi.Webpack.getModule(
-        (m) => m?.getUser && m?.getCurrentUser
-      );
-    } catch (_) {
-      this.UserStore = null;
-    }
+    this.ChannelStore = Webpack.getStore("ChannelStore");
+    this.GuildStore = Webpack.getStore("GuildStore");
+    this.MessageStore = Webpack.getStore("MessageStore");
+    this.UserStore = Webpack.getStore("UserStore");
   }
 
   // ── Context Menu (right-click → Shadow Mark) ──────────────────────────
@@ -990,6 +967,7 @@ module.exports = class ShadowExchange {
   // ── Shadow Assignment ────────────────────────────────────────────────
 
   async getWeakestAvailableShadow() {
+    if (!BdApi.Plugins.isEnabled("ShadowArmy")) return this.getFallbackShadow();
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
     const saInstance = saPlugin?.instance;
 
@@ -1057,6 +1035,9 @@ module.exports = class ShadowExchange {
   }
 
   async getAvailableShadowCount() {
+    if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
+      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+    }
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
     const saInstance = saPlugin?.instance;
     if (!saInstance || typeof saInstance.getAllShadows !== "function") {

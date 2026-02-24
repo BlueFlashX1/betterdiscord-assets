@@ -201,6 +201,10 @@ class DeploymentManager {
       return this._availableCache.shadows;
     }
     try {
+      if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
+        this._debugError("DeploymentManager", "ShadowArmy plugin not enabled");
+        return [];
+      }
       const armyPlugin = BdApi.Plugins.get("ShadowArmy");
       if (!armyPlugin || !armyPlugin.instance) {
         this._debugError("DeploymentManager", "ShadowArmy plugin not available");
@@ -221,16 +225,18 @@ class DeploymentManager {
       let dungeonReserve = [];
 
       try {
-        const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
-        if (exchangePlugin && exchangePlugin.instance && typeof exchangePlugin.instance.getMarkedShadowIds === "function") {
-          exchangeMarkedIds = exchangePlugin.instance.getMarkedShadowIds();
+        if (BdApi.Plugins.isEnabled("ShadowExchange")) {
+          const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
+          if (exchangePlugin && exchangePlugin.instance && typeof exchangePlugin.instance.getMarkedShadowIds === "function") {
+            exchangeMarkedIds = exchangePlugin.instance.getMarkedShadowIds();
+          }
         }
       } catch (exErr) {
         this._debugLog("DeploymentManager", "ShadowExchange not available for exclusion", exErr);
       }
 
       try {
-        const dungeonsPlugin = BdApi.Plugins.get("Dungeons");
+        const dungeonsPlugin = BdApi.Plugins.isEnabled("Dungeons") ? BdApi.Plugins.get("Dungeons") : null;
         if (dungeonsPlugin && dungeonsPlugin.instance) {
           // Get reserve pool (idle shadows held back by Dungeons)
           dungeonReserve = Array.isArray(dungeonsPlugin.instance.shadowReserve)
