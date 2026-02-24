@@ -5430,9 +5430,11 @@ module.exports = class Dungeons {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
-    if (!dungeon.shadowsDeployed) {
-      await this.deployShadows(channelKey);
-    } else if (!dungeon.userParticipating) {
+    // Shadows must be explicitly deployed via the DEPLOY SHADOWS button.
+    // Don't auto-deploy on message — let the user choose when to start combat.
+    if (!dungeon.shadowsDeployed) return;
+
+    if (!dungeon.userParticipating) {
       await this.selectDungeon(channelKey);
     }
 
