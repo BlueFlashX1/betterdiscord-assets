@@ -26,13 +26,43 @@ module.exports = class ChatNavArrows {
     this._patcherId = 'ChatNavArrows';
     this._isStopped = false;
     this._domFallback = null;
+    this._settings = Object.assign({ debug: false }, BdApi.Data.load('ChatNavArrows', 'settings'));
+  }
+
+  _debugLog(...args) {
+    if (!this._settings.debug) return;
+    console.log('[ChatNavArrows:DEBUG]', ...args);
+  }
+
+  getSettingsPanel() {
+    const panel = document.createElement('div');
+    panel.style.cssText = 'padding:12px;background:#1e1e2e;border-radius:8px;color:#cdd6f4;font-family:system-ui,sans-serif';
+
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer';
+
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = this._settings.debug;
+    cb.addEventListener('change', () => {
+      this._settings.debug = cb.checked;
+      BdApi.Data.save('ChatNavArrows', 'settings', this._settings);
+    });
+
+    row.appendChild(cb);
+    row.appendChild(document.createTextNode('Debug Mode — log arrow diagnostics to console'));
+    panel.appendChild(row);
+    return panel;
   }
 
   start() {
     this._isStopped = false;
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', this.getCSS());
+    this._debugLog('start() called');
     const reactPatched = this._installReactPatcher();
+    this._debugLog('React patcher result:', reactPatched);
     if (!reactPatched) {
+      this._debugLog('Falling back to DOM mode');
       this._startDomFallback();
     }
   }
@@ -59,19 +89,26 @@ module.exports = class ChatNavArrows {
     let ReactUtils;
     try {
       ReactUtils = _bdLoad('BetterDiscordReactUtils.js');
-    } catch (_) {
+    } catch (e) {
+      this._debugLog('ReactUtils load error:', e.message);
       ReactUtils = null;
     }
+    this._debugLog('ReactUtils loaded:', !!ReactUtils);
 
     if (ReactUtils) {
       const pluginInstance = this;
+      let patcherCallCount = 0;
       const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+        patcherCallCount++;
+        pluginInstance._debugLog(`Patcher callback #${patcherCallCount} — appNode:`, !!appNode, 'appNode.props:', !!appNode?.props);
         const component = React.createElement(pluginInstance._ArrowManager, {
           key: 'sl-chat-nav-arrows',
           pluginInstance,
         });
-        ReactUtils.injectReactComponent(appNode, 'sl-chat-nav-arrows-root', component, returnValue);
+        const injected = ReactUtils.injectReactComponent(appNode, 'sl-chat-nav-arrows-root', component, returnValue);
+        pluginInstance._debugLog(`injectReactComponent result: ${injected ? 'injected' : 'already exists (dedup)'}`);
       });
+      this._debugLog('patchReactMainContent result:', ok);
       if (!ok) {
         console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
         return false;
@@ -80,21 +117,23 @@ module.exports = class ChatNavArrows {
     }
 
     // Inline fallback if BetterDiscordReactUtils.js is not available
+    this._debugLog('Using inline MainContent finder (ReactUtils unavailable)');
     // Multi-strategy MainContent finder (resilient to Discord renames)
     const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
     let MainContent = null, _mcKey = 'Z';
     if (typeof BdApi.Webpack.getWithKey === 'function') {
       for (const s of _mcStrings) {
-        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
+        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; this._debugLog(`getWithKey matched on '${s}', key='${r[1]}'`); break; } } catch (_) {}
       }
     }
     if (!MainContent) {
       for (const s of _mcStrings) {
-        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
+        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) { this._debugLog(`getByStrings matched on '${s}', key='${_mcKey}'`); break; } } } catch (_) {}
       }
     }
     if (!MainContent) {
       console.error('[ChatNavArrows] MainContent module not found (all strategies exhausted) — using DOM fallback');
+      this._debugLog('All inline MC strategies exhausted');
       return false;
     }
 
@@ -326,6 +365,7 @@ module.exports = class ChatNavArrows {
 
     this.__ArrowManagerCached = ({ pluginInstance }) => {
       const React = BdApi.React;
+      const dbg = (...a) => pluginInstance._debugLog('[ArrowManager]', ...a);
       const [showDown, setShowDown] = React.useState(false);
       const [showUp, setShowUp] = React.useState(false);
       // bindCount forces a re-render whenever findAndBind discovers a new scroller.
@@ -339,30 +379,42 @@ module.exports = class ChatNavArrows {
       const pollRef = React.useRef(null);
       // Track DOM-injected arrows for cleanup when createPortal unavailable
       const domArrowsRef = React.useRef(null);
+      // Throttle scroll diagnostics (max once per 3s)
+      const lastScrollLogRef = React.useRef(0);
 
       React.useEffect(() => {
-        if (pluginInstance._isStopped) return;
+        dbg('useEffect mounted');
+        if (pluginInstance._isStopped) { dbg('BAIL: pluginInstance._isStopped'); return; }
 
         let currentScroller = null;
         let scrollHandler = null;
 
         const findScroller = () => {
+          const sel1 = 'div[class*="messagesWrapper_"]';
+          const sel2 = 'div[class*="messagesWrapper-"]';
+          const sel3 = 'main[class*="chatContent"] > div > div[class*="scroller"]';
           const wrapper =
-            document.querySelector('div[class*="messagesWrapper_"]') ||
-            document.querySelector('div[class*="messagesWrapper-"]') ||
-            document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')?.parentElement;
+            document.querySelector(sel1) ||
+            document.querySelector(sel2) ||
+            document.querySelector(sel3)?.parentElement;
           const scroller =
             wrapper?.querySelector('div[class*="scroller_"]') ||
             wrapper?.querySelector('div[class*="scroller-"]') ||
             wrapper?.querySelector('[class*="scrollerInner_"]')?.parentElement;
+          dbg('findScroller:', {
+            wrapper: wrapper ? `<${wrapper.tagName} class="${(wrapper.className || '').slice(0,60)}">` : null,
+            scroller: scroller ? `<${scroller.tagName} class="${(scroller.className || '').slice(0,60)}">` : null,
+          });
           return { wrapper: wrapper || null, scroller: scroller || null };
         };
 
         const findAndBind = () => {
           const { wrapper, scroller } = findScroller();
-          if (!scroller) return;
+          if (!scroller) { dbg('findAndBind: no scroller found'); return; }
           // Same scroller still connected — no rebind needed
           if (scroller === currentScroller && scroller.isConnected) return;
+
+          dbg('findAndBind: binding new scroller (isConnected:', scroller.isConnected, ')');
 
           // Unbind previous
           if (currentScroller && scrollHandler) {
@@ -377,28 +429,37 @@ module.exports = class ChatNavArrows {
           if (wrapper) wrapper.style.position = 'relative';
 
           scrollHandler = () => {
-            if (!scroller.isConnected) return;
+            if (!scroller.isConnected) { dbg('scrollHandler: scroller disconnected'); return; }
             const { scrollTop, scrollHeight, clientHeight } = scroller;
             const atBottom = scrollHeight - scrollTop - clientHeight < THRESHOLD;
             const atTop = scrollTop < THRESHOLD;
             setShowDown(!atBottom);
             setShowUp(!atTop);
+            // Throttled scroll diagnostics
+            const now = Date.now();
+            if (now - lastScrollLogRef.current > 3000) {
+              lastScrollLogRef.current = now;
+              dbg(`scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, atTop=${atTop}, atBottom=${atBottom}, showDown=${!atBottom}, showUp=${!atTop}`);
+            }
           };
 
           scroller.addEventListener('scroll', scrollHandler, { passive: true });
           scrollHandler(); // Initial check
           // Force re-render so the portal/DOM path can pick up the new wrapper
           setBindCount(c => c + 1);
+          dbg('findAndBind: bound, bindCount incremented');
         };
 
         // Find scroller immediately; retry quickly if DOM isn't ready yet
         findAndBind();
         if (!currentScroller) {
+          dbg('Initial bind failed — scheduling 150ms retry');
           setTimeout(findAndBind, 150);
         }
         pollRef.current = setInterval(findAndBind, POLL_INTERVAL);
 
         return () => {
+          dbg('useEffect cleanup');
           // Cleanup: remove listener + stop polling
           if (currentScroller && scrollHandler) {
             currentScroller.removeEventListener('scroll', scrollHandler);
@@ -434,8 +495,12 @@ module.exports = class ChatNavArrows {
 
       const wrapper = wrapperRef.current;
 
+      // ── Render path diagnostics ──
+      dbg(`render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper?.isConnected}, createPortal=${!!BdApi.ReactDOM?.createPortal}, showDown=${showDown}, showUp=${showUp}`);
+
       // ── Portal path (preferred) ──
       if (wrapper && wrapper.isConnected && BdApi.ReactDOM?.createPortal) {
+        dbg('render → PORTAL path');
         return BdApi.ReactDOM.createPortal(
           React.createElement(React.Fragment, null,
             React.createElement('div', {
@@ -461,8 +526,9 @@ module.exports = class ChatNavArrows {
       // Inject arrow elements directly into the wrapper via useEffect.
       // This mirrors the DOM fallback mode but driven by React state.
       React.useEffect(() => {
-        if (!wrapper || !wrapper.isConnected) return;
+        if (!wrapper || !wrapper.isConnected) { dbg('DOM fallback: wrapper missing/disconnected'); return; }
         if (BdApi.ReactDOM?.createPortal) return; // Portal path handles it
+        dbg('render → DOM INJECTION fallback');
 
         // Create or reuse arrow elements
         let arrows = domArrowsRef.current;
@@ -495,6 +561,7 @@ module.exports = class ChatNavArrows {
         };
       }, [wrapper, showDown, showUp, bindCount, handleDownClick, handleUpClick]);
 
+      if (!wrapper) dbg('render → NULL (no wrapper yet, waiting for findAndBind)');
       return null;
     };
 
