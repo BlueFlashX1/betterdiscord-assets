@@ -336,8 +336,8 @@ const methods = {
     const runId = this._transitionRunId;
 
     const configuredDuration = this.settings.animationDuration || 550;
-    const duration = Math.max(420, configuredDuration + 220);
-    const totalDuration = duration + 320;
+    const duration = Math.max(420, configuredDuration + 1320);
+    const totalDuration = duration + 530;
     const transitionStartedAt = performance.now();
 
     // ── Portal Diagnostic Timeline ──
@@ -349,7 +349,7 @@ const methods = {
     };
     _diagLog("TRANSITION_START");
     console.log(`%c[PortalDiag]%c configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
-    console.log(`%c[PortalDiag]%c formComplete(34%)=${Math.round(totalDuration*0.34)}ms navDelay(42%)=${Math.max(340,Math.round(totalDuration*0.42))}ms revealStart(65%)=${Math.round(totalDuration*0.65)}ms fadeOut(78%)=${Math.round(totalDuration*0.78)}ms cleanup=${totalDuration+340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+    console.log(`%c[PortalDiag]%c formComplete(22%)=${Math.round(totalDuration*0.22)}ms navDelay(26%)=${Math.max(280,Math.round(totalDuration*0.26))}ms revealStart(52%)=${Math.round(totalDuration*0.52)}ms fadeOut(96%)=${Math.round(totalDuration*0.96)}ms cleanup=${totalDuration+420}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
     const prefersReducedMotion = respectReducedMotion && systemPrefersReducedMotion;
@@ -473,11 +473,11 @@ const methods = {
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
     };
 
-    // Navigate at 42% — formation done at 34%, portal solid ~80ms, then 230ms gap before
-    // reveal (65%) gives Discord time to settle after channel switch so rAF isn't starved.
+    // Navigate at 26% — formation done at 22%, portal solid, fire nav early so Discord
+    // has maximum time (~600ms) to fetch messages behind the opaque portal before reveal (72%).
     const navDelay = prefersReducedMotion
       ? 24
-      : Math.max(340, Math.round(totalDuration * 0.42));
+      : Math.max(280, Math.round(totalDuration * 0.26));
     _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms)`);
 
     this._transitionNavTimeout = setTimeout(() => {
@@ -497,6 +497,18 @@ const methods = {
   },
 
   startPortalCanvasAnimation(canvas, duration) {
+    // Try OffscreenCanvas Worker for smooth animation during Discord navigation
+    if (typeof canvas.transferControlToOffscreen === "function") {
+      try {
+        return this._startPortalCanvasWorker(canvas, duration);
+      } catch (e) {
+        console.warn("[ShadowPortalCore] OffscreenCanvas Worker failed, falling back to main thread:", e);
+      }
+    }
+    return this._startPortalCanvasMainThread(canvas, duration);
+  },
+
+  _startPortalCanvasMainThread(canvas, duration) {
     if (!canvas || typeof canvas.getContext !== "function") return null;
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return null;
@@ -575,11 +587,11 @@ const methods = {
           lineWidth: 1 + Math.random() * 2.5,
           phase: Math.random() * TAU,
         })),
-        outerLightning: Array.from({ length: Math.max(12, Math.round(22 * qualityScale)) }, () => ({
+        outerLightning: Array.from({ length: Math.max(18, Math.round(36 * qualityScale)) }, () => ({
           angle: Math.random() * TAU,
           speed: 0.32 + Math.random() * 0.88,
-          reach: 0.24 + Math.random() * 0.42,
-          width: 0.9 + Math.random() * 1.55,
+          reach: 0.30 + Math.random() * 0.52,
+          width: 1.1 + Math.random() * 1.8,
           jitter: 0.028 + Math.random() * 0.052,
           phase: Math.random() * TAU,
         })),
@@ -632,18 +644,18 @@ const methods = {
       const easeInOut = t < 0.5
         ? 2 * t * t
         : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      const fadeOut = t < 0.78 ? 1 : Math.max(0, 1 - (t - 0.78) / 0.22);
-      const swirl = elapsed * 0.00125;
-      const formT = Math.min(1, t / 0.34);
+      const fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
+      const swirl = elapsed * 0.0022;
+      const formT = Math.min(1, t / 0.22);
       const formEase = 1 - Math.pow(1 - formT, 3);
-      const portalForm = 0.45 + 0.55 * formEase;
-      const revealStart = 0.65;
+      const portalForm = 0.38 + 0.62 * formEase;
+      const revealStart = 0.52;
       const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
 
       // Phase crossing diagnostics
-      if (!_canvasDiag.formDone && formT >= 1) { _canvasDiag.formDone = true; _cdLog("FORMATION_COMPLETE (formT=1)"); }
-      if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)})`); }
-      if (!_canvasDiag.fadeStarted && t >= 0.78) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.78)"); }
+      if (!_canvasDiag.formDone && formT >= 1) { _canvasDiag.formDone = true; _cdLog("FORMATION_COMPLETE (formT=1, t=0.22)"); }
+      if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)}, target=0.74)`); }
+      if (!_canvasDiag.fadeStarted && t >= 0.95) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.95)"); }
       if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
       const revealEase = revealProgress < 0.5
         ? 2 * revealProgress * revealProgress
@@ -661,9 +673,9 @@ const methods = {
       const veilOuter = maxSide * (0.58 + 0.9 * formEase);
       const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
       const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-      veil.addColorStop(0, `rgba(22, 12, 36, ${(0.2 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.26, `rgba(12, 8, 22, ${(0.28 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.62, `rgba(6, 6, 12, ${(0.14 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0, `rgba(22, 12, 36, ${(0.18 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.26, `rgba(12, 8, 22, ${(0.24 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.62, `rgba(6, 6, 12, ${(0.12 * portalForm * fadeOut).toFixed(4)})`);
       veil.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = veil;
       ctx.beginPath();
@@ -826,7 +838,7 @@ const methods = {
       ctx.fill();
 
       // Large center vortex so formation reads as a portal, not a plain overlay.
-      const coreVortexAlpha = (0.14 + 0.3 * (1 - revealProgress)) * fadeOut * portalForm;
+      const coreVortexAlpha = (0.24 + 0.42 * (1 - revealProgress)) * fadeOut * portalForm;
       if (coreVortexAlpha > 0.004) {
         const coreVortexRadius = innerRadius * (0.78 + 0.22 * formEase);
         ctx.save();
@@ -840,9 +852,9 @@ const methods = {
           cy,
           coreVortexRadius
         );
-        vortexGlow.addColorStop(0, `rgba(170, 118, 255, ${(coreVortexAlpha * 0.84).toFixed(4)})`);
-        vortexGlow.addColorStop(0.24, `rgba(120, 80, 214, ${(coreVortexAlpha * 0.48).toFixed(4)})`);
-        vortexGlow.addColorStop(0.66, `rgba(60, 42, 116, ${(coreVortexAlpha * 0.22).toFixed(4)})`);
+        vortexGlow.addColorStop(0, `rgba(170, 118, 255, ${(coreVortexAlpha * 1.0).toFixed(4)})`);
+        vortexGlow.addColorStop(0.28, `rgba(120, 80, 214, ${(coreVortexAlpha * 0.62).toFixed(4)})`);
+        vortexGlow.addColorStop(0.62, `rgba(60, 42, 116, ${(coreVortexAlpha * 0.34).toFixed(4)})`);
         vortexGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = vortexGlow;
         ctx.beginPath();
@@ -851,12 +863,12 @@ const methods = {
 
         const swirlCount = perfTier === 0 ? 5 : perfTier === 1 ? 7 : 9;
         const swirlPoints = perfTier === 0 ? 11 : 13;
-        const turnBase = 2.1 + formEase * 0.9;
+        const turnBase = 1.8 + formEase * 0.7;
         for (let s = 0; s < swirlCount; s++) {
           const phase = swirl * (1.45 + s * 0.19);
           const direction = s % 2 === 0 ? 1 : -1;
           const base = (s / swirlCount) * TAU + phase * direction;
-          const laneNoise = Math.sin(phase * 1.7 + s * 0.8) * 0.22;
+          const laneNoise = Math.sin(phase * 1.7 + s * 0.8) * 0.10;
 
           ctx.beginPath();
           for (let i = 0; i <= swirlPoints; i++) {
@@ -864,10 +876,10 @@ const methods = {
             const rr = coreVortexRadius * (
               0.1 +
               0.86 * p +
-              0.08 * Math.sin(phase * 2.8 + p * 10.2 + s * 0.6)
+              0.04 * Math.sin(phase * 2.8 + p * 10.2 + s * 0.6)
             );
-            const twist = p * (turnBase + 0.22 * s) * direction;
-            const cork = Math.sin(phase * 3.2 + p * 7.4 + s * 0.4) * 0.17;
+            const twist = p * (turnBase + 0.12 * s) * direction;
+            const cork = Math.sin(phase * 3.2 + p * 7.4 + s * 0.4) * 0.07;
             const ang = base + twist + cork + laneNoise * (1 - p * 0.45);
             const x = cx + Math.cos(ang) * rr;
             const y = cy + Math.sin(ang) * rr * 0.88;
@@ -875,42 +887,15 @@ const methods = {
             else ctx.lineTo(x, y);
           }
 
-          const strandAlpha = coreVortexAlpha * (0.5 + 0.44 * Math.sin(phase + s * 0.6));
-          ctx.strokeStyle = `rgba(210, 154, 255, ${Math.max(0.04, strandAlpha).toFixed(4)})`;
-          ctx.lineWidth = (1.25 + s * 0.18) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (10 + s * 1.35) * shadowScale;
+          const strandAlpha = coreVortexAlpha * (0.64 + 0.36 * Math.sin(phase + s * 0.6));
+          ctx.strokeStyle = `rgba(210, 154, 255, ${Math.max(0.06, strandAlpha).toFixed(4)})`;
+          ctx.lineWidth = (1.7 + s * 0.24) * (perfTier === 0 ? 0.9 : 1);
+          ctx.shadowBlur = (14 + s * 1.8) * shadowScale;
           ctx.shadowColor = `rgba(150, 92, 240, ${(strandAlpha * 0.8).toFixed(4)})`;
           ctx.stroke();
         }
 
-        const counterCount = perfTier === 0 ? 2 : 3;
-        for (let c = 0; c < counterCount; c++) {
-          const phase = swirl * (2.2 + c * 0.35);
-          const base = (c / counterCount) * TAU + phase;
-          ctx.beginPath();
-          for (let i = 0; i <= 9; i++) {
-            const p = i / 9;
-            const rr = coreVortexRadius * (
-              0.18 +
-              0.68 * p +
-              0.05 * Math.sin(phase * 3.1 + p * 9.3)
-            );
-            const ang =
-              base -
-              p * (2.3 + c * 0.35) +
-              Math.sin(phase * 4.2 + p * 6.4) * 0.14;
-            const x = cx + Math.cos(ang) * rr;
-            const y = cy + Math.sin(ang) * rr * 0.88;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          const ca = coreVortexAlpha * 0.42;
-          ctx.strokeStyle = `rgba(182, 128, 246, ${Math.max(0.03, ca).toFixed(4)})`;
-          ctx.lineWidth = perfTier === 0 ? 1 : 1.2;
-          ctx.shadowBlur = (8 + c * 2.2) * shadowScale;
-          ctx.shadowColor = `rgba(130, 82, 220, ${(ca * 0.86).toFixed(4)})`;
-          ctx.stroke();
-        }
+        // Counter-rotation removed — replaced by more outward lightning
 
         ctx.beginPath();
         for (let i = 0; i <= 28; i++) {
@@ -962,8 +947,8 @@ const methods = {
           if (flicker < flickerGate) continue;
 
           const alpha =
-            (0.06 + 0.12 * (flicker * 0.5 + 0.5)) *
-            (1 + creationBoost * 0.42) *
+            (0.10 + 0.18 * (flicker * 0.5 + 0.5)) *
+            (1 + creationBoost * 0.55) *
             lightningRamp *
             lightningFade *
             fadeOut;
@@ -971,51 +956,51 @@ const methods = {
 
           const baseA = bolt.angle + drift * 0.24 + Math.sin(drift * 2.1) * 0.08;
           const startR = lightningRadius * (0.96 + 0.08 * Math.sin(drift * 1.8));
-          const reach = innerRadius * (0.12 + bolt.reach * (0.38 + 0.3 * lightningRamp));
-          const span = 0.22 + 0.1 * Math.sin(drift * 2.6 + bolt.phase);
+          const reach = innerRadius * (0.18 + bolt.reach * (0.48 + 0.36 * lightningRamp));
+          const span = 0.10 + 0.05 * Math.sin(drift * 2.6 + bolt.phase);
 
           ctx.beginPath();
           for (let i = 0; i <= mainSteps; i++) {
             const p = i / mainSteps;
             const rr = startR + reach * p;
             const jag =
-              Math.sin(drift * 3.2 + p * 12.6) +
-              0.65 * Math.sin(drift * 5.6 + p * 8.1 + bolt.phase);
-            const ang = baseA + (p - 0.24) * span + jag * bolt.jitter * (1 + p * 1.38);
+              Math.sin(drift * 3.2 + p * 12.6) * 0.5 +
+              0.3 * Math.sin(drift * 5.6 + p * 8.1 + bolt.phase);
+            const ang = baseA + (p - 0.24) * span + jag * bolt.jitter * (1 + p * 0.7);
             const x = cx + Math.cos(ang) * rr;
             const y = cy + Math.sin(ang) * rr * 0.88;
             if (i === 0) ctx.moveTo(x, y);
             else ctx.lineTo(x, y);
           }
 
-          ctx.strokeStyle = `rgba(112, 66, 206, ${(alpha * 0.78).toFixed(4)})`;
-          ctx.lineWidth = bolt.width + 1;
-          ctx.shadowBlur = (12 + (1 - revealProgress) * 12) * shadowScale;
-          ctx.shadowColor = `rgba(102, 56, 196, ${(alpha * 0.9).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(112, 66, 206, ${(alpha * 0.88).toFixed(4)})`;
+          ctx.lineWidth = bolt.width + 1.6;
+          ctx.shadowBlur = (16 + (1 - revealProgress) * 16) * shadowScale;
+          ctx.shadowColor = `rgba(102, 56, 196, ${(alpha * 1.0).toFixed(4)})`;
           ctx.stroke();
 
-          ctx.strokeStyle = `rgba(216, 172, 255, ${Math.min(0.4, alpha + 0.05).toFixed(4)})`;
-          ctx.lineWidth = Math.max(0.82, bolt.width * 0.58);
-          ctx.shadowBlur = (6 + (1 - revealProgress) * 7) * shadowScale;
-          ctx.shadowColor = `rgba(178, 130, 255, ${(alpha * 0.8).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(216, 172, 255, ${Math.min(0.52, alpha + 0.08).toFixed(4)})`;
+          ctx.lineWidth = Math.max(1.0, bolt.width * 0.68);
+          ctx.shadowBlur = (8 + (1 - revealProgress) * 10) * shadowScale;
+          ctx.shadowColor = `rgba(178, 130, 255, ${(alpha * 0.9).toFixed(4)})`;
           ctx.stroke();
 
-          if (flicker > (0.22 - creationBoost * 0.24)) {
+          if (flicker > (0.08 - creationBoost * 0.32)) {
             const dir = Math.sin(drift * 2.2 + bolt.phase) > 0 ? 1 : -1;
             const branchStartP = 0.34 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 1.5 + bolt.phase));
             const fromR = startR + reach * branchStartP;
             const fromA = baseA + dir * 0.04;
             const branchReach = reach * (0.38 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
-            const branchSpan = dir * (0.2 + 0.1 * Math.sin(drift * 3 + bolt.phase));
+            const branchSpan = dir * (0.12 + 0.06 * Math.sin(drift * 3 + bolt.phase));
 
             ctx.beginPath();
             for (let b = 0; b <= branchSteps; b++) {
               const p = b / branchSteps;
               const rr = fromR + branchReach * p;
               const jag =
-                Math.sin(drift * 4.1 + p * 9.2) +
-                0.48 * Math.sin(drift * 6.3 + p * 6.1 + bolt.phase);
-              const ang = fromA + p * branchSpan + jag * bolt.jitter * 1.35;
+                Math.sin(drift * 4.1 + p * 9.2) * 0.5 +
+                0.24 * Math.sin(drift * 6.3 + p * 6.1 + bolt.phase);
+              const ang = fromA + p * branchSpan + jag * bolt.jitter * 0.7;
               const x = cx + Math.cos(ang) * rr;
               const y = cy + Math.sin(ang) * rr * 0.88;
               if (b === 0) ctx.moveTo(x, y);
@@ -1049,17 +1034,18 @@ const methods = {
         ctx.restore();
 
         const ringRadius = apertureRadius * (1 + Math.sin(swirl * 10.8) * 0.026);
-        const rimWidth = innerRadius * (0.17 + (1 - revealProgress) * 0.1);
-        const ringInner = Math.max(2, ringRadius - rimWidth * 0.56);
-        const ringOuter = ringRadius + rimWidth;
+        const rimWidth = innerRadius * (0.48 + (1 - revealProgress) * 0.28);
+        const ringInner = Math.max(2, ringRadius - rimWidth * 0.42);
+        const ringOuter = ringRadius + rimWidth * 1.3;
 
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
 
         const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
-        ringBody.addColorStop(0, `rgba(0, 0, 0, ${(0.98 * fadeOut).toFixed(4)})`);
-        ringBody.addColorStop(0.62, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
-        ringBody.addColorStop(0.88, `rgba(10, 8, 14, ${(0.54 * fadeOut).toFixed(4)})`);
+        ringBody.addColorStop(0, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(4)})`);
+        ringBody.addColorStop(0.42, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(4)})`);
+        ringBody.addColorStop(0.68, `rgba(4, 2, 8, ${(0.92 * fadeOut).toFixed(4)})`);
+        ringBody.addColorStop(0.88, `rgba(8, 6, 14, ${(0.64 * fadeOut).toFixed(4)})`);
         ringBody.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = ringBody;
         ctx.beginPath();
@@ -1067,12 +1053,12 @@ const methods = {
         ctx.arc(cx, cy, ringInner, 0, TAU, true);
         ctx.fill("evenodd");
 
-        const blackRimAlpha = Math.max(0, (0.96 - revealProgress * 0.3) * fadeOut);
+        const blackRimAlpha = Math.max(0, (1.0 - revealProgress * 0.18) * fadeOut);
         if (blackRimAlpha > 0.006) {
           ctx.beginPath();
           ctx.strokeStyle = `rgba(0, 0, 0, ${blackRimAlpha.toFixed(4)})`;
-          ctx.lineWidth = 6 + (1 - revealProgress) * 8.8;
-          ctx.shadowBlur = (6 + (1 - revealProgress) * 10) * shadowScale;
+          ctx.lineWidth = 14 + (1 - revealProgress) * 20;
+          ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * shadowScale;
           ctx.shadowColor = `rgba(0, 0, 0, ${(blackRimAlpha * 0.78).toFixed(4)})`;
           ctx.arc(cx, cy, ringRadius, 0, TAU);
           ctx.stroke();
@@ -1107,48 +1093,51 @@ const methods = {
           ctx.stroke();
         }
 
+        // Expanding shockwave ripples — start beyond ring outer edge for visibility
         for (let i = 0; i < 5; i++) {
           const wave = revealProgress * 1.45 - i * 0.18;
           if (wave <= 0 || wave >= 1.52) continue;
-          const waveRadius = ringRadius * (0.95 + wave * 1.08);
-          const waveAlpha = (0.18 * (1 - Math.min(1, wave)) * (1 - i * 0.14)) * fadeOut;
+          // Start from ring outer edge so thick ring doesn't cover them
+          const waveRadius = ringOuter + innerRadius * wave * 0.92;
+          const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
           if (waveAlpha <= 0.003) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(58, 58, 66, ${waveAlpha.toFixed(4)})`;
-          ctx.lineWidth = Math.max(1, 4.6 - wave * 2.1);
-          ctx.shadowBlur = (12 + (1 - wave) * 16) * shadowScale;
-          ctx.shadowColor = `rgba(20, 20, 26, ${(waveAlpha * 0.92).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(72, 58, 96, ${waveAlpha.toFixed(4)})`;
+          ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
+          ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale;
+          ctx.shadowColor = `rgba(48, 32, 78, ${(waveAlpha * 0.88).toFixed(4)})`;
           ctx.arc(cx, cy, waveRadius, 0, TAU);
           ctx.stroke();
         }
 
+        // Purple energy jets — centered on ring body
         ctx.globalCompositeOperation = "screen";
         for (let i = 0; i < purpleJets.length; i += detailStep) {
           const jet = purpleJets[i];
           const drift = swirl * jet.speed + jet.phase;
-          const radius = ringRadius + innerRadius * (0.02 + Math.sin(drift * 1.7) * 0.08);
+          const radius = ringRadius + innerRadius * (0.01 + Math.sin(drift * 1.7) * 0.04);
           const start = jet.angle + drift * 0.24;
-          const span = 0.08 + jet.spread * 0.14 + Math.sin(drift * 2.1) * 0.02;
-          const alpha = (0.1 + 0.16 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
+          const span = 0.12 + jet.spread * 0.18 + Math.sin(drift * 2.1) * 0.03;
+          const alpha = (0.24 + 0.34 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(178, 118, 255, ${Math.max(0.03, alpha).toFixed(4)})`;
-          ctx.lineWidth = jet.lineWidth + 0.75 + (1 - revealProgress) * 1.35;
-          ctx.shadowBlur = (11 + (1 - revealProgress) * 13) * shadowScale;
-          ctx.shadowColor = `rgba(138, 74, 242, ${(alpha * 0.95).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(178, 118, 255, ${Math.max(0.06, alpha).toFixed(4)})`;
+          ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
+          ctx.shadowBlur = (18 + (1 - revealProgress) * 22) * shadowScale;
+          ctx.shadowColor = `rgba(138, 74, 242, ${(alpha * 0.92).toFixed(4)})`;
           ctx.arc(cx, cy, radius, start, start + span);
           ctx.stroke();
         }
 
-        // Secondary lightning during pulse-out reveal (same style, fewer bolts).
+        // Secondary lightning during pulse-out reveal — boosted alpha & reach for thick ring
         const revealLightningRamp = Math.max(0, Math.min(1, (revealProgress - 0.08) / 0.92));
         if (revealLightningRamp > 0.01) {
           const revealBoltStep = Math.max(perfTier === 0 ? 3 : 2, detailStep + 1);
           const revealMainSteps = perfTier === 0 ? 4 : 5;
           const revealBranchSteps = perfTier === 0 ? 3 : 4;
-          const revealLightningRadius = ringRadius + rimWidth * 0.28;
+          const revealLightningRadius = ringOuter + rimWidth * 0.12;
 
           for (let li = 0; li < outerLightning.length; li += revealBoltStep) {
             const bolt = outerLightning[li];
@@ -1160,14 +1149,14 @@ const methods = {
             if (flicker < -0.04) continue;
 
             const alpha =
-              (0.04 + 0.08 * (flicker * 0.5 + 0.5)) *
+              (0.10 + 0.18 * (flicker * 0.5 + 0.5)) *
               revealLightningRamp *
               fadeOut;
             if (alpha <= 0.003) continue;
 
             const baseA = bolt.angle + drift * 0.2 + Math.sin(drift * 1.8) * 0.06;
             const startR = revealLightningRadius * (0.98 + 0.05 * Math.sin(drift * 1.7));
-            const reach = innerRadius * (0.1 + bolt.reach * 0.26);
+            const reach = innerRadius * (0.18 + bolt.reach * 0.42);
             const span = 0.2 + 0.08 * Math.sin(drift * 2.4 + bolt.phase);
 
             ctx.beginPath();
@@ -1228,22 +1217,25 @@ const methods = {
           }
         }
 
+        // Mist halo — solid atmospheric fog centered on ring
         const mistHalo = ctx.createRadialGradient(
           cx,
           cy,
-          Math.max(2, ringRadius * 0.82),
+          Math.max(2, ringRadius * 0.72),
           cx,
           cy,
-          ringRadius + innerRadius * (0.54 + (1 - revealProgress) * 0.18)
+          ringOuter + innerRadius * (0.78 + (1 - revealProgress) * 0.34)
         );
         mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
-        mistHalo.addColorStop(0.38, `rgba(62, 62, 76, ${(0.18 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.66, `rgba(28, 28, 36, ${(0.28 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.84, `rgba(84, 50, 132, ${(0.12 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${(0.48 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.38, `rgba(64, 42, 108, ${(0.58 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.56, `rgba(86, 52, 148, ${(0.44 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.74, `rgba(58, 34, 102, ${(0.32 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${(0.16 * fadeOut).toFixed(4)})`);
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
         ctx.beginPath();
-        ctx.arc(cx, cy, ringRadius + innerRadius * 0.7, 0, TAU);
+        ctx.arc(cx, cy, ringOuter + innerRadius * 1.0, 0, TAU);
         ctx.fill();
         ctx.restore();
       }
@@ -1258,6 +1250,611 @@ const methods = {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("resize", onResize);
       ctx.clearRect(0, 0, width, height);
+    };
+  },
+
+  /**
+   * OffscreenCanvas Worker version — runs the draw loop on a separate CPU thread.
+   * Discord's main-thread navigation work cannot starve this animation.
+   */
+  _startPortalCanvasWorker(canvas, duration) {
+    const TAU = Math.PI * 2;
+    const screenArea = Math.max(1, Math.floor((window.innerWidth || 1920) * (window.innerHeight || 1080)));
+    const perfTier = screenArea > 3200000 ? 0 : screenArea > 2400000 ? 1 : 2;
+    const qualityScale = perfTier === 0 ? 0.58 : perfTier === 1 ? 0.76 : 1;
+    const dprCap = perfTier === 0 ? 1.0 : perfTier === 1 ? 1.2 : 1.35;
+    const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
+
+    // Generate seeds on main thread (fast, uses Math.random)
+    const seedCacheKey = `v1:${perfTier}:${qualityScale.toFixed(2)}`;
+    if (!(this.__shadowPortalSeedCache instanceof Map)) this.__shadowPortalSeedCache = new Map();
+    let seeds = this.__shadowPortalSeedCache.get(seedCacheKey);
+    if (!seeds) {
+      const rng = () => Math.random();
+      seeds = {
+        wisps: Array.from({ length: Math.max(72, Math.round(128 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.08 + rng() * 0.46, offset: 0.08 + rng() * 1.08,
+          size: 20 + rng() * 74, phase: rng() * TAU, drift: rng() * 2 - 1,
+        })),
+        darkBlots: Array.from({ length: Math.max(34, Math.round(56 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.12 + rng() * 0.38, offset: 0.12 + rng() * 0.92,
+          size: 26 + rng() * 62, phase: rng() * TAU,
+        })),
+        portalRifts: Array.from({ length: Math.max(22, Math.round(42 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.22 + rng() * 0.62, spread: 0.42 + rng() * 1.05,
+          lineWidth: 1 + rng() * 2.6, length: 0.46 + rng() * 0.32, phase: rng() * TAU,
+        })),
+        coreFilaments: Array.from({ length: Math.max(16, Math.round(28 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.3 + rng() * 0.82, spread: 0.62 + rng() * 1.12,
+          lineWidth: 1 + rng() * 2, length: 0.54 + rng() * 0.26, phase: rng() * TAU,
+        })),
+        ringMistBands: Array.from({ length: Math.max(38, Math.round(84 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.2 + rng() * 0.95, width: 0.06 + rng() * 0.22,
+          band: 0.74 + rng() * 0.64, lineWidth: 1.1 + rng() * 2.7, phase: rng() * TAU,
+        })),
+        purpleJets: Array.from({ length: Math.max(18, Math.round(34 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.24 + rng() * 0.92, length: 0.34 + rng() * 0.32,
+          spread: 0.22 + rng() * 0.64, lineWidth: 1 + rng() * 2.5, phase: rng() * TAU,
+        })),
+        outerLightning: Array.from({ length: Math.max(18, Math.round(36 * qualityScale)) }, () => ({
+          angle: rng() * TAU, speed: 0.32 + rng() * 0.88, reach: 0.30 + rng() * 0.52,
+          width: 1.1 + rng() * 1.8, jitter: 0.028 + rng() * 0.052, phase: rng() * TAU,
+        })),
+      };
+      this.__shadowPortalSeedCache.set(seedCacheKey, seeds);
+      if (this.__shadowPortalSeedCache.size > 2) {
+        const firstKey = this.__shadowPortalSeedCache.keys().next().value;
+        if (firstKey !== seedCacheKey) this.__shadowPortalSeedCache.delete(firstKey);
+      }
+    }
+
+    const initWidth = Math.max(1, Math.floor(window.innerWidth));
+    const initHeight = Math.max(1, Math.floor(window.innerHeight));
+
+    // Transfer canvas to offscreen
+    const offscreen = canvas.transferControlToOffscreen();
+
+    // Inline Worker code — the entire draw loop runs on a separate thread
+    const workerCode = `
+"use strict";
+let canvas, ctx, stopped = false;
+let width, height, maxSide, cx, cy, dpr;
+let seeds, perfTier, detailStep, mistStep, shadowScale, duration;
+const TAU = Math.PI * 2;
+
+function resize(w, h, devicePixelRatio) {
+  width = w; height = h; dpr = devicePixelRatio;
+  maxSide = Math.max(width, height);
+  cx = width / 2; cy = height / 2;
+  canvas.width = Math.max(1, Math.floor(width * dpr));
+  canvas.height = Math.max(1, Math.floor(height * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+}
+
+self.onmessage = (e) => {
+  const msg = e.data;
+  if (msg.type === "init") {
+    canvas = msg.canvas;
+    ctx = canvas.getContext("2d", { alpha: true });
+    seeds = msg.seeds;
+    perfTier = msg.perfTier;
+    detailStep = perfTier === 0 ? 2 : 1;
+    mistStep = perfTier === 0 ? 3 : perfTier === 1 ? 2 : 1;
+    shadowScale = perfTier === 0 ? 0.62 : perfTier === 1 ? 0.78 : 1;
+    duration = msg.duration;
+    dpr = msg.dpr;
+    resize(msg.width, msg.height, dpr);
+    startDrawLoop();
+  } else if (msg.type === "resize") {
+    resize(msg.width, msg.height, dpr);
+  } else if (msg.type === "stop") {
+    stopped = true;
+    if (ctx) ctx.clearRect(0, 0, canvas.width, canvas.height);
+    self.close();
+  }
+};
+
+function startDrawLoop() {
+  const { wisps, darkBlots, portalRifts, coreFilaments, ringMistBands, purpleJets, outerLightning } = seeds;
+  const qualityScale = perfTier === 0 ? 0.58 : perfTier === 1 ? 0.76 : 1;
+  const start = performance.now();
+
+  function draw() {
+    if (stopped) return;
+    const now = performance.now();
+    const elapsed = now - start;
+    const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
+    if (t >= 1) { stopped = true; return; }
+
+    const easeInOut = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+    const fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
+    const swirl = elapsed * 0.0022;
+    const formT = Math.min(1, t / 0.22);
+    const formEase = 1 - Math.pow(1 - formT, 3);
+    const portalForm = 0.38 + 0.62 * formEase;
+    const revealStart = 0.52;
+    const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
+    const revealEase = revealProgress < 0.5 ? 2 * revealProgress * revealProgress : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
+
+    const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
+    const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
+
+    ctx.clearRect(0, 0, width, height);
+
+    // Ambient dim
+    const ambientDim = (0.04 + 0.07 * formEase) * fadeOut;
+    ctx.fillStyle = "rgba(2, 2, 6, " + ambientDim.toFixed(4) + ")";
+    ctx.fillRect(0, 0, width, height);
+
+    // Veil
+    const veilOuter = maxSide * (0.58 + 0.9 * formEase);
+    const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
+    const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
+    veil.addColorStop(0, "rgba(22, 12, 36, " + (0.18 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.26, "rgba(12, 8, 22, " + (0.24 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.62, "rgba(6, 6, 12, " + (0.12 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = veil;
+    ctx.beginPath(); ctx.arc(cx, cy, veilOuter, 0, TAU); ctx.fill();
+
+    // Wisps
+    for (let wi = 0; wi < wisps.length; wi += detailStep) {
+      const wisp = wisps[wi];
+      const ang = wisp.angle + swirl * wisp.speed + Math.sin(swirl * 0.8 + wisp.phase) * 0.2;
+      const orbit = portalRadius * (0.34 + wisp.offset * 0.72) + Math.sin(swirl * 2.4 + wisp.phase) * portalRadius * 0.12;
+      const x = cx + Math.cos(ang) * orbit + Math.sin(swirl + wisp.phase) * 20 * wisp.drift;
+      const y = cy + Math.sin(ang) * orbit * 0.78 + Math.cos(swirl * 0.92 + wisp.phase) * 14 * wisp.drift;
+      const r = wisp.size * (0.88 + easeInOut * 0.72);
+      const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, "rgba(46, 42, 56, " + (alpha * 1.18).toFixed(4) + ")");
+      g.addColorStop(0.56, "rgba(14, 12, 20, " + alpha.toFixed(4) + ")");
+      g.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+
+    // Dark blots
+    for (let bi = 0; bi < darkBlots.length; bi += detailStep) {
+      const blot = darkBlots[bi];
+      const ang = blot.angle - swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
+      const radius = innerRadius * (0.22 + blot.offset * 0.86);
+      const x = cx + Math.cos(ang) * radius;
+      const y = cy + Math.sin(ang) * radius * 0.82;
+      const r = blot.size * (0.82 + easeInOut * 0.62);
+      const alpha = (0.18 + 0.26 * (1 - blot.offset * 0.7)) * fadeOut * portalForm;
+      const bg = ctx.createRadialGradient(x, y, 0, x, y, r);
+      bg.addColorStop(0, "rgba(0, 0, 0, " + Math.min(0.86, alpha).toFixed(4) + ")");
+      bg.addColorStop(0.62, "rgba(0, 0, 0, " + (alpha * 0.58).toFixed(4) + ")");
+      bg.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
+    }
+
+    // Purple ring energy
+    const ringOuterClip = innerRadius * (1.18 + 0.05 * Math.sin(swirl * 1.6));
+    const ringInnerClip = innerRadius * (0.66 + 0.04 * Math.sin(swirl * 2.1));
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, ringOuterClip, 0, TAU);
+    ctx.arc(cx, cy, ringInnerClip, 0, TAU, true);
+    ctx.clip("evenodd");
+    ctx.globalCompositeOperation = "screen";
+
+    for (let ri = 0; ri < portalRifts.length; ri += detailStep) {
+      const rift = portalRifts[ri];
+      const base = rift.angle + swirl * rift.speed + Math.sin(swirl * 1.2 + rift.phase) * 0.22;
+      ctx.beginPath();
+      for (let i = 0; i <= 8; i++) {
+        const p = i / 8;
+        const rr = innerRadius * (1.06 - p * rift.length * 0.34 + 0.08 * Math.sin(swirl * 2.3 + rift.phase + p * 2.8));
+        const ang = base + (p - 0.48) * rift.spread + Math.sin(swirl * 2 + rift.phase + p) * 0.08;
+        const x = cx + Math.cos(ang) * rr;
+        const y = cy + Math.sin(ang) * rr * 0.86;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
+      ctx.strokeStyle = "rgba(188, 130, 255, " + Math.max(0.07, glow).toFixed(4) + ")";
+      ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
+      ctx.shadowBlur = (10 + easeInOut * 20) * shadowScale;
+      ctx.shadowColor = "rgba(146, 78, 248, 0.78)";
+      ctx.stroke();
+    }
+
+    for (let fi = 0; fi < coreFilaments.length; fi += detailStep) {
+      const filament = coreFilaments[fi];
+      const base = filament.angle - swirl * filament.speed + Math.sin(swirl * 1.8 + filament.phase) * 0.26;
+      ctx.beginPath();
+      for (let i = 0; i <= 7; i++) {
+        const p = i / 7;
+        const rr = innerRadius * (1.1 - p * filament.length * 0.36 + 0.06 * Math.sin(swirl * 2.6 + filament.phase + p * 2.4));
+        const ang = base + (p - 0.5) * filament.spread + Math.sin(swirl * 2.2 + filament.phase + p * 0.6) * 0.06;
+        const x = cx + Math.cos(ang) * rr;
+        const y = cy + Math.sin(ang) * rr * 0.88;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      const glow = (0.2 + 0.24 * Math.sin(swirl * 2.8 + filament.phase)) * fadeOut;
+      ctx.strokeStyle = "rgba(178, 120, 248, " + Math.max(0.06, glow).toFixed(4) + ")";
+      ctx.lineWidth = filament.lineWidth + easeInOut * 1.5;
+      ctx.shadowBlur = (8 + easeInOut * 16) * shadowScale;
+      ctx.shadowColor = "rgba(138, 68, 238, 0.74)";
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // Void gradient
+    const voidGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.14, cx, cy, innerRadius * 2.18);
+    voidGradient.addColorStop(0, "rgba(4, 2, 8, " + (0.88 * fadeOut).toFixed(4) + ")");
+    voidGradient.addColorStop(0.34, "rgba(2, 1, 5, " + (0.96 * fadeOut).toFixed(4) + ")");
+    voidGradient.addColorStop(0.72, "rgba(1, 1, 2, " + (0.92 * fadeOut).toFixed(4) + ")");
+    voidGradient.addColorStop(1, "rgba(0, 0, 0, 0)");
+    ctx.fillStyle = voidGradient;
+    ctx.beginPath(); ctx.arc(cx, cy, innerRadius * 2.18, 0, TAU); ctx.fill();
+
+    // Hard occlusion mask
+    const solidPortalRadius = innerRadius * (1.02 + 0.03 * Math.sin(swirl * 3.1));
+    const solidPortalAlpha = Math.min(1, 0.98 * fadeOut + 0.02);
+    ctx.fillStyle = "rgba(0, 0, 0, " + solidPortalAlpha.toFixed(4) + ")";
+    ctx.beginPath(); ctx.arc(cx, cy, solidPortalRadius, 0, TAU); ctx.fill();
+
+    // Core gradient
+    const coreGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.08, cx, cy, innerRadius);
+    coreGradient.addColorStop(0, "rgba(1, 1, 2, " + (0.98 * fadeOut).toFixed(4) + ")");
+    coreGradient.addColorStop(0.32, "rgba(0, 0, 1, " + (1 * fadeOut).toFixed(4) + ")");
+    coreGradient.addColorStop(0.72, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
+    coreGradient.addColorStop(1, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
+    ctx.fillStyle = coreGradient;
+    ctx.beginPath(); ctx.arc(cx, cy, innerRadius, 0, TAU); ctx.fill();
+    ctx.fillStyle = "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")";
+    ctx.beginPath(); ctx.arc(cx, cy, innerRadius * 0.78, 0, TAU); ctx.fill();
+
+    // Core vortex
+    const coreVortexAlpha = (0.24 + 0.42 * (1 - revealProgress)) * fadeOut * portalForm;
+    if (coreVortexAlpha > 0.004) {
+      const coreVortexRadius = innerRadius * (0.78 + 0.22 * formEase);
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      const vortexGlow = ctx.createRadialGradient(cx, cy, Math.max(2, coreVortexRadius * 0.08), cx, cy, coreVortexRadius);
+      vortexGlow.addColorStop(0, "rgba(170, 118, 255, " + (coreVortexAlpha * 1.0).toFixed(4) + ")");
+      vortexGlow.addColorStop(0.28, "rgba(120, 80, 214, " + (coreVortexAlpha * 0.62).toFixed(4) + ")");
+      vortexGlow.addColorStop(0.62, "rgba(60, 42, 116, " + (coreVortexAlpha * 0.34).toFixed(4) + ")");
+      vortexGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = vortexGlow;
+      ctx.beginPath(); ctx.arc(cx, cy, coreVortexRadius, 0, TAU); ctx.fill();
+
+      const swirlCount = perfTier === 0 ? 5 : perfTier === 1 ? 7 : 9;
+      const swirlPoints = perfTier === 0 ? 11 : 13;
+      const turnBase = 1.8 + formEase * 0.7;
+      for (let s = 0; s < swirlCount; s++) {
+        const phase = swirl * (1.45 + s * 0.19);
+        const direction = s % 2 === 0 ? 1 : -1;
+        const base = (s / swirlCount) * TAU + phase * direction;
+        const laneNoise = Math.sin(phase * 1.7 + s * 0.8) * 0.10;
+        ctx.beginPath();
+        for (let i = 0; i <= swirlPoints; i++) {
+          const p = i / swirlPoints;
+          const rr = coreVortexRadius * (0.1 + 0.86 * p + 0.04 * Math.sin(phase * 2.8 + p * 10.2 + s * 0.6));
+          const twist = p * (turnBase + 0.12 * s) * direction;
+          const cork = Math.sin(phase * 3.2 + p * 7.4 + s * 0.4) * 0.07;
+          const ang = base + twist + cork + laneNoise * (1 - p * 0.45);
+          const x = cx + Math.cos(ang) * rr;
+          const y = cy + Math.sin(ang) * rr * 0.88;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        const strandAlpha = coreVortexAlpha * (0.64 + 0.36 * Math.sin(phase + s * 0.6));
+        ctx.strokeStyle = "rgba(210, 154, 255, " + Math.max(0.06, strandAlpha).toFixed(4) + ")";
+        ctx.lineWidth = (1.7 + s * 0.24) * (perfTier === 0 ? 0.9 : 1);
+        ctx.shadowBlur = (14 + s * 1.8) * shadowScale;
+        ctx.shadowColor = "rgba(150, 92, 240, " + (strandAlpha * 0.8).toFixed(4) + ")";
+        ctx.stroke();
+      }
+
+      // Counter-rotation removed — replaced by more outward lightning
+
+      ctx.beginPath();
+      for (let i = 0; i <= 28; i++) {
+        const p = i / 28;
+        const ang = p * TAU + swirl * 1.95;
+        const rr = coreVortexRadius * (0.28 + 0.14 * Math.sin(swirl * 4.2 + p * 12) + 0.07 * Math.sin(swirl * 6.5 + p * 8.2));
+        const x = cx + Math.cos(ang) * rr;
+        const y = cy + Math.sin(ang) * rr * 0.88;
+        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(122, 78, 206, " + (coreVortexAlpha * 0.34).toFixed(4) + ")";
+      ctx.fill();
+      ctx.restore();
+    }
+
+    // Chaotic lightning
+    const lightningRamp = Math.max(0, Math.min(1, t / 0.28));
+    if (lightningRamp > 0.01) {
+      const boltStep = perfTier === 0 ? Math.max(2, detailStep) : detailStep;
+      const creationBoost = Math.max(0, Math.min(1, 1 - t / Math.max(0.01, revealStart + 0.08)));
+      const activeBoltStep = creationBoost > 0.24 ? Math.max(1, boltStep - 1) : boltStep;
+      const mainSteps = perfTier === 0 ? 4 : 6;
+      const branchSteps = perfTier === 0 ? 3 : 4;
+      const lightningRadius = innerRadius * (0.86 + 0.14 * formEase + Math.sin(swirl * 1.9) * 0.05);
+      const lightningFade = Math.max(0, 1 - revealProgress * 0.28);
+
+      ctx.save();
+      ctx.globalCompositeOperation = "screen";
+
+      for (let li = 0; li < outerLightning.length; li += activeBoltStep) {
+        const bolt = outerLightning[li];
+        const drift = swirl * bolt.speed + bolt.phase;
+        const flicker = 0.5 + 0.5 * Math.sin(drift * 4.4 + t * 12.4) + 0.35 * Math.sin(drift * 7.2 + bolt.phase * 1.3);
+        const flickerGate = -0.18 - creationBoost * 0.16;
+        if (flicker < flickerGate) continue;
+        const alpha = (0.10 + 0.18 * (flicker * 0.5 + 0.5)) * (1 + creationBoost * 0.55) * lightningRamp * lightningFade * fadeOut;
+        if (alpha <= 0.004) continue;
+        const baseA = bolt.angle + drift * 0.24 + Math.sin(drift * 2.1) * 0.08;
+        const startR = lightningRadius * (0.96 + 0.08 * Math.sin(drift * 1.8));
+        const reach = innerRadius * (0.18 + bolt.reach * (0.48 + 0.36 * lightningRamp));
+        const span = 0.10 + 0.05 * Math.sin(drift * 2.6 + bolt.phase);
+
+        ctx.beginPath();
+        for (let i = 0; i <= mainSteps; i++) {
+          const p = i / mainSteps;
+          const rr = startR + reach * p;
+          const jag = Math.sin(drift * 3.2 + p * 12.6) * 0.5 + 0.3 * Math.sin(drift * 5.6 + p * 8.1 + bolt.phase);
+          const ang = baseA + (p - 0.24) * span + jag * bolt.jitter * (1 + p * 0.7);
+          const x = cx + Math.cos(ang) * rr;
+          const y = cy + Math.sin(ang) * rr * 0.88;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.strokeStyle = "rgba(112, 66, 206, " + (alpha * 0.88).toFixed(4) + ")";
+        ctx.lineWidth = bolt.width + 1.6;
+        ctx.shadowBlur = (16 + (1 - revealProgress) * 16) * shadowScale;
+        ctx.shadowColor = "rgba(102, 56, 196, " + (alpha * 1.0).toFixed(4) + ")";
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(216, 172, 255, " + Math.min(0.52, alpha + 0.08).toFixed(4) + ")";
+        ctx.lineWidth = Math.max(1.0, bolt.width * 0.68);
+        ctx.shadowBlur = (8 + (1 - revealProgress) * 10) * shadowScale;
+        ctx.shadowColor = "rgba(178, 130, 255, " + (alpha * 0.9).toFixed(4) + ")";
+        ctx.stroke();
+
+        if (flicker > (0.08 - creationBoost * 0.32)) {
+          const dir = Math.sin(drift * 2.2 + bolt.phase) > 0 ? 1 : -1;
+          const branchStartP = 0.34 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 1.5 + bolt.phase));
+          const fromR = startR + reach * branchStartP;
+          const fromA = baseA + dir * 0.04;
+          const branchReach = reach * (0.38 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
+          const branchSpan = dir * (0.12 + 0.06 * Math.sin(drift * 3 + bolt.phase));
+          ctx.beginPath();
+          for (let b = 0; b <= branchSteps; b++) {
+            const p = b / branchSteps;
+            const rr = fromR + branchReach * p;
+            const jag = Math.sin(drift * 4.1 + p * 9.2) * 0.5 + 0.24 * Math.sin(drift * 6.3 + p * 6.1 + bolt.phase);
+            const ang = fromA + p * branchSpan + jag * bolt.jitter * 0.7;
+            const x = cx + Math.cos(ang) * rr;
+            const y = cy + Math.sin(ang) * rr * 0.88;
+            if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          const branchAlpha = alpha * 0.58;
+          ctx.strokeStyle = "rgba(124, 78, 220, " + branchAlpha.toFixed(4) + ")";
+          ctx.lineWidth = Math.max(0.75, bolt.width * 0.64);
+          ctx.shadowBlur = (9 + (1 - revealProgress) * 9) * shadowScale;
+          ctx.shadowColor = "rgba(110, 68, 206, " + (branchAlpha * 0.86).toFixed(4) + ")";
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    // Reveal aperture
+    if (revealProgress > 0) {
+      const apertureRadius = innerRadius * (0.24 + 2.36 * revealEase) * (1 + Math.sin(swirl * 9.8) * 0.11 * (1 - revealProgress * 0.62));
+      ctx.save(); ctx.globalCompositeOperation = "destination-out";
+      ctx.beginPath(); ctx.arc(cx, cy, apertureRadius, 0, TAU); ctx.fill(); ctx.restore();
+
+      const ringRadius = apertureRadius * (1 + Math.sin(swirl * 10.8) * 0.026);
+      const rimWidth = innerRadius * (0.48 + (1 - revealProgress) * 0.28);
+      const ringInner = Math.max(2, ringRadius - rimWidth * 0.42);
+      const ringOuter = ringRadius + rimWidth * 1.3;
+
+      ctx.save(); ctx.globalCompositeOperation = "source-over";
+      const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
+      ringBody.addColorStop(0, "rgba(0, 0, 0, " + (1.0 * fadeOut).toFixed(4) + ")");
+      ringBody.addColorStop(0.42, "rgba(0, 0, 0, " + (1.0 * fadeOut).toFixed(4) + ")");
+      ringBody.addColorStop(0.68, "rgba(4, 2, 8, " + (0.92 * fadeOut).toFixed(4) + ")");
+      ringBody.addColorStop(0.88, "rgba(8, 6, 14, " + (0.64 * fadeOut).toFixed(4) + ")");
+      ringBody.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = ringBody;
+      ctx.beginPath(); ctx.arc(cx, cy, ringOuter, 0, TAU);
+      ctx.arc(cx, cy, ringInner, 0, TAU, true); ctx.fill("evenodd");
+
+      const blackRimAlpha = Math.max(0, (1.0 - revealProgress * 0.18) * fadeOut);
+      if (blackRimAlpha > 0.006) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(0, 0, 0, " + blackRimAlpha.toFixed(4) + ")";
+        ctx.lineWidth = 14 + (1 - revealProgress) * 20;
+        ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * shadowScale;
+        ctx.shadowColor = "rgba(0, 0, 0, " + (blackRimAlpha * 0.78).toFixed(4) + ")";
+        ctx.arc(cx, cy, ringRadius, 0, TAU); ctx.stroke();
+      }
+
+      const edgeAlpha = Math.max(0, (0.34 - revealProgress * 0.12) * fadeOut);
+      if (edgeAlpha > 0.004) {
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(124, 120, 136, " + edgeAlpha.toFixed(4) + ")";
+        ctx.lineWidth = 1.2 + (1 - revealProgress) * 1.4;
+        ctx.shadowBlur = (8 + (1 - revealProgress) * 8) * shadowScale;
+        ctx.shadowColor = "rgba(48, 44, 60, " + (edgeAlpha * 0.84).toFixed(4) + ")";
+        ctx.arc(cx, cy, ringRadius + rimWidth * 0.34, 0, TAU); ctx.stroke();
+      }
+
+      // Ring mist bands
+      for (let mi = 0; mi < ringMistBands.length; mi += mistStep) {
+        const band = ringMistBands[mi];
+        const drift = swirl * band.speed + band.phase;
+        const radius = ringRadius + innerRadius * (0.03 + (band.band - 0.9) * 0.24) + Math.sin(drift * 1.2) * innerRadius * 0.03;
+        const arcLength = band.width + Math.sin(drift * 1.8) * 0.04;
+        const start = band.angle + drift * 0.32;
+        const alpha = (0.07 + 0.12 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 2.4) * 0.3) * fadeOut;
+        if (alpha <= 0.004) continue;
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(66, 66, 76, " + Math.max(0.01, alpha).toFixed(4) + ")";
+        ctx.lineWidth = band.lineWidth + (1 - revealProgress) * 1.8;
+        ctx.shadowBlur = (10 + (1 - revealProgress) * 16) * shadowScale;
+        ctx.shadowColor = "rgba(18, 18, 24, " + (alpha * 0.9).toFixed(4) + ")";
+        ctx.arc(cx, cy, radius, start, start + arcLength); ctx.stroke();
+      }
+
+      // Expanding shockwave ripples — start beyond ring outer edge
+      for (let i = 0; i < 5; i++) {
+        const wave = revealProgress * 1.45 - i * 0.18;
+        if (wave <= 0 || wave >= 1.52) continue;
+        const waveRadius = ringOuter + innerRadius * wave * 0.92;
+        const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
+        if (waveAlpha <= 0.003) continue;
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(72, 58, 96, " + waveAlpha.toFixed(4) + ")";
+        ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
+        ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale;
+        ctx.shadowColor = "rgba(48, 32, 78, " + (waveAlpha * 0.88).toFixed(4) + ")";
+        ctx.arc(cx, cy, waveRadius, 0, TAU); ctx.stroke();
+      }
+
+      // Purple energy jets — centered on ring body
+      ctx.globalCompositeOperation = "screen";
+      for (let i = 0; i < purpleJets.length; i += detailStep) {
+        const jet = purpleJets[i];
+        const drift = swirl * jet.speed + jet.phase;
+        const radius = ringRadius + innerRadius * (0.01 + Math.sin(drift * 1.7) * 0.04);
+        const start = jet.angle + drift * 0.24;
+        const span = 0.12 + jet.spread * 0.18 + Math.sin(drift * 2.1) * 0.03;
+        const alpha = (0.24 + 0.34 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
+        if (alpha <= 0.004) continue;
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(178, 118, 255, " + Math.max(0.06, alpha).toFixed(4) + ")";
+        ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
+        ctx.shadowBlur = (18 + (1 - revealProgress) * 22) * shadowScale;
+        ctx.shadowColor = "rgba(138, 74, 242, " + (alpha * 0.92).toFixed(4) + ")";
+        ctx.arc(cx, cy, radius, start, start + span); ctx.stroke();
+      }
+
+      // Reveal lightning — boosted alpha & reach for thick ring
+      const revealLightningRamp = Math.max(0, Math.min(1, (revealProgress - 0.08) / 0.92));
+      if (revealLightningRamp > 0.01) {
+        const revealBoltStep = Math.max(perfTier === 0 ? 3 : 2, detailStep + 1);
+        const revealMainSteps = perfTier === 0 ? 4 : 5;
+        const revealBranchSteps = perfTier === 0 ? 3 : 4;
+        const revealLightningRadius = ringOuter + rimWidth * 0.12;
+        for (let li = 0; li < outerLightning.length; li += revealBoltStep) {
+          const bolt = outerLightning[li];
+          const drift = swirl * (bolt.speed * 1.06) + bolt.phase;
+          const flicker = 0.5 + 0.5 * Math.sin(drift * 4.2 + revealProgress * 16) + 0.3 * Math.sin(drift * 6.6 + bolt.phase * 1.2);
+          if (flicker < -0.04) continue;
+          const alpha = (0.10 + 0.18 * (flicker * 0.5 + 0.5)) * revealLightningRamp * fadeOut;
+          if (alpha <= 0.003) continue;
+          const baseA = bolt.angle + drift * 0.2 + Math.sin(drift * 1.8) * 0.06;
+          const startR = revealLightningRadius * (0.98 + 0.05 * Math.sin(drift * 1.7));
+          const reach = innerRadius * (0.18 + bolt.reach * 0.42);
+          const span = 0.2 + 0.08 * Math.sin(drift * 2.4 + bolt.phase);
+          ctx.beginPath();
+          for (let i = 0; i <= revealMainSteps; i++) {
+            const p = i / revealMainSteps;
+            const rr = startR + reach * p;
+            const jag = Math.sin(drift * 3 + p * 12.2) + 0.58 * Math.sin(drift * 5.1 + p * 7.6 + bolt.phase);
+            const ang = baseA + (p - 0.24) * span + jag * bolt.jitter * (1 + p * 1.12);
+            const x = cx + Math.cos(ang) * rr;
+            const y = cy + Math.sin(ang) * rr * 0.88;
+            if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          }
+          ctx.strokeStyle = "rgba(108, 64, 198, " + (alpha * 0.72).toFixed(4) + ")";
+          ctx.lineWidth = Math.max(0.78, bolt.width * 0.88);
+          ctx.shadowBlur = (10 + (1 - revealProgress) * 8) * shadowScale;
+          ctx.shadowColor = "rgba(100, 58, 188, " + (alpha * 0.88).toFixed(4) + ")";
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(208, 164, 255, " + Math.min(0.32, alpha + 0.03).toFixed(4) + ")";
+          ctx.lineWidth = Math.max(0.7, bolt.width * 0.48);
+          ctx.shadowBlur = (5 + (1 - revealProgress) * 6) * shadowScale;
+          ctx.shadowColor = "rgba(170, 126, 246, " + (alpha * 0.74).toFixed(4) + ")";
+          ctx.stroke();
+          if (flicker > 0.26) {
+            const dir = Math.sin(drift * 2 + bolt.phase) > 0 ? 1 : -1;
+            const branchStartP = 0.36 + 0.2 * (0.5 + 0.5 * Math.sin(drift * 1.4 + bolt.phase));
+            const fromR = startR + reach * branchStartP;
+            const fromA = baseA + dir * 0.035;
+            const branchReach = reach * (0.32 + 0.18 * (0.5 + 0.5 * Math.sin(drift * 2.1)));
+            const branchSpan = dir * (0.18 + 0.08 * Math.sin(drift * 2.8 + bolt.phase));
+            ctx.beginPath();
+            for (let b = 0; b <= revealBranchSteps; b++) {
+              const p = b / revealBranchSteps;
+              const rr = fromR + branchReach * p;
+              const jag = Math.sin(drift * 3.8 + p * 8.6) + 0.45 * Math.sin(drift * 6 + p * 5.4 + bolt.phase);
+              const ang = fromA + p * branchSpan + jag * bolt.jitter * 1.16;
+              const x = cx + Math.cos(ang) * rr;
+              const y = cy + Math.sin(ang) * rr * 0.88;
+              if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            }
+            const branchAlpha = alpha * 0.5;
+            ctx.strokeStyle = "rgba(120, 76, 210, " + branchAlpha.toFixed(4) + ")";
+            ctx.lineWidth = Math.max(0.65, bolt.width * 0.52);
+            ctx.shadowBlur = (7 + (1 - revealProgress) * 6) * shadowScale;
+            ctx.shadowColor = "rgba(108, 70, 198, " + (branchAlpha * 0.82).toFixed(4) + ")";
+            ctx.stroke();
+          }
+        }
+      }
+
+      // Mist halo — solid atmospheric fog centered on ring
+      const mistHalo = ctx.createRadialGradient(cx, cy, Math.max(2, ringRadius * 0.72), cx, cy, ringOuter + innerRadius * (0.78 + (1 - revealProgress) * 0.34));
+      mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
+      mistHalo.addColorStop(0.18, "rgba(42, 28, 68, " + (0.48 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(0.38, "rgba(64, 42, 108, " + (0.58 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(0.56, "rgba(86, 52, 148, " + (0.44 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(0.74, "rgba(58, 34, 102, " + (0.32 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(0.90, "rgba(32, 18, 62, " + (0.16 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = mistHalo;
+      ctx.beginPath(); ctx.arc(cx, cy, ringOuter + innerRadius * 1.0, 0, TAU); ctx.fill();
+      ctx.restore();
+    }
+
+    setTimeout(draw, 8);
+  }
+
+  draw();
+}
+`;
+
+    const blob = new Blob([workerCode], { type: "application/javascript" });
+    const url = URL.createObjectURL(blob);
+    const worker = new Worker(url);
+    URL.revokeObjectURL(url);
+
+    console.log("%c[PortalDiag]%c OffscreenCanvas Worker created — animation on separate thread", "color:#a855f7;font-weight:bold", "color:#22c55e");
+
+    // Set canvas CSS size before transfer (Worker can't access DOM style)
+    canvas.style.width = `${initWidth}px`;
+    canvas.style.height = `${initHeight}px`;
+
+    worker.postMessage({
+      type: "init",
+      canvas: offscreen,
+      duration,
+      seeds,
+      perfTier,
+      dpr,
+      width: initWidth,
+      height: initHeight,
+    }, [offscreen]);
+
+    // Forward resize events to Worker
+    const onResize = () => {
+      const w = Math.max(1, Math.floor(window.innerWidth));
+      const h = Math.max(1, Math.floor(window.innerHeight));
+      canvas.style.width = `${w}px`;
+      canvas.style.height = `${h}px`;
+      worker.postMessage({ type: "resize", width: w, height: h });
+    };
+    window.addEventListener("resize", onResize);
+
+    // Return stop function
+    return () => {
+      window.removeEventListener("resize", onResize);
+      try { worker.postMessage({ type: "stop" }); } catch (_) {}
+      setTimeout(() => { try { worker.terminate(); } catch (_) {} }, 50);
     };
   },
 };

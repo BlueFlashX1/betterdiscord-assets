@@ -185,6 +185,7 @@ module.exports = class LevelProgressBar {
     const pluginInstance = this;
 
     if (SLUtils) {
+      this._trace('REACT_INJECT', 'Using SLUtils.tryReactInjection path');
       const ok = SLUtils.tryReactInjection({
         patcherId: 'LevelProgressBar',
         elementId: 'lpb-progress-container',
@@ -198,6 +199,7 @@ module.exports = class LevelProgressBar {
             pluginInstance.renderProgressBarReactElement(React)
           ),
         onMount: (domEl) => {
+          pluginInstance._trace('REACT_INJECT', 'onMount callback fired — element in DOM');
           pluginInstance.progressBar = domEl;
           pluginInstance.initializeProgressBar();
         },
@@ -205,11 +207,13 @@ module.exports = class LevelProgressBar {
         debugError: (...a) => pluginInstance.debugError(...a),
       });
 
+      this._trace('REACT_INJECT', `SLUtils.tryReactInjection returned: ${ok}`);
       if (ok) this.reactInjectionActive = true;
       return ok;
     }
 
     // Fallback: inline implementation if SLUtils unavailable
+    this._trace('REACT_INJECT', 'SLUtils unavailable, using inline React injection');
     try {
       // Multi-strategy MainContent finder (resilient to Discord renames)
       const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
@@ -225,9 +229,10 @@ module.exports = class LevelProgressBar {
         }
       }
       if (!MainContent) {
-        this.debugLog('REACT_INJECTION', 'Main content component not found (all strategies exhausted), using DOM fallback');
+        this._trace('REACT_INJECT', 'MainContent component NOT found (all strategies exhausted)');
         return false;
       }
+      this._trace('REACT_INJECT', `MainContent found via key "${_mcKey}"`);
 
       const React = BdApi.React;
       BdApi.Patcher.after('LevelProgressBar', MainContent, _mcKey, (_this, _args, returnValue) => {
@@ -338,7 +343,14 @@ module.exports = class LevelProgressBar {
    * Initialize progress bar after creation (common setup for both React and DOM)
    */
   initializeProgressBar() {
-    if (!this.progressBar) return;
+    if (!this.progressBar) {
+      this._trace('INIT_BAR', 'initializeProgressBar called but progressBar is null');
+      return;
+    }
+    this._trace('INIT_BAR', 'Initializing progress bar', {
+      inDOM: document.contains(this.progressBar),
+      position: this.settings.position,
+    });
 
     // Initial update - force update even if data hasn't changed
     this.lastLevel = null;
@@ -444,6 +456,7 @@ module.exports = class LevelProgressBar {
    */
   async start() {
     this._isStopped = false;
+    this._trace('START', 'Plugin starting...');
     this.debugLog('START', 'Plugin starting');
     this.initializeWebpackModules();
 
@@ -459,6 +472,7 @@ module.exports = class LevelProgressBar {
     }
 
     await this.loadSettings();
+    this._trace('START', 'Settings loaded', { debugMode: this.settings.debugMode, enabled: this.settings.enabled, position: this.settings.position });
     this.injectCSS();
     this.createProgressBar();
     this.startReconUpdates();
@@ -472,22 +486,23 @@ module.exports = class LevelProgressBar {
         this.subscribeToEvents();
         // If still no events after retry, use fallback polling
         if (this.eventUnsubscribers.length === 0) {
-          this.debugLog('START', 'Events not available after retry, using fallback polling');
+          this._trace('START', 'Events not available after retry, using fallback polling');
           this.startUpdating();
         }
       }, 1000);
     }
 
-    this.debugLog('START', 'Plugin started successfully', {
+    this._trace('START', 'Plugin started', {
       enabled: this.settings.enabled,
-      position: this.settings.position,
-      eventBased: this.eventUnsubscribers.length > 0,
-      fallbackPolling: this.eventUnsubscribers.length === 0,
+      hasProgressBar: !!this.progressBar,
+      reactInjection: this.reactInjectionActive,
+      eventListeners: this.eventUnsubscribers.length,
     });
   }
 
   stop() {
     this._isStopped = true;
+    this._trace('STOP', 'Plugin stopping');
     this.debugLog('STOP', 'Plugin stopping');
     this.unsubscribeFromEvents();
     this.stopReconUpdates();
@@ -1135,58 +1150,78 @@ module.exports = class LevelProgressBar {
    * 3.4 PROGRESS BAR MANAGEMENT
    */
 
+  /**
+   * Direct DOM injection — guaranteed to create the element.
+   * Used as primary fallback when React injection doesn't produce a visible element.
+   */
+  _createProgressBarDOM() {
+    // Remove any stale container first
+    document.getElementById('lpb-progress-container')?.remove();
+
+    const container = document.createElement('div');
+    container.id = 'lpb-progress-container';
+    container.className = `lpb-progress-container ${this.settings.position}`;
+    container.style.opacity = 1.0;
+    container.innerHTML = this.renderProgressBarHTML();
+
+    document.body.appendChild(container);
+    this.progressBar = container;
+
+    this._trace('CREATE_BAR', 'Progress bar created via DOM injection', {
+      position: this.settings.position,
+      inDOM: !!document.getElementById('lpb-progress-container'),
+    });
+
+    this.initializeProgressBar();
+    this.invalidateDOMCache();
+  }
+
   // Create progress bar element
   createProgressBar() {
     if (!this.settings.enabled) {
-      this.debugLog('CREATE_BAR', 'Plugin disabled, skipping');
+      this._trace('CREATE_BAR', 'Plugin disabled, skipping bar creation');
       return;
     }
 
-    if (this.progressBar) {
-      this.debugLog('CREATE_BAR', 'Progress bar already exists');
+    if (this.progressBar && document.contains(this.progressBar)) {
+      this._trace('CREATE_BAR', 'Progress bar already exists in DOM');
       return;
+    }
+
+    // Reset stale reference if element was removed from DOM
+    if (this.progressBar && !document.contains(this.progressBar)) {
+      this._trace('CREATE_BAR', 'Stale progressBar ref detected, clearing');
+      this.progressBar = null;
     }
 
     // Try React injection first (preferred method)
-    if (this.tryReactInjection()) {
-      // React injection successful, initialization handled in tryReactInjection
-      this.debugLog('CREATE_BAR', 'Progress bar created via React injection');
+    this._trace('CREATE_BAR', 'Attempting React injection...');
+    const reactOk = this.tryReactInjection();
+    this._trace('CREATE_BAR', `React injection returned: ${reactOk}`);
+
+    if (reactOk) {
+      // React injection set up the patch, but the element might not exist yet
+      // (it only renders when MainContent re-renders). Verify with timeout.
+      this._setTrackedTimeout(() => {
+        const el = document.getElementById('lpb-progress-container');
+        if (el) {
+          this._trace('CREATE_BAR', 'React-injected element confirmed in DOM');
+          if (!this.progressBar) {
+            this.progressBar = el;
+            this.initializeProgressBar();
+          }
+        } else {
+          // React patch was set up but element never rendered — fall back to DOM
+          this._trace('CREATE_BAR', 'React-injected element NOT in DOM after 1.5s — falling back to DOM injection');
+          this._createProgressBarDOM();
+        }
+      }, 1500);
       return;
     }
 
-    // Fallback to DOM injection if React injection fails
-    this.debugLog('CREATE_BAR', 'React injection failed, using DOM fallback');
-
-    try {
-      const container = document.createElement('div');
-      container.id = 'lpb-progress-container';
-      container.className = `lpb-progress-container ${this.settings.position}`;
-      container.style.opacity = 1.0; // Fixed at 100% opacity
-
-      // Use renderProgressBarHTML for consistency
-      container.innerHTML = this.renderProgressBarHTML();
-
-      document.body.appendChild(container);
-
-      this.progressBar = container;
-      this.debugLog('CREATE_BAR', 'Progress bar created successfully via DOM', {
-        position: this.settings.position,
-        compact: this.settings.compact,
-        containerExists: !!this.progressBar,
-        parentExists: !!this.progressBar.parentElement,
-        showLevel: this.settings.showLevel,
-        showRank: this.settings.showRank,
-        showXP: this.settings.showXP,
-      });
-
-      // Initialize progress bar (common setup)
-      this.initializeProgressBar();
-
-      // Invalidate DOM cache since new elements were created
-      this.invalidateDOMCache();
-    } catch (error) {
-      this.debugError('CREATE_BAR', error);
-    }
+    // React injection failed immediately — use DOM fallback
+    this._trace('CREATE_BAR', 'React injection failed, using DOM fallback');
+    this._createProgressBarDOM();
   }
 
   removeProgressBar() {
@@ -1536,12 +1571,18 @@ module.exports = class LevelProgressBar {
   updateProgressBar() {
     // Early returns for invalid states
     if (!this.progressBar || !this.settings.enabled) {
-      this.debugLog('UPDATE_BAR', 'Skipping update', {
-        hasBar: !!this.progressBar,
-        enabled: this.settings.enabled,
-      });
+      // Trace only once to avoid spam
+      if (!this._updateSkipTraced) {
+        this._trace('UPDATE_BAR', 'Skipping — bar or enabled missing', {
+          hasBar: !!this.progressBar,
+          barInDOM: this.progressBar ? document.contains(this.progressBar) : false,
+          enabled: this.settings.enabled,
+        });
+        this._updateSkipTraced = true;
+      }
       return;
     }
+    this._updateSkipTraced = false;
 
     try {
       const reconChanged = this.updateReconIntelText();
@@ -1859,6 +1900,17 @@ module.exports = class LevelProgressBar {
   /**
    * 2.2 HELPER FUNCTIONS
    */
+
+  /**
+   * Always-on lifecycle trace — fires regardless of debugMode.
+   * Use for critical lifecycle events only.
+   */
+  _trace(tag, msg, data = null) {
+    const prefix = '%c[LPB]%c';
+    const styles = ['color:#a855f7;font-weight:bold', 'color:inherit'];
+    if (data) console.log(prefix, ...styles, `[${tag}]`, msg, data);
+    else console.log(prefix, ...styles, `[${tag}]`, msg);
+  }
 
   debugLog(operation, message, data = null) {
     if (this._debug) { this._debug.log(operation, message, data); return; }
