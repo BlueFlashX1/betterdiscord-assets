@@ -50,6 +50,7 @@ module.exports = class Stealth {
       telemetry: 0,
       silent: 0,
       process: 0,
+      readReceipts: 0,
     };
 
     this._suppressEventLog = {
@@ -76,6 +77,7 @@ module.exports = class Stealth {
       telemetry: 0,
       silent: 0,
       process: 0,
+      readReceipts: 0,
     };
 
     this._installPatches();
@@ -235,6 +237,7 @@ module.exports = class Stealth {
     this._patchActivityUpdates();
     this._patchTelemetry();
     this._patchAutoSilentMessages();
+    this._patchReadReceipts();
   }
 
   _patchTypingIndicators() {
@@ -414,6 +417,71 @@ module.exports = class Stealth {
     }
 
     this._patchMetrics.silent = patched;
+  }
+
+  _patchReadReceipts() {
+    let patched = 0;
+
+    // Primary: patch ack/bulkAck module
+    try {
+      const ackModule =
+        BdApi.Webpack.getByKeys("ack", "bulkAck") ||
+        BdApi.Webpack.getByKeys("ack");
+
+      if (ackModule) {
+        if (typeof ackModule.ack === "function") {
+          BdApi.Patcher.instead(
+            STEALTH_PLUGIN_ID,
+            ackModule,
+            "ack",
+            (ctx, args, original) => {
+              if (this.settings.enabled && this.settings.suppressReadReceipts) {
+                this._recordSuppressed("readReceipts");
+                return undefined;
+              }
+              return original.apply(ctx, args);
+            }
+          );
+          patched += 1;
+        }
+
+        if (typeof ackModule.bulkAck === "function") {
+          BdApi.Patcher.instead(
+            STEALTH_PLUGIN_ID,
+            ackModule,
+            "bulkAck",
+            (ctx, args, original) => {
+              if (this.settings.enabled && this.settings.suppressReadReceipts) {
+                this._recordSuppressed("readReceipts");
+                return undefined;
+              }
+              return original.apply(ctx, args);
+            }
+          );
+          patched += 1;
+        }
+      }
+    } catch (error) {
+      this._logWarning("READ_RECEIPTS", "Failed to patch ack/bulkAck", error, "ack-patch");
+    }
+
+    // Fallback: scan for ack-like functions
+    const fnNames = ["ack", "bulkAck", "localAck"];
+    const keyCombos = [
+      ["ack", "bulkAck"],
+      ["ack"],
+    ];
+
+    patched += this._patchFunctions({
+      fnNames,
+      keyCombos,
+      shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
+      onBlocked: () => this._recordSuppressed("readReceipts"),
+      tag: "readReceipts",
+      blockedReturnValue: undefined,
+    });
+
+    this._patchMetrics.readReceipts = patched;
   }
 
   _applyStealthHardening() {
