@@ -6080,13 +6080,17 @@ module.exports = class Dungeons {
     }
     this.settings.mobKillNotifications[channelKey].count += killCount;
 
-    if (dungeon.userParticipating && this.soloLevelingStats) {
+    if (this.soloLevelingStats) {
+      // Grant XP for mob kills — full XP if participating, reduced (30%) if shadows fighting alone.
+      // This ensures the player grows through their shadows' combat even after being defeated.
       const xpPerKill = this.calculateMobXP(mobRank, dungeon.userParticipating);
-      this._grantUserDungeonXP(xpPerKill * killCount, 'dungeon_mob_kill', {
-        channelKey,
-        mobRank,
-        killCount,
-      });
+      if (xpPerKill > 0) {
+        this._grantUserDungeonXP(xpPerKill * killCount, dungeon.userParticipating ? 'dungeon_mob_kill' : 'dungeon_shadow_mob_kill', {
+          channelKey,
+          mobRank,
+          killCount,
+        });
+      }
     }
   }
 
@@ -11242,6 +11246,27 @@ module.exports = class Dungeons {
         // ARISE available (silent)
       } else {
         // User didn't participate, no extraction chance (silent)
+      }
+    }
+
+    // Shadow Commander XP: Player earns a share of their shadows' dungeon performance.
+    // This represents growth through commanding an army — the stronger your shadows fight,
+    // the more XP flows back to you. Applies regardless of completion reason or participation.
+    if (summaryStats.shadowTotalXP > 0 && this.soloLevelingStats) {
+      const shadowSharePercent = 0.15; // 15% of total shadow dungeon XP flows to player
+      const shadowShareXP = Math.floor(summaryStats.shadowTotalXP * shadowSharePercent);
+      if (shadowShareXP > 0) {
+        if (
+          this._grantUserDungeonXP(shadowShareXP, 'dungeon_shadow_share', {
+            channelKey,
+            dungeonRank: dungeon.rank,
+            shadowTotalXP: summaryStats.shadowTotalXP,
+            sharePercent: shadowSharePercent,
+          })
+        ) {
+          summaryStats.userXP = (summaryStats.userXP || 0) + shadowShareXP;
+          summaryStats.shadowShareXP = shadowShareXP;
+        }
       }
     }
 
