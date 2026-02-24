@@ -57,18 +57,38 @@ module.exports = class ChatNavArrows {
 
   start() {
     this._isStopped = false;
+    this._patcherCallbackFired = false;
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', this.getCSS());
     this._debugLog('start() called');
     const reactPatched = this._installReactPatcher();
     this._debugLog('React patcher result:', reactPatched);
     if (!reactPatched) {
-      this._debugLog('Falling back to DOM mode');
+      this._debugLog('Falling back to DOM mode immediately');
       this._startDomFallback();
+    } else {
+      // React patcher installed, but MainContent may have already rendered.
+      // Attempt to force a re-render so the patcher callback fires.
+      requestAnimationFrame(() => {
+        if (this._patcherCallbackFired || this._isStopped) return;
+        this._debugLog('Patcher callback not yet fired — attempting force re-render');
+        this._forceAppRerender();
+      });
+      // Safety net: if patcher callback still hasn't fired after 2s, start DOM fallback
+      this._fallbackTimer = setTimeout(() => {
+        if (!this._patcherCallbackFired && !this._isStopped) {
+          this._debugLog('Patcher callback not fired after 2s — starting DOM fallback as safety net');
+          this._startDomFallback();
+        }
+      }, 2000);
     }
   }
 
   stop() {
     this._isStopped = true;
+    if (this._fallbackTimer) {
+      clearTimeout(this._fallbackTimer);
+      this._fallbackTimer = null;
+    }
     BdApi.Patcher.unpatchAll(this._patcherId);
     BdApi.DOM.removeStyle('sl-chat-nav-arrows-css');
     this._stopDomFallback();
@@ -79,6 +99,34 @@ module.exports = class ChatNavArrows {
     });
     // Remove any residual arrow elements
     document.querySelectorAll('.sl-chat-nav-arrow').forEach((el) => el.remove());
+  }
+
+  /**
+   * Walk up the React Fiber tree from #app-mount and call forceUpdate on the
+   * first class component found. This nudges MainContent to re-render so our
+   * patcher callback fires at least once.
+   */
+  _forceAppRerender() {
+    try {
+      const node = document.getElementById('app-mount');
+      if (!node) { this._debugLog('forceRerender: #app-mount not found'); return; }
+      const fiberKey = Object.keys(node).find(k => k.startsWith('__reactFiber'));
+      if (!fiberKey) { this._debugLog('forceRerender: no fiber key on #app-mount'); return; }
+      let fiber = node[fiberKey];
+      let attempts = 0;
+      while (fiber && attempts < 50) {
+        attempts++;
+        if (fiber.stateNode?.forceUpdate) {
+          fiber.stateNode.forceUpdate();
+          this._debugLog(`forceRerender: forceUpdate called (depth ${attempts})`);
+          return;
+        }
+        fiber = fiber.return;
+      }
+      this._debugLog(`forceRerender: no forceUpdate-able node found (walked ${attempts} fibers)`);
+    } catch (e) {
+      this._debugLog('forceRerender error:', e.message);
+    }
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -100,6 +148,12 @@ module.exports = class ChatNavArrows {
       let patcherCallCount = 0;
       const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
         patcherCallCount++;
+        pluginInstance._patcherCallbackFired = true;
+        // Supersede DOM fallback if it was started as safety net
+        if (pluginInstance._domFallback && patcherCallCount === 1) {
+          pluginInstance._debugLog('Patcher callback fired — stopping DOM fallback');
+          pluginInstance._stopDomFallback();
+        }
         pluginInstance._debugLog(`Patcher callback #${patcherCallCount} — appNode:`, !!appNode, 'appNode.props:', !!appNode?.props);
         const component = React.createElement(pluginInstance._ArrowManager, {
           key: 'sl-chat-nav-arrows',
