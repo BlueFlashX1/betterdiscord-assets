@@ -1634,12 +1634,28 @@ module.exports = class LevelProgressBar {
       // Update progress fill animation
       const progressFill = this.getCachedElement('#lpb-progress-fill');
       if (progressFill) {
-        progressFill.style.transform = `scaleX(${Math.max(0, Math.min(xpPercent / 100, 1))})`;
-        // Add XP gain animation class temporarily
-        progressFill.classList.add('lpb-xp-gain');
-        this._setTrackedTimeout(() => {
-          progressFill.classList.remove('lpb-xp-gain');
-        }, 600);
+        const newScale = Math.max(0, Math.min(xpPercent / 100, 1));
+
+        // Detect level-up or XP overflow: bar would animate backwards from ~100% to low%.
+        // Disable transition so it snaps instantly instead of visually "refilling".
+        const oldScale = parseFloat(progressFill.style.transform?.match(/scaleX\(([^)]+)\)/)?.[1] || '0');
+        const isLevelUp = newScale < oldScale - 0.1;
+
+        if (isLevelUp) {
+          progressFill.style.transition = 'none';
+          progressFill.style.transform = `scaleX(${newScale})`;
+          // Re-enable transition on next frame so future XP gains animate normally
+          requestAnimationFrame(() => {
+            progressFill.style.transition = '';
+          });
+        } else {
+          progressFill.style.transform = `scaleX(${newScale})`;
+          // Add XP gain animation class temporarily
+          progressFill.classList.add('lpb-xp-gain');
+          this._setTrackedTimeout(() => {
+            progressFill.classList.remove('lpb-xp-gain');
+          }, 600);
+        }
       }
 
       // Update milestone markers
