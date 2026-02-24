@@ -106,13 +106,9 @@ module.exports = class Stealth {
 
   _initStores() {
     try {
-      this._stores.user =
-        BdApi.Webpack.getStore?.("UserStore") ||
-        BdApi.Webpack.getModule((m) => m && typeof m.getCurrentUser === "function");
+      this._stores.user = BdApi.Webpack.getStore("UserStore");
 
-      this._stores.presence =
-        BdApi.Webpack.getStore?.("PresenceStore") ||
-        BdApi.Webpack.getModule((m) => m && typeof m.getStatus === "function");
+      this._stores.presence = BdApi.Webpack.getStore("PresenceStore");
     } catch (error) {
       this._logWarning("WEBPACK", "Failed to initialize User/Presence stores", error, "stores-init");
     }

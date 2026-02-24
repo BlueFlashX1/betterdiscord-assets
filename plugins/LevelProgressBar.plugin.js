@@ -191,10 +191,8 @@ module.exports = class LevelProgressBar {
       });
     } else {
       try {
-        this.webpackModules.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
-        this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
-          (m) => m && (m.getChannel || m.getChannelId)
-        );
+        this.webpackModules.UserStore = BdApi.Webpack.getStore("UserStore");
+        this.webpackModules.ChannelStore = BdApi.Webpack.getStore("ChannelStore");
         this.webpackModuleAccess = !!(
           this.webpackModules.UserStore || this.webpackModules.ChannelStore
         );

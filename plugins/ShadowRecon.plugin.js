@@ -224,16 +224,14 @@ module.exports = class ShadowRecon {
     this._GuildChannelStore = Webpack.getStore("GuildChannelStore");
 
     this._UserStore = Webpack.getStore("UserStore");
-    this._PresenceStore = Webpack.getStore("PresenceStore") || Webpack.getModule(m => m && typeof m.getStatus === "function");
+    this._PresenceStore = Webpack.getStore("PresenceStore");
     this._GuildMemberStore = Webpack.getStore("GuildMemberStore");
     this._GuildMemberCountStore = Webpack.getStore("GuildMemberCountStore");
     this._SessionsStore = Webpack.getStore("SessionsStore");
 
-    this._PermissionStore = Webpack.getStore("PermissionStore") || Webpack.getModule(m => m && typeof m.getGuildPermissions === "function");
+    this._PermissionStore = Webpack.getStore("PermissionStore");
 
-    this._UserProfileStore =
-      Webpack.getStore("UserProfileStore") ||
-      Webpack.getModule(m => m && (typeof m.getUserProfile === "function" || typeof m.getProfile === "function"));
+    this._UserProfileStore = Webpack.getStore("UserProfileStore");
 
     this._UserProfileActions =
       Webpack.getByKeys("fetchProfile", "fetchUserProfile") ||

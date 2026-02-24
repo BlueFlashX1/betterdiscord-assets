@@ -2982,10 +2982,7 @@ module.exports = class ShadowArmy {
   getChannelStoreModule() {
     let ChannelStore = this.webpackModules?.ChannelStore;
     if (!ChannelStore?.getChannel) {
-      ChannelStore = BdApi.Webpack.getModule(
-        (m) =>
-          m && typeof m.getChannel === 'function' && (m.getChannelId || m.getLastSelectedChannelId)
-      );
+      ChannelStore = BdApi.Webpack.getStore("ChannelStore");
       if (ChannelStore) this.webpackModules.ChannelStore = ChannelStore;
     }
     return ChannelStore || null;
@@ -3051,12 +3048,7 @@ module.exports = class ShadowArmy {
 
     let PermissionStore = this.webpackModules?.PermissionStore;
     if (!PermissionStore?.can) {
-      PermissionStore = BdApi.Webpack.getModule(
-        (m) =>
-          m &&
-          typeof m.can === 'function' &&
-          (typeof m.canAccessChannel === 'function' || typeof m.computePermissions === 'function')
-      );
+      PermissionStore = BdApi.Webpack.getStore("PermissionStore");
       if (PermissionStore) this.webpackModules.PermissionStore = PermissionStore;
     }
 
@@ -3337,11 +3329,7 @@ module.exports = class ShadowArmy {
     try {
       // Method 1: Try BetterDiscord Webpack UserStore (BdApi - PRIMARY)
       // Prefer getStore, fallback to getModule with search
-      const UserStore =
-        (BdApi.Webpack && BdApi.Webpack.getStore && BdApi.Webpack.getStore('UserStore')) ||
-        (BdApi.Webpack &&
-          BdApi.Webpack.getModule &&
-          BdApi.Webpack.getModule((m) => m && typeof m.getCurrentUser === 'function'));
+      const UserStore = BdApi.Webpack.getStore('UserStore');
 
       if (UserStore && typeof UserStore.getCurrentUser === 'function') {
         try {

@@ -27,15 +27,11 @@ function initWebpackModules(opts = {}) {
   };
 
   try {
-    result.UserStore = BdApi.Webpack.getModule((m) => m && m.getCurrentUser);
-    result.ChannelStore = BdApi.Webpack.getModule(
-      (m) => m && (m.getChannel || m.getChannelId)
-    );
+    result.UserStore = BdApi.Webpack.getStore("UserStore");
+    result.ChannelStore = BdApi.Webpack.getStore("ChannelStore");
 
     if (opts.messageStore) {
-      result.MessageStore = BdApi.Webpack.getModule(
-        (m) => m && (m.getMessage || m.getMessages || m.receiveMessage)
-      );
+      result.MessageStore = BdApi.Webpack.getStore("MessageStore");
     }
 
     if (opts.messageActions) {

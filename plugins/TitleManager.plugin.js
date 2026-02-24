@@ -1417,9 +1417,7 @@ module.exports = class SoloLevelingTitleManager {
   initializeWebpackModules() {
     try {
       // Fetch ChannelStore for potential future use
-      this.webpackModules.ChannelStore = BdApi.Webpack.getModule(
-        (m) => m && m.getChannel && m.getChannelId
-      );
+      this.webpackModules.ChannelStore = BdApi.Webpack.getStore("ChannelStore");
 
       this.webpackModuleAccess = !!this.webpackModules.ChannelStore;
 

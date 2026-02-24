@@ -504,9 +504,7 @@ class SensesEngine {
   _resolveUserStore() {
     if (this._plugin._UserStore) return this._plugin._UserStore;
     try {
-      this._plugin._UserStore =
-        BdApi.Webpack.getStore?.("UserStore") ||
-        BdApi.Webpack.getModule(m => m && typeof m.getCurrentUser === "function" && typeof m.getUser === "function");
+      this._plugin._UserStore = BdApi.Webpack.getStore("UserStore");
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to resolve UserStore", err);
     }
@@ -516,9 +514,7 @@ class SensesEngine {
   _resolvePresenceStore() {
     if (this._plugin._PresenceStore) return this._plugin._PresenceStore;
     try {
-      this._plugin._PresenceStore =
-        BdApi.Webpack.getStore?.("PresenceStore") ||
-        BdApi.Webpack.getModule(m => m && typeof m.getStatus === "function");
+      this._plugin._PresenceStore = BdApi.Webpack.getStore("PresenceStore");
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to resolve PresenceStore", err);
     }
@@ -528,9 +524,7 @@ class SensesEngine {
   _resolveRelationshipStore() {
     if (this._plugin._RelationshipStore) return this._plugin._RelationshipStore;
     try {
-      this._plugin._RelationshipStore =
-        BdApi.Webpack.getStore?.("RelationshipStore") ||
-        BdApi.Webpack.getModule(m => m && typeof m.getFriendIDs === "function");
+      this._plugin._RelationshipStore = BdApi.Webpack.getStore("RelationshipStore");
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to resolve RelationshipStore", err);
     }
@@ -2730,15 +2724,9 @@ module.exports = class ShadowSenses {
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._GuildStore = Webpack.getStore("GuildStore");
-    this._UserStore =
-      Webpack.getStore("UserStore") ||
-      Webpack.getModule(m => m && typeof m.getCurrentUser === "function" && typeof m.getUser === "function");
-    this._PresenceStore =
-      Webpack.getStore("PresenceStore") ||
-      Webpack.getModule(m => m && typeof m.getStatus === "function");
-    this._RelationshipStore =
-      Webpack.getStore("RelationshipStore") ||
-      Webpack.getModule(m => m && typeof m.getFriendIDs === "function");
+    this._UserStore = Webpack.getStore("UserStore");
+    this._PresenceStore = Webpack.getStore("PresenceStore");
+    this._RelationshipStore = Webpack.getStore("RelationshipStore");
     this._NavigationUtils =
       Webpack.getByKeys("transitionTo", "back", "forward") ||
       Webpack.getModule(m => m.transitionTo && m.back && m.forward);
