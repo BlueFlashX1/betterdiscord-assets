@@ -2283,7 +2283,7 @@ module.exports = class SkillTree {
         height: 32px;
         background: transparent;
         border: 1px solid rgba(138, 43, 226, 1);
-        border-radius: 4px;
+        border-radius: 2px;
         cursor: pointer;
         display: flex;
         align-items: center;
@@ -2317,7 +2317,7 @@ module.exports = class SkillTree {
         left: 50%;
         transform: translate(-50%, -50%);
         background: linear-gradient(145deg, #0a0a10 0%, #0d0d14 50%, #08080e 100%);
-        border-radius: 16px;
+        border-radius: 2px;
         padding: 0;
         max-width: 900px;
         width: 90vw;
@@ -2399,7 +2399,7 @@ module.exports = class SkillTree {
         padding: 8px 16px;
         background: #1a0e2e;
         border: 1px solid rgba(138, 43, 226, 0.4);
-        border-radius: 8px;
+        border-radius: 2px;
         color: #e8dcff;
         font-size: 14px;
         font-weight: 600;
@@ -2409,7 +2409,7 @@ module.exports = class SkillTree {
         padding: 10px 20px;
         background: linear-gradient(135deg, #cc2222 0%, #aa1818 100%);
         border: 2px solid var(--danger-color, #ff4444);
-        border-radius: 8px;
+        border-radius: 2px;
         color: white;
         font-size: 14px;
         font-weight: bold;
@@ -2454,7 +2454,7 @@ module.exports = class SkillTree {
       .st-confirm-dialog {
         background: linear-gradient(135deg, #0a0a10 0%, #08080d 100%);
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 16px;
+        border-radius: 2px;
         width: 90%;
         max-width: 500px;
         box-shadow: 0 0 40px rgba(138, 43, 226, 0.35);
@@ -2505,7 +2505,7 @@ module.exports = class SkillTree {
       .st-confirm-btn {
         flex: 1;
         padding: 12px 24px;
-        border-radius: 8px;
+        border-radius: 2px;
         font-size: 15px;
         font-weight: bold;
         cursor: pointer;
@@ -2559,7 +2559,7 @@ module.exports = class SkillTree {
         background: linear-gradient(135deg, #ff4444 0%, #cc2222 100%);
         color: white;
         border: none;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 8px 12px;
         cursor: pointer;
         font-size: 18px;
@@ -2596,14 +2596,14 @@ module.exports = class SkillTree {
 
       .skilltree-tier-nav::-webkit-scrollbar-thumb {
         background: rgba(138, 43, 226, 0.5);
-        border-radius: 3px;
+        border-radius: 2px;
       }
 
       .skilltree-tier-nav-btn {
         padding: 10px 20px;
         background: linear-gradient(135deg, #0d0d14 0%, #08080d 100%);
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 8px;
+        border-radius: 2px;
         color: rgba(255, 255, 255, 0.9);
         font-size: 14px;
         font-weight: 600;
@@ -2641,7 +2641,7 @@ module.exports = class SkillTree {
         margin: 35px 0;
         padding: 25px;
         background: linear-gradient(135deg, #110a1e 0%, #0e0818 100%);
-        border-radius: 12px;
+        border-radius: 2px;
         border: 1px solid rgba(138, 43, 226, 0.2);
         scroll-margin-top: 20px;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5),
@@ -2676,7 +2676,7 @@ module.exports = class SkillTree {
         display: inline-block;
         padding: 4px 12px;
         background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
-        border-radius: 12px;
+        border-radius: 2px;
         font-size: 12px;
         font-weight: 700;
         color: white;
@@ -2687,7 +2687,7 @@ module.exports = class SkillTree {
       /* Skill Card */
       .skilltree-skill {
         background: linear-gradient(135deg, #0a0a12 0%, #08080e 100%);
-        border-radius: 10px;
+        border-radius: 2px;
         padding: 18px;
         margin: 12px 0;
         border: 1px solid rgba(138, 43, 226, 0.2);
@@ -2764,7 +2764,7 @@ module.exports = class SkillTree {
         margin-top: 8px;
         padding: 8px;
         background: #081a12;
-        border-radius: 6px;
+        border-radius: 2px;
         border: 1px solid rgba(0, 255, 136, 0.25);
       }
       .skilltree-skill-cost {
@@ -2792,7 +2792,7 @@ module.exports = class SkillTree {
         background: linear-gradient(135deg, #00ff88 0%, #00cc6a 100%);
         color: white;
         border: none;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 10px 20px;
         cursor: pointer;
         font-size: 13px;
@@ -2823,7 +2823,7 @@ module.exports = class SkillTree {
         background: linear-gradient(135deg, #8a2be2 0%, #4b0082 100%);
         color: white;
         border: none;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 10px 16px;
         cursor: pointer;
         font-size: 13px;
@@ -2882,7 +2882,7 @@ module.exports = class SkillTree {
         margin-bottom: 16px;
         padding: 10px 14px;
         background: #08080e;
-        border-radius: 10px;
+        border-radius: 2px;
         border: 1px solid rgba(0, 100, 255, 0.3);
       }
       .skilltree-mana-bar-label {
@@ -2895,14 +2895,14 @@ module.exports = class SkillTree {
         flex: 1;
         height: 12px;
         background: #060608;
-        border-radius: 6px;
+        border-radius: 2px;
         overflow: hidden;
         position: relative;
       }
       .skilltree-mana-bar-fill {
         height: 100%;
         background: linear-gradient(90deg, #1e64ff 0%, #64b4ff 100%);
-        border-radius: 6px;
+        border-radius: 2px;
         transition: width 0.5s ease;
         box-shadow: 0 0 8px rgba(30, 100, 255, 0.5);
       }
@@ -2921,7 +2921,7 @@ module.exports = class SkillTree {
         margin-bottom: 10px;
         background: linear-gradient(135deg, #0a0a12 0%, #0c0c14 100%);
         border: 1px solid rgba(138, 43, 226, 0.25);
-        border-radius: 10px;
+        border-radius: 2px;
         transition: all 0.3s ease;
       }
       .skilltree-active-skill:hover {
@@ -2993,7 +2993,7 @@ module.exports = class SkillTree {
       .skilltree-activate-btn {
         width: 100%;
         padding: 8px 16px;
-        border-radius: 8px;
+        border-radius: 2px;
         font-size: 13px;
         font-weight: 700;
         cursor: pointer;
@@ -3389,7 +3389,7 @@ module.exports = class SkillTree {
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
-        <div style="margin-top: 15px; padding: 10px; background: #1a0e2e; border-radius: 8px; border-left: 3px solid #8a2be2;">
+        <div style="margin-top: 15px; padding: 10px; background: #1a0e2e; border-radius: 0; border-left: 3px solid #8a2be2;">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 5px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:

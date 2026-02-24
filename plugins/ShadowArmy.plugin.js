@@ -8310,7 +8310,7 @@ module.exports = class ShadowArmy {
       .shadow-extraction-content {
         background: rgba(0, 0, 0, 0.9);
         border: 2px solid #8a2be2;
-        border-radius: 12px;
+        border-radius: 2px;
         padding: 20px 30px;
         text-align: center;
         box-shadow: 0 0 20px rgba(138, 43, 226, 0.6);
@@ -8512,7 +8512,7 @@ module.exports = class ShadowArmy {
         width: 100%;
         box-sizing: border-box;
         background: #1e1e2e;
-        border-radius: 8px;
+        border-radius: 2px;
       }
 
       .shadow-army-settings h2,
@@ -8614,7 +8614,7 @@ module.exports = class ShadowArmy {
         height: 32px;
         background: transparent;
         border: none;
-        border-radius: 4px;
+        border-radius: 2px;
         cursor: pointer;
         color: var(--interactive-normal, #b9bbbe);
         display: flex;
@@ -8775,14 +8775,10 @@ module.exports = class ShadowArmy {
   tryReactInjection() {
     try {
       // Find MainContent component (Discord's main app container)
-      let MainContent = BdApi.Webpack.getByStrings('baseLayer', {
-        searchExports: true,
-      });
+      let MainContent = BdApi.Webpack.getByStrings('baseLayer', { defaultExport: false });
 
       if (!MainContent) {
-        MainContent = BdApi.Webpack.getByStrings('appMount', {
-          searchExports: true,
-        });
+        MainContent = BdApi.Webpack.getByStrings('appMount', { defaultExport: false });
       }
 
       if (!MainContent) {
@@ -10441,7 +10437,7 @@ module.exports = class ShadowArmy {
       #shadow-army-widget {
         background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
         border: 1px solid rgba(138, 43, 226, 0.4) !important;
-        border-radius: 8px !important;
+        border-radius: 2px !important;
         padding: 12px !important;
         margin: 8px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
@@ -10483,7 +10479,7 @@ module.exports = class ShadowArmy {
         text-align: center !important;
         padding: 4px !important;
         background: rgba(0, 0, 0, 0.4) !important;
-        border-radius: 4px !important;
+        border-radius: 2px !important;
         transition: all 0.2s ease !important;
       }
 
@@ -10741,7 +10737,7 @@ module.exports = class ShadowArmy {
         const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
 
         return `
-        <div style="text-align: center; padding: 6px; background: rgba(0, 0, 0, 0.3); border-radius: 4px; border: 1px solid ${color}40;">
+        <div style="text-align: center; padding: 6px; background: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid ${color}40;">
           <div style="color: ${color}; font-size: 14px; font-weight: bold;">${rank}</div>
           <div style="color: #fff; font-size: 16px; font-weight: bold; margin: 2px 0;">${count}</div>
           <div style="color: #888; font-size: 9px;">${percentage}%</div>
@@ -10851,7 +10847,7 @@ module.exports = class ShadowArmy {
                   <div class="sa-general-card" data-shadow-id="${shortId}" style="
                     background: rgba(251, 191, 36, 0.15);
                     border: 2px solid #fbbf24;
-                    border-radius: 8px;
+                    border-radius: 2px;
                     padding: 14px;
                     margin-bottom: 12px;
                     box-shadow: 0 0 15px rgba(251, 191, 36, 0.3);
@@ -10865,7 +10861,7 @@ module.exports = class ShadowArmy {
                         font-size: 20px;
                         font-weight: bold;
                         padding: 8px;
-                        border-radius: 8px;
+                        border-radius: 2px;
                         width: 48px;
                         height: 48px;
                         display: flex;
@@ -10902,7 +10898,7 @@ module.exports = class ShadowArmy {
                         </div>
 
                         <!-- Stats Grid -->
-                        <div style="background: rgba(0, 0, 0, 0.3); border-radius: 6px; padding: 8px; margin-bottom: 8px;">
+                        <div style="background: rgba(0, 0, 0, 0.3); border-radius: 2px; padding: 8px; margin-bottom: 8px;">
                           <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 4px;">
                             <div style="text-align: center;">
                               <div style="color: #ef4444; font-size: 9px; font-weight: 600; margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px;">STR</div>
@@ -11460,16 +11456,16 @@ module.exports = class ShadowArmy {
           <div style="font-size: 11px; opacity: 0.8; margin-top: 4px;">Generals provide full buffs • Other shadows provide diminishing returns</div>
         </div>
 
-        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
-          <button type="button" data-sa-action="diagnostic" style="padding: 6px 12px; background: #8a2be2; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
+        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 2px;">
+          <button type="button" data-sa-action="diagnostic" style="padding: 6px 12px; background: #8a2be2; color: white; border: none; border-radius: 2px; cursor: pointer; font-size: 12px; font-weight: 600;">
             Check Actual Storage (Diagnostic)
           </button>
           <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Click to check IndexedDB for actual shadow count</div>
           <div id="shadow-army-diagnostic-result" style="margin-top: 8px; font-size: 11px; color: #9370db;"></div>
         </div>
 
-        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px;">
-          <button type="button" data-sa-action="test-arise" style="padding: 6px 12px; background: #6d28d9; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 600;">
+        <div style="margin-top: 12px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 2px;">
+          <button type="button" data-sa-action="test-arise" style="padding: 6px 12px; background: #6d28d9; color: white; border: none; border-radius: 2px; cursor: pointer; font-size: 12px; font-weight: 600;">
             Test ARISE Animation
           </button>
           <div style="font-size: 10px; opacity: 0.7; margin-top: 4px;">Triggers a test ARISE animation with a dummy shadow to verify font & styling</div>
@@ -11482,7 +11478,7 @@ module.exports = class ShadowArmy {
             }>
             <span>Debug Mode (Console logs for font verification & animation)</span>
           </label>
-          <div style="margin-top: 8px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 4px; font-size: 11px; color: rgba(255, 255, 255, 0.7);">
+          <div style="margin-top: 8px; padding: 8px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; font-size: 11px; color: rgba(255, 255, 255, 0.7);">
             <strong style="color: #8a2be2;">Debug Mode:</strong> Enable to see detailed console logs for:
             <ul style="margin: 4px 0; padding-left: 20px;">
               <li>Font loading status (FONT_LOADER)</li>
@@ -11544,14 +11540,14 @@ module.exports = class ShadowArmy {
 
           const errorHtml =
             diagnostic.errors.length > 0
-              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; font-size: 10px; color: #ef4444;">
+              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(239, 68, 68, 0.1); border-radius: 2px; font-size: 10px; color: #ef4444;">
                    <strong>Errors:</strong><br>
                    ${diagnostic.errors.map((e) => safe(`- ${e}`)).join('<br>')}
                  </div>`
               : '';
 
           const sampleHtml = diagnostic.sampleShadow
-            ? `<div style="margin-top: 8px; padding: 6px; background: rgba(52, 211, 153, 0.1); border-radius: 4px; font-size: 10px;">
+            ? `<div style="margin-top: 8px; padding: 6px; background: rgba(52, 211, 153, 0.1); border-radius: 2px; font-size: 10px;">
                  <strong>Sample Shadow Found:</strong><br>
                  ID: ${safe(diagnostic.sampleShadow.id)}<br>
                  Rank: ${safe(diagnostic.sampleShadow.rank)}, Role: ${safe(
@@ -11563,7 +11559,7 @@ module.exports = class ShadowArmy {
 
           const noteHtml =
             diagnostic.counts.indexedDB > 0 && diagnostic.counts.localStorage === 0
-              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(138, 43, 226, 0.2); border-radius: 4px; font-size: 10px; color: #9370db;">
+              ? `<div style="margin-top: 8px; padding: 6px; background: rgba(138, 43, 226, 0.2); border-radius: 2px; font-size: 10px; color: #9370db;">
                    <strong>Note:</strong> Shadows are in IndexedDB (${safe(
                      diagnostic.counts.indexedDB
                    )}) but not in local settings cache. IndexedDB is the primary storage.
@@ -11571,7 +11567,7 @@ module.exports = class ShadowArmy {
               : '';
 
           resultDiv.innerHTML = `
-            <div style="background: rgba(138, 43, 226, 0.15); padding: 12px; border-radius: 4px; margin-top: 8px; border: 1px solid rgba(138, 43, 226, 0.3);">
+            <div style="background: rgba(138, 43, 226, 0.15); padding: 12px; border-radius: 2px; margin-top: 8px; border: 1px solid rgba(138, 43, 226, 0.3);">
               <div style="font-weight: bold; margin-bottom: 8px; color: #9370db;">Storage Diagnostic Results:</div>
               <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; font-size: 11px;">
                 <div>Local cache:</div>

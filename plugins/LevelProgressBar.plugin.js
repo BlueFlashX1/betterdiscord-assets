@@ -746,9 +746,9 @@ module.exports = class LevelProgressBar {
     const panel = document.createElement('div');
     panel.style.padding = '20px';
     panel.innerHTML = `
-      <div style="background: #1e1e2e; border-radius: 8px; padding: 20px;">
+      <div style="background: #1e1e2e; border-radius: 0; padding: 20px;">
         <h3 style="color: #8a2be2; margin: 0 0 16px 0; font-size: 16px; font-weight: 600;">Level Progress Bar</h3>
-        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 6px; border: 1px solid #3a3a4e;">
+        <label style="display: flex; align-items: center; cursor: pointer; padding: 10px 12px; background: #2a2a3e; border-radius: 2px; border: 1px solid #3a3a4e;">
           <input type="checkbox" ${this.settings.debugMode ? 'checked' : ''} data-lpb-setting="debugMode"
             style="accent-color: #8a2be2; width: 16px; height: 16px; margin: 0;">
           <span style="margin-left: 10px; color: #e0e0e0; font-size: 14px;">Debug Mode</span>

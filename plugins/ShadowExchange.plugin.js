@@ -1286,12 +1286,16 @@ module.exports = class ShadowExchange {
   setupSwirlObserver() {
     if (this._swirlObserver) return;
 
-    const appMount = document.getElementById("app-mount") || document.body;
-    if (!appMount) return;
+    // PERF: Narrow observer scope to the base layout container instead of full app-mount.
+    // The swirl icon lives in the channel header toolbar, which only changes during
+    // channel navigation — no need to observe settings overlays, modals, or popouts.
+    const observeRoot =
+      document.querySelector('[class*="baseLayer_"]') ||
+      document.querySelector('[class*="base_"]') ||
+      document.getElementById("app-mount") ||
+      document.body;
+    if (!observeRoot) return;
 
-    // PERF: Throttle observer callback — app-mount subtree fires on every DOM mutation
-    // in the entire app. scheduleSwirlIconReinject already debounces, but thousands of
-    // redundant timeout-set-then-clear cycles per second add up.
     let lastSwirlCheck = 0;
     this._swirlObserver = new MutationObserver(() => {
       const now = Date.now();
@@ -1299,7 +1303,7 @@ module.exports = class ShadowExchange {
       lastSwirlCheck = now;
       this._scheduleSwirlIconReinject();
     });
-    this._swirlObserver.observe(appMount, { childList: true, subtree: true });
+    this._swirlObserver.observe(observeRoot, { childList: true, subtree: true });
 
     this._swirlResizeHandler = () => this._scheduleSwirlIconReinject(80);
     window.addEventListener("resize", this._swirlResizeHandler, { passive: true });
@@ -1521,7 +1525,7 @@ ${buildPortalTransitionCSS()}
         max-height: 82vh;
         background: #1e1e2e;
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 14px;
+        border-radius: 2px;
         box-shadow: 0 0 40px rgba(138, 43, 226, 0.2), 0 8px 32px rgba(0, 0, 0, 0.6);
         display: flex;
         flex-direction: column;
@@ -1558,7 +1562,7 @@ ${buildPortalTransitionCSS()}
         background: linear-gradient(135deg, #7c3aed, #8a2be2);
         color: #fff;
         border: none;
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 6px 14px;
         font-size: 12px;
         font-weight: 600;
@@ -1593,7 +1597,7 @@ ${buildPortalTransitionCSS()}
       .se-sort-select, .se-search-input {
         background: rgba(0, 0, 0, 0.3);
         border: 1px solid rgba(138, 43, 226, 0.2);
-        border-radius: 6px;
+        border-radius: 2px;
         color: #ddd;
         padding: 6px 10px;
         font-size: 12px;
@@ -1666,7 +1670,7 @@ ${buildPortalTransitionCSS()}
         background: rgba(0, 0, 0, 0.25);
         border: 1px solid rgba(138, 43, 226, 0.12);
         border-left: 3px solid #808080;
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 10px 14px;
         transition: background 0.15s ease, border-color 0.15s ease;
       }
@@ -1684,7 +1688,7 @@ ${buildPortalTransitionCSS()}
       .se-shadow-rank {
         display: inline-block;
         padding: 1px 6px;
-        border-radius: 3px;
+        border-radius: 2px;
         font-size: 10px;
         font-weight: 700;
         color: #fff;
@@ -1708,7 +1712,7 @@ ${buildPortalTransitionCSS()}
         font-size: 12px;
         cursor: pointer;
         padding: 2px 4px;
-        border-radius: 4px;
+        border-radius: 2px;
         transition: color 0.15s ease, background 0.15s ease;
         flex-shrink: 0;
       }
@@ -1737,7 +1741,7 @@ ${buildPortalTransitionCSS()}
         background: rgba(138, 43, 226, 0.15);
         color: #a78bfa;
         padding: 1px 6px;
-        border-radius: 3px;
+        border-radius: 2px;
         font-size: 10px;
         font-weight: 600;
         letter-spacing: 0.3px;
@@ -1756,7 +1760,7 @@ ${buildPortalTransitionCSS()}
       .se-message-preview {
         background: rgba(0, 0, 0, 0.2);
         border-left: 2px solid rgba(138, 43, 226, 0.3);
-        border-radius: 0 4px 4px 0;
+        border-radius: 0 2px 2px 0;
         padding: 5px 8px;
         margin: 4px 0 6px 0;
         font-size: 12px;
@@ -1786,7 +1790,7 @@ ${buildPortalTransitionCSS()}
         background: linear-gradient(135deg, #6d28d9, #8a2be2);
         color: #fff;
         border: none;
-        border-radius: 5px;
+        border-radius: 2px;
         padding: 5px 16px;
         font-size: 11px;
         font-weight: 600;

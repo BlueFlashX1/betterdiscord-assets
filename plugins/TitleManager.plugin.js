@@ -906,7 +906,7 @@ module.exports = class SoloLevelingTitleManager {
     panel.style.cssText = `
       padding: 20px;
       background: #1e1e2e;
-      border-radius: 8px;
+      border-radius: 0;
       border: 2px solid rgba(138, 43, 226, 0.3);
       box-shadow: 0 0 30px rgba(138, 43, 226, 0.2);
     `;
@@ -927,7 +927,7 @@ module.exports = class SoloLevelingTitleManager {
           margin-bottom: 20px;
           padding: 15px;
           background: rgba(138, 43, 226, 0.1);
-          border-radius: 8px;
+          border-radius: 0;
           border-left: 3px solid #8a2be2;
         ">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 10px;">Sort Preferences</div>
@@ -946,7 +946,7 @@ module.exports = class SoloLevelingTitleManager {
           margin-bottom: 15px;
           padding: 12px;
           background: rgba(0, 0, 0, 0.3);
-          border-radius: 8px;
+          border-radius: 0;
           cursor: pointer;
           transition: all 0.3s ease;
         ">
@@ -966,7 +966,7 @@ module.exports = class SoloLevelingTitleManager {
           margin-top: 15px;
           padding: 15px;
           background: rgba(138, 43, 226, 0.1);
-          border-radius: 8px;
+          border-radius: 0;
           border-left: 3px solid #8a2be2;
         ">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
@@ -1030,7 +1030,7 @@ module.exports = class SoloLevelingTitleManager {
       .tm-title-button {
         background: transparent;
         border: 1px solid rgba(138, 43, 226, 1);
-        border-radius: 4px;
+        border-radius: 2px;
         width: 32px;
         height: 32px;
         cursor: pointer;
@@ -1082,7 +1082,7 @@ module.exports = class SoloLevelingTitleManager {
       .tm-modal-content {
         background: linear-gradient(135deg, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0.85) 100%);
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 16px;
+        border-radius: 2px;
         width: 90%;
         max-width: 800px;
         max-height: 90vh;
@@ -1129,7 +1129,7 @@ module.exports = class SoloLevelingTitleManager {
         padding: 10px 16px;
         background: #0d0d14;
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 8px;
+        border-radius: 2px;
         color: #e8dcff;
         font-size: 14px;
         font-weight: 500;
@@ -1186,7 +1186,7 @@ module.exports = class SoloLevelingTitleManager {
         display: flex;
         align-items: center;
         justify-content: center;
-        border-radius: 8px;
+        border-radius: 2px;
         transition: all 0.2s ease;
       }
 
@@ -1201,7 +1201,7 @@ module.exports = class SoloLevelingTitleManager {
       .tm-active-title {
         background: rgba(0, 255, 136, 0.1);
         border: 2px solid rgba(0, 255, 136, 0.5);
-        border-radius: 12px;
+        border-radius: 2px;
         padding: 20px;
         margin-bottom: 20px;
         text-align: center;
@@ -1231,7 +1231,7 @@ module.exports = class SoloLevelingTitleManager {
         padding: 8px 20px;
         background: rgba(255, 68, 68, 0.8);
         border: 2px solid rgba(255, 68, 68, 1);
-        border-radius: 6px;
+        border-radius: 2px;
         color: white;
         font-weight: bold;
         cursor: pointer;
@@ -1246,7 +1246,7 @@ module.exports = class SoloLevelingTitleManager {
       .tm-no-title {
         background: rgba(138, 43, 226, 0.1);
         border: 2px dashed rgba(138, 43, 226, 0.3);
-        border-radius: 12px;
+        border-radius: 2px;
         padding: 30px;
         margin-bottom: 20px;
         text-align: center;
@@ -1301,7 +1301,7 @@ module.exports = class SoloLevelingTitleManager {
       .tm-title-card {
         background: rgba(0, 0, 0, 0.6);
         border: 2px solid rgba(138, 43, 226, 0.3);
-        border-radius: 12px;
+        border-radius: 2px;
         padding: 20px;
         text-align: center;
         transition: all 0.3s ease;
@@ -1347,7 +1347,7 @@ module.exports = class SoloLevelingTitleManager {
         font-weight: bold;
         padding: 6px 12px;
         background: rgba(0, 255, 136, 0.2);
-        border-radius: 6px;
+        border-radius: 2px;
         display: inline-block;
       }
 
@@ -1356,7 +1356,7 @@ module.exports = class SoloLevelingTitleManager {
         padding: 8px;
         background: linear-gradient(135deg, #8a2be2 0%, #8a2be2 100%);
         border: 2px solid rgba(138, 43, 226, 0.8);
-        border-radius: 6px;
+        border-radius: 2px;
         color: white;
         font-weight: bold;
         cursor: pointer;

@@ -966,7 +966,7 @@ module.exports = class SoloLevelingStats {
       this.domCache.valid = true;
       this.domCache.lastUpdate = Date.now();
     } catch (error) {
-      console.error('[SoloLevelingStats] DOM cache initialization failed:', error);
+      this.errorLog('DOM_CACHE', 'DOM cache initialization failed:', error);
       this.domCache.valid = false;
     }
   }
@@ -1261,7 +1261,7 @@ module.exports = class SoloLevelingStats {
   getChannelStore() {
     let channelStore = this.webpackModules?.ChannelStore;
     if (!channelStore?.getChannel) {
-      channelStore = BdApi.Webpack.getModule((m) => m?.getChannel && m?.getLastSelectedChannelId);
+      channelStore = BdApi.Webpack.getModule((m) => m && m.getChannel && m.getLastSelectedChannelId);
       if (channelStore) this.webpackModules.ChannelStore = channelStore;
     }
     return channelStore || null;
@@ -4401,7 +4401,6 @@ module.exports = class SoloLevelingStats {
     }
 
     this.debugLog('BACKUP_STATUS', 'SoloLevelingStats backup status', { statuses });
-    console.log('[SoloLevelingStats] Backup status:', statuses.join(' | '));
     return statuses;
   }
 
@@ -4409,7 +4408,7 @@ module.exports = class SoloLevelingStats {
     try {
       const data = this.readFileBackup();
       if (!data) {
-        console.warn('[SoloLevelingStats] No file backup found to restore.');
+        this.warnLog('RESTORE_FILE_BACKUP', 'No file backup found to restore.');
         return false;
       }
       // Use deep copy to avoid reference issues
@@ -4419,18 +4418,16 @@ module.exports = class SoloLevelingStats {
       this.debugLog('RESTORE_FILE_BACKUP', 'Restored from file backup and saved to stores', {
         path: this.fileBackupPath,
       });
-      console.log('[SoloLevelingStats] Restored from file backup and saved to stores.');
       return true;
     } catch (error) {
       this.debugError('RESTORE_FILE_BACKUP', error);
-      console.error('[SoloLevelingStats] Failed to restore from file backup:', error);
       return false;
     }
   }
 
   async checkIndexedDBBackups() {
     if (!UnifiedSaveManager) {
-      console.warn('[SoloLevelingStats] UnifiedSaveManager not available for IndexedDB checks.');
+      this.warnLog('INDEXEDDB_CHECK', 'UnifiedSaveManager not available for IndexedDB checks.');
       return null;
     }
     const manager = new UnifiedSaveManager('SoloLevelingStats');
@@ -4463,13 +4460,12 @@ module.exports = class SoloLevelingStats {
     }));
 
     this.debugLog('INDEXEDDB_STATUS', 'IndexedDB status', result);
-    console.log('[SoloLevelingStats] IndexedDB status:', result);
     return result;
   }
 
   async restoreFromIndexedDBBackup(backupId = null) {
     if (!UnifiedSaveManager) {
-      console.warn('[SoloLevelingStats] UnifiedSaveManager not available for IndexedDB restore.');
+      this.warnLog('INDEXEDDB_RESTORE', 'UnifiedSaveManager not available for IndexedDB restore.');
       return false;
     }
     const manager = new UnifiedSaveManager('SoloLevelingStats');
@@ -4479,7 +4475,7 @@ module.exports = class SoloLevelingStats {
     if (!targetId) {
       const backups = await manager.getBackups('settings', 1);
       if (!backups.length) {
-        console.error('[SoloLevelingStats] No IndexedDB backups found.');
+        this.errorLog('INDEXEDDB_RESTORE', 'No IndexedDB backups found.');
         return false;
       }
       targetId = backups[0].id;
@@ -4487,7 +4483,7 @@ module.exports = class SoloLevelingStats {
 
     const data = await manager.restoreFromBackup('settings', targetId);
     if (!data) {
-      console.error('[SoloLevelingStats] Failed to restore from IndexedDB backup.');
+      this.errorLog('INDEXEDDB_RESTORE', 'Failed to restore from IndexedDB backup.');
       return false;
     }
 
@@ -4496,7 +4492,6 @@ module.exports = class SoloLevelingStats {
     this.recomputeHPManaFromStats();
     await this.saveSettings(true);
     this.debugLog('RESTORE_INDEXEDDB', 'Restored from IndexedDB backup', { backupId: targetId });
-    console.log('[SoloLevelingStats] Restored from IndexedDB backup:', targetId);
     return true;
   }
 
@@ -4958,7 +4953,7 @@ module.exports = class SoloLevelingStats {
             const legacyRaw = fs.readFileSync(legacyPath, 'utf8');
             const legacyData = JSON.parse(legacyRaw);
             if (legacyData && legacyData.level > 1) {
-              console.warn('[SoloLevelingStats] RESCUED: Found real progress in legacy .data.json (level', legacyData.level, ') — refusing to use defaults');
+              this.warnLog('RESCUE', `Found real progress in legacy .data.json (level ${legacyData.level}) — refusing to use defaults`);
               const merged = { ...this.defaultSettings, ...legacyData };
               this.settings = JSON.parse(JSON.stringify(merged));
               if (Array.isArray(this.settings.activity?.channelsVisited)) {
@@ -5004,7 +4999,7 @@ module.exports = class SoloLevelingStats {
         if (fs.existsSync(legacyPath)) {
           const legacyData = JSON.parse(fs.readFileSync(legacyPath, 'utf8'));
           if (legacyData && legacyData.level > 1) {
-            console.warn('[SoloLevelingStats] ERROR-PATH RESCUE: Found real progress in legacy .data.json');
+            this.warnLog('RESCUE', 'ERROR-PATH RESCUE: Found real progress in legacy .data.json');
             const merged = { ...this.defaultSettings, ...legacyData };
             this.settings = JSON.parse(JSON.stringify(merged));
             if (Array.isArray(this.settings.activity?.channelsVisited)) {
@@ -5111,9 +5106,7 @@ module.exports = class SoloLevelingStats {
 
       const currentLooksFresh = !this._isRealProgressState(this.settings);
       if (probeResult.found && currentLooksFresh) {
-        console.warn(
-          `[SoloLevelingStats] BLOCKED save: found persisted progress in ${probeResult.source} (level ${probeResult.level}, totalXP ${probeResult.totalXP}) while current state looks fresh. Reloading instead of overwriting.`
-        );
+        this.warnLog('SAVE_GUARD', `BLOCKED save: found persisted progress in ${probeResult.source} (level ${probeResult.level}, totalXP ${probeResult.totalXP}) while current state looks fresh. Reloading instead of overwriting.`);
         try {
           await this.loadSettings();
         } catch (_) {
@@ -7327,7 +7320,7 @@ module.exports = class SoloLevelingStats {
     try {
       this.shareShadowXP(xpReward, 'quest');
     } catch (error) {
-      console.error('[SoloLevelingStats] Quest shadow XP share error:', error);
+      this.errorLog('QUEST_XP', 'Quest shadow XP share error:', error);
     }
   }
 
@@ -9394,7 +9387,7 @@ module.exports = class SoloLevelingStats {
         margin: 6px 16px 8px 16px;
         background: linear-gradient(135deg, rgba(10, 10, 15, 0.95) 0%, rgba(15, 15, 26, 0.95) 100%);
         border: 1px solid rgba(138, 43, 226, 0.5);
-        border-radius: 10px;
+        border-radius: 2px;
         padding: 14px 12px;
         box-shadow: 0 0 8px rgba(138, 43, 226, 0.4);
         z-index: 1000;
@@ -9473,7 +9466,7 @@ module.exports = class SoloLevelingStats {
         cursor: pointer;
         font-size: 11px;
         padding: 4px 8px;
-        border-radius: 5px;
+        border-radius: 2px;
         transition: all 0.2s ease;
         min-width: 24px;
         display: flex;
@@ -9542,7 +9535,7 @@ module.exports = class SoloLevelingStats {
         padding: 2px 6px;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.2) 0%, rgba(75, 0, 130, 0.15) 100%);
         border: 1px solid rgba(138, 43, 226, 0.4);
-        border-radius: 4px;
+        border-radius: 2px;
         display: inline-flex !important;
         flex-shrink: 0;
         box-shadow: 0 0 4px rgba(138, 43, 226, 0.3);
@@ -9590,7 +9583,7 @@ module.exports = class SoloLevelingStats {
         max-width: 200px;
         height: 8px;
         background: rgba(10, 10, 15, 0.9);
-        border-radius: 4px;
+        border-radius: 2px;
         overflow: hidden;
         border: none !important;
         box-shadow: none !important;
@@ -9607,7 +9600,7 @@ module.exports = class SoloLevelingStats {
         background: linear-gradient(90deg, #8a2be2 0%, #9370db 50%, #ba55d3 100%);
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         position: relative;
-        border-radius: 4px;
+        border-radius: 2px;
         /* COMPLETE GLOW REMOVAL - ALL POSSIBLE SOURCES */
         box-shadow: none !important;
         filter: none !important;
@@ -9737,7 +9730,7 @@ module.exports = class SoloLevelingStats {
         top: 54px;
         transform: translateX(-50%);
         padding: 10px 16px;
-        border-radius: 10px;
+        border-radius: 2px;
         background: rgba(10, 10, 15, 0.92);
         border: 1px solid rgba(138, 43, 226, 0.55);
         color: #a78bfa;
@@ -9861,7 +9854,7 @@ module.exports = class SoloLevelingStats {
       .sls-quest-celebration-content {
         background: linear-gradient(135deg, rgba(5, 5, 10, 0.98) 0%, rgba(10, 5, 15, 0.98) 100%);
         border: 2px solid rgba(138, 43, 226, 0.3);
-        border-radius: 12px;
+        border-radius: 2px;
         padding: 24px 32px;
         text-align: left;
         box-shadow: 0 0 20px rgba(138, 43, 226, 0.2),
@@ -9904,7 +9897,7 @@ module.exports = class SoloLevelingStats {
         padding: 10px;
         background: rgba(138, 43, 226, 0.1);
         border-left: 3px solid rgba(138, 43, 226, 0.5);
-        border-radius: 4px;
+        border-radius: 2px;
       }
 
       .sls-quest-current-progress {
@@ -9932,7 +9925,7 @@ module.exports = class SoloLevelingStats {
         gap: 12px;
         padding: 8px;
         background: rgba(10, 5, 15, 0.6);
-        border-radius: 6px;
+        border-radius: 2px;
         border: 1px solid rgba(138, 43, 226, 0.15);
         transition: all 0.2s ease;
       }
@@ -9984,7 +9977,7 @@ module.exports = class SoloLevelingStats {
         flex: 1;
         height: 6px;
         background: rgba(20, 10, 30, 0.8);
-        border-radius: 3px;
+        border-radius: 2px;
         overflow: hidden;
         border: 1px solid rgba(138, 43, 226, 0.2);
       }
@@ -9993,7 +9986,7 @@ module.exports = class SoloLevelingStats {
         height: 100%;
         background: linear-gradient(90deg, rgba(138, 43, 226, 0.6) 0%, rgba(138, 43, 226, 0.4) 100%);
         transition: width 0.3s ease;
-        border-radius: 3px;
+        border-radius: 2px;
       }
 
       .sls-quest-progress-item.completed .sls-quest-progress-fill {
@@ -10020,7 +10013,7 @@ module.exports = class SoloLevelingStats {
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.3) 0%, rgba(75, 0, 130, 0.3) 100%);
         border: 2px solid rgba(138, 43, 226, 0.5);
-        border-radius: 8px;
+        border-radius: 2px;
         padding: 12px 32px;
         color: rgba(200, 180, 255, 0.95);
         font-size: 14px;
@@ -10265,7 +10258,7 @@ module.exports = class SoloLevelingStats {
         position: relative;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.12) 0%, rgba(75, 0, 130, 0.08) 100%);
         border: 1px solid rgba(138, 43, 226, 0.35);
-        border-radius: 5px;
+        border-radius: 2px;
         padding: 5px 9px;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -10300,7 +10293,7 @@ module.exports = class SoloLevelingStats {
         font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
         background: rgba(138, 43, 226, 0.2);
         border: 1px solid rgba(138, 43, 226, 0.4);
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 6px 10px;
         color: #d4a5ff;
         font-weight: 700;
@@ -10329,7 +10322,7 @@ module.exports = class SoloLevelingStats {
         position: relative;
         background: linear-gradient(135deg, rgba(138, 43, 226, 0.15) 0%, rgba(75, 0, 130, 0.1) 100%);
         border: 1px solid rgba(138, 43, 226, 0.3);
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 8px 12px;
         min-width: 50px;
         cursor: pointer;
@@ -10415,7 +10408,7 @@ module.exports = class SoloLevelingStats {
       .sls-chat-title-display {
         background: rgba(138, 43, 226, 0.15);
         border: 1px solid rgba(138, 43, 226, 0.3);
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 6px 10px;
         margin-bottom: 8px;
         display: flex;
@@ -10461,7 +10454,7 @@ module.exports = class SoloLevelingStats {
         margin: 8px 0 4px 0;
         background: rgba(138, 43, 226, 0.1);
         border: 1px solid rgba(138, 43, 226, 0.3);
-        border-radius: 6px;
+        border-radius: 2px;
         cursor: pointer;
         transition: all 0.2s;
       }
@@ -10487,7 +10480,7 @@ module.exports = class SoloLevelingStats {
         margin-bottom: 8px;
         padding: 8px;
         background: rgba(138, 43, 226, 0.05);
-        border-radius: 6px;
+        border-radius: 2px;
       }
 
       .sls-chat-activity-grid {
@@ -10499,7 +10492,7 @@ module.exports = class SoloLevelingStats {
       .sls-chat-activity-item {
         background: rgba(138, 43, 226, 0.1);
         border: 1px solid rgba(138, 43, 226, 0.2);
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 8px;
         text-align: center;
       }
@@ -10522,7 +10515,7 @@ module.exports = class SoloLevelingStats {
         background: rgba(138, 43, 226, 0.08);
         border: 1px solid rgba(138, 43, 226, 0.2);
         border-left: 3px solid rgba(138, 43, 226, 0.4);
-        border-radius: 6px;
+        border-radius: 2px;
         padding: 8px;
         margin-bottom: 6px;
         position: relative;
@@ -10595,7 +10588,7 @@ module.exports = class SoloLevelingStats {
         padding: 6px;
         background: rgba(138, 43, 226, 0.1);
         border: 1px solid rgba(138, 43, 226, 0.3);
-        border-radius: 6px;
+        border-radius: 2px;
       }
 
       .sls-chat-achievement-icon {
@@ -10641,7 +10634,7 @@ module.exports = class SoloLevelingStats {
     container.style.cssText = `
       padding: 20px;
       background: #1e1e2e;
-      border-radius: 8px;
+      border-radius: 2px;
       border: 1px solid rgba(138, 43, 226, 0.5);
       color: #ffffff;
       font-family: 'Segoe UI', sans-serif;
@@ -10674,7 +10667,7 @@ module.exports = class SoloLevelingStats {
       margin-top: 20px;
       padding: 15px;
       background: rgba(138, 43, 226, 0.1);
-      border-radius: 8px;
+      border-radius: 2px;
       border-left: 3px solid #8a2be2;
     `;
     info.innerHTML = `
@@ -10751,7 +10744,7 @@ module.exports = class SoloLevelingStats {
           debugMode: () =>
             this.withAutoSave(() => {
               this.settings.debugMode = isChecked;
-              console.log('[SoloLevelingStats] Debug mode', isChecked ? 'enabled' : 'disabled');
+              this.debugLog('SETTINGS', 'Debug mode', isChecked ? 'enabled' : 'disabled');
             }, true),
         };
 
@@ -10856,7 +10849,7 @@ module.exports = class SoloLevelingStats {
       margin-bottom: 20px;
       padding: 15px;
       background: rgba(138, 43, 226, 0.05);
-      border-radius: 8px;
+      border-radius: 2px;
       border: 1px solid rgba(138, 43, 226, 0.2);
     `;
 
@@ -10911,7 +10904,7 @@ module.exports = class SoloLevelingStats {
       margin-bottom: 8px;
       padding: 15px;
       background: rgba(138, 43, 226, 0.05);
-      border-radius: 8px;
+      border-radius: 2px;
       border: 1px solid rgba(138, 43, 226, 0.2);
     `;
 
@@ -10922,7 +10915,7 @@ module.exports = class SoloLevelingStats {
     button.setAttribute('data-sls-action', actionKey);
     button.style.cssText = `
       padding: 10px 14px;
-      border-radius: 8px;
+      border-radius: 2px;
       border: 1px solid rgba(138, 43, 226, 0.55);
       background: ${disabled ? 'rgba(120, 120, 120, 0.35)' : 'rgba(138, 43, 226, 0.25)'};
       color: #ffffff;

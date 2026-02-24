@@ -826,7 +826,7 @@ module.exports = (() => {
       pointer-events: none;
       z-index: 100000;
       border: 2px solid rgba(138, 43, 226, 0.95);
-      border-radius: 6px;
+      border-radius: 2px;
       background: transparent;
       box-shadow: none;
     `;
@@ -846,7 +846,7 @@ module.exports = (() => {
       background: var(--brand-color, #5865f2);
       color: #ffffff;
       border: 1px solid rgba(255, 255, 255, 0.12);
-      border-radius: 10px;
+      border-radius: 2px;
       padding: 10px 12px;
       cursor: pointer;
       font-weight: 700;
@@ -872,7 +872,7 @@ module.exports = (() => {
       pointer-events: none;
       background: rgba(17, 18, 20, 0.92);
       border: 1px solid rgba(88, 101, 242, 0.65);
-      border-radius: 8px;
+      border-radius: 2px;
       padding: 10px 12px;
       overflow: auto;
       font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
@@ -1015,7 +1015,7 @@ module.exports = (() => {
             color: white;
             border: none;
             padding: 10px 14px;
-            border-radius: 6px;
+            border-radius: 2px;
             cursor: pointer;
             font-weight: 600;
             margin-right: 10px;
@@ -1025,7 +1025,7 @@ module.exports = (() => {
             color: var(--text-normal, #dcddde);
             border: none;
             padding: 10px 14px;
-            border-radius: 6px;
+            border-radius: 2px;
             cursor: pointer;
           ">Stop</button>
         </div>
@@ -1047,13 +1047,13 @@ module.exports = (() => {
             <span style="min-width: 140px; opacity: 0.85;">Rule hints count</span>
             <input id="css-picker-toast-rule-count" type="number" min="0" max="6" value="${escapeHtml(
               settings.toastRuleCount
-            )}" style="width: 80px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+            )}" style="width: 80px; padding: 6px 8px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
           </label>
           <label style="display:flex; gap: 10px; align-items:center; margin-bottom: 8px;">
             <span style="min-width: 140px; opacity: 0.85;">Toast timeout (ms)</span>
             <input id="css-picker-toast-timeout" type="number" min="1500" max="20000" value="${escapeHtml(
               settings.toastTimeoutMs
-            )}" style="width: 120px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+            )}" style="width: 120px; padding: 6px 8px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
           </label>
         </div>
         <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(255,255,255,0.08);">
@@ -1068,7 +1068,7 @@ module.exports = (() => {
             <span style="min-width: 140px; opacity: 0.85;">Hotkey</span>
             <input id="css-picker-hotkey" type="text" value="${escapeHtml(
               settings.hotkey
-            )}" style="width: 200px; padding: 6px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
+            )}" style="width: 200px; padding: 6px 8px; border-radius: 2px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.25); color: var(--text-normal, #dcddde);" />
             <span style="opacity: 0.7;">Example: Ctrl+Shift+P</span>
           </label>
         </div>

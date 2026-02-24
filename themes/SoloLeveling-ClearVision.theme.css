@@ -353,7 +353,7 @@ div[class^="membersWrap_"] {
 /* Boxed member rows — each user entry gets a subtle card look */
 div[class^="members_"] div[class^="member_"] {
   background: rgba(0, 0, 0, 0.5) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   margin: 10px 8px !important;
   padding: 8px 8px !important;
   border: 2px solid transparent !important;
@@ -421,7 +421,7 @@ main[aria-label="Friends"] div[class^="grid_"] button[class^="container_"] {
   background: rgba(10, 10, 16, 0.85) !important;
   background-image: none !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
-  border-radius: 10px !important;
+  border-radius: 2px !important;
   padding: 12px 16px !important;
   transition: border-color 0.2s ease, background-color 0.2s ease !important;
 }
@@ -458,7 +458,7 @@ div[class*="userPopoutOuter_"] {
   background: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -484,7 +484,7 @@ div[role="menu"],
   background: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -517,7 +517,7 @@ div[aria-label='Quick Switcher'] div[class^='container_'],
 div[aria-label='Quick Switcher'] div[class^='quickswitcher_'] {
   background: rgba(10, 10, 16, 0.96) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.35) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.45) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -583,7 +583,7 @@ div[role="dialog"][aria-label="Quick Switcher"] div[class^="container_"] {
 div[role="dialog"][aria-label="Quick Switcher"] div[class^="quickswitcher_"] {
   background: rgba(10, 10, 16, 0.98) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.48) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.52) !important;
 }
 
@@ -683,7 +683,7 @@ div[class*="bd-addon-error" i],
 div[class*="bd-error-modal" i] {
   background: rgba(10, 10, 16, 0.98) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.42) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.55) !important;
   backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
@@ -1075,6 +1075,10 @@ nav[aria-label="Servers sidebar"] ul[role="tree"] > div[class^="itemsContainer_"
    The SVG path (Discord logo) is already display:none from ClearVision. */
 div[class^="tutorialContainer_"] div[class^="childWrapper_"] > svg[role="img"] {
   background: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/shadow_icon.png') center/contain no-repeat !important;
+  opacity: 1 !important;
+}
+div[class^="tutorialContainer_"] div[class^="childWrapper_"] {
+  opacity: 1 !important;
 }
 
 /* §6f (override) — Error dialog tip row: using .bd-error-modal class selector
@@ -1100,7 +1104,7 @@ div[class^="root_"][class*="rootWithShadow_"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   overflow: hidden !important;
   box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
 }
@@ -1198,7 +1202,7 @@ div[class^="channelTextArea_"] button[class*="emojiButton_"],
 div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button {
   background: rgba(8, 10, 20, 0.96) !important;
   border: 1px solid var(--sl-color-primary) !important;
-  border-radius: 6px !important;
+  border-radius: 2px !important;
   padding: 4px !important;
   margin: 0 2px !important;
 }
@@ -1229,7 +1233,7 @@ div[class*="contentWrapper_"]:has(div[class*="gifPicker_"]) {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 2px solid var(--sl-color-primary) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
 }
 /* Inner surfaces of expression picker: no border, solid bg only */
 div[class^="emojiPicker_"],
@@ -1359,7 +1363,7 @@ div[class^="resultsWrapper_"] {
   background: rgba(10, 10, 16, 0.98) !important;
   background-image: none !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
 }
 
 /* §9h (continued) — Search result outer wrapper: 3px purple border on hover
@@ -1368,7 +1372,7 @@ div[class^="resultsWrapper_"] {
 section[aria-label="Search Results"] div[class^="searchResult_"]:hover,
 div[class^="searchResultsWrap_"] div[class^="searchResult_"]:hover {
   border: 3px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
 }
 
 /* §9h (continued) — Search dropdown option rows: purple hover highlight */
@@ -1530,7 +1534,7 @@ div[class^="callContainer_"] div[class^="scroller_"]::-webkit-scrollbar {
 section[aria-label="User status and settings"] > div[class^="wrapper_"] {
   background: rgba(8, 10, 20, 0.96) !important;
   background-image: none !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   border: none !important;
   border-bottom: none !important;
   position: relative !important;
@@ -1540,7 +1544,7 @@ section[aria-label="User status and settings"] > div[class^="wrapper_"] {
 section[aria-label="User status and settings"] > div[class^="wrapper_"] > div[class^="container_"] {
   background: rgba(8, 10, 20, 0.96) !important;
   background-image: none !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   border: none !important;
   border-bottom: none !important;
 }
@@ -1571,7 +1575,7 @@ section[aria-label="User status and settings"] > div[class^="wrapper_"] div[clas
    On hover: slightly thicker + brighter purple glow. */
 div[class^="callContainer_"] div[class^="tileChild_"] {
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
   transition: border 0.15s ease, box-shadow 0.15s ease !important;
 }
 div[class^="callContainer_"] div[class^="tileChild_"]:hover {
@@ -1679,7 +1683,7 @@ article[class^="embed_"] {
   background-image: none !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
   border-left: 4px solid var(--sl-color-primary) !important;
-  border-radius: 4px !important;
+  border-radius: 2px !important;
 }
 /* Embed inner grid container: transparent so parent bg shows through */
 article[class^="embedFull_"] div[class^="gridContainer_"],
@@ -1798,7 +1802,7 @@ div[class^="messagesWrapper_"] time {
 .user-profile-popout div[class^="footer_"] textarea {
   background: rgba(15, 17, 30, 0.95) !important;
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.3) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   color: #e0e0e0 !important;
 }
 .user-profile-popout div[class^="footer_"] div[class^="inputWrapper_"]:focus-within,
@@ -1890,7 +1894,7 @@ div[class^="messagesWrapper_"] time {
    status in the member list or chat. Uses popout_af3b89 class. */
 div[id^="popout_"] div[class^="popout_"]:has(div[class^="popoutContentWrapper_"]) {
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   overflow: hidden !important;
 }
 
@@ -1940,7 +1944,7 @@ div[class^="headerBarInner_"] div[class^="tabBarItem_"] {
   background: transparent !important;
   background-image: none !important;
   border: 1px solid transparent !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   padding: 6px 14px !important;
   margin: 0 4px 0 0 !important;
   transition: background 0.15s, border-color 0.15s, box-shadow 0.15s !important;
@@ -2070,7 +2074,7 @@ div[class^="contentBody_"] div[class*="card_"] {
 /* Purple outline only on the message preview card */
 div[class^="contentBody_"] div[class^="preview_"] {
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
 }
 /* §10c (continued) — Account profile card bg + credential list: match container */
 div[class^="contentBody_"] div[class^="background_"],
@@ -2108,7 +2112,7 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"] {
   background: transparent !important;
   background-image: none !important;
   border: 1px solid transparent !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   padding: 6px 14px !important;
   margin: 0 4px -1px 0 !important;
   box-shadow: none !important;
@@ -2200,7 +2204,7 @@ div[id^="popout_"] div[role="listbox"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 1px solid var(--sl-color-primary) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   box-shadow: none !important;
 }
 /* §10e (continued) — All inner elements of dropdown lists: solid bg
@@ -2293,7 +2297,7 @@ ul[class^="guildsList_"] > li div[class^="container_"] {
 ul[class^="guildsList_"] > li img {
   width: 48px !important;
   height: 48px !important;
-  border-radius: 12px !important;
+  border-radius: 2px !important;
   flex-shrink: 0 !important;
 }
 /* Server name + member count wrapper: fill middle space, left align */
@@ -2334,7 +2338,7 @@ div[class^="container_"] div[class*="wrapper_"][class*="selectField_"] {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 1px solid var(--sl-color-primary) !important;
-  border-radius: 8px !important;
+  border-radius: 2px !important;
   box-shadow: none !important;
 }
 div[class^="container_"] div[class*="selectField_"]:hover,

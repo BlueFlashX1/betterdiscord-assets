@@ -1538,7 +1538,7 @@ module.exports = class SoloLevelingToasts {
   getSettingsPanel() {
     this.detachSoloLevelingToastsSettingsPanelHandlers();
     const panel = document.createElement('div');
-    panel.style.cssText = 'padding: 20px; background: #1e1e2e; border-radius: 8px;';
+    panel.style.cssText = 'padding: 20px; background: #1e1e2e; border-radius: 0;';
     panel.innerHTML = `
       <div>
         <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Notification Settings</h3>
@@ -1570,7 +1570,7 @@ module.exports = class SoloLevelingToasts {
 
         <label style="display: flex; flex-direction: column; margin-bottom: 15px;">
           <span style="margin-bottom: 5px;">Position:</span>
-          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(138, 43, 226, 0.2); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 8px; color: #fff; width: 100%;">
+          <select id="toast-position" data-slt-setting="position" style="padding: 8px; background: rgba(138, 43, 226, 0.2); border: 1px solid rgba(138, 43, 226, 0.4); border-radius: 2px; color: #fff; width: 100%;">
             <option value="top-right" ${
               this.settings.position === 'top-right' ? 'selected' : ''
             }>Top Right</option>
@@ -1593,7 +1593,7 @@ module.exports = class SoloLevelingToasts {
           <span style="margin-left: 10px;">Debug Mode (Show console logs)</span>
         </label>
 
-        <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 8px; border-left: 3px solid #8a2be2;">
+        <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:

@@ -1513,7 +1513,7 @@ module.exports = class ShadowRecon {
   margin: 6px 8px;
   padding: 8px 10px;
   border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 10px;
+  border-radius: 2px;
   background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
   color: #bfdbfe;
   font-size: 11px;
@@ -1529,7 +1529,7 @@ module.exports = class ShadowRecon {
   transform: rotate(90deg);
   margin: 10px -12px;
   padding: 7px 9px;
-  border-radius: 8px;
+  border-radius: 2px;
   font-size: 10px;
   line-height: 1.2;
 }
@@ -1543,7 +1543,7 @@ module.exports = class ShadowRecon {
   margin: 8px 10px;
   padding: 8px 10px;
   border: 1px solid rgba(96, 165, 250, 0.35);
-  border-radius: 8px;
+  border-radius: 2px;
   background: rgba(15, 23, 42, 0.85);
   color: #bfdbfe;
   font-size: 12px;
@@ -1564,7 +1564,7 @@ module.exports = class ShadowRecon {
 #${MODAL_ID} .shadow-recon-modal {
   width: min(900px, 94vw);
   max-height: 85vh;
-  border-radius: 12px;
+  border-radius: 2px;
   overflow: hidden;
   border: 1px solid rgba(96, 165, 250, 0.45);
   background: #0f172a;
@@ -1590,7 +1590,7 @@ module.exports = class ShadowRecon {
   border: 1px solid rgba(148, 163, 184, 0.45);
   background: transparent;
   color: #e2e8f0;
-  border-radius: 7px;
+  border-radius: 2px;
   width: 30px;
   height: 30px;
   cursor: pointer;
@@ -1611,7 +1611,7 @@ module.exports = class ShadowRecon {
 
 #${MODAL_ID} .shadow-recon-section {
   border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 10px;
+  border-radius: 2px;
   padding: 10px;
   background: rgba(15, 23, 42, 0.82);
 }
@@ -1651,7 +1651,7 @@ module.exports = class ShadowRecon {
   justify-content: space-between;
   align-items: center;
   border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 7px;
+  border-radius: 2px;
   padding: 6px 8px;
   font-size: 12px;
 }
@@ -1670,7 +1670,7 @@ module.exports = class ShadowRecon {
   grid-column: 1 / -1;
   padding: 10px;
   border: 1px solid rgba(250, 204, 21, 0.5);
-  border-radius: 8px;
+  border-radius: 2px;
   color: #fde68a;
   background: rgba(120, 53, 15, 0.22);
   margin-bottom: 8px;
@@ -1678,7 +1678,7 @@ module.exports = class ShadowRecon {
 
 .shadow-recon-button {
   border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 8px;
+  border-radius: 2px;
   background: rgba(15, 23, 42, 0.85);
   color: #dbeafe;
   padding: 7px 10px;

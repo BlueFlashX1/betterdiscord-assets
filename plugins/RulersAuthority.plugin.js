@@ -2060,7 +2060,7 @@ ${sidebarHandleDisable.join(",\n")} {
   width: 24px;
   height: 24px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: background 150ms ease, filter 200ms ease;
   margin-left: 4px;
   opacity: 0.7;

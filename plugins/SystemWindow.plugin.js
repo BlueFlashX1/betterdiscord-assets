@@ -279,7 +279,7 @@ module.exports = class SystemWindow {
     // ── Colors ──
     const BLUE = "59, 130, 246"; // #3b82f6 — System (others)
     const PURPLE = "155, 50, 255"; // #9b32ff — Monarch (self), saturated violet
-    const R = "6px";
+    const R = "2px";
     const BG = "rgba(0, 0, 0, 0.55)"; // Darker codeblock background
 
     return /* css */ `
@@ -471,7 +471,7 @@ module.exports = class SystemWindow {
       li.sw-group-start [class*="timestamp"],
       li.sw-group-middle [class*="timestamp"],
       li.sw-group-end [class*="timestamp"] {
-        opacity: 0.45 !important;
+        opacity: 0.6 !important;
         font-size: 0.68rem !important;
         transition: opacity 200ms ease !important;
       }
@@ -482,7 +482,7 @@ module.exports = class SystemWindow {
       li.sw-group-start:hover [class*="timestamp"],
       li.sw-group-middle:hover [class*="timestamp"],
       li.sw-group-end:hover [class*="timestamp"] {
-        opacity: 0.65 !important;
+        opacity: 0.8 !important;
       }
 
       /* ════════════════════════════════════════════
@@ -592,7 +592,7 @@ module.exports = class SystemWindow {
 
   getSettingsPanel() {
     const panel = document.createElement("div");
-    panel.style.cssText = "padding: 16px; background: #1e1e2e; border-radius: 8px;";
+    panel.style.cssText = "padding: 16px; background: #1e1e2e; border-radius: 0;";
 
     panel.innerHTML = `
       <div>

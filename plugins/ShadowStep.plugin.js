@@ -984,7 +984,7 @@ module.exports = class ShadowStep {
 .ss-panel-container {
   background: #1e1e2e;
   border: 1px solid rgba(138, 43, 226, 0.4);
-  border-radius: 12px;
+  border-radius: 2px;
   width: 420px;
   max-height: 70vh;
   display: flex;
@@ -1019,7 +1019,7 @@ module.exports = class ShadowStep {
   font-size: 20px;
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: color 0.15s ease, background 0.15s ease;
 }
 .ss-panel-close:hover { color: #fff; background: rgba(138, 43, 226, 0.2); }
@@ -1031,7 +1031,7 @@ module.exports = class ShadowStep {
   padding: 8px 12px;
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(138, 43, 226, 0.2);
-  border-radius: 8px;
+  border-radius: 2px;
   color: #ddd;
   font-size: 13px;
   outline: none;
@@ -1056,7 +1056,7 @@ module.exports = class ShadowStep {
   color: #777;
   font-size: 11px;
   padding: 3px 8px;
-  border-radius: 4px;
+  border-radius: 2px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -1081,7 +1081,7 @@ module.exports = class ShadowStep {
 .ss-panel-list::-webkit-scrollbar-track { background: transparent; }
 .ss-panel-list::-webkit-scrollbar-thumb {
   background: rgba(138, 43, 226, 0.3);
-  border-radius: 3px;
+  border-radius: 2px;
 }
 
 .ss-panel-empty {
@@ -1116,7 +1116,7 @@ module.exports = class ShadowStep {
   align-items: center;
   gap: 10px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s ease;
   margin-bottom: 2px;
@@ -1170,7 +1170,7 @@ module.exports = class ShadowStep {
 .ss-anchor-rename-input {
   background: rgba(0, 0, 0, 0.3);
   border: 1px solid rgba(138, 43, 226, 0.4);
-  border-radius: 4px;
+  border-radius: 2px;
   color: #ddd;
   font-size: 13px;
   padding: 2px 6px;
@@ -1185,7 +1185,7 @@ module.exports = class ShadowStep {
   font-size: 16px;
   cursor: pointer;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: color 0.15s ease, background 0.15s ease;
   flex-shrink: 0;
   opacity: 0;

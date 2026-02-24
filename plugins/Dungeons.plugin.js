@@ -942,13 +942,13 @@ module.exports = class Dungeons {
     this.defaultSettings = {
       enabled: true,
       debug: false, // Debug mode: enables verbose console logging
-      spawnChance: 100, // 100% chance per user message (TESTING MODE)
+      spawnChance: 12, // 12% chance per user message
       dungeonDuration: 600000, // 10 minutes
       maxDungeonsPercentage: 0.15, // Max 15% of server channels can have active dungeons
       minDungeonsAllowed: 3, // Always allow at least 3 dungeons even in small servers
       maxDungeonsAllowed: 20, // Cap at 20 dungeons max even in huge servers
       channelSpawnCooldown: 300000, // 5 min cooldown per channel after dungeon ends
-      globalSpawnCooldown: 30000, // 30s between any new dungeon spawn
+      globalSpawnCooldown: 60000, // 60s between any new dungeon spawn
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
@@ -1047,6 +1047,7 @@ module.exports = class Dungeons {
 
     // CHANNEL LOCK SYSTEM: Prevents multiple dungeons in same channel (spam protection)
     this.channelLocks = new Set(); // Locked channels (one dungeon at a time per channel)
+    this._lastGlobalSpawnTime = Date.now(); // Initialize to prevent burst spawning on plugin load
 
     // Plugin references
     this.soloLevelingStats = null;
@@ -2300,6 +2301,11 @@ module.exports = class Dungeons {
         box-shadow: 0 4px 12px rgba(139, 92, 246, 0.7) !important;
         text-shadow: 0 0 10px rgba(139, 92, 246, 1) !important;
       }
+      .dungeon-recall-btn:hover {
+        transform: scale(1.05) !important;
+        box-shadow: 0 4px 12px rgba(220, 38, 38, 0.7) !important;
+        text-shadow: 0 0 10px rgba(239, 68, 68, 1) !important;
+      }
       .dungeon-join-btn:hover {
         transform: scale(1.05) !important;
         box-shadow: 0 4px 12px rgba(16, 185, 129, 0.6) !important;
@@ -2336,6 +2342,18 @@ module.exports = class Dungeons {
         channelKey &&
           Promise.resolve(this.deployShadows(channelKey)).catch((error) =>
             this.errorLog('UI', 'Failed to deploy shadows', { channelKey, error })
+          );
+        return;
+      }
+
+      const recallBtn = target.closest?.('.dungeon-recall-btn');
+      if (recallBtn) {
+        e.preventDefault();
+        e.stopPropagation();
+        const channelKey = recallBtn.getAttribute('data-channel-key');
+        channelKey &&
+          Promise.resolve(this.recallShadows(channelKey)).catch((error) =>
+            this.errorLog('UI', 'Failed to recall shadows', { channelKey, error })
           );
         return;
       }
@@ -3873,9 +3891,11 @@ module.exports = class Dungeons {
     const spawnChance = Math.max(0, Math.min(1, spawnChancePercent / 100));
     if (Math.random() > spawnChance) return;
 
-    // LOCK CHANNEL IMMEDIATELY: Prevents race conditions from message spam
+    // LOCK CHANNEL + GLOBAL COOLDOWN IMMEDIATELY: Prevents race conditions from message spam.
+    // Setting _lastGlobalSpawnTime BEFORE the async createDungeon call prevents concurrent
+    // messages from all bypassing the gate while createDungeon is in-flight.
     this.channelLocks.add(channelKey);
-    this._lastGlobalSpawnTime = now;
+    this._lastGlobalSpawnTime = Date.now();
 
     try {
       const dungeonRank = this.calculateDungeonRank();
@@ -5157,28 +5177,44 @@ module.exports = class Dungeons {
     }
 
     // Mark deployed (shadows fight autonomously — user can optionally JOIN separately)
-    dungeon.shadowsDeployed = true;
-    const bossGateConfig = this.getBossGateRuntimeConfig();
-    if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
-      dungeon.bossGate = {
-        enabled: bossGateConfig.enabled,
-        minDurationMs: bossGateConfig.minDurationMs,
-        requiredMobKills: bossGateConfig.requiredMobKills,
-        deployedAt: null,
-        unlockedAt: null,
-      };
-    } else {
-      // Refresh runtime gate values on deploy so stale persisted dungeon payloads
-      // can't bypass intended gate timing.
-      dungeon.bossGate.enabled = bossGateConfig.enabled;
-      dungeon.bossGate.minDurationMs = bossGateConfig.minDurationMs;
-      dungeon.bossGate.requiredMobKills = bossGateConfig.requiredMobKills;
+    // Wrapped in try-catch: if getBossGateRuntimeConfig() or any state-setting throws,
+    // we must roll back shadowsDeployed to prevent irrecoverable limbo (deployed flag
+    // set but no allocation/combat ever starts, and re-deploy is blocked by L5152 guard).
+    try {
+      dungeon.shadowsDeployed = true;
+      const bossGateConfig = this.getBossGateRuntimeConfig();
+      if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
+        dungeon.bossGate = {
+          enabled: bossGateConfig.enabled,
+          minDurationMs: bossGateConfig.minDurationMs,
+          requiredMobKills: bossGateConfig.requiredMobKills,
+          deployedAt: null,
+          unlockedAt: null,
+        };
+      } else {
+        // Refresh runtime gate values on deploy so stale persisted dungeon payloads
+        // can't bypass intended gate timing.
+        dungeon.bossGate.enabled = bossGateConfig.enabled;
+        dungeon.bossGate.minDurationMs = bossGateConfig.minDurationMs;
+        dungeon.bossGate.requiredMobKills = bossGateConfig.requiredMobKills;
+      }
+      const deployedAt = Date.now();
+      dungeon.deployedAt = deployedAt;
+      dungeon.bossGate.deployedAt = deployedAt;
+      dungeon.bossGate.unlockedAt = null;
+      this._markAllocationDirty('deploy-shadows');
+    } catch (stateError) {
+      // Rollback — prevent irrecoverable limbo state
+      dungeon.shadowsDeployed = false;
+      dungeon.deployedAt = null;
+      if (dungeon.bossGate && typeof dungeon.bossGate === 'object') {
+        dungeon.bossGate.deployedAt = null;
+        dungeon.bossGate.unlockedAt = null;
+      }
+      this.errorLog('DEPLOY', 'Failed to initialize deploy state — rolled back', { channelKey, error: stateError });
+      this.showToast('Deploy failed to initialize. Try again.', 'error');
+      return;
     }
-    const deployedAt = Date.now();
-    dungeon.deployedAt = deployedAt;
-    dungeon.bossGate.deployedAt = deployedAt;
-    dungeon.bossGate.unlockedAt = null;
-    this._markAllocationDirty('deploy-shadows');
     const deployStartedAt = Date.now();
     let starterAllocationCount = 0;
 
@@ -5191,7 +5227,51 @@ module.exports = class Dungeons {
       this.errorLog('DEPLOY', 'Failed to build starter allocation', { channelKey, error });
     }
 
+    // COLD-CACHE RECOVERY: If starter allocation got 0 shadows because all caches were cold
+    // (first deploy after plugin start, or long idle period), warm the cache via async IDB read
+    // and retry the allocation once before giving up.
+    if (starterAllocationCount === 0) {
+      this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting async cache warm', { channelKey });
+      try {
+        const allShadows = await this.getAllShadows(false); // force fresh IDB read
+        // Race guard: recall may have fired during async IDB read
+        if (!dungeon.shadowsDeployed) {
+          this.debugLog('DEPLOY', 'Aborted — recalled during cache warm', { channelKey });
+          return;
+        }
+        if (Array.isArray(allShadows) && allShadows.length > 0) {
+          this.debugLog('DEPLOY', `Cache warmed: ${allShadows.length} shadows found — retrying allocation`, { channelKey });
+          const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
+          starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, retryShadows);
+        }
+      } catch (error) {
+        this.errorLog('DEPLOY', 'Cold-cache recovery failed', { channelKey, error });
+      }
+    }
+
     const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
+
+    // GUARDRAIL: If 0 shadows were allocated, abort deploy entirely.
+    // Without shadows, combat is meaningless — boss gate will unlock after 180s but
+    // nothing attacks the boss, leading to phantom defeats and unearned XP.
+    if (assignedShadows.length === 0 && starterAllocationCount === 0) {
+      dungeon.shadowsDeployed = false;
+      dungeon.deployedAt = null;
+      if (dungeon.bossGate) {
+        dungeon.bossGate.deployedAt = null;
+        dungeon.bossGate.unlockedAt = null;
+      }
+      dungeon.shadowAllocation = null;
+      this.shadowAllocations.delete(channelKey);
+      this._markAllocationDirty('deploy-aborted-no-shadows');
+      console.warn(
+        `[Dungeons] ⚠️ DEPLOY ABORTED: "${dungeon.name}" [${dungeon.rank}] — 0 shadows available. ` +
+        `Check ShadowArmy plugin or extract more shadows.`
+      );
+      this.showToast('No shadows available to deploy! Extract more shadows first.', 'error');
+      return;
+    }
+
     const deployMode = starterAllocationCount > 0 ? 'fast-start' : 'async-full-split';
 
     // ALWAYS-ON: Deploy log with full context
@@ -5243,12 +5323,23 @@ module.exports = class Dungeons {
     }, 1000);
 
     await this.startShadowAttacks(channelKey, { allowBlockingReallocation: false });
+    // Race guard: recall may have fired during shadow attack init
+    if (!dungeon.shadowsDeployed) {
+      this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during shadow attack init', { channelKey });
+      return;
+    }
     this.startBossAttacks(channelKey);
     this.startMobAttacks(channelKey);
 
     // Deploy responsiveness: run one immediate shadow attack pass only when starter allocation exists.
     if (assignedShadows.length > 0) {
       await this.processShadowAttacks(channelKey, 1, this.isWindowVisible(), 250);
+    }
+
+    // Race guard: recall may have fired during immediate attack pass
+    if (!dungeon.shadowsDeployed) {
+      this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during attack pass', { channelKey });
+      return;
     }
 
     dungeon._deployPendingFullAllocation = true;
@@ -5269,6 +5360,70 @@ module.exports = class Dungeons {
     // Update HP bar after modal closes so header re-render isn't gated by transient overlay state.
     this.queueHPBarUpdate(channelKey);
     this._setTrackedTimeout(() => this.queueHPBarUpdate(channelKey), 34);
+  }
+
+  /**
+   * Recall all shadows from a dungeon — stops all combat and resets deployment.
+   * User can re-deploy later if the dungeon hasn't expired.
+   */
+  async recallShadows(channelKey) {
+    const dungeon = this.activeDungeons.get(channelKey);
+    if (!dungeon) {
+      this.showToast('No active dungeon here.', 'error');
+      return;
+    }
+    if (!dungeon.shadowsDeployed) {
+      this.showToast('No shadows deployed to recall.', 'info');
+      return;
+    }
+    if (dungeon.completed || dungeon.failed || dungeon._completing) {
+      this.showToast('This dungeon has already been cleared.', 'info');
+      return;
+    }
+
+    // Stop all combat systems
+    this.stopShadowAttacks(channelKey);
+    this.stopBossAttacks(channelKey);
+    this.stopMobAttacks(channelKey);
+    this.stopMobSpawning(channelKey);
+
+    // Reset deployment state
+    dungeon.shadowsDeployed = false;
+    dungeon.userParticipating = false;
+    dungeon.deployedAt = null;
+    if (dungeon.bossGate) {
+      dungeon.bossGate.deployedAt = null;
+      dungeon.bossGate.unlockedAt = null;
+    }
+
+    // Clear shadow allocations for this dungeon
+    this.shadowAllocations.delete(channelKey);
+    this._markAllocationDirty('recall-shadows');
+
+    // Start idle timer for expiry (3-minute countdown)
+    dungeon._idleSince = Date.now();
+
+    // Clear active dungeon reference if this was the active one
+    if (this.settings.userActiveDungeon === channelKey) {
+      this.settings.userActiveDungeon = null;
+    }
+
+    console.log(
+      `[Dungeons] RECALL: "${dungeon.name}" [${dungeon.rank}] — all shadows recalled from #${dungeon.channelName || '?'}`
+    );
+    this.showToast(`Shadows recalled from ${dungeon.name}!`, 'info');
+    this.saveSettings();
+
+    // Persist to IDB so recall survives hot-reload
+    if (this.storageManager) {
+      this.storageManager.saveDungeon(dungeon).catch((err) =>
+        this.errorLog('Failed to save dungeon after recall', err)
+      );
+    }
+
+    // Update UI — bust cache so HP bar re-renders with deploy button restored
+    this._bossBarCache?.delete?.(channelKey);
+    this.queueHPBarUpdate(channelKey);
   }
 
   async processUserAttack(channelKey, messageElement = null) {
@@ -5457,12 +5612,16 @@ module.exports = class Dungeons {
       const exchange = this._getPluginSafe('ShadowExchange');
       const markedIds = exchange?.getMarkedShadowIds?.();
       markedIds instanceof Set && markedIds.forEach((id) => id && blockedIds.add(String(id)));
-    } catch (_) {}
+    } catch (err) {
+      this.errorLog('DEPLOY', 'ShadowExchange blocked-ID fetch failed (non-fatal)', err);
+    }
     try {
       const senses = this._getPluginSafe('ShadowSenses');
       const deployedIds = senses?.getDeployedShadowIds?.();
       deployedIds instanceof Set && deployedIds.forEach((id) => id && blockedIds.add(String(id)));
-    } catch (_) {}
+    } catch (err) {
+      this.errorLog('DEPLOY', 'ShadowSenses deployed-ID fetch failed (non-fatal)', err);
+    }
 
     let candidatePool =
       Array.isArray(this._allocationSortedShadowsCache) && this._allocationSortedShadowsCache.length > 0
@@ -7845,6 +8004,7 @@ module.exports = class Dungeons {
         growthHoursByShadowId,
       }).catch((error) => {
         this.errorLog('Deferred dungeon shadow XP post-processing failed', error);
+        try { this.showToast('Shadow XP post-processing failed — XP may be incomplete.', 'error'); } catch (_) {}
       });
     }, 0);
 
@@ -11059,9 +11219,19 @@ module.exports = class Dungeons {
       }
     }
     if (reason === 'boss') {
+      // GUARDRAIL: No XP if shadows did zero actual combat damage.
+      // Prevents phantom defeats (0 shadows allocated, boss dies to nothing).
+      const actualBossDamage = summaryStats.totalBossDamage || 0;
+      const actualMobsKilled = summaryStats.totalMobsKilled || 0;
+      const userDealtDamage = (dungeon.userDamageDealt || 0) > 0;
+      if (actualBossDamage === 0 && actualMobsKilled === 0 && !userDealtDamage) {
+        console.warn(
+          `[Dungeons] ⚠️ XP DENIED: "${dungeon.name}" [${dungeon.rank}] — boss defeated but 0 damage dealt (no shadow or user contribution)`
+        );
+        this.showToast(`${dungeon.name}: No XP earned — no combat contribution.`, 'info');
+      } else if (this.soloLevelingStats) {
       // Grant XP for boss kill (even if not participating - shadows cleared it for you!)
-      if (this.soloLevelingStats) {
-        if (dungeon.userParticipating) {
+      if (dungeon.userParticipating) {
           // Full XP if actively participating
           const bossXP = 200 + rankIndex * 100; // E: 200, D: 300, C: 400, B: 500, A: 600, S: 700
           if (
@@ -11357,7 +11527,7 @@ module.exports = class Dungeons {
       background: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%);
       color: white;
       border: 2px solid #a78bfa;
-      border-radius: 8px;
+      border-radius: 2px;
       padding: 12px 20px;
       font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
       font-size: 14px;
@@ -12093,7 +12263,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%);
         color: white;
         border: none;
-        border-radius: 6px;
+        border-radius: 2px;
         font-size: 11px;
         font-weight: 700;
         cursor: pointer;
@@ -12105,19 +12275,21 @@ module.exports = class Dungeons {
       </button>
     `
         : `
-      <span style="
+      <button class="dungeon-recall-btn" data-channel-key="${channelKey}" style="
         padding: 4px 12px;
-        background: linear-gradient(135deg, #059669 0%, #047857 100%);
+        background: linear-gradient(135deg, #dc2626 0%, #b91c1c 100%);
         color: white;
-        border-radius: 6px;
+        border: none;
+        border-radius: 2px;
         font-size: 11px;
         font-weight: 700;
-        box-shadow: 0 2px 6px rgba(5, 150, 105, 0.4);
-        text-shadow: 0 0 6px rgba(16, 185, 129, 0.6);
-        display: inline-block;
+        cursor: pointer;
+        transition: all 0.2s;
+        box-shadow: 0 2px 6px rgba(220, 38, 38, 0.5);
+        text-shadow: 0 0 6px rgba(239, 68, 68, 0.8);
       ">
-        DEPLOYED
-      </span>
+        RECALL SHADOWS
+      </button>
     `;
 
       // JOIN button (show if user hasn't joined yet — can join before or after deploy)
@@ -12128,7 +12300,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%);
         color: white;
         border: none;
-        border-radius: 6px;
+        border-radius: 2px;
         font-size: 11px;
         font-weight: 700;
         cursor: pointer;
@@ -12148,7 +12320,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
         color: white;
         border: none;
-        border-radius: 6px;
+        border-radius: 2px;
         font-size: 11px;
         font-weight: 700;
         cursor: pointer;
@@ -12200,7 +12372,7 @@ module.exports = class Dungeons {
         width: 100% !important;
         max-width: 100% !important;
         background: linear-gradient(180deg, rgba(15, 15, 25, 0.9), rgba(20, 20, 30, 0.95)) !important;
-        border-radius: 8px !important;
+        border-radius: 2px !important;
         overflow: hidden !important;
         position: relative !important;
         border: 1px solid rgba(139, 92, 246, 0.5) !important;
@@ -12211,7 +12383,7 @@ module.exports = class Dungeons {
           width: var(--boss-hp-percent, 0%) !important;
           height: 100% !important;
           background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 40%, #ec4899 80%, #f97316 100%) !important;
-          border-radius: 8px !important;
+          border-radius: 2px !important;
           transition: width 0.5s ease !important;
         "></div>
         <div class="hp-bar-text" style="
@@ -13622,14 +13794,22 @@ module.exports = class Dungeons {
   cleanupExpiredDungeons() {
     const now = Date.now();
     const expiredChannels = [];
+    const IDLE_EXPIRY_MS = 180000; // 3 minutes idle before expiry
     this.activeDungeons.forEach((dungeon, channelKey) => {
-      // FIX: Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
-      // Without this, the expiry timer fires completeDungeon a SECOND time on dungeons
-      // that were boss-killed but still in the Map awaiting ARISE cleanup — causing
-      // double-delete and "dungeon not found" errors on shadow deploy.
+      // Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
       if (dungeon.completed || dungeon.failed || dungeon._completing) return;
-      const elapsed = now - dungeon.startTime;
-      if (elapsed >= this.settings.dungeonDuration) {
+
+      // Active protection: never expire while user is participating or shadows are deployed.
+      if (dungeon.shadowsDeployed || dungeon.userParticipating) {
+        dungeon._idleSince = null; // Reset idle timer — dungeon is actively engaged
+        return;
+      }
+
+      // Dungeon is idle (no user, no shadows). Start/check 3-minute idle countdown.
+      if (!dungeon._idleSince) {
+        dungeon._idleSince = now;
+      }
+      if (now - dungeon._idleSince >= IDLE_EXPIRY_MS) {
         expiredChannels.push(channelKey);
       }
     });
@@ -14166,7 +14346,7 @@ module.exports = class Dungeons {
     toast.style.cssText = `
       background: linear-gradient(135deg, ${color.bg} 0%, ${color.border} 100%);
       border: 2px solid ${color.border};
-      border-radius: 10px;
+      border-radius: 2px;
       padding: 14px 18px;
       color: white;
       font-weight: 600;
@@ -14404,7 +14584,7 @@ module.exports = class Dungeons {
         height: 32px;
         background: transparent;
         border: none;
-        border-radius: 4px;
+        border-radius: 2px;
         cursor: pointer;
         color: var(--interactive-normal, #b9bbbe);
         display: flex;
@@ -14487,7 +14667,7 @@ module.exports = class Dungeons {
         font-family: 'Orbitron', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
         background: rgba(30, 30, 45, 0.85) !important;
         border: 1px solid rgba(139, 92, 246, 0.4) !important;
-        border-radius: 8px !important;
+        border-radius: 2px !important;
         backdrop-filter: blur(6px) !important;
         box-shadow: 0 2px 8px rgba(139, 92, 246, 0.15) !important;
         box-sizing: border-box !important;
@@ -14509,7 +14689,7 @@ module.exports = class Dungeons {
         width: 100% !important;
         max-width: 100% !important;
         background: linear-gradient(180deg, rgba(15, 15, 25, 0.9) 0%, rgba(20, 20, 30, 0.95) 100%) !important;
-        border-radius: 8px !important;
+        border-radius: 2px !important;
         overflow: hidden !important;
         position: relative !important;
         border: 1px solid rgba(139, 92, 246, 0.5) !important;
@@ -14521,7 +14701,7 @@ module.exports = class Dungeons {
         width: var(--boss-hp-percent, 0%);
         height: 100%;
         background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 40%, #ec4899 80%, #f97316 100%);
-        border-radius: 8px;
+        border-radius: 2px;
         transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
         box-shadow:
           0 0 12px rgba(139, 92, 246, 0.6),
@@ -14561,7 +14741,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 6px !important;
+        border-radius: 2px !important;
         font-size: 11px !important;
         font-weight: 700 !important;
         cursor: pointer !important;
@@ -14584,7 +14764,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #10b981 0%, #059669 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 6px !important;
+        border-radius: 2px !important;
         font-size: 11px !important;
         font-weight: 700 !important;
         cursor: pointer !important;
@@ -14605,7 +14785,7 @@ module.exports = class Dungeons {
         background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%) !important;
         color: white !important;
         border: none !important;
-        border-radius: 6px !important;
+        border-radius: 2px !important;
         font-size: 11px !important;
         font-weight: 700 !important;
         cursor: pointer !important;

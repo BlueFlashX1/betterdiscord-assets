@@ -1686,7 +1686,7 @@ ${buildPortalTransitionCSS()}
 .shadow-senses-widget {
   background: linear-gradient(135deg, rgba(138, 43, 226, 0.15), rgba(138, 43, 226, 0.05));
   border: 1px solid #8a2be2;
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 8px 10px;
   margin: 4px 8px;
   display: flex;
@@ -1716,7 +1716,7 @@ ${buildPortalTransitionCSS()}
   font-size: 11px;
   font-weight: 700;
   padding: 2px 8px;
-  border-radius: 10px;
+  border-radius: 2px;
   min-width: 20px;
   text-align: center;
 }
@@ -1742,7 +1742,7 @@ ${buildPortalTransitionCSS()}
 .shadow-senses-panel {
   background: #1e1e2e;
   border: 1px solid #8a2be2;
-  border-radius: 12px;
+  border-radius: 2px;
   width: 700px;
   max-width: 95vw;
   max-height: 80vh;
@@ -1774,7 +1774,7 @@ ${buildPortalTransitionCSS()}
   font-size: 20px;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 4px;
+  border-radius: 2px;
   transition: color 0.15s ease;
 }
 
@@ -1816,7 +1816,7 @@ ${buildPortalTransitionCSS()}
 .shadow-senses-feed-card {
   background: rgba(20, 20, 40, 0.6);
   border: 1px solid rgba(138, 43, 226, 0.15);
-  border-radius: 8px;
+  border-radius: 2px;
   padding: 10px 14px;
   margin: 4px 0;
   cursor: pointer;
@@ -1867,7 +1867,7 @@ ${buildPortalTransitionCSS()}
   justify-content: space-between;
   padding: 8px 12px;
   background: rgba(20, 20, 40, 0.4);
-  border-radius: 8px;
+  border-radius: 2px;
   margin: 4px 0;
   border: 1px solid rgba(138, 43, 226, 0.1);
 }
@@ -1904,7 +1904,7 @@ ${buildPortalTransitionCSS()}
   font-size: 12px;
   font-weight: 600;
   padding: 4px 12px;
-  border-radius: 6px;
+  border-radius: 2px;
   cursor: pointer;
   transition: background 0.15s ease;
 }
@@ -1920,7 +1920,7 @@ ${buildPortalTransitionCSS()}
   font-size: 13px;
   font-weight: 600;
   padding: 8px 16px;
-  border-radius: 8px;
+  border-radius: 2px;
   cursor: pointer;
   width: 100%;
   text-align: center;
@@ -1950,7 +1950,7 @@ ${buildPortalTransitionCSS()}
 .shadow-senses-picker {
   background: #1e1e2e;
   border: 1px solid #8a2be2;
-  border-radius: 12px;
+  border-radius: 2px;
   width: 400px;
   max-width: 90vw;
   max-height: 60vh;

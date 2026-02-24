@@ -6687,7 +6687,7 @@ ${childSel} {
                 padding: 0;
                 color: var(--text-normal);
                 background: #1e1e2e;
-                border-radius: 8px;
+                border-radius: 0;
             }
 
             .crit-settings-header {
@@ -6760,7 +6760,7 @@ ${childSel} {
             .crit-slider {
                 flex: 1;
                 height: 6px;
-                border-radius: 3px;
+                border-radius: 2px;
                 background: var(--background-modifier-accent);
                 outline: none;
                 -webkit-appearance: none;
@@ -6799,7 +6799,7 @@ ${childSel} {
                 padding: 8px 12px;
                 background: var(--input-background);
                 border: 1px solid var(--input-border);
-                border-radius: 4px;
+                border-radius: 2px;
                 color: var(--text-normal);
                 font-size: 14px;
                 text-align: center;
@@ -6822,7 +6822,7 @@ ${childSel} {
                 width: 50px;
                 height: 40px;
                 border: 2px solid var(--input-border);
-                border-radius: 6px;
+                border-radius: 2px;
                 cursor: pointer;
                 overflow: hidden;
                 -webkit-appearance: none;
@@ -6835,13 +6835,13 @@ ${childSel} {
 
             .crit-color-picker::-webkit-color-swatch {
                 border: none;
-                border-radius: 4px;
+                border-radius: 2px;
             }
 
             .crit-color-preview {
                 flex: 1;
                 height: 40px;
-                border-radius: 6px;
+                border-radius: 2px;
                 border: 2px solid var(--input-border);
                 box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
             }
@@ -6851,7 +6851,7 @@ ${childSel} {
                 padding: 10px 14px;
                 background: var(--input-background);
                 border: 1px solid var(--input-border);
-                border-radius: 6px;
+                border-radius: 2px;
                 color: var(--text-normal);
                 font-size: 14px;
                 font-family: 'Friend or Foe BB', 'Orbitron', sans-serif !important;
@@ -6874,7 +6874,7 @@ ${childSel} {
                 gap: 12px;
                 cursor: pointer;
                 padding: 12px;
-                border-radius: 6px;
+                border-radius: 2px;
                 background: var(--background-modifier-hover);
                 transition: all 0.2s ease;
             }
@@ -6891,7 +6891,7 @@ ${childSel} {
                 width: 20px;
                 height: 20px;
                 border: 2px solid var(--input-border);
-                border-radius: 4px;
+                border-radius: 2px;
                 background: var(--input-background);
                 position: relative;
                 transition: all 0.2s ease;
@@ -6941,7 +6941,7 @@ ${childSel} {
                 padding: 14px 20px;
                 background: linear-gradient(135deg, #ff0000 0%, #ff4444 100%);
                 border: none;
-                border-radius: 8px;
+                border-radius: 2px;
                 color: white;
                 font-size: 14px;
                 font-weight: 600;
