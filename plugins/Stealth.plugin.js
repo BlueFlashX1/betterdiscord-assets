@@ -1,6 +1,6 @@
 /**
  * @name Stealth
- * @description Total concealment: suppress typing, force invisible, block read receipts, suppress idle detection, hide activities, erase telemetry, and neutralize tracking.
+ * @description Total concealment: suppress typing, force invisible, suppress idle detection, hide activities, erase telemetry, and neutralize tracking.
  * @version 2.0.0
  * @author matthewthompson
  */
@@ -19,7 +19,6 @@ const DEFAULT_SETTINGS = {
   suppressTelemetry: true,
   disableProcessMonitor: true,
   autoSilentMessages: true,
-  suppressReadReceipts: true,
   suppressIdle: true,
   restoreStatusOnStop: true,
   showToasts: true,
@@ -50,14 +49,12 @@ module.exports = class Stealth {
       telemetry: 0,
       silent: 0,
       process: 0,
-      readReceipts: 0,
     };
 
     this._suppressEventLog = {
       typing: 0,
       activities: 0,
       telemetry: 0,
-      readReceipts: 0,
       idle: 0,
       silent: 0,
     };
@@ -77,7 +74,6 @@ module.exports = class Stealth {
       telemetry: 0,
       silent: 0,
       process: 0,
-      readReceipts: 0,
     };
 
     this._installPatches();
@@ -237,7 +233,6 @@ module.exports = class Stealth {
     this._patchActivityUpdates();
     this._patchTelemetry();
     this._patchAutoSilentMessages();
-    this._patchReadReceipts();
   }
 
   _patchTypingIndicators() {
@@ -417,71 +412,6 @@ module.exports = class Stealth {
     }
 
     this._patchMetrics.silent = patched;
-  }
-
-  _patchReadReceipts() {
-    let patched = 0;
-
-    // Primary: patch ack/bulkAck module
-    try {
-      const ackModule =
-        BdApi.Webpack.getByKeys("ack", "bulkAck") ||
-        BdApi.Webpack.getByKeys("ack");
-
-      if (ackModule) {
-        if (typeof ackModule.ack === "function") {
-          BdApi.Patcher.instead(
-            STEALTH_PLUGIN_ID,
-            ackModule,
-            "ack",
-            (ctx, args, original) => {
-              if (this.settings.enabled && this.settings.suppressReadReceipts) {
-                this._recordSuppressed("readReceipts");
-                return undefined;
-              }
-              return original.apply(ctx, args);
-            }
-          );
-          patched += 1;
-        }
-
-        if (typeof ackModule.bulkAck === "function") {
-          BdApi.Patcher.instead(
-            STEALTH_PLUGIN_ID,
-            ackModule,
-            "bulkAck",
-            (ctx, args, original) => {
-              if (this.settings.enabled && this.settings.suppressReadReceipts) {
-                this._recordSuppressed("readReceipts");
-                return undefined;
-              }
-              return original.apply(ctx, args);
-            }
-          );
-          patched += 1;
-        }
-      }
-    } catch (error) {
-      this._logWarning("READ_RECEIPTS", "Failed to patch ack/bulkAck", error, "ack-patch");
-    }
-
-    // Fallback: scan for ack-like functions
-    const fnNames = ["ack", "bulkAck", "localAck"];
-    const keyCombos = [
-      ["ack", "bulkAck"],
-      ["ack"],
-    ];
-
-    patched += this._patchFunctions({
-      fnNames,
-      keyCombos,
-      shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
-      onBlocked: () => this._recordSuppressed("readReceipts"),
-      tag: "readReceipts",
-      blockedReturnValue: undefined,
-    });
-
-    this._patchMetrics.readReceipts = patched;
   }
 
   _applyStealthHardening() {
@@ -979,7 +909,7 @@ module.exports = class Stealth {
       React.createElement(
         "div",
         { style: { color: "rgba(226, 232, 240, 0.82)", fontSize: "12px", lineHeight: 1.35 } },
-        "Total concealment: hide typing, force Invisible, block read receipts, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
+        "Total concealment: hide typing, force Invisible, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
       )
     );
 
@@ -1026,7 +956,7 @@ module.exports = class Stealth {
           lineHeight: 1.4,
         },
       },
-      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}, read-receipts ${self._patchMetrics.readReceipts}`
+      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}`
     );
 
     const Panel = () => React.createElement(
@@ -1072,11 +1002,6 @@ module.exports = class Stealth {
         settingKey: "disableProcessMonitor",
         title: "Sever Process Monitor",
         description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring.",
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressReadReceipts",
-        title: "Block Read Receipts",
-        description: "Prevents Discord from knowing which messages you have read.",
       }),
       React.createElement(SettingRow, {
         settingKey: "suppressIdle",
