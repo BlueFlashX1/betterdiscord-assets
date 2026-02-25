@@ -24,8 +24,7 @@ module.exports = class SystemWindow {
     this._pollInterval = null;
     this._throttleTimer = null;
     this._lastScrollerEl = null;
-    this._nearViewport = new Set();
-    this._visibilityObserver = null;
+    this._classifyRAF = null;
   }
 
   /* ═══════════════════════════════════════════════
@@ -116,49 +115,8 @@ module.exports = class SystemWindow {
 
   _observeScroller(scroller) {
     if (this._observer) this._observer.disconnect();
-
-    // ── Visibility tracker: only classify messages near the viewport ──
-    // Prevents freezing when teleporting to old messages (200+ items).
-    // Off-screen messages keep the CSS pre-style (individual blue codeblocks).
-    this._nearViewport.clear();
-    if (this._visibilityObserver) this._visibilityObserver.disconnect();
-    const scrollRoot = scroller.closest('[class*="scroller_"]') || scroller.parentElement;
-    this._visibilityObserver = new IntersectionObserver((entries) => {
-      let changed = false;
-      for (const entry of entries) {
-        if (entry.isIntersecting) {
-          if (!this._nearViewport.has(entry.target)) {
-            this._nearViewport.add(entry.target);
-            changed = true;
-          }
-        } else {
-          if (this._nearViewport.delete(entry.target)) changed = true;
-        }
-      }
-      // New items scrolled into view — re-classify to apply grouping
-      if (changed) this._throttledClassify();
-    }, {
-      root: scrollRoot,
-      rootMargin: '600px 0px', // classify 600px above/below viewport
-    });
-
-    // Observe existing LIs
-    for (const li of scroller.querySelectorAll(':scope > li[class*="messageListItem_"]')) {
-      this._visibilityObserver.observe(li);
-    }
-
-    // MutationObserver: watch for new/removed LIs
-    this._observer = new MutationObserver((mutations) => {
-      // Track new LIs with the visibility observer
-      for (const m of mutations) {
-        for (const node of m.addedNodes) {
-          if (node.nodeType === 1 && node.matches?.('li[class*="messageListItem_"]')) {
-            this._visibilityObserver?.observe(node);
-          }
-        }
-      }
-      this._throttledClassify();
-    });
+    this._observer = new MutationObserver(() => this._throttledClassify());
+    // Only watch direct children (li items) — not subtree
     this._observer.observe(scroller, { childList: true });
   }
 
@@ -180,11 +138,10 @@ module.exports = class SystemWindow {
       this._navBusUnsub();
       this._navBusUnsub = null;
     }
-    if (this._visibilityObserver) {
-      this._visibilityObserver.disconnect();
-      this._visibilityObserver = null;
+    if (this._classifyRAF) {
+      cancelAnimationFrame(this._classifyRAF);
+      this._classifyRAF = null;
     }
-    this._nearViewport.clear();
     clearTimeout(this._throttleTimer);
     this._throttleTimer = null;
     this._lastScrollerEl = null;
@@ -194,7 +151,12 @@ module.exports = class SystemWindow {
     if (this._throttleTimer) return;
     this._throttleTimer = setTimeout(() => {
       this._throttleTimer = null;
-      this._classifyMessages();
+      // Schedule at start of next frame so we don't compete with Discord's rendering
+      if (this._classifyRAF) cancelAnimationFrame(this._classifyRAF);
+      this._classifyRAF = requestAnimationFrame(() => {
+        this._classifyRAF = null;
+        this._classifyMessages();
+      });
     }, 150);
   }
 
@@ -253,15 +215,10 @@ module.exports = class SystemWindow {
     // a classless frame that causes a visual flash.
 
     const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
-    let classifiedCount = 0;
 
     for (const group of groups) {
-      // PERF: Skip groups entirely if no item is near the viewport.
-      // Off-screen messages keep the CSS pre-style (individual blue codeblocks).
-      const hasVisible = group.some(({ li }) => this._nearViewport.has(li));
-      if (!hasVisible) continue;
-
       // Cached _isOwnMessage: Fiber walk once per article element, ever.
+      // Subsequent runs read from the data attribute (~100x faster).
       const firstArt = group[0].article;
       let isSelf;
       if (firstArt.hasAttribute('data-sw-self')) {
@@ -273,9 +230,6 @@ module.exports = class SystemWindow {
 
       for (let i = 0; i < group.length; i++) {
         const { li, article: art } = group[i];
-
-        // Only write classes for items near the viewport
-        if (!this._nearViewport.has(li)) continue;
 
         // Compute desired position class
         let desiredPos;
@@ -316,12 +270,11 @@ module.exports = class SystemWindow {
 
         if (wantMentioned && !hasMentioned) li.classList.add("sw-mentioned");
         else if (!wantMentioned && hasMentioned) li.classList.remove("sw-mentioned");
-        classifiedCount++;
       }
     }
 
     if (this.settings.debugMode) {
-      console.log(`[SystemWindow] Classified ${classifiedCount}/${items.length} messages (${groups.length} groups, ${this._nearViewport.size} near viewport)`);
+      console.log(`[SystemWindow] Classified ${items.length} messages into ${groups.length} groups`);
     }
   }
 
