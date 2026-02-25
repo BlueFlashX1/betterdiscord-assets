@@ -1,7 +1,7 @@
 /**
  * @name Stealth
  * @description Total concealment: suppress typing, force invisible, suppress idle detection, hide activities, erase telemetry, and neutralize tracking.
- * @version 2.1.0
+ * @version 2.1.1
  * @author matthewthompson
  */
 
@@ -36,7 +36,6 @@ module.exports = class Stealth {
     this._processMonitorPatched = false;
 
     this._Dispatcher = null;
-    this._originalDispatch = null;
     this._dispatcherPollTimer = null;
     this._fluxHandlers = new Map();
 
@@ -96,12 +95,6 @@ module.exports = class Stealth {
     }
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
-
-    // Restore original Dispatcher.dispatch if we patched it for read receipt suppression
-    if (this._originalDispatch && this._Dispatcher) {
-      this._Dispatcher.dispatch = this._originalDispatch;
-      this._originalDispatch = null;
-    }
 
     if (this.settings.restoreStatusOnStop) {
       this._restoreOriginalStatus();
@@ -444,7 +437,7 @@ module.exports = class Stealth {
       shouldBlock: () => this.settings.enabled && this.settings.suppressReadReceipts,
       onBlocked: () => this._recordSuppressed("readReceipts"),
       tag: "readReceipts",
-      blockedReturnValue: undefined,
+      blockedReturnValue: Promise.resolve(),
     });
 
     // Strategy 2: Patch the HTTP-level unread ack endpoint
@@ -462,7 +455,7 @@ module.exports = class Stealth {
               (ctx, args, original) => {
                 if (this.settings.enabled && this.settings.suppressReadReceipts) {
                   this._recordSuppressed("readReceipts");
-                  return undefined;
+                  return Promise.resolve();
                 }
                 return original.apply(ctx, args);
               }
@@ -473,29 +466,6 @@ module.exports = class Stealth {
       }
     } catch (error) {
       this._logWarning("READ_RECEIPTS", "Failed to patch markRead/ackMessages", error, "ack-mark-read");
-    }
-
-    // Strategy 3: Intercept MESSAGE_ACK Flux dispatches at the Dispatcher level.
-    // This catches any path we missed above by blocking the dispatch action itself.
-    if (this._Dispatcher) {
-      const originalDispatch = this._Dispatcher.dispatch;
-      if (originalDispatch && !this._originalDispatch) {
-        this._originalDispatch = originalDispatch;
-        const self = this;
-        this._Dispatcher.dispatch = function (event) {
-          if (
-            self.settings.enabled &&
-            self.settings.suppressReadReceipts &&
-            event &&
-            (event.type === "MESSAGE_ACK" || event.type === "BULK_ACK")
-          ) {
-            self._recordSuppressed("readReceipts");
-            return;
-          }
-          return self._originalDispatch.apply(this, arguments);
-        };
-        patched += 1;
-      }
     }
 
     this._patchMetrics.readReceipts = patched;
