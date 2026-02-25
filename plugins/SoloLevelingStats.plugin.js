@@ -2,7 +2,7 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
- * @version 3.0.1
+ * @version 3.0.2
  * @authorId
  * @authorLink
  * @website
@@ -2470,7 +2470,16 @@ module.exports = class SoloLevelingStats {
 
             // PERF: Skip expensive findInTree walks when chat UI already exists in DOM.
             // The chatUIObserver handles re-injection if React unmounts the element.
-            if (pluginInstance.chatUIPanel) return returnValue;
+            if (pluginInstance.chatUIPanel) {
+              // Self-heal: detect stale reference (DOM removed by React re-render)
+              if (!pluginInstance.chatUIPanel.isConnected) {
+                pluginInstance.debugLog('REACT_INJECTION', 'Stale chatUIPanel detected — DOM disconnected, clearing for re-injection');
+                pluginInstance.chatUIPanel = null;
+                // Fall through to re-inject below
+              } else {
+                return returnValue;
+              }
+            }
 
             const bodyPath = BdApi.Utils.findInTree(
               returnValue,
@@ -3660,6 +3669,11 @@ module.exports = class SoloLevelingStats {
 
         // Re-evaluate chat UI visibility for new channel
         if (this._isGuildTextChannel()) {
+          // Self-heal stale reference on channel switch
+          if (this.chatUIPanel && !this.chatUIPanel.isConnected) {
+            this.debugLog('CHANNEL_CHANGE', 'Stale chatUIPanel on channel switch — clearing');
+            this.chatUIPanel = null;
+          }
           // Guild text channel — ensure UI is present
           if (!document.getElementById('sls-chat-ui')) {
             this.createChatUI();
@@ -9017,6 +9031,24 @@ module.exports = class SoloLevelingStats {
 
     this.chatUIUpdateInterval = setInterval(() => {
       if (document.hidden) return; // PERF: Skip when window not visible
+
+      // Self-heal: detect stale or missing panel and re-create
+      if (this._isGuildTextChannel()) {
+        const panelInDOM = document.getElementById('sls-chat-ui');
+        if (!panelInDOM) {
+          // Panel disappeared — stale ref or React unmounted it
+          if (this.chatUIPanel) {
+            this.debugLog('CHAT_UI_WATCHDOG', 'Panel reference exists but DOM element missing — clearing stale ref');
+            this.chatUIPanel = null;
+          }
+          this.debugLog('CHAT_UI_WATCHDOG', 'Panel missing from DOM — triggering re-creation');
+          clearInterval(this.chatUIUpdateInterval);
+          this.chatUIUpdateInterval = null;
+          this.createChatUI();
+          return;
+        }
+      }
+
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
       this.updateChatUI();
@@ -9045,11 +9077,15 @@ module.exports = class SoloLevelingStats {
       // Try React injection first (preferred method — v3.0.0 uses component tree)
       if (this.tryReactInjection()) {
         // React injection successful — components handle their own state + events
+        this.debugLog('CREATE_CHAT_UI', 'React injection succeeded, waiting for DOM mount');
         setTimeout(() => {
           const uiPanel = document.getElementById('sls-chat-ui');
           if (uiPanel) {
             this.chatUIPanel = uiPanel;
+            this.debugLog('CREATE_CHAT_UI', 'Panel mounted in DOM via React injection');
             this.ensureChatUIUpdateInterval(true);
+          } else {
+            this.debugLog('CREATE_CHAT_UI', 'Panel NOT in DOM 100ms after React injection — patcher may not have fired yet');
           }
         }, 100);
         return; // React injection successful, skip DOM fallback
@@ -9093,6 +9129,7 @@ module.exports = class SoloLevelingStats {
           }
 
           this.chatUIPanel = uiPanel;
+          this.debugLog('CREATE_CHAT_UI', 'Panel mounted in DOM via DOM fallback');
           this.ensureChatUIUpdateInterval(true);
           return true;
         } catch (uiError) {
@@ -9132,6 +9169,11 @@ module.exports = class SoloLevelingStats {
           if (!this._canShowChatUIInCurrentView()) {
             this.removeChatUI();
             return;
+          }
+          // Self-heal: detect stale reference (DOM removed by React re-render)
+          if (this.chatUIPanel && !this.chatUIPanel.isConnected) {
+            this.debugLog('CHAT_UI_OBSERVER', 'Stale chatUIPanel detected — DOM disconnected, clearing');
+            this.chatUIPanel = null;
           }
           if (document.getElementById('sls-chat-ui')) return;
           if (this._chatUiObserverDebounceTimeout) return;
@@ -9182,6 +9224,14 @@ module.exports = class SoloLevelingStats {
   }
 
   removeChatUI() {
+    this.debugLog('REMOVE_CHAT_UI', 'removeChatUI() called', {
+      hadPanel: !!this.chatUIPanel,
+      panelConnected: this.chatUIPanel?.isConnected ?? null,
+      hadRoot: !!this._chatUIRoot,
+      hadObserver: !!this.chatUIObserver,
+      inGuildText: this._isGuildTextChannel(),
+      caller: new Error().stack?.split('\n')[2]?.trim() || 'unknown',
+    });
     // Unmount React root if using createRoot fallback (v3.0.0)
     if (this._chatUIRoot) {
       try {
