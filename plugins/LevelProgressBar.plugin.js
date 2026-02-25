@@ -1007,11 +1007,11 @@ module.exports = class LevelProgressBar {
         }
         50% {
           box-shadow: 0 0 20px rgba(138, 43, 226, 0.8), inset 0 0 30px rgba(167, 139, 250, 0.6);
-          transform: scaleY(1.1);
+          /* No transform here — scaleY would override the inline scaleX
+             that controls fill width, making the bar flash to 100%. */
         }
         100% {
           box-shadow: 0 0 10px rgba(138, 43, 226, 0.5), inset 0 0 20px rgba(167, 139, 250, 0.3);
-          transform: scaleY(1);
         }
       }
 
