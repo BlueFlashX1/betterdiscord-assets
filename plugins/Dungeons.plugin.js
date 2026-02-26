@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.8.3
+ * @version 4.8.9
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -939,7 +939,7 @@ module.exports = class Dungeons {
       mobKillNotificationInterval: 30000,
       mobSpawnInterval: 10000, // Spawn new mobs every 10 seconds (slower, less lag)
       mobSpawnCount: 750, // Base spawn count (will have variable scaling based on mob count)
-      mobMaxActiveCap: 600, // Hard limit on simultaneously active mobs per dungeon
+      mobMaxActiveCap: 500, // Hard limit on simultaneously active mobs per dungeon
       mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
       mobTierNormalShare: 0.7, // Spawn mix: normal mobs
@@ -1004,6 +1004,7 @@ module.exports = class Dungeons {
     this.bossHPBars = new Map();
     this._bossBarCache = new Map(); // Cache last boss bar render payload per channel
     this._mobCleanupCache = new Map(); // Throttled alive-mob counts per channel
+    this._mobIdCounter = 0; // Incrementing mob ID (faster than Math.random().toString(36))
     this._bossBarLayoutFrame = null;
     this._bossBarLayoutThrottle = new Map(); // Throttle HP bar layout adjustments (100-150ms)
     this._rankStatsCache = new Map(); // Cache rank-based stat calculations
@@ -1042,7 +1043,7 @@ module.exports = class Dungeons {
 
     // CACHE MANAGEMENT
     this._shadowCountCache = null; // Shadow count cache (5s TTL)
-    this._shadowsCache = null; // Shadows data cache (1s TTL during combat)
+    this._shadowsCache = null; // Shadows data cache (10s TTL — invalidated explicitly on mutations)
     this._shadowStatsCache = new Map(); // Shadow stats cache (500ms TTL)
     this._mobGenerationCache = new Map(); // Mob generation cache (prevents crashes from excessive generation)
     this._mobCacheTTL = 60000; // 60 seconds cache TTL for mob generation
@@ -1757,6 +1758,18 @@ module.exports = class Dungeons {
       // MANUAL DEPLOY: Skip combat entirely for dungeons where shadows haven't been deployed
       if (!dungeon.shadowsDeployed) return;
 
+      // SAFETY NET: Detect "deployed but stuck" — deployed >5s but no mobs and no spawn scheduled.
+      // This catches any deploy race condition where startMobSpawning was skipped or failed silently.
+      if (!dungeon._deploying && this._combatTickCount % 5 === 0 && dungeon.boss?.hp > 0) {
+        const liveMobs = this._countLiveMobs(dungeon);
+        const hasSpawnScheduled = this._mobSpawnNextAt.has(channelKey);
+        const deployAge = dungeon.deployedAt ? (now - dungeon.deployedAt) : 0;
+        if (liveMobs === 0 && !hasSpawnScheduled && deployAge > 5000) {
+          console.warn(`[Dungeons] STUCK_DEPLOY_HEAL: "${dungeon.name}" deployed ${Math.floor(deployAge / 1000)}s ago but 0 mobs + no spawn scheduled — re-triggering spawn pipeline`);
+          this.ensureDeployedSpawnPipeline(channelKey, 'stuck_deploy_heal');
+        }
+      }
+
       const isActive = this.isActiveDungeon(channelKey);
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
@@ -1803,6 +1816,15 @@ module.exports = class Dungeons {
         }
       }
 
+      // PERF: Build shadow-ID lookup Map once per tick (shared by boss and mob attacks).
+      // Both processBossAttacks and processMobAttacks build identical maps from assignedShadows.
+      // Since assignedShadows don't change between attack phases, we build once and pass down.
+      let _tickShadowByIdMap = null;
+      const _tickAssigned = this.shadowAllocations.get(channelKey);
+      if (_tickAssigned && _tickAssigned.length > 0) {
+        _tickShadowByIdMap = new Map(_tickAssigned.map(s => [this.getShadowIdValue(s), s]));
+      }
+
       // Boss attacks
       if (this.bossAttackTimers.has(channelKey) && dungeon.boss?.hp > 0) {
         const activeInterval = 1000;
@@ -1813,7 +1835,7 @@ module.exports = class Dungeons {
 
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
-          await this.processBossAttacks(channelKey, cyclesToProcess, isWindowVisible);
+          await this.processBossAttacks(channelKey, cyclesToProcess, isWindowVisible, _tickShadowByIdMap);
           this._lastBossAttackTime.set(channelKey, now);
         }
       }
@@ -1828,7 +1850,7 @@ module.exports = class Dungeons {
 
         if (elapsed >= intervalTime) {
           const cyclesToProcess = isActive ? 1 : Math.max(1, Math.floor(elapsed / activeInterval));
-          await this.processMobAttacks(channelKey, cyclesToProcess, isWindowVisible, mobBudget);
+          await this.processMobAttacks(channelKey, cyclesToProcess, isWindowVisible, mobBudget, _tickShadowByIdMap);
           this._lastMobAttackTime.set(channelKey, now);
         }
       }
@@ -1935,6 +1957,13 @@ module.exports = class Dungeons {
     this.validateActiveDungeonStatus();
 
     this.setupChannelWatcher();
+
+    // PERF: Pre-warm shadow cache in background so first deploy is instant (~<50ms)
+    // instead of paying cold-cache IDB penalty (~2-5s). Runs after ShadowArmy ref
+    // and IDB are ready. Fire-and-forget — failure falls back to current behavior.
+    this._setTrackedTimeout(() => {
+      this._preWarmShadowCache().catch(() => {});
+    }, 3000);
 
     // Start window visibility tracking for performance optimization
     this.startVisibilityTracking();
@@ -2740,7 +2769,14 @@ module.exports = class Dungeons {
       // Save to IndexedDB first (crash-resistant, primary storage)
       if (this.saveManager) {
         try {
-          await this.saveManager.save('settings', this.settings, true); // true = create backup
+          // PERF: Only create IDB backup every 10th save (~30s) instead of every save (~3s).
+          // Backup cleanup scans 20 records and deletes oldest — wasteful at 3s intervals.
+          if (!this._settingsBackupCounter) this._settingsBackupCounter = 0;
+          this._settingsBackupCounter++;
+          const createBackup = this._settingsBackupCounter >= 10;
+          if (createBackup) this._settingsBackupCounter = 0;
+
+          await this.saveManager.save('settings', this.settings, createBackup);
           if (shouldLog) {
             this.debugLog('SAVE_SETTINGS', 'Saved to IndexedDB', {
               timestamp: new Date().toISOString(),
@@ -4643,22 +4679,27 @@ module.exports = class Dungeons {
 
       // DYNAMIC SPAWN RATE WITH VARIANCE: Self-balancing with randomness
       // NO HARD CAPS - uses soft scaling that gradually slows down
+      // PERF: Use throttled alive-count cache when fresh (populated by HP bar updater at 500ms cadence).
+      // Falls back to O(n) scan for brand-new dungeons or when cache is stale (>1s).
       let _aliveMobs = 0;
-      for (const mob of dungeon.mobs.activeMobs) {
-        mob?.hp > 0 && _aliveMobs++;
+      const _mobCacheEntry = this._mobCleanupCache.get(channelKey);
+      if (_mobCacheEntry && (Date.now() - _mobCacheEntry.time < 1000)) {
+        _aliveMobs = _mobCacheEntry.alive || 0;
+      } else {
+        for (const mob of dungeon.mobs.activeMobs) {
+          mob?.hp > 0 && _aliveMobs++;
+        }
       }
 
-      // PER-DUNGEON CAPACITY: Use dungeon's own capacity instead of global cap
-      // Each dungeon has its own capacity based on rank and biome
+      // ACTIVE MOB CAP: Settings cap is the hard ceiling; per-dungeon capacity can only be lower.
+      const globalCap = Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
+        ? Number(this.settings.mobMaxActiveCap)
+        : this.defaultSettings.mobMaxActiveCap;
       const dungeonMobCapacity = Number(dungeon.mobs.mobCapacity);
-      const settingMobCapacity = Number(this.settings?.mobMaxActiveCap);
-      const resolvedMobCapacity =
-        Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
-          ? dungeonMobCapacity
-          : Number.isFinite(settingMobCapacity) && settingMobCapacity > 0
-          ? settingMobCapacity
-          : this.defaultSettings.mobMaxActiveCap;
-      const mobCap = this.clampNumber(Math.floor(resolvedMobCapacity), 50, 2000);
+      const effectiveCap = Number.isFinite(dungeonMobCapacity) && dungeonMobCapacity > 0
+        ? Math.min(dungeonMobCapacity, globalCap)
+        : globalCap;
+      const mobCap = this.clampNumber(Math.floor(effectiveCap), 50, 2000);
       // Verbose spawn stats stripped — use MOB_CAP debugLog for capacity warnings
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
@@ -4746,7 +4787,7 @@ module.exports = class Dungeons {
 
           const mob = {
             ...mobTemplate,
-            id: `mob_${spawnedAt}_${Math.random().toString(36).slice(2, 11)}`, // New unique ID
+            id: `mob_${spawnedAt}_${this._mobIdCounter++}`, // New unique ID (counter is faster than random+toString(36))
             spawnedAt, // Update spawn time
           };
           mob.hp = Math.max(1, Math.floor(hp));
@@ -4834,7 +4875,7 @@ module.exports = class Dungeons {
           );
           newMobs.push({
             // Core mob identity
-            id: `mob_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+            id: `mob_${Date.now()}_${this._mobIdCounter++}`,
             rank: mobRank,
 
             // MAGIC BEAST IDENTITY (for shadow extraction)
@@ -5040,6 +5081,14 @@ module.exports = class Dungeons {
       return;
     }
 
+    // MUTEX: Block join while deploy is in-flight to prevent state interleaving.
+    // deployShadows() yields at 3 await points; joining mid-deploy can persist
+    // partial state (shadowsDeployed=true, no mobs) and corrupt the combat pipeline.
+    if (dungeon._deploying) {
+      this.showToast('Deploy in progress — wait for shadows to finish deploying.', 'info');
+      return;
+    }
+
     // SYNC HP/MANA FROM STATS PLUGIN
     const { hpSynced, manaSynced } = this.syncHPAndManaFromStats();
     if (hpSynced || manaSynced) {
@@ -5111,6 +5160,14 @@ module.exports = class Dungeons {
       this.showToast('Shadows already deployed here!', 'info');
       return;
     }
+    // MUTEX: Prevent concurrent deploy + join race condition.
+    // deployShadows() has 3 await points where selectDungeon() can interleave,
+    // causing partial state persistence (shadowsDeployed=true but no mobs/combat).
+    if (dungeon._deploying) {
+      this.showToast('Deploy in progress — please wait.', 'info');
+      return;
+    }
+    dungeon._deploying = true;
 
     // Validate active dungeon status first (clear invalid references)
     this.validateActiveDungeonStatus();
@@ -5163,6 +5220,7 @@ module.exports = class Dungeons {
       this._markAllocationDirty('deploy-shadows');
     } catch (stateError) {
       // Rollback — prevent irrecoverable limbo state
+      dungeon._deploying = false;
       dungeon.shadowsDeployed = false;
       dungeon.deployedAt = null;
       if (dungeon.bossGate && typeof dungeon.bossGate === 'object') {
@@ -5194,6 +5252,7 @@ module.exports = class Dungeons {
         const allShadows = await this.getAllShadows(false); // force fresh IDB read
         // Race guard: recall may have fired during async IDB read
         if (!dungeon.shadowsDeployed) {
+          dungeon._deploying = false;
           this.debugLog('DEPLOY', 'Aborted — recalled during cache warm', { channelKey });
           return;
         }
@@ -5213,6 +5272,7 @@ module.exports = class Dungeons {
     // Without shadows, combat is meaningless — boss gate will unlock after 180s but
     // nothing attacks the boss, leading to phantom defeats and unearned XP.
     if (assignedShadows.length === 0 && starterAllocationCount === 0) {
+      dungeon._deploying = false;
       dungeon.shadowsDeployed = false;
       dungeon.deployedAt = null;
       if (dungeon.bossGate) {
@@ -5283,6 +5343,7 @@ module.exports = class Dungeons {
     await this.startShadowAttacks(channelKey, { allowBlockingReallocation: false });
     // Race guard: recall may have fired during shadow attack init
     if (!dungeon.shadowsDeployed) {
+      dungeon._deploying = false;
       this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during shadow attack init', { channelKey });
       return;
     }
@@ -5296,6 +5357,7 @@ module.exports = class Dungeons {
 
     // Race guard: recall may have fired during immediate attack pass
     if (!dungeon.shadowsDeployed) {
+      dungeon._deploying = false;
       this.debugLog('DEPLOY', 'Aborted mid-deploy — recalled during attack pass', { channelKey });
       return;
     }
@@ -5304,6 +5366,7 @@ module.exports = class Dungeons {
     this._scheduleDeployRebalance(channelKey, deployStartedAt);
 
     this.showToast(`Shadows deployed to ${dungeon.name}!`, 'success');
+    dungeon._deploying = false; // MUTEX RELEASE: deploy pipeline complete
     this.saveSettings();
 
     // CRITICAL: Persist dungeon state to IDB immediately — shadowsDeployed must survive hot-reload.
@@ -5338,6 +5401,9 @@ module.exports = class Dungeons {
       this.showToast('This dungeon has already been cleared.', 'info');
       return;
     }
+
+    // Clear deploy mutex (recall can be called during or after deploy)
+    dungeon._deploying = false;
 
     // Stop all combat systems
     this.stopShadowAttacks(channelKey);
@@ -9407,10 +9473,12 @@ module.exports = class Dungeons {
    * @returns {Promise<Array>} Array of shadow objects
    */
   async getAllShadows(useCache = true) {
-    // Use cache during active combat (1 second TTL)
+    // PERF: 10s TTL — shadow data only changes on extraction/rank-up/growth,
+    // all of which call invalidateShadowsCache() explicitly. Old 1s TTL caused
+    // redundant IDB reads and was the root cause of ~5s cold-cache first-deploy.
     if (useCache && this._shadowsCache) {
       const now = Date.now();
-      if (now - this._shadowsCache.timestamp < 1000) {
+      if (now - this._shadowsCache.timestamp < 10000) {
         return this._shadowsCache.shadows;
       }
     }
@@ -9472,6 +9540,65 @@ module.exports = class Dungeons {
   invalidateShadowsCache() {
     this._shadowsCache = null;
     this._markAllocationDirty('invalidate-shadows-cache', { shadowSetChanged: true });
+  }
+
+  /**
+   * Pre-warm shadow caches in background so the first deploy doesn't pay cold-cache IDB penalty.
+   * Populates _shadowsCache (10s TTL) and _allocationSortedShadowsCache (60s TTL).
+   * Called ~3s after start() — ShadowArmy ref and IDB are ready by then.
+   * Fire-and-forget: failures silently fall back to current cold-cache path.
+   */
+  async _preWarmShadowCache() {
+    if (!this.started || !this.shadowArmy) return;
+
+    try {
+      const allShadows = await this.getAllShadows(false); // force fresh read, populates _shadowsCache
+      if (!this.started || !Array.isArray(allShadows) || allShadows.length === 0) return;
+
+      // Build sorted cache (same logic as preSplitShadowArmy lines 8272-8286)
+      // This is the primary source _buildDeployStarterAllocation checks first (60s TTL).
+      if (!this._allocationSortedShadowsCache || this._allocationSortedShadowsCache.length === 0) {
+        const scoreCache = new Map();
+        const getShadowId = (s) => this.getShadowIdValue(s);
+        const readScore = (shadow) => {
+          const sid = getShadowId(shadow);
+          if (!sid) return this.getShadowCombatScore(shadow);
+          const key = String(sid);
+          if (scoreCache.has(key)) return scoreCache.get(key);
+          const score = this.getShadowCombatScore(shadow);
+          scoreCache.set(key, score);
+          return score;
+        };
+
+        const normalized = [];
+        for (let i = 0; i < allShadows.length; i++) {
+          const n = this.normalizeShadowId(allShadows[i]) || allShadows[i];
+          n && normalized.push(n);
+          // Yield every 2500 shadows to keep event loop responsive (matches preSplitShadowArmy)
+          if ((i + 1) % 2500 === 0) {
+            await this._yieldToEventLoop();
+            if (!this.started) return;
+          }
+        }
+
+        normalized.sort((a, b) => readScore(b) - readScore(a));
+
+        // Only write if still empty (another path may have populated it during our async work)
+        if (!this._allocationSortedShadowsCache || this._allocationSortedShadowsCache.length === 0) {
+          this._allocationSortedShadowsCache = normalized;
+          this._allocationSortedShadowsCacheTime = Date.now();
+          this._allocationScoreCache = scoreCache;
+          this._allocationShadowSetDirty = false;
+        }
+
+        console.log(
+          `[Dungeons] 🔥 PRE-WARM: Shadow cache ready — ${normalized.length} shadows sorted for instant deploy`
+        );
+      }
+    } catch (error) {
+      // Non-fatal: first deploy falls back to cold-cache path (current behavior)
+      this.debugLog('PRE_WARM', 'Shadow cache pre-warm failed (non-fatal)', { error: error?.message });
+    }
   }
 
   // ==== COMBAT DATA HELPER FUNCTIONS (Performance Optimization) ====
@@ -10049,7 +10176,7 @@ module.exports = class Dungeons {
   }
 
   // ==== BOSS & MOB ATTACKS ====
-  async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null) {
+  async processBossAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, prebuiltShadowByIdMap = null) {
     try {
       // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
@@ -10112,9 +10239,9 @@ module.exports = class Dungeons {
       // Get alive shadows ONCE before the attack loop (not per-attack)
       const aliveShadows = this.getCombatReadyShadows(assignedShadows, deadShadows, shadowHP);
 
-      // NUMPY-STYLE: Pre-build O(1) shadow lookup Map — shared with _applyAccumulatedShadowAndUserDamage.
-      // Avoids O(N) .find() per damaged shadow during damage application.
-      const shadowByIdMap = new Map(
+      // NUMPY-STYLE: O(1) shadow lookup Map — shared with _applyAccumulatedShadowAndUserDamage.
+      // Uses pre-built map from _processDungeonCombatTick when available (avoids rebuilding per attack phase).
+      const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
 
@@ -10256,7 +10383,7 @@ module.exports = class Dungeons {
     }
   }
 
-  async processMobAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, mobBudget = 500) {
+  async processMobAttacks(channelKey, cyclesMultiplier = 1, isWindowVisible = null, mobBudget = 500, prebuiltShadowByIdMap = null) {
     try {
       // PERFORMANCE: Use hoisted visibility from _combatLoopTick when available
       if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();
@@ -10295,8 +10422,9 @@ module.exports = class Dungeons {
         return;
       }
 
-      // NUMPY-STYLE: Pre-build O(1) shadow lookup Map for damage application
-      const shadowByIdMap = new Map(
+      // NUMPY-STYLE: O(1) shadow lookup Map for damage application.
+      // Uses pre-built map from _processDungeonCombatTick when available (avoids rebuilding per attack phase).
+      const shadowByIdMap = prebuiltShadowByIdMap || new Map(
         assignedShadows.map((s) => [this.getShadowIdValue(s), s])
       );
 
@@ -10746,16 +10874,19 @@ module.exports = class Dungeons {
       }
       this._pruneShadowMobContributionLedger(dungeon);
 
-      // PERFORMANCE: Only save to storage every 5 attack cycles (not every 2 seconds)
-      if (!this._saveCycleCount) this._saveCycleCount = 0;
-      this._saveCycleCount++;
+      // PERFORMANCE: Only save to storage every 5 attack cycles per dungeon.
+      // BUGFIX: Was a global counter (this._saveCycleCount) shared across all dungeons,
+      // causing 10x write amplification with 10 concurrent dungeons (counter hit 5 in 500ms).
+      // Now per-dungeon so each dungeon saves exactly once per 5 of its own mob-attack cycles.
+      if (!dungeon._saveCycleCount) dungeon._saveCycleCount = 0;
+      dungeon._saveCycleCount++;
 
-      if (this._saveCycleCount >= 5 && this.storageManager) {
+      if (dungeon._saveCycleCount >= 5 && this.storageManager) {
         this.storageManager
           .saveDungeon(dungeon)
           .catch((err) => this.errorLog('Failed to save dungeon', err));
         this.saveSettings();
-        this._saveCycleCount = 0;
+        dungeon._saveCycleCount = 0;
       }
     }
   }
@@ -11466,9 +11597,8 @@ module.exports = class Dungeons {
     const channelHeader = this.findChannelHeader();
     if (!channelHeader?.isConnected) return;
 
-    // React re-render guard: clean up any detached ARISE buttons
-    document.querySelectorAll(`[data-arise-button="${channelKey}"]`).forEach((btn) => btn.remove());
-    document.querySelectorAll('.dungeon-arise-button').forEach((btn) => {
+    // PERF: Single query for ARISE button cleanup (was 2 separate querySelectorAll calls)
+    document.querySelectorAll(`[data-arise-button="${channelKey}"], .dungeon-arise-button:not([data-arise-button])`).forEach((btn) => {
       if (btn.getAttribute('data-arise-button') === channelKey || !btn.isConnected) btn.remove();
     });
 
@@ -12064,10 +12194,6 @@ module.exports = class Dungeons {
       // Ensure boss HP bar CSS is present before any render/recreate work.
       this.ensureBossHpBarCssInjected?.();
 
-      // CRITICAL: SYNC FROM STATS PLUGIN FIRST (get freshest HP/Mana)
-      // Ensures HP bar shows accurate participation status
-      this.syncHPAndManaFromStats();
-
       // Do not render when user/settings layers are open to prevent overlap
       if (this.isSettingsLayerOpen()) {
         this.removeBossHPBar(channelKey);
@@ -12105,6 +12231,11 @@ module.exports = class Dungeons {
         }
         return;
       }
+
+      // PERF: Sync HP/Mana from stats plugin only for the VISIBLE dungeon.
+      // Moved here from before channel guard — saves 9 wasted calls per tick
+      // for background dungeons that don't need fresh stats for rendering.
+      this.syncHPAndManaFromStats();
 
       // Force recreate boss HP bar when returning to dungeon channel
       // This ensures it shows correctly after guild/channel switches and console opens
@@ -12183,27 +12314,43 @@ module.exports = class Dungeons {
       const currentBossHP = dungeon.boss?.hp || 0;
       const currentBossMaxHP = dungeon.boss?.maxHp || 0;
 
-      // Boss bar diffing: skip rebuild if payload unchanged; still update fill/text
-      // PERF: Field comparison instead of JSON.stringify (avoids object+string creation per tick)
+      // Boss bar diffing: structural vs numeric split.
+      // Structural fields (buttons, badge, name, type) require full innerHTML rebuild.
+      // Numeric fields (HP, mobs) update via targeted textContent (no DOM destruction).
+      // PERF: ~99% of ticks hit the fast-path since structural fields rarely change during combat.
       const hpFloor = Math.floor(currentBossHP);
       const maxHpFloor = Math.floor(currentBossMaxHP);
       const hpPctRound = Math.floor(hpPercent * 10) / 10;
       const prev = this._bossBarCache.get(channelKey);
-      const unchanged = prev &&
-        prev.hp === hpFloor && prev.maxHp === maxHpFloor && prev.hpPct === hpPctRound &&
-        prev.alive === aliveMobs && prev.total === totalMobs &&
+      const structuralUnchanged = prev &&
         prev.part === dungeon.userParticipating && prev.dep === dungeon.shadowsDeployed &&
         prev.type === dungeon.type && prev.rank === dungeon.rank && prev.name === dungeon.name;
 
-      if (hpBar && unchanged) {
-        const fillEl = hpBar.querySelector('.hp-bar-fill');
-        const textEl = hpBar.querySelector('.hp-bar-text');
+      if (hpBar && structuralUnchanged) {
+        // Fast path: update numeric values via targeted textContent (no innerHTML rebuild)
         const hpCont = hpBar.closest('.dungeon-boss-hp-container');
-        if (hpCont) hpCont.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+        if (hpCont) {
+          hpCont.style.setProperty('--boss-hp-percent', `${hpPercent}%`);
+          hpCont.setAttribute('data-hp-percent', hpPercent);
+        }
+        const textEl = hpBar.querySelector('.hp-bar-text');
         if (textEl) textEl.textContent = `${Math.floor(hpPercent)}%`;
-        // Preserve HP state as data attribute for recovery after React re-render
-        const hpContainer = hpBar.closest('.dungeon-boss-hp-container');
-        if (hpContainer) hpContainer.setAttribute('data-hp-percent', hpPercent);
+        // Boss HP + mob count text updates (avoids full innerHTML rebuild for numeric changes)
+        const hpCurrentEl = hpBar.querySelector('.boss-hp-current');
+        if (hpCurrentEl) hpCurrentEl.textContent = Math.floor(currentBossHP).toLocaleString();
+        const hpMaxEl = hpBar.querySelector('.boss-hp-max');
+        if (hpMaxEl) hpMaxEl.textContent = currentBossMaxHP.toLocaleString();
+        const mobAliveEl = hpBar.querySelector('.mob-alive');
+        if (mobAliveEl) mobAliveEl.textContent = aliveMobs.toLocaleString();
+        const mobTotalEl = hpBar.querySelector('.mob-total');
+        if (mobTotalEl) mobTotalEl.textContent = totalMobs.toLocaleString();
+        // Update cache with current numeric values
+        this._bossBarCache.set(channelKey, {
+          hp: hpFloor, maxHp: maxHpFloor, hpPct: hpPctRound,
+          alive: aliveMobs, total: totalMobs,
+          part: dungeon.userParticipating, dep: dungeon.shadowsDeployed,
+          type: dungeon.type, rank: dungeon.rank, name: dungeon.name,
+        });
         this.scheduleBossBarLayout(hpBar.parentElement);
         return;
       }
@@ -12325,17 +12472,17 @@ module.exports = class Dungeons {
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 11px; color: #c4b5fd;">
           <div>
             <span style="color: #94a3b8;">Boss:</span>
-            <span style="color: #f87171; font-weight: 700;">${Math.floor(
+            <span class="boss-hp-current" style="color: #f87171; font-weight: 700;">${Math.floor(
               currentBossHP
             ).toLocaleString()}</span>
             <span style="color: #64748b;">/</span>
-            <span style="color: #fbbf24;">${currentBossMaxHP.toLocaleString()}</span>
+            <span class="boss-hp-max" style="color: #fbbf24;">${currentBossMaxHP.toLocaleString()}</span>
           </div>
           <div>
             <span style="color: #94a3b8;">Mobs:</span>
-            <span style="color: #34d399; font-weight: 700;">${aliveMobs.toLocaleString()}</span>
+            <span class="mob-alive" style="color: #34d399; font-weight: 700;">${aliveMobs.toLocaleString()}</span>
             <span style="color: #64748b;">/</span>
-            <span style="color: #94a3b8;">${totalMobs.toLocaleString()}</span>
+            <span class="mob-total" style="color: #94a3b8;">${totalMobs.toLocaleString()}</span>
           </div>
         </div>
       </div>
@@ -12491,14 +12638,12 @@ module.exports = class Dungeons {
       // Ensure boss HP bar CSS exists (Discord/BD can swap layers and styles may be removed).
       this.ensureBossHpBarCssInjected?.();
 
-      // Clean up any existing containers first to prevent duplicates
-      // Only clean up containers that are not in the DOM or are empty
-      document.querySelectorAll('.dungeon-boss-hp-container').forEach((el) => {
+      // PERF: Targeted cleanup — only query containers for this channel (was querying ALL containers)
+      document.querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`).forEach((el) => {
         try {
           const hasBar = el.querySelector('.dungeon-boss-hp-bar');
-          const inDOM = el.isConnected;
           // Remove if empty or not in DOM (orphaned)
-          if ((!hasBar || !inDOM) && el.getAttribute('data-channel-key') === channelKey) {
+          if (!hasBar || !el.isConnected) {
             el.remove();
           }
         } catch {
@@ -13757,7 +13902,8 @@ module.exports = class Dungeons {
   cleanupExpiredDungeons() {
     const now = Date.now();
     const expiredChannels = [];
-    const IDLE_EXPIRY_MS = 180000; // 3 minutes idle before expiry
+    const NEVER_ENGAGED_EXPIRY_MS = 60000;  // 1 minute — never deployed, never joined
+    const DISENGAGED_EXPIRY_MS = 180000;   // 3 minutes — had engagement that was withdrawn
     this.activeDungeons.forEach((dungeon, channelKey) => {
       // Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
       if (dungeon.completed || dungeon.failed || dungeon._completing) return;
@@ -13768,11 +13914,16 @@ module.exports = class Dungeons {
         return;
       }
 
-      // Dungeon is idle (no user, no shadows). Start/check 3-minute idle countdown.
+      // Dungeon is idle (no user, no shadows). Start idle countdown.
       if (!dungeon._idleSince) {
         dungeon._idleSince = now;
       }
-      if (now - dungeon._idleSince >= IDLE_EXPIRY_MS) {
+
+      // Tiered expiry: dungeons that were NEVER engaged expire faster (1 min)
+      // than ones where shadows were deployed then withdrawn (3 min).
+      const wasEverEngaged = dungeon.deployedAt != null;
+      const expiryMs = wasEverEngaged ? DISENGAGED_EXPIRY_MS : NEVER_ENGAGED_EXPIRY_MS;
+      if (now - dungeon._idleSince >= expiryMs) {
         expiredChannels.push(channelKey);
       }
     });
