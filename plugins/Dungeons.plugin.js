@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.8.9
+ * @version 4.9.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -1660,11 +1660,25 @@ module.exports = class Dungeons {
           continue;
         }
 
-        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${dungeon.mobs?.activeMobs?.length || 0}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
+        // FIX: Early cap check BEFORE calling spawnMobs — prevents wasteful no-op spawn ticks
+        // and misleading "SPAWNING" logs when mobs are already at cap.
+        const _preCheckAlive = dungeon.mobs?.activeMobs?.length || 0;
+        const _preCheckCap = Math.min(
+          Number.isFinite(Number(dungeon.mobs?.mobCapacity)) && Number(dungeon.mobs.mobCapacity) > 0
+            ? Number(dungeon.mobs.mobCapacity) : Infinity,
+          Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
+            ? Number(this.settings.mobMaxActiveCap) : 500
+        );
+        if (_preCheckAlive >= _preCheckCap) {
+          // At cap — back off with a longer delay instead of hot-looping every 2.5s
+          this._mobSpawnNextAt.set(channelKey, now + 10000);
+          continue;
+        }
+
+        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${_preCheckAlive}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
         this.spawnMobs(channelKey);
         const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
         this._mobSpawnNextAt.set(channelKey, now + nextDelay);
-        // Next wave timing log stripped
         spawns++;
       }
     }
