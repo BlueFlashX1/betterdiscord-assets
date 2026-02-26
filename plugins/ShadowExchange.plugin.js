@@ -1,7 +1,7 @@
 /**
  * @name ShadowExchange
  * @description Shadow waypoint bookmark system — station shadows at Discord locations and teleport to them instantly. Solo Leveling themed.
- * @version 2.1.0
+ * @version 2.1.1
  * @author matthewthompson
  *
  * ============================================================================
@@ -36,7 +36,7 @@ const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','expo
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const SE_PLUGIN_ID = "ShadowExchange";
-const SE_VERSION = "2.1.0";
+const SE_VERSION = "2.1.1";
 const SE_STYLE_ID = "shadow-exchange-css";
 const SE_SWIRL_ID = "se-swirl-icon";
 const SE_PANEL_CONTAINER_ID = "se-panel-root";
@@ -390,10 +390,21 @@ function buildPanelComponents(pluginInstance) {
   // ── WaypointPanel ───────────────────────────────────────────────────────
 
   function WaypointPanel({ onClose }) {
+    const [searchInput, setSearchInput] = React.useState("");
     const [searchQuery, setSearchQuery] = React.useState("");
+    const searchTimerRef = React.useRef(null);
     const [sortBy, setSortBy] = React.useState(pluginInstance.settings.sortBy || "created");
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
     const [availCount, setAvailCount] = React.useState(0);
+
+    // PERF: Debounce search filtering — input stays responsive, filter runs 150ms after typing stops
+    const handleSearchChange = React.useCallback((e) => {
+      const val = e.target.value;
+      setSearchInput(val);
+      if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+      searchTimerRef.current = setTimeout(() => setSearchQuery(val), 150);
+    }, []);
+    React.useEffect(() => () => clearTimeout(searchTimerRef.current), []);
 
     // Load available shadow count on mount
     React.useEffect(() => {
@@ -529,8 +540,8 @@ function buildPanelComponents(pluginInstance) {
             type: "text",
             className: "se-search-input",
             placeholder: "Search waypoints...",
-            value: searchQuery,
-            onChange: (e) => setSearchQuery(e.target.value),
+            value: searchInput,
+            onChange: handleSearchChange,
           })
         ),
         // Waypoint list
@@ -1245,20 +1256,17 @@ module.exports = class ShadowExchange {
   // ── Swirl Icon (channel-header anchored) ───────────────────────────────
 
   _getChannelHeaderToolbar() {
-    const selectors = [
-      '[aria-label="Channel header"] [class*="toolbar_"]',
-      '[class*="titleWrapper_"] [class*="toolbar_"]',
-      'header [class*="toolbar_"]',
-    ];
-
-    for (const selector of selectors) {
-      const nodes = document.querySelectorAll(selector);
-      for (const node of nodes) {
-        if (!node || node.offsetParent === null) continue;
-        const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
-        if (host && host.offsetParent === null) continue;
-        return node;
-      }
+    // PERF: Single combined querySelectorAll instead of 3 separate queries
+    const nodes = document.querySelectorAll(
+      '[aria-label="Channel header"] [class*="toolbar_"], ' +
+      '[class*="titleWrapper_"] [class*="toolbar_"], ' +
+      'header [class*="toolbar_"]'
+    );
+    for (const node of nodes) {
+      if (node.offsetParent === null) continue;
+      const host = node.closest('[aria-label="Channel header"], [class*="titleWrapper_"], header');
+      if (host && host.offsetParent === null) continue;
+      return node;
     }
     return null;
   }

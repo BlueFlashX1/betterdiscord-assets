@@ -2,7 +2,7 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
- * @version 3.0.2
+ * @version 3.0.4
  * @authorId
  * @authorLink
  * @website
@@ -1715,14 +1715,27 @@ module.exports = class SoloLevelingStats {
   }
 
   _getPrimaryChatContainer() {
-    return (
+    // PERF: 2s TTL cache — avoids 6 sequential querySelector calls on every hot-path invocation
+    const now = Date.now();
+    if (this._cachedChatContainer && this._cachedChatContainerTs && (now - this._cachedChatContainerTs < 2000)) {
+      if (this._cachedChatContainer.isConnected) return this._cachedChatContainer;
+      this._cachedChatContainer = null;
+      this._cachedChatContainerTs = 0;
+    }
+
+    const el =
       document.querySelector('main[class*="chatContent"]') ||
       document.querySelector('section[class*="chatContent"][role="main"]') ||
       document.querySelector('div[class*="chatContent"]:not([role="complementary"])') ||
       document.querySelector('main[class*="chatContent-"]') ||
       document.querySelector('div[class*="chat_"]:not([class*="chatLayerWrapper"])') ||
-      document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])')
-    );
+      document.querySelector('div[class*="chat-"]:not([class*="chatLayerWrapper"])');
+
+    if (el) {
+      this._cachedChatContainer = el;
+      this._cachedChatContainerTs = now;
+    }
+    return el;
   }
 
   _getMessageInputAreaInPrimaryChat() {
@@ -3655,6 +3668,10 @@ module.exports = class SoloLevelingStats {
 
       // Only track if channel actually changed
       if (channelId !== lastChannelId) {
+        // Invalidate chat container cache on channel switch (DOM likely changed)
+        this._cachedChatContainer = null;
+        this._cachedChatContainerTs = 0;
+
         // Reduced verbosity - only log if verbose mode enabled (frequent operation)
         this.debugLog('HANDLE_CHANNEL_CHANGE', 'Channel changed detected', {
           oldChannelId: lastChannelId,
@@ -9058,10 +9075,17 @@ module.exports = class SoloLevelingStats {
   // initializeChatUIPanel() — REMOVED in v3.0.0 (React components self-initialize)
 
   createChatUI() {
+    // Prevent concurrent creation from observer/channel-switch race
+    if (this._isCreatingUI) {
+      this.debugLog('CREATE_CHAT_UI', 'Skipping — already creating UI');
+      return;
+    }
+    this._isCreatingUI = true;
     try {
       // Only inject chat UI in guild text channels (not threads/forums/VC/DMs)
       if (!this._isGuildTextChannel()) {
         this.debugLog('CREATE_CHAT_UI', 'Skipping — not a guild text channel');
+        this._isCreatingUI = false;
         this.removeChatUI();
         return;
       }
@@ -9088,6 +9112,7 @@ module.exports = class SoloLevelingStats {
             this.debugLog('CREATE_CHAT_UI', 'Panel NOT in DOM 100ms after React injection — patcher may not have fired yet');
           }
         }, 100);
+        this._isCreatingUI = false;
         return; // React injection successful, skip DOM fallback
       }
 
@@ -9097,6 +9122,7 @@ module.exports = class SoloLevelingStats {
       // Function to actually create the UI
       const tryCreateUI = () => {
         try {
+          if (this._isCreatingUI) return false;
           if (!this._canShowChatUIInCurrentView()) return false;
 
           // Find writable input area scoped to primary chat content only
@@ -9106,6 +9132,13 @@ module.exports = class SoloLevelingStats {
           // Check if UI already exists
           if (document.getElementById('sls-chat-ui')) {
             return true;
+          }
+
+          // Guard: unmount any orphaned React root from a previous DOM fallback
+          // (its container may have been removed by Discord re-render)
+          if (this._chatUIRoot) {
+            try { this._chatUIRoot.unmount(); } catch (_) {}
+            this._chatUIRoot = null;
           }
 
           // Create the UI panel container
@@ -9199,6 +9232,7 @@ module.exports = class SoloLevelingStats {
             this._chatUiObserverRetryTimeout = null;
             this.chatUIObserver && this.createChatUI();
           }, 1500);
+          this._isCreatingUI = false;
           return;
         }
 
@@ -9207,7 +9241,9 @@ module.exports = class SoloLevelingStats {
           subtree: true,
         });
       }
+      this._isCreatingUI = false;
     } catch (error) {
+      this._isCreatingUI = false;
       this.debugError('CREATE_CHAT_UI', error);
       // Retry after delay
       if (!this._createChatUIErrorRetryTimeout) {
@@ -9232,6 +9268,8 @@ module.exports = class SoloLevelingStats {
       inGuildText: this._isGuildTextChannel(),
       caller: new Error().stack?.split('\n')[2]?.trim() || 'unknown',
     });
+    // Clear creation mutex (prevent stale lock)
+    this._isCreatingUI = false;
     // Unmount React root if using createRoot fallback (v3.0.0)
     if (this._chatUIRoot) {
       try {

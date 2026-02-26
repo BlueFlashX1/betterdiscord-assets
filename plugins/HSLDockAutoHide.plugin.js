@@ -1,7 +1,7 @@
 /**
  * @name HSLDockAutoHide
  * @description Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift. Includes user panel dock mover (originally by BlueFlashX1).
- * @version 4.0.0
+ * @version 4.0.1
  * @author Solo Leveling Theme Dev, BlueFlashX1
  *
  * ============================================================================
@@ -301,11 +301,17 @@ class DockEngine {
     const docks = Array.from(document.querySelectorAll(selectorStr));
     if (!docks.length) return null;
 
+    // PERF: Batch-read all rects first (single layout pass), then filter in JS
+    const measured = [];
+    for (const dock of docks) {
+      measured.push({ dock, rect: dock.getBoundingClientRect() });
+    }
+
     let best = null;
     let bestScore = -Infinity;
-    for (const dock of docks) {
-      const rect = dock.getBoundingClientRect();
+    for (const { dock, rect } of measured) {
       if (rect.width < 120 || rect.height < 24) continue;
+      // Only call getComputedStyle on size-qualified candidates (expensive)
       const style = getComputedStyle(dock);
       if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
       const score = rect.width + rect.top * 2;
@@ -562,11 +568,21 @@ class DockEngine {
   // ── Event Handlers ────────────────────────────────────────────────────────
 
   onMouseMove(event) {
-    if (Date.now() < this.lockOpenUntil) return;
+    // PERF: Always capture coords (cheap), but coalesce heavy work to 1x per RAF
     this.hasMouseMoved = true;
-    this.lastMouseMoveAt = Date.now();
     this.lastMouseX = event.clientX;
     this.lastMouseY = event.clientY;
+    if (this._mouseMoveRafPending) return;
+    this._mouseMoveRafPending = true;
+    requestAnimationFrame(() => {
+      this._mouseMoveRafPending = false;
+      this._processMouseMove();
+    });
+  }
+
+  _processMouseMove() {
+    if (Date.now() < this.lockOpenUntil) return;
+    this.lastMouseMoveAt = Date.now();
 
     if (Date.now() < this.typingLockUntil) {
       this.clearRevealTimer("typing-active-move");
@@ -579,7 +595,7 @@ class DockEngine {
       this.revealCandidateAt = 0;
     }
 
-    const nearBottom = this.isCursorInRevealStrip(event.clientX, event.clientY);
+    const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
     const hidden = Boolean(this.stateTarget?.classList?.contains("sl-dock-hidden"));
     const shouldReveal = hidden && nearBottom && !this.pointerOverDock && !this.isOpenSuppressed() && this.isRecentMouseMove(1200);
 

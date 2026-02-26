@@ -343,10 +343,10 @@ main[aria-label="Friends"] aside.refresh-active-now {
   background-image: none !important;
 }
 
-/* Server/group-DM member list (right panel) — light wash on panel */
-div[class^="members_"],
+/* Server/group-DM member list (right panel) — full dark wash on panel */
+.members_c8ffbb,
 div[class^="membersWrap_"] {
-  background: rgba(0, 0, 0, 0.4) !important;
+  background: rgba(0, 0, 0, 1.0) !important;
   background-image: none !important;
 }
 

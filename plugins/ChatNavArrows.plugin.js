@@ -1,7 +1,7 @@
 /**
  * @name ChatNavArrows
  * @description Replaces the "Jump to Present" bar with a compact down-arrow button, and adds an up-arrow button to jump to the first message in the channel.
- * @version 2.0.0
+ * @version 2.0.1
  * @author Solo Leveling Theme Dev
  *
  * ============================================================================
@@ -368,7 +368,13 @@ module.exports = class ChatNavArrows {
 
       ensureArrowElements(wrapper);
 
-      state.scrollHandler = () => updateArrowState();
+      // PERF: RAF-coalesced scroll handler (was firing on every scroll event)
+      let scrollRafPending = false;
+      state.scrollHandler = () => {
+        if (scrollRafPending) return;
+        scrollRafPending = true;
+        requestAnimationFrame(() => { scrollRafPending = false; updateArrowState(); });
+      };
       scroller.addEventListener('scroll', state.scrollHandler, { passive: true });
       updateArrowState();
     };
@@ -482,7 +488,9 @@ module.exports = class ChatNavArrows {
           // Ensure wrapper is position:relative for absolute arrow positioning
           if (wrapper) wrapper.style.position = 'relative';
 
-          scrollHandler = () => {
+          // PERF: RAF-coalesced scroll handler (was firing on every scroll event)
+          let scrollRafPending = false;
+          const scrollWork = () => {
             if (!scroller.isConnected) { dbg('scrollHandler: scroller disconnected'); return; }
             const { scrollTop, scrollHeight, clientHeight } = scroller;
             const atBottom = scrollHeight - scrollTop - clientHeight < THRESHOLD;
@@ -495,6 +503,11 @@ module.exports = class ChatNavArrows {
               lastScrollLogRef.current = now;
               dbg(`scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, atTop=${atTop}, atBottom=${atBottom}, showDown=${!atBottom}, showUp=${!atTop}`);
             }
+          };
+          scrollHandler = () => {
+            if (scrollRafPending) return;
+            scrollRafPending = true;
+            requestAnimationFrame(() => { scrollRafPending = false; scrollWork(); });
           };
 
           scroller.addEventListener('scroll', scrollHandler, { passive: true });

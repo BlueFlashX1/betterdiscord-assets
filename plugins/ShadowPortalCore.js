@@ -1,7 +1,7 @@
 /**
  * @name ShadowPortalCore
  * @description Shared navigation + transition core for ShadowStep, ShadowExchange, and ShadowSenses.
- * @version 1.0.0
+ * @version 1.0.1
  * @author matthewthompson
  */
 
@@ -310,6 +310,11 @@ const methods = {
       clearTimeout(this._transitionCleanupTimeout);
       this._transitionCleanupTimeout = null;
     }
+    // Cancel any in-flight WAAPI shard animations
+    if (this._activeShardAnims) {
+      for (const a of this._activeShardAnims) { try { a.cancel(); } catch (_) {} }
+      this._activeShardAnims = null;
+    }
     if (typeof this._transitionStopCanvas === "function") {
       try {
         this._transitionStopCanvas();
@@ -340,16 +345,20 @@ const methods = {
     const totalDuration = duration + 530;
     const transitionStartedAt = performance.now();
 
-    // ── Portal Diagnostic Timeline ──
+    // ── Portal Diagnostic Timeline (gated behind debugMode) ──
+    const _debugMode = !!this.settings?.debugMode;
     const _diag = { t0: transitionStartedAt, events: [] };
     const _diagLog = (phase) => {
+      if (!_debugMode) return;
       const ms = Math.round(performance.now() - _diag.t0);
       _diag.events.push({ phase, ms });
       console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
     _diagLog("TRANSITION_START");
-    console.log(`%c[PortalDiag]%c configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
-    console.log(`%c[PortalDiag]%c formComplete(22%)=${Math.round(totalDuration*0.22)}ms navDelay(26%)=${Math.max(280,Math.round(totalDuration*0.26))}ms revealStart(52%)=${Math.round(totalDuration*0.52)}ms fadeOut(96%)=${Math.round(totalDuration*0.96)}ms cleanup=${totalDuration+420}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+    if (_debugMode) {
+      console.log(`%c[PortalDiag]%c configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+      console.log(`%c[PortalDiag]%c formComplete(22%)=${Math.round(totalDuration*0.22)}ms navDelay(26%)=${Math.max(280,Math.round(totalDuration*0.26))}ms revealStart(52%)=${Math.round(totalDuration*0.52)}ms fadeOut(96%)=${Math.round(totalDuration*0.96)}ms cleanup=${totalDuration+420}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+    }
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
     const prefersReducedMotion = respectReducedMotion && systemPrefersReducedMotion;
@@ -434,20 +443,22 @@ const methods = {
         { duration: totalDuration, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" }
       );
 
+      const shardAnims = [];
       for (const shard of shards) {
         const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
         const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
         const ty = shard.style.getPropertyValue("--ss-shard-y") || "-80px";
         const rot = shard.style.getPropertyValue("--ss-shard-r") || "0deg";
-        shard.animate(
+        shardAnims.push(shard.animate(
           [
             { transform: "translate3d(0, 0, 0) rotate(0deg) scale(0.3)", opacity: 0 },
             { transform: "translate3d(0, 0, 0) rotate(0deg) scale(1)", opacity: 0.72, offset: 0.22 },
             { transform: `translate3d(${tx}, ${ty}, 0) rotate(${rot}) scale(0.2)`, opacity: 0 },
           ],
           { duration: 900, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards", delay }
-        );
+        ));
       }
+      this._activeShardAnims = shardAnims;
       debugLog(this, "Transition", "Using WAAPI + canvas portal transition");
     } else if (prefersReducedMotion) {
       overlay.classList.add("ss-transition-overlay--reduced");
@@ -480,6 +491,9 @@ const methods = {
       : Math.max(280, Math.round(totalDuration * 0.26));
     _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms)`);
 
+    // Clear stale timers from previous rapid teleport before setting new ones
+    if (this._transitionNavTimeout) clearTimeout(this._transitionNavTimeout);
+    if (this._transitionCleanupTimeout) clearTimeout(this._transitionCleanupTimeout);
     this._transitionNavTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
       this._transitionNavTimeout = null;
@@ -628,13 +642,17 @@ const methods = {
     };
 
     resize();
-    const onResize = () => resize();
+    let resizeTimer = null;
+    const onResize = () => {
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(resize, 150);
+    };
     window.addEventListener("resize", onResize);
 
     const start = performance.now();
     // ── Canvas phase diagnostics (log once per phase) ──
     const _canvasDiag = { formDone: false, revealStarted: false, fadeStarted: false, done: false };
-    const _cdLog = (phase) => console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
+    const _cdLog = (phase) => { if (this.settings?.debugMode) console.log(`%c[PortalDiag]%c ${phase} %c@ ${Math.round(performance.now() - start)}ms (canvas)`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8"); };
 
     const draw = (now) => {
       if (stopped) return;
@@ -1852,13 +1870,17 @@ function startDrawLoop() {
       height: initHeight,
     }, [offscreen]);
 
-    // Forward resize events to Worker
+    // Forward resize events to Worker (debounced)
+    let resizeTimer = null;
     const onResize = () => {
-      const w = Math.max(1, Math.floor(window.innerWidth));
-      const h = Math.max(1, Math.floor(window.innerHeight));
-      canvas.style.width = `${w}px`;
-      canvas.style.height = `${h}px`;
-      worker.postMessage({ type: "resize", width: w, height: h });
+      if (resizeTimer) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        const w = Math.max(1, Math.floor(window.innerWidth));
+        const h = Math.max(1, Math.floor(window.innerHeight));
+        canvas.style.width = `${w}px`;
+        canvas.style.height = `${h}px`;
+        worker.postMessage({ type: "resize", width: w, height: h });
+      }, 150);
     };
     window.addEventListener("resize", onResize);
 

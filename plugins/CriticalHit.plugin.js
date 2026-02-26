@@ -8309,6 +8309,10 @@ ${childSel} {
         this._cache.urlGuildIdSource = null;
       }
 
+      // Clear cached DOM element references (prevent GC blocking on reload)
+      this._cachedMessageContainer = null;
+      this._cachedMessageContainerTimestamp = 0;
+
       // Remove injected CSS via BdApi
       BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.crit);
       BdApi.DOM.removeStyle(this.CSS_STYLE_IDS.critMessages);

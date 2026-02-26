@@ -1,7 +1,7 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.1.3
+ * @version 1.1.4
  * @author matthewthompson
  */
 
@@ -11,7 +11,7 @@ const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','expo
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
-const PLUGIN_VERSION = "1.1.3";
+const PLUGIN_VERSION = "1.1.4";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
@@ -29,7 +29,7 @@ const RANK_COLORS = {
 
 const GUILD_FEED_CAP = 5000;
 const GLOBAL_FEED_CAP = 25000;
-const FEED_MAX_AGE_MS = 3 * 24 * 60 * 60 * 1000; // 3 days
+const FEED_MAX_AGE_MS = 1 * 24 * 60 * 60 * 1000; // 1 day
 const PURGE_INTERVAL_MS = 10 * 60 * 1000; // Check for stale entries every 10 minutes
 const WIDGET_OBSERVER_DEBOUNCE_MS = 200;
 const WIDGET_REINJECT_DELAY_MS = 300;
@@ -340,6 +340,7 @@ class SensesEngine {
     //   1. First activity after restart → "user is active" toast
     //   2. Return from AFK (1-3h silence) → "back from AFK" toast
     this._userLastActivity = new Map();  // authorId → { timestamp, notifiedActive }
+    this._USER_ACTIVITY_MAX = 1000; // LRU cap — evict oldest when exceeded
     this._AFK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours — sweet spot for real AFK detection
     this._subscribeTime = 0; // Set when subscribe() fires — used to defer early toasts
     this._statusByUserId = new Map(); // userId -> normalized status
@@ -1282,6 +1283,14 @@ class SensesEngine {
 
         // Always update timestamp
         this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
+        // LRU eviction: drop oldest entries when map exceeds cap
+        if (this._userLastActivity.size > this._USER_ACTIVITY_MAX) {
+          let oldest = null, oldestTs = Infinity;
+          for (const [uid, data] of this._userLastActivity) {
+            if (data.timestamp < oldestTs) { oldest = uid; oldestTs = data.timestamp; }
+          }
+          if (oldest) this._userLastActivity.delete(oldest);
+        }
       }
 
       // Build feed entry
@@ -2289,12 +2298,21 @@ function buildComponents(pluginRef) {
 
     useEffect(() => {
       if (feed.length > prevLenRef.current && scrollRef.current) {
-        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        // Defer scrollTop write to avoid layout thrashing after React render
+        requestAnimationFrame(() => {
+          if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+        });
       }
       prevLenRef.current = feed.length;
     }, [feed.length]);
 
-    if (feed.length === 0) {
+    // Cap visible entries to last 200 to avoid rendering thousands of DOM nodes
+    const visibleFeed = useMemo(() => {
+      if (feed.length <= 200) return feed;
+      return feed.slice(feed.length - 200);
+    }, [feed]);
+
+    if (visibleFeed.length === 0) {
       return ce("div", { className: "shadow-senses-empty" },
         "No messages detected yet. Shadows are watching..."
       );
@@ -2304,7 +2322,7 @@ function buildComponents(pluginRef) {
       ref: scrollRef,
       style: { maxHeight: "50vh", overflowY: "auto", padding: "8px 16px" },
     },
-      feed.map((entry, i) =>
+      visibleFeed.map((entry, i) =>
         ce(FeedCard, { key: `${entry.messageId}-${i}`, entry, onNavigate })
       )
     );
@@ -2870,10 +2888,29 @@ module.exports = class ShadowSenses {
 
   _getMembersWrap() {
     try {
+      // PERF: Cache the found wrap element for 2s to avoid offsetParent layout recalc every 500ms observer tick
+      const now = Date.now();
+      if (this._cachedMembersWrap && this._cachedMembersWrapTs && (now - this._cachedMembersWrapTs < 2000)) {
+        // Validate cached element is still connected and visible
+        if (this._cachedMembersWrap.isConnected && this._cachedMembersWrap.offsetParent !== null) {
+          return this._cachedMembersWrap;
+        }
+        // Stale — clear and re-query
+        this._cachedMembersWrap = null;
+        this._cachedMembersWrapTs = 0;
+      }
+
       const wraps = document.querySelectorAll('[class^="membersWrap_"], [class*=" membersWrap_"]');
       for (const wrap of wraps) {
-        if (wrap.offsetParent !== null) return wrap;
+        if (wrap.offsetParent !== null) {
+          this._cachedMembersWrap = wrap;
+          this._cachedMembersWrapTs = now;
+          return wrap;
+        }
       }
+      // Not found — clear cache
+      this._cachedMembersWrap = null;
+      this._cachedMembersWrapTs = 0;
     } catch (err) {
       this.debugError("Widget", "Failed to find membersWrap", err);
     }
@@ -2954,6 +2991,9 @@ module.exports = class ShadowSenses {
       if (existing) existing.remove();
       const spacer = document.getElementById(WIDGET_SPACER_ID);
       if (spacer) spacer.remove();
+      // Clear membersWrap cache — element is gone
+      this._cachedMembersWrap = null;
+      this._cachedMembersWrapTs = 0;
     } catch (err) {
       this.debugError("Widget", "Failed to remove widget", err);
     }

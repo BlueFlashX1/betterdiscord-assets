@@ -2,7 +2,7 @@
  * @name ShadowArmy
  * @author BlueFlashX1
  * @description Solo Leveling Shadow Army system - Extract and collect shadows with ranks, roles, and abilities
- * @version 3.6.0
+ * @version 3.6.1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -2795,6 +2795,12 @@ module.exports = class ShadowArmy {
       clearTimeout(this.widgetReinjectionTimeout);
       this.widgetReinjectionTimeout = null;
     }
+    // Clear navigation change debounce
+    if (this._navChangeTimeout) {
+      clearTimeout(this._navChangeTimeout);
+      this._retryTimeouts?.delete?.(this._navChangeTimeout);
+      this._navChangeTimeout = null;
+    }
 
     // COMPREHENSIVE MEMORY CLEANUP
     // Clear caches
@@ -2816,21 +2822,10 @@ module.exports = class ShadowArmy {
     // are managed by the storage manager itself and will be cleaned up when
     // database is closed
 
-    // Clear widget injection timeouts
-    if (this._widgetInjectionTimeouts) {
-      this._widgetInjectionTimeouts.forEach((timeoutId) => clearTimeout(timeoutId));
-      this._widgetInjectionTimeouts.clear();
-      this._widgetInjectionTimeouts = null;
-    }
-
     // Disconnect member list observer
     if (this.memberListObserver) {
       this.memberListObserver.disconnect();
       this.memberListObserver = null;
-    }
-    if (this.memberListAttributeObserver) {
-      this.memberListAttributeObserver.disconnect();
-      this.memberListAttributeObserver = null;
     }
 
     // Remove shadow rank widget (React unmount + DOM)
@@ -2885,11 +2880,17 @@ module.exports = class ShadowArmy {
       // Re-setup member list watcher on channel/guild change.
       // The previous observer may be watching a stale (disconnected) DOM node
       // since Discord re-renders the entire layout on navigation.
-      const timeoutId = setTimeout(() => {
-        this._retryTimeouts.delete(timeoutId);
+      // Debounce: rapid guild/channel switches only trigger one rebuild.
+      if (this._navChangeTimeout) {
+        clearTimeout(this._navChangeTimeout);
+        this._retryTimeouts.delete(this._navChangeTimeout);
+      }
+      this._navChangeTimeout = setTimeout(() => {
+        this._retryTimeouts.delete(this._navChangeTimeout);
+        this._navChangeTimeout = null;
         this.setupMemberListWatcher();
       }, 200);
-      this._retryTimeouts.add(timeoutId);
+      this._retryTimeouts.add(this._navChangeTimeout);
     };
 
     // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
@@ -3101,10 +3102,6 @@ module.exports = class ShadowArmy {
     if (this.memberListObserver) {
       this.memberListObserver.disconnect();
     }
-    if (this.memberListAttributeObserver) {
-      this.memberListAttributeObserver.disconnect();
-    }
-
     if (!this.canInjectWidgetInCurrentView()) {
       document.getElementById('shadow-army-widget')?.remove();
       const retryId = setTimeout(() => {
@@ -10499,6 +10496,11 @@ module.exports = class ShadowArmy {
       }
 
       // Mount React component into widget container
+      // Defensive: unmount stale root if it survived cleanup
+      if (this._widgetReactRoot) {
+        try { this._widgetReactRoot.unmount(); } catch (_) {}
+        this._widgetReactRoot = null;
+      }
       const createRoot = this._getCreateRoot();
       if (createRoot) {
         const root = createRoot(widget);
