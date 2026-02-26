@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.8.2
+ * @version 4.8.3
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -2624,7 +2624,7 @@ module.exports = class Dungeons {
 
     const mobMaxActiveCapRaw = Number(this.settings?.mobMaxActiveCap);
     const mobMaxActiveCap = Number.isFinite(mobMaxActiveCapRaw)
-      ? this.clampNumber(Math.floor(mobMaxActiveCapRaw), 50, 50000)
+      ? this.clampNumber(Math.floor(mobMaxActiveCapRaw), 50, 2000)
       : this.defaultSettings.mobMaxActiveCap;
     setIfChanged('mobMaxActiveCap', mobMaxActiveCap);
 
@@ -3693,27 +3693,28 @@ module.exports = class Dungeons {
   }
 
   isUserMessage(messageElement) {
+    // STRICT: Only messages with a visible author element count as user messages.
+    // System messages (joins, boosts, pins, etc.) lack author headings and must NOT spawn dungeons.
     const authorElement =
       messageElement.querySelector('span[role="heading"]') ||
       messageElement.querySelector('[class*="author"]') ||
       messageElement.querySelector('[class*="username"]') ||
       messageElement.querySelector('[class*="headerText"]');
 
-    if (!authorElement) {
-      // Fallback: Check if message has text content (might be a valid message without author element visible)
-      const hasContent = messageElement.textContent && messageElement.textContent.trim().length > 0;
-      if (hasContent) {
-        return true; // Accept messages with content even without author element
-      }
-      return false;
-    }
+    if (!authorElement) return false;
 
+    // Reject bot messages
     const botBadge =
       messageElement.querySelector('svg[aria-label*="bot" i]') ||
       messageElement.querySelector('[class*="botTag"]') ||
       messageElement.querySelector('[class*="bot"]');
+    if (botBadge) return false;
 
-    return !botBadge;
+    // Reject system messages (join, boost, pin, etc.) — they have [class*="systemMessage"]
+    if (messageElement.querySelector('[class*="systemMessage"]') ||
+        messageElement.closest('[class*="systemMessage"]')) return false;
+
+    return true;
   }
 
   // ==== DUNGEON SPAWNING ====
@@ -4079,13 +4080,12 @@ module.exports = class Dungeons {
         spawnRate: 2 + rankIndex,
         activeMobs: [], // Array of mob objects with HP and stats
         // Per-dungeon mob capacity: Matches target count up to performance ceiling
-        // Shadows kill mobs continuously so the full target can be alive simultaneously.
-        // Safety ceiling of 10,000 prevents excessive memory/GC pressure.
+        // Shadows kill mobs continuously; cap prevents UI freezes from array iteration.
         mobCapacity: Math.floor(
           Math.max(
             200, // Minimum capacity (prevents too low for any dungeon)
             Math.min(
-              10000, // Maximum capacity (prevents excessive mobs causing lag)
+              2000, // Maximum capacity (prevents excessive mobs causing lag/freezes)
               totalMobCount // Full target count (capped by max above)
             )
           )
@@ -4658,7 +4658,7 @@ module.exports = class Dungeons {
           : Number.isFinite(settingMobCapacity) && settingMobCapacity > 0
           ? settingMobCapacity
           : this.defaultSettings.mobMaxActiveCap;
-      const mobCap = this.clampNumber(Math.floor(resolvedMobCapacity), 50, 50000);
+      const mobCap = this.clampNumber(Math.floor(resolvedMobCapacity), 50, 2000);
       // Verbose spawn stats stripped — use MOB_CAP debugLog for capacity warnings
       if (_aliveMobs >= mobCap) {
         // Throttle warning to prevent console spam (log once per 30 seconds per dungeon)
@@ -8918,7 +8918,7 @@ module.exports = class Dungeons {
 
         // PERFORMANCE: Limit mobs processed based on window visibility
         // Reuse isWindowVisible from function start
-        const maxMobsToProcess = isWindowVisible ? 3000 : 500; // Much fewer mobs when hidden
+        const maxMobsToProcess = isWindowVisible ? 500 : 100; // Cap mob processing to prevent UI freezes
         const aliveMobs = [];
         for (const m of dungeon.mobs.activeMobs) {
           if (aliveMobs.length >= maxMobsToProcess) break;
@@ -14052,7 +14052,7 @@ module.exports = class Dungeons {
 
           // MIGRATION: Sync mobCapacity with current formula (handles 15%→100% change)
           if (dungeon.mobs?.targetCount && dungeon.mobs.mobCapacity) {
-            const correctCap = Math.floor(Math.max(200, Math.min(10000, dungeon.mobs.targetCount)));
+            const correctCap = Math.floor(Math.max(200, Math.min(2000, dungeon.mobs.targetCount)));
             if (dungeon.mobs.mobCapacity < correctCap) {
               dungeon.mobs.mobCapacity = correctCap;
             }
