@@ -1317,16 +1317,13 @@ ul[aria-label="Channels"] li:has(div[aria-label="Browse Channels"]) {
   display: none !important;
 }
 
-/* §9f — Purple highlight fill on channel rows when hovered
-   Discord's hover rule: .wrapper_:hover .link_ { background: var(--interactive-background-hover) }
-   Instead of fighting that rule, we override the CSS variable on the channel list
-   scope so Discord's own rule applies our purple. Also add a direct override on
-   the link element for full coverage. Selected channels are excluded */
+/* §9f — Neutralize Discord's built-in hover background on channel rows.
+   Discord's rule: .wrapper_:hover .link_ { background: var(--interactive-background-hover) }
+   Setting the variable to transparent prevents Discord's shorthand from resetting
+   background-image (which carries our SVG banners). The SVG v2 hover banner at
+   §9f+h provides the actual hover visual. */
 ul[aria-label="Channels"] {
-  --interactive-background-hover: rgba(var(--sl-color-primary-rgb), 0.25) !important;
-}
-ul[aria-label="Channels"] li[class*="containerDefault_"]:not([class*="selected_"]) div[class*="wrapper_"]:hover [class*="link_"] {
-  background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
+  --interactive-background-hover: transparent !important;
 }
 
 /* §9f+ — SVG banner backgrounds on channel rows (Solo Leveling gate frame)
