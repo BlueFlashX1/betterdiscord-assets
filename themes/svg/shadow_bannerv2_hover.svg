@@ -1,31 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="25 400 970 195" preserveAspectRatio="none">
-<defs>
-  <!-- Outer glow filter for stroke paths -->
-  <filter id="glow" x="-10%" y="-30%" width="120%" height="160%">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur"/>
-    <feMerge>
-      <feMergeNode in="blur"/>
-      <feMergeNode in="SourceGraphic"/>
-    </feMerge>
-  </filter>
-
-  <!-- Intense inner glow for the gate frame -->
-  <filter id="innerGlow" x="-5%" y="-20%" width="110%" height="140%">
-    <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
-    <feColorMatrix in="blur" type="matrix"
-      values="1.2 0 0 0 0.15
-              0 0.6 0 0 0
-              0 0 1.5 0 0.2
-              0 0 0 1.2 0" result="colored"/>
-    <feMerge>
-      <feMergeNode in="colored"/>
-      <feMergeNode in="SourceGraphic"/>
-    </feMerge>
-  </filter>
-
-</defs>
-
 <!-- Dark interior fill (slightly lighter than v1 for hover feedback) -->
 <g fill="#0e0e18">
 <path d="
@@ -158,7 +132,7 @@
 </g>
 
 <!-- Gate frame — brightened purple with glow filter -->
-<g fill="#a855f7" filter="url(#innerGlow)">
+<g fill="#a855f7">
 <path d="
   M 891.40 423.91
   Q 886.11 418.69 891.69 413.60
@@ -447,7 +421,7 @@
 </g>
 
 <!-- Glowing stroke outlines — brighter + filtered -->
-<g stroke-width="2.5" fill="none" stroke-linecap="butt" filter="url(#glow)">
+<g stroke-width="2.5" fill="none" stroke-linecap="butt">
 <path stroke="#7c3aed" vector-effect="non-scaling-stroke" d="
   M 891.40 423.91
   Q 886.11 418.69 891.69 413.60
