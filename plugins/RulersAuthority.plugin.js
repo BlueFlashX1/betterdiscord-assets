@@ -168,7 +168,7 @@ const DEFAULT_SETTINGS = {
   // Default panel widths (used for reset)
   defaultWidths: {
     sidebar: 240,
-    members: 240,
+    members: 245,
     profile: 340,
     search: 400,
   },

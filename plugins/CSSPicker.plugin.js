@@ -461,7 +461,43 @@ module.exports = (() => {
     const w = parseFloat(cs.width), h = parseFloat(cs.height);
     if (w === 0 || h === 0) flags.collapsed = `${Math.round(w)}x${Math.round(h)}`;
     if (cs.clipPath && cs.clipPath !== 'none') flags.clipPath = cs.clipPath;
+
+    // Interaction state at capture time
+    try { if (el.matches(':hover')) flags.hover = true; } catch {}
+    try { if (el.matches(':focus')) flags.focus = true; } catch {}
+    try { if (el.matches(':focus-within')) flags.focusWithin = true; } catch {}
+
+    // Discord state classes (selected channel, active item, etc.)
+    const cls = Array.from(el.classList || []);
+    const stateClass = cls.find(c => /selected|active|focused|hovered|muted|unread/i.test(c));
+    if (stateClass) flags.stateClass = stateClass;
+
     return Object.keys(flags).length ? flags : null;
+  };
+
+  // Check if element has any meaningful identity (classes, ID, aria-label, role, data-testid)
+  const hasElementIdentity = (el) => {
+    if (!el || !(el instanceof Element)) return false;
+    if (el.id) return true;
+    if (el.classList && el.classList.length > 0) return true;
+    if (el.getAttribute('aria-label')) return true;
+    if (el.getAttribute('role')) return true;
+    if (el.getAttribute('data-testid')) return true;
+    return false;
+  };
+
+  // When elementFromPoint lands on a bare wrapper (no classes, no ID, etc.),
+  // climb up to the nearest meaningful parent so the pick is actionable.
+  const promoteToMeaningfulAncestor = (el, maxClimb = 3) => {
+    if (!el || hasElementIdentity(el)) return { el, promoted: false };
+    let current = el;
+    for (let i = 0; i < maxClimb; i++) {
+      const parent = current.parentElement;
+      if (!parent || parent === document.body || parent === document.documentElement) break;
+      if (hasElementIdentity(parent)) return { el: parent, promoted: true, originalTag: el.tagName.toLowerCase() };
+      current = parent;
+    }
+    return { el, promoted: false };
   };
 
   // Full computed style keys for the target element
@@ -1390,8 +1426,9 @@ module.exports = (() => {
           const { x, y } = this.pendingHoverPoint;
           this.pendingHoverPoint = null;
 
-          const target = getTargetFromPoint(x, y);
-          if (!target || !(target instanceof Element)) return;
+          const rawTarget = getTargetFromPoint(x, y);
+          if (!rawTarget || !(rawTarget instanceof Element)) return;
+          const target = promoteToMeaningfulAncestor(rawTarget).el;
 
           if (target === this.lastHoverElement) return;
           this.lastHoverElement = target;
@@ -1409,17 +1446,21 @@ module.exports = (() => {
           return;
         }
 
-        const target = getTargetFromPoint(event.clientX, event.clientY);
-        if (!target || !(target instanceof Element)) {
+        const rawTarget = getTargetFromPoint(event.clientX, event.clientY);
+        if (!rawTarget || !(rawTarget instanceof Element)) {
           safeToast('No element found to capture', { type: 'error' });
           this.deactivatePickMode();
           return;
         }
+        const { el: target, promoted, originalTag } = promoteToMeaningfulAncestor(rawTarget);
+
+        const elementDetails = getElementDetails(target);
+        if (promoted && originalTag) elementDetails._promotedFrom = originalTag;
 
         const report = {
           plugin: PLUGIN_NAME,
           version: config.info.version,
-          element: getElementDetails(target),
+          element: elementDetails,
         };
 
         const saveResult = trySaveReportJson(report);
