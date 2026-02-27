@@ -2535,6 +2535,13 @@ div[class*="containerDefault_"] {
   }
 }
 
+/* §14c+h — Hide "Invite to Channel" and "Open Chat" hover icons
+   These buttons clutter the channel list on hover — fully hidden. */
+ul[aria-label="Channels"] div[aria-label="Invite to Channel"],
+ul[aria-label="Channels"] div[aria-label="Open Chat"] {
+  display: none !important;
+}
+
 /* §14d — Disabled Channel Textarea Redesign
    Cleaner look for read-only channels (no send permission).
    Converted to attribute selectors for hash resilience.
