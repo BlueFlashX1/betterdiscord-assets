@@ -2,7 +2,7 @@
  * @name SoloLevelingStats
  * @author BlueFlashX1
  * @description Level up, unlock achievements, and complete daily quests based on your Discord activity
- * @version 3.0.4
+ * @version 3.0.5
  * @authorId
  * @authorLink
  * @website
@@ -3016,146 +3016,175 @@ module.exports = class SoloLevelingStats {
       this.messageObserver.disconnect();
       this.messageObserver = null;
     }
+    // Clean up debounce state from previous observer
+    if (this._mutationDebounceTimer) {
+      clearTimeout(this._mutationDebounceTimer);
+      this._mutationDebounceTimer = null;
+    }
+    this._pendingMutationNodes = [];
 
     const self = this;
     this.messageObserver = new MutationObserver((mutations) => {
-      mutations.forEach((mutation) => {
-        mutation.addedNodes.forEach((node) => {
-          if (node.nodeType !== 1) return;
+      // PERF: Buffer added nodes, debounce processing to avoid 8-12 sync DOM queries per node.
+      // During channel load Discord adds 50-200 nodes; without batching this causes 400-2400 queries.
+      if (!self._pendingMutationNodes) self._pendingMutationNodes = [];
 
-          // Avoid attaching ad-hoc properties to DOM nodes in hot paths.
-          // Store metadata in a WeakMap so GC can collect nodes naturally.
-          if (!self._domNodeAddedTime) {
-            self._domNodeAddedTime = new WeakMap();
-          }
-          self._domNodeAddedTime.set(node, Date.now());
+      for (let i = 0; i < mutations.length; i++) {
+        const added = mutations[i].addedNodes;
+        for (let j = 0; j < added.length; j++) {
+          if (added[j].nodeType === 1) self._pendingMutationNodes.push(added[j]);
+        }
+      }
 
-          // Check if this is a message element
-          const messageElement = node.classList?.contains('message')
-            ? node
-            : node.querySelector?.('[class*="message"]') || node.closest?.('[class*="message"]');
+      // Debounce: coalesce rapid mutation bursts into a single processing pass
+      if (self._mutationDebounceTimer) return;
+      self._mutationDebounceTimer = setTimeout(() => {
+        self._mutationDebounceTimer = null;
+        const nodes = self._pendingMutationNodes;
+        self._pendingMutationNodes = [];
+        if (!nodes.length || !self._isRunning) return;
 
-          // Also mark message element with added time
-          if (messageElement && messageElement !== node) {
-            self._domNodeAddedTime.set(messageElement, Date.now());
-          }
+        requestAnimationFrame(() => {
+          for (let k = 0; k < nodes.length; k++) {
+            const node = nodes[k];
+            if (!node.isConnected) continue;
 
-          if (!messageElement) return;
-
-          // Check if this is our own message
-          const isOwnMessage = this.isOwnMessage(messageElement, currentUserId);
-          self.debugLog('MUTATION_OBSERVER', 'Message element detected', {
-            hasMessageElement: !!messageElement,
-            isOwnMessage,
-            hasCurrentUserId: !!currentUserId,
-          });
-
-          if (!isOwnMessage) return;
-
-          const messageId = self.getMessageId(messageElement);
-          self.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
-            messageId,
-            alreadyProcessed: messageId ? self.processedMessageIds.has(messageId) : false,
-            elementClasses: messageElement.classList?.toString() || '',
-            usingWebpack: self.webpackModuleAccess,
-          });
-
-          // Skip DOM processing if webpack patches are handling it (fallback mode)
-          if (self.webpackModuleAccess && messageId && self.processedMessageIds.has(messageId)) {
-            return;
-          }
-
-          if (!messageId || self.processedMessageIds.has(messageId)) {
-            self.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
-              messageId,
-              hasId: !!messageId,
-            });
-            return;
-          }
-
-          // Double-check: Only process if we have strong confirmation
-          const hasReactProps = this.doesMessageFiberMatchAuthorId(messageElement, currentUserId);
-
-          const hasExplicitYou = (() => {
-            const usernameElement =
-              messageElement.querySelector('[class*="username"]') ||
-              messageElement.querySelector('[class*="author"]');
-            if (usernameElement) {
-              const usernameText = usernameElement.textContent?.trim() || '';
-              return (
-                usernameText.toLowerCase() === 'you' ||
-                usernameText.toLowerCase().startsWith('you ')
-              );
+            // Avoid attaching ad-hoc properties to DOM nodes in hot paths.
+            // Store metadata in a WeakMap so GC can collect nodes naturally.
+            if (!self._domNodeAddedTime) {
+              self._domNodeAddedTime = new WeakMap();
             }
-            return false;
-          })();
+            self._domNodeAddedTime.set(node, Date.now());
 
-          if (!hasReactProps && !hasExplicitYou) {
-            self.debugLog(
-              'MUTATION_OBSERVER',
-              'Skipping: Insufficient confirmation for MutationObserver detection',
-              {
-                hasReactProps,
-                hasExplicitYou,
+            // PERF: Cheap string check before expensive DOM traversal
+            const cn = node.className || '';
+            const isMessageNode = typeof cn === 'string' && cn.includes('message');
+            const messageElement = isMessageNode
+              ? node
+              : (node.closest?.('[class*="message"]') || null);
+
+            // Also mark message element with added time
+            if (messageElement && messageElement !== node) {
+              self._domNodeAddedTime.set(messageElement, Date.now());
+            }
+
+            if (!messageElement) continue;
+
+            // Check if this is our own message
+            const isOwnMessage = self.isOwnMessage(messageElement, currentUserId);
+            self.debugLog('MUTATION_OBSERVER', 'Message element detected', {
+              hasMessageElement: !!messageElement,
+              isOwnMessage,
+              hasCurrentUserId: !!currentUserId,
+            });
+
+            if (!isOwnMessage) continue;
+
+            const messageId = self.getMessageId(messageElement);
+            self.debugLog('MUTATION_OBSERVER', 'Own message detected via MutationObserver', {
+              messageId,
+              alreadyProcessed: messageId ? self.processedMessageIds.has(messageId) : false,
+              elementClasses: messageElement.classList?.toString() || '',
+              usingWebpack: self.webpackModuleAccess,
+            });
+
+            // Skip DOM processing if webpack patches are handling it (fallback mode)
+            if (self.webpackModuleAccess && messageId && self.processedMessageIds.has(messageId)) {
+              continue;
+            }
+
+            if (!messageId || self.processedMessageIds.has(messageId)) {
+              self.debugLog('MUTATION_OBSERVER', 'Message already processed or no ID', {
                 messageId,
-              }
-            );
-            return;
-          }
-
-          // Check message timestamp to prevent processing old chat history
-          const messageTimestamp = self.getMessageTimestamp(messageElement);
-          const isNewMessage = messageTimestamp && messageTimestamp >= (self.pluginStartTime || 0);
-          if (!isNewMessage && messageTimestamp) {
-            self.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
-              messageId,
-              messageTimestamp,
-              pluginStartTime: self.pluginStartTime,
-              age: Date.now() - messageTimestamp,
-            });
-            return;
-          }
-
-          self.addProcessedMessageId(messageId);
-          self.lastMessageId = messageId;
-          self.lastMessageElement = messageElement;
-
-          // Get message text
-          const messageText =
-            messageElement.textContent?.trim() ||
-            messageElement.querySelector('[class*="messageContent"]')?.textContent?.trim() ||
-            messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
-            '';
-
-          if (messageText.length > 0 && !self.isSystemMessage(messageElement)) {
-            self.debugLog('MUTATION_OBSERVER', 'Processing own message (confirmed)', {
-              messageId,
-              length: messageText.length,
-              preview: messageText.substring(0, 50),
-              confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
-              isNewMessage,
-              messageTimestamp,
-            });
-            const timeoutId = setTimeout(() => {
-              self._messageProcessTimeouts?.delete(timeoutId);
-              if (!self._isRunning) return;
-              const context = self.buildMessageContextFromView(messageText, messageElement);
-              self.processMessageSent(messageText, context);
-            }, 100);
-            if (!self._messageProcessTimeouts) {
-              self._messageProcessTimeouts = new Set();
+                hasId: !!messageId,
+              });
+              continue;
             }
-            self._messageProcessTimeouts.add(timeoutId);
-          } else {
-            self.debugLog('MUTATION_OBSERVER', 'Message skipped', {
-              reason: messageText.length === 0 ? 'empty' : 'system_message',
-            });
-          }
-        });
-      });
 
-      // Track channel visits
-      this.trackChannelVisit();
+            // Double-check: Only process if we have strong confirmation
+            const hasReactProps = self.doesMessageFiberMatchAuthorId(messageElement, currentUserId);
+
+            const hasExplicitYou = (() => {
+              const usernameElement =
+                messageElement.querySelector('[class*="username"]') ||
+                messageElement.querySelector('[class*="author"]');
+              if (usernameElement) {
+                const usernameText = usernameElement.textContent?.trim() || '';
+                return (
+                  usernameText.toLowerCase() === 'you' ||
+                  usernameText.toLowerCase().startsWith('you ')
+                );
+              }
+              return false;
+            })();
+
+            if (!hasReactProps && !hasExplicitYou) {
+              self.debugLog(
+                'MUTATION_OBSERVER',
+                'Skipping: Insufficient confirmation for MutationObserver detection',
+                {
+                  hasReactProps,
+                  hasExplicitYou,
+                  messageId,
+                }
+              );
+              continue;
+            }
+
+            // Check message timestamp to prevent processing old chat history
+            const messageTimestamp = self.getMessageTimestamp(messageElement);
+            const isNewMessage = messageTimestamp && messageTimestamp >= (self.pluginStartTime || 0);
+            if (!isNewMessage && messageTimestamp) {
+              self.debugLog('MUTATION_OBSERVER', 'Skipping old message from chat history', {
+                messageId,
+                messageTimestamp,
+                pluginStartTime: self.pluginStartTime,
+                age: Date.now() - messageTimestamp,
+              });
+              continue;
+            }
+
+            self.addProcessedMessageId(messageId);
+            self.lastMessageId = messageId;
+            self.lastMessageElement = messageElement;
+
+            // Get message text
+            const messageText =
+              messageElement.textContent?.trim() ||
+              messageElement.querySelector('[class*="messageContent"]')?.textContent?.trim() ||
+              messageElement.querySelector('[class*="textValue"]')?.textContent?.trim() ||
+              '';
+
+            if (messageText.length > 0 && !self.isSystemMessage(messageElement)) {
+              self.debugLog('MUTATION_OBSERVER', 'Processing own message (confirmed)', {
+                messageId,
+                length: messageText.length,
+                preview: messageText.substring(0, 50),
+                confirmationMethod: hasReactProps ? 'React props' : 'Explicit You',
+                isNewMessage,
+                messageTimestamp,
+              });
+              const timeoutId = setTimeout(() => {
+                self._messageProcessTimeouts?.delete(timeoutId);
+                if (!self._isRunning) return;
+                const context = self.buildMessageContextFromView(messageText, messageElement);
+                self.processMessageSent(messageText, context);
+              }, 100);
+              if (!self._messageProcessTimeouts) {
+                self._messageProcessTimeouts = new Set();
+              }
+              self._messageProcessTimeouts.add(timeoutId);
+            } else {
+              self.debugLog('MUTATION_OBSERVER', 'Message skipped', {
+                reason: messageText.length === 0 ? 'empty' : 'system_message',
+              });
+            }
+          }
+
+          // Track channel visits
+          self.trackChannelVisit();
+        });
+      }, 100);
     });
 
     this.messageObserver.observe(messageContainer, {
@@ -4045,6 +4074,11 @@ module.exports = class SoloLevelingStats {
       this.messageObserver.disconnect();
       this.messageObserver = null;
     }
+    if (this._mutationDebounceTimer) {
+      clearTimeout(this._mutationDebounceTimer);
+      this._mutationDebounceTimer = null;
+    }
+    this._pendingMutationNodes = [];
     this._domNodeAddedTime = null;
     if (this.processedMessageIds) {
       this.processedMessageIds.clear();

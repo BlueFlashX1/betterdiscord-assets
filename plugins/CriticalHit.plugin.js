@@ -2,7 +2,7 @@
  * @name CriticalHit
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
- * @version 3.4.2
+ * @version 3.4.3
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * Font Credit:
@@ -3412,10 +3412,23 @@ ${childSel} {
 
     // Use MutationObserver to detect when messages are loaded (no polling)
     const loadObserver = this._trackTransientObserver(
-      new MutationObserver(() => {
-        const messageCount =
-          messageContainer?.querySelectorAll?.('[class*="message"]')?.length ?? 0;
-        messageCount > 0 && markChannelLoaded('mutation');
+      new MutationObserver((mutations) => {
+        // PERF: Check added nodes directly instead of querySelectorAll on every mutation.
+        // querySelectorAll('[class*="message"]') was firing 50-100x/sec during channel load.
+        for (let i = 0; i < mutations.length; i++) {
+          const added = mutations[i].addedNodes;
+          for (let j = 0; j < added.length; j++) {
+            const n = added[j];
+            if (n.nodeType === 1) {
+              const cn = n.className;
+              if ((typeof cn === 'string' && cn.includes('message')) ||
+                  n.querySelector?.('[class*="message"]')) {
+                markChannelLoaded('mutation');
+                return; // Found messages — stop checking
+              }
+            }
+          }
+        }
       })
     );
 
@@ -3450,18 +3463,33 @@ ${childSel} {
         // Multiple child nodes in the same message may be added at once.
         const uniqueMessageElements = new Set();
         for (let k = 0; k < addedElements.length; k++) {
-           // Use closest() for robust upward traversal
-           const messageElement = addedElements[k].closest?.('[class*="message-"]:not([class*="Content"]):not([class*="Group"])') ||
-                            addedElements[k].closest?.('[class*="messageListItem"]') ||
-                            addedElements[k].closest?.('[data-message-id]');
+           // PERF: Single upward walk instead of 3x closest() calls per node
+           let messageElement = null;
+           let el = addedElements[k];
+           while (el && el !== messageContainer) {
+             const cn = el.className;
+             if (typeof cn === 'string') {
+               if ((cn.includes('message-') && !cn.includes('Content') && !cn.includes('Group')) ||
+                   cn.includes('messageListItem')) {
+                 messageElement = el;
+                 break;
+               }
+             }
+             if (el.hasAttribute?.('data-message-id')) {
+               messageElement = el;
+               break;
+             }
+             el = el.parentElement;
+           }
 
           if (messageElement && messageElement.isConnected && !messageElement.classList.contains('messageContent')) {
             uniqueMessageElements.add(messageElement);
           } else if (addedElements[k].nodeType === 1 && addedElements[k].isConnected) {
             // Fallback for nodes that might be messages themselves
-            const isMsg = addedElements[k].classList?.contains('message-2C84CH') ||
-                          addedElements[k].classList?.contains('messageListItem') ||
-                          Array.from(addedElements[k].classList || []).some(c => c.includes('message-') && !c.includes('Content'));
+            const fallbackCn = addedElements[k].className;
+            const isMsg = typeof fallbackCn === 'string' &&
+                          ((fallbackCn.includes('message-') && !fallbackCn.includes('Content')) ||
+                           fallbackCn.includes('messageListItem'));
             if (isMsg) uniqueMessageElements.add(addedElements[k]);
           }
         }

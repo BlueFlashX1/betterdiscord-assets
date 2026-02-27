@@ -2,7 +2,7 @@
  * @name Dungeons
  * @author BlueFlashX1
  * @description Solo Leveling Dungeon system - Random dungeons spawn in channels, fight mobs and bosses with your stats and shadow army
- * @version 4.9.0
+ * @version 4.9.1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * ============================================================================
@@ -1002,6 +1002,7 @@ module.exports = class Dungeons {
     this.mobAttackTimers = new Map(); // Mob attack timers per dungeon
     this.dungeonIndicators = new Map();
     this.bossHPBars = new Map();
+    this._ariseButtonRefs = new Map(); // PERF: Cache ARISE button DOM refs to avoid document.querySelector every 5 ticks
     this._bossBarCache = new Map(); // Cache last boss bar render payload per channel
     this._mobCleanupCache = new Map(); // Throttled alive-mob counts per channel
     this._mobIdCounter = 0; // Incrementing mob ID (faster than Math.random().toString(36))
@@ -1799,10 +1800,11 @@ module.exports = class Dungeons {
           this._bossBarCache?.delete?.(channelKey);
           this.queueHPBarUpdate(channelKey);
         }
-        // Also check ARISE button
-        const ariseBtn = document.querySelector(`[data-arise-button="${channelKey}"]`);
-        if (ariseBtn && !ariseBtn.isConnected) {
-          ariseBtn.remove();
+        // PERF: Check ARISE button via cached ref (was document.querySelector every 5 ticks)
+        const cachedAriseBtn = this._ariseButtonRefs?.get(channelKey);
+        if (cachedAriseBtn && !cachedAriseBtn.isConnected) {
+          cachedAriseBtn.remove();
+          this._ariseButtonRefs.delete(channelKey);
           // Re-show if boss is still defeated
           this.defeatedBosses.has(channelKey) && this.showAriseButton(channelKey);
         }
@@ -11660,6 +11662,8 @@ module.exports = class Dungeons {
     // Final safety check — parent may have been replaced during setup
     if (!channelHeader.isConnected) return;
     channelHeader.appendChild(ariseBtn);
+    // PERF: Cache ref so combat loop uses .isConnected instead of document.querySelector
+    this._ariseButtonRefs?.set(channelKey, ariseBtn);
   }
 
   /**
@@ -11916,11 +11920,12 @@ module.exports = class Dungeons {
    * @param {string} channelKey - Channel key
    */
   async cleanupDefeatedBoss(channelKey) {
-    // Remove ARISE button
-    const ariseBtn = document.querySelector(`[data-arise-button="${channelKey}"]`);
+    // Remove ARISE button (use cached ref first, fallback to querySelector)
+    const ariseBtn = this._ariseButtonRefs?.get(channelKey) ||
+                     document.querySelector(`[data-arise-button="${channelKey}"]`);
     if (ariseBtn) {
       ariseBtn.remove();
-      // ARISE button removed (silent)
+      this._ariseButtonRefs?.delete(channelKey);
     }
 
     // Delete from IndexedDB
@@ -12848,6 +12853,7 @@ module.exports = class Dungeons {
     });
     this.bossHPBars.clear();
     this._bossBarCache?.clear?.();
+    this._ariseButtonRefs?.clear?.();
 
     // Also remove any orphaned containers
     document.querySelectorAll('.dungeon-boss-hp-container').forEach((container) => {
