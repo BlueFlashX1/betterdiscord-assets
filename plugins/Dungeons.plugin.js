@@ -14713,7 +14713,7 @@ module.exports = class Dungeons {
       [data-dungeon-active] [class*="name"] {
         display: flex !important;
         align-items: center !important;
-        gap: 4px;
+        gap: 8px;
       }
       [data-dungeon-active] [class*="name"]::before {
         content: '';
