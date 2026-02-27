@@ -1405,7 +1405,12 @@ module.exports = class Dungeons {
       const hasWork =
         (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
         (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
-      if (!hasWork) return;
+      if (!hasWork) {
+        // PERF: Stop the interval entirely when idle — prevents 500ms empty ticks forever.
+        // _mobSpawnLoopTick's self-stop is unreachable from this early-return path.
+        this._stopMobSpawnLoop();
+        return;
+      }
 
       // Allow queue flush even when window is hidden so newly spawned mobs actually deploy.
       // We'll still skip creating NEW waves while hidden to prevent load spikes.
@@ -13043,43 +13048,55 @@ module.exports = class Dungeons {
     // Initialize visibility state
     this._isWindowVisible = !document.hidden;
 
-    // Listen for visibility changes
+    // PERF: Only use visibilitychange — blur/focus fire on every window switch,
+    // DevTools click, popout interaction, etc. causing excessive handler churn.
+    // visibilitychange fires ONLY on actual tab/window visibility changes.
     this._visibilityChangeHandler = () => {
       const wasVisible = this._isWindowVisible;
       this._isWindowVisible = !document.hidden;
 
-      if (!this._isWindowVisible && wasVisible) {
-        // Window just became hidden - pause all dungeon processing
+      // Skip if no actual transition (guards against duplicate events)
+      if (this._isWindowVisible === wasVisible) return;
+
+      // PERF: Debounce rapid transitions (e.g. Discord reconnect flicker)
+      // — coalesce hidden→visible→hidden within 500ms into a single transition
+      if (this._visibilityDebounceTimer) {
+        clearTimeout(this._visibilityDebounceTimer);
+        this._visibilityDebounceTimer = null;
+      }
+
+      if (!this._isWindowVisible) {
+        // Hidden → pause immediately (save CPU right away)
         this.debugLog('PERF', 'Discord window hidden - pausing dungeon processing');
         this.pauseAllDungeonProcessing();
-      } else if (this._isWindowVisible && !wasVisible) {
-        // Window just became visible - simulate elapsed time and resume
-        this.debugLog('PERF', 'Discord window visible - simulating elapsed time and resuming');
-        this.resumeDungeonProcessingWithSimulation();
+      } else {
+        // Visible → debounce resume by 500ms to avoid rapid hidden→visible→hidden churn
+        this._visibilityDebounceTimer = setTimeout(() => {
+          this._visibilityDebounceTimer = null;
+          if (!document.hidden) {
+            this.debugLog('PERF', 'Discord window visible - simulating elapsed time and resuming');
+            this.resumeDungeonProcessingWithSimulation();
+          }
+        }, 500);
       }
     };
 
-    // Use both visibilitychange and focus/blur for better compatibility
     document.addEventListener('visibilitychange', this._visibilityChangeHandler);
-    window.addEventListener('blur', this._visibilityChangeHandler);
-    window.addEventListener('focus', this._visibilityChangeHandler);
 
     // Track for cleanup
     this._listeners.set('visibility_doc', { target: document, event: 'visibilitychange', handler: this._visibilityChangeHandler });
-    this._listeners.set('visibility_blur', { target: window, event: 'blur', handler: this._visibilityChangeHandler });
-    this._listeners.set('visibility_focus', { target: window, event: 'focus', handler: this._visibilityChangeHandler });
   }
 
   stopVisibilityTracking() {
+    if (this._visibilityDebounceTimer) {
+      clearTimeout(this._visibilityDebounceTimer);
+      this._visibilityDebounceTimer = null;
+    }
     if (this._visibilityChangeHandler) {
       document.removeEventListener('visibilitychange', this._visibilityChangeHandler);
-      window.removeEventListener('blur', this._visibilityChangeHandler);
-      window.removeEventListener('focus', this._visibilityChangeHandler);
       this._visibilityChangeHandler = null;
       // Remove from centralized listener tracking
       this._listeners.delete('visibility_doc');
-      this._listeners.delete('visibility_blur');
-      this._listeners.delete('visibility_focus');
     }
     this._isWindowVisible = true; // Reset to visible state
   }

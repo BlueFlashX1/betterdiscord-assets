@@ -2,7 +2,7 @@
  * @name CriticalHit
  * @author BlueFlashX1
  * @description Critical hit system with visual effects and animations
- * @version 3.4.1
+ * @version 3.4.2
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * Font Credit:
@@ -1387,6 +1387,11 @@ module.exports = class CriticalHit {
    * Restores crit styling when switching channels
    */
   setupChannelChangeListener() {
+    // PERF: Tear down any existing listener before setting up a new one.
+    // Without this, each channel change stacks another NavBus subscription
+    // because startObserving() calls setupChannelChangeListener() every time.
+    this.teardownChannelChangeListener();
+
     // IMPORTANT: Do not use a document-wide MutationObserver to detect URL changes.
     // Discord's DOM mutates constantly; observing `document` with subtree:true can peg CPU.
     // Use history navigation hooks + popstate instead.
