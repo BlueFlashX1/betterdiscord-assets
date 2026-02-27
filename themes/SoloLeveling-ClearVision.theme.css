@@ -1329,6 +1329,73 @@ ul[aria-label="Channels"] li[class*="containerDefault_"]:not([class*="selected_"
   background: rgba(var(--sl-color-primary-rgb), 0.25) !important;
 }
 
+/* §9f+ — SVG banner backgrounds on channel rows (Solo Leveling gate frame)
+   Uses shadow_bannerv1.svg — dark banner with purple flame border.
+   viewBox cropped to artwork bounds (25 400 970 195) with preserveAspectRatio="none"
+   so background-size:100% 100% stretches the banner to fill each channel row. */
+ul[aria-label="Channels"] [class*="link_"] {
+  background-color: transparent !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  padding-left: 42px !important;
+  overflow: hidden !important;
+}
+
+/* §9f+n — Truncate long channel names with ellipsis */
+ul[aria-label="Channels"] [class*="name_"] {
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  display: block !important;
+  max-width: calc(100% - 10px) !important;
+}
+ul[aria-label="Channels"] [class*="linkTop_"] {
+  overflow: hidden !important;
+  min-width: 0 !important;
+}
+
+/* §9f+h — Hover: keep SVG banner + purple glow
+   Discord applies its own hover bg on wrapper/link — nuke all of them */
+ul[aria-label="Channels"] [class*="wrapper_"]:hover,
+ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
+  background-color: transparent !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+}
+ul[aria-label="Channels"] [class*="wrapper_"]:hover {
+  background-image: none !important;
+}
+ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
+  box-shadow: 0 0 10px 2px rgba(138, 43, 226, 0.45),
+              inset 0 0 8px rgba(138, 43, 226, 0.15) !important;
+}
+
+/* §9f+s — Selected channel: keep SVG banner, nuke Discord's solid purple */
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"] {
+  background-color: transparent !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-size: 100% 100% !important;
+  background-repeat: no-repeat !important;
+  background-position: center !important;
+  box-shadow: 0 0 12px 3px rgba(138, 43, 226, 0.55),
+              inset 0 0 10px rgba(138, 43, 226, 0.2) !important;
+}
+ul[aria-label="Channels"] [class*="modeSelected_"],
+ul[aria-label="Channels"] li[class*="selected_"] [class*="wrapper_"] {
+  background-color: transparent !important;
+  background: transparent !important;
+}
+
+/* §9f+i — Hide channel icons (hash #, speaker, etc.) — banner replaces them */
+ul[aria-label="Channels"] [class^="iconContainer_"] {
+  display: none !important;
+}
+
 /* §9g — Hide scrollbar on server channel list (keep scroll functional)
    Targets the #channels scroller wrapper that contains the channel list */
 #channels,
