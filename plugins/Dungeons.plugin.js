@@ -1148,6 +1148,7 @@ module.exports = class Dungeons {
 
     // Defeated bosses awaiting shadow extraction (ARISE)
     this.defeatedBosses = new Map(); // { channelKey: { boss, dungeon, timestamp } }
+    this._arisedBossIds = new Set(); // Prevent arising the same boss twice
 
     // ARISE corpse pile is stored on each dungeon object (dungeon.corpsePile = [])
     // so it persists to IDB and survives hot-reloads/restarts.
@@ -2409,6 +2410,12 @@ module.exports = class Dungeons {
       if (ariseBtn) {
         e.preventDefault();
         e.stopPropagation();
+        // ── Immediate visual disable to block spam clicks ──
+        if (ariseBtn.dataset.ariseDisabled === 'true') return;
+        ariseBtn.dataset.ariseDisabled = 'true';
+        ariseBtn.style.opacity = '0.5';
+        ariseBtn.style.pointerEvents = 'none';
+        ariseBtn.style.cursor = 'not-allowed';
         const channelKey = ariseBtn.getAttribute('data-arise-button');
         channelKey &&
           Promise.resolve(this.attemptBossExtraction(channelKey)).catch((error) =>
@@ -11673,20 +11680,39 @@ module.exports = class Dungeons {
    * @param {string} channelKey - Channel key where boss was defeated
    */
   async attemptBossExtraction(channelKey) {
+    // ── Mutex: block concurrent extraction on same channel ──
+    if (this.extractionInProgress.has(channelKey)) return;
+
     const bossData = this.defeatedBosses.get(channelKey);
     if (!bossData) {
       this.showToast('Boss corpse has degraded. Extraction no longer possible.', 'error');
       return;
     }
 
+    // Generate unique boss ID early so we can guard against duplicate arise
+    const bossId = `dungeon_${bossData.dungeon.id}_boss_${bossData.boss.name
+      .toLowerCase()
+      .replace(/\s+/g, '_')}`;
+
+    // ── Guard: prevent arising a boss that was already successfully extracted ──
+    if (this._arisedBossIds.has(bossId)) {
+      this.showToast('Shadow already extracted from this boss.', 'info');
+      return;
+    }
+
+    // Lock extraction for this channel
+    this.extractionInProgress.add(channelKey);
+
     // Check if ShadowArmy plugin is available
     if (!this.shadowArmy) {
+      this.extractionInProgress.delete(channelKey);
       this.showToast('Shadow Army plugin not found. Cannot extract shadow.', 'error');
       return;
     }
 
     // Get user data from SoloLevelingStats
     if (!this.soloLevelingStats) {
+      this.extractionInProgress.delete(channelKey);
       this.showToast('Solo Leveling Stats plugin not found. Cannot extract shadow.', 'error');
       return;
     }
@@ -11694,11 +11720,6 @@ module.exports = class Dungeons {
     const userStats = this.soloLevelingStats.settings?.stats || {};
     const userRank = this.soloLevelingStats.settings?.rank || 'E';
     const userLevel = this.soloLevelingStats.settings?.level || 1;
-
-    // Generate unique boss ID for attempt tracking
-    const bossId = `dungeon_${bossData.dungeon.id}_boss_${bossData.boss.name
-      .toLowerCase()
-      .replace(/\s+/g, '_')}`;
 
     // SHADOW-COMPATIBLE BOSS STATS
     // Use baseStats structure if available (for mobs), otherwise construct from boss properties
@@ -11740,6 +11761,8 @@ module.exports = class Dungeons {
         result.success && result.shadow ? 'success' : result.error ? 'error' : 'fail';
       const extractionHandlers = {
         success: async () => {
+          // ── Mark boss as arose — permanently blocks re-extraction ──
+          this._arisedBossIds.add(bossId);
           this.showAriseSuccessAnimation(result.shadow, bossData.boss);
           this.showToast(`ARISE! \"${result.shadow.name}\" extracted!`, 'success');
           await this.recalculateUserMana();
@@ -11758,12 +11781,35 @@ module.exports = class Dungeons {
       // If no attempts remaining or success, cleanup the arise button
       if (result.attemptsRemaining === 0 || result.success) {
         this._setTrackedTimeout(() => this.cleanupDefeatedBoss(channelKey), 3000);
+      } else {
+        // Failed but has attempts remaining — re-enable button for retry
+        this._reEnableAriseButton(channelKey);
       }
-      // If failed but has attempts remaining, keep arise button visible
     } catch (error) {
       this.errorLog('Failed to extract shadow', error);
       this.showToast('Extraction failed due to an error', 'error');
       this.showAriseFailAnimation(bossData.boss, 'System error');
+      // Re-enable on system error so user can retry
+      this._reEnableAriseButton(channelKey);
+    } finally {
+      // ── Always release mutex so next click can enter ──
+      this.extractionInProgress.delete(channelKey);
+    }
+  }
+
+  /**
+   * Re-enable a disabled ARISE button (after failed extraction with attempts remaining)
+   * @param {string} channelKey
+   */
+  _reEnableAriseButton(channelKey) {
+    const ariseBtn =
+      this._ariseButtonRefs?.get(channelKey) ||
+      document.querySelector(`[data-arise-button="${channelKey}"]`);
+    if (ariseBtn?.isConnected) {
+      ariseBtn.dataset.ariseDisabled = 'false';
+      ariseBtn.style.opacity = '1';
+      ariseBtn.style.pointerEvents = 'auto';
+      ariseBtn.style.cursor = 'pointer';
     }
   }
 
@@ -11949,6 +11995,7 @@ module.exports = class Dungeons {
     this.channelLocks.delete(channelKey);
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
+    this.extractionInProgress.delete(channelKey); // Clear stale mutex if any
     this.clearRoleCombatState(channelKey);
     this._markAllocationDirty('dungeon-arise-cleanup');
     if (this.settings.mobKillNotifications) delete this.settings.mobKillNotifications[channelKey];
