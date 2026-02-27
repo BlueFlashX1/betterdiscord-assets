@@ -1,7 +1,7 @@
 /**
  * @name ShadowSenses
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
- * @version 1.1.4
+ * @version 1.1.5
  * @author matthewthompson
  */
 
@@ -2193,7 +2193,7 @@ ${buildPortalTransitionCSS()}
 
 function buildComponents(pluginRef) {
   const React = BdApi.React;
-  const { useState, useEffect, useCallback, useRef, useReducer } = React;
+  const { useState, useEffect, useCallback, useRef, useReducer, useMemo } = React;
   const ce = React.createElement;
 
   // ── FeedCard ──────────────────────────────────────────────────────────
