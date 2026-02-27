@@ -1009,21 +1009,20 @@ nav[aria-label="Servers sidebar"] div[class^="none_"] {
   -webkit-backdrop-filter: none !important;
 }
 
-/* §8e — Purple accent line on top edge of the dock
-   Uses both border-top AND inset box-shadow for full coverage.
-   border-top works when the nav isn't clipped; inset shadow works even
-   when the top edge is tucked under the content area above.
-   Applies in BOTH dock states: visible (sl-dock-visible) and hidden (peek). */
+/* §8e — Purple accent line on visual top edge of the horizontal dock.
+   HSL applies rotate(-90deg) to .guilds_, so CSS border-left becomes the
+   visual top after rotation. Uses both border-left AND inset box-shadow
+   for full coverage across dock states (visible + peek). */
 nav[aria-label="Servers sidebar"],
 nav[class^="wrapper_"][class*="guilds_"],
 nav.sl-hsl-dock-target,
 body.sl-dock-visible nav[aria-label="Servers sidebar"],
 body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
-  border-top: 2px solid var(--sl-color-primary) !important;
+  border-left: 2px solid var(--sl-color-primary) !important;
+  border-top: none !important;
   border-bottom: none !important;
-  border-left: none !important;
   border-right: none !important;
-  box-shadow: inset 0 2px 0 0 var(--sl-color-primary) !important;
+  box-shadow: inset 2px 0 0 0 var(--sl-color-primary) !important;
   transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
