@@ -1787,7 +1787,7 @@ body.ra-members-pushed.ra-members-hover-reveal div[class^="members_"] {
 }
 
 body.ra-members-pushed.ra-members-hover-reveal div[aria-label="Members"][role="list"] {
-  background: rgba(0, 0, 0, 0.4) !important;
+  background: transparent !important;
   -webkit-mask-image: none !important;
   mask-image: none !important;
 }
@@ -1872,7 +1872,7 @@ ${membersSel}:hover:before,
 ${profileSel}:hover:before,
 ${searchSel}:hover:before {
   opacity: 1;
-  background: linear-gradient(to right, rgba(138, 43, 226, 0.15), transparent);
+  background: transparent;
 }
 
 ${sidebarSel}:before {
