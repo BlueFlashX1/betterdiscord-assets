@@ -2,7 +2,7 @@
  * @name CSS Picker
  * @author BlueFlashX1
  * @description Hover to inspect, click to capture & auto-update theme. Integrates with Theme Auto Maintainer.
- * @version 1.3.0
+ * @version 1.4.0
  * @authorId
  */
 /* global CSS, Element */
@@ -20,7 +20,7 @@ module.exports = (() => {
           discord_id: '',
         },
       ],
-      version: '1.3.0',
+      version: '1.4.0',
       description:
         'Hover to inspect, click to capture. Integrates with Theme Auto Maintainer for class verification.',
     },
@@ -198,22 +198,21 @@ module.exports = (() => {
     return parts.slice(0, 4);
   };
 
-  const buildRuleHints = ({ matchedCssRules, maxRuleCount }) => {
-    const rules = Array.isArray(matchedCssRules) ? matchedCssRules : [];
+  // Works with both old { properties, stylesheet } and new compact { props, source } format
+  const buildRuleHints = ({ appliedRules, matchedCssRules, maxRuleCount }) => {
+    const rules = Array.isArray(appliedRules) ? appliedRules : Array.isArray(matchedCssRules) ? matchedCssRules : [];
     const keys = [
-      'background-image',
-      'background',
-      'background-color',
-      'box-shadow',
-      'border',
-      'outline',
-      'filter',
-      'backdrop-filter',
-      'transform',
+      'background-image', 'background', 'background-color',
+      'box-shadow', 'border', 'outline',
+      'filter', 'backdrop-filter', 'transform',
     ];
 
     const pickFirstRuleForKey = (key) =>
-      rules.find((r) => r?.properties && r.properties[key] && r.properties[key].value);
+      rules.find((r) => {
+        if (r?.props) return !!r.props[key]; // compact format
+        if (r?.properties) return !!(r.properties[key]?.value); // legacy format
+        return false;
+      });
 
     const picks = keys
       .map((k) => [k, pickFirstRuleForKey(k)])
@@ -223,14 +222,17 @@ module.exports = (() => {
     const unique = new Set();
     return picks
       .map(([key, r]) => {
-        const prop = r.properties[key];
-        const priority = prop?.priority === 'important' ? ' !important' : '';
-        const pseudo = r.pseudo ? r.pseudo : '';
-        const selector = truncateMiddle(`${r.selector}${pseudo}`, 58);
-        const sheet = shortenStylesheetLabel(r.stylesheet);
+        const isCompact = !!r.props;
+        const value = isCompact ? r.props[key] : r.properties[key]?.value;
+        const hasBang = isCompact ? (value || '').includes('!important') : r.properties[key]?.priority === 'important';
+        const priority = hasBang ? ' !important' : '';
+        const pseudo = r.pseudo || '';
+        const sel = isCompact ? r.selector : `${r.selector || ''}${pseudo}`;
+        const selector = truncateMiddle(sel, 58);
+        const sheet = shortenStylesheetLabel(isCompact ? r.source : r.stylesheet);
         const line = `${key}${priority}: ${selector} @ ${sheet}`;
 
-        const dedupeKey = `${key}|${r.stylesheet}|${r.selectorText}`;
+        const dedupeKey = `${key}|${sheet}|${sel}`;
         if (unique.has(dedupeKey)) return null;
         unique.add(dedupeKey);
         return line;
@@ -241,7 +243,7 @@ module.exports = (() => {
 
   const buildCaptureToastMessage = ({ elementDetails, saveResult, clipboardResult, settings }) => {
     const elementSummary = elementDetails?.summary || 'unknown';
-    const bestSelector = elementDetails?.bestSelector || null;
+    const bestSelector = elementDetails?.selector || elementDetails?.bestSelector || null;
     const selectorLabel = bestSelector ? truncateMiddle(bestSelector, 70) : elementSummary;
 
     const base = `Captured: ${selectorLabel}`;
@@ -250,7 +252,8 @@ module.exports = (() => {
       : [];
     const ruleHints = settings.toastIncludeRules
       ? buildRuleHints({
-          matchedCssRules: elementDetails?.matchedCssRules,
+          appliedRules: elementDetails?.appliedRules,
+          matchedCssRules: elementDetails?.matchedCssRules, // legacy fallback
           maxRuleCount: settings.toastRuleCount,
         })
       : [];
@@ -442,41 +445,55 @@ module.exports = (() => {
     };
   };
 
-  const pickComputedStyles = (el) => {
+  // ── Element state flags: explicit metadata so AI never misreads hidden/clipped/inert state ──
+  const detectElementFlags = (el) => {
+    if (!el || !(el instanceof Element)) return {};
+    const cs = window.getComputedStyle(el);
+    const flags = {};
+    if (cs.display === 'none') flags.hidden = 'display:none';
+    else if (cs.visibility === 'hidden') flags.hidden = 'visibility:hidden';
+    else if (parseFloat(cs.opacity) === 0) flags.hidden = 'opacity:0';
+    if (cs.pointerEvents === 'none') flags.inert = 'pointer-events:none';
+    if (cs.overflow === 'hidden' || cs.overflow === 'clip') flags.clipped = cs.overflow;
+    if (cs.position === 'fixed') flags.positioning = 'fixed';
+    else if (cs.position === 'sticky') flags.positioning = 'sticky';
+    const w = parseFloat(cs.width), h = parseFloat(cs.height);
+    if (w === 0 || h === 0) flags.collapsed = `${Math.round(w)}x${Math.round(h)}`;
+    if (cs.clipPath && cs.clipPath !== 'none') flags.clipPath = cs.clipPath;
+    return Object.keys(flags).length ? flags : null;
+  };
+
+  // Full computed style keys for the target element
+  const COMPUTED_KEYS_FULL = [
+    'display', 'position', 'zIndex', 'opacity',
+    'visibility', 'overflow', 'pointerEvents',
+    'backgroundColor', 'backgroundImage', 'background',
+    'border', 'borderColor', 'borderWidth', 'borderRadius',
+    'boxShadow', 'outline', 'filter', 'backdropFilter', 'transform',
+    'color', 'fontFamily', 'fontSize', 'lineHeight',
+    'padding', 'margin',
+    'width', 'height', 'maxWidth', 'maxHeight',
+  ];
+
+  // Compact computed style keys for children (visual-only, no layout)
+  const COMPUTED_KEYS_COMPACT = [
+    'display', 'opacity', 'visibility',
+    'background', 'border', 'borderRadius', 'boxShadow',
+    'color', 'fontSize',
+  ];
+
+  const _pickStyles = (el, keys) => {
     if (!el || !(el instanceof Element)) return null;
-
     const style = window.getComputedStyle(el);
-    const keys = [
-      'display',
-      'position',
-      'zIndex',
-      'opacity',
-      'backgroundColor',
-      'backgroundImage',
-      'background',
-      'border',
-      'borderColor',
-      'borderWidth',
-      'borderRadius',
-      'boxShadow',
-      'outline',
-      'filter',
-      'backdropFilter',
-      'transform',
-      'color',
-      'fontFamily',
-      'fontSize',
-      'lineHeight',
-      'padding',
-      'margin',
-    ];
-
     return keys.reduce((acc, key) => {
       const cssKey = key.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
       acc[key] = style.getPropertyValue(cssKey) || style[key] || null;
       return acc;
     }, {});
   };
+
+  const pickComputedStyles = (el) => _pickStyles(el, COMPUTED_KEYS_FULL);
+  const pickComputedStylesCompact = (el) => _pickStyles(el, COMPUTED_KEYS_COMPACT);
 
   const getChildElements = (el, max = 10) => {
     if (!el || !(el instanceof Element) || !el.children) return [];
@@ -505,6 +522,49 @@ module.exports = (() => {
         };
       })
       .filter(Boolean);
+  };
+
+  // Compact children: summary + ariaLabel + flags + key visual styles only
+  const getChildrenCompact = (el, max = 8) => {
+    const children = getChildElements(el, max);
+    return children.map((child, index) => {
+      const entry = {
+        index,
+        summary: getElementSummary(child),
+      };
+      const ariaLabel = child.getAttribute('aria-label');
+      if (ariaLabel) entry.ariaLabel = ariaLabel;
+      const role = child.getAttribute('role');
+      if (role) entry.role = role;
+      const flags = detectElementFlags(child);
+      if (flags) entry.flags = flags;
+      // Only include compact style if child has visible styling worth knowing
+      const cs = window.getComputedStyle(child);
+      const hasBg = cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent';
+      const hasBorder = cs.borderWidth !== '0px';
+      const hasShadow = cs.boxShadow !== 'none';
+      if (hasBg || hasBorder || hasShadow) {
+        entry.style = pickComputedStylesCompact(child);
+      }
+      return entry;
+    });
+  };
+
+  // Compact ancestry: max 4 levels, summary + ariaLabel + stableSelector only
+  const getAncestryCompact = (el, maxDepth = 4) => {
+    const chain = [];
+    let current = el;
+    for (let depth = 0; depth < maxDepth && current && current.nodeType === 1; depth++) {
+      const entry = { depth, summary: getElementSummary(current) };
+      const ariaLabel = current.getAttribute('aria-label');
+      if (ariaLabel && ariaLabel.length <= 80) entry.ariaLabel = ariaLabel;
+      const stable = getStableSelectorSet(current);
+      if (stable.length) entry.selector = stable[0];
+      chain.push(entry);
+      current = current.parentElement;
+      if (!current || ['HTML', 'BODY'].includes(current.tagName)) break;
+    }
+    return chain;
   };
 
   const getTablistChildHints = (el) => {
@@ -550,6 +610,34 @@ module.exports = (() => {
         ? `.${owner.className.trim().split(/\s+/)[0]}`
         : '';
     return `inline:${index}:${ownerTag}${ownerId}${ownerClass}`;
+  };
+
+  // Clean stylesheet label for AI readability:
+  //   "inline:51:style#SoloLeveling-ClearVision-theme-container" → "SoloLeveling-ClearVision-theme"
+  //   "https://discord.com/assets/web.26898.css" → "discord-css"
+  const simplifySheetLabel = (label) => {
+    if (!label) return 'unknown';
+    // Discord CDN CSS
+    if (/discord\.com\/assets\//.test(label)) return 'discord-css';
+    // Inline style with id — extract meaningful name
+    const inlineMatch = label.match(/^inline:\d+:style#(.+)/);
+    if (inlineMatch) {
+      return inlineMatch[1]
+        .replace(/-container$/, '')
+        .replace(/-styles?$/, '');
+    }
+    // Inline without id
+    if (/^inline:\d+:/.test(label)) return label;
+    // External URL — use hostname
+    try { return new URL(label).hostname; } catch (_) {}
+    return label;
+  };
+
+  // Returns true for global CSS reset rules (massive comma-separated tag selectors)
+  const isResetRule = (selectorText) => {
+    if (!selectorText) return false;
+    const commas = selectorText.split(',').length;
+    return commas > 8; // "a, abbr, acronym, address, ..." style resets
   };
 
   const splitPseudo = (selectorText) => {
@@ -687,103 +775,90 @@ module.exports = (() => {
     return chain;
   };
 
+  // ── Compact CSS rules: filter resets, simplify labels, flatten props ──
+  const getCompactCssRules = (el, keys, maxMatches = 30) => {
+    const raw = findMatchingCssRules(el, keys, maxMatches);
+    return raw
+      .filter((r) => !isResetRule(r.selectorText))
+      .map((r) => {
+        const entry = {
+          source: simplifySheetLabel(r.stylesheet),
+          selector: r.selectorText,
+        };
+        // Flatten properties: { 'background': { value, priority } } → { 'background': 'value !important' }
+        const props = {};
+        for (const [key, val] of Object.entries(r.properties)) {
+          props[key] = val.priority ? `${val.value} !${val.priority}` : val.value;
+        }
+        entry.props = props;
+        if (r.pseudo) entry.pseudo = r.pseudo;
+        return entry;
+      });
+  };
+
   const getElementDetails = (el) => {
     if (!el || !(el instanceof Element)) return null;
 
-    const MAX_SELECTOR_CANDIDATES = 8;
-    const MAX_UNIQUE_CHECKS = 2;
-    const MAX_CHILDREN_DETAILS = 12;
     const MATCH_KEYS = [
-      'background',
-      'background-color',
-      'background-image',
-      'border',
-      'border-color',
-      'border-width',
-      'border-radius',
-      'box-shadow',
-      'outline',
-      'filter',
-      'backdrop-filter',
-      'transform',
+      'background', 'background-color', 'background-image',
+      'border', 'border-color', 'border-width', 'border-radius',
+      'box-shadow', 'outline', 'filter', 'backdrop-filter', 'transform',
+      'display', 'visibility', 'opacity', 'pointer-events', 'overflow',
+      'color', 'font-size', 'font-family',
+      'mask-image', '-webkit-mask-image',
     ];
 
-    const rect = el.getBoundingClientRect();
     const classList = Array.from(el.classList || []);
-    const childrenCount = el.children ? el.children.length : 0;
-    const firstChildSummary = el.firstElementChild ? getElementSummary(el.firstElementChild) : null;
-    const parentSummary = el.parentElement ? getElementSummary(el.parentElement) : null;
+    const stableSelectors = getStableSelectorSet(el);
+    const bestSelector =
+      stableSelectors[0] ||
+      getExactClassSelectors(el)[0] ||
+      (el.id ? `#${CSS.escape(el.id)}` : null);
 
-    const attributes = Array.from(el.attributes || [])
-      .map((a) => ({ name: a.name, value: a.value }))
-      .slice(0, 40);
-
-    const selectorCandidates = getSelectorCandidates(el)
-      .slice(0, MAX_SELECTOR_CANDIDATES)
-      .map((selector, index) => {
-        const base = {
-          selector,
-          isValid: false,
-          matchesNow: false,
-          isUnique: null,
-        };
-
-        try {
-          const matches = Array.from(document.querySelectorAll(selector));
-          const matchCount = matches.length;
-          const matchesNow = matchCount > 0;
-          const shouldCheckUniqueness = matchesNow && index < MAX_UNIQUE_CHECKS;
-
-          return {
-            ...base,
-            isValid: true,
-            matchesNow,
-            isUnique: shouldCheckUniqueness ? matchCount === 1 : null,
-          };
-        } catch (e) {
-          return base;
-        }
-      });
-
-    return {
-      capturedAt: new Date().toISOString(),
+    // Core identity
+    const result = {
       summary: getElementSummary(el),
-      tagName: el.tagName.toLowerCase(),
-      id: el.id || null,
+      selector: bestSelector,
       classList,
-      exactClassSelectors: getExactClassSelectors(el).slice(0, 10),
-      semanticClassSelectors: getSemanticClassSelectors(el),
-      parentSummary,
-      childrenSummary: {
-        count: childrenCount,
-        firstChild: firstChildSummary,
-      },
-      attributes,
-      textPreview: (el.textContent || '').trim().slice(0, 200) || null,
-      computedStyle: pickComputedStyles(el),
-      children: getChildrenDetails(el, MAX_CHILDREN_DETAILS),
-      tablistHints: getTablistChildHints(el),
-      matchedCssRules: findMatchingCssRules(el, MATCH_KEYS, 40),
-      rect: {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-        top: rect.top,
-        left: rect.left,
-        right: rect.right,
-        bottom: rect.bottom,
-      },
-      stableSelectors: getStableSelectorSet(el),
-      bestSelector:
-        getStableSelectorSet(el)[0] ||
-        getExactClassSelectors(el)[0] ||
-        (el.id ? `#${CSS.escape(el.id)}` : null),
-      rootSelectors: [':root', 'html', 'body'],
-      selectorCandidates,
-      ancestry: getAncestry(el, 10),
-      rootContext: getRootContext(),
     };
+
+    // Semantic attributes (only if present)
+    const ariaLabel = el.getAttribute('aria-label');
+    const role = el.getAttribute('role');
+    const id = el.id;
+    if (id) result.id = id;
+    if (ariaLabel) result.ariaLabel = ariaLabel;
+    if (role) result.role = role;
+
+    // State flags — explicit visibility/interaction state
+    const flags = detectElementFlags(el);
+    if (flags) result.flags = flags;
+
+    // Parent context
+    const parent = el.parentElement;
+    if (parent) result.parent = getElementSummary(parent);
+
+    // Full computed style on target (all keys — don't filter, values like 'none' may be meaningful)
+    result.computedStyle = pickComputedStyles(el);
+
+    // Children (compact: summary + ariaLabel + flags + key visual styles if notable)
+    const childCount = el.children ? el.children.length : 0;
+    if (childCount > 0) {
+      result.children = getChildrenCompact(el, 8);
+    }
+
+    // Ancestry (compact: max 4 levels)
+    result.ancestry = getAncestryCompact(el, 4);
+
+    // CSS rules that actually affect this element (filtered, simplified)
+    result.appliedRules = getCompactCssRules(el, MATCH_KEYS, 30);
+
+    // Alternate selectors (only stable ones, no nth-of-type fragile paths)
+    if (stableSelectors.length > 1) {
+      result.altSelectors = stableSelectors.slice(1);
+    }
+
+    return result;
   };
 
   const trySaveReportJson = (report) => {
@@ -1186,7 +1261,6 @@ module.exports = (() => {
         const report = {
           plugin: PLUGIN_NAME,
           version: config.info.version,
-          url: window.location.href,
           element: getElementDetails(target),
         };
 
