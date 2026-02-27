@@ -1353,10 +1353,8 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
   min-width: 0 !important;
 }
 
-/* §9f+h — Hover: v2 SVG banner with glow + energy pulse effect
-   Uses shadow_bannerv2_hover.svg — brighter purple gate frame with SVG glow filters,
-   radial energy gradient, and activated sweep overlay. Provides clear hover feedback
-   while keeping the dungeon gate aesthetic */
+/* §9f+h — Hover: v2 SVG banner replaces v1 as sole hover feedback.
+   No box-shadow or highlight — the SVG glow filters handle everything. */
 ul[aria-label="Channels"] [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
@@ -1364,13 +1362,10 @@ ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
   background-size: 100% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
+  box-shadow: none !important;
 }
 ul[aria-label="Channels"] [class*="wrapper_"]:hover {
   background-image: none !important;
-}
-ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
-  box-shadow: 0 0 10px 2px rgba(138, 43, 226, 0.45),
-              inset 0 0 8px rgba(138, 43, 226, 0.15) !important;
 }
 
 /* §9f+s — Selected channel: keep SVG banner, nuke Discord's solid purple */
