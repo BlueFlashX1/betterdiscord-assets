@@ -1346,6 +1346,12 @@ module.exports = class CriticalHit {
    */
   _handleChannelChange(verbose = false) {
     if (this._isStopped) return;
+
+    // PERF: Immediately detach the NavBus listener so rapid channel clicks
+    // during the 500ms CHANNEL_CHANGE_DELAY can't queue duplicate startObserving() calls.
+    // setupChannelChangeListener() will re-subscribe after startObserving() completes.
+    this.teardownChannelChangeListener();
+
     // Save current session data before navigating
     if (this.currentChannelId) {
       const critCount = this.getCritHistory().length;
