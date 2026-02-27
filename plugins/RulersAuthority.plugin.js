@@ -1768,12 +1768,12 @@ body.ra-members-pushed.ra-members-hover-reveal ${chatSel} {
   background: rgba(0, 0, 0, 0.4) !important;
 }
 
-/* ── Members: outer wrap has subtle purple glow, scroller transparent ── */
+/* ── Members: outer wrap matches inner dark overlay ── */
 body.ra-members-pushed.ra-members-hover-reveal ${membersSel},
 body.ra-members-pushed.ra-members-hover-reveal div[class^="membersWrap_"] {
-  background: transparent !important;
-  background-color: transparent !important;
-  box-shadow: -2px 0 10px rgba(138, 43, 226, 0.15) !important;
+  background: rgba(0, 0, 0, 0.4) !important;
+  background-color: rgba(0, 0, 0, 0.4) !important;
+  box-shadow: none !important;
   border-left: 0 !important;
   outline: none !important;
 }
