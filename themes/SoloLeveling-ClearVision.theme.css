@@ -1287,12 +1287,12 @@ div[class^="positionContainer_"] *::-webkit-scrollbar {
 /* §9b (continued) — Message actions popup styling removed;
    popup is now hidden entirely by §14i */
 
-/* §9c — Server channel list sidebar: dark wash for readability
+/* §9c — Server channel list sidebar: transparent with light dark overlay
    Targets ONLY the server guild sidebar by requiring a Channels list descendant.
    The DM sidebar uses aria-label="Private channels", not "Channels", so this
-   won't match it. 0.7 opacity lets a hint of the GIF through */
+   won't match it. 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
 div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
-  background: rgba(0, 0, 0, 0.7) !important;
+  background: rgba(0, 0, 0, 0.4) !important;
   background-image: none !important;
 }
 
