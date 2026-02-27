@@ -1563,7 +1563,7 @@ function buildWidgetComponents(pluginInstance) {
       textAlign: 'center',
       padding: isElite ? '3px 2px' : '4px',
       background: isElite ? 'rgba(0, 0, 0, 0.5)' : 'rgba(0, 0, 0, 0.4)',
-      borderRadius: '4px',
+      borderRadius: '0',
       border: `1px solid ${color}${isElite ? '60' : '40'}`,
       boxShadow: isElite && count > 0 ? `0 0 6px ${color}30` : undefined,
       transition: 'all 0.2s ease',
@@ -1661,7 +1661,7 @@ function buildWidgetComponents(pluginInstance) {
         ce('div', { className: 'widget-total', style: { color: '#999', fontSize: '11px' } }, totalCount + ' Total')
       ),
       // Power bar
-      ce('div', { className: 'widget-power', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '6px 8px', background: 'rgba(0, 0, 0, 0.8)', border: '1px solid rgba(138, 43, 226, 0.5)', borderRadius: '4px' } },
+      ce('div', { className: 'widget-power', style: { display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '8px', padding: '6px 8px', background: 'rgba(0, 0, 0, 0.8)', border: '1px solid rgba(138, 43, 226, 0.5)', borderRadius: '0' } },
         ce('span', { style: { color: '#8a2be2', fontSize: '11px', fontWeight: '600', textShadow: '0 0 4px rgba(138, 43, 226, 0.6)', fontFamily: "'Orbitron', sans-serif" } }, '\u2694 Total Power: ' + totalPower)
       ),
       // Elite ranks grid
@@ -1672,8 +1672,8 @@ function buildWidgetComponents(pluginInstance) {
       ce('div', { className: 'rank-grid', style: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '4px' } },
         standardRanks.map(({ rank, count, color }) => ce(RankBox, { key: rank, rank, count, color, isElite: false }))
       ),
-      // Footer
-      ce('div', { className: 'widget-footer', style: { marginTop: '8px', paddingTop: '8px', borderTop: '1px solid rgba(138, 43, 226, 0.2)', textAlign: 'center', color: '#888', fontSize: '9px' } }, 'Click to manage shadows')
+      // Divider line (bottom edge)
+      ce('div', { style: { marginTop: '8px', borderTop: '1px solid rgba(138, 43, 226, 0.2)' } })
     );
   }
 
@@ -10363,7 +10363,7 @@ module.exports = class ShadowArmy {
       #shadow-army-widget {
         background: linear-gradient(135deg, rgba(20, 10, 30, 0.95), rgba(10, 10, 20, 0.95)) !important;
         border: 1px solid rgba(138, 43, 226, 0.4) !important;
-        border-radius: 2px !important;
+        border-radius: 0 !important;
         padding: 12px !important;
         margin: 8px !important;
         box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4), 0 0 20px rgba(138, 43, 226, 0.15) !important;
@@ -10405,7 +10405,7 @@ module.exports = class ShadowArmy {
         text-align: center !important;
         padding: 4px !important;
         background: rgba(0, 0, 0, 0.4) !important;
-        border-radius: 2px !important;
+        border-radius: 0 !important;
         transition: all 0.2s ease !important;
       }
 
@@ -10420,13 +10420,8 @@ module.exports = class ShadowArmy {
         font-weight: bold !important;
       }
 
-      #shadow-army-widget .widget-footer {
-        margin-top: 8px !important;
-        padding-top: 8px !important;
-        border-top: 1px solid rgba(138, 43, 226, 0.2) !important;
-        text-align: center !important;
-        color: #888 !important;
-        font-size: 9px !important;
+      #shadow-army-widget * {
+        border-radius: 0 !important;
       }
     `;
 
