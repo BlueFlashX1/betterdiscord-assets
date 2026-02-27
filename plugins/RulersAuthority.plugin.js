@@ -1,7 +1,7 @@
 /**
  * @name RulersAuthority
  * @description Telekinetic control over Discord's UI — push, pull, grip, and crush panels and channels. Solo Leveling themed.
- * @version 2.1.1
+ * @version 2.1.2
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
@@ -56,7 +56,7 @@ const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','expo
 // ═══════════════════════════════════════════════════════════════════════════
 
 const RA_PLUGIN_NAME = "RulersAuthority";
-const RA_VERSION = "2.1.0";
+const RA_VERSION = "2.1.2";
 const RA_STYLE_ID = "rulers-authority-css";
 const RA_VARS_STYLE_ID = "rulers-authority-vars";
 const RA_TOOLBAR_ICON_ID = "ra-toolbar-icon";
@@ -1799,7 +1799,7 @@ ${sidebarHover.join(",\n")} {
   min-width: var(--ra-sidebar-width) !important;
   max-width: var(--ra-sidebar-width) !important;
   overflow-y: auto !important;
-  box-shadow: 4px 0 20px var(--ra-push-color) !important;
+  box-shadow: none !important;
   transition: width var(--ra-transition-speed) ease,
               min-width var(--ra-transition-speed) ease,
               max-width var(--ra-transition-speed) ease;
@@ -1890,7 +1890,7 @@ ${sidebarSel}:before {
 
 ${sidebarSel}:hover:before {
   opacity: 1;
-  background: linear-gradient(to left, rgba(138, 43, 226, 0.15), transparent);
+  background: transparent;
 }
 
 ${sidebarHandleDisable.join(",\n")} {
