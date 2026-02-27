@@ -1,7 +1,7 @@
 /**
  * @name RulersAuthority
  * @description Telekinetic control over Discord's UI — push, pull, grip, and crush panels and channels. Solo Leveling themed.
- * @version 2.1.0
+ * @version 2.1.1
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
@@ -1201,7 +1201,7 @@ module.exports = class RulersAuthority {
         // Category (type === 4): Crush
         if (channel.type === 4) {
           const isCrushed = this.isCategoryCrushed(guildId, channelId);
-          items.push(BdApi.ContextMenu.buildItem({
+          items.push({
             type: "text",
             label: isCrushed ? "Release Category" : "Crush Category",
             id: isCrushed ? "ra-release-category" : "ra-crush-category",
@@ -1214,13 +1214,13 @@ module.exports = class RulersAuthority {
                 BdApi.UI.showToast(`Crushed ${channel.name}`, { type: "success" });
               }
             },
-          }));
+          });
         }
 
         // Regular channel: Push
         if (channel.type !== 4) {
           const isHidden = this.isChannelHidden(guildId, channelId);
-          items.push(BdApi.ContextMenu.buildItem({
+          items.push({
             type: "text",
             label: isHidden ? "Recall Channel" : "Push Channel",
             id: isHidden ? "ra-recall-channel" : "ra-push-channel",
@@ -1233,7 +1233,7 @@ module.exports = class RulersAuthority {
                 BdApi.UI.showToast(`Pushed #${channel.name}`, { type: "success" });
               }
             },
-          }));
+          });
         }
 
         if (items.length === 0) return;
