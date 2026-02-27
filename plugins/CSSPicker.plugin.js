@@ -2,7 +2,7 @@
  * @name CSS Picker
  * @author BlueFlashX1
  * @description Hover to inspect, click to capture & auto-update theme. Integrates with Theme Auto Maintainer.
- * @version 1.4.0
+ * @version 1.5.0
  * @authorId
  */
 /* global CSS, Element */
@@ -20,7 +20,7 @@ module.exports = (() => {
           discord_id: '',
         },
       ],
-      version: '1.4.0',
+      version: '1.5.0',
       description:
         'Hover to inspect, click to capture. Integrates with Theme Auto Maintainer for class verification.',
     },
@@ -230,7 +230,8 @@ module.exports = (() => {
         const sel = isCompact ? r.selector : `${r.selector || ''}${pseudo}`;
         const selector = truncateMiddle(sel, 58);
         const sheet = shortenStylesheetLabel(isCompact ? r.source : r.stylesheet);
-        const line = `${key}${priority}: ${selector} @ ${sheet}`;
+        const originTag = isCompact && r.origin?.type ? ` (${r.origin.type})` : '';
+        const line = `${key}${priority}: ${selector} @ ${sheet}${originTag}`;
 
         const dedupeKey = `${key}|${sheet}|${sel}`;
         if (unique.has(dedupeKey)) return null;
@@ -248,7 +249,7 @@ module.exports = (() => {
 
     const base = `Captured: ${selectorLabel}`;
     const computedParts = settings.toastIncludeComputed
-      ? buildComputedVisualSummary(elementDetails?.computedStyle)
+      ? buildComputedVisualSummary(elementDetails?.activeStyles)
       : [];
     const ruleHints = settings.toastIncludeRules
       ? buildRuleHints({
@@ -495,6 +496,71 @@ module.exports = (() => {
   const pickComputedStyles = (el) => _pickStyles(el, COMPUTED_KEYS_FULL);
   const pickComputedStylesCompact = (el) => _pickStyles(el, COMPUTED_KEYS_COMPACT);
 
+  // Known browser defaults for computed style keys.
+  // Array = any match counts as default; null = always treat as active (inherited/element-dependent).
+  const COMPUTED_DEFAULTS = {
+    display: null,        // element-dependent (block for div, inline for span, table-cell for td)
+    position: 'static',
+    zIndex: 'auto',
+    opacity: '1',
+    visibility: 'visible',
+    overflow: 'visible',
+    pointerEvents: 'auto',
+    backgroundColor: ['rgba(0, 0, 0, 0)', 'transparent'],
+    backgroundImage: 'none',
+    background: ['rgba(0, 0, 0, 0) none repeat scroll 0% 0% / auto padding-box border-box', 'rgba(0, 0, 0, 0)'],
+    border: ['0px none rgb(0, 0, 0)', ''],
+    borderColor: 'rgb(0, 0, 0)',
+    borderWidth: '0px',
+    borderRadius: '0px',
+    boxShadow: 'none',
+    outline: ['rgb(0, 0, 0) none 0px', '0px none invert'],
+    filter: 'none',
+    backdropFilter: 'none',
+    transform: 'none',
+    color: null,        // inherited — always active
+    fontFamily: null,    // inherited — always active
+    fontSize: null,      // inherited — always active
+    lineHeight: 'normal',
+    padding: '0px',
+    margin: '0px',
+    width: null,         // element-dependent — always active
+    height: null,        // element-dependent — always active
+    maxWidth: 'none',
+    maxHeight: 'none',
+  };
+
+  // Split computed styles into active (non-default) values and a collapsed list of default key names.
+  const splitComputedStyles = (el) => {
+    const all = pickComputedStyles(el);
+    if (!all) return { activeStyles: {}, defaultStyles: [] };
+    const activeStyles = {};
+    const defaultStyles = [];
+    for (const [key, val] of Object.entries(all)) {
+      if (!val) { defaultStyles.push(key); continue; }
+      const def = COMPUTED_DEFAULTS[key];
+      if (def === null) { activeStyles[key] = val; continue; }
+      const isDefault = Array.isArray(def)
+        ? def.some((d) => val === d)
+        : val === def;
+      isDefault ? defaultStyles.push(key) : (activeStyles[key] = val);
+    }
+    return { activeStyles, defaultStyles };
+  };
+
+  // Extract inline style="" attribute properties separately from computed styles.
+  const extractInlineStyles = (el) => {
+    if (!el?.style?.length) return null;
+    const inline = {};
+    for (let i = 0; i < el.style.length; i++) {
+      const prop = el.style[i];
+      const val = el.style.getPropertyValue(prop);
+      const priority = el.style.getPropertyPriority(prop);
+      if (val) inline[prop] = priority ? `${val} !important` : val;
+    }
+    return Object.keys(inline).length ? inline : null;
+  };
+
   const getChildElements = (el, max = 10) => {
     if (!el || !(el instanceof Element) || !el.children) return [];
     return Array.from(el.children).slice(0, max);
@@ -633,6 +699,81 @@ module.exports = (() => {
     return label;
   };
 
+  // Origin types:
+  //   discord  — Discord CDN stylesheets (discord.com/assets/*.css)
+  //   theme    — BD theme container (id ends with -theme-container)
+  //   plugin   — BdApi.DOM.addStyle() <style> elements (has ID, not theme)
+  //   customcss — BD Custom CSS editor (id === 'customcss')
+  //   external — External CDN (fonts.googleapis.com, etc.) — may be theme OR plugin
+  //   unknown  — Discord internal <style> without ID, or browser extension
+  const classifyRuleOrigin = (sheetLabel, sheetHref, ownerNode) => {
+    // Discord core — loaded from CDN
+    if (sheetHref && sheetHref.includes('discord.com/assets/'))
+      return { type: 'discord', name: 'Discord' };
+
+    const id = ownerNode?.id || '';
+
+    // BD Custom CSS editor
+    if (id === 'customcss')
+      return { type: 'customcss', name: 'Custom CSS' };
+
+    // Theme — BD theme container
+    if (id.endsWith('-theme-container'))
+      return { type: 'theme', name: sheetLabel };
+
+    // Known theme CDN @imports (NOT fonts — fonts can come from plugins too)
+    if (sheetHref && (
+      sheetHref.includes('clearvision.github.io') ||
+      sheetHref.includes('discordstyles.github.io')
+    )) return { type: 'theme', name: sheetLabel };
+
+    // External fonts (Google Fonts, etc.) — could be theme or plugin, classify separately
+    if (sheetHref && sheetHref.includes('fonts.googleapis.com'))
+      return { type: 'external', name: sheetLabel };
+
+    // Plugin — BD style elements from BdApi.DOM.addStyle (has ID, not theme/customcss)
+    if (ownerNode?.tagName === 'STYLE' && id)
+      return { type: 'plugin', name: sheetLabel };
+
+    // Unknown — probably Discord internal or browser extension
+    return { type: 'unknown', name: sheetLabel };
+  };
+
+  // Scope analysis: count how many elements a rule selector matches + sample others.
+  // querySelectorAll returns a static NodeList — DOM walk happens at call time.
+  // For Discord's ~10K DOM nodes, this is <1ms per call in native C++.
+  // We cap at 30 rules (maxMatches default), so total overhead is <30ms.
+  const analyzeRuleScope = (selectorText, pickedEl) => {
+    try {
+      const all = document.querySelectorAll(selectorText);
+      const total = all.length;
+      let scope;
+      if (total <= 1) scope = 'unique';
+      else if (total <= 5) scope = 'targeted';
+      else if (total <= 50) scope = 'moderate';
+      else scope = 'global';
+
+      const result = { scope, totalMatches: total };
+      if (total > 1) {
+        const samples = [];
+        let count = 0;
+        for (const m of all) {
+          if (m === pickedEl) continue;
+          if (count >= 5) break;
+          const tag = m.tagName.toLowerCase();
+          const cls = m.classList[0] || '';
+          const aria = m.getAttribute('aria-label');
+          samples.push(aria ? `${tag}.${cls}[${aria}]` : cls ? `${tag}.${cls}` : tag);
+          count++;
+        }
+        result.otherElements = samples;
+      }
+      return result;
+    } catch {
+      return { scope: 'unknown', totalMatches: -1 };
+    }
+  };
+
   // Returns true for global CSS reset rules (massive comma-separated tag selectors)
   const isResetRule = (selectorText) => {
     if (!selectorText) return false;
@@ -659,7 +800,7 @@ module.exports = (() => {
         continue;
       }
 
-      // CSSMediaRule / CSSSupportsRule
+      // Any grouping rule (@media, @supports, @container, @layer, etc.)
       const hasNested = rule?.cssRules && rule.cssRules.length;
       hasNested && iterCssRules(rule.cssRules, onRule, state);
     }
@@ -669,6 +810,7 @@ module.exports = (() => {
   // Cache invalidates every 10 seconds (stylesheets rarely change during a session).
   let _cachedFlatRules = null;
   let _cachedFlatRulesTime = 0;
+  let _lastCorsBlockedCount = 0;
   const RULE_CACHE_TTL_MS = 10000;
 
   const _getFlatRules = () => {
@@ -676,18 +818,21 @@ module.exports = (() => {
     if (_cachedFlatRules && now - _cachedFlatRulesTime < RULE_CACHE_TTL_MS) return _cachedFlatRules;
 
     const flat = [];
+    let corsCount = 0;
     const sheets = Array.from(document.styleSheets || []);
     sheets.forEach((sheet, sheetIndex) => {
       let rules;
-      try { rules = sheet.cssRules; } catch (e) { return; } // Skip CORS sheets
+      try { rules = sheet.cssRules; } catch (e) { corsCount++; return; } // Skip CORS sheets
       const sheetLabel = getStylesheetLabel(sheet, sheetIndex);
       iterCssRules(rules, (rule, ruleIndex) => {
         if (rule.selectorText) {
-          flat.push({ rule, ruleIndex, sheetLabel, sheetIndex });
+          flat.push({ rule, ruleIndex, sheetLabel, sheetIndex,
+                      sheetHref: sheet.href || null, ownerNode: sheet.ownerNode || null });
         }
       }, { shouldStop: false });
     });
 
+    _lastCorsBlockedCount = corsCount;
     _cachedFlatRules = flat;
     _cachedFlatRulesTime = now;
     return flat;
@@ -701,7 +846,7 @@ module.exports = (() => {
     for (let i = 0; i < flatRules.length; i++) {
       if (matches.length >= maxMatches) break;
 
-      const { rule, ruleIndex, sheetLabel, sheetIndex } = flatRules[i];
+      const { rule, ruleIndex, sheetLabel, sheetIndex, sheetHref, ownerNode } = flatRules[i];
       const selectorText = rule.selectorText;
       const { selector, pseudo } = splitPseudo(selectorText);
       if (!selector) continue;
@@ -738,6 +883,8 @@ module.exports = (() => {
         selector,
         pseudo,
         properties: props,
+        sheetHref,
+        ownerNode,
       });
     }
 
@@ -783,6 +930,8 @@ module.exports = (() => {
       .map((r) => {
         const entry = {
           source: simplifySheetLabel(r.stylesheet),
+          origin: classifyRuleOrigin(simplifySheetLabel(r.stylesheet), r.sheetHref, r.ownerNode),
+          scope: analyzeRuleScope(r.selector || r.selectorText, el),
           selector: r.selectorText,
         };
         // Flatten properties: { 'background': { value, priority } } → { 'background': 'value !important' }
@@ -838,8 +987,12 @@ module.exports = (() => {
     const parent = el.parentElement;
     if (parent) result.parent = getElementSummary(parent);
 
-    // Full computed style on target (all keys — don't filter, values like 'none' may be meaningful)
-    result.computedStyle = pickComputedStyles(el);
+    // Computed styles split into active (non-default) values and collapsed default key names
+    Object.assign(result, splitComputedStyles(el));
+
+    // Inline style="" attribute (only if element has one — lets AI know what's inline vs CSS rule)
+    const inlineStyles = extractInlineStyles(el);
+    if (inlineStyles) result.inlineStyles = inlineStyles;
 
     // Children (compact: summary + ariaLabel + flags + key visual styles if notable)
     const childCount = el.children ? el.children.length : 0;
@@ -856,6 +1009,11 @@ module.exports = (() => {
     // Alternate selectors (only stable ones, no nth-of-type fragile paths)
     if (stableSelectors.length > 1) {
       result.altSelectors = stableSelectors.slice(1);
+    }
+
+    // Extraction warnings — let AI know if data might be incomplete
+    if (_lastCorsBlockedCount > 0) {
+      result._warnings = [`${_lastCorsBlockedCount} cross-origin stylesheet(s) could not be read — some rules may be missing`];
     }
 
     return result;
