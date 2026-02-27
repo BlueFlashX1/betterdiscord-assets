@@ -24,28 +24,6 @@
     </feMerge>
   </filter>
 
-  <!-- Radial energy gradient for interior -->
-  <radialGradient id="energyPulse" cx="50%" cy="50%" r="55%">
-    <stop offset="0%" stop-color="rgba(168,85,247,0.08)"/>
-    <stop offset="40%" stop-color="rgba(138,43,226,0.04)"/>
-    <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
-  </radialGradient>
-
-  <!-- Horizontal sweep gradient for activated feel -->
-  <linearGradient id="activeSweep" x1="0" y1="0" x2="1" y2="0">
-    <stop offset="0%" stop-color="rgba(138,43,226,0.12)"/>
-    <stop offset="25%" stop-color="rgba(168,85,247,0.06)"/>
-    <stop offset="50%" stop-color="rgba(138,43,226,0.10)"/>
-    <stop offset="75%" stop-color="rgba(168,85,247,0.06)"/>
-    <stop offset="100%" stop-color="rgba(138,43,226,0.12)"/>
-  </linearGradient>
-
-  <!-- Edge energy gradient (vertical) -->
-  <linearGradient id="edgeEnergy" x1="0" y1="0" x2="0" y2="1">
-    <stop offset="0%" stop-color="rgba(168,85,247,0.25)"/>
-    <stop offset="50%" stop-color="rgba(138,43,226,0.05)"/>
-    <stop offset="100%" stop-color="rgba(168,85,247,0.25)"/>
-  </linearGradient>
 </defs>
 
 <!-- Dark interior fill (slightly lighter than v1 for hover feedback) -->
@@ -178,11 +156,6 @@
   Z"
 />
 </g>
-
-<!-- Energy pulse overlay inside gate -->
-<rect x="25" y="400" width="970" height="195" fill="url(#energyPulse)" opacity="0.8"/>
-<rect x="25" y="400" width="970" height="195" fill="url(#activeSweep)" opacity="0.6"/>
-<rect x="25" y="400" width="970" height="195" fill="url(#edgeEnergy)" opacity="0.4"/>
 
 <!-- Gate frame — brightened purple with glow filter -->
 <g fill="#a855f7" filter="url(#innerGlow)">

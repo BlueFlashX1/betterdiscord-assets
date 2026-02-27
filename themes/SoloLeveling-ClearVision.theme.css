@@ -1292,7 +1292,7 @@ div[class^="positionContainer_"] *::-webkit-scrollbar {
    The DM sidebar uses aria-label="Private channels", not "Channels", so this
    won't match it. 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
 div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
-  background: rgba(0, 0, 0, 0.4) !important;
+  background: rgba(0, 0, 0, 0.2) !important;
   background-image: none !important;
 }
 
