@@ -1010,19 +1010,19 @@ nav[aria-label="Servers sidebar"] div[class^="none_"] {
 }
 
 /* §8e — Purple accent line on visual top edge of the horizontal dock.
-   HSL applies rotate(-90deg) to .guilds_, so CSS border-left becomes the
-   visual top after rotation. Uses both border-left AND inset box-shadow
-   for full coverage across dock states (visible + peek). */
+   HSL applies rotate(-90deg) (counter-clockwise) to .guilds_, so:
+     CSS top→visual left, right→visual top, bottom→visual right, left→visual bottom.
+   Therefore CSS border-right becomes the visual top after rotation. */
 nav[aria-label="Servers sidebar"],
 nav[class^="wrapper_"][class*="guilds_"],
 nav.sl-hsl-dock-target,
 body.sl-dock-visible nav[aria-label="Servers sidebar"],
 body.sl-dock-autohide nav[aria-label="Servers sidebar"] {
-  border-left: 2px solid var(--sl-color-primary) !important;
+  border-right: 2px solid var(--sl-color-primary) !important;
   border-top: none !important;
   border-bottom: none !important;
-  border-right: none !important;
-  box-shadow: inset 2px 0 0 0 var(--sl-color-primary) !important;
+  border-left: none !important;
+  box-shadow: inset -2px 0 0 0 var(--sl-color-primary) !important;
   transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
 }
 
