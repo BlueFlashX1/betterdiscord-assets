@@ -1356,12 +1356,14 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
   min-width: 0 !important;
 }
 
-/* §9f+h — Hover: keep SVG banner + purple glow
-   Discord applies its own hover bg on wrapper/link — nuke all of them */
+/* §9f+h — Hover: v2 SVG banner with glow + energy pulse effect
+   Uses shadow_bannerv2_hover.svg — brighter purple gate frame with SVG glow filters,
+   radial energy gradient, and activated sweep overlay. Provides clear hover feedback
+   while keeping the dungeon gate aesthetic */
 ul[aria-label="Channels"] [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2_hover.svg') !important;
   background-size: 100% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
