@@ -1788,8 +1788,8 @@ body.ra-members-pushed.ra-members-hover-reveal div[class^="members_"] {
 
 body.ra-members-pushed.ra-members-hover-reveal div[aria-label="Members"][role="list"] {
   background: rgba(0, 0, 0, 0.4) !important;
-  -webkit-mask-image: linear-gradient(to right, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.7) 12px, black 24px) !important;
-  mask-image: linear-gradient(to right, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.7) 12px, black 24px) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 
 /* ── Hover-to-Expand (float overlay) ────────────────────────────── */
