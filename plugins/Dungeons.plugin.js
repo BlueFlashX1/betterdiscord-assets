@@ -1762,7 +1762,7 @@ module.exports = class Dungeons {
         const totalDeaths = permanentDeaths + totalRevives; // Total deaths ever = still dead + successfully revived
         const assigned = this.shadowAllocations.get(channelKey)?.length || 0;
         const alive = assigned - permanentDeaths;
-        console.log(
+        this.settings.debug && console.log(
           `[Dungeons] 📊 COMBAT STATUS: ${dungeon.name} (${dungeon.rank}) | ` +
           `Mobs killed: ${dungeon.mobs?.killed || 0}/${dungeon.mobs?.targetCount || '?'} | ` +
           `Boss HP: ${dungeon.boss?.hp?.toLocaleString() || 0}/${dungeon.boss?.maxHp?.toLocaleString() || '?'} | ` +
@@ -4260,8 +4260,7 @@ module.exports = class Dungeons {
     this.showDungeonIndicator(channelKey, channelInfo);
     this.showToast(`${dungeonName} [${rank}] Spawned!`, 'info');
 
-    // ALWAYS-ON: Dungeon spawn log with full context (guild, channel, rank, biome)
-    console.log(
+    this.settings.debug && console.log(
       `[Dungeons] 🏰 SPAWN: "${dungeonName}" [${rank}] in #${dungeon.channelName} (${dungeon.guildName}) — ` +
       `Biome: ${dungeonType} | Boss: ${dungeon.boss?.name || '?'} [${dungeon.boss?.rank}] | ` +
       `Mobs: ${dungeon.mobs?.targetCount?.toLocaleString()} | Key: ${channelKey}`
@@ -5324,16 +5323,17 @@ module.exports = class Dungeons {
 
     const deployMode = starterAllocationCount > 0 ? 'fast-start' : 'async-full-split';
 
-    // ALWAYS-ON: Deploy log with full context
-    const gateSummary = dungeon.bossGate?.enabled === false
-      ? 'disabled'
-      : `${Math.floor((dungeon.bossGate?.minDurationMs || 0) / 1000)}s + ${dungeon.bossGate?.requiredMobKills || 0} kills`;
-    console.log(
-      `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
-      `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | ` +
-      `Gate: ${gateSummary} | Mode: ${deployMode} | ` +
-      `Alloc: ${Date.now() - deployStartedAt}ms | Key: ${channelKey}`
-    );
+    if (this.settings.debug) {
+      const gateSummary = dungeon.bossGate?.enabled === false
+        ? 'disabled'
+        : `${Math.floor((dungeon.bossGate?.minDurationMs || 0) / 1000)}s + ${dungeon.bossGate?.requiredMobKills || 0} kills`;
+      console.log(
+        `[Dungeons] ⚔️ DEPLOY: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
+        `${assignedShadows.length} shadows deployed | Boss: ${dungeon.boss?.name} [${dungeon.boss?.rank}] HP: ${dungeon.boss?.hp?.toLocaleString()} | ` +
+        `Gate: ${gateSummary} | Mode: ${deployMode} | ` +
+        `Alloc: ${Date.now() - deployStartedAt}ms | Key: ${channelKey}`
+      );
+    }
 
     // Initialize boss and mob attack times to prevent one-shot burst
     const now = Date.now();
@@ -5464,7 +5464,7 @@ module.exports = class Dungeons {
       this.settings.userActiveDungeon = null;
     }
 
-    console.log(
+    this.settings.debug && console.log(
       `[Dungeons] RECALL: "${dungeon.name}" [${dungeon.rank}] — all shadows recalled from #${dungeon.channelName || '?'}`
     );
     this.showToast(`Shadows recalled from ${dungeon.name}!`, 'info');
@@ -5800,7 +5800,7 @@ module.exports = class Dungeons {
           this.ensureDeployedSpawnPipeline(channelKey, 'deploy_async_rebalance');
           this.queueHPBarUpdate(channelKey);
 
-          console.log(
+          this.settings.debug && console.log(
             `[Dungeons] ⚔️ DEPLOY REBALANCE: "${refreshedDungeon.name}" [${refreshedDungeon.rank}] ` +
               `starter=${beforeCount} -> full=${afterCount} shadows | ` +
               `rebalance=${Date.now() - rebalanceStartAt}ms | total=${Date.now() - deployStartedAt}ms | ` +
@@ -8176,7 +8176,7 @@ module.exports = class Dungeons {
       }
 
       const elapsedMs = Date.now() - startMs;
-      console.log(
+      this.settings.debug && console.log(
         `[Dungeons] ⏱️ SHADOW XP POST: "${dungeonName || channelKey}" [${dungeonRank || '?'}] | ` +
         `targets=${xpTargetIds.length} | leveled=${leveledUpShadows.length} | ranked=${rankedUpShadows.length} | ` +
         `growthSaved=${growthSaved} | ${elapsedMs}ms`
@@ -9623,7 +9623,7 @@ module.exports = class Dungeons {
           this._allocationShadowSetDirty = false;
         }
 
-        console.log(
+        this.settings.debug && console.log(
           `[Dungeons] 🔥 PRE-WARM: Shadow cache ready — ${normalized.length} shadows sorted for instant deploy`
         );
       }
@@ -10984,8 +10984,7 @@ module.exports = class Dungeons {
     this.queueHPBarUpdate(channelKey);
 
     if (dungeon.boss.hp <= 0) {
-      // ALWAYS-ON: Boss death is a critical event — never gate behind debug
-      console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
+      this.settings.debug && console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
 
       // PERF/FIX: Eagerly remove HP bar BEFORE async completeDungeon.
       // completeDungeon has multiple awaits (extraction, XP, IDB) — the 2s HP bar
@@ -11419,14 +11418,15 @@ module.exports = class Dungeons {
     summaryStats.shadowsExtracted = extractionResults.extracted;
     summaryStats.extractionAttempts = extractionResults.attempted;
 
-    // ALWAYS-ON: Dungeon completion log with full context
-    const duration = dungeon.startTime ? Math.round((Date.now() - dungeon.startTime) / 1000) : 0;
-    const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
-    console.log(
-      `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
-      `${durationStr} | Mobs: ${summaryStats.totalMobsKilled} | Deaths: ${summaryStats.totalShadowDeaths || 0} | ` +
-      `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey}`
-    );
+    if (this.settings.debug) {
+      const duration = dungeon.startTime ? Math.round((Date.now() - dungeon.startTime) / 1000) : 0;
+      const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
+      console.log(
+        `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
+        `${durationStr} | Mobs: ${summaryStats.totalMobsKilled} | Deaths: ${summaryStats.totalShadowDeaths || 0} | ` +
+        `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey}`
+      );
+    }
 
     // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
     if (reason !== 'timeout') {
@@ -12227,7 +12227,7 @@ module.exports = class Dungeons {
     });
 
     const elapsedMs = Date.now() - grantStartedAt;
-    console.log(
+    this.settings.debug && console.log(
       `[Dungeons] ⏱️ SHADOW XP GRANT: "${dungeon?.name || channelKey}" [${dungeon?.rank || '?'}] | ` +
       `targets=${xpTargetIds.length} | totalXP=${totalXPGranted.toLocaleString()} | ` +
       `deferred=${deferredPostProcess} | ${elapsedMs}ms`
@@ -14391,19 +14391,21 @@ module.exports = class Dungeons {
 
           // Only restart mob spawning + combat if shadows were deployed before reload
           if (dg?.shadowsDeployed) {
-            const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
-            console.log(
-              `[Dungeons] 🏰 RESTORE: "${dg.name}" [${dg.rank}] in #${dg.channelName || '?'} (${dg.guildName || '?'}) — ` +
-              `Shadows: ${allocCount} | Boss HP: ${dg.boss?.hp?.toLocaleString()}/${dg.boss?.maxHp?.toLocaleString()} | ` +
-              `Mobs killed: ${dg.mobs?.killed || 0}/${dg.mobs?.targetCount?.toLocaleString() || '?'} | Key: ${channelKey}`
-            );
+            if (this.settings.debug) {
+              const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
+              console.log(
+                `[Dungeons] 🏰 RESTORE: "${dg.name}" [${dg.rank}] in #${dg.channelName || '?'} (${dg.guildName || '?'}) — ` +
+                `Shadows: ${allocCount} | Boss HP: ${dg.boss?.hp?.toLocaleString()}/${dg.boss?.maxHp?.toLocaleString()} | ` +
+                `Mobs killed: ${dg.mobs?.killed || 0}/${dg.mobs?.targetCount?.toLocaleString() || '?'} | Key: ${channelKey}`
+              );
+            }
             this.startMobSpawning(channelKey);
             this.ensureDeployedSpawnPipeline(channelKey, 'restore_deployed');
             await this.startShadowAttacks(channelKey);
             this.startBossAttacks(channelKey);
             this.startMobAttacks(channelKey);
           } else {
-            console.log(
+            this.settings.debug && console.log(
               `[Dungeons] 🏰 RESTORE (idle): "${dg?.name}" [${dg?.rank}] in #${dg?.channelName || '?'} (${dg?.guildName || '?'}) — ` +
               `Boss HP: ${dg?.boss?.hp?.toLocaleString()}/${dg?.boss?.maxHp?.toLocaleString()} | Key: ${channelKey}`
             );

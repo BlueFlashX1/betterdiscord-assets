@@ -606,7 +606,9 @@ module.exports = class ShadowStep {
 
     // Play transition then navigate
     const _ssT0 = performance.now();
-    const _ssDiag = (phase) => console.log(`%c[PortalDiag:ShadowStep]%c ${phase} %c@ ${Math.round(performance.now() - _ssT0)}ms`, "color:#f59e0b;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
+    const _ssDiag = this.settings.debugMode
+      ? (phase) => console.log(`%c[PortalDiag:ShadowStep]%c ${phase} %c@ ${Math.round(performance.now() - _ssT0)}ms`, "color:#f59e0b;font-weight:bold", "color:#e2e8f0", "color:#94a3b8")
+      : () => {};
     _ssDiag(`TELEPORT_START → ${anchor.name} (${path})`);
 
     this.playTransition(() => {

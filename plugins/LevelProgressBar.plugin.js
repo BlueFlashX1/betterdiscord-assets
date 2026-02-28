@@ -1918,10 +1918,10 @@ module.exports = class LevelProgressBar {
    */
 
   /**
-   * Always-on lifecycle trace — fires regardless of debugMode.
-   * Use for critical lifecycle events only.
+   * Debug-gated lifecycle trace — only fires when debugMode is on.
    */
   _trace(tag, msg, data = null) {
+    if (!this.settings?.debugMode) return;
     const prefix = '%c[LPB]%c';
     const styles = ['color:#a855f7;font-weight:bold', 'color:inherit'];
     if (data) console.log(prefix, ...styles, `[${tag}]`, msg, data);

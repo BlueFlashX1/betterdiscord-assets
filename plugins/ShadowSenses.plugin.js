@@ -402,7 +402,7 @@ class SensesEngine {
     } catch (err) {
       this._plugin.debugError("SensesEngine", "Failed to get initial guild ID", err);
     }
-    console.log(`[ShadowSenses] subscribe: _currentGuildId=${this._currentGuildId}`);
+    this._plugin._debugMode && console.log(`[ShadowSenses] subscribe: _currentGuildId=${this._currentGuildId}`);
 
     // Mark current guild as seen
     if (this._currentGuildId && this._guildFeeds[this._currentGuildId]) {
@@ -1206,7 +1206,7 @@ class SensesEngine {
             ? this._plugin._SelectedGuildStore.getGuildId()
             : null;
           if (this._currentGuildId) {
-            console.log(`[ShadowSenses] Lazy guild resolve: _currentGuildId=${this._currentGuildId}`);
+            this._plugin._debugMode && console.log(`[ShadowSenses] Lazy guild resolve: _currentGuildId=${this._currentGuildId}`);
           }
         } catch (_) { /* silent */ }
       }

@@ -12,6 +12,7 @@
 // ── GSAP CDN loader state (shared across all portal-core consumers) ──
 let _gsapLoadPromise = null;
 let _gsapLoaded = false;
+let _gsapLogSent = false;
 
 // ── CSS Portal spiral mask (PropJockey technique) ──
 // Preferred: imgur PNG. Fallback: procedurally generated spiral.
@@ -197,12 +198,11 @@ const methods = {
         if (window.Physics2DPlugin) window.gsap.registerPlugin(window.Physics2DPlugin);
 
         _gsapLoaded = true;
-        console.log(
-          "%c[ShadowPortalCore]%c GSAP v" + window.gsap.version + " loaded",
-          "color:#a855f7;font-weight:bold", "color:#22c55e",
-          window.CustomEase ? "+ CustomEase" : "",
-          window.Physics2DPlugin ? "+ Physics2D" : ""
-        );
+        if (!_gsapLogSent) {
+          _gsapLogSent = true;
+          const plugins = [window.CustomEase && "CustomEase", window.Physics2DPlugin && "Physics2D"].filter(Boolean);
+          console.log(`[ShadowPortalCore] GSAP v${window.gsap.version} loaded` + (plugins.length ? ` + ${plugins.join(" + ")}` : ""));
+        }
         return window.gsap;
       } catch (err) {
         console.warn("[ShadowPortalCore] GSAP CDN load failed — vanilla canvas fallback active:", err.message);

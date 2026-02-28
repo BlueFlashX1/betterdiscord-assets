@@ -29,7 +29,6 @@ module.exports = class Stealth {
   constructor() {
     this.settings = { ...DEFAULT_SETTINGS };
 
-    this._statusInterval = null;
     this._originalStatus = null;
     this._forcedInvisible = false;
     this._statusSetters = [];
@@ -63,6 +62,7 @@ module.exports = class Stealth {
     };
 
     this._warningTimestamps = new Map();
+    this._protoUtils = null;
   }
 
   start() {
@@ -87,7 +87,6 @@ module.exports = class Stealth {
   }
 
   stop() {
-    this._stopStatusInterval();
     this._unsubscribeFluxEvents();
     if (this._dispatcherPollTimer) {
       clearInterval(this._dispatcherPollTimer);
@@ -207,6 +206,13 @@ module.exports = class Stealth {
           setTimeout(() => this._ensureInvisibleStatus(), 1000);
         }
       },
+
+      // Fires when user changes status via Discord's UI status picker
+      USER_SETTINGS_PROTO_UPDATE: () => {
+        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+        // Small delay so Discord applies the setting, then we override
+        setTimeout(() => this._ensureInvisibleStatus(), 300);
+      },
     };
 
     for (const [eventName, handler] of Object.entries(events)) {
@@ -238,6 +244,8 @@ module.exports = class Stealth {
     this._patchTelemetry();
     this._patchAutoSilentMessages();
     this._patchReadReceipts();
+    this._initProtoUtils();
+    this._patchProtoStatusUpdate();
   }
 
   _patchTypingIndicators() {
@@ -646,35 +654,18 @@ module.exports = class Stealth {
     const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
 
     if (!shouldForceInvisible) {
-      this._stopStatusInterval();
-
       if (this._forcedInvisible) {
         this._restoreOriginalStatus();
         this._forcedInvisible = false;
       }
-
       return;
     }
 
-    this._statusSetters = this._resolveStatusSetters();
-
+    // Event-driven: proto patch intercepts at source, flux listener is safety net.
+    // No polling needed — _patchProtoStatusUpdate() and USER_SETTINGS_PROTO_UPDATE handle it.
     const forced = this._ensureInvisibleStatus();
     if (!forced && this.settings.showToasts) {
       this._toast("Stealth: could not force Invisible status", "warning");
-    }
-
-    if (!this._statusInterval) {
-      this._statusInterval = setInterval(() => {
-        if (!this.settings.enabled || !this.settings.invisibleStatus) return;
-        this._ensureInvisibleStatus();
-      }, 5000);
-    }
-  }
-
-  _stopStatusInterval() {
-    if (this._statusInterval) {
-      clearInterval(this._statusInterval);
-      this._statusInterval = null;
     }
   }
 
@@ -732,6 +723,111 @@ module.exports = class Stealth {
     return unique;
   }
 
+  /** Find Discord's PreloadedUserSettings proto module.
+   *  This is the REAL status-change mechanism in modern Discord —
+   *  updateAsync("status", cb) is what the UI status picker calls. */
+  _initProtoUtils() {
+    try {
+      // Collect ALL proto settings objects with updateAsync (searchExports needed — not top-level)
+      const allProtos = [];
+      BdApi.Webpack.getModule((exp) => {
+        try {
+          if (typeof exp.updateAsync === "function") allProtos.push(exp);
+        } catch (e) { /* skip */ }
+        return false;
+      }, { searchExports: true });
+
+      // Pick PreloadedUserSettings by typeName
+      for (const p of allProtos) {
+        try {
+          if (String(p.ProtoClass?.typeName || "").includes("PreloadedUserSettings")) {
+            this._protoUtils = p;
+            console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
+            return;
+          }
+        } catch (e) { /* skip */ }
+      }
+
+      console.warn("[Stealth][DEBUG] All strategies failed — no proto with 'status' field found");
+    } catch (err) {
+      this._logWarning("STATUS", "Failed to find PreloadedUserSettings proto module", err, "proto-init");
+    }
+  }
+
+  /** Patch updateAsync so ANY status change via the proto system
+   *  (including Discord's own UI status picker) gets forced to invisible.
+   *  Proto status enum: 0=unset, 1=online, 2=idle, 3=dnd, 4=invisible */
+  _patchProtoStatusUpdate() {
+    if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") {
+      this._logWarning("STATUS", "Proto utils unavailable — cannot intercept proto status changes", null, "proto-patch-skip");
+      return;
+    }
+
+    BdApi.Patcher.before(STEALTH_PLUGIN_ID, this._protoUtils, "updateAsync", (_ctx, args) => {
+      if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+
+      // args[0] = setting group key ("status", "appearance", etc.)
+      // args[1] = callback that mutates the proto settings
+      if (args[0] === "status" && typeof args[1] === "function") {
+        const originalCallback = args[1];
+        args[1] = (data) => {
+          originalCallback(data);
+          // Force invisible after the original callback sets whatever it wants
+          if (data?.status) {
+            data.status.value = "invisible";
+          }
+        };
+      }
+    });
+  }
+
+  /** Direct proto call to set status to invisible — used by _ensureInvisibleStatus
+   *  as primary method, with legacy setStatus as fallback. */
+  _setStatusViaProto(statusString) {
+    if (!this._protoUtils || typeof this._protoUtils.updateAsync !== "function") return false;
+
+    try {
+      this._protoUtils.updateAsync("status", (data) => {
+        if (data?.status) {
+          data.status.value = statusString; // "invisible", "online", "idle", "dnd"
+        }
+      }, 0);
+      return true;
+    } catch (err) {
+      this._logWarning("STATUS", "Proto updateAsync call failed", err, "proto-set");
+      return false;
+    }
+  }
+
+  /** Patch all resolved status-setter functions so ANY call to set a
+   *  non-invisible status gets silently rewritten to "invisible" before
+   *  the original function executes.  This catches Discord's own UI
+   *  status picker and any other module that calls setStatus/setPresence. */
+  _patchStatusSetters() {
+    if (!this._statusSetters?.length) return;
+
+    for (const { module, fnName } of this._statusSetters) {
+      try {
+        BdApi.Patcher.before(STEALTH_PLUGIN_ID, module, fnName, (_ctx, args) => {
+          if (!this.settings.enabled || !this.settings.invisibleStatus) return;
+
+          if (fnName === "setPresence") {
+            if (args[0] && typeof args[0] === "object" && args[0].status && args[0].status !== "invisible") {
+              args[0] = { ...args[0], status: "invisible" };
+            }
+            return;
+          }
+          // setStatus / updateStatus — override string arg
+          if (typeof args[0] === "string" && args[0] !== "invisible") {
+            args[0] = "invisible";
+          }
+        });
+      } catch (err) {
+        this._logWarning("STATUS", `Failed to intercept ${fnName}`, err, `status-intercept-${fnName}`);
+      }
+    }
+  }
+
   _ensureInvisibleStatus() {
     const current = this._getCurrentStatus();
 
@@ -744,6 +840,13 @@ module.exports = class Stealth {
       return true;
     }
 
+    // Try proto method first (Discord's actual status system)
+    if (this._setStatusViaProto("invisible")) {
+      this._forcedInvisible = true;
+      return true;
+    }
+
+    // Fallback to legacy setStatus
     const updated = this._setStatus("invisible");
     if (updated) {
       this._forcedInvisible = true;
@@ -794,6 +897,13 @@ module.exports = class Stealth {
   _restoreOriginalStatus() {
     if (!this._originalStatus) return;
 
+    // Proto uses string values directly: "online", "idle", "dnd", "invisible"
+    if (this._setStatusViaProto(this._originalStatus)) {
+      this._originalStatus = null;
+      return;
+    }
+
+    // Fallback to legacy
     this._setStatus(this._originalStatus);
     this._originalStatus = null;
   }
