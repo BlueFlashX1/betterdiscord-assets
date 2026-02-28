@@ -611,7 +611,7 @@ const methods = {
       // Dual-speed portal: outer layer spins fast (4.5s), inner core spins slow (14s)
       portalStyleEl.textContent = [
         "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
-        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 18px #7b3fbf) drop-shadow(0 0 40px #5a2d8a);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
+        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 8px rgba(123,63,191,0.3)) drop-shadow(0 0 20px rgba(90,45,138,0.15));overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         // Outer layer — fast spin
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 4.5s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
