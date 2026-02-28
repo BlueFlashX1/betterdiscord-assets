@@ -1,13 +1,17 @@
 /**
  * @name ShadowPortalCore
  * @description Shared navigation + transition core for ShadowStep, ShadowExchange, and ShadowSenses.
- * @version 1.1.0
+ * @version 2.0.0
  * @author matthewthompson
  */
 
 /* global BdApi */
 
 "use strict";
+
+// ── GSAP CDN loader state (shared across all portal-core consumers) ──
+let _gsapLoadPromise = null;
+let _gsapLoaded = false;
 
 const DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
 
@@ -70,6 +74,62 @@ function debugError(instance, tag, message, error) {
 }
 
 const methods = {
+  /**
+   * Load GSAP + plugins from CDN with dedup and graceful fallback.
+   * Safe to call multiple times — returns cached promise on repeat calls.
+   * @returns {Promise<object|null>} GSAP instance or null if CDN failed.
+   */
+  async _ensureGSAP() {
+    if (_gsapLoaded && window.gsap) return window.gsap;
+    if (_gsapLoadPromise) return _gsapLoadPromise;
+
+    _gsapLoadPromise = (async () => {
+      try {
+        const loadScript = (url) => new Promise((resolve, reject) => {
+          // Dedup: don't inject same script twice
+          if (document.querySelector(`script[src="${url}"]`)) { resolve(); return; }
+          const el = document.createElement("script");
+          el.src = url;
+          el.onload = resolve;
+          el.onerror = reject;
+          document.head.appendChild(el);
+        });
+
+        const CDN = "https://cdnjs.cloudflare.com/ajax/libs/gsap/3.13.0";
+
+        // Core (required)
+        await loadScript(`${CDN}/gsap.min.js`);
+        // EasePack (required for elastic, expo, back extras)
+        await loadScript(`${CDN}/EasePack.min.js`);
+        // Optional premium plugins (now free — soft-fail if unavailable)
+        await loadScript(`${CDN}/CustomEase.min.js`).catch(() => {});
+        await loadScript(`${CDN}/Physics2DPlugin.min.js`).catch(() => {});
+
+        if (!window.gsap) throw new Error("gsap global not found after script injection");
+
+        // Register available plugins
+        if (window.CustomEase) window.gsap.registerPlugin(window.CustomEase);
+        if (window.Physics2DPlugin) window.gsap.registerPlugin(window.Physics2DPlugin);
+
+        _gsapLoaded = true;
+        console.log(
+          "%c[ShadowPortalCore]%c GSAP v" + window.gsap.version + " loaded",
+          "color:#a855f7;font-weight:bold", "color:#22c55e",
+          window.CustomEase ? "+ CustomEase" : "",
+          window.Physics2DPlugin ? "+ Physics2D" : ""
+        );
+        return window.gsap;
+      } catch (err) {
+        console.warn("[ShadowPortalCore] GSAP CDN load failed — vanilla canvas fallback active:", err.message);
+        _gsapLoaded = false;
+        _gsapLoadPromise = null;
+        return null;
+      }
+    })();
+
+    return _gsapLoadPromise;
+  },
+
   /**
    * Extract a Discord channel ID from a path like /channels/guildId/channelId
    */
@@ -303,6 +363,11 @@ const methods = {
         }
 
         BdApi.UI.showToast(getNavigationFailureToast(this), { type: "error" });
+
+        // Smooth portal retraction if GSAP timeline is active (Phase 6)
+        if (this._gsapMasterTimeline) {
+          this._reversePortalTransition();
+        }
         return;
       }
 
@@ -330,6 +395,37 @@ const methods = {
     }
   },
 
+  /**
+   * Smoothly reverse the portal animation (GSAP only).
+   * Falls back to instant cleanup if GSAP timeline isn't active.
+   * Automatically called on navigation failure when GSAP is loaded.
+   */
+  _reversePortalTransition() {
+    const tl = this._gsapMasterTimeline;
+    if (!tl || !window.gsap) {
+      this._cancelPendingTransition();
+      return;
+    }
+
+    // Cancel scheduled timeouts — reverse handles its own cleanup
+    if (this._transitionCleanupTimeout) {
+      clearTimeout(this._transitionCleanupTimeout);
+      this._transitionCleanupTimeout = null;
+    }
+    if (this._transitionNavTimeout) {
+      clearTimeout(this._transitionNavTimeout);
+      this._transitionNavTimeout = null;
+    }
+
+    tl.timeScale(2); // 2x speed for snappy retraction
+    tl.reverse();
+    tl.eventCallback("onReverseComplete", () => {
+      this._cancelPendingTransition();
+    });
+
+    debugLog(this, "Transition", "Portal reverse initiated (GSAP timeline.reverse @ 2x)");
+  },
+
   _cancelPendingTransition() {
     if (this._transitionNavTimeout) {
       clearTimeout(this._transitionNavTimeout);
@@ -339,9 +435,11 @@ const methods = {
       clearTimeout(this._transitionCleanupTimeout);
       this._transitionCleanupTimeout = null;
     }
-    // Cancel any in-flight WAAPI shard animations
+    // Cancel any in-flight shard animations (GSAP timelines use .kill(), WAAPI uses .cancel())
     if (this._activeShardAnims) {
-      for (const a of this._activeShardAnims) { try { a.cancel(); } catch (_) {} }
+      for (const a of this._activeShardAnims) {
+        try { if (typeof a.kill === "function") a.kill(); else a.cancel(); } catch (_) {}
+      }
       this._activeShardAnims = null;
     }
     if (typeof this._transitionStopCanvas === "function") {
@@ -489,23 +587,48 @@ const methods = {
         { duration: totalDuration, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" }
       );
 
+      // Phase 3: GSAP shard animation with back.out(2) for explosive pop, or WAAPI fallback
       const shardAnims = [];
-      for (const shard of shards) {
-        const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
-        const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
-        const ty = shard.style.getPropertyValue("--ss-shard-y") || "-80px";
-        const rot = shard.style.getPropertyValue("--ss-shard-r") || "0deg";
-        shardAnims.push(shard.animate(
-          [
-            { transform: "translate3d(0, 0, 0) rotate(0deg) scale(0.3)", opacity: 0 },
-            { transform: "translate3d(0, 0, 0) rotate(0deg) scale(1)", opacity: 0.72, offset: 0.22 },
-            { transform: `translate3d(${tx}, ${ty}, 0) rotate(${rot}) scale(0.2)`, opacity: 0 },
-          ],
-          { duration: 900, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards", delay }
-        ));
+      if (_gsapLoaded && window.gsap) {
+        for (const shard of shards) {
+          const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
+          const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
+          const ty = shard.style.getPropertyValue("--ss-shard-y") || "-80px";
+          const rot = shard.style.getPropertyValue("--ss-shard-r") || "0deg";
+          // Initial state: small, invisible
+          window.gsap.set(shard, { scale: 0.3, opacity: 0, x: 0, y: 0, rotation: 0 });
+          // Phase 1: burst into view with back.out(2) — explosive pop with overshoot
+          const shardTl = window.gsap.timeline({ delay: delay / 1000 });
+          shardTl.to(shard, {
+            scale: 1, opacity: 0.72, duration: 0.2, ease: "back.out(2)",
+          });
+          // Phase 2: disperse outward with gravity-like arc
+          shardTl.to(shard, {
+            x: tx, y: ty, rotation: rot, scale: 0.2, opacity: 0,
+            duration: 0.7, ease: "power3.out",
+          });
+          shardAnims.push(shardTl);
+        }
+        this._activeShardAnims = shardAnims;
+        debugLog(this, "Transition", "Using GSAP shards + canvas portal transition");
+      } else {
+        for (const shard of shards) {
+          const delay = parseFloat(shard.style.getPropertyValue("--ss-delay")) || 0;
+          const tx = shard.style.getPropertyValue("--ss-shard-x") || "0px";
+          const ty = shard.style.getPropertyValue("--ss-shard-y") || "-80px";
+          const rot = shard.style.getPropertyValue("--ss-shard-r") || "0deg";
+          shardAnims.push(shard.animate(
+            [
+              { transform: "translate3d(0, 0, 0) rotate(0deg) scale(0.3)", opacity: 0 },
+              { transform: "translate3d(0, 0, 0) rotate(0deg) scale(1)", opacity: 0.72, offset: 0.22 },
+              { transform: `translate3d(${tx}, ${ty}, 0) rotate(${rot}) scale(0.2)`, opacity: 0 },
+            ],
+            { duration: 900, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards", delay }
+          ));
+        }
+        this._activeShardAnims = shardAnims;
+        debugLog(this, "Transition", "Using WAAPI + canvas portal transition");
       }
-      this._activeShardAnims = shardAnims;
-      debugLog(this, "Transition", "Using WAAPI + canvas portal transition");
     } else if (prefersReducedMotion) {
       overlay.classList.add("ss-transition-overlay--reduced");
       if (canUseWaapi) {
@@ -565,7 +688,12 @@ const methods = {
   },
 
   startPortalCanvasAnimation(canvas, duration) {
-    // Try OffscreenCanvas Worker for smooth animation during Discord navigation
+    // ── GSAP-enhanced path — uses main-thread canvas only (GSAP depends on DOM) ──
+    if (_gsapLoaded && window.gsap) {
+      return this._startPortalCanvasGSAP(canvas, duration);
+    }
+
+    // ── Vanilla fallback: OffscreenCanvas Worker → main-thread canvas ──
     if (typeof canvas.transferControlToOffscreen === "function") {
       try {
         return this._startPortalCanvasWorker(canvas, duration);
@@ -576,7 +704,103 @@ const methods = {
     return this._startPortalCanvasMainThread(canvas, duration);
   },
 
-  _startPortalCanvasMainThread(canvas, duration) {
+  /**
+   * GSAP-enhanced canvas animation path.
+   * Creates a master timeline driving a state object; the canvas draw loop
+   * reads GSAP-interpolated values instead of computing from raw `t`.
+   * Uses main-thread canvas only (GSAP depends on DOM APIs).
+   */
+  _startPortalCanvasGSAP(canvas, duration) {
+    const gsap = window.gsap;
+    if (!gsap) return this._startPortalCanvasMainThread(canvas, duration);
+
+    // ── GSAP state object — timeline tweens these, draw loop reads them ──
+    const gs = {
+      portalForm: 0.38,      // 0.38→1.0 (formation envelope)
+      formEase: 0,           // 0→1 (formation progress)
+      easeInOut: 0,          // 0→1 (global ease envelope)
+      fadeOut: 1,            // 1→0 (end fade)
+      revealProgress: 0,     // 0→1 (aperture reveal)
+      revealEase: 0,         // 0→1 (reveal easing)
+      ringGlow: 1,           // glow multiplier (Phase 5)
+      coreGlow: 1,           // core glow multiplier (Phase 5)
+      hueShift: 0,           // hue drift in degrees (Phase 5)
+      shockwaveBoost: 0,     // elastic overshoot for shockwave ripples (Phase 3)
+    };
+
+    const dur = duration / 1000; // GSAP uses seconds
+
+    // ── Master timeline ──
+    const tl = gsap.timeline();
+
+    // Formation: 0→25% — back.out gives subtle overshoot snap
+    tl.to(gs, {
+      portalForm: 1,
+      formEase: 1,
+      duration: dur * 0.25,
+      ease: "back.out(1.4)",
+    }, 0);
+
+    // Global ease envelope: power2.inOut across full duration
+    tl.to(gs, {
+      easeInOut: 1,
+      duration: dur,
+      ease: "power2.inOut",
+    }, 0);
+
+    // Reveal aperture: 52%→100% with expo.inOut for dramatic accel/decel
+    tl.to(gs, {
+      revealProgress: 1,
+      revealEase: 1,
+      duration: dur * 0.48,
+      ease: "expo.inOut",
+    }, dur * 0.52);
+
+    // Fade out: 95%→100% with power2.in for smooth exit
+    tl.to(gs, {
+      fadeOut: 0,
+      duration: dur * 0.05,
+      ease: "power2.in",
+    }, dur * 0.95);
+
+    // Phase 3: Shockwave elastic overshoot — starts 54% through, elastic.out gives ripple bounce
+    tl.to(gs, {
+      shockwaveBoost: 1,
+      duration: dur * 0.42,
+      ease: "elastic.out(1, 0.3)",
+    }, dur * 0.54);
+
+    // ── Phase 5: Glow breathing — infinite yoyo loops during portal lifetime ──
+    const breathingTweens = [
+      gsap.to(gs, { ringGlow: 1.6, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 }),
+      gsap.to(gs, { coreGlow: 2.0, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: -1 }),
+      gsap.to(gs, { hueShift: 10, duration: 2, ease: "none", yoyo: true, repeat: -1 }),
+    ];
+
+    // Store timeline on instance for Phase 6 (reverse-on-failure)
+    this._gsapMasterTimeline = tl;
+
+    if (this.settings?.debugMode) {
+      console.log(
+        "%c[PortalDiag]%c GSAP timeline created — " + dur.toFixed(3) + "s, " + tl.getChildren().length + " tweens",
+        "color:#a855f7;font-weight:bold", "color:#22c55e",
+        "CustomEase:", !!window.CustomEase, "Physics2D:", !!window.Physics2DPlugin
+      );
+    }
+
+    // Delegate to main-thread draw loop, passing GSAP state
+    const stopCanvas = this._startPortalCanvasMainThread(canvas, duration, gs);
+
+    // Wrap stop function to kill GSAP timeline + breathing tweens
+    return () => {
+      tl.kill();
+      for (const tw of breathingTweens) tw.kill();
+      this._gsapMasterTimeline = null;
+      if (stopCanvas) stopCanvas();
+    };
+  },
+
+  _startPortalCanvasMainThread(canvas, duration, _gsap) {
     if (!canvas || typeof canvas.getContext !== "function") return null;
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return null;
@@ -713,25 +937,40 @@ const methods = {
 
       const elapsed = now - start;
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
-      const easeInOut = t < 0.5
-        ? 2 * t * t
-        : 1 - Math.pow(-2 * t + 2, 2) / 2;
-      const fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
       const swirl = elapsed * 0.0022;
-      const formT = Math.min(1, t / 0.22);
-      const formEase = 1 - Math.pow(1 - formT, 3);
-      const portalForm = 0.38 + 0.62 * formEase;
       const revealStart = 0.52;
-      const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
+
+      // ── Phase state: GSAP-driven or vanilla-computed ──
+      let easeInOut, fadeOut, formT, formEase, portalForm, revealProgress, revealEase;
+      if (_gsap) {
+        easeInOut = _gsap.easeInOut;
+        fadeOut = _gsap.fadeOut;
+        formEase = _gsap.formEase;
+        portalForm = _gsap.portalForm;
+        revealProgress = _gsap.revealProgress;
+        revealEase = _gsap.revealEase;
+        formT = formEase; // diagnostics compat
+      } else {
+        easeInOut = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+        fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
+        formT = Math.min(1, t / 0.22);
+        formEase = 1 - Math.pow(1 - formT, 3);
+        portalForm = 0.38 + 0.62 * formEase;
+        revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
+        revealEase = revealProgress < 0.5
+          ? 2 * revealProgress * revealProgress
+          : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
+      }
 
       // Phase crossing diagnostics
       if (!_canvasDiag.formDone && formT >= 1) { _canvasDiag.formDone = true; _cdLog("FORMATION_COMPLETE (formT=1, t=0.22)"); }
       if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)}, target=0.74)`); }
       if (!_canvasDiag.fadeStarted && t >= 0.95) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.95)"); }
       if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
-      const revealEase = revealProgress < 0.5
-        ? 2 * revealProgress * revealProgress
-        : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
+
+      // ── Glow breathing multipliers (GSAP Phase 5; 1.0 in vanilla) ──
+      const glowMul = _gsap ? _gsap.ringGlow : 1;
+      const coreGlowMul = _gsap ? _gsap.coreGlow : 1;
 
       const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
       const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
@@ -821,7 +1060,7 @@ const methods = {
         const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
         ctx.strokeStyle = `rgba(188, 130, 255, ${Math.max(0.07, glow).toFixed(4)})`;
         ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
-        ctx.shadowBlur = (10 + easeInOut * 20) * shadowScale;
+        ctx.shadowBlur = (10 + easeInOut * 20) * shadowScale * glowMul;
         ctx.shadowColor = "rgba(146, 78, 248, 0.78)";
         ctx.stroke();
       }
@@ -846,7 +1085,7 @@ const methods = {
         const glow = (0.22 + 0.3 * Math.sin(swirl * 3.2 + filament.phase)) * fadeOut;
         ctx.strokeStyle = `rgba(238, 186, 255, ${Math.max(0.07, glow).toFixed(4)})`;
         ctx.lineWidth = filament.lineWidth + easeInOut * 1.1;
-        ctx.shadowBlur = (8 + easeInOut * 15) * shadowScale;
+        ctx.shadowBlur = (8 + easeInOut * 15) * shadowScale * glowMul;
         ctx.shadowColor = "rgba(214, 136, 255, 0.76)";
         ctx.stroke();
       }
@@ -912,7 +1151,7 @@ const methods = {
       // Large center vortex so formation reads as a portal, not a plain overlay.
       const coreVortexAlpha = (0.24 + 0.42 * (1 - revealProgress)) * fadeOut * portalForm;
       if (coreVortexAlpha > 0.004) {
-        const coreVortexRadius = innerRadius * (1.0 + 0.52 * formEase);
+        const coreVortexRadius = innerRadius * (1.0 + 0.52 * formEase) * (0.5 + 0.5 * coreGlowMul);
         ctx.save();
         ctx.globalCompositeOperation = "source-over";
 
@@ -970,7 +1209,7 @@ const methods = {
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
           ctx.strokeStyle = `rgba(210, 154, 255, ${Math.max(0.06, strandAlpha).toFixed(4)})`;
           ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (16 + s * 2.0) * shadowScale;
+          ctx.shadowBlur = (16 + s * 2.0) * shadowScale * coreGlowMul;
           ctx.shadowColor = `rgba(150, 92, 240, ${(strandAlpha * 0.9).toFixed(4)})`;
           ctx.stroke();
         }
@@ -1174,18 +1413,21 @@ const methods = {
         }
 
         // Expanding shockwave ripples — start beyond ring outer edge for visibility
+        // Phase 3: shockwaveBoost adds elastic overshoot to radius (GSAP) or 0 (vanilla)
+        const swBoost = _gsap ? _gsap.shockwaveBoost : 0;
         for (let i = 0; i < 5; i++) {
           const wave = revealProgress * 1.45 - i * 0.18;
           if (wave <= 0 || wave >= 1.52) continue;
           // Start from ring outer edge so thick ring doesn't cover them
-          const waveRadius = ringOuter + innerRadius * wave * 0.92;
+          // shockwaveBoost scales radius by up to 18% via elastic.out overshoot
+          const waveRadius = ringOuter + innerRadius * wave * (0.92 + swBoost * 0.18);
           const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
           if (waveAlpha <= 0.003) continue;
 
           ctx.beginPath();
           ctx.strokeStyle = `rgba(72, 58, 96, ${waveAlpha.toFixed(4)})`;
           ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
-          ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale;
+          ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale * glowMul;
           ctx.shadowColor = `rgba(48, 32, 78, ${(waveAlpha * 0.88).toFixed(4)})`;
           ctx.arc(cx, cy, waveRadius, 0, TAU);
           ctx.stroke();
@@ -1980,6 +2222,12 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
       writable: true,
       value: fn,
     });
+  }
+
+  // Fire-and-forget GSAP preload so it's ready by first portal animation.
+  // Safe no-op if CDN is blocked — vanilla canvas path will be used instead.
+  if (!_gsapLoadPromise && !_gsapLoaded) {
+    methods._ensureGSAP.call({}).catch(() => {});
   }
 
   return true;
