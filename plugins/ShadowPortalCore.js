@@ -13,23 +13,52 @@
 let _gsapLoadPromise = null;
 let _gsapLoaded = false;
 
-// ── CSS Portal mask (PropJockey-style spiral, generated once and cached) ──
+// ── CSS Portal spiral mask (PropJockey technique) ──
+// Preferred: imgur PNG. Fallback: procedurally generated spiral.
 let _spiralMaskUrl = null;
+let _spiralMaskReady = false;
+
+const SPIRAL_IMG_URL = "https://i.imgur.com/oNjtnOI.png";
 
 /**
- * Procedurally generate a spiral mask on an offscreen canvas.
- * The mask, when counter-rotated against a gradient, creates a swirling vortex.
- * Returns a data:image/png URL cached for the lifetime of the page.
+ * Preload the spiral mask image from imgur.
+ * On success, caches as data URL (avoids repeat network hits + CSP issues).
+ * On failure, falls back to a procedurally generated spiral.
+ * Called fire-and-forget during applyPortalCoreToClass.
  */
-function getSpiralMaskUrl() {
-  if (_spiralMaskUrl) return _spiralMaskUrl;
+function preloadSpiralMask() {
+  if (_spiralMaskReady || _spiralMaskUrl) return;
+  const img = new Image();
+  img.crossOrigin = "anonymous";
+  img.onload = () => {
+    try {
+      const c = document.createElement("canvas");
+      c.width = c.height = 512;
+      const ctx = c.getContext("2d");
+      ctx.drawImage(img, 0, 0, 512, 512);
+      _spiralMaskUrl = c.toDataURL();
+    } catch (_) {
+      // CORS tainted canvas — fall back to procedural
+      _spiralMaskUrl = generateProceduralSpiral();
+    }
+    _spiralMaskReady = true;
+  };
+  img.onerror = () => {
+    _spiralMaskUrl = generateProceduralSpiral();
+    _spiralMaskReady = true;
+  };
+  img.src = SPIRAL_IMG_URL;
+}
+
+/** Procedural fallback: logarithmic spiral with Gaussian ring. */
+function generateProceduralSpiral() {
   const size = 256;
   const c = document.createElement("canvas");
   c.width = c.height = size;
   const ctx = c.getContext("2d");
   const mid = size / 2;
-  const img = ctx.createImageData(size, size);
-  const d = img.data;
+  const imgData = ctx.createImageData(size, size);
+  const d = imgData.data;
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = (x - mid) / mid;
@@ -37,23 +66,27 @@ function getSpiralMaskUrl() {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist > 1.0) continue;
       const angle = Math.atan2(dy, dx);
-      // Ring donut shape — peak at ~0.52 radius, Gaussian falloff
       const ring = Math.exp(-Math.pow((dist - 0.52) / 0.27, 2));
-      // Logarithmic spiral modulation — 3 arms wound tightly
       const spiral = (Math.cos(angle * 3 + Math.log(Math.max(0.001, dist)) * 4.5) + 1) * 0.5;
-      const alpha = ring * (0.25 + 0.75 * spiral) * 255;
       const idx = (y * size + x) * 4;
-      d[idx + 3] = Math.round(alpha);
+      d[idx + 3] = Math.round(ring * (0.25 + 0.75 * spiral) * 255);
     }
   }
-  ctx.putImageData(img, 0, 0);
-  // Soft blur pass for organic edges
+  ctx.putImageData(imgData, 0, 0);
   const blurred = document.createElement("canvas");
   blurred.width = blurred.height = size;
   const bctx = blurred.getContext("2d");
   bctx.filter = "blur(4px)";
   bctx.drawImage(c, 0, 0);
-  _spiralMaskUrl = blurred.toDataURL();
+  return blurred.toDataURL();
+}
+
+/** Get the spiral mask URL (imgur data URL preferred, procedural fallback). */
+function getSpiralMaskUrl() {
+  if (_spiralMaskUrl) return _spiralMaskUrl;
+  // If preload hasn't completed yet, generate procedural synchronously
+  _spiralMaskUrl = generateProceduralSpiral();
+  _spiralMaskReady = true;
   return _spiralMaskUrl;
 }
 
@@ -567,11 +600,12 @@ const methods = {
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
+      // Matches PropJockey reference exactly: CCW rotate(359deg), 7s cycle, top left mask
       portalStyleEl.textContent = [
-        "@keyframes ss-portal-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
+        "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
         ".ss-portal-css{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(1.75);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
-        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 5s infinite linear}",
-        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
+        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
+        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(black -25%,transparent 50%,white 125%),var(--ss-portal-color,#6b3fa0)}',
       ].join("");
       overlay.appendChild(portalStyleEl);
@@ -2450,6 +2484,9 @@ function applyPortalCoreToClass(PluginClass, config = {}) {
   if (!_gsapLoadPromise && !_gsapLoaded) {
     methods._ensureGSAP.call({}).catch(() => {});
   }
+
+  // Fire-and-forget spiral mask preload — tries imgur PNG first, procedural fallback.
+  preloadSpiralMask();
 
   return true;
 }
