@@ -519,6 +519,7 @@ div[role="menu"] div[role="menuitem"],
 #now-playing-menu div[role="menuitem"] {
   background: transparent !important;
   background-image: none !important;
+  border-radius: 2px !important;
 }
 
 div[role="menu"] div[role="menuitem"]:hover,
@@ -527,6 +528,7 @@ div[role="menu"] div[class^="item_"][class*="focused"],
 #now-playing-menu div[class^="item_"][class*="focused"] {
   background: rgba(123, 43, 226, 0.45) !important;
   background-image: none !important;
+  border-radius: 2px !important;
 }
 
 /* ═══════════════════════════════════════════════════════════
