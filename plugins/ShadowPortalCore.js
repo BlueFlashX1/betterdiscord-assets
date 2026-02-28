@@ -1184,13 +1184,15 @@ const methods = {
         ctx.arc(cx, cy, coreVortexRadius, 0, TAU);
         ctx.fill();
 
-        // ── GSAP-enhanced swirl strands (8 strands with dynamic modulation) ──
+        // ── GSAP-enhanced swirl strands (8 strands, unified rotation + tapered width) ──
         const swirlCount = 8;
         const swirlPoints = _gsap ? 24 : (perfTier === 0 ? 12 : 16);
         const strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85, 0.14, 0.66];
-        const strandDirs = [1, -1, 1, -1, -1, 1, 1, -1];
-        const strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12, 1.28, 0.86];
-        const strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7, 3.1, 1.9];
+        // 6 unified CW + 2 rebel CCW (indices 2, 5) for organic feel
+        const strandDirs = [1, 1, -1, 1, 1, -1, 1, 1];
+        // Tight speed cluster so strands rotate cohesively
+        const strandSpeeds = [1.24, 1.18, 0.88, 1.30, 1.22, 0.92, 1.26, 1.20];
+        const strandTurns = [2.4, 2.2, 1.6, 2.5, 2.3, 1.8, 2.6, 2.1];
         // GSAP accelerating spin adds growing angular offset to all strands
         const spinOffset = vortexSpinMul * TAU * 0.8;
         for (let s = 0; s < swirlCount; s++) {
@@ -1198,10 +1200,10 @@ const methods = {
           const dir = strandDirs[s];
           const base = strandSeeds[s] * TAU + phase * dir + spinOffset * dir;
           const wobbleFreq = 2.4 + s * 0.7;
-          // strandMorph amplifies deformation — makes strands writhe dynamically
-          const wobbleAmp = (0.14 + 0.08 * Math.sin(phase * 0.6 + s)) * (1 + strandMorphMul * 1.2);
+          const wobbleAmp = (0.10 + 0.06 * Math.sin(phase * 0.6 + s)) * (1 + strandMorphMul * 1.2);
 
-          ctx.beginPath();
+          // Compute all points first, then draw segments with tapering width
+          const pts = [];
           for (let i = 0; i <= swirlPoints; i++) {
             const p = i / swirlPoints;
             const morphWave = strandMorphMul * 0.1 * Math.sin(phase * 2.3 + p * 9.1 + s * 1.7);
@@ -1215,21 +1217,30 @@ const methods = {
             const twist = p * strandTurns[s] * dir;
             const distort =
               Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp +
-              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06 +
-              strandMorphMul * 0.08 * Math.sin(phase * 5.3 + p * 15.4 + s * 2.1);
+              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.04 +
+              strandMorphMul * 0.06 * Math.sin(phase * 5.3 + p * 15.4 + s * 2.1);
             const ang = base + twist + distort;
-            const x = cx + Math.cos(ang) * rr;
-            const y = cy + Math.sin(ang) * rr * 0.86;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
+            pts.push({
+              x: cx + Math.cos(ang) * rr,
+              y: cy + Math.sin(ang) * rr * 0.86,
+            });
           }
 
+          // Draw tapered segments — thin at center, thick at outer edge
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
+          const baseW = (1.0 + strandMorphMul * 0.4) * (perfTier === 0 ? 0.9 : 1);
+          const maxW = (3.6 + strandMorphMul * 1.0) * (perfTier === 0 ? 0.9 : 1);
           ctx.strokeStyle = `rgba(90, 55, 150, ${Math.max(0.04, strandAlpha * 0.65).toFixed(4)})`;
-          ctx.lineWidth = (1.8 + s * 0.22 + strandMorphMul * 0.6) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (12 + s * 1.6 + strandMorphMul * 4) * shadowScale * coreGlowMul;
           ctx.shadowColor = `rgba(60, 30, 110, ${(strandAlpha * 0.55).toFixed(4)})`;
-          ctx.stroke();
+          for (let i = 0; i < pts.length - 1; i++) {
+            const p = i / (pts.length - 1);
+            ctx.beginPath();
+            ctx.moveTo(pts[i].x, pts[i].y);
+            ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
+            ctx.lineWidth = baseW + (maxW - baseW) * p;
+            ctx.shadowBlur = (6 + 10 * p + strandMorphMul * 4) * shadowScale * coreGlowMul;
+            ctx.stroke();
+          }
         }
 
         // ── Spiral tendrils — replaces static blob with dynamic swirling filaments ──
@@ -1874,36 +1885,42 @@ function startDrawLoop() {
       ctx.fillStyle = vortexGlow;
       ctx.beginPath(); ctx.arc(cx, cy, coreVortexRadius, 0, TAU); ctx.fill();
 
-      // Worker fallback: 8 swirl strands (no GSAP modulation — static sine-wave motion)
+      // Worker fallback: 8 swirl strands (unified rotation + tapered width, no GSAP)
       var swirlCount = 8;
       var swirlPoints = perfTier === 0 ? 12 : 16;
       var strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85, 0.14, 0.66];
-      var strandDirs = [1, -1, 1, -1, -1, 1, 1, -1];
-      var strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12, 1.28, 0.86];
-      var strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7, 3.1, 1.9];
+      var strandDirs = [1, 1, -1, 1, 1, -1, 1, 1];
+      var strandSpeeds = [1.24, 1.18, 0.88, 1.30, 1.22, 0.92, 1.26, 1.20];
+      var strandTurns = [2.4, 2.2, 1.6, 2.5, 2.3, 1.8, 2.6, 2.1];
       for (var s = 0; s < swirlCount; s++) {
         var phase = swirl * strandSpeeds[s];
         var dir = strandDirs[s];
         var base = strandSeeds[s] * TAU + phase * dir;
         var wobbleFreq = 2.4 + s * 0.7;
-        var wobbleAmp = 0.14 + 0.08 * Math.sin(phase * 0.6 + s);
-        ctx.beginPath();
+        var wobbleAmp = 0.10 + 0.06 * Math.sin(phase * 0.6 + s);
+        var pts = [];
         for (var i = 0; i <= swirlPoints; i++) {
           var p = i / swirlPoints;
           var rr = coreVortexRadius * (0.08 + 1.48 * p + 0.12 * Math.sin(phase * 1.9 + p * 6.4 + s * 1.3) + 0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9));
           var twist = p * strandTurns[s] * dir;
-          var distort = Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp + Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06;
+          var distort = Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp + Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.04;
           var ang = base + twist + distort;
-          var x = cx + Math.cos(ang) * rr;
-          var y = cy + Math.sin(ang) * rr * 0.86;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+          pts.push({ x: cx + Math.cos(ang) * rr, y: cy + Math.sin(ang) * rr * 0.86 });
         }
         var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
+        var bW = 1.0 * (perfTier === 0 ? 0.9 : 1);
+        var mW = 3.6 * (perfTier === 0 ? 0.9 : 1);
         ctx.strokeStyle = "rgba(90, 55, 150, " + Math.max(0.04, strandAlpha * 0.65).toFixed(4) + ")";
-        ctx.lineWidth = (1.8 + s * 0.22) * (perfTier === 0 ? 0.9 : 1);
-        ctx.shadowBlur = (12 + s * 1.6) * shadowScale;
         ctx.shadowColor = "rgba(60, 30, 110, " + (strandAlpha * 0.55).toFixed(4) + ")";
-        ctx.stroke();
+        for (var i = 0; i < pts.length - 1; i++) {
+          var p = i / (pts.length - 1);
+          ctx.beginPath();
+          ctx.moveTo(pts[i].x, pts[i].y);
+          ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
+          ctx.lineWidth = bW + (mW - bW) * p;
+          ctx.shadowBlur = (6 + 10 * p) * shadowScale;
+          ctx.stroke();
+        }
       }
 
       // Worker fallback: 12 spiral tendrils (no GSAP — static sine spirals)
