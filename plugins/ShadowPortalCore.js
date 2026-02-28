@@ -19,7 +19,7 @@ let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
 let _spiralMaskLoadedFrom = null;
 
-const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_mask_shadow.png";
+const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_shadow.png";
 
 /**
  * Preload the spiral mask image from imgur.
@@ -614,7 +614,7 @@ const methods = {
         ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#8a45aa,#000),#000}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
@@ -622,7 +622,7 @@ const methods = {
       cssPortalEl.className = "ss-portal-css";
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#481e65");
+      cssPortalEl.style.setProperty("--ss-portal-color", "#1e0a30");
       const portalInner = document.createElement("div");
       portalInner.className = "ss-portal-css__inner";
       cssPortalEl.appendChild(portalInner);
