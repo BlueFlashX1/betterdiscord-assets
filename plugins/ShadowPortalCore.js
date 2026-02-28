@@ -18,7 +18,7 @@ let _gsapLoaded = false;
 let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
 
-const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_mask_3.png";
+const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_mask_shadow.png";
 
 /**
  * Preload the spiral mask image from imgur.
@@ -1122,16 +1122,16 @@ const methods = {
       ctx.clearRect(0, 0, width, height);
 
       const ambientDim = (0.18 + 0.35 * formEase) * fadeOut;
-      ctx.fillStyle = `rgba(2, 2, 6, ${ambientDim.toFixed(4)})`;
+      ctx.fillStyle = `rgba(2, 2, 6, ${ambientDim.toFixed(3)})`;
       ctx.fillRect(0, 0, width, height);
 
       const veilOuter = maxSide * (0.58 + 0.9 * formEase);
       const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
       const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-      veil.addColorStop(0, `rgba(6, 4, 10, ${(0.52 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.26, `rgba(4, 3, 8, ${(0.56 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.62, `rgba(2, 2, 4, ${(0.34 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.10 * formEase * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0, `rgba(6, 4, 10, ${(0.52 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(0.26, `rgba(4, 3, 8, ${(0.56 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(0.62, `rgba(2, 2, 4, ${(0.34 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.10 * formEase * fadeOut).toFixed(3)})`);
       ctx.fillStyle = veil;
       ctx.beginPath();
       ctx.arc(cx, cy, veilOuter, 0, TAU);
@@ -1147,8 +1147,8 @@ const methods = {
         const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
 
         const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `rgba(12, 10, 18, ${(alpha * 1.4).toFixed(4)})`);
-        g.addColorStop(0.56, `rgba(4, 3, 8, ${(alpha * 1.1).toFixed(4)})`);
+        g.addColorStop(0, `rgba(12, 10, 18, ${(alpha * 1.4).toFixed(3)})`);
+        g.addColorStop(0.56, `rgba(4, 3, 8, ${(alpha * 1.1).toFixed(3)})`);
         g.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = g;
         ctx.beginPath();
@@ -1165,8 +1165,8 @@ const methods = {
         const r = blot.size * (0.82 + easeInOut * 0.62);
         const alpha = (0.18 + 0.26 * (1 - blot.offset * 0.7)) * fadeOut * portalForm;
         const bg = ctx.createRadialGradient(x, y, 0, x, y, r);
-        bg.addColorStop(0, `rgba(0, 0, 0, ${Math.min(0.86, alpha).toFixed(4)})`);
-        bg.addColorStop(0.62, `rgba(0, 0, 0, ${(alpha * 0.58).toFixed(4)})`);
+        bg.addColorStop(0, `rgba(0, 0, 0, ${Math.min(0.86, alpha).toFixed(3)})`);
+        bg.addColorStop(0.62, `rgba(0, 0, 0, ${(alpha * 0.58).toFixed(3)})`);
         bg.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = bg;
         ctx.beginPath();
@@ -1202,7 +1202,7 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(100, 60, 160, ${Math.max(0.05, glow * 0.6).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(100, 60, 160, ${Math.max(0.05, glow * 0.6).toFixed(3)})`;
         ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
         ctx.shadowBlur = (8 + easeInOut * 14) * shadowScale * glowMul;
         ctx.shadowColor = "rgba(80, 40, 140, 0.5)";
@@ -1227,7 +1227,7 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.22 + 0.3 * Math.sin(swirl * 3.2 + filament.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(120, 80, 170, ${Math.max(0.05, glow * 0.55).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(120, 80, 170, ${Math.max(0.05, glow * 0.55).toFixed(3)})`;
         ctx.lineWidth = filament.lineWidth + easeInOut * 1.1;
         ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale * glowMul;
         ctx.shadowColor = "rgba(90, 50, 150, 0.45)";
@@ -1252,7 +1252,7 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.22 + 0.25 * Math.sin(swirl * 3 + jet.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, glow * 0.5).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, glow * 0.5).toFixed(3)})`;
         ctx.lineWidth = jet.lineWidth + easeInOut * 1.4;
         ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale;
         ctx.shadowColor = "rgba(50, 28, 90, 0.4)";
@@ -1261,9 +1261,9 @@ const methods = {
       ctx.restore();
 
       const voidGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.14, cx, cy, innerRadius * 2.18);
-      voidGradient.addColorStop(0, `rgba(4, 2, 8, ${(0.88 * fadeOut).toFixed(4)})`);
-      voidGradient.addColorStop(0.34, `rgba(2, 1, 5, ${(0.96 * fadeOut).toFixed(4)})`);
-      voidGradient.addColorStop(0.72, `rgba(1, 1, 2, ${(0.92 * fadeOut).toFixed(4)})`);
+      voidGradient.addColorStop(0, `rgba(4, 2, 8, ${(0.88 * fadeOut).toFixed(3)})`);
+      voidGradient.addColorStop(0.34, `rgba(2, 1, 5, ${(0.96 * fadeOut).toFixed(3)})`);
+      voidGradient.addColorStop(0.72, `rgba(1, 1, 2, ${(0.92 * fadeOut).toFixed(3)})`);
       voidGradient.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = voidGradient;
       ctx.beginPath();
@@ -1273,23 +1273,15 @@ const methods = {
       // Hard occlusion mask so the portal body is fully solid.
       const solidPortalRadius = innerRadius * (1.02 + 0.03 * Math.sin(swirl * 3.1));
       const solidPortalAlpha = Math.min(1, 0.98 * fadeOut + 0.02);
-      ctx.fillStyle = `rgba(0, 0, 0, ${solidPortalAlpha.toFixed(4)})`;
+      ctx.fillStyle = `rgba(0, 0, 0, ${solidPortalAlpha.toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, solidPortalRadius, 0, TAU);
       ctx.fill();
 
-      const coreGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerRadius);
-      coreGradient.addColorStop(0, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
-      coreGradient.addColorStop(0.32, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
-      coreGradient.addColorStop(0.72, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
-      coreGradient.addColorStop(1, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
-      ctx.fillStyle = coreGradient;
+      // Single solid fill replaces redundant gradient (all stops were same alpha)
+      ctx.fillStyle = `rgba(0,0,0,${fadeOut.toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, innerRadius, 0, TAU);
-      ctx.fill();
-      ctx.fillStyle = `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`;
-      ctx.beginPath();
-      ctx.arc(cx, cy, innerRadius * 0.78, 0, TAU);
       ctx.fill();
 
       // Large center vortex so formation reads as a portal, not a plain overlay.
@@ -1307,9 +1299,9 @@ const methods = {
           cy,
           coreVortexRadius
         );
-        vortexGlow.addColorStop(0, `rgba(40, 20, 70, ${(coreVortexAlpha * 0.8).toFixed(4)})`);
-        vortexGlow.addColorStop(0.28, `rgba(16, 10, 32, ${(coreVortexAlpha * 0.6).toFixed(4)})`);
-        vortexGlow.addColorStop(0.62, `rgba(6, 4, 14, ${(coreVortexAlpha * 0.4).toFixed(4)})`);
+        vortexGlow.addColorStop(0, `rgba(40, 20, 70, ${(coreVortexAlpha * 0.8).toFixed(3)})`);
+        vortexGlow.addColorStop(0.28, `rgba(16, 10, 32, ${(coreVortexAlpha * 0.6).toFixed(3)})`);
+        vortexGlow.addColorStop(0.62, `rgba(6, 4, 14, ${(coreVortexAlpha * 0.4).toFixed(3)})`);
         vortexGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = vortexGlow;
         ctx.beginPath();
@@ -1362,21 +1354,22 @@ const methods = {
             });
           }
 
-          // Draw tapered segments — wispy at center, bold at outer edge
+          // Draw strand as 3 batched segments (inner/mid/outer) instead of per-point
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
           const baseW = (1.0 + strandMorphMul * 0.5) * tierScale;
           const maxW = (16.0 + strandMorphMul * 4.0) * tierScale;
           ctx.lineCap = "round";
-          for (let i = 0; i < pts.length - 1; i++) {
-            const p = i / (pts.length - 1);
-            const segAlpha = strandAlpha * (0.3 + 0.7 * p); // also fades in from center
+          const third = Math.floor(pts.length / 3);
+          const batches = [[0, third, 0.15], [third, third * 2, 0.5], [third * 2, pts.length - 1, 0.85]];
+          for (const [start, end, p] of batches) {
+            const segAlpha = strandAlpha * (0.3 + 0.7 * p);
             ctx.beginPath();
-            ctx.moveTo(pts[i].x, pts[i].y);
-            ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
-            ctx.lineWidth = baseW + (maxW - baseW) * p * p; // quadratic taper — slow start, dramatic end
-            ctx.strokeStyle = `rgba(90, 55, 150, ${Math.max(0.03, segAlpha * 0.65).toFixed(4)})`;
+            ctx.moveTo(pts[start].x, pts[start].y);
+            for (let i = start + 1; i <= end; i++) ctx.lineTo(pts[i].x, pts[i].y);
+            ctx.lineWidth = baseW + (maxW - baseW) * p * p;
+            ctx.strokeStyle = `rgba(90,55,150,${Math.max(0.03, segAlpha * 0.65).toFixed(3)})`;
             ctx.shadowBlur = (4 + 16 * p + strandMorphMul * 4) * shadowScale * coreGlowMul;
-            ctx.shadowColor = `rgba(60, 30, 110, ${(segAlpha * 0.55).toFixed(4)})`;
+            ctx.shadowColor = `rgba(60,30,110,${(segAlpha * 0.55).toFixed(3)})`;
             ctx.stroke();
           }
           ctx.lineCap = "butt";
@@ -1409,10 +1402,15 @@ const methods = {
           }
 
           const tAlpha = coreVortexAlpha * (0.35 + 0.45 * tendrilPulseMul) * (0.5 + 0.5 * Math.sin(swirl * 2 + ti * 0.52));
-          ctx.strokeStyle = `rgba(100, 60, 165, ${Math.max(0.04, tAlpha * 0.7).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(100,60,165,${Math.max(0.04, tAlpha * 0.7).toFixed(3)})`;
           ctx.lineWidth = 1.0 + 0.5 * Math.sin(swirl * 3 + ti * 0.9) + tendrilPulseMul * 0.4;
-          ctx.shadowBlur = (6 + tendrilPulseMul * 6) * shadowScale * coreGlowMul;
-          ctx.shadowColor = `rgba(80, 40, 140, ${(tAlpha * 0.5).toFixed(4)})`;
+          // Only apply shadow on every 3rd tendril to cut GPU compositing cost
+          if (ti % 3 === 0) {
+            ctx.shadowBlur = (6 + tendrilPulseMul * 6) * shadowScale * coreGlowMul;
+            ctx.shadowColor = `rgba(80,40,140,${(tAlpha * 0.5).toFixed(3)})`;
+          } else {
+            ctx.shadowBlur = 0;
+          }
           ctx.stroke();
         }
 
@@ -1479,16 +1477,16 @@ const methods = {
             else ctx.lineTo(x, y);
           }
 
-          ctx.strokeStyle = `rgba(148, 88, 240, ${(alpha * 0.92).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(148, 88, 240, ${(alpha * 0.92).toFixed(3)})`;
           ctx.lineWidth = bolt.width + 2.4;
           ctx.shadowBlur = (22 + (1 - revealProgress) * 22) * shadowScale;
-          ctx.shadowColor = `rgba(132, 72, 228, ${(alpha * 1.0).toFixed(4)})`;
+          ctx.shadowColor = `rgba(132, 72, 228, ${(alpha * 1.0).toFixed(3)})`;
           ctx.stroke();
 
-          ctx.strokeStyle = `rgba(232, 192, 255, ${Math.min(0.68, alpha + 0.12).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(232, 192, 255, ${Math.min(0.68, alpha + 0.12).toFixed(3)})`;
           ctx.lineWidth = Math.max(1.4, bolt.width * 0.82);
           ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
-          ctx.shadowColor = `rgba(198, 152, 255, ${(alpha * 0.95).toFixed(4)})`;
+          ctx.shadowColor = `rgba(198, 152, 255, ${(alpha * 0.95).toFixed(3)})`;
           ctx.stroke();
 
           if (flicker > (0.08 - creationBoost * 0.32)) {
@@ -1514,10 +1512,10 @@ const methods = {
             }
 
             const branchAlpha = alpha * 0.72;
-            ctx.strokeStyle = `rgba(156, 108, 240, ${branchAlpha.toFixed(4)})`;
+            ctx.strokeStyle = `rgba(156, 108, 240, ${branchAlpha.toFixed(3)})`;
             ctx.lineWidth = Math.max(1.0, bolt.width * 0.76);
             ctx.shadowBlur = (12 + (1 - revealProgress) * 12) * shadowScale;
-            ctx.shadowColor = `rgba(138, 88, 228, ${(branchAlpha * 0.9).toFixed(4)})`;
+            ctx.shadowColor = `rgba(138, 88, 228, ${(branchAlpha * 0.9).toFixed(3)})`;
             ctx.stroke();
           }
         }
@@ -1548,10 +1546,10 @@ const methods = {
         ctx.globalCompositeOperation = "source-over";
 
         const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
-        ringBody.addColorStop(0, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(4)})`);
-        ringBody.addColorStop(0.42, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(4)})`);
-        ringBody.addColorStop(0.68, `rgba(4, 2, 8, ${(0.92 * fadeOut).toFixed(4)})`);
-        ringBody.addColorStop(0.88, `rgba(8, 6, 14, ${(0.64 * fadeOut).toFixed(4)})`);
+        ringBody.addColorStop(0, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(0.42, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(0.68, `rgba(4, 2, 8, ${(0.92 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(0.88, `rgba(8, 6, 14, ${(0.64 * fadeOut).toFixed(3)})`);
         ringBody.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = ringBody;
         ctx.beginPath();
@@ -1562,10 +1560,10 @@ const methods = {
         const blackRimAlpha = Math.max(0, (1.0 - revealProgress * 0.18) * fadeOut);
         if (blackRimAlpha > 0.006) {
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(0, 0, 0, ${blackRimAlpha.toFixed(4)})`;
+          ctx.strokeStyle = `rgba(0, 0, 0, ${blackRimAlpha.toFixed(3)})`;
           ctx.lineWidth = 14 + (1 - revealProgress) * 20;
           ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * shadowScale;
-          ctx.shadowColor = `rgba(0, 0, 0, ${(blackRimAlpha * 0.78).toFixed(4)})`;
+          ctx.shadowColor = `rgba(0, 0, 0, ${(blackRimAlpha * 0.78).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius, 0, TAU);
           ctx.stroke();
         }
@@ -1573,10 +1571,10 @@ const methods = {
         const edgeAlpha = Math.max(0, (0.34 - revealProgress * 0.12) * fadeOut);
         if (edgeAlpha > 0.004) {
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(124, 120, 136, ${edgeAlpha.toFixed(4)})`;
+          ctx.strokeStyle = `rgba(124, 120, 136, ${edgeAlpha.toFixed(3)})`;
           ctx.lineWidth = 1.2 + (1 - revealProgress) * 1.4;
           ctx.shadowBlur = (8 + (1 - revealProgress) * 8) * shadowScale;
-          ctx.shadowColor = `rgba(48, 44, 60, ${(edgeAlpha * 0.84).toFixed(4)})`;
+          ctx.shadowColor = `rgba(48, 44, 60, ${(edgeAlpha * 0.84).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius + rimWidth * 0.34, 0, TAU);
           ctx.stroke();
         }
@@ -1591,10 +1589,10 @@ const methods = {
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(66, 66, 76, ${Math.max(0.01, alpha).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(66, 66, 76, ${Math.max(0.01, alpha).toFixed(3)})`;
           ctx.lineWidth = band.lineWidth + (1 - revealProgress) * 1.8;
           ctx.shadowBlur = (10 + (1 - revealProgress) * 16) * shadowScale;
-          ctx.shadowColor = `rgba(18, 18, 24, ${(alpha * 0.9).toFixed(4)})`;
+          ctx.shadowColor = `rgba(18, 18, 24, ${(alpha * 0.9).toFixed(3)})`;
           ctx.arc(cx, cy, radius, start, start + arcLength);
           ctx.stroke();
         }
@@ -1612,10 +1610,10 @@ const methods = {
           if (waveAlpha <= 0.003) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(72, 58, 96, ${waveAlpha.toFixed(4)})`;
+          ctx.strokeStyle = `rgba(72, 58, 96, ${waveAlpha.toFixed(3)})`;
           ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
           ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale * glowMul;
-          ctx.shadowColor = `rgba(48, 32, 78, ${(waveAlpha * 0.88).toFixed(4)})`;
+          ctx.shadowColor = `rgba(48, 32, 78, ${(waveAlpha * 0.88).toFixed(3)})`;
           ctx.arc(cx, cy, waveRadius, 0, TAU);
           ctx.stroke();
         }
@@ -1632,10 +1630,10 @@ const methods = {
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, alpha * 0.5).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, alpha * 0.5).toFixed(3)})`;
           ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
           ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
-          ctx.shadowColor = `rgba(50, 28, 90, ${(alpha * 0.45).toFixed(4)})`;
+          ctx.shadowColor = `rgba(50, 28, 90, ${(alpha * 0.45).toFixed(3)})`;
           ctx.arc(cx, cy, radius, start, start + span);
           ctx.stroke();
         }
@@ -1682,16 +1680,16 @@ const methods = {
               else ctx.lineTo(x, y);
             }
 
-            ctx.strokeStyle = `rgba(108, 64, 198, ${(alpha * 0.72).toFixed(4)})`;
+            ctx.strokeStyle = `rgba(108, 64, 198, ${(alpha * 0.72).toFixed(3)})`;
             ctx.lineWidth = Math.max(0.78, bolt.width * 0.88);
             ctx.shadowBlur = (10 + (1 - revealProgress) * 8) * shadowScale;
-            ctx.shadowColor = `rgba(100, 58, 188, ${(alpha * 0.88).toFixed(4)})`;
+            ctx.shadowColor = `rgba(100, 58, 188, ${(alpha * 0.88).toFixed(3)})`;
             ctx.stroke();
 
-            ctx.strokeStyle = `rgba(208, 164, 255, ${Math.min(0.32, alpha + 0.03).toFixed(4)})`;
+            ctx.strokeStyle = `rgba(208, 164, 255, ${Math.min(0.32, alpha + 0.03).toFixed(3)})`;
             ctx.lineWidth = Math.max(0.7, bolt.width * 0.48);
             ctx.shadowBlur = (5 + (1 - revealProgress) * 6) * shadowScale;
-            ctx.shadowColor = `rgba(170, 126, 246, ${(alpha * 0.74).toFixed(4)})`;
+            ctx.shadowColor = `rgba(170, 126, 246, ${(alpha * 0.74).toFixed(3)})`;
             ctx.stroke();
 
             if (flicker > 0.26) {
@@ -1717,10 +1715,10 @@ const methods = {
               }
 
               const branchAlpha = alpha * 0.5;
-              ctx.strokeStyle = `rgba(120, 76, 210, ${branchAlpha.toFixed(4)})`;
+              ctx.strokeStyle = `rgba(120, 76, 210, ${branchAlpha.toFixed(3)})`;
               ctx.lineWidth = Math.max(0.65, bolt.width * 0.52);
               ctx.shadowBlur = (7 + (1 - revealProgress) * 6) * shadowScale;
-              ctx.shadowColor = `rgba(108, 70, 198, ${(branchAlpha * 0.82).toFixed(4)})`;
+              ctx.shadowColor = `rgba(108, 70, 198, ${(branchAlpha * 0.82).toFixed(3)})`;
               ctx.stroke();
             }
           }
@@ -1736,11 +1734,11 @@ const methods = {
           ringOuter + innerRadius * (0.78 + (1 - revealProgress) * 0.34)
         );
         mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
-        mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${(0.48 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.38, `rgba(64, 42, 108, ${(0.58 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.56, `rgba(86, 52, 148, ${(0.44 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.74, `rgba(58, 34, 102, ${(0.32 * fadeOut).toFixed(4)})`);
-        mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${(0.16 * fadeOut).toFixed(4)})`);
+        mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${(0.48 * fadeOut).toFixed(3)})`);
+        mistHalo.addColorStop(0.38, `rgba(64, 42, 108, ${(0.58 * fadeOut).toFixed(3)})`);
+        mistHalo.addColorStop(0.56, `rgba(86, 52, 148, ${(0.44 * fadeOut).toFixed(3)})`);
+        mistHalo.addColorStop(0.74, `rgba(58, 34, 102, ${(0.32 * fadeOut).toFixed(3)})`);
+        mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${(0.16 * fadeOut).toFixed(3)})`);
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
         ctx.beginPath();
