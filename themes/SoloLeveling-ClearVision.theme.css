@@ -1326,12 +1326,12 @@ ul[aria-label="Channels"] {
 }
 
 /* §9f+ — SVG banner backgrounds on channel rows (Solo Leveling gate frame)
-   Uses shadow_bannerv1.svg — dark banner with purple flame border.
-   viewBox cropped to artwork bounds (25 400 970 195) with preserveAspectRatio="none"
+   Uses Shadowbannerv1.1.svg — dark banner with purple shadow tendrils.
+   viewBox 0 0 1940 390 with preserveAspectRatio="none"
    so background-size:100% 100% stretches the banner to fill each channel row. */
 ul[aria-label="Channels"] [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Shadowbannerv1.1.svg') !important;
   background-size: 100% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1357,7 +1357,7 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
 ul[aria-label="Channels"] [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2_hover.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2.1hover.svg') !important;
   background-size: 100% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1371,7 +1371,7 @@ ul[aria-label="Channels"] [class*="wrapper_"]:hover {
 ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"],
 ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv1.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Shadowbannerv1.1.svg') !important;
   background-size: 100% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
