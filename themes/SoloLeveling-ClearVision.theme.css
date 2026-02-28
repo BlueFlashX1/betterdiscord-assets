@@ -2127,6 +2127,42 @@ div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"]::-w
   display: none !important;
 }
 
+/* §10b+svg — Settings sidebar items: SVG-framed menu buttons
+   Applies channel-unread / channel-hover / channel-selected SVG backgrounds
+   to settings nav items. Mirrors the channel list SVG treatment from §9f. */
+
+/* Reset: nuke Discord's default item highlight / pill backgrounds */
+div[class^="container_"] > div[class^="sidebar_"] div[class*="item_"] {
+  background-color: transparent !important;
+  background-image: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  transition: filter 0.2s ease !important;
+}
+/* Kill ::before pseudo-element Discord uses as selected highlight overlay */
+div[class^="container_"] > div[class^="sidebar_"] div[class*="item_"]::before {
+  display: none !important;
+}
+
+/* Default/unselected state: channel-unread SVG (organic purple stroke frame) */
+div[class^="container_"] > div[class^="sidebar_"] div[class*="item_"]:not([class*="selected"]):not([class*="header"]):not([class*="separator"]) {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
+}
+
+/* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
+div[class^="container_"] > div[class^="sidebar_"] div[class*="item_"]:not([class*="selected"]):not([class*="header"]):not([class*="separator"]):hover {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
+}
+
+/* Selected/active state: channel-selected SVG (circuit pattern + double border) + glow */
+div[class^="container_"] > div[class^="sidebar_"] div[class*="item_"][class*="selected"] {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-selected.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
+}
+
 /* §10c — Settings content area (right panel): solid dark bg
    contentHeader_ is the top bar with page title + close button.
    contentBody_ is the scrollable content below. Both go solid. */
