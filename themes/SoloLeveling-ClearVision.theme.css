@@ -2243,13 +2243,16 @@ div[class^="contentBody_"] div[class^="credentialList_"] {
   background-image: none !important;
 }
 
-/* §10c (continued) — Settings content cards + inputs: sharp corners
-   Override Discord's 8/16px rounded corners on cards, wrappers, sections, search inputs */
+/* §10c (continued) — Settings content cards + inputs + buttons: sharp corners
+   Override Discord's rounded corners globally on cards, wrappers, sections, search inputs, buttons */
 div[class^="itemCard_"],
 div[class*="wrapper_"][class*="outer_"],
 section[class^="section_"],
 div[class^="searchBar_"] div[class^="container_"],
-div[class^="searchBar_"] div[class^="wrapper_"] {
+div[class^="searchBar_"] div[class^="wrapper_"],
+button[class^="button_"],
+button[class*="primary_"],
+button[class*="md_"] {
   border-radius: 2px !important;
 }
 
