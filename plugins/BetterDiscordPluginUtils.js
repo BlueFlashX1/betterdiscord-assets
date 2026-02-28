@@ -376,6 +376,74 @@ const LayoutObserverBus = (() => {
   return bus;
 })();
 
+// ── Toast Helper Factory ────────────────────────────────────────────────────
+// Replaces the duplicated _toast() + _toastEngine pattern across 19 plugins.
+// Returns a function with the same (message, type, timeout) signature.
+
+/**
+ * Create a plugin-specific toast wrapper that routes through SoloLevelingToasts
+ * when available, with automatic BdApi fallback.
+ * @param {string} callerId - Unique caller ID for rate limiting (e.g. "shadowStep")
+ * @returns {(message: string, type?: string, timeout?: number|null) => void}
+ */
+function createToastHelper(callerId) {
+  return function (message, type = "info", timeout = null) {
+    showToast(message, { type, timeout, callerId });
+  };
+}
+
+// ── Safe Plugin Resolution ──────────────────────────────────────────────────
+
+/**
+ * Safely get another plugin's instance. Checks enabled state and returns null
+ * on any failure. Replaces inconsistent BdApi.Plugins.get/isEnabled patterns.
+ * @param {string} pluginName
+ * @returns {object|null} The plugin instance, or null
+ */
+function getPluginSafe(pluginName) {
+  try {
+    if (!BdApi.Plugins.isEnabled(pluginName)) return null;
+    const p = BdApi.Plugins.get(pluginName);
+    return p?.instance || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+// ── Debug Logger Factory ────────────────────────────────────────────────────
+// Consolidates 3 debug logging variations across 13 plugins.
+
+/**
+ * Create a debug logger for a plugin. Only logs when isEnabled() returns truthy.
+ * Errors always log regardless of debug state.
+ * @param {string} pluginName - Plugin name for log prefix
+ * @param {() => boolean} isEnabled - Getter for debug-enabled state
+ * @returns {{ log: Function, error: Function, warn: Function, once: Function }}
+ */
+function createDebugLogger(pluginName, isEnabled) {
+  const seen = new Set();
+  return {
+    log(system, ...args) {
+      if (typeof isEnabled === "function" ? isEnabled() : isEnabled) {
+        console.log(`[${pluginName}][${system}]`, ...args);
+      }
+    },
+    error(system, ...args) {
+      console.error(`[${pluginName}][${system}]`, ...args);
+    },
+    warn(system, ...args) {
+      console.warn(`[${pluginName}][${system}]`, ...args);
+    },
+    once(tag, ...args) {
+      if (seen.has(tag)) return;
+      seen.add(tag);
+      if (typeof isEnabled === "function" ? isEnabled() : isEnabled) {
+        console.log(`[${pluginName}][${tag}]`, ...args);
+      }
+    },
+  };
+}
+
 // ── Exports ──────────────────────────────────────────────────────────────────
 
 module.exports = {
@@ -390,6 +458,9 @@ module.exports = {
   createTTLCache,
   getDispatcher,
   createThrottle,
+  createToastHelper,
+  getPluginSafe,
+  createDebugLogger,
   NavigationBus,
   LayoutObserverBus,
 };

@@ -118,24 +118,8 @@ module.exports = class HSLWheelBridge {
     this._fallbackTimer = null;
   }
 
-  _toast(message, type = "info", timeout = null) {
-    if (this._toastEngine) {
-      this._toastEngine.showToast(message, type, timeout, { callerId: "hSLWheelBridge" });
-    } else {
-      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
-    }
-  }
-
-
-
   start() {
-    // Toast engine discovery (unified toast system)
-    this._toastEngine = (() => {
-      try {
-        const p = BdApi.Plugins.get("SoloLevelingToasts");
-        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
-      } catch { return null; }
-    })();
+    this._toast = _PluginUtils?.createToastHelper?.("hSLWheelBridge") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this._isStopped = false;
     this._engineMounted = false;
     this._fallbackEngine = null;
