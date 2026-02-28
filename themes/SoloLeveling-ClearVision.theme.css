@@ -2233,9 +2233,11 @@ div[class^="contentBody_"] div[class^="credentialList_"] {
   background-image: none !important;
 }
 
-/* §10c (continued) — Settings content section cards: sharp corners
-   Override Discord's 8px rounded corners on section_ cards inside itemCard_ */
-div[class^="contentBody_"] section[class^="section_"] {
+/* §10c (continued) — Settings content cards: sharp corners
+   Override Discord's 8/16px rounded corners on itemCard_, wrapper_, outer_, section_ */
+div[class^="itemCard_"],
+div[class*="wrapper_"][class*="outer_"],
+section[class^="section_"] {
   border-radius: 2px !important;
 }
 
