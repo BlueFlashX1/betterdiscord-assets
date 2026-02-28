@@ -603,10 +603,10 @@ const methods = {
       // Matches PropJockey reference exactly: CCW rotate(359deg), 7s cycle, top left mask
       portalStyleEl.textContent = [
         "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
-        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(1.75);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
+        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#1a0a24 -25%,transparent 50%,#7a3d96 125%),var(--ss-portal-color,#7a3fa0)}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#2a1040 -25%,transparent 50%,#a855c8 125%),var(--ss-portal-color,#9b4fbf)}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
@@ -614,7 +614,7 @@ const methods = {
       cssPortalEl.className = "ss-portal-css";
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#3a1850");
+      cssPortalEl.style.setProperty("--ss-portal-color", "#5a2878");
       const portalInner = document.createElement("div");
       portalInner.className = "ss-portal-css__inner";
       cssPortalEl.appendChild(portalInner);
