@@ -1137,17 +1137,17 @@ const methods = {
 
       ctx.clearRect(0, 0, width, height);
 
-      const ambientDim = (0.10 + 0.20 * formEase) * fadeOut;
-      ctx.fillStyle = `rgba(2, 2, 6, ${ambientDim.toFixed(3)})`;
+      const ambientDim = (0.35 + 0.55 * formEase) * fadeOut;
+      ctx.fillStyle = `rgba(2, 1, 4, ${ambientDim.toFixed(3)})`;
       ctx.fillRect(0, 0, width, height);
 
       const veilOuter = maxSide * (0.58 + 0.9 * formEase);
       const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
       const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-      veil.addColorStop(0, `rgba(6, 4, 10, ${(0.30 * portalForm * fadeOut).toFixed(3)})`);
-      veil.addColorStop(0.26, `rgba(4, 3, 8, ${(0.32 * portalForm * fadeOut).toFixed(3)})`);
-      veil.addColorStop(0.62, `rgba(2, 2, 4, ${(0.18 * portalForm * fadeOut).toFixed(3)})`);
-      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.05 * formEase * fadeOut).toFixed(3)})`);
+      veil.addColorStop(0, `rgba(4, 2, 8, ${(0.70 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(0.26, `rgba(3, 2, 6, ${(0.75 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(0.62, `rgba(2, 1, 4, ${(0.55 * portalForm * fadeOut).toFixed(3)})`);
+      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.20 * formEase * fadeOut).toFixed(3)})`);
       ctx.fillStyle = veil;
       ctx.beginPath();
       ctx.arc(cx, cy, veilOuter, 0, TAU);
@@ -1277,18 +1277,18 @@ const methods = {
       ctx.restore();
 
       const voidGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.14, cx, cy, innerRadius * 2.18);
-      voidGradient.addColorStop(0, `rgba(4, 2, 8, ${(0.50 * fadeOut).toFixed(3)})`);
-      voidGradient.addColorStop(0.34, `rgba(2, 1, 5, ${(0.55 * fadeOut).toFixed(3)})`);
-      voidGradient.addColorStop(0.72, `rgba(1, 1, 2, ${(0.45 * fadeOut).toFixed(3)})`);
+      voidGradient.addColorStop(0, `rgba(2, 1, 4, ${(0.92 * fadeOut).toFixed(3)})`);
+      voidGradient.addColorStop(0.34, `rgba(1, 1, 3, ${(0.95 * fadeOut).toFixed(3)})`);
+      voidGradient.addColorStop(0.72, `rgba(1, 0, 2, ${(0.88 * fadeOut).toFixed(3)})`);
       voidGradient.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = voidGradient;
       ctx.beginPath();
       ctx.arc(cx, cy, innerRadius * 2.18, 0, TAU);
       ctx.fill();
 
-      // Softer occlusion — lets CSS portal show through
+      // Hard occlusion — very dark portal body, aperture punches through
       const solidPortalRadius = innerRadius * (1.02 + 0.03 * Math.sin(swirl * 3.1));
-      ctx.fillStyle = `rgba(0,0,0,${(0.55 * fadeOut).toFixed(3)})`;
+      ctx.fillStyle = `rgba(0,0,0,${(0.96 * fadeOut).toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(cx, cy, solidPortalRadius, 0, TAU);
       ctx.fill();
