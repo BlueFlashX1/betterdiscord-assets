@@ -377,17 +377,17 @@ const methods = {
     const runId = this._transitionRunId;
 
     // ── Timing: Two profiles based on whether target channel is cached ──
-    // Express (cached):   ~350ms total, navigate immediately, brief flash effect
+    // Fast (cached):     ~1000ms total, same full portal but sped up
     // Cinematic (uncached): user's configured duration (default 550), full portal
     const configuredDuration = this.settings.animationDuration || 550;
     const isCached = !!targetPath && this._isChannelCached(targetPath);
 
-    // Express path: skip the heavy canvas, just do a fast overlay flash
+    // Both paths play the full canvas portal — cached just runs it faster (~1s)
     const duration = isCached
-      ? Math.max(200, Math.round(configuredDuration * 0.35))     // ~192ms min, ~35% of configured
+      ? 720                                                       // Fixed 720ms canvas for cached
       : Math.max(420, Math.round(configuredDuration * 1.6));      // ~880ms at default 550
     const totalDuration = isCached
-      ? duration + 160                                            // ~350ms total for cached
+      ? 1000                                                      // Fixed 1s total for cached
       : duration + Math.round(configuredDuration * 0.45);         // ~1128ms total at default 550
     const transitionStartedAt = performance.now();
 
@@ -400,10 +400,10 @@ const methods = {
       _diag.events.push({ phase, ms });
       console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
-    _diagLog(isCached ? "TRANSITION_START (EXPRESS — cached channel)" : "TRANSITION_START (CINEMATIC)");
+    _diagLog(isCached ? "TRANSITION_START (FAST — cached channel, 1s)" : "TRANSITION_START (CINEMATIC)");
     if (_debugMode) {
       console.log(`%c[PortalDiag]%c cached=${isCached} configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
-      console.log(`%c[PortalDiag]%c navDelay=${isCached ? 16 : Math.max(140, Math.round(totalDuration * 0.18))}ms cleanup=${isCached ? totalDuration + 80 : totalDuration + 340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+      console.log(`%c[PortalDiag]%c navDelay=${isCached ? 80 : Math.max(140, Math.round(totalDuration * 0.18))}ms cleanup=${isCached ? totalDuration + 120 : totalDuration + 340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
     }
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
@@ -420,7 +420,7 @@ const methods = {
     canvas.className = "ss-transition-canvas";
     overlay.appendChild(canvas);
 
-    const shardCount = (prefersReducedMotion || isCached) ? 0 : 9 + Math.floor(Math.random() * 8);
+    const shardCount = prefersReducedMotion ? 0 : 9 + Math.floor(Math.random() * 8);
     debugLog(
       this,
       "Transition",
@@ -454,8 +454,7 @@ const methods = {
     _diagLog("OVERLAY_APPENDED");
 
     this._transitionStopCanvas = null;
-    // Skip heavy canvas animation for express (cached) transitions
-    if (!prefersReducedMotion && !isCached) {
+    if (!prefersReducedMotion) {
       const startCanvas = () => {
         if (runId !== this._transitionRunId) return;
         _diagLog("CANVAS_ANIMATION_START");
@@ -475,20 +474,7 @@ const methods = {
 
     const canUseWaapi = typeof overlay.animate === "function";
 
-    if (isCached && canUseWaapi) {
-      // Express flash: quick dark pulse with subtle purple tinge
-      _diagLog("WAAPI_EXPRESS_FLASH");
-      overlay.classList.add("ss-transition-overlay--waapi");
-      overlay.animate(
-        [
-          { opacity: 0 },
-          { opacity: 0.82, offset: 0.25 },
-          { opacity: 0.82, offset: 0.5 },
-          { opacity: 0 },
-        ],
-        { duration: totalDuration, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" }
-      );
-    } else if (!prefersReducedMotion && canUseWaapi) {
+    if (!prefersReducedMotion && canUseWaapi) {
       _diagLog("WAAPI_OVERLAY_START");
       overlay.classList.add("ss-transition-overlay--waapi");
 
@@ -545,11 +531,11 @@ const methods = {
     };
 
     // Navigation delay:
-    //   Express (cached):    16ms — navigate near-immediately, content is already there
+    //   Fast (cached):       80ms — portal starts forming, nav fires early (content is already there)
     //   Reduced motion:      24ms — minimal delay
     //   Cinematic (uncached): 18% of total — portal forms, then nav fires behind it
     const navDelay = isCached
-      ? 16
+      ? 80
       : prefersReducedMotion
         ? 24
         : Math.max(140, Math.round(totalDuration * 0.18));
@@ -565,7 +551,7 @@ const methods = {
     }, navDelay);
 
     const cleanupDelay = isCached
-      ? totalDuration + 80                     // Express: clean up right after flash ends
+      ? totalDuration + 120                    // Fast: brief buffer after portal ends
       : prefersReducedMotion
         ? Math.max(320, Math.round(duration * 0.98))
         : totalDuration + 340;
