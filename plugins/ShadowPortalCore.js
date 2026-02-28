@@ -606,7 +606,7 @@ const methods = {
         ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:radial-gradient(circle,#8a45aa 0%,#481e65 35%,#0a0a0a 70%,#000 100%),#000}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#8a45aa,#000),#000}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
@@ -901,13 +901,12 @@ const methods = {
         { opacity: 1, scale: 1, duration: dur * 0.25, ease: "back.out(1.2)" },
         0
       );
-      // Reveal expansion: portal blows outward in sync with aperture punch-through.
-      // Aperture uses expo.inOut over 35%→100% — CSS portal matches exactly.
+      // Reveal expansion: portal blows outward 0.5s after aperture starts punching.
       tl.to(cssPortalEl, {
         scale: 4,
         duration: dur * 0.65,
         ease: "expo.inOut",
-      }, dur * 0.35);
+      }, dur * 0.35 + 0.5);
       // Quick fade at tail (last 8%) so portal doesn't linger after aperture finishes
       tl.to(cssPortalEl, {
         opacity: 0,
