@@ -515,16 +515,29 @@ div[role="menu"],
   -webkit-backdrop-filter: none !important;
 }
 
+/* Global: all interactive items inside any popup/menu get consistent inset highlight */
+div[role="menu"] div[class^="item_"],
 div[role="menu"] div[role="menuitem"],
+div[role="menu"] div[role="option"],
+div[role="listbox"] div[role="option"],
+div[class^="popout_"] div[class^="item_"],
 #now-playing-menu div[role="menuitem"] {
   background: transparent !important;
   background-image: none !important;
   border-radius: 2px !important;
   margin: 0 4px !important;
+  box-sizing: border-box !important;
 }
 
-div[role="menu"] div[role="menuitem"]:hover,
+div[role="menu"] div[class^="item_"]:hover,
 div[role="menu"] div[class^="item_"][class*="focused"],
+div[role="menu"] div[role="menuitem"]:hover,
+div[role="menu"] div[role="option"]:hover,
+div[role="menu"] div[role="option"][class*="focused"],
+div[role="listbox"] div[role="option"]:hover,
+div[role="listbox"] div[role="option"][class*="focused"],
+div[class^="popout_"] div[class^="item_"]:hover,
+div[class^="popout_"] div[class^="item_"][class*="focused"],
 #now-playing-menu div[role="menuitem"]:hover,
 #now-playing-menu div[class^="item_"][class*="focused"] {
   background: rgba(123, 43, 226, 0.45) !important;
