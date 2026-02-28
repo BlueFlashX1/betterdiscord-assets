@@ -1104,10 +1104,10 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.22 + 0.25 * Math.sin(swirl * 3 + jet.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(206, 142, 255, ${Math.max(0.06, glow).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, glow * 0.5).toFixed(4)})`;
         ctx.lineWidth = jet.lineWidth + easeInOut * 1.4;
-        ctx.shadowBlur = (8 + easeInOut * 14) * shadowScale;
-        ctx.shadowColor = "rgba(166, 94, 255, 0.76)";
+        ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale;
+        ctx.shadowColor = "rgba(50, 28, 90, 0.4)";
         ctx.stroke();
       }
       ctx.restore();
@@ -1227,7 +1227,7 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         ctx.closePath();
-        ctx.fillStyle = `rgba(122, 78, 206, ${(coreVortexAlpha * 0.34).toFixed(4)})`;
+        ctx.fillStyle = `rgba(30, 16, 50, ${(coreVortexAlpha * 0.4).toFixed(4)})`;
         ctx.fill();
         ctx.restore();
       }
@@ -1441,10 +1441,10 @@ const methods = {
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(178, 118, 255, ${Math.max(0.06, alpha).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, alpha * 0.5).toFixed(4)})`;
           ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
-          ctx.shadowBlur = (18 + (1 - revealProgress) * 22) * shadowScale;
-          ctx.shadowColor = `rgba(138, 74, 242, ${(alpha * 0.92).toFixed(4)})`;
+          ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
+          ctx.shadowColor = `rgba(50, 28, 90, ${(alpha * 0.45).toFixed(4)})`;
           ctx.arc(cx, cy, radius, start, start + span);
           ctx.stroke();
         }
@@ -1881,7 +1881,7 @@ function startDrawLoop() {
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       ctx.closePath();
-      ctx.fillStyle = "rgba(122, 78, 206, " + (coreVortexAlpha * 0.34).toFixed(4) + ")";
+      ctx.fillStyle = "rgba(30, 16, 50, " + (coreVortexAlpha * 0.4).toFixed(4) + ")";
       ctx.fill();
       ctx.restore();
     }
@@ -2047,10 +2047,10 @@ function startDrawLoop() {
         const alpha = (0.24 + 0.34 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
         if (alpha <= 0.004) continue;
         ctx.beginPath();
-        ctx.strokeStyle = "rgba(178, 118, 255, " + Math.max(0.06, alpha).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(80, 50, 130, " + Math.max(0.04, alpha * 0.5).toFixed(4) + ")";
         ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
-        ctx.shadowBlur = (18 + (1 - revealProgress) * 22) * shadowScale;
-        ctx.shadowColor = "rgba(138, 74, 242, " + (alpha * 0.92).toFixed(4) + ")";
+        ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
+        ctx.shadowColor = "rgba(50, 28, 90, " + (alpha * 0.45).toFixed(4) + ")";
         ctx.arc(cx, cy, radius, start, start + span); ctx.stroke();
       }
 
