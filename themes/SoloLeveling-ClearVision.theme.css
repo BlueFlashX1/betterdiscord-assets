@@ -2233,6 +2233,12 @@ div[class^="contentBody_"] div[class^="credentialList_"] {
   background-image: none !important;
 }
 
+/* §10c (continued) — Settings content section cards: sharp corners
+   Override Discord's 8px rounded corners on section_ cards inside itemCard_ */
+div[class^="contentBody_"] section[class^="section_"] {
+  border-radius: 2px !important;
+}
+
 /* §10c (continued) — Settings content scrollbar hidden */
 div[class^="contentBody_"] div[class^="scroller_"] {
   scrollbar-width: none !important;
