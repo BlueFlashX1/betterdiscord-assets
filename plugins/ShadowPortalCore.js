@@ -630,6 +630,9 @@ const methods = {
       const portalCore = document.createElement("div");
       portalCore.className = "ss-portal-css__core";
       cssPortalEl.appendChild(portalCore);
+      // Store layer refs for individual GSAP animation
+      cssPortalEl._inner = portalInner;
+      cssPortalEl._core = portalCore;
       overlay.appendChild(cssPortalEl);
     }
 
@@ -911,24 +914,31 @@ const methods = {
     // ── CSS Portal GSAP animations (formation → expand → fade) ──
     const cssPortalTweens = [];
     if (cssPortalEl) {
-      // Formation: 0→25% — scale from 0.3→1 + fade in, matches portal formation phase
+      const revealAt = dur * 0.35; // sync with canvas revealStart
+      const expandDur = dur * 0.55; // expansion duration
+      // Formation: 0→25% — scale from 0.3→1 + fade in
       tl.fromTo(cssPortalEl,
         { opacity: 0, scale: 0.3 },
         { opacity: 1, scale: 1, duration: dur * 0.25, ease: "back.out(1.2)" },
         0
       );
-      // Reveal expansion: portal blows outward 0.5s after aperture starts punching.
-      tl.to(cssPortalEl, {
-        scale: 4,
-        duration: dur * 0.65,
-        ease: "expo.inOut",
-      }, dur * 0.35 + 0.5);
-      // Quick fade at tail (last 8%) so portal doesn't linger after aperture finishes
+      // When reveal starts, both layers expand outward beyond screen at same speed
+      tl.to(cssPortalEl._inner, {
+        scale: 6,
+        duration: expandDur,
+        ease: "power2.in",
+      }, revealAt);
+      tl.to(cssPortalEl._core, {
+        scale: 6,
+        duration: expandDur,
+        ease: "power2.in",
+      }, revealAt);
+      // Quick fade — clear fast after expansion (last 10%)
       tl.to(cssPortalEl, {
         opacity: 0,
-        duration: dur * 0.08,
-        ease: "power2.in",
-      }, dur * 0.92);
+        duration: dur * 0.10,
+        ease: "power3.in",
+      }, revealAt + expandDur * 0.7);
     }
 
     // Store timeline on instance for Phase 6 (reverse-on-failure)
