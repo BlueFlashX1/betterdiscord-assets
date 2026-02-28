@@ -1281,60 +1281,84 @@ const methods = {
           ctx.stroke();
         }
 
-        // ── Void eye — concentric broken rings rotating at different speeds ──
-        // Like peering into a layered tunnel; each ring a different purple shade,
-        // gaps between rings let the void show through for depth.
+        // ── Void eye — concentric broken rings with tapered ends ──
         const eyeR = coreVortexRadius * (0.40 + 0.06 * coreGlowMul);
         const eyePulse = 0.7 + 0.3 * tendrilPulseMul;
         const ringCount = 6;
+        const arcSegs = 20; // segments per arc for taper effect
 
         for (let ri = 0; ri < ringCount; ri++) {
-          const depth = ri / (ringCount - 1); // 0=outermost, 1=innermost
+          const depth = ri / (ringCount - 1);
           const radius = Math.max(2, eyeR * (0.95 - 0.82 * depth) * (1 + 0.06 * Math.sin(swirl * 2.1 + ri * 1.4) * eyePulse));
-          // Each ring rotates at its own speed — inner rings faster
           const ringSpeed = 0.6 + depth * 1.4;
           const ringAngle = swirl * ringSpeed + spinOffset * (0.3 + depth * 0.5) + ri * 1.1;
-          // Ring width gets thinner deeper in — tunnel perspective
-          const ringW = (5.0 + 10.0 * (1 - depth) + strandMorphMul * 3.0) * tierScale;
-          // Deeper rings = darker purple, outer = brighter
+          // Base width at thickest point (center of arc)
+          const peakW = (6.0 + 12.0 * (1 - depth) + strandMorphMul * 3.0) * tierScale;
           const pr = Math.round(110 - 50 * depth);
           const pg = Math.round(60 - 30 * depth);
           const pb = Math.round(200 - 60 * depth);
-          // Alpha: outer rings strong, inner rings slightly dimmer
           const ringAlpha = coreVortexAlpha * (0.7 + 0.3 * (1 - depth)) * eyePulse;
 
-          // Each ring is 2-3 broken arcs with gaps (not a full circle)
-          const arcCount = 2 + Math.floor(depth * 2); // outer=2 arcs, inner=4
-          const gapFraction = 0.15 + 0.1 * depth; // bigger gaps deeper in
+          // Fewer arcs but longer — more coverage
+          const arcCount = 2 + Math.floor(depth * 1.5);
+          const gapFraction = 0.08 + 0.06 * depth;
           const arcSpan = (TAU / arcCount) * (1 - gapFraction);
 
           for (let ai = 0; ai < arcCount; ai++) {
             const arcStart = ringAngle + (ai / arcCount) * TAU;
-            // Wobble each arc slightly for organic feel
             const wobble = 0.08 * Math.sin(swirl * 3.2 + ri * 2.1 + ai * 1.7) * eyePulse;
+            const a0 = arcStart + wobble;
 
-            ctx.beginPath();
-            ctx.arc(cx, cy, radius, arcStart + wobble, arcStart + wobble + arcSpan);
-            ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.06, ringAlpha * 0.85).toFixed(4)})`;
-            ctx.lineWidth = ringW;
-            ctx.shadowBlur = (8 + 12 * (1 - depth)) * shadowScale * coreGlowMul;
-            ctx.shadowColor = `rgba(${pr}, ${pg}, ${pb}, ${(ringAlpha * 0.5).toFixed(4)})`;
+            // Draw arc as segments with tapered width (thick center, thin ends)
             ctx.lineCap = "round";
-            ctx.stroke();
+            for (let si = 0; si < arcSegs; si++) {
+              const t0 = si / arcSegs;
+              const t1 = (si + 1) / arcSegs;
+              const ang0 = a0 + t0 * arcSpan;
+              const ang1 = a0 + t1 * arcSpan;
+              // Taper: 0 at ends, 1 at center (symmetric parabola)
+              const mid = (t0 + t1) * 0.5;
+              const taper = 1 - 4 * (mid - 0.5) * (mid - 0.5); // peaks at 0.5
+              const segW = Math.max(1, peakW * (0.12 + 0.88 * taper));
+              const segAlpha = ringAlpha * (0.3 + 0.7 * taper);
+
+              ctx.beginPath();
+              ctx.arc(cx, cy, radius, ang0, ang1);
+              ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.04, segAlpha * 0.85).toFixed(4)})`;
+              ctx.lineWidth = segW;
+              ctx.shadowBlur = (6 + 10 * (1 - depth)) * taper * shadowScale * coreGlowMul;
+              ctx.shadowColor = `rgba(${pr}, ${pg}, ${pb}, ${(segAlpha * 0.4).toFixed(4)})`;
+              ctx.stroke();
+            }
           }
         }
+        ctx.lineCap = "butt";
 
-        // Tiny bright iris at the very center — a pinpoint of purple light
-        const irisR = Math.max(1, eyeR * 0.06 * (1 + 0.3 * Math.sin(swirl * 4.5)));
-        const irisAlpha = coreVortexAlpha * 0.9 * eyePulse;
+        // Center blob — single wobbly purple shape
+        const blobR = eyeR * (0.12 + 0.03 * coreGlowMul);
+        const blobPulse = 0.75 + 0.25 * tendrilPulseMul;
+        const blobPts = 24;
         ctx.beginPath();
-        ctx.arc(cx, cy, irisR, 0, TAU);
-        ctx.fillStyle = `rgba(140, 90, 220, ${irisAlpha.toFixed(4)})`;
-        ctx.shadowBlur = 16 * shadowScale * coreGlowMul;
-        ctx.shadowColor = `rgba(120, 70, 200, ${(irisAlpha * 0.7).toFixed(4)})`;
+        for (let bi = 0; bi <= blobPts; bi++) {
+          const bp = bi / blobPts;
+          const bAng = bp * TAU + swirl * 0.8 + spinOffset * 0.4;
+          const w = blobR * (
+            1.0
+            + 0.2 * Math.sin(swirl * 2.4 + bp * 5.5 + 0.3) * blobPulse
+            + 0.12 * Math.sin(swirl * 4.1 + bp * 10.0 + 1.2)
+          );
+          const bx = cx + Math.cos(bAng) * w;
+          const by = cy + Math.sin(bAng) * w * 0.9;
+          if (bi === 0) ctx.moveTo(bx, by);
+          else ctx.lineTo(bx, by);
+        }
+        ctx.closePath();
+        const blobAlpha = coreVortexAlpha * 0.85 * blobPulse;
+        ctx.fillStyle = `rgba(105, 60, 180, ${blobAlpha.toFixed(4)})`;
+        ctx.shadowBlur = 14 * shadowScale * coreGlowMul;
+        ctx.shadowColor = `rgba(120, 70, 200, ${(blobAlpha * 0.6).toFixed(4)})`;
         ctx.fill();
         ctx.shadowBlur = 0;
-        ctx.lineCap = "butt";
 
         ctx.restore();
       }
@@ -2013,52 +2037,80 @@ function startDrawLoop() {
         ctx.stroke();
       }
 
-      // Void eye — concentric broken rings (Worker fallback, no GSAP)
-      var eyeR = coreVortexRadius * 0.40;
-      var eyePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
-      var ringCount = 6;
+      // Void eye — concentric broken rings with tapered ends (Worker fallback, no GSAP)
+      var eyeR2 = coreVortexRadius * 0.40;
+      var eyePulse2 = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
+      var ringCount2 = 6;
+      var arcSegs2 = 20;
 
-      for (var ri = 0; ri < ringCount; ri++) {
-        var depth = ri / (ringCount - 1);
-        var radius = Math.max(2, eyeR * (0.95 - 0.82 * depth) * (1 + 0.06 * Math.sin(swirl * 2.1 + ri * 1.4) * eyePulse));
-        var ringSpeed = 0.6 + depth * 1.4;
-        var ringAngle = swirl * ringSpeed + ri * 1.1;
-        var ringW = (5.0 + 10.0 * (1 - depth)) * tS;
-        var pr = Math.round(110 - 50 * depth);
-        var pg = Math.round(60 - 30 * depth);
-        var pb = Math.round(200 - 60 * depth);
-        var ringAlpha = coreVortexAlpha * (0.7 + 0.3 * (1 - depth)) * eyePulse;
+      for (var ri2 = 0; ri2 < ringCount2; ri2++) {
+        var depth2 = ri2 / (ringCount2 - 1);
+        var radius2 = Math.max(2, eyeR2 * (0.95 - 0.82 * depth2) * (1 + 0.06 * Math.sin(swirl * 2.1 + ri2 * 1.4) * eyePulse2));
+        var ringSpeed2 = 0.6 + depth2 * 1.4;
+        var ringAngle2 = swirl * ringSpeed2 + ri2 * 1.1;
+        var peakW2 = (6.0 + 12.0 * (1 - depth2)) * tS;
+        var pr2 = Math.round(110 - 50 * depth2);
+        var pg2 = Math.round(60 - 30 * depth2);
+        var pb2 = Math.round(200 - 60 * depth2);
+        var ringAlpha2 = coreVortexAlpha * (0.7 + 0.3 * (1 - depth2)) * eyePulse2;
 
-        var arcCount = 2 + Math.floor(depth * 2);
-        var gapFraction = 0.15 + 0.1 * depth;
-        var arcSpan = (TAU / arcCount) * (1 - gapFraction);
+        var arcCount2 = 2 + Math.floor(depth2 * 1.5);
+        var gapFraction2 = 0.08 + 0.06 * depth2;
+        var arcSpan2 = (TAU / arcCount2) * (1 - gapFraction2);
 
-        for (var ai = 0; ai < arcCount; ai++) {
-          var arcStart = ringAngle + (ai / arcCount) * TAU;
-          var wobble = 0.08 * Math.sin(swirl * 3.2 + ri * 2.1 + ai * 1.7) * eyePulse;
+        for (var ai2 = 0; ai2 < arcCount2; ai2++) {
+          var arcStart2 = ringAngle2 + (ai2 / arcCount2) * TAU;
+          var wobble2 = 0.08 * Math.sin(swirl * 3.2 + ri2 * 2.1 + ai2 * 1.7) * eyePulse2;
+          var a0_2 = arcStart2 + wobble2;
 
-          ctx.beginPath();
-          ctx.arc(cx, cy, radius, arcStart + wobble, arcStart + wobble + arcSpan);
-          ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.06, ringAlpha * 0.85).toFixed(4) + ")";
-          ctx.lineWidth = ringW;
-          ctx.shadowBlur = (8 + 12 * (1 - depth)) * shadowScale;
-          ctx.shadowColor = "rgba(" + pr + ", " + pg + ", " + pb + ", " + (ringAlpha * 0.5).toFixed(4) + ")";
           ctx.lineCap = "round";
-          ctx.stroke();
+          for (var si2 = 0; si2 < arcSegs2; si2++) {
+            var t0_2 = si2 / arcSegs2;
+            var t1_2 = (si2 + 1) / arcSegs2;
+            var ang0_2 = a0_2 + t0_2 * arcSpan2;
+            var ang1_2 = a0_2 + t1_2 * arcSpan2;
+            var mid2 = (t0_2 + t1_2) * 0.5;
+            var taper2 = 1 - 4 * (mid2 - 0.5) * (mid2 - 0.5);
+            var segW2 = Math.max(1, peakW2 * (0.12 + 0.88 * taper2));
+            var segAlpha2 = ringAlpha2 * (0.3 + 0.7 * taper2);
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius2, ang0_2, ang1_2);
+            ctx.strokeStyle = "rgba(" + pr2 + ", " + pg2 + ", " + pb2 + ", " + Math.max(0.04, segAlpha2 * 0.85).toFixed(4) + ")";
+            ctx.lineWidth = segW2;
+            ctx.shadowBlur = (6 + 10 * (1 - depth2)) * taper2 * shadowScale;
+            ctx.shadowColor = "rgba(" + pr2 + ", " + pg2 + ", " + pb2 + ", " + (segAlpha2 * 0.4).toFixed(4) + ")";
+            ctx.stroke();
+          }
         }
       }
+      ctx.lineCap = "butt";
 
-      // Tiny bright iris at center
-      var irisR = Math.max(1, eyeR * 0.06 * (1 + 0.3 * Math.sin(swirl * 4.5)));
-      var irisAlpha = coreVortexAlpha * 0.9 * eyePulse;
+      // Center blob — single wobbly purple shape (Worker fallback)
+      var blobR2 = eyeR2 * 0.12;
+      var blobPulse2 = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
+      var blobPts2 = 24;
       ctx.beginPath();
-      ctx.arc(cx, cy, irisR, 0, TAU);
-      ctx.fillStyle = "rgba(140, 90, 220, " + irisAlpha.toFixed(4) + ")";
-      ctx.shadowBlur = 16 * shadowScale;
-      ctx.shadowColor = "rgba(120, 70, 200, " + (irisAlpha * 0.7).toFixed(4) + ")";
+      for (var bi2 = 0; bi2 <= blobPts2; bi2++) {
+        var bp2 = bi2 / blobPts2;
+        var bAng2 = bp2 * TAU + swirl * 0.8;
+        var bw2 = blobR2 * (
+          1.0
+          + 0.2 * Math.sin(swirl * 2.4 + bp2 * 5.5 + 0.3) * blobPulse2
+          + 0.12 * Math.sin(swirl * 4.1 + bp2 * 10.0 + 1.2)
+        );
+        var bbx2 = cx + Math.cos(bAng2) * bw2;
+        var bby2 = cy + Math.sin(bAng2) * bw2 * 0.9;
+        if (bi2 === 0) ctx.moveTo(bbx2, bby2);
+        else ctx.lineTo(bbx2, bby2);
+      }
+      ctx.closePath();
+      var blobAlpha2 = coreVortexAlpha * 0.85 * blobPulse2;
+      ctx.fillStyle = "rgba(105, 60, 180, " + blobAlpha2.toFixed(4) + ")";
+      ctx.shadowBlur = 14 * shadowScale;
+      ctx.shadowColor = "rgba(120, 70, 200, " + (blobAlpha2 * 0.6).toFixed(4) + ")";
       ctx.fill();
       ctx.shadowBlur = 0;
-      ctx.lineCap = "butt";
 
       ctx.restore();
     }
