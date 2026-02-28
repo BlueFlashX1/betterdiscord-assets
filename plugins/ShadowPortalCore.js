@@ -1195,6 +1195,7 @@ const methods = {
         const strandTurns = [2.4, 2.2, 1.6, 2.5, 2.3, 1.8, 2.6, 2.1];
         // GSAP accelerating spin adds growing angular offset to all strands
         const spinOffset = vortexSpinMul * TAU * 0.8;
+        const tierScale = perfTier === 0 ? 0.9 : 1;
         for (let s = 0; s < swirlCount; s++) {
           const phase = swirl * strandSpeeds[s];
           const dir = strandDirs[s];
@@ -1226,21 +1227,24 @@ const methods = {
             });
           }
 
-          // Draw tapered segments — thin at center, thick at outer edge
+          // Draw tapered segments — wispy at center, bold at outer edge
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-          const baseW = (1.0 + strandMorphMul * 0.4) * (perfTier === 0 ? 0.9 : 1);
-          const maxW = (3.6 + strandMorphMul * 1.0) * (perfTier === 0 ? 0.9 : 1);
-          ctx.strokeStyle = `rgba(90, 55, 150, ${Math.max(0.04, strandAlpha * 0.65).toFixed(4)})`;
-          ctx.shadowColor = `rgba(60, 30, 110, ${(strandAlpha * 0.55).toFixed(4)})`;
+          const baseW = (0.4 + strandMorphMul * 0.2) * tierScale;
+          const maxW = (7.0 + strandMorphMul * 2.0) * tierScale;
+          ctx.lineCap = "round";
           for (let i = 0; i < pts.length - 1; i++) {
             const p = i / (pts.length - 1);
+            const segAlpha = strandAlpha * (0.3 + 0.7 * p); // also fades in from center
             ctx.beginPath();
             ctx.moveTo(pts[i].x, pts[i].y);
             ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
-            ctx.lineWidth = baseW + (maxW - baseW) * p;
-            ctx.shadowBlur = (6 + 10 * p + strandMorphMul * 4) * shadowScale * coreGlowMul;
+            ctx.lineWidth = baseW + (maxW - baseW) * p * p; // quadratic taper — slow start, dramatic end
+            ctx.strokeStyle = `rgba(90, 55, 150, ${Math.max(0.03, segAlpha * 0.65).toFixed(4)})`;
+            ctx.shadowBlur = (4 + 16 * p + strandMorphMul * 4) * shadowScale * coreGlowMul;
+            ctx.shadowColor = `rgba(60, 30, 110, ${(segAlpha * 0.55).toFixed(4)})`;
             ctx.stroke();
           }
+          ctx.lineCap = "butt";
         }
 
         // ── Spiral tendrils — replaces static blob with dynamic swirling filaments ──
@@ -1276,6 +1280,39 @@ const methods = {
           ctx.shadowColor = `rgba(80, 40, 140, ${(tAlpha * 0.5).toFixed(4)})`;
           ctx.stroke();
         }
+
+        // ── Purple glowing core with shadow swirl overlay ──
+        const coreR = coreVortexRadius * (0.16 + 0.04 * coreGlowMul);
+        const corePulse = 0.7 + 0.3 * tendrilPulseMul;
+
+        // Inner purple glow
+        const purpleCore = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+        purpleCore.addColorStop(0, `rgba(130, 80, 210, ${(coreVortexAlpha * 0.9 * corePulse).toFixed(4)})`);
+        purpleCore.addColorStop(0.35, `rgba(100, 55, 175, ${(coreVortexAlpha * 0.65 * corePulse).toFixed(4)})`);
+        purpleCore.addColorStop(0.7, `rgba(60, 30, 120, ${(coreVortexAlpha * 0.3).toFixed(4)})`);
+        purpleCore.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ctx.fillStyle = purpleCore;
+        ctx.shadowBlur = 20 * shadowScale * coreGlowMul;
+        ctx.shadowColor = `rgba(110, 60, 190, ${(coreVortexAlpha * 0.5).toFixed(4)})`;
+        ctx.beginPath();
+        ctx.arc(cx, cy, coreR, 0, TAU);
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Dark swirl wisps over the purple core — 5 short rotating shadow arcs
+        const shadowCoreR = coreR * 0.85;
+        for (let sw = 0; sw < 5; sw++) {
+          const swAngle = (sw / 5) * TAU + swirl * 1.6 + spinOffset * 0.5;
+          const arcSpan = 0.35 + 0.15 * Math.sin(swirl * 2.4 + sw * 1.2);
+          ctx.beginPath();
+          ctx.arc(cx, cy, shadowCoreR * (0.5 + 0.5 * Math.sin(swirl * 1.8 + sw)), swAngle, swAngle + arcSpan);
+          ctx.strokeStyle = `rgba(8, 4, 16, ${(coreVortexAlpha * 0.7).toFixed(4)})`;
+          ctx.lineWidth = (2.5 + 1.5 * Math.sin(swirl * 3.1 + sw * 0.7)) * tierScale;
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
+        ctx.lineCap = "butt";
+
         ctx.restore();
       }
 
@@ -1908,19 +1945,23 @@ function startDrawLoop() {
           pts.push({ x: cx + Math.cos(ang) * rr, y: cy + Math.sin(ang) * rr * 0.86 });
         }
         var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-        var bW = 1.0 * (perfTier === 0 ? 0.9 : 1);
-        var mW = 3.6 * (perfTier === 0 ? 0.9 : 1);
-        ctx.strokeStyle = "rgba(90, 55, 150, " + Math.max(0.04, strandAlpha * 0.65).toFixed(4) + ")";
-        ctx.shadowColor = "rgba(60, 30, 110, " + (strandAlpha * 0.55).toFixed(4) + ")";
+        var tS = perfTier === 0 ? 0.9 : 1;
+        var bW = 0.4 * tS;
+        var mW = 7.0 * tS;
+        ctx.lineCap = "round";
         for (var i = 0; i < pts.length - 1; i++) {
           var p = i / (pts.length - 1);
+          var segA = strandAlpha * (0.3 + 0.7 * p);
           ctx.beginPath();
           ctx.moveTo(pts[i].x, pts[i].y);
           ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
-          ctx.lineWidth = bW + (mW - bW) * p;
-          ctx.shadowBlur = (6 + 10 * p) * shadowScale;
+          ctx.lineWidth = bW + (mW - bW) * p * p;
+          ctx.strokeStyle = "rgba(90, 55, 150, " + Math.max(0.03, segA * 0.65).toFixed(4) + ")";
+          ctx.shadowBlur = (4 + 16 * p) * shadowScale;
+          ctx.shadowColor = "rgba(60, 30, 110, " + (segA * 0.55).toFixed(4) + ")";
           ctx.stroke();
         }
+        ctx.lineCap = "butt";
       }
 
       // Worker fallback: 12 spiral tendrils (no GSAP — static sine spirals)
@@ -1948,6 +1989,33 @@ function startDrawLoop() {
         ctx.shadowColor = "rgba(80, 40, 140, " + (tAlpha * 0.5).toFixed(4) + ")";
         ctx.stroke();
       }
+
+      // Purple glowing core with shadow swirl overlay (Worker fallback)
+      var coreR = coreVortexRadius * 0.16;
+      var purpleCore = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
+      purpleCore.addColorStop(0, "rgba(130, 80, 210, " + (coreVortexAlpha * 0.9).toFixed(4) + ")");
+      purpleCore.addColorStop(0.35, "rgba(100, 55, 175, " + (coreVortexAlpha * 0.65).toFixed(4) + ")");
+      purpleCore.addColorStop(0.7, "rgba(60, 30, 120, " + (coreVortexAlpha * 0.3).toFixed(4) + ")");
+      purpleCore.addColorStop(1, "rgba(0, 0, 0, 0)");
+      ctx.fillStyle = purpleCore;
+      ctx.shadowBlur = 20 * shadowScale;
+      ctx.shadowColor = "rgba(110, 60, 190, " + (coreVortexAlpha * 0.5).toFixed(4) + ")";
+      ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, TAU); ctx.fill();
+      ctx.shadowBlur = 0;
+      var shadowCoreR = coreR * 0.85;
+      var tS2 = perfTier === 0 ? 0.9 : 1;
+      for (var sw = 0; sw < 5; sw++) {
+        var swAngle = (sw / 5) * TAU + swirl * 1.6;
+        var arcSpan = 0.35 + 0.15 * Math.sin(swirl * 2.4 + sw * 1.2);
+        ctx.beginPath();
+        ctx.arc(cx, cy, shadowCoreR * (0.5 + 0.5 * Math.sin(swirl * 1.8 + sw)), swAngle, swAngle + arcSpan);
+        ctx.strokeStyle = "rgba(8, 4, 16, " + (coreVortexAlpha * 0.7).toFixed(4) + ")";
+        ctx.lineWidth = (2.5 + 1.5 * Math.sin(swirl * 3.1 + sw * 0.7)) * tS2;
+        ctx.lineCap = "round";
+        ctx.stroke();
+      }
+      ctx.lineCap = "butt";
+
       ctx.restore();
     }
 
