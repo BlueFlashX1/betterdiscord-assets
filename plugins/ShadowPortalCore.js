@@ -606,7 +606,7 @@ const methods = {
         ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#2a1040 -25%,transparent 50%,#a855c8 125%),var(--ss-portal-color,#9b4fbf)}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#1f0c30 -25%,transparent 50%,#8a45aa 125%),var(--ss-portal-color,#8845a8)}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
@@ -614,7 +614,7 @@ const methods = {
       cssPortalEl.className = "ss-portal-css";
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#5a2878");
+      cssPortalEl.style.setProperty("--ss-portal-color", "#481e65");
       const portalInner = document.createElement("div");
       portalInner.className = "ss-portal-css__inner";
       cssPortalEl.appendChild(portalInner);
@@ -1417,31 +1417,7 @@ const methods = {
           ctx.stroke();
         }
 
-        // Center blob — wobbly purple shape at portal core
-        const blobR = coreVortexRadius * (0.10 + 0.03 * coreGlowMul);
-        const blobPulse = 0.75 + 0.25 * tendrilPulseMul;
-        const blobPts = 24;
-        ctx.beginPath();
-        for (let bi = 0; bi <= blobPts; bi++) {
-          const bp = bi / blobPts;
-          const bAng = bp * TAU + swirl * 0.8 + spinOffset * 0.4;
-          const w = blobR * (
-            1.0
-            + 0.2 * Math.sin(swirl * 2.4 + bp * 5.5 + 0.3) * blobPulse
-            + 0.12 * Math.sin(swirl * 4.1 + bp * 10.0 + 1.2)
-          );
-          const bx = cx + Math.cos(bAng) * w;
-          const by = cy + Math.sin(bAng) * w * 0.9;
-          if (bi === 0) ctx.moveTo(bx, by);
-          else ctx.lineTo(bx, by);
-        }
-        ctx.closePath();
-        const blobAlpha = coreVortexAlpha * 0.85 * blobPulse;
-        ctx.fillStyle = `rgba(105, 60, 180, ${blobAlpha.toFixed(4)})`;
-        ctx.shadowBlur = 14 * shadowScale * coreGlowMul;
-        ctx.shadowColor = `rgba(120, 70, 200, ${(blobAlpha * 0.6).toFixed(4)})`;
-        ctx.fill();
-        ctx.shadowBlur = 0;
+        // Center blob removed — CSS portal spiral replaces it
 
         } // end core vortex block
 
