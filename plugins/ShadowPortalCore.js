@@ -1281,58 +1281,60 @@ const methods = {
           ctx.stroke();
         }
 
-        // ── Smoke vortex core — layered rotating arc strokes, no fill ──
-        // Multiple semi-transparent arcs at different radii/speeds spiral inward.
-        // Overlapping strokes build up density = dark smoke being pulled into center.
-        const smokeR = coreVortexRadius * (0.42 + 0.08 * coreGlowMul);
-        const smokePulse = 0.7 + 0.3 * tendrilPulseMul;
-        const smokeCount = 18;
-        ctx.lineCap = "round";
+        // ── Void eye — concentric broken rings rotating at different speeds ──
+        // Like peering into a layered tunnel; each ring a different purple shade,
+        // gaps between rings let the void show through for depth.
+        const eyeR = coreVortexRadius * (0.40 + 0.06 * coreGlowMul);
+        const eyePulse = 0.7 + 0.3 * tendrilPulseMul;
+        const ringCount = 6;
 
-        for (let si = 0; si < smokeCount; si++) {
-          const layer = si / smokeCount;
-          const speed = 2.0 - layer * 1.2;
-          const baseAng = (si / smokeCount) * TAU + swirl * speed + spinOffset * (0.7 - layer * 0.35);
-          const r = Math.max(2, smokeR * (0.06 + 0.94 * layer) * (1 + 0.12 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
-          // Longer arcs — more coverage so they actually overlap and build density
-          const span = (0.6 + 1.2 * layer + 0.3 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
-          // Much thicker — visible against the dark portal
-          const w = (3.0 + 14.0 * layer * layer + strandMorphMul * 4.0 * layer) * tierScale;
-          // Higher base opacity + wider bell curve
-          const bell = Math.exp(-5 * (layer - 0.5) * (layer - 0.5));
-          const alpha = coreVortexAlpha * (0.5 + 0.5 * bell) * smokePulse;
-          // Brighter purples so they pop against black
-          const pr = Math.round(80 + 60 * layer);
-          const pg = Math.round(35 + 40 * layer);
-          const pb = Math.round(130 + 80 * layer);
+        for (let ri = 0; ri < ringCount; ri++) {
+          const depth = ri / (ringCount - 1); // 0=outermost, 1=innermost
+          const radius = Math.max(2, eyeR * (0.95 - 0.82 * depth) * (1 + 0.06 * Math.sin(swirl * 2.1 + ri * 1.4) * eyePulse));
+          // Each ring rotates at its own speed — inner rings faster
+          const ringSpeed = 0.6 + depth * 1.4;
+          const ringAngle = swirl * ringSpeed + spinOffset * (0.3 + depth * 0.5) + ri * 1.1;
+          // Ring width gets thinner deeper in — tunnel perspective
+          const ringW = (5.0 + 10.0 * (1 - depth) + strandMorphMul * 3.0) * tierScale;
+          // Deeper rings = darker purple, outer = brighter
+          const pr = Math.round(110 - 50 * depth);
+          const pg = Math.round(60 - 30 * depth);
+          const pb = Math.round(200 - 60 * depth);
+          // Alpha: outer rings strong, inner rings slightly dimmer
+          const ringAlpha = coreVortexAlpha * (0.7 + 0.3 * (1 - depth)) * eyePulse;
 
-          ctx.beginPath();
-          ctx.arc(cx, cy, r, baseAng, baseAng + span);
-          ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.05, alpha).toFixed(4)})`;
-          ctx.lineWidth = w;
-          ctx.shadowBlur = (6 + 14 * layer) * shadowScale * coreGlowMul;
-          ctx.shadowColor = `rgba(${pr}, ${pg}, ${pb}, ${(alpha * 0.6).toFixed(4)})`;
-          ctx.stroke();
+          // Each ring is 2-3 broken arcs with gaps (not a full circle)
+          const arcCount = 2 + Math.floor(depth * 2); // outer=2 arcs, inner=4
+          const gapFraction = 0.15 + 0.1 * depth; // bigger gaps deeper in
+          const arcSpan = (TAU / arcCount) * (1 - gapFraction);
+
+          for (let ai = 0; ai < arcCount; ai++) {
+            const arcStart = ringAngle + (ai / arcCount) * TAU;
+            // Wobble each arc slightly for organic feel
+            const wobble = 0.08 * Math.sin(swirl * 3.2 + ri * 2.1 + ai * 1.7) * eyePulse;
+
+            ctx.beginPath();
+            ctx.arc(cx, cy, radius, arcStart + wobble, arcStart + wobble + arcSpan);
+            ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.06, ringAlpha * 0.85).toFixed(4)})`;
+            ctx.lineWidth = ringW;
+            ctx.shadowBlur = (8 + 12 * (1 - depth)) * shadowScale * coreGlowMul;
+            ctx.shadowColor = `rgba(${pr}, ${pg}, ${pb}, ${(ringAlpha * 0.5).toFixed(4)})`;
+            ctx.lineCap = "round";
+            ctx.stroke();
+          }
         }
 
-        // Dark smoke wisps — near-black arcs for depth and contrast
-        for (let di = 0; di < 7; di++) {
-          const dLayer = (di + 0.5) / 7;
-          const dAng = (di / 7) * TAU + swirl * (1.6 + di * 0.14) + spinOffset * 0.5;
-          const dR = Math.max(2, smokeR * (0.1 + 0.6 * dLayer));
-          const dSpan = 0.35 + 0.5 * Math.sin(swirl * 2.1 + di * 1.3);
-          const dAlpha = coreVortexAlpha * 0.7 * smokePulse;
-
-          ctx.beginPath();
-          ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
-          ctx.strokeStyle = `rgba(12, 6, 24, ${Math.max(0.05, dAlpha).toFixed(4)})`;
-          ctx.lineWidth = (3.0 + 5.0 * dLayer) * tierScale;
-          ctx.shadowBlur = 6 * shadowScale;
-          ctx.shadowColor = `rgba(0, 0, 0, ${(dAlpha * 0.4).toFixed(4)})`;
-          ctx.stroke();
-        }
-        ctx.lineCap = "butt";
+        // Tiny bright iris at the very center — a pinpoint of purple light
+        const irisR = Math.max(1, eyeR * 0.06 * (1 + 0.3 * Math.sin(swirl * 4.5)));
+        const irisAlpha = coreVortexAlpha * 0.9 * eyePulse;
+        ctx.beginPath();
+        ctx.arc(cx, cy, irisR, 0, TAU);
+        ctx.fillStyle = `rgba(140, 90, 220, ${irisAlpha.toFixed(4)})`;
+        ctx.shadowBlur = 16 * shadowScale * coreGlowMul;
+        ctx.shadowColor = `rgba(120, 70, 200, ${(irisAlpha * 0.7).toFixed(4)})`;
+        ctx.fill();
         ctx.shadowBlur = 0;
+        ctx.lineCap = "butt";
 
         ctx.restore();
       }
@@ -2011,52 +2013,52 @@ function startDrawLoop() {
         ctx.stroke();
       }
 
-      // Smoke vortex core — layered rotating arcs, no fill (Worker fallback)
-      var smokeR = coreVortexRadius * 0.42;
-      var smokePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
-      var smokeCount = 18;
-      ctx.lineCap = "round";
+      // Void eye — concentric broken rings (Worker fallback, no GSAP)
+      var eyeR = coreVortexRadius * 0.40;
+      var eyePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
+      var ringCount = 6;
 
-      for (var si = 0; si < smokeCount; si++) {
-        var layer = si / smokeCount;
-        var speed = 2.0 - layer * 1.2;
-        var baseAng = (si / smokeCount) * TAU + swirl * speed;
-        var r = Math.max(2, smokeR * (0.06 + 0.94 * layer) * (1 + 0.12 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
-        var span = (0.6 + 1.2 * layer + 0.3 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
-        var w = (3.0 + 14.0 * layer * layer) * tS;
-        var bell = Math.exp(-5 * (layer - 0.5) * (layer - 0.5));
-        var alpha = coreVortexAlpha * (0.5 + 0.5 * bell) * smokePulse;
-        var pr = Math.round(80 + 60 * layer);
-        var pg = Math.round(35 + 40 * layer);
-        var pb = Math.round(130 + 80 * layer);
+      for (var ri = 0; ri < ringCount; ri++) {
+        var depth = ri / (ringCount - 1);
+        var radius = Math.max(2, eyeR * (0.95 - 0.82 * depth) * (1 + 0.06 * Math.sin(swirl * 2.1 + ri * 1.4) * eyePulse));
+        var ringSpeed = 0.6 + depth * 1.4;
+        var ringAngle = swirl * ringSpeed + ri * 1.1;
+        var ringW = (5.0 + 10.0 * (1 - depth)) * tS;
+        var pr = Math.round(110 - 50 * depth);
+        var pg = Math.round(60 - 30 * depth);
+        var pb = Math.round(200 - 60 * depth);
+        var ringAlpha = coreVortexAlpha * (0.7 + 0.3 * (1 - depth)) * eyePulse;
 
-        ctx.beginPath();
-        ctx.arc(cx, cy, r, baseAng, baseAng + span);
-        ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.05, alpha).toFixed(4) + ")";
-        ctx.lineWidth = w;
-        ctx.shadowBlur = (6 + 14 * layer) * shadowScale;
-        ctx.shadowColor = "rgba(" + pr + ", " + pg + ", " + pb + ", " + (alpha * 0.6).toFixed(4) + ")";
-        ctx.stroke();
+        var arcCount = 2 + Math.floor(depth * 2);
+        var gapFraction = 0.15 + 0.1 * depth;
+        var arcSpan = (TAU / arcCount) * (1 - gapFraction);
+
+        for (var ai = 0; ai < arcCount; ai++) {
+          var arcStart = ringAngle + (ai / arcCount) * TAU;
+          var wobble = 0.08 * Math.sin(swirl * 3.2 + ri * 2.1 + ai * 1.7) * eyePulse;
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, radius, arcStart + wobble, arcStart + wobble + arcSpan);
+          ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.06, ringAlpha * 0.85).toFixed(4) + ")";
+          ctx.lineWidth = ringW;
+          ctx.shadowBlur = (8 + 12 * (1 - depth)) * shadowScale;
+          ctx.shadowColor = "rgba(" + pr + ", " + pg + ", " + pb + ", " + (ringAlpha * 0.5).toFixed(4) + ")";
+          ctx.lineCap = "round";
+          ctx.stroke();
+        }
       }
 
-      // Dark smoke wisps on top
-      for (var di = 0; di < 7; di++) {
-        var dLayer = (di + 0.5) / 7;
-        var dAng = (di / 7) * TAU + swirl * (1.6 + di * 0.14);
-        var dR = Math.max(2, smokeR * (0.1 + 0.6 * dLayer));
-        var dSpan = 0.35 + 0.5 * Math.sin(swirl * 2.1 + di * 1.3);
-        var dAlpha = coreVortexAlpha * 0.7 * smokePulse;
-
-        ctx.beginPath();
-        ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
-        ctx.strokeStyle = "rgba(12, 6, 24, " + Math.max(0.05, dAlpha).toFixed(4) + ")";
-        ctx.lineWidth = (3.0 + 5.0 * dLayer) * tS;
-        ctx.shadowBlur = 6 * shadowScale;
-        ctx.shadowColor = "rgba(0, 0, 0, " + (dAlpha * 0.4).toFixed(4) + ")";
-        ctx.stroke();
-      }
-      ctx.lineCap = "butt";
+      // Tiny bright iris at center
+      var irisR = Math.max(1, eyeR * 0.06 * (1 + 0.3 * Math.sin(swirl * 4.5)));
+      var irisAlpha = coreVortexAlpha * 0.9 * eyePulse;
+      ctx.beginPath();
+      ctx.arc(cx, cy, irisR, 0, TAU);
+      ctx.fillStyle = "rgba(140, 90, 220, " + irisAlpha.toFixed(4) + ")";
+      ctx.shadowBlur = 16 * shadowScale;
+      ctx.shadowColor = "rgba(120, 70, 200, " + (irisAlpha * 0.7).toFixed(4) + ")";
+      ctx.fill();
       ctx.shadowBlur = 0;
+      ctx.lineCap = "butt";
 
       ctx.restore();
     }
