@@ -1318,8 +1318,8 @@ const methods = {
         ctx.fill();
 
         // ── Canvas core vortex (strands + tendrils + blob) ──
-        // Skipped when CSS portal overlay is active — the CSS spiral replaces this.
-        if (!_cssPortalActive) {
+        // Always draw — tendrils layer beneath the CSS portal spiral for combined energy.
+        {
         // ── GSAP-enhanced swirl strands (8 strands, unified rotation + tapered width) ──
         const swirlCount = 8;
         const swirlPoints = _gsap ? 24 : (perfTier === 0 ? 12 : 16);
@@ -1443,7 +1443,7 @@ const methods = {
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        } // end !_cssPortalActive gate
+        } // end core vortex block
 
         ctx.restore();
       }
