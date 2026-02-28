@@ -1309,6 +1309,13 @@ ul[aria-label="Channels"] > div:not([class]) {
   display: none !important;
 }
 
+/* §9c+ — Push channel list down to prevent overlap with server banner/icon.
+   The server banner image occupies ~48px at the top of the sidebar scroller;
+   channels need clearance below it so SVG banners don't clip into it. */
+ul[aria-label="Channels"] {
+  padding-top: 92px !important;
+}
+
 /* §9e — Hide "Browse Channels" button from server channel list
    The Browse Channels entry lives inside a wrapper with aria-label.
    Targeting the parent li so the entire row disappears cleanly */
@@ -1325,6 +1332,11 @@ ul[aria-label="Channels"] {
   --interactive-background-hover: transparent !important;
 }
 
+/* §9f+g — Channel row spacing: double gap between channel items */
+ul[aria-label="Channels"] li[class*="containerDefault_"] {
+  margin-bottom: 8px !important;
+}
+
 /* §9f+ — SVG banner backgrounds on channel rows (Solo Leveling gate frame)
    Uses Shadowbannerv1.1.svg — dark banner with purple shadow tendrils.
    viewBox 0 0 1940 390 with preserveAspectRatio="none"
@@ -1332,10 +1344,10 @@ ul[aria-label="Channels"] {
 ul[aria-label="Channels"] [class*="link_"] {
   background-color: transparent !important;
   background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Shadowbannerv1.1.svg') !important;
-  background-size: 100% 100% !important;
+  background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
-  padding-left: 42px !important;
+  padding-left: 52px !important;
   overflow: hidden !important;
 }
 
@@ -1353,30 +1365,34 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
 }
 
 /* §9f+h — Hover: v2 SVG banner replaces v1 as sole hover feedback.
-   No box-shadow or highlight — the SVG glow filters handle everything. */
+   drop-shadow traces actual SVG painted pixels (not bounding box),
+   so the purple glow hugs the irregular tendril edges. */
 ul[aria-label="Channels"] [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
   background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2.1hover.svg') !important;
-  background-size: 100% 100% !important;
+  background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
   box-shadow: none !important;
+  filter: drop-shadow(0 0 6px rgba(138, 43, 226, 0.6))
+          drop-shadow(0 0 2px rgba(138, 43, 226, 0.4)) !important;
 }
 ul[aria-label="Channels"] [class*="wrapper_"]:hover {
   background-image: none !important;
 }
 
-/* §9f+s — Selected channel: keep SVG banner, nuke Discord's solid purple */
+/* §9f+s — Selected/active channel: dedicated Selected_channel.svg with drop-shadow glow */
 ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"],
 ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Shadowbannerv1.1.svg') !important;
-  background-size: 100% 100% !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Selected_channel.svg') !important;
+  background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
-  box-shadow: 0 0 12px 3px rgba(138, 43, 226, 0.55),
-              inset 0 0 10px rgba(138, 43, 226, 0.2) !important;
+  box-shadow: none !important;
+  filter: drop-shadow(0 0 8px rgba(138, 43, 226, 0.7))
+          drop-shadow(0 0 3px rgba(138, 43, 226, 0.5)) !important;
 }
 ul[aria-label="Channels"] [class*="modeSelected_"],
 ul[aria-label="Channels"] li[class*="selected_"] [class*="wrapper_"] {
