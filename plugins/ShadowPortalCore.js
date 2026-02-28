@@ -13,6 +13,50 @@
 let _gsapLoadPromise = null;
 let _gsapLoaded = false;
 
+// ── CSS Portal mask (PropJockey-style spiral, generated once and cached) ──
+let _spiralMaskUrl = null;
+
+/**
+ * Procedurally generate a spiral mask on an offscreen canvas.
+ * The mask, when counter-rotated against a gradient, creates a swirling vortex.
+ * Returns a data:image/png URL cached for the lifetime of the page.
+ */
+function getSpiralMaskUrl() {
+  if (_spiralMaskUrl) return _spiralMaskUrl;
+  const size = 256;
+  const c = document.createElement("canvas");
+  c.width = c.height = size;
+  const ctx = c.getContext("2d");
+  const mid = size / 2;
+  const img = ctx.createImageData(size, size);
+  const d = img.data;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const dx = (x - mid) / mid;
+      const dy = (y - mid) / mid;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > 1.0) continue;
+      const angle = Math.atan2(dy, dx);
+      // Ring donut shape — peak at ~0.52 radius, Gaussian falloff
+      const ring = Math.exp(-Math.pow((dist - 0.52) / 0.27, 2));
+      // Logarithmic spiral modulation — 3 arms wound tightly
+      const spiral = (Math.cos(angle * 3 + Math.log(Math.max(0.001, dist)) * 4.5) + 1) * 0.5;
+      const alpha = ring * (0.25 + 0.75 * spiral) * 255;
+      const idx = (y * size + x) * 4;
+      d[idx + 3] = Math.round(alpha);
+    }
+  }
+  ctx.putImageData(img, 0, 0);
+  // Soft blur pass for organic edges
+  const blurred = document.createElement("canvas");
+  blurred.width = blurred.height = size;
+  const bctx = blurred.getContext("2d");
+  bctx.filter = "blur(4px)";
+  bctx.drawImage(c, 0, 0);
+  _spiralMaskUrl = blurred.toDataURL();
+  return _spiralMaskUrl;
+}
+
 const DEFAULT_CONTEXT_LABEL_KEYS = ["anchorName", "waypointLabel", "label", "name", "targetName", "targetUsername"];
 
 function getCoreConfig(instance) {
@@ -514,6 +558,35 @@ const methods = {
     canvas.className = "ss-transition-canvas";
     overlay.appendChild(canvas);
 
+    // ── CSS Portal (PropJockey spiral-mask counter-rotation technique) ──
+    // Only on main-thread GSAP path; Worker fallback keeps canvas vortex.
+    let cssPortalEl = null;
+    if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
+      const maskUrl = getSpiralMaskUrl();
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 0.55;
+
+      // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
+      const portalStyleEl = document.createElement("style");
+      portalStyleEl.textContent = [
+        "@keyframes ss-portal-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}",
+        ".ss-portal-css{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(1.75);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
+        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 5s infinite linear}",
+        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(black -25%,transparent 50%,white 125%),var(--ss-portal-color,#6b3fa0)}',
+      ].join("");
+      overlay.appendChild(portalStyleEl);
+
+      cssPortalEl = document.createElement("div");
+      cssPortalEl.className = "ss-portal-css";
+      cssPortalEl.style.width = `${portalDiam}px`;
+      cssPortalEl.style.height = `${portalDiam}px`;
+      cssPortalEl.style.setProperty("--ss-portal-color", "#7b4fbf");
+      const portalInner = document.createElement("div");
+      portalInner.className = "ss-portal-css__inner";
+      cssPortalEl.appendChild(portalInner);
+      overlay.appendChild(cssPortalEl);
+    }
+
     const shardCount = prefersReducedMotion ? 0 : 9 + Math.floor(Math.random() * 8);
     debugLog(
       this,
@@ -553,7 +626,7 @@ const methods = {
         if (runId !== this._transitionRunId) return;
         _diagLog("CANVAS_ANIMATION_START");
         try {
-          this._transitionStopCanvas = this.startPortalCanvasAnimation(canvas, totalDuration);
+          this._transitionStopCanvas = this.startPortalCanvasAnimation(canvas, totalDuration, cssPortalEl);
         } catch (error) {
           this._transitionStopCanvas = null;
           debugError(this, "Transition", "Canvas portal start failed; continuing with non-canvas overlay", error);
@@ -683,10 +756,10 @@ const methods = {
     }, cleanupDelay);
   },
 
-  startPortalCanvasAnimation(canvas, duration) {
+  startPortalCanvasAnimation(canvas, duration, cssPortalEl) {
     // ── GSAP-enhanced path — uses main-thread canvas only (GSAP depends on DOM) ──
     if (_gsapLoaded && window.gsap) {
-      return this._startPortalCanvasGSAP(canvas, duration);
+      return this._startPortalCanvasGSAP(canvas, duration, cssPortalEl);
     }
 
     // ── Vanilla fallback: OffscreenCanvas Worker → main-thread canvas ──
@@ -706,7 +779,7 @@ const methods = {
    * reads GSAP-interpolated values instead of computing from raw `t`.
    * Uses main-thread canvas only (GSAP depends on DOM APIs).
    */
-  _startPortalCanvasGSAP(canvas, duration) {
+  _startPortalCanvasGSAP(canvas, duration, cssPortalEl) {
     const gsap = window.gsap;
     if (!gsap) return this._startPortalCanvasMainThread(canvas, duration);
 
@@ -785,30 +858,50 @@ const methods = {
       gsap.to(gs, { tendrilPulse: 1, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: -1 }),
     ];
 
+    // ── CSS Portal GSAP animations (formation → sustain → fade) ──
+    const cssPortalTweens = [];
+    if (cssPortalEl) {
+      // Formation: 0→25% — scale from 0.3→1 + fade in, matches portal formation phase
+      tl.fromTo(cssPortalEl,
+        { opacity: 0, scale: 0.3 },
+        { opacity: 1, scale: 1, duration: dur * 0.25, ease: "back.out(1.2)" },
+        0
+      );
+      // Reveal fade-out: as aperture opens (35%→90%), CSS portal fades + slightly expands
+      tl.to(cssPortalEl, {
+        opacity: 0,
+        scale: 1.35,
+        duration: dur * 0.55,
+        ease: "power2.in",
+      }, dur * 0.35);
+    }
+
     // Store timeline on instance for Phase 6 (reverse-on-failure)
     this._gsapMasterTimeline = tl;
 
     if (this.settings?.debugMode) {
       console.log(
-        "%c[PortalDiag]%c GSAP timeline created — " + dur.toFixed(3) + "s, " + tl.getChildren().length + " tweens",
+        "%c[PortalDiag]%c GSAP timeline created — " + dur.toFixed(3) + "s, " + tl.getChildren().length + " tweens" +
+        (cssPortalEl ? " (CSS portal active)" : ""),
         "color:#a855f7;font-weight:bold", "color:#22c55e",
         "CustomEase:", !!window.CustomEase, "Physics2D:", !!window.Physics2DPlugin
       );
     }
 
-    // Delegate to main-thread draw loop, passing GSAP state
-    const stopCanvas = this._startPortalCanvasMainThread(canvas, duration, gs);
+    // Delegate to main-thread draw loop, passing GSAP state + CSS portal flag
+    const stopCanvas = this._startPortalCanvasMainThread(canvas, duration, gs, !!cssPortalEl);
 
-    // Wrap stop function to kill GSAP timeline + breathing tweens
+    // Wrap stop function to kill GSAP timeline + breathing tweens + CSS portal tweens
     return () => {
       tl.kill();
       for (const tw of breathingTweens) tw.kill();
+      for (const tw of cssPortalTweens) tw.kill();
       this._gsapMasterTimeline = null;
       if (stopCanvas) stopCanvas();
     };
   },
 
-  _startPortalCanvasMainThread(canvas, duration, _gsap) {
+  _startPortalCanvasMainThread(canvas, duration, _gsap, _cssPortalActive) {
     if (!canvas || typeof canvas.getContext !== "function") return null;
     const ctx = canvas.getContext("2d", { alpha: true });
     if (!ctx) return null;
@@ -1184,6 +1277,9 @@ const methods = {
         ctx.arc(cx, cy, coreVortexRadius, 0, TAU);
         ctx.fill();
 
+        // ── Canvas core vortex (strands + tendrils + blob) ──
+        // Skipped when CSS portal overlay is active — the CSS spiral replaces this.
+        if (!_cssPortalActive) {
         // ── GSAP-enhanced swirl strands (8 strands, unified rotation + tapered width) ──
         const swirlCount = 8;
         const swirlPoints = _gsap ? 24 : (perfTier === 0 ? 12 : 16);
@@ -1306,6 +1402,8 @@ const methods = {
         ctx.shadowColor = `rgba(120, 70, 200, ${(blobAlpha * 0.6).toFixed(4)})`;
         ctx.fill();
         ctx.shadowBlur = 0;
+
+        } // end !_cssPortalActive gate
 
         ctx.restore();
       }
