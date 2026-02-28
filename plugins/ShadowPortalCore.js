@@ -606,7 +606,7 @@ const methods = {
         ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#30102a,#8a45aa,#30102a),var(--ss-portal-color,#8845a8)}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:radial-gradient(circle,#8a45aa 0%,#481e65 40%,#1a0818 80%),var(--ss-portal-color,#8845a8)}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
