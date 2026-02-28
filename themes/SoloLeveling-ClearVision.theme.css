@@ -2130,8 +2130,8 @@ div[class^="container_"] > div[class^="sidebar_"] div[class^="navScroller_"]::-w
 /* §10b+svg — Settings sidebar items: SVG-framed menu buttons
    Applies channel-unread / channel-hover / channel-selected SVG backgrounds
    to settings nav items. Mirrors the channel list SVG treatment from §9f.
-   DOM: itemContainer_ (gets selected_ class!) > item_ (role=listitem) > itemContent_ > svg.icon_ + text
-   NOTE: "selected_" class lives on itemContainer_, NOT on the listitem itself. */
+   DOM: itemContainer_ > item_ (role=listitem, gets active_ class!) > itemContent_ > svg.icon_ + text
+   NOTE: "active_" class lives on the listitem ITSELF, not on itemContainer_. */
 
 /* Shift sidebar items left for tighter framing */
 div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"] {
@@ -2163,23 +2163,21 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class
 }
 
 /* Default/unselected state: channel-unread SVG (organic purple stroke frame)
-   Excludes containers that have selected_ class */
-div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"]:not([class*="selected"]) > div[role="listitem"] {
+   Excludes items that have the active_ class */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]) {
   background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-unread.svg') center / 100% 100% no-repeat !important;
 }
 
 /* Hover state: channel-hover SVG (enhanced purple + dark fills) + glow */
-div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"]:not([class*="selected"]):hover > div[role="listitem"] {
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([class*="active_"]):hover {
   background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-hover.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
 }
 
 /* Selected/active state: channel-selected SVG (circuit pattern + double border) + glow
-   selected_ class is on the CONTAINER (itemContainer_), not the listitem.
-   Cover both cases for resilience: selected on container OR on item directly. */
-div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"][class*="selected"] > div[role="listitem"],
-div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="selected"] {
+   active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
   background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-selected.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
