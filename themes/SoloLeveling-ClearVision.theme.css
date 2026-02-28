@@ -489,6 +489,18 @@ div[class^="userPopoutOuter_"] div[class*="wrapper"] {
   border-color: transparent !important;
   outline: none !important;
 }
+/* Kill dark gradient overlay on profile inner container (popout + modal).
+   Discord applies linear-gradient(black 60%) as background-image on inner_
+   via .custom-user-profile-theme — looks like a fake border. */
+div[class^="outer_"] > div[class^="inner_"],
+.custom-user-profile-theme div[class^="inner_"] {
+  background: transparent !important;
+  background-image: none !important;
+  border-radius: 2px !important;
+}
+div[class^="outer_"] {
+  border-radius: 2px !important;
+}
 
 /* §3d — Context menus (all role="menu" popups: activity cards, friend row, etc.)
    Solid dark background + purple border. Also styles menu item hover states */
