@@ -18,7 +18,7 @@ let _gsapLoaded = false;
 let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
 
-const SPIRAL_IMG_URL = "https://i.imgur.com/oNjtnOI.png";
+const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_mask2.png";
 
 /**
  * Preload the spiral mask image from imgur.
