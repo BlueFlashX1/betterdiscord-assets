@@ -892,7 +892,7 @@ const methods = {
       gsap.to(gs, { tendrilPulse: 1, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: -1 }),
     ];
 
-    // ── CSS Portal GSAP animations (formation → sustain → fade) ──
+    // ── CSS Portal GSAP animations (formation → expand → fade) ──
     const cssPortalTweens = [];
     if (cssPortalEl) {
       // Formation: 0→25% — scale from 0.3→1 + fade in, matches portal formation phase
@@ -901,13 +901,19 @@ const methods = {
         { opacity: 1, scale: 1, duration: dur * 0.25, ease: "back.out(1.2)" },
         0
       );
-      // Reveal fade-out: as aperture opens (35%→90%), CSS portal fades + slightly expands
+      // Reveal expansion: portal blows outward in sync with aperture punch-through.
+      // Aperture uses expo.inOut over 35%→100% — CSS portal matches exactly.
+      tl.to(cssPortalEl, {
+        scale: 4,
+        duration: dur * 0.65,
+        ease: "expo.inOut",
+      }, dur * 0.35);
+      // Quick fade at tail (last 8%) so portal doesn't linger after aperture finishes
       tl.to(cssPortalEl, {
         opacity: 0,
-        scale: 1.35,
-        duration: dur * 0.55,
+        duration: dur * 0.08,
         ease: "power2.in",
-      }, dur * 0.35);
+      }, dur * 0.92);
     }
 
     // Store timeline on instance for Phase 6 (reverse-on-failure)
