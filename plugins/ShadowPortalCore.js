@@ -1146,9 +1146,9 @@ const methods = {
       ctx.arc(cx, cy, solidPortalRadius, 0, TAU);
       ctx.fill();
 
-      const coreGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.08, cx, cy, innerRadius);
-      coreGradient.addColorStop(0, `rgba(1, 1, 2, ${(0.98 * fadeOut).toFixed(4)})`);
-      coreGradient.addColorStop(0.32, `rgba(0, 0, 1, ${(1 * fadeOut).toFixed(4)})`);
+      const coreGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerRadius);
+      coreGradient.addColorStop(0, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
+      coreGradient.addColorStop(0.32, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
       coreGradient.addColorStop(0.72, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
       coreGradient.addColorStop(1, `rgba(0, 0, 0, ${(1 * fadeOut).toFixed(4)})`);
       ctx.fillStyle = coreGradient;
@@ -1238,7 +1238,8 @@ const methods = {
         for (let ti = 0; ti < tendrilCount; ti++) {
           const baseAngle = (ti / tendrilCount) * TAU + swirl * 0.9 + spinOffset * 1.2;
           const spiralTightness = 1.8 + ti * 0.12 + strandMorphMul * 0.4;
-          const spiralDir = ti % 2 === 0 ? 1 : -1;
+          // 9 unified CW, 3 chaotic CCW (indices 3, 7, 10) for organic feel
+          const spiralDir = (ti === 3 || ti === 7 || ti === 10) ? -1 : 1;
 
           ctx.beginPath();
           for (let i = 0; i <= tendrilPoints; i++) {
@@ -1849,9 +1850,9 @@ function startDrawLoop() {
     ctx.beginPath(); ctx.arc(cx, cy, solidPortalRadius, 0, TAU); ctx.fill();
 
     // Core gradient
-    const coreGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.08, cx, cy, innerRadius);
-    coreGradient.addColorStop(0, "rgba(1, 1, 2, " + (0.98 * fadeOut).toFixed(4) + ")");
-    coreGradient.addColorStop(0.32, "rgba(0, 0, 1, " + (1 * fadeOut).toFixed(4) + ")");
+    const coreGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerRadius);
+    coreGradient.addColorStop(0, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
+    coreGradient.addColorStop(0.32, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
     coreGradient.addColorStop(0.72, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
     coreGradient.addColorStop(1, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
     ctx.fillStyle = coreGradient;
@@ -1911,7 +1912,7 @@ function startDrawLoop() {
       for (var ti = 0; ti < tendrilCount; ti++) {
         var tBaseAngle = (ti / tendrilCount) * TAU + swirl * 0.9;
         var spiralTightness = 1.8 + ti * 0.12;
-        var spiralDir = ti % 2 === 0 ? 1 : -1;
+        var spiralDir = (ti === 3 || ti === 7 || ti === 10) ? -1 : 1;
         ctx.beginPath();
         for (var i = 0; i <= tendrilPoints; i++) {
           var p = i / tendrilPoints;
