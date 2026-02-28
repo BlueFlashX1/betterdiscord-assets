@@ -744,13 +744,13 @@ const methods = {
       ease: "power2.inOut",
     }, 0);
 
-    // Reveal aperture: 40%→100% with expo.inOut for dramatic accel/decel
+    // Reveal aperture: 28%→100% with expo.inOut for dramatic accel/decel
     tl.to(gs, {
       revealProgress: 1,
       revealEase: 1,
-      duration: dur * 0.60,
+      duration: dur * 0.72,
       ease: "expo.inOut",
-    }, dur * 0.40);
+    }, dur * 0.28);
 
     // Fade out: 95%→100% with power2.in for smooth exit
     tl.to(gs, {
@@ -759,12 +759,12 @@ const methods = {
       ease: "power2.in",
     }, dur * 0.95);
 
-    // Phase 3: Shockwave elastic overshoot — starts 42% through, elastic.out gives ripple bounce
+    // Phase 3: Shockwave elastic overshoot — starts 30% through, elastic.out gives ripple bounce
     tl.to(gs, {
       shockwaveBoost: 1,
-      duration: dur * 0.42,
+      duration: dur * 0.52,
       ease: "elastic.out(1, 0.3)",
-    }, dur * 0.42);
+    }, dur * 0.30);
 
     // ── Phase 5: Glow breathing — infinite yoyo loops during portal lifetime ──
     const breathingTweens = [
@@ -934,7 +934,7 @@ const methods = {
       const elapsed = now - start;
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
       const swirl = elapsed * 0.0022;
-      const revealStart = 0.40;
+      const revealStart = 0.28;
 
       // ── Phase state: GSAP-driven or vanilla-computed ──
       let easeInOut, fadeOut, formT, formEase, portalForm, revealProgress, revealEase;
@@ -1690,7 +1690,7 @@ function startDrawLoop() {
     const formT = Math.min(1, t / 0.22);
     const formEase = 1 - Math.pow(1 - formT, 3);
     const portalForm = 0.38 + 0.62 * formEase;
-    const revealStart = 0.40;
+    const revealStart = 0.28;
     const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
     const revealEase = revealProgress < 0.5 ? 2 * revealProgress * revealProgress : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
 
