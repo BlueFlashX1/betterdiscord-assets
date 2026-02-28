@@ -2145,6 +2145,8 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] {
   border-radius: 0 !important;
   box-shadow: none !important;
   transition: filter 0.2s ease !important;
+  justify-content: center !important;
+  text-align: center !important;
 }
 /* Also reset the container itself (Discord may put bg here for selected state) */
 div[class^="container_"] > div[class^="sidebar_"] div[class^="itemContainer_"] {
