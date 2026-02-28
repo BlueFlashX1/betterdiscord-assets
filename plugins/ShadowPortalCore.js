@@ -973,17 +973,17 @@ const methods = {
 
       ctx.clearRect(0, 0, width, height);
 
-      const ambientDim = (0.04 + 0.07 * formEase) * fadeOut;
+      const ambientDim = (0.18 + 0.35 * formEase) * fadeOut;
       ctx.fillStyle = `rgba(2, 2, 6, ${ambientDim.toFixed(4)})`;
       ctx.fillRect(0, 0, width, height);
 
       const veilOuter = maxSide * (0.58 + 0.9 * formEase);
       const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
       const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-      veil.addColorStop(0, `rgba(22, 12, 36, ${(0.18 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.26, `rgba(12, 8, 22, ${(0.24 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.62, `rgba(6, 6, 12, ${(0.12 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(1, "rgba(0, 0, 0, 0)");
+      veil.addColorStop(0, `rgba(22, 12, 36, ${(0.42 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.26, `rgba(12, 8, 22, ${(0.48 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.62, `rgba(6, 6, 12, ${(0.28 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.08 * formEase * fadeOut).toFixed(4)})`);
       ctx.fillStyle = veil;
       ctx.beginPath();
       ctx.arc(cx, cy, veilOuter, 0, TAU);
@@ -1700,7 +1700,7 @@ function startDrawLoop() {
     ctx.clearRect(0, 0, width, height);
 
     // Ambient dim
-    const ambientDim = (0.04 + 0.07 * formEase) * fadeOut;
+    const ambientDim = (0.18 + 0.35 * formEase) * fadeOut;
     ctx.fillStyle = "rgba(2, 2, 6, " + ambientDim.toFixed(4) + ")";
     ctx.fillRect(0, 0, width, height);
 
@@ -1708,10 +1708,10 @@ function startDrawLoop() {
     const veilOuter = maxSide * (0.58 + 0.9 * formEase);
     const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
     const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-    veil.addColorStop(0, "rgba(22, 12, 36, " + (0.18 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(0.26, "rgba(12, 8, 22, " + (0.24 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(0.62, "rgba(6, 6, 12, " + (0.12 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(1, "rgba(0, 0, 0, 0)");
+    veil.addColorStop(0, "rgba(22, 12, 36, " + (0.42 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.26, "rgba(12, 8, 22, " + (0.48 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.62, "rgba(6, 6, 12, " + (0.28 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(1, "rgba(0, 0, 0, " + (0.08 * formEase * fadeOut).toFixed(4) + ")");
     ctx.fillStyle = veil;
     ctx.beginPath(); ctx.arc(cx, cy, veilOuter, 0, TAU); ctx.fill();
 
