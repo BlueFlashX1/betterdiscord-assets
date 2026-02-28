@@ -17,6 +17,7 @@ let _gsapLoaded = false;
 // Preferred: imgur PNG. Fallback: procedurally generated spiral.
 let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
+let _spiralMaskLoadedFrom = null;
 
 const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_mask_shadow.png";
 
@@ -27,7 +28,14 @@ const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdisc
  * Called fire-and-forget during applyPortalCoreToClass.
  */
 function preloadSpiralMask() {
+  // Re-fetch if URL changed (e.g. mask image swapped between plugin versions)
+  if (_spiralMaskLoadedFrom && _spiralMaskLoadedFrom !== SPIRAL_IMG_URL) {
+    _spiralMaskUrl = null;
+    _spiralMaskReady = false;
+    _spiralMaskLoadedFrom = null;
+  }
   if (_spiralMaskReady || _spiralMaskUrl) return;
+  _spiralMaskLoadedFrom = SPIRAL_IMG_URL;
   const img = new Image();
   img.crossOrigin = "anonymous";
   img.onload = () => {
