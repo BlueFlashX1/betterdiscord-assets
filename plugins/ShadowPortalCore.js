@@ -616,9 +616,9 @@ const methods = {
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 4.5s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
-        // Inner core — slow spin, layered on top to override center
+        // Inner core — slow spin, stronger glow, layered on top
         ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 14s infinite linear}",
-        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
+        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat;filter:drop-shadow(0 0 12px rgba(140,70,210,0.5)) drop-shadow(0 0 28px rgba(100,50,170,0.3))}`,
         '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
       ].join("");
       overlay.appendChild(portalStyleEl);
@@ -1317,115 +1317,7 @@ const methods = {
         ctx.arc(cx, cy, coreVortexRadius, 0, TAU);
         ctx.fill();
 
-        // ── Canvas core vortex (strands + tendrils + blob) ──
-        // Always draw — tendrils layer beneath the CSS portal spiral for combined energy.
-        {
-        // ── GSAP-enhanced swirl strands (8 strands, unified rotation + tapered width) ──
-        const swirlCount = 8;
-        const swirlPoints = _gsap ? 24 : (perfTier === 0 ? 12 : 16);
-        const strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85, 0.14, 0.66];
-        // 6 unified CW + 2 rebel CCW (indices 2, 5) for organic feel
-        const strandDirs = [1, 1, -1, 1, 1, -1, 1, 1];
-        // Tight speed cluster so strands rotate cohesively
-        const strandSpeeds = [1.24, 1.18, 0.88, 1.30, 1.22, 0.92, 1.26, 1.20];
-        const strandTurns = [2.4, 2.2, 1.6, 2.5, 2.3, 1.8, 2.6, 2.1];
-        // GSAP accelerating spin adds growing angular offset to all strands
-        const spinOffset = vortexSpinMul * TAU * 0.8;
-        const tierScale = perfTier === 0 ? 0.9 : 1;
-        for (let s = 0; s < swirlCount; s++) {
-          const phase = swirl * strandSpeeds[s];
-          const dir = strandDirs[s];
-          const base = strandSeeds[s] * TAU + phase * dir + spinOffset * dir;
-          const wobbleFreq = 2.4 + s * 0.7;
-          const wobbleAmp = (0.10 + 0.06 * Math.sin(phase * 0.6 + s)) * (1 + strandMorphMul * 1.2);
-
-          // Compute all points first, then draw segments with tapering width
-          const pts = [];
-          for (let i = 0; i <= swirlPoints; i++) {
-            const p = i / swirlPoints;
-            const morphWave = strandMorphMul * 0.1 * Math.sin(phase * 2.3 + p * 9.1 + s * 1.7);
-            const rr = coreVortexRadius * (
-              0.08 +
-              1.48 * p +
-              0.12 * Math.sin(phase * 1.9 + p * 6.4 + s * 1.3) +
-              0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9) +
-              morphWave
-            );
-            const twist = p * strandTurns[s] * dir;
-            const distort =
-              Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp +
-              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.04 +
-              strandMorphMul * 0.06 * Math.sin(phase * 5.3 + p * 15.4 + s * 2.1);
-            const ang = base + twist + distort;
-            pts.push({
-              x: cx + Math.cos(ang) * rr,
-              y: cy + Math.sin(ang) * rr * 0.86,
-            });
-          }
-
-          // Draw strand as 3 batched segments (inner/mid/outer) instead of per-point
-          const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-          const baseW = (1.0 + strandMorphMul * 0.5) * tierScale;
-          const maxW = (16.0 + strandMorphMul * 4.0) * tierScale;
-          ctx.lineCap = "round";
-          const third = Math.floor(pts.length / 3);
-          const batches = [[0, third, 0.15], [third, third * 2, 0.5], [third * 2, pts.length - 1, 0.85]];
-          for (const [start, end, p] of batches) {
-            const segAlpha = strandAlpha * (0.3 + 0.7 * p);
-            ctx.beginPath();
-            ctx.moveTo(pts[start].x, pts[start].y);
-            for (let i = start + 1; i <= end; i++) ctx.lineTo(pts[i].x, pts[i].y);
-            ctx.lineWidth = baseW + (maxW - baseW) * p * p;
-            ctx.strokeStyle = `rgba(90,55,150,${Math.max(0.03, segAlpha * 0.65).toFixed(3)})`;
-            ctx.shadowBlur = (4 + 16 * p + strandMorphMul * 4) * shadowScale * coreGlowMul;
-            ctx.shadowColor = `rgba(60,30,110,${(segAlpha * 0.55).toFixed(3)})`;
-            ctx.stroke();
-          }
-          ctx.lineCap = "butt";
-        }
-
-        // ── Spiral tendrils — replaces static blob with dynamic swirling filaments ──
-        const tendrilCount = 12;
-        const tendrilPoints = _gsap ? 28 : 18;
-        for (let ti = 0; ti < tendrilCount; ti++) {
-          const baseAngle = (ti / tendrilCount) * TAU + swirl * 0.9 + spinOffset * 1.2;
-          const spiralTightness = 1.8 + ti * 0.12 + strandMorphMul * 0.4;
-          // 9 unified CW, 3 chaotic CCW (indices 3, 7, 10) for organic feel
-          const spiralDir = (ti === 3 || ti === 7 || ti === 10) ? -1 : 1;
-
-          ctx.beginPath();
-          for (let i = 0; i <= tendrilPoints; i++) {
-            const p = i / tendrilPoints;
-            // Archimedean spiral: r grows linearly with angle
-            const rBase = coreVortexRadius * (0.04 + p * 0.42);
-            const rWobble = coreVortexRadius * 0.06 * Math.sin(swirl * 2.8 + ti * 1.3 + p * 5.2) * (1 + tendrilPulseMul * 0.6);
-            const rr = rBase + rWobble;
-            const spiralAngle = baseAngle
-              + p * spiralTightness * spiralDir
-              + Math.sin(swirl * 2.5 + ti + p * 3) * 0.15 * (1 + tendrilPulseMul)
-              + Math.sin(swirl * 4.3 + ti * 0.7 + p * 7.8) * 0.05;
-            const x = cx + Math.cos(spiralAngle) * rr;
-            const y = cy + Math.sin(spiralAngle) * rr * 0.88;
-            if (i === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-
-          const tAlpha = coreVortexAlpha * (0.35 + 0.45 * tendrilPulseMul) * (0.5 + 0.5 * Math.sin(swirl * 2 + ti * 0.52));
-          ctx.strokeStyle = `rgba(100,60,165,${Math.max(0.04, tAlpha * 0.7).toFixed(3)})`;
-          ctx.lineWidth = 1.0 + 0.5 * Math.sin(swirl * 3 + ti * 0.9) + tendrilPulseMul * 0.4;
-          // Only apply shadow on every 3rd tendril to cut GPU compositing cost
-          if (ti % 3 === 0) {
-            ctx.shadowBlur = (6 + tendrilPulseMul * 6) * shadowScale * coreGlowMul;
-            ctx.shadowColor = `rgba(80,40,140,${(tAlpha * 0.5).toFixed(3)})`;
-          } else {
-            ctx.shadowBlur = 0;
-          }
-          ctx.stroke();
-        }
-
-        // Center blob removed — CSS portal spiral replaces it
-
-        } // end core vortex block
+        // Strands/tendrils/blob removed — CSS portal handles all vortex visuals
 
         ctx.restore();
       }
