@@ -888,6 +888,8 @@ class DockEngine {
     if (rect.width <= 1 || rect.height <= 1) { this.rail.style.opacity = "0"; return; }
     let left = Math.round(rect.left);
     let top = Math.round(rect.top - this.railHeightPx);
+    // Nudge rail down 2px when dock is visible so it doesn't overlap content above
+    if (this.stateTarget?.classList?.contains("sl-dock-visible")) top += 5;
     if (left < 0) left = 0;
     const maxTop = window.innerHeight - this.railHeightPx;
     if (top < 0) top = 0;
