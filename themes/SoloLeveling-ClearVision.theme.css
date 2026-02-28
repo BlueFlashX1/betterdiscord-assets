@@ -2146,8 +2146,8 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]::before {
 }
 
 /* §10b+i — Hide lucide SVG icons in settings sidebar items
-   The SVG backgrounds replace the need for individual item icons */
-div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class^="icon_"] {
+   Uses class*= not class^= because BD items have class="lucide icon_caf372" */
+div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"] svg[class*="icon_"] {
   display: none !important;
 }
 
