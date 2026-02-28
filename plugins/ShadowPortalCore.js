@@ -1284,53 +1284,51 @@ const methods = {
         // ── Smoke vortex core — layered rotating arc strokes, no fill ──
         // Multiple semi-transparent arcs at different radii/speeds spiral inward.
         // Overlapping strokes build up density = dark smoke being pulled into center.
-        const smokeR = coreVortexRadius * (0.38 + 0.06 * coreGlowMul);
+        const smokeR = coreVortexRadius * (0.42 + 0.08 * coreGlowMul);
         const smokePulse = 0.7 + 0.3 * tendrilPulseMul;
-        const smokeCount = 14;
+        const smokeCount = 18;
         ctx.lineCap = "round";
 
         for (let si = 0; si < smokeCount; si++) {
-          const layer = si / smokeCount; // 0→1 (inner→outer)
-          // Each arc orbits at its own speed; inner arcs faster (pulled in)
-          const speed = 1.8 - layer * 1.1; // inner=1.8, outer=0.7
-          const baseAng = (si / smokeCount) * TAU + swirl * speed + spinOffset * (0.6 - layer * 0.3);
-          // Radius: inner layers tight, outer layers wide
-          const r = Math.max(2, smokeR * (0.08 + 0.92 * layer) * (1 + 0.08 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
-          // Arc span: inner arcs shorter, outer arcs longer
-          const span = (0.3 + 0.8 * layer + 0.15 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
-          // Width: inner arcs thin, outer arcs thick
-          const w = (1.5 + 6.0 * layer * layer + strandMorphMul * 2.0 * layer) * tierScale;
-          // Opacity: mid-layers densest, inner/outer fade — bell curve
-          const bell = Math.exp(-8 * (layer - 0.45) * (layer - 0.45));
-          const alpha = coreVortexAlpha * (0.25 + 0.55 * bell) * smokePulse;
-          // Purple hue shifts slightly per layer — deeper inside = darker
-          const pr = Math.round(60 + 50 * layer);
-          const pg = Math.round(25 + 35 * layer);
-          const pb = Math.round(100 + 70 * layer);
+          const layer = si / smokeCount;
+          const speed = 2.0 - layer * 1.2;
+          const baseAng = (si / smokeCount) * TAU + swirl * speed + spinOffset * (0.7 - layer * 0.35);
+          const r = Math.max(2, smokeR * (0.06 + 0.94 * layer) * (1 + 0.12 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
+          // Longer arcs — more coverage so they actually overlap and build density
+          const span = (0.6 + 1.2 * layer + 0.3 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
+          // Much thicker — visible against the dark portal
+          const w = (3.0 + 14.0 * layer * layer + strandMorphMul * 4.0 * layer) * tierScale;
+          // Higher base opacity + wider bell curve
+          const bell = Math.exp(-5 * (layer - 0.5) * (layer - 0.5));
+          const alpha = coreVortexAlpha * (0.5 + 0.5 * bell) * smokePulse;
+          // Brighter purples so they pop against black
+          const pr = Math.round(80 + 60 * layer);
+          const pg = Math.round(35 + 40 * layer);
+          const pb = Math.round(130 + 80 * layer);
 
           ctx.beginPath();
           ctx.arc(cx, cy, r, baseAng, baseAng + span);
-          ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.03, alpha * 0.7).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.05, alpha).toFixed(4)})`;
           ctx.lineWidth = w;
-          ctx.shadowBlur = (3 + 8 * layer) * shadowScale * coreGlowMul;
-          ctx.shadowColor = `rgba(${pr - 20}, ${pg - 10}, ${pb - 20}, ${(alpha * 0.4).toFixed(4)})`;
+          ctx.shadowBlur = (6 + 14 * layer) * shadowScale * coreGlowMul;
+          ctx.shadowColor = `rgba(${pr}, ${pg}, ${pb}, ${(alpha * 0.6).toFixed(4)})`;
           ctx.stroke();
         }
 
-        // Second pass: dark smoke wisps on top — near-black arcs for depth
-        for (let di = 0; di < 5; di++) {
-          const dLayer = (di + 0.5) / 5;
-          const dAng = (di / 5) * TAU + swirl * (1.4 + di * 0.12) + spinOffset * 0.4;
-          const dR = Math.max(2, smokeR * (0.12 + 0.55 * dLayer));
-          const dSpan = 0.25 + 0.35 * Math.sin(swirl * 2.1 + di * 1.3);
-          const dAlpha = coreVortexAlpha * 0.5 * smokePulse;
+        // Dark smoke wisps — near-black arcs for depth and contrast
+        for (let di = 0; di < 7; di++) {
+          const dLayer = (di + 0.5) / 7;
+          const dAng = (di / 7) * TAU + swirl * (1.6 + di * 0.14) + spinOffset * 0.5;
+          const dR = Math.max(2, smokeR * (0.1 + 0.6 * dLayer));
+          const dSpan = 0.35 + 0.5 * Math.sin(swirl * 2.1 + di * 1.3);
+          const dAlpha = coreVortexAlpha * 0.7 * smokePulse;
 
           ctx.beginPath();
           ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
-          ctx.strokeStyle = `rgba(8, 4, 16, ${Math.max(0.03, dAlpha).toFixed(4)})`;
-          ctx.lineWidth = (2.0 + 3.0 * dLayer) * tierScale;
-          ctx.shadowBlur = 4 * shadowScale;
-          ctx.shadowColor = `rgba(0, 0, 0, ${(dAlpha * 0.3).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(12, 6, 24, ${Math.max(0.05, dAlpha).toFixed(4)})`;
+          ctx.lineWidth = (3.0 + 5.0 * dLayer) * tierScale;
+          ctx.shadowBlur = 6 * shadowScale;
+          ctx.shadowColor = `rgba(0, 0, 0, ${(dAlpha * 0.4).toFixed(4)})`;
           ctx.stroke();
         }
         ctx.lineCap = "butt";
@@ -2014,47 +2012,47 @@ function startDrawLoop() {
       }
 
       // Smoke vortex core — layered rotating arcs, no fill (Worker fallback)
-      var smokeR = coreVortexRadius * 0.38;
+      var smokeR = coreVortexRadius * 0.42;
       var smokePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
-      var smokeCount = 14;
+      var smokeCount = 18;
       ctx.lineCap = "round";
 
       for (var si = 0; si < smokeCount; si++) {
         var layer = si / smokeCount;
-        var speed = 1.8 - layer * 1.1;
+        var speed = 2.0 - layer * 1.2;
         var baseAng = (si / smokeCount) * TAU + swirl * speed;
-        var r = Math.max(2, smokeR * (0.08 + 0.92 * layer) * (1 + 0.08 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
-        var span = (0.3 + 0.8 * layer + 0.15 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
-        var w = (1.5 + 6.0 * layer * layer) * tS;
-        var bell = Math.exp(-8 * (layer - 0.45) * (layer - 0.45));
-        var alpha = coreVortexAlpha * (0.25 + 0.55 * bell) * smokePulse;
-        var pr = Math.round(60 + 50 * layer);
-        var pg = Math.round(25 + 35 * layer);
-        var pb = Math.round(100 + 70 * layer);
+        var r = Math.max(2, smokeR * (0.06 + 0.94 * layer) * (1 + 0.12 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
+        var span = (0.6 + 1.2 * layer + 0.3 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
+        var w = (3.0 + 14.0 * layer * layer) * tS;
+        var bell = Math.exp(-5 * (layer - 0.5) * (layer - 0.5));
+        var alpha = coreVortexAlpha * (0.5 + 0.5 * bell) * smokePulse;
+        var pr = Math.round(80 + 60 * layer);
+        var pg = Math.round(35 + 40 * layer);
+        var pb = Math.round(130 + 80 * layer);
 
         ctx.beginPath();
         ctx.arc(cx, cy, r, baseAng, baseAng + span);
-        ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.03, alpha * 0.7).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.05, alpha).toFixed(4) + ")";
         ctx.lineWidth = w;
-        ctx.shadowBlur = (3 + 8 * layer) * shadowScale;
-        ctx.shadowColor = "rgba(" + (pr - 20) + ", " + (pg - 10) + ", " + (pb - 20) + ", " + (alpha * 0.4).toFixed(4) + ")";
+        ctx.shadowBlur = (6 + 14 * layer) * shadowScale;
+        ctx.shadowColor = "rgba(" + pr + ", " + pg + ", " + pb + ", " + (alpha * 0.6).toFixed(4) + ")";
         ctx.stroke();
       }
 
       // Dark smoke wisps on top
-      for (var di = 0; di < 5; di++) {
-        var dLayer = (di + 0.5) / 5;
-        var dAng = (di / 5) * TAU + swirl * (1.4 + di * 0.12);
-        var dR = Math.max(2, smokeR * (0.12 + 0.55 * dLayer));
-        var dSpan = 0.25 + 0.35 * Math.sin(swirl * 2.1 + di * 1.3);
-        var dAlpha = coreVortexAlpha * 0.5 * smokePulse;
+      for (var di = 0; di < 7; di++) {
+        var dLayer = (di + 0.5) / 7;
+        var dAng = (di / 7) * TAU + swirl * (1.6 + di * 0.14);
+        var dR = Math.max(2, smokeR * (0.1 + 0.6 * dLayer));
+        var dSpan = 0.35 + 0.5 * Math.sin(swirl * 2.1 + di * 1.3);
+        var dAlpha = coreVortexAlpha * 0.7 * smokePulse;
 
         ctx.beginPath();
         ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
-        ctx.strokeStyle = "rgba(8, 4, 16, " + Math.max(0.03, dAlpha).toFixed(4) + ")";
-        ctx.lineWidth = (2.0 + 3.0 * dLayer) * tS;
-        ctx.shadowBlur = 4 * shadowScale;
-        ctx.shadowColor = "rgba(0, 0, 0, " + (dAlpha * 0.3).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(12, 6, 24, " + Math.max(0.05, dAlpha).toFixed(4) + ")";
+        ctx.lineWidth = (3.0 + 5.0 * dLayer) * tS;
+        ctx.shadowBlur = 6 * shadowScale;
+        ctx.shadowColor = "rgba(0, 0, 0, " + (dAlpha * 0.4).toFixed(4) + ")";
         ctx.stroke();
       }
       ctx.lineCap = "butt";
