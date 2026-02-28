@@ -2292,7 +2292,7 @@ div[role="tablist"][aria-label="Friends"] div[role="tab"]:hover {
   border-color: rgba(180, 140, 255, 0.25) !important;
 }
 
-/* Selected state: purple gradient pill + purple border
+/* Selected state: black base + purple gradient border
    Handles aria-selected="true" and class-based selected_/active_ states */
 div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
 div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"],
@@ -2306,18 +2306,20 @@ div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selec
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"],
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"],
 div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"] {
-  background: linear-gradient(
+  background: rgba(8, 8, 14, 0.95) !important;
+  border: 1px solid transparent !important;
+  border-image: linear-gradient(
     135deg,
-    rgba(75, 0, 160, 0.92),
-    rgba(var(--sl-color-primary-rgb), 0.72)
-  ) !important;
-  border-color: rgba(180, 140, 255, 0.35) !important;
-  box-shadow: 0 0 22px rgba(var(--sl-color-primary-rgb), 0.34),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1) !important;
+    rgba(138, 43, 226, 0.7),
+    rgba(180, 140, 255, 0.5),
+    rgba(100, 20, 180, 0.6)
+  ) 1 !important;
+  box-shadow: 0 0 14px rgba(var(--sl-color-primary-rgb), 0.25),
+    inset 0 0 8px rgba(138, 43, 226, 0.08) !important;
   color: #ffffff !important;
 }
 
-/* Selected + hover: brighter purple */
+/* Selected + hover: brighter purple border glow */
 div[class^="modalContentInner_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
 div[class^="contentBody_"] div[role="tablist"] div[role="tab"][aria-selected="true"]:hover,
 div[class^="contentBody_"] div[class^="tabBar_"] div[class^="item_"][aria-selected="true"]:hover,
@@ -2330,11 +2332,15 @@ div[class^="contentColumn_"] div[class^="tabBar_"] div[class^="tab_"][aria-selec
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="selected"]:hover,
 div[class^="contentColumn_"] div[class^="tabBar_"] div[class*="active_"]:hover,
 div[role="tablist"][aria-label="Friends"] div[role="tab"][aria-selected="true"]:hover {
-  background: linear-gradient(
+  background: rgba(8, 8, 14, 0.98) !important;
+  border-image: linear-gradient(
     135deg,
-    rgba(75, 0, 160, 0.96),
-    rgba(var(--sl-color-primary-rgb), 0.78)
-  ) !important;
+    rgba(138, 43, 226, 0.9),
+    rgba(200, 160, 255, 0.65),
+    rgba(120, 40, 200, 0.8)
+  ) 1 !important;
+  box-shadow: 0 0 20px rgba(var(--sl-color-primary-rgb), 0.35),
+    inset 0 0 10px rgba(138, 43, 226, 0.12) !important;
 }
 
 /* Kill the default underline indicator on selected tabs */
