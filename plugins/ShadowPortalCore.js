@@ -19,7 +19,7 @@ let _spiralMaskUrl = null;
 let _spiralMaskReady = false;
 let _spiralMaskLoadedFrom = null;
 
-const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_shadow.png";
+const SPIRAL_IMG_URL = "https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/animation_mask/portal_shadowv2.png";
 
 /**
  * Preload the spiral mask image from imgur.
@@ -604,7 +604,7 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 2.2;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.5;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
