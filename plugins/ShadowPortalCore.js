@@ -980,10 +980,10 @@ const methods = {
       const veilOuter = maxSide * (0.58 + 0.9 * formEase);
       const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
       const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-      veil.addColorStop(0, `rgba(22, 12, 36, ${(0.42 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.26, `rgba(12, 8, 22, ${(0.48 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(0.62, `rgba(6, 6, 12, ${(0.28 * portalForm * fadeOut).toFixed(4)})`);
-      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.08 * formEase * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0, `rgba(6, 4, 10, ${(0.52 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.26, `rgba(4, 3, 8, ${(0.56 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(0.62, `rgba(2, 2, 4, ${(0.34 * portalForm * fadeOut).toFixed(4)})`);
+      veil.addColorStop(1, `rgba(0, 0, 0, ${(0.10 * formEase * fadeOut).toFixed(4)})`);
       ctx.fillStyle = veil;
       ctx.beginPath();
       ctx.arc(cx, cy, veilOuter, 0, TAU);
@@ -999,8 +999,8 @@ const methods = {
         const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
 
         const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-        g.addColorStop(0, `rgba(46, 42, 56, ${(alpha * 1.18).toFixed(4)})`);
-        g.addColorStop(0.56, `rgba(14, 12, 20, ${alpha.toFixed(4)})`);
+        g.addColorStop(0, `rgba(12, 10, 18, ${(alpha * 1.4).toFixed(4)})`);
+        g.addColorStop(0.56, `rgba(4, 3, 8, ${(alpha * 1.1).toFixed(4)})`);
         g.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = g;
         ctx.beginPath();
@@ -1054,10 +1054,10 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(188, 130, 255, ${Math.max(0.07, glow).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(100, 60, 160, ${Math.max(0.05, glow * 0.6).toFixed(4)})`;
         ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
-        ctx.shadowBlur = (10 + easeInOut * 20) * shadowScale * glowMul;
-        ctx.shadowColor = "rgba(146, 78, 248, 0.78)";
+        ctx.shadowBlur = (8 + easeInOut * 14) * shadowScale * glowMul;
+        ctx.shadowColor = "rgba(80, 40, 140, 0.5)";
         ctx.stroke();
       }
 
@@ -1079,10 +1079,10 @@ const methods = {
           else ctx.lineTo(x, y);
         }
         const glow = (0.22 + 0.3 * Math.sin(swirl * 3.2 + filament.phase)) * fadeOut;
-        ctx.strokeStyle = `rgba(238, 186, 255, ${Math.max(0.07, glow).toFixed(4)})`;
+        ctx.strokeStyle = `rgba(120, 80, 170, ${Math.max(0.05, glow * 0.55).toFixed(4)})`;
         ctx.lineWidth = filament.lineWidth + easeInOut * 1.1;
-        ctx.shadowBlur = (8 + easeInOut * 15) * shadowScale * glowMul;
-        ctx.shadowColor = "rgba(214, 136, 255, 0.76)";
+        ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale * glowMul;
+        ctx.shadowColor = "rgba(90, 50, 150, 0.45)";
         ctx.stroke();
       }
 
@@ -1159,9 +1159,9 @@ const methods = {
           cy,
           coreVortexRadius
         );
-        vortexGlow.addColorStop(0, `rgba(170, 118, 255, ${(coreVortexAlpha * 1.0).toFixed(4)})`);
-        vortexGlow.addColorStop(0.28, `rgba(120, 80, 214, ${(coreVortexAlpha * 0.62).toFixed(4)})`);
-        vortexGlow.addColorStop(0.62, `rgba(60, 42, 116, ${(coreVortexAlpha * 0.34).toFixed(4)})`);
+        vortexGlow.addColorStop(0, `rgba(40, 20, 70, ${(coreVortexAlpha * 0.8).toFixed(4)})`);
+        vortexGlow.addColorStop(0.28, `rgba(16, 10, 32, ${(coreVortexAlpha * 0.6).toFixed(4)})`);
+        vortexGlow.addColorStop(0.62, `rgba(6, 4, 14, ${(coreVortexAlpha * 0.4).toFixed(4)})`);
         vortexGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = vortexGlow;
         ctx.beginPath();
@@ -1203,10 +1203,10 @@ const methods = {
           }
 
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-          ctx.strokeStyle = `rgba(210, 154, 255, ${Math.max(0.06, strandAlpha).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(70, 40, 120, ${Math.max(0.04, strandAlpha * 0.6).toFixed(4)})`;
           ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (16 + s * 2.0) * shadowScale * coreGlowMul;
-          ctx.shadowColor = `rgba(150, 92, 240, ${(strandAlpha * 0.9).toFixed(4)})`;
+          ctx.shadowBlur = (12 + s * 1.6) * shadowScale * coreGlowMul;
+          ctx.shadowColor = `rgba(50, 25, 90, ${(strandAlpha * 0.5).toFixed(4)})`;
           ctx.stroke();
         }
 
@@ -1708,10 +1708,10 @@ function startDrawLoop() {
     const veilOuter = maxSide * (0.58 + 0.9 * formEase);
     const veilInner = Math.max(2, innerRadius * (0.1 + 0.18 * formEase));
     const veil = ctx.createRadialGradient(cx, cy, veilInner, cx, cy, veilOuter);
-    veil.addColorStop(0, "rgba(22, 12, 36, " + (0.42 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(0.26, "rgba(12, 8, 22, " + (0.48 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(0.62, "rgba(6, 6, 12, " + (0.28 * portalForm * fadeOut).toFixed(4) + ")");
-    veil.addColorStop(1, "rgba(0, 0, 0, " + (0.08 * formEase * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0, "rgba(6, 4, 10, " + (0.52 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.26, "rgba(4, 3, 8, " + (0.56 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(0.62, "rgba(2, 2, 4, " + (0.34 * portalForm * fadeOut).toFixed(4) + ")");
+    veil.addColorStop(1, "rgba(0, 0, 0, " + (0.10 * formEase * fadeOut).toFixed(4) + ")");
     ctx.fillStyle = veil;
     ctx.beginPath(); ctx.arc(cx, cy, veilOuter, 0, TAU); ctx.fill();
 
@@ -1725,8 +1725,8 @@ function startDrawLoop() {
       const r = wisp.size * (0.88 + easeInOut * 0.72);
       const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, "rgba(46, 42, 56, " + (alpha * 1.18).toFixed(4) + ")");
-      g.addColorStop(0.56, "rgba(14, 12, 20, " + alpha.toFixed(4) + ")");
+      g.addColorStop(0, "rgba(12, 10, 18, " + (alpha * 1.4).toFixed(4) + ")");
+      g.addColorStop(0.56, "rgba(4, 3, 8, " + (alpha * 1.1).toFixed(4) + ")");
       g.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, TAU); ctx.fill();
     }
@@ -1770,10 +1770,10 @@ function startDrawLoop() {
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
-      ctx.strokeStyle = "rgba(188, 130, 255, " + Math.max(0.07, glow).toFixed(4) + ")";
+      ctx.strokeStyle = "rgba(100, 60, 160, " + Math.max(0.05, glow * 0.6).toFixed(4) + ")";
       ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
-      ctx.shadowBlur = (10 + easeInOut * 20) * shadowScale;
-      ctx.shadowColor = "rgba(146, 78, 248, 0.78)";
+      ctx.shadowBlur = (8 + easeInOut * 14) * shadowScale;
+      ctx.shadowColor = "rgba(80, 40, 140, 0.5)";
       ctx.stroke();
     }
 
@@ -1790,10 +1790,10 @@ function startDrawLoop() {
         if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
       }
       const glow = (0.2 + 0.24 * Math.sin(swirl * 2.8 + filament.phase)) * fadeOut;
-      ctx.strokeStyle = "rgba(178, 120, 248, " + Math.max(0.06, glow).toFixed(4) + ")";
+      ctx.strokeStyle = "rgba(120, 80, 170, " + Math.max(0.05, glow * 0.55).toFixed(4) + ")";
       ctx.lineWidth = filament.lineWidth + easeInOut * 1.5;
-      ctx.shadowBlur = (8 + easeInOut * 16) * shadowScale;
-      ctx.shadowColor = "rgba(138, 68, 238, 0.74)";
+      ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale;
+      ctx.shadowColor = "rgba(90, 50, 150, 0.45)";
       ctx.stroke();
     }
     ctx.restore();
@@ -1831,9 +1831,9 @@ function startDrawLoop() {
       ctx.save();
       ctx.globalCompositeOperation = "source-over";
       const vortexGlow = ctx.createRadialGradient(cx, cy, Math.max(2, coreVortexRadius * 0.08), cx, cy, coreVortexRadius);
-      vortexGlow.addColorStop(0, "rgba(170, 118, 255, " + (coreVortexAlpha * 1.0).toFixed(4) + ")");
-      vortexGlow.addColorStop(0.28, "rgba(120, 80, 214, " + (coreVortexAlpha * 0.62).toFixed(4) + ")");
-      vortexGlow.addColorStop(0.62, "rgba(60, 42, 116, " + (coreVortexAlpha * 0.34).toFixed(4) + ")");
+      vortexGlow.addColorStop(0, "rgba(40, 20, 70, " + (coreVortexAlpha * 0.8).toFixed(4) + ")");
+      vortexGlow.addColorStop(0.28, "rgba(16, 10, 32, " + (coreVortexAlpha * 0.6).toFixed(4) + ")");
+      vortexGlow.addColorStop(0.62, "rgba(6, 4, 14, " + (coreVortexAlpha * 0.4).toFixed(4) + ")");
       vortexGlow.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = vortexGlow;
       ctx.beginPath(); ctx.arc(cx, cy, coreVortexRadius, 0, TAU); ctx.fill();
@@ -1862,10 +1862,10 @@ function startDrawLoop() {
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-        ctx.strokeStyle = "rgba(210, 154, 255, " + Math.max(0.06, strandAlpha).toFixed(4) + ")";
+        ctx.strokeStyle = "rgba(70, 40, 120, " + Math.max(0.04, strandAlpha * 0.6).toFixed(4) + ")";
         ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
-        ctx.shadowBlur = (16 + s * 2.0) * shadowScale;
-        ctx.shadowColor = "rgba(150, 92, 240, " + (strandAlpha * 0.9).toFixed(4) + ")";
+        ctx.shadowBlur = (12 + s * 1.6) * shadowScale;
+        ctx.shadowColor = "rgba(50, 25, 90, " + (strandAlpha * 0.5).toFixed(4) + ")";
         ctx.stroke();
       }
 
