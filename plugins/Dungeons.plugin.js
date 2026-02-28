@@ -11767,7 +11767,13 @@ module.exports = class Dungeons {
         success: async () => {
           // ── Mark boss as arose — permanently blocks re-extraction ──
           this._arisedBossIds.add(bossId);
-          this.showAriseSuccessAnimation(result.shadow, bossData.boss);
+          // Use ShadowArmy's SVG ARISE animation if available, fallback to Dungeons overlay
+          const sa = this.shadowArmy;
+          if (sa?.triggerArise && sa?.settings?.ariseAnimation?.enabled) {
+            sa.triggerArise(result.shadow);
+          } else {
+            this.showAriseSuccessAnimation(result.shadow, bossData.boss);
+          }
           this.showToast(`ARISE! \"${result.shadow.name}\" extracted!`, 'success');
           await this.recalculateUserMana();
         },
@@ -11852,24 +11858,28 @@ module.exports = class Dungeons {
     arrow.textContent = '↑';
 
     const title = document.createElement('div');
+    let _ariseSvgOk = false;
     try {
-      // Hand-drawn ARISE SVG with purple glow
-      title.style.cssText = 'margin-bottom: 12px; text-align: center;';
-      const ariseImg = new Image();
-      ariseImg.src = 'data:image/svg+xml,' + encodeURIComponent(ARISE_SVG);
-      ariseImg.alt = 'ARISE';
-      ariseImg.style.cssText =
-        'height: 80px; width: auto; filter: drop-shadow(0 0 20px #8b5cf6) drop-shadow(0 0 40px rgba(139, 92, 246, 0.3));';
-      ariseImg.onerror = () => {
-        // Fallback: plain text if SVG fails to render
-        title.innerHTML = '';
-        title.style.cssText =
-          'font-size: 48px; font-weight: bold; color: #a78bfa; margin-bottom: 12px; text-shadow: 0 0 20px #8b5cf6;';
-        title.textContent = 'ARISE';
-      };
-      title.appendChild(ariseImg);
-    } catch (_) {
+      // Hand-drawn ARISE SVG — parse via DOMParser for proper SVG namespace
+      const _svgStr = (typeof ARISE_SVG === 'string') ? ARISE_SVG : null;
+      if (!_svgStr) throw new Error('ARISE_SVG constant not in scope');
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(_svgStr, 'image/svg+xml');
+      const parseErr = svgDoc.querySelector('parsererror');
+      if (parseErr) throw new Error('SVG parse error: ' + parseErr.textContent);
+      const svgEl = svgDoc.documentElement;
+      if (!svgEl || svgEl.tagName !== 'svg') throw new Error('No <svg> root');
+      svgEl.style.cssText =
+        'height: 180px !important; width: auto !important; display: inline-block !important; filter: drop-shadow(0 0 24px #8b5cf6) drop-shadow(0 0 60px rgba(139, 92, 246, 0.4)) !important;';
+      title.style.cssText = 'margin-bottom: 12px !important; text-align: center !important;';
+      title.appendChild(document.importNode(svgEl, true));
+      _ariseSvgOk = true;
+    } catch (e) {
+      console.error('[Dungeons] ARISE SVG failed, using text fallback:', e?.message || e);
+    }
+    if (!_ariseSvgOk) {
       // Fallback: plain text
+      title.innerHTML = '';
       title.style.cssText =
         'font-size: 48px; font-weight: bold; color: #a78bfa; margin-bottom: 12px; text-shadow: 0 0 20px #8b5cf6;';
       title.textContent = 'ARISE';
