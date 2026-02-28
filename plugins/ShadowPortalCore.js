@@ -606,7 +606,7 @@ const methods = {
         ".ss-portal-css{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(1.75);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
-        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#0a0412 -25%,transparent 50%,#3d1f5c 125%),var(--ss-portal-color,#6b3fa0)}',
+        '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:linear-gradient(#120820 -25%,transparent 50%,#6b3f8e 125%),var(--ss-portal-color,#6b3fa0)}',
       ].join("");
       overlay.appendChild(portalStyleEl);
 
@@ -614,7 +614,7 @@ const methods = {
       cssPortalEl.className = "ss-portal-css";
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#1a0a2e");
+      cssPortalEl.style.setProperty("--ss-portal-color", "#2d1548");
       const portalInner = document.createElement("div");
       portalInner.className = "ss-portal-css__inner";
       cssPortalEl.appendChild(portalInner);
