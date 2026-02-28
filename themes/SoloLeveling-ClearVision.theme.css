@@ -1262,7 +1262,7 @@ div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
 
 /* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): solid + purple border
    Only the outermost wrapper gets the border — everything inside is transparent/borderless.
-   Broad selectors for resilience against Discord DOM changes. */
+   Scoped selectors: target the picker's direct popout shell, not broad contentWrapper_ */
 div[class^="positionContainer_"] > div[class^="container_"],
 div[id^="uid_"][role="dialog"],
 div[class^="positionContainer_"] div[class^="contentWrapper_"],
@@ -1272,26 +1272,19 @@ div[id^="popout_"] > div[class*="popout_"]:has(div[class*="gifPicker_"]),
 div[class*="contentWrapper_"]:has(div[class*="emojiPicker_"]),
 div[class*="contentWrapper_"]:has(section[class*="stickerPicker_"]),
 div[class*="contentWrapper_"]:has(div[class*="gifPicker_"]),
-/* Broader fallbacks for GIF/Sticker/Emoji pickers */
-div[class*="expressionPicker"],
+/* Scoped fallbacks — only match expressionPicker containers */
+div[class*="expressionPicker"]:not([class*="chatInput"]):not([class*="channelTextArea"]),
 div[class*="expressionPickerChat"],
-div[class*="layerContainer_"] div[class*="contentWrapper_"],
-div[class*="popout_"]:has(div[class*="expressionPicker"]),
-div[class*="popout_"]:has(nav[class*="nav_"]):has(div[class*="searchBar_"]),
-section[class*="stickerPicker_"],
-div[class*="gifPicker_"] {
+div[id^="popout_"] > div[class*="popout_"]:has(div[class*="expressionPicker"]) {
   background: rgba(8, 10, 20, 0.98) !important;
   background-image: none !important;
   border: 2px solid var(--sl-color-primary) !important;
   border-radius: 2px !important;
 }
-/* Prevent double border on inner picker surfaces */
-div[class*="expressionPicker"] div[class*="emojiPicker_"],
-div[class*="expressionPicker"] section[class*="stickerPicker_"],
-div[class*="expressionPicker"] div[class*="gifPicker_"],
-div[class*="expressionPicker"] div[class*="contentWrapper_"],
-div[class*="expressionPicker"] nav {
-  border: none !important;
+/* Kill border on ALL inner picker surfaces to prevent double-border / inflation */
+div[class*="expressionPicker"] *,
+div[class^="positionContainer_"] div[class^="contentWrapper_"] > * {
+  border-color: transparent !important;
 }
 /* Inner surfaces of expression picker: no border, solid bg only */
 div[class^="emojiPicker_"],
