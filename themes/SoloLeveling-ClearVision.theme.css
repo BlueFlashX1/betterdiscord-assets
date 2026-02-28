@@ -2175,10 +2175,10 @@ div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"]:not([clas
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
 }
 
-/* Selected/active state: channel-selected SVG (circuit pattern + double border) + glow
+/* Selected/active state: Selected_channel SVG (organic dark strokes + purple edges) + glow
    active_ class is on the ITEM (div[role=listitem]) itself, confirmed via CSS Picker. */
 div[class^="container_"] > div[class^="sidebar_"] div[role="listitem"][class*="active_"] {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/channel-selected.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }
