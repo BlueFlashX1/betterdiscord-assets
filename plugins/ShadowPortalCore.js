@@ -1337,7 +1337,7 @@ const methods = {
         // Dark swirl wisps over the blob — shadow currents across the liquid surface
         for (let sw = 0; sw < 6; sw++) {
           const swAng = (sw / 6) * TAU + swirl * 1.6 + spinOffset * 0.5;
-          const swR = coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1));
+          const swR = Math.max(1, coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1)));
           const arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
           ctx.beginPath();
           ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
@@ -2081,7 +2081,7 @@ function startDrawLoop() {
       // Dark swirl wisps over the blob — shadow currents
       for (var sw = 0; sw < 6; sw++) {
         var swAng = (sw / 6) * TAU + swirl * 1.6;
-        var swR = coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1));
+        var swR = Math.max(1, coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1)));
         var arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
         ctx.beginPath();
         ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
