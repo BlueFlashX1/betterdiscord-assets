@@ -118,7 +118,24 @@ module.exports = class HSLWheelBridge {
     this._fallbackTimer = null;
   }
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "hSLWheelBridge" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     this._isStopped = false;
     this._engineMounted = false;
     this._fallbackEngine = null;
@@ -141,7 +158,7 @@ module.exports = class HSLWheelBridge {
       }
     }, 3000);
 
-    BdApi.UI.showToast('HSLWheelBridge active', { type: 'success', timeout: 2000 });
+    this._toast('HSLWheelBridge active', "success", 2000);
   }
 
   stop() {
@@ -160,7 +177,7 @@ module.exports = class HSLWheelBridge {
     }
     this._engineMounted = false;
     BdApi.Patcher.unpatchAll(this._patcherId);
-    BdApi.UI.showToast('HSLWheelBridge stopped', { type: 'info', timeout: 2000 });
+    this._toast('HSLWheelBridge stopped', "info", 2000);
   }
 
   // ── React Patcher — MainContent.Z ─────────────────────────────────────────

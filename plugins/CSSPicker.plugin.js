@@ -102,23 +102,6 @@ module.exports = (() => {
     }
   };
 
-  const safeToast = (message, options = {}) => {
-    try {
-      if (_PluginUtils) {
-        _PluginUtils.showToast(message, { timeout: 3000, ...options });
-        return;
-      }
-      // Inline fallback — modern API first, deprecated last
-      const opts = { timeout: 3000, ...options };
-      if (typeof BdApi.UI?.showToast === "function") {
-        BdApi.UI.showToast(message, opts);
-      } else if (typeof BdApi.showToast === "function") {
-        BdApi.showToast(message, opts);
-      }
-    } catch (e) {
-      // ignore
-    }
-  };
 
   const escapeHtml = (text) => {
     const div = document.createElement('div');
@@ -1226,7 +1209,24 @@ module.exports = (() => {
   };
 
   return class CSSPicker {
+
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "cSSPicker" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
     start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
       this.isActive = false;
       this.lastHoverElement = null;
 
@@ -1261,9 +1261,7 @@ module.exports = (() => {
         this.settings?.hotkeyEnabled && this.settings?.hotkey
           ? ` Hotkey: ${this.settings.hotkey}`
           : '';
-      safeToast(`CSS Picker v${config.info.version} loaded.${hotkeyLabel}`, {
-        type: 'info',
-      });
+      this._toast(`CSS Picker v${config.info.version} loaded.${hotkeyLabel}`, "info");
     }
 
     stop() {
@@ -1366,7 +1364,7 @@ module.exports = (() => {
         const merged = { ...loadSettings(), ...next };
         saveSettings(merged);
         this.settings = merged;
-        safeToast('CSS Picker settings saved', { type: 'success', timeout: 2000 });
+        this._toast('CSS Picker settings saved', 'success', 2000);
       };
 
       panel.querySelector('#css-picker-toast-computed').addEventListener('change', (e) => {
@@ -1448,7 +1446,7 @@ module.exports = (() => {
 
         const rawTarget = getTargetFromPoint(event.clientX, event.clientY);
         if (!rawTarget || !(rawTarget instanceof Element)) {
-          safeToast('No element found to capture', { type: 'error' });
+          this._toast('No element found to capture', 'error');
           this.deactivatePickMode();
           return;
         }
@@ -1479,7 +1477,7 @@ module.exports = (() => {
           settings,
         });
 
-        safeToast(message, { type: toastType, timeout: settings.toastTimeoutMs || 5500 });
+        this._toast(message, toastType, settings.toastTimeoutMs || 5500);
 
         this.deactivatePickMode();
       };
@@ -1491,7 +1489,7 @@ module.exports = (() => {
         event.preventDefault();
         event.stopPropagation();
 
-        safeToast('CSS Picker cancelled', { type: 'info' });
+        this._toast('CSS Picker cancelled', 'info');
         this.deactivatePickMode();
       };
 
@@ -1500,10 +1498,7 @@ module.exports = (() => {
       document.addEventListener('keydown', this.onKeyDown, true);
 
       this.updateLauncherState();
-      safeToast('CSS Picker active: hover and click once to capture. Press Esc to cancel.', {
-        type: 'info',
-        timeout: 5000,
-      });
+      this._toast('CSS Picker active: hover and click once to capture. Press Esc to cancel.', 'info', 5000);
     }
 
     deactivatePickMode() {

@@ -591,7 +591,24 @@ module.exports = class ShadowExchange {
     this._NavigationUtils = null;
   }
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "shadowExchange" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     try {
       this.panelOpen = false;
       this.swirlIcon = null;
@@ -636,13 +653,13 @@ module.exports = class ShadowExchange {
       // Right-click context menu on messages → "Shadow Mark"
       this.patchContextMenu();
 
-      BdApi.UI.showToast(
-        `ShadowExchange v${SE_VERSION} active`,
+      this._toast(
+      `ShadowExchange v${SE_VERSION} active`,
         { type: "success", timeout: 2200 }
       );
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
-      BdApi.UI.showToast("ShadowExchange failed to start", { type: "error" });
+      this._toast("ShadowExchange failed to start", "error");
     }
   }
 
@@ -664,6 +681,8 @@ module.exports = class ShadowExchange {
       this._cancelChannelViewFade();
       this.teardownSwirlObserver();
       this.removeSwirlIcon();
+      const seTip = document.getElementById("sl-toolbar-tip-se");
+      if (seTip) seTip.remove();
       this.removeCSS();
     } catch (err) {
       console.error("[ShadowExchange] stop() failed:", err);
@@ -712,9 +731,9 @@ module.exports = class ShadowExchange {
               id: "shadow-exchange-unmark",
               action: () => {
                 this.removeWaypoint(existingWaypoint.id);
-                BdApi.UI.showToast(
-                  `${existingWaypoint.shadowName} recalled — available for deployment`,
-                  { type: "info" }
+                this._toast(
+                  `${existingWaypoint.shadowName} recalled \u2014 available for deployment`,
+                  "info"
                 );
               },
             });
@@ -754,7 +773,7 @@ module.exports = class ShadowExchange {
       (w) => w.channelId === channelId && w.messageId === messageId
     );
     if (dup) {
-      BdApi.UI.showToast(`Already marked: ${dup.label}`, { type: "warning" });
+      this._toast(`Already marked: ${dup.label}`, "warning");
       return;
     }
 
@@ -773,7 +792,7 @@ module.exports = class ShadowExchange {
 
     const shadow = await this.getWeakestAvailableShadow();
     if (!shadow) {
-      BdApi.UI.showToast("No shadows available!", { type: "error" });
+      this._toast("No shadows available!", "error");
       return;
     }
 
@@ -828,7 +847,7 @@ module.exports = class ShadowExchange {
     this.saveSettings();
     this._triggerPanelRefresh();
 
-    BdApi.UI.showToast(`${shadow.name} stationed at message in ${label}`, { type: "success" });
+    this._toast(`${shadow.name} stationed at message in ${label}`, "success");
   }
 
   // ── Persistence ────────────────────────────────────────────────────────
@@ -1129,7 +1148,7 @@ module.exports = class ShadowExchange {
   async markCurrentLocation() {
     const loc = this.getCurrentLocation();
     if (!loc) {
-      BdApi.UI.showToast("Navigate to a channel first", { type: "warning" });
+      this._toast("Navigate to a channel first", "warning");
       return;
     }
 
@@ -1137,13 +1156,13 @@ module.exports = class ShadowExchange {
       (w) => w.channelId === loc.channelId && w.messageId === loc.messageId
     );
     if (dup) {
-      BdApi.UI.showToast(`Already marked: ${dup.label}`, { type: "warning" });
+      this._toast(`Already marked: ${dup.label}`, "warning");
       return;
     }
 
     const shadow = await this.getWeakestAvailableShadow();
     if (!shadow) {
-      BdApi.UI.showToast("No shadows available!", { type: "error" });
+      this._toast("No shadows available!", "error");
       return;
     }
 
@@ -1175,7 +1194,7 @@ module.exports = class ShadowExchange {
     this.saveSettings();
     this._triggerPanelRefresh();
 
-    BdApi.UI.showToast(`${shadow.name} stationed at ${label}`, { type: "success" });
+    this._toast(`${shadow.name} stationed at ${label}`, "success");
   }
 
   removeWaypoint(waypointId) {
@@ -1185,7 +1204,7 @@ module.exports = class ShadowExchange {
     this.settings.waypoints.splice(idx, 1);
     this.saveSettings();
     this._triggerPanelRefresh();
-    BdApi.UI.showToast(`${wp.shadowName} recalled from ${wp.label}`, { type: "info" });
+    this._toast(`${wp.shadowName} recalled from ${wp.label}`, "info");
   }
 
   renameWaypoint(waypointId, newLabel) {
@@ -1226,7 +1245,7 @@ module.exports = class ShadowExchange {
         window.history.pushState({}, "", url);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
-      BdApi.UI.showToast(`Exchanged to ${wp.label}`, { type: "warning", timeout: 2500 });
+      this._toast(`Exchanged to ${wp.label}`, "warning", 2500);
       return;
     }
 
@@ -1242,7 +1261,7 @@ module.exports = class ShadowExchange {
       });
     }, url);
 
-    BdApi.UI.showToast(`Exchanged to ${wp.label}`, { type: "success", timeout: 2500 });
+    this._toast(`Exchanged to ${wp.label}`, "success", 2500);
   }
 
   // ── Panel refresh bridge (imperative → React) ─────────────────────────
@@ -1334,14 +1353,9 @@ module.exports = class ShadowExchange {
       icon = document.createElement("div");
       icon.id = SE_SWIRL_ID;
       icon.className = "se-swirl-icon";
-      icon.title = "Shadow Exchange — Waypoints";
       icon.innerHTML = [
-        '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" xmlns="http://www.w3.org/2000/svg">',
-        '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.15)"/>',
-        '<path d="M12 4c1.5 0 3.5 1.2 4.2 3.5.5 1.5.2 3.2-.8 4.5l-3.4 4-3.4-4c-1-1.3-1.3-3-.8-4.5C8.5 5.2 10.5 4 12 4z" fill="#9b59b6" opacity="0.9"/>',
-        '<circle cx="12" cy="9.5" r="2" fill="#c39bd3"/>',
-        '<path d="M8 15c1.2 1.5 2.5 2.2 4 2.2s2.8-.7 4-2.2" stroke="#9b59b6" stroke-width="1.5" fill="none" stroke-linecap="round"/>',
-        '<path d="M9.5 18c.8.7 1.6 1 2.5 1s1.7-.3 2.5-1" stroke="#7d3c98" stroke-width="1" fill="none" stroke-linecap="round"/>',
+        '<svg viewBox="0 0 512 512" width="18" height="18" xmlns="http://www.w3.org/2000/svg">',
+        '<path fill="#b5b5be" d="M298.736 21.016c-99.298 0-195.928 104.647-215.83 233.736-7.074 45.887-3.493 88.68 8.512 124.787-4.082-6.407-7.92-13.09-11.467-20.034-16.516-32.335-24.627-65.378-25-96.272-11.74 36.254-8.083 82.47 14.482 126.643 27.7 54.227 81.563 91.94 139.87 97.502 5.658.725 11.447 1.108 17.364 1.108 99.298 0 195.93-104.647 215.83-233.736 9.28-60.196.23-115.072-22.133-156.506 21.625 21.867 36.56 45.786 44.617 69.496.623-30.408-14.064-65.766-44.21-95.806-33.718-33.598-77.227-50.91-114.995-50.723-2.328-.118-4.67-.197-7.04-.197zm-5.6 36.357c40.223 0 73.65 20.342 95.702 53.533 15.915 42.888 12.51 108.315.98 147.858-16.02 54.944-40.598 96.035-79.77 126.107-41.79 32.084-98.447 24.39-115.874-5.798-1.365-2.363-2.487-4.832-3.38-7.385 11.724 14.06 38.188 14.944 61.817 1.3 25.48-14.71 38.003-40.727 27.968-58.108-10.036-17.384-38.826-19.548-64.307-4.837-9.83 5.676-17.72 13.037-23.14 20.934.507-1.295 1.043-2.59 1.626-3.88-18.687 24.49-24.562 52.126-12.848 72.417 38.702 45.923 98.07 25.503 140.746-6.426 37.95-28.392 72.32-73.55 89.356-131.988 1.265-4.34 2.416-8.677 3.467-13.008-.286 2.218-.59 4.442-.934 6.678-16.807 109.02-98.412 197.396-182.272 197.396-35.644 0-65.954-15.975-87.74-42.71-26.492-48.396-15.988-142.083 4.675-185.15 26.745-55.742 66.133-122.77 134.324-116.804 46.03 4.027 63.098 58.637 39.128 116.22-8.61 20.685-21.192 39.314-36.21 54.313 24.91-16.6 46.72-42.13 59.572-73 23.97-57.583 6.94-113.422-39.13-116.805-85.737-6.296-137.638 58.55-177.542 128.485-9.21 19.9-16.182 40.35-20.977 60.707.494-7.435 1.312-14.99 2.493-22.652C127.67 145.75 209.275 57.373 293.135 57.373z"/>',
         "</svg>",
       ].join("");
 
@@ -1349,6 +1363,26 @@ module.exports = class ShadowExchange {
         e.stopPropagation();
         e.preventDefault();
         this.togglePanel();
+      });
+
+      // Custom themed tooltip (appended to body to avoid overflow clipping)
+      icon.addEventListener("mouseenter", () => {
+        let tip = document.getElementById("sl-toolbar-tip-se");
+        if (!tip) {
+          tip = document.createElement("div");
+          tip.id = "sl-toolbar-tip-se";
+          tip.className = "sl-toolbar-tip";
+          tip.textContent = "Shadow Exchange";
+          document.body.appendChild(tip);
+        }
+        const rect = icon.getBoundingClientRect();
+        tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
+        tip.style.left = `${rect.left + rect.width / 2}px`;
+        tip.classList.add("sl-toolbar-tip--visible");
+      });
+      icon.addEventListener("mouseleave", () => {
+        const tip = document.getElementById("sl-toolbar-tip-se");
+        if (tip) tip.classList.remove("sl-toolbar-tip--visible");
       });
     }
 
@@ -1427,11 +1461,11 @@ module.exports = class ShadowExchange {
       console.error("[ShadowExchange] Neither createRoot nor ReactDOM.render available");
       this.panelOpen = false;
       container.remove();
-      BdApi.UI.showToast("ShadowExchange: React rendering unavailable", { type: "error" });
+      this._toast("ShadowExchange: React rendering unavailable", "error");
     } catch (err) {
       console.error("[ShadowExchange] openPanel() failed:", err);
       this.panelOpen = false;
-      BdApi.UI.showToast("ShadowExchange: panel error", { type: "error" });
+      this._toast("ShadowExchange: panel error", "error");
     }
   }
 
@@ -1480,15 +1514,15 @@ ${buildPortalTransitionCSS()}
         align-items: center;
         justify-content: center;
         flex: 0 0 auto;
-        margin-left: 8px;
-        width: 26px;
-        height: 26px;
-        border-radius: 50%;
-        border: 2px solid rgba(138, 43, 226, 0.6);
-        background: rgba(10, 10, 20, 0.7);
+        margin-left: 4px;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        border: none;
+        background: transparent;
         cursor: pointer;
-        opacity: 0.85;
-        transition: opacity 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+        opacity: 0.8;
+        transition: opacity 0.15s ease, background 0.15s ease;
         pointer-events: auto;
       }
       .se-swirl-icon--hidden {
@@ -1496,9 +1530,41 @@ ${buildPortalTransitionCSS()}
       }
       .se-swirl-icon:hover {
         opacity: 1;
-        transform: scale(1.15);
-        border-color: rgba(138, 43, 226, 1);
-        box-shadow: 0 0 12px rgba(138, 43, 226, 0.6);
+      }
+      .se-swirl-icon:hover svg {
+        filter: drop-shadow(0 0 4px rgba(200, 170, 255, 0.7));
+      }
+
+      /* ── Shared Toolbar Tooltip ────────────────────────────────────── */
+      .sl-toolbar-tip {
+        position: fixed;
+        transform: translateX(-50%);
+        padding: 8px 12px;
+        background: rgb(10, 10, 15);
+        border: 1px solid rgba(138, 43, 226, 0.4);
+        border-radius: 4px;
+        box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08);
+        color: #fff;
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: 0.3px;
+        white-space: nowrap;
+        pointer-events: none;
+        opacity: 0;
+        transition: opacity 0.1s ease;
+        z-index: 999999;
+      }
+      .sl-toolbar-tip--visible {
+        opacity: 1;
+      }
+      .sl-toolbar-tip::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        transform: translateX(-50%);
+        border: 5px solid transparent;
+        border-top-color: rgba(138, 43, 226, 0.4);
       }
 
       /* ── Panel Overlay ─────────────────────────────────────────────── */

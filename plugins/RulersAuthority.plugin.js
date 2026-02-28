@@ -266,7 +266,24 @@ module.exports = class RulersAuthority {
 
   // ── Lifecycle ──────────────────────────────────────────────
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "rulersAuthority" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     try {
       this._controller = new AbortController();
       this.loadSettings();
@@ -287,10 +304,10 @@ module.exports = class RulersAuthority {
       this.applyMicroStateForCurrentGuild();
       this.applyDMGripping();
       this.setupDMObserver();
-      BdApi.UI.showToast("Ruler's Authority — Active", { type: "info" });
+      this._toast("Ruler's Authority — Active", "info");
     } catch (err) {
       this.debugError("Lifecycle", "Error during start:", err);
-      BdApi.UI.showToast("Ruler's Authority — Failed to start", { type: "error" });
+      this._toast("Ruler's Authority — Failed to start", "error");
     }
   }
 
@@ -329,9 +346,11 @@ module.exports = class RulersAuthority {
       BdApi.DOM.removeStyle(RA_STYLE_ID);
       BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
 
-      // 5. Remove toolbar icon
+      // 5. Remove toolbar icon + tooltip
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       if (icon) icon.remove();
+      const raTip = document.getElementById("sl-toolbar-tip-ra");
+      if (raTip) raTip.remove();
       this.teardownToolbarObserver();
 
       // 6. Unpatch context menus
@@ -384,7 +403,7 @@ module.exports = class RulersAuthority {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    BdApi.UI.showToast("Ruler's Authority — Dormant", { type: "info" });
+    this._toast("Ruler's Authority — Dormant", "info");
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -552,10 +571,10 @@ module.exports = class RulersAuthority {
   onAmplifiedModeChange(active) {
     if (active) {
       document.body.classList.add("ra-amplified");
-      BdApi.UI.showToast("Ruler's Authority AMPLIFIED — Full telekinetic power!", { type: "success", timeout: 4000 });
+      this._toast("Ruler's Authority AMPLIFIED — Full telekinetic power!", "success", 4000);
     } else {
       document.body.classList.remove("ra-amplified");
-      BdApi.UI.showToast("Ruler's Authority amplification expired.", { type: "info" });
+      this._toast("Ruler's Authority amplification expired.", "info");
     }
     this.updateToolbarIcon();
   }
@@ -1098,7 +1117,7 @@ module.exports = class RulersAuthority {
     this.settings.grippedDMs.push({ channelId, username });
     this.applyDMGripping();
     this.saveSettings();
-    BdApi.UI.showToast(`Gripped DM: ${username}`, { type: "success" });
+    this._toast(`Gripped DM: ${username}`, "success");
     this.debugLog("GripDM", `Gripped ${username} (${channelId})`);
   }
 
@@ -1107,7 +1126,7 @@ module.exports = class RulersAuthority {
     const el = document.querySelector(`[data-list-item-id*="${channelId}"] .ra-grip-indicator`);
     if (el) el.remove();
     this.saveSettings();
-    BdApi.UI.showToast("Released DM grip", { type: "info" });
+    this._toast("Released DM grip", "info");
     this.debugLog("ReleaseDM", `Released ${channelId}`);
   }
 
@@ -1208,10 +1227,10 @@ module.exports = class RulersAuthority {
             action: () => {
               if (isCrushed) {
                 this.releaseCategory(guildId, channelId);
-                BdApi.UI.showToast(`Released ${channel.name}`, { type: "info" });
+                this._toast(`Released ${channel.name}`, "info");
               } else {
                 this.crushCategory(guildId, channelId, channel.name);
-                BdApi.UI.showToast(`Crushed ${channel.name}`, { type: "success" });
+                this._toast(`Crushed ${channel.name}`, "success");
               }
             },
           });
@@ -1227,10 +1246,10 @@ module.exports = class RulersAuthority {
             action: () => {
               if (isHidden) {
                 this.recallChannel(guildId, channelId);
-                BdApi.UI.showToast(`Recalled #${channel.name}`, { type: "info" });
+                this._toast(`Recalled #${channel.name}`, "info");
               } else {
                 this.pushChannel(guildId, channelId, channel.name);
-                BdApi.UI.showToast(`Pushed #${channel.name}`, { type: "success" });
+                this._toast(`Pushed #${channel.name}`, "success");
               }
             },
           });
@@ -1290,20 +1309,14 @@ module.exports = class RulersAuthority {
       icon = document.createElement("div");
       icon.id = RA_TOOLBAR_ICON_ID;
       icon.className = "ra-toolbar-icon";
-      icon.title = "Ruler's Authority";
       icon.setAttribute("role", "button");
       icon.setAttribute("aria-label", "Ruler's Authority — Toggle Sidebar");
       icon.setAttribute("tabindex", "0");
 
-      // Telekinesis hand SVG
+      // Hand SVG
       icon.innerHTML = [
-        '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" xmlns="http://www.w3.org/2000/svg">',
-        '<path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2z" fill="rgba(138,43,226,0.12)"/>',
-        '<path d="M8 14l-1-5a1.2 1.2 0 012.3-.4L10 12m0 0l.5-5.5a1.2 1.2 0 012.4 0L13 12m0 0l.5-4.5a1.2 1.2 0 012.3.4L15 12" stroke="#9b59b6" stroke-width="1.2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>',
-        '<path d="M15 12l.8-2.5a1.1 1.1 0 012.1.5L17 13c0 2.8-2.2 5-5 5s-5-2.2-5-5l.5-2" stroke="#9b59b6" stroke-width="1.2" fill="none" stroke-linecap="round"/>',
-        '<circle cx="12" cy="5" r="1" fill="#b49bff" opacity="0.6"/>',
-        '<circle cx="8" cy="7" r="0.6" fill="#b49bff" opacity="0.4"/>',
-        '<circle cx="16" cy="7" r="0.6" fill="#b49bff" opacity="0.4"/>',
+        '<svg viewBox="0 0 32 32" width="18" height="18" xmlns="http://www.w3.org/2000/svg">',
+        '<path fill="#b5b5be" d="M31 8.5c0 0-2.53 5.333-3.215 8.062-0.896 3.57 0.13 6.268-1.172 9.73-2.25 4.060-2.402 4.717-10.613 4.708-3.009-0.003-11.626-2.297-11.626-2.297-1.188-0.305-3.373-0.125-3.373-1.453s1.554-2.296 2.936-2.3l5.439 0.478c1.322-0.083 2.705-0.856 2.747-2.585-0.022-2.558-0.275-4.522-1.573-6.6l-5.042-7.867c-0.301-0.626-0.373-1.694 0.499-2.171s1.862 0.232 2.2 0.849l5.631 7.66c0.602 0.559 1.671 0.667 1.58-0.524l-2.487-11.401c-0.155-0.81 0.256-1.791 1.194-1.791 1.231 0 1.987 0.47 1.963 1.213l2.734 11.249c0.214 0.547 0.972 0.475 1.176-0.031l0.779-10.939c0.040-0.349 0.495-0.957 1.369-0.831s1.377 1.063 1.285 1.424l-0.253 10.809c0.177 0.958 0.93 1.098 1.517 0.563l3.827-6.843c0.232-0.574 1.143-0.693 1.67-0.466 0.491 0.32 0.81 0.748 0.81 1.351v0z"/>',
         "</svg>",
       ].join("");
 
@@ -1320,6 +1333,26 @@ module.exports = class RulersAuthority {
         e.stopPropagation();
         e.preventDefault();
         this.togglePanel("members");
+      }, iconSignal);
+
+      // Custom themed tooltip (appended to body to avoid overflow clipping)
+      icon.addEventListener("mouseenter", () => {
+        let tip = document.getElementById("sl-toolbar-tip-ra");
+        if (!tip) {
+          tip = document.createElement("div");
+          tip.id = "sl-toolbar-tip-ra";
+          tip.className = "sl-toolbar-tip";
+          tip.textContent = "Ruler's Authority";
+          document.body.appendChild(tip);
+        }
+        const rect = icon.getBoundingClientRect();
+        tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
+        tip.style.left = `${rect.left + rect.width / 2}px`;
+        tip.classList.add("sl-toolbar-tip--visible");
+      }, iconSignal);
+      icon.addEventListener("mouseleave", () => {
+        const tip = document.getElementById("sl-toolbar-tip-ra");
+        if (tip) tip.classList.remove("sl-toolbar-tip--visible");
       }, iconSignal);
     }
 
@@ -1934,15 +1967,50 @@ ${sidebarHandleDisable.join(",\n")} {
   width: 24px;
   height: 24px;
   cursor: pointer;
-  border-radius: 2px;
-  transition: background 150ms ease, filter 200ms ease;
+  border-radius: 4px;
+  transition: opacity 0.15s ease, background 0.15s ease;
   margin-left: 4px;
-  opacity: 0.7;
+  opacity: 0.8;
 }
 
 .ra-toolbar-icon:hover {
-  background: rgba(138, 43, 226, 0.15);
   opacity: 1;
+}
+
+.ra-toolbar-icon:hover svg {
+  filter: drop-shadow(0 0 4px rgba(200, 170, 255, 0.7));
+}
+
+/* ── Shared Toolbar Tooltip ────────────────────────────────────── */
+.sl-toolbar-tip {
+  position: fixed;
+  transform: translateX(-50%);
+  padding: 8px 12px;
+  background: rgb(10, 10, 15);
+  border: 1px solid rgba(138, 43, 226, 0.4);
+  border-radius: 4px;
+  box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.1s ease;
+  z-index: 999999;
+}
+.sl-toolbar-tip--visible {
+  opacity: 1;
+}
+.sl-toolbar-tip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 5px solid transparent;
+  border-top-color: rgba(138, 43, 226, 0.4);
 }
 
 .ra-toolbar-icon--active {

@@ -1,8 +1,8 @@
 /**
  * @name SoloLevelingToasts
  * @author BlueFlashX1
- * @description Custom toast notifications for Solo Leveling Stats with purple gradient, glow, and particle effects
- * @version 1.1.1
+ * @description Unified toast engine for all BetterDiscord plugins — standard + card-style toasts with rate limiting, dedup, and shared queue
+ * @version 2.0.0
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  *
  * @changelog v1.1.0 (2025-12-06) - ADVANCED BETTERDISCORD INTEGRATION
@@ -85,6 +85,10 @@ module.exports = class SoloLevelingToasts {
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
 
+    // Toast Engine v2: rate limiting + consumer tracking
+    this._rateLimiter = new Map();
+    this._registeredConsumers = new Set();
+
     // Performance caches
     this._cache = {
       soloPluginInstance: null, // Cache SoloLevelingStats plugin instance
@@ -92,6 +96,8 @@ module.exports = class SoloLevelingToasts {
       soloPluginInstanceTTL: 5000, // 5s - plugin instance doesn't change often
     };
   }
+
+  get toastEngineVersion() { return 2; }
 
   _setTrackedTimeout(callback, delayMs) {
     const timeoutId = setTimeout(() => {
@@ -351,6 +357,17 @@ module.exports = class SoloLevelingToasts {
     return 'info';
   }
 
+  _getAccentColor(toastType) {
+    const colors = {
+      'level-up':    '#8a2be2',
+      'achievement': '#fbbf24',
+      'quest':       '#22c55e',
+      'error':       '#ef4444',
+      'info':        '#8a2be2',
+    };
+    return colors[toastType] || colors['info'];
+  }
+
   /**
    * Generate a grouping key for similar messages
    * Operations:
@@ -575,6 +592,10 @@ module.exports = class SoloLevelingToasts {
     });
     this.messageGroups.clear();
 
+    // Clear rate limiter + consumer tracking
+    this._rateLimiter.clear();
+    this._registeredConsumers.clear();
+
     // Clear all caches
     if (this._cache) {
       this._cache.soloPluginInstance = null;
@@ -642,12 +663,12 @@ module.exports = class SoloLevelingToasts {
         max-width: 360px;
         min-height: 50px;
         max-height: fit-content;
-        padding: 14px 18px;
+        padding: 14px 18px 14px 22px;
         background: rgb(10, 10, 15);
-        border: 1px solid rgba(138, 43, 226, 0.3);
+        border: 1px solid color-mix(in srgb, var(--sl-card-accent, #8a2be2) 30%, transparent);
         border-radius: 0;
-        box-shadow: 0 4px 20px rgba(138, 43, 226, 0.4),
-                    0 0 40px rgba(138, 43, 226, 0.2);
+        box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),
+                    0 0 40px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);
         pointer-events: auto;
         cursor: pointer;
         overflow: visible;
@@ -716,30 +737,6 @@ module.exports = class SoloLevelingToasts {
         }
       }
 
-      .sl-toast.level-up {
-        border-color: rgba(138, 43, 226, 0.5);
-        box-shadow: 0 4px 20px rgba(138, 43, 226, 0.5),
-                    0 0 40px rgba(138, 43, 226, 0.3);
-      }
-
-      .sl-toast.achievement {
-        border-color: rgba(251, 191, 36, 0.5);
-        box-shadow: 0 4px 20px rgba(251, 191, 36, 0.5),
-                    0 0 40px rgba(251, 191, 36, 0.3);
-      }
-
-      .sl-toast.quest {
-        border-color: rgba(34, 197, 94, 0.5);
-        box-shadow: 0 4px 20px rgba(34, 197, 94, 0.5),
-                    0 0 40px rgba(34, 197, 94, 0.3);
-      }
-
-      .sl-toast.error {
-        border-color: rgba(239, 68, 68, 0.5);
-        box-shadow: 0 4px 20px rgba(239, 68, 68, 0.5),
-                    0 0 40px rgba(239, 68, 68, 0.3);
-      }
-
       .sl-toast-title {
         font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
         font-size: 11px;
@@ -799,7 +796,7 @@ module.exports = class SoloLevelingToasts {
         left: 0;
         right: 0;
         height: 2px;
-        background: linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.8), transparent);
+        background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
         animation: sl-toast-progress linear forwards;
       }
 
@@ -886,6 +883,123 @@ module.exports = class SoloLevelingToasts {
           this.settings.fadeAnimationDuration / 1000
         }s cubic-bezier(0.4, 0, 1, 1) forwards !important;
         pointer-events: none;
+      }
+
+      .sl-toast-accent {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--sl-card-accent, #8a2be2);
+        border-radius: 8px 0 0 8px;
+        z-index: 1;
+      }
+
+      /* ── Toast Engine v2: Card Toasts ── */
+
+      .sl-toast.sl-toast-card {
+        padding: 0;
+        min-width: 300px;
+        max-width: 380px;
+        min-height: auto;
+        border-color: var(--sl-card-accent, rgba(138, 43, 226, 0.3));
+        box-shadow: 0 4px 20px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 40%, transparent),
+                    0 0 30px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 20%, transparent);
+      }
+
+      .sl-toast-card-accent {
+        position: absolute;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--sl-card-accent, #8a2be2);
+        border-radius: 0;
+      }
+
+      .sl-toast-card-inner {
+        display: flex;
+        align-items: flex-start;
+        gap: 12px;
+        padding: 12px 14px 12px 18px;
+      }
+
+      .sl-toast-card-avatar-wrap {
+        position: relative;
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+      }
+
+      .sl-toast-card-avatar {
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        object-fit: cover;
+        border: 2px solid var(--sl-card-accent, #8a2be2);
+      }
+
+      .sl-toast-card-status {
+        position: absolute;
+        bottom: -1px;
+        right: -1px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 2px solid rgb(10, 10, 15);
+        background: var(--sl-card-accent, #8a2be2);
+      }
+
+      .sl-toast-card-content {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+      }
+
+      .sl-toast-card-header {
+        font-family: 'Friend or Foe BB', 'Orbitron', sans-serif;
+        font-size: 12px;
+        font-weight: bold;
+        color: #fff;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        text-shadow: 0 0 6px color-mix(in srgb, var(--sl-card-accent, #8a2be2) 60%, transparent);
+      }
+
+      .sl-toast-card-body {
+        font-size: 13px;
+        color: rgba(255, 255, 255, 0.85);
+        margin-top: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .sl-toast-card-detail {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.5);
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .sl-toast.sl-toast-card::before {
+        display: none;
+      }
+
+      .sl-toast-card .sl-toast-card-progress {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 2px;
+        background: linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent);
+        animation: sl-toast-progress linear forwards;
       }
     `;
 
@@ -1021,8 +1135,18 @@ module.exports = class SoloLevelingToasts {
    * 4. Schedule grouped message display (faster grouping for responsiveness)
    * 5. Handle cooldown for rapid messages
    */
-  showToast(message, type = 'info', timeout = null) {
+  showToast(message, type = 'info', timeout = null, options = {}) {
     if (this._isStopped) return;
+
+    // Rate limiting (Toast Engine v2)
+    if (options.callerId) {
+      this._registeredConsumers.add(options.callerId);
+      if (!this._checkRateLimit(options.callerId, options.maxPerMinute || 15)) {
+        this.debugLog('RATE_LIMIT', `Throttled toast from ${options.callerId}`);
+        return;
+      }
+    }
+
     const groupKey = this.getMessageGroupKey(message, type);
     const now = Date.now();
     const messageText = this._extractMessageText(message);
@@ -1228,6 +1352,11 @@ module.exports = class SoloLevelingToasts {
       const toast = document.createElement('div');
       toast.className = `sl-toast ${toastType}`;
       toast.style.setProperty('--sl-toast-timeout', `${toastTimeout}ms`);
+      toast.style.setProperty('--sl-card-accent', this._getAccentColor(toastType));
+
+      const accentBar = document.createElement('div');
+      accentBar.className = 'sl-toast-accent';
+      toast.appendChild(accentBar);
 
       // Extract title and message
       const lines = processedMessage.split('\n');
@@ -1256,7 +1385,7 @@ module.exports = class SoloLevelingToasts {
       progressBar.style.right = '0';
       progressBar.style.height = '2px';
       progressBar.style.background =
-        'linear-gradient(90deg, transparent, rgba(138, 43, 226, 0.8), transparent)';
+        'linear-gradient(90deg, transparent, var(--sl-card-accent, #8a2be2), transparent)';
       progressBar.style.animation = `sl-toast-progress ${toastTimeout}ms linear forwards`;
       toast.appendChild(progressBar);
 
@@ -1404,6 +1533,168 @@ module.exports = class SoloLevelingToasts {
     this.activeToasts = [];
   }
 
+  // ============================================================================
+  // TOAST ENGINE v2: Card Toast API + Rate Limiting
+  // ============================================================================
+
+  /**
+   * Check if a caller has exceeded their rate limit
+   * @param {string} callerId - Unique caller identifier
+   * @param {number} maxPerMinute - Maximum toasts per minute (default: 15)
+   * @returns {boolean} true if allowed, false if throttled
+   */
+  _checkRateLimit(callerId, maxPerMinute = 15) {
+    const now = Date.now();
+    const timestamps = this._rateLimiter.get(callerId) || [];
+    const recent = timestamps.filter(t => now - t < 60000);
+    if (recent.length >= maxPerMinute) return false;
+    recent.push(now);
+    this._rateLimiter.set(callerId, recent);
+    return true;
+  }
+
+  /**
+   * Show a card-style toast with avatar, header, body, and optional detail.
+   * Used for rich notifications like status changes, mentions, etc.
+   *
+   * @param {Object} opts
+   * @param {string} opts.avatarUrl - User avatar URL
+   * @param {string} opts.accentColor - Left border + dot color (CSS color)
+   * @param {string} opts.header - Line 1: e.g. "[S-Rank] ShadowName"
+   * @param {string} opts.body - Line 2: e.g. "came online" or "@mentioned you"
+   * @param {string} [opts.detail] - Line 3: e.g. "in ServerName #channel"
+   * @param {number} [opts.timeout] - ms, defaults to settings.defaultTimeout
+   * @param {Function} [opts.onClick] - Callback on click
+   * @param {string} [opts.callerId] - For rate limiting
+   * @param {number} [opts.maxPerMinute] - Rate limit cap (default: 15)
+   */
+  showCardToast(opts = {}) {
+    if (this._isStopped) return;
+
+    const { avatarUrl, accentColor, header, body } = opts;
+    if (!avatarUrl || !accentColor || !header || !body) {
+      this.debugLog('CARD_TOAST', 'Missing required fields', { avatarUrl: !!avatarUrl, accentColor: !!accentColor, header: !!header, body: !!body });
+      return;
+    }
+
+    // Rate limiting
+    if (opts.callerId) {
+      this._registeredConsumers.add(opts.callerId);
+      if (!this._checkRateLimit(opts.callerId, opts.maxPerMinute || 15)) {
+        this.debugLog('RATE_LIMIT', `Throttled card toast from ${opts.callerId}`);
+        return;
+      }
+    }
+
+    // Dedup check: key on header + body
+    const dedupKey = `${header}::${body}`.toLowerCase().replace(/\d+/g, 'N').replace(/\s+/g, ' ').trim();
+    const existingToast = this.activeToasts.find(t => t._cardDedupKey === dedupKey);
+    if (existingToast) {
+      this.resetToastFadeOut(existingToast, this._getToastTimeout(opts.timeout));
+      this.debugLog('CARD_TOAST', 'Deduped card toast', { dedupKey });
+      return;
+    }
+
+    // Evict oldest if at max
+    this._evictOldestToastIfNeeded();
+
+    const toastTimeout = this._getToastTimeout(opts.timeout);
+
+    // Build card DOM
+    const toast = document.createElement('div');
+    toast.className = 'sl-toast sl-toast-card';
+    toast.style.setProperty('--sl-card-accent', accentColor);
+    toast.style.setProperty('--sl-toast-timeout', `${toastTimeout}ms`);
+    toast._cardDedupKey = dedupKey;
+
+    // Accent bar (left border)
+    const accent = document.createElement('div');
+    accent.className = 'sl-toast-card-accent';
+    toast.appendChild(accent);
+
+    // Inner layout
+    const inner = document.createElement('div');
+    inner.className = 'sl-toast-card-inner';
+
+    // Avatar wrap
+    const avatarWrap = document.createElement('div');
+    avatarWrap.className = 'sl-toast-card-avatar-wrap';
+
+    const img = document.createElement('img');
+    img.className = 'sl-toast-card-avatar';
+    img.src = avatarUrl;
+    img.alt = '';
+    img.onerror = () => { img.style.display = 'none'; };
+    avatarWrap.appendChild(img);
+
+    const statusDot = document.createElement('div');
+    statusDot.className = 'sl-toast-card-status';
+    avatarWrap.appendChild(statusDot);
+
+    inner.appendChild(avatarWrap);
+
+    // Content
+    const content = document.createElement('div');
+    content.className = 'sl-toast-card-content';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'sl-toast-card-header';
+    headerEl.textContent = header;
+    content.appendChild(headerEl);
+
+    const bodyEl = document.createElement('div');
+    bodyEl.className = 'sl-toast-card-body';
+    bodyEl.textContent = body;
+    content.appendChild(bodyEl);
+
+    if (opts.detail) {
+      const detailEl = document.createElement('div');
+      detailEl.className = 'sl-toast-card-detail';
+      detailEl.textContent = opts.detail;
+      content.appendChild(detailEl);
+    }
+
+    inner.appendChild(content);
+    toast.appendChild(inner);
+
+    // Progress bar
+    const progressBar = document.createElement('div');
+    progressBar.className = 'sl-toast-card-progress';
+    progressBar.style.animationDuration = `${toastTimeout}ms`;
+    toast.appendChild(progressBar);
+
+    // Click to dismiss
+    toast.addEventListener('click', () => {
+      this._clearToastFadeTimeout(toast);
+      if (typeof opts.onClick === 'function') {
+        try { opts.onClick(); } catch (_) {}
+      }
+      this.startFadeOut(toast);
+      this._setTrackedTimeout(
+        () => this.removeToast(toast, false),
+        this.settings.fadeAnimationDuration
+      );
+    });
+
+    // Ensure container
+    if (!this.toastContainer) this.createToastContainer();
+
+    // Append via RAF for smooth insertion
+    requestAnimationFrame(() => {
+      if (this._isStopped || !this.toastContainer) return;
+      this.toastContainer.appendChild(toast);
+      this.activeToasts.push(toast);
+    });
+
+    // Schedule auto-dismiss
+    this._scheduleToastFadeOut(toast, toastTimeout);
+
+    this.debugLog('CARD_TOAST', 'Card toast created', {
+      header, body, accentColor,
+      activeToasts: this.activeToasts.length,
+    });
+  }
+
   /**
    * Hook into SoloLevelingStats plugin to intercept notifications
    * Operations:
@@ -1545,7 +1836,7 @@ module.exports = class SoloLevelingToasts {
     panel.style.cssText = 'padding: 20px; background: #1e1e2e; border-radius: 0;';
     panel.innerHTML = `
       <div>
-        <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Notification Settings</h3>
+        <h3 style="color: #8a2be2; margin-bottom: 20px;">Toast Engine Settings</h3>
 
         <label style="display: flex; align-items: center; margin-bottom: 15px;">
           <input type="checkbox" ${
@@ -1598,16 +1889,25 @@ module.exports = class SoloLevelingToasts {
         </label>
 
         <div style="margin-top: 20px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
+          <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Toast Engine Status</div>
+          <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
+            <div>Engine Version: <strong style="color: #8a2be2;">v2.0</strong></div>
+            <div style="margin-top: 4px;">Active Toasts: <strong>${this.activeToasts.length}</strong></div>
+            <div style="margin-top: 4px;">Registered Consumers: <strong>${this._registeredConsumers.size > 0 ? [...this._registeredConsumers].join(', ') : 'None yet'}</strong></div>
+          </div>
+        </div>
+
+        <div style="margin-top: 12px; padding: 15px; background: rgba(138, 43, 226, 0.1); border-radius: 2px; border-left: 3px solid #8a2be2;">
           <div style="color: #8a2be2; font-weight: bold; margin-bottom: 8px;">Debug Information</div>
           <div style="color: rgba(255, 255, 255, 0.7); font-size: 13px;">
             Enable Debug Mode to see detailed console logs for:
             <ul style="margin: 5px 0; padding-left: 20px;">
               <li>Toast creation and rendering</li>
+              <li>Rate limiting and dedup</li>
+              <li>Card toast lifecycle</li>
+              <li>Consumer registration</li>
               <li>Hook into SoloLevelingStats</li>
-              <li>Settings load/save operations</li>
-              <li>CSS injection</li>
-              <li>Container management</li>
-              <li>Error tracking and debugging</li>
+              <li>Settings and CSS injection</li>
             </ul>
           </div>
         </div>

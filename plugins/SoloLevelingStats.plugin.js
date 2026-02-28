@@ -3781,12 +3781,12 @@ module.exports = class SoloLevelingStats {
       }
       const slToasts = this._toastPluginCache;
       if (slToasts?.showToast) {
-        slToasts.showToast(message, type, timeout);
+        slToasts.showToast(message, type, timeout, { callerId: "soloLevelingStats" });
         return;
       }
       if (BdApi?.UI?.showToast) {
         BdApi.UI.showToast(message, {
-          type: type,
+          type: type === "level-up" ? "info" : type,
           timeout: timeout,
         });
       }

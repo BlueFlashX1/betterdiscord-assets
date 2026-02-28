@@ -88,7 +88,7 @@ class DockEngine {
 
     // ── Config ──
     this.peekPx = 8;
-    this.revealZonePx = 72;
+    this.revealZonePx = 85;
     this.hideDelayMs = 220;
     this.revealHoldMs = 900;
     this.revealConfirmMs = 140;
@@ -1070,7 +1070,24 @@ module.exports = class HSLDockAutoHide {
     this._fallbackTimer = null;
   }
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "hSLDockAutoHide" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     this._isStopped = false;
     this._engineMounted = false;
     this._fallbackEngine = null;
@@ -1089,7 +1106,7 @@ module.exports = class HSLDockAutoHide {
       }
     }, 3000);
 
-    BdApi.UI.showToast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", { type: "success", timeout: 2200 });
+    this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
   }
 
   stop() {
@@ -1115,7 +1132,7 @@ module.exports = class HSLDockAutoHide {
     document.querySelectorAll(".sl-hsl-dock-target").forEach(el => el.classList.remove("sl-hsl-dock-target"));
     document.querySelectorAll(".sl-userpanel-docked").forEach(el => el.classList.remove("sl-userpanel-docked"));
     document.getElementById("sl-hsl-alert-rail")?.remove();
-    BdApi.UI.showToast("HSLDockAutoHide stopped", { type: "info", timeout: 2000 });
+    this._toast("HSLDockAutoHide stopped", "info", 2000);
   }
 
   // ── React Patcher — MainContent.Z ─────────────────────────────────────────

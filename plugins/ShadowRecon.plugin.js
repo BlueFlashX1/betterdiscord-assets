@@ -96,7 +96,24 @@ module.exports = class ShadowRecon {
     this._permissionBitsCache = null;
   }
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "shadowRecon" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     try {
       this._stopped = false;
       this.loadSettings();
@@ -114,10 +131,10 @@ module.exports = class ShadowRecon {
       this.startRefreshLoops();
       this.setupObserver();
 
-      BdApi.UI.showToast(`${PLUGIN_NAME} v${PLUGIN_VERSION} - Recon online`, { type: "info" });
+      this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} - Recon online`, "info");
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to start`, err);
-      BdApi.UI.showToast(`${PLUGIN_NAME} failed to start: ${err.message}`, { type: "error" });
+      this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
     }
   }
 
@@ -131,7 +148,7 @@ module.exports = class ShadowRecon {
     this.clearGuildIconHints();
     this.closeModal();
     BdApi.DOM.removeStyle(STYLE_ID);
-    BdApi.UI.showToast(`${PLUGIN_NAME} - Recon dismissed`, { type: "info" });
+    this._toast(`${PLUGIN_NAME} - Recon dismissed`, "info");
   }
 
   // ---- Data / Settings -------------------------------------------------
@@ -198,16 +215,16 @@ module.exports = class ShadowRecon {
   _toggleCurrentGuildMarkWithToast() {
     const guildId = this._getCurrentGuildId();
     if (!guildId) {
-      BdApi.UI.showToast("Select a guild first", { type: "warning" });
+      this._toast("Select a guild first", "warning");
       return null;
     }
     const marked = this.toggleGuildMark(guildId);
     const guild = this._GuildStore?.getGuild?.(guildId);
-    BdApi.UI.showToast(
+    this._toast(
       marked
         ? `Recon enabled for guild: ${guild?.name || guildId}`
         : `Recon removed for guild: ${guild?.name || guildId}`,
-      { type: marked ? "success" : "info" }
+      marked ? "success" : "info"
     );
     return marked;
   }
@@ -340,11 +357,11 @@ module.exports = class ShadowRecon {
               label: marked ? "Shadow Recon: Unrecon Current Guild" : "Shadow Recon: Recon Current Guild",
               action: () => {
                 const nextMarked = this.toggleGuildMark(guildId);
-                BdApi.UI.showToast(
+                this._toast(
                   nextMarked
                     ? `Recon enabled for guild: ${guild?.name || guildId}`
                     : `Recon removed for guild: ${guild?.name || guildId}`,
-                  { type: nextMarked ? "success" : "info" }
+                  nextMarked ? "success" : "info"
                 );
               },
             }),
@@ -442,11 +459,11 @@ module.exports = class ShadowRecon {
         label: marked ? "Unrecon Guild" : "Recon Guild",
         action: () => {
           const nextMarked = this.toggleGuildMark(guildId);
-          BdApi.UI.showToast(
+          this._toast(
             nextMarked
               ? `Recon enabled for guild: ${guildName}`
               : `Recon removed for guild: ${guildName}`,
-            { type: nextMarked ? "success" : "info" }
+            nextMarked ? "success" : "info"
           );
         },
       }),
@@ -590,7 +607,7 @@ module.exports = class ShadowRecon {
       widget.addEventListener("click", () => {
         const guildId = this._getCurrentGuildId();
         if (guildId) this.openGuildDossier(guildId);
-        else BdApi.UI.showToast("Select a guild first", { type: "warning" });
+        else this._toast("Select a guild first", "warning");
       });
       widget.addEventListener("contextmenu", (event) => {
         event.preventDefault();
@@ -788,7 +805,7 @@ module.exports = class ShadowRecon {
   openGuildDossier(guildId) {
     const guild = this._GuildStore?.getGuild?.(guildId);
     if (!guild) {
-      BdApi.UI.showToast("Guild intel unavailable", { type: "error" });
+      this._toast("Guild intel unavailable", "error");
       return;
     }
 
@@ -1044,7 +1061,7 @@ module.exports = class ShadowRecon {
 
   openStaffIntelModal(userId, guildId) {
     if (!guildId || !userId) {
-      BdApi.UI.showToast("Guild context required for staff dossier", { type: "warning" });
+      this._toast("Guild context required for staff dossier", "warning");
       return;
     }
 
@@ -1052,7 +1069,7 @@ module.exports = class ShadowRecon {
     const user = this._UserStore?.getUser?.(userId);
     const staff = this.getStaffIntel(userId, guildId);
     if (!guild || !staff) {
-      BdApi.UI.showToast("No staff dossier available for this user", { type: "warning" });
+      this._toast("No staff dossier available for this user", "warning");
       return;
     }
 
@@ -1484,7 +1501,7 @@ module.exports = class ShadowRecon {
           className: "shadow-recon-button",
           onClick: () => {
             if (currentGuildId) this.openGuildDossier(currentGuildId);
-            else BdApi.UI.showToast("Select a guild first", { type: "warning" });
+            else this._toast("Select a guild first", "warning");
           },
         }, "Open Current Guild Dossier"),
         ce("button", {
@@ -1493,7 +1510,7 @@ module.exports = class ShadowRecon {
             this._markedGuildIds.clear();
             this.saveMarkedGuilds();
             this.refreshAllVisuals();
-            BdApi.UI.showToast("Shadow Recon guild marks cleared", { type: "info" });
+            this._toast("Shadow Recon guild marks cleared", "info");
           },
         }, "Clear Recon Guilds")
       )

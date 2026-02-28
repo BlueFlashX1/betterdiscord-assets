@@ -434,14 +434,17 @@ module.exports = class SoloLevelingTitleManager {
           'svg',
           {
             className: 'tm-title-icon',
-            viewBox: '0 0 24 24',
+            viewBox: '0 0 512 512',
             width: '20',
             height: '20',
             fill: 'currentColor',
             style: { display: 'block', margin: 'auto' },
           },
           React.createElement('path', {
-            d: 'M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z',
+            d: 'M458.159,404.216c-18.93-33.65-49.934-71.764-100.409-93.431c-28.868,20.196-63.938,32.087-101.745,32.087c-37.828,0-72.898-11.89-101.767-32.087c-50.474,21.667-81.479,59.782-100.398,93.431C28.731,448.848,48.417,512,91.842,512c43.426,0,164.164,0,164.164,0s120.726,0,164.153,0C463.583,512,483.269,448.848,458.159,404.216z',
+          }),
+          React.createElement('path', {
+            d: 'M256.005,300.641c74.144,0,134.231-60.108,134.231-134.242v-32.158C390.236,60.108,330.149,0,256.005,0c-74.155,0-134.252,60.108-134.252,134.242V166.4C121.753,240.533,181.851,300.641,256.005,300.641z',
           })
         )
       )
@@ -797,7 +800,24 @@ module.exports = class SoloLevelingTitleManager {
   /**
    * 3.1 PLUGIN LIFECYCLE
    */
+
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "titleManager" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
@@ -1441,13 +1461,13 @@ module.exports = class SoloLevelingTitleManager {
       if (!instance) return false;
 
       if (this._unwantedTitles.has(titleName)) {
-        BdApi.UI.showToast('This title has been removed', { type: 'error', timeout: 2000 });
+        this._toast('This title has been removed', "error", 2000);
         return false;
       }
 
       const soloData = this.getSoloLevelingData();
       if (!soloData || !soloData.titles.includes(titleName)) {
-        BdApi.UI.showToast('Title not unlocked', { type: 'error', timeout: 2000 });
+        this._toast('Title not unlocked', "error", 2000);
         return false;
       }
 
@@ -1461,7 +1481,7 @@ module.exports = class SoloLevelingTitleManager {
         const bonus = this.getTitleBonus(titleName);
         const buffs = this.formatTitleBonusLines(bonus);
         const bonusText = buffs.length > 0 ? ` (${buffs.join(', ')})` : '';
-        BdApi.UI.showToast(`Title Equipped: ${titleName}${bonusText}`, { type: 'success', timeout: 3000 });
+        this._toast(`Title Equipped: ${titleName}${bonusText}`, "success", 3000);
         this._modalForceUpdate?.();
       }
       return result;
@@ -1498,7 +1518,7 @@ module.exports = class SoloLevelingTitleManager {
         // Invalidate cache since title was unequipped
         this._cache.soloLevelingData = null;
         this._cache.soloLevelingDataTime = 0;
-        BdApi.UI.showToast('Title Unequipped', { type: 'info', timeout: 2000 });
+        this._toast('Title Unequipped', "info", 2000);
         this._modalForceUpdate?.();
         return true;
       }

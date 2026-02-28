@@ -1785,15 +1785,19 @@ div[class^="notice_"] div[class*="card_"] {
   box-shadow: none !important;
 }
 
-/* §9l — Tooltips: solid black bg + purple border for readability.
+/* §9l — Tooltips: dark bg + purple border/glow for Solo Leveling aesthetic.
    Applies to server hover tooltips, button tooltips, etc. */
 div[class^="tooltip_"] {
-  background: #000 !important;
-  border: 1.5px solid var(--sl-color-primary, #7b2cbf) !important;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.6) !important;
+  background: rgb(10, 10, 15) !important;
+  border: 1px solid rgba(138, 43, 226, 0.4) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 2px 12px rgba(138, 43, 226, 0.25), 0 0 20px rgba(138, 43, 226, 0.08) !important;
+  color: #fff !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.3px !important;
 }
 div[class^="tooltip_"] div[class^="tooltipPointer_"] {
-  border-top-color: #000 !important;
+  border-top-color: rgba(138, 43, 226, 0.4) !important;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════

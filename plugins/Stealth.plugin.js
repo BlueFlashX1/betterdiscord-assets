@@ -65,7 +65,25 @@ module.exports = class Stealth {
     this._protoUtils = null;
   }
 
+  _toast(message, type = "info", timeout = null) {
+    if (!this.settings.showToasts) return;
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "stealth" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     this.loadSettings();
     this.injectCSS();
     this._initStores();
@@ -992,26 +1010,6 @@ module.exports = class Stealth {
     }
   }
 
-  _toast(message, type = "info") {
-    if (!this.settings.showToasts) return;
-
-    let PluginUtils;
-    try { PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { PluginUtils = null; }
-
-    if (PluginUtils) {
-      PluginUtils.showToast(message, { type, timeout: 2500 });
-      return;
-    }
-
-    // Inline fallback — modern API first, deprecated last
-    if (typeof BdApi.UI?.showToast === "function") {
-      BdApi.UI.showToast(message, { type, timeout: 2500 });
-      return;
-    }
-    if (typeof BdApi.showToast === "function") {
-      BdApi.showToast(message, { type, timeout: 2500 });
-    }
-  }
 
   getSettingsPanel() {
     const React = BdApi.React;

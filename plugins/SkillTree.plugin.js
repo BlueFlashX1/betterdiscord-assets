@@ -303,7 +303,7 @@ function buildSkillTreeComponents(pluginInstance) {
 
     const handleActivate = React.useCallback((skillId) => {
       const result = pluginInstance.activateSkill(skillId);
-      if (!result.success && BdApi?.UI?.showToast) BdApi.UI.showToast(result.reason, { type: 'error', timeout: 2500 });
+      if (!result.success && BdApi?.UI?.showToast) this._toast(result.reason, "error", 2500);
       forceUpdate();
     }, []);
 
@@ -827,7 +827,24 @@ module.exports = class SkillTree {
   // ============================================================================
   // §2 LIFECYCLE METHODS (start/stop)
   // ============================================================================
+
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "skillTree" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
@@ -928,12 +945,8 @@ module.exports = class SkillTree {
     const pluginInstance = this;
     const sp = this.settings?.skillPoints ?? 0;
 
-    // SVG paths for skill tree layers icon
-    const svgPaths = [
-      'M12 2L2 7L12 12L22 7L12 2Z',
-      'M2 17L12 22L22 17',
-      'M2 12L12 17L22 12',
-    ];
+    // SVG path for dataflow icon
+    const svgPath = 'M12 4V15.2C12 16.8802 12 17.7202 12.327 18.362C12.6146 18.9265 13.0735 19.3854 13.638 19.673C14.2798 20 15.1198 20 16.8 20H17M17 20C17 21.1046 17.8954 22 19 22C20.1046 22 21 21.1046 21 20C21 18.8954 20.1046 18 19 18C17.8954 18 17 18.8954 17 20ZM7 4L17 4M7 4C7 5.10457 6.10457 6 5 6C3.89543 6 3 5.10457 3 4C3 2.89543 3.89543 2 5 2C6.10457 2 7 2.89543 7 4ZM17 4C17 5.10457 17.8954 6 19 6C20.1046 6 21 5.10457 21 4C21 2.89543 20.1046 2 19 2C17.8954 2 17 2.89543 17 4ZM12 12H17M17 12C17 13.1046 17.8954 14 19 14C20.1046 14 21 13.1046 21 12C21 10.8954 20.1046 10 19 10C17.8954 10 17 10.8954 17 12Z';
 
     return React.createElement(
       'div',
@@ -967,7 +980,7 @@ module.exports = class SkillTree {
             strokeLinejoin: 'round',
             style: { display: 'block', margin: 'auto' },
           },
-          ...svgPaths.map((d, i) => React.createElement('path', { key: i, d }))
+          React.createElement('path', { d: svgPath })
         )
       )
     );
@@ -1649,7 +1662,7 @@ module.exports = class SkillTree {
       ? `${Math.round(def.durationMs / 60000)}m`
       : `${def.charges} charge${def.charges > 1 ? 's' : ''}`;
     if (BdApi?.UI?.showToast) {
-      BdApi.UI.showToast(`${def.name} activated! (${durationText})`, { type: 'success', timeout: 3000 });
+      this._toast(`${def.name} activated! (${durationText})`, "success", 3000);
     }
 
     // Fire DOM event for other plugins
@@ -1697,7 +1710,7 @@ module.exports = class SkillTree {
 
     const def = this.activeSkillDefs[skillId];
     if (BdApi?.UI?.showToast && def) {
-      BdApi.UI.showToast(`${def.name} expired.`, { type: 'info', timeout: 2000 });
+      this._toast(`${def.name} expired.`, "info", 2000);
     }
 
     document.dispatchEvent(new CustomEvent('SkillTree:activeSkillExpired', {
@@ -2159,17 +2172,11 @@ module.exports = class SkillTree {
 
       // Show notification
       const newLevel = this.getSkillLevel(skillId);
-      if (BdApi?.UI?.showToast) {
-        const message =
-          currentLevel === 0
-            ? `Skill Unlocked: ${skill.name}`
-            : `${skill.name} upgraded to Level ${newLevel}!`;
-
-        BdApi.UI.showToast(message, {
-          type: 'success',
-          timeout: 3000,
-        });
-      }
+      const message =
+        currentLevel === 0
+          ? `Skill Unlocked: ${skill.name}`
+          : `${skill.name} upgraded to Level ${newLevel}!`;
+      this._toast(message, "success");
 
       return true;
     } catch (error) {
@@ -2237,17 +2244,11 @@ module.exports = class SkillTree {
       this._finalizeSkillUpgrade(skillId);
 
       // Show notification
-      if (BdApi?.UI?.showToast) {
-        const message =
-          currentLevel === 0
-            ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
-            : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
-
-        BdApi.UI.showToast(message, {
-          type: 'success',
-          timeout: 3000,
-        });
-      }
+      const message =
+        currentLevel === 0
+          ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
+          : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
+      this._toast(message, "success");
 
       return true;
     } catch (error) {

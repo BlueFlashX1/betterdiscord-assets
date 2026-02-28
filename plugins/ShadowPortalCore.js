@@ -447,7 +447,11 @@ const methods = {
           }
         }
 
-        BdApi.UI.showToast(getNavigationFailureToast(this), { type: "error" });
+        if (typeof this._toast === "function") {
+          this._toast(getNavigationFailureToast(this), "error");
+        } else {
+          BdApi.UI.showToast(getNavigationFailureToast(this), { type: "error" });
+        }
 
         // Smooth portal retraction if GSAP timeline is active (Phase 6)
         if (this._gsapMasterTimeline) {
@@ -476,7 +480,11 @@ const methods = {
           debugError(this, "Navigate", "onFailed hook threw during navigation exception handling", hookError);
         }
       }
-      BdApi.UI.showToast("Navigation error — check console", { type: "error" });
+      if (typeof this._toast === "function") {
+        this._toast("Navigation error — check console", "error");
+      } else {
+        BdApi.UI.showToast("Navigation error — check console", { type: "error" });
+      }
     }
   },
 
@@ -888,12 +896,12 @@ const methods = {
       ease: "power2.in",
     }, dur * 0.95);
 
-    // Phase 3: Shockwave elastic overshoot — starts 37% through, elastic.out gives ripple bounce
+    // Phase 3: Shockwave elastic overshoot — starts 50% through, elastic.out gives ripple bounce
     tl.to(gs, {
       shockwaveBoost: 1,
-      duration: dur * 0.48,
+      duration: dur * 0.38,
       ease: "elastic.out(1, 0.3)",
-    }, dur * 0.37);
+    }, dur * 0.50);
 
     // Vortex spin: accelerates over full duration — starts slow, builds to full spiral
     tl.to(gs, {

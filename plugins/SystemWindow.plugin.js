@@ -31,7 +31,24 @@ module.exports = class SystemWindow {
      §1  Lifecycle
      ═══════════════════════════════════════════════ */
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "systemWindow" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     this.settings = {
       ...this._defaultSettings,
       ...(BdApi.Data.load("SystemWindow", "settings") || {}),
@@ -46,7 +63,7 @@ module.exports = class SystemWindow {
       this._injectCSS();
       this._attachObserver();
     }
-    BdApi.UI.showToast("SystemWindow active", { type: "success", timeout: 2000 });
+    this._toast("SystemWindow active", "success", 2000);
   }
 
   stop() {

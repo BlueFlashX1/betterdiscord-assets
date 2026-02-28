@@ -33,8 +33,19 @@ const FEED_MAX_AGE_MS = 1 * 24 * 60 * 60 * 1000; // 1 day
 const PURGE_INTERVAL_MS = 10 * 60 * 1000; // Check for stale entries every 10 minutes
 const WIDGET_OBSERVER_DEBOUNCE_MS = 200;
 const WIDGET_REINJECT_DELAY_MS = 300;
-const STARTUP_TOAST_GRACE_MS = 3000;
+const STARTUP_TOAST_GRACE_MS = 5000;
 const DEFAULT_TYPING_ALERT_COOLDOWN_MS = 15000;
+const BURST_WINDOW_MS = 10000;
+const PRIORITY = { LOW: 1, MEDIUM: 2, HIGH: 3, CRITICAL: 4 };
+const PRIORITY_LABELS = { 1: null, 2: "P2", 3: "P3", 4: "P4!" };
+const PRIORITY_COLORS = {
+  1: null,
+  2: "rgba(96, 165, 250, 0.3)",
+  3: "rgba(251, 191, 36, 0.35)",
+  4: "rgba(239, 68, 68, 0.4)",
+};
+const KEYWORD_MATCH_COLOR = "rgba(52, 211, 153, 0.35)"; // emerald green
+const NAME_MENTION_COLOR = "rgba(236, 72, 153, 0.4)";   // pink
 const ONLINE_STATUSES = new Set(["online", "idle", "dnd"]);
 const PRESENCE_EVENT_NAMES = ["PRESENCE_UPDATES", "PRESENCE_UPDATE"];
 const RELATIONSHIP_EVENT_NAMES = ["FRIEND_REQUEST_ACCEPTED", "RELATIONSHIP_ADD", "RELATIONSHIP_UPDATE", "RELATIONSHIP_REMOVE"];
@@ -52,10 +63,7 @@ const STATUS_ACCENT_COLORS = {
   offline: "#9ca3af",
   invisible: "#9ca3af",
 };
-const STATUS_TOAST_ROOT_ID = "shadow-senses-status-toast-root";
 const STATUS_TOAST_TIMEOUT_MS = 5200;
-const STATUS_TOAST_EXIT_MS = 220;
-const STATUS_TOAST_MAX_VISIBLE = 4;
 const DEFAULT_SETTINGS = {
   animationEnabled: true,
   respectReducedMotion: false,
@@ -65,6 +73,8 @@ const DEFAULT_SETTINGS = {
   removedFriendAlerts: true,
   showMarkedOnlineCount: true,
   typingAlertCooldownMs: DEFAULT_TYPING_ALERT_COOLDOWN_MS,
+  priorityKeywords: [],
+  mentionNames: [],
 };
 
 // ─── DeploymentManager ─────────────────────────────────────────────────────
@@ -334,6 +344,7 @@ class SensesEngine {
     this._subscribedEventHandlers = new Map(); // eventName -> handler
     this._totalFeedEntries = 0;  // Incremental counter — avoids O(G×F) per message
     this._feedVersion = 0;       // Bumped on every feed mutation — lets consumers skip unchanged polls
+    this._burstMap = new Map();  // "authorId:channelId" -> { guildId, feedIndex, timestamp }
 
     // Presence detection — in-memory only, resets on restart/reload
     // Tracks last message timestamp per monitored user to detect:
@@ -346,11 +357,8 @@ class SensesEngine {
     this._statusByUserId = new Map(); // userId -> normalized status
     this._relationshipFriendIds = new Set();
     this._typingToastCooldown = new Map(); // userId:channelId -> timestamp
-    this._statusToastTimers = new Map(); // toastId -> timeout ID
-    this._statusToastExitTimers = new Map(); // toastId -> timeout ID
     this._deferredStatusToastTimers = new Set(); // startup-deferred status toast timers
     this._deferredUtilityToastTimers = new Set(); // deferred non-status toasts (startup grace)
-    this._statusToastCounter = 0;
 
     // Load persisted data — per-guild keys first, legacy monolithic fallback
     const feedGuildIds = BdApi.Data.load(PLUGIN_NAME, "feedGuildIds");
@@ -393,6 +401,16 @@ class SensesEngine {
       this._plugin.debugError("SensesEngine", "Dispatcher not available, cannot subscribe");
       return;
     }
+
+    // Resolve unified toast engine (v2+)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        const inst = p?.instance;
+        return inst?.toastEngineVersion >= 2 ? inst : null;
+      } catch { return null; }
+    })();
+    this._plugin.debugLog("SensesEngine", `Toast engine: ${this._toastEngine ? "v2 connected" : "fallback mode"}`);
 
     // Store current guild — try immediately, retry if null (Discord may not be ready yet)
     try {
@@ -454,6 +472,7 @@ class SensesEngine {
       }
     }
     this._subscribedEventHandlers.clear();
+    this._burstMap?.clear();
     this._handleMessageCreate = null;
     this._handleChannelSelect = null;
     this._handlePresenceUpdate = null;
@@ -480,11 +499,6 @@ class SensesEngine {
     this._deferredStatusToastTimers.clear();
     for (const timer of this._deferredUtilityToastTimers) clearTimeout(timer);
     this._deferredUtilityToastTimers.clear();
-    for (const timer of this._statusToastTimers.values()) clearTimeout(timer);
-    for (const timer of this._statusToastExitTimers.values()) clearTimeout(timer);
-    this._statusToastTimers.clear();
-    this._statusToastExitTimers.clear();
-    this._clearStatusToastRoot();
 
     this._plugin.debugLog("SensesEngine", "Unsubscribed from all events");
   }
@@ -607,54 +621,12 @@ class SensesEngine {
     return this._relationshipFriendIds instanceof Set && this._relationshipFriendIds.has(String(userId));
   }
 
-  _ensureStatusToastRoot() {
-    let root = document.getElementById(STATUS_TOAST_ROOT_ID);
-    if (root) return root;
-    root = document.createElement("div");
-    root.id = STATUS_TOAST_ROOT_ID;
-    root.className = "shadow-senses-status-toast-root";
-    document.body.appendChild(root);
-    return root;
-  }
-
-  _clearStatusToastRoot() {
-    const root = document.getElementById(STATUS_TOAST_ROOT_ID);
-    if (root) root.remove();
-  }
-
-  _dismissStatusToast(toastId, immediate = false) {
-    if (!toastId) return;
-
-    const showTimer = this._statusToastTimers.get(toastId);
-    if (showTimer) {
-      clearTimeout(showTimer);
-      this._statusToastTimers.delete(toastId);
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "shadowSenses" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
     }
-
-    const existingExitTimer = this._statusToastExitTimers.get(toastId);
-    if (existingExitTimer) {
-      clearTimeout(existingExitTimer);
-      this._statusToastExitTimers.delete(toastId);
-    }
-
-    const root = document.getElementById(STATUS_TOAST_ROOT_ID);
-    if (!root) return;
-    const toast = root.querySelector(`[data-ss-toast-id="${toastId}"]`);
-    if (!toast) return;
-
-    if (immediate) {
-      toast.remove();
-      if (!root.childElementCount) root.remove();
-      return;
-    }
-
-    toast.classList.add("is-leaving");
-    const exitTimer = setTimeout(() => {
-      this._statusToastExitTimers.delete(toastId);
-      toast.remove();
-      if (!root.childElementCount) root.remove();
-    }, STATUS_TOAST_EXIT_MS);
-    this._statusToastExitTimers.set(toastId, exitTimer);
   }
 
   _scheduleStatusToast(toastPayload, delayMs = 0) {
@@ -691,113 +663,42 @@ class SensesEngine {
   }
 
   _showStatusToast({ userId, userName, previousLabel, nextLabel, nextStatus, deployment }) {
-    const root = this._ensureStatusToastRoot();
-    if (!root) return;
-
-    while (root.childElementCount >= STATUS_TOAST_MAX_VISIBLE) {
-      const oldest = root.firstElementChild;
-      const oldId = oldest?.dataset?.ssToastId;
-      if (!oldId) {
-        oldest?.remove?.();
-        break;
-      }
-      this._dismissStatusToast(oldId, true);
-    }
-
-    const toastId = `status-${Date.now()}-${++this._statusToastCounter}`;
     const accent = STATUS_ACCENT_COLORS[nextStatus] || "#8a2be2";
-    const rankColor = RANK_COLORS[deployment?.shadowRank] || "#8a2be2";
+    const rankLabel = deployment?.shadowRank || "E";
+    const shadowName = deployment?.shadowName || "Shadow";
+    const friendSuffix = this._isFriend(userId) ? " [FRIEND]" : "";
 
-    const toast = document.createElement("div");
-    toast.className = "shadow-senses-status-toast";
-    toast.dataset.ssToastId = toastId;
-    toast.dataset.status = nextStatus || "offline";
-    toast.style.setProperty("--ss-status-accent", accent);
-    toast.setAttribute("role", "status");
-    toast.setAttribute("aria-live", "polite");
-
-    const avatarWrap = document.createElement("div");
-    avatarWrap.className = "shadow-senses-status-toast-avatar-wrap";
-
-    const avatarUrl = this._resolveUserAvatarUrl(userId);
-    if (avatarUrl) {
-      const avatar = document.createElement("img");
-      avatar.className = "shadow-senses-status-toast-avatar";
-      avatar.src = avatarUrl;
-      avatar.alt = `${userName} avatar`;
-      avatarWrap.appendChild(avatar);
+    if (this._toastEngine) {
+      const avatarUrl = this._resolveUserAvatarUrl(userId);
+      this._toastEngine.showCardToast({
+        avatarUrl: avatarUrl || `https://cdn.discordapp.com/embed/avatars/0.png`,
+        accentColor: accent,
+        header: `[${rankLabel}] ${shadowName} reports${friendSuffix}`,
+        body: `${userName || "Unknown"} ${previousLabel} -> ${nextLabel}`,
+        timeout: STATUS_TOAST_TIMEOUT_MS,
+        callerId: "shadowSenses",
+      });
     } else {
-      const fallback = document.createElement("div");
-      fallback.className = "shadow-senses-status-toast-avatar-fallback";
-      fallback.textContent = (userName || "?").charAt(0).toUpperCase();
-      avatarWrap.appendChild(fallback);
+      BdApi.UI.showToast(`[${rankLabel}] ${shadowName}: ${userName} ${previousLabel} -> ${nextLabel}`, { type: "info" });
     }
+  }
 
-    const dot = document.createElement("span");
-    dot.className = "shadow-senses-status-toast-dot";
-    dot.dataset.status = nextStatus || "offline";
-    avatarWrap.appendChild(dot);
-
-    const main = document.createElement("div");
-    main.className = "shadow-senses-status-toast-main";
-
-    const header = document.createElement("div");
-    header.className = "shadow-senses-status-toast-header";
-
-    const rank = document.createElement("span");
-    rank.className = "shadow-senses-status-toast-rank";
-    rank.style.color = rankColor;
-    rank.textContent = `[${deployment?.shadowRank || "E"}]`;
-    header.appendChild(rank);
-
-    const shadowName = document.createElement("span");
-    shadowName.textContent = `${deployment?.shadowName || "Shadow"} reports`;
-    header.appendChild(shadowName);
-
-    if (this._isFriend(userId)) {
-      const friendTag = document.createElement("span");
-      friendTag.className = "shadow-senses-status-toast-chip";
-      friendTag.textContent = "FRIEND";
-      header.appendChild(friendTag);
+  _showMentionToast({ userId, userName, label, detail, accent, deployment }) {
+    if (this._toastEngine) {
+      const avatarUrl = this._resolveUserAvatarUrl(userId)
+        || `https://cdn.discordapp.com/embed/avatars/0.png`;
+      this._toastEngine.showCardToast({
+        avatarUrl,
+        accentColor: accent,
+        header: `[${deployment?.shadowRank || "E"}] ${deployment?.shadowName || "Shadow"}`,
+        body: `${userName} ${label}`,
+        detail: detail || undefined,
+        timeout: STATUS_TOAST_TIMEOUT_MS,
+        callerId: "shadowSenses",
+      });
+    } else {
+      BdApi.UI.showToast(`${userName} ${label}`, { type: "info" });
     }
-
-    const body = document.createElement("div");
-    body.className = "shadow-senses-status-toast-message";
-
-    const user = document.createElement("span");
-    user.className = "shadow-senses-status-toast-user";
-    user.textContent = userName || "Unknown";
-    body.appendChild(user);
-
-    const prev = document.createElement("span");
-    prev.className = "shadow-senses-status-toast-prev";
-    prev.textContent = ` ${previousLabel}`;
-    body.appendChild(prev);
-
-    const arrow = document.createElement("span");
-    arrow.className = "shadow-senses-status-toast-arrow";
-    arrow.textContent = " -> ";
-    body.appendChild(arrow);
-
-    const next = document.createElement("span");
-    next.className = "shadow-senses-status-toast-next";
-    next.textContent = nextLabel;
-    body.appendChild(next);
-
-    main.appendChild(header);
-    main.appendChild(body);
-    toast.appendChild(avatarWrap);
-    toast.appendChild(main);
-    root.appendChild(toast);
-
-    requestAnimationFrame(() => toast.classList.add("is-visible"));
-
-    const timeout = setTimeout(
-      () => this._dismissStatusToast(toastId, false),
-      STATUS_TOAST_TIMEOUT_MS
-    );
-    this._statusToastTimers.set(toastId, timeout);
-    toast.addEventListener("click", () => this._dismissStatusToast(toastId, false), { once: true });
   }
 
   _seedTrackedStatuses() {
@@ -888,6 +789,8 @@ class SensesEngine {
     if (this._guildFeeds[guildId].length > GUILD_FEED_CAP) {
       this._guildFeeds[guildId].shift();
       this._totalFeedEntries--;
+      // Burst map indices for this guild are now invalid
+      for (const [k, b] of this._burstMap) { if (b.guildId === guildId) this._burstMap.delete(k); }
     }
 
     // Global cap: O(1) check via incremental counter (was O(G×F) reduce)
@@ -901,6 +804,7 @@ class SensesEngine {
         const trimmed = maxLen - trimTo;
         this._guildFeeds[maxGuild] = this._guildFeeds[maxGuild].slice(-trimTo);
         this._totalFeedEntries -= trimmed;
+        for (const [k, b] of this._burstMap) { if (b.guildId === maxGuild) this._burstMap.delete(k); }
         this._dirtyGuilds.add(maxGuild);
         this._plugin.debugLog?.("SensesEngine", `Global cap: trimmed guild ${maxGuild} from ${maxLen} to ${trimTo}`);
       }
@@ -975,6 +879,150 @@ class SensesEngine {
     if (removed > 0) {
       this._feedVersion++;
       this._plugin.debugLog("SensesEngine", `Purged ${removed} non-message utility entries`);
+    }
+  }
+
+  // ── Priority Scoring ─────────────────────────────────────────────────────
+
+  /**
+   * Compute priority (P1-P4) for a message from a monitored user.
+   * Short-circuits from highest to lowest; fails open to P1.
+   */
+  _computePriority(message, guildId, entry) {
+    const currentUser = this._plugin._UserStore?.getCurrentUser?.();
+    const currentUserId = currentUser?.id;
+
+    // P4 Critical: direct @mention of current user
+    if (currentUserId && Array.isArray(message.mentions)) {
+      for (const m of message.mentions) {
+        if (String(m?.id || m) === currentUserId) {
+          entry.matchReason = "mention";
+          return PRIORITY.CRITICAL;
+        }
+      }
+    }
+
+    // P3 High: reply to current user's message
+    if (currentUserId && message.referenced_message?.author?.id === currentUserId) {
+      entry.matchReason = "reply";
+      return PRIORITY.HIGH;
+    }
+
+    // P3 High: @everyone / @here
+    if (message.mention_everyone) {
+      entry.matchReason = "everyone";
+      return PRIORITY.HIGH;
+    }
+
+    // P3 High: soft name mention (user's configured names appear in message content)
+    const mentionNames = this._plugin.settings?.mentionNames;
+    if (Array.isArray(mentionNames) && mentionNames.length > 0 && message.content) {
+      const lower = message.content.toLowerCase();
+      for (const name of mentionNames) {
+        if (name && lower.includes(name.toLowerCase())) {
+          entry.matchReason = "name";
+          entry.matchedTerm = name;
+          return PRIORITY.HIGH;
+        }
+      }
+    }
+
+    // P2 Medium: role mention matching current user's roles
+    if (currentUserId && guildId && Array.isArray(message.mention_roles) && message.mention_roles.length > 0) {
+      try {
+        const member = this._plugin._GuildMemberStore?.getMember?.(guildId, currentUserId);
+        if (member && Array.isArray(member.roles)) {
+          const myRoles = new Set(member.roles.map(String));
+          for (const roleId of message.mention_roles) {
+            if (myRoles.has(String(roleId))) {
+              entry.matchReason = "role";
+              return PRIORITY.MEDIUM;
+            }
+          }
+        }
+      } catch (_) { /* fail open */ }
+    }
+
+    // P2 Medium: keyword match
+    const keywords = this._plugin.settings?.priorityKeywords;
+    if (Array.isArray(keywords) && keywords.length > 0 && message.content) {
+      const lower = message.content.toLowerCase();
+      for (const kw of keywords) {
+        if (kw && lower.includes(kw.toLowerCase())) {
+          entry.matchReason = "keyword";
+          entry.matchedTerm = kw;
+          return PRIORITY.MEDIUM;
+        }
+      }
+    }
+
+    return PRIORITY.LOW;
+  }
+
+  // ── Burst Grouping ───────────────────────────────────────────────────────
+
+  /**
+   * Try to merge entry into an existing burst (same author+channel within 10s).
+   * Returns true if merged, false if a new entry should be created.
+   * P3+ entries always get their own entry.
+   */
+  _tryBurstGroup(guildId, entry) {
+    if ((entry.priority || 1) >= PRIORITY.HIGH) return false;
+
+    const key = `${entry.authorId}:${entry.channelId}`;
+    const burst = this._burstMap.get(key);
+    if (!burst || burst.guildId !== guildId) return false;
+
+    if (entry.timestamp - burst.timestamp > BURST_WINDOW_MS) {
+      this._burstMap.delete(key);
+      return false;
+    }
+
+    const feed = this._guildFeeds[guildId];
+    if (!feed || burst.feedIndex >= feed.length) {
+      this._burstMap.delete(key);
+      return false;
+    }
+
+    const target = feed[burst.feedIndex];
+    if (!target || target.authorId !== entry.authorId || target.channelId !== entry.channelId) {
+      this._burstMap.delete(key);
+      return false;
+    }
+
+    // Don't merge into a high-priority entry
+    if ((target.priority || 1) >= PRIORITY.HIGH) return false;
+
+    // Merge in-place
+    if (!target.firstContent) target.firstContent = target.content;
+    target.content = entry.content;
+    target.messageId = entry.messageId;
+    target.timestamp = entry.timestamp;
+    target.messageCount = (target.messageCount || 1) + 1;
+    if ((entry.priority || 1) > (target.priority || 1)) target.priority = entry.priority;
+
+    burst.timestamp = entry.timestamp;
+    this._feedVersion++;
+    this._dirtyGuilds.add(guildId);
+    this._dirty = true;
+    return true;
+  }
+
+  /**
+   * Register a new entry for potential future burst grouping.
+   */
+  _registerBurst(guildId, entry) {
+    const key = `${entry.authorId}:${entry.channelId}`;
+    const feed = this._guildFeeds[guildId];
+    if (!feed) return;
+    this._burstMap.set(key, {
+      guildId,
+      feedIndex: feed.length - 1,
+      timestamp: entry.timestamp,
+    });
+    // LRU cap
+    if (this._burstMap.size > 200) {
+      this._burstMap.delete(this._burstMap.keys().next().value);
     }
   }
 
@@ -1098,9 +1146,9 @@ class SensesEngine {
         : guildName;
 
       if (this._plugin.settings?.typingAlerts) {
-        BdApi.UI.showToast(
+        this._toast(
           `[${deployment.shadowRank}] ${deployment.shadowName} senses ${userName} typing in ${locationLabel}`,
-          { type: "info", timeout: 4000 }
+          "info", 4000
         );
       }
 
@@ -1156,9 +1204,9 @@ class SensesEngine {
 
         const userName = this._resolveUserName(removedId, deployment.targetUsername || "Unknown");
         if (this._plugin.settings?.removedFriendAlerts) {
-          BdApi.UI.showToast(
+          this._toast(
             `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${userName} removed your connection`,
-            { type: "warning", timeout: 5000 }
+            "warning", 5000
           );
         }
 
@@ -1248,36 +1296,60 @@ class SensesEngine {
       const isEarlyStartup = this._subscribeTime > 0 && msSinceSubscribe < STARTUP_TOAST_GRACE_MS;
 
       if (!lastActivity) {
-        // First message from this user since restart/reload
-        const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`;
+        // First message from this user since restart/reload — card toast for visibility
+        const avatarUrl = this._resolveUserAvatarUrl(authorId)
+          || `https://cdn.discordapp.com/embed/avatars/0.png`;
+        const showActive = () => {
+          if (this._toastEngine) {
+            this._toastEngine.showCardToast({
+              avatarUrl,
+              accentColor: "#22c55e",
+              header: `[${deployment.shadowRank}] ${deployment.shadowName}`,
+              body: `${authorName} is now active`,
+              detail: `${guildName} #${channelName}`,
+              duration: 5000,
+            });
+          } else {
+            this._toast(`[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} is now active`, "quest", 5000);
+          }
+        };
         if (isEarlyStartup) {
-          this._scheduleDeferredUtilityToast(
-            () => BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 }),
-            STARTUP_TOAST_GRACE_MS - msSinceSubscribe
-          );
+          this._scheduleDeferredUtilityToast(showActive, STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
         } else {
-          BdApi.UI.showToast(toastMsg, { type: "success", timeout: 5000 });
+          showActive();
         }
         this._userLastActivity.set(authorId, { timestamp: now, notifiedActive: true });
       } else {
         const silenceMs = now - lastActivity.timestamp;
 
         if (silenceMs >= this._AFK_THRESHOLD_MS) {
-          // User was silent for 2h+ → AFK return toast
+          // User was silent for 2h+ → AFK return card toast
           const silenceHours = Math.floor(silenceMs / (60 * 60 * 1000));
           const silenceMins = Math.floor((silenceMs % (60 * 60 * 1000)) / (60 * 1000));
           const timeStr = silenceHours > 0
             ? `${silenceHours}h${silenceMins > 0 ? ` ${silenceMins}m` : ""}`
             : `${silenceMins}m`;
 
-          const toastMsg = `[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`;
+          const avatarUrl = this._resolveUserAvatarUrl(authorId)
+            || `https://cdn.discordapp.com/embed/avatars/0.png`;
+          const showReturn = () => {
+            if (this._toastEngine) {
+              this._toastEngine.showCardToast({
+                avatarUrl,
+                accentColor: "#fbbf24",
+                header: `[${deployment.shadowRank}] ${deployment.shadowName}`,
+                body: `${authorName} has returned`,
+                detail: `AFK ${timeStr} \u2022 ${guildName} #${channelName}`,
+                duration: 5000,
+              });
+            } else {
+              this._toast(`[${deployment.shadowRank}] ${deployment.shadowName} reports: ${authorName} has returned (AFK ${timeStr})`, "achievement", 5000);
+            }
+          };
           if (isEarlyStartup) {
-            this._scheduleDeferredUtilityToast(
-              () => BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 }),
-              STARTUP_TOAST_GRACE_MS - msSinceSubscribe
-            );
+            this._scheduleDeferredUtilityToast(showReturn, STARTUP_TOAST_GRACE_MS - msSinceSubscribe);
           } else {
-            BdApi.UI.showToast(toastMsg, { type: "warning", timeout: 5000 });
+            showReturn();
           }
         }
 
@@ -1293,7 +1365,27 @@ class SensesEngine {
         }
       }
 
-      // Build feed entry
+      // Build feed entry — extract text + attachment/embed indicators
+      const contentParts = [];
+      if (message.content) contentParts.push(message.content.slice(0, 200));
+      if (Array.isArray(message.attachments) && message.attachments.length > 0) {
+        for (const att of message.attachments) {
+          const ct = att.content_type || "";
+          if (ct.startsWith("image/")) contentParts.push("[Image]");
+          else if (ct.startsWith("video/")) contentParts.push("[Video]");
+          else if (ct.startsWith("audio/")) contentParts.push("[Audio]");
+          else contentParts.push(`[File: ${att.filename || "attachment"}]`);
+        }
+      }
+      if (Array.isArray(message.embeds) && message.embeds.length > 0) {
+        for (const emb of message.embeds) {
+          if (emb.title) contentParts.push(`[Embed: ${emb.title.slice(0, 60)}]`);
+          else if (emb.description) contentParts.push(`[Embed: ${emb.description.slice(0, 60)}]`);
+          else if (emb.url) contentParts.push("[Link]");
+          else contentParts.push("[Embed]");
+        }
+      }
+
       const entry = {
         eventType: "message",
         messageId: message.id,
@@ -1303,14 +1395,42 @@ class SensesEngine {
         channelName,
         guildId,
         guildName,
-        content: (message.content || "").slice(0, 200),
+        content: contentParts.join(" ") || "",
         timestamp: now,
         shadowName: deployment.shadowName,
         shadowRank: deployment.shadowRank,
       };
 
-      // Add to the guild's feed (always, regardless of current guild)
-      this._addToGuildFeed(guildId, entry);
+      // Priority scoring + burst grouping
+      entry.priority = this._computePriority(message, guildId, entry);
+      const merged = this._tryBurstGroup(guildId, entry);
+      if (!merged) {
+        this._addToGuildFeed(guildId, entry);
+        this._registerBurst(guildId, entry);
+      }
+
+      // ── Mention toasts (always fire for @mention + name mention) ──────
+      if (entry.matchReason === "mention") {
+        const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
+        this._showMentionToast({
+          userId: authorId,
+          userName: authorName,
+          label: "@mentioned you",
+          detail: `in ${guildName} #${entry.channelName}${snippet}`,
+          accent: "#ef4444",
+          deployment,
+        });
+      } else if (entry.matchReason === "name") {
+        const snippet = entry.content ? `: "${entry.content.slice(0, 80)}"` : "";
+        this._showMentionToast({
+          userId: authorId,
+          userName: authorName,
+          label: `said "${entry.matchedTerm}"`,
+          detail: `in ${guildName} #${entry.channelName}${snippet}`,
+          accent: "#ec4899",
+          deployment,
+        });
+      }
 
       // Invisible detection: PresenceStore reports invisible users as "offline".
       // If someone with "offline" status sends a message, they're invisible — toast it.
@@ -1322,15 +1442,15 @@ class SensesEngine {
 
       if (isAwayGuild) {
         // Away guild — always toast (you can't see the message)
-        BdApi.UI.showToast(
+        this._toast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} in ${guildName} #${entry.channelName}`,
-          { type: "info" }
+          "info"
         );
       } else if (isInvisible) {
         // Current guild + invisible — toast because status toasts won't fire for them
-        BdApi.UI.showToast(
+        this._toast(
           `[${entry.shadowRank}] ${entry.shadowName} sensed ${entry.authorName} (invisible) in #${entry.channelName}`,
-          { type: "warning" }
+          "error"
         );
         this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       } else {
@@ -1380,9 +1500,9 @@ class SensesEngine {
           const shadowNames = new Set(unseenEntries.map(e => e.shadowName));
           const guildName = this._plugin._getGuildName(newGuildId);
 
-          BdApi.UI.showToast(
+          this._toast(
             `Shadow Senses: ${unseenCount} signal${unseenCount > 1 ? "s" : ""} in ${guildName} from ${shadowNames.size} shadow${shadowNames.size > 1 ? "s" : ""} while away`,
-            { type: "info" }
+            "info"
           );
           this._plugin._widgetDirty = true;
         }
@@ -1457,12 +1577,6 @@ class SensesEngine {
   clear() {
     // Note: Timer cleanup is handled by unsubscribe(), not here.
     // clear() only resets data state.
-    if (this._statusToastTimers instanceof Map) {
-      for (const timer of this._statusToastTimers.values()) clearTimeout(timer);
-    }
-    if (this._statusToastExitTimers instanceof Map) {
-      for (const timer of this._statusToastExitTimers.values()) clearTimeout(timer);
-    }
     if (this._deferredStatusToastTimers instanceof Set) {
       for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
     }
@@ -1471,6 +1585,7 @@ class SensesEngine {
     }
     this._guildFeeds = {};
     this._lastSeenCount = {};
+    this._burstMap = new Map();
     this._currentGuildId = null;
     this._sessionMessageCount = 0;
     this._handleMessageCreate = null;
@@ -1486,12 +1601,8 @@ class SensesEngine {
     this._statusByUserId = new Map();
     this._typingToastCooldown = new Map();
     this._relationshipFriendIds = new Set();
-    this._statusToastTimers = new Map();
-    this._statusToastExitTimers = new Map();
     this._deferredStatusToastTimers = new Set();
     this._deferredUtilityToastTimers = new Set();
-    this._statusToastCounter = 0;
-    this._clearStatusToastRoot();
   }
 }
 
@@ -2014,167 +2125,6 @@ ${buildPortalTransitionCSS()}
   font-size: 11px;
 }
 
-/* ─── Status Toasts ─────────────────────────────────────────────────────── */
-
-.shadow-senses-status-toast-root {
-  position: fixed;
-  top: 72px;
-  right: 18px;
-  width: min(360px, calc(100vw - 24px));
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  z-index: 10010;
-  pointer-events: none;
-}
-
-.shadow-senses-status-toast {
-  pointer-events: auto;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 0;
-  border: 1px solid rgba(138, 43, 226, 0.38);
-  border-left: 3px solid var(--ss-status-accent, #8a2be2);
-  background:
-    radial-gradient(120% 100% at 20% 12%, rgba(138, 43, 226, 0.18) 0%, rgba(12, 10, 22, 0) 56%),
-    linear-gradient(135deg, rgba(18, 14, 34, 0.96), rgba(11, 9, 18, 0.95));
-  box-shadow:
-    0 10px 26px rgba(0, 0, 0, 0.42),
-    0 0 0 1px rgba(138, 43, 226, 0.15) inset;
-  transform: translate3d(18px, 0, 0);
-  opacity: 0;
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-
-.shadow-senses-status-toast.is-visible {
-  transform: translate3d(0, 0, 0);
-  opacity: 1;
-}
-
-.shadow-senses-status-toast.is-leaving {
-  transform: translate3d(18px, 0, 0);
-  opacity: 0;
-}
-
-.shadow-senses-status-toast-avatar-wrap {
-  position: relative;
-  width: 40px;
-  height: 40px;
-  flex-shrink: 0;
-}
-
-.shadow-senses-status-toast-avatar {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  object-fit: cover;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-}
-
-.shadow-senses-status-toast-avatar-fallback {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
-  font-weight: 800;
-  color: #e9ddff;
-  background: linear-gradient(160deg, rgba(138, 43, 226, 0.55), rgba(71, 33, 127, 0.8));
-  border: 1px solid rgba(255, 255, 255, 0.12);
-}
-
-.shadow-senses-status-toast-dot {
-  position: absolute;
-  right: -2px;
-  bottom: -2px;
-  width: 12px;
-  height: 12px;
-  border-radius: 999px;
-  border: 2px solid #100b1f;
-  background: #9ca3af;
-}
-
-.shadow-senses-status-toast-dot[data-status="online"] { background: #22c55e; }
-.shadow-senses-status-toast-dot[data-status="idle"] { background: #f59e0b; }
-.shadow-senses-status-toast-dot[data-status="dnd"] { background: #ef4444; }
-.shadow-senses-status-toast-dot[data-status="offline"],
-.shadow-senses-status-toast-dot[data-status="invisible"] { background: #9ca3af; }
-
-.shadow-senses-status-toast-main {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.shadow-senses-status-toast-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  line-height: 1.2;
-  color: #b8aacd;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.shadow-senses-status-toast-rank {
-  font-weight: 800;
-}
-
-.shadow-senses-status-toast-chip {
-  margin-left: auto;
-  padding: 2px 6px;
-  border-radius: 999px;
-  border: 1px solid rgba(138, 43, 226, 0.48);
-  background: rgba(138, 43, 226, 0.2);
-  color: #d7c3ff;
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.shadow-senses-status-toast-message {
-  color: #e4e4ee;
-  font-size: 13px;
-  line-height: 1.25;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.shadow-senses-status-toast-user {
-  color: #ffffff;
-  font-weight: 700;
-}
-
-.shadow-senses-status-toast-prev {
-  color: #c8cad8;
-}
-
-.shadow-senses-status-toast-arrow {
-  color: #8f94a8;
-  font-weight: 700;
-}
-
-.shadow-senses-status-toast-next {
-  color: var(--ss-status-accent, #8a2be2);
-  font-weight: 700;
-}
-
-@media (max-width: 520px) {
-  .shadow-senses-status-toast-root {
-    right: 10px;
-    left: 10px;
-    width: auto;
-    top: 68px;
-  }
-}
-
 /* ─── Empty State ───────────────────────────────────────────────────────── */
 
 .shadow-senses-empty {
@@ -2209,13 +2159,42 @@ function buildComponents(pluginRef) {
       eventType === "typing" ? "TYPING" :
       eventType === "relationship" ? "CONNECTION" :
       eventType.toUpperCase();
+
+    // Priority + burst (backward-compatible defaults)
+    const priority = entry.priority || 1;
+    const matchReason = entry.matchReason || null;
+    const msgCount = entry.messageCount || 1;
+    const isBurst = msgCount > 1;
+
+    // Determine border color: keyword → green, name → pink, otherwise priority color
+    const borderColor = matchReason === "keyword" ? KEYWORD_MATCH_COLOR
+      : matchReason === "name" ? NAME_MENTION_COLOR
+      : PRIORITY_COLORS[priority] || null;
+
+    // Determine badge label + colors
+    let badgeLabel = null, badgeColor = null, badgeBg = null;
+    if (matchReason === "keyword") {
+      badgeLabel = entry.matchedTerm ? `"${entry.matchedTerm}"` : "KW";
+      badgeColor = "#34d399"; badgeBg = "rgba(52,211,153,0.15)";
+    } else if (matchReason === "name") {
+      badgeLabel = entry.matchedTerm ? `"${entry.matchedTerm}"` : "NAME";
+      badgeColor = "#ec4899"; badgeBg = "rgba(236,72,153,0.15)";
+    } else if (PRIORITY_LABELS[priority]) {
+      badgeLabel = PRIORITY_LABELS[priority];
+      badgeColor = priority >= 4 ? "#ef4444" : priority >= 3 ? "#fbbf24" : "#60a5fa";
+      badgeBg = priority >= 4 ? "rgba(239,68,68,0.15)" : priority >= 3 ? "rgba(251,191,36,0.15)" : "rgba(96,165,250,0.15)";
+    }
+
     const contentText = eventType === "message"
       ? (entry.content ? `\u201C${entry.content}\u201D` : "\u2014 no text content \u2014")
       : (entry.content || "\u2014 no details \u2014");
 
     return ce("div", {
       className: "shadow-senses-feed-card",
-      style: { cursor: isNavigable ? "pointer" : "default" },
+      style: {
+        cursor: isNavigable ? "pointer" : "default",
+        borderLeft: borderColor ? `3px solid ${borderColor}` : undefined,
+      },
       onClick: () => {
         if (!isNavigable) return;
         if (onNavigate) onNavigate(entry);
@@ -2227,6 +2206,25 @@ function buildComponents(pluginRef) {
         ),
         ce("span", { style: { color: "#666" } }, "\u2192"),
         ce("span", { style: { color: "#ccc" } }, entry.authorName),
+        badgeLabel
+          ? ce("span", {
+              style: {
+                color: badgeColor,
+                fontSize: "0.75em", fontWeight: 700,
+                padding: "1px 4px", borderRadius: "3px",
+                background: badgeBg,
+              },
+            }, badgeLabel)
+          : null,
+        isBurst
+          ? ce("span", {
+              style: {
+                color: "#a78bfa", fontSize: "0.75em", fontWeight: 600,
+                padding: "1px 4px", borderRadius: "3px",
+                background: "rgba(167, 139, 250, 0.15)",
+              },
+            }, `${msgCount} msgs`)
+          : null,
         eventLabel
           ? ce("span", { style: { color: "#fbbf24", fontSize: "0.8em", fontWeight: 700 } }, eventLabel)
           : null,
@@ -2238,9 +2236,13 @@ function buildComponents(pluginRef) {
           : null,
         ce("span", { style: { color: "#666", marginLeft: "auto" } }, timeStr)
       ),
-      ce("div", { className: "shadow-senses-feed-content" },
-        contentText
-      )
+      ce("div", { className: "shadow-senses-feed-content" }, contentText),
+      isBurst && entry.firstContent
+        ? ce("div", {
+            className: "shadow-senses-feed-content",
+            style: { color: "#888", fontSize: "11px", marginTop: "2px", fontStyle: "italic" },
+          }, `First: \u201C${entry.firstContent}\u201D`)
+        : null
     );
   }
 
@@ -2398,7 +2400,7 @@ function buildComponents(pluginRef) {
     }, [onClose]);
 
     const handleDeployNew = useCallback(() => {
-      BdApi.UI.showToast("Right-click a user to deploy a shadow", { type: "info" });
+      pluginRef._toast("Right-click a user to deploy a shadow");
     }, []);
 
     const deployCount = pluginRef.deploymentManager
@@ -2408,7 +2410,7 @@ function buildComponents(pluginRef) {
       ? pluginRef.sensesEngine.getMarkedOnlineCount()
       : 0;
     const msgCount = pluginRef.sensesEngine
-      ? pluginRef.sensesEngine.getSessionMessageCount()
+      ? pluginRef.sensesEngine.getTotalDetections()
       : 0;
 
     return ce("div", {
@@ -2446,7 +2448,7 @@ function buildComponents(pluginRef) {
               ? `${deployCount} deployed \u2022 ${onlineMarkedCount} online`
               : `${deployCount} shadow${deployCount !== 1 ? "s" : ""} deployed`
           ),
-          ce("span", null, `${msgCount} detection${msgCount !== 1 ? "s" : ""} (since restart)`)
+          ce("span", null, `${msgCount.toLocaleString()} detection${msgCount !== 1 ? "s" : ""}`)
         )
       )
     );
@@ -2640,10 +2642,10 @@ module.exports = class ShadowSenses {
       this.patchContextMenu();
 
       this.debugLog("Lifecycle", "Started successfully");
-      BdApi.UI.showToast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`, { type: "info" });
+      this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadow deployment online`);
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] FATAL: start() crashed:`, err);
-      BdApi.UI.showToast(`${PLUGIN_NAME} failed to start: ${err.message}`, { type: "error" });
+      this._toast(`${PLUGIN_NAME} failed to start: ${err.message}`, "error");
     }
   }
 
@@ -2713,7 +2715,16 @@ module.exports = class ShadowSenses {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    BdApi.UI.showToast(`${PLUGIN_NAME} \u2014 Shadows recalled`, { type: "info" });
+    this._toast(`${PLUGIN_NAME} \u2014 Shadows recalled`);
+  }
+
+  _toast(message, type = "info", timeout = null) {
+    const engine = this.sensesEngine?._toastEngine;
+    if (engine) {
+      engine.showToast(message, type, timeout, { callerId: "shadowSenses" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
   }
 
   loadSettings() {
@@ -2752,6 +2763,7 @@ module.exports = class ShadowSenses {
     this._UserStore = Webpack.getStore("UserStore");
     this._PresenceStore = Webpack.getStore("PresenceStore");
     this._RelationshipStore = Webpack.getStore("RelationshipStore");
+    this._GuildMemberStore = Webpack.getStore("GuildMemberStore");
     this._NavigationUtils =
       Webpack.getByKeys("transitionTo", "back", "forward") ||
       Webpack.getModule(m => m.transitionTo && m.back && m.forward);
@@ -2763,6 +2775,7 @@ module.exports = class ShadowSenses {
       UserStore: !!this._UserStore,
       PresenceStore: !!this._PresenceStore,
       RelationshipStore: !!this._RelationshipStore,
+      GuildMemberStore: !!this._GuildMemberStore,
       NavigationUtils: !!this._NavigationUtils,
     });
   }
@@ -2805,7 +2818,7 @@ module.exports = class ShadowSenses {
 
       if (attempt >= maxAttempts) {
         console.error(`[${PLUGIN_NAME}] Dispatcher unavailable after ${maxAttempts} polls (~15s) — message detection will NOT work`);
-        BdApi.UI.showToast(`${PLUGIN_NAME}: Dispatcher not found — message detection disabled`, { type: "error" });
+        this._toast(`${PLUGIN_NAME}: Dispatcher not found — message detection disabled`, "error");
         return;
       }
       this._dispatcherRetryTimer = setTimeout(tryAcquire, 500);
@@ -2829,7 +2842,7 @@ module.exports = class ShadowSenses {
         window.history.pushState({}, "", targetPath);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
-      BdApi.UI.showToast("Shadow Senses navigation fallback used", { type: "warning" });
+      this._toast("Shadow Senses navigation fallback used", "warning");
       return;
     }
 
@@ -3123,17 +3136,14 @@ module.exports = class ShadowSenses {
             const success = await this.deploymentManager.deploy(shadow, targetUser);
             if (success) {
               const targetName = targetUser.globalName || targetUser.username || "User";
-              BdApi.UI.showToast(
-                `Deployed ${shadow.roleName || shadow.role || "Shadow"} [${shadow.rank || "E"}] to monitor ${targetName}`,
-                { type: "success" }
-              );
+              this._toast(`Deployed ${shadow.roleName || shadow.role || "Shadow"} [${shadow.rank || "E"}] to monitor ${targetName}`, "success");
               this._widgetDirty = true;
             } else {
-              BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
+              this._toast("Shadow already deployed or target already monitored", "warning");
             }
           } catch (err) {
             this.debugError("Picker", "Deploy failed", err);
-            BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
+            this._toast("Failed to deploy shadow", "error");
           }
           // Close picker after selection
           this._closePicker();
@@ -3207,10 +3217,7 @@ module.exports = class ShadowSenses {
             action: () => {
               try {
                 this.deploymentManager.recall(deployment.shadowId);
-                BdApi.UI.showToast(
-                  `Recalled ${deployment.shadowName} from ${deployment.targetUsername}`,
-                  { type: "info" }
-                );
+                this._toast(`Recalled ${deployment.shadowName} from ${deployment.targetUsername}`);
                 this._widgetDirty = true;
               } catch (err) {
                 this.debugError("ContextMenu", "Recall failed", err);
@@ -3231,13 +3238,13 @@ module.exports = class ShadowSenses {
                   : [];
               } catch (err) {
                 this.debugError("ContextMenu", "Failed to load available shadows", err);
-                BdApi.UI.showToast("Failed to load shadows", { type: "error" });
+                this._toast("Failed to load shadows", "error");
                 return;
               }
 
               try {
                 if (available.length === 0) {
-                  BdApi.UI.showToast("No available shadows. All are deployed, in dungeons, or marked for exchange.", { type: "warning" });
+                  this._toast("No available shadows. All are deployed, in dungeons, or marked for exchange.", "warning");
                   return;
                 }
                 // Sort weakest first (ascending rank index)
@@ -3250,17 +3257,14 @@ module.exports = class ShadowSenses {
                 const success = await this.deploymentManager.deploy(weakest, user);
                 if (success) {
                   const targetName = user.globalName || user.username || "User";
-                  BdApi.UI.showToast(
-                    `Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`,
-                    { type: "success" }
-                  );
+                  this._toast(`Deployed ${weakest.roleName || weakest.role || "Shadow"} [${weakest.rank || "E"}] to monitor ${targetName}`, "success");
                   this._widgetDirty = true;
                 } else {
-                  BdApi.UI.showToast("Shadow already deployed or target already monitored", { type: "warning" });
+                  this._toast("Shadow already deployed or target already monitored", "warning");
                 }
               } catch (err) {
                 this.debugError("ContextMenu", "Auto-deploy failed", err);
-                BdApi.UI.showToast("Failed to deploy shadow", { type: "error" });
+                this._toast("Failed to deploy shadow", "error");
               }
             },
           });
@@ -3418,6 +3422,84 @@ module.exports = class ShadowSenses {
       "Status, typing, and connection alerts are toast-only and are not saved in Active Feed history. ",
       "Active Feed records chat message detections only."
       ),
+
+      ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Priority Keywords"),
+      ce("div", {
+        style: {
+          marginTop: "6px",
+          padding: "10px 12px",
+          borderRadius: "8px",
+          border: "1px solid rgba(138, 43, 226, 0.25)",
+          background: "rgba(138, 43, 226, 0.08)",
+          color: "#b8b8b8",
+          fontSize: "12px",
+          lineHeight: 1.45,
+          marginBottom: "8px",
+        },
+      },
+      "Messages containing these keywords are bumped to P2 (Medium) priority. ",
+      "P3 = @everyone/reply-to-you, P4 = direct @mention."
+      ),
+      ce("input", {
+        type: "text",
+        placeholder: "urgent, important, help, @here ...",
+        defaultValue: (this.settings.priorityKeywords || []).join(", "),
+        onChange: (e) => {
+          const raw = e.target.value;
+          const keywords = raw.split(",").map(s => s.trim()).filter(Boolean);
+          updateSetting("priorityKeywords", keywords);
+        },
+        style: {
+          width: "100%",
+          padding: "8px 10px",
+          borderRadius: "6px",
+          border: "1px solid rgba(138, 43, 226, 0.35)",
+          background: "rgba(30, 30, 46, 0.9)",
+          color: "#e0e0e0",
+          fontSize: "13px",
+          outline: "none",
+          boxSizing: "border-box",
+        },
+      }),
+
+      ce("h3", { style: { color: "#ec4899", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Mention Names"),
+      ce("div", {
+        style: {
+          marginTop: "6px",
+          padding: "10px 12px",
+          borderRadius: "8px",
+          border: "1px solid rgba(236, 72, 153, 0.25)",
+          background: "rgba(236, 72, 153, 0.08)",
+          color: "#b8b8b8",
+          fontSize: "12px",
+          lineHeight: 1.45,
+          marginBottom: "8px",
+        },
+      },
+      "When a monitored user says one of these names in a message, you get a toast notification and the feed card is highlighted pink. ",
+      "Case-insensitive. Ranked P3 (High)."
+      ),
+      ce("input", {
+        type: "text",
+        placeholder: "Curio, bestie, your name ...",
+        defaultValue: (this.settings.mentionNames || []).join(", "),
+        onChange: (e) => {
+          const raw = e.target.value;
+          const names = raw.split(",").map(s => s.trim()).filter(Boolean);
+          updateSetting("mentionNames", names);
+        },
+        style: {
+          width: "100%",
+          padding: "8px 10px",
+          borderRadius: "6px",
+          border: "1px solid rgba(236, 72, 153, 0.35)",
+          background: "rgba(30, 30, 46, 0.9)",
+          color: "#e0e0e0",
+          fontSize: "13px",
+          outline: "none",
+          boxSizing: "border-box",
+        },
+      }),
 
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Diagnostics"),
 

@@ -312,7 +312,24 @@ module.exports = class ShadowStep {
 
   // ── Lifecycle ───────────────────────────────────────────────
 
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "shadowStep" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(this);
@@ -320,7 +337,7 @@ module.exports = class ShadowStep {
     this.patchContextMenu();
     this._registerHotkey();
     this._pruneStaleAnchors();
-    BdApi.UI.showToast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, { type: "info" });
+    this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, "info");
   }
 
   stop() {
@@ -363,7 +380,7 @@ module.exports = class ShadowStep {
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
-    BdApi.UI.showToast(`${PLUGIN_NAME} \u2014 Anchors dormant`, { type: "info" });
+    this._toast(`${PLUGIN_NAME} \u2014 Anchors dormant`, "info");
   }
 
   // ── Webpack ─────────────────────────────────────────────────
@@ -428,7 +445,7 @@ module.exports = class ShadowStep {
               const anchor = this.settings.anchors.find((a) => a.channelId === channelId);
               if (anchor) {
                 this.removeAnchor(anchor.id);
-                BdApi.UI.showToast(`Uprooted anchor: #${anchor.channelName}`, { type: "info" });
+                this._toast(`Uprooted anchor: #${anchor.channelName}`, "info");
               }
             },
           });
@@ -463,11 +480,11 @@ module.exports = class ShadowStep {
 
   addAnchor(channelId, guildId) {
     if (this.hasAnchor(channelId)) {
-      BdApi.UI.showToast("Channel already anchored", { type: "warning" });
+      this._toast("Channel already anchored", "warning");
       return;
     }
     if (this.settings.anchors.length >= this.getMaxAnchors()) {
-      BdApi.UI.showToast(`Max anchors reached (${this.getMaxAnchors()})`, { type: "warning" });
+      this._toast(`Max anchors reached (${this.getMaxAnchors()})`, "warning");
       return;
     }
 
@@ -490,7 +507,7 @@ module.exports = class ShadowStep {
     this.settings.anchors.push(anchor);
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
-    BdApi.UI.showToast(`Shadow Anchor planted: #${anchor.channelName}`, { type: "success" });
+    this._toast(`Shadow Anchor planted: #${anchor.channelName}`, "success");
     this.debugLog("Anchor", "Added:", anchor.name, anchor.channelId);
   }
 
@@ -563,14 +580,14 @@ module.exports = class ShadowStep {
   teleportTo(anchorId) {
     const anchor = this.settings.anchors.find((a) => a.id === anchorId);
     if (!anchor) {
-      BdApi.UI.showToast("Anchor not found", { type: "error" });
+      this._toast("Anchor not found", "error");
       return;
     }
 
     const channelExists = this._ChannelStore?.getChannel(anchor.channelId);
     if (!channelExists) {
       this.removeAnchor(anchor.id);
-      BdApi.UI.showToast("Anchor is stale and was removed", { type: "warning" });
+      this._toast("Anchor is stale and was removed", "warning");
       this.debugLog("Teleport", "Blocked stale anchor", anchor.id, anchor.channelId);
       return;
     }
@@ -600,7 +617,7 @@ module.exports = class ShadowStep {
         window.history.pushState({}, "", path);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }
-      BdApi.UI.showToast(`Shadow Step \u2192 #${anchor.channelName}`, { type: "warning" });
+      this._toast(`Shadow Step \u2192 #${anchor.channelName}`, "warning");
       return;
     }
 
@@ -633,7 +650,7 @@ module.exports = class ShadowStep {
       });
     }, path);
 
-    BdApi.UI.showToast(`Shadow Step \u2192 #${anchor.channelName}`, { type: "success" });
+    this._toast(`Shadow Step \u2192 #${anchor.channelName}`, "success");
     this.debugLog("Teleport", anchor.name, path);
   }
 

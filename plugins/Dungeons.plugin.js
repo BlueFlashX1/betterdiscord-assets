@@ -1218,10 +1218,6 @@ module.exports = class Dungeons {
     // Plugin running state
     this.started = false;
 
-    // Fallback toast system
-    this.fallbackToastContainer = null;
-    this.fallbackToasts = [];
-
     // Track observer start time to ignore old messages
     this.observerStartTime = Date.now();
     this.processedMessageIds = new Set(); // Track processed message IDs to avoid duplicates
@@ -2110,15 +2106,6 @@ module.exports = class Dungeons {
       this.gcInterval = null;
     }
 
-    // Clean up fallback toast container and its orphaned style element
-    if (this.fallbackToastContainer && this.fallbackToastContainer.parentNode) {
-      this.fallbackToastContainer.parentNode.removeChild(this.fallbackToastContainer);
-      this.fallbackToastContainer = null;
-    }
-    this.fallbackToasts = [];
-    const toastStyleEl = document.getElementById('dungeons-fallback-toast-styles');
-    if (toastStyleEl) toastStyleEl.remove();
-
     // Clear extraction systems
     if (this.shadowArmyCountCache) {
       this.shadowArmyCountCache.clear();
@@ -2341,9 +2328,6 @@ module.exports = class Dungeons {
         transform: scale(1.05) !important;
         box-shadow: 0 6px 16px rgba(139, 92, 246, 0.6) !important;
       }
-      .dungeons-fallback-toast:hover {
-        transform: scale(1.02) !important;
-      }
     `;
     document.head.appendChild(style);
   }
@@ -2428,13 +2412,6 @@ module.exports = class Dungeons {
         return;
       }
 
-      const toastEl = target.closest?.('.dungeons-fallback-toast');
-      if (toastEl) {
-        e.preventDefault();
-        e.stopPropagation();
-        const toastId = toastEl.getAttribute('data-toast-id') || toastEl.id;
-        toastId && this.removeFallbackToast(toastId);
-      }
     };
 
     // Capture to ensure Discord handlers can't swallow our clicks.
@@ -3123,7 +3100,7 @@ module.exports = class Dungeons {
       // Load SoloLevelingToasts plugin (with fallback support)
       const toastsPlugin = BdApi.Plugins.isEnabled('SoloLevelingToasts')
         ? BdApi.Plugins.get('SoloLevelingToasts') : null;
-      if (toastsPlugin?.instance && typeof toastsPlugin.instance.showToast === 'function') {
+      if (toastsPlugin?.instance?.toastEngineVersion >= 2 && typeof toastsPlugin.instance.showToast === 'function') {
         this.toasts = toastsPlugin.instance;
         this.debugLog('SoloLevelingToasts plugin loaded successfully');
       } else {
@@ -14515,11 +14492,11 @@ module.exports = class Dungeons {
     }
   }
 
-  // ==== TOAST & CSS ====
+  // ==== TOAST (via unified engine) ====
   showToast(message, type = 'info') {
     // PERFORMANCE: Skip toast notifications when window is hidden (except critical errors)
     if (!this.isWindowVisible() && type !== 'error') {
-      return; // Don't show non-critical toasts when window is hidden
+      return;
     }
     // Try to reload plugin reference if not available
     if (!this.toasts) {
@@ -14531,138 +14508,16 @@ module.exports = class Dungeons {
 
     if (this.toasts?.showToast) {
       try {
-        const result = this.toasts.showToast(message, type);
-        return result;
+        return this.toasts.showToast(message, type, null, {
+          callerId: 'dungeons',
+          maxPerMinute: 15,
+        });
       } catch (error) {
-        this.errorLog('Error showing toast via plugin:', error);
-        // Fall back to fallback toast
-        this.showFallbackToast(message, type);
-        return null;
+        this.errorLog('Error showing toast via engine:', error);
       }
-    } else {
-      // Fallback: Create a visual notification
-      this.showFallbackToast(message, type);
-      return null;
     }
-  }
-
-  showFallbackToast(message, type = 'info') {
-    // Initialize toast container if it doesn't exist
-    if (!this.fallbackToastContainer) {
-      this.fallbackToastContainer = document.createElement('div');
-      this.fallbackToastContainer.id = 'dungeons-fallback-toast-container';
-      this.fallbackToastContainer.style.cssText = `
-        position: fixed;
-        top: 20px;
-        right: 20px;
-        z-index: 10002;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        pointer-events: none;
-        max-width: 350px;
-      `;
-      document.body.appendChild(this.fallbackToastContainer);
-      this.fallbackToasts = [];
-    }
-
-    // Color mapping based on type
-    const colors = {
-      info: { bg: '#8b5cf6', border: '#7c3aed', glow: 'rgba(139, 92, 246, 0.4)' },
-      success: { bg: '#10b981', border: '#059669', glow: 'rgba(16, 185, 129, 0.4)' },
-      error: { bg: '#ef4444', border: '#dc2626', glow: 'rgba(239, 68, 68, 0.4)' },
-      warning: { bg: '#ffaa00', border: '#cc8800', glow: 'rgba(255, 170, 0, 0.4)' },
-    };
-    const color = colors[type] || colors.info;
-
-    // Create toast element
-    const toast = document.createElement('div');
-    toast.className = 'dungeons-fallback-toast';
-    const toastId = `toast-${Date.now()}-${Math.random()}`;
-    toast.id = toastId;
-    toast.setAttribute('data-toast-id', toastId);
-    toast.style.setProperty('--toast-glow', color.glow);
-
-    toast.style.cssText = `
-      background: linear-gradient(135deg, ${color.bg} 0%, ${color.border} 100%);
-      border: 2px solid ${color.border};
-      border-radius: 2px;
-      padding: 14px 18px;
-      color: white;
-      font-weight: 600;
-      font-size: 14px;
-      box-shadow: 0 4px 20px var(--toast-glow), 0 2px 8px rgba(0, 0, 0, 0.3);
-      animation: dungeonsToastSlideIn 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-      word-wrap: break-word;
-      pointer-events: auto;
-      cursor: pointer;
-      transition: transform 0.2s ease, opacity 0.2s ease;
-      backdrop-filter: blur(10px);
-    `;
-    toast.textContent = message;
-
-    // Add animation styles if not already added
-    if (!document.getElementById('dungeons-fallback-toast-styles')) {
-      const style = document.createElement('style');
-      style.id = 'dungeons-fallback-toast-styles';
-      style.textContent = `
-        @keyframes dungeonsToastSlideIn {
-          from {
-            transform: translateX(120%);
-            opacity: 0;
-          }
-          to {
-            transform: translateX(0);
-            opacity: 1;
-          }
-        }
-        @keyframes dungeonsToastSlideOut {
-          from {
-            transform: translateX(0) scale(1);
-            opacity: 1;
-          }
-          to {
-            transform: translateX(120%) scale(0.8);
-            opacity: 0;
-          }
-        }
-        .dungeons-fallback-toast:hover {
-          transform: scale(1.02) !important;
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
-    // Add to container
-    this.fallbackToastContainer.appendChild(toast);
-    this.fallbackToasts.push({ id: toastId, element: toast });
-
-    // Limit to 5 toasts max
-    if (this.fallbackToasts.length > 5) {
-      const oldestToast = this.fallbackToasts.shift();
-      this.removeFallbackToast(oldestToast.id);
-    }
-
-    // Auto-remove after 4 seconds
-    this._setTrackedTimeout(() => {
-      if (!this.started) return;
-      this.removeFallbackToast(toastId);
-    }, 4000);
-  }
-
-  removeFallbackToast(toastId) {
-    const toastIndex = this.fallbackToasts.findIndex((t) => t.id === toastId);
-    if (toastIndex === -1) return;
-
-    const toast = this.fallbackToasts[toastIndex].element;
-    toast.style.animation = 'dungeonsToastSlideOut 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55)';
-    this._setTrackedTimeout(() => {
-      if (!this.started) return;
-      if (toast.parentNode) {
-        toast.parentNode.removeChild(toast);
-      }
-      this.fallbackToasts.splice(toastIndex, 1);
-    }, 300);
+    // Fallback to BdApi native toast
+    BdApi.UI.showToast(message, { type: type === 'level-up' ? 'info' : type });
   }
 
   // ==== CSS MANAGEMENT SYSTEM - Advanced Theme Integration & Style Management ====

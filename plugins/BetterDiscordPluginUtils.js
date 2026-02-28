@@ -8,15 +8,24 @@
  */
 
 // ── Toast ────────────────────────────────────────────────────────────────────
-// Modern API first (BdApi.UI.showToast), deprecated fallback (BdApi.showToast).
+// Routes through SoloLevelingToasts engine when available, falls back to BdApi.
 
 /**
- * Show a toast notification using the best available BdApi method.
+ * Show a toast notification using the unified toast engine (preferred) or BdApi fallback.
  * @param {string} message
- * @param {{ type?: string, timeout?: number }} [options]
+ * @param {{ type?: string, timeout?: number, callerId?: string }} [options]
  */
 function showToast(message, options = {}) {
-  const opts = { timeout: 2500, ...options };
+  const { type = "info", timeout, callerId, ...rest } = options;
+  try {
+    const p = BdApi.Plugins.get("SoloLevelingToasts");
+    const engine = p?.instance;
+    if (engine?.toastEngineVersion >= 2) {
+      engine.showToast(message, type, timeout ?? null, callerId ? { callerId } : undefined);
+      return;
+    }
+  } catch (_) {}
+  const opts = { timeout: timeout ?? 2500, type, ...rest };
   if (typeof BdApi.UI?.showToast === "function") {
     BdApi.UI.showToast(message, opts);
     return;

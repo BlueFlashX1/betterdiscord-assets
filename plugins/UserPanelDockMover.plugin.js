@@ -6,7 +6,24 @@
  */
 
 module.exports = class UserPanelDockMover {
+
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "userPanelDockMover" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     const instanceKey = "__UserPanelDockMoverInstance";
     try {
       const prev = window[instanceKey];
@@ -46,7 +63,7 @@ module.exports = class UserPanelDockMover {
     this.trySetup();
     this.pollInterval = setInterval(() => this.trySetup(), 900);
 
-    BdApi.UI.showToast("UserPanelDockMover v3.7.0 active", { type: "success", timeout: 2200 });
+    this._toast("UserPanelDockMover v3.7.0 active", "success", 2200);
   }
 
   stop() {
@@ -86,7 +103,7 @@ module.exports = class UserPanelDockMover {
       console.warn("[UserPanelDockMover] Failed to clear singleton instance key:", error);
     }
 
-    BdApi.UI.showToast("UserPanelDockMover stopped", { type: "info", timeout: 2200 });
+    this._toast("UserPanelDockMover stopped", "info", 2200);
   }
 
   injectStyles() {

@@ -2432,7 +2432,22 @@ module.exports = class ShadowArmy {
    * 6. Integrate with SoloLevelingStats plugin
    * 7. Set up message listener for shadow extraction
    */
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "shadowArmy" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
   async start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
     // SNAPSHOT CACHE: Instance-level (NOT in this.settings — must not be persisted to disk)
@@ -4393,16 +4408,11 @@ module.exports = class ShadowArmy {
               }
             }
 
-            // Show success toast notification using BdApi
-            if (BdApi?.UI?.showToast) {
-              BdApi.UI.showToast(
-                `Shadow Extracted: ${shadow.rank}-Rank ${shadow.roleName || shadow.role}`,
-                {
-                  type: 'success',
-                  timeout: 3000,
-                }
-              );
-            }
+            // Show success toast notification
+            this._toast(
+              `Shadow Extracted: ${shadow.rank}-Rank ${shadow.roleName || shadow.role}`,
+              "success"
+            );
 
             // PERF: Mark widget dirty + coalesce to one refresh task
             this._widgetDirty = true;
@@ -4893,7 +4903,7 @@ module.exports = class ShadowArmy {
         // ONE summary toast
         if (BdApi?.UI?.showToast) {
           const rankSummary = Object.entries(rankCounts).map(([r, c]) => `${c}x ${r}`).join(', ');
-          BdApi.UI.showToast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, { type: 'success', timeout: 4000 });
+          this._toast(`⚔️ ARISE: ${totalExtracted} shadows extracted (${rankSummary})`, "success", 4000);
         }
 
         // Coalesced widget refresh
@@ -8372,7 +8382,7 @@ module.exports = class ShadowArmy {
       }
 
       .sa-arise-meta {
-        margin-top: calc(28px + (var(--sa-scale, 1) - 1) * 20px);
+        margin-top: calc(4px + (var(--sa-scale, 1) - 1) * 4px);
         font-family: 'Orbitron', system-ui, sans-serif;
         font-size: 16px;
         font-weight: 900;
@@ -9875,13 +9885,8 @@ module.exports = class ShadowArmy {
         `Total essence: ${this.settings.shadowEssence.essence} | Remaining shadows: ${remaining}`
       );
 
-      // Show toast if available
-      if (BdApi?.UI?.showToast) {
-        BdApi.UI.showToast(`Converted ${toConvert.length} weak shadows to ${totalEssence} essence.`, {
-          type: 'info',
-          timeout: 5000,
-        });
-      }
+      // Show toast
+      this._toast(`Converted ${toConvert.length} weak shadows to ${totalEssence} essence.`, "info", 5000);
 
       // Update UI if modal is open
       if (this.shadowArmyModal && document.body.contains(this.shadowArmyModal)) {
@@ -10222,17 +10227,10 @@ module.exports = class ShadowArmy {
       this.cachedBuffsTime = null;
 
       // Show notification
-      if (BdApi?.UI?.showToast) {
-        BdApi.UI.showToast(
-          `Converted ${quantity} ${rank}-rank shadow${
-            quantity !== 1 ? 's' : ''
-          } to ${totalEssence.toLocaleString()} essence!`,
-          {
-            type: 'info',
-            timeout: 5000,
-          }
-        );
-      }
+      this._toast(
+        `Converted ${quantity} ${rank}-rank shadow${quantity !== 1 ? 's' : ''} to ${totalEssence.toLocaleString()} essence!`,
+        "info", 5000
+      );
 
       return {
         success: true,

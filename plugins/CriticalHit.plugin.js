@@ -7435,14 +7435,7 @@ ${childSel} {
     }
 
     const effectiveCrit = this.getEffectiveCritChance();
-    try {
-      BdApi.UI.showToast(this._createCritChanceToastMessage(effectiveCrit), {
-        type: 'info',
-        timeout: this.TOAST_TIMEOUT_MS,
-      });
-    } catch (error) {
-      this.debugError('SHOW_TOAST', error);
-    }
+    this._toast(this._createCritChanceToastMessage(effectiveCrit), "info");
   }
 
   /**
@@ -7556,11 +7549,7 @@ ${childSel} {
    * @param {Object} options - Toast options
    */
   _showToast(message, options = {}) {
-    try {
-      BdApi.UI.showToast(message, { timeout: this.TOAST_TIMEOUT_MS, ...options });
-    } catch (error) {
-      this.debugError('SHOW_TOAST', error);
-    }
+    this._toast(message, options.type || "info");
   }
 
   /**
@@ -8188,7 +8177,24 @@ ${childSel} {
    * Called when plugin is enabled or Discord starts
    * Initializes the plugin: loads history, injects CSS, starts observers
    */
+
+  _toast(message, type = "info", timeout = null) {
+    if (this._toastEngine) {
+      this._toastEngine.showToast(message, type, timeout, { callerId: "criticalHit" });
+    } else {
+      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    }
+  }
+
+
   start() {
+    // Toast engine discovery (unified toast system)
+    this._toastEngine = (() => {
+      try {
+        const p = BdApi.Plugins.get("SoloLevelingToasts");
+        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
+      } catch { return null; }
+    })();
     try {
       this._isStopped = false;
 
@@ -8514,12 +8520,7 @@ ${childSel} {
     });
 
     // Show toast notification
-    try {
-      BdApi.UI.showToast(`Debug mode ${enabled ? 'enabled' : 'disabled'}`, {
-        type: enabled ? 'warning' : 'info',
-        timeout: 2000,
-      });
-    } catch (_) {}
+    this._toast(`Debug mode ${enabled ? 'enabled' : 'disabled'}`, enabled ? 'warning' : 'info');
   }
 
   // ============================================================================
