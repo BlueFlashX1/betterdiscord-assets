@@ -531,6 +531,12 @@ div[role="menu"] div[class^="item_"][class*="focused"],
   border-radius: 2px !important;
 }
 
+/* Guild header server actions popout: nudge left to stay within sidebar */
+#guild-header-popout,
+div[aria-label="Server Actions"] {
+  transform: translateX(-4px) !important;
+}
+
 /* ═══════════════════════════════════════════════════════════
    §4  QUICK SWITCHER (Ctrl+K search dialog)
    VERIFIED — 2026-02-13
