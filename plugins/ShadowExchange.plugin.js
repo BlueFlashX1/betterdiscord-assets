@@ -1240,7 +1240,7 @@ module.exports = class ShadowExchange {
         onConfirmed: () => this._finishChannelViewFade(fadeToken, true),
         onFailed: () => this._finishChannelViewFade(fadeToken, false),
       });
-    });
+    }, url);
 
     BdApi.UI.showToast(`Exchanged to ${wp.label}`, { type: "success", timeout: 2500 });
   }

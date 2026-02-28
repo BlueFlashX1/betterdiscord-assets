@@ -1,7 +1,7 @@
 /**
  * @name ShadowPortalCore
  * @description Shared navigation + transition core for ShadowStep, ShadowExchange, and ShadowSenses.
- * @version 1.0.1
+ * @version 1.1.0
  * @author matthewthompson
  */
 
@@ -70,6 +70,35 @@ function debugError(instance, tag, message, error) {
 }
 
 const methods = {
+  /**
+   * Extract a Discord channel ID from a path like /channels/guildId/channelId
+   */
+  _extractChannelId(path) {
+    const match = String(path || "").match(/\/channels\/\d+\/(\d+)/);
+    return match ? match[1] : null;
+  },
+
+  /**
+   * Check if Discord's MessageStore already has messages for a channel.
+   * Cached channels load almost instantly — no need for a long portal animation.
+   */
+  _isChannelCached(path) {
+    try {
+      const channelId = this._extractChannelId(path);
+      if (!channelId) return false;
+      const { Webpack } = BdApi;
+      const MessageStore = Webpack.getStore?.("MessageStore")
+        || Webpack.getModule?.(m => m.getMessage && m.getMessages);
+      if (!MessageStore?.getMessages) return false;
+      const messages = MessageStore.getMessages(channelId);
+      // If there are any cached messages, this channel has been visited before
+      return messages && (messages.length > 0 || messages._array?.length > 0 || messages.size > 0);
+    } catch (e) {
+      debugError(this, "Cache", "Failed to check channel cache", e);
+      return false;
+    }
+  },
+
   _normalizePath(path) {
     const p = String(path || "").trim();
     if (!p) return "/";
@@ -330,7 +359,14 @@ const methods = {
     this._cancelChannelViewFade();
   },
 
-  playTransition(callback) {
+  /**
+   * Play portal transition animation.
+   * @param {Function} callback - Navigation callback fired during the animation
+   * @param {string} [targetPath] - Optional Discord path for cached-channel detection.
+   *   When the target channel has cached messages, a shorter "express" animation plays
+   *   (~350ms) instead of the full cinematic portal (~1200ms).
+   */
+  playTransition(callback, targetPath) {
     if (!this.settings?.animationEnabled) {
       callback();
       return;
@@ -340,9 +376,19 @@ const methods = {
     this._transitionRunId = Number(this._transitionRunId || 0) + 1;
     const runId = this._transitionRunId;
 
+    // ── Timing: Two profiles based on whether target channel is cached ──
+    // Express (cached):   ~350ms total, navigate immediately, brief flash effect
+    // Cinematic (uncached): user's configured duration (default 550), full portal
     const configuredDuration = this.settings.animationDuration || 550;
-    const duration = Math.max(420, configuredDuration + 1320);
-    const totalDuration = duration + 530;
+    const isCached = !!targetPath && this._isChannelCached(targetPath);
+
+    // Express path: skip the heavy canvas, just do a fast overlay flash
+    const duration = isCached
+      ? Math.max(200, Math.round(configuredDuration * 0.35))     // ~192ms min, ~35% of configured
+      : Math.max(420, Math.round(configuredDuration * 1.6));      // ~880ms at default 550
+    const totalDuration = isCached
+      ? duration + 160                                            // ~350ms total for cached
+      : duration + Math.round(configuredDuration * 0.45);         // ~1128ms total at default 550
     const transitionStartedAt = performance.now();
 
     // ── Portal Diagnostic Timeline (gated behind debugMode) ──
@@ -354,10 +400,10 @@ const methods = {
       _diag.events.push({ phase, ms });
       console.log(`%c[PortalDiag]%c ${phase} %c@ ${ms}ms`, "color:#a855f7;font-weight:bold", "color:#e2e8f0", "color:#94a3b8");
     };
-    _diagLog("TRANSITION_START");
+    _diagLog(isCached ? "TRANSITION_START (EXPRESS — cached channel)" : "TRANSITION_START (CINEMATIC)");
     if (_debugMode) {
-      console.log(`%c[PortalDiag]%c configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
-      console.log(`%c[PortalDiag]%c formComplete(22%)=${Math.round(totalDuration*0.22)}ms navDelay(26%)=${Math.max(280,Math.round(totalDuration*0.26))}ms revealStart(52%)=${Math.round(totalDuration*0.52)}ms fadeOut(96%)=${Math.round(totalDuration*0.96)}ms cleanup=${totalDuration+420}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+      console.log(`%c[PortalDiag]%c cached=${isCached} configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+      console.log(`%c[PortalDiag]%c navDelay=${isCached ? 16 : Math.max(140, Math.round(totalDuration * 0.18))}ms cleanup=${isCached ? totalDuration + 80 : totalDuration + 340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
     }
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
@@ -374,11 +420,11 @@ const methods = {
     canvas.className = "ss-transition-canvas";
     overlay.appendChild(canvas);
 
-    const shardCount = prefersReducedMotion ? 0 : 9 + Math.floor(Math.random() * 8);
+    const shardCount = (prefersReducedMotion || isCached) ? 0 : 9 + Math.floor(Math.random() * 8);
     debugLog(
       this,
       "Transition",
-      `start style=blackMistPortalCanvasV5 duration=${duration} total=${totalDuration} reducedMotion=${prefersReducedMotion} systemReducedMotion=${systemPrefersReducedMotion} respectReducedMotion=${respectReducedMotion} cinders=${shardCount}`
+      `start style=${isCached ? "expressFlash" : "blackMistPortalCanvasV5"} duration=${duration} total=${totalDuration} cached=${isCached} reducedMotion=${prefersReducedMotion} cinders=${shardCount}`
     );
 
     const shards = [];
@@ -408,7 +454,8 @@ const methods = {
     _diagLog("OVERLAY_APPENDED");
 
     this._transitionStopCanvas = null;
-    if (!prefersReducedMotion) {
+    // Skip heavy canvas animation for express (cached) transitions
+    if (!prefersReducedMotion && !isCached) {
       const startCanvas = () => {
         if (runId !== this._transitionRunId) return;
         _diagLog("CANVAS_ANIMATION_START");
@@ -428,7 +475,20 @@ const methods = {
 
     const canUseWaapi = typeof overlay.animate === "function";
 
-    if (!prefersReducedMotion && canUseWaapi) {
+    if (isCached && canUseWaapi) {
+      // Express flash: quick dark pulse with subtle purple tinge
+      _diagLog("WAAPI_EXPRESS_FLASH");
+      overlay.classList.add("ss-transition-overlay--waapi");
+      overlay.animate(
+        [
+          { opacity: 0 },
+          { opacity: 0.82, offset: 0.25 },
+          { opacity: 0.82, offset: 0.5 },
+          { opacity: 0 },
+        ],
+        { duration: totalDuration, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" }
+      );
+    } else if (!prefersReducedMotion && canUseWaapi) {
       _diagLog("WAAPI_OVERLAY_START");
       overlay.classList.add("ss-transition-overlay--waapi");
 
@@ -484,11 +544,15 @@ const methods = {
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
     };
 
-    // Navigate at 26% — formation done at 22%, portal solid, fire nav early so Discord
-    // has maximum time (~600ms) to fetch messages behind the opaque portal before reveal (72%).
-    const navDelay = prefersReducedMotion
-      ? 24
-      : Math.max(280, Math.round(totalDuration * 0.26));
+    // Navigation delay:
+    //   Express (cached):    16ms — navigate near-immediately, content is already there
+    //   Reduced motion:      24ms — minimal delay
+    //   Cinematic (uncached): 18% of total — portal forms, then nav fires behind it
+    const navDelay = isCached
+      ? 16
+      : prefersReducedMotion
+        ? 24
+        : Math.max(140, Math.round(totalDuration * 0.18));
     _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms)`);
 
     // Clear stale timers from previous rapid teleport before setting new ones
@@ -500,7 +564,11 @@ const methods = {
       runNavigation();
     }, navDelay);
 
-    const cleanupDelay = prefersReducedMotion ? Math.max(320, Math.round(duration * 0.98)) : totalDuration + 340;
+    const cleanupDelay = isCached
+      ? totalDuration + 80                     // Express: clean up right after flash ends
+      : prefersReducedMotion
+        ? Math.max(320, Math.round(duration * 0.98))
+        : totalDuration + 340;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;

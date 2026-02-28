@@ -629,7 +629,7 @@ module.exports = class ShadowStep {
           _ssDiag("CHANNEL_FADE_IN_STARTED (failure)");
         },
       });
-    });
+    }, path);
 
     BdApi.UI.showToast(`Shadow Step \u2192 #${anchor.channelName}`, { type: "success" });
     this.debugLog("Teleport", anchor.name, path);

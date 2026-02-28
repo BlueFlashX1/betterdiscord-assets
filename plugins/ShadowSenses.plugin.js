@@ -2839,7 +2839,7 @@ module.exports = class ShadowSenses {
         onConfirmed: () => this._finishChannelViewFade(fadeToken, true),
         onFailed: () => this._finishChannelViewFade(fadeToken, false),
       });
-    });
+    }, targetPath);
   }
 
   injectCSS() {
