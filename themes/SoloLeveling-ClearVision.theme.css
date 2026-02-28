@@ -1347,7 +1347,7 @@ ul[aria-label="Channels"] li[class*="containerDefault_"] {
    so background-size:100% 100% stretches the banner to fill each channel row. */
 ul[aria-label="Channels"] [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Shadowbannerv1.1.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Shadowbannerv1.1.svg') !important;
   background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1374,7 +1374,7 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
 ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover,
 ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2.1hover.svg') !important;
+  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/shadow_bannerv2.1hover.svg') !important;
   background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
@@ -1403,7 +1403,7 @@ ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"]::before {
 }
 ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
 ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"] {
-  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/main/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
   filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
           drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }
