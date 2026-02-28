@@ -596,7 +596,7 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 0.55;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.1;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
@@ -614,7 +614,7 @@ const methods = {
       cssPortalEl.className = "ss-portal-css";
       cssPortalEl.style.width = `${portalDiam}px`;
       cssPortalEl.style.height = `${portalDiam}px`;
-      cssPortalEl.style.setProperty("--ss-portal-color", "#7b4fbf");
+      cssPortalEl.style.setProperty("--ss-portal-color", "#1a0a2e");
       const portalInner = document.createElement("div");
       portalInner.className = "ss-portal-css__inner";
       cssPortalEl.appendChild(portalInner);
