@@ -1291,7 +1291,7 @@ div[class^="positionContainer_"] *::-webkit-scrollbar {
    The DM sidebar uses aria-label="Private channels", not "Channels", so this
    won't match it. 0.4 opacity keeps GIF wallpaper visible, matches chatbox */
 div[class^="sidebar_"][class*="theme-dark"]:has(ul[aria-label="Channels"]) {
-  background: rgba(0, 0, 0, 0.22) !important;
+  background: rgba(0, 0, 0, 0.24) !important;
   background-image: none !important;
 }
 
@@ -1330,6 +1330,10 @@ ul[aria-label="Channels"] li:has(div[aria-label="Browse Channels"]) {
    §9f+h provides the actual hover visual. */
 ul[aria-label="Channels"] {
   --interactive-background-hover: transparent !important;
+  --interactive-background-active: transparent !important;
+  --interactive-background-selected: transparent !important;
+  --background-modifier-selected: transparent !important;
+  --background-modifier-active: transparent !important;
 }
 
 /* §9f+g — Channel row spacing: double gap between channel items */
@@ -1367,37 +1371,41 @@ ul[aria-label="Channels"] [class*="linkTop_"] {
 /* §9f+h — Hover: v2 SVG banner replaces v1 as sole hover feedback.
    drop-shadow traces actual SVG painted pixels (not bounding box),
    so the purple glow hugs the irregular tendril edges. */
-ul[aria-label="Channels"] [class*="wrapper_"]:hover,
-ul[aria-label="Channels"] [class*="wrapper_"]:hover [class*="link_"] {
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover,
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover [class*="link_"] {
   background-color: transparent !important;
   background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/shadow_bannerv2.1hover.svg') !important;
   background-size: 115% 100% !important;
   background-repeat: no-repeat !important;
   background-position: center !important;
   box-shadow: none !important;
-  filter: drop-shadow(0 0 6px rgba(138, 43, 226, 0.6))
-          drop-shadow(0 0 2px rgba(138, 43, 226, 0.4)) !important;
+  filter: drop-shadow(0 0 3px rgba(138, 43, 226, 0.3))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.2)) !important;
 }
-ul[aria-label="Channels"] [class*="wrapper_"]:hover {
+ul[aria-label="Channels"] li:not([class*="selected_"]) [class*="wrapper_"]:hover {
   background-image: none !important;
 }
 
-/* §9f+s — Selected/active channel: dedicated Selected_channel.svg with drop-shadow glow */
-ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"],
-ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"] {
-  background-color: transparent !important;
-  background-image: url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Selected_channel.svg') !important;
-  background-size: 115% 100% !important;
-  background-repeat: no-repeat !important;
-  background-position: center !important;
-  box-shadow: none !important;
-  filter: drop-shadow(0 0 8px rgba(138, 43, 226, 0.7))
-          drop-shadow(0 0 3px rgba(138, 43, 226, 0.5)) !important;
-}
+/* §9f+s — Selected/active channel: nuke ALL Discord highlight boxes,
+   then let the Selected_channel.svg do all the visual work. */
+ul[aria-label="Channels"] li[class*="selected_"],
+ul[aria-label="Channels"] li[class*="selected_"] *,
 ul[aria-label="Channels"] [class*="modeSelected_"],
-ul[aria-label="Channels"] li[class*="selected_"] [class*="wrapper_"] {
+ul[aria-label="Channels"] [class*="modeSelected_"] * {
   background-color: transparent !important;
   background: transparent !important;
+  box-shadow: none !important;
+}
+/* Kill ::before pseudo-element Discord uses as selected highlight overlay */
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"]::before,
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"]::before {
+  display: none !important;
+}
+ul[aria-label="Channels"] li[class*="selected_"] [class*="link_"],
+ul[aria-label="Channels"] [class*="modeSelected_"] [class*="link_"] {
+  background: transparent url('https://raw.githubusercontent.com/BlueFlashX1/betterdiscord-assets/feat/system-window-plugin/themes/svg/Selected_channel.svg') center / 100% 100% no-repeat !important;
+  filter: drop-shadow(0 0 4px rgba(138, 43, 226, 0.35))
+          drop-shadow(0 0 1px rgba(138, 43, 226, 0.25)) !important;
 }
 
 /* §9f+i — Hide channel icons (hash #, speaker, etc.) — banner replaces them */
