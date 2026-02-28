@@ -618,7 +618,7 @@ const methods = {
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
         // Inner core — slow spin, stronger glow, layered on top
         ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 14s infinite linear}",
-        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat;filter:drop-shadow(0 0 12px rgba(140,70,210,0.5)) drop-shadow(0 0 28px rgba(100,50,170,0.3))}`,
+        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
       ].join("");
       overlay.appendChild(portalStyleEl);
