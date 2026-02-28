@@ -1281,72 +1281,60 @@ const methods = {
           ctx.stroke();
         }
 
-        // ── Watery purple core — solid wobbly blob, not a gradient glow ──
-        const coreR = coreVortexRadius * (0.18 + 0.03 * coreGlowMul);
-        const corePulse = 0.7 + 0.3 * tendrilPulseMul;
-        const blobPts = 36;
+        // ── Smoke vortex core — layered rotating arc strokes, no fill ──
+        // Multiple semi-transparent arcs at different radii/speeds spiral inward.
+        // Overlapping strokes build up density = dark smoke being pulled into center.
+        const smokeR = coreVortexRadius * (0.38 + 0.06 * coreGlowMul);
+        const smokePulse = 0.7 + 0.3 * tendrilPulseMul;
+        const smokeCount = 14;
+        ctx.lineCap = "round";
 
-        // Outer blob — main watery shape
-        ctx.beginPath();
-        for (let bi = 0; bi <= blobPts; bi++) {
-          const bp = bi / blobPts;
-          const bAng = bp * TAU + swirl * 0.6 + spinOffset * 0.3;
-          const wobble = coreR * (
-            1.0
-            + 0.18 * Math.sin(swirl * 2.1 + bp * 5.0 + 0.3) * corePulse
-            + 0.10 * Math.sin(swirl * 3.8 + bp * 9.2 + 1.1)
-            + 0.06 * Math.sin(swirl * 5.5 + bp * 14.0 + 2.4)
-          );
-          const bx = cx + Math.cos(bAng) * wobble;
-          const by = cy + Math.sin(bAng) * wobble * 0.9;
-          if (bi === 0) ctx.moveTo(bx, by);
-          else ctx.lineTo(bx, by);
-        }
-        ctx.closePath();
-        ctx.fillStyle = `rgba(95, 55, 165, ${(coreVortexAlpha * 0.82 * corePulse).toFixed(4)})`;
-        ctx.shadowBlur = 12 * shadowScale * coreGlowMul;
-        ctx.shadowColor = `rgba(100, 55, 180, ${(coreVortexAlpha * 0.4).toFixed(4)})`;
-        ctx.fill();
+        for (let si = 0; si < smokeCount; si++) {
+          const layer = si / smokeCount; // 0→1 (inner→outer)
+          // Each arc orbits at its own speed; inner arcs faster (pulled in)
+          const speed = 1.8 - layer * 1.1; // inner=1.8, outer=0.7
+          const baseAng = (si / smokeCount) * TAU + swirl * speed + spinOffset * (0.6 - layer * 0.3);
+          // Radius: inner layers tight, outer layers wide
+          const r = Math.max(2, smokeR * (0.08 + 0.92 * layer) * (1 + 0.08 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
+          // Arc span: inner arcs shorter, outer arcs longer
+          const span = (0.3 + 0.8 * layer + 0.15 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
+          // Width: inner arcs thin, outer arcs thick
+          const w = (1.5 + 6.0 * layer * layer + strandMorphMul * 2.0 * layer) * tierScale;
+          // Opacity: mid-layers densest, inner/outer fade — bell curve
+          const bell = Math.exp(-8 * (layer - 0.45) * (layer - 0.45));
+          const alpha = coreVortexAlpha * (0.25 + 0.55 * bell) * smokePulse;
+          // Purple hue shifts slightly per layer — deeper inside = darker
+          const pr = Math.round(60 + 50 * layer);
+          const pg = Math.round(25 + 35 * layer);
+          const pb = Math.round(100 + 70 * layer);
 
-        // Inner blob — slightly brighter, offset, smaller = depth/liquid layering
-        const innerR = coreR * 0.55;
-        const iOff = coreR * 0.06;
-        const iCx = cx + Math.sin(swirl * 1.3) * iOff;
-        const iCy = cy + Math.cos(swirl * 1.7) * iOff;
-        ctx.beginPath();
-        for (let bi = 0; bi <= blobPts; bi++) {
-          const bp = bi / blobPts;
-          const bAng = bp * TAU + swirl * 0.9 + spinOffset * 0.5;
-          const wobble = innerR * (
-            1.0
-            + 0.22 * Math.sin(swirl * 2.6 + bp * 6.4 + 0.7) * corePulse
-            + 0.12 * Math.sin(swirl * 4.2 + bp * 11.0 + 1.9)
-          );
-          const bx = iCx + Math.cos(bAng) * wobble;
-          const by = iCy + Math.sin(bAng) * wobble * 0.92;
-          if (bi === 0) ctx.moveTo(bx, by);
-          else ctx.lineTo(bx, by);
-        }
-        ctx.closePath();
-        ctx.fillStyle = `rgba(120, 72, 195, ${(coreVortexAlpha * 0.7 * corePulse).toFixed(4)})`;
-        ctx.shadowBlur = 6 * shadowScale * coreGlowMul;
-        ctx.shadowColor = `rgba(130, 75, 210, ${(coreVortexAlpha * 0.3).toFixed(4)})`;
-        ctx.fill();
-        ctx.shadowBlur = 0;
-
-        // Dark swirl wisps over the blob — shadow currents across the liquid surface
-        for (let sw = 0; sw < 6; sw++) {
-          const swAng = (sw / 6) * TAU + swirl * 1.6 + spinOffset * 0.5;
-          const swR = Math.max(1, coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1)));
-          const arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
           ctx.beginPath();
-          ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
-          ctx.strokeStyle = `rgba(10, 5, 20, ${(coreVortexAlpha * 0.65).toFixed(4)})`;
-          ctx.lineWidth = (3.0 + 2.0 * Math.sin(swirl * 3.1 + sw * 0.7)) * tierScale;
-          ctx.lineCap = "round";
+          ctx.arc(cx, cy, r, baseAng, baseAng + span);
+          ctx.strokeStyle = `rgba(${pr}, ${pg}, ${pb}, ${Math.max(0.03, alpha * 0.7).toFixed(4)})`;
+          ctx.lineWidth = w;
+          ctx.shadowBlur = (3 + 8 * layer) * shadowScale * coreGlowMul;
+          ctx.shadowColor = `rgba(${pr - 20}, ${pg - 10}, ${pb - 20}, ${(alpha * 0.4).toFixed(4)})`;
+          ctx.stroke();
+        }
+
+        // Second pass: dark smoke wisps on top — near-black arcs for depth
+        for (let di = 0; di < 5; di++) {
+          const dLayer = (di + 0.5) / 5;
+          const dAng = (di / 5) * TAU + swirl * (1.4 + di * 0.12) + spinOffset * 0.4;
+          const dR = Math.max(2, smokeR * (0.12 + 0.55 * dLayer));
+          const dSpan = 0.25 + 0.35 * Math.sin(swirl * 2.1 + di * 1.3);
+          const dAlpha = coreVortexAlpha * 0.5 * smokePulse;
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
+          ctx.strokeStyle = `rgba(8, 4, 16, ${Math.max(0.03, dAlpha).toFixed(4)})`;
+          ctx.lineWidth = (2.0 + 3.0 * dLayer) * tierScale;
+          ctx.shadowBlur = 4 * shadowScale;
+          ctx.shadowColor = `rgba(0, 0, 0, ${(dAlpha * 0.3).toFixed(4)})`;
           ctx.stroke();
         }
         ctx.lineCap = "butt";
+        ctx.shadowBlur = 0;
 
         ctx.restore();
       }
@@ -2025,72 +2013,52 @@ function startDrawLoop() {
         ctx.stroke();
       }
 
-      // Watery purple core — solid wobbly blob (Worker fallback, no GSAP)
-      var coreR = coreVortexRadius * 0.18;
-      var corePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
-      var blobPts = 36;
+      // Smoke vortex core — layered rotating arcs, no fill (Worker fallback)
+      var smokeR = coreVortexRadius * 0.38;
+      var smokePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
+      var smokeCount = 14;
+      ctx.lineCap = "round";
 
-      // Outer blob — main watery shape
-      ctx.beginPath();
-      for (var bi = 0; bi <= blobPts; bi++) {
-        var bp = bi / blobPts;
-        var bAng = bp * TAU + swirl * 0.6;
-        var wobble = coreR * (
-          1.0
-          + 0.18 * Math.sin(swirl * 2.1 + bp * 5.0 + 0.3) * corePulse
-          + 0.10 * Math.sin(swirl * 3.8 + bp * 9.2 + 1.1)
-          + 0.06 * Math.sin(swirl * 5.5 + bp * 14.0 + 2.4)
-        );
-        var bx = cx + Math.cos(bAng) * wobble;
-        var by = cy + Math.sin(bAng) * wobble * 0.9;
-        if (bi === 0) ctx.moveTo(bx, by);
-        else ctx.lineTo(bx, by);
-      }
-      ctx.closePath();
-      ctx.fillStyle = "rgba(95, 55, 165, " + (coreVortexAlpha * 0.82 * corePulse).toFixed(4) + ")";
-      ctx.shadowBlur = 12 * shadowScale;
-      ctx.shadowColor = "rgba(100, 55, 180, " + (coreVortexAlpha * 0.4).toFixed(4) + ")";
-      ctx.fill();
+      for (var si = 0; si < smokeCount; si++) {
+        var layer = si / smokeCount;
+        var speed = 1.8 - layer * 1.1;
+        var baseAng = (si / smokeCount) * TAU + swirl * speed;
+        var r = Math.max(2, smokeR * (0.08 + 0.92 * layer) * (1 + 0.08 * Math.sin(swirl * 2.3 + si * 1.7) * smokePulse));
+        var span = (0.3 + 0.8 * layer + 0.15 * Math.sin(swirl * 1.9 + si * 0.9)) * smokePulse;
+        var w = (1.5 + 6.0 * layer * layer) * tS;
+        var bell = Math.exp(-8 * (layer - 0.45) * (layer - 0.45));
+        var alpha = coreVortexAlpha * (0.25 + 0.55 * bell) * smokePulse;
+        var pr = Math.round(60 + 50 * layer);
+        var pg = Math.round(25 + 35 * layer);
+        var pb = Math.round(100 + 70 * layer);
 
-      // Inner blob — brighter, offset, smaller for depth/liquid layering
-      var innerBlobR = coreR * 0.55;
-      var iOff = coreR * 0.06;
-      var iCx = cx + Math.sin(swirl * 1.3) * iOff;
-      var iCy = cy + Math.cos(swirl * 1.7) * iOff;
-      ctx.beginPath();
-      for (var bi2 = 0; bi2 <= blobPts; bi2++) {
-        var bp2 = bi2 / blobPts;
-        var bAng2 = bp2 * TAU + swirl * 0.9;
-        var wobble2 = innerBlobR * (
-          1.0
-          + 0.22 * Math.sin(swirl * 2.6 + bp2 * 6.4 + 0.7) * corePulse
-          + 0.12 * Math.sin(swirl * 4.2 + bp2 * 11.0 + 1.9)
-        );
-        var bx2 = iCx + Math.cos(bAng2) * wobble2;
-        var by2 = iCy + Math.sin(bAng2) * wobble2 * 0.92;
-        if (bi2 === 0) ctx.moveTo(bx2, by2);
-        else ctx.lineTo(bx2, by2);
-      }
-      ctx.closePath();
-      ctx.fillStyle = "rgba(120, 72, 195, " + (coreVortexAlpha * 0.7 * corePulse).toFixed(4) + ")";
-      ctx.shadowBlur = 6 * shadowScale;
-      ctx.shadowColor = "rgba(130, 75, 210, " + (coreVortexAlpha * 0.3).toFixed(4) + ")";
-      ctx.fill();
-      ctx.shadowBlur = 0;
-
-      // Dark swirl wisps over the blob — shadow currents
-      for (var sw = 0; sw < 6; sw++) {
-        var swAng = (sw / 6) * TAU + swirl * 1.6;
-        var swR = Math.max(1, coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1)));
-        var arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
         ctx.beginPath();
-        ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
-        ctx.strokeStyle = "rgba(10, 5, 20, " + (coreVortexAlpha * 0.65).toFixed(4) + ")";
-        ctx.lineWidth = (3.0 + 2.0 * Math.sin(swirl * 3.1 + sw * 0.7)) * tS;
-        ctx.lineCap = "round";
+        ctx.arc(cx, cy, r, baseAng, baseAng + span);
+        ctx.strokeStyle = "rgba(" + pr + ", " + pg + ", " + pb + ", " + Math.max(0.03, alpha * 0.7).toFixed(4) + ")";
+        ctx.lineWidth = w;
+        ctx.shadowBlur = (3 + 8 * layer) * shadowScale;
+        ctx.shadowColor = "rgba(" + (pr - 20) + ", " + (pg - 10) + ", " + (pb - 20) + ", " + (alpha * 0.4).toFixed(4) + ")";
+        ctx.stroke();
+      }
+
+      // Dark smoke wisps on top
+      for (var di = 0; di < 5; di++) {
+        var dLayer = (di + 0.5) / 5;
+        var dAng = (di / 5) * TAU + swirl * (1.4 + di * 0.12);
+        var dR = Math.max(2, smokeR * (0.12 + 0.55 * dLayer));
+        var dSpan = 0.25 + 0.35 * Math.sin(swirl * 2.1 + di * 1.3);
+        var dAlpha = coreVortexAlpha * 0.5 * smokePulse;
+
+        ctx.beginPath();
+        ctx.arc(cx, cy, dR, dAng, dAng + dSpan);
+        ctx.strokeStyle = "rgba(8, 4, 16, " + Math.max(0.03, dAlpha).toFixed(4) + ")";
+        ctx.lineWidth = (2.0 + 3.0 * dLayer) * tS;
+        ctx.shadowBlur = 4 * shadowScale;
+        ctx.shadowColor = "rgba(0, 0, 0, " + (dAlpha * 0.3).toFixed(4) + ")";
         ctx.stroke();
       }
       ctx.lineCap = "butt";
+      ctx.shadowBlur = 0;
 
       ctx.restore();
     }
