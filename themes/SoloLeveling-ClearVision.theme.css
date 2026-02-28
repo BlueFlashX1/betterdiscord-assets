@@ -1696,12 +1696,15 @@ div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollba
   display: none !important;
 }
 
-/* §9k — Notice banner: purple theme
+/* §9k — Notice banner: dark base + purple accent border
    The "You were in a voice channel last time..." reconnect banner at the top.
-   Override default green with Solo Leveling purple. */
+   Dark background matching content area, subtle purple border. */
 div[class^="notice_"] {
-  background: rgba(75, 0, 160, 0.85) !important;
-  border-bottom: 2px solid var(--sl-color-primary) !important;
+  background: rgba(8, 10, 20, 0.95) !important;
+  border: 1px solid rgba(138, 43, 226, 0.35) !important;
+  border-bottom: 2px solid rgba(138, 43, 226, 0.6) !important;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4),
+    inset 0 0 12px rgba(138, 43, 226, 0.06) !important;
 }
 div[class^="notice_"],
 div[class^="notice_"] span,
