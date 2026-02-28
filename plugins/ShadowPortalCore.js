@@ -595,12 +595,8 @@ const methods = {
     overlay.style.setProperty("--ss-duration", `${duration}ms`);
     overlay.style.setProperty("--ss-total-duration", `${totalDuration}ms`);
 
-    const canvas = document.createElement("canvas");
-    canvas.className = "ss-transition-canvas";
-    overlay.appendChild(canvas);
-
     // ── CSS Portal (PropJockey spiral-mask counter-rotation technique) ──
-    // Only on main-thread GSAP path; Worker fallback keeps canvas vortex.
+    // Appended BEFORE canvas so canvas (dark overlay + aperture punch) stacks on top.
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
@@ -616,7 +612,7 @@ const methods = {
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 4.5s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
-        // Inner core — slow spin, stronger glow, layered on top
+        // Inner core — slow spin, layered on top
         ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 14s infinite linear}",
         `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
@@ -636,6 +632,10 @@ const methods = {
       cssPortalEl.appendChild(portalCore);
       overlay.appendChild(cssPortalEl);
     }
+
+    const canvas = document.createElement("canvas");
+    canvas.className = "ss-transition-canvas";
+    overlay.appendChild(canvas);
 
     const shardCount = prefersReducedMotion ? 0 : 9 + Math.floor(Math.random() * 8);
     debugLog(
