@@ -1136,15 +1136,25 @@ const methods = {
       const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
 
       ctx.clearRect(0, 0, width, height);
-      // No dark overlay — CSS portal is fully visible underneath.
-      // Canvas only draws the expanding shockwave ring effects.
 
-      // Late-stage reveal: expanding shockwave ring with purple turbulence.
+      // Semi-transparent dark overlay (0.7 opacity) — dims screen but lets CSS portal show through
+      const overlayAlpha = (0.70 * formEase) * fadeOut;
+      ctx.fillStyle = `rgba(2, 1, 4, ${overlayAlpha.toFixed(3)})`;
+      ctx.fillRect(0, 0, width, height);
+
+      // Reveal: aperture punches through dark overlay to show channel content
       if (revealProgress > 0) {
         const apertureRadius =
           innerRadius *
           (0.24 + 2.36 * revealEase) *
           (1 + Math.sin(swirl * 9.8) * 0.11 * (1 - revealProgress * 0.62));
+
+        ctx.save();
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.arc(cx, cy, apertureRadius, 0, TAU);
+        ctx.fill();
+        ctx.restore();
 
         const ringRadius = apertureRadius * (1 + Math.sin(swirl * 10.8) * 0.026);
         const rimWidth = innerRadius * (0.48 + (1 - revealProgress) * 0.28);
