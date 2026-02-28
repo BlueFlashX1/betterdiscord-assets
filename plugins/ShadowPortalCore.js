@@ -722,6 +722,9 @@ const methods = {
       coreGlow: 1,           // core glow multiplier (Phase 5)
       hueShift: 0,           // hue drift in degrees (Phase 5)
       shockwaveBoost: 0,     // elastic overshoot for shockwave ripples (Phase 3)
+      vortexSpin: 0,         // 0→1 accelerating spiral rotation over portal lifetime
+      strandMorph: 0,        // 0↔1 strand deformation amplitude modulator (breathing)
+      tendrilPulse: 0.5,     // 0↔1 inner tendril intensity breathing
     };
 
     const dur = duration / 1000; // GSAP uses seconds
@@ -766,11 +769,20 @@ const methods = {
       ease: "elastic.out(1, 0.3)",
     }, dur * 0.30);
 
+    // Vortex spin: accelerates over full duration — starts slow, builds to full spiral
+    tl.to(gs, {
+      vortexSpin: 1,
+      duration: dur,
+      ease: "power2.in",
+    }, 0);
+
     // ── Phase 5: Glow breathing — infinite yoyo loops during portal lifetime ──
     const breathingTweens = [
       gsap.to(gs, { ringGlow: 1.6, duration: 0.8, ease: "sine.inOut", yoyo: true, repeat: -1 }),
       gsap.to(gs, { coreGlow: 2.0, duration: 1.1, ease: "sine.inOut", yoyo: true, repeat: -1 }),
       gsap.to(gs, { hueShift: 10, duration: 2, ease: "none", yoyo: true, repeat: -1 }),
+      gsap.to(gs, { strandMorph: 1, duration: 0.7, ease: "sine.inOut", yoyo: true, repeat: -1 }),
+      gsap.to(gs, { tendrilPulse: 1, duration: 0.5, ease: "sine.inOut", yoyo: true, repeat: -1 }),
     ];
 
     // Store timeline on instance for Phase 6 (reverse-on-failure)
@@ -967,6 +979,10 @@ const methods = {
       // ── Glow breathing multipliers (GSAP Phase 5; 1.0 in vanilla) ──
       const glowMul = _gsap ? _gsap.ringGlow : 1;
       const coreGlowMul = _gsap ? _gsap.coreGlow : 1;
+      // ── Vortex dynamics (GSAP-driven; static fallback in vanilla) ──
+      const vortexSpinMul = _gsap ? _gsap.vortexSpin : 0;
+      const strandMorphMul = _gsap ? _gsap.strandMorph : 0;
+      const tendrilPulseMul = _gsap ? _gsap.tendrilPulse : 0.5;
 
       const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
       const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
@@ -1168,33 +1184,39 @@ const methods = {
         ctx.arc(cx, cy, coreVortexRadius, 0, TAU);
         ctx.fill();
 
-        const swirlCount = 6;
-        const swirlPoints = perfTier === 0 ? 12 : 16;
-        // Each strand gets its own chaotic personality
-        const strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85];
-        const strandDirs = [1, -1, 1, -1, -1, 1];
-        const strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12];
-        const strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7];
+        // ── GSAP-enhanced swirl strands (8 strands with dynamic modulation) ──
+        const swirlCount = 8;
+        const swirlPoints = _gsap ? 24 : (perfTier === 0 ? 12 : 16);
+        const strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85, 0.14, 0.66];
+        const strandDirs = [1, -1, 1, -1, -1, 1, 1, -1];
+        const strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12, 1.28, 0.86];
+        const strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7, 3.1, 1.9];
+        // GSAP accelerating spin adds growing angular offset to all strands
+        const spinOffset = vortexSpinMul * TAU * 0.8;
         for (let s = 0; s < swirlCount; s++) {
           const phase = swirl * strandSpeeds[s];
           const dir = strandDirs[s];
-          const base = strandSeeds[s] * TAU + phase * dir;
+          const base = strandSeeds[s] * TAU + phase * dir + spinOffset * dir;
           const wobbleFreq = 2.4 + s * 0.7;
-          const wobbleAmp = 0.14 + 0.08 * Math.sin(phase * 0.6 + s);
+          // strandMorph amplifies deformation — makes strands writhe dynamically
+          const wobbleAmp = (0.14 + 0.08 * Math.sin(phase * 0.6 + s)) * (1 + strandMorphMul * 1.2);
 
           ctx.beginPath();
           for (let i = 0; i <= swirlPoints; i++) {
             const p = i / swirlPoints;
+            const morphWave = strandMorphMul * 0.1 * Math.sin(phase * 2.3 + p * 9.1 + s * 1.7);
             const rr = coreVortexRadius * (
               0.08 +
               1.48 * p +
               0.12 * Math.sin(phase * 1.9 + p * 6.4 + s * 1.3) +
-              0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9)
+              0.06 * Math.sin(phase * 3.7 + p * 11.8 + s * 0.9) +
+              morphWave
             );
             const twist = p * strandTurns[s] * dir;
             const distort =
               Math.sin(phase * wobbleFreq + p * 8.6 + s * 0.5) * wobbleAmp +
-              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06;
+              Math.sin(phase * 4.1 + p * 13.2 + s * 1.1) * 0.06 +
+              strandMorphMul * 0.08 * Math.sin(phase * 5.3 + p * 15.4 + s * 2.1);
             const ang = base + twist + distort;
             const x = cx + Math.cos(ang) * rr;
             const y = cy + Math.sin(ang) * rr * 0.86;
@@ -1203,32 +1225,45 @@ const methods = {
           }
 
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-          ctx.strokeStyle = `rgba(70, 40, 120, ${Math.max(0.04, strandAlpha * 0.6).toFixed(4)})`;
-          ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
-          ctx.shadowBlur = (12 + s * 1.6) * shadowScale * coreGlowMul;
-          ctx.shadowColor = `rgba(50, 25, 90, ${(strandAlpha * 0.5).toFixed(4)})`;
+          ctx.strokeStyle = `rgba(90, 55, 150, ${Math.max(0.04, strandAlpha * 0.65).toFixed(4)})`;
+          ctx.lineWidth = (1.8 + s * 0.22 + strandMorphMul * 0.6) * (perfTier === 0 ? 0.9 : 1);
+          ctx.shadowBlur = (12 + s * 1.6 + strandMorphMul * 4) * shadowScale * coreGlowMul;
+          ctx.shadowColor = `rgba(60, 30, 110, ${(strandAlpha * 0.55).toFixed(4)})`;
           ctx.stroke();
         }
 
-        // Counter-rotation removed — replaced by more outward lightning
+        // ── Spiral tendrils — replaces static blob with dynamic swirling filaments ──
+        const tendrilCount = 12;
+        const tendrilPoints = _gsap ? 28 : 18;
+        for (let ti = 0; ti < tendrilCount; ti++) {
+          const baseAngle = (ti / tendrilCount) * TAU + swirl * 0.9 + spinOffset * 1.2;
+          const spiralTightness = 1.8 + ti * 0.12 + strandMorphMul * 0.4;
+          const spiralDir = ti % 2 === 0 ? 1 : -1;
 
-        ctx.beginPath();
-        for (let i = 0; i <= 28; i++) {
-          const p = i / 28;
-          const ang = p * TAU + swirl * 1.95;
-          const rr = coreVortexRadius * (
-            0.28 +
-            0.14 * Math.sin(swirl * 4.2 + p * 12) +
-            0.07 * Math.sin(swirl * 6.5 + p * 8.2)
-          );
-          const x = cx + Math.cos(ang) * rr;
-          const y = cy + Math.sin(ang) * rr * 0.88;
-          if (i === 0) ctx.moveTo(x, y);
-          else ctx.lineTo(x, y);
+          ctx.beginPath();
+          for (let i = 0; i <= tendrilPoints; i++) {
+            const p = i / tendrilPoints;
+            // Archimedean spiral: r grows linearly with angle
+            const rBase = coreVortexRadius * (0.04 + p * 0.42);
+            const rWobble = coreVortexRadius * 0.06 * Math.sin(swirl * 2.8 + ti * 1.3 + p * 5.2) * (1 + tendrilPulseMul * 0.6);
+            const rr = rBase + rWobble;
+            const spiralAngle = baseAngle
+              + p * spiralTightness * spiralDir
+              + Math.sin(swirl * 2.5 + ti + p * 3) * 0.15 * (1 + tendrilPulseMul)
+              + Math.sin(swirl * 4.3 + ti * 0.7 + p * 7.8) * 0.05;
+            const x = cx + Math.cos(spiralAngle) * rr;
+            const y = cy + Math.sin(spiralAngle) * rr * 0.88;
+            if (i === 0) ctx.moveTo(x, y);
+            else ctx.lineTo(x, y);
+          }
+
+          const tAlpha = coreVortexAlpha * (0.35 + 0.45 * tendrilPulseMul) * (0.5 + 0.5 * Math.sin(swirl * 2 + ti * 0.52));
+          ctx.strokeStyle = `rgba(100, 60, 165, ${Math.max(0.04, tAlpha * 0.7).toFixed(4)})`;
+          ctx.lineWidth = 1.0 + 0.5 * Math.sin(swirl * 3 + ti * 0.9) + tendrilPulseMul * 0.4;
+          ctx.shadowBlur = (6 + tendrilPulseMul * 6) * shadowScale * coreGlowMul;
+          ctx.shadowColor = `rgba(80, 40, 140, ${(tAlpha * 0.5).toFixed(4)})`;
+          ctx.stroke();
         }
-        ctx.closePath();
-        ctx.fillStyle = `rgba(30, 16, 50, ${(coreVortexAlpha * 0.4).toFixed(4)})`;
-        ctx.fill();
         ctx.restore();
       }
 
@@ -1838,12 +1873,13 @@ function startDrawLoop() {
       ctx.fillStyle = vortexGlow;
       ctx.beginPath(); ctx.arc(cx, cy, coreVortexRadius, 0, TAU); ctx.fill();
 
-      var swirlCount = 6;
+      // Worker fallback: 8 swirl strands (no GSAP modulation — static sine-wave motion)
+      var swirlCount = 8;
       var swirlPoints = perfTier === 0 ? 12 : 16;
-      var strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85];
-      var strandDirs = [1, -1, 1, -1, -1, 1];
-      var strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12];
-      var strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7];
+      var strandSeeds = [0.73, 0.21, 0.58, 0.92, 0.37, 0.85, 0.14, 0.66];
+      var strandDirs = [1, -1, 1, -1, -1, 1, 1, -1];
+      var strandSpeeds = [1.62, 0.94, 1.38, 0.72, 1.51, 1.12, 1.28, 0.86];
+      var strandTurns = [2.2, 1.4, 2.8, 1.1, 2.5, 1.7, 3.1, 1.9];
       for (var s = 0; s < swirlCount; s++) {
         var phase = swirl * strandSpeeds[s];
         var dir = strandDirs[s];
@@ -1862,27 +1898,38 @@ function startDrawLoop() {
           if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
         }
         var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-        ctx.strokeStyle = "rgba(70, 40, 120, " + Math.max(0.04, strandAlpha * 0.6).toFixed(4) + ")";
-        ctx.lineWidth = (2.0 + s * 0.28) * (perfTier === 0 ? 0.9 : 1);
+        ctx.strokeStyle = "rgba(90, 55, 150, " + Math.max(0.04, strandAlpha * 0.65).toFixed(4) + ")";
+        ctx.lineWidth = (1.8 + s * 0.22) * (perfTier === 0 ? 0.9 : 1);
         ctx.shadowBlur = (12 + s * 1.6) * shadowScale;
-        ctx.shadowColor = "rgba(50, 25, 90, " + (strandAlpha * 0.5).toFixed(4) + ")";
+        ctx.shadowColor = "rgba(60, 30, 110, " + (strandAlpha * 0.55).toFixed(4) + ")";
         ctx.stroke();
       }
 
-      // Counter-rotation removed — replaced by more outward lightning
-
-      ctx.beginPath();
-      for (let i = 0; i <= 28; i++) {
-        const p = i / 28;
-        const ang = p * TAU + swirl * 1.95;
-        const rr = coreVortexRadius * (0.28 + 0.14 * Math.sin(swirl * 4.2 + p * 12) + 0.07 * Math.sin(swirl * 6.5 + p * 8.2));
-        const x = cx + Math.cos(ang) * rr;
-        const y = cy + Math.sin(ang) * rr * 0.88;
-        if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      // Worker fallback: 12 spiral tendrils (no GSAP — static sine spirals)
+      var tendrilCount = 12;
+      var tendrilPoints = 18;
+      for (var ti = 0; ti < tendrilCount; ti++) {
+        var tBaseAngle = (ti / tendrilCount) * TAU + swirl * 0.9;
+        var spiralTightness = 1.8 + ti * 0.12;
+        var spiralDir = ti % 2 === 0 ? 1 : -1;
+        ctx.beginPath();
+        for (var i = 0; i <= tendrilPoints; i++) {
+          var p = i / tendrilPoints;
+          var rBase = coreVortexRadius * (0.04 + p * 0.42);
+          var rWobble = coreVortexRadius * 0.06 * Math.sin(swirl * 2.8 + ti * 1.3 + p * 5.2);
+          var rr = rBase + rWobble;
+          var spiralAngle = tBaseAngle + p * spiralTightness * spiralDir + Math.sin(swirl * 2.5 + ti + p * 3) * 0.15 + Math.sin(swirl * 4.3 + ti * 0.7 + p * 7.8) * 0.05;
+          var x = cx + Math.cos(spiralAngle) * rr;
+          var y = cy + Math.sin(spiralAngle) * rr * 0.88;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        var tAlpha = coreVortexAlpha * 0.55 * (0.5 + 0.5 * Math.sin(swirl * 2 + ti * 0.52));
+        ctx.strokeStyle = "rgba(100, 60, 165, " + Math.max(0.04, tAlpha * 0.7).toFixed(4) + ")";
+        ctx.lineWidth = 1.0 + 0.5 * Math.sin(swirl * 3 + ti * 0.9);
+        ctx.shadowBlur = 6 * shadowScale;
+        ctx.shadowColor = "rgba(80, 40, 140, " + (tAlpha * 0.5).toFixed(4) + ")";
+        ctx.stroke();
       }
-      ctx.closePath();
-      ctx.fillStyle = "rgba(30, 16, 50, " + (coreVortexAlpha * 0.4).toFixed(4) + ")";
-      ctx.fill();
       ctx.restore();
     }
 
