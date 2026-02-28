@@ -998,37 +998,7 @@ const methods = {
     let seeds = this.__shadowPortalSeedCache.get(seedCacheKey);
     if (!seeds) {
       seeds = {
-        wisps: Array.from({ length: Math.max(72, Math.round(128 * qualityScale)) }, () => ({
-          angle: Math.random() * TAU,
-          speed: 0.08 + Math.random() * 0.46,
-          offset: 0.08 + Math.random() * 1.08,
-          size: 20 + Math.random() * 74,
-          phase: Math.random() * TAU,
-          drift: Math.random() * 2 - 1,
-        })),
-        darkBlots: Array.from({ length: Math.max(34, Math.round(56 * qualityScale)) }, () => ({
-          angle: Math.random() * TAU,
-          speed: 0.12 + Math.random() * 0.38,
-          offset: 0.12 + Math.random() * 0.92,
-          size: 26 + Math.random() * 62,
-          phase: Math.random() * TAU,
-        })),
-        portalRifts: Array.from({ length: Math.max(22, Math.round(42 * qualityScale)) }, () => ({
-          angle: Math.random() * TAU,
-          speed: 0.22 + Math.random() * 0.62,
-          spread: 0.42 + Math.random() * 1.05,
-          lineWidth: 1 + Math.random() * 2.6,
-          length: 0.46 + Math.random() * 0.32,
-          phase: Math.random() * TAU,
-        })),
-        coreFilaments: Array.from({ length: Math.max(16, Math.round(28 * qualityScale)) }, () => ({
-          angle: Math.random() * TAU,
-          speed: 0.3 + Math.random() * 0.82,
-          spread: 0.62 + Math.random() * 1.12,
-          lineWidth: 1 + Math.random() * 2,
-          length: 0.54 + Math.random() * 0.26,
-          phase: Math.random() * TAU,
-        })),
+        // wisps, darkBlots, portalRifts, coreFilaments removed — only used by worker fallback path
         ringMistBands: Array.from({ length: Math.max(38, Math.round(84 * qualityScale)) }, () => ({
           angle: Math.random() * TAU,
           speed: 0.2 + Math.random() * 0.95,
@@ -1062,15 +1032,7 @@ const methods = {
       }
     }
 
-    const {
-      wisps,
-      darkBlots,
-      portalRifts,
-      coreFilaments,
-      ringMistBands,
-      purpleJets,
-      outerLightning,
-    } = seeds;
+    const { ringMistBands, purpleJets, outerLightning } = seeds;
 
     const resize = () => {
       width = Math.max(1, Math.floor(window.innerWidth));
@@ -1134,26 +1096,20 @@ const methods = {
       if (!_canvasDiag.fadeStarted && t >= 0.95) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.95)"); }
       if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
 
-      // ── Glow breathing multipliers (GSAP Phase 5; 1.0 in vanilla) ──
       const glowMul = _gsap ? _gsap.ringGlow : 1;
-      const coreGlowMul = _gsap ? _gsap.coreGlow : 1;
-      // ── Vortex dynamics (GSAP-driven; static fallback in vanilla) ──
-      const vortexSpinMul = _gsap ? _gsap.vortexSpin : 0;
-      const strandMorphMul = _gsap ? _gsap.strandMorph : 0;
-      const tendrilPulseMul = _gsap ? _gsap.tendrilPulse : 0.5;
 
       const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
-      const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
 
       ctx.clearRect(0, 0, width, height);
 
       // Semi-transparent dark overlay (0.7 opacity) — dims screen but lets CSS portal show through
-      const overlayAlpha = (0.70 * formEase) * fadeOut;
-      ctx.fillStyle = `rgba(2, 1, 4, ${overlayAlpha.toFixed(3)})`;
+      const overlayAlpha = 0.70 * formEase * fadeOut;
+      ctx.fillStyle = `rgba(2,1,4,${overlayAlpha.toFixed(3)})`;
       ctx.fillRect(0, 0, width, height);
 
       // Reveal: aperture punches through dark overlay to show channel content
       if (revealProgress > 0) {
+        const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
         const apertureRadius =
           innerRadius *
           (0.24 + 2.36 * revealEase) *
@@ -1167,32 +1123,36 @@ const methods = {
         ctx.restore();
 
         const ringRadius = apertureRadius * (1 + Math.sin(swirl * 10.8) * 0.026);
-        const rimWidth = innerRadius * (0.48 + (1 - revealProgress) * 0.28);
+        const oneMinusReveal = 1 - revealProgress;
+        const rimWidth = innerRadius * (0.48 + oneMinusReveal * 0.28);
         const ringInner = Math.max(2, ringRadius - rimWidth * 0.42);
         const ringOuter = ringRadius + rimWidth * 1.3;
 
-        ctx.save();
-        ctx.globalCompositeOperation = "source-over";
+        // Precompute per-frame constants for hot loops
+        const fadeStr = fadeOut.toFixed(3);
+        const mistShadowBlur = (10 + oneMinusReveal * 16) * shadowScale;
+        const jetShadowBlur = (12 + oneMinusReveal * 14) * shadowScale;
+        const mistLineExtra = oneMinusReveal * 1.8;
+        const jetLineExtra = 1.6 + oneMinusReveal * 2.4;
 
         const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
-        ringBody.addColorStop(0, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(3)})`);
-        ringBody.addColorStop(0.42, `rgba(0, 0, 0, ${(1.0 * fadeOut).toFixed(3)})`);
-        ringBody.addColorStop(0.68, `rgba(4, 2, 8, ${(0.92 * fadeOut).toFixed(3)})`);
-        ringBody.addColorStop(0.88, `rgba(8, 6, 14, ${(0.64 * fadeOut).toFixed(3)})`);
-        ringBody.addColorStop(1, "rgba(0, 0, 0, 0)");
+        ringBody.addColorStop(0, `rgba(0,0,0,${fadeStr})`);
+        ringBody.addColorStop(0.68, `rgba(4,2,8,${(0.92 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(0.88, `rgba(8,6,14,${(0.64 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = ringBody;
         ctx.beginPath();
         ctx.arc(cx, cy, ringOuter, 0, TAU);
         ctx.arc(cx, cy, ringInner, 0, TAU, true);
         ctx.fill("evenodd");
 
-        const blackRimAlpha = Math.max(0, (1.0 - revealProgress * 0.18) * fadeOut);
+        const blackRimAlpha = Math.max(0, (1 - revealProgress * 0.18) * fadeOut);
         if (blackRimAlpha > 0.006) {
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(0, 0, 0, ${blackRimAlpha.toFixed(3)})`;
-          ctx.lineWidth = 14 + (1 - revealProgress) * 20;
-          ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * shadowScale;
-          ctx.shadowColor = `rgba(0, 0, 0, ${(blackRimAlpha * 0.78).toFixed(3)})`;
+          ctx.strokeStyle = `rgba(0,0,0,${blackRimAlpha.toFixed(3)})`;
+          ctx.lineWidth = 14 + oneMinusReveal * 20;
+          ctx.shadowBlur = (14 + oneMinusReveal * 22) * shadowScale;
+          ctx.shadowColor = `rgba(0,0,0,${(blackRimAlpha * 0.78).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius, 0, TAU);
           ctx.stroke();
         }
@@ -1200,80 +1160,89 @@ const methods = {
         const edgeAlpha = Math.max(0, (0.34 - revealProgress * 0.12) * fadeOut);
         if (edgeAlpha > 0.004) {
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(124, 120, 136, ${edgeAlpha.toFixed(3)})`;
-          ctx.lineWidth = 1.2 + (1 - revealProgress) * 1.4;
-          ctx.shadowBlur = (8 + (1 - revealProgress) * 8) * shadowScale;
-          ctx.shadowColor = `rgba(48, 44, 60, ${(edgeAlpha * 0.84).toFixed(3)})`;
+          ctx.strokeStyle = `rgba(124,120,136,${edgeAlpha.toFixed(3)})`;
+          ctx.lineWidth = 1.2 + oneMinusReveal * 1.4;
+          ctx.shadowBlur = (8 + oneMinusReveal * 8) * shadowScale;
+          ctx.shadowColor = `rgba(48,44,60,${(edgeAlpha * 0.84).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius + rimWidth * 0.34, 0, TAU);
           ctx.stroke();
         }
 
+        // Mist bands — shadowBlur hoisted (constant across loop)
+        ctx.shadowBlur = mistShadowBlur;
+        ctx.shadowColor = "rgba(18,18,24,0.15)";
         for (let mi = 0; mi < ringMistBands.length; mi += mistStep) {
           const band = ringMistBands[mi];
           const drift = swirl * band.speed + band.phase;
           const radius = ringRadius + innerRadius * (0.03 + (band.band - 0.9) * 0.24) + Math.sin(drift * 1.2) * innerRadius * 0.03;
           const arcLength = band.width + Math.sin(drift * 1.8) * 0.04;
           const start = band.angle + drift * 0.32;
-          const alpha = (0.07 + 0.12 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 2.4) * 0.3) * fadeOut;
+          const alpha = (0.07 + 0.12 * oneMinusReveal) * (0.7 + Math.sin(drift * 2.4) * 0.3) * fadeOut;
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(66, 66, 76, ${Math.max(0.01, alpha).toFixed(3)})`;
-          ctx.lineWidth = band.lineWidth + (1 - revealProgress) * 1.8;
-          ctx.shadowBlur = (10 + (1 - revealProgress) * 16) * shadowScale;
-          ctx.shadowColor = `rgba(18, 18, 24, ${(alpha * 0.9).toFixed(3)})`;
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = "rgba(66,66,76,1)";
+          ctx.lineWidth = band.lineWidth + mistLineExtra;
           ctx.arc(cx, cy, radius, start, start + arcLength);
           ctx.stroke();
         }
+        ctx.globalAlpha = 1;
 
-        // Expanding shockwave ripples — start beyond ring outer edge for visibility
-        // Phase 3: shockwaveBoost adds elastic overshoot to radius (GSAP) or 0 (vanilla)
+        // Expanding shockwave ripples
         const swBoost = _gsap ? _gsap.shockwaveBoost : 0;
         for (let i = 0; i < 5; i++) {
           const wave = revealProgress * 1.45 - i * 0.18;
           if (wave <= 0 || wave >= 1.52) continue;
-          // Start from ring outer edge so thick ring doesn't cover them
-          // shockwaveBoost scales radius by up to 18% via elastic.out overshoot
           const waveRadius = ringOuter + innerRadius * wave * (0.92 + swBoost * 0.18);
           const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
           if (waveAlpha <= 0.003) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(72, 58, 96, ${waveAlpha.toFixed(3)})`;
+          ctx.globalAlpha = waveAlpha;
+          ctx.strokeStyle = "rgba(72,58,96,1)";
           ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
           ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale * glowMul;
-          ctx.shadowColor = `rgba(48, 32, 78, ${(waveAlpha * 0.88).toFixed(3)})`;
+          ctx.shadowColor = "rgba(48,32,78,0.88)";
           ctx.arc(cx, cy, waveRadius, 0, TAU);
           ctx.stroke();
         }
+        ctx.globalAlpha = 1;
 
-        // Purple energy jets — centered on ring body
+        // Purple energy jets — shadowBlur hoisted (constant across loop)
         ctx.globalCompositeOperation = "screen";
+        ctx.shadowBlur = jetShadowBlur;
+        ctx.shadowColor = "rgba(50,28,90,0.45)";
         for (let i = 0; i < purpleJets.length; i += detailStep) {
           const jet = purpleJets[i];
           const drift = swirl * jet.speed + jet.phase;
           const radius = ringRadius + innerRadius * (0.01 + Math.sin(drift * 1.7) * 0.04);
           const start = jet.angle + drift * 0.24;
           const span = 0.12 + jet.spread * 0.18 + Math.sin(drift * 2.1) * 0.03;
-          const alpha = (0.24 + 0.34 * (1 - revealProgress)) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
+          const alpha = (0.24 + 0.34 * oneMinusReveal) * (0.7 + Math.sin(drift * 3.1) * 0.3) * fadeOut;
           if (alpha <= 0.004) continue;
 
           ctx.beginPath();
-          ctx.strokeStyle = `rgba(80, 50, 130, ${Math.max(0.04, alpha * 0.5).toFixed(3)})`;
-          ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
-          ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
-          ctx.shadowColor = `rgba(50, 28, 90, ${(alpha * 0.45).toFixed(3)})`;
+          ctx.globalAlpha = alpha * 0.5;
+          ctx.strokeStyle = "rgba(80,50,130,1)";
+          ctx.lineWidth = jet.lineWidth + jetLineExtra;
           ctx.arc(cx, cy, radius, start, start + span);
           ctx.stroke();
         }
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = "source-over";
 
-        // Secondary lightning during pulse-out reveal — boosted alpha & reach for thick ring
+        // Secondary lightning during pulse-out reveal
         const revealLightningRamp = Math.max(0, Math.min(1, (revealProgress - 0.08) / 0.92));
         if (revealLightningRamp > 0.01) {
           const revealBoltStep = Math.max(perfTier === 0 ? 3 : 2, detailStep + 1);
           const revealMainSteps = perfTier === 0 ? 4 : 5;
           const revealBranchSteps = perfTier === 0 ? 3 : 4;
           const revealLightningRadius = ringOuter + rimWidth * 0.12;
+          // Hoist constant shadowBlur for main/core/branch strokes
+          const mainShadowBlur = (10 + oneMinusReveal * 8) * shadowScale;
+          const coreShadowBlur = (5 + oneMinusReveal * 6) * shadowScale;
+          const branchShadowBlur = (7 + oneMinusReveal * 6) * shadowScale;
 
           for (let li = 0; li < outerLightning.length; li += revealBoltStep) {
             const bolt = outerLightning[li];
@@ -1309,16 +1278,18 @@ const methods = {
               else ctx.lineTo(x, y);
             }
 
-            ctx.strokeStyle = `rgba(108, 64, 198, ${(alpha * 0.72).toFixed(3)})`;
+            ctx.globalAlpha = alpha * 0.72;
+            ctx.strokeStyle = "rgb(108, 64, 198)";
             ctx.lineWidth = Math.max(0.78, bolt.width * 0.88);
-            ctx.shadowBlur = (10 + (1 - revealProgress) * 8) * shadowScale;
-            ctx.shadowColor = `rgba(100, 58, 188, ${(alpha * 0.88).toFixed(3)})`;
+            ctx.shadowBlur = mainShadowBlur;
+            ctx.shadowColor = "rgba(100, 58, 188, 0.88)";
             ctx.stroke();
 
-            ctx.strokeStyle = `rgba(208, 164, 255, ${Math.min(0.32, alpha + 0.03).toFixed(3)})`;
+            ctx.globalAlpha = Math.min(0.32, alpha + 0.03);
+            ctx.strokeStyle = "rgb(208, 164, 255)";
             ctx.lineWidth = Math.max(0.7, bolt.width * 0.48);
-            ctx.shadowBlur = (5 + (1 - revealProgress) * 6) * shadowScale;
-            ctx.shadowColor = `rgba(170, 126, 246, ${(alpha * 0.74).toFixed(3)})`;
+            ctx.shadowBlur = coreShadowBlur;
+            ctx.shadowColor = "rgba(170, 126, 246, 0.74)";
             ctx.stroke();
 
             if (flicker > 0.26) {
@@ -1343,15 +1314,19 @@ const methods = {
                 else ctx.lineTo(x, y);
               }
 
-              const branchAlpha = alpha * 0.5;
-              ctx.strokeStyle = `rgba(120, 76, 210, ${branchAlpha.toFixed(3)})`;
+              ctx.globalAlpha = alpha * 0.5;
+              ctx.strokeStyle = "rgb(120, 76, 210)";
               ctx.lineWidth = Math.max(0.65, bolt.width * 0.52);
-              ctx.shadowBlur = (7 + (1 - revealProgress) * 6) * shadowScale;
-              ctx.shadowColor = `rgba(108, 70, 198, ${(branchAlpha * 0.82).toFixed(3)})`;
+              ctx.shadowBlur = branchShadowBlur;
+              ctx.shadowColor = "rgba(108, 70, 198, 0.82)";
               ctx.stroke();
             }
           }
         }
+
+        // Reset GPU state after lightning strokes
+        ctx.globalAlpha = 1;
+        ctx.shadowBlur = 0;
 
         // Mist halo — solid atmospheric fog centered on ring
         const mistHalo = ctx.createRadialGradient(
@@ -1360,7 +1335,7 @@ const methods = {
           Math.max(2, ringRadius * 0.72),
           cx,
           cy,
-          ringOuter + innerRadius * (0.78 + (1 - revealProgress) * 0.34)
+          ringOuter + innerRadius * (0.78 + oneMinusReveal * 0.34)
         );
         mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
         mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${(0.48 * fadeOut).toFixed(3)})`);
@@ -1371,7 +1346,7 @@ const methods = {
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
         ctx.beginPath();
-        ctx.arc(cx, cy, ringOuter + innerRadius * 1.0, 0, TAU);
+        ctx.arc(cx, cy, ringOuter + innerRadius, 0, TAU);
         ctx.fill();
         ctx.restore();
       }
