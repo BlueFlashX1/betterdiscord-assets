@@ -596,7 +596,7 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.1;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 2.2;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
