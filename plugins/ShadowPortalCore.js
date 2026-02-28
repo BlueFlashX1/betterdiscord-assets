@@ -604,14 +604,14 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.9;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.7;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
       // Matches PropJockey reference exactly: CCW rotate(359deg), 7s cycle, top left mask
       portalStyleEl.textContent = [
         "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
-        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
+        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 18px #7b3fbf) drop-shadow(0 0 40px #5a2d8a);overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
         ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 7s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
