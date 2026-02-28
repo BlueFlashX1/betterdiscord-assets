@@ -1730,6 +1730,13 @@ div[class^="notice_"] div[class^="closeButton_"]:hover path {
   color: #ffffff !important;
   fill: #ffffff !important;
 }
+/* Strip inner card border inside notice to avoid double-border */
+div[class^="notice_"] div[class^="preview_"],
+div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="notice_"] div[class*="card_"] {
+  border: none !important;
+  box-shadow: none !important;
+}
 
 /* §9l — Tooltips: solid black bg + purple border for readability.
    Applies to server hover tooltips, button tooltips, etc. */
