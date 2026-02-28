@@ -476,16 +476,18 @@ div[class^="userPopoutOuter_"] div[class^="connectedAccounts_"] {
   background: transparent !important;
   background-image: none !important;
 }
-/* Kill inner borders on user popout children (prevents double-border) */
-div[class^="userPopoutOuter_"] > div,
-div[class^="userPopoutOuter_"] div[class^="userPopoutInner_"],
-div[class^="userPopoutOuter_"] div[class^="userProfileOuter"],
-div[class^="userPopoutOuter_"] div[class^="profilePopout_"],
-div[class^="userPopoutOuter_"] div[class^="outer_"],
-div[class^="userPopoutOuter_"] div[class*="themed_"] {
+/* Kill ALL inner borders on user popout children (prevents double-border) */
+div[class^="userPopoutOuter_"] > *,
+div[class^="userPopoutOuter_"] > * > *,
+div[class^="userPopoutOuter_"] div[class*="Inner"],
+div[class^="userPopoutOuter_"] div[class*="outer"],
+div[class^="userPopoutOuter_"] div[class*="inner"],
+div[class^="userPopoutOuter_"] div[class*="themed"],
+div[class^="userPopoutOuter_"] div[class*="popout"],
+div[class^="userPopoutOuter_"] div[class*="wrapper"] {
   border: none !important;
   border-color: transparent !important;
-  box-shadow: none !important;
+  outline: none !important;
 }
 
 /* §3d — Context menus (all role="menu" popups: activity cards, friend row, etc.)
@@ -1932,7 +1934,7 @@ div[class^="messagesWrapper_"] li[class*="message_"]:hover time {
   gap: 4px !important;
 }
 .user-profile-modal-v2 div[class^="tabBarItem_"] {
-  border-radius: 16px !important;
+  border-radius: 2px !important;
   padding: 6px 14px !important;
   margin: 0 !important;
   margin-bottom: -1px !important;
