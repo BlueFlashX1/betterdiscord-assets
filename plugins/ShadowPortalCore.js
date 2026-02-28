@@ -1229,8 +1229,8 @@ const methods = {
 
           // Draw tapered segments — wispy at center, bold at outer edge
           const strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
-          const baseW = (0.4 + strandMorphMul * 0.2) * tierScale;
-          const maxW = (7.0 + strandMorphMul * 2.0) * tierScale;
+          const baseW = (1.0 + strandMorphMul * 0.5) * tierScale;
+          const maxW = (16.0 + strandMorphMul * 4.0) * tierScale;
           ctx.lineCap = "round";
           for (let i = 0; i < pts.length - 1; i++) {
             const p = i / (pts.length - 1);
@@ -1281,33 +1281,68 @@ const methods = {
           ctx.stroke();
         }
 
-        // ── Purple glowing core with shadow swirl overlay ──
-        const coreR = coreVortexRadius * (0.16 + 0.04 * coreGlowMul);
+        // ── Watery purple core — solid wobbly blob, not a gradient glow ──
+        const coreR = coreVortexRadius * (0.18 + 0.03 * coreGlowMul);
         const corePulse = 0.7 + 0.3 * tendrilPulseMul;
+        const blobPts = 36;
 
-        // Inner purple glow
-        const purpleCore = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
-        purpleCore.addColorStop(0, `rgba(130, 80, 210, ${(coreVortexAlpha * 0.9 * corePulse).toFixed(4)})`);
-        purpleCore.addColorStop(0.35, `rgba(100, 55, 175, ${(coreVortexAlpha * 0.65 * corePulse).toFixed(4)})`);
-        purpleCore.addColorStop(0.7, `rgba(60, 30, 120, ${(coreVortexAlpha * 0.3).toFixed(4)})`);
-        purpleCore.addColorStop(1, "rgba(0, 0, 0, 0)");
-        ctx.fillStyle = purpleCore;
-        ctx.shadowBlur = 20 * shadowScale * coreGlowMul;
-        ctx.shadowColor = `rgba(110, 60, 190, ${(coreVortexAlpha * 0.5).toFixed(4)})`;
+        // Outer blob — main watery shape
         ctx.beginPath();
-        ctx.arc(cx, cy, coreR, 0, TAU);
+        for (let bi = 0; bi <= blobPts; bi++) {
+          const bp = bi / blobPts;
+          const bAng = bp * TAU + swirl * 0.6 + spinOffset * 0.3;
+          const wobble = coreR * (
+            1.0
+            + 0.18 * Math.sin(swirl * 2.1 + bp * 5.0 + 0.3) * corePulse
+            + 0.10 * Math.sin(swirl * 3.8 + bp * 9.2 + 1.1)
+            + 0.06 * Math.sin(swirl * 5.5 + bp * 14.0 + 2.4)
+          );
+          const bx = cx + Math.cos(bAng) * wobble;
+          const by = cy + Math.sin(bAng) * wobble * 0.9;
+          if (bi === 0) ctx.moveTo(bx, by);
+          else ctx.lineTo(bx, by);
+        }
+        ctx.closePath();
+        ctx.fillStyle = `rgba(95, 55, 165, ${(coreVortexAlpha * 0.82 * corePulse).toFixed(4)})`;
+        ctx.shadowBlur = 12 * shadowScale * coreGlowMul;
+        ctx.shadowColor = `rgba(100, 55, 180, ${(coreVortexAlpha * 0.4).toFixed(4)})`;
+        ctx.fill();
+
+        // Inner blob — slightly brighter, offset, smaller = depth/liquid layering
+        const innerR = coreR * 0.55;
+        const iOff = coreR * 0.06;
+        const iCx = cx + Math.sin(swirl * 1.3) * iOff;
+        const iCy = cy + Math.cos(swirl * 1.7) * iOff;
+        ctx.beginPath();
+        for (let bi = 0; bi <= blobPts; bi++) {
+          const bp = bi / blobPts;
+          const bAng = bp * TAU + swirl * 0.9 + spinOffset * 0.5;
+          const wobble = innerR * (
+            1.0
+            + 0.22 * Math.sin(swirl * 2.6 + bp * 6.4 + 0.7) * corePulse
+            + 0.12 * Math.sin(swirl * 4.2 + bp * 11.0 + 1.9)
+          );
+          const bx = iCx + Math.cos(bAng) * wobble;
+          const by = iCy + Math.sin(bAng) * wobble * 0.92;
+          if (bi === 0) ctx.moveTo(bx, by);
+          else ctx.lineTo(bx, by);
+        }
+        ctx.closePath();
+        ctx.fillStyle = `rgba(120, 72, 195, ${(coreVortexAlpha * 0.7 * corePulse).toFixed(4)})`;
+        ctx.shadowBlur = 6 * shadowScale * coreGlowMul;
+        ctx.shadowColor = `rgba(130, 75, 210, ${(coreVortexAlpha * 0.3).toFixed(4)})`;
         ctx.fill();
         ctx.shadowBlur = 0;
 
-        // Dark swirl wisps over the purple core — 5 short rotating shadow arcs
-        const shadowCoreR = coreR * 0.85;
-        for (let sw = 0; sw < 5; sw++) {
-          const swAngle = (sw / 5) * TAU + swirl * 1.6 + spinOffset * 0.5;
-          const arcSpan = 0.35 + 0.15 * Math.sin(swirl * 2.4 + sw * 1.2);
+        // Dark swirl wisps over the blob — shadow currents across the liquid surface
+        for (let sw = 0; sw < 6; sw++) {
+          const swAng = (sw / 6) * TAU + swirl * 1.6 + spinOffset * 0.5;
+          const swR = coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1));
+          const arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
           ctx.beginPath();
-          ctx.arc(cx, cy, shadowCoreR * (0.5 + 0.5 * Math.sin(swirl * 1.8 + sw)), swAngle, swAngle + arcSpan);
-          ctx.strokeStyle = `rgba(8, 4, 16, ${(coreVortexAlpha * 0.7).toFixed(4)})`;
-          ctx.lineWidth = (2.5 + 1.5 * Math.sin(swirl * 3.1 + sw * 0.7)) * tierScale;
+          ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
+          ctx.strokeStyle = `rgba(10, 5, 20, ${(coreVortexAlpha * 0.65).toFixed(4)})`;
+          ctx.lineWidth = (3.0 + 2.0 * Math.sin(swirl * 3.1 + sw * 0.7)) * tierScale;
           ctx.lineCap = "round";
           ctx.stroke();
         }
@@ -1946,8 +1981,8 @@ function startDrawLoop() {
         }
         var strandAlpha = coreVortexAlpha * (0.58 + 0.42 * Math.sin(phase + s * 0.8));
         var tS = perfTier === 0 ? 0.9 : 1;
-        var bW = 0.4 * tS;
-        var mW = 7.0 * tS;
+        var bW = 1.0 * tS;
+        var mW = 16.0 * tS;
         ctx.lineCap = "round";
         for (var i = 0; i < pts.length - 1; i++) {
           var p = i / (pts.length - 1);
@@ -1990,27 +2025,68 @@ function startDrawLoop() {
         ctx.stroke();
       }
 
-      // Purple glowing core with shadow swirl overlay (Worker fallback)
-      var coreR = coreVortexRadius * 0.16;
-      var purpleCore = ctx.createRadialGradient(cx, cy, 0, cx, cy, coreR);
-      purpleCore.addColorStop(0, "rgba(130, 80, 210, " + (coreVortexAlpha * 0.9).toFixed(4) + ")");
-      purpleCore.addColorStop(0.35, "rgba(100, 55, 175, " + (coreVortexAlpha * 0.65).toFixed(4) + ")");
-      purpleCore.addColorStop(0.7, "rgba(60, 30, 120, " + (coreVortexAlpha * 0.3).toFixed(4) + ")");
-      purpleCore.addColorStop(1, "rgba(0, 0, 0, 0)");
-      ctx.fillStyle = purpleCore;
-      ctx.shadowBlur = 20 * shadowScale;
-      ctx.shadowColor = "rgba(110, 60, 190, " + (coreVortexAlpha * 0.5).toFixed(4) + ")";
-      ctx.beginPath(); ctx.arc(cx, cy, coreR, 0, TAU); ctx.fill();
+      // Watery purple core — solid wobbly blob (Worker fallback, no GSAP)
+      var coreR = coreVortexRadius * 0.18;
+      var corePulse = 0.7 + 0.3 * (0.5 + 0.5 * Math.sin(swirl * 1.2));
+      var blobPts = 36;
+
+      // Outer blob — main watery shape
+      ctx.beginPath();
+      for (var bi = 0; bi <= blobPts; bi++) {
+        var bp = bi / blobPts;
+        var bAng = bp * TAU + swirl * 0.6;
+        var wobble = coreR * (
+          1.0
+          + 0.18 * Math.sin(swirl * 2.1 + bp * 5.0 + 0.3) * corePulse
+          + 0.10 * Math.sin(swirl * 3.8 + bp * 9.2 + 1.1)
+          + 0.06 * Math.sin(swirl * 5.5 + bp * 14.0 + 2.4)
+        );
+        var bx = cx + Math.cos(bAng) * wobble;
+        var by = cy + Math.sin(bAng) * wobble * 0.9;
+        if (bi === 0) ctx.moveTo(bx, by);
+        else ctx.lineTo(bx, by);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(95, 55, 165, " + (coreVortexAlpha * 0.82 * corePulse).toFixed(4) + ")";
+      ctx.shadowBlur = 12 * shadowScale;
+      ctx.shadowColor = "rgba(100, 55, 180, " + (coreVortexAlpha * 0.4).toFixed(4) + ")";
+      ctx.fill();
+
+      // Inner blob — brighter, offset, smaller for depth/liquid layering
+      var innerBlobR = coreR * 0.55;
+      var iOff = coreR * 0.06;
+      var iCx = cx + Math.sin(swirl * 1.3) * iOff;
+      var iCy = cy + Math.cos(swirl * 1.7) * iOff;
+      ctx.beginPath();
+      for (var bi2 = 0; bi2 <= blobPts; bi2++) {
+        var bp2 = bi2 / blobPts;
+        var bAng2 = bp2 * TAU + swirl * 0.9;
+        var wobble2 = innerBlobR * (
+          1.0
+          + 0.22 * Math.sin(swirl * 2.6 + bp2 * 6.4 + 0.7) * corePulse
+          + 0.12 * Math.sin(swirl * 4.2 + bp2 * 11.0 + 1.9)
+        );
+        var bx2 = iCx + Math.cos(bAng2) * wobble2;
+        var by2 = iCy + Math.sin(bAng2) * wobble2 * 0.92;
+        if (bi2 === 0) ctx.moveTo(bx2, by2);
+        else ctx.lineTo(bx2, by2);
+      }
+      ctx.closePath();
+      ctx.fillStyle = "rgba(120, 72, 195, " + (coreVortexAlpha * 0.7 * corePulse).toFixed(4) + ")";
+      ctx.shadowBlur = 6 * shadowScale;
+      ctx.shadowColor = "rgba(130, 75, 210, " + (coreVortexAlpha * 0.3).toFixed(4) + ")";
+      ctx.fill();
       ctx.shadowBlur = 0;
-      var shadowCoreR = coreR * 0.85;
-      var tS2 = perfTier === 0 ? 0.9 : 1;
-      for (var sw = 0; sw < 5; sw++) {
-        var swAngle = (sw / 5) * TAU + swirl * 1.6;
-        var arcSpan = 0.35 + 0.15 * Math.sin(swirl * 2.4 + sw * 1.2);
+
+      // Dark swirl wisps over the blob — shadow currents
+      for (var sw = 0; sw < 6; sw++) {
+        var swAng = (sw / 6) * TAU + swirl * 1.6;
+        var swR = coreR * (0.3 + 0.5 * Math.sin(swirl * 1.8 + sw * 1.1));
+        var arcLen = 0.4 + 0.2 * Math.sin(swirl * 2.4 + sw * 1.2);
         ctx.beginPath();
-        ctx.arc(cx, cy, shadowCoreR * (0.5 + 0.5 * Math.sin(swirl * 1.8 + sw)), swAngle, swAngle + arcSpan);
-        ctx.strokeStyle = "rgba(8, 4, 16, " + (coreVortexAlpha * 0.7).toFixed(4) + ")";
-        ctx.lineWidth = (2.5 + 1.5 * Math.sin(swirl * 3.1 + sw * 0.7)) * tS2;
+        ctx.arc(cx, cy, swR, swAng, swAng + arcLen);
+        ctx.strokeStyle = "rgba(10, 5, 20, " + (coreVortexAlpha * 0.65).toFixed(4) + ")";
+        ctx.lineWidth = (3.0 + 2.0 * Math.sin(swirl * 3.1 + sw * 0.7)) * tS;
         ctx.lineCap = "round";
         ctx.stroke();
       }
