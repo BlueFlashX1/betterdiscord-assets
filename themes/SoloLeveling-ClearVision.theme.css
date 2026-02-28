@@ -515,6 +515,15 @@ div[role="menu"],
   -webkit-backdrop-filter: none !important;
 }
 
+/* §3d (continued) — Reaction tooltip (hover popup on emoji reactions): solid + purple border */
+div[class^="reactionTooltip_"] {
+  background: rgba(10, 10, 16, 0.98) !important;
+  background-image: none !important;
+  border: 2px solid rgba(var(--sl-color-primary-rgb), 0.55) !important;
+  border-radius: 2px !important;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.5) !important;
+}
+
 /* Global: all interactive items inside any popup/menu get consistent inset highlight */
 div[role="menu"] div[class^="item_"],
 div[role="menu"] div[role="menuitem"],
@@ -1260,20 +1269,17 @@ div[class^="channelTextArea_"] div[class^="buttonContainer_"] > button:hover {
   border-color: var(--sl-color-accent-light) !important;
 }
 
-/* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): solid + purple border
-   ONLY use :has() scoped selectors to avoid matching broad chat wrappers. */
-div[id^="popout_"] > div[class*="popout_"]:has(div[class*="emojiPicker_"]),
-div[id^="popout_"] > div[class*="popout_"]:has(section[class*="stickerPicker_"]),
-div[id^="popout_"] > div[class*="popout_"]:has(div[class*="gifPicker_"]),
-div[id^="popout_"] > div[class*="popout_"]:has(div[class*="expressionPicker"]),
-div[class*="contentWrapper_"]:has(> div[class*="emojiPicker_"]),
-div[class*="contentWrapper_"]:has(> section[class*="stickerPicker_"]),
-div[class*="contentWrapper_"]:has(> div[class*="gifPicker_"]),
-div[class*="contentWrapper_"]:has(> div[class*="expressionPicker"]) {
-  background: rgba(8, 10, 20, 0.98) !important;
-  background-image: none !important;
+/* §9b (continued) — Expression picker popup (GIF/Stickers/Emoji panel): purple border
+   All three pickers (Emoji/GIF/Sticker) share div.contentWrapper__08434 as outer shell
+   containing nav.nav__08434 (tab bar) + the active tab panel.
+   Scoped via aria-label="Expression Picker Categories" on the inner navList —
+   this is unique to the expression picker, zero inflation risk. */
+div[class*="contentWrapper_"]:has(> nav [aria-label="Expression Picker Categories"]) {
   border: 2px solid var(--sl-color-primary) !important;
   border-radius: 2px !important;
+  overflow: hidden !important;
+  background: rgba(8, 10, 20, 0.98) !important;
+  background-image: none !important;
 }
 /* Inner surfaces of expression picker: no border, solid bg only */
 div[class^="emojiPicker_"],
@@ -1845,6 +1851,15 @@ div[class^="message_"][class*="mentioned_"]:hover {
   background: rgba(var(--sl-color-primary-rgb), 0.12) !important;
 }
 
+/* §11c (continued) — Inline @mention and #channel pills: bigger padding
+   Default Discord: padding 0 4px.  Bump to 2px 6px for a chunkier pill. */
+span[class*="wrapper_f61d60"],
+span.channelMention,
+span[class*="roleMention"] {
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+}
+
 /* §11d — Reply context bar: purple spine connector
    The repliedMessage_ div has a ::before pseudo that draws the reply
    connector line (the L-shaped pipe). Override its color to purple. */
@@ -2306,6 +2321,13 @@ div[class^="contentBody_"] div[class^="scroller_"]::-webkit-scrollbar {
   width: 0 !important;
   height: 0 !important;
   display: none !important;
+}
+
+/* §10d (pre) — Friends header tab buttons: bigger pill size
+   Default Discord: padding ~2px 8-10px. Bump for chunkier pills with custom font. */
+div[role="tablist"][aria-label="Friends"] div[role="tab"] {
+  padding: 6px 14px !important;
+  font-size: 17px !important;
 }
 
 /* §10d — Settings + Friends tab headers: pill style
