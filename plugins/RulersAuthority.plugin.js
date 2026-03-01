@@ -643,6 +643,53 @@ module.exports = class RulersAuthority {
   // §9  Hover-to-Expand System
   // ═══════════════════════════════════════════════════════════════════════
 
+  /**
+   * Shared timer-based reveal/hide logic for hover-to-expand panels.
+   * Manages a reveal timer and a hide timer for the given panel name,
+   * toggling visibility via a body class (`ra-{name}-hover-reveal`).
+   *
+   * @param {string} name     Timer prefix (sidebar, members, profile, channel)
+   * @param {boolean} inZone  Whether cursor is inside the activation zone/panel
+   * @param {number} revealDelay  ms before reveal fires
+   * @param {number} hideDelay    ms before hide fires
+   * @param {function} [isActive]  Custom "is currently revealed" check (defaults to body class)
+   * @param {function} [setActive] Custom reveal/hide setter (defaults to body class toggle)
+   */
+  _applyHoverRevealState(name, inZone, revealDelay, hideDelay, isActive, setActive) {
+    const revealKey = `_${name}RevealTimer`;
+    const hideKey = `_${name}HideTimer`;
+    const className = `ra-${name}-hover-reveal`;
+
+    const checkActive = isActive || (() => document.body.classList.contains(className));
+    const applyActive = setActive || ((revealed) => {
+      if (revealed) {
+        document.body.classList.add(className);
+      } else {
+        document.body.classList.remove(className);
+      }
+    });
+
+    if (inZone) {
+      clearTimeout(this[hideKey]);
+      this[hideKey] = null;
+      if (!this[revealKey] && !checkActive()) {
+        this[revealKey] = setTimeout(() => {
+          this[revealKey] = null;
+          applyActive(true);
+        }, revealDelay);
+      }
+    } else {
+      clearTimeout(this[revealKey]);
+      this[revealKey] = null;
+      if (!this[hideKey] && checkActive()) {
+        this[hideKey] = setTimeout(() => {
+          this[hideKey] = null;
+          applyActive(false);
+        }, hideDelay);
+      }
+    }
+  }
+
   setupHoverHandlers() {
     if (!this._controller) return;
 
@@ -676,110 +723,36 @@ module.exports = class RulersAuthority {
         const inZone = e.clientX <= fudge;
         const sidebarEl = this._findPanelElement("sidebar");
         const inPanel = sidebarEl ? this._isInsideElement(e, sidebarEl, fudge) : false;
-
-        if (inZone || inPanel) {
-          clearTimeout(this._sidebarHideTimer);
-          this._sidebarHideTimer = null;
-          if (!this._sidebarRevealTimer && !document.body.classList.contains("ra-sidebar-hover-reveal")) {
-            this._sidebarRevealTimer = setTimeout(() => {
-              this._sidebarRevealTimer = null;
-              document.body.classList.add("ra-sidebar-hover-reveal");
-            }, revealDelay);
-          }
-        } else {
-          clearTimeout(this._sidebarRevealTimer);
-          this._sidebarRevealTimer = null;
-          if (!this._sidebarHideTimer && document.body.classList.contains("ra-sidebar-hover-reveal")) {
-            this._sidebarHideTimer = setTimeout(() => {
-              this._sidebarHideTimer = null;
-              document.body.classList.remove("ra-sidebar-hover-reveal");
-            }, hideDelay);
-          }
-        }
+        this._applyHoverRevealState("sidebar", inZone || inPanel, revealDelay, hideDelay);
       }
 
       // ── Members list hover (right edge) ──
       if (membersHoverEnabled && this.settings.panels.members.pushed) {
         const distFromRight = viewportWidth - e.clientX;
         const inZone = distFromRight <= fudge;
-
         const membersEl = this._findPanelElement("members");
         const inPanel = membersEl ? this._isInsideElement(e, membersEl, fudge) : false;
-
-        if (inZone || inPanel) {
-          clearTimeout(this._membersHideTimer);
-          this._membersHideTimer = null;
-          if (!this._membersRevealTimer && !document.body.classList.contains("ra-members-hover-reveal")) {
-            this._membersRevealTimer = setTimeout(() => {
-              this._membersRevealTimer = null;
-              document.body.classList.add("ra-members-hover-reveal");
-            }, revealDelay);
-          }
-        } else {
-          clearTimeout(this._membersRevealTimer);
-          this._membersRevealTimer = null;
-          if (!this._membersHideTimer && document.body.classList.contains("ra-members-hover-reveal")) {
-            this._membersHideTimer = setTimeout(() => {
-              this._membersHideTimer = null;
-              document.body.classList.remove("ra-members-hover-reveal");
-            }, hideDelay);
-          }
-        }
+        this._applyHoverRevealState("members", inZone || inPanel, revealDelay, hideDelay);
       }
 
       // ── Profile panel hover (right edge, offset from members) ──
       if (profileHoverEnabled && this.settings.panels.profile.pushed) {
         const profileEl = this._findPanelElement("profile");
         const inPanel = profileEl ? this._isInsideElement(e, profileEl, fudge) : false;
-
         const distFromRight = viewportWidth - e.clientX;
         const inZone = distFromRight <= fudge && !document.body.classList.contains("ra-members-hover-reveal");
-
-        if (inZone || inPanel) {
-          clearTimeout(this._profileHideTimer);
-          this._profileHideTimer = null;
-          if (!this._profileRevealTimer && !document.body.classList.contains("ra-profile-hover-reveal")) {
-            this._profileRevealTimer = setTimeout(() => {
-              this._profileRevealTimer = null;
-              document.body.classList.add("ra-profile-hover-reveal");
-            }, revealDelay);
-          }
-        } else {
-          clearTimeout(this._profileRevealTimer);
-          this._profileRevealTimer = null;
-          if (!this._profileHideTimer && document.body.classList.contains("ra-profile-hover-reveal")) {
-            this._profileHideTimer = setTimeout(() => {
-              this._profileHideTimer = null;
-              document.body.classList.remove("ra-profile-hover-reveal");
-            }, hideDelay);
-          }
-        }
+        this._applyHoverRevealState("profile", inZone || inPanel, revealDelay, hideDelay);
       }
 
       // ── Pushed channel hover reveal (channel sidebar region) ──
       if (channelHoverEnabled) {
         const hoverEl = this._getChannelHoverElement();
         const inChannelPanel = hoverEl ? this._isInsideElement(e, hoverEl, fudge) : false;
-
-        if (inChannelPanel) {
-          clearTimeout(this._channelHideTimer);
-          this._channelHideTimer = null;
-          if (!this._channelRevealTimer && !this._channelsHoverRevealActive) {
-            this._channelRevealTimer = setTimeout(() => {
-              this._channelRevealTimer = null;
-              this._setHiddenChannelRevealState(true);
-            }, revealDelay);
-          }
-        } else {
-          clearTimeout(this._channelRevealTimer);
-          this._channelRevealTimer = null;
-          if (!this._channelHideTimer && this._channelsHoverRevealActive) {
-            this._channelHideTimer = setTimeout(() => {
-              this._channelHideTimer = null;
-              this._setHiddenChannelRevealState(false);
-            }, hideDelay);
-          }
-        }
+        this._applyHoverRevealState(
+          "channel", inChannelPanel, revealDelay, hideDelay,
+          () => this._channelsHoverRevealActive,
+          (revealed) => this._setHiddenChannelRevealState(revealed)
+        );
       } else {
         clearTimeout(this._channelRevealTimer);
         clearTimeout(this._channelHideTimer);

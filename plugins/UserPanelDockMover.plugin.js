@@ -107,6 +107,13 @@ module.exports = class UserPanelDockMover {
   }
 
   injectStyles() {
+    // HSLDockAutoHide already injects the identical .sl-userpanel-docked CSS
+    // ruleset. Skip duplicate injection when it's active to avoid redundancy.
+    const hslActive = BdApi.Plugins.isEnabled("HSLDockAutoHide");
+    if (hslActive) {
+      return;
+    }
+
     const css = `
       /* ── Docked user panel — right-side overlay on dock ──
          pointer-events: none on the section so horizontal scroll passes
