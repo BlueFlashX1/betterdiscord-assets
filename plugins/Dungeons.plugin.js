@@ -160,7 +160,7 @@
  * - Added bidirectional HP/Mana sync before join validation
  * - Pulls fresh HP/Mana from Stats plugin before checking requirements
  * - Regeneration now syncs immediately with Stats plugin UI
- * - HP bar updates trigger Stats plugin updateHPManaBars()
+ * - HP bar updates trigger Stats plugin updateChatUI() (v3 React re-render)
  * - Fixed delayed responses (HP/Mana now real-time)
  * - Added sync logging for debugging
  *
@@ -920,8 +920,6 @@ module.exports = class Dungeons {
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobSpawnInterval: 10000, // Spawn new mobs every 10 seconds (slower, less lag)
-      mobSpawnCount: 750, // Base spawn count (will have variable scaling based on mob count)
       mobMaxActiveCap: 500, // Hard limit on simultaneously active mobs per dungeon
       mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
@@ -937,7 +935,6 @@ module.exports = class Dungeons {
       shadowPressureMobScaleStep: 0.12, // mobHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureScaleMax: 2.75, // Safety cap for pressure scaling
-      shadowReviveCost: 50, // Mana cost to revive a shadow
       roleCombatModelEnabled: true, // Lore-role combat model (bounded state, low-overhead)
       roleCombatModelVersion: 1, // Reserved for future behavior migrations
       // Dungeon ranks including SS, SSS
@@ -980,47 +977,6 @@ module.exports = class Dungeons {
     this.shadowArmy = null;
     this.toasts = null;
 
-    // SHARED UTILITIES - Common functions for plugin cooperation
-    this.utils = {
-      // Normalize rank to index
-      getRankIndex: (
-        rank,
-        rankArray = this.settings?.dungeonRanks || [
-          'E',
-          'D',
-          'C',
-          'B',
-          'A',
-          'S',
-          'SS',
-          'SSS',
-          'NH',
-          'Monarch',
-          'Monarch+',
-          'Shadow Monarch',
-        ]
-      ) => {
-        return rankArray.indexOf(rank);
-      },
-      // Calculate HP from stats
-      calculateHP: (vitality, rankIndex, shadowCount = 0) => {
-        const baseHP = 100 + vitality * 10 + rankIndex * 50;
-        const shadowBonus = shadowCount * 25;
-        return baseHP + shadowBonus;
-      },
-      // Calculate Mana from stats (lore: mostly INT + level, not army size)
-      calculateMana: (intelligence, level = 1) => {
-        const safeLevel = Number.isFinite(level) ? Math.max(1, level) : 1;
-        return 100 + intelligence * 12 + safeLevel * 8;
-      },
-      // Get effective stats (with fallback)
-      getEffectiveStats: (plugin, settings) => {
-        return (
-          plugin?.getTotalEffectiveStats?.() || plugin?.settings?.stats || settings?.stats || {}
-        );
-      },
-    };
-
     // RANK SCALING CONFIG (single source of truth)
     // Used by combat damage + mob/boss/shadow HP scaling.
     this.rankScaling = {
@@ -1035,26 +991,6 @@ module.exports = class Dungeons {
       shadowHpBaseFactor: 0.9,
       shadowHpStep: 0.05,
       shadowHpMaxFactor: 1.5,
-    };
-
-    // Baseline stats system: exponential scaling by rank
-    // Used to ensure shadows scale properly with rank progression
-    this.baselineStats = {
-      E: { strength: 10, agility: 10, intelligence: 10, vitality: 10, perception: 10 },
-      D: { strength: 25, agility: 25, intelligence: 25, vitality: 25, perception: 25 },
-      C: { strength: 50, agility: 50, intelligence: 50, vitality: 50, perception: 50 },
-      B: { strength: 100, agility: 100, intelligence: 100, vitality: 100, perception: 100 },
-      A: { strength: 200, agility: 200, intelligence: 200, vitality: 200, perception: 200 },
-      S: { strength: 400, agility: 400, intelligence: 400, vitality: 400, perception: 400 },
-      SS: { strength: 800, agility: 800, intelligence: 800, vitality: 800, perception: 800 },
-      SSS: { strength: 1600, agility: 1600, intelligence: 1600, vitality: 1600, perception: 1600 },
-      Monarch: {
-        strength: 3200,
-        agility: 3200,
-        intelligence: 3200,
-        vitality: 3200,
-        perception: 3200,
-      },
     };
 
     this.extractionRetryLimit = 3; // Max attempts per boss (mobs use single-attempt immediate extraction)
@@ -1117,7 +1053,6 @@ module.exports = class Dungeons {
     this._bossBarLayoutThrottle = new Map(); // Throttle HP bar layout adjustments (100-150ms)
     this._rankStatsCache = new Map(); // Cache rank-based stat calculations
     // Boss stats are rolled fresh per instance (no cache needed — bosses spawn infrequently)
-    this._shadowEffectiveStatsCache = new Map(); // TTL cache for shadow effective stats
     this._personalityCache = new Map(); // TTL cache for personality lookups
     this._memberWidthCache = new Map(); // Short-lived cache for member list width
     this._containerCache = new Map(); // Cache for progress/header containers (short TTL)
@@ -1228,17 +1163,6 @@ module.exports = class Dungeons {
 
     // Extraction tracking
     this.extractionInProgress = new Set(); // Track channels currently processing extractions
-
-    // Spawn reliability state (bounded; not persisted)
-    this._spawnPityByChannel = new Map(); // channelKey -> { pity, lastSeenAt }
-    this._spawnPityMax = 50;
-
-    // Spawn activity state (bounded; not persisted)
-    // Tracks recent per-channel message volume to make spawns feel reasonable in active channels.
-    this._spawnActivityByChannel = new Map(); // channelKey -> { count, windowStartAt, lastSeenAt }
-    this._spawnActivityWindowMs = 60000; // 60s rolling-ish window (reset-based)
-    this._spawnActivityCap = 200; // cap count per window to bound impact and memory
-    this._spawnActivityMaxEntries = 500; // LRU cap for channel entries
   }
 
   /** DOM element references, container references. */
@@ -1246,9 +1170,6 @@ module.exports = class Dungeons {
     this.dungeonIndicators = new Map();
     this.bossHPBars = new Map();
     this._bossBarLayoutFrame = null;
-    // Legacy: used by older spawn-queue implementation (now centralized in global spawn loop)
-    this.userHPBar = null;
-    this.dungeonModal = null;
 
     // Performance optimization: Throttled DOM updates
     this._hpBarUpdateQueue = new Set(); // Queue of channelKeys needing HP bar updates
@@ -1283,18 +1204,6 @@ module.exports = class Dungeons {
     this.debugLog(...args);
   }
 
-  /**
-   * Info log - Silent unless debug mode or forced
-   * Use for important events only to avoid console spam
-   * @param {boolean} force - Set true to log even when debug is off
-   * @param {...any} args - Message args
-   */
-  infoLog(force = false, ...args) {
-    if (force || this.settings.debug) {
-      // Legacy direct console log kept for compatibility; controlled by infoLog/debugLog
-      console.log('[Dungeons]', ...args);
-    }
-  }
 
   _setTrackedTimeout(callback, delayMs) {
     const timeoutId = setTimeout(() => {
@@ -1674,7 +1583,6 @@ module.exports = class Dungeons {
     // PERF: Hoist shared computations — compute ONCE per tick, not per-dungeon × per-function
     const isWindowVisible = this.isWindowVisible();
     if (isWindowVisible) {
-      this._syncVitalsForVisibleCombat(true);
       this.syncHPAndManaFromStats();
     }
 
@@ -2014,11 +1922,6 @@ module.exports = class Dungeons {
     // Stop HP/Mana regeneration
     this.stopRegeneration();
 
-    if (this._statusValidationInterval) {
-      clearInterval(this._statusValidationInterval);
-      this._intervals.delete(this._statusValidationInterval);
-      this._statusValidationInterval = null;
-    }
 
     if (this._recalculateManaTimeout) {
       clearTimeout(this._recalculateManaTimeout);
@@ -2033,11 +1936,6 @@ module.exports = class Dungeons {
     this._stopCombatLoop();
     this.stopAllDungeonCleanup();
     // Corpse pile lives on dungeon objects (persisted to IDB) — no separate cleanup needed.
-    // Clear legacy extraction processors
-    if (this.extractionProcessors) {
-      this.extractionProcessors.forEach((processor) => clearInterval(processor));
-      this.extractionProcessors.clear();
-    }
     this.removeAllIndicators();
     this.removeAllBossHPBars();
 
@@ -2051,11 +1949,6 @@ module.exports = class Dungeons {
     this._intervals.forEach((intervalId) => clearInterval(intervalId));
     this._intervals.clear();
 
-    // Stop plugin validation interval
-    if (this._pluginValidationInterval) {
-      clearInterval(this._pluginValidationInterval);
-      this._pluginValidationInterval = null;
-    }
 
     // Stop HP bar restoration
     this.stopHPBarRestoration();
@@ -2097,7 +1990,6 @@ module.exports = class Dungeons {
     if (this._personalityCache) this._personalityCache.clear();
     if (this._memberWidthCache) this._memberWidthCache.clear();
     if (this._containerCache) this._containerCache.clear();
-    if (this._lastExtractionAttempt) this._lastExtractionAttempt.clear();
     if (this._mobSpawnQueue) this._mobSpawnQueue.clear();
     if (this.cache) {
       this.cache.clear();
@@ -2129,11 +2021,6 @@ module.exports = class Dungeons {
       this._shadowExtractedListener = null;
     }
 
-    // Remove shadow extraction event listener (legacy)
-    if (this._shadowExtractedHandler) {
-      document.removeEventListener('shadowExtracted', this._shadowExtractedHandler);
-      this._shadowExtractedHandler = null;
-    }
     // Clear dead shadows tracking
     if (this.deadShadows) {
       this.deadShadows.clear();
@@ -2197,7 +2084,6 @@ module.exports = class Dungeons {
     });
     this.hiddenComments.clear();
 
-    this.closeDungeonModal();
 
     this.stopChannelWatcher?.();
     this.currentChannelKey = null;
@@ -2251,10 +2137,6 @@ module.exports = class Dungeons {
     if (this._onStatsChangedUnsubscribe && typeof this._onStatsChangedUnsubscribe === 'function') {
       this._onStatsChangedUnsubscribe();
       this._onStatsChangedUnsubscribe = null;
-    }
-    if (this._shadowExtractedHandler) {
-      document.removeEventListener('shadowExtracted', this._shadowExtractedHandler);
-      this._shadowExtractedHandler = null;
     }
     // _restoreLocalAgentLogs removed (Sprint 3) — window.fetch no longer monkey-patched
 
@@ -5116,7 +4998,6 @@ module.exports = class Dungeons {
         this.errorLog('Failed to save dungeon after join', err)
       );
     }
-    this.closeDungeonModal();
   }
 
   /**
@@ -5357,7 +5238,6 @@ module.exports = class Dungeons {
       );
     }
 
-    this.closeDungeonModal();
     // Update HP bar after modal closes so header re-render isn't gated by transient overlay state.
     this.queueHPBarUpdate(channelKey);
     this._setTrackedTimeout(() => this.queueHPBarUpdate(channelKey), 34);
@@ -5530,9 +5410,9 @@ module.exports = class Dungeons {
     this.soloLevelingStats.settings.userHP = this.settings.userHP;
     this.soloLevelingStats.settings.userMaxHP = this.settings.userMaxHP;
 
-    // Update UI immediately
-    if (typeof this.soloLevelingStats.updateHPManaBars === 'function') {
-      this.soloLevelingStats.updateHPManaBars();
+    // Update UI immediately (v3: React re-render via updateChatUI)
+    if (typeof this.soloLevelingStats.updateChatUI === 'function') {
+      this.soloLevelingStats.updateChatUI();
     }
 
     // Save if requested
@@ -5550,12 +5430,10 @@ module.exports = class Dungeons {
     this.soloLevelingStats.settings.userMana = this.settings.userMana;
     this.soloLevelingStats.settings.userMaxMana = this.settings.userMaxMana;
 
-    // Update UI immediately (prefer updateHPManaBars, fallback to updateUI)
-    const uiUpdater = [
-      this.soloLevelingStats.updateHPManaBars,
-      this.soloLevelingStats.updateUI,
-    ].find((fn) => typeof fn === 'function');
-    uiUpdater?.call(this.soloLevelingStats);
+    // Update UI immediately (v3: React re-render via updateChatUI)
+    if (typeof this.soloLevelingStats.updateChatUI === 'function') {
+      this.soloLevelingStats.updateChatUI();
+    }
 
     // Save if requested
     if (saveImmediately && typeof this.soloLevelingStats.saveSettings === 'function') {
@@ -5565,15 +5443,13 @@ module.exports = class Dungeons {
 
   /**
    * Update Stats plugin UI (HP/Mana bars)
-   * Tries updateHPManaBars first, falls back to updateUI
+   * Triggers React re-render via updateChatUI (v3)
    */
   updateStatsUI() {
     if (!this.soloLevelingStats) return;
-    const uiUpdater = [
-      this.soloLevelingStats.updateHPManaBars,
-      this.soloLevelingStats.updateUI,
-    ].find((fn) => typeof fn === 'function');
-    uiUpdater?.call(this.soloLevelingStats);
+    if (typeof this.soloLevelingStats.updateChatUI === 'function') {
+      this.soloLevelingStats.updateChatUI();
+    }
   }
 
   _buildDeployStarterAllocation(channelKey, dungeon) {
@@ -6365,12 +6241,6 @@ module.exports = class Dungeons {
     return { assignedShadows, shadowHP, deadShadows };
   }
 
-  _syncVitalsForVisibleCombat(isWindowVisible) {
-    if (isWindowVisible) {
-      this.syncHPAndManaFromStats();
-    }
-  }
-
   async _applyAccumulatedShadowAndUserDamage({
     shadowDamageMap,
     assignedShadows,
@@ -6538,9 +6408,6 @@ module.exports = class Dungeons {
   }
 
   /**
-   * Recalculate user mana pool based on current effective stats and level.
-   */
-  /**
    * Recalculate user HP pool based on current stats and shadow count
    * Called when shadow army size changes
    */
@@ -6555,7 +6422,6 @@ module.exports = class Dungeons {
     const rank = this.soloLevelingStats.settings?.rank || 'E';
     await this.getShadowCount(); // Cache shadow count for HP calculation
 
-    const _rankIndex = this.getRankIndexValue(rank); // Used in calculateHP internally
     const oldMaxHP = this.settings.userMaxHP || 0;
     this.settings.userMaxHP = await this.calculateHP(vitality, rank, true);
 
@@ -8793,8 +8659,6 @@ module.exports = class Dungeons {
         cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
       }
 
-      // NOTE: _syncVitalsForVisibleCombat hoisted to _combatLoopTick (once per tick)
-
       // Validate active dungeon status periodically
       // PERFORMANCE: Skip validation when window is hidden
       if (isWindowVisible && Math.random() < 0.1) {
@@ -9644,9 +9508,9 @@ module.exports = class Dungeons {
 
     if (this.shadowArmy) {
       // Get personality (now uses stored data from ShadowArmy)
-      if (this.shadowArmy.getShadowPersonality) {
-        const personalityObj = this.shadowArmy.getShadowPersonality(shadow);
-        personality = shadow.personality || personalityObj.name?.toLowerCase() || 'balanced';
+      if (this.shadowArmy.getShadowPersonalityKey) {
+        const personalityKey = this.shadowArmy.getShadowPersonalityKey(shadow);
+        personality = personalityKey || shadow.personality || 'balanced';
       }
 
       // Get base attack interval (now uses stored data from ShadowArmy)
@@ -10211,8 +10075,6 @@ module.exports = class Dungeons {
         // Window hidden - reduce cycles multiplier significantly (75% reduction)
         cyclesMultiplier = Math.max(1, Math.floor(cyclesMultiplier * 0.25)); // Process 75% less
       }
-
-      // NOTE: _syncVitalsForVisibleCombat hoisted to _combatLoopTick (once per tick)
 
       const dungeon = this._getActiveDungeon(channelKey);
       if (!dungeon || !dungeon.boss || dungeon.boss.hp <= 0) {
@@ -11089,13 +10951,6 @@ module.exports = class Dungeons {
         try {
           if (typeof BdApi?.Events?.emit === 'function') {
             BdApi.Events.emit('Dungeons:awardEssence', { amount: 1 });
-          } else {
-            // Fallback: direct mutation if BdApi.Events unavailable
-            const shadowArmyPlugin = BdApi.Plugins.isEnabled('ShadowArmy')
-              ? BdApi.Plugins.get('ShadowArmy')?.instance : null;
-            if (shadowArmyPlugin?.addEssence) {
-              shadowArmyPlugin.addEssence(1);
-            }
           }
         } catch (essenceError) {
           this.debugLog?.(`Failed to award shadow essence: ${essenceError.message}`);
@@ -11160,8 +11015,8 @@ module.exports = class Dungeons {
         dungeon.successfulResurrections === 500
       ) {
         const percent = Math.floor((manaAfter / this.settings.userMaxMana) * 100);
-        this.infoLog(
-          `${dungeon.successfulResurrections} shadows resurrected. Mana: ${manaAfter}/${this.settings.userMaxMana} (${percent}%)`
+        console.log(
+          `[Dungeons] ${dungeon.successfulResurrections} shadows resurrected. Mana: ${manaAfter}/${this.settings.userMaxMana} (${percent}%)`
         );
       }
     }
@@ -12878,12 +12733,6 @@ module.exports = class Dungeons {
   // All HP bar creation, positioning, and update code has been removed
   // HP/Mana calculations (calculateHP, calculateMana) are still used by resurrection system
 
-  closeDungeonModal() {
-    if (this.dungeonModal) {
-      this.dungeonModal.remove();
-      this.dungeonModal = null;
-    }
-  }
 
   // ==== PERFORMANCE OPTIMIZATION: Active/Background Dungeon System ====
   /**
