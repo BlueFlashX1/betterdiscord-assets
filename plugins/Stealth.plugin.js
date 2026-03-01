@@ -817,35 +817,6 @@ module.exports = class Stealth {
     }
   }
 
-  /** Patch all resolved status-setter functions so ANY call to set a
-   *  non-invisible status gets silently rewritten to "invisible" before
-   *  the original function executes.  This catches Discord's own UI
-   *  status picker and any other module that calls setStatus/setPresence. */
-  _patchStatusSetters() {
-    if (!this._statusSetters?.length) return;
-
-    for (const { module, fnName } of this._statusSetters) {
-      try {
-        BdApi.Patcher.before(STEALTH_PLUGIN_ID, module, fnName, (_ctx, args) => {
-          if (!this.settings.enabled || !this.settings.invisibleStatus) return;
-
-          if (fnName === "setPresence") {
-            if (args[0] && typeof args[0] === "object" && args[0].status && args[0].status !== "invisible") {
-              args[0] = { ...args[0], status: "invisible" };
-            }
-            return;
-          }
-          // setStatus / updateStatus — override string arg
-          if (typeof args[0] === "string" && args[0] !== "invisible") {
-            args[0] = "invisible";
-          }
-        });
-      } catch (err) {
-        this._logWarning("STATUS", `Failed to intercept ${fnName}`, err, `status-intercept-${fnName}`);
-      }
-    }
-  }
-
   _ensureInvisibleStatus() {
     const current = this._getCurrentStatus();
 

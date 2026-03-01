@@ -9728,18 +9728,6 @@ module.exports = class SoloLevelingStats {
          Targets: All animated elements (progress bar, quest celebrations, particles)
          Purpose: Define animation keyframes for visual effects throughout the UI
          ============================================================================ */
-      /* Progress bar shimmer effect (currently unused but available) */
-      @keyframes shimmer {
-        0% { transform: translateX(-100%); }
-        100% { transform: translateX(100%); }
-      }
-
-      /* Progress bar sparkle effect (currently unused but available) */
-      @keyframes sparkle {
-        0%, 100% { opacity: 0; }
-        50% { opacity: 1; }
-      }
-
       @keyframes sparkle-float {
         0% {
           opacity: 0;
@@ -11021,7 +11009,6 @@ module.exports = class SoloLevelingStats {
       this.debug.lastLogTimes[operation] = now;
     }
 
-    const _timestamp = new Date().toISOString();
     console.warn(`[SoloLevelingStats:${operation}] ${message}`, data || '');
 
     // Track operation counts

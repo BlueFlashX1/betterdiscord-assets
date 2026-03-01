@@ -724,16 +724,6 @@ class DockEngine {
     this.requireRevealReset = true;
   }
 
-  isTypingInMessageComposer() {
-    if (Date.now() < this.typingLockUntil) return true;
-    const active = document.activeElement;
-    if (active && active instanceof Element) {
-      if (active.matches(COMPOSER_EDITABLE_SELECTORS)) return true;
-      if (this.isElementInMessageComposer(active)) return true;
-    }
-    return false;
-  }
-
   isElementInMessageComposer(el) {
     if (!el || !(el instanceof Element)) return false;
     // PERF: Cache result — same element reference always gives same answer.
@@ -745,22 +735,7 @@ class DockEngine {
     return result;
   }
 
-  isComposerFocused() {
-    const active = document.activeElement;
-    if (!active || !(active instanceof Element)) return false;
-    if (active.matches(COMPOSER_EDITABLE_SELECTORS)) return true;
-    if (this.isElementInMessageComposer(active)) return true;
-    return false;
-  }
-
   // ── Cursor Geometry ───────────────────────────────────────────────────────
-
-  isCursorWithinDockX(x = this.lastMouseX) {
-    if (typeof x !== "number" || x < 0) return false;
-    if (!this.dock || !this.dock.getBoundingClientRect) return true;
-    const rect = this.dock.getBoundingClientRect();
-    return x >= rect.left && x <= rect.right;
-  }
 
   isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
     if (typeof x !== "number" || typeof y !== "number") return false;

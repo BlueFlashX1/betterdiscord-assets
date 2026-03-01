@@ -969,10 +969,6 @@ module.exports = class ShadowExchange {
     }
   }
 
-  debugLog(system, ...args) {
-    if (this.settings?.debug) console.log(`[ShadowExchange][${system}]`, ...args);
-  }
-
   debugError(system, ...args) {
     console.error(`[ShadowExchange][${system}]`, ...args);
   }
@@ -1189,13 +1185,6 @@ module.exports = class ShadowExchange {
     this.saveSettings();
     this._triggerPanelRefresh();
     this._toast(`${wp.shadowName} recalled from ${wp.label}`, "info");
-  }
-
-  renameWaypoint(waypointId, newLabel) {
-    const wp = this.settings.waypoints.find((w) => w.id === waypointId);
-    if (!wp) return;
-    wp.label = newLabel.trim() || wp.label;
-    this.saveSettings();
   }
 
   // ── Navigation ─────────────────────────────────────────────────────────

@@ -2615,8 +2615,7 @@ module.exports = class ShadowArmy {
       clearInterval(this.naturalGrowthInterval);
     }
 
-    // Process immediately on start
-    this.processNaturalGrowthForAllShadows();
+    // Natural growth is COMBAT-BASED ONLY — see Dungeons plugin applyNaturalGrowth()
 
     // Process shadow compression on start (delayed 10 mins to avoid startup lag)
     const compressionTimeoutId = setTimeout(() => {
@@ -7502,17 +7501,6 @@ module.exports = class ShadowArmy {
     shadow.strength = this.calculateShadowStrength(effectiveStats, 1);
 
     return true;
-  }
-
-  /**
-   * Process natural growth for all shadows based on REAL TIME ELAPSED
-   * Applies retroactively - shadows grow even when you're offline!
-   * Called on plugin start and hourly
-   */
-  async processNaturalGrowthForAllShadows() {
-    // Natural growth is now COMBAT-BASED ONLY (handled by Dungeons plugin)
-    // Shadows grow from fighting in dungeons, not from real-world time
-    // This function is kept for compatibility but does nothing
   }
 
   /**

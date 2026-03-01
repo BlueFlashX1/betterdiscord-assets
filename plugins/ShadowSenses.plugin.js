@@ -11,7 +11,7 @@ const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','expo
 // ─── Constants ─────────────────────────────────────────────────────────────
 
 const PLUGIN_NAME = "ShadowSenses";
-const PLUGIN_VERSION = "1.1.4";
+const PLUGIN_VERSION = "1.1.5";
 const STYLE_ID = "shadow-senses-css";
 const WIDGET_ID = "shadow-senses-widget";
 const WIDGET_SPACER_ID = "shadow-senses-widget-spacer";
@@ -179,18 +179,6 @@ class DeploymentManager {
     return true;
   }
 
-  isDeployed(shadowId) {
-    return this._deployedShadowIds.has(shadowId);
-  }
-
-  getDeployedShadowIds() {
-    return new Set(this._deployedShadowIds);
-  }
-
-  isMonitored(userId) {
-    return this._monitoredUserIds.has(userId);
-  }
-
   getDeploymentForUser(userId) {
     return this._deployments.find(d => d.targetUserId === userId) || null;
   }
@@ -305,22 +293,6 @@ class DeploymentManager {
     }
   }
 
-  async validateDeployments(getAvailableShadowsFn) {
-    if (!getAvailableShadowsFn) return;
-    try {
-      const available = await getAvailableShadowsFn();
-      const availableIds = new Set(available.map(s => s.id));
-      const before = this._deployments.length;
-      this._deployments = this._deployments.filter(d => availableIds.has(d.shadowId));
-      if (this._deployments.length < before) {
-        this._debugLog("DeploymentManager", `Pruned ${before - this._deployments.length} stale deployments`);
-        this._rebuildSets();
-        this._save();
-      }
-    } catch (err) {
-      this._debugError("DeploymentManager", "Failed to validate deployments", err);
-    }
-  }
 }
 
 // ─── SensesEngine ──────────────────────────────────────────────────────────
@@ -749,12 +721,6 @@ class SensesEngine {
     return updates;
   }
 
-  _addUtilityFeedEntry(_entry, _guildId = GLOBAL_UTILITY_FEED_ID) {
-    // By design: utility alerts are transient toast intel, not feed history.
-    // Active Feed remains chat-message history only.
-    return;
-  }
-
   _flushToDisk() {
     try {
       const dirtyCount = this._dirtyGuilds.size;
@@ -1073,21 +1039,6 @@ class SensesEngine {
           }
         }
 
-        this._addUtilityFeedEntry({
-          eventType: "status",
-          messageId: `status-${userId}-${now}`,
-          authorId: userId,
-          authorName: userName,
-          guildId: GLOBAL_UTILITY_FEED_ID,
-          guildName: "Shadow Network",
-          channelId: null,
-          channelName: "presence",
-          content: `Status changed: ${previousLabel} \u2192 ${nextLabel}`,
-          timestamp: now,
-          shadowName: deployment.shadowName,
-          shadowRank: deployment.shadowRank,
-        });
-
         this._plugin._widgetDirty = true;
       }
     } catch (err) {
@@ -1152,21 +1103,6 @@ class SensesEngine {
         );
       }
 
-      this._addUtilityFeedEntry({
-        eventType: "typing",
-        messageId: `typing-${userId}-${channelId || "none"}-${now}`,
-        authorId: userId,
-        authorName: userName,
-        guildId: eventScopeId,
-        guildName,
-        channelId: channelId || null,
-        channelName,
-        content: `Typing detected in ${locationLabel}`,
-        timestamp: now,
-        shadowName: deployment.shadowName,
-        shadowRank: deployment.shadowRank,
-      }, eventScopeId);
-
       if (guildId && guildId === this._currentGuildId && this._guildFeeds[guildId]) {
         this._lastSeenCount[guildId] = this._guildFeeds[guildId].length;
       }
@@ -1210,20 +1146,6 @@ class SensesEngine {
           );
         }
 
-        this._addUtilityFeedEntry({
-          eventType: "relationship",
-          messageId: `relationship-${removedId}-${now}`,
-          authorId: removedId,
-          authorName: userName,
-          guildId: GLOBAL_UTILITY_FEED_ID,
-          guildName: "Shadow Network",
-          channelId: null,
-          channelName: "relationships",
-          content: "Friend connection removed",
-          timestamp: now,
-          shadowName: deployment.shadowName,
-          shadowRank: deployment.shadowRank,
-        });
         this._plugin._widgetDirty = true;
       }
     } catch (err) {
@@ -1575,8 +1497,14 @@ class SensesEngine {
   }
 
   clear() {
-    // Note: Timer cleanup is handled by unsubscribe(), not here.
-    // clear() only resets data state.
+    // Unsubscribe from FluxDispatcher FIRST to prevent dangling subscriptions
+    const Dispatcher = this._plugin._Dispatcher;
+    if (Dispatcher && this._subscribedEventHandlers?.size > 0) {
+      for (const [eventName, handler] of this._subscribedEventHandlers.entries()) {
+        try { Dispatcher.unsubscribe(eventName, handler); } catch (_) {}
+      }
+      this._subscribedEventHandlers.clear();
+    }
     if (this._deferredStatusToastTimers instanceof Set) {
       for (const timer of this._deferredStatusToastTimers) clearTimeout(timer);
     }
@@ -2052,67 +1980,6 @@ ${buildPortalTransitionCSS()}
   background: rgba(138, 43, 226, 0.3);
 }
 
-/* ─── Picker (shadow selection overlay) ─────────────────────────────────── */
-
-.shadow-senses-picker-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(0, 0, 0, 0.85);
-  z-index: 10003;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  backdrop-filter: blur(5px);
-}
-
-.shadow-senses-picker {
-  background: #1e1e2e;
-  border: 1px solid #8a2be2;
-  border-radius: 2px;
-  width: 400px;
-  max-width: 90vw;
-  max-height: 60vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  box-shadow: 0 8px 32px rgba(138, 43, 226, 0.3);
-}
-
-.shadow-senses-picker-title {
-  color: #8a2be2;
-  font-size: 14px;
-  font-weight: 700;
-  margin-bottom: 12px;
-  text-align: center;
-  padding: 14px 14px 0;
-}
-
-.shadow-senses-picker-shadow-name {
-  color: #ccc;
-  font-size: 13px;
-}
-
-.shadow-senses-picker-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  cursor: pointer;
-  border-bottom: 1px solid rgba(138, 43, 226, 0.1);
-  transition: background 0.15s ease;
-}
-
-.shadow-senses-picker-item:hover {
-  background: rgba(138, 43, 226, 0.15);
-}
-
-.shadow-senses-picker-item:last-child {
-  border-bottom: none;
-}
-
 /* ─── Footer ────────────────────────────────────────────────────────────── */
 
 .shadow-senses-footer {
@@ -2491,80 +2358,7 @@ function buildComponents(pluginRef) {
     );
   }
 
-  // ── ShadowPicker ──────────────────────────────────────────────────────
-  function ShadowPicker({ targetUser, onSelect, onClose }) {
-    const [shadows, setShadows] = useState([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-      let cancelled = false;
-      (async () => {
-        try {
-          const available = pluginRef.deploymentManager
-            ? await pluginRef.deploymentManager.getAvailableShadows()
-            : [];
-          if (!cancelled) {
-            // Sort by rank — higher ranks first
-            const sorted = [...available].sort((a, b) => {
-              const aIdx = RANKS.indexOf(a.rank || "E");
-              const bIdx = RANKS.indexOf(b.rank || "E");
-              return bIdx - aIdx;
-            });
-            setShadows(sorted);
-            setLoading(false);
-          }
-        } catch (err) {
-          if (!cancelled) {
-            pluginRef.debugError("ShadowPicker", "Failed to load shadows:", err);
-            setLoading(false);
-          }
-        }
-      })();
-      return () => { cancelled = true; };
-    }, []);
-
-    const handleOverlayClick = useCallback((e) => {
-      if (e.target === e.currentTarget) onClose();
-    }, [onClose]);
-
-    const targetName = targetUser
-      ? (targetUser.globalName || targetUser.username || "User")
-      : "User";
-
-    return ce("div", {
-      className: "shadow-senses-picker-overlay",
-      onClick: handleOverlayClick,
-    },
-      ce("div", { className: "shadow-senses-picker" },
-        ce("div", { className: "shadow-senses-picker-title" },
-          `Deploy a shadow to watch ${targetName}`
-        ),
-        ce("div", { style: { overflowY: "auto", flex: 1 } },
-          loading
-            ? ce("div", { className: "shadow-senses-empty" }, "Loading shadows...")
-            : shadows.length === 0
-              ? ce("div", { className: "shadow-senses-empty" }, "No available shadows. Extract more from ShadowArmy first.")
-              : shadows.map((shadow) => {
-                  const rankColor = RANK_COLORS[shadow.rank] || "#8a2be2";
-                  return ce("div", {
-                    key: shadow.id,
-                    className: "shadow-senses-picker-item",
-                    onClick: () => onSelect(shadow),
-                  },
-                    ce("span", { className: "shadow-senses-picker-shadow-name" },
-                      shadow.roleName || shadow.role || shadow.name || "Shadow"
-                    ),
-                    ce("span", { style: { color: rankColor, fontWeight: 700, fontSize: 12 } },
-                      `[${shadow.rank || "E"}]`
-                    )
-                  );
-                })
-        )
-      )
-    );
-  }
-
-  return { SensesWidget, SensesPanel, ShadowPicker };
+  return { SensesWidget, SensesPanel };
 }
 
 // ─── Shared Utilities ─────────────────────────────────────────────────────
@@ -2597,7 +2391,6 @@ module.exports = class ShadowSenses {
       this._stopped = false;
       this._widgetDirty = true;
       this._panelOpen = false;
-      this._pickerOpen = false;
       this._transitionNavTimeout = null;
       this._transitionCleanupTimeout = null;
       this._transitionRunId = 0;
@@ -2670,15 +2463,8 @@ module.exports = class ShadowSenses {
         this._unpatchContextMenu = null;
       }
 
-      // 3. Close panel + picker
+      // 3. Close panel
       this.closePanel();
-      if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in stop()', _); }
-        this._pickerReactRoot = null;
-      }
-      const picker = document.getElementById("shadow-senses-picker-root");
-      if (picker) picker.remove();
-      this._pickerOpen = false;
 
       // 4. Widget + observer — PERF(P5-4): Unsubscribe from shared LayoutObserverBus
       if (this._layoutBusUnsub) {
@@ -3100,91 +2886,13 @@ module.exports = class ShadowSenses {
     }
   }
 
-  // ── Shadow Picker ───────────────────────────────────────────────────────
-
-  openShadowPicker(targetUser) {
-    try {
-      if (!this._components?.ShadowPicker) {
-        this.debugError?.('Picker', 'Components not initialized');
-        return;
-      }
-
-      const createRoot = this._getCreateRoot();
-      if (!createRoot) {
-        this.debugError("Picker", "createRoot not available");
-        return;
-      }
-
-      // Close existing picker if open
-      if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in openShadowPicker()', _); }
-        this._pickerReactRoot = null;
-      }
-      const existingPicker = document.getElementById("shadow-senses-picker-root");
-      if (existingPicker) existingPicker.remove();
-
-      const container = document.createElement("div");
-      container.id = "shadow-senses-picker-root";
-      container.style.display = "contents";
-      document.body.appendChild(container);
-
-      const root = createRoot(container);
-      root.render(BdApi.React.createElement(this._components.ShadowPicker, {
-        targetUser,
-        onSelect: async (shadow) => {
-          try {
-            const success = await this.deploymentManager.deploy(shadow, targetUser);
-            if (success) {
-              const targetName = targetUser.globalName || targetUser.username || "User";
-              this._toast(`Deployed ${shadow.roleName || shadow.role || "Shadow"} [${shadow.rank || "E"}] to monitor ${targetName}`, "success");
-              this._widgetDirty = true;
-            } else {
-              this._toast("Shadow already deployed or target already monitored", "warning");
-            }
-          } catch (err) {
-            this.debugError("Picker", "Deploy failed", err);
-            this._toast("Failed to deploy shadow", "error");
-          }
-          // Close picker after selection
-          this._closePicker();
-        },
-        onClose: () => this._closePicker(),
-      }));
-
-      this._pickerReactRoot = root;
-      this._pickerOpen = true;
-      this.debugLog("Picker", "Opened for user", targetUser?.username);
-    } catch (err) {
-      this.debugError("Picker", "Failed to open picker", err);
-    }
-  }
-
-  _closePicker() {
-    try {
-      if (this._pickerReactRoot) {
-        try { this._pickerReactRoot.unmount(); } catch (_) { this.debugLog?.('CLEANUP', 'Picker unmount error in _closePicker()', _); }
-        this._pickerReactRoot = null;
-      }
-      const container = document.getElementById("shadow-senses-picker-root");
-      if (container) container.remove();
-      this._pickerOpen = false;
-      this.debugLog("Picker", "Closed");
-    } catch (err) {
-      this.debugError("Picker", "Failed to close picker", err);
-    }
-  }
-
   // ── ESC Handler ─────────────────────────────────────────────────────────
 
   registerEscHandler() {
     try {
       this._escHandler = (e) => {
         if (e.key !== "Escape") return;
-        // Close picker first (higher z-index), then panel
-        if (this._pickerOpen) {
-          this._closePicker();
-          e.stopPropagation();
-        } else if (this._panelOpen) {
+        if (this._panelOpen) {
           this.closePanel();
           e.stopPropagation();
         }

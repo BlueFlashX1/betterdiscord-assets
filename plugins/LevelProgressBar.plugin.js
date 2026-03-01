@@ -1237,20 +1237,6 @@ module.exports = class LevelProgressBar {
   }
 
   /**
-   * Update progress bar position
-   */
-  updateProgressBarPosition() {
-    if (this.progressBar) {
-      this.progressBar.className = `lpb-progress-container ${this.settings.position}`;
-      this.debugLog('UPDATE_POSITION', 'Position updated', {
-        position: this.settings.position,
-      });
-    }
-    const overlay = document.getElementById('lpb-levelup-overlay');
-    overlay && (overlay.className = `lpb-levelup-overlay ${this.settings.position}`);
-  }
-
-  /**
    * Get SoloLevelingStats instance and level info
    * @returns {Object|null} - Object with instance and levelInfo, or null if unavailable
    */
@@ -1696,25 +1682,6 @@ module.exports = class LevelProgressBar {
     }
   }
 
-  getOrCreateLevelUpOverlay() {
-    if (SLUtils) {
-      return SLUtils.getOrCreateOverlay(
-        'lpb-levelup-overlay',
-        `lpb-levelup-overlay ${this.settings.position}`
-      );
-    }
-    const existing = document.getElementById('lpb-levelup-overlay');
-    if (existing) {
-      existing.className = `lpb-levelup-overlay ${this.settings.position}`;
-      return existing;
-    }
-    const overlay = document.createElement('div');
-    overlay.id = 'lpb-levelup-overlay';
-    overlay.className = `lpb-levelup-overlay ${this.settings.position}`;
-    (document.body || document.documentElement).appendChild(overlay);
-    return overlay;
-  }
-
   removeLevelUpOverlay() {
     document.getElementById('lpb-levelup-overlay')?.remove();
   }
@@ -1722,24 +1689,6 @@ module.exports = class LevelProgressBar {
   /**
    * 3.7 VISUAL EFFECTS & UPDATES
    */
-
-  /**
-   * Refresh progress text with current data
-   */
-  async refreshProgressText() {
-    if (!this.progressBar) return;
-
-    this.updateReconIntelText();
-
-    // Refresh main progress text
-    const soloData = this.getSoloLevelingData();
-    if (soloData) {
-      const { levelInfo, rank } = soloData;
-      const xp = levelInfo.xp;
-      const xpRequired = levelInfo.xpRequired || 1;
-      this.updateProgressText(rank, levelInfo.level, xp, xpRequired);
-    }
-  }
 
   /**
    * Update progress text with current rank, level, and XP

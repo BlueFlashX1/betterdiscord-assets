@@ -303,7 +303,7 @@ function buildSkillTreeComponents(pluginInstance) {
 
     const handleActivate = React.useCallback((skillId) => {
       const result = pluginInstance.activateSkill(skillId);
-      if (!result.success && BdApi?.UI?.showToast) this._toast(result.reason, "error", 2500);
+      if (!result.success && BdApi?.UI?.showToast) pluginInstance._toast(result.reason, "error", 2500);
       forceUpdate();
     }, []);
 

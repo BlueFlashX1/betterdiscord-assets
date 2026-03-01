@@ -193,7 +193,6 @@ module.exports = class CriticalHit {
     this.maxCritHistory = this.settings.maxCritHistory ?? 1000;
     this.maxHistoryPerChannel = this.settings.maxHistoryPerChannel ?? 500;
     this.historyCleanupInterval = null; // Interval for periodic history cleanup
-    this._displayUpdateInterval = null; // Interval for settings panel display updates
     // novaFlatObserver — REMOVED in v3.4.0 (per-message CSS handles font enforcement)
     // Cache DOM queries
     // Additional performance caches
@@ -226,9 +225,6 @@ module.exports = class CriticalHit {
       SelectedGuildStore: null,
     };
     this.messageStorePatch = null; // Track MessageStore patch for cleanup
-    this._cachedMessageSelectors = null;
-    this._cachedMessageSelectorsTimestamp = 0;
-    this._cachedMessageSelectorsMaxAge = 2000; // 2 seconds cache validity
     // Processing locks to prevent duplicate calls during spam
     this._processingCrits = new Set(); // Track message IDs currently being processed for crit styling
     this._processingAnimations = new Set(); // Track message IDs currently being processed for animation
@@ -283,7 +279,6 @@ module.exports = class CriticalHit {
     // Cached DOM queries (animation)
     this._cachedChatInput = null;
     this._cachedMessageList = null;
-    this._cachedMessages = null;
     this._cacheTimestamp = 0;
     this._cacheMaxAge = 5000; // 5 seconds cache validity
 
@@ -2611,49 +2606,6 @@ module.exports = class CriticalHit {
   // ----------------------------------------------------------------------------
 
   /**
-   * Sets up a MutationObserver to retry restoration when new messages are added
-   * @param {string} channelId - The channel ID being restored
-   * @param {number} nextRetry - Next retry attempt number
-   */
-  setupRestorationRetryObserver(channelId, nextRetry) {
-    // OPTIMIZED: Use cached container or fallback
-    const messageContainer =
-      this._cachedMessageContainer ||
-      document.querySelector('[class*="messagesWrapper"]') ||
-      document.body;
-    const restoreObserver = this._trackTransientObserver(
-      new MutationObserver((mutations) => {
-        const hasNewMessages = mutations.some(
-          (m) =>
-            m.type === 'childList' &&
-            m.addedNodes.length > 0 &&
-            Array.from(m.addedNodes).some(
-              (node) =>
-                node.nodeType === Node.ELEMENT_NODE &&
-                node.querySelector?.('[class*="message"]') !== null
-            )
-        );
-
-        if (hasNewMessages && this.currentChannelId === channelId) {
-          this._disconnectTransientObserver(restoreObserver);
-          this.restoreChannelCrits(channelId, nextRetry);
-        }
-      })
-    );
-
-    restoreObserver.observe(messageContainer, {
-      childList: true,
-      subtree: true,
-    });
-
-    // Fallback: Cleanup observer after timeout if no messages load
-    this._setTrackedTimeout(
-      () => this._disconnectTransientObserver(restoreObserver),
-      nextRetry < 2 ? 2000 : 3000
-    );
-  }
-
-  /**
    * Restores crit styling for all crit messages in a channel
    * Called when switching channels or on page load
    * @param {string} channelId - The channel ID to restore crits for
@@ -4103,35 +4055,6 @@ ${childSel} {
       normalizedEntryId === pureMessageId ||
       (pureMessageId && this.extractPureDiscordId(normalizedEntryId) === pureMessageId)
     );
-  }
-
-  /**
-   * Matches a message to a crit entry from history using multiple strategies
-   * @param {string} normalizedMsgId - Normalized message ID
-   * @param {string} pureMessageId - Pure Discord ID
-   * @param {Array} channelCrits - Channel crit history
-   * @returns {Object|null} Matched entry or null
-   */
-  matchCritToMessage(normalizedMsgId, pureMessageId, channelCrits) {
-    if (!this.isValidDiscordId(normalizedMsgId) || !channelCrits?.length) return null;
-
-    // Use dictionary pattern for matching strategies
-    const matchingStrategies = {
-      exact: () =>
-        channelCrits.find((entry) => {
-          const entryId = this.normalizeId(entry.messageId);
-          return this._matchesMessageId(entryId, normalizedMsgId, pureMessageId);
-        }),
-      pure: () =>
-        channelCrits.find((entry) => {
-          const entryId = this.normalizeId(entry.messageId);
-          if (!entryId || entryId.startsWith('hash_')) return false;
-          const entryPureId = this.extractPureDiscordId(entryId) || entryId;
-          return pureMessageId && entryPureId && entryPureId === pureMessageId;
-        }),
-    };
-
-    return matchingStrategies.exact() || matchingStrategies.pure();
   }
 
   /**
@@ -7162,16 +7085,6 @@ ${childSel} {
     return container;
   }
 
-  /**
-   * Legacy handler attachment stub - kept for backwards compatibility
-   * React component now handles all events internally
-   * @param {HTMLElement} _container - Unused
-   */
-  attachCriticalHitSettingsPanelHandlers(_container) {
-    // No-op: React component handles all events internally via useState/useCallback
-    // Kept as stub for any external callers
-  }
-
   // ============================================================================
   // SETTINGS UPDATE METHODS
   // ============================================================================
@@ -7422,72 +7335,6 @@ ${childSel} {
     return Math.min(this.MAX_EFFECTIVE_CRIT_CHANCE, Math.max(0, baseChance));
   }
 
-  updateCritChance(value) {
-    this.settings.critChance = Math.max(
-      0,
-      Math.min(this.MAX_BASE_CRIT_CHANCE, parseFloat(value) || 0)
-    );
-    this.saveSettings();
-
-    const labelValue = document.querySelector('.crit-label-value');
-    if (labelValue) {
-      labelValue.textContent = `${this.settings.critChance}%`;
-    }
-
-    const effectiveCrit = this.getEffectiveCritChance();
-    this._toast(this._createCritChanceToastMessage(effectiveCrit), "info");
-  }
-
-  /**
-   * Updates crit color setting
-   * @param {string} value - New crit color value
-   */
-  updateCritColor(value) {
-    this.settings.critColor = value;
-    this.saveSettings();
-    this.updateExistingCrits();
-  }
-
-  /**
-   * Updates crit font setting
-   * @param {string} value - New crit font value
-   */
-  updateCritFont(value) {
-    this.settings.critFont = value;
-    this.saveSettings();
-    this.updateExistingCrits();
-  }
-
-  /**
-   * Updates crit animation setting
-   * @param {boolean} value - New crit animation value
-   */
-  updateCritAnimation(value) {
-    this.settings.critAnimation = value;
-    this.saveSettings();
-    this.updateExistingCrits();
-  }
-
-  /**
-   * Updates crit gradient setting
-   * @param {boolean} value - New crit gradient value
-   */
-  updateCritGradient(value) {
-    this.settings.critGradient = value;
-    this.saveSettings();
-    this.updateExistingCrits();
-  }
-
-  /**
-   * Updates crit glow setting
-   * @param {boolean} value - New crit glow value
-   */
-  updateCritGlow(value) {
-    this.settings.critGlow = value;
-    this.saveSettings();
-    this.updateExistingCrits();
-  }
-
   // ──────────────────────────────────────────────────────────────────────────────
   // Crit Styling & Application
   // ──────────────────────────────────────────────────────────────────────────────
@@ -7550,28 +7397,6 @@ ${childSel} {
    */
   _showToast(message, options = {}) {
     this._toast(message, options.type || "info");
-  }
-
-  /**
-   * Tests crit by applying to most recent message
-   */
-  testCrit() {
-    const messages = document.querySelectorAll(this.TEST_MESSAGE_SELECTOR);
-    const lastMessage = messages[messages.length - 1];
-
-    if (!lastMessage) {
-      this._showToast('No messages found to test', { type: 'error' });
-      return;
-    }
-
-    if (this.critMessages.has(lastMessage)) {
-      this._showToast('Message already has crit!', { type: 'info' });
-      return;
-    }
-
-    this.applyCritStyle(lastMessage, { animate: true });
-    this.critMessages.add(lastMessage);
-    this._showToast('Test Critical Hit Applied!', { type: 'success' });
   }
 
   // ============================================================================
@@ -8312,11 +8137,6 @@ ${childSel} {
         this.historyCleanupInterval = null;
       }
 
-      if (this._displayUpdateInterval) {
-        clearInterval(this._displayUpdateInterval);
-        this._displayUpdateInterval = null;
-      }
-
       // Clear combo timers
       this.userCombos?.forEach((combo) => {
         this._clearTrackedTimeout(combo?.timeout);
@@ -8610,16 +8430,4 @@ ${childSel} {
     }
   }
 
-  // ============================================================================
-  // SETTINGS PANEL EVENT LISTENERS
-  // ============================================================================
-
-  /**
-   * Sets up MutationObserver to update settings panel display
-   * @param {HTMLElement} container - Settings panel container
-   */
-  setupSettingsDisplayObserver(container) {
-    // This can be used to update display values when settings change externally
-    // Currently not needed, but kept for future use
-  }
 };

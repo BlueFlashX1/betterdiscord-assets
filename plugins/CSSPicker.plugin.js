@@ -585,30 +585,6 @@ module.exports = (() => {
     return Array.from(el.children).slice(0, max);
   };
 
-  const getChildrenDetails = (el, max = 10) => {
-    const children = getChildElements(el, max);
-    return children
-      .map((child, index) => {
-        const node = getElementNodeInfo(child);
-        if (!node) return null;
-
-        const attrs = Array.from(child.attributes || [])
-          .map((a) => ({ name: a.name, value: a.value }))
-          .slice(0, 25);
-
-        return {
-          index,
-          ...node,
-          attributes: attrs,
-          textPreview: (child.textContent || '').trim().slice(0, 120) || null,
-          stableSelectors: getStableSelectorSet(child),
-          selectorCandidates: getSelectorCandidates(child).slice(0, 8),
-          computedStyle: pickComputedStyles(child),
-        };
-      })
-      .filter(Boolean);
-  };
-
   // Compact children: summary + ariaLabel + flags + key visual styles only
   const getChildrenCompact = (el, max = 8) => {
     const children = getChildElements(el, max);
@@ -650,38 +626,6 @@ module.exports = (() => {
       if (!current || ['HTML', 'BODY'].includes(current.tagName)) break;
     }
     return chain;
-  };
-
-  const getTablistChildHints = (el) => {
-    if (!el || !(el instanceof Element)) return null;
-    const role = el.getAttribute('role');
-    if (role !== 'tablist') return null;
-
-    const children = getChildElements(el, 20);
-    const tabs = children.filter((child) => {
-      const hasTabRole = child.getAttribute('role') === 'tab';
-      const hasItemPrefix = Array.from(child.classList || []).some((c) => /^item[_]{1,2}/.test(c));
-      return hasTabRole || hasItemPrefix;
-    });
-
-    const selected = tabs.filter((child) => {
-      const ariaSelected = child.getAttribute('aria-selected');
-      return ariaSelected === 'true' || child.className?.includes?.('selected');
-    });
-
-    return {
-      childCount: children.length,
-      tabCandidatesCount: tabs.length,
-      selectedTabCandidatesCount: selected.length,
-      tabCandidatesSummaries: tabs.slice(0, 6).map((c) => ({
-        summary: getElementSummary(c),
-        role: c.getAttribute('role') || null,
-        ariaSelected: c.getAttribute('aria-selected') || null,
-        classList: Array.from(c.classList || []).slice(0, 10),
-        stableSelectors: getStableSelectorSet(c).slice(0, 4),
-        selectorCandidates: getSelectorCandidates(c).slice(0, 4),
-      })),
-    };
   };
 
   const getStylesheetLabel = (sheet, index) => {
@@ -908,37 +852,6 @@ module.exports = (() => {
     }
 
     return matches;
-  };
-
-  const getAncestry = (el, maxDepth = 10) => {
-    const chain = [];
-    let current = el;
-
-    for (let depth = 0; depth < maxDepth && current && current.nodeType === 1; depth++) {
-      const node = getElementNodeInfo(current);
-      if (!node) break;
-
-      chain.push({
-        depth,
-        ...node,
-        selectorCandidates: getSelectorCandidates(current).slice(0, 8),
-      });
-
-      current = current.parentElement;
-      if (!current) break;
-      if (current.tagName && ['HTML', 'BODY'].includes(current.tagName)) {
-        const rootNode = getElementNodeInfo(current);
-        rootNode &&
-          chain.push({
-            depth: depth + 1,
-            ...rootNode,
-            selectorCandidates: getSelectorCandidates(current).slice(0, 8),
-          });
-        break;
-      }
-    }
-
-    return chain;
   };
 
   // ── Compact CSS rules: filter resets, simplify labels, flatten props ──

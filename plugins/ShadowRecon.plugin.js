@@ -631,58 +631,6 @@ module.exports = class ShadowRecon {
     return membersWrap.querySelector('[class^="members_"], [class*=" members_"]') || membersWrap;
   }
 
-  injectMemberCounterBanner() {
-    if (!this.settings.showMemberCounterBanner) {
-      this.removeMemberCounterBanner();
-      return;
-    }
-
-    const target = this._getMembersListTarget();
-    if (!target) {
-      this.removeMemberCounterBanner();
-      return;
-    }
-
-    let banner = document.getElementById(MEMBER_BANNER_ID);
-    if (!banner) {
-      banner = document.createElement("div");
-      banner.id = MEMBER_BANNER_ID;
-      banner.className = "shadow-recon-member-banner";
-      banner.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
-      banner.addEventListener("click", () => {
-        const guildId = this._getCurrentGuildId();
-        if (guildId) this.openGuildDossier(guildId);
-      });
-      banner.addEventListener("contextmenu", (event) => {
-        event.preventDefault();
-        this._toggleCurrentGuildMarkWithToast();
-      });
-      if (target.firstChild) target.insertBefore(banner, target.firstChild);
-      else target.appendChild(banner);
-    }
-
-    this.updateMemberCounterBanner();
-  }
-
-  updateMemberCounterBanner() {
-    const banner = document.getElementById(MEMBER_BANNER_ID);
-    if (!banner) return;
-
-    const guildId = this._getCurrentGuildId();
-    if (!guildId) {
-      banner.textContent = "Shadow Recon - Member Intel unavailable outside guild channels";
-      return;
-    }
-
-    const guild = this._GuildStore?.getGuild?.(guildId);
-    const total = this._GuildMemberCountStore?.getMemberCount?.(guildId)
-      || guild?.memberCount
-      || guild?.member_count
-      || 0;
-    const online = this._getGuildOnlineCount(guildId, guild);
-    banner.textContent = `Shadow Recon - Members: ${this._formatNumber(total)} | Online: ${this._formatNumber(online)}`;
-  }
-
   removeMemberCounterBanner() {
     const banner = document.getElementById(MEMBER_BANNER_ID);
     if (banner) banner.remove();
