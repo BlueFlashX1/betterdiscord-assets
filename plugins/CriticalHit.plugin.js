@@ -4041,23 +4041,6 @@ ${childSel} {
   // ----------------------------------------------------------------------------
 
   /**
-   * Checks if an entry ID matches the target message ID
-   * @param {string} entryId - Entry message ID
-   * @param {string} normalizedMsgId - Normalized target message ID
-   * @param {string} pureMessageId - Pure Discord ID
-   * @returns {boolean} True if matches
-   */
-  _matchesMessageId(entryId, normalizedMsgId, pureMessageId) {
-    if (!entryId || entryId.startsWith('hash_')) return false;
-    const normalizedEntryId = this.normalizeId(entryId);
-    return (
-      normalizedEntryId === normalizedMsgId ||
-      normalizedEntryId === pureMessageId ||
-      (pureMessageId && this.extractPureDiscordId(normalizedEntryId) === pureMessageId)
-    );
-  }
-
-  /**
    * Performs crit restoration on a message element
    * @param {Object} historyEntry - History entry with crit settings
    * @param {string} normalizedMsgId - Normalized message ID
@@ -7177,26 +7160,6 @@ ${childSel} {
     };
   }
 
-  /**
-   * Creates crit chance toast message
-   * @param {number} effectiveCrit - Effective crit chance
-   * @returns {string} Toast message
-   */
-  _createCritChanceToastMessage(effectiveCrit) {
-    const totalBonus = effectiveCrit - this.settings.critChance;
-    if (totalBonus <= 0) {
-      return `Crit chance set to ${this.settings.critChance}%`;
-    }
-
-    const bonuses = this._getIndividualBonuses();
-    const bonusParts = [];
-    if (bonuses.agility > 0) bonusParts.push(`+${bonuses.agility.toFixed(1)}% AGI`);
-    if (bonuses.skill > 0) bonusParts.push(`+${bonuses.skill.toFixed(1)}% Skill`);
-    return `Crit: ${this.settings.critChance}% base (${bonusParts.join(
-      ' + '
-    )}) = ${effectiveCrit.toFixed(1)}%`;
-  }
-
   // Get effective crit chance (base + AGI + skill tree, capped at 50%)
   // Simple hash function for deterministic random number generation
   simpleHash(str) {
@@ -7338,66 +7301,6 @@ ${childSel} {
   // ──────────────────────────────────────────────────────────────────────────────
   // Crit Styling & Application
   // ──────────────────────────────────────────────────────────────────────────────
-
-  // ----------------------------------------------------------------------------
-  // Existing Crits Update
-  // ----------------------------------------------------------------------------
-
-  /**
-   * Updates existing crits with new settings by rebuilding per-message CSS.
-   * v3.4.0: No inline styles — rebuilds CSS rules for all tracked crits.
-   */
-  updateExistingCrits() {
-    this.debugLog('UPDATE_EXISTING_CRITS', 'Rebuilding per-message CSS for all crits', {
-      trackedCount: this.critCSSRules.size,
-    });
-
-    // Rebuild all per-message CSS rules with current settings
-    const currentSettings = {
-      gradient: this.settings.critGradient !== false,
-      gradientColor: this.settings.critGradientColor,
-      color: this.settings.critColor,
-      font: this.settings.critFont,
-      glow: this.settings.critGlow,
-    };
-
-    for (const messageId of this.critCSSRules.keys()) {
-      const rule = this.buildMessageCSSRule(messageId, currentSettings);
-      this.critCSSRules.set(messageId, rule);
-    }
-
-    this.rebuildCritMessageStyles(true);
-  }
-
-  // ============================================================================
-  // TEST & UTILITY METHODS
-  // ============================================================================
-  // Testing and utility functions
-
-  /**
-   * Message selector for test crit
-   * @type {string}
-   */
-  get TEST_MESSAGE_SELECTOR() {
-    return '[class*="message"]:not([class*="messageContent"]):not([class*="messageGroup"])';
-  }
-
-  /**
-   * Toast timeout in milliseconds
-   * @type {number}
-   */
-  get TOAST_TIMEOUT_MS() {
-    return 2000;
-  }
-
-  /**
-   * Shows toast message with error handling
-   * @param {string} message - Toast message
-   * @param {Object} options - Toast options
-   */
-  _showToast(message, options = {}) {
-    this._toast(message, options.type || "info");
-  }
 
   // ============================================================================
   // USER IDENTIFICATION

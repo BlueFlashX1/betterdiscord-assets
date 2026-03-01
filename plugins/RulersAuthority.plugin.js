@@ -469,18 +469,6 @@ module.exports = class RulersAuthority {
     });
   }
 
-  // Get a CSS selector string for a panel (for use in CSS rules)
-  _getCSSSelector(panelName) {
-    const m = this._modules;
-    switch (panelName) {
-      case "sidebar": return m.sidebar?.sidebarList ? `.${m.sidebar.sidebarList}` : SIDEBAR_FALLBACKS[0];
-      case "members": return m.members?.membersWrap ? `.${m.members.membersWrap}` : MEMBERS_FALLBACKS[0];
-      case "profile":  return m.panel?.outer ? `.${m.panel.outer}` : PROFILE_FALLBACKS[0];
-      case "search":   return m.search?.searchResultsWrap ? `.${m.search.searchResultsWrap}` : SEARCH_FALLBACKS[0];
-      default: return "";
-    }
-  }
-
   // Find a DOM element using resolved selectors for a panel
   // PERF: Caches element refs — panel elements rarely change (only on guild/channel switch).
   // Eliminates up to 4 querySelector() calls per mousemove frame.

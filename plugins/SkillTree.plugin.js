@@ -1195,15 +1195,6 @@ module.exports = class SkillTree {
     }
   }
 
-  escapeHtml(unsafeString) {
-    return String(unsafeString ?? '')
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
-
   /**
    * Recalculate SP based on current level (for reset or initial setup)
    * Always syncs level and ensures SP matches current level
@@ -3088,69 +3079,6 @@ module.exports = class SkillTree {
     );
 
     return hasComposerActionButton || buttonCount >= 2;
-  }
-
-  getToolbarContainer() {
-    const now = Date.now();
-    const cache = this._toolbarCache || {};
-    const cached = cache.element;
-    const composerRoot = this._getComposerRoot();
-    if (!composerRoot) {
-      Object.assign(this._toolbarCache, { element: null, time: now });
-      return null;
-    }
-
-    const cacheFresh = cached && cache.time && now - cache.time < cache.ttl;
-    if (cacheFresh && this.isValidToolbarContainer(cached, composerRoot)) {
-      return cached;
-    }
-
-    const formRoot = composerRoot.closest('form') || composerRoot;
-    const searchScope = formRoot.parentElement || formRoot;
-
-    const selectorCandidates = [
-      '[class*="buttons"]',
-      '[class*="buttonContainer"]',
-      '[class*="actionButtons"]',
-      '[class*="inner"]',
-    ];
-
-    const candidateSet = new Set();
-    selectorCandidates.forEach((selector) => {
-      composerRoot.querySelectorAll(selector).forEach((node) => candidateSet.add(node));
-      searchScope.querySelectorAll(selector).forEach((node) => candidateSet.add(node));
-    });
-
-    const composerActionButtons = searchScope.querySelectorAll(
-      '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
-    );
-    composerActionButtons.forEach((btn) => {
-      if (!btn) return;
-      btn.parentElement && candidateSet.add(btn.parentElement);
-      const container = btn.closest(
-        '[class*="buttons"], [class*="buttonContainer"], [class*="actionButtons"], [class*="inner"]'
-      );
-      container && candidateSet.add(container);
-    });
-
-    const candidateContainers = Array.from(candidateSet).filter(Boolean);
-    const scoredCandidates = candidateContainers
-      .filter((container) => this.isValidToolbarContainer(container, composerRoot))
-      .map((container) => {
-        const hasComposerActionButton = !!container.querySelector(
-          '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
-        );
-        const buttonLike = container.querySelectorAll('button, [class*="button"], [aria-label]');
-        const buttonCount = buttonLike ? buttonLike.length : 0;
-        const score = (hasComposerActionButton ? 100 : 0) + buttonCount;
-        return { container, score };
-      })
-      .sort((a, b) => b.score - a.score);
-
-    const toolbar = scoredCandidates[0]?.container || null;
-
-    Object.assign(this._toolbarCache, { element: toolbar, time: now });
-    return this.isValidToolbarContainer(toolbar, composerRoot) ? toolbar : null;
   }
 
   /**

@@ -1762,42 +1762,6 @@ module.exports = class SoloLevelingStats {
     return messageInputArea;
   }
 
-  _hasWritableMessageInputInCurrentView() {
-    try {
-      const messageInputArea = this._getMessageInputAreaInPrimaryChat();
-      if (!messageInputArea) return false;
-
-      if (
-        messageInputArea.getAttribute('aria-disabled') === 'true' ||
-        messageInputArea.closest('[aria-disabled="true"]')
-      ) {
-        return false;
-      }
-
-      const editor =
-        messageInputArea.querySelector('[role="textbox"]') ||
-        messageInputArea.querySelector('textarea') ||
-        messageInputArea.querySelector('[contenteditable="true"]') ||
-        messageInputArea.querySelector('[class*="slateTextArea"]');
-
-      if (!editor) return false;
-
-      if (
-        editor.getAttribute('aria-disabled') === 'true' ||
-        editor.getAttribute('disabled') !== null ||
-        editor.getAttribute('readonly') !== null ||
-        editor.getAttribute('contenteditable') === 'false'
-      ) {
-        return false;
-      }
-
-      return true;
-    } catch (error) {
-      this.debugError('HAS_WRITABLE_INPUT', error);
-      return false;
-    }
-  }
-
   _canShowChatUIInCurrentView() {
     // Show chat UI in all guild text channels unconditionally.
     // Previously also required a writable message input, which caused the UI to
@@ -2235,76 +2199,6 @@ module.exports = class SoloLevelingStats {
   // ── §3.5 WEBPACK MODULE HELPERS ──────────────────────────────────────────
   // Discord internals: MessageStore, UserStore, ChannelStore, MessageActions
   // Function patching for reliable message tracking, React fiber injection
-
-  /**
-   * Set up webpack patches for message tracking
-   * Uses MessageStore to detect new messages
-   */
-  setupWebpackPatches() {
-    try {
-      const extractMessageFromPatch = ({ args, returnValue }) => {
-        const raw = [returnValue, ...(Array.isArray(args) ? args : [])].filter(Boolean);
-        const candidates = raw
-          .flatMap((v) => [
-            v,
-            v?.message,
-            v?.payload?.message,
-            v?.payload?.messageRecord,
-            v?.messageRecord,
-          ])
-          .filter(Boolean);
-
-        return candidates.find((m) => {
-          const hasId = typeof m?.id === 'string' || typeof m?.id === 'number';
-          const hasAuthor = typeof m?.author?.id === 'string' || typeof m?.author?.id === 'number';
-          const hasContent = typeof m?.content === 'string';
-          return hasId && (hasAuthor || hasContent);
-        });
-      };
-
-      // Patch MessageStore.receiveMessage if available
-      if (this.webpackModules.MessageStore && this.webpackModules.MessageStore.receiveMessage) {
-        BdApi.Patcher.after(
-          'SoloLevelingStats',
-          this.webpackModules.MessageStore,
-          'receiveMessage',
-          (thisObject, args, returnValue) => {
-            try {
-              // Process message from store (more reliable than DOM)
-              const message = extractMessageFromPatch({ args, returnValue });
-              message?.id && this.processMessageFromStore(message);
-            } catch (error) {
-              this.debugError('MESSAGE_STORE_PATCH', error);
-            }
-          }
-        );
-        this.messageStorePatch = true;
-        this.debugLog('WEBPACK_PATCH', 'MessageStore patch installed');
-      }
-
-      // Also patch MessageActions.sendMessage for sent messages
-      if (this.webpackModules.MessageActions && this.webpackModules.MessageActions.sendMessage) {
-        BdApi.Patcher.after(
-          'SoloLevelingStats',
-          this.webpackModules.MessageActions,
-          'sendMessage',
-          (thisObject, args, returnValue) => {
-            try {
-              // Process sent message
-              const message = extractMessageFromPatch({ args, returnValue });
-              message?.id && this.processMessageFromStore(message);
-            } catch (error) {
-              this.debugError('MESSAGE_ACTIONS_PATCH', error);
-            }
-          }
-        );
-        this.debugLog('WEBPACK_PATCH', 'MessageActions patch installed');
-      }
-    } catch (error) {
-      this.debugError('WEBPACK_PATCH_SETUP', error);
-      this.webpackModuleAccess = false;
-    }
-  }
 
   /**
    * Get current user ID from UserStore (more reliable than React fiber)
@@ -5437,10 +5331,6 @@ module.exports = class SoloLevelingStats {
   // The MutationObserver fired on every message container mutation (~10+ times/sec
   // in active channels) and churned clearTimeout/setTimeout for something that
   // happens once every few minutes. Cleanup in stop() retained defensively.
-  setupShadowPowerObserver() {
-    // No-op — retained as stub so any callers don't throw
-  }
-
   // renderChatActivity() — REMOVED in v3.0.0 (replaced by React ActivityGrid component)
 
   startActivityTracking() {

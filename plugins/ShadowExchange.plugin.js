@@ -987,14 +987,6 @@ module.exports = class ShadowExchange {
     );
   }
 
-  /**
-   * Check if a specific shadow is stationed at a waypoint.
-   */
-  isShadowMarked(shadowId) {
-    if (!shadowId || !this.settings?.waypoints) return false;
-    return this.settings.waypoints.some((w) => w.shadowId === shadowId);
-  }
-
   // ── Shadow Assignment ────────────────────────────────────────────────
 
   async getWeakestAvailableShadow() {

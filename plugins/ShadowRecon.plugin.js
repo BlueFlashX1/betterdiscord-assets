@@ -625,12 +625,6 @@ module.exports = class ShadowRecon {
 
   // ---- Member Counter Banner ------------------------------------------
 
-  _getMembersListTarget() {
-    const membersWrap = document.querySelector('[class^="membersWrap_"], [class*=" membersWrap_"]');
-    if (!membersWrap) return null;
-    return membersWrap.querySelector('[class^="members_"], [class*=" members_"]') || membersWrap;
-  }
-
   removeMemberCounterBanner() {
     const banner = document.getElementById(MEMBER_BANNER_ID);
     if (banner) banner.remove();

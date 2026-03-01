@@ -392,69 +392,6 @@ class ShadowStorageManager {
   // COMBAT ENTITY NORMALIZATION HELPERS
   // ============================================================================
   /**
-   * Normalize a shadow object for combat so all downstream code can rely on:
-   * - a stable `id`
-   * - consistent `rank`
-   * - decompressed stats when possible
-   *
-   * NOTE: This returns a new object when it needs to add `id` to old/compressed shapes.
-   * It does NOT mutate the input.
-   *
-   * @param {Object} shadow
-   * @returns {Object|null}
-   */
-  normalizeShadowForCombat(shadow) {
-    const shadowId = this.getCacheKey(shadow);
-    if (!shadowId) return null;
-
-    const decompressed =
-      typeof this.getShadowData === 'function' ? this.getShadowData(shadow) || shadow : shadow;
-
-    // Ensure an `id` exists for combat/caches even if the record uses only `i`.
-    return decompressed?.id
-      ? decompressed
-      : {
-          ...decompressed,
-          id: shadowId,
-          i: decompressed?.i || shadow?.i,
-        };
-  }
-
-  /**
-   * Normalize a target (mob/boss/elite) object for combat.
-   * Supports the minimal target shapes passed in from Dungeons (type/rank/strength only).
-   *
-   * @param {Object} target
-   * @returns {Object}
-   */
-  normalizeTargetForCombat(target) {
-    const safeTarget = target && typeof target === 'object' ? target : {};
-    const type = safeTarget.type || 'mob';
-    const id = safeTarget.id || safeTarget.name || (type === 'boss' ? 'boss' : 'unknown');
-    const rank = safeTarget.rank || 'E';
-
-    const hp = Number.isFinite(safeTarget.hp) ? safeTarget.hp : 0;
-    const maxHp = Number.isFinite(safeTarget.maxHp) ? safeTarget.maxHp : hp;
-
-    const stats =
-      safeTarget.stats && typeof safeTarget.stats === 'object' ? safeTarget.stats : safeTarget;
-
-    return {
-      ...safeTarget,
-      id,
-      type,
-      rank,
-      hp,
-      maxHp: Math.max(maxHp, hp),
-      strength: Number.isFinite(stats.strength) ? stats.strength : 0,
-      agility: Number.isFinite(stats.agility) ? stats.agility : 0,
-      intelligence: Number.isFinite(stats.intelligence) ? stats.intelligence : 0,
-      vitality: Number.isFinite(stats.vitality) ? stats.vitality : 0,
-      perception: Number.isFinite(stats.perception) ? stats.perception : 0,
-    };
-  }
-
-  /**
    * Invalidate cache entries for a shadow (handles both id and i)
    * @param {Object} shadow - Shadow object to invalidate
    */
@@ -2624,15 +2561,6 @@ module.exports = class ShadowArmy {
       this.processShadowCompression();
     }, 600000); // 10 minutes after start
     this._retryTimeouts.add(compressionTimeoutId);
-
-    // REMOVED: No automatic army trimming — user controls army size manually
-    // Emergency essence conversion disabled to prevent shadow loss on restart
-    // const emergencyTimeoutId = setTimeout(() => {
-    //   this._retryTimeouts.delete(emergencyTimeoutId);
-    //   if (this._isStopped) return;
-    //   this.processEmergencyCleanup();
-    // }, 900000); // 15 minutes after start
-    // this._retryTimeouts.add(emergencyTimeoutId);
 
     // Then process every hour (natural growth removed — combat-based only now)
     this.naturalGrowthInterval = setInterval(() => {
@@ -6321,112 +6249,6 @@ module.exports = class ShadowArmy {
     return this.settings.cachedTotalPower || 0;
   }
 
-  async getAllShadowsForAggregation() {
-    let allShadows = [];
-    let totalCount = 0;
-
-    if (!this.storageManager) {
-      this.debugLog('COMBAT', 'No storage manager available - returning empty array', {
-        hasStorageManager: false,
-      });
-      return { allShadows, totalCount };
-    }
-
-    try {
-      // Ensure storage manager is initialized
-      if (!this.storageManager?.db) {
-        this.debugLog('COMBAT', 'IndexedDB not initialized, initializing now...');
-        await this.storageManager.init();
-      }
-
-      // FAST PATH: Use snapshot cache if fresh (avoids IDB read entirely)
-      const snapshot = this.getShadowSnapshot();
-      if (snapshot && snapshot.length > 0) {
-        this.debugLog('COMBAT', 'Using snapshot cache for aggregation', {
-          snapshotSize: snapshot.length,
-        });
-        return { allShadows: snapshot, totalCount: snapshot.length };
-      }
-
-      // Verify IndexedDB is working by checking count first
-      totalCount = await this.storageManager.getTotalCount();
-
-      // CRITICAL: Only use IndexedDB - no fallback to old settings.shadows
-      if (totalCount > 0) {
-        try {
-          allShadows = await this.storageManager.getShadows({}, 0, Infinity);
-
-          // CRITICAL DIAGNOSTIC: If IndexedDB has shadows but getShadows returned empty
-          if (!allShadows || allShadows.length === 0) {
-            this.debugError(
-              'COMBAT',
-              'CRITICAL: IndexedDB has shadows but getShadows returned empty!',
-              {
-                totalCount,
-                returnedCount: allShadows?.length || 0,
-                hasStorageManager: !!this.storageManager,
-                dbInitialized: !!this.storageManager?.db,
-                dbName: this.storageManager?.dbName || 'unknown',
-                storeName: this.storageManager?.storeName || 'unknown',
-                possibleCauses: [
-                  'IndexedDB transaction failed silently',
-                  'Shadows filtered out by getShadows logic',
-                  'IndexedDB cursor not iterating correctly',
-                  'Database corruption or migration issue',
-                ],
-              }
-            );
-
-            // Try to get a single shadow directly to verify IndexedDB access
-            try {
-              const testShadows = await this.storageManager.getShadows({}, 0, 1);
-              this.debugLog('COMBAT', 'Direct test query result', {
-                testShadowCount: testShadows?.length || 0,
-                firstShadow: testShadows?.[0]
-                  ? { id: testShadows[0].id || testShadows[0].i, rank: testShadows[0].rank }
-                  : null,
-              });
-            } catch (testError) {
-              this.debugError('COMBAT', 'Direct test query also failed', testError);
-            }
-          } else {
-            this.debugLog('COMBAT', 'Retrieved shadows from IndexedDB', {
-              shadowCount: allShadows.length,
-              totalCount,
-              hasStorageManager: !!this.storageManager,
-              dbInitialized: !!this.storageManager?.db,
-            });
-          }
-        } catch (getShadowsError) {
-          this.debugError('COMBAT', 'getShadows() threw an error', {
-            error: getShadowsError,
-            message: getShadowsError?.message,
-            stack: getShadowsError?.stack,
-            totalCount,
-          });
-          allShadows = []; // Set to empty on error
-        }
-      } else {
-        // IndexedDB is empty - shadows should be in IndexedDB, not settings
-        this.debugLog('COMBAT', 'IndexedDB is empty - no shadows found', {
-          totalCount,
-          dbName: this.storageManager?.dbName || 'unknown',
-        });
-        allShadows = []; // Empty array - no fallback to old storage
-      }
-    } catch (storageError) {
-      this.debugError('COMBAT', 'Failed to get shadows from IndexedDB', storageError);
-      // CRITICAL: No fallback to old settings.shadows - shadows are in IndexedDB only
-      allShadows = []; // Empty array - no fallback to old storage
-      totalCount = 0;
-      this.debugLog('COMBAT', 'Using empty array (no fallback to old storage)', {
-        error: storageError?.message || 'Unknown error',
-      });
-    }
-
-    return { allShadows: allShadows || [], totalCount: totalCount || 0 };
-  }
-
   logShadowAggregationSamples(allShadows) {
     // Debug: Log shadow retrieval success with detailed info
     this.debugLog('COMBAT', 'Retrieved shadows for aggregation', {
@@ -6987,17 +6809,6 @@ module.exports = class ShadowArmy {
     this.cachedBuffsTime = Date.now();
 
     return buffs;
-  }
-
-  /**
-   * Legacy wrapper retained for compatibility.
-   * Applies current soft-cap buff compression model.
-   */
-  applyBuffCaps(buffs) {
-    // Guard clause: Return early if no buffs provided
-    if (!buffs) return;
-
-    this.applyShadowBuffSoftCaps(buffs);
   }
 
   // ============================================================================
@@ -10042,54 +9853,6 @@ module.exports = class ShadowArmy {
   }
 
   /**
-   * Show manual essence conversion modal (React 18 createRoot)
-   * Allows user to select rank and quantity of shadows to convert
-   */
-  showEssenceConversionModal() {
-    // Remove existing modal if present
-    if (this._essenceConversionRoot) {
-      try {
-        this._essenceConversionRoot.unmount();
-      } catch (error) {
-        this.debugError('UI', 'Failed to unmount existing essence conversion modal root', error);
-      }
-      this._essenceConversionRoot = null;
-    }
-    document.getElementById('shadow-essence-convert-modal-root')?.remove();
-
-    const container = document.createElement('div');
-    container.id = 'shadow-essence-convert-modal-root';
-    container.style.display = 'contents';
-    document.body.appendChild(container);
-
-    const createRoot = this._getCreateRoot();
-    if (!createRoot) {
-      // Fallback: remove container if createRoot unavailable
-      container.remove();
-      this.debugError('UI', 'createRoot not available for essence conversion modal');
-      return;
-    }
-
-    const root = createRoot(container);
-    this._essenceConversionRoot = root;
-
-    const onClose = () => {
-      if (this._essenceConversionRoot) {
-        try {
-          this._essenceConversionRoot.unmount();
-        } catch (error) {
-          this.debugError('UI', 'Failed to unmount essence conversion modal on close', error);
-        }
-        this._essenceConversionRoot = null;
-      }
-      document.getElementById('shadow-essence-convert-modal-root')?.remove();
-    };
-
-    const React = BdApi.React;
-    root.render(React.createElement(this._EssenceConversionModal, { onClose }));
-  }
-
-  /**
    * Manually convert shadows to essence by rank and quantity
    * @param {string} rank - Rank of shadows to convert
    * @param {number} quantity - Number of shadows to convert
@@ -10215,60 +9978,6 @@ module.exports = class ShadowArmy {
     } catch (error) {
       this.debugError('ESSENCE', 'Error in manual conversion', error);
       return { success: false, error: error.message };
-    }
-  }
-
-  /**
-   * Emergency cleanup wrapper - only runs essence conversion if army > 5000
-   */
-  async processEmergencyCleanup() {
-    try {
-      let count = 0;
-      if (this.storageManager) {
-        // Get user rank and shadow ranks for getAggregatedPower
-        const soloData = this.getSoloLevelingData();
-        const userRank = soloData?.rank || 'E';
-        const shadowRanks = this.shadowRanks || [
-          'E',
-          'D',
-          'C',
-          'B',
-          'A',
-          'S',
-          'SS',
-          'SSS',
-          'SSS+',
-          'NH',
-          'Monarch',
-          'Monarch+',
-          'Shadow Monarch',
-        ];
-
-        // Guard clause: Call getAggregatedPower with required parameters
-        try {
-          const stats = await this.storageManager.getAggregatedPower(userRank, shadowRanks);
-          count = stats?.totalCount || 0;
-        } catch (error) {
-          // Fallback: Use getAllShadows if getAggregatedPower fails
-          this.debugLog(
-            'CLEANUP',
-            'getAggregatedPower failed, using getAllShadows fallback',
-            error
-          );
-          const allShadows = await this.getAllShadows();
-          count = allShadows?.length || 0;
-        }
-      }
-
-      // Guard clause: Trigger cleanup only if count exceeds threshold
-      if (count > 5000) {
-        // debugLog method is in SECTION 4
-        this.debugLog('CLEANUP', `Emergency cleanup triggered (${count} shadows)`);
-        await this.processShadowEssenceConversion();
-      }
-    } catch (error) {
-      // debugError method is in SECTION 4
-      this.debugError('CLEANUP', 'Emergency cleanup error', error);
     }
   }
 
@@ -10625,55 +10334,6 @@ module.exports = class ShadowArmy {
     return formatter(totalSeconds);
   }
 
-  /**
-   * Generate rank distribution HTML
-   * Shows count of shadows per rank with color coding
-   */
-  generateRankDistribution(shadows) {
-    // Guard clause: Return empty string if no shadows
-    if (!shadows || shadows.length === 0) return '';
-
-    // Shadow Monarch excluded — player's exclusive title, not a shadow rank
-    const ranks = ['E', 'D', 'C', 'B', 'A', 'S', 'SS', 'SSS', 'SSS+', 'NH', 'Monarch', 'Monarch+'];
-    const rankColors = {
-      E: '#999',
-      D: '#a0a0a0',
-      C: '#22c55e',
-      B: '#3b82f6',
-      A: '#8a2be2',
-      S: '#f59e0b',
-      SS: '#ef4444',
-      SSS: '#ec4899',
-      'SSS+': '#f50057',
-      NH: '#e040fb',
-      Monarch: '#ff4500',
-      'Monarch+': '#ff6b2b',
-    };
-
-    // Use reduce for functional pattern to count shadows by rank
-    const rankCounts = shadows.reduce((counts, shadow) => {
-      const rank = shadow.rank || 'E';
-      counts[rank] = (counts[rank] || 0) + 1;
-      return counts;
-    }, {});
-
-    return ranks
-      .map((rank) => {
-        const count = rankCounts[rank] || 0;
-        const color = rankColors[rank] || '#999';
-        const percentage = shadows.length > 0 ? ((count / shadows.length) * 100).toFixed(1) : 0;
-
-        return `
-        <div style="text-align: center; padding: 6px; background: rgba(0, 0, 0, 0.3); border-radius: 2px; border: 1px solid ${color}40;">
-          <div style="color: ${color}; font-size: 14px; font-weight: bold;">${rank}</div>
-          <div style="color: #fff; font-size: 16px; font-weight: bold; margin: 2px 0;">${count}</div>
-          <div style="color: #888; font-size: 9px;">${percentage}%</div>
-        </div>
-      `;
-      })
-      .join('');
-  }
-
   computeShadowArmyUiData(shadows) {
     const safeShadows = Array.isArray(shadows) ? shadows : [];
 
@@ -10870,13 +10530,6 @@ module.exports = class ShadowArmy {
                     </div>
                   </div>
                 `;
-  }
-
-  getShadowArmyGeneralsHtml(generals) {
-    const safeGenerals = Array.isArray(generals) ? generals : [];
-    return safeGenerals
-      .map((shadow, index) => this.getShadowArmyGeneralCardHtml(shadow, index))
-      .join('');
   }
 
   /**
