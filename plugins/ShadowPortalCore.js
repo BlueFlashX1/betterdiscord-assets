@@ -608,20 +608,22 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 1.9;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 2.3;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
       // Dual-speed portal: outer layer spins fast (4.5s), inner core spins slow (14s)
       portalStyleEl.textContent = [
         "@keyframes ss-portal-spin{0%{transform:rotate(359deg)}}",
-        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 8px rgba(123,63,191,0.3)) drop-shadow(0 0 20px rgba(90,45,138,0.15));overflow:hidden;pointer-events:none;border-radius:50%;opacity:0}",
+        // Organic warp: asymmetric scale + skew breathing cycle
+        "@keyframes ss-portal-warp{0%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}25%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.78) scaleY(0.93) skew(1.5deg)}50%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.65) scaleY(1.05) skew(-1deg)}75%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.74) scaleY(0.96) skew(0.8deg)}100%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}}",
+        ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 8px rgba(123,63,191,0.3)) drop-shadow(0 0 20px rgba(90,45,138,0.15));overflow:hidden;pointer-events:none;border-radius:50%;opacity:0;animation:ss-portal-warp 3s ease-in-out infinite}",
         // Outer layer — fast spin
-        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 4.5s infinite linear}",
+        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 2.8s infinite linear}",
         `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
         // Inner core — slow spin, layered on top
-        ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 14s infinite linear}",
+        ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 8s infinite linear}",
         `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
         '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
       ].join("");
@@ -856,6 +858,7 @@ const methods = {
       coreGlow: 1,           // core glow multiplier (Phase 5)
       hueShift: 0,           // hue drift in degrees (Phase 5)
       shockwaveBoost: 0,     // elastic overshoot for shockwave ripples (Phase 3)
+      shadowEnvelope: 0,     // 0→1→0 black engulf before reveal (shadow teleport effect)
       vortexSpin: 0,         // 0→1 accelerating spiral rotation over portal lifetime
       strandMorph: 0,        // 0↔1 strand deformation amplitude modulator (breathing)
       tendrilPulse: 0.5,     // 0↔1 inner tendril intensity breathing
@@ -881,13 +884,13 @@ const methods = {
       ease: "power2.inOut",
     }, 0);
 
-    // Reveal aperture: 35%→100% with expo.inOut for dramatic accel/decel
+    // Reveal aperture: 50%→100% with expo.inOut for dramatic accel/decel (delayed for longer sustain)
     tl.to(gs, {
       revealProgress: 1,
       revealEase: 1,
-      duration: dur * 0.65,
+      duration: dur * 0.50,
       ease: "expo.inOut",
-    }, dur * 0.35);
+    }, dur * 0.50);
 
     // Fade out: 95%→100% with power2.in for smooth exit
     tl.to(gs, {
@@ -896,12 +899,26 @@ const methods = {
       ease: "power2.in",
     }, dur * 0.95);
 
-    // Phase 3: Shockwave elastic overshoot — starts 50% through, elastic.out gives ripple bounce
+    // Shadow envelope: darkness gradually engulfs screen before reveal (shadow teleport effect)
+    // Creep: 25→48% — shadow darkens over 23% of duration with slight acceleration
+    tl.to(gs, {
+      shadowEnvelope: 1,
+      duration: dur * 0.23,
+      ease: "power2.in",
+    }, dur * 0.25);
+    // Ramp out: 50→65% — reveal punches through the darkness
+    tl.to(gs, {
+      shadowEnvelope: 0,
+      duration: dur * 0.15,
+      ease: "power3.out",
+    }, dur * 0.50);
+
+    // Phase 3: Shockwave elastic overshoot — starts 65% through, elastic.out gives ripple bounce
     tl.to(gs, {
       shockwaveBoost: 1,
-      duration: dur * 0.38,
+      duration: dur * 0.30,
       ease: "elastic.out(1, 0.3)",
-    }, dur * 0.50);
+    }, dur * 0.65);
 
     // Vortex spin: accelerates over full duration — starts slow, builds to full spiral
     tl.to(gs, {
@@ -922,8 +939,8 @@ const methods = {
     // ── CSS Portal GSAP animations (formation → expand → fade) ──
     const cssPortalTweens = [];
     if (cssPortalEl) {
-      const revealAt = dur * 0.35; // sync with canvas revealStart
-      const expandDur = dur * 0.55; // expansion duration
+      const revealAt = dur * 0.50; // sync with canvas revealStart (delayed for longer sustain)
+      const expandDur = dur * 0.45; // expansion duration (compressed to fit 1.5s)
       // Formation: 0→25% — scale from 0.3→1 + fade in
       tl.fromTo(cssPortalEl,
         { opacity: 0, scale: 0.3 },
@@ -941,6 +958,22 @@ const methods = {
         duration: expandDur,
         ease: "power2.in",
       }, revealAt);
+      // Boost CSS portal glow to be clearly visible from the start
+      tl.set(cssPortalEl, {
+        filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
+      }, 0);
+      // Shadow envelope: gradually dim CSS portal glow as darkness creeps in
+      tl.to(cssPortalEl, {
+        filter: "contrast(2.2) drop-shadow(0 0 0px rgba(123,63,191,0)) drop-shadow(0 0 0px rgba(90,45,138,0))",
+        duration: dur * 0.23,
+        ease: "power2.in",
+      }, dur * 0.25);
+      // Restore strong glow when reveal punches through
+      tl.to(cssPortalEl, {
+        filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
+        duration: dur * 0.15,
+        ease: "power3.out",
+      }, dur * 0.50);
       // Quick fade — clear fast after expansion (last 10%)
       tl.to(cssPortalEl, {
         opacity: 0,
@@ -988,7 +1021,7 @@ const methods = {
     const qualityScale = perfTier === 0 ? 0.58 : perfTier === 1 ? 0.76 : 1;
     const detailStep = perfTier === 0 ? 2 : 1;
     const mistStep = perfTier === 0 ? 3 : perfTier === 1 ? 2 : 1;
-    const shadowScale = perfTier === 0 ? 0.62 : perfTier === 1 ? 0.78 : 1;
+    const shadowScale = perfTier === 0 ? 1.4 : perfTier === 1 ? 1.8 : 2.2;
     const dprCap = perfTier === 0 ? 1.0 : perfTier === 1 ? 1.2 : 1.35;
     const dpr = Math.min(dprCap, window.devicePixelRatio || 1);
     let width = 1;
@@ -1073,8 +1106,8 @@ const methods = {
 
       const elapsed = now - start;
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
-      const swirl = elapsed * 0.0022;
-      const revealStart = 0.35;
+      const swirl = elapsed * 0.0044;
+      const revealStart = 0.50;
 
       // ── Phase state: GSAP-driven or vanilla-computed ──
       let easeInOut, fadeOut, formT, formEase, portalForm, revealProgress, revealEase;
@@ -1105,6 +1138,9 @@ const methods = {
       if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
 
       const glowMul = _gsap ? _gsap.ringGlow : 1;
+      // Shadow envelope dims all glow to 0 as darkness engulfs, restores after reveal
+      const glowDim = _gsap ? (1 - _gsap.shadowEnvelope) : 1;
+      const effShadow = shadowScale * glowDim; // per-frame glow-aware shadow scale
 
       const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
 
@@ -1114,6 +1150,13 @@ const methods = {
       const overlayAlpha = 0.70 * formEase * fadeOut;
       ctx.fillStyle = `rgba(2,1,4,${overlayAlpha.toFixed(3)})`;
       ctx.fillRect(0, 0, width, height);
+
+      // Shadow envelope: complete blackout before reveal — shadow engulfs for teleport
+      const envelope = _gsap ? _gsap.shadowEnvelope : 0;
+      if (envelope > 0.01) {
+        ctx.fillStyle = `rgba(0,0,0,${(envelope * fadeOut).toFixed(3)})`;
+        ctx.fillRect(0, 0, width, height);
+      }
 
       // Reveal: aperture punches through dark overlay to show channel content
       if (revealProgress > 0) {
@@ -1138,15 +1181,22 @@ const methods = {
 
         // Precompute per-frame constants for hot loops
         const fadeStr = fadeOut.toFixed(3);
-        const mistShadowBlur = (10 + oneMinusReveal * 16) * shadowScale;
-        const jetShadowBlur = (12 + oneMinusReveal * 14) * shadowScale;
+        const fade092 = (0.92 * fadeOut).toFixed(3);
+        const fade064 = (0.64 * fadeOut).toFixed(3);
+        const fade048 = (0.48 * fadeOut).toFixed(3);
+        const fade058 = (0.58 * fadeOut).toFixed(3);
+        const fade044 = (0.44 * fadeOut).toFixed(3);
+        const fade032 = (0.32 * fadeOut).toFixed(3);
+        const fade016 = (0.16 * fadeOut).toFixed(3);
+        const mistShadowBlur = (10 + oneMinusReveal * 16) * effShadow;
+        const jetShadowBlur = (12 + oneMinusReveal * 14) * effShadow;
         const mistLineExtra = oneMinusReveal * 1.8;
         const jetLineExtra = 1.6 + oneMinusReveal * 2.4;
 
         const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
         ringBody.addColorStop(0, `rgba(0,0,0,${fadeStr})`);
-        ringBody.addColorStop(0.68, `rgba(4,2,8,${(0.92 * fadeOut).toFixed(3)})`);
-        ringBody.addColorStop(0.88, `rgba(8,6,14,${(0.64 * fadeOut).toFixed(3)})`);
+        ringBody.addColorStop(0.68, `rgba(4,2,8,${fade092})`);
+        ringBody.addColorStop(0.88, `rgba(8,6,14,${fade064})`);
         ringBody.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = ringBody;
         ctx.beginPath();
@@ -1159,7 +1209,7 @@ const methods = {
           ctx.beginPath();
           ctx.strokeStyle = `rgba(0,0,0,${blackRimAlpha.toFixed(3)})`;
           ctx.lineWidth = 14 + oneMinusReveal * 20;
-          ctx.shadowBlur = (14 + oneMinusReveal * 22) * shadowScale;
+          ctx.shadowBlur = (14 + oneMinusReveal * 22) * effShadow;
           ctx.shadowColor = `rgba(0,0,0,${(blackRimAlpha * 0.78).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius, 0, TAU);
           ctx.stroke();
@@ -1170,7 +1220,7 @@ const methods = {
           ctx.beginPath();
           ctx.strokeStyle = `rgba(124,120,136,${edgeAlpha.toFixed(3)})`;
           ctx.lineWidth = 1.2 + oneMinusReveal * 1.4;
-          ctx.shadowBlur = (8 + oneMinusReveal * 8) * shadowScale;
+          ctx.shadowBlur = (8 + oneMinusReveal * 8) * effShadow;
           ctx.shadowColor = `rgba(48,44,60,${(edgeAlpha * 0.84).toFixed(3)})`;
           ctx.arc(cx, cy, ringRadius + rimWidth * 0.34, 0, TAU);
           ctx.stroke();
@@ -1203,14 +1253,14 @@ const methods = {
           const wave = revealProgress * 1.45 - i * 0.18;
           if (wave <= 0 || wave >= 1.52) continue;
           const waveRadius = ringOuter + innerRadius * wave * (0.92 + swBoost * 0.18);
-          const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
+          const waveAlpha = (0.22 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
           if (waveAlpha <= 0.003) continue;
 
           ctx.beginPath();
           ctx.globalAlpha = waveAlpha;
           ctx.strokeStyle = "rgba(72,58,96,1)";
           ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
-          ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale * glowMul;
+          ctx.shadowBlur = (16 + (1 - wave) * 24) * effShadow * glowMul;
           ctx.shadowColor = "rgba(48,32,78,0.88)";
           ctx.arc(cx, cy, waveRadius, 0, TAU);
           ctx.stroke();
@@ -1248,9 +1298,9 @@ const methods = {
           const revealBranchSteps = perfTier === 0 ? 3 : 4;
           const revealLightningRadius = ringOuter + rimWidth * 0.12;
           // Hoist constant shadowBlur for main/core/branch strokes
-          const mainShadowBlur = (10 + oneMinusReveal * 8) * shadowScale;
-          const coreShadowBlur = (5 + oneMinusReveal * 6) * shadowScale;
-          const branchShadowBlur = (7 + oneMinusReveal * 6) * shadowScale;
+          const mainShadowBlur = (10 + oneMinusReveal * 8) * effShadow;
+          const coreShadowBlur = (5 + oneMinusReveal * 6) * effShadow;
+          const branchShadowBlur = (7 + oneMinusReveal * 6) * effShadow;
 
           for (let li = 0; li < outerLightning.length; li += revealBoltStep) {
             const bolt = outerLightning[li];
@@ -1346,11 +1396,11 @@ const methods = {
           ringOuter + innerRadius * (0.78 + oneMinusReveal * 0.34)
         );
         mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
-        mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${(0.48 * fadeOut).toFixed(3)})`);
-        mistHalo.addColorStop(0.38, `rgba(64, 42, 108, ${(0.58 * fadeOut).toFixed(3)})`);
-        mistHalo.addColorStop(0.56, `rgba(86, 52, 148, ${(0.44 * fadeOut).toFixed(3)})`);
-        mistHalo.addColorStop(0.74, `rgba(58, 34, 102, ${(0.32 * fadeOut).toFixed(3)})`);
-        mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${(0.16 * fadeOut).toFixed(3)})`);
+        mistHalo.addColorStop(0.18, `rgba(42, 28, 68, ${fade048})`);
+        mistHalo.addColorStop(0.38, `rgba(64, 42, 108, ${fade058})`);
+        mistHalo.addColorStop(0.56, `rgba(86, 52, 148, ${fade044})`);
+        mistHalo.addColorStop(0.74, `rgba(58, 34, 102, ${fade032})`);
+        mistHalo.addColorStop(0.90, `rgba(32, 18, 62, ${fade016})`);
         mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
         ctx.fillStyle = mistHalo;
         ctx.beginPath();
@@ -1459,7 +1509,7 @@ self.onmessage = (e) => {
     perfTier = msg.perfTier;
     detailStep = perfTier === 0 ? 2 : 1;
     mistStep = perfTier === 0 ? 3 : perfTier === 1 ? 2 : 1;
-    shadowScale = perfTier === 0 ? 0.62 : perfTier === 1 ? 0.78 : 1;
+    shadowScale = perfTier === 0 ? 1.4 : perfTier === 1 ? 1.8 : 2.2;
     duration = msg.duration;
     dpr = msg.dpr;
     resize(msg.width, msg.height, dpr);
@@ -1487,23 +1537,56 @@ function startDrawLoop() {
 
     const easeInOut = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     const fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
-    const swirl = elapsed * 0.0022;
+    const swirl = elapsed * 0.0044;
     const formT = Math.min(1, t / 0.22);
     const formEase = 1 - Math.pow(1 - formT, 3);
     const portalForm = 0.38 + 0.62 * formEase;
-    const revealStart = 0.35;
+    const revealStart = 0.50;
     const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
     const revealEase = revealProgress < 0.5 ? 2 * revealProgress * revealProgress : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
+
+    // Shadow envelope: vanilla computation (mirrors GSAP 25→48% gradual in, 50→65% out)
+    let shadowEnvelope = 0;
+    if (t >= 0.25 && t < 0.48) {
+      const envT = (t - 0.25) / 0.23;
+      shadowEnvelope = envT * envT; // power2.in (slight acceleration into darkness)
+    } else if (t >= 0.48 && t < 0.50) {
+      shadowEnvelope = 1;
+    } else if (t >= 0.50 && t < 0.65) {
+      const envT = (t - 0.50) / 0.15;
+      shadowEnvelope = 1 - (1 - Math.pow(1 - envT, 3)); // power3.out
+    }
+
+    const glowDim = 1 - shadowEnvelope; // dims all glow during envelope
+    const effShadow = shadowScale * glowDim;
 
     const portalRadius = maxSide * (0.68 + 1.28 * easeInOut);
     const innerRadius = portalRadius * (0.62 + 0.1 * Math.sin(swirl * 4.4));
 
     ctx.clearRect(0, 0, width, height);
 
+    // Pre-cache fadeOut-derived strings (used 30+ times per frame)
+    const fadeStr = fadeOut.toFixed(4);
+    const fade048 = (0.48 * fadeOut).toFixed(4);
+    const fade058 = (0.58 * fadeOut).toFixed(4);
+    const fade044 = (0.44 * fadeOut).toFixed(4);
+    const fade032 = (0.32 * fadeOut).toFixed(4);
+    const fade016 = (0.16 * fadeOut).toFixed(4);
+    const fade092 = (0.92 * fadeOut).toFixed(4);
+    const fade088 = (0.88 * fadeOut).toFixed(4);
+    const fade096 = (0.96 * fadeOut).toFixed(4);
+    const fade064 = (0.64 * fadeOut).toFixed(4);
+
     // Ambient dim
     const ambientDim = (0.18 + 0.35 * formEase) * fadeOut;
     ctx.fillStyle = "rgba(2, 2, 6, " + ambientDim.toFixed(4) + ")";
     ctx.fillRect(0, 0, width, height);
+
+    // Shadow envelope: complete blackout before reveal — shadow engulfs for teleport
+    if (shadowEnvelope > 0.01) {
+      ctx.fillStyle = "rgba(0, 0, 0, " + (shadowEnvelope * fadeOut).toFixed(4) + ")";
+      ctx.fillRect(0, 0, width, height);
+    }
 
     // Veil
     const veilOuter = maxSide * (0.58 + 0.9 * formEase);
@@ -1519,12 +1602,13 @@ function startDrawLoop() {
     // Wisps
     for (let wi = 0; wi < wisps.length; wi += detailStep) {
       const wisp = wisps[wi];
+      const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
+      if (alpha < 0.004) continue;
       const ang = wisp.angle + swirl * wisp.speed + Math.sin(swirl * 0.8 + wisp.phase) * 0.2;
       const orbit = portalRadius * (0.34 + wisp.offset * 0.72) + Math.sin(swirl * 2.4 + wisp.phase) * portalRadius * 0.12;
       const x = cx + Math.cos(ang) * orbit + Math.sin(swirl + wisp.phase) * 20 * wisp.drift;
       const y = cy + Math.sin(ang) * orbit * 0.78 + Math.cos(swirl * 0.92 + wisp.phase) * 14 * wisp.drift;
       const r = wisp.size * (0.88 + easeInOut * 0.72);
-      const alpha = (0.03 + 0.22 * (1 - wisp.offset * 0.68)) * fadeOut * portalForm;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
       g.addColorStop(0, "rgba(12, 10, 18, " + (alpha * 1.4).toFixed(4) + ")");
       g.addColorStop(0.56, "rgba(4, 3, 8, " + (alpha * 1.1).toFixed(4) + ")");
@@ -1535,12 +1619,13 @@ function startDrawLoop() {
     // Dark blots
     for (let bi = 0; bi < darkBlots.length; bi += detailStep) {
       const blot = darkBlots[bi];
+      const alpha = (0.18 + 0.26 * (1 - blot.offset * 0.7)) * fadeOut * portalForm;
+      if (alpha < 0.004) continue;
       const ang = blot.angle + swirl * blot.speed + Math.sin(swirl * 0.9 + blot.phase) * 0.32;
       const radius = innerRadius * (0.22 + blot.offset * 0.86);
       const x = cx + Math.cos(ang) * radius;
       const y = cy + Math.sin(ang) * radius * 0.82;
       const r = blot.size * (0.82 + easeInOut * 0.62);
-      const alpha = (0.18 + 0.26 * (1 - blot.offset * 0.7)) * fadeOut * portalForm;
       const bg = ctx.createRadialGradient(x, y, 0, x, y, r);
       bg.addColorStop(0, "rgba(0, 0, 0, " + Math.min(0.86, alpha).toFixed(4) + ")");
       bg.addColorStop(0.62, "rgba(0, 0, 0, " + (alpha * 0.58).toFixed(4) + ")");
@@ -1573,7 +1658,7 @@ function startDrawLoop() {
       const glow = (0.25 + 0.32 * Math.sin(swirl * 2.6 + rift.phase)) * fadeOut;
       ctx.strokeStyle = "rgba(100, 60, 160, " + Math.max(0.05, glow * 0.6).toFixed(4) + ")";
       ctx.lineWidth = rift.lineWidth + easeInOut * 1.8;
-      ctx.shadowBlur = (8 + easeInOut * 14) * shadowScale;
+      ctx.shadowBlur = (8 + easeInOut * 14) * effShadow;
       ctx.shadowColor = "rgba(80, 40, 140, 0.5)";
       ctx.stroke();
     }
@@ -1593,7 +1678,7 @@ function startDrawLoop() {
       const glow = (0.2 + 0.24 * Math.sin(swirl * 2.8 + filament.phase)) * fadeOut;
       ctx.strokeStyle = "rgba(120, 80, 170, " + Math.max(0.05, glow * 0.55).toFixed(4) + ")";
       ctx.lineWidth = filament.lineWidth + easeInOut * 1.5;
-      ctx.shadowBlur = (6 + easeInOut * 10) * shadowScale;
+      ctx.shadowBlur = (6 + easeInOut * 10) * effShadow;
       ctx.shadowColor = "rgba(90, 50, 150, 0.45)";
       ctx.stroke();
     }
@@ -1601,9 +1686,9 @@ function startDrawLoop() {
 
     // Void gradient
     const voidGradient = ctx.createRadialGradient(cx, cy, innerRadius * 0.14, cx, cy, innerRadius * 2.18);
-    voidGradient.addColorStop(0, "rgba(4, 2, 8, " + (0.88 * fadeOut).toFixed(4) + ")");
-    voidGradient.addColorStop(0.34, "rgba(2, 1, 5, " + (0.96 * fadeOut).toFixed(4) + ")");
-    voidGradient.addColorStop(0.72, "rgba(1, 1, 2, " + (0.92 * fadeOut).toFixed(4) + ")");
+    voidGradient.addColorStop(0, "rgba(4, 2, 8, " + fade088 + ")");
+    voidGradient.addColorStop(0.34, "rgba(2, 1, 5, " + fade096 + ")");
+    voidGradient.addColorStop(0.72, "rgba(1, 1, 2, " + fade092 + ")");
     voidGradient.addColorStop(1, "rgba(0, 0, 0, 0)");
     ctx.fillStyle = voidGradient;
     ctx.beginPath(); ctx.arc(cx, cy, innerRadius * 2.18, 0, TAU); ctx.fill();
@@ -1616,13 +1701,13 @@ function startDrawLoop() {
 
     // Core gradient
     const coreGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, innerRadius);
-    coreGradient.addColorStop(0, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
-    coreGradient.addColorStop(0.32, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
-    coreGradient.addColorStop(0.72, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
-    coreGradient.addColorStop(1, "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")");
+    coreGradient.addColorStop(0, "rgba(0, 0, 0, " + fadeStr + ")");
+    coreGradient.addColorStop(0.32, "rgba(0, 0, 0, " + fadeStr + ")");
+    coreGradient.addColorStop(0.72, "rgba(0, 0, 0, " + fadeStr + ")");
+    coreGradient.addColorStop(1, "rgba(0, 0, 0, " + fadeStr + ")");
     ctx.fillStyle = coreGradient;
     ctx.beginPath(); ctx.arc(cx, cy, innerRadius, 0, TAU); ctx.fill();
-    ctx.fillStyle = "rgba(0, 0, 0, " + (1 * fadeOut).toFixed(4) + ")";
+    ctx.fillStyle = "rgba(0, 0, 0, " + fadeStr + ")";
     ctx.beginPath(); ctx.arc(cx, cy, innerRadius * 0.78, 0, TAU); ctx.fill();
 
     // Core vortex
@@ -1674,7 +1759,7 @@ function startDrawLoop() {
           ctx.lineTo(pts[i + 1].x, pts[i + 1].y);
           ctx.lineWidth = bW + (mW - bW) * p * p;
           ctx.strokeStyle = "rgba(90, 55, 150, " + Math.max(0.03, segA * 0.65).toFixed(4) + ")";
-          ctx.shadowBlur = (4 + 16 * p) * shadowScale;
+          ctx.shadowBlur = (4 + 16 * p) * effShadow;
           ctx.shadowColor = "rgba(60, 30, 110, " + (segA * 0.55).toFixed(4) + ")";
           ctx.stroke();
         }
@@ -1702,7 +1787,7 @@ function startDrawLoop() {
         var tAlpha = coreVortexAlpha * 0.55 * (0.5 + 0.5 * Math.sin(swirl * 2 + ti * 0.52));
         ctx.strokeStyle = "rgba(100, 60, 165, " + Math.max(0.04, tAlpha * 0.7).toFixed(4) + ")";
         ctx.lineWidth = 1.0 + 0.5 * Math.sin(swirl * 3 + ti * 0.9);
-        ctx.shadowBlur = 6 * shadowScale;
+        ctx.shadowBlur = 6 * effShadow;
         ctx.shadowColor = "rgba(80, 40, 140, " + (tAlpha * 0.5).toFixed(4) + ")";
         ctx.stroke();
       }
@@ -1728,87 +1813,11 @@ function startDrawLoop() {
       ctx.closePath();
       var blobAlpha2 = coreVortexAlpha * 0.85 * blobPulse2;
       ctx.fillStyle = "rgba(105, 60, 180, " + blobAlpha2.toFixed(4) + ")";
-      ctx.shadowBlur = 14 * shadowScale;
+      ctx.shadowBlur = 14 * effShadow;
       ctx.shadowColor = "rgba(120, 70, 200, " + (blobAlpha2 * 0.6).toFixed(4) + ")";
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      ctx.restore();
-    }
-
-    // Chaotic lightning — disabled
-    const lightningRamp = Math.max(0, Math.min(1, t / 0.28));
-    if (false && lightningRamp > 0.01) {
-      const boltStep = perfTier === 0 ? Math.max(2, detailStep) : detailStep;
-      const creationBoost = Math.max(0, Math.min(1, 1 - t / Math.max(0.01, revealStart + 0.08)));
-      const activeBoltStep = creationBoost > 0.24 ? Math.max(1, boltStep - 1) : boltStep;
-      const mainSteps = perfTier === 0 ? 4 : 6;
-      const branchSteps = perfTier === 0 ? 3 : 4;
-      const lightningRadius = innerRadius * (0.86 + 0.14 * formEase + Math.sin(swirl * 1.9) * 0.05);
-      const lightningFade = Math.max(0, 1 - revealProgress * 0.28);
-
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter";
-
-      for (let li = 0; li < outerLightning.length; li += activeBoltStep) {
-        const bolt = outerLightning[li];
-        const drift = swirl * bolt.speed + bolt.phase;
-        const flicker = 0.5 + 0.5 * Math.sin(drift * 4.4 + t * 12.4) + 0.35 * Math.sin(drift * 7.2 + bolt.phase * 1.3);
-        const flickerGate = -0.18 - creationBoost * 0.16;
-        if (flicker < flickerGate) continue;
-        const alpha = (0.22 + 0.34 * (flicker * 0.5 + 0.5)) * (1 + creationBoost * 0.55) * lightningRamp * lightningFade * fadeOut;
-        if (alpha <= 0.004) continue;
-        const baseA = bolt.angle + drift * 0.24 + Math.sin(drift * 2.1) * 0.08;
-        const startR = lightningRadius * (0.96 + 0.08 * Math.sin(drift * 1.8));
-        const reach = innerRadius * (0.38 + bolt.reach * (0.82 + 0.52 * lightningRamp));
-        const span = 0.10 + 0.05 * Math.sin(drift * 2.6 + bolt.phase);
-
-        ctx.beginPath();
-        for (let i = 0; i <= mainSteps; i++) {
-          const p = i / mainSteps;
-          const rr = startR + reach * p;
-          const jag = Math.sin(drift * 3.2 + p * 12.6) * 0.5 + 0.3 * Math.sin(drift * 5.6 + p * 8.1 + bolt.phase);
-          const ang = baseA + (p - 0.24) * span + jag * bolt.jitter * (1 + p * 0.7);
-          const x = cx + Math.cos(ang) * rr;
-          const y = cy + Math.sin(ang) * rr * 0.88;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        }
-        ctx.strokeStyle = "rgba(148, 88, 240, " + (alpha * 0.92).toFixed(4) + ")";
-        ctx.lineWidth = bolt.width + 2.4;
-        ctx.shadowBlur = (22 + (1 - revealProgress) * 22) * shadowScale;
-        ctx.shadowColor = "rgba(132, 72, 228, " + (alpha * 1.0).toFixed(4) + ")";
-        ctx.stroke();
-        ctx.strokeStyle = "rgba(232, 192, 255, " + Math.min(0.68, alpha + 0.12).toFixed(4) + ")";
-        ctx.lineWidth = Math.max(1.4, bolt.width * 0.82);
-        ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
-        ctx.shadowColor = "rgba(198, 152, 255, " + (alpha * 0.95).toFixed(4) + ")";
-        ctx.stroke();
-
-        if (flicker > (0.08 - creationBoost * 0.32)) {
-          const dir = Math.sin(drift * 2.2 + bolt.phase) > 0 ? 1 : -1;
-          const branchStartP = 0.34 + 0.22 * (0.5 + 0.5 * Math.sin(drift * 1.5 + bolt.phase));
-          const fromR = startR + reach * branchStartP;
-          const fromA = baseA + dir * 0.04;
-          const branchReach = reach * (0.48 + 0.32 * (0.5 + 0.5 * Math.sin(drift * 2.4)));
-          const branchSpan = dir * (0.16 + 0.08 * Math.sin(drift * 3 + bolt.phase));
-          ctx.beginPath();
-          for (let b = 0; b <= branchSteps; b++) {
-            const p = b / branchSteps;
-            const rr = fromR + branchReach * p;
-            const jag = Math.sin(drift * 4.1 + p * 9.2) * 0.5 + 0.24 * Math.sin(drift * 6.3 + p * 6.1 + bolt.phase);
-            const ang = fromA + p * branchSpan + jag * bolt.jitter * 0.7;
-            const x = cx + Math.cos(ang) * rr;
-            const y = cy + Math.sin(ang) * rr * 0.88;
-            if (b === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-          }
-          const branchAlpha = alpha * 0.72;
-          ctx.strokeStyle = "rgba(156, 108, 240, " + branchAlpha.toFixed(4) + ")";
-          ctx.lineWidth = Math.max(1.0, bolt.width * 0.76);
-          ctx.shadowBlur = (12 + (1 - revealProgress) * 12) * shadowScale;
-          ctx.shadowColor = "rgba(138, 88, 228, " + (branchAlpha * 0.9).toFixed(4) + ")";
-          ctx.stroke();
-        }
-      }
       ctx.restore();
     }
 
@@ -1825,10 +1834,10 @@ function startDrawLoop() {
 
       ctx.save(); ctx.globalCompositeOperation = "source-over";
       const ringBody = ctx.createRadialGradient(cx, cy, ringInner, cx, cy, ringOuter);
-      ringBody.addColorStop(0, "rgba(0, 0, 0, " + (1.0 * fadeOut).toFixed(4) + ")");
-      ringBody.addColorStop(0.42, "rgba(0, 0, 0, " + (1.0 * fadeOut).toFixed(4) + ")");
-      ringBody.addColorStop(0.68, "rgba(4, 2, 8, " + (0.92 * fadeOut).toFixed(4) + ")");
-      ringBody.addColorStop(0.88, "rgba(8, 6, 14, " + (0.64 * fadeOut).toFixed(4) + ")");
+      ringBody.addColorStop(0, "rgba(0, 0, 0, " + fadeStr + ")");
+      ringBody.addColorStop(0.42, "rgba(0, 0, 0, " + fadeStr + ")");
+      ringBody.addColorStop(0.68, "rgba(4, 2, 8, " + fade092 + ")");
+      ringBody.addColorStop(0.88, "rgba(8, 6, 14, " + fade064 + ")");
       ringBody.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = ringBody;
       ctx.beginPath(); ctx.arc(cx, cy, ringOuter, 0, TAU);
@@ -1839,7 +1848,7 @@ function startDrawLoop() {
         ctx.beginPath();
         ctx.strokeStyle = "rgba(0, 0, 0, " + blackRimAlpha.toFixed(4) + ")";
         ctx.lineWidth = 14 + (1 - revealProgress) * 20;
-        ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * shadowScale;
+        ctx.shadowBlur = (14 + (1 - revealProgress) * 22) * effShadow;
         ctx.shadowColor = "rgba(0, 0, 0, " + (blackRimAlpha * 0.78).toFixed(4) + ")";
         ctx.arc(cx, cy, ringRadius, 0, TAU); ctx.stroke();
       }
@@ -1849,7 +1858,7 @@ function startDrawLoop() {
         ctx.beginPath();
         ctx.strokeStyle = "rgba(124, 120, 136, " + edgeAlpha.toFixed(4) + ")";
         ctx.lineWidth = 1.2 + (1 - revealProgress) * 1.4;
-        ctx.shadowBlur = (8 + (1 - revealProgress) * 8) * shadowScale;
+        ctx.shadowBlur = (8 + (1 - revealProgress) * 8) * effShadow;
         ctx.shadowColor = "rgba(48, 44, 60, " + (edgeAlpha * 0.84).toFixed(4) + ")";
         ctx.arc(cx, cy, ringRadius + rimWidth * 0.34, 0, TAU); ctx.stroke();
       }
@@ -1866,7 +1875,7 @@ function startDrawLoop() {
         ctx.beginPath();
         ctx.strokeStyle = "rgba(66, 66, 76, " + Math.max(0.01, alpha).toFixed(4) + ")";
         ctx.lineWidth = band.lineWidth + (1 - revealProgress) * 1.8;
-        ctx.shadowBlur = (10 + (1 - revealProgress) * 16) * shadowScale;
+        ctx.shadowBlur = (10 + (1 - revealProgress) * 16) * effShadow;
         ctx.shadowColor = "rgba(18, 18, 24, " + (alpha * 0.9).toFixed(4) + ")";
         ctx.arc(cx, cy, radius, start, start + arcLength); ctx.stroke();
       }
@@ -1876,12 +1885,12 @@ function startDrawLoop() {
         const wave = revealProgress * 1.45 - i * 0.18;
         if (wave <= 0 || wave >= 1.52) continue;
         const waveRadius = ringOuter + innerRadius * wave * 0.92;
-        const waveAlpha = (0.38 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
+        const waveAlpha = (0.22 * (1 - Math.min(1, wave)) * (1 - i * 0.12)) * fadeOut;
         if (waveAlpha <= 0.003) continue;
         ctx.beginPath();
         ctx.strokeStyle = "rgba(72, 58, 96, " + waveAlpha.toFixed(4) + ")";
         ctx.lineWidth = Math.max(1.5, 6.4 - wave * 2.8);
-        ctx.shadowBlur = (16 + (1 - wave) * 24) * shadowScale;
+        ctx.shadowBlur = (16 + (1 - wave) * 24) * effShadow;
         ctx.shadowColor = "rgba(48, 32, 78, " + (waveAlpha * 0.88).toFixed(4) + ")";
         ctx.arc(cx, cy, waveRadius, 0, TAU); ctx.stroke();
       }
@@ -1899,7 +1908,7 @@ function startDrawLoop() {
         ctx.beginPath();
         ctx.strokeStyle = "rgba(80, 50, 130, " + Math.max(0.04, alpha * 0.5).toFixed(4) + ")";
         ctx.lineWidth = jet.lineWidth + 1.6 + (1 - revealProgress) * 2.4;
-        ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * shadowScale;
+        ctx.shadowBlur = (12 + (1 - revealProgress) * 14) * effShadow;
         ctx.shadowColor = "rgba(50, 28, 90, " + (alpha * 0.45).toFixed(4) + ")";
         ctx.arc(cx, cy, radius, start, start + span); ctx.stroke();
       }
@@ -1934,12 +1943,12 @@ function startDrawLoop() {
           }
           ctx.strokeStyle = "rgba(108, 64, 198, " + (alpha * 0.72).toFixed(4) + ")";
           ctx.lineWidth = Math.max(0.78, bolt.width * 0.88);
-          ctx.shadowBlur = (10 + (1 - revealProgress) * 8) * shadowScale;
+          ctx.shadowBlur = (10 + (1 - revealProgress) * 8) * effShadow;
           ctx.shadowColor = "rgba(100, 58, 188, " + (alpha * 0.88).toFixed(4) + ")";
           ctx.stroke();
           ctx.strokeStyle = "rgba(208, 164, 255, " + Math.min(0.32, alpha + 0.03).toFixed(4) + ")";
           ctx.lineWidth = Math.max(0.7, bolt.width * 0.48);
-          ctx.shadowBlur = (5 + (1 - revealProgress) * 6) * shadowScale;
+          ctx.shadowBlur = (5 + (1 - revealProgress) * 6) * effShadow;
           ctx.shadowColor = "rgba(170, 126, 246, " + (alpha * 0.74).toFixed(4) + ")";
           ctx.stroke();
           if (flicker > 0.26) {
@@ -1962,7 +1971,7 @@ function startDrawLoop() {
             const branchAlpha = alpha * 0.5;
             ctx.strokeStyle = "rgba(120, 76, 210, " + branchAlpha.toFixed(4) + ")";
             ctx.lineWidth = Math.max(0.65, bolt.width * 0.52);
-            ctx.shadowBlur = (7 + (1 - revealProgress) * 6) * shadowScale;
+            ctx.shadowBlur = (7 + (1 - revealProgress) * 6) * effShadow;
             ctx.shadowColor = "rgba(108, 70, 198, " + (branchAlpha * 0.82).toFixed(4) + ")";
             ctx.stroke();
           }
@@ -1972,11 +1981,11 @@ function startDrawLoop() {
       // Mist halo — solid atmospheric fog centered on ring
       const mistHalo = ctx.createRadialGradient(cx, cy, Math.max(2, ringRadius * 0.72), cx, cy, ringOuter + innerRadius * (0.78 + (1 - revealProgress) * 0.34));
       mistHalo.addColorStop(0, "rgba(0, 0, 0, 0)");
-      mistHalo.addColorStop(0.18, "rgba(42, 28, 68, " + (0.48 * fadeOut).toFixed(4) + ")");
-      mistHalo.addColorStop(0.38, "rgba(64, 42, 108, " + (0.58 * fadeOut).toFixed(4) + ")");
-      mistHalo.addColorStop(0.56, "rgba(86, 52, 148, " + (0.44 * fadeOut).toFixed(4) + ")");
-      mistHalo.addColorStop(0.74, "rgba(58, 34, 102, " + (0.32 * fadeOut).toFixed(4) + ")");
-      mistHalo.addColorStop(0.90, "rgba(32, 18, 62, " + (0.16 * fadeOut).toFixed(4) + ")");
+      mistHalo.addColorStop(0.18, "rgba(42, 28, 68, " + fade048 + ")");
+      mistHalo.addColorStop(0.38, "rgba(64, 42, 108, " + fade058 + ")");
+      mistHalo.addColorStop(0.56, "rgba(86, 52, 148, " + fade044 + ")");
+      mistHalo.addColorStop(0.74, "rgba(58, 34, 102, " + fade032 + ")");
+      mistHalo.addColorStop(0.90, "rgba(32, 18, 62, " + fade016 + ")");
       mistHalo.addColorStop(1, "rgba(0, 0, 0, 0)");
       ctx.fillStyle = mistHalo;
       ctx.beginPath(); ctx.arc(cx, cy, ringOuter + innerRadius * 1.0, 0, TAU); ctx.fill();
