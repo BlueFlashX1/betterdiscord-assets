@@ -7999,6 +7999,7 @@ module.exports = class Dungeons {
     beforeStatesEntries,
     combatHours,
     growthHoursByShadowId,
+    postXpShadows,
   }) {
     const uniqueIds = this._normalizeShadowIds(xpTargetIds);
     if (uniqueIds.length === 0) return false;
@@ -8026,6 +8027,7 @@ module.exports = class Dungeons {
         beforeStatesEntries,
         combatHours,
         growthHoursByShadowId,
+        postXpShadows,
       }).catch((error) => {
         this.errorLog('Deferred dungeon shadow XP post-processing failed', error);
         try { this.showToast('Shadow XP post-processing failed — XP may be incomplete.', 'error'); } catch (_) {}
@@ -8044,20 +8046,41 @@ module.exports = class Dungeons {
     beforeStatesEntries,
     combatHours,
     growthHoursByShadowId,
+    postXpShadows,
   }) {
     const startMs = Date.now();
     const beforeStates = new Map(beforeStatesEntries || []);
     const shadowStorage = this.shadowArmy?.storageManager;
 
     try {
-      // Re-fetch shadows from IDB to get post-XP-grant state (grantShadowXP persists its own copies)
-      const updatedShadows = await this._fetchDungeonShadowsByIds(xpTargetIds);
-      const updatedMap = new Map();
-      for (const shadow of updatedShadows) {
-        const sid = String(this.getShadowIdValue(shadow) || '');
-        if (sid && beforeStates.has(sid)) {
-          updatedMap.set(sid, shadow);
+      // Build post-XP shadow map: prefer in-memory data from grantShadowXP,
+      // fall back to IDB fetch if unavailable or count mismatch (partial failure)
+      let updatedMap = new Map();
+
+      if (Array.isArray(postXpShadows) && postXpShadows.length >= xpTargetIds.length) {
+        // Use in-memory post-XP shadows — no IDB read needed
+        for (const shadow of postXpShadows) {
+          const sid = String(this.getShadowIdValue(shadow) || '');
+          if (sid && beforeStates.has(sid)) {
+            updatedMap.set(sid, shadow);
+          }
         }
+        this.settings.debug && console.log(
+          `[Dungeons] ⚡ POST-XP CACHE HIT: ${updatedMap.size}/${xpTargetIds.length} shadows from grantShadowXP (skipped IDB fetch)`
+        );
+      } else {
+        // Fallback: re-fetch from IDB (postXpShadows missing or partial failure)
+        const updatedShadows = await this._fetchDungeonShadowsByIds(xpTargetIds);
+        for (const shadow of updatedShadows) {
+          const sid = String(this.getShadowIdValue(shadow) || '');
+          if (sid && beforeStates.has(sid)) {
+            updatedMap.set(sid, shadow);
+          }
+        }
+        this.settings.debug && console.log(
+          `[Dungeons] 📦 POST-XP FALLBACK: fetched ${updatedMap.size}/${xpTargetIds.length} shadows from IDB` +
+          (Array.isArray(postXpShadows) ? ` (postXpShadows had ${postXpShadows.length}, needed ${xpTargetIds.length})` : ' (no postXpShadows)')
+        );
       }
 
       const leveledUpShadows = [];
@@ -12095,10 +12118,11 @@ module.exports = class Dungeons {
 
     const grantStartedAt = Date.now();
     let xpGrantSucceeded = false;
+    let postXpShadows = [];
 
     // One XP batch grant for all contributing shadows (avoids repeated full-table scans).
     try {
-      await this.shadowArmy.grantShadowXP(
+      const xpResult = await this.shadowArmy.grantShadowXP(
         0,
         `dungeon_${dungeon.rank}_${channelKey}`,
         xpTargetIds,
@@ -12108,6 +12132,7 @@ module.exports = class Dungeons {
         }
       );
       xpGrantSucceeded = true;
+      postXpShadows = xpResult?.updatedShadows || [];
     } catch (err) {
       this.errorLog('Failed to grant dungeon shadow XP batch', err);
     }
@@ -12129,6 +12154,7 @@ module.exports = class Dungeons {
       beforeStatesEntries: Array.from(beforeStates.entries()),
       combatHours,
       growthHoursByShadowId,
+      postXpShadows,
     });
 
     const elapsedMs = Date.now() - grantStartedAt;

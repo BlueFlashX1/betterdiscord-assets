@@ -24,7 +24,7 @@
  * - calculateShadowPower(stats, multiplier) - Returns number
  * - getAggregatedArmyStats() - Returns Promise<Object> { totalShadows, totalPower, totalStats, byRank, byRole, avgLevel } (direct calculation, no cache)
  * - attemptDungeonExtraction(bossId, userRank, userLevel, userStats, mobRank, mobStats, mobStrength, beastFamilies, isBoss) - Returns Promise<Object>
- * - grantShadowXP(amount, reason, shadowIds) - Returns Promise<void>
+ * - grantShadowXP(amount, reason, shadowIds) - Returns Promise<{updatedShadows: Array}> — post-persist shadow objects (may be empty on error/no-op)
  * - getShadowData(shadow) - Returns Object (decompressed shadow)
  * - calculateShadowAttackInterval(shadow, baseInterval) - Returns number
  * - calculateShadowDamage(shadow, target) - Returns number
@@ -6842,10 +6842,11 @@ module.exports = class ShadowArmy {
     const targetFetchChunkSize = Math.max(25, Math.floor(Number(options?.fetchChunkSize) || 300));
 
     // Guard clause: Return early if invalid baseAmount and no per-shadow overrides
-    if (baseAmount <= 0 && !perShadowAmounts) return;
+    if (baseAmount <= 0 && !perShadowAmounts) return { updatedShadows: [] };
 
     let shadowsToGrant = [];
     let hasPersistedUpdates = false;
+    const allUpdatedShadows = [];
     const targetShadowIds =
       Array.isArray(shadowIds) && shadowIds.length > 0
         ? shadowIds
@@ -6914,6 +6915,7 @@ module.exports = class ShadowArmy {
           await Promise.all(updatedShadows.map((s) => this.storageManager.saveShadow(s)));
         }
         hasPersistedUpdates = true;
+        allUpdatedShadows.push(...updatedShadows);
         return updatedShadows.length;
       } catch (error) {
         this.debugError('STORAGE', 'Failed to batch-save shadow XP updates to IndexedDB', error);
@@ -6930,7 +6932,7 @@ module.exports = class ShadowArmy {
             .filter(Boolean)
         )
       );
-      if (uniqueTargetIds.length === 0) return;
+      if (uniqueTargetIds.length === 0) return { updatedShadows: [] };
 
       for (let i = 0; i < uniqueTargetIds.length; i += targetFetchChunkSize) {
         const idChunk = uniqueTargetIds.slice(i, i + targetFetchChunkSize);
@@ -6962,11 +6964,11 @@ module.exports = class ShadowArmy {
       }
 
       // Guard clause: Return early if no shadows to grant XP to
-      if (!shadowsToGrant.length) return;
+      if (!shadowsToGrant.length) return { updatedShadows: [] };
       await processXpBatch(shadowsToGrant);
     }
 
-    if (!hasPersistedUpdates) return;
+    if (!hasPersistedUpdates) return { updatedShadows: [] };
     this._invalidateSnapshot(); // XP/level/rank changed — snapshot stale
 
     // When shadow XP/level changes, we need to recalculate that shadow's power and update cache
@@ -6983,6 +6985,7 @@ module.exports = class ShadowArmy {
     }
 
     this.saveSettings();
+    return { updatedShadows: allUpdatedShadows };
   }
 
   /**
