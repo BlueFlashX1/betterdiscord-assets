@@ -14479,17 +14479,6 @@ module.exports = class Dungeons {
       });
     }
 
-    // Suggest garbage collection to V8 (if available)
-    // eslint-disable-next-line no-undef
-    if (typeof global !== 'undefined' && typeof global.gc === 'function') {
-      try {
-        // eslint-disable-next-line no-undef
-        global.gc();
-        this.debugLog('V8 garbage collection executed');
-      } catch (e) {
-        // GC not available (requires --expose-gc flag)
-      }
-    }
   }
 
   // ==== TOAST (via unified engine) ====

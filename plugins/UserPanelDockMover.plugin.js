@@ -301,6 +301,7 @@ module.exports = class UserPanelDockMover {
       this.panel.classList.remove("sl-userpanel-docked");
       this.panel.style.removeProperty("right");
       this.panel.style.removeProperty("left");
+      this._pollSlowed = false;
     }
 
     this.panel = panel;

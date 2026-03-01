@@ -713,6 +713,7 @@ module.exports = class ShadowRecon {
       const markedLabel = this.isGuildMarked(guildId) ? "[Marked]" : "[Unmarked]";
 
       const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
+      if (node.getAttribute('title') === title) continue;
       node.setAttribute("title", title);
       node.setAttribute("data-shadow-recon-title", "1");
     }
@@ -1484,17 +1485,6 @@ module.exports = class ShadowRecon {
 #${WIDGET_ID}.shadow-recon-widget:hover {
   border-color: rgba(96, 165, 250, 0.85);
   color: #dbeafe;
-}
-
-#${MEMBER_BANNER_ID}.shadow-recon-member-banner {
-  margin: 8px 10px;
-  padding: 8px 10px;
-  border: 1px solid rgba(96, 165, 250, 0.35);
-  border-radius: 2px;
-  background: rgba(15, 23, 42, 0.85);
-  color: #bfdbfe;
-  font-size: 12px;
-  font-weight: 600;
 }
 
 #${MODAL_ID}.shadow-recon-overlay {

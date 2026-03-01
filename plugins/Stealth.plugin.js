@@ -760,13 +760,13 @@ module.exports = class Stealth {
         try {
           if (String(p.ProtoClass?.typeName || "").includes("PreloadedUserSettings")) {
             this._protoUtils = p;
-            console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
+            if (this.settings.debugMode) console.log("[Stealth] Proto settings acquired (PreloadedUserSettings)");
             return;
           }
         } catch (e) { /* skip */ }
       }
 
-      console.warn("[Stealth][DEBUG] All strategies failed — no proto with 'status' field found");
+      if (this.settings.debugMode) console.warn("[Stealth] All strategies failed — no proto with 'status' field found");
     } catch (err) {
       this._logWarning("STATUS", "Failed to find PreloadedUserSettings proto module", err, "proto-init");
     }

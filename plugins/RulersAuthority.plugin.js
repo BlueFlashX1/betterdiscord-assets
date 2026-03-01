@@ -220,6 +220,7 @@ module.exports = class RulersAuthority {
 
     // Caches
     this._statsCache = _ttl(RA_STATS_CACHE_TTL);
+    this._panelElCache = null;
 
     // Resolved selectors (built from Webpack modules + fallbacks)
     this._resolvedSelectors = {};

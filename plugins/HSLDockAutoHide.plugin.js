@@ -196,7 +196,7 @@ class DockEngine {
       this.safeTick();
     }, 1500); // 1.5s (was 850ms) — dock state rarely changes
 
-    this.debug("mount:ready", { syncIntervalMs: 850 }, true);
+    this.debug("mount:ready", { syncIntervalMs: 1500 }, true);
   }
 
   unmount() {

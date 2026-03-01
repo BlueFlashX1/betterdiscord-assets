@@ -478,7 +478,10 @@ class SensesEngine {
   _subscribeEvent(eventName, handler) {
     const Dispatcher = this._plugin._Dispatcher;
     if (!Dispatcher || !eventName || typeof handler !== "function") return false;
-    if (this._subscribedEventHandlers.has(eventName)) return true;
+    if (this._subscribedEventHandlers.has(eventName)) {
+      this._plugin.debugLog("SensesEngine", `Duplicate subscribe blocked for ${eventName}`);
+      return true;
+    }
     try {
       Dispatcher.subscribe(eventName, handler);
       this._subscribedEventHandlers.set(eventName, handler);
