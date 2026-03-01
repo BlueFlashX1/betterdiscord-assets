@@ -8056,8 +8056,9 @@ module.exports = class Dungeons {
       // Build post-XP shadow map: prefer in-memory data from grantShadowXP,
       // fall back to IDB fetch only when postXpShadows is empty/missing
       let updatedMap = new Map();
+      const usingPostXpCache = Array.isArray(postXpShadows) && postXpShadows.length > 0;
 
-      if (Array.isArray(postXpShadows) && postXpShadows.length > 0) {
+      if (usingPostXpCache) {
         // Use in-memory post-XP shadows — no IDB read needed
         for (const shadow of postXpShadows) {
           const sid = String(this.getShadowIdValue(shadow) || '');
@@ -8133,17 +8134,23 @@ module.exports = class Dungeons {
             }
           }
 
-          const prepared = this.shadowArmy.prepareShadowForSave
-            ? this.shadowArmy.prepareShadowForSave(shadow)
-            : shadow;
+          // Fast path: postXpShadows already prepped by grantShadowXP pipeline;
+          // applyNaturalGrowth + attemptAutoRankUp mutate in-place and recalculate strength.
+          // Fallback path: raw IDB records may be compressed — must go through full prep.
+          const prepared = usingPostXpCache
+            ? shadow
+            : (this.shadowArmy.prepareShadowForSave?.(shadow) ?? shadow);
           prepared && growthUpdates.push(prepared);
         }
 
         if (growthUpdates.length > 0 && shadowStorage) {
-          if (typeof shadowStorage.saveShadowsChunked === 'function') {
-            await shadowStorage.saveShadowsChunked(growthUpdates, 10);
-          } else if (typeof shadowStorage.updateShadowsBatch === 'function') {
+          // Prefer single-transaction updateShadowsBatch for typical dungeon sizes (≤50).
+          // Updates recentCache (fixes cache coherence) and avoids multi-txn overhead.
+          // Fall back to chunked writes for large batches to avoid blocking IDB.
+          if (growthUpdates.length <= 50 && typeof shadowStorage.updateShadowsBatch === 'function') {
             await shadowStorage.updateShadowsBatch(growthUpdates);
+          } else if (typeof shadowStorage.saveShadowsChunked === 'function') {
+            await shadowStorage.saveShadowsChunked(growthUpdates, 10);
           } else {
             await Promise.all(growthUpdates.map((shadow) => shadowStorage.saveShadow(shadow)));
           }
