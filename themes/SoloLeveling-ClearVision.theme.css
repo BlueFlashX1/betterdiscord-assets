@@ -1563,6 +1563,12 @@ div[data-list-id^="forum-channel-list"] > div[class^="container_"] {
   background-image: none !important;
 }
 
+/* §9i (continued) — Forum post cards: sharp corners + solid background */
+div[data-list-id^="forum-channel-list"] div[class^="mainCard_"] {
+  border-radius: 0 !important;
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
 /* §9i (continued) — Sharp corners on forum header bars
    The "Thread header" (right panel) and "Channel header" (left panel)
    must have no rounded corners at the top. Also force sharp corners
