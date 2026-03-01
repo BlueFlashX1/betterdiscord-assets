@@ -1605,11 +1605,15 @@ module.exports = class Dungeons {
       await this.preSplitShadowArmy();
     }
 
+    // Per-tick lock: prevent parallel dungeons from calling preSplitShadowArmy redundantly
+    this._tickAllocationLock = false;
+
     // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
     // Each dungeon has isolated shadow allocations, deadShadows, and dungeon state.
     // Shared state (userHP, userMana) has minor race potential but is self-correcting via
     // periodic SoloLevelingStats sync and debounced saveSettings.
     const dungeonPromises = [];
+    let dungeonIndex = 0;
     for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
       if (!dungeon || dungeon.completed || dungeon.failed) {
         this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
@@ -1619,8 +1623,9 @@ module.exports = class Dungeons {
       }
 
       dungeonPromises.push(this._processDungeonCombatTick(
-        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget
+        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget, dungeonIndex
       ));
+      dungeonIndex++;
     }
 
     if (dungeonPromises.length > 0) {
@@ -1653,14 +1658,14 @@ module.exports = class Dungeons {
    * IMPORTANT: Within each dungeon, shadow→boss→mob order is preserved (sequential await).
    * Cross-dungeon parallelism is safe because each dungeon has isolated allocations and state.
    */
-  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget) {
+  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget, dungeonIndex = 0) {
     try {
       // MANUAL DEPLOY: Skip combat entirely for dungeons where shadows haven't been deployed
       if (!dungeon.shadowsDeployed) return;
 
       // SAFETY NET: Detect "deployed but stuck" — deployed >5s but no mobs and no spawn scheduled.
       // This catches any deploy race condition where startMobSpawning was skipped or failed silently.
-      if (!dungeon._deploying && this._combatTickCount % 5 === 0 && dungeon.boss?.hp > 0) {
+      if (!dungeon._deploying && (this._combatTickCount + dungeonIndex) % 5 === 0 && dungeon.boss?.hp > 0) {
         const liveMobs = this._countLiveMobs(dungeon);
         const hasSpawnScheduled = this._mobSpawnNextAt.has(channelKey);
         const deployAge = dungeon.deployedAt ? (now - dungeon.deployedAt) : 0;
@@ -1673,7 +1678,7 @@ module.exports = class Dungeons {
       const isActive = this.isActiveDungeon(channelKey);
 
       // React re-render guard: every 5th tick, verify injected UI is still in DOM
-      if (isActive && this._combatTickCount % 5 === 0) {
+      if (isActive && (this._combatTickCount + dungeonIndex) % 5 === 0) {
         const hpBar = this.bossHPBars.get(channelKey);
         if (hpBar && !hpBar.isConnected) {
           this.bossHPBars.delete(channelKey);
@@ -1699,7 +1704,7 @@ module.exports = class Dungeons {
         const elapsed = now - lastTime;
 
         // Periodic trace (every 10 ticks ~10s) so user can see combat is alive
-        if (this._combatTickCount % 10 === 0) {
+        if ((this._combatTickCount + dungeonIndex) % 10 === 0) {
           const allocCount = (this.shadowAllocations.get(channelKey) || []).length;
           const mobCount = dungeon.mobs?.activeMobs?.length || 0;
           const bossHp = dungeon.boss?.hp ?? 'N/A';
@@ -2091,6 +2096,11 @@ module.exports = class Dungeons {
     // Clear HP bar update queue
     if (this._hpBarUpdateQueue) {
       this._hpBarUpdateQueue.clear();
+    }
+    if (this._hpBarUpdateTimer) {
+      this._timeouts.delete(this._hpBarUpdateTimer);
+      clearTimeout(this._hpBarUpdateTimer);
+      this._hpBarUpdateTimer = null;
     }
     this._hpBarUpdateScheduled = false;
     this._lastHPBarUpdate = {};
@@ -8718,12 +8728,13 @@ module.exports = class Dungeons {
           this._deployRebalanceInFlight?.has?.(channelKey);
 
         let didReallocate = false;
-        if (cacheExpired || !hasAllocation) {
+        if ((cacheExpired || !hasAllocation) && !this._tickAllocationLock) {
           if (deployRebalancePending) {
             // Keep combat loop responsive while async deploy rebalance computes full split.
             !hasAllocation && this.ensureDeployedSpawnPipeline(channelKey, 'combat_waiting_for_rebalance');
           } else {
             this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
+            this._tickAllocationLock = true;
             await this.preSplitShadowArmy();
             didReallocate = true;
           }
@@ -8759,9 +8770,10 @@ module.exports = class Dungeons {
               avgAssignedRankIndex < dungeonRankIndex - 0.9 ||
               (isBossAlive && bossFraction > 0.6 && assignedShadows.length < expected);
 
-            if (needsRebalance) {
+            if (needsRebalance && !this._tickAllocationLock) {
               this._lastRebalanceAt.set(channelKey, nowRebalance);
               this._markAllocationDirty('combat-rebalance');
+              this._tickAllocationLock = true;
               await this.preSplitShadowArmy();
               this.syncDungeonDifficultyScale(dungeon, channelKey, { scaleExistingMobs: true });
             }
@@ -9341,8 +9353,12 @@ module.exports = class Dungeons {
           }
         }
 
-        this._cleanupDungeonActiveMobs(dungeon);
-        this._pruneShadowMobContributionLedger(dungeon);
+        // Only compact activeMobs and prune ledger when mobs actually died this tick.
+        // Both functions scan the entire activeMobs array — skip when nothing changed.
+        if (deadMobsThisTick.length > 0) {
+          this._cleanupDungeonActiveMobs(dungeon);
+          this._pruneShadowMobContributionLedger(dungeon);
+        }
 
         // REAL-TIME UPDATE: Queue throttled HP bar update after all combat processing
         this.queueHPBarUpdate(channelKey);
@@ -10265,7 +10281,6 @@ module.exports = class Dungeons {
       // eslint-disable-next-line require-atomic-updates
       dungeon.boss.lastAttackTime = now + totalTimeSpan;
       this.deadShadows.set(channelKey, deadShadows);
-      this.saveSettings();
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processBossAttacks', { channelKey, error });
       // Don't throw - let combat continue
@@ -10605,7 +10620,6 @@ module.exports = class Dungeons {
       // REAL-TIME UPDATE: Queue throttled HP bar update after boss attacks complete
       this.queueHPBarUpdate(channelKey);
 
-      this.saveSettings();
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processMobAttacks', { channelKey, error });
       // Don't throw - let combat continue
@@ -11134,6 +11148,25 @@ module.exports = class Dungeons {
     if (this._lastMobAttackTime) {
       this._lastMobAttackTime.delete(channelKey);
     }
+
+    // Clean up orphan per-channel Map entries (multi-dungeon leak prevention)
+    this._mobSpawnNextAt?.delete(channelKey);
+    this._mobSpawnQueueNextAt?.delete(channelKey);
+    this._spawnPipelineGuardAt?.delete(channelKey);
+    this._mobContributionMissLogState?.delete(channelKey);
+    this._lastRebalanceAt?.delete(channelKey);
+    this._deployRebalanceInFlight?.delete(channelKey);
+    this._allocationSummary?.delete(channelKey);
+    this._mobCleanupCache?.delete(channelKey);
+    delete this._lastHPBarUpdate?.[channelKey];
+    delete this._mobCapWarningShown?.[channelKey];
+
+    // Cancel pending dungeon save timer (prevents ghost saves on stale dungeon objects)
+    if (this._dungeonSaveTimers?.has(channelKey)) {
+      clearTimeout(this._dungeonSaveTimers.get(channelKey));
+      this._dungeonSaveTimers.delete(channelKey);
+    }
+
     if (this.extractionEvents) {
       const eventsToRemove = [];
       this.extractionEvents.forEach((value, key) => {
@@ -13466,9 +13499,10 @@ module.exports = class Dungeons {
     // Schedule batch update if not already scheduled
     if (!this._hpBarUpdateScheduled && this._hpBarUpdateQueue.size > 0) {
       this._hpBarUpdateScheduled = true;
-      requestAnimationFrame(() => {
+      this._hpBarUpdateTimer = this._setTrackedTimeout(() => {
+        this._hpBarUpdateTimer = null;
         this.processHPBarUpdateQueue();
-      });
+      }, 250);
     }
   }
 
@@ -13484,24 +13518,27 @@ module.exports = class Dungeons {
     const now = Date.now();
     const queued = this._hpBarUpdateQueue;
     this._hpBarUpdateQueue = new Set();
+    let earliestRetry = Infinity;
 
     for (const channelKey of queued) {
       const lastUpdate = this._lastHPBarUpdate[channelKey] || 0;
-      if (now - lastUpdate >= 250) {
-        // Throttle passed, update now
+      const elapsed = now - lastUpdate;
+      if (elapsed >= 250) {
         this._lastHPBarUpdate[channelKey] = now;
         this.updateBossHPBar(channelKey);
       } else {
-        // Still throttled, re-queue
         this._hpBarUpdateQueue.add(channelKey);
+        const remaining = 250 - elapsed;
+        if (remaining < earliestRetry) earliestRetry = remaining;
       }
     }
 
-    // Schedule next batch if queue not empty
+    // Sleep until earliest throttled entry is ready (was: 60fps rAF spin-loop)
     if (this._hpBarUpdateQueue.size > 0) {
-      requestAnimationFrame(() => {
+      this._hpBarUpdateTimer = this._setTrackedTimeout(() => {
+        this._hpBarUpdateTimer = null;
         this.processHPBarUpdateQueue();
-      });
+      }, earliestRetry);
     } else {
       this._hpBarUpdateScheduled = false;
     }
