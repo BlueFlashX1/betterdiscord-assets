@@ -8054,10 +8054,10 @@ module.exports = class Dungeons {
 
     try {
       // Build post-XP shadow map: prefer in-memory data from grantShadowXP,
-      // fall back to IDB fetch if unavailable or count mismatch (partial failure)
+      // fall back to IDB fetch only when postXpShadows is empty/missing
       let updatedMap = new Map();
 
-      if (Array.isArray(postXpShadows) && postXpShadows.length >= xpTargetIds.length) {
+      if (Array.isArray(postXpShadows) && postXpShadows.length > 0) {
         // Use in-memory post-XP shadows — no IDB read needed
         for (const shadow of postXpShadows) {
           const sid = String(this.getShadowIdValue(shadow) || '');
@@ -8079,7 +8079,7 @@ module.exports = class Dungeons {
         }
         this.settings.debug && console.log(
           `[Dungeons] 📦 POST-XP FALLBACK: fetched ${updatedMap.size}/${xpTargetIds.length} shadows from IDB` +
-          (Array.isArray(postXpShadows) ? ` (postXpShadows had ${postXpShadows.length}, needed ${xpTargetIds.length})` : ' (no postXpShadows)')
+          (Array.isArray(postXpShadows) ? ` (postXpShadows was empty)` : ' (no postXpShadows)')
         );
       }
 
