@@ -7249,7 +7249,7 @@ module.exports = class ShadowArmy {
    * Formula: (combat time hours × rank multiplier × role weight × variance)
    * This creates exponential growth that reflects rank potential AND role specialization
    */
-  async applyNaturalGrowth(shadow, combatTimeHours = 0) {
+  applyNaturalGrowth(shadow, combatTimeHours = 0) {
     if (!shadow) return false;
 
     const shadowRank = shadow.rank || 'E';

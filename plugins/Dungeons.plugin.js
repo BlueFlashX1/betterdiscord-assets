@@ -8050,6 +8050,7 @@ module.exports = class Dungeons {
     const shadowStorage = this.shadowArmy?.storageManager;
 
     try {
+      // Re-fetch shadows from IDB to get post-XP-grant state (grantShadowXP persists its own copies)
       const updatedShadows = await this._fetchDungeonShadowsByIds(xpTargetIds);
       const updatedMap = new Map();
       for (const shadow of updatedShadows) {
@@ -8094,7 +8095,7 @@ module.exports = class Dungeons {
             : combatHours;
           if (shadowCombatHours <= 0) continue;
 
-          const growthApplied = await this.shadowArmy.applyNaturalGrowth(shadow, shadowCombatHours);
+          const growthApplied = this.shadowArmy.applyNaturalGrowth(shadow, shadowCombatHours);
           if (!growthApplied || !shadowStorage) continue;
 
           // Natural growth can push a shadow over promotion thresholds.
@@ -10950,17 +10951,16 @@ module.exports = class Dungeons {
     if (dungeon.boss.hp <= 0) {
       this.settings.debug && console.log(`[Dungeons] 💀 BOSS DEFEATED in ${dungeon.name} (${dungeon.rank}-rank) | Mobs killed: ${dungeon.mobs?.killed || 0} | User participating: ${dungeon.userParticipating} | Shadows deployed: ${dungeon.shadowsDeployed}`);
 
-      // PERF/FIX: Eagerly remove HP bar BEFORE async completeDungeon.
-      // completeDungeon has multiple awaits (extraction, XP, IDB) — the 2s HP bar
-      // restore interval can re-inject the bar during those gaps if we wait.
-      // Also mark completed synchronously so restore interval sees it immediately.
+      // Remove HP bar and mark completed before completeDungeon.
+      // completeDungeon is synchronous (Phase A), but marking completed early
+      // ensures the restore interval sees it immediately.
       dungeon.completed = true;
       this.removeBossHPBar(channelKey);
       document
         .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
         .forEach((el) => el.remove());
 
-      await this.completeDungeon(channelKey, 'boss');
+      this.completeDungeon(channelKey, 'boss');
       // Save immediately on boss death (important state change)
       if (this.storageManager) {
         this.storageManager
@@ -11146,20 +11146,27 @@ module.exports = class Dungeons {
   // Automatic resurrection happens when shadows die (see attemptAutoResurrection)
 
   // ==== DUNGEON COMPLETION ====
-  async completeDungeon(channelKey, reason) {
+  completeDungeon(channelKey, reason) {
     const dungeon = this.activeDungeons.get(channelKey);
     if (!dungeon) return;
 
     if (dungeon._completing) return; // Prevent concurrent completion
     dungeon._completing = true;
 
-    // Track end time for spawn cooldowns (reliability when dungeons end early).
+    // ── PHASE A: Synchronous cleanup (dungeon disappears from UI immediately) ──
+
+    // Track end time for spawn cooldowns
     this.settings.lastDungeonEndTime || (this.settings.lastDungeonEndTime = {});
     this.settings.lastDungeonEndTime[channelKey] = Date.now();
 
     const hadShadowsDeployed = Boolean(dungeon.shadowsDeployed);
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
+
+    // Capture deploy timestamps BEFORE clearing (Phase B needs them for combat hours)
+    const originalDeployedAt = dungeon.deployedAt;
+    const originalBossGateDeployedAt = dungeon.bossGate?.deployedAt;
+
     dungeon.shadowsDeployed = false;
     dungeon.deployedAt = null;
     if (dungeon.bossGate && typeof dungeon.bossGate === 'object') {
@@ -11169,27 +11176,121 @@ module.exports = class Dungeons {
     this.shadowAllocations.delete(channelKey);
     this._markAllocationDirty(`dungeon-complete:${reason}`);
 
-    // Snapshot the corpse pile from the dungeon object (persisted to IDB, survives restarts).
+    // Snapshot the corpse pile, then clear the dungeon's copy
     const corpsePileSnapshot = dungeon.corpsePile || [];
-    // Clear from dungeon so it's not processed again on a second completeDungeon call
     dungeon.corpsePile = [];
 
-    // CRITICAL: Process corpse pile extraction FIRST — before any other async work.
-    // Hot-reloads from file sync can fire during any await, orphaning promise chains.
-    // By awaiting extraction here (before grantShadowDungeonXP), it completes before
-    // the plugin instance can be torn down.
+    // Build a lightweight snapshot with all data Phase B needs.
+    // After Phase A deletes the dungeon from activeDungeons, the original object
+    // becomes unreachable and will be GC'd — the snapshot keeps only shallow copies.
+    const dungeonSnapshot = {
+      id: dungeon.id,
+      name: dungeon.name,
+      rank: dungeon.rank,
+      channelName: dungeon.channelName,
+      guildName: dungeon.guildName,
+      userParticipating: dungeon.userParticipating,
+      shadowContributions: { ...dungeon.shadowContributions },
+      boss: dungeon.boss ? { ...dungeon.boss } : null,
+      bossGate: dungeon.bossGate ? { ...dungeon.bossGate, deployedAt: originalBossGateDeployedAt } : null,
+      deployedAt: originalDeployedAt,
+      startTime: dungeon.startTime,
+      mobs: { killed: dungeon.mobs?.killed || 0 },
+      shadowRevives: dungeon.shadowRevives || 0,
+      userDamageDealt: dungeon.userDamageDealt || 0,
+      beastFamilies: dungeon.beastFamilies,
+      combatAnalytics: dungeon.combatAnalytics ? { ...dungeon.combatAnalytics } : {},
+    };
+
+    // Capture shadow death count before we clear it
+    const shadowDeathCount = this.deadShadows.get(channelKey)?.size || 0;
+
+    // Stop all combat systems
+    this.stopShadowAttacks(channelKey);
+    this.stopBossAttacks(channelKey);
+    this.stopMobAttacks(channelKey);
+    this.stopMobKillNotifications(channelKey);
+    this.stopMobSpawning(channelKey);
+
+    // Remove UI elements
+    this.removeDungeonIndicator(channelKey);
+    this.removeBossHPBar(channelKey);
+    document
+      .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
+      .forEach((el) => {
+        el.remove();
+      });
+
+    // Reset user active dungeon status (allows entering new dungeons)
+    if (this.settings.userActiveDungeon === channelKey) {
+      this.settings.userActiveDungeon = null;
+    }
+
+    // Release channel lock
+    this.channelLocks.delete(channelKey);
+
+    // KEY LINE: Dungeon disappears from UI
+    this.activeDungeons.delete(channelKey);
+
+    // Clean up all remaining per-channel state
+    delete this.settings.mobKillNotifications[channelKey];
+    this.deadShadows.delete(channelKey);
+    this.clearRoleCombatState(channelKey);
+    // shadowAllocations already deleted + marked dirty above (line ~11181)
+    if (this.extractionInProgress) {
+      this.extractionInProgress.delete(channelKey);
+    }
+    if (this._lastShadowAttackTime) {
+      this._lastShadowAttackTime.delete(channelKey);
+    }
+    if (this._lastBossAttackTime) {
+      this._lastBossAttackTime.delete(channelKey);
+    }
+    if (this._lastMobAttackTime) {
+      this._lastMobAttackTime.delete(channelKey);
+    }
+    if (this.extractionEvents) {
+      const eventsToRemove = [];
+      this.extractionEvents.forEach((value, key) => {
+        if (key.includes(channelKey)) {
+          eventsToRemove.push(key);
+        }
+      });
+      eventsToRemove.forEach((key) => this.extractionEvents.delete(key));
+    }
+
+    this.saveSettings();
+
+    // ── PHASE B: Fire-and-forget background work (ARISE, XP, DB cleanup) ──
+    this._completeDungeonBackground(
+      channelKey, reason, dungeonSnapshot, corpsePileSnapshot,
+      hadShadowsDeployed, shadowDeathCount
+    ).catch((err) => {
+      this.errorLog('Background dungeon completion failed', err);
+      try { this.showToast('Dungeon processing error — XP/ARISE may be incomplete.', 'error'); } catch (_) {}
+    });
+  }
+
+  /**
+   * Phase B of dungeon completion — runs asynchronously after the dungeon
+   * has already been removed from UI and activeDungeons (Phase A).
+   * Handles: ARISE extraction, shadow XP, user XP, summary toast, DB cleanup.
+   * @private
+   */
+  async _completeDungeonBackground(channelKey, reason, snap, corpsePileSnapshot, hadShadowsDeployed, shadowDeathCount) {
+    if (!this.started) return; // Plugin disabled before Phase B could run
+
+    // ── ARISE Extraction ──
     let extractionResults = { extracted: 0, attempted: 0 };
     const pileSize = corpsePileSnapshot.length;
-    // ARISE only if user is still actively participating (survived to the end).
-    // If defeated mid-dungeon, corpse pile is cleaned up — you lost, no extraction.
     if (
-      dungeon.userParticipating &&
+      snap.userParticipating &&
       (reason === 'boss' || reason === 'complete' || reason === 'timeout') &&
       pileSize > 0
     ) {
-      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE TRIGGERED: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ${reason}, ${pileSize} bodies awaiting extraction`);
       try {
-        extractionResults = await this._processCorpsePile(channelKey, dungeon, corpsePileSnapshot);
+        extractionResults = await this._processCorpsePile(channelKey, snap, corpsePileSnapshot);
         if (extractionResults.attempted > 0) {
           this.showToast(
             `ARISE: ${extractionResults.extracted} shadows from ${extractionResults.attempted} fallen enemies`,
@@ -11199,36 +11300,35 @@ module.exports = class Dungeons {
       } catch (error) {
         this.errorLog('Failed to process corpse pile extraction', error);
       }
-    } else if (dungeon.userParticipating && pileSize === 0 && hadShadowsDeployed) {
-      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${dungeon.mobs?.killed || 0})`);
-    } else if (!dungeon.userParticipating) {
-      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${dungeon.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
+    } else if (snap.userParticipating && pileSize === 0 && hadShadowsDeployed) {
+      console.warn(`[Dungeons] ⚠️ ARISE: Corpse pile EMPTY for ${channelKey} — no enemies to extract (deployed: ${hadShadowsDeployed}, mobs killed: ${snap.mobs?.killed || 0})`);
+    } else if (!snap.userParticipating) {
+      this.settings.debug && console.log(`[Dungeons] ⚔️ ARISE SKIPPED: ${snap.name} — user was defeated, corpse pile cleaned up (${pileSize} bodies lost)`);
     }
 
-    // COLLECT SUMMARY STATS BEFORE ANY NOTIFICATIONS
-    const combatAnalytics = dungeon.combatAnalytics || {};
+    // ── Collect summary stats ──
+    const combatAnalytics = snap.combatAnalytics || {};
     const summaryStats = {
-      dungeonName: dungeon.name,
-      dungeonRank: dungeon.rank,
-      userParticipated: dungeon.userParticipating,
+      dungeonName: snap.name,
+      dungeonRank: snap.rank,
+      userParticipated: snap.userParticipating,
       userXP: 0,
       shadowTotalXP: 0,
       shadowsLeveledUp: [],
       shadowsRankedUp: [],
-      totalMobsKilled: dungeon.mobs.killed || 0,
-      shadowDeaths: this.deadShadows.get(channelKey)?.size || 0,
-      shadowRevives: dungeon.shadowRevives || 0,
+      totalMobsKilled: snap.mobs.killed || 0,
+      shadowDeaths: shadowDeathCount,
+      shadowRevives: snap.shadowRevives || 0,
       reason: reason,
-      // Combat analytics (NEW!)
       totalBossDamage: combatAnalytics.totalBossDamage || 0,
       totalMobDamage: combatAnalytics.totalMobDamage || 0,
       shadowsAttackedBoss: combatAnalytics.shadowsAttackedBoss || 0,
       shadowsAttackedMobs: combatAnalytics.shadowsAttackedMobs || 0,
     };
 
-    // Grant XP to shadows based on their contributions (level/rank post-processing is deferred)
+    // ── Shadow XP grants ──
     if (reason === 'boss' || reason === 'complete') {
-      const contributionEntries = Object.values(dungeon.shadowContributions || {}).filter((entry) => {
+      const contributionEntries = Object.values(snap.shadowContributions || {}).filter((entry) => {
         const mobsKilled = Number(entry?.mobsKilled) || 0;
         const bossDamage = Number(entry?.bossDamage) || 0;
         return mobsKilled > 0 || bossDamage > 0;
@@ -11250,7 +11350,7 @@ module.exports = class Dungeons {
         );
       }
 
-      const shadowResults = await this.grantShadowDungeonXP(channelKey, dungeon);
+      const shadowResults = await this.grantShadowDungeonXP(channelKey, snap);
       if (shadowResults) {
         summaryStats.shadowTotalXP = shadowResults.totalXP;
         summaryStats.shadowsLeveledUp = shadowResults.leveledUp;
@@ -11260,51 +11360,17 @@ module.exports = class Dungeons {
         }
       }
     }
-    if (dungeon._mobContributionByMobId) {
-      delete dungeon._mobContributionByMobId;
-    }
 
-    // CRITICAL CLEANUP: Stop all dungeon systems
-    this.stopShadowAttacks(channelKey);
-    this.stopBossAttacks(channelKey);
-    this.stopMobAttacks(channelKey);
-    this.stopMobKillNotifications(channelKey);
-    this.stopMobSpawning(channelKey);
-    this.removeDungeonIndicator(channelKey);
-
-    // CRITICAL: Remove HP bar and container
-    this.removeBossHPBar(channelKey);
-
-    // SAFETY: Remove any orphaned HP bar containers for this channel
-    document
-      .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
-      .forEach((el) => {
-        el.remove();
-      });
-
-    // CRITICAL: Reset user active dungeon status (allows entering new dungeons)
-    if (this.settings.userActiveDungeon === channelKey) {
-      this.settings.userActiveDungeon = null;
-      this.saveSettings(); // Persist immediately
-    }
-
-    // RELEASE CHANNEL LOCK: Dungeon is completing/ending - free the channel
-    // Allows new dungeons to spawn in this channel after cooldown
-    if (this.channelLocks.has(channelKey)) {
-      this.channelLocks.delete(channelKey);
-    }
-
-    // Calculate user XP based on reason and participation
-    const rankIndex = this.getRankIndexValue(dungeon.rank);
+    // ── User XP calculation ──
+    const rankIndex = this.getRankIndexValue(snap.rank);
 
     if (reason === 'complete') {
-      // Shadow Monarch gets completion XP regardless — shadows clearing = you clearing.
       if (this.soloLevelingStats) {
-        const completionXP = 100 + rankIndex * 50; // E: 100, D: 150, C: 200, B: 250, A: 300, S: 350
+        const completionXP = 100 + rankIndex * 50;
         if (
           this._grantUserDungeonXP(completionXP, 'dungeon_complete', {
             channelKey,
-            dungeonRank: dungeon.rank,
+            dungeonRank: snap.rank,
             reason,
           })
         ) {
@@ -11313,61 +11379,48 @@ module.exports = class Dungeons {
       }
     }
     if (reason === 'boss') {
-      // GUARDRAIL: No XP if shadows did zero actual combat damage.
-      // Prevents phantom defeats (0 shadows allocated, boss dies to nothing).
       const actualBossDamage = summaryStats.totalBossDamage || 0;
       const actualMobsKilled = summaryStats.totalMobsKilled || 0;
-      const userDealtDamage = (dungeon.userDamageDealt || 0) > 0;
+      const userDealtDamage = (snap.userDamageDealt || 0) > 0;
       if (actualBossDamage === 0 && actualMobsKilled === 0 && !userDealtDamage) {
         console.warn(
-          `[Dungeons] ⚠️ XP DENIED: "${dungeon.name}" [${dungeon.rank}] — boss defeated but 0 damage dealt (no shadow or user contribution)`
+          `[Dungeons] ⚠️ XP DENIED: "${snap.name}" [${snap.rank}] — boss defeated but 0 damage dealt (no shadow or user contribution)`
         );
-        this.showToast(`${dungeon.name}: No XP earned — no combat contribution.`, 'info');
+        this.showToast(`${snap.name}: No XP earned — no combat contribution.`, 'info');
       } else if (this.soloLevelingStats) {
-        // Shadow Monarch gets full boss XP regardless of participation — your shadows are you.
-        const bossXP = 200 + rankIndex * 100; // E: 200, D: 300, C: 400, B: 500, A: 600, S: 700
+        const bossXP = 200 + rankIndex * 100;
         if (
           this._grantUserDungeonXP(bossXP, 'dungeon_boss_kill', {
             channelKey,
-            dungeonRank: dungeon.rank,
+            dungeonRank: snap.rank,
             reason,
-            userParticipating: dungeon.userParticipating,
+            userParticipating: snap.userParticipating,
           })
         ) {
           summaryStats.userXP = bossXP;
         }
       }
 
-      // Only allow ARISE extraction if user is actively participating
-      if (dungeon.userParticipating) {
-        // Store defeated boss for shadow extraction (ARISE)
+      // Boss ARISE button (only if user participated)
+      if (snap.userParticipating) {
         this.defeatedBosses.set(channelKey, {
-          boss: dungeon.boss,
-          dungeon: dungeon,
+          boss: snap.boss,
+          dungeon: snap,
           timestamp: Date.now(),
         });
-
-        // Show ARISE button (3 extraction chances)
         this.showAriseButton(channelKey);
-
-        // Auto-cleanup is handled by the global cleanup loop (avoids per-boss long-lived timers)
-
-        // ARISE available (silent)
-      } else {
-        // User didn't participate, no extraction chance (silent)
       }
     }
 
-    // Shadow Monarch XP Mirror: All shadow dungeon XP is mirrored to the player.
-    // Your army's strength is your strength — no reduction for either party.
+    // ── Shadow XP mirror to user ──
     if (summaryStats.shadowTotalXP > 0 && this.soloLevelingStats) {
-      const shadowSharePercent = 1.0; // 100% mirror — same XP as shadows received
+      const shadowSharePercent = 1.0;
       const shadowShareXP = Math.floor(summaryStats.shadowTotalXP * shadowSharePercent);
       if (shadowShareXP > 0) {
         if (
           this._grantUserDungeonXP(shadowShareXP, 'dungeon_shadow_share', {
             channelKey,
-            dungeonRank: dungeon.rank,
+            dungeonRank: snap.rank,
             shadowTotalXP: summaryStats.shadowTotalXP,
             sharePercent: shadowSharePercent,
           })
@@ -11378,75 +11431,39 @@ module.exports = class Dungeons {
       }
     }
 
-    // Attach extraction results to summary (extraction already completed above)
+    // Attach extraction results to summary
     summaryStats.shadowsExtracted = extractionResults.extracted;
     summaryStats.extractionAttempts = extractionResults.attempted;
 
+    // ── Debug logging ──
     if (this.settings.debug) {
-      const duration = dungeon.startTime ? Math.round((Date.now() - dungeon.startTime) / 1000) : 0;
+      const duration = snap.startTime ? Math.round((Date.now() - snap.startTime) / 1000) : 0;
       const durationStr = duration > 60 ? `${Math.floor(duration / 60)}m ${duration % 60}s` : `${duration}s`;
       console.log(
-        `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${dungeon.name}" [${dungeon.rank}] in #${dungeon.channelName || '?'} (${dungeon.guildName || '?'}) — ` +
+        `[Dungeons] 🏰 ${reason === 'timeout' ? 'FAILED' : 'COMPLETE'}: "${snap.name}" [${snap.rank}] in #${snap.channelName || '?'} (${snap.guildName || '?'}) — ` +
         `${durationStr} | Mobs: ${summaryStats.totalMobsKilled} | Deaths: ${summaryStats.totalShadowDeaths || 0} | ` +
         `Extracted: ${extractionResults.extracted}/${extractionResults.attempted} | Key: ${channelKey}`
       );
     }
 
-    // SHOW SINGLE AGGREGATE SUMMARY NOTIFICATION
+    // ── Summary toast ──
     if (reason !== 'timeout') {
       this.showDungeonCompletionSummary(summaryStats);
     } else {
-      this.showToast(`${dungeon.name} Failed (Timeout)`, 'error');
+      this.showToast(`${snap.name} Failed (Timeout)`, 'error');
     }
-    // Note: Extraction summary will be shown separately when processing completes
 
-    // Cleanup logic based on participation and reason
-    if (reason === 'boss' && dungeon.userParticipating) {
-      // Boss defeated and user participated: keep for ARISE button (3 attempts) (silent)
-    } else {
-      // Immediate cleanup for:
-      // - Non-boss completions
-      // - Timeouts
-      // - Boss defeats where user didn't participate (no ARISE chance)
-      if (reason === 'boss' && !dungeon.userParticipating) {
-        // Boss defeated but user not participating - cleaning up immediately (silent)
-      }
-
-      // COMPREHENSIVE DATABASE CLEANUP
-      // Delete dungeon and all associated mob data from IndexedDB
+    // ── DB cleanup (skip for boss ARISE path — kept for extraction UI) ──
+    if (reason !== 'boss' || !snap.userParticipating) {
       if (this.storageManager) {
         try {
-          // Delete dungeon (includes all mob data)
           await this.storageManager.deleteDungeon(channelKey);
-
-          // Clear completed dungeons log
           await this.storageManager.clearCompletedDungeons();
-
-          // Database cleanup complete (silent)
         } catch (error) {
           this.errorLog('Failed to delete dungeon from storage', error);
         }
       }
 
-      // COMPREHENSIVE MEMORY CLEANUP
-      this.activeDungeons.delete(channelKey);
-      this.channelLocks.delete(channelKey);
-      delete this.settings.mobKillNotifications[channelKey];
-      this.deadShadows.delete(channelKey);
-      this.clearRoleCombatState(channelKey);
-
-      // Clear shadow allocations for this dungeon
-      if (this.shadowAllocations) {
-        this.shadowAllocations.delete(channelKey);
-      }
-      this._markAllocationDirty('dungeon-cleanup');
-
-      // Clear extraction in-progress flag
-      if (this.extractionInProgress) {
-        this.extractionInProgress.delete(channelKey);
-      }
-
-      // Clean up mobs from database when dungeon completes
       if (this.mobBossStorageManager) {
         try {
           await this.mobBossStorageManager.deleteMobsByDungeon(channelKey);
@@ -11454,85 +11471,9 @@ module.exports = class Dungeons {
           this.errorLog('Failed to cleanup mobs from database', error);
         }
       }
-
-      // Clear last attack times
-      if (this._lastShadowAttackTime) {
-        this._lastShadowAttackTime.delete(channelKey);
-      }
-      if (this._lastBossAttackTime) {
-        this._lastBossAttackTime.delete(channelKey);
-      }
-      if (this._lastMobAttackTime) {
-        this._lastMobAttackTime.delete(channelKey);
-      }
-
-      // Clear mob references (help garbage collector)
-      if (dungeon.mobs?.activeMobs) {
-        dungeon.mobs.activeMobs.length = 0; // Clear array
-        dungeon.mobs.activeMobs = null;
-      }
-
-      // Clear shadow combat data
-      if (dungeon.shadowCombatData) {
-        dungeon.shadowCombatData = null;
-      }
-
-      // Clear shadow contributions
-      if (dungeon.shadowContributions) {
-        dungeon.shadowContributions = null;
-      }
-      if (dungeon._mobContributionByMobId) {
-        dungeon._mobContributionByMobId = null;
-      }
-
-      // Clear shadow HP tracking
-      if (dungeon.shadowHP) {
-        dungeon.shadowHP = null;
-      }
-
-      if (dungeon.boss) {
-        dungeon.boss.baseStats = null;
-        dungeon.boss = null;
-      }
-      if (dungeon.combatAnalytics) {
-        dungeon.combatAnalytics = null;
-      }
-      if (dungeon.shadowAttacks) {
-        dungeon.shadowAttacks = null;
-      }
-      if (dungeon.mobs) {
-        if (dungeon.mobs.activeMobs) {
-          dungeon.mobs.activeMobs = null;
-        }
-        dungeon.mobs = null;
-      }
-
-      // Clear extraction events for this channel
-      if (this.extractionEvents) {
-        const eventsToRemove = [];
-        this.extractionEvents.forEach((value, key) => {
-          if (key.includes(channelKey)) {
-            eventsToRemove.push(key);
-          }
-        });
-        eventsToRemove.forEach((key) => this.extractionEvents.delete(key));
-      }
-
-      // Force garbage collection hint (if available)
-      // eslint-disable-next-line no-undef
-      if (typeof global !== 'undefined' && typeof global.gc === 'function') {
-        try {
-          // eslint-disable-next-line no-undef
-          global.gc();
-          this.debugLog('Forced garbage collection after dungeon cleanup');
-        } catch (e) {
-          // GC not available, that's okay
-        }
-      }
     }
-
-    this.saveSettings();
   }
+
 
   // ==== NOTIFICATION SYSTEM - Batched Toast Notifications ====
   /**
@@ -13229,14 +13170,14 @@ module.exports = class Dungeons {
       );
       dungeon.boss.hp = Math.max(0, dungeon.boss.hp - totalBossDamageOverTime);
       if (dungeon.boss.hp <= 0) {
-        // FIX: Eagerly mark completed + remove HP bar before async completeDungeon
+        // Mark completed + remove HP bar before completeDungeon
         // (same pattern as applyDamageToBoss — prevents restore interval re-injection)
         dungeon.completed = true;
         this.removeBossHPBar(channelKey);
         document
           .querySelectorAll(`.dungeon-boss-hp-container[data-channel-key="${channelKey}"]`)
           .forEach((el) => el.remove());
-        await this.completeDungeon(channelKey, 'boss');
+        this.completeDungeon(channelKey, 'boss');
         return;
       }
     }
