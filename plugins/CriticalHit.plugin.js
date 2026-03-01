@@ -7149,17 +7149,6 @@ ${childSel} {
     return 0;
   }
 
-  /**
-   * Gets individual bonuses for display
-   * @returns {Object} Object with agility and skill bonuses
-   */
-  _getIndividualBonuses() {
-    return {
-      agility: this._loadAgilityBonus(),
-      skill: this._loadSkillTreeBonus(),
-    };
-  }
-
   // Get effective crit chance (base + AGI + skill tree, capped at 50%)
   // Simple hash function for deterministic random number generation
   simpleHash(str) {

@@ -3051,36 +3051,6 @@ module.exports = class SkillTree {
     return !!(rects && rects.length > 0);
   }
 
-  isValidToolbarContainer(toolbar, composerRoot = null) {
-    if (!toolbar?.isConnected) return false;
-
-    const root = composerRoot || this._getComposerRoot();
-    if (!root?.isConnected) return false;
-
-    const rootForm = root.closest('form') || root;
-    const toolbarForm = toolbar.closest('form');
-    const sameForm = !!(toolbarForm && rootForm && toolbarForm === rootForm);
-    const sameRegion =
-      root.contains(toolbar) ||
-      toolbar.contains(root) ||
-      sameForm ||
-      (!!root.parentElement && root.parentElement.contains(toolbar));
-    if (!sameRegion) return false;
-
-    const hasTextbox = !!root.querySelector(
-      '[role="textbox"], textarea, [contenteditable="true"], [class*="slateTextArea"]'
-    );
-    if (!hasTextbox) return false;
-
-    const buttonLike = toolbar.querySelectorAll?.('button, [class*="button"], [aria-label]');
-    const buttonCount = buttonLike ? buttonLike.length : 0;
-    const hasComposerActionButton = !!toolbar.querySelector(
-      '[aria-label*="emoji" i], [aria-label*="gif" i], [aria-label*="sticker" i], [aria-label*="attach" i], [class*="emojiButton"], [class*="attachButton"]'
-    );
-
-    return hasComposerActionButton || buttonCount >= 2;
-  }
-
   /**
    * Update button text with current SP count
    */

@@ -252,12 +252,6 @@ module.exports = class ShadowRecon {
     this._SoundboardStore = Webpack.getStore("SoundboardStore");
   }
 
-  _getCreateRoot() {
-    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
-    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    return null;
-  }
-
   // ---- ShadowSenses Integration ---------------------------------------
 
   _getShadowDeploymentMap() {
