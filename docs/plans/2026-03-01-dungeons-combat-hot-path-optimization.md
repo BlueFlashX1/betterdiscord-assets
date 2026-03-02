@@ -1,15 +1,16 @@
-# Dungeons Combat Hot Path Optimization
+# Dungeons Combat Hot Path & Multi-Dungeon Optimization
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Eliminate three performance bottlenecks in the Dungeons combat loop that waste CPU cycles on every tick during active combat.
+**Goal:** Eliminate performance bottlenecks in the Dungeons combat loop AND fix multi-dungeon scaling issues (orphan state, allocation races, tick spikes).
 
-**Architecture:** All three fixes target hot-path methods called from `_combatLoopTick` (1000ms interval). No API changes, no behavioral changes — purely internal efficiency. ~20 LOC changed total.
+**Architecture:** Fixes 1-3 target hot-path methods called from `_combatLoopTick` (1000ms interval). Fixes 4-6 address multi-dungeon lifecycle issues found via code audit. No API changes, no behavioral changes — purely internal efficiency and correctness. ~55 LOC changed total.
 
 **Context:**
 - Combat loop fires every 1s via `_combatLoopTick`, calling `processBossAttacks`, `processMobAttacks`, and `processShadowAttacks` each tick.
 - Typical combat has 1-10 active dungeons, each with 5-50 shadows vs. 10-500 mobs.
-- All three fixes were verified against the actual code — not assumptions. See verification notes in each task.
+- All fixes were verified against the actual code — not assumptions. See verification notes in each task.
+- Multi-dungeon audit revealed orphan Map entries, allocation race conditions, and tick spikes at 10+ concurrent dungeons.
 
 **File:** `plugins/Dungeons.plugin.js`
 
@@ -143,13 +144,14 @@ to:
     // Schedule batch update if not already scheduled
     if (!this._hpBarUpdateScheduled && this._hpBarUpdateQueue.size > 0) {
       this._hpBarUpdateScheduled = true;
-      const remaining = 250 - (now - lastUpdate);
       this._hpBarUpdateTimer = this._setTrackedTimeout(() => {
         this._hpBarUpdateTimer = null;
         this.processHPBarUpdateQueue();
-      }, remaining > 0 ? remaining : 0);
+      }, 250);
     }
 ```
+
+> **Note:** Uses a fixed 250ms timeout instead of per-channel remaining calculation. The queue may contain entries for multiple channels with different throttle states. `processHPBarUpdateQueue` handles per-channel timing internally via `earliestRetry`. This is still vastly better than rAF (16ms × 15 frames = 240ms of wasted polling vs. one 250ms sleep).
 
 **Step 3: Add timer cleanup in stop()**
 
@@ -157,10 +159,13 @@ Find the cleanup section in `stop()` where other HP bar properties are cleaned u
 
 ```javascript
       if (this._hpBarUpdateTimer) {
-        this._clearTrackedTimeout(this._hpBarUpdateTimer);
+        this._timeouts.delete(this._hpBarUpdateTimer);
+        clearTimeout(this._hpBarUpdateTimer);
         this._hpBarUpdateTimer = null;
       }
 ```
+
+> **Note:** Uses the existing tracked timeout cleanup pattern (`this._timeouts.delete` + `clearTimeout`). There is no `_clearTrackedTimeout` method — the tracked timeout system uses `_setTrackedTimeout` to register and manual delete + clearTimeout to cancel.
 
 **Step 4: Syntax check**
 
@@ -189,15 +194,18 @@ and uses setTimeout to wake precisely when the entry is ready."
 **Files:**
 - Modify: `plugins/Dungeons.plugin.js:10268` and `plugins/Dungeons.plugin.js:10608`
 
-**What:** Both `processBossAttacks` (line 10268) and `processMobAttacks` (line 10608) call `this.saveSettings()` at the end of every tick. This is redundant because `_debounceDungeonSave` (line 10873, called elsewhere in the combat loop) already calls `saveSettings()` on a 2s debounce.
+**What:** Both `processBossAttacks` (line 10268) and `processMobAttacks` (line 10608) call `this.saveSettings()` at the end of every tick. These are pure function-entry overhead.
 
 **Why it's safe:**
-- `saveSettings()` uses a 3s debounce with NO timer reset (line 2601: `if (this._saveSettingsTimer) return;`). Subsequent calls within the 3s window are no-ops. So removing these calls changes nothing if `_debounceDungeonSave` fires within 3s — which it does (2s debounce).
+- `saveSettings()` uses a 3s debounce with a **no-op guard** (line 2613: `if (this._saveSettingsTimer) return;`). With combat ticking at 1s and the debounce at 3s, these calls just enter the function, set `_saveSettingsDirty = true`, hit the guard, and return. At most one write fires per 3s regardless of call frequency.
+- Settings persistence during combat is already covered by:
+  - `attackMobs` (calls `saveSettings()` every 5th cycle at line 10777)
+  - `_debounceDungeonSave` (2s debounce, calls `saveSettings()` at line 10884, invoked via `applyDamageToBoss` at line 10867)
+  - `stop()` immediate flush on shutdown (line 2102: `this.saveSettings(true)`)
 - `this.deadShadows` (set at lines 10267 and 10603) is a runtime `Map()` initialized at line 1117 — it is NOT in `this.settings`, so `saveSettings()` doesn't persist it.
-- HP/Mana changes from `_applyAccumulatedShadowAndUserDamage` trigger `pushHPToStats`/`pushManaToStats` which call `updateChatUI()` (fixed earlier today) — these don't go through `saveSettings()`.
-- `dungeon.boss.lastAttackTime` (line 10266) is on the dungeon object which is persisted by `_debounceDungeonSave` → `storageManager.saveDungeon()`, not by `saveSettings()`.
+- `dungeon.boss.lastAttackTime` is on the dungeon object which is persisted by `_debounceDungeonSave` → `storageManager.saveDungeon()`, not by `saveSettings()`.
 
-**Verified:** Read `saveSettings()` (lines 2601-2623), `_saveSettingsImmediate()` (lines 2625-2679), and `_debounceDungeonSave()` (lines 10873-10887). The debounce is NOT timer-reset — subsequent calls are no-ops. But removing the calls eliminates the overhead of entering `saveSettings()`, marking dirty, and checking the timer — ~10 function calls/second during multi-dungeon combat.
+**Verified:** Read `saveSettings()` (lines 2601-2623), `_saveSettingsImmediate()` (lines 2625-2679), and `_debounceDungeonSave()` (lines 10873-10887). Removing these calls eliminates ~10 function calls/second during multi-dungeon combat.
 
 **Step 1: Remove saveSettings from processBossAttacks**
 
@@ -230,11 +238,14 @@ git add plugins/Dungeons.plugin.js
 git commit -m "perf(dungeons): remove redundant saveSettings from combat tick methods
 
 processBossAttacks and processMobAttacks called saveSettings() every tick
-(1s interval per dungeon). This is redundant: _debounceDungeonSave (2s)
-already calls saveSettings(). The saveSettings debounce is a no-op guard
-(not timer-reset), so these calls just add function call overhead.
-deadShadows is a runtime Map not in settings. Boss/mob state is persisted
-by _debounceDungeonSave → storageManager.saveDungeon()."
+(1s interval). saveSettings() uses a 3s debounce with a no-op guard
+(if timer exists, return immediately). These calls are pure function-entry
+overhead — at most one write fires per 3s regardless of call frequency.
+
+Settings persistence during combat is already covered by:
+- attackMobs (saveSettings every 5th cycle, line 10777)
+- _debounceDungeonSave (2s debounce via applyDamageToBoss, line 10867)
+- stop() immediate flush on shutdown (line 2102)"
 ```
 
 ---
@@ -300,27 +311,276 @@ attackMobs and simulateCombat remain unconditional."
 
 ---
 
-## Task 5: Squash merge to main, sync, and verify
+## Task 5: Clean up orphan per-channel Map entries in completeDungeon (Fix 4)
+
+**Files:**
+- Modify: `plugins/Dungeons.plugin.js` — `completeDungeon` method (lines ~11120-11145)
+
+**What:** `completeDungeon` cleans up most per-channel state (activeDungeons, deadShadows, shadowAllocations, timer Maps, etc.) but misses ~10 Maps that accumulate entries keyed by `channelKey`. Over a long session with many dungeons completed, these orphan entries pile up. The most dangerous is `_dungeonSaveTimers` — a pending 2s timer can fire AFTER the dungeon is deleted, calling `storageManager.saveDungeon()` on a stale dungeon object captured in the timer closure.
+
+**Why it's safe:** All of these Maps are per-channel runtime state with no cross-dungeon dependencies. Deleting the channelKey entry after the dungeon is gone is the correct lifecycle.
+
+**Verified:** Enumerated every `new Map()` in `_initTimers`, `_initCaches`, `_initState`, and `_initUI`. Cross-referenced each against the cleanup block in `completeDungeon` (lines 11120-11145). The 10 Maps below have `.set(channelKey, ...)` call sites but zero `.delete(channelKey)` in the completion path.
+
+**Step 1: Add cleanup calls to completeDungeon**
+
+After line 11135 (after the `_lastMobAttackTime` cleanup block), add:
+
+```javascript
+    // Clean up orphan per-channel Map entries (multi-dungeon leak prevention)
+    this._mobSpawnNextAt?.delete(channelKey);
+    this._mobSpawnQueueNextAt?.delete(channelKey);
+    this._spawnPipelineGuardAt?.delete(channelKey);
+    this._mobContributionMissLogState?.delete(channelKey);
+    this._lastRebalanceAt?.delete(channelKey);
+    this._deployRebalanceInFlight?.delete(channelKey);
+    this._allocationSummary?.delete(channelKey);
+    this._mobCleanupCache?.delete(channelKey);
+    delete this._lastHPBarUpdate?.[channelKey];
+    delete this._mobCapWarningShown?.[channelKey];
+
+    // Cancel pending dungeon save timer (prevents ghost saves on stale dungeon objects)
+    if (this._dungeonSaveTimers?.has(channelKey)) {
+      clearTimeout(this._dungeonSaveTimers.get(channelKey));
+      this._dungeonSaveTimers.delete(channelKey);
+    }
+```
+
+**Step 2: Syntax check**
+
+```bash
+node -c plugins/Dungeons.plugin.js
+```
+
+Expected: `Syntax OK`
+
+**Step 3: Commit**
+
+```bash
+git add plugins/Dungeons.plugin.js
+git commit -m "fix(dungeons): clean up orphan per-channel Map entries on dungeon completion
+
+completeDungeon missed ~10 per-channel Maps that accumulate entries over
+a session. Most critically, _dungeonSaveTimers could fire a ghost save
+on a stale dungeon object after completion. Also clears orphan entries
+from _mobSpawnNextAt, _spawnPipelineGuardAt, _lastRebalanceAt,
+_mobCleanupCache, _lastHPBarUpdate, _mobCapWarningShown, and others."
+```
+
+---
+
+## Task 6: Add per-tick allocation lock to prevent redundant preSplitShadowArmy calls (Fix 5)
+
+**Files:**
+- Modify: `plugins/Dungeons.plugin.js` — `_combatLoopTick` (line ~1607) and `processShadowAttacks` (lines ~8721, ~8762)
+
+**What:** `_combatLoopTick` calls `preSplitShadowArmy()` once at line 1605 (correct). But `processShadowAttacks` has two additional call sites (lines 8727 and 8765) that can fire from inside `Promise.all` parallel dungeon processing. Since dungeons interleave at `await` points, multiple dungeons can call `preSplitShadowArmy` on the same tick — each performing an IDB read + sort + full reallocation.
+
+The allocation cache guard at line 8068 usually prevents redundant work, but the rebalance path at line 8764 sets `_allocationDirty = true` first, bypassing the guard.
+
+**Why it's safe:** `preSplitShadowArmy` is idempotent — calling it once or ten times produces the same result. The lock just prevents redundant work within a single tick.
+
+**Verified:** Read `_combatLoopTick` (lines 1579-1649), `_processDungeonCombatTick` (lines 1656-1760), and `processShadowAttacks` (lines 8653-9358). Confirmed `Promise.all` at line 1627 creates the interleaving window.
+
+**Step 1: Initialize lock in _combatLoopTick**
+
+At line ~1607 (after `preSplitShadowArmy` call, before `Promise.all`), add:
+
+```javascript
+    // Per-tick lock: prevent parallel dungeons from calling preSplitShadowArmy redundantly
+    this._tickAllocationLock = false;
+```
+
+**Step 2: Guard preSplitShadowArmy calls in processShadowAttacks**
+
+At line ~8721, change:
+
+```javascript
+        if (cacheExpired || !hasAllocation) {
+          if (deployRebalancePending) {
+```
+
+to:
+
+```javascript
+        if ((cacheExpired || !hasAllocation) && !this._tickAllocationLock) {
+          if (deployRebalancePending) {
+```
+
+And wrap the `preSplitShadowArmy` call at line ~8727:
+
+```javascript
+            this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
+            this._tickAllocationLock = true;
+            await this.preSplitShadowArmy();
+```
+
+At line ~8762, change:
+
+```javascript
+            if (needsRebalance) {
+              this._lastRebalanceAt.set(channelKey, nowRebalance);
+              this._markAllocationDirty('combat-rebalance');
+              await this.preSplitShadowArmy();
+```
+
+to:
+
+```javascript
+            if (needsRebalance && !this._tickAllocationLock) {
+              this._lastRebalanceAt.set(channelKey, nowRebalance);
+              this._markAllocationDirty('combat-rebalance');
+              this._tickAllocationLock = true;
+              await this.preSplitShadowArmy();
+```
+
+**Step 3: Syntax check**
+
+```bash
+node -c plugins/Dungeons.plugin.js
+```
+
+Expected: `Syntax OK`
+
+**Step 4: Commit**
+
+```bash
+git add plugins/Dungeons.plugin.js
+git commit -m "perf(dungeons): add per-tick allocation lock to prevent redundant preSplitShadowArmy
+
+With N dungeons processed via Promise.all, multiple processShadowAttacks
+calls could interleave at await points and each call preSplitShadowArmy
+(IDB read + sort + reallocation). The _tickAllocationLock ensures at most
+one preSplitShadowArmy call per combat tick, even during parallel processing."
+```
+
+---
+
+## Task 7: Stagger periodic work across dungeons to prevent tick spikes (Fix 6)
+
+**Files:**
+- Modify: `plugins/Dungeons.plugin.js` — `_processDungeonCombatTick` (lines ~1663, ~1676, ~1702)
+
+**What:** `_combatTickCount` is a single global counter incremented once per tick. All dungeons use `this._combatTickCount % N === 0` for periodic work (stuck-deploy detection every 5 ticks, DOM integrity check every 5 ticks, combat trace logging every 10 ticks, alive-count recompute every 10 ticks, status log every 30 ticks). Since all dungeons check the same counter, they ALL do their periodic work on the same tick, creating "spike ticks" every 5s.
+
+**Why it's safe:** Staggering changes WHEN each dungeon does periodic work, not WHETHER it does it. The offset is deterministic (based on dungeon index within the tick), so each dungeon still gets the same frequency of periodic checks.
+
+**Verified:** Read `_combatLoopTick` (lines 1579-1649) and `_processDungeonCombatTick` (lines 1656-1760). The `_combatTickCount` counter at line 1581 is used at lines 1631, 1663, 1676, 1702, 8842.
+
+**Step 1: Pass dungeon index to _processDungeonCombatTick**
+
+At lines 1612-1623, change:
+
+```javascript
+    const dungeonPromises = [];
+    for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+      if (!dungeon || dungeon.completed || dungeon.failed) {
+        this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
+        this.bossAttackTimers.has(channelKey) && this.stopBossAttacks(channelKey);
+        this.mobAttackTimers.has(channelKey) && this.stopMobAttacks(channelKey);
+        continue;
+      }
+
+      dungeonPromises.push(this._processDungeonCombatTick(
+        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget
+      ));
+    }
+```
+
+to:
+
+```javascript
+    const dungeonPromises = [];
+    let dungeonIndex = 0;
+    for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+      if (!dungeon || dungeon.completed || dungeon.failed) {
+        this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
+        this.bossAttackTimers.has(channelKey) && this.stopBossAttacks(channelKey);
+        this.mobAttackTimers.has(channelKey) && this.stopMobAttacks(channelKey);
+        continue;
+      }
+
+      dungeonPromises.push(this._processDungeonCombatTick(
+        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget, dungeonIndex
+      ));
+      dungeonIndex++;
+    }
+```
+
+**Step 2: Add dungeonIndex parameter and stagger periodic checks**
+
+In `_processDungeonCombatTick` signature (line ~1656), add `dungeonIndex = 0` parameter:
+
+```javascript
+  async _processDungeonCombatTick(channelKey, dungeon, now, isWindowVisible, shadowBudget, mobBudget, dungeonIndex = 0) {
+```
+
+Then change the periodic check conditions:
+
+```javascript
+// Line ~1663 — stuck-deploy detection (was: % 5 === 0)
+if (!dungeon._deploying && (this._combatTickCount + dungeonIndex) % 5 === 0 && dungeon.boss?.hp > 0) {
+
+// Line ~1676 — DOM integrity check (was: % 5 === 0)
+if (isActive && (this._combatTickCount + dungeonIndex) % 5 === 0) {
+
+// Line ~1702 — combat trace logging (was: % 10 === 0)
+if ((this._combatTickCount + dungeonIndex) % 10 === 0) {
+```
+
+**Step 3: Syntax check**
+
+```bash
+node -c plugins/Dungeons.plugin.js
+```
+
+Expected: `Syntax OK`
+
+**Step 4: Commit**
+
+```bash
+git add plugins/Dungeons.plugin.js
+git commit -m "perf(dungeons): stagger periodic work across dungeons to prevent tick spikes
+
+_combatTickCount is a global counter. All dungeons using modulo checks
+(% 5, % 10) for periodic work did it on the SAME tick, creating spike
+ticks every 5s with 10+ concurrent dungeons. Now offsets by dungeonIndex
+so work is spread evenly across ticks."
+```
+
+---
+
+## Task 8: Squash merge to main, sync, and verify
 
 **Step 1: Squash merge**
 
 ```bash
 git checkout main
 git merge --squash perf/combat-hot-path-optimization
-git commit -m "perf(dungeons): optimize combat hot path — rAF loop, redundant saves, mob scan guard
+git commit -m "perf(dungeons): optimize combat hot path + multi-dungeon scaling
 
 Fix 1: Replace requestAnimationFrame spin-loop in processHPBarUpdateQueue
 with calculated setTimeout. Was burning ~15 wasted frames per queued update
 at 60fps during combat. Now sleeps until exact throttle expiry.
 
 Fix 2: Remove redundant saveSettings() from processBossAttacks and
-processMobAttacks. _debounceDungeonSave (2s) already calls saveSettings().
-The saveSettings debounce is a no-op guard, so these just added function
-call overhead (~10 calls/s during multi-dungeon combat).
+processMobAttacks. saveSettings() uses a 3s no-op guard — these calls
+were pure function-entry overhead (~10 calls/s during multi-dungeon combat).
 
 Fix 3: Guard _cleanupDungeonActiveMobs and _pruneShadowMobContributionLedger
 behind deadMobsThisTick.length > 0 in processShadowAttacks. Both scan
-entire activeMobs array (up to 3000 entries) — skip when nothing died."
+entire activeMobs array (up to 3000 entries) — skip when nothing died.
+
+Fix 4: Clean up ~10 orphan per-channel Map entries in completeDungeon.
+Prevents _dungeonSaveTimers ghost saves on stale dungeon objects and
+memory leaks over long sessions.
+
+Fix 5: Add per-tick allocation lock to prevent redundant preSplitShadowArmy
+calls during Promise.all parallel dungeon processing.
+
+Fix 6: Stagger periodic work (stuck-deploy, DOM check, trace log) across
+dungeons by offsetting _combatTickCount with dungeonIndex. Eliminates
+spike ticks every 5s at 10+ concurrent dungeons."
 ```
 
 **Step 2: Delete feature branch**
@@ -351,11 +611,18 @@ After all tasks complete:
 
 1. `node -c plugins/Dungeons.plugin.js` — must pass
 2. `git log --oneline -3` — should show squash merge commit on main
-3. `git diff HEAD~1 -- plugins/Dungeons.plugin.js` — should show ~20 lines changed:
-   - `processHPBarUpdateQueue` rewritten: `requestAnimationFrame` → `setTimeout(remaining)`
-   - `queueHPBarUpdate` scheduling: `requestAnimationFrame` → `setTimeout(remaining)`
+3. `git diff HEAD~1 -- plugins/Dungeons.plugin.js` — should show ~55 lines changed:
+   - `processHPBarUpdateQueue` rewritten: `requestAnimationFrame` → `setTimeout(earliestRetry)`
+   - `queueHPBarUpdate` scheduling: `requestAnimationFrame` → `setTimeout(250)`
    - `_hpBarUpdateTimer` cleanup added to `stop()`
    - `saveSettings()` removed from `processBossAttacks` (line ~10268)
    - `saveSettings()` removed from `processMobAttacks` (line ~10608)
    - `_cleanupDungeonActiveMobs` + `_pruneShadowMobContributionLedger` wrapped in `deadMobsThisTick.length > 0` guard
-4. Manual test in Discord: complete a dungeon, verify no errors in console, HP bars still update smoothly
+   - ~15 lines of orphan Map cleanup added to `completeDungeon`
+   - `_tickAllocationLock` guard added in `_combatLoopTick` and `processShadowAttacks`
+   - `dungeonIndex` parameter added to `_processDungeonCombatTick` with staggered modulo checks
+4. Manual test in Discord:
+   - Start 2+ dungeons simultaneously
+   - Verify HP bars update smoothly
+   - Complete a dungeon, verify no errors in console
+   - Verify the completed dungeon's state is fully cleaned (no ghost saves in console)

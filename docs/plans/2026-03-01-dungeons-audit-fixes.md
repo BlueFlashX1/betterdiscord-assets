@@ -2,9 +2,9 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Fix all 25 issues (4 critical, 7 high, 9 medium, 5 low) identified by the comprehensive Dungeons pipeline audit.
+**Goal:** Fix 23 verified issues (3 critical, 7 high, 8 medium, 5 low) identified by the Dungeons pipeline audit. (2 findings from the original 25 were verified as false positives and removed: LOGIC-7 simulation shadow interval is correct at 3s, INTEGRITY-9 `completed` pre-set is intentional.)
 
-**Architecture:** Single-file plugin (`plugins/Dungeons.plugin.js`, ~14,800 LOC). All fixes are surgical edits — no new files, no structural refactors. Issues span combat pipeline races, memory leaks, logic flaws, and hot-path performance.
+**Architecture:** Single-file plugin (`plugins/Dungeons.plugin.js`, ~14,900 LOC). All fixes are surgical edits — no new files, no structural refactors. Issues span combat pipeline races, memory leaks, logic flaws, and hot-path performance.
 
 **Tech Stack:** BetterDiscord plugin (vanilla JS, no build step). No test framework — verification is `node -c` syntax check + `archlint scan`.
 
@@ -29,7 +29,7 @@ node -c plugins/Dungeons.plugin.js
 
 ## Batch 1 — CRITICAL Fixes (4 issues)
 
-### Task 1: LOGIC-1 — Fix `userMana` race condition across concurrent dungeons
+### Task 1: LOGIC-1 — Fix `userMana` race condition across concurrent dungeons [CRITICAL]
 
 **Problem:** `Promise.all` runs dungeon ticks concurrently. `attemptAutoResurrection` (line ~10996) does `this.settings.userMana -= manaCost` — a non-atomic read-modify-write. Two concurrent dungeons can both read mana=500, both deduct 50, each writes 450 → one deduction lost.
 
@@ -119,38 +119,35 @@ Also update the mana verification block immediately after (lines ~10999-11009) t
     }
 ```
 
-**Step 4: Also fix the batched resurrection path at line ~6305-6318**
+**Step 4: Skip `pushManaToStats` during parallel mode**
 
-The batched resurrection in `_applyAccumulatedShadowAndUserDamage` (lines ~6305-6318) has the same issue. It reads `let manaPool = this.settings.userMana || 0` and then does `manaPool -= cost` in a loop, finally writing back `this.settings.userMana = Math.max(0, manaPool)`.
+At line ~11014, `attemptAutoResurrection` calls `this.pushManaToStats(false)` which syncs `this.settings.userMana` to SoloLevelingStats. During parallel mode, `userMana` hasn't been updated yet (spend is tracked per-dungeon), so this would push a stale value.
 
-Find (around line ~6305):
+Replace line ~11014:
 ```javascript
-      this.syncManaFromStats();
-      let manaPool = this.settings.userMana || 0;
+    this.pushManaToStats(false);
 ```
 
-Replace with:
+With:
 ```javascript
-      this.syncManaFromStats();
-      // BUGFIX LOGIC-1: Use per-dungeon budget in parallel mode
-      let manaPool = this._tickManaBudgetPerDungeon !== undefined
-        ? this._tickManaBudgetPerDungeon - (dungeon._tickManaUsed || 0)
-        : (this.settings.userMana || 0);
+    // BUGFIX LOGIC-1: Skip mana sync during parallel mode — userMana is reconciled post-Promise.all
+    if (this._tickManaBudgetPerDungeon === undefined) {
+      this.pushManaToStats(false);
+    }
 ```
 
-And find where `manaPool` is written back to `this.settings.userMana` after the resurrection loop (should be around line ~6330-6340). Replace the direct write-back with:
+Then add a `pushManaToStats(false)` call after the mana reconciliation block in `_combatLoopTick` (after the `totalManaUsed` deduction):
 
 ```javascript
-      // BUGFIX LOGIC-1: Track spend per-dungeon in parallel mode
-      const totalSpent = startingManaPool - manaPool;
-      if (this._tickManaBudgetPerDungeon !== undefined) {
-        dungeon._tickManaUsed = (dungeon._tickManaUsed || 0) + totalSpent;
-      } else {
-        this.settings.userMana = Math.max(0, manaPool);
-      }
+    // Sync reconciled mana to SoloLevelingStats (deferred from parallel mode)
+    if (totalManaUsed > 0) {
+      this.pushManaToStats(false);
+    }
 ```
 
-(Where `startingManaPool` should be captured at the start of the loop as `const startingManaPool = manaPool;`.)
+**Step 5: Also fix the batched resurrection path if it exists**
+
+> **Note:** The original audit claimed `_applyAccumulatedShadowAndUserDamage` (line ~6305) has its own `manaPool` loop. Verify this by searching for `manaPool` or `userMana -=` inside the function. If it has a separate mana deduction loop, apply the same budget pattern. If `attemptAutoResurrection` (line 8837) is the only mana deduction call site (as grep suggests), this step can be skipped.
 
 **Step 5: Syntax check**
 ```bash
@@ -165,102 +162,86 @@ git commit -m "fix(dungeons): prevent userMana race condition in parallel dungeo
 
 ---
 
-### Task 2: INTEGRITY-1 — Verify `deadShadows` pruning is not overwritten
+### Task 2: INTEGRITY-1 — Clarify `deadShadows` Set reference lifecycle (verified false positive)
 
 **Problem (claimed):** Audit flagged that `maybePruneDungeonShadowState` prunes `deadShadows` in-place, then `processBossAttacks` writes its local reference back, potentially overwriting pruned state.
 
-**Verification needed:** `_getDungeonShadowCombatContext` (line 6246) calls `maybePruneDungeonShadowState` with the same Set reference returned by `this.deadShadows.get(channelKey)`. Since pruning mutates in-place (line 9624: `deadShadows.delete(shadowId)`), the returned reference IS the pruned Set. The write-back at line 10283 (`this.deadShadows.set(channelKey, deadShadows)`) writes the same object — this should be a no-op.
+**Verification result: FALSE POSITIVE.** `_getDungeonShadowCombatContext` (line 6249) returns the SAME Set reference via `this.deadShadows.get(channelKey) || new Set()`. Pruning at line 9624 (`.delete(shadowId)`) mutates in-place. The write-back at line 10283 stores the same object back → no-op. The `|| new Set()` fallback path IS correctly handled by the write-back (initializes the Map entry for channels that had no dead shadows yet).
 
-**Step 1: Read `processShadowAttacks` to check if it creates a NEW Set**
+**Step 1: Add defensive comments (do NOT remove the write-backs)**
 
-Check lines ~8663-9374. Search for `this.deadShadows.set(` or `new Set(` inside that function. If `processShadowAttacks` creates a fresh Set and stores it in `this.deadShadows`, then when `processBossAttacks` later calls `_getDungeonShadowCombatContext`, it would get the NEW Set, not the old one — and pruning + write-back would be correct.
-
-**Step 2: If verified as false positive, add a defensive comment**
-
-At line 10283, add:
+At line 10283 (`processBossAttacks`), replace:
 ```javascript
-      // NOTE: deadShadows is the same Set reference from _getDungeonShadowCombatContext (mutated in-place).
-      // Write-back is a no-op but kept for consistency with processMobAttacks.
+      this.deadShadows.set(channelKey, deadShadows);
+```
+With:
+```javascript
+      // deadShadows is the same Set reference from _getDungeonShadowCombatContext (mutated in-place).
+      // Write-back is a no-op for existing entries but correctly initializes the Map entry
+      // when deadShadows was created via the `|| new Set()` fallback (first combat tick).
       this.deadShadows.set(channelKey, deadShadows);
 ```
 
-**Step 3: If verified as REAL issue, fix by removing redundant write-back**
+Add the same comment at line ~10618 (`processMobAttacks`).
 
-Remove line 10283 (`this.deadShadows.set(channelKey, deadShadows);`) from `processBossAttacks`.
-Also remove the equivalent line from `processMobAttacks` (around line ~10615).
-The Set is mutated in-place throughout — write-backs are unnecessary and could mask future bugs.
-
-**Step 4: Syntax check**
+**Step 2: Syntax check + commit**
 ```bash
 node -c plugins/Dungeons.plugin.js
-```
-
-**Step 5: Commit**
-```bash
 git add plugins/Dungeons.plugin.js
-git commit -m "fix(dungeons): clarify deadShadows Set reference lifecycle (INTEGRITY-1)"
+git commit -m "docs(dungeons): clarify deadShadows Set reference lifecycle — verified false positive (INTEGRITY-1)"
 ```
 
 ---
 
-### Task 3: INTEGRITY-2 — Prevent ghost combatants from extracted shadows
+### Task 3: INTEGRITY-2 — Prevent ghost combatants from extracted shadows [CRITICAL]
 
 **Problem:** `shadowAllocations` is built from `_allocationSortedShadowsCache` (60s TTL). A shadow extracted from ShadowArmy between cache refreshes stays in combat for up to 60s — consuming mana for resurrections, accumulating contributions, but receiving 0 XP because it no longer exists in IDB.
 
 **File:** `plugins/Dungeons.plugin.js`
 
-**Step 1: Add extraction event listener in `start()` or wherever ShadowArmy cross-plugin hooks are set up**
+> **IMPORTANT:** ShadowArmy plugins do NOT have `.on()` / `.off()` EventEmitter methods — they are plain BetterDiscord plugin classes. Do NOT use EventEmitter patterns.
 
-Search for where `this.shadowArmy` is acquired (likely in `start()` or an init method). After acquiring the ShadowArmy reference, register a listener:
+**Step 1: Hook into existing extraction listener**
+
+Search for `_shadowExtractedListener` in the file — Dungeons already registers a cross-plugin extraction listener in `loadPluginReferences()`. Extend that listener to also invalidate allocation state:
 
 ```javascript
-    // BUGFIX INTEGRITY-2: Immediately invalidate shadow cache when ShadowArmy extracts a shadow.
-    // Prevents ghost combatants: extracted shadows staying in combat allocations for up to 60s.
-    if (this.shadowArmy && !this._shadowExtractionListener) {
-      this._shadowExtractionListener = (extractedShadowId) => {
-        this.invalidateShadowsCache();
-        // Also remove the extracted shadow from all active dungeon allocations immediately
-        if (extractedShadowId) {
-          for (const [channelKey, allocation] of this.shadowAllocations.entries()) {
-            if (!Array.isArray(allocation)) continue;
-            const idx = allocation.findIndex(s => this.getShadowIdValue(s) === extractedShadowId);
-            if (idx !== -1) {
-              allocation.splice(idx, 1);
-              this.debugLog(`Removed extracted shadow ${extractedShadowId} from dungeon ${channelKey}`);
-            }
-          }
+    // BUGFIX INTEGRITY-2: When a shadow is extracted, immediately invalidate allocation caches
+    // to prevent the extracted shadow from staying in combat allocations for up to 60s.
+    this._markAllocationDirty('shadow-extracted');
+    this._allocationShadowSetDirty = true;
+    if (typeof this.invalidateShadowsCache === 'function') {
+      this.invalidateShadowsCache();
+    }
+```
+
+If `_shadowExtractedListener` doesn't exist, create one by hooking into the ShadowArmy plugin via `BdApi.Patcher` or by checking for extraction events via the existing plugin reference pattern:
+
+```javascript
+    // In loadPluginReferences() after acquiring shadowArmy reference:
+    // Poll-based fallback: reduce allocation cache TTL so ghost combatants are purged faster
+    this.allocationCacheTTL = 15000; // Reduced from 60s to 15s to limit ghost combatant window
+```
+
+**Step 2: Also remove extracted shadow from active allocations immediately**
+
+Add a helper that can be called from the extraction listener:
+
+```javascript
+    _removeExtractedShadowFromAllocations(extractedShadowId) {
+      if (!extractedShadowId) return;
+      for (const [channelKey, allocation] of this.shadowAllocations.entries()) {
+        if (!Array.isArray(allocation)) continue;
+        const idx = allocation.findIndex(s => this.getShadowIdValue(s) === extractedShadowId);
+        if (idx !== -1) {
+          allocation.splice(idx, 1);
+          this.debugLog(`Removed extracted shadow ${extractedShadowId} from dungeon ${channelKey}`);
         }
-      };
-      // Hook into ShadowArmy's extraction event if it exposes one
-      if (this.shadowArmy.on) {
-        this.shadowArmy.on('shadowExtracted', this._shadowExtractionListener);
       }
     }
 ```
 
-**Step 2: If ShadowArmy doesn't expose events, add a polling guard in `processShadowAttacks`**
-
-As a fallback, at the start of shadow iteration (inside the shadow loop), add a lightweight check:
-
-```javascript
-        // BUGFIX INTEGRITY-2: Skip shadows that no longer exist in the allocation cache.
-        // If _allocationSortedShadowsCache was invalidated, the shadow may have been extracted.
-        if (this._allocationDirty && !this.allocationCache) {
-          // Cache was invalidated — force re-allocation before continuing
-          break;
-        }
-```
-
-**Step 3: Clean up listener in `stop()`**
-
-```javascript
-    if (this._shadowExtractionListener && this.shadowArmy?.off) {
-      this.shadowArmy.off('shadowExtracted', this._shadowExtractionListener);
-      this._shadowExtractionListener = null;
-    }
-```
-
-**Step 4: Syntax check + commit**
+**Step 3: Syntax check + commit**
 ```bash
 node -c plugins/Dungeons.plugin.js
 git add plugins/Dungeons.plugin.js
@@ -269,9 +250,9 @@ git commit -m "fix(dungeons): prevent ghost combatants from extracted shadows (I
 
 ---
 
-### Task 4: LOGIC-5 / INTEGRITY-3 — Fix `cleanupDefeatedBoss` deleting wrong dungeon
+### Task 4: LOGIC-5 / INTEGRITY-3 — Fix `cleanupDefeatedBoss` deleting wrong dungeon [HIGH]
 
-**Problem:** `cleanupDefeatedBoss` (line ~11856) runs 5 minutes after boss defeat. Does `this.activeDungeons.delete(channelKey)` unconditionally. If a new dungeon started in the same channel, the NEW dungeon gets deleted. The user sees an HP bar but combat silently stops.
+**Problem:** `cleanupDefeatedBoss` (line ~11856) does `this.activeDungeons.delete(channelKey)` unconditionally. If a new dungeon started in the same channel, the NEW dungeon gets deleted. The primary timer at line 11616 is only 3 seconds (not 5 minutes as originally reported), making the race window very narrow. However, `cleanupExpiredDungeons` (line 13801) also calls `cleanupDefeatedBoss` on a periodic sweep — this path can run much later, where the collision risk is real.
 
 **File:** `plugins/Dungeons.plugin.js`
 
@@ -319,9 +300,11 @@ git commit -m "fix(dungeons): prevent cleanupDefeatedBoss from deleting wrong du
 
 ## Batch 2 — HIGH Fixes (7 issues)
 
-### Task 5: LOGIC-4 — Fix `attackMobs` cooldown field name mismatch
+### Task 5: LOGIC-4 — Fix `attackMobs` cooldown field name mismatch [CRITICAL — upgraded from HIGH]
 
-**Problem:** `attackMobs` shadow path (line ~10696) reads `combatData.cooldown`, but `initializeShadowCombatData` (line ~9545) sets `attackInterval`, not `cooldown`. Since `cooldown` is `undefined`, `timeSinceLastAttack < undefined` → `false`, so ALL shadows attack EVERY tick.
+**Problem:** `attackMobs` shadow path (line ~10696) reads `combatData.cooldown`, but `initializeShadowCombatData` (line 9545) returns an object with `attackInterval` (line 9547) — there is NO `cooldown` field. Since `combatData.cooldown` is `undefined`, `timeSinceLastAttack < undefined` evaluates to `false` (NaN comparison), so ALL shadows attack EVERY tick through this path.
+
+**Impact:** Shadows deal 3-5× intended damage through the `attackMobs` path, breaking combat balance. This is the most impactful bug in the entire audit.
 
 **File:** `plugins/Dungeons.plugin.js`
 
@@ -334,8 +317,12 @@ Replace:
 
 With:
 ```javascript
-        if (timeSinceLastAttack < (combatData.attackInterval || combatData.cooldown || 2000)) {
+        // BUGFIX LOGIC-4: Was reading nonexistent `cooldown` field (always undefined).
+        // `initializeShadowCombatData` sets `attackInterval`, not `cooldown`.
+        if (timeSinceLastAttack < (combatData.attackInterval || 2000)) {
 ```
+
+> **Note:** No `|| combatData.cooldown` fallback — there is no valid `cooldown` field on the combat data object. Using `attackInterval` everywhere is cleaner.
 
 **Step 2: Fix the cooldown update at line ~10741**
 
@@ -503,22 +490,13 @@ git commit -m "fix(dungeons): add size caps to _debugLogOnceKeys and _lastResurr
 
 ### Task 9: INTEGRITY-8 — Prevent double-counted mob kills in `attackMobs`
 
-**Problem:** In `attackMobs`, `aliveMobs` is computed once before the shadow loop. A shadow kills a mob (hp=0), but subsequent shadows pick from the original `aliveMobs` array and re-select the dead mob. `if (targetMob.hp <= 0)` triggers again → `_onMobKilled` called twice.
+**Problem:** In `attackMobs`, `aliveMobs` is computed once before the shadow loop. When a shadow kills a mob (hp→0 at line 10728), subsequent shadows can still randomly select the same mob from `aliveMobs`. Line 10702 (`if (!targetMob || targetMob.hp <= 0) continue;`) skips these dead mobs — but there's a race: if two shadows attack the same mob in the same tick, and both read `hp > 0` before either writes, both will apply damage. The second shadow's kill triggers `_onMobKilled` again.
+
+The fix is simple: check that `targetMobHpBefore > 0` (already captured at line 10727) before counting the kill.
 
 **File:** `plugins/Dungeons.plugin.js`
 
-**Step 1: Skip already-dead mobs in the target selection**
-
-At line ~10702, the code already has:
-```javascript
-        if (!targetMob || targetMob.hp <= 0) continue;
-```
-
-This should catch mobs that died earlier in the loop. However, the issue is that `targetMob.hp` was set to 0 at line ~10728 by a previous shadow, but the `continue` at 10702 will skip it. Let me verify — actually, line 10702 IS the fix. The mob's `hp` field is mutated in-place at line 10728, so subsequent shadows should see `hp <= 0` and skip.
-
-The real double-count issue is: `_onMobKilled` is called (line 10745) every time a shadow finds `targetMob.hp <= 0` after its attack. But if the mob was ALREADY at 0 HP before this shadow attacked, the shadow deals 0 damage (`Math.max(0, 0 - damage) = 0`), and the `if (targetMob.hp <= 0)` check at line 10744 triggers again.
-
-Fix: Add a check that the mob was ALIVE before this shadow's attack:
+**Step 1: Add killing-blow check**
 
 Replace line ~10744:
 ```javascript
@@ -532,7 +510,7 @@ With:
         if (targetMob.hp <= 0 && targetMobHpBefore > 0) {
 ```
 
-(`targetMobHpBefore` is already captured at line ~10727.)
+> **Note:** `targetMobHpBefore` is already captured at line 10727: `const targetMobHpBefore = targetMob.hp;`
 
 **Step 2: Syntax check + commit**
 ```bash
@@ -543,38 +521,21 @@ git commit -m "fix(dungeons): prevent double-counted mob kills in attackMobs sha
 
 ---
 
-## Batch 3 — MEDIUM Fixes (9 issues)
+## Batch 3 — MEDIUM Fixes (8 issues)
 
-### Task 10: LOGIC-7 — Fix simulation shadow interval mismatch
+### ~~Task 10: LOGIC-7~~ — REMOVED (False Positive)
 
-**Problem:** `simulateDungeonCombat` (line ~13425) uses `shadowInterval = 3000` (3s) but the live combat loop drives shadows at 1s intervals. Background simulation under-estimates shadow damage by 3×.
-
-**File:** `plugins/Dungeons.plugin.js`
-
-**Step 1: Fix the interval at line ~13425**
-
-Replace:
-```javascript
-    const shadowInterval = 3000; // 3 seconds
-```
-
-With:
-```javascript
-    const shadowInterval = 1000; // 1 second — matches live _combatLoopTick interval (line 1243)
-```
-
-**Step 2: Syntax check + commit**
-```bash
-node -c plugins/Dungeons.plugin.js
-git add plugins/Dungeons.plugin.js
-git commit -m "fix(dungeons): fix simulation shadow interval from 3s to 1s to match live combat (LOGIC-7)"
-```
+> **Verified against source code:** The 3s shadow interval in `simulateDungeonCombat` (line 13425) is **correct**. While `_combatLoopTick` fires every 1s, `processShadowAttacks` only fires when `elapsed >= intervalTime` (line 1709), and `_shadowActiveIntervalMs` defaults to **3000ms** (line 1695: `const activeInterval = this._shadowActiveIntervalMs.get(channelKey) || 3000`). Shadows attack every 3s in live combat. The simulation matches.
+>
+> **Do NOT change this value.** Changing it to 1s would make the simulation OVER-estimate shadow damage by 3×.
 
 ---
 
 ### Task 11: LOGIC-8 — Fix `calculateAttacksInTimeSpan` always returning ≥1
 
-**Problem:** Line ~9663: `return Math.max(1, Math.floor(remainingTime / effectiveCooldown))` — the `Math.max(1, ...)` means a shadow that just attacked will always get at least one attack per cycle, making cooldowns unenforceable.
+**Problem:** Line 9663: `return Math.max(1, Math.floor(remainingTime / effectiveCooldown))` — the `Math.max(1, ...)` forces at least 1 attack even when `remainingTime < effectiveCooldown`, making cooldowns unenforceable for the recurring case.
+
+> **Note:** The first-attack case is ALREADY handled by lines 9651-9654: `if (cappedTimeSinceLastAttack <= 0) return 1;`. So removing `Math.max(1,...)` will NOT break initial attacks.
 
 **File:** `plugins/Dungeons.plugin.js`
 
@@ -587,8 +548,8 @@ Replace line ~9663:
 
 With:
 ```javascript
-    // BUGFIX LOGIC-8: Removed Math.max(1,...) — was making cooldowns unenforceable.
-    // A shadow that just attacked should get 0 attacks if remainingTime < cooldown.
+    // BUGFIX LOGIC-8: Removed Math.max(1,...) — forces ≥1 attack even when remainingTime < cooldown.
+    // First-attack case is already handled above (lines 9651-9654: return 1 when timeSinceLastAttack ≤ 0).
     return Math.floor(remainingTime / effectiveCooldown);
 ```
 
@@ -707,39 +668,25 @@ git commit -m "perf(dungeons): cache buildShadowStats in mob overflow redistribu
 
 ---
 
-### Task 14: PERF-5 — Fix `isWindowVisible` cache bypass
+### Task 14: PERF-5 — Remove redundant `isWindowVisible()` calls in combat methods
 
-**Problem:** `isWindowVisible()` (line ~12930) unconditionally overwrites `this._isWindowVisible = !document.hidden` on every call, ignoring the event-driven cache. Also called redundantly in `processBossAttacks` (line ~10089) and `processMobAttacks` (line ~10293) despite already receiving it as a parameter.
+**Problem:** `processBossAttacks` (line 10089) and `processMobAttacks` (line 10293) call `this.isWindowVisible()` despite already receiving `isWindowVisible` as a parameter from `_processDungeonCombatTick`. These are redundant function calls in the hot loop.
+
+> **Note:** Do NOT modify `isWindowVisible()` itself. `document.hidden` is a simple boolean property read (essentially free). The `visibilitychange` event handler can miss edge cases (iframe focus, tab switching without visibility change). The current "always check" approach is a correct safety net.
 
 **File:** `plugins/Dungeons.plugin.js`
 
-**Step 1: Fix `isWindowVisible()` to use its cache**
+**Step 1: Remove redundant `isWindowVisible()` calls in `processBossAttacks` and `processMobAttacks`**
 
-Replace lines ~12928-12932:
-```javascript
-  isWindowVisible() {
-    // Always check current state in case event handler missed something
-    this._isWindowVisible = !document.hidden;
-    return this._isWindowVisible;
-  }
-```
+Both methods already have `isWindowVisible` as a parameter (with a `null` default + self-check). The self-check line `if (isWindowVisible === null) isWindowVisible = this.isWindowVisible();` at lines 10089 and 10293 is correct — it handles standalone calls. The issue is any OTHER `this.isWindowVisible()` calls within these methods that duplicate the parameter.
 
-With:
-```javascript
-  isWindowVisible() {
-    // PERF-5: Use event-driven cache. Fallback to document.hidden only if cache is unset.
-    if (this._isWindowVisible === undefined) {
-      this._isWindowVisible = !document.hidden;
-    }
-    return this._isWindowVisible;
-  }
-```
+Search for any redundant calls beyond the parameter check. If the only call is the parameter check, this task is complete — the parameter pattern is already the optimization.
 
 **Step 2: Syntax check + commit**
 ```bash
 node -c plugins/Dungeons.plugin.js
 git add plugins/Dungeons.plugin.js
-git commit -m "perf(dungeons): use event-driven visibility cache instead of reading document.hidden every call (PERF-5)"
+git commit -m "perf(dungeons): remove redundant isWindowVisible() calls in combat methods (PERF-5)"
 ```
 
 ---
@@ -912,27 +859,17 @@ git commit -m "perf(dungeons): replace document.body.contains with isConnected f
 
 ---
 
-### Task 20: INTEGRITY-9 — Remove dual-write to `dungeon.completed`
+### ~~Task 20: INTEGRITY-9~~ — REMOVED (Intentional Design)
 
-**Problem:** `applyDamageToBoss` (line ~10863) sets `dungeon.completed = true` before calling `completeDungeon` (line ~10869), which re-sets it at line ~11062. Fragile under future changes.
-
-**File:** `plugins/Dungeons.plugin.js`
-
-**Step 1: Remove the pre-set in `applyDamageToBoss`**
-
-Delete or comment out line ~10863:
-```javascript
-      dungeon.completed = true;
-```
-
-The canonical write happens in `completeDungeon` at line ~11062 (`dungeon.completed = reason !== 'timeout'`).
-
-**Step 2: Syntax check + commit**
-```bash
-node -c plugins/Dungeons.plugin.js
-git add plugins/Dungeons.plugin.js
-git commit -m "fix(dungeons): remove premature dungeon.completed write in applyDamageToBoss (INTEGRITY-9)"
-```
+> **Verified against source code:** The `dungeon.completed = true` at line 10863 is **intentional**. The comment at lines 10860-10862 explains:
+> ```
+> // Remove HP bar and mark completed before completeDungeon.
+> // completeDungeon is synchronous (Phase A), but marking completed early
+> // ensures the restore interval sees it immediately.
+> ```
+> The `_hpBarRestoreInterval` runs asynchronously and checks `dungeon.completed` to decide whether to restore the HP bar. Without the pre-set, the restore interval could re-inject the HP bar between `removeBossHPBar` (line 10864) and `completeDungeon` (line 10869). The dual-write is a **timing defense against a real race**, not a bug.
+>
+> **Do NOT remove this line.**
 
 ---
 
@@ -961,7 +898,47 @@ git commit -m "fix(dungeons): null _hpBarRestoreInterval in stop() to prevent re
 
 ## Post-Flight
 
-### Task 22: Final verification + sync
+### Task 22: Squash merge to main
+
+**Step 1: Squash merge**
+```bash
+git checkout main
+git merge --squash fix/dungeons-audit-2026-03-01
+git commit -m "fix(dungeons): comprehensive audit fixes — races, cooldowns, leaks, cleanup
+
+CRITICAL:
+- LOGIC-1: userMana race condition in parallel dungeon ticks (budget + reconciliation)
+- LOGIC-4: attackMobs cooldown field name mismatch (shadows attacked every tick)
+- INTEGRITY-2: ghost combatants from extracted shadows (allocation cache invalidation)
+
+HIGH:
+- LOGIC-5: cleanupDefeatedBoss could delete wrong dungeon (ID check added)
+- PERF-1/2/3: O(N²) attackMobs path — cleanup + mob lookup hoisted out of loop
+- LOGIC-3: cancelled _dungeonSaveTimers left stale IDs in _timeouts
+- LEAK-1/2: unbounded _debugLogOnceKeys and _lastResurrectionAttempt
+- INTEGRITY-8: double-counted mob kills (killing-blow check)
+
+MEDIUM:
+- LOGIC-8: calculateAttacksInTimeSpan Math.max(1,...) broke cooldowns
+- LOGIC-9: _completing=true stranded dungeons on Phase A exception
+- PERF-4: buildShadowStats per-hit in overflow redistribution
+- PERF-5: redundant isWindowVisible() calls in combat methods
+- LEAK-4/5: stale hiddenComments refs, _ariseButtonRefs not cleaned
+- INTEGRITY-7: _arisedBossIds pruning on boss cleanup
+
+LOW: rAF cleanup, simulation sampling, isConnected, _hpBarRestoreInterval
+
+2 findings removed as false positives:
+- LOGIC-7: simulation shadow interval IS 3s (matches live combat)
+- INTEGRITY-9: dungeon.completed pre-set is intentional timing defense"
+```
+
+**Step 2: Delete feature branch**
+```bash
+git branch -D fix/dungeons-audit-2026-03-01
+```
+
+### Task 23: Final verification + sync
 
 **Step 1: Full syntax check**
 ```bash
@@ -978,14 +955,21 @@ cp plugins/Dungeons.plugin.js ~/Library/Application\ Support/BetterDiscord/plugi
 archlint scan 2>&1 | head -50
 ```
 
+**Step 4: Manual test**
+- Start 2+ dungeons simultaneously
+- Verify shadows respect cooldowns (no burst-fire every tick)
+- Complete a dungeon, verify no console errors
+- Let an ARISE window expire, verify no ghost dungeon deletion
+
 ---
 
 ## Summary
 
-| Batch | Issues | Commits | Risk |
-|-------|--------|---------|------|
-| 1 | LOGIC-1, INTEGRITY-1, INTEGRITY-2, LOGIC-5 | 4 | CRITICAL — races, ghost combatants, wrong deletion |
-| 2 | LOGIC-4, PERF-1/2/3, LOGIC-3, LEAK-1/2, INTEGRITY-8 | 5 | HIGH — broken cooldowns, O(N²), leaks |
-| 3 | LOGIC-7/8/9, PERF-4/5, LEAK-4/5/6, INTEGRITY-7 | 7 | MEDIUM — simulation bugs, cache bypass, stale refs |
-| 4 | PERF-6/7/8, INTEGRITY-9, LEAK-8 | 5 | LOW — cleanup, sampling bias, dual-write |
-| **Total** | **25 issues** | **21 commits** | |
+| Batch | Issues | Tasks | Risk |
+|-------|--------|-------|------|
+| 1 | LOGIC-1, INTEGRITY-1 (FP), INTEGRITY-2, LOGIC-5 | 4 | CRITICAL — mana race, ghost combatants, wrong deletion |
+| 2 | LOGIC-4 (↑CRIT), PERF-1/2/3, LOGIC-3, LEAK-1/2, INTEGRITY-8 | 5 | CRITICAL+HIGH — broken cooldowns, O(N²), leaks |
+| 3 | ~~LOGIC-7 (FP)~~, LOGIC-8, LOGIC-9, PERF-4/5, LEAK-4/5/6, INTEGRITY-7 | 6 | MEDIUM — cooldown math, cache, stale refs |
+| 4 | PERF-6/7/8, ~~INTEGRITY-9 (FP)~~, LEAK-8 | 3 | LOW — cleanup, sampling |
+| Post | Squash merge + verify | 2 | — |
+| **Total** | **23 issues (2 FPs removed)** | **20 tasks** | |

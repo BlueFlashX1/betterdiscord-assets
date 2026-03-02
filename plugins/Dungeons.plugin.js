@@ -1084,7 +1084,7 @@ module.exports = class Dungeons {
     this.shadowReserve = []; // Weakest shadows held back for ShadowSenses deployment
     this.allocationCache = null; // Cache of all shadows
     this.allocationCacheTime = null; // When cache was created
-    this.allocationCacheTTL = 60000; // 1 minute TTL
+    this.allocationCacheTTL = 15000; // BUGFIX INTEGRITY-2: Reduced from 60s to 15s to limit ghost combatant window
     this._allocationDirty = true; // Recompute allocations on first use
     this._allocationDirtyReason = 'init';
     this._allocationShadowSetDirty = true; // Rebuild sorted shadow pool when army composition/stats changed
@@ -1199,6 +1199,10 @@ module.exports = class Dungeons {
   debugLogOnce(key, ...args) {
     if (!key) return this.debugLog(...args);
     this._debugLogOnceKeys || (this._debugLogOnceKeys = new Set());
+    // LEAK-1: Prevent unbounded growth in multi-hour sessions
+    if (this._debugLogOnceKeys.size > 5000) {
+      this._debugLogOnceKeys.clear();
+    }
     if (this._debugLogOnceKeys.has(key)) return;
     this._debugLogOnceKeys.add(key);
     this.debugLog(...args);
@@ -1608,6 +1612,19 @@ module.exports = class Dungeons {
     // Per-tick lock: prevent parallel dungeons from calling preSplitShadowArmy redundantly
     this._tickAllocationLock = false;
 
+    // BUGFIX LOGIC-1: Pre-snapshot mana to prevent race conditions during Promise.all.
+    // Each dungeon gets an equal slice of the available mana pool for resurrections.
+    // This prevents concurrent dungeons from both reading the same mana balance and
+    // double-spending (non-atomic read-modify-write on this.settings.userMana).
+    if (activeDungeonCount > 1) {
+      this._tickManaPool = this.settings.userMana || 0;
+      this._tickManaBudgetPerDungeon = Math.floor(this._tickManaPool / activeDungeonCount);
+      this._tickManaSpent = 0;
+    } else {
+      this._tickManaPool = undefined;
+      this._tickManaBudgetPerDungeon = undefined;
+    }
+
     // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
     // Each dungeon has isolated shadow allocations, deadShadows, and dungeon state.
     // Shared state (userHP, userMana) has minor race potential but is self-correcting via
@@ -1630,6 +1647,26 @@ module.exports = class Dungeons {
 
     if (dungeonPromises.length > 0) {
       await Promise.all(dungeonPromises);
+    }
+
+    // BUGFIX LOGIC-1: Reconcile mana after parallel dungeon processing.
+    // Each dungeon tracked its own spend via dungeon._tickManaUsed (set in attemptAutoResurrection).
+    // Deduct the actual total from the real mana pool in one atomic operation.
+    if (this._tickManaBudgetPerDungeon !== undefined) {
+      let totalManaUsed = 0;
+      for (const [, dungeon] of this.activeDungeons.entries()) {
+        if (dungeon._tickManaUsed > 0) {
+          totalManaUsed += dungeon._tickManaUsed;
+          dungeon._tickManaUsed = 0;
+        }
+      }
+      if (totalManaUsed > 0) {
+        this.settings.userMana = Math.max(0, this._tickManaPool - totalManaUsed);
+        // Sync reconciled mana to SoloLevelingStats (deferred from parallel mode)
+        this.pushManaToStats(false);
+      }
+      this._tickManaBudgetPerDungeon = undefined;
+      this._tickManaPool = undefined;
     }
 
     // ALWAYS-ON: Periodic combat status log (every 30s) — mob kills, shadow deaths, resurrections
@@ -1953,6 +1990,12 @@ module.exports = class Dungeons {
     // Stop all tracked intervals (centralized cleanup)
     this._intervals.forEach((intervalId) => clearInterval(intervalId));
     this._intervals.clear();
+
+    // PERF-6: Cancel orphaned rAF from scheduleBossBarLayout
+    if (this._bossBarLayoutFrame) {
+      cancelAnimationFrame(this._bossBarLayoutFrame);
+      this._bossBarLayoutFrame = null;
+    }
 
 
     // Stop HP bar restoration
@@ -2934,6 +2977,13 @@ module.exports = class Dungeons {
           this.invalidateShadowCountCache();
           // Invalidate shadows cache
           this.invalidateShadowsCache();
+
+          // BUGFIX INTEGRITY-2: Immediately remove extracted shadow from active allocations.
+          // Without this, extracted shadows stay in combat for up to 60s (allocationCacheTTL),
+          // consuming mana for resurrections on a shadow that no longer exists.
+          if (shadowId) {
+            this._removeExtractedShadowFromAllocations(shadowId);
+          }
 
           const activeDungeonCount = this.activeDungeons?.size || 0;
           if (activeDungeonCount === 0) {
@@ -6301,8 +6351,13 @@ module.exports = class Dungeons {
       if (!dungeon._lastResurrectionAttempt) dungeon._lastResurrectionAttempt = {};
       const now = Date.now();
 
-      this.syncManaFromStats();
-      let manaPool = this.settings.userMana || 0;
+      // BUGFIX LOGIC-1: In parallel mode, use per-dungeon budget instead of shared userMana
+      if (this._tickManaBudgetPerDungeon === undefined) {
+        this.syncManaFromStats();
+      }
+      let manaPool = this._tickManaBudgetPerDungeon !== undefined
+        ? this._tickManaBudgetPerDungeon - (dungeon._tickManaUsed || 0)
+        : (this.settings.userMana || 0);
 
       // Sort: resurrect highest-rank shadows first (most valuable)
       const rankOrder = { 'Shadow Monarch': 12, 'Monarch+': 11, Monarch: 10, NH: 9, 'SSS+': 8, SSS: 7, SS: 6, S: 5, A: 4, B: 3, C: 2, D: 1, E: 0 };
@@ -6330,8 +6385,14 @@ module.exports = class Dungeons {
 
       // Single mana write-back for entire batch
       if (resurrectedCount > 0) {
-        this.settings.userMana = Math.max(0, manaPool);
-        this.pushManaToStats(false);
+        if (this._tickManaBudgetPerDungeon !== undefined) {
+          // BUGFIX LOGIC-1: Parallel mode — track spend, defer write-back to post-Promise.all
+          const totalSpent = (this._tickManaBudgetPerDungeon - (dungeon._tickManaUsed || 0)) - manaPool;
+          dungeon._tickManaUsed = (dungeon._tickManaUsed || 0) + Math.max(0, totalSpent);
+        } else {
+          this.settings.userMana = Math.max(0, manaPool);
+          this.pushManaToStats(false);
+        }
         dungeon.shadowRevives = (dungeon.shadowRevives || 0) + resurrectedCount;
         dungeon.successfulResurrections = (dungeon.successfulResurrections || 0) + resurrectedCount;
         this.saveSettings();
@@ -7830,6 +7891,22 @@ module.exports = class Dungeons {
       this._allocationSortedShadowsCache = null;
       this._allocationSortedShadowsCacheTime = null;
       this._allocationScoreCache = null;
+    }
+  }
+
+  // BUGFIX INTEGRITY-2: Immediately remove an extracted shadow from all active dungeon allocations.
+  // Without this, extracted shadows stay in combat allocations for up to allocationCacheTTL (60s),
+  // consuming mana for resurrections and accumulating contributions for a shadow that no longer exists.
+  _removeExtractedShadowFromAllocations(extractedShadowId) {
+    if (!extractedShadowId) return;
+    const idStr = String(extractedShadowId);
+    for (const [channelKey, allocation] of (this.shadowAllocations || new Map()).entries()) {
+      if (!Array.isArray(allocation)) continue;
+      const idx = allocation.findIndex(s => String(this.getShadowIdValue(s)) === idStr);
+      if (idx !== -1) {
+        allocation.splice(idx, 1);
+        this.debugLog(`Removed extracted shadow ${idStr} from dungeon ${channelKey}`);
+      }
     }
   }
 
@@ -9597,6 +9674,15 @@ module.exports = class Dungeons {
       shadowId && assignedIds.add(shadowId);
     }
 
+    // LEAK-2: Prune stale resurrection attempt timestamps (only keep assigned shadows)
+    if (dungeon._lastResurrectionAttempt) {
+      for (const shadowId of Object.keys(dungeon._lastResurrectionAttempt)) {
+        if (!assignedIds.has(shadowId)) {
+          delete dungeon._lastResurrectionAttempt[shadowId];
+        }
+      }
+    }
+
     // If there are no assigned shadows, clear state completely.
     if (assignedIds.size === 0) {
       dungeon.shadowHP && (dungeon.shadowHP = new Map());
@@ -9660,7 +9746,9 @@ module.exports = class Dungeons {
     }
 
     // Calculate attacks based on remaining time and cooldown
-    return Math.max(1, Math.floor(remainingTime / effectiveCooldown)); // At least 1 attack per cycle
+    // BUGFIX LOGIC-8: Removed Math.max(1,...) — forces ≥1 attack even when remainingTime < cooldown.
+    // First-attack case is already handled above (return 1 when timeSinceLastAttack ≤ 0).
+    return Math.floor(remainingTime / effectiveCooldown);
   }
 
   /**
@@ -10280,6 +10368,9 @@ module.exports = class Dungeons {
       // Atomic update: create new object reference to prevent race conditions
       // eslint-disable-next-line require-atomic-updates
       dungeon.boss.lastAttackTime = now + totalTimeSpan;
+      // INTEGRITY-1 (verified FP): deadShadows is the same Set reference from _getDungeonShadowCombatContext
+      // (mutated in-place). Write-back is a no-op for existing entries but correctly initializes
+      // the Map entry when deadShadows was created via the `|| new Set()` fallback (first combat tick).
       this.deadShadows.set(channelKey, deadShadows);
     } catch (error) {
       this.errorLog('CRITICAL', 'Fatal error in processBossAttacks', { channelKey, error });
@@ -10474,6 +10565,8 @@ module.exports = class Dungeons {
           // Calculate damage per unique shadow, but cap at effective HP remaining.
           // Excess damage (overkill) is redistributed as additional hits to other shadows.
           // This ensures scaled mob hits produce realistic shadow death counts.
+          // PERF-4: Cache shadow stats for redistribution — stats don't change within a tick
+          const _redistributionStatsCache = new Map();
           let overflowHits = 0;
           for (const [shadowId, hits] of hitsPerTarget) {
             const target = shadowByIdMap.get(shadowId);
@@ -10481,7 +10574,11 @@ module.exports = class Dungeons {
             const hpData = shadowHP.get(shadowId);
             if (!hpData || hpData.hp <= 0) continue;
 
-            const shadowStats = this.buildShadowStats(target);
+            let shadowStats = _redistributionStatsCache.get(shadowId);
+            if (!shadowStats) {
+              shadowStats = this.buildShadowStats(target);
+              _redistributionStatsCache.set(shadowId, shadowStats);
+            }
             const shadowRole =
               target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
             const baseDamage = this.calculateMobDamageToShadow(
@@ -10532,7 +10629,11 @@ module.exports = class Dungeons {
                 if (hpData.hp - accDmg <= 0) continue;
 
                 // Apply one hit worth of damage
-                const shadowStats = this.buildShadowStats(target);
+                let shadowStats = _redistributionStatsCache.get(target.id);
+                if (!shadowStats) {
+                  shadowStats = this.buildShadowStats(target);
+                  _redistributionStatsCache.set(target.id, shadowStats);
+                }
                 const shadowRole =
                   target.role || target.roleName || target.ro || this.normalizeShadowRoleKey(target.type);
                 const baseDmg = this.calculateMobDamageToShadow(
@@ -10614,7 +10715,9 @@ module.exports = class Dungeons {
         shadowByIdMap,
       });
 
-      // Atomic update: create new object reference to prevent race conditions
+      // INTEGRITY-1 (verified FP): deadShadows is the same Set reference from _getDungeonShadowCombatContext
+      // (mutated in-place). Write-back is a no-op for existing entries but correctly initializes
+      // the Map entry when deadShadows was created via the `|| new Set()` fallback (first combat tick).
       this.deadShadows.set(channelKey, deadShadows);
 
       // REAL-TIME UPDATE: Queue throttled HP bar update after boss attacks complete
@@ -10693,7 +10796,10 @@ module.exports = class Dungeons {
 
         // Check individual shadow cooldown (chaotic timing)
         const timeSinceLastAttack = now - combatData.lastAttackTime;
-        if (timeSinceLastAttack < combatData.cooldown) {
+        // BUGFIX LOGIC-4: Was reading nonexistent `cooldown` field (always undefined).
+        // `initializeShadowCombatData` sets `attackInterval`, not `cooldown`.
+        // undefined comparison always returned false, so ALL shadows attacked EVERY tick.
+        if (timeSinceLastAttack < (combatData.attackInterval || 2000)) {
           continue; // Not ready yet
         }
 
@@ -10738,10 +10844,11 @@ module.exports = class Dungeons {
 
         // Vary cooldown for next attack (keeps combat rhythm dynamic, clamped to prevent drift)
         const cooldownVariance = this._varianceNarrow();
-        combatData.cooldown = Math.max(800, Math.min(5000, combatData.cooldown * cooldownVariance));
+        combatData.attackInterval = Math.max(800, Math.min(5000, (combatData.attackInterval || 2000) * cooldownVariance));
 
-        // Check if mob died from this attack
-        if (targetMob.hp <= 0) {
+        // BUGFIX INTEGRITY-8: Only count kill if THIS shadow's attack was the killing blow.
+        // Without this, multiple shadows attacking the same 0-HP mob each call _onMobKilled.
+        if (targetMob.hp <= 0 && targetMobHpBefore > 0) {
           this._onMobKilled(channelKey, dungeon, targetMob.rank);
 
           // ARISE: Stash dead mob in corpse pile for post-dungeon extraction (lore-accurate)
@@ -10764,18 +10871,22 @@ module.exports = class Dungeons {
           }
         }
 
-        this._cleanupDungeonActiveMobs(dungeon);
-        // No queue cleanup needed - database handles storage
+      }
 
-        // EXTRACTION EVENTS CACHE CLEANUP: Prevent cache bloat
-        if (this.extractionEvents && this.extractionEvents.size > 1000) {
-          const entries = Array.from(this.extractionEvents.entries());
-          this.extractionEvents.clear();
-          // Keep only last 500 events
-          entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
-        }
+      // PERF-2: Moved cleanup OUTSIDE the per-shadow loop. Was O(N) per kill × up to 500 shadows.
+      // Now runs once after all shadow attacks, same as the main processShadowAttacks path.
+      if (dungeon.mobs?.activeMobs?.some(m => m && m.hp <= 0)) {
+        this._cleanupDungeonActiveMobs(dungeon);
       }
       this._pruneShadowMobContributionLedger(dungeon);
+
+      // PERF-3: Moved extraction cache cleanup OUTSIDE the per-shadow loop.
+      // Was allocating Array.from() per shadow iteration unnecessarily.
+      if (this.extractionEvents && this.extractionEvents.size > 1000) {
+        const entries = Array.from(this.extractionEvents.entries());
+        this.extractionEvents.clear();
+        entries.slice(-500).forEach(([k, v]) => this.extractionEvents.set(k, v));
+      }
 
       // PERFORMANCE: Only save to storage every 5 attack cycles per dungeon.
       // BUGFIX: Was a global counter (this._saveCycleCount) shared across all dungeons,
@@ -10954,8 +11065,13 @@ module.exports = class Dungeons {
     // Get dungeon reference for resurrection tracking
     let dungeon = this.activeDungeons.get(channelKey);
 
-    // AGGRESSIVE: Check if user has enough mana (using FRESHEST value)
-    if (this.settings.userMana < manaCost) {
+    // BUGFIX LOGIC-1: In parallel mode, check per-dungeon budget instead of shared userMana.
+    // This prevents two concurrent dungeons from both reading the same balance and double-spending.
+    const budgetAvailable = this._tickManaBudgetPerDungeon !== undefined
+      ? this._tickManaBudgetPerDungeon - (dungeon?._tickManaUsed || 0)
+      : this.settings.userMana;
+
+    if (budgetAvailable < manaCost) {
       // Track failed attempts for this dungeon
       if (dungeon) {
         if (!dungeon.failedResurrections) dungeon.failedResurrections = 0;
@@ -10989,29 +11105,40 @@ module.exports = class Dungeons {
       dungeon.lowManaWarningShown = false; // Can show warning again if mana depletes
     }
 
-    // Store mana before consumption for verification
+    // BUGFIX LOGIC-1: Use per-dungeon mana budget during parallel ticks to prevent race conditions.
+    // When multiple dungeons run via Promise.all, each dungeon tracks its own spend via dungeon._tickManaUsed.
+    // The actual this.settings.userMana deduction happens atomically after Promise.all completes.
     const manaBefore = this.settings.userMana;
 
-    // Consume mana from local settings
-    this.settings.userMana -= manaCost;
+    if (this._tickManaBudgetPerDungeon !== undefined) {
+      // Parallel mode: track per-dungeon spend, defer actual deduction to post-Promise.all
+      dungeon._tickManaUsed = (dungeon._tickManaUsed || 0) + manaCost;
+    } else {
+      // Single-dungeon mode: deduct directly (no race possible)
+      this.settings.userMana -= manaCost;
+    }
 
-    // Ensure mana doesn't go negative (safety check)
-    if (this.settings.userMana < 0) {
+    // Ensure mana doesn't go negative (safety check — only in single-dungeon mode)
+    if (this._tickManaBudgetPerDungeon === undefined && this.settings.userMana < 0) {
       this.errorLog(
         `CRITICAL: Mana went negative! Resetting to 0. Before: ${manaBefore}, Cost: ${manaCost}`
       );
       this.settings.userMana = 0;
     }
 
-    // Verify mana was actually deducted
-    const manaAfter = this.settings.userMana;
-    const actualDeduction = manaBefore - manaAfter;
-    if (actualDeduction !== manaCost) {
-      this.debugLog(`Mana deduction mismatch! Expected: ${manaCost}, Actual: ${actualDeduction}`);
+    // Verify mana was actually deducted (only meaningful in single-dungeon mode)
+    if (this._tickManaBudgetPerDungeon === undefined) {
+      const manaAfter = this.settings.userMana;
+      const actualDeduction = manaBefore - manaAfter;
+      if (actualDeduction !== manaCost) {
+        this.debugLog(`Mana deduction mismatch! Expected: ${manaCost}, Actual: ${actualDeduction}`);
+      }
     }
 
-    // Sync mana to SoloLevelingStats in-memory (no immediate save — debounced saveSettings handles persistence)
-    this.pushManaToStats(false);
+    // BUGFIX LOGIC-1: Skip mana sync during parallel mode — userMana is reconciled post-Promise.all
+    if (this._tickManaBudgetPerDungeon === undefined) {
+      this.pushManaToStats(false);
+    }
     this.startRegeneration(); // PERF: restart regen if it was paused
 
     // Track resurrection (reuse existing dungeon variable)
@@ -11051,8 +11178,10 @@ module.exports = class Dungeons {
 
     if (dungeon._completing) return; // Prevent concurrent completion
     dungeon._completing = true;
+    dungeon._completingStartedAt = Date.now(); // BUGFIX LOGIC-9: Timestamp for stranded dungeon recovery
 
     // ── PHASE A: Synchronous cleanup (dungeon disappears from UI immediately) ──
+    try {
 
     // Track end time for spawn cooldowns
     this.settings.lastDungeonEndTime || (this.settings.lastDungeonEndTime = {});
@@ -11150,6 +11279,10 @@ module.exports = class Dungeons {
     }
 
     // Clean up orphan per-channel Map entries (multi-dungeon leak prevention)
+    // LEAK-5: Clean up ARISE button ref for non-ARISE completions (timeout, complete)
+    this._ariseButtonRefs?.delete(channelKey);
+    // LEAK-6: Clean up boss bar layout throttle entry
+    this._bossBarLayoutThrottle?.delete(channelKey);
     this._mobSpawnNextAt?.delete(channelKey);
     this._mobSpawnQueueNextAt?.delete(channelKey);
     this._spawnPipelineGuardAt?.delete(channelKey);
@@ -11162,8 +11295,11 @@ module.exports = class Dungeons {
     delete this._mobCapWarningShown?.[channelKey];
 
     // Cancel pending dungeon save timer (prevents ghost saves on stale dungeon objects)
+    // BUGFIX LOGIC-3: Also remove from _timeouts tracking Set to prevent stale ID accumulation
     if (this._dungeonSaveTimers?.has(channelKey)) {
-      clearTimeout(this._dungeonSaveTimers.get(channelKey));
+      const timerId = this._dungeonSaveTimers.get(channelKey);
+      this._timeouts.delete(timerId);
+      clearTimeout(timerId);
       this._dungeonSaveTimers.delete(channelKey);
     }
 
@@ -11178,6 +11314,14 @@ module.exports = class Dungeons {
     }
 
     this.saveSettings();
+    } catch (phaseAError) {
+      // BUGFIX LOGIC-9: Unset _completing so the dungeon isn't permanently stranded
+      dungeon._completing = false;
+      this.errorLog('CRITICAL', 'Phase A of completeDungeon failed — dungeon may be in inconsistent state', {
+        channelKey, reason, error: phaseAError
+      });
+      return;
+    }
 
     // ── PHASE B: Fire-and-forget background work (ARISE, XP, DB cleanup) ──
     this._completeDungeonBackground(
@@ -11324,6 +11468,7 @@ module.exports = class Dungeons {
         this.defeatedBosses.set(channelKey, {
           boss: snap.boss,
           dungeon: snap,
+          dungeonId: snap.id || snap.dungeonId, // BUGFIX LOGIC-5: Track which dungeon this boss belonged to
           timestamp: Date.now(),
         });
         this.showAriseButton(channelKey);
@@ -11853,8 +11998,20 @@ module.exports = class Dungeons {
     // Clean up all dungeon data for this channel
     // NOTE: Do NOT delete corpse pile — _processCorpsePile runs async and may still be processing.
     // It cleans up after itself when done.
-    this.activeDungeons.delete(channelKey);
+    // BUGFIX LOGIC-5: Only delete if the active dungeon is the SAME one that was defeated.
+    // A new dungeon may have started in this channel during the ARISE window.
+    const bossData = this.defeatedBosses.get(channelKey);
+    const currentDungeon = this.activeDungeons.get(channelKey);
+    if (currentDungeon && bossData?.dungeonId && currentDungeon.id !== bossData.dungeonId) {
+      this.debugLog(`cleanupDefeatedBoss: skipping activeDungeons.delete — new dungeon ${currentDungeon.id} started in ${channelKey}`);
+    } else {
+      this.activeDungeons.delete(channelKey);
+    }
     this.channelLocks.delete(channelKey);
+    // INTEGRITY-7: Remove ARISE block for this channel's boss to prevent collisions with future dungeon runs.
+    if (bossData?.boss?.id && this._arisedBossIds) {
+      this._arisedBossIds.delete(bossData.boss.id);
+    }
     this.defeatedBosses.delete(channelKey);
     this.shadowAllocations.delete(channelKey);
     this.extractionInProgress.delete(channelKey); // Clear stale mutex if any
@@ -12387,8 +12544,8 @@ module.exports = class Dungeons {
     const now = Date.now();
     const cached = this._containerCache.get(cacheKey);
     if (cached && now - cached.timestamp < 2000) {
-      // Verify cached element still exists in DOM
-      if (cached.value && document.body.contains(cached.value)) {
+      // PERF-8: isConnected is faster than document.body.contains (avoids tree walk)
+      if (cached.value?.isConnected) {
         return cached.value;
       }
     }
@@ -12423,8 +12580,8 @@ module.exports = class Dungeons {
     const now = Date.now();
     const cached = this._containerCache.get(cacheKey);
     if (cached && now - cached.timestamp < 2000) {
-      // Verify cached element still exists in DOM
-      if (cached.value && document.body.contains(cached.value)) {
+      // PERF-8: isConnected is faster than document.body.contains (avoids tree walk)
+      if (cached.value?.isConnected) {
         return cached.value;
       }
     }
@@ -13173,8 +13330,8 @@ module.exports = class Dungeons {
     let totalUserDamage = 0;
 
     if (aliveShadows.length > 0) {
-      // Boss attacks shadows
-      const sampleShadow = aliveShadows[0];
+      // Boss attacks shadows — PERF-7: sample median shadow for representative stats
+      const sampleShadow = aliveShadows[Math.floor(aliveShadows.length / 2)];
       const shadowStats = this.buildShadowStats(sampleShadow);
       const shadowRank = sampleShadow.rank || 'E';
       const shadowRole =
@@ -13276,8 +13433,8 @@ module.exports = class Dungeons {
     let totalUserDamage = 0;
 
     if (aliveShadows.length > 0) {
-      // Mobs attack shadows
-      const sampleShadow = aliveShadows[0];
+      // Mobs attack shadows — PERF-7: sample median shadow for representative stats
+      const sampleShadow = aliveShadows[Math.floor(aliveShadows.length / 2)];
       const shadowStats = this.buildShadowStats(sampleShadow);
       const shadowRank = sampleShadow.rank || 'E';
 
@@ -13761,7 +13918,17 @@ module.exports = class Dungeons {
     const DISENGAGED_EXPIRY_MS = 180000;   // 3 minutes — had engagement that was withdrawn
     this.activeDungeons.forEach((dungeon, channelKey) => {
       // Skip dungeons already completed/failed (ARISE-deferred or mid-completion).
-      if (dungeon.completed || dungeon.failed || dungeon._completing) return;
+      if (dungeon.completed || dungeon.failed) return;
+
+      // BUGFIX LOGIC-9: Recover dungeons stranded with _completing=true for >30s
+      if (dungeon._completing) {
+        const strandedAge = now - (dungeon._completingStartedAt || now);
+        if (strandedAge > 30000) {
+          dungeon._completing = false;
+          expiredChannels.push(channelKey);
+        }
+        return;
+      }
 
       // Active protection: never expire while user is participating or shadows are deployed.
       if (dungeon.shadowsDeployed || dungeon.userParticipating) {
