@@ -92,7 +92,12 @@ Find your BetterDiscord installation folder:
    - `LevelProgressBar.plugin.js`
    - `SoloLevelingToasts.plugin.js`
    - Level up animation is included in `LevelProgressBar.plugin.js`
-3. Paste all files into `BetterDiscord/plugins/` folder
+3. Copy shared helper files used by plugins:
+   - `SoloLevelingUtils.js`
+   - `UnifiedSaveManager.js`
+   - `LevelProgressBarStyles.js`
+   - `LevelProgressBarRuntimeHelpers.js`
+4. Paste all files into `BetterDiscord/plugins/` folder
 
 **Step 3: Install Theme**
 
@@ -139,6 +144,9 @@ cd ~/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets
 
 # Copy plugins
 cp plugins/*.plugin.js ~/Library/Application\ Support/BetterDiscord/plugins/
+
+# Copy required helper files
+cp plugins/SoloLevelingUtils.js plugins/UnifiedSaveManager.js plugins/LevelProgressBarStyles.js plugins/LevelProgressBarRuntimeHelpers.js ~/Library/Application\ Support/BetterDiscord/plugins/
 
 # Copy theme
 cp themes/SoloLeveling-ClearVision.theme.css ~/Library/Application\ Support/BetterDiscord/themes/

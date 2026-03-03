@@ -52,7 +52,13 @@ done
 
 # Deploy shared libraries (non-plugin JS files required by plugins)
 for lib in \
-  SoloLevelingUtils.js
+  BetterDiscordPluginUtils.js \
+  BetterDiscordReactUtils.js \
+  SoloLevelingUtils.js \
+  UnifiedSaveManager.js \
+  LevelProgressBarStyles.js \
+  LevelProgressBarRuntimeHelpers.js \
+  ShadowPortalCore.js
   do
   if [[ -f "$ASSETS_PLUGINS/$lib" ]]; then
     rsync -a "$ASSETS_PLUGINS/$lib" "$BD_PLUGINS/"

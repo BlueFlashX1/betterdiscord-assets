@@ -84,6 +84,34 @@ done
 
 echo "✅ All plugins linked successfully!"
 echo ""
+echo "Linking shared helper JS files..."
+for helper in \
+    BetterDiscordPluginUtils.js \
+    BetterDiscordReactUtils.js \
+    SoloLevelingUtils.js \
+    UnifiedSaveManager.js \
+    LevelProgressBarStyles.js \
+    LevelProgressBarRuntimeHelpers.js \
+    ShadowPortalCore.js; do
+    source_path="$DEV_DIR/$helper"
+    target_path="$BD_PLUGINS_DIR/$helper"
+
+    if [ ! -f "$source_path" ]; then
+        continue
+    fi
+
+    if [ -e "$target_path" ] || [ -L "$target_path" ]; then
+        rm -f "$target_path"
+    fi
+
+    ln -sf "$source_path" "$target_path"
+    if [ -L "$target_path" ] && [ -e "$target_path" ]; then
+        echo "  ✅ Linked helper: $helper"
+    else
+        echo "  ❌ Failed helper link: $helper"
+    fi
+done
+echo ""
 echo "Verifying symlinks..."
 cd "$BD_PLUGINS_DIR"
 for plugin in *.plugin.js; do
