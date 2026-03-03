@@ -590,7 +590,7 @@ const methods = {
     _diagLog(isCached ? "TRANSITION_START (cached, 1.5s)" : "TRANSITION_START (cinematic, 1.5s)");
     if (_debugMode) {
       console.log(`%c[PortalDiag]%c cached=${isCached} configuredDuration=${configuredDuration} duration=${duration} totalDuration=${totalDuration}`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
-      console.log(`%c[PortalDiag]%c navDelay=${isCached ? 80 : Math.max(140, Math.round(totalDuration * 0.18))}ms cleanup=${isCached ? totalDuration + 120 : totalDuration + 340}ms`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
+      console.log(`%c[PortalDiag]%c navDelay=${Math.max(580, Math.round(totalDuration * 0.39))}ms cleanup=${totalDuration + 340}ms (unified timing)`, "color:#a855f7;font-weight:bold", "color:#94a3b8");
     }
     const systemPrefersReducedMotion = !!window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches;
     const respectReducedMotion = this.settings.respectReducedMotion !== false;
@@ -608,7 +608,7 @@ const methods = {
     let cssPortalEl = null;
     if (!prefersReducedMotion && _gsapLoaded && window.gsap) {
       const maskUrl = getSpiralMaskUrl();
-      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 2.3;
+      const portalDiam = Math.min(window.innerWidth, window.innerHeight) * 3.0;
 
       // Inject keyframes + pseudo-element styles (scoped to overlay lifetime)
       const portalStyleEl = document.createElement("style");
@@ -618,13 +618,13 @@ const methods = {
         // Organic warp: asymmetric scale + skew breathing cycle
         "@keyframes ss-portal-warp{0%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}25%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.78) scaleY(0.93) skew(1.5deg)}50%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.65) scaleY(1.05) skew(-1deg)}75%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.74) scaleY(0.96) skew(0.8deg)}100%{transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7) scaleY(1.0) skew(0deg)}}",
         ".ss-portal-css{position:absolute;top:50%;left:46%;transform:translate(-50%,-50%) perspective(2077px) translateZ(-0.1px) scaleX(0.7);filter:contrast(2.2) drop-shadow(0 0 8px rgba(123,63,191,0.3)) drop-shadow(0 0 20px rgba(90,45,138,0.15));overflow:hidden;pointer-events:none;border-radius:50%;opacity:0;animation:ss-portal-warp 3s ease-in-out infinite}",
-        // Outer layer — fast spin
-        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:0;animation:ss-portal-spin 2.8s infinite linear}",
-        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
+        // Main layer — oversized (inset:-30%) so mask edges are off-screen during burst
+        ".ss-portal-css__inner,.ss-portal-css__inner::before{position:absolute;inset:-30%;animation:ss-portal-spin 2.8s infinite linear}",
+        `.ss-portal-css__inner{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
         '.ss-portal-css__inner::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
-        // Inner core — slow spin, layered on top
-        ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:25%;animation:ss-portal-spin 8s infinite linear}",
-        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) top left/100% 100% no-repeat;mask:url(${maskUrl}) top left/100% 100% no-repeat}`,
+        // Inner core — also oversized to avoid crop at burst scale
+        ".ss-portal-css__core,.ss-portal-css__core::before{position:absolute;inset:-5%;animation:ss-portal-spin 8s infinite linear}",
+        `.ss-portal-css__core{-webkit-mask:url(${maskUrl}) center/100% 100% no-repeat;mask:url(${maskUrl}) center/100% 100% no-repeat}`,
         '.ss-portal-css__core::before{content:"";animation-direction:reverse;background:conic-gradient(#000,#3a1550,#000),#000}',
       ].join("");
       overlay.appendChild(portalStyleEl);
@@ -711,12 +711,12 @@ const methods = {
       overlay.animate(
         [
           { opacity: 0 },
-          { opacity: 1, offset: 0.1 },
-          { opacity: 1, offset: 0.72 },
-          { opacity: 0.86, offset: 0.9 },
+          { opacity: 1, offset: 0.08 },
+          { opacity: 1, offset: 0.88 },
+          { opacity: 0.7, offset: 0.95 },
           { opacity: 0 },
         ],
-        { duration: totalDuration, easing: "cubic-bezier(.22,.61,.36,1)", fill: "forwards" }
+        { duration: totalDuration, easing: "linear", fill: "forwards" }
       );
 
       // Phase 3: GSAP shard animation with back.out(2) for explosive pop, or WAAPI fallback
@@ -785,16 +785,17 @@ const methods = {
       Promise.resolve().then(() => _diagLog("NAVIGATE_CALLBACK_RETURNED"));
     };
 
-    // Navigation delay:
-    //   Fast (cached):       80ms — portal starts forming, nav fires early (content is already there)
-    //   Reduced motion:      24ms — minimal delay
-    //   Cinematic (uncached): 18% of total — portal forms, then nav fires behind it
-    const navDelay = isCached
-      ? 80
-      : prefersReducedMotion
-        ? 24
-        : Math.max(140, Math.round(totalDuration * 0.18));
-    _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms)`);
+    // Navigation delay — SAME for cached and uncached:
+    //   Both wait until darknessOverlay reaches 1.0 (full black at 38% = ~570ms)
+    //   so the Discord channel switch is invisible behind the blackout.
+    //   Fire at 39% — right after full black, gives Discord max time to load before reveal at 60%.
+    //   For same-channel TPs, _navigate skips transitionTo entirely, so the delay
+    //   is harmless — content doesn't change regardless.
+    //   Reduced motion: 24ms — minimal delay (no darkness overlay to wait for)
+    const navDelay = prefersReducedMotion
+      ? 24
+      : Math.max(580, Math.round(totalDuration * 0.39));
+    _diagLog(`NAV_SCHEDULED (delay=${navDelay}ms, cached=${isCached})`);
 
     // Clear stale timers from previous rapid teleport before setting new ones
     if (this._transitionNavTimeout) clearTimeout(this._transitionNavTimeout);
@@ -805,11 +806,11 @@ const methods = {
       runNavigation();
     }, navDelay);
 
-    const cleanupDelay = isCached
-      ? totalDuration + 120                    // Fast: brief buffer after portal ends
-      : prefersReducedMotion
-        ? Math.max(320, Math.round(duration * 0.98))
-        : totalDuration + 340;
+    // Cleanup delay — SAME for cached and uncached:
+    //   totalDuration + 340ms buffer for Discord to finish rendering after portal ends
+    const cleanupDelay = prefersReducedMotion
+      ? Math.max(320, Math.round(duration * 0.98))
+      : totalDuration + 340;
     _diagLog(`CLEANUP_SCHEDULED (delay=${cleanupDelay}ms)`);
     this._transitionCleanupTimeout = setTimeout(() => {
       if (runId !== this._transitionRunId) return;
@@ -859,6 +860,7 @@ const methods = {
       hueShift: 0,           // hue drift in degrees (Phase 5)
       shockwaveBoost: 0,     // elastic overshoot for shockwave ripples (Phase 3)
       shadowEnvelope: 0,     // 0→1→0 black engulf before reveal (shadow teleport effect)
+      darknessOverlay: 0,    // 0→1 full-screen black blanket drawn on top of everything
       vortexSpin: 0,         // 0→1 accelerating spiral rotation over portal lifetime
       strandMorph: 0,        // 0↔1 strand deformation amplitude modulator (breathing)
       tendrilPulse: 0.5,     // 0↔1 inner tendril intensity breathing
@@ -884,13 +886,13 @@ const methods = {
       ease: "power2.inOut",
     }, 0);
 
-    // Reveal aperture: 50%→100% with expo.inOut for dramatic accel/decel (delayed for longer sustain)
+    // Reveal aperture: 60%→100% with expo.inOut for dramatic accel/decel (synced with darkness clear)
     tl.to(gs, {
       revealProgress: 1,
       revealEase: 1,
-      duration: dur * 0.50,
+      duration: dur * 0.40,
       ease: "expo.inOut",
-    }, dur * 0.50);
+    }, dur * 0.60);
 
     // Fade out: 95%→100% with power2.in for smooth exit
     tl.to(gs, {
@@ -899,26 +901,29 @@ const methods = {
       ease: "power2.in",
     }, dur * 0.95);
 
+    // Darkness overlay: computed directly in draw loop (not GSAP) to avoid
+    // two-tween-same-property conflict. See darknessOverlay computation below.
+
     // Shadow envelope: darkness gradually engulfs screen before reveal (shadow teleport effect)
-    // Creep: 25→48% — shadow darkens over 23% of duration with slight acceleration
+    // Creep: 25→40% — shadow darkens over 15% of duration with slight acceleration
     tl.to(gs, {
       shadowEnvelope: 1,
-      duration: dur * 0.23,
+      duration: dur * 0.15,
       ease: "power2.in",
     }, dur * 0.25);
-    // Ramp out: 50→65% — reveal punches through the darkness
+    // Ramp out: 60→74% — reveal punches through the darkness (synced with darknessOverlay clear)
     tl.to(gs, {
       shadowEnvelope: 0,
-      duration: dur * 0.15,
+      duration: dur * 0.14,
       ease: "power3.out",
-    }, dur * 0.50);
+    }, dur * 0.60);
 
-    // Phase 3: Shockwave elastic overshoot — starts 65% through, elastic.out gives ripple bounce
+    // Phase 3: Shockwave elastic overshoot — starts 74% through, elastic.out gives ripple bounce
     tl.to(gs, {
       shockwaveBoost: 1,
-      duration: dur * 0.30,
+      duration: dur * 0.26,
       ease: "elastic.out(1, 0.3)",
-    }, dur * 0.65);
+    }, dur * 0.74);
 
     // Vortex spin: accelerates over full duration — starts slow, builds to full spiral
     tl.to(gs, {
@@ -939,47 +944,69 @@ const methods = {
     // ── CSS Portal GSAP animations (formation → expand → fade) ──
     const cssPortalTweens = [];
     if (cssPortalEl) {
-      const revealAt = dur * 0.50; // sync with canvas revealStart (delayed for longer sustain)
-      const expandDur = dur * 0.45; // expansion duration (compressed to fit 1.5s)
+      const revealAt = dur * 0.60; // sync with canvas revealStart (synced with darkness clear)
+      const expandDur = dur * 0.36; // expansion duration (compressed to fit remaining time)
       // Formation: 0→25% — scale from 0.3→1 + fade in
       tl.fromTo(cssPortalEl,
         { opacity: 0, scale: 0.3 },
         { opacity: 1, scale: 1, duration: dur * 0.25, ease: "back.out(1.2)" },
         0
       );
-      // When reveal starts, both layers expand outward beyond screen at same speed
-      tl.to(cssPortalEl._inner, {
-        scale: 6,
+      // Remove overflow:hidden on the overlay container so the portal can burst beyond viewport
+      const overlayEl = cssPortalEl.parentNode;
+      tl.set(overlayEl, { overflow: "visible" }, revealAt);
+
+      // Instantly strip circular clip the moment reveal starts (no animation — frame 1)
+      tl.set(cssPortalEl, {
+        borderRadius: "0%",
+        overflow: "visible",
+      }, revealAt);
+      // Slower burst outward — visible expansion that doesn't fly off-screen instantly
+      tl.to(cssPortalEl, {
+        scale: 2.4,
         duration: expandDur,
+        ease: "power2.inOut",
+      }, revealAt);
+      // Fade canvas element once darkness clears so CSS portal burst shows through
+      tl.to(canvas, {
+        opacity: 0,
+        duration: dur * 0.20,
         ease: "power2.in",
+      }, dur * 0.74);
+      // Spiral layers expand gradually — stay visible throughout
+      // (spiral masks stay — they ARE the visual; removing them kills the portal)
+      tl.to(cssPortalEl._inner, {
+        scale: 3.5,
+        duration: expandDur,
+        ease: "power2.inOut",
       }, revealAt);
       tl.to(cssPortalEl._core, {
-        scale: 6,
+        scale: 3.5,
         duration: expandDur,
-        ease: "power2.in",
+        ease: "power2.inOut",
       }, revealAt);
       // Boost CSS portal glow to be clearly visible from the start
       tl.set(cssPortalEl, {
         filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
       }, 0);
-      // Shadow envelope: gradually dim CSS portal glow as darkness creeps in
+      // Shadow envelope: gradually dim CSS portal glow as darkness creeps in (25→40%)
       tl.to(cssPortalEl, {
         filter: "contrast(2.2) drop-shadow(0 0 0px rgba(123,63,191,0)) drop-shadow(0 0 0px rgba(90,45,138,0))",
-        duration: dur * 0.23,
+        duration: dur * 0.15,
         ease: "power2.in",
       }, dur * 0.25);
-      // Restore strong glow when reveal punches through
+      // Restore strong glow when reveal punches through (60→74%)
       tl.to(cssPortalEl, {
         filter: "contrast(2.2) drop-shadow(0 0 24px rgba(123,63,191,0.7)) drop-shadow(0 0 48px rgba(90,45,138,0.4))",
-        duration: dur * 0.15,
+        duration: dur * 0.14,
         ease: "power3.out",
-      }, dur * 0.50);
-      // Quick fade — clear fast after expansion (last 10%)
+      }, dur * 0.60);
+      // Fade out near the end — let the portal be visible through most of the burst
       tl.to(cssPortalEl, {
         opacity: 0,
-        duration: dur * 0.10,
-        ease: "power3.in",
-      }, revealAt + expandDur * 0.7);
+        duration: dur * 0.08,
+        ease: "power2.in",
+      }, revealAt + expandDur * 0.85);
     }
 
     // Store timeline on instance for Phase 6 (reverse-on-failure)
@@ -1107,10 +1134,20 @@ const methods = {
       const elapsed = now - start;
       const t = Math.max(0, Math.min(1, elapsed / Math.max(1, duration)));
       const swirl = elapsed * 0.0044;
-      const revealStart = 0.50;
+      const revealStart = 0.60;
 
       // ── Phase state: GSAP-driven or vanilla-computed ──
-      let easeInOut, fadeOut, formT, formEase, portalForm, revealProgress, revealEase;
+      let easeInOut, fadeOut, darknessOverlay, formT, formEase, portalForm, revealProgress, revealEase;
+      // darknessOverlay: always computed from t (not GSAP) — avoids two-tween conflict
+      // Timing: slow dim → hold → clear synced with reveal/shockwave
+      darknessOverlay = t < 0.38
+        ? Math.pow(t / 0.38, 3.5)                                      // 0→38%: very slow start, accelerates to full black
+        : t < 0.60
+          ? 1                                                          // 38→60%: hold at full black (330ms)
+          : t < 0.74
+            ? 1 - Math.pow(Math.min(1, (t - 0.60) / 0.14), 0.5)       // 60→74%: clear for shockwave reveal
+            : 0;
+
       if (_gsap) {
         easeInOut = _gsap.easeInOut;
         fadeOut = _gsap.fadeOut;
@@ -1122,6 +1159,7 @@ const methods = {
       } else {
         easeInOut = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
         fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
+        // darknessOverlay already computed above (shared by both paths)
         formT = Math.min(1, t / 0.22);
         formEase = 1 - Math.pow(1 - formT, 3);
         portalForm = 0.38 + 0.62 * formEase;
@@ -1133,7 +1171,7 @@ const methods = {
 
       // Phase crossing diagnostics
       if (!_canvasDiag.formDone && formT >= 1) { _canvasDiag.formDone = true; _cdLog("FORMATION_COMPLETE (formT=1, t=0.22)"); }
-      if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)}, target=0.74)`); }
+      if (!_canvasDiag.revealStarted && t > revealStart) { _canvasDiag.revealStarted = true; _cdLog(`REVEAL_APERTURE_START (t=${t.toFixed(3)}, target=0.60)`); }
       if (!_canvasDiag.fadeStarted && t >= 0.95) { _canvasDiag.fadeStarted = true; _cdLog("FADE_OUT_START (t=0.95)"); }
       if (!_canvasDiag.done && t >= 1) { _canvasDiag.done = true; _cdLog("CANVAS_ANIMATION_END (t=1)"); }
 
@@ -1156,6 +1194,23 @@ const methods = {
       if (envelope > 0.01) {
         ctx.fillStyle = `rgba(0,0,0,${(envelope * fadeOut).toFixed(3)})`;
         ctx.fillRect(0, 0, width, height);
+      }
+
+      // ── Darkness overlay: drawn BEFORE aperture so the reveal punches through it ──
+      // This creates the dramatic "shockwave breaks through the blackout" effect.
+      // The aperture's destination-out compositing erases both portal effects AND darkness.
+      if (darknessOverlay > 0.005) {
+        ctx.save();
+        ctx.globalCompositeOperation = "source-over";
+        ctx.globalAlpha = 1;
+        ctx.fillStyle = `rgba(0,0,0,${darknessOverlay.toFixed(3)})`;
+        ctx.fillRect(0, 0, width, height);
+        ctx.restore();
+        // TEMP DIAG: log darkness overlay values every ~500ms
+        if (!this._lastDarknessLog || now - this._lastDarknessLog > 500) {
+          this._lastDarknessLog = now;
+          console.log(`%c[DarknessOverlay]%c t=${t.toFixed(3)} darkness=${darknessOverlay.toFixed(4)} fadeOut=${fadeOut.toFixed(4)} gsap=${!!_gsap} canvasW=${width} canvasH=${height}`, "color:#ff6b6b;font-weight:bold", "color:#e2e8f0");
+        }
       }
 
       // Reveal: aperture punches through dark overlay to show channel content
@@ -1537,23 +1592,30 @@ function startDrawLoop() {
 
     const easeInOut = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     const fadeOut = t < 0.96 ? 1 : Math.max(0, 1 - (t - 0.96) / 0.04);
+    const darknessOverlay = t < 0.38
+      ? Math.pow(t / 0.38, 3.5)
+      : t < 0.60
+        ? 1
+        : t < 0.74
+        ? 1 - Math.pow(Math.min(1, (t - 0.60) / 0.14), 0.5)
+        : 0;
     const swirl = elapsed * 0.0044;
     const formT = Math.min(1, t / 0.22);
     const formEase = 1 - Math.pow(1 - formT, 3);
     const portalForm = 0.38 + 0.62 * formEase;
-    const revealStart = 0.50;
+    const revealStart = 0.60;
     const revealProgress = t <= revealStart ? 0 : Math.min(1, (t - revealStart) / (1 - revealStart));
     const revealEase = revealProgress < 0.5 ? 2 * revealProgress * revealProgress : 1 - Math.pow(-2 * revealProgress + 2, 2) / 2;
 
-    // Shadow envelope: vanilla computation (mirrors GSAP 25→48% gradual in, 50→65% out)
+    // Shadow envelope: vanilla computation (mirrors GSAP 25→40% gradual in, 60→74% out)
     let shadowEnvelope = 0;
-    if (t >= 0.25 && t < 0.48) {
-      const envT = (t - 0.25) / 0.23;
+    if (t >= 0.25 && t < 0.40) {
+      const envT = (t - 0.25) / 0.15;
       shadowEnvelope = envT * envT; // power2.in (slight acceleration into darkness)
-    } else if (t >= 0.48 && t < 0.50) {
+    } else if (t >= 0.40 && t < 0.60) {
       shadowEnvelope = 1;
-    } else if (t >= 0.50 && t < 0.65) {
-      const envT = (t - 0.50) / 0.15;
+    } else if (t >= 0.60 && t < 0.74) {
+      const envT = (t - 0.60) / 0.14;
       shadowEnvelope = 1 - (1 - Math.pow(1 - envT, 3)); // power3.out
     }
 
@@ -1818,6 +1880,16 @@ function startDrawLoop() {
       ctx.fill();
       ctx.shadowBlur = 0;
 
+      ctx.restore();
+    }
+
+    // ── Darkness overlay: drawn BEFORE aperture so the reveal punches through it ──
+    if (darknessOverlay > 0.005) {
+      ctx.save();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = "rgba(0,0,0," + darknessOverlay.toFixed(4) + ")";
+      ctx.fillRect(0, 0, width, height);
       ctx.restore();
     }
 
