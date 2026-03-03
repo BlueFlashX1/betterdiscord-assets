@@ -29,7 +29,27 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
 
 // Scroller selectors — primary + fallbacks for Discord class name changes
 const HSL_SCROLLER_SELECTORS = [
@@ -130,6 +150,17 @@ module.exports = class HSLWheelBridge {
     this._fallbackPoll = null;
     this._toast = (msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type });
     this._warnedReactFallback = false;
+    this._warnedMessages = new Set();
+  }
+
+  _warnOnce(key, message, detail = null) {
+    if (this._warnedMessages.has(key)) return;
+    this._warnedMessages.add(key);
+    if (detail !== null) {
+      console.warn(message, detail);
+      return;
+    }
+    console.warn(message);
   }
 
   _cleanupRuntime() {
@@ -158,6 +189,7 @@ module.exports = class HSLWheelBridge {
     this._isStopped = false;
     this._engineMounted = false;
     this._warnedReactFallback = false;
+    this._warnedMessages.clear();
     this._installReactPatcher();
 
     // Fallback: if React patcher does not mount within 3s, mount engine directly
@@ -166,7 +198,7 @@ module.exports = class HSLWheelBridge {
       if (!this._isStopped && !this._engineMounted) {
         if (!this._warnedReactFallback) {
           this._warnedReactFallback = true;
-          console.warn('[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
+          this._warnOnce('react-fallback', '[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
         }
         const engine = new WheelBridgeEngine();
         this._fallbackEngine = engine;
@@ -203,7 +235,7 @@ module.exports = class HSLWheelBridge {
     }
 
     if (!ReactUtils?.patchReactMainContent || !ReactUtils?.injectReactComponent) {
-      console.warn('[HSLWheelBridge] ReactUtils unavailable — waiting for DOM fallback');
+      this._warnOnce('react-utils-missing', '[HSLWheelBridge] ReactUtils unavailable — waiting for DOM fallback');
       return;
     }
 
@@ -217,7 +249,7 @@ module.exports = class HSLWheelBridge {
     });
 
     if (!ok) {
-      console.error('[HSLWheelBridge] MainContent module not found — waiting for DOM fallback');
+      this._warnOnce('maincontent-missing', '[HSLWheelBridge] MainContent module not found — waiting for DOM fallback');
     }
   }
 

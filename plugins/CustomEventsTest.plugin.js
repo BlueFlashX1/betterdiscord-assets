@@ -18,6 +18,7 @@ module.exports = class CustomEventsTest {
     this.version = '1.0.0';
     this._controller = null;
     this._eventPrefix = this.pluginId + ':';
+    this._boundListeners = [];
     this.debug = false;
   }
 
@@ -25,6 +26,10 @@ module.exports = class CustomEventsTest {
   // 1) LIFECYCLE
   // =========================================================================
   start() {
+    for (const { eventName, listener } of this._boundListeners) {
+      document.removeEventListener(eventName, listener);
+    }
+    this._boundListeners = [];
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }
@@ -40,6 +45,10 @@ module.exports = class CustomEventsTest {
   }
 
   stop() {
+    for (const { eventName, listener } of this._boundListeners) {
+      document.removeEventListener(eventName, listener);
+    }
+    this._boundListeners = [];
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }
@@ -97,11 +106,13 @@ module.exports = class CustomEventsTest {
     if (!eventName || typeof handler !== 'function') return;
     if (!this._controller || this._controller.signal.aborted) return;
     const fullName = this._eventPrefix + eventName;
+    const listener = (e) => {
+      handler(e.detail, e);
+    };
+    this._boundListeners.push({ eventName: fullName, listener });
     document.addEventListener(
       fullName,
-      (e) => {
-        handler(e.detail, e);
-      },
+      listener,
       { signal: this._controller.signal },
     );
   }

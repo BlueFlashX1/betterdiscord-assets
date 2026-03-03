@@ -32,6 +32,7 @@ module.exports = class EventDelegationTest {
       this._controller.abort();
     }
     this._controller = new AbortController();
+    document.removeEventListener('click', this.onRootClick);
 
     // One listener on document catches ALL bubbling clicks
     // This is far more efficient than attaching listeners to individual elements
@@ -45,6 +46,7 @@ module.exports = class EventDelegationTest {
   }
 
   stop() {
+    document.removeEventListener('click', this.onRootClick);
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }

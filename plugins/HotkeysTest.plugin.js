@@ -63,6 +63,7 @@ module.exports = class HotkeysTest {
       this._controller.abort();
     }
     this._controller = new AbortController();
+    document.removeEventListener('keydown', this.onKeyDown);
 
     document.addEventListener('keydown', this.onKeyDown, {
       signal: this._controller.signal,
@@ -71,6 +72,7 @@ module.exports = class HotkeysTest {
   }
 
   stop() {
+    document.removeEventListener('keydown', this.onKeyDown);
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }

@@ -15,7 +15,27 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
 
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }

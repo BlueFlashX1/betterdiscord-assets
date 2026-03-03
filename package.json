@@ -7,7 +7,8 @@
     "watch:plugin": "node scripts/watch-plugin.js",
     "link:plugin": "node scripts/link-plugin.js",
     "link:theme": "node scripts/link-theme.js",
-    "dev": "npm run watch:plugin"
+    "dev": "npm run watch:plugin",
+    "harness:harmony": "node scripts/plugin-harmony-harness.js"
   },
   "keywords": [
     "betterdiscord",

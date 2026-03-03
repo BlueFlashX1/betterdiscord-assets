@@ -92,6 +92,14 @@ for helper in \
     UnifiedSaveManager.js \
     LevelProgressBarStyles.js \
     LevelProgressBarRuntimeHelpers.js \
+    PluginMainLoader.js \
+    ShadowReconMain.js \
+    LevelProgressBarMain.js \
+    HSLDockAutoHideMain.js \
+    ShadowExchangeMain.js \
+    StealthMain.js \
+    TitleManagerMain.js \
+    ShadowStepMain.js \
     ShadowPortalCore.js; do
     source_path="$DEV_DIR/$helper"
     target_path="$BD_PLUGINS_DIR/$helper"

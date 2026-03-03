@@ -13,19 +13,27 @@
  */
 
 /** Load a local shared module from BD's plugins folder. */
-const _bdLoad = (f) => {
+const _bdLoad = (fileName) => {
+  if (!fileName) return null;
   try {
-    const mod = { exports: {} };
     const fs = require("fs");
     const path = require("path");
-    const src = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
-    new Function("module", "exports", src)(mod, mod.exports);
-    return mod.exports && (typeof mod.exports === "function" || Object.keys(mod.exports).length)
-      ? mod.exports
-      : null;
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      "module",
+      "exports",
+      "require",
+      "BdApi",
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === "function") return candidate;
+    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
   } catch (_) {
-    return null;
   }
+  return null;
 };
 
 let _PluginUtils = null;
@@ -382,7 +390,10 @@ module.exports = class UserPanelDockMover {
     // PERF: Slow down poll after successful setup (900ms → 10s safety net)
     if (this.pollInterval && !this._pollSlowed) {
       clearInterval(this.pollInterval);
-      this.pollInterval = setInterval(() => this.trySetup(), 10000);
+      this.pollInterval = setInterval(() => {
+        if (document.hidden) return;
+        this.trySetup();
+      }, 10000);
       this._pollSlowed = true;
     }
   }

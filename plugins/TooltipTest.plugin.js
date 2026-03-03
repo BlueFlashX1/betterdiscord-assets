@@ -34,6 +34,8 @@ module.exports = class TooltipTest {
       this._controller.abort();
     }
     this._controller = new AbortController();
+    document.removeEventListener('mouseover', this.onMouseEnter);
+    document.removeEventListener('mouseout', this.onMouseLeave);
 
     this.injectCSS();
 
@@ -56,6 +58,8 @@ module.exports = class TooltipTest {
   }
 
   stop() {
+    document.removeEventListener('mouseover', this.onMouseEnter);
+    document.removeEventListener('mouseout', this.onMouseLeave);
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }

@@ -36,6 +36,7 @@ module.exports = class ScrollSpyTest {
       this._controller.abort();
     }
     this._controller = new AbortController();
+    document.removeEventListener('scroll', this.onScroll, true);
 
     this.attachScrollListeners();
     BdApi.UI.showToast(this.pluginId + ' Scroll Spy Active', {
@@ -44,6 +45,7 @@ module.exports = class ScrollSpyTest {
   }
 
   stop() {
+    document.removeEventListener('scroll', this.onScroll, true);
     if (this._controller && !this._controller.signal.aborted) {
       this._controller.abort();
     }

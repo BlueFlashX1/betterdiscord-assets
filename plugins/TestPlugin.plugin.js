@@ -11,23 +11,45 @@
  * 2) Toast Utilities
  */
 
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
+
+let _PluginUtils = null;
+try { _PluginUtils = _bdLoad('BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
+
 module.exports = class TestPlugin {
   constructor() {
     this.pluginId = 'TestPlugin';
     this.version = '1.0.0';
     this.instanceKey = `__${this.pluginId}Instance`;
     this.debug = false;
+    this._toastFn = null;
   }
 
   // =========================================================================
   // 2) TOAST UTILITIES
   // =========================================================================
   _toast(message, type = "info", timeout = null) {
-    if (this._toastEngine) {
-      this._toastEngine.showToast(message, type, timeout, { callerId: "testPlugin" });
-    } else {
-      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
-    }
+    this._toastFn?.(message, type, timeout);
   }
 
   _logDebug(...args) {
@@ -39,13 +61,14 @@ module.exports = class TestPlugin {
   // 1) LIFECYCLE
   // =========================================================================
   start() {
-    // Toast engine discovery (unified toast system)
-    this._toastEngine = (() => {
-      try {
-        const p = BdApi.Plugins.get("SoloLevelingToasts");
-        return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
-      } catch { return null; }
-    })();
+    this._toastFn =
+      _PluginUtils?.createToastHelper?.('testPlugin') ||
+      ((message, type = 'info', timeout = null) => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type,
+          timeout: timeout ?? 2500,
+        });
+      });
     try {
       // Prevent duplicate instances
       const prev = window[this.instanceKey];
@@ -74,6 +97,6 @@ module.exports = class TestPlugin {
     // ---------------------------
 
     this._toast(`${this.pluginId} stopped`, "info", 2200);
-    this._toastEngine = null;
+    this._toastFn = null;
   }
 };

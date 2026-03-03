@@ -58,6 +58,14 @@ for lib in \
   UnifiedSaveManager.js \
   LevelProgressBarStyles.js \
   LevelProgressBarRuntimeHelpers.js \
+  PluginMainLoader.js \
+  ShadowReconMain.js \
+  LevelProgressBarMain.js \
+  HSLDockAutoHideMain.js \
+  ShadowExchangeMain.js \
+  StealthMain.js \
+  TitleManagerMain.js \
+  ShadowStepMain.js \
   ShadowPortalCore.js
   do
   if [[ -f "$ASSETS_PLUGINS/$lib" ]]; then

@@ -107,6 +107,8 @@ module.exports = class DraggableTest {
   }
 
   injectWidget() {
+    if (!document.body) return;
+
     const widget = document.createElement('div');
     widget.id = this._containerId;
 
@@ -123,6 +125,9 @@ module.exports = class DraggableTest {
 
     // Attach mousedown to the header (drag handle)
     const header = widget.querySelector('.widget-header');
+    if (!header) {
+      return;
+    }
     header.addEventListener('mousedown', this.onMouseDown);
 
     document.body.appendChild(widget);

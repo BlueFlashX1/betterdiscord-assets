@@ -27,7 +27,27 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
 
 module.exports = class ChatNavArrows {
   constructor() {
@@ -35,6 +55,7 @@ module.exports = class ChatNavArrows {
     this._isStopped = false;
     this._domFallback = null;
     this._settings = Object.assign({ debug: false }, BdApi.Data.load('ChatNavArrows', 'settings'));
+    this._warnedMessages = new Set();
   }
 
   // ==========================================================================
@@ -44,6 +65,16 @@ module.exports = class ChatNavArrows {
   _debugLog(...args) {
     if (!this._settings.debug) return;
     console.log('[ChatNavArrows:DEBUG]', ...args);
+  }
+
+  _warnOnce(key, message, detail = null) {
+    if (this._warnedMessages.has(key)) return;
+    this._warnedMessages.add(key);
+    if (detail !== null) {
+      console.warn(message, detail);
+      return;
+    }
+    console.warn(message);
   }
 
   getSettingsPanel() {
@@ -78,6 +109,7 @@ module.exports = class ChatNavArrows {
 
     this._isStopped = false;
     this._patcherCallbackFired = false;
+    this._warnedMessages.clear();
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', this.getCSS());
     this._debugLog('start() called');
     const reactPatched = this._installReactPatcher();
@@ -188,7 +220,7 @@ module.exports = class ChatNavArrows {
 
     this._debugLog('patchReactMainContent result:', ok);
     if (!ok) {
-      console.error('[ChatNavArrows] MainContent module not found — using DOM fallback');
+      this._warnOnce('maincontent-missing', '[ChatNavArrows] MainContent module not found — using DOM fallback');
       return false;
     }
     return true;

@@ -132,6 +132,7 @@ module.exports = class MutationScannerTest {
     if (!this._isRunning) return;
     const combinedSelector = this._getCombinedWatchSelector();
     if (!combinedSelector) return;
+    const elementNodeType = 1;
 
     const seen = new WeakSet();
 
@@ -140,7 +141,7 @@ module.exports = class MutationScannerTest {
 
       for (const node of mutation.addedNodes) {
         // Skip text nodes
-        if (node.nodeType !== Node.ELEMENT_NODE) continue;
+        if (!node || node.nodeType !== elementNodeType) continue;
         this._processAddedElement(node, combinedSelector, seen);
       }
     }

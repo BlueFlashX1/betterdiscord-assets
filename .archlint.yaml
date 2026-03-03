@@ -4,6 +4,7 @@
 # This keeps dead-code reporting useful while avoiding lifecycle false positives.
 entry_points:
   - plugins/*.plugin.js
+  - plugins/*Main.js
   - plugins/BetterDiscordPluginUtils.js
   - plugins/BetterDiscordReactUtils.js
   - plugins/SoloLevelingUtils.js
@@ -14,4 +15,5 @@ rules:
     severity: medium
     exclude:
       - plugins/*.plugin.js
+      - plugins/*Main.js
       - plugins/UnifiedSaveManager.js
