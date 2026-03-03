@@ -5,6 +5,13 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Animation Core
+ * 3) Timing Functions
+ */
+
 module.exports = class AnimateTest {
   constructor() {
     this.pluginId = 'AnimateTest';
@@ -12,6 +19,9 @@ module.exports = class AnimateTest {
     this._activeAnimations = new Set();
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
     BdApi.UI.showToast(this.pluginId + ' Animation Engine Active', {
       type: 'success',
@@ -37,7 +47,7 @@ module.exports = class AnimateTest {
   }
 
   // =========================================================================
-  // STRUCTURED ANIMATION ENGINE
+  // 2) STRUCTURED ANIMATION ENGINE
   // Reference: https://javascript.info/js-animation#structured-animation
   //
   // animate({ duration, timing, draw })
@@ -48,11 +58,20 @@ module.exports = class AnimateTest {
   // Returns a cancel() function to stop the animation early
   // =========================================================================
   animate({ duration, timing, draw }) {
+    if (typeof timing !== 'function' || typeof draw !== 'function') {
+      return () => {};
+    }
+
+    const safeDuration = Math.max(1, Number(duration) || 1);
     const start = performance.now();
-    let rafId;
+    let rafId = null;
 
     const animationStep = (time) => {
-      let timeFraction = (time - start) / duration;
+      if (rafId !== null) {
+        this._activeAnimations.delete(rafId);
+      }
+
+      let timeFraction = (time - start) / safeDuration;
       if (timeFraction > 1) timeFraction = 1;
 
       // Apply timing function to get the actual animation progress
@@ -62,8 +81,6 @@ module.exports = class AnimateTest {
       if (timeFraction < 1) {
         rafId = requestAnimationFrame(animationStep);
         this._activeAnimations.add(rafId);
-      } else {
-        this._activeAnimations.delete(rafId);
       }
     };
 
@@ -72,13 +89,15 @@ module.exports = class AnimateTest {
 
     // Return a cancel handle
     return () => {
+      if (rafId === null) return;
       cancelAnimationFrame(rafId);
       this._activeAnimations.delete(rafId);
+      rafId = null;
     };
   }
 
   // =========================================================================
-  // TIMING FUNCTIONS
+  // 3) TIMING FUNCTIONS
   // Reference: https://javascript.info/js-animation#timing-functions
   //
   // Each function takes timeFraction [0..1] and returns progress [0..1].
@@ -124,44 +143,4 @@ module.exports = class AnimateTest {
     };
   }
 
-  // =========================================================================
-  // CONVENIENCE METHODS
-  // =========================================================================
-
-  // Fade an element in (0 -> 1 opacity)
-  fadeIn(element, duration = 300) {
-    element.style.opacity = 0;
-    element.style.display = '';
-    return this.animate({
-      duration,
-      timing: this.timings.easeOut,
-      draw: (progress) => {
-        element.style.opacity = progress;
-      },
-    });
-  }
-
-  // Fade an element out (1 -> 0 opacity)
-  fadeOut(element, duration = 300) {
-    return this.animate({
-      duration,
-      timing: this.timings.easeIn,
-      draw: (progress) => {
-        element.style.opacity = 1 - progress;
-      },
-    });
-  }
-
-  // Slide an element's width from 0 to its natural width
-  slideIn(element, duration = 400) {
-    const targetWidth = element.scrollWidth;
-    element.style.overflow = 'hidden';
-    return this.animate({
-      duration,
-      timing: this.timings.easeOut,
-      draw: (progress) => {
-        element.style.width = progress * targetWidth + 'px';
-      },
-    });
-  }
 };

@@ -11,6 +11,14 @@
  * const data = await saveManager.load('settings');
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle + DB Initialization
+ * 2) Save/Load/Backup APIs
+ * 3) Serialization/Sanitization Helpers
+ * 4) Maintenance + Cleanup
+ */
+
 class UnifiedSaveManager {
   static SCHEMA_VERSION = 1;
 
@@ -22,7 +30,12 @@ class UnifiedSaveManager {
     this.storeName = 'pluginData';
     this.backupStoreName = 'backups';
     this.db = null;
+    this._initPromise = null;
   }
+
+  // =========================================================================
+  // 1) LIFECYCLE + DB INITIALIZATION
+  // =========================================================================
 
   /**
    * Get Discord user ID for database isolation
@@ -46,18 +59,29 @@ class UnifiedSaveManager {
    */
   async init() {
     if (this.db) return this.db;
+    if (this._initPromise) return this._initPromise;
 
-    return new Promise((resolve, reject) => {
+    this._initPromise = new Promise((resolve, reject) => {
       if (!window.indexedDB) {
+        this._initPromise = null;
         reject(new Error('IndexedDB not supported'));
         return;
       }
 
       const request = indexedDB.open(this.dbName, UnifiedSaveManager.SCHEMA_VERSION);
 
-      request.onerror = () => reject(request.error);
+      request.onerror = () => {
+        this._initPromise = null;
+        reject(request.error);
+      };
       request.onsuccess = () => {
         this.db = request.result;
+        this.db.onversionchange = () => {
+          try { this.db?.close(); } catch (_) {}
+          this.db = null;
+          this._initPromise = null;
+        };
+        this._initPromise = null;
         resolve(this.db);
       };
 
@@ -85,9 +109,11 @@ class UnifiedSaveManager {
 
       request.onblocked = () => {
         console.warn(`[${this.pluginName}] Database upgrade blocked by other tabs`);
+        this._initPromise = null;
         reject(new Error('Database upgrade blocked'));
       };
     });
+    return this._initPromise;
   }
 
   /**
@@ -96,6 +122,9 @@ class UnifiedSaveManager {
    * @param {any} data - Data to save
    * @param {boolean} createBackup - Whether to create backup (default: true)
    */
+  // =========================================================================
+  // 2) SAVE/LOAD/BACKUP APIS
+  // =========================================================================
   async save(key, data, createBackup = true) {
     if (!this.db) await this.init();
 
@@ -130,7 +159,7 @@ class UnifiedSaveManager {
 
         backupRequest.onsuccess = () => {
           // Clean up old backups (keep last 10 per plugin+key)
-          this.cleanupOldBackups(key).catch(console.error);
+          this.cleanupOldBackups(key).catch(() => {});
         };
       }
 
@@ -259,40 +288,61 @@ class UnifiedSaveManager {
    * Sanitize data for IndexedDB storage
    * Removes non-serializable values (Promises, Functions, etc.)
    */
+  // =========================================================================
+  // 3) SERIALIZATION / SANITIZATION HELPERS
+  // =========================================================================
   sanitizeData(data) {
-    return JSON.parse(
-      JSON.stringify(data, (key, value) => {
-        // Skip Promise values
-        if (value instanceof Promise) {
-          return undefined;
-        }
-        // Skip Function values
-        if (typeof value === 'function') {
-          return undefined;
-        }
-        // Skip DOM elements
-        const hasHTMLElement =
-          typeof window !== 'undefined' && typeof window.HTMLElement === 'function';
-        if (hasHTMLElement && value instanceof window.HTMLElement) {
-          return undefined;
-        }
-        // Skip Sets (convert to Array)
-        if (value instanceof Set) {
-          return Array.from(value);
-        }
-        // Skip Maps (convert to Object)
-        if (value instanceof Map) {
-          return Object.fromEntries(value);
-        }
-        return value;
-      })
-    );
+    const seen = new WeakSet();
+    try {
+      return JSON.parse(
+        JSON.stringify(data, (_key, value) => {
+          // Skip Promise values
+          if (value instanceof Promise) {
+            return undefined;
+          }
+          // Skip Function values
+          if (typeof value === 'function') {
+            return undefined;
+          }
+          // Skip DOM elements
+          const hasHTMLElement =
+            typeof window !== 'undefined' && typeof window.HTMLElement === 'function';
+          if (hasHTMLElement && value instanceof window.HTMLElement) {
+            return undefined;
+          }
+          // Handle circular references
+          if (value && typeof value === 'object') {
+            if (seen.has(value)) return undefined;
+            seen.add(value);
+          }
+          // Skip Sets (convert to Array)
+          if (value instanceof Set) {
+            return Array.from(value);
+          }
+          // Skip Maps (convert to Object)
+          if (value instanceof Map) {
+            return Object.fromEntries(value);
+          }
+          return value;
+        })
+      );
+    } catch (_) {
+      // Last-resort fallback to avoid save pipeline crashes.
+      if (data == null) return data;
+      if (typeof data === 'string' || typeof data === 'number' || typeof data === 'boolean') {
+        return data;
+      }
+      return {};
+    }
   }
 
   /**
    * Delete data
    * @param {string} key - Data key
    */
+  // =========================================================================
+  // 4) MAINTENANCE + CLEANUP
+  // =========================================================================
   async delete(key) {
     if (!this.db) await this.init();
 

@@ -184,101 +184,36 @@ module.exports = class LevelProgressBar {
   tryReactInjection() {
     const pluginInstance = this;
 
-    if (SLUtils) {
-      this._trace('REACT_INJECT', 'Using SLUtils.tryReactInjection path');
-      const ok = SLUtils.tryReactInjection({
-        patcherId: 'LevelProgressBar',
-        elementId: 'lpb-progress-container',
-        render: (React) =>
-          React.createElement(
-            'div',
-            {
-              id: 'lpb-progress-container',
-              className: `lpb-progress-container ${pluginInstance.settings.position}`,
-            },
-            pluginInstance.renderProgressBarReactElement(React)
-          ),
-        onMount: (domEl) => {
-          pluginInstance._trace('REACT_INJECT', 'onMount callback fired — element in DOM');
-          pluginInstance.progressBar = domEl;
-          pluginInstance.initializeProgressBar();
-        },
-        debugLog: (...a) => pluginInstance.debugLog(...a),
-        debugError: (...a) => pluginInstance.debugError(...a),
-      });
-
-      this._trace('REACT_INJECT', `SLUtils.tryReactInjection returned: ${ok}`);
-      if (ok) this.reactInjectionActive = true;
-      return ok;
-    }
-
-    // Fallback: inline implementation if SLUtils unavailable
-    this._trace('REACT_INJECT', 'SLUtils unavailable, using inline React injection');
-    try {
-      // Multi-strategy MainContent finder (resilient to Discord renames)
-      const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
-      let MainContent = null, _mcKey = 'Z';
-      if (typeof BdApi.Webpack.getWithKey === 'function') {
-        for (const s of _mcStrings) {
-          try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
-        }
-      }
-      if (!MainContent) {
-        for (const s of _mcStrings) {
-          try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
-        }
-      }
-      if (!MainContent) {
-        this._trace('REACT_INJECT', 'MainContent component NOT found (all strategies exhausted)');
-        return false;
-      }
-      this._trace('REACT_INJECT', `MainContent found via key "${_mcKey}"`);
-
-      const React = BdApi.React;
-      BdApi.Patcher.after('LevelProgressBar', MainContent, _mcKey, (_this, _args, returnValue) => {
-        try {
-          const bodyPath = BdApi.Utils.findInTree(
-            returnValue,
-            (prop) =>
-              prop && prop.props &&
-              (prop.props.className?.includes('app') || prop.props.id === 'app-mount' || prop.type === 'body'),
-            { walkable: ['props', 'children'] }
-          );
-          if (!bodyPath?.props) return returnValue;
-
-          const already = BdApi.Utils.findInTree(
-            returnValue,
-            (prop) => prop?.props?.id === 'lpb-progress-container',
-            { walkable: ['props', 'children'] }
-          );
-          if (already || pluginInstance.progressBar) return returnValue;
-
-          const el = React.createElement('div', {
-            id: 'lpb-progress-container',
-            className: `lpb-progress-container ${pluginInstance.settings.position}`,
-          }, pluginInstance.renderProgressBarReactElement(React));
-
-          if (Array.isArray(bodyPath.props.children)) bodyPath.props.children.unshift(el);
-          else if (bodyPath.props.children) bodyPath.props.children = [el, bodyPath.props.children];
-          else bodyPath.props.children = el;
-
-          pluginInstance.reactInjectionActive = true;
-          pluginInstance._setTrackedTimeout(() => {
-            const dom = document.getElementById('lpb-progress-container');
-            if (dom) { pluginInstance.progressBar = dom; pluginInstance.initializeProgressBar(); }
-          }, 100);
-        } catch (error) {
-          pluginInstance.debugError('REACT_INJECTION', error);
-        }
-        return returnValue;
-      });
-
-      this.reactInjectionActive = true;
-      return true;
-    } catch (error) {
-      this.debugError('REACT_INJECTION', error);
+    if (!SLUtils?.tryReactInjection) {
+      this._trace('REACT_INJECT', 'SLUtils.tryReactInjection unavailable');
       return false;
     }
+
+    this._trace('REACT_INJECT', 'Using SLUtils.tryReactInjection path');
+    const ok = SLUtils.tryReactInjection({
+      patcherId: 'LevelProgressBar',
+      elementId: 'lpb-progress-container',
+      render: (React) =>
+        React.createElement(
+          'div',
+          {
+            id: 'lpb-progress-container',
+            className: `lpb-progress-container ${pluginInstance.settings.position}`,
+          },
+          pluginInstance.renderProgressBarReactElement(React)
+        ),
+      onMount: (domEl) => {
+        pluginInstance._trace('REACT_INJECT', 'onMount callback fired — element in DOM');
+        pluginInstance.progressBar = domEl;
+        pluginInstance.initializeProgressBar();
+      },
+      debugLog: (...a) => pluginInstance.debugLog(...a),
+      debugError: (...a) => pluginInstance.debugError(...a),
+    });
+
+    this._trace('REACT_INJECT', `SLUtils.tryReactInjection returned: ${ok}`);
+    if (ok) this.reactInjectionActive = true;
+    return ok;
   }
 
   /**
@@ -561,42 +496,75 @@ module.exports = class LevelProgressBar {
   // Location: /Library/Application Support/discord/SoloLevelingBackups/LevelProgressBar.json
 
   _getFileBackupPath() {
-    try {
-      const pathModule = require('path');
-      const appSupport = pathModule.resolve(BdApi.Plugins.folder, '..', '..'); // Application Support
-      const backupDir = pathModule.join(appSupport, 'discord', 'SoloLevelingBackups');
-      require('fs').mkdirSync(backupDir, { recursive: true });
-      return pathModule.join(backupDir, 'LevelProgressBar.json');
-    } catch { return null; }
+    return SLUtils?.getSoloLevelingBackupFilePath?.('LevelProgressBar.json') || null;
   }
 
   readFileBackup() {
     const filePath = this._getFileBackupPath();
     if (!filePath) return null;
-    try {
-      const fs = require('fs');
-      if (!fs.existsSync(filePath)) return null;
-      return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-    } catch (error) {
-      this.debugError('LOAD_SETTINGS_FILE', error);
-      return null;
+    const readShared = SLUtils?.readJsonFileSafe;
+    if (typeof readShared === 'function') {
+      return readShared(filePath, (error) => this.debugError('LOAD_SETTINGS_FILE', error));
     }
+    return null;
   }
 
   writeFileBackup(data) {
     const filePath = this._getFileBackupPath();
     if (!filePath) return false;
-    try {
-      const fs = require('fs');
-      fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8', (err) => {
-        if (err) this.debugError('SAVE_SETTINGS_FILE', err);
-        else this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: filePath });
-      });
-      return true;
-    } catch (error) {
-      this.debugError('SAVE_SETTINGS_FILE', error);
-      return false;
+    const writeShared = SLUtils?.writeJsonFileSafe;
+    if (typeof writeShared !== 'function') return false;
+    return writeShared(
+      filePath,
+      data,
+      (error) => this.debugError('SAVE_SETTINGS_FILE', error),
+      () => this.debugLog('SAVE_SETTINGS', 'Saved file backup', { path: filePath })
+    );
+  }
+
+  _getCandidateTimestamp(data) {
+    if (typeof SLUtils?.getSavedTimestampFromMetadata === 'function') {
+      return SLUtils.getSavedTimestampFromMetadata(data);
     }
+    const iso = data?._metadata?.lastSave;
+    const ts = iso ? Date.parse(iso) : NaN;
+    return Number.isFinite(ts) ? ts : 0;
+  }
+
+  _appendSettingsCandidate(candidates, source, data) {
+    if (!data || typeof data !== 'object') return;
+    candidates.push({ source, data, ts: this._getCandidateTimestamp(data) });
+  }
+
+  async _loadSettingsTierCandidates() {
+    const candidates = [];
+    const tiers = [
+      { source: 'file', load: () => this.readFileBackup() },
+      {
+        source: 'indexeddb',
+        load: async () => (this.saveManager ? this.saveManager.load('settings') : null),
+      },
+      { source: 'bdapi', load: () => BdApi.Data.load('LevelProgressBar', 'settings') },
+    ];
+
+    for (const tier of tiers) {
+      try {
+        const loaded = await tier.load();
+        this._appendSettingsCandidate(candidates, tier.source, loaded);
+      } catch (error) {
+        this.debugError('LOAD_SETTINGS', error, { source: tier.source });
+      }
+    }
+
+    return candidates;
+  }
+
+  _pickBestSettingsCandidate(candidates) {
+    if (typeof SLUtils?.pickNewestSettingsCandidate === 'function') {
+      return SLUtils.pickNewestSettingsCandidate(candidates, { indexeddb: 3, file: 2, bdapi: 1 });
+    }
+    if (!Array.isArray(candidates) || candidates.length === 0) return null;
+    return candidates[0];
   }
 
   /**
@@ -607,60 +575,10 @@ module.exports = class LevelProgressBar {
   async loadSettings() {
     try {
       this.debugLog('LOAD_SETTINGS', 'Attempting to load settings from all tiers...');
+      const candidates = await this._loadSettingsTierCandidates();
+      const best = this._pickBestSettingsCandidate(candidates);
 
-      const getSavedTimestamp = (data) => {
-        const iso = data?._metadata?.lastSave;
-        const ts = iso ? Date.parse(iso) : NaN;
-        return Number.isFinite(ts) ? ts : 0;
-      };
-
-      const candidates = [];
-
-      // Tier 3: File backup (survives BD reinstall)
-      try {
-        const fileSaved = this.readFileBackup();
-        if (fileSaved && typeof fileSaved === 'object') {
-          candidates.push({ source: 'file', data: fileSaved, ts: getSavedTimestamp(fileSaved) });
-        }
-      } catch (error) {
-        this.debugError('LOAD_SETTINGS', 'File backup load failed', error);
-      }
-
-      // Tier 1: IndexedDB (survives BD reinstall)
-      if (this.saveManager) {
-        try {
-          const idbSaved = await this.saveManager.load('settings');
-          if (idbSaved && typeof idbSaved === 'object') {
-            candidates.push({ source: 'indexeddb', data: idbSaved, ts: getSavedTimestamp(idbSaved) });
-          }
-        } catch (error) {
-          this.debugError('LOAD_SETTINGS', 'IndexedDB load failed', error);
-        }
-      }
-
-      // Tier 2: BdApi.Data (wiped on BD reinstall)
-      try {
-        const bdSaved = BdApi.Data.load('LevelProgressBar', 'settings');
-        if (bdSaved && typeof bdSaved === 'object') {
-          candidates.push({ source: 'bdapi', data: bdSaved, ts: getSavedTimestamp(bdSaved) });
-        }
-      } catch (error) {
-        this.debugError('LOAD_SETTINGS', 'BdApi.Data load failed', error);
-      }
-
-      // Pick newest; tie-break by storage priority
-      const sourcePriority = { indexeddb: 3, file: 2, bdapi: 1 };
-      const best = candidates.reduce(
-        (acc, cur) => {
-          const hasNewer = cur.ts > acc.ts;
-          const isTie = cur.ts === acc.ts;
-          const hasHigherPriority = (sourcePriority[cur.source] ?? 0) >= (sourcePriority[acc.source] ?? 0);
-          return hasNewer || (isTie && hasHigherPriority) ? cur : acc;
-        },
-        { source: null, data: null, ts: 0 }
-      );
-
-      if (best.data) {
+      if (best?.data) {
         this.debugLog('LOAD_SETTINGS', `Selected settings candidate`, {
           source: best.source,
           ts: best.ts ? new Date(best.ts).toISOString() : 'none',
@@ -1445,8 +1363,30 @@ module.exports = class LevelProgressBar {
 
   _getGuildOnlineCount(guildId, guild = null) {
     if (!guildId) return 0;
-
     const countStore = this.webpackModules.GuildMemberCountStore;
+    const fromStore = this._getGuildOnlineCountFromStore(countStore, guildId);
+    if (fromStore !== null) return fromStore;
+
+    const fallbackGuild = guild || this.webpackModules.GuildStore?.getGuild?.(guildId);
+    const fromGuild = this._readOnlineCountFromObject(fallbackGuild);
+    return fromGuild !== null ? fromGuild : 0;
+  }
+
+  _readOnlineCountFromStoreMethod(countStore, methodName, guildId) {
+    const method = countStore?.[methodName];
+    if (typeof method !== 'function') return null;
+    try {
+      const result = method.call(countStore, guildId);
+      const direct = Number(result);
+      if (Number.isFinite(direct) && direct >= 0) return Math.trunc(direct);
+      return this._readOnlineCountFromObject(result);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  _getGuildOnlineCountFromStore(countStore, guildId) {
+    if (!countStore || typeof countStore !== 'object') return null;
     const methodNames = [
       'getOnlineCount',
       'getOnlineMemberCount',
@@ -1456,23 +1396,11 @@ module.exports = class LevelProgressBar {
       'getGuildCounts',
     ];
 
-    if (countStore && typeof countStore === 'object') {
-      for (const methodName of methodNames) {
-        const method = countStore[methodName];
-        if (typeof method !== 'function') continue;
-        try {
-          const result = method.call(countStore, guildId);
-          const direct = Number(result);
-          if (Number.isFinite(direct) && direct >= 0) return Math.trunc(direct);
-          const fromObject = this._readOnlineCountFromObject(result);
-          if (fromObject !== null) return fromObject;
-        } catch (_) {}
-      }
+    for (const methodName of methodNames) {
+      const parsed = this._readOnlineCountFromStoreMethod(countStore, methodName, guildId);
+      if (parsed !== null) return parsed;
     }
-
-    const fallbackGuild = guild || this.webpackModules.GuildStore?.getGuild?.(guildId);
-    const fromGuild = this._readOnlineCountFromObject(fallbackGuild);
-    return fromGuild !== null ? fromGuild : 0;
+    return null;
   }
 
   _getGuildReconCounts(guildId) {
@@ -1556,21 +1484,101 @@ module.exports = class LevelProgressBar {
   /**
    * Update progress bar with current data
    */
-  updateProgressBar() {
-    // Early returns for invalid states
-    if (!this.progressBar || !this.settings.enabled) {
-      // Trace only once to avoid spam
-      if (!this._updateSkipTraced) {
-        this._trace('UPDATE_BAR', 'Skipping — bar or enabled missing', {
-          hasBar: !!this.progressBar,
-          barInDOM: this.progressBar ? document.contains(this.progressBar) : false,
-          enabled: this.settings.enabled,
-        });
-        this._updateSkipTraced = true;
-      }
+  _shouldSkipProgressBarUpdate() {
+    if (this.progressBar && this.settings.enabled) {
+      this._updateSkipTraced = false;
+      return false;
+    }
+
+    if (!this._updateSkipTraced) {
+      this._trace('UPDATE_BAR', 'Skipping — bar or enabled missing', {
+        hasBar: !!this.progressBar,
+        barInDOM: this.progressBar ? document.contains(this.progressBar) : false,
+        enabled: this.settings.enabled,
+      });
+      this._updateSkipTraced = true;
+    }
+    return true;
+  }
+
+  _buildProgressSnapshot(soloData) {
+    const levelInfo = soloData?.levelInfo || {};
+    const currentLevel = this._toNonNegativeInt(levelInfo.level);
+    const currentXP = this._toNonNegativeInt(levelInfo.xp);
+    const xpRequired = this._toNonNegativeInt(levelInfo.xpRequired) || 1;
+    const xpPercent = Math.min((currentXP / xpRequired) * 100, 100);
+    return {
+      rank: soloData?.rank ?? 'E',
+      currentLevel,
+      currentXP,
+      xpRequired,
+      xpPercent,
+    };
+  }
+
+  _isProgressSnapshotUnchanged(snapshot, reconChanged) {
+    return (
+      this.lastLevel !== null
+      && this.lastXP !== null
+      && snapshot.currentLevel === this.lastLevel
+      && snapshot.currentXP === this.lastXP
+      && snapshot.xpRequired === (this.lastXPRequired || 0)
+      && !reconChanged
+    );
+  }
+
+  _cacheProgressSnapshot(snapshot) {
+    this.lastLevel = snapshot.currentLevel;
+    this.lastXP = snapshot.currentXP;
+    this.lastXPRequired = snapshot.xpRequired;
+  }
+
+  _updateProgressFill(xpPercent) {
+    const progressFill = this.getCachedElement('#lpb-progress-fill');
+    if (!progressFill) return;
+
+    const newScale = Math.max(0, Math.min(xpPercent / 100, 1));
+    const oldScale = parseFloat(progressFill.style.transform?.match(/scaleX\(([^)]+)\)/)?.[1] || '0');
+    const isLevelUp = newScale < oldScale - 0.1;
+
+    if (isLevelUp) {
+      progressFill.style.transition = 'none';
+      progressFill.style.transform = `scaleX(${newScale})`;
+      requestAnimationFrame(() => {
+        progressFill.style.transition = '';
+      });
       return;
     }
-    this._updateSkipTraced = false;
+
+    progressFill.style.transform = `scaleX(${newScale})`;
+    progressFill.classList.add('lpb-xp-gain');
+    this._setTrackedTimeout(() => {
+      progressFill.classList.remove('lpb-xp-gain');
+    }, 600);
+  }
+
+  _updateMilestoneMarkersIfNeeded(xpPercent) {
+    const progressTrack = this.getCachedElement('.lpb-progress-track');
+    if (!progressTrack) return;
+    const milestones = [25, 50, 75];
+    const mask = milestones.reduce(
+      (acc, milestone, index) => (xpPercent >= milestone ? acc | (1 << index) : acc),
+      0
+    );
+    if (mask === this._lastMilestoneMask) return;
+    this._lastMilestoneMask = mask;
+    this.updateMilestoneMarkers(progressTrack, xpPercent);
+  }
+
+  _syncProgressBarClasses() {
+    const bar = this.getCachedElement('.lpb-progress-bar');
+    bar?.classList.toggle('compact', this.settings.compact);
+    const shouldDisableShimmer = !this.settings.showShimmer || this.getPrefersReducedMotion();
+    bar?.classList.toggle('lpb-no-shimmer', shouldDisableShimmer);
+  }
+
+  updateProgressBar() {
+    if (this._shouldSkipProgressBarUpdate()) return;
 
     try {
       const reconChanged = this.updateReconIntelText();
@@ -1583,93 +1591,35 @@ module.exports = class LevelProgressBar {
         return;
       }
 
-      const { levelInfo, rank } = soloData;
-      const currentLevel = levelInfo.level;
-      const currentXP = levelInfo.xp;
-      const xpRequired = levelInfo.xpRequired || 1; // Prevent division by zero
-      const xpPercent = Math.min((currentXP / xpRequired) * 100, 100); // Cap at 100%
-
-      // Skip update if data hasn't changed (but allow initial update)
-      // CRITICAL: Always update if level changed, even if XP appears the same
-      // This ensures progress bar updates correctly when leveling up
-      if (
-        this.lastLevel !== null &&
-        this.lastXP !== null &&
-        currentLevel === this.lastLevel &&
-        currentXP === this.lastXP &&
-        xpRequired === (this.lastXPRequired || 0) &&
-        !reconChanged
-      ) {
-        return;
-      }
+      const snapshot = this._buildProgressSnapshot(soloData);
+      if (this._isProgressSnapshotUnchanged(snapshot, reconChanged)) return;
 
       this.debugLog('UPDATE_BAR', 'Data changed, updating bar', {
         oldLevel: this.lastLevel,
-        newLevel: currentLevel,
+        newLevel: snapshot.currentLevel,
         oldXP: this.lastXP,
-        newXP: currentXP,
+        newXP: snapshot.currentXP,
       });
 
-      this.lastLevel = currentLevel;
-      this.lastXP = currentXP;
-      this.lastXPRequired = xpRequired;
+      this._cacheProgressSnapshot(snapshot);
 
       // Update progress text (single line format matching SoloLevelingStats)
-      this.updateProgressText(rank, currentLevel, currentXP, xpRequired);
-
-      // Update progress fill animation
-      const progressFill = this.getCachedElement('#lpb-progress-fill');
-      if (progressFill) {
-        const newScale = Math.max(0, Math.min(xpPercent / 100, 1));
-
-        // Detect level-up or XP overflow: bar would animate backwards from ~100% to low%.
-        // Disable transition so it snaps instantly instead of visually "refilling".
-        const oldScale = parseFloat(progressFill.style.transform?.match(/scaleX\(([^)]+)\)/)?.[1] || '0');
-        const isLevelUp = newScale < oldScale - 0.1;
-
-        if (isLevelUp) {
-          progressFill.style.transition = 'none';
-          progressFill.style.transform = `scaleX(${newScale})`;
-          // Re-enable transition on next frame so future XP gains animate normally
-          requestAnimationFrame(() => {
-            progressFill.style.transition = '';
-          });
-        } else {
-          progressFill.style.transform = `scaleX(${newScale})`;
-          // Add XP gain animation class temporarily
-          progressFill.classList.add('lpb-xp-gain');
-          this._setTrackedTimeout(() => {
-            progressFill.classList.remove('lpb-xp-gain');
-          }, 600);
-        }
-      }
-
-      // Update milestone markers
-      const progressTrack = this.getCachedElement('.lpb-progress-track');
-      if (progressTrack) {
-        const milestones = [25, 50, 75];
-        const mask = milestones.reduce(
-          (acc, milestone, index) => (xpPercent >= milestone ? acc | (1 << index) : acc),
-          0
-        );
-        if (mask !== this._lastMilestoneMask) {
-          this._lastMilestoneMask = mask;
-          this.updateMilestoneMarkers(progressTrack, xpPercent);
-        }
-      }
-
-      // FUNCTIONAL: Update compact class using classList.toggle (NO IF-ELSE!)
-      const bar = this.getCachedElement('.lpb-progress-bar');
-      bar?.classList.toggle('compact', this.settings.compact);
-      const shouldDisableShimmer = !this.settings.showShimmer || this.getPrefersReducedMotion();
-      bar?.classList.toggle('lpb-no-shimmer', shouldDisableShimmer);
+      this.updateProgressText(
+        snapshot.rank,
+        snapshot.currentLevel,
+        snapshot.currentXP,
+        snapshot.xpRequired
+      );
+      this._updateProgressFill(snapshot.xpPercent);
+      this._updateMilestoneMarkersIfNeeded(snapshot.xpPercent);
+      this._syncProgressBarClasses();
 
       this.debugLog('UPDATE_BAR', 'Progress bar updated successfully', {
-        level: currentLevel,
-        xp: currentXP,
-        xpRequired,
-        percent: Math.round(xpPercent),
-        rank,
+        level: snapshot.currentLevel,
+        xp: snapshot.currentXP,
+        xpRequired: snapshot.xpRequired,
+        percent: Math.round(snapshot.xpPercent),
+        rank: snapshot.rank,
         showLevel: this.settings.showLevel,
         showRank: this.settings.showRank,
         showXP: this.settings.showXP,

@@ -22,6 +22,11 @@ Key subfolders:
 - history/archive-migration/
 - history/stories/
 
+## Active Surface
+
+- Quick index for current docs: `ACTIVE_DOCS.md`
+- Legacy top-level markdown docs were archived to: `history/root-archive-2026-03-03/`
+
 ## Navigation Rule
 
 - If you are changing behavior/design: start in `architecture/`.

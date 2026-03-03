@@ -6,11 +6,21 @@
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Observer + Classification
+ * 3) Styling
+ * 4) Settings
+ */
+
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
+const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
 
 module.exports = class SystemWindow {
   constructor() {
@@ -25,6 +35,7 @@ module.exports = class SystemWindow {
     this._throttleTimer = null;
     this._lastScrollerEl = null;
     this._classifyRAF = null;
+    this._started = false;
   }
 
   /* ═══════════════════════════════════════════════
@@ -32,6 +43,10 @@ module.exports = class SystemWindow {
      ═══════════════════════════════════════════════ */
 
   start() {
+    if (this._started) {
+      this.stop();
+    }
+
     this._toast = _PluginUtils?.createToastHelper?.("systemWindow") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
     this.settings = {
       ...this._defaultSettings,
@@ -47,6 +62,7 @@ module.exports = class SystemWindow {
       this._injectCSS();
       this._attachObserver();
     }
+    this._started = true;
     this._toast("SystemWindow active", "success", 2000);
   }
 
@@ -55,6 +71,7 @@ module.exports = class SystemWindow {
     this._detachObserver();
     this._cleanupClasses();
     this._currentUserId = null;
+    this._started = false;
   }
 
   /* ═══════════════════════════════════════════════
@@ -70,6 +87,9 @@ module.exports = class SystemWindow {
      ═══════════════════════════════════════════════ */
 
   _attachObserver() {
+    // Idempotent attach to prevent duplicate timers/subscriptions.
+    this._detachObserver();
+
     // Immediately find and observe the current scroller
     this._findAndObserve();
 
@@ -173,6 +193,61 @@ module.exports = class SystemWindow {
        sw-self         — message sent by current user
      ═══════════════════════════════════════════════ */
 
+  _getGroupSelfFlag(firstArticle) {
+    if (firstArticle.hasAttribute('data-sw-self')) {
+      return firstArticle.getAttribute('data-sw-self') === '1';
+    }
+    const isSelf = this._isOwnMessage(firstArticle);
+    firstArticle.setAttribute('data-sw-self', isSelf ? '1' : '0');
+    return isSelf;
+  }
+
+  _getDesiredGroupPosition(groupSize, index) {
+    if (groupSize === 1) return "sw-group-solo";
+    if (index === 0) return "sw-group-start";
+    if (index === groupSize - 1) return "sw-group-end";
+    return "sw-group-middle";
+  }
+
+  _syncPositionClass(li, desiredPos) {
+    if (li.classList.contains(desiredPos)) return;
+    li.classList.add(desiredPos);
+    for (const cls of SW_POS_CLASSES) {
+      if (cls !== desiredPos) li.classList.remove(cls);
+    }
+  }
+
+  _syncToggleClass(li, className, shouldHave) {
+    if (shouldHave) li.classList.add(className);
+    else li.classList.remove(className);
+  }
+
+  _applyGroupClasses(li, desiredPos, wantSelf, wantMentioned) {
+    const hasPos = li.classList.contains(desiredPos);
+    const hasSelf = li.classList.contains("sw-self");
+    const hasMentioned = li.classList.contains("sw-mentioned");
+
+    if (hasPos && hasSelf === wantSelf && hasMentioned === wantMentioned) return;
+
+    this._syncPositionClass(li, desiredPos);
+    this._syncToggleClass(li, "sw-self", wantSelf);
+    this._syncToggleClass(li, "sw-mentioned", wantMentioned);
+  }
+
+  _classifyGroup(group) {
+    if (!group.length) return;
+
+    const isSelf = this._getGroupSelfFlag(group[0].article);
+    const groupSize = group.length;
+
+    for (let i = 0; i < groupSize; i++) {
+      const { li, article } = group[i];
+      const desiredPos = this._getDesiredGroupPosition(groupSize, i);
+      const wantMentioned = /\bmentioned/.test(article.className);
+      this._applyGroupClasses(li, desiredPos, isSelf, wantMentioned);
+    }
+  }
+
   _classifyMessages() {
     const scroller =
       this._lastScrollerEl ||
@@ -182,100 +257,35 @@ module.exports = class SystemWindow {
     const items = scroller.querySelectorAll(':scope > li[class*="messageListItem_"]');
     if (!items.length) return;
 
-    // Build groups using Discord's groupStart_ class as boundary
-    const groups = [];
+    // Build/process groups using Discord's groupStart_ class as boundary.
+    let groupCount = 0;
     let currentGroup = [];
+    const flushGroup = () => {
+      if (!currentGroup.length) return;
+      this._classifyGroup(currentGroup);
+      groupCount++;
+      currentGroup = [];
+    };
 
     for (const li of items) {
       const article = li.querySelector(':scope > div[role="article"]');
       if (!article) {
         // Non-message element (date divider, unread bar, etc.)
-        if (currentGroup.length) {
-          groups.push(currentGroup);
-          currentGroup = [];
-        }
+        flushGroup();
         continue;
       }
 
-      const isGroupStart = /\bgroupStart/.test(article.className);
+      const isGroupStart = article.className.includes('groupStart');
 
-      if (isGroupStart && currentGroup.length) {
-        groups.push(currentGroup);
-        currentGroup = [];
-      }
+      if (isGroupStart) flushGroup();
 
       currentGroup.push({ li, article });
     }
 
-    if (currentGroup.length) groups.push(currentGroup);
-
-    // ── Non-destructive class application ──
-    // Only touch elements that actually need changes. For position
-    // swaps (e.g. solo→start when a new msg joins a group), add
-    // the new class BEFORE removing the old one so there's never
-    // a classless frame that causes a visual flash.
-
-    const SW_POS_CLASSES = ["sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end"];
-
-    for (const group of groups) {
-      // Cached _isOwnMessage: Fiber walk once per article element, ever.
-      // Subsequent runs read from the data attribute (~100x faster).
-      const firstArt = group[0].article;
-      let isSelf;
-      if (firstArt.hasAttribute('data-sw-self')) {
-        isSelf = firstArt.getAttribute('data-sw-self') === '1';
-      } else {
-        isSelf = this._isOwnMessage(firstArt);
-        firstArt.setAttribute('data-sw-self', isSelf ? '1' : '0');
-      }
-
-      for (let i = 0; i < group.length; i++) {
-        const { li, article: art } = group[i];
-
-        // Compute desired position class
-        let desiredPos;
-        if (group.length === 1) {
-          desiredPos = "sw-group-solo";
-        } else if (i === 0) {
-          desiredPos = "sw-group-start";
-        } else if (i === group.length - 1) {
-          desiredPos = "sw-group-end";
-        } else {
-          desiredPos = "sw-group-middle";
-        }
-
-        // Compute desired modifier classes
-        const wantSelf = isSelf;
-        const wantMentioned = /\bmentioned/.test(art.className);
-
-        // Skip entirely if this element already has the correct state
-        const hasPos = li.classList.contains(desiredPos);
-        const hasSelf = li.classList.contains("sw-self");
-        const hasMentioned = li.classList.contains("sw-mentioned");
-
-        if (hasPos && hasSelf === wantSelf && hasMentioned === wantMentioned) {
-          continue; // Nothing to do — skip this element entirely
-        }
-
-        // Position class: ADD first, THEN remove old — never classless
-        if (!hasPos) {
-          li.classList.add(desiredPos);
-          for (const cls of SW_POS_CLASSES) {
-            if (cls !== desiredPos) li.classList.remove(cls);
-          }
-        }
-
-        // Reconcile modifier classes (no-op if already correct)
-        if (wantSelf && !hasSelf) li.classList.add("sw-self");
-        else if (!wantSelf && hasSelf) li.classList.remove("sw-self");
-
-        if (wantMentioned && !hasMentioned) li.classList.add("sw-mentioned");
-        else if (!wantMentioned && hasMentioned) li.classList.remove("sw-mentioned");
-      }
-    }
+    flushGroup();
 
     if (this.settings.debugMode) {
-      console.log(`[SystemWindow] Classified ${items.length} messages into ${groups.length} groups`);
+      console.log(`[SystemWindow] Classified ${items.length} messages into ${groupCount} groups`);
     }
   }
 
@@ -304,6 +314,9 @@ module.exports = class SystemWindow {
       .forEach((el) =>
         el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned"),
       );
+    document
+      .querySelectorAll('div[role="article"][data-sw-self]')
+      .forEach((el) => el.removeAttribute('data-sw-self'));
   }
 
   /* ═══════════════════════════════════════════════

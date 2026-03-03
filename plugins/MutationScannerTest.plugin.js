@@ -5,6 +5,13 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Mutation Observer Engine
+ * 3) Mutation Processing
+ */
+
 module.exports = class MutationScannerTest {
   constructor() {
     this.pluginId = 'MutationScannerTest';
@@ -12,6 +19,7 @@ module.exports = class MutationScannerTest {
     this._observer = null;
     this._debounceTimer = null;
     this._cssId = this.pluginId + '-css';
+    this._isRunning = false;
 
     // --- CONFIGURATION ---
     this.debounceMs = 150; // Prevents lag from rapid DOM changes
@@ -23,25 +31,36 @@ module.exports = class MutationScannerTest {
     ];
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    // Restart-safe lifecycle: clear previous observer/timers before reattach.
+    this.stop({ silent: true });
+
     this.startObserver();
+    this._isRunning = true;
     BdApi.UI.showToast(this.pluginId + ' Mutation Scanner Active', {
       type: 'success',
     });
   }
 
-  stop() {
+  stop({ silent = false } = {}) {
     if (this._observer) {
       this._observer.disconnect();
       this._observer = null;
     }
     clearTimeout(this._debounceTimer);
+    this._debounceTimer = null;
+    this._isRunning = false;
     BdApi.DOM.removeStyle(this._cssId);
-    BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
+    if (!silent) {
+      BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
+    }
   }
 
   // =========================================================================
-  // MUTATION OBSERVER ENGINE
+  // 2) MUTATION OBSERVER ENGINE
   // Reference: https://javascript.info/mutation-observer
   //
   // Key insight from the tutorial: MutationObserver batches mutations into
@@ -50,6 +69,9 @@ module.exports = class MutationScannerTest {
   // or we will freeze the client.
   // =========================================================================
   startObserver() {
+    if (this._observer) {
+      this._observer.disconnect();
+    }
     this._observer = new MutationObserver((mutations) => {
       // Debounce: collapse rapid-fire mutations into a single processing pass
       clearTimeout(this._debounceTimer);
@@ -67,29 +89,59 @@ module.exports = class MutationScannerTest {
   }
 
   // =========================================================================
-  // MUTATION PROCESSOR
+  // 3) MUTATION PROCESSOR
   // Iterates over batched MutationRecords and checks if any addedNodes
   // match our target selectors. This is the safe, performant pattern.
   // =========================================================================
+  _getCombinedWatchSelector() {
+    const joined = this.watchSelectors.join(',');
+    if (joined === this._combinedWatchSelectorRaw) return this._combinedWatchSelector;
+    this._combinedWatchSelectorRaw = joined;
+    this._combinedWatchSelector = joined || null;
+    return this._combinedWatchSelector;
+  }
+
+  _resolveMatchedSelector(element) {
+    for (const selector of this.watchSelectors) {
+      if (element.matches && element.matches(selector)) return selector;
+    }
+    return null;
+  }
+
+  _notifyIfMatch(element, seen) {
+    if (seen.has(element)) return;
+    const selector = this._resolveMatchedSelector(element);
+    if (!selector) return;
+    seen.add(element);
+    this.onTargetFound(element, selector);
+  }
+
+  _processAddedElement(node, combinedSelector, seen) {
+    if (node.matches && node.matches(combinedSelector)) {
+      this._notifyIfMatch(node, seen);
+    }
+
+    if (!node.querySelectorAll) return;
+    const matches = node.querySelectorAll(combinedSelector);
+    for (const match of matches) {
+      this._notifyIfMatch(match, seen);
+    }
+  }
+
   processMutations(mutations) {
+    if (!this._isRunning) return;
+    const combinedSelector = this._getCombinedWatchSelector();
+    if (!combinedSelector) return;
+
+    const seen = new WeakSet();
+
     for (const mutation of mutations) {
       if (mutation.type !== 'childList') continue;
 
       for (const node of mutation.addedNodes) {
         // Skip text nodes
         if (node.nodeType !== Node.ELEMENT_NODE) continue;
-
-        for (const selector of this.watchSelectors) {
-          // Check if the added node itself matches
-          if (node.matches && node.matches(selector)) {
-            this.onTargetFound(node, selector);
-          }
-          // Check if any descendant of the added node matches
-          if (node.querySelectorAll) {
-            const matches = node.querySelectorAll(selector);
-            matches.forEach((match) => this.onTargetFound(match, selector));
-          }
-        }
+        this._processAddedElement(node, combinedSelector, seen);
       }
     }
   }

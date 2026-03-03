@@ -21,6 +21,13 @@
  * { childList: true, subtree: true } — fired on every DOM change app-wide.
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Scroller Discovery + Wheel Engine
+ * 2) Plugin Lifecycle
+ * 3) React Patcher + Fallback Mount
+ */
+
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
@@ -36,6 +43,10 @@ const _scrollerCache = {};
 
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
+// ============================================================================
+// 1) SCROLLER DISCOVERY + WHEEL ENGINE
+// ============================================================================
 
 function findHSLScroller() {
   if (_PluginUtils) {
@@ -116,20 +127,47 @@ module.exports = class HSLWheelBridge {
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
+    this._fallbackPoll = null;
+    this._toast = (msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type });
+    this._warnedReactFallback = false;
   }
 
+  _cleanupRuntime() {
+    if (this._fallbackTimer) {
+      clearTimeout(this._fallbackTimer);
+      this._fallbackTimer = null;
+    }
+    if (this._fallbackPoll) {
+      clearInterval(this._fallbackPoll);
+      this._fallbackPoll = null;
+    }
+    if (this._fallbackEngine) {
+      this._fallbackEngine.unmount();
+      this._fallbackEngine = null;
+    }
+    this._engineMounted = false;
+    BdApi.Patcher.unpatchAll(this._patcherId);
+  }
+
+  // =========================================================================
+  // 2) PLUGIN LIFECYCLE
+  // =========================================================================
   start() {
     this._toast = _PluginUtils?.createToastHelper?.("hSLWheelBridge") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._cleanupRuntime();
     this._isStopped = false;
     this._engineMounted = false;
-    this._fallbackEngine = null;
+    this._warnedReactFallback = false;
     this._installReactPatcher();
 
     // Fallback: if React patcher does not mount within 3s, mount engine directly
     this._fallbackTimer = setTimeout(() => {
       this._fallbackTimer = null;
       if (!this._isStopped && !this._engineMounted) {
-        console.warn('[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
+        if (!this._warnedReactFallback) {
+          this._warnedReactFallback = true;
+          console.warn('[HSLWheelBridge] React patcher did not mount — using direct DOM fallback');
+        }
         const engine = new WheelBridgeEngine();
         this._fallbackEngine = engine;
         this._engineMounted = true;
@@ -147,23 +185,13 @@ module.exports = class HSLWheelBridge {
 
   stop() {
     this._isStopped = true;
-    if (this._fallbackTimer) {
-      clearTimeout(this._fallbackTimer);
-      this._fallbackTimer = null;
-    }
-    if (this._fallbackPoll) {
-      clearInterval(this._fallbackPoll);
-      this._fallbackPoll = null;
-    }
-    if (this._fallbackEngine) {
-      this._fallbackEngine.unmount();
-      this._fallbackEngine = null;
-    }
-    this._engineMounted = false;
-    BdApi.Patcher.unpatchAll(this._patcherId);
+    this._cleanupRuntime();
     this._toast('HSLWheelBridge stopped', "info", 2000);
   }
 
+  // =========================================================================
+  // 3) REACT PATCHER + FALLBACK MOUNT
+  // =========================================================================
   // ── React Patcher — MainContent.Z ─────────────────────────────────────────
 
   _installReactPatcher() {
@@ -174,87 +202,23 @@ module.exports = class HSLWheelBridge {
       ReactUtils = null;
     }
 
-    if (ReactUtils) {
-      const pluginInstance = this;
-      const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
-        const component = React.createElement(pluginInstance._WheelController, {
-          key: 'sl-wheel-bridge',
-          pluginInstance,
-        });
-        ReactUtils.injectReactComponent(appNode, 'sl-wheel-bridge-root', component, returnValue);
-      });
-      if (!ok) {
-        console.error('[HSLWheelBridge] MainContent module not found — plugin inactive');
-      }
-      return;
-    }
-
-    // Inline fallback if BetterDiscordReactUtils.js is not available
-    // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
-    let MainContent = null, _mcKey = 'Z';
-    if (typeof BdApi.Webpack.getWithKey === 'function') {
-      for (const s of _mcStrings) {
-        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      for (const s of _mcStrings) {
-        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      console.error('[HSLWheelBridge] MainContent module not found (all strategies exhausted) — using DOM fallback');
+    if (!ReactUtils?.patchReactMainContent || !ReactUtils?.injectReactComponent) {
+      console.warn('[HSLWheelBridge] ReactUtils unavailable — waiting for DOM fallback');
       return;
     }
 
     const pluginInstance = this;
-
-    BdApi.Patcher.after(this._patcherId, MainContent, _mcKey, (_this, _args, returnValue) => {
-      try {
-        if (pluginInstance._isStopped) return returnValue;
-
-        const appNode = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) =>
-            prop && prop.props &&
-            (prop.props.className?.includes('app') ||
-              prop.props.id === 'app-mount' ||
-              prop.type === 'body'),
-          { walkable: ['props', 'children'] }
-        );
-
-        if (!appNode || !appNode.props) return returnValue;
-
-        const already = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) => prop && prop.props && prop.props.id === 'sl-wheel-bridge-root',
-          { walkable: ['props', 'children'] }
-        );
-        if (already) return returnValue;
-
-        const React = BdApi.React;
-        const controller = React.createElement(pluginInstance._WheelController, {
-          key: 'sl-wheel-bridge',
-          pluginInstance,
-        });
-        const wrapper = React.createElement('div', {
-          id: 'sl-wheel-bridge-root',
-          style: { display: 'contents' },
-        }, controller);
-
-        if (Array.isArray(appNode.props.children)) {
-          appNode.props.children.push(wrapper);
-        } else if (appNode.props.children) {
-          appNode.props.children = [appNode.props.children, wrapper];
-        } else {
-          appNode.props.children = wrapper;
-        }
-      } catch (e) {
-        console.error('[HSLWheelBridge] React patcher error:', e);
-      }
-      return returnValue;
+    const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+      const component = React.createElement(pluginInstance._WheelController, {
+        key: 'sl-wheel-bridge',
+        pluginInstance,
+      });
+      ReactUtils.injectReactComponent(appNode, 'sl-wheel-bridge-root', component, returnValue);
     });
+
+    if (!ok) {
+      console.error('[HSLWheelBridge] MainContent module not found — waiting for DOM fallback');
+    }
   }
 
   // ── WheelController — React Functional Component ──────────────────────────

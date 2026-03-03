@@ -5,11 +5,18 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Keydown Routing
+ * 3) Action Handlers
+ */
+
 module.exports = class HotkeysTest {
   constructor() {
     this.pluginId = 'HotkeysTest';
     this.version = '1.0.0';
-    this._controller = new AbortController();
+    this._controller = null;
 
     // Bind the keydown handler
     this.onKeyDown = this.onKeyDown.bind(this);
@@ -48,7 +55,15 @@ module.exports = class HotkeysTest {
     ];
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = new AbortController();
+
     document.addEventListener('keydown', this.onKeyDown, {
       signal: this._controller.signal,
     });
@@ -56,12 +71,15 @@ module.exports = class HotkeysTest {
   }
 
   stop() {
-    this._controller.abort();
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = null;
     BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
   }
 
   // =========================================================================
-  // KEYDOWN ROUTER
+  // 2) KEYDOWN ROUTER
   // Reference: https://javascript.info/keyboard-events
   //
   // Key design decisions from the tutorial:
@@ -75,21 +93,12 @@ module.exports = class HotkeysTest {
     if (event.repeat) return;
 
     // Don't intercept keyboard input when the user is typing in a text field
-    const activeTag = document.activeElement?.tagName;
-    if (
-      activeTag === 'INPUT' ||
-      activeTag === 'TEXTAREA' ||
-      document.activeElement?.isContentEditable
-    ) {
+    if (this.isTextInputFocused(document.activeElement)) {
       return;
     }
 
     for (const hotkey of this.hotkeys) {
-      const ctrlMatch = hotkey.ctrl === (event.ctrlKey || event.metaKey);
-      const shiftMatch = hotkey.shift === event.shiftKey;
-      const altMatch = hotkey.alt === event.altKey;
-
-      if (event.code === hotkey.code && ctrlMatch && shiftMatch && altMatch) {
+      if (this.matchesHotkey(event, hotkey)) {
         event.preventDefault();
         event.stopPropagation();
 
@@ -102,7 +111,32 @@ module.exports = class HotkeysTest {
   }
 
   // =========================================================================
-  // HOTKEY ACTION HANDLERS
+  // HOTKEY MATCH HELPERS
+  // =========================================================================
+  matchesHotkey(event, hotkey) {
+    const primaryRequired = Boolean(hotkey.ctrl || hotkey.meta);
+    const primaryPressed = Boolean(event.ctrlKey || event.metaKey);
+
+    if (event.code !== hotkey.code) return false;
+    if (primaryRequired !== primaryPressed) return false;
+    if (hotkey.shift !== event.shiftKey) return false;
+    if (hotkey.alt !== event.altKey) return false;
+    return true;
+  }
+
+  isTextInputFocused(activeElement) {
+    if (!activeElement) return false;
+    if (activeElement.isContentEditable) return true;
+
+    const tag = activeElement.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return true;
+    if (activeElement.closest && activeElement.closest('[role="textbox"]')) return true;
+
+    return false;
+  }
+
+  // =========================================================================
+  // 3) HOTKEY ACTION HANDLERS
   // =========================================================================
 
   // Ctrl+S

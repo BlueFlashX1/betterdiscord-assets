@@ -5,6 +5,45 @@
  */
 
 /**
+ * TABLE OF CONTENTS
+ * 1) Module Discovery Helpers
+ * 2) React Main Content Patch Helpers
+ * 3) React Injection Helpers
+ * 4) ReactDOM createRoot Discovery
+ */
+
+let _cachedMainContentResult = null;
+let _mainContentMissingWarned = false;
+let _lastPatcherErrorAt = 0;
+
+function _isValidMainContentTuple(result) {
+  if (!Array.isArray(result) || result.length !== 2) return false;
+  const [mod, key] = result;
+  return !!mod && typeof key === 'string' && typeof mod[key] === 'function';
+}
+
+function _logMainContentMissingOnce() {
+  if (_mainContentMissingWarned) return;
+  _mainContentMissingWarned = true;
+  console.warn(
+    '[BetterDiscordReactUtils] MainContent module not found — all strategies exhausted. Plugins will use DOM fallback.'
+  );
+}
+
+function _logPatcherErrorRateLimited(error) {
+  const now = Date.now();
+  if (now - _lastPatcherErrorAt < 5000) return;
+  _lastPatcherErrorAt = now;
+  console.error('[BetterDiscordReactUtils] Patcher error:', error);
+}
+
+/**
+ * ============================================================================
+ * 1) MODULE DISCOVERY HELPERS
+ * ============================================================================
+ */
+
+/**
  * Find the app-mount node inside a React returnValue tree.
  * @param {object} returnValue - React render return value
  * @returns {object|null} The app mount node, or null
@@ -28,43 +67,71 @@ function findAppMountNode(returnValue) {
  */
 const _MC_STRINGS = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
 
+function _resolveFunctionExportKey(mod) {
+  if (!mod) return null;
+  for (const key of ['Z', 'ZP', 'default']) {
+    if (typeof mod[key] === 'function') return key;
+  }
+  return Object.keys(mod).find((key) => typeof mod[key] === 'function') || null;
+}
+
+function _findMainContentByGetWithKey(Webpack, strings) {
+  if (typeof Webpack?.getWithKey !== 'function') return null;
+  for (const str of strings) {
+    try {
+      const result = Webpack.getWithKey(
+        (m) => typeof m === 'function' && m.toString().includes(str)
+      );
+      if (_isValidMainContentTuple(result)) return result;
+    } catch (_) {}
+  }
+  return null;
+}
+
+function _findMainContentByGetByStrings(Webpack, strings) {
+  for (const str of strings) {
+    try {
+      const mod = Webpack.getByStrings(str, { defaultExport: false });
+      const key = _resolveFunctionExportKey(mod);
+      if (key) return [mod, key];
+    } catch (_) {}
+  }
+  return null;
+}
+
 /**
  * Find the MainContent webpack module (Discord's main app container).
  * Uses multiple strategies for resilience against Discord internal renames.
+ * Results are cached to avoid repeating costly Webpack scans.
  * @returns {[object, string]|null} [moduleObject, exportKey] tuple, or null
  */
-function findMainContentModule() {
-  const { Webpack } = BdApi;
-
-  // Strategy 1: getWithKey (BD 1.13+) — auto-resolves export key
-  if (typeof Webpack.getWithKey === 'function') {
-    for (const str of _MC_STRINGS) {
-      try {
-        const result = Webpack.getWithKey(
-          m => typeof m === 'function' && m.toString().includes(str)
-        );
-        if (result && result[0]) return result;
-      } catch (_) {}
-    }
+function findMainContentModule(forceRefresh = false) {
+  if (!forceRefresh && _isValidMainContentTuple(_cachedMainContentResult)) {
+    return _cachedMainContentResult;
   }
 
-  // Strategy 2: getByStrings + dynamic key detection (legacy BD / fallback)
-  for (const str of _MC_STRINGS) {
-    try {
-      const mod = Webpack.getByStrings(str, { defaultExport: false });
-      if (mod) {
-        // Try common SWC-mangled export keys, then any function export
-        for (const k of ['Z', 'ZP', 'default']) {
-          if (typeof mod[k] === 'function') return [mod, k];
-        }
-        const key = Object.keys(mod).find(k => typeof mod[k] === 'function');
-        if (key) return [mod, key];
-      }
-    } catch (_) {}
+  const { Webpack } = BdApi;
+
+  const withKeyResult = _findMainContentByGetWithKey(Webpack, _MC_STRINGS);
+  if (_isValidMainContentTuple(withKeyResult)) {
+    _cachedMainContentResult = withKeyResult;
+    return withKeyResult;
+  }
+
+  const byStringsResult = _findMainContentByGetByStrings(Webpack, _MC_STRINGS);
+  if (_isValidMainContentTuple(byStringsResult)) {
+    _cachedMainContentResult = byStringsResult;
+    return byStringsResult;
   }
 
   return null;
 }
+
+/**
+ * ============================================================================
+ * 2) REACT MAIN CONTENT PATCH HELPERS
+ * ============================================================================
+ */
 
 /**
  * Patch Discord's MainContent React component to inject custom UI.
@@ -74,9 +141,13 @@ function findMainContentModule() {
  * @returns {boolean} Whether patching succeeded
  */
 function patchReactMainContent(pluginInstance, patcherId, renderCallback) {
-  const result = findMainContentModule();
+  let result = findMainContentModule();
+  if (!_isValidMainContentTuple(result)) {
+    result = findMainContentModule(true);
+  }
+
   if (!result) {
-    console.warn('[BetterDiscordReactUtils] MainContent module not found — all strategies exhausted. Plugins will use DOM fallback.');
+    _logMainContentMissingOnce();
     return false;
   }
 
@@ -91,13 +162,19 @@ function patchReactMainContent(pluginInstance, patcherId, renderCallback) {
 
       renderCallback(BdApi.React, appNode, returnValue);
     } catch (e) {
-      console.error('[BetterDiscordReactUtils] Patcher error:', e);
+      _logPatcherErrorRateLimited(e);
     }
     return returnValue;
   });
 
   return true;
 }
+
+/**
+ * ============================================================================
+ * 3) REACT INJECTION HELPERS
+ * ============================================================================
+ */
 
 /**
  * Inject a React component into an appNode's children with dedup protection.
@@ -132,6 +209,12 @@ function injectReactComponent(appNode, componentId, component, searchRoot) {
 
   return true;
 }
+
+/**
+ * ============================================================================
+ * 4) REACTDOM CREATEROOT DISCOVERY
+ * ============================================================================
+ */
 
 /**
  * Get React 18 createRoot with webpack fallbacks.

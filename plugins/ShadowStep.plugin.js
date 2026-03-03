@@ -34,6 +34,9 @@ const DEFAULT_SETTINGS = {
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
+let _SLUtils;
+try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
+
 const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
   matchesHotkey: () => false,
@@ -1365,44 +1368,13 @@ module.exports = class ShadowStep {
 };
 
 const _loadShadowPortalCore = () => {
-  try {
-    const path = require("path");
-    const fs = require("fs");
-    const candidates = [];
-    if (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === "string") {
-      candidates.push(path.join(BdApi.Plugins.folder, "ShadowPortalCore.js"));
-    }
-    candidates.push("./ShadowPortalCore.js");
-
-    for (const candidate of candidates) {
-      try {
-        const resolved = require.resolve(candidate);
-        if (require.cache[resolved]) delete require.cache[resolved];
-        const mod = require(resolved);
-        if (mod?.applyPortalCoreToClass) return mod;
-      } catch (_) {}
-      try {
-        const absolute = path.isAbsolute(candidate)
-          ? candidate
-          : path.join(BdApi?.Plugins?.folder || "", candidate.replace(/^\.\//, ""));
-        if (!absolute || !fs.existsSync(absolute)) continue;
-        const source = fs.readFileSync(absolute, "utf8");
-        const moduleObj = { exports: {} };
-        const factory = new Function(
-          "module",
-          "exports",
-          "require",
-          "window",
-          "BdApi",
-          `${source}\nreturn module.exports || exports || (window && window.ShadowPortalCore) || null;`
-        );
-        const loaded = factory(moduleObj, moduleObj.exports, require, typeof window !== "undefined" ? window : null, BdApi);
-        const mod = loaded || moduleObj.exports || (typeof window !== "undefined" ? window.ShadowPortalCore : null);
-        if (mod?.applyPortalCoreToClass) return mod;
-      } catch (_) {}
-    }
-  } catch (_) {}
-  return typeof window !== "undefined" ? window.ShadowPortalCore || null : null;
+  if (typeof _SLUtils?.loadShadowPortalCore === "function") {
+    const mod = _SLUtils.loadShadowPortalCore();
+    if (mod?.applyPortalCoreToClass) return mod;
+  }
+  return typeof window !== "undefined" && window.ShadowPortalCore?.applyPortalCoreToClass
+    ? window.ShadowPortalCore
+    : null;
 };
 
 const SHADOW_PORTAL_CONFIG = {

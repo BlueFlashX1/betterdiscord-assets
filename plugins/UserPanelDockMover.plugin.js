@@ -5,7 +5,47 @@
  * @author BlueFlashX1
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Styling
+ * 3) Dock/Panel Sync Loop
+ */
+
+/** Load a local shared module from BD's plugins folder. */
+const _bdLoad = (f) => {
+  try {
+    const mod = { exports: {} };
+    const fs = require("fs");
+    const path = require("path");
+    const src = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
+    new Function("module", "exports", src)(mod, mod.exports);
+    return mod.exports && (typeof mod.exports === "function" || Object.keys(mod.exports).length)
+      ? mod.exports
+      : null;
+  } catch (_) {
+    return null;
+  }
+};
+
+let _PluginUtils = null;
+try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+
 module.exports = class UserPanelDockMover {
+  constructor() {
+    this.pluginId = "UserPanelDockMover";
+    this.version = "3.7.0";
+    this.instanceKey = "__UserPanelDockMoverInstance";
+    this.panelSelector = "section[aria-label='User status and settings']";
+    this.dockSelector = "nav[aria-label='Servers sidebar']";
+    this.panel = null;
+    this.dock = null;
+    this.pollInterval = null;
+    this.isPositioned = false;
+    this._pollSlowed = false;
+    this._layoutUnsub = null;
+    this.debug = false;
+  }
 
   _toast(message, type = "info", timeout = null) {
     if (this._toastEngine) {
@@ -15,7 +55,14 @@ module.exports = class UserPanelDockMover {
     }
   }
 
+  _logDebug(...args) {
+    if (!this.debug) return;
+    console.debug("[UserPanelDockMover]", ...args);
+  }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
     // Toast engine discovery (unified toast system)
     this._toastEngine = (() => {
@@ -24,26 +71,17 @@ module.exports = class UserPanelDockMover {
         return p?.instance?.toastEngineVersion >= 2 ? p.instance : null;
       } catch { return null; }
     })();
-    const instanceKey = "__UserPanelDockMoverInstance";
+    this.stop({ silent: true });
+
     try {
-      const prev = window[instanceKey];
+      const prev = window[this.instanceKey];
       if (prev && prev !== this && typeof prev.stop === "function") prev.stop();
-      window[instanceKey] = this;
+      window[this.instanceKey] = this;
     } catch (error) {
-      console.warn("[UserPanelDockMover] Failed to register singleton instance:", error);
+      this._logDebug("Failed to register singleton instance", error);
     }
 
-    this.instanceKey = instanceKey;
-    this.pluginId = "UserPanelDockMover";
-    this.version = "3.7.0";
-
-    this.panelSelector = "section[aria-label='User status and settings']";
-    this.dockSelector = "nav[aria-label='Servers sidebar']";
-
-    this.panel = null;
-    this.dock = null;
-    this.pollInterval = null;
-    this.isPositioned = false;
+    this._pollSlowed = false;
 
     // NOTE: Dock-hover bridge code was removed in v3.7.0.
     // HSLDockAutoHide v4.0.0+ handles user panel hover internally via
@@ -61,15 +99,31 @@ module.exports = class UserPanelDockMover {
 
     // Initial sync + recurring poll to find elements after React renders
     this.trySetup();
-    this.pollInterval = setInterval(() => this.trySetup(), 900);
+    this.pollInterval = setInterval(() => {
+      if (document.hidden) return;
+      this.trySetup();
+    }, 2000);
+
+    // PERF: shared observer bus reduces redundant independent MutationObservers.
+    if (_PluginUtils?.LayoutObserverBus) {
+      this._layoutUnsub = _PluginUtils.LayoutObserverBus.subscribe(
+        `${this.pluginId}:dock-sync`,
+        () => this.trySetup(),
+        500
+      );
+    }
 
     this._toast("UserPanelDockMover v3.7.0 active", "success", 2200);
   }
 
-  stop() {
+  stop({ silent = false } = {}) {
     if (this.pollInterval) {
       clearInterval(this.pollInterval);
       this.pollInterval = null;
+    }
+    if (this._layoutUnsub) {
+      this._layoutUnsub();
+      this._layoutUnsub = null;
     }
 
     // Remove positioning class
@@ -100,12 +154,17 @@ module.exports = class UserPanelDockMover {
     try {
       delete window[this.instanceKey];
     } catch (error) {
-      console.warn("[UserPanelDockMover] Failed to clear singleton instance key:", error);
+      this._logDebug("Failed to clear singleton instance key", error);
     }
 
-    this._toast("UserPanelDockMover stopped", "info", 2200);
+    if (!silent) {
+      this._toast("UserPanelDockMover stopped", "info", 2200);
+    }
   }
 
+  // =========================================================================
+  // 2) STYLING
+  // =========================================================================
   injectStyles() {
     // HSLDockAutoHide already injects the identical .sl-userpanel-docked CSS
     // ruleset. Skip duplicate injection when it's active to avoid redundancy.
@@ -289,6 +348,9 @@ module.exports = class UserPanelDockMover {
     if (BdApi?.DOM?.addStyle) BdApi.DOM.addStyle(this.pluginId, css);
   }
 
+  // =========================================================================
+  // 3) DOCK/PANEL SYNC LOOP
+  // =========================================================================
   trySetup() {
     const panel = document.querySelector(this.panelSelector);
     const dock = document.querySelector(this.dockSelector);

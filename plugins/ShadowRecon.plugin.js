@@ -367,38 +367,7 @@ module.exports = class ShadowRecon {
           if (!user?.id) return;
 
           const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
-          const items = [];
-
-          if (this.settings.showStaffIntelInContextMenu) {
-            const staff = this.getStaffIntel(user.id, currentGuildId);
-            if (staff) {
-              const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId);
-              items.push(BdApi.ContextMenu.buildItem({
-                type: "text",
-                label: `Shadow Recon: ${staff.label}`,
-                disabled: true,
-              }));
-              items.push(BdApi.ContextMenu.buildItem({
-                type: "text",
-                label: detailedUnlocked
-                  ? "Shadow Recon: Open Staff Dossier"
-                  : "Shadow Recon: Staff Dossier (recon guild)",
-                action: detailedUnlocked
-                  ? () => this.openStaffIntelModal(user.id, currentGuildId)
-                  : undefined,
-                disabled: !detailedUnlocked,
-              }));
-            }
-          }
-
-          if (this.settings.showMarkedTargetIntelInContext && this._isMarkedTarget(user.id)) {
-            const deployment = this._getShadowDeploymentMap().get(String(user.id));
-            items.push(BdApi.ContextMenu.buildItem({
-              type: "text",
-              label: `Shadow Recon: Target Intel${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
-              action: () => this.openUserIntelModal(user.id, currentGuildId),
-            }));
-          }
+          const items = this._buildUserContextReconItems(user.id, currentGuildId);
 
           if (items.length > 0) this._appendContextItems(tree, items);
         } catch (err) {
@@ -408,6 +377,52 @@ module.exports = class ShadowRecon {
     } catch (err) {
       console.error(`[${PLUGIN_NAME}] Failed to patch user-context`, err);
     }
+  }
+
+  _buildStaffContextItems(userId, currentGuildId) {
+    if (!this.settings.showStaffIntelInContextMenu) return [];
+    const staff = this.getStaffIntel(userId, currentGuildId);
+    if (!staff) return [];
+
+    const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId);
+    return [
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: `Shadow Recon: ${staff.label}`,
+        disabled: true,
+      }),
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: detailedUnlocked
+          ? "Shadow Recon: Open Staff Dossier"
+          : "Shadow Recon: Staff Dossier (recon guild)",
+        action: detailedUnlocked
+          ? () => this.openStaffIntelModal(userId, currentGuildId)
+          : undefined,
+        disabled: !detailedUnlocked,
+      }),
+    ];
+  }
+
+  _buildMarkedTargetContextItems(userId, currentGuildId) {
+    if (!this.settings.showMarkedTargetIntelInContext) return [];
+    if (!this._isMarkedTarget(userId)) return [];
+
+    const deployment = this._getShadowDeploymentMap().get(String(userId));
+    return [
+      BdApi.ContextMenu.buildItem({
+        type: "text",
+        label: `Shadow Recon: Target Intel${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
+        action: () => this.openUserIntelModal(userId, currentGuildId),
+      }),
+    ];
+  }
+
+  _buildUserContextReconItems(userId, currentGuildId) {
+    return [
+      ...this._buildStaffContextItems(userId, currentGuildId),
+      ...this._buildMarkedTargetContextItems(userId, currentGuildId),
+    ];
   }
 
   unpatchContextMenus() {
@@ -453,18 +468,14 @@ module.exports = class ShadowRecon {
     ];
   }
 
-  _resolveContextChildrenArray(node, depth = 0, seen = null) {
-    if (!node || depth > 7) return null;
-    if (!seen) seen = new Set();
-    if (typeof node !== "object") return null;
-    if (seen.has(node)) return null;
-    seen.add(node);
-
+  _getDirectContextChildrenArray(node) {
     if (Array.isArray(node)) return node;
-
     if (Array.isArray(node?.props?.children)) return node.props.children;
     if (Array.isArray(node?.children)) return node.children;
+    return null;
+  }
 
+  _collectContextChildrenCandidates(node) {
     const candidates = [];
     if (node?.props?.children) candidates.push(node.props.children);
     if (node?.children) candidates.push(node.children);
@@ -475,8 +486,20 @@ module.exports = class ShadowRecon {
         if (typeof value === "object") candidates.push(value);
       }
     }
+    return candidates;
+  }
 
-    for (const candidate of candidates) {
+  _resolveContextChildrenArray(node, depth = 0, seen = null) {
+    if (!node || depth > 7) return null;
+    if (!seen) seen = new Set();
+    if (typeof node !== "object") return null;
+    if (seen.has(node)) return null;
+    seen.add(node);
+
+    const direct = this._getDirectContextChildrenArray(node);
+    if (direct) return direct;
+
+    for (const candidate of this._collectContextChildrenCandidates(node)) {
       const found = this._resolveContextChildrenArray(candidate, depth + 1, seen);
       if (found) return found;
     }
@@ -624,32 +647,32 @@ module.exports = class ShadowRecon {
     if (banner) banner.remove();
   }
 
-  _getGuildOnlineCount(guildId, guild = null) {
-    if (!guildId) return 0;
+  _safeNonNegativeInt(value) {
+    const n = Number(value);
+    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+  }
 
-    const toSafeInt = (value) => {
-      const n = Number(value);
-      return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
-    };
+  _readOnlineCountFromObject(obj) {
+    if (!obj || typeof obj !== "object") return null;
+    const keys = [
+      "online",
+      "onlineCount",
+      "presence",
+      "presenceCount",
+      "approximatePresenceCount",
+      "approximate_presence_count",
+    ];
+    for (const key of keys) {
+      const parsed = this._safeNonNegativeInt(obj[key]);
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  }
 
-    const fromObject = (obj) => {
-      if (!obj || typeof obj !== "object") return null;
-      const keys = [
-        "online",
-        "onlineCount",
-        "presence",
-        "presenceCount",
-        "approximatePresenceCount",
-        "approximate_presence_count",
-      ];
-      for (const key of keys) {
-        const parsed = toSafeInt(obj[key]);
-        if (parsed !== null) return parsed;
-      }
-      return null;
-    };
-
+  _readOnlineCountFromStore(guildId) {
     const countStore = this._GuildMemberCountStore;
+    if (!countStore || typeof countStore !== "object") return null;
+
     const storeMethods = [
       "getOnlineCount",
       "getOnlineMemberCount",
@@ -658,24 +681,29 @@ module.exports = class ShadowRecon {
       "getCounts",
       "getGuildCounts",
     ];
-
-    if (countStore && typeof countStore === "object") {
-      for (const methodName of storeMethods) {
-        const fn = countStore?.[methodName];
-        if (typeof fn !== "function") continue;
-        try {
-          const result = fn.call(countStore, guildId);
-          const direct = toSafeInt(result);
-          if (direct !== null) return direct;
-          const nested = fromObject(result);
-          if (nested !== null) return nested;
-        } catch (_) {}
-      }
+    for (const methodName of storeMethods) {
+      const fn = countStore?.[methodName];
+      if (typeof fn !== "function") continue;
+      try {
+        const result = fn.call(countStore, guildId);
+        const direct = this._safeNonNegativeInt(result);
+        if (direct !== null) return direct;
+        const nested = this._readOnlineCountFromObject(result);
+        if (nested !== null) return nested;
+      } catch (_) {}
     }
+    return null;
+  }
+
+  _getGuildOnlineCount(guildId, guild = null) {
+    if (!guildId) return 0;
+
+    const fromStore = this._readOnlineCountFromStore(guildId);
+    if (fromStore !== null) return fromStore;
 
     const activeGuild = guild || this._GuildStore?.getGuild?.(guildId);
-    const directGuildCount = fromObject(activeGuild);
-    if (directGuildCount !== null) return directGuildCount;
+    const fromGuild = this._readOnlineCountFromObject(activeGuild);
+    if (fromGuild !== null) return fromGuild;
 
     return 0;
   }
@@ -790,40 +818,72 @@ module.exports = class ShadowRecon {
     ]));
   }
 
-  getGuildIntel(guildId) {
-    const guild = this._GuildStore?.getGuild?.(guildId);
-    const owner = guild ? this._UserStore?.getUser?.(guild.ownerId) : null;
+  _getGuildOwner(guild) {
+    if (!guild) return null;
+    return this._UserStore?.getUser?.(guild.ownerId) || null;
+  }
 
-    const createdAt = this._safeDateFromSnowflake(guild?.id);
-    const joinedAt = guild?.joinedAt ? new Date(guild.joinedAt).toLocaleString() : "Unknown";
+  _getGuildOwnerName(owner, guild) {
+    if (owner) return owner.globalName || owner.username || owner.id;
+    return guild?.ownerId || "Unknown";
+  }
 
-    const channelCount = this._countGuildChannels(guildId);
-    const roleCount = guild?.roles ? Object.keys(guild.roles).length : 0;
+  _getGuildJoinedAtLabel(guild) {
+    return guild?.joinedAt ? new Date(guild.joinedAt).toLocaleString() : "Unknown";
+  }
 
-    const memberCount = this._GuildMemberCountStore?.getMemberCount?.(guildId)
+  _getGuildRoleCount(guild) {
+    return guild?.roles ? Object.keys(guild.roles).length : 0;
+  }
+
+  _getGuildMemberCount(guildId, guild) {
+    return this._GuildMemberCountStore?.getMemberCount?.(guildId)
       || guild?.memberCount
       || guild?.member_count
       || 0;
+  }
+
+  _getGuildFeaturesLabel(guild) {
+    const features = guild?.features;
+    if (!Array.isArray(features) || features.length === 0) return "None";
+    return features.slice(0, 8).join(", ");
+  }
+
+  _getGuildPreferredLocale(guild) {
+    return guild?.preferredLocale || guild?.preferred_locale || "";
+  }
+
+  getGuildIntel(guildId) {
+    const guild = this._GuildStore?.getGuild?.(guildId);
+    const owner = this._getGuildOwner(guild);
+
+    const createdAt = this._safeDateFromSnowflake(guild?.id);
+    const joinedAt = this._getGuildJoinedAtLabel(guild);
+
+    const channelCount = this._countGuildChannels(guildId);
+    const roleCount = this._getGuildRoleCount(guild);
+
+    const memberCount = this._getGuildMemberCount(guildId, guild);
     const onlineCount = this._getGuildOnlineCount(guildId, guild);
 
     const permissionSummary = this.getCurrentUserPermissionSummary(guildId);
 
     return {
-      ownerName: owner ? (owner.globalName || owner.username || owner.id) : guild?.ownerId || "Unknown",
+      ownerName: this._getGuildOwnerName(owner, guild),
       createdAt,
       joinedAt,
       premiumTier: guild?.premiumTier || 0,
       premiumSubscriptionCount: guild?.premiumSubscriptionCount || 0,
       roleCount,
       channelCount,
-      featuresLabel: Array.isArray(guild?.features) && guild.features.length > 0 ? guild.features.slice(0, 8).join(", ") : "None",
+      featuresLabel: this._getGuildFeaturesLabel(guild),
       memberCount,
       onlineCount,
       description: guild?.description || "",
       emojiCount: this._countGuildEmojis(guildId, guild),
       stickerCount: this._countGuildStickers(guildId, guild),
       soundboardCount: this._countGuildSoundboard(guildId),
-      preferredLocale: guild?.preferredLocale || guild?.preferred_locale || "",
+      preferredLocale: this._getGuildPreferredLocale(guild),
       currentUserPermissionSummary: permissionSummary,
     };
   }
@@ -876,38 +936,55 @@ module.exports = class ShadowRecon {
     }
   }
 
-  getPlatformIntel(userId) {
+  _collectSessionClientStatuses() {
+    const out = {};
+    if (!this._SessionsStore?.getSessions) return out;
+    const sessions = this._SessionsStore.getSessions() || {};
+    for (const session of Object.values(sessions)) {
+      const client = session?.clientInfo?.client;
+      if (!client) continue;
+      out[client] = session?.status || "unknown";
+    }
+    return out;
+  }
+
+  _collectClientStatuses(userId) {
+    const currentUserId = this._UserStore?.getCurrentUser?.()?.id;
+    if (currentUserId && String(userId) === String(currentUserId)) {
+      return this._collectSessionClientStatuses();
+    }
+    return this._PresenceStore?.getState?.()?.clientStatuses?.[userId] || {};
+  }
+
+  _mapClientStatusesToRows(clientStatuses) {
     const rows = [];
-    try {
-      const currentUserId = this._UserStore?.getCurrentUser?.()?.id;
-      let clientStatuses = {};
-
-      if (currentUserId && String(userId) === String(currentUserId) && this._SessionsStore?.getSessions) {
-        const sessions = this._SessionsStore.getSessions() || {};
-        for (const session of Object.values(sessions)) {
-          const client = session?.clientInfo?.client;
-          const status = session?.status;
-          if (!client) continue;
-          clientStatuses[client] = status || "unknown";
-        }
-      } else {
-        clientStatuses = this._PresenceStore?.getState?.()?.clientStatuses?.[userId] || {};
-      }
-
-      for (const [platformRaw, statusRaw] of Object.entries(clientStatuses)) {
-        const platform = PLATFORM_LABELS[platformRaw] || this._capitalize(platformRaw);
-        const status = STATUS_LABELS[statusRaw] || this._capitalize(statusRaw);
-        rows.push({ platform, status });
-      }
-
-      if (rows.length === 0) {
-        const statusRaw = this._PresenceStore?.getStatus?.(userId);
-        if (statusRaw) rows.push({ platform: "Presence", status: STATUS_LABELS[statusRaw] || this._capitalize(statusRaw) });
-      }
-    } catch (err) {
-      console.error(`[${PLUGIN_NAME}] Failed getting platform intel`, err);
+    for (const [platformRaw, statusRaw] of Object.entries(clientStatuses || {})) {
+      const platform = PLATFORM_LABELS[platformRaw] || this._capitalize(platformRaw);
+      const status = STATUS_LABELS[statusRaw] || this._capitalize(statusRaw);
+      rows.push({ platform, status });
     }
     return rows;
+  }
+
+  _appendPresenceFallbackRow(rows, userId) {
+    if (rows.length > 0) return;
+    const statusRaw = this._PresenceStore?.getStatus?.(userId);
+    if (!statusRaw) return;
+    rows.push({
+      platform: "Presence",
+      status: STATUS_LABELS[statusRaw] || this._capitalize(statusRaw),
+    });
+  }
+
+  getPlatformIntel(userId) {
+    try {
+      const rows = this._mapClientStatusesToRows(this._collectClientStatuses(userId));
+      this._appendPresenceFallbackRow(rows, userId);
+      return rows;
+    } catch (err) {
+      console.error(`[${PLUGIN_NAME}] Failed getting platform intel`, err);
+      return [];
+    }
   }
 
   async getConnectionsIntel(userId, guildId) {

@@ -304,6 +304,72 @@ function buildPanelComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
+  function buildLocationLabel(wp) {
+    return wp.guildName
+      ? `${wp.guildName} \u00BB #${wp.channelName}`
+      : `DM \u00BB ${wp.channelName}`;
+  }
+
+  function hasMessageLookupTarget(wp) {
+    return Boolean(wp.messageId && wp.channelId);
+  }
+
+  function getCachedMessagePreviewText(cached) {
+    if (!cached) return "";
+    if (cached.content) {
+      return cached.content.length > 120 ? `${cached.content.slice(0, 120)}\u2026` : cached.content;
+    }
+    if (Array.isArray(cached.embeds) && cached.embeds.length > 0) return "[Embed]";
+    const attachmentCount = Number(cached.attachments?.size || cached.attachments?.length || 0);
+    if (attachmentCount > 0) return "[Attachment]";
+    return "";
+  }
+
+  function getCachedMessageAuthor(cached) {
+    if (!cached?.author) return "";
+    return cached.author.globalName || cached.author.username || "";
+  }
+
+  function resolveMessagePreviewData(wp) {
+    let preview = wp.messagePreview || "";
+    let author = wp.messageAuthor || "";
+    if (preview || !hasMessageLookupTarget(wp)) return { preview, author };
+
+    try {
+      const cached = pluginInstance.MessageStore?.getMessage(wp.channelId, wp.messageId);
+      if (!cached) return { preview, author };
+
+      const nextPreview = getCachedMessagePreviewText(cached);
+      if (nextPreview) {
+        preview = nextPreview;
+        wp.messagePreview = nextPreview;
+      }
+
+      if (!author) {
+        const nextAuthor = getCachedMessageAuthor(cached);
+        if (nextAuthor) {
+          author = nextAuthor;
+          wp.messageAuthor = nextAuthor;
+        }
+      }
+    } catch (error) {
+      pluginInstance.debugError("Panel", "Failed to parse message metadata for preview", error);
+    }
+
+    return { preview, author };
+  }
+
+  function buildWaypointMessageSection(wp) {
+    if (wp.locationType !== "message") return null;
+    const { preview, author } = resolveMessagePreviewData(wp);
+    return ce("div", { className: "se-message-preview" },
+      author ? ce("span", { className: "se-msg-author" }, `${author}:`) : null,
+      ce("span", { className: "se-msg-text" },
+        preview || ce("em", { style: { color: "#666" } }, "Navigate to load preview")
+      )
+    );
+  }
+
   // ── WaypointCard ────────────────────────────────────────────────────────
 
   function WaypointCard({ wp, onTeleport, onRemove }) {
@@ -311,47 +377,8 @@ function buildPanelComponents(pluginInstance) {
     const typeBadge = getTypeBadge(wp.locationType);
     const visits = wp.visitCount || 0;
     const timeStr = formatTimestamp(wp.createdAt);
-
-    const fullLocation = wp.guildName
-      ? `${wp.guildName} \u00BB #${wp.channelName}`
-      : `DM \u00BB ${wp.channelName}`;
-
-    // Message preview section
-    let messageSection = null;
-    if (wp.locationType === "message") {
-      let preview = wp.messagePreview || "";
-      let author = wp.messageAuthor || "";
-
-      // Backfill from Discord cache
-      if (!preview && wp.messageId && wp.channelId) {
-        try {
-          const cached = pluginInstance.MessageStore?.getMessage(wp.channelId, wp.messageId);
-          if (cached) {
-            if (cached.content) {
-              preview = cached.content.length > 120 ? cached.content.slice(0, 120) + "\u2026" : cached.content;
-              wp.messagePreview = preview;
-            } else if (cached.embeds?.length) {
-              preview = "[Embed]";
-            } else if (cached.attachments?.size || cached.attachments?.length) {
-              preview = "[Attachment]";
-            }
-            if (!author && cached.author) {
-              author = cached.author.globalName || cached.author.username || "";
-              wp.messageAuthor = author;
-            }
-          }
-        } catch (error) {
-          pluginInstance.debugError("Panel", "Failed to parse message metadata for preview", error);
-        }
-      }
-
-      messageSection = ce("div", { className: "se-message-preview" },
-        author ? ce("span", { className: "se-msg-author" }, author + ":") : null,
-        ce("span", { className: "se-msg-text" },
-          preview || ce("em", { style: { color: "#666" } }, "Navigate to load preview")
-        )
-      );
-    }
+    const fullLocation = buildLocationLabel(wp);
+    const messageSection = buildWaypointMessageSection(wp);
 
     return ce("div", {
       className: "se-waypoint-card",
@@ -569,12 +596,15 @@ try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactU
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
+let _SLUtils;
+try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
+
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
 module.exports = class ShadowExchange {
   // ── Lifecycle ──────────────────────────────────────────────────────────
 
-  constructor() {
+  _resetRuntimeState() {
     this._panelForceUpdate = null;
     this._panelContainer = null;
     this._swirlObserver = null;
@@ -588,6 +618,10 @@ module.exports = class ShadowExchange {
     this._navigateRequestId = 0;
     this._channelFadeToken = 0;
     this._channelFadeResetTimer = null;
+  }
+
+  constructor() {
+    this._resetRuntimeState();
     this._NavigationUtils = null;
   }
 
@@ -598,19 +632,7 @@ module.exports = class ShadowExchange {
       this.swirlIcon = null;
       this.fallbackIdx = 0;
       this.fileBackupPath = null;
-      this._panelForceUpdate = null;
-      this._panelContainer = null;
-      this._swirlObserver = null;
-      this._swirlReinjectTimeout = null;
-      this._swirlResizeHandler = null;
-      this._transitionNavTimeout = null;
-      this._transitionCleanupTimeout = null;
-      this._transitionRunId = 0;
-      this._transitionStopCanvas = null;
-      this._navigateRetryTimers = new Set();
-      this._navigateRequestId = 0;
-      this._channelFadeToken = 0;
-      this._channelFadeResetTimer = null;
+      this._resetRuntimeState();
       this.defaultSettings = {
         waypoints: [],
         sortBy: "created",
@@ -748,19 +770,7 @@ module.exports = class ShadowExchange {
   /**
    * Mark a specific message from the context menu.
    */
-  async markMessage(channel, message) {
-    const channelId = channel.id;
-    const guildId = channel.guild_id || null;
-    const messageId = message.id;
-
-    const dup = this.settings.waypoints.find(
-      (w) => w.channelId === channelId && w.messageId === messageId
-    );
-    if (dup) {
-      this._toast(`Already marked: ${dup.label}`, "warning");
-      return;
-    }
-
+  _resolveWaypointLocationNames(channel, guildId) {
     let channelName = channel.name || "DM";
     let guildName = guildId ? "Unknown Server" : "Direct Messages";
 
@@ -774,39 +784,68 @@ module.exports = class ShadowExchange {
       this.debugError("Mark", "Failed to resolve guild/channel labels for message waypoint", error);
     }
 
+    return { channelName, guildName };
+  }
+
+  _buildWaypointLabel(guildId, guildName, channelName) {
+    return guildId
+      ? `${guildName} \u00BB #${channelName}`
+      : `DM \u00BB ${channelName}`;
+  }
+
+  _extractMessagePreviewText(message) {
+    try {
+      if (message.content) {
+        return message.content.length > 120
+          ? `${message.content.slice(0, 120)}\u2026`
+          : message.content;
+      }
+      if (message.embeds?.length) return "[Embed]";
+      if (message.attachments?.length) {
+        const count = message.attachments.length;
+        return `[${count} attachment${count > 1 ? "s" : ""}]`;
+      }
+    } catch (error) {
+      this.debugError("Mark", "Failed to build message preview text", error);
+    }
+    return "";
+  }
+
+  _extractMessageAuthor(message) {
+    try {
+      if (message.author) {
+        return message.author.globalName || message.author.username || "";
+      }
+    } catch (error) {
+      this.debugError("Mark", "Failed to read message author for waypoint", error);
+    }
+    return "";
+  }
+
+  async markMessage(channel, message) {
+    const channelId = channel.id;
+    const guildId = channel.guild_id || null;
+    const messageId = message.id;
+
+    const dup = this.settings.waypoints.find(
+      (w) => w.channelId === channelId && w.messageId === messageId
+    );
+    if (dup) {
+      this._toast(`Already marked: ${dup.label}`, "warning");
+      return;
+    }
+
+    const { channelName, guildName } = this._resolveWaypointLocationNames(channel, guildId);
+
     const shadow = await this.getWeakestAvailableShadow();
     if (!shadow) {
       this._toast("No shadows available!", "error");
       return;
     }
 
-    const label = guildId
-      ? `${guildName} \u00BB #${channelName}`
-      : `DM \u00BB ${channelName}`;
-
-    let messagePreview = "";
-    try {
-      if (message.content) {
-        messagePreview = message.content.length > 120
-          ? message.content.slice(0, 120) + "\u2026"
-          : message.content;
-      } else if (message.embeds?.length) {
-        messagePreview = "[Embed]";
-      } else if (message.attachments?.length) {
-        messagePreview = `[${message.attachments.length} attachment${message.attachments.length > 1 ? "s" : ""}]`;
-      }
-    } catch (error) {
-      this.debugError("Mark", "Failed to build message preview text", error);
-    }
-
-    let messageAuthor = "";
-    try {
-      if (message.author) {
-        messageAuthor = message.author.globalName || message.author.username || "";
-      }
-    } catch (error) {
-      this.debugError("Mark", "Failed to read message author for waypoint", error);
-    }
+    const label = this._buildWaypointLabel(guildId, guildName, channelName);
+    const messagePreview = this._extractMessagePreviewText(message);
+    const messageAuthor = this._extractMessageAuthor(message);
 
     const waypoint = {
       id: `wp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
@@ -1078,41 +1117,55 @@ module.exports = class ShadowExchange {
 
   // ── Location Detection ─────────────────────────────────────────────────
 
-  getCurrentLocation() {
-    const urlPattern = /channels\/(@me|(\d+))\/(\d+)(?:\/(\d+))?/;
-    const match = window.location.href.match(urlPattern);
+  _parseCurrentLocationFromUrl(url) {
+    const match = url.match(/channels\/(@me|(\d+))\/(\d+)(?:\/(\d+))?/);
     if (!match) return null;
 
     const [, guildIdOrMe, guildIdNum, channelId, messageId] = match;
-    const guildId = guildIdOrMe === "@me" ? null : guildIdNum || guildIdOrMe;
+    return {
+      guildId: guildIdOrMe === "@me" ? null : guildIdNum || guildIdOrMe,
+      channelId,
+      messageId: messageId || null,
+    };
+  }
 
+  _resolveCurrentChannelMetadata(channelId, guildId) {
     let channelName = "Unknown";
-    let guildName = guildId ? "Unknown Server" : "Direct Messages";
     let locationType = "channel";
-
     try {
       const channel = this.ChannelStore?.getChannel(channelId);
-      if (channel) {
-        channelName = channel.name || (channel.recipients?.length ? "DM" : "Unknown");
-        if (channel.isThread && channel.isThread()) locationType = "thread";
-        else if (!guildId) locationType = "dm";
-      }
+      if (!channel) return { channelName, locationType };
+      channelName = channel.name || (channel.recipients?.length ? "DM" : "Unknown");
+      if (channel.isThread && channel.isThread()) locationType = "thread";
+      else if (!guildId) locationType = "dm";
     } catch (error) {
       this.debugError("Location", "Failed to resolve channel metadata for current location", error);
     }
+    return { channelName, locationType };
+  }
 
+  _resolveCurrentGuildName(guildId) {
+    if (!guildId) return "Direct Messages";
+    let guildName = "Unknown Server";
     try {
-      if (guildId) {
-        const guild = this.GuildStore?.getGuild(guildId);
-        if (guild) guildName = guild.name;
-      }
+      const guild = this.GuildStore?.getGuild(guildId);
+      if (guild) guildName = guild.name;
     } catch (error) {
       this.debugError("Location", "Failed to resolve guild metadata for current location", error);
     }
+    return guildName;
+  }
 
-    if (messageId) locationType = "message";
+  getCurrentLocation() {
+    const parsed = this._parseCurrentLocationFromUrl(window.location.href);
+    if (!parsed) return null;
 
-    return { guildId, channelId, messageId: messageId || null, channelName, guildName, locationType };
+    const { guildId, channelId, messageId } = parsed;
+    const { channelName, locationType: baseType } = this._resolveCurrentChannelMetadata(channelId, guildId);
+    const guildName = this._resolveCurrentGuildName(guildId);
+    const locationType = messageId ? "message" : baseType;
+
+    return { guildId, channelId, messageId, channelName, guildName, locationType };
   }
 
   // ── Marking ────────────────────────────────────────────────────────────
@@ -1269,6 +1322,30 @@ module.exports = class ShadowExchange {
     return true;
   }
 
+  _showToolbarTooltip(icon, tooltipId, label) {
+    const tip = typeof _SLUtils?.getOrCreateOverlay === "function"
+      ? _SLUtils.getOrCreateOverlay(tooltipId, "sl-toolbar-tip")
+      : (() => {
+          const existing = document.getElementById(tooltipId);
+          if (existing) return existing;
+          const created = document.createElement("div");
+          created.id = tooltipId;
+          created.className = "sl-toolbar-tip";
+          (document.body || document.documentElement).appendChild(created);
+          return created;
+        })();
+    const rect = icon.getBoundingClientRect();
+    tip.textContent = label;
+    tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
+    tip.style.left = `${rect.left + rect.width / 2}px`;
+    tip.classList.add("sl-toolbar-tip--visible");
+  }
+
+  _hideToolbarTooltip(tooltipId) {
+    const tip = document.getElementById(tooltipId);
+    if (tip) tip.classList.remove("sl-toolbar-tip--visible");
+  }
+
   _scheduleSwirlIconReinject(delayMs = SWIRL_REINJECT_DELAY_MS) {
     if (this._swirlReinjectTimeout) clearTimeout(this._swirlReinjectTimeout);
     this._swirlReinjectTimeout = setTimeout(() => {
@@ -1332,22 +1409,10 @@ module.exports = class ShadowExchange {
 
       // Custom themed tooltip (appended to body to avoid overflow clipping)
       icon.addEventListener("mouseenter", () => {
-        let tip = document.getElementById("sl-toolbar-tip-se");
-        if (!tip) {
-          tip = document.createElement("div");
-          tip.id = "sl-toolbar-tip-se";
-          tip.className = "sl-toolbar-tip";
-          tip.textContent = "Shadow Exchange";
-          document.body.appendChild(tip);
-        }
-        const rect = icon.getBoundingClientRect();
-        tip.style.top = `${rect.top - tip.offsetHeight - 8}px`;
-        tip.style.left = `${rect.left + rect.width / 2}px`;
-        tip.classList.add("sl-toolbar-tip--visible");
+        this._showToolbarTooltip(icon, "sl-toolbar-tip-se", "Shadow Exchange");
       });
       icon.addEventListener("mouseleave", () => {
-        const tip = document.getElementById("sl-toolbar-tip-se");
-        if (tip) tip.classList.remove("sl-toolbar-tip--visible");
+        this._hideToolbarTooltip("sl-toolbar-tip-se");
       });
     }
 
@@ -1865,44 +1930,13 @@ ${buildPortalTransitionCSS()}
 };
 
 const _loadShadowPortalCore = () => {
-  try {
-    const path = require("path");
-    const fs = require("fs");
-    const candidates = [];
-    if (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === "string") {
-      candidates.push(path.join(BdApi.Plugins.folder, "ShadowPortalCore.js"));
-    }
-    candidates.push("./ShadowPortalCore.js");
-
-    for (const candidate of candidates) {
-      try {
-        const resolved = require.resolve(candidate);
-        if (require.cache[resolved]) delete require.cache[resolved];
-        const mod = require(resolved);
-        if (mod?.applyPortalCoreToClass) return mod;
-      } catch (_) {}
-      try {
-        const absolute = path.isAbsolute(candidate)
-          ? candidate
-          : path.join(BdApi?.Plugins?.folder || "", candidate.replace(/^\.\//, ""));
-        if (!absolute || !fs.existsSync(absolute)) continue;
-        const source = fs.readFileSync(absolute, "utf8");
-        const moduleObj = { exports: {} };
-        const factory = new Function(
-          "module",
-          "exports",
-          "require",
-          "window",
-          "BdApi",
-          `${source}\nreturn module.exports || exports || (window && window.ShadowPortalCore) || null;`
-        );
-        const loaded = factory(moduleObj, moduleObj.exports, require, typeof window !== "undefined" ? window : null, BdApi);
-        const mod = loaded || moduleObj.exports || (typeof window !== "undefined" ? window.ShadowPortalCore : null);
-        if (mod?.applyPortalCoreToClass) return mod;
-      } catch (_) {}
-    }
-  } catch (_) {}
-  return typeof window !== "undefined" ? window.ShadowPortalCore || null : null;
+  if (typeof _SLUtils?.loadShadowPortalCore === "function") {
+    const mod = _SLUtils.loadShadowPortalCore();
+    if (mod?.applyPortalCoreToClass) return mod;
+  }
+  return typeof window !== "undefined" && window.ShadowPortalCore?.applyPortalCoreToClass
+    ? window.ShadowPortalCore
+    : null;
 };
 
 const SHADOW_PORTAL_CONFIG = {

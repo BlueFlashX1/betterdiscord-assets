@@ -18,6 +18,14 @@
  * patchAll() on every DOM mutation — expensive and flickered on re-renders.
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle + Settings
+ * 2) React Patcher + DOM Fallback
+ * 3) Arrow Manager Component
+ * 4) CSS
+ */
+
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
@@ -28,6 +36,10 @@ module.exports = class ChatNavArrows {
     this._domFallback = null;
     this._settings = Object.assign({ debug: false }, BdApi.Data.load('ChatNavArrows', 'settings'));
   }
+
+  // ==========================================================================
+  // 1) LIFECYCLE + SETTINGS
+  // ==========================================================================
 
   _debugLog(...args) {
     if (!this._settings.debug) return;
@@ -56,6 +68,14 @@ module.exports = class ChatNavArrows {
   }
 
   start() {
+    // Idempotent start: clear stale patch/fallback if plugin is reloaded quickly.
+    this._stopDomFallback();
+    BdApi.Patcher.unpatchAll(this._patcherId);
+    if (this._fallbackTimer) {
+      clearTimeout(this._fallbackTimer);
+      this._fallbackTimer = null;
+    }
+
     this._isStopped = false;
     this._patcherCallbackFired = false;
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', this.getCSS());
@@ -129,9 +149,9 @@ module.exports = class ChatNavArrows {
     }
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // React Patcher — inject into MainContent.Z (base layer)
-  // ──────────────────────────────────────────────────────────────────────────
+  // ==========================================================================
+  // 2) REACT PATCHER + DOM FALLBACK
+  // ==========================================================================
 
   _installReactPatcher() {
     let ReactUtils;
@@ -143,103 +163,34 @@ module.exports = class ChatNavArrows {
     }
     this._debugLog('ReactUtils loaded:', !!ReactUtils);
 
-    if (ReactUtils) {
-      const pluginInstance = this;
-      let patcherCallCount = 0;
-      const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
-        patcherCallCount++;
-        pluginInstance._patcherCallbackFired = true;
-        // Supersede DOM fallback if it was started as safety net
-        if (pluginInstance._domFallback && patcherCallCount === 1) {
-          pluginInstance._debugLog('Patcher callback fired — stopping DOM fallback');
-          pluginInstance._stopDomFallback();
-        }
-        pluginInstance._debugLog(`Patcher callback #${patcherCallCount} — appNode:`, !!appNode, 'appNode.props:', !!appNode?.props);
-        const component = React.createElement(pluginInstance._ArrowManager, {
-          key: 'sl-chat-nav-arrows',
-          pluginInstance,
-        });
-        const injected = ReactUtils.injectReactComponent(appNode, 'sl-chat-nav-arrows-root', component, returnValue);
-        pluginInstance._debugLog(`injectReactComponent result: ${injected ? 'injected' : 'already exists (dedup)'}`);
-      });
-      this._debugLog('patchReactMainContent result:', ok);
-      if (!ok) {
-        console.error('[ChatNavArrows] MainContent module not found — plugin inactive');
-        return false;
-      }
-      return true;
-    }
-
-    // Inline fallback if BetterDiscordReactUtils.js is not available
-    this._debugLog('Using inline MainContent finder (ReactUtils unavailable)');
-    // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
-    let MainContent = null, _mcKey = 'Z';
-    if (typeof BdApi.Webpack.getWithKey === 'function') {
-      for (const s of _mcStrings) {
-        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; this._debugLog(`getWithKey matched on '${s}', key='${r[1]}'`); break; } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      for (const s of _mcStrings) {
-        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) { this._debugLog(`getByStrings matched on '${s}', key='${_mcKey}'`); break; } } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      console.error('[ChatNavArrows] MainContent module not found (all strategies exhausted) — using DOM fallback');
-      this._debugLog('All inline MC strategies exhausted');
+    if (!ReactUtils?.patchReactMainContent || !ReactUtils?.injectReactComponent) {
+      this._debugLog('ReactUtils unavailable for patching — using DOM fallback');
       return false;
     }
 
-    const React = BdApi.React;
     const pluginInstance = this;
-
-    BdApi.Patcher.after(this._patcherId, MainContent, _mcKey, (_this, _args, returnValue) => {
-      try {
-        if (pluginInstance._isStopped) return returnValue;
-
-        const appNode = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) =>
-            prop &&
-            prop.props &&
-            (prop.props.className?.includes('app') ||
-              prop.props.id === 'app-mount' ||
-              prop.type === 'body'),
-          { walkable: ['props', 'children'] }
-        );
-
-        if (!appNode || !appNode.props) return returnValue;
-
-        const already = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) => prop && prop.props && prop.props.id === 'sl-chat-nav-arrows-root',
-          { walkable: ['props', 'children'] }
-        );
-        if (already) return returnValue;
-
-        const arrowManager = React.createElement(pluginInstance._ArrowManager, {
-          key: 'sl-chat-nav-arrows',
-          pluginInstance,
-        });
-        const wrapper = React.createElement(
-          'div',
-          { id: 'sl-chat-nav-arrows-root', style: { display: 'contents' } },
-          arrowManager
-        );
-
-        if (Array.isArray(appNode.props.children)) {
-          appNode.props.children.push(wrapper);
-        } else if (appNode.props.children) {
-          appNode.props.children = [appNode.props.children, wrapper];
-        } else {
-          appNode.props.children = wrapper;
-        }
-      } catch (e) {
-        console.error('[ChatNavArrows] React patcher error:', e);
+    let patcherCallCount = 0;
+    const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+      patcherCallCount++;
+      pluginInstance._patcherCallbackFired = true;
+      if (pluginInstance._domFallback && patcherCallCount === 1) {
+        pluginInstance._debugLog('Patcher callback fired — stopping DOM fallback');
+        pluginInstance._stopDomFallback();
       }
-      return returnValue;
+      pluginInstance._debugLog(`Patcher callback #${patcherCallCount} — appNode:`, !!appNode, 'appNode.props:', !!appNode?.props);
+      const component = React.createElement(pluginInstance._ArrowManager, {
+        key: 'sl-chat-nav-arrows',
+        pluginInstance,
+      });
+      const injected = ReactUtils.injectReactComponent(appNode, 'sl-chat-nav-arrows-root', component, returnValue);
+      pluginInstance._debugLog(`injectReactComponent result: ${injected ? 'injected' : 'already exists (dedup)'}`);
     });
+
+    this._debugLog('patchReactMainContent result:', ok);
+    if (!ok) {
+      console.error('[ChatNavArrows] MainContent module not found — using DOM fallback');
+      return false;
+    }
     return true;
   }
 
@@ -390,7 +341,7 @@ module.exports = class ChatNavArrows {
 
     tick();
     this._domFallback.pollTimer = setInterval(tick, 2000); // 2s (was 500ms)
-    console.log('[ChatNavArrows] Using DOM fallback mode');
+    this._debugLog('Using DOM fallback mode');
   }
 
   _stopDomFallback() {
@@ -412,9 +363,9 @@ module.exports = class ChatNavArrows {
     this._domFallback = null;
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // Arrow Manager — React functional component
-  // ──────────────────────────────────────────────────────────────────────────
+  // ==========================================================================
+  // 3) ARROW MANAGER COMPONENT
+  // ==========================================================================
 
   get _ArrowManager() {
     // Cache the component so React doesn't re-create it every render
@@ -561,12 +512,66 @@ module.exports = class ChatNavArrows {
       }, []);
 
       const wrapper = wrapperRef.current;
+      const wrapperConnected = !!(wrapper && wrapper.isConnected);
+      const portalAvailable = !!BdApi.ReactDOM?.createPortal;
+
+      // DOM fallback path must use stable hook order (no conditional hooks).
+      React.useEffect(() => {
+        const removeArrows = () => {
+          const arrows = domArrowsRef.current;
+          if (!arrows) return;
+          if (arrows.down?.isConnected) arrows.down.remove();
+          if (arrows.up?.isConnected) arrows.up.remove();
+          domArrowsRef.current = null;
+        };
+
+        if (portalAvailable || !wrapperConnected || !wrapper) {
+          removeArrows();
+          return;
+        }
+
+        let arrows = domArrowsRef.current;
+        if (!arrows || !arrows.down?.isConnected) {
+          const down = document.createElement('div');
+          down.className = 'sl-chat-nav-arrow sl-chat-nav-down';
+          down.title = 'Jump to Present';
+          down.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
+          down.addEventListener('click', handleDownClick);
+
+          const up = document.createElement('div');
+          up.className = 'sl-chat-nav-arrow sl-chat-nav-up';
+          up.title = 'Jump to Top';
+          up.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
+          up.addEventListener('click', handleUpClick);
+
+          arrows = { down, up };
+          domArrowsRef.current = arrows;
+        }
+
+        if (!wrapper.contains(arrows.down)) wrapper.appendChild(arrows.down);
+        if (!wrapper.contains(arrows.up)) wrapper.appendChild(arrows.up);
+
+        return () => {
+          if (!domArrowsRef.current) return;
+          if (domArrowsRef.current.down?.isConnected) domArrowsRef.current.down.remove();
+          if (domArrowsRef.current.up?.isConnected) domArrowsRef.current.up.remove();
+          domArrowsRef.current = null;
+        };
+      }, [portalAvailable, wrapperConnected, wrapper, bindCount, handleDownClick, handleUpClick]);
+
+      React.useEffect(() => {
+        if (portalAvailable) return;
+        const arrows = domArrowsRef.current;
+        if (!arrows) return;
+        arrows.down.classList.toggle('sl-visible', showDown);
+        arrows.up.classList.toggle('sl-visible', showUp);
+      }, [portalAvailable, showDown, showUp, bindCount]);
 
       // ── Render path diagnostics ──
-      dbg(`render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper?.isConnected}, createPortal=${!!BdApi.ReactDOM?.createPortal}, showDown=${showDown}, showUp=${showUp}`);
+      dbg(`render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper?.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`);
 
       // ── Portal path (preferred) ──
-      if (wrapper && wrapper.isConnected && BdApi.ReactDOM?.createPortal) {
+      if (wrapperConnected && portalAvailable) {
         dbg('render → PORTAL path');
         return BdApi.ReactDOM.createPortal(
           React.createElement(React.Fragment, null,
@@ -589,45 +594,6 @@ module.exports = class ChatNavArrows {
         );
       }
 
-      // ── DOM injection fallback (createPortal unavailable or wrapper stale) ──
-      // Inject arrow elements directly into the wrapper via useEffect.
-      // This mirrors the DOM fallback mode but driven by React state.
-      React.useEffect(() => {
-        if (!wrapper || !wrapper.isConnected) { dbg('DOM fallback: wrapper missing/disconnected'); return; }
-        if (BdApi.ReactDOM?.createPortal) return; // Portal path handles it
-        dbg('render → DOM INJECTION fallback');
-
-        // Create or reuse arrow elements
-        let arrows = domArrowsRef.current;
-        if (!arrows || !arrows.down.isConnected) {
-          const down = document.createElement('div');
-          down.className = 'sl-chat-nav-arrow sl-chat-nav-down';
-          down.title = 'Jump to Present';
-          down.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
-          down.addEventListener('click', handleDownClick);
-
-          const up = document.createElement('div');
-          up.className = 'sl-chat-nav-arrow sl-chat-nav-up';
-          up.title = 'Jump to Top';
-          up.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
-          up.addEventListener('click', handleUpClick);
-
-          arrows = { down, up };
-          domArrowsRef.current = arrows;
-        }
-
-        if (!wrapper.contains(arrows.down)) wrapper.appendChild(arrows.down);
-        if (!wrapper.contains(arrows.up)) wrapper.appendChild(arrows.up);
-
-        arrows.down.classList.toggle('sl-visible', showDown);
-        arrows.up.classList.toggle('sl-visible', showUp);
-
-        return () => {
-          if (arrows.down.isConnected) arrows.down.remove();
-          if (arrows.up.isConnected) arrows.up.remove();
-        };
-      }, [wrapper, showDown, showUp, bindCount, handleDownClick, handleUpClick]);
-
       if (!wrapper) dbg('render → NULL (no wrapper yet, waiting for findAndBind)');
       return null;
     };
@@ -635,9 +601,9 @@ module.exports = class ChatNavArrows {
     return this.__ArrowManagerCached;
   }
 
-  // ──────────────────────────────────────────────────────────────────────────
-  // CSS
-  // ──────────────────────────────────────────────────────────────────────────
+  // ==========================================================================
+  // 4) CSS
+  // ==========================================================================
 
   getCSS() {
     return `

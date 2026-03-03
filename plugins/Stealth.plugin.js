@@ -915,31 +915,43 @@ module.exports = class Stealth {
     return null;
   }
 
+  _trimWarningTimestamps(now, targetSize = 192) {
+    if (this._warningTimestamps.size <= 256) return;
+    const staleBefore = now - 5 * 60 * 1000;
+    for (const [mapKey, timestamp] of this._warningTimestamps) {
+      if (timestamp < staleBefore) this._warningTimestamps.delete(mapKey);
+      if (this._warningTimestamps.size <= targetSize) return;
+    }
+    while (this._warningTimestamps.size > targetSize) {
+      const oldestKey = this._warningTimestamps.keys().next().value;
+      if (oldestKey === undefined) break;
+      this._warningTimestamps.delete(oldestKey);
+    }
+  }
+
+  _shouldThrottleWarning(key, now, throttleMs) {
+    const lastTs = this._warningTimestamps.get(key) || 0;
+    if (now - lastTs < throttleMs) return true;
+    this._warningTimestamps.set(key, now);
+    return false;
+  }
+
+  _printWarning(scope, message, error) {
+    const prefix = `[${STEALTH_PLUGIN_ID}][${scope}] ${message}`;
+    if (error) {
+      console.warn(prefix, error);
+      return;
+    }
+    console.warn(prefix);
+  }
+
   _logWarning(scope, message, error = null, throttleKey = null) {
     const key = throttleKey || `${scope}:${message}`;
     const now = Date.now();
     const throttleMs = 15000;
-    if (this._warningTimestamps.size > 256) {
-      const staleBefore = now - 5 * 60 * 1000;
-      for (const [mapKey, ts] of this._warningTimestamps) {
-        if (ts < staleBefore) this._warningTimestamps.delete(mapKey);
-        if (this._warningTimestamps.size <= 192) break;
-      }
-      while (this._warningTimestamps.size > 192) {
-        const oldestKey = this._warningTimestamps.keys().next().value;
-        if (oldestKey === undefined) break;
-        this._warningTimestamps.delete(oldestKey);
-      }
-    }
-    const lastTs = this._warningTimestamps.get(key) || 0;
-    if (now - lastTs < throttleMs) return;
-    this._warningTimestamps.set(key, now);
-
-    if (error) {
-      console.warn(`[${STEALTH_PLUGIN_ID}][${scope}] ${message}`, error);
-    } else {
-      console.warn(`[${STEALTH_PLUGIN_ID}][${scope}] ${message}`);
-    }
+    this._trimWarningTimestamps(now);
+    if (this._shouldThrottleWarning(key, now, throttleMs)) return;
+    this._printWarning(scope, message, error);
   }
 
   _recordSuppressed(kind) {
@@ -952,25 +964,35 @@ module.exports = class Stealth {
     this._suppressEventLog[kind] = now;
   }
 
+  _isStatusPolicySetting(key) {
+    return key === "enabled" || key === "invisibleStatus";
+  }
+
+  _handleStatusPolicySettingChange(key) {
+    this._syncStatusPolicy();
+    this._applyStealthHardening();
+    if (key !== "enabled") return;
+    this._toast(
+      this.settings.enabled ? "Stealth engaged" : "Stealth disengaged",
+      this.settings.enabled ? "success" : "info"
+    );
+  }
+
+  _shouldReapplyHardeningForSetting(key) {
+    return (key === "suppressTelemetry" || key === "disableProcessMonitor") && this.settings.enabled;
+  }
+
   _setSetting(key, value) {
     this.settings[key] = value;
     this.saveSettings();
 
-    if (key === "enabled" || key === "invisibleStatus") {
-      this._syncStatusPolicy();
-      this._applyStealthHardening();
-
-      if (key === "enabled") {
-        this._toast(
-          this.settings.enabled ? "Stealth engaged" : "Stealth disengaged",
-          this.settings.enabled ? "success" : "info"
-        );
-      }
+    if (this._isStatusPolicySetting(key)) {
+      this._handleStatusPolicySettingChange(key);
       return;
     }
 
     if (key === "showToasts") return;
-    if ((key === "suppressTelemetry" || key === "disableProcessMonitor") && this.settings.enabled) {
+    if (this._shouldReapplyHardeningForSetting(key)) {
       this._applyStealthHardening();
       return;
     }

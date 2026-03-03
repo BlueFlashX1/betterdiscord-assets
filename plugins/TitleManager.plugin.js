@@ -87,7 +87,27 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
 
 // ============================================================================
 // REACT COMPONENT FACTORY (v2.0.0 — replaces innerHTML modal rendering)
@@ -382,24 +402,38 @@ module.exports = class SoloLevelingTitleManager {
   }
 
   _clearTrackedTimeout(timeoutId) {
-    if (!Number.isFinite(timeoutId)) return;
+    if (typeof timeoutId !== 'number') return false;
     clearTimeout(timeoutId);
     this._retryTimeouts.delete(timeoutId);
+    return true;
+  }
+
+  _unsubscribeNavigationBus() {
+    if (!this._navBusUnsub) return;
+    this._navBusUnsub();
+    this._navBusUnsub = null;
   }
 
   /**
    * Load SoloLevelingUtils shared library (toolbar registry, React injection, etc.)
    */
   _loadSLUtils() {
-    // Use top-level _SLUtils (loaded during module evaluation via require)
-    this._SLUtils = _SLUtils || window.SoloLevelingUtils || null;
+    const fromWindow = typeof window !== 'undefined' ? window.SoloLevelingUtils : null;
+    this._SLUtils = fromWindow || _SLUtils || null;
+    return !!this._SLUtils;
   }
 
   /** React 18 createRoot with shared utility + fallback */
   _getCreateRoot() {
-    if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
-    // Minimal inline fallback
-    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+    const fromShared = typeof _ReactUtils?.getCreateRoot === 'function'
+      ? _ReactUtils.getCreateRoot()
+      : null;
+    if (fromShared) return fromShared;
+
+    const reactDom = BdApi.ReactDOM;
+    if (typeof reactDom?.createRoot === 'function') {
+      return (container) => reactDom.createRoot(container);
+    }
     return null;
   }
 
@@ -1427,33 +1461,24 @@ module.exports = class SoloLevelingTitleManager {
    * Enhanced to persist buttons across guild/channel switches
    */
   setupChannelWatcher() {
-    // Use event-based URL change detection (more efficient than polling)
-    let lastUrl = window.location.href;
-
-    const handleUrlChange = () => {
-      // FUNCTIONAL: Guard clause (keep for early return)
+    let previousUrl = window.location.href;
+    const handleNavigation = () => {
       if (this._isStopped) return;
-
-      const currentUrl = window.location.href;
-      // FUNCTIONAL: Short-circuit for URL change (no if-else)
-      if (currentUrl !== lastUrl) {
-        lastUrl = currentUrl;
-        // React patcher handles button persistence on channel switch — no manual re-creation needed.
-      }
+      const nextUrl = window.location.href;
+      if (nextUrl === previousUrl) return;
+      previousUrl = nextUrl;
+      // React patcher handles button persistence on channel switch — no manual re-creation needed.
     };
 
-    // PERF(P5-1): Use shared NavigationBus instead of independent pushState wrapper
-    if (_PluginUtils?.NavigationBus) {
-      this._navBusUnsub = _PluginUtils.NavigationBus.subscribe(() => handleUrlChange());
+    const navigationBus = _PluginUtils?.NavigationBus;
+    if (navigationBus && typeof navigationBus.subscribe === 'function') {
+      this._navBusUnsub = navigationBus.subscribe(handleNavigation);
+    } else {
+      this._navBusUnsub = null;
     }
 
-    // Store idempotent cleanup function
     this._urlChangeCleanup = () => {
-      // PERF(P5-1): Unsubscribe from shared NavigationBus
-      if (this._navBusUnsub) {
-        this._navBusUnsub();
-        this._navBusUnsub = null;
-      }
+      this._unsubscribeNavigationBus();
     };
   }
 

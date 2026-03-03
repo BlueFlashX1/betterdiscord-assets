@@ -5,11 +5,18 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Scroll Listener Engine
+ * 3) Scroll Processing
+ */
+
 module.exports = class ScrollSpyTest {
   constructor() {
     this.pluginId = 'ScrollSpyTest';
     this.version = '1.0.0';
-    this._controller = new AbortController();
+    this._controller = null;
     this._throttleTimer = null;
 
     // --- CONFIGURATION ---
@@ -21,7 +28,15 @@ module.exports = class ScrollSpyTest {
     this.onScroll = this.onScroll.bind(this);
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = new AbortController();
+
     this.attachScrollListeners();
     BdApi.UI.showToast(this.pluginId + ' Scroll Spy Active', {
       type: 'success',
@@ -29,13 +44,17 @@ module.exports = class ScrollSpyTest {
   }
 
   stop() {
-    this._controller.abort();
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = null;
     clearTimeout(this._throttleTimer);
+    this._throttleTimer = null;
     BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
   }
 
   // =========================================================================
-  // SCROLL LISTENER SETUP
+  // 2) SCROLL LISTENER SETUP
   // Reference: https://javascript.info/onscroll
   //
   // Key insight: scroll events fire at EXTREMELY high frequency (60+ times/sec).
@@ -69,16 +88,17 @@ module.exports = class ScrollSpyTest {
   }
 
   // =========================================================================
-  // SCROLL PROCESSOR
+  // 3) SCROLL PROCESSOR
   // Calculates scroll position metrics and dispatches to handlers.
   // =========================================================================
   processScroll(container) {
     const scrollTop = container.scrollTop;
     const scrollHeight = container.scrollHeight;
     const clientHeight = container.clientHeight;
+    const scrollRange = Math.max(0, scrollHeight - clientHeight);
 
     // How far scrolled as a percentage (0 = top, 1 = bottom)
-    const scrollPercent = scrollTop / (scrollHeight - clientHeight);
+    const scrollPercent = scrollRange === 0 ? 1 : scrollTop / scrollRange;
 
     // Distance from bottom in pixels
     const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
@@ -107,33 +127,4 @@ module.exports = class ScrollSpyTest {
     // -------------------------
   }
 
-  // =========================================================================
-  // VISIBILITY CHECK UTILITY
-  // Determines if an element is currently visible within a scroll container.
-  // Useful for triggering animations or lazy-loading when elements scroll
-  // into view.
-  // =========================================================================
-  isElementVisible(element, container) {
-    const elemRect = element.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
-
-    return (
-      elemRect.top < containerRect.bottom && elemRect.bottom > containerRect.top
-    );
-  }
-
-  // =========================================================================
-  // SCROLL-TO UTILITY
-  // Smoothly scrolls a container to a target position.
-  // =========================================================================
-  scrollTo(container, targetTop, smooth = true) {
-    container.scrollTo({
-      top: targetTop,
-      behavior: smooth ? 'smooth' : 'instant',
-    });
-  }
-
-  scrollToBottom(container, smooth = true) {
-    this.scrollTo(container, container.scrollHeight, smooth);
-  }
 };

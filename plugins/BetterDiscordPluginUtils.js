@@ -7,6 +7,16 @@
  * @version 1.2.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Toast + Settings
+ * 2) Hotkey + DOM Helpers
+ * 3) Cache + Throttle Helpers
+ * 4) Shared Buses (Navigation/Layout)
+ * 5) Plugin/Debug Helpers
+ * 6) Exports
+ */
+
 // ── Toast ────────────────────────────────────────────────────────────────────
 // Routes through SoloLevelingToasts engine when available, falls back to BdApi.
 
@@ -128,7 +138,30 @@ function isEditableTarget(target) {
   if (!target) return false;
   const tag = target.tagName?.toLowerCase?.() || "";
   if (tag === "input" || tag === "textarea" || tag === "select") return true;
+  if (target.closest?.('[role="textbox"]')) return true;
   return !!target.isContentEditable;
+}
+
+function _readSelectorCache(cache, cacheKey, ttlMs) {
+  if (!cache || !cacheKey || !ttlMs) return null;
+  const entry = cache[cacheKey];
+  if (!entry || Date.now() - entry.time >= ttlMs) return null;
+  if (entry.el?.isConnected) return entry.el;
+  cache[cacheKey] = null;
+  return null;
+}
+
+function _writeSelectorCache(cache, cacheKey, ttlMs, el) {
+  if (!cache || !cacheKey || !ttlMs) return;
+  cache[cacheKey] = el ? { el, time: Date.now() } : null;
+}
+
+function _queryFirstSelector(selectors) {
+  for (const sel of selectors) {
+    const match = document.querySelector(sel);
+    if (match) return match;
+  }
+  return null;
 }
 
 /**
@@ -144,30 +177,12 @@ function isEditableTarget(target) {
  *   const el = querySelectorFallback(SELECTORS, { cache: _cache, cacheKey: 'hsl-scroller', ttlMs: 2000 });
  */
 function querySelectorFallback(selectors, options = {}) {
+  if (!Array.isArray(selectors) || selectors.length === 0) return null;
   const { cache, cacheKey, ttlMs } = options;
-
-  // Check cache if provided
-  if (cache && cacheKey && ttlMs) {
-    const entry = cache[cacheKey];
-    if (entry && Date.now() - entry.time < ttlMs) {
-      // Verify cached element is still connected
-      if (entry.el && entry.el.isConnected) return entry.el;
-      // Element disconnected — invalidate
-      cache[cacheKey] = null;
-    }
-  }
-
-  let result = null;
-  for (const sel of selectors) {
-    result = document.querySelector(sel);
-    if (result) break;
-  }
-
-  // Update cache
-  if (cache && cacheKey && ttlMs) {
-    cache[cacheKey] = result ? { el: result, time: Date.now() } : null;
-  }
-
+  const cached = _readSelectorCache(cache, cacheKey, ttlMs);
+  if (cached) return cached;
+  const result = _queryFirstSelector(selectors);
+  _writeSelectorCache(cache, cacheKey, ttlMs, result);
   return result;
 }
 
@@ -335,15 +350,50 @@ const LayoutObserverBus = (() => {
 
   let observer = null;
   let target = null;
+  let retryTimer = null;
+  const RETRY_MS = 1500;
   const subscribers = new Map(); // id -> { callback, throttleMs, lastFired }
 
-  function ensure() {
-    if (observer) return !!target;
-    target =
+  function findTarget() {
+    if (typeof document === 'undefined') return null;
+    return (
       document.querySelector('[class*="base_"][class*="container_"]') ||
       document.querySelector('[class*="app_"]') ||
-      document.getElementById('app-mount');
-    if (!target) return false;
+      document.getElementById('app-mount')
+    );
+  }
+
+  function stopRetry() {
+    if (!retryTimer) return;
+    clearInterval(retryTimer);
+    retryTimer = null;
+  }
+
+  function startRetry() {
+    if (retryTimer || subscribers.size === 0) return;
+    retryTimer = setInterval(() => {
+      if (subscribers.size === 0) {
+        stopRetry();
+        return;
+      }
+      ensure();
+    }, RETRY_MS);
+  }
+
+  function ensure() {
+    if (observer && target?.isConnected) return true;
+    if (observer && !target?.isConnected) {
+      observer.disconnect();
+      observer = null;
+      target = null;
+    }
+
+    target = findTarget();
+    if (!target) {
+      startRetry();
+      return false;
+    }
+    stopRetry();
 
     observer = new MutationObserver(() => {
       const now = Date.now();
@@ -358,15 +408,23 @@ const LayoutObserverBus = (() => {
   }
 
   function subscribe(id, callback, throttleMs = 500) {
-    ensure();
+    if (!id || typeof callback !== 'function') return () => {};
+
     subscribers.set(id, { callback, throttleMs, lastFired: 0 });
+    if (!ensure()) startRetry();
+
     return () => {
       subscribers.delete(id);
-      if (subscribers.size === 0 && observer) {
-        observer.disconnect();
-        observer = null;
-        target = null;
-        if (typeof window !== 'undefined') delete window.__BD_LayoutObserverBus;
+      if (subscribers.size === 0) {
+        stopRetry();
+        if (observer) {
+          observer.disconnect();
+          observer = null;
+          target = null;
+        }
+        if (typeof window !== 'undefined') {
+          delete window.__BD_LayoutObserverBus;
+        }
       }
     };
   }

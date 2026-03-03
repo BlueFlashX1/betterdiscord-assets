@@ -5,20 +5,36 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Tooltip Styling and Event Wiring
+ * 3) Tooltip State Handlers
+ */
+
 module.exports = class TooltipTest {
   constructor() {
     this.pluginId = 'TooltipTest';
     this.version = '1.0.0';
     this._cssId = this.pluginId + '-css';
-    this._controller = new AbortController();
+    this._controller = null;
     this._activeTooltip = null;
+    this._activeTarget = null;
 
     // Bind handlers
     this.onMouseEnter = this.onMouseEnter.bind(this);
     this.onMouseLeave = this.onMouseLeave.bind(this);
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = new AbortController();
+
     this.injectCSS();
 
     // Use mouseenter/mouseleave (NOT mouseover/mouseout) to avoid
@@ -40,12 +56,18 @@ module.exports = class TooltipTest {
   }
 
   stop() {
-    this._controller.abort();
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = null;
     this.removeTooltip();
     BdApi.DOM.removeStyle(this._cssId);
     BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
   }
 
+  // =========================================================================
+  // 2) TOOLTIP STYLING AND EVENT WIRING
+  // =========================================================================
   injectCSS() {
     const css = `
       .${this.pluginId}-tooltip {
@@ -73,13 +95,18 @@ module.exports = class TooltipTest {
   }
 
   // =========================================================================
+  // 3) TOOLTIP STATE HANDLERS
   // MOUSE ENTER HANDLER
   // Uses event.target.closest() to find the nearest [data-tooltip] ancestor.
   // Reference: https://javascript.info/event-delegation#the-behavior-pattern
   // =========================================================================
   onMouseEnter(event) {
-    const target = event.target.closest('[data-tooltip]');
+    const sourceNode = event.target;
+    if (!(sourceNode instanceof Element)) return;
+
+    const target = sourceNode.closest('[data-tooltip]');
     if (!target) return;
+    if (target === this._activeTarget) return;
 
     this.removeTooltip();
 
@@ -121,7 +148,10 @@ module.exports = class TooltipTest {
   }
 
   onMouseLeave(event) {
-    const target = event.target.closest('[data-tooltip]');
+    const sourceNode = event.target;
+    if (!(sourceNode instanceof Element)) return;
+
+    const target = sourceNode.closest('[data-tooltip]');
     if (!target || target !== this._activeTarget) return;
 
     // Check if we're moving to a child of the same target

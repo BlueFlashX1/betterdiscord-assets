@@ -5,13 +5,23 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Toast Utilities
+ */
+
 module.exports = class TestPlugin {
   constructor() {
     this.pluginId = 'TestPlugin';
     this.version = '1.0.0';
     this.instanceKey = `__${this.pluginId}Instance`;
+    this.debug = false;
   }
 
+  // =========================================================================
+  // 2) TOAST UTILITIES
+  // =========================================================================
   _toast(message, type = "info", timeout = null) {
     if (this._toastEngine) {
       this._toastEngine.showToast(message, type, timeout, { callerId: "testPlugin" });
@@ -20,8 +30,14 @@ module.exports = class TestPlugin {
     }
   }
 
+  _logDebug(...args) {
+    if (!this.debug) return;
+    console.debug(`[${this.pluginId}]`, ...args);
+  }
 
-
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
     // Toast engine discovery (unified toast system)
     this._toastEngine = (() => {
@@ -36,10 +52,7 @@ module.exports = class TestPlugin {
       if (prev && prev !== this && typeof prev.stop === 'function') prev.stop();
       window[this.instanceKey] = this;
     } catch (error) {
-      console.warn(
-        `[${this.pluginId}] Failed to register singleton instance:`,
-        error,
-      );
+      this._logDebug('Failed to register singleton instance', error);
     }
 
     this._toast(`${this.pluginId} v${this.version} active`, "success", 2200);
@@ -53,10 +66,7 @@ module.exports = class TestPlugin {
     try {
       delete window[this.instanceKey];
     } catch (error) {
-      console.warn(
-        `[${this.pluginId}] Failed to clear singleton instance key:`,
-        error,
-      );
+      this._logDebug('Failed to clear singleton instance key', error);
     }
 
     // --- AI DEHYDRATION ZONE ---

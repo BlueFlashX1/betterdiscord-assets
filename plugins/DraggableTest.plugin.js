@@ -5,6 +5,13 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Widget/CSS Setup
+ * 3) Drag State Machine
+ */
+
 module.exports = class DraggableTest {
   constructor() {
     this.pluginId = 'DraggableTest';
@@ -23,7 +30,13 @@ module.exports = class DraggableTest {
     this.shiftY = 0;
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    // Restart-safe start: clear stale widget/listeners from prior instances.
+    this.stop({ silent: true });
+
     this.injectCSS();
     this.injectWidget();
     BdApi.UI.showToast(this.pluginId + ' Draggable Widget Active', {
@@ -31,7 +44,7 @@ module.exports = class DraggableTest {
     });
   }
 
-  stop() {
+  stop({ silent = false } = {}) {
     // Cleanup DOM
     BdApi.DOM.removeStyle(this._cssId);
     const widget = document.getElementById(this._containerId);
@@ -41,9 +54,18 @@ module.exports = class DraggableTest {
     document.removeEventListener('mousemove', this.onMouseMove);
     document.removeEventListener('mouseup', this.onMouseUp);
 
-    BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
+    this.isDragging = false;
+    this.shiftX = 0;
+    this.shiftY = 0;
+
+    if (!silent) {
+      BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
+    }
   }
 
+  // =========================================================================
+  // 2) WIDGET/CSS SETUP
+  // =========================================================================
   injectCSS() {
     const css = `
       #${this._containerId} {
@@ -106,6 +128,9 @@ module.exports = class DraggableTest {
     document.body.appendChild(widget);
   }
 
+  // =========================================================================
+  // 3) DRAG STATE MACHINE
+  // =========================================================================
   onMouseDown(event) {
     if (event.button !== 0) return; // Only left-click
 

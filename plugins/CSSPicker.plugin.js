@@ -157,28 +157,51 @@ module.exports = (() => {
   const buildComputedVisualSummary = (computedStyle) => {
     if (!computedStyle) return [];
 
-    const bgColor = computedStyle.backgroundColor;
-    const bgImg = computedStyle.backgroundImage;
-    const shadow = computedStyle.boxShadow;
-    const border = computedStyle.border;
-    const outline = computedStyle.outline;
-    const filter = computedStyle.filter;
-    const backdrop = computedStyle.backdropFilter;
+    const rows = [
+      {
+        value: computedStyle.backgroundColor,
+        include: (value) => !isTrulyTransparent(value),
+        render: (value) => `bg ${formatCssValueCompact(value)}`,
+      },
+      {
+        value: computedStyle.backgroundImage,
+        include: (value) => value && value !== 'none' && !isTrulyTransparent(value),
+        render: (value) => `bg-img ${truncateMiddle(value, 78)}`,
+      },
+      {
+        value: computedStyle.boxShadow,
+        include: (value) => value && value !== 'none',
+        render: (value) => `shadow ${truncateMiddle(value, 78)}`,
+      },
+      {
+        value: computedStyle.border,
+        include: (value) => value && value !== 'none',
+        render: (value) => `border ${truncateMiddle(value, 62)}`,
+      },
+      {
+        value: computedStyle.outline,
+        include: (value) => value && value !== 'none',
+        render: (value) => `outline ${truncateMiddle(value, 62)}`,
+      },
+      {
+        value: computedStyle.filter,
+        include: (value) => value && value !== 'none',
+        render: (value) => `filter ${truncateMiddle(value, 62)}`,
+      },
+      {
+        value: computedStyle.backdropFilter,
+        include: (value) => value && value !== 'none',
+        render: (value) => `backdrop ${truncateMiddle(value, 62)}`,
+      },
+    ];
 
-    const parts = [
-      !isTrulyTransparent(bgColor) && `bg ${formatCssValueCompact(bgColor)}`,
-      bgImg &&
-        !isTrulyTransparent(bgImg) &&
-        bgImg !== 'none' &&
-        `bg-img ${truncateMiddle(bgImg, 78)}`,
-      shadow && shadow !== 'none' && `shadow ${truncateMiddle(shadow, 78)}`,
-      border && border !== 'none' && `border ${truncateMiddle(border, 62)}`,
-      outline && outline !== 'none' && `outline ${truncateMiddle(outline, 62)}`,
-      filter && filter !== 'none' && `filter ${truncateMiddle(filter, 62)}`,
-      backdrop && backdrop !== 'none' && `backdrop ${truncateMiddle(backdrop, 62)}`,
-    ].filter(Boolean);
-
-    return parts.slice(0, 4);
+    const parts = [];
+    for (const row of rows) {
+      if (!row.include(row.value)) continue;
+      parts.push(row.render(row.value));
+      if (parts.length >= 4) break;
+    }
+    return parts;
   };
 
   // Works with both old { properties, stylesheet } and new compact { props, source } format
@@ -430,31 +453,50 @@ module.exports = (() => {
   };
 
   // ── Element state flags: explicit metadata so AI never misreads hidden/clipped/inert state ──
-  const detectElementFlags = (el) => {
-    if (!el || !(el instanceof Element)) return {};
-    const cs = window.getComputedStyle(el);
-    const flags = {};
-    if (cs.display === 'none') flags.hidden = 'display:none';
-    else if (cs.visibility === 'hidden') flags.hidden = 'visibility:hidden';
-    else if (parseFloat(cs.opacity) === 0) flags.hidden = 'opacity:0';
+  const addVisibilityFlags = (flags, cs) => {
+    if (cs.display === 'none') {
+      flags.hidden = 'display:none';
+      return;
+    }
+    if (cs.visibility === 'hidden') {
+      flags.hidden = 'visibility:hidden';
+      return;
+    }
+    if (parseFloat(cs.opacity) === 0) flags.hidden = 'opacity:0';
+  };
+
+  const addLayoutFlags = (flags, cs) => {
     if (cs.pointerEvents === 'none') flags.inert = 'pointer-events:none';
     if (cs.overflow === 'hidden' || cs.overflow === 'clip') flags.clipped = cs.overflow;
-    if (cs.position === 'fixed') flags.positioning = 'fixed';
-    else if (cs.position === 'sticky') flags.positioning = 'sticky';
-    const w = parseFloat(cs.width), h = parseFloat(cs.height);
-    if (w === 0 || h === 0) flags.collapsed = `${Math.round(w)}x${Math.round(h)}`;
+    if (cs.position === 'fixed' || cs.position === 'sticky') flags.positioning = cs.position;
+    const width = parseFloat(cs.width);
+    const height = parseFloat(cs.height);
+    if (width === 0 || height === 0) {
+      flags.collapsed = `${Math.round(width)}x${Math.round(height)}`;
+    }
     if (cs.clipPath && cs.clipPath !== 'none') flags.clipPath = cs.clipPath;
+  };
 
-    // Interaction state at capture time
+  const addInteractionFlags = (flags, el) => {
     try { if (el.matches(':hover')) flags.hover = true; } catch {}
     try { if (el.matches(':focus')) flags.focus = true; } catch {}
     try { if (el.matches(':focus-within')) flags.focusWithin = true; } catch {}
+  };
 
-    // Discord state classes (selected channel, active item, etc.)
-    const cls = Array.from(el.classList || []);
-    const stateClass = cls.find(c => /selected|active|focused|hovered|muted|unread/i.test(c));
+  const addStateClassFlag = (flags, el) => {
+    const classes = Array.from(el.classList || []);
+    const stateClass = classes.find((name) => /selected|active|focused|hovered|muted|unread/i.test(name));
     if (stateClass) flags.stateClass = stateClass;
+  };
 
+  const detectElementFlags = (el) => {
+    if (!el || !(el instanceof Element)) return {};
+    const computed = window.getComputedStyle(el);
+    const flags = {};
+    addVisibilityFlags(flags, computed);
+    addLayoutFlags(flags, computed);
+    addInteractionFlags(flags, el);
+    addStateClassFlag(flags, el);
     return Object.keys(flags).length ? flags : null;
   };
 
@@ -706,31 +748,32 @@ module.exports = (() => {
   // querySelectorAll returns a static NodeList — DOM walk happens at call time.
   // For Discord's ~10K DOM nodes, this is <1ms per call in native C++.
   // We cap at 30 rules (maxMatches default), so total overhead is <30ms.
+  const getRuleScopeLabel = (totalMatches) => {
+    if (totalMatches <= 1) return 'unique';
+    if (totalMatches <= 5) return 'targeted';
+    if (totalMatches <= 50) return 'moderate';
+    return 'global';
+  };
+
+  const sampleScopeMatches = (nodes, pickedEl, maxSamples = 5) => {
+    const samples = [];
+    for (const node of nodes) {
+      if (node === pickedEl) continue;
+      const tag = node.tagName.toLowerCase();
+      const cls = node.classList[0] || '';
+      const aria = node.getAttribute('aria-label');
+      samples.push(aria ? `${tag}.${cls}[${aria}]` : cls ? `${tag}.${cls}` : tag);
+      if (samples.length >= maxSamples) break;
+    }
+    return samples;
+  };
+
   const analyzeRuleScope = (selectorText, pickedEl) => {
     try {
       const all = document.querySelectorAll(selectorText);
       const total = all.length;
-      let scope;
-      if (total <= 1) scope = 'unique';
-      else if (total <= 5) scope = 'targeted';
-      else if (total <= 50) scope = 'moderate';
-      else scope = 'global';
-
-      const result = { scope, totalMatches: total };
-      if (total > 1) {
-        const samples = [];
-        let count = 0;
-        for (const m of all) {
-          if (m === pickedEl) continue;
-          if (count >= 5) break;
-          const tag = m.tagName.toLowerCase();
-          const cls = m.classList[0] || '';
-          const aria = m.getAttribute('aria-label');
-          samples.push(aria ? `${tag}.${cls}[${aria}]` : cls ? `${tag}.${cls}` : tag);
-          count++;
-        }
-        result.otherElements = samples;
-      }
+      const result = { scope: getRuleScopeLabel(total), totalMatches: total };
+      if (total > 1) result.otherElements = sampleScopeMatches(all, pickedEl);
       return result;
     } catch {
       return { scope: 'unknown', totalMatches: -1 };
@@ -801,42 +844,49 @@ module.exports = (() => {
     return flat;
   };
 
+  const ruleTouchesAnyKey = (rule, keys) => {
+    for (const key of keys) {
+      try {
+        if (rule.style?.getPropertyValue?.(key)) return true;
+      } catch (_) {}
+    }
+    return false;
+  };
+
+  const selectorMatchesElement = (el, selector) => {
+    try {
+      return !!selector && el.matches(selector);
+    } catch (_) {
+      return false;
+    }
+  };
+
+  const collectRuleProperties = (rule, keys) => {
+    const props = {};
+    for (const key of keys) {
+      const value = rule.style.getPropertyValue(key);
+      if (!value) continue;
+      props[key] = {
+        value,
+        priority: rule.style.getPropertyPriority(key) || null,
+      };
+    }
+    return props;
+  };
+
   const findMatchingCssRules = (el, keys, maxMatches = 30) => {
     if (!el || !(el instanceof Element)) return [];
     const matches = [];
     const flatRules = _getFlatRules();
 
-    for (let i = 0; i < flatRules.length; i++) {
+    for (const entry of flatRules) {
       if (matches.length >= maxMatches) break;
-
-      const { rule, ruleIndex, sheetLabel, sheetIndex, sheetHref, ownerNode } = flatRules[i];
+      const { rule, ruleIndex, sheetLabel, sheetIndex, sheetHref, ownerNode } = entry;
       const selectorText = rule.selectorText;
       const { selector, pseudo } = splitPseudo(selectorText);
       if (!selector) continue;
-
-      // Quick prefilter: only consider rules that set any of the keys
-      let hasAnyKey = false;
-      for (let k = 0; k < keys.length; k++) {
-        try {
-          if (rule.style?.getPropertyValue?.(keys[k])) { hasAnyKey = true; break; }
-        } catch (e) { /* skip */ }
-      }
-      if (!hasAnyKey) continue;
-
-      try {
-        if (!el.matches(selector)) continue;
-      } catch (e) { continue; } // Invalid selector
-
-      const props = {};
-      for (let k = 0; k < keys.length; k++) {
-        const value = rule.style.getPropertyValue(keys[k]);
-        if (value) {
-          props[keys[k]] = {
-            value,
-            priority: rule.style.getPropertyPriority(keys[k]) || null,
-          };
-        }
-      }
+      if (!ruleTouchesAnyKey(rule, keys)) continue;
+      if (!selectorMatchesElement(el, selector)) continue;
 
       matches.push({
         stylesheet: sheetLabel,
@@ -845,7 +895,7 @@ module.exports = (() => {
         selectorText,
         selector,
         pseudo,
-        properties: props,
+        properties: collectRuleProperties(rule, keys),
         sheetHref,
         ownerNode,
       });
@@ -877,77 +927,61 @@ module.exports = (() => {
       });
   };
 
+  const MATCH_KEYS = [
+    'background', 'background-color', 'background-image',
+    'border', 'border-color', 'border-width', 'border-radius',
+    'box-shadow', 'outline', 'filter', 'backdrop-filter', 'transform',
+    'display', 'visibility', 'opacity', 'pointer-events', 'overflow',
+    'color', 'font-size', 'font-family',
+    'mask-image', '-webkit-mask-image',
+  ];
+
+  const getBestSelector = (el, stableSelectors) =>
+    stableSelectors[0]
+    || getExactClassSelectors(el)[0]
+    || (el.id ? `#${CSS.escape(el.id)}` : null);
+
+  const appendElementSemanticFields = (result, el) => {
+    if (el.id) result.id = el.id;
+    const ariaLabel = el.getAttribute('aria-label');
+    const role = el.getAttribute('role');
+    if (ariaLabel) result.ariaLabel = ariaLabel;
+    if (role) result.role = role;
+  };
+
+  const appendElementFlagsAndContext = (result, el) => {
+    const flags = detectElementFlags(el);
+    if (flags) result.flags = flags;
+    const parent = el.parentElement;
+    if (parent) result.parent = getElementSummary(parent);
+    const inlineStyles = extractInlineStyles(el);
+    if (inlineStyles) result.inlineStyles = inlineStyles;
+    if (el.children && el.children.length > 0) {
+      result.children = getChildrenCompact(el, 8);
+    }
+  };
+
   const getElementDetails = (el) => {
     if (!el || !(el instanceof Element)) return null;
 
-    const MATCH_KEYS = [
-      'background', 'background-color', 'background-image',
-      'border', 'border-color', 'border-width', 'border-radius',
-      'box-shadow', 'outline', 'filter', 'backdrop-filter', 'transform',
-      'display', 'visibility', 'opacity', 'pointer-events', 'overflow',
-      'color', 'font-size', 'font-family',
-      'mask-image', '-webkit-mask-image',
-    ];
-
     const classList = Array.from(el.classList || []);
     const stableSelectors = getStableSelectorSet(el);
-    const bestSelector =
-      stableSelectors[0] ||
-      getExactClassSelectors(el)[0] ||
-      (el.id ? `#${CSS.escape(el.id)}` : null);
-
-    // Core identity
     const result = {
       summary: getElementSummary(el),
-      selector: bestSelector,
+      selector: getBestSelector(el, stableSelectors),
       classList,
     };
 
-    // Semantic attributes (only if present)
-    const ariaLabel = el.getAttribute('aria-label');
-    const role = el.getAttribute('role');
-    const id = el.id;
-    if (id) result.id = id;
-    if (ariaLabel) result.ariaLabel = ariaLabel;
-    if (role) result.role = role;
-
-    // State flags — explicit visibility/interaction state
-    const flags = detectElementFlags(el);
-    if (flags) result.flags = flags;
-
-    // Parent context
-    const parent = el.parentElement;
-    if (parent) result.parent = getElementSummary(parent);
-
-    // Computed styles split into active (non-default) values and collapsed default key names
+    appendElementSemanticFields(result, el);
+    appendElementFlagsAndContext(result, el);
     Object.assign(result, splitComputedStyles(el));
 
-    // Inline style="" attribute (only if element has one — lets AI know what's inline vs CSS rule)
-    const inlineStyles = extractInlineStyles(el);
-    if (inlineStyles) result.inlineStyles = inlineStyles;
-
-    // Children (compact: summary + ariaLabel + flags + key visual styles if notable)
-    const childCount = el.children ? el.children.length : 0;
-    if (childCount > 0) {
-      result.children = getChildrenCompact(el, 8);
-    }
-
-    // Ancestry (compact: max 4 levels)
     result.ancestry = getAncestryCompact(el, 4);
-
-    // CSS rules that actually affect this element (filtered, simplified)
     result.appliedRules = getCompactCssRules(el, MATCH_KEYS, 30);
-
-    // Alternate selectors (only stable ones, no nth-of-type fragile paths)
-    if (stableSelectors.length > 1) {
-      result.altSelectors = stableSelectors.slice(1);
-    }
-
-    // Extraction warnings — let AI know if data might be incomplete
+    if (stableSelectors.length > 1) result.altSelectors = stableSelectors.slice(1);
     if (_lastCorsBlockedCount > 0) {
       result._warnings = [`${_lastCorsBlockedCount} cross-origin stylesheet(s) could not be read — some rules may be missing`];
     }
-
     return result;
   };
 
@@ -1334,22 +1368,13 @@ module.exports = (() => {
         });
       };
 
-      this.onClick = async (event) => {
-        if (!this.isActive) return;
-
-        // Capture exactly once per activation
-        if (event.target && event.target.closest && event.target.closest('#css-picker-launcher')) {
-          return;
-        }
-
-        const rawTarget = getTargetFromPoint(event.clientX, event.clientY);
+      const captureElementAtPoint = async (x, y) => {
+        const rawTarget = getTargetFromPoint(x, y);
         if (!rawTarget || !(rawTarget instanceof Element)) {
-          this._toast('No element found to capture', 'error');
-          this.deactivatePickMode();
-          return;
+          return { ok: false, error: 'No element found to capture' };
         }
-        const { el: target, promoted, originalTag } = promoteToMeaningfulAncestor(rawTarget);
 
+        const { el: target, promoted, originalTag } = promoteToMeaningfulAncestor(rawTarget);
         const elementDetails = getElementDetails(target);
         if (promoted && originalTag) elementDetails._promotedFrom = originalTag;
 
@@ -1361,12 +1386,10 @@ module.exports = (() => {
 
         const saveResult = trySaveReportJson(report);
         const clipboardResult = await tryCopyJsonToClipboard(report);
-
         const toastType =
-          (saveResult.ok && clipboardResult.ok && 'success') ||
-          ((saveResult.ok || clipboardResult.ok) && 'warning') ||
-          'error';
-
+          (saveResult.ok && clipboardResult.ok && 'success')
+          || ((saveResult.ok || clipboardResult.ok) && 'warning')
+          || 'error';
         const settings = this.settings || loadSettings();
         const message = buildCaptureToastMessage({
           elementDetails: report.element,
@@ -1374,9 +1397,24 @@ module.exports = (() => {
           clipboardResult,
           settings,
         });
+        return {
+          ok: true,
+          toastType,
+          message,
+          toastTimeoutMs: settings.toastTimeoutMs || 5500,
+        };
+      };
 
-        this._toast(message, toastType, settings.toastTimeoutMs || 5500);
-
+      this.onClick = async (event) => {
+        if (!this.isActive) return;
+        if (event.target?.closest?.('#css-picker-launcher')) return;
+        const capture = await captureElementAtPoint(event.clientX, event.clientY);
+        if (!capture.ok) {
+          this._toast(capture.error || 'Failed to capture element', 'error');
+          this.deactivatePickMode();
+          return;
+        }
+        this._toast(capture.message, capture.toastType, capture.toastTimeoutMs);
         this.deactivatePickMode();
       };
 

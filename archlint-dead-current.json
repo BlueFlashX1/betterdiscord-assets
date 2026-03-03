@@ -1,0 +1,53 @@
+{
+  "smells": [
+    {
+      "explanation": {
+        "problem": "Unused file detected",
+        "reason": "This file is not imported by any other module in the codebase. It may be leftover code from refactoring, experimental code that was never integrated, or a genuinely unused module.",
+        "recommendations": [
+          "Verify the file is truly unused (check dynamic imports, tests, configs)",
+          "Remove the file if confirmed as dead code",
+          "If keeping for reference, move to an archive or documentation",
+          "Add the file to entry_points config if it's an intentional entry point",
+          "Review recent refactorings to understand why it became unused"
+        ],
+        "risks": [
+          "Increases codebase size and maintenance burden",
+          "Causes confusion about what code is actually in use",
+          "May contain outdated patterns or security vulnerabilities",
+          "Wastes developer time when searching or refactoring",
+          "Can lead to accidental usage of outdated code"
+        ]
+      },
+      "files": [
+        "/Users/matthewthompson/Documents/DEVELOPMENT/discord/betterdiscord/betterdiscord-assets/plugins/ShadowPortalCore.js"
+      ],
+      "locations": [],
+      "metrics": [],
+      "severity": "High",
+      "type": "dead_code"
+    }
+  ],
+  "summary": {
+    "architecture_grade": {
+      "density": "1.43",
+      "level": "Good",
+      "score": "8.8"
+    },
+    "cycle_clusters": 0,
+    "cyclic_dependencies": 0,
+    "dead_code": 1,
+    "dead_symbols": 0,
+    "feature_envy": 0,
+    "files_analyzed": 35,
+    "files_in_cycles": 0,
+    "god_modules": 0,
+    "high_cognitive_complexity_functions": 0,
+    "high_cyclomatic_complexity_functions": 0,
+    "hub_dependencies": 0,
+    "large_files": 0,
+    "shotgun_surgery": 0,
+    "total_smells": 1,
+    "unstable_interfaces": 0
+  }
+}

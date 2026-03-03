@@ -26,7 +26,28 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const fullPath = path.join(BdApi.Plugins.folder, fileName);
+    const source = fs.readFileSync(fullPath, 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === 'function') return candidate;
+    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {}
+  return null;
+}
 
 // ─── Selector Configuration ─────────────────────────────────────────────────
 // Centralized for easy updating when Discord changes class names.
@@ -877,29 +898,43 @@ class DockEngine {
     this.rail.style.width = `${width}px`;
   }
 
-  isAlertNodeActive(el) {
+  _isAlertNodeUsable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
     try {
-      const style = getComputedStyle(el);
-      if (style.display === "none") return false;
+      return getComputedStyle(el).display !== "none";
     } catch (error) {
       this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to read computed style for alert node", error);
+      return false;
     }
-    const cls = String(el.className || "").toLowerCase();
-    const label = String(el.getAttribute("aria-label") || "").toLowerCase();
-    const text = String(el.textContent || "").trim().toLowerCase();
+  }
+
+  _getAlertNodeTextData(el) {
+    return {
+      className: String(el.className || "").toLowerCase(),
+      label: String(el.getAttribute("aria-label") || "").toLowerCase(),
+      text: String(el.textContent || "").trim().toLowerCase(),
+    };
+  }
+
+  _isMentionLabelActive(label) {
+    if (!label) return false;
     if (label.includes("no mention") || label.includes("no mentions")) return false;
-    if (label.includes("mention") || label.includes("mentions")) {
-      const amount = label.match(/\d+/);
-      if (amount) return Number(amount[0]) > 0;
-      return true;
-    }
-    if (cls.includes("mentionsbadge") || cls.includes("numberbadge")) {
-      if (/^\d+$/.test(text)) return Number(text) > 0;
-      return true;
-    }
-    return false;
+    if (!label.includes("mention")) return false;
+    const amount = label.match(/\d+/);
+    return amount ? Number(amount[0]) > 0 : true;
+  }
+
+  _isBadgeClassActive(className, text) {
+    if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
+    return /^\d+$/.test(text) ? Number(text) > 0 : true;
+  }
+
+  isAlertNodeActive(el) {
+    if (!this._isAlertNodeUsable(el)) return false;
+    const { className, label, text } = this._getAlertNodeTextData(el);
+    if (this._isMentionLabelActive(label)) return true;
+    return this._isBadgeClassActive(className, text);
   }
 
   // ── Debug Infrastructure ──────────────────────────────────────────────────
@@ -1120,93 +1155,23 @@ module.exports = class HSLDockAutoHide {
       ReactUtils = null;
     }
 
-    if (ReactUtils) {
-      const pluginInstance = this;
-      const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
-        const component = React.createElement(pluginInstance._DockController, {
-          key: 'sl-dock-autohide',
-          pluginInstance,
-        });
-        ReactUtils.injectReactComponent(appNode, 'sl-dock-autohide-root', component, returnValue);
-      });
-      if (!ok) {
-        console.error('[HSLDockAutoHide] MainContent module not found — plugin inactive');
-      }
+    if (!ReactUtils?.patchReactMainContent || !ReactUtils?.injectReactComponent) {
+      console.warn('[HSLDockAutoHide] BetterDiscordReactUtils unavailable; relying on direct DOM fallback');
       return;
     }
 
-    // Inline fallback if BetterDiscordReactUtils.js is not available
-    // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount'];
-    let MainContent = null, _mcKey = 'Z';
-    if (typeof BdApi.Webpack.getWithKey === 'function') {
-      for (const s of _mcStrings) {
-        try { const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s)); if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      for (const s of _mcStrings) {
-        try { const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false }); if (mod) { for (const k of ['Z','ZP','default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } } if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } } if (MainContent) break; } } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      console.error('[HSLDockAutoHide] MainContent module not found (all strategies exhausted) — using DOM fallback');
-      return;
-    }
-
-    const React = BdApi.React;
     const pluginInstance = this;
-
-    BdApi.Patcher.after(this._patcherId, MainContent, _mcKey, (_this, _args, returnValue) => {
-      try {
-        if (pluginInstance._isStopped) return returnValue;
-
-        const appNode = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) =>
-            prop && prop.props &&
-            (prop.props.className?.includes('app') ||
-              prop.props.id === 'app-mount' ||
-              prop.type === 'body'),
-          { walkable: ['props', 'children'] }
-        );
-
-        if (!appNode || !appNode.props) {
-          if (!pluginInstance._appNodeWarnLogged) {
-            console.warn('[HSLDockAutoHide] findInTree could not locate appNode in React tree — fallback will activate');
-            pluginInstance._appNodeWarnLogged = true;
-          }
-          return returnValue;
-        }
-
-        const already = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) => prop && prop.props && prop.props.id === 'sl-dock-autohide-root',
-          { walkable: ['props', 'children'] }
-        );
-        if (already) return returnValue;
-
-        const controller = React.createElement(pluginInstance._DockController, {
-          key: 'sl-dock-autohide',
-          pluginInstance,
-        });
-        const wrapper = React.createElement('div', {
-          id: 'sl-dock-autohide-root',
-          style: { display: 'contents' },
-        }, controller);
-
-        if (Array.isArray(appNode.props.children)) {
-          appNode.props.children.push(wrapper);
-        } else if (appNode.props.children) {
-          appNode.props.children = [appNode.props.children, wrapper];
-        } else {
-          appNode.props.children = wrapper;
-        }
-      } catch (e) {
-        console.error('[HSLDockAutoHide] React patcher error:', e);
-      }
-      return returnValue;
+    const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+      const component = React.createElement(pluginInstance._DockController, {
+        key: 'sl-dock-autohide',
+        pluginInstance,
+      });
+      ReactUtils.injectReactComponent(appNode, 'sl-dock-autohide-root', component, returnValue);
     });
+
+    if (!ok) {
+      console.warn('[HSLDockAutoHide] MainContent React patch unavailable; relying on direct DOM fallback');
+    }
   }
 
   // ── DockAutoHideController — React Functional Component ───────────────────

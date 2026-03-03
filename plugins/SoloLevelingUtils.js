@@ -8,6 +8,35 @@
 
 /* global BdApi */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Constants + Module Discovery
+ * 2) Injection + Debug + DOM Helpers
+ * 3) Toolbar Injection Bus
+ * 4) Cross-Plugin Helpers
+ * 5) Shared Module Loaders
+ * 6) Exports
+ */
+
+/** Load local shared modules from BD plugins folder. */
+const _bdLoad = (f) => {
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const mod = { exports: {} };
+    const src = fs.readFileSync(path.join(BdApi.Plugins.folder, f), 'utf8');
+    new Function('module', 'exports', src)(mod, mod.exports);
+    return mod.exports && (typeof mod.exports === 'function' || Object.keys(mod.exports).length)
+      ? mod.exports
+      : null;
+  } catch (_) {
+    return null;
+  }
+};
+
+let _ReactUtils = null;
+try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+
 // ---------------------------------------------------------------------------
 // Shared constants
 // ---------------------------------------------------------------------------
@@ -59,6 +88,135 @@ function initWebpackModules(opts = {}) {
   return result;
 }
 
+function _invokeOnMount(onMount, elementId) {
+  if (!onMount) return;
+  setTimeout(() => {
+    const domEl = document.getElementById(elementId);
+    if (domEl) onMount(domEl);
+  }, 100);
+}
+
+function _findMainContentWithGetWithKey(candidates) {
+  if (typeof BdApi.Webpack.getWithKey !== 'function') return null;
+  for (const value of candidates) {
+    try {
+      const result = BdApi.Webpack.getWithKey(
+        (m) => typeof m === 'function' && m.toString().includes(value)
+      );
+      if (result && result[0]) return [result[0], result[1]];
+    } catch (_) {}
+  }
+  return null;
+}
+
+function _resolveMainContentExportKey(mod) {
+  if (!mod) return null;
+  for (const key of ['Z', 'ZP', 'default']) {
+    if (typeof mod[key] === 'function') return key;
+  }
+  return Object.keys(mod).find((key) => typeof mod[key] === 'function') || null;
+}
+
+function _findMainContentWithGetByStrings(candidates) {
+  for (const value of candidates) {
+    try {
+      const mod = BdApi.Webpack.getByStrings(value, { defaultExport: false });
+      const key = _resolveMainContentExportKey(mod);
+      if (key) return [mod, key];
+    } catch (_) {}
+  }
+  return null;
+}
+
+function _findInlineMainContentModule() {
+  const candidates = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
+  return (
+    _findMainContentWithGetWithKey(candidates) ||
+    _findMainContentWithGetByStrings(candidates)
+  );
+}
+
+function _trySharedReactInjection(opts, log, err) {
+  if (!_ReactUtils?.patchReactMainContent || !_ReactUtils?.injectReactComponent) return false;
+  const { patcherId, elementId, render, onMount, guard } = opts;
+  const pluginInstance = opts.pluginInstance || { _isStopped: false };
+
+  const ok = _ReactUtils.patchReactMainContent(pluginInstance, patcherId, (React, appNode, returnValue) => {
+    try {
+      if (guard && !guard()) return;
+      const element = render(React);
+      const injected = _ReactUtils.injectReactComponent(appNode, elementId, element, returnValue);
+      if (!injected) return;
+      log('REACT_INJECTION', `${elementId} injected via shared ReactUtils`);
+      _invokeOnMount(onMount, elementId);
+    } catch (error) {
+      err('REACT_INJECTION', error);
+    }
+  });
+
+  if (!ok) {
+    log('REACT_INJECTION', 'Shared ReactUtils could not patch; falling back to inline finder');
+    return false;
+  }
+
+  return true;
+}
+
+function _installInlineReactInjectionPatch(opts, log, err) {
+  const { patcherId, elementId, render, onMount, guard } = opts;
+  const tuple = _findInlineMainContentModule();
+  if (!tuple) {
+    log('REACT_INJECTION', 'Main content component not found (all strategies exhausted), using DOM fallback');
+    return false;
+  }
+
+  const [MainContent, mainKey] = tuple;
+  const React = BdApi.React;
+
+  BdApi.Patcher.after(patcherId, MainContent, mainKey, (_this, _args, returnValue) => {
+    try {
+      if (guard && !guard()) return returnValue;
+
+      const bodyPath = BdApi.Utils.findInTree(
+        returnValue,
+        (prop) =>
+          prop &&
+          prop.props &&
+          (prop.props.className?.includes('app') ||
+            prop.props.id === 'app-mount' ||
+            prop.type === 'body'),
+        { walkable: ['props', 'children'] }
+      );
+      if (!bodyPath || !bodyPath.props) return returnValue;
+
+      const alreadyInjected = BdApi.Utils.findInTree(
+        returnValue,
+        (prop) => prop && prop.props && prop.props.id === elementId,
+        { walkable: ['props', 'children'] }
+      );
+      if (alreadyInjected) return returnValue;
+
+      const element = render(React);
+      if (Array.isArray(bodyPath.props.children)) {
+        bodyPath.props.children.unshift(element);
+      } else if (bodyPath.props.children) {
+        bodyPath.props.children = [element, bodyPath.props.children];
+      } else {
+        bodyPath.props.children = element;
+      }
+
+      log('REACT_INJECTION', `${elementId} injected via React`);
+      _invokeOnMount(onMount, elementId);
+    } catch (error) {
+      err('REACT_INJECTION', error);
+    }
+    return returnValue;
+  });
+
+  log('REACT_INJECTION', 'React injection patch installed');
+  return true;
+}
+
 /**
  * Try to inject a React element into Discord's base layer.
  *
@@ -72,96 +230,13 @@ function initWebpackModules(opts = {}) {
  * @returns {boolean} true if patch was installed
  */
 function tryReactInjection(opts) {
-  const { patcherId, elementId, render, onMount, guard, debugLog, debugError } = opts;
+  const { debugLog, debugError } = opts;
   const log = debugLog || (() => {});
   const err = debugError || (() => {});
 
   try {
-    // Multi-strategy MainContent finder (resilient to Discord renames)
-    const _mcStrings = ['baseLayer', 'appMount', 'app-mount', 'notAppAsidePanel', 'applicationStore'];
-    let MainContent = null, _mcKey = 'Z';
-
-    // Strategy 1: getWithKey (BD 1.13+) — auto-resolves export key
-    if (typeof BdApi.Webpack.getWithKey === 'function') {
-      for (const s of _mcStrings) {
-        try {
-          const r = BdApi.Webpack.getWithKey(m => typeof m === 'function' && m.toString().includes(s));
-          if (r && r[0]) { MainContent = r[0]; _mcKey = r[1]; break; }
-        } catch (_) {}
-      }
-    }
-    // Strategy 2: getByStrings + dynamic key detection
-    if (!MainContent) {
-      for (const s of _mcStrings) {
-        try {
-          const mod = BdApi.Webpack.getByStrings(s, { defaultExport: false });
-          if (mod) {
-            for (const k of ['Z', 'ZP', 'default']) { if (typeof mod[k] === 'function') { MainContent = mod; _mcKey = k; break; } }
-            if (!MainContent) { const k = Object.keys(mod).find(k => typeof mod[k] === 'function'); if (k) { MainContent = mod; _mcKey = k; } }
-            if (MainContent) break;
-          }
-        } catch (_) {}
-      }
-    }
-    if (!MainContent) {
-      log('REACT_INJECTION', 'Main content component not found (all strategies exhausted), using DOM fallback');
-      return false;
-    }
-
-    const React = BdApi.React;
-
-    BdApi.Patcher.after(patcherId, MainContent, _mcKey, (_this, _args, returnValue) => {
-      try {
-        // Optional per-render guard — if it returns false, skip injection for this render
-        if (guard && !guard()) return returnValue;
-
-        const bodyPath = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) =>
-            prop &&
-            prop.props &&
-            (prop.props.className?.includes('app') ||
-              prop.props.id === 'app-mount' ||
-              prop.type === 'body'),
-          { walkable: ['props', 'children'] }
-        );
-
-        if (!bodyPath || !bodyPath.props) return returnValue;
-
-        const alreadyInjected = BdApi.Utils.findInTree(
-          returnValue,
-          (prop) => prop && prop.props && prop.props.id === elementId,
-          { walkable: ['props', 'children'] }
-        );
-
-        if (alreadyInjected) return returnValue;
-
-        const element = render(React);
-
-        if (Array.isArray(bodyPath.props.children)) {
-          bodyPath.props.children.unshift(element);
-        } else if (bodyPath.props.children) {
-          bodyPath.props.children = [element, bodyPath.props.children];
-        } else {
-          bodyPath.props.children = element;
-        }
-
-        log('REACT_INJECTION', `${elementId} injected via React`);
-
-        if (onMount) {
-          setTimeout(() => {
-            const domEl = document.getElementById(elementId);
-            if (domEl) onMount(domEl);
-          }, 100);
-        }
-      } catch (error) {
-        err('REACT_INJECTION', error);
-      }
-      return returnValue;
-    });
-
-    log('REACT_INJECTION', 'React injection patch installed');
-    return true;
+    if (_trySharedReactInjection(opts, log, err)) return true;
+    return _installInlineReactInjectionPatch(opts, log, err);
   } catch (error) {
     err('REACT_INJECTION', error, { phase: 'setup' });
     return false;
@@ -294,10 +369,9 @@ function createTrackedTimeouts() {
   const ids = new Set();
 
   function set(callback, delayMs) {
-    let stopped = false;
     const wrapped = () => {
       ids.delete(timeoutId);
-      if (!stopped) callback();
+      callback();
     };
     const timeoutId = setTimeout(wrapped, delayMs);
     ids.add(timeoutId);
@@ -582,6 +656,195 @@ function getPluginInstance(name) {
   }
 }
 
+/**
+ * Resolve shared backup file path outside BetterDiscord plugin directory.
+ * The parent folder is created when needed.
+ *
+ * @param {string} fileName
+ * @returns {string|null}
+ */
+function getSoloLevelingBackupFilePath(fileName) {
+  try {
+    if (!fileName || typeof fileName !== 'string') return null;
+    const pathModule = require('path');
+    const fs = require('fs');
+    const appSupport = pathModule.resolve(BdApi.Plugins.folder, '..', '..');
+    const backupDir = pathModule.join(appSupport, 'discord', 'SoloLevelingBackups');
+    fs.mkdirSync(backupDir, { recursive: true });
+    return pathModule.join(backupDir, fileName);
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Read JSON file content safely.
+ *
+ * @param {string} filePath
+ * @param {Function} [onError]
+ * @returns {Object|null}
+ */
+function readJsonFileSafe(filePath, onError) {
+  if (!filePath) return null;
+  try {
+    const fs = require('fs');
+    if (!fs.existsSync(filePath)) return null;
+    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+  } catch (error) {
+    if (typeof onError === 'function') onError(error);
+    return null;
+  }
+}
+
+/**
+ * Write JSON file content safely (async write).
+ *
+ * @param {string} filePath
+ * @param {Object} data
+ * @param {Function} [onError]
+ * @param {Function} [onSuccess]
+ * @returns {boolean}
+ */
+function writeJsonFileSafe(filePath, data, onError, onSuccess) {
+  if (!filePath) return false;
+  try {
+    const fs = require('fs');
+    fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8', (error) => {
+      if (error) {
+        if (typeof onError === 'function') onError(error);
+        return;
+      }
+      if (typeof onSuccess === 'function') onSuccess();
+    });
+    return true;
+  } catch (error) {
+    if (typeof onError === 'function') onError(error);
+    return false;
+  }
+}
+
+/**
+ * Parse settings metadata timestamp.
+ *
+ * @param {Object} data
+ * @returns {number}
+ */
+function getSavedTimestampFromMetadata(data) {
+  const iso = data?._metadata?.lastSave;
+  const ts = iso ? Date.parse(iso) : NaN;
+  return Number.isFinite(ts) ? ts : 0;
+}
+
+/**
+ * Select newest settings candidate from multi-tier storage.
+ *
+ * @param {Array<{source: string, data: Object, ts?: number}>} candidates
+ * @param {Object<string, number>} [sourcePriority]
+ * @returns {{source: string, data: Object, ts: number}|null}
+ */
+function pickNewestSettingsCandidate(candidates, sourcePriority = {}) {
+  if (!Array.isArray(candidates) || candidates.length === 0) return null;
+  return candidates.reduce((best, current) => {
+    if (!current || !current.data || typeof current.data !== 'object') return best;
+    const currentTs = Number.isFinite(current.ts) ? current.ts : getSavedTimestampFromMetadata(current.data);
+    if (!best) return { ...current, ts: currentTs };
+
+    const bestTs = Number.isFinite(best.ts) ? best.ts : getSavedTimestampFromMetadata(best.data);
+    if (currentTs > bestTs) return { ...current, ts: currentTs };
+    if (currentTs < bestTs) return { ...best, ts: bestTs };
+
+    const bestPriority = sourcePriority[best.source] ?? 0;
+    const currentPriority = sourcePriority[current.source] ?? 0;
+    return currentPriority >= bestPriority
+      ? { ...current, ts: currentTs }
+      : { ...best, ts: bestTs };
+  }, null);
+}
+
+function _hasPortalCoreShape(mod) {
+  return !!(mod && typeof mod.applyPortalCoreToClass === 'function');
+}
+
+function _getShadowPortalCoreCandidates() {
+  const candidates = [];
+  if (BdApi?.Plugins?.folder && typeof BdApi.Plugins.folder === 'string') {
+    const path = require('path');
+    candidates.push(path.join(BdApi.Plugins.folder, 'ShadowPortalCore.js'));
+  }
+  candidates.push('./ShadowPortalCore.js');
+  return candidates;
+}
+
+function _tryRequireShadowPortalCore(candidate) {
+  try {
+    const resolved = require.resolve(candidate);
+    if (require.cache[resolved]) delete require.cache[resolved];
+    const mod = require(resolved);
+    return _hasPortalCoreShape(mod) ? mod : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function _trySourceLoadShadowPortalCore(candidate, path, fs) {
+  try {
+    const absolute = path.isAbsolute(candidate)
+      ? candidate
+      : path.join(BdApi?.Plugins?.folder || '', candidate.replace(/^\.\//, ''));
+    if (!absolute || !fs.existsSync(absolute)) return null;
+
+    const source = fs.readFileSync(absolute, 'utf8');
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      'module',
+      'exports',
+      'require',
+      'window',
+      'BdApi',
+      `${source}\nreturn module.exports || exports || (window && window.ShadowPortalCore) || null;`
+    );
+    const loaded = factory(
+      moduleObj,
+      moduleObj.exports,
+      require,
+      typeof window !== 'undefined' ? window : null,
+      BdApi
+    );
+    const mod =
+      loaded ||
+      moduleObj.exports ||
+      (typeof window !== 'undefined' ? window.ShadowPortalCore : null);
+    return _hasPortalCoreShape(mod) ? mod : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+/**
+ * Load shared ShadowPortalCore with resilient fallback order.
+ * Centralizes logic used by ShadowStep and ShadowExchange.
+ *
+ * @returns {object|null}
+ */
+function loadShadowPortalCore() {
+  try {
+    const path = require('path');
+    const fs = require('fs');
+    const candidates = _getShadowPortalCoreCandidates();
+
+    for (const candidate of candidates) {
+      const fromRequire = _tryRequireShadowPortalCore(candidate);
+      if (fromRequire) return fromRequire;
+
+      const fromSource = _trySourceLoadShadowPortalCore(candidate, path, fs);
+      if (fromSource) return fromSource;
+    }
+  } catch (_) {}
+
+  const fromWindow = typeof window !== 'undefined' ? window.ShadowPortalCore || null : null;
+  return _hasPortalCoreShape(fromWindow) ? fromWindow : null;
+}
+
 // ---------------------------------------------------------------------------
 // Exports
 // ---------------------------------------------------------------------------
@@ -599,6 +862,12 @@ const _SoloLevelingUtils = {
   registerToolbarButton,
   unregisterToolbarButton,
   getPluginInstance,
+  getSoloLevelingBackupFilePath,
+  readJsonFileSafe,
+  writeJsonFileSafe,
+  getSavedTimestampFromMetadata,
+  pickNewestSettingsCandidate,
+  loadShadowPortalCore,
 };
 
 // module.exports for require() — BD's require uses vm.compileFunction where

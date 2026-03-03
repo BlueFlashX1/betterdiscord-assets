@@ -5,15 +5,31 @@
  * @version 1.0.0
  */
 
+/**
+ * TABLE OF CONTENTS
+ * 1) Lifecycle
+ * 2) Event Bus Emit/Listen
+ * 3) Cross-Plugin Communication Notes
+ */
+
 module.exports = class CustomEventsTest {
   constructor() {
     this.pluginId = 'CustomEventsTest';
     this.version = '1.0.0';
-    this._controller = new AbortController();
+    this._controller = null;
     this._eventPrefix = this.pluginId + ':';
+    this.debug = false;
   }
 
+  // =========================================================================
+  // 1) LIFECYCLE
+  // =========================================================================
   start() {
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = new AbortController();
+
     this.registerListeners();
     BdApi.UI.showToast(this.pluginId + ' Event Bus Active', {
       type: 'success',
@@ -24,13 +40,16 @@ module.exports = class CustomEventsTest {
   }
 
   stop() {
-    this._controller.abort();
+    if (this._controller && !this._controller.signal.aborted) {
+      this._controller.abort();
+    }
+    this._controller = null;
     this.emit('shutdown', { timestamp: Date.now() });
     BdApi.UI.showToast(this.pluginId + ' Stopped', { type: 'info' });
   }
 
   // =========================================================================
-  // EVENT BUS: EMIT
+  // 2) EVENT BUS: EMIT
   // Reference: https://javascript.info/dispatch-events
   //
   // Uses CustomEvent with { bubbles: true } so any ancestor can catch it.
@@ -38,6 +57,7 @@ module.exports = class CustomEventsTest {
   // with native event properties.
   // =========================================================================
   emit(eventName, data = {}) {
+    if (!eventName || typeof eventName !== 'string') return;
     const fullName = this._eventPrefix + eventName;
     const event = new CustomEvent(fullName, {
       bubbles: true,
@@ -58,7 +78,9 @@ module.exports = class CustomEventsTest {
   registerListeners() {
     // Listen for our own events
     this.on('ready', (detail) => {
-      console.log('[' + this.pluginId + '] Ready at', detail.timestamp);
+      if (this.debug) {
+        console.log('[' + this.pluginId + '] Ready at', detail.timestamp);
+      }
     });
 
     // --- AI HYDRATION ZONE ---
@@ -72,6 +94,8 @@ module.exports = class CustomEventsTest {
 
   // Convenience wrapper for listening to namespaced events
   on(eventName, handler) {
+    if (!eventName || typeof handler !== 'function') return;
+    if (!this._controller || this._controller.signal.aborted) return;
     const fullName = this._eventPrefix + eventName;
     document.addEventListener(
       fullName,
@@ -83,7 +107,7 @@ module.exports = class CustomEventsTest {
   }
 
   // =========================================================================
-  // CROSS-PLUGIN COMMUNICATION
+  // 3) CROSS-PLUGIN COMMUNICATION
   // Any plugin can emit events that others consume. This creates a
   // loosely-coupled plugin ecosystem.
   //
