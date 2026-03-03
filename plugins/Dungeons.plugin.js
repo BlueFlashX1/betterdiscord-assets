@@ -920,7 +920,7 @@ module.exports = class Dungeons {
       shadowAttackInterval: 3000,
       userAttackCooldown: 2000,
       mobKillNotificationInterval: 30000,
-      mobMaxActiveCap: 500, // Hard limit on simultaneously active mobs per dungeon
+      mobMaxActiveCap: 1000, // Hard limit on simultaneously active mobs per dungeon
       mobWaveBaseCount: 200, // Per-wave spawn target before variance/cap checks (larger batches, less frequent)
       mobWaveVariancePercent: 0.2, // ±20% organic wave variance
       mobTierNormalShare: 0.7, // Spawn mix: normal mobs
@@ -932,9 +932,15 @@ module.exports = class Dungeons {
       bossGateEnabled: true, // Prevent immediate boss burn on fresh dungeon spawn
       bossGateMinDurationMs: 180000, // Boss unlock requires at least 3 minutes elapsed
       bossGateRequiredMobKills: 0, // No mob kill requirement — timer only
+      shadowPressureScalingEnabled: false, // Lore mode: disable HP scaling from deployed shadow count
       shadowPressureMobScaleStep: 0.12, // mobHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureBossScaleStep: 0.18, // bossHP *= 1 + step * log10(shadowPower + 1)
       shadowPressureScaleMax: 2.75, // Safety cap for pressure scaling
+      staticBossHpBaseMultiplier: 2.3, // Base static HP multiplier (no shadow pressure scaling)
+      staticBossHpRankStep: 0.14, // Additional static HP multiplier per rank index
+      rankAllocationDeployPoolShare: 0.8, // Share of combat pool to deploy across active dungeons
+      rankAllocationPreferredPairShare: 0.8, // Share of each dungeon allocation from (same-rank + one-rank-higher)
+      rankAllocationSameRankShare: 0.75, // Inside preferred pair, majority stays same-rank
       roleCombatModelEnabled: true, // Lore-role combat model (bounded state, low-overhead)
       roleCombatModelVersion: 1, // Reserved for future behavior migrations
       // Dungeon ranks including SS, SSS
@@ -962,7 +968,7 @@ module.exports = class Dungeons {
       userMaxHP: null,
       userMana: null, // Will be calculated from intelligence
       userMaxMana: null,
-      settingsVersion: 1,
+      settingsVersion: 2,
     };
 
     // IMPORTANT: avoid sharing references between defaults and live settings.
@@ -1593,7 +1599,7 @@ module.exports = class Dungeons {
           Number.isFinite(Number(dungeon.mobs?.mobCapacity)) && Number(dungeon.mobs.mobCapacity) > 0
             ? Number(dungeon.mobs.mobCapacity) : Infinity,
           Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
-            ? Number(this.settings.mobMaxActiveCap) : 500
+            ? Number(this.settings.mobMaxActiveCap) : this.defaultSettings.mobMaxActiveCap
         );
         if (_preCheckAlive >= _preCheckCap) {
           // At cap — back off with a longer delay instead of hot-looping every 2.5s
@@ -2518,6 +2524,14 @@ module.exports = class Dungeons {
             this.settings.bossGateMinDurationMs ??= this.defaultSettings.bossGateMinDurationMs;
             this.settings.bossGateRequiredMobKills ??= this.defaultSettings.bossGateRequiredMobKills;
             this.settings.settingsVersion = 1;
+          }
+          if (currentVersion < 2) {
+            // v2: Raise legacy default mob cap from 500 -> 1000 unless user had a custom value.
+            const legacyMobCap = Number(this.settings?.mobMaxActiveCap);
+            if (!Number.isFinite(legacyMobCap) || legacyMobCap <= 0 || legacyMobCap === 500) {
+              this.settings.mobMaxActiveCap = this.defaultSettings.mobMaxActiveCap;
+            }
+            this.settings.settingsVersion = 2;
           }
         } catch (migrationError) {
           this.errorLog?.('SETTINGS', 'Migration failed, restoring backup', migrationError);
@@ -4042,9 +4056,14 @@ module.exports = class Dungeons {
     const bossVitality = bossBaseStats.vitality;
     const bossPerception = bossBaseStats.perception;
 
-    // Boss HP: base + vitality + rank bonus (piecewise: polynomial early, logarithmic taper late)
+    // Boss HP: static lore HP (base + vitality + rank bonus) times rank multiplier.
+    // No runtime scaling from shadow counts.
     const rankBonus = this._bossHPBonusTable?.[rankIndex] || 0;
-    const finalBossHP = Math.floor(100 + bossVitality * 10 + rankBonus);
+    const staticBossHpMultiplier = this.getStaticBossHpMultiplier(rankIndex);
+    const finalBossHP = Math.max(
+      1,
+      Math.floor((100 + bossVitality * 10 + rankBonus) * staticBossHpMultiplier)
+    );
 
     // BOSS MAGIC BEAST TYPE (biome-appropriate)
     const bossBeastType = this.selectMagicBeastType(
@@ -6274,7 +6293,19 @@ module.exports = class Dungeons {
     return this.clampNumber(rawScale, 1, safeMax);
   }
 
+  getStaticBossHpMultiplier(rankIndex) {
+    const safeRankIndex = Math.max(0, Number.isFinite(rankIndex) ? rankIndex : 0);
+    const base = Number.isFinite(this.settings?.staticBossHpBaseMultiplier)
+      ? this.settings.staticBossHpBaseMultiplier
+      : 2.3;
+    const rankStep = Number.isFinite(this.settings?.staticBossHpRankStep)
+      ? this.settings.staticBossHpRankStep
+      : 0.14;
+    return this.clampNumber(base + safeRankIndex * rankStep, 1, 12);
+  }
+
   getShadowPressureMobFactor(dungeon) {
+    if (this.settings?.shadowPressureScalingEnabled !== true) return 1;
     const totalPower = Number.isFinite(dungeon?.shadowAllocation?.totalPower)
       ? dungeon.shadowAllocation.totalPower
       : 0;
@@ -6288,6 +6319,7 @@ module.exports = class Dungeons {
   }
 
   getShadowPressureBossFactor(dungeon) {
+    if (this.settings?.shadowPressureScalingEnabled !== true) return 1;
     const totalPower = Number.isFinite(dungeon?.shadowAllocation?.totalPower)
       ? dungeon.shadowAllocation.totalPower
       : 0;
@@ -6302,9 +6334,6 @@ module.exports = class Dungeons {
 
   syncDungeonDifficultyScale(dungeon, channelKey = null, { scaleExistingMobs = false } = {}) {
     if (!dungeon?.boss) return false;
-
-    const nextMobFactor = this.getShadowPressureMobFactor(dungeon);
-    const nextBossFactor = this.getShadowPressureBossFactor(dungeon);
 
     if (!dungeon.difficultyScale || typeof dungeon.difficultyScale !== 'object') {
       dungeon.difficultyScale = {
@@ -6321,6 +6350,21 @@ module.exports = class Dungeons {
     const prevBossFactor = Number.isFinite(dungeon.difficultyScale.bossFactor)
       ? dungeon.difficultyScale.bossFactor
       : 1;
+    const scalingEnabled = this.settings?.shadowPressureScalingEnabled === true;
+    if (!scalingEnabled) {
+      dungeon.difficultyScale = {
+        mobFactor: 1,
+        bossFactor: 1,
+        lastPower: Number.isFinite(dungeon?.shadowAllocation?.totalPower)
+          ? dungeon.shadowAllocation.totalPower
+          : 0,
+        updatedAt: Date.now(),
+      };
+      return false;
+    }
+
+    const nextMobFactor = this.getShadowPressureMobFactor(dungeon);
+    const nextBossFactor = this.getShadowPressureBossFactor(dungeon);
 
     const mobRatio = prevMobFactor > 0 ? nextMobFactor / prevMobFactor : nextMobFactor;
     const bossRatio = prevBossFactor > 0 ? nextBossFactor / prevBossFactor : nextBossFactor;
@@ -7429,9 +7473,57 @@ module.exports = class Dungeons {
     return clamped;
   }
 
+  normalizeRankLabel(rank, rankArray = this.settings?.dungeonRanks) {
+    const list = Array.isArray(rankArray) && rankArray.length ? rankArray : ['E'];
+    if (rank == null) return list[0] || 'E';
+
+    const raw = String(rank).trim();
+    if (!raw) return list[0] || 'E';
+
+    const normalizeKey = (value) =>
+      String(value || '')
+        .toLowerCase()
+        .replace(/[\s_-]+/g, ' ')
+        .trim();
+
+    const canonicalByNormalized = new Map(
+      list.map((entry) => [normalizeKey(entry), String(entry)])
+    );
+    const tryResolve = (candidate) => {
+      const value = String(candidate || '').trim();
+      if (!value) return null;
+      if (list.includes(value)) return value;
+      const normalizedMatch = canonicalByNormalized.get(normalizeKey(value));
+      if (normalizedMatch) return normalizedMatch;
+      const stripped = value.replace(/^\[+|\]+$/g, '').trim();
+      if (!stripped) return null;
+      if (list.includes(stripped)) return stripped;
+      const strippedMatch = canonicalByNormalized.get(normalizeKey(stripped));
+      if (strippedMatch) return strippedMatch;
+      const upper = stripped.toUpperCase();
+      if (list.includes(upper)) return upper;
+      return canonicalByNormalized.get(normalizeKey(upper)) || null;
+    };
+
+    const candidates = [raw];
+    const bracketMatch = raw.match(/\[([^[\]]+)\]/);
+    bracketMatch?.[1] && candidates.push(bracketMatch[1]);
+    const rankSuffixMatch = raw.match(/([A-Za-z0-9+\s]+)\s*-?\s*rank/i);
+    rankSuffixMatch?.[1] && candidates.push(rankSuffixMatch[1]);
+    const firstToken = raw.split(/\s+/)[0];
+    firstToken && candidates.push(firstToken);
+
+    for (let i = 0; i < candidates.length; i++) {
+      const resolved = tryResolve(candidates[i]);
+      if (resolved) return resolved;
+    }
+    return null;
+  }
+
   findRankIndex(rank, rankArray = this.settings?.dungeonRanks) {
     const list = Array.isArray(rankArray) && rankArray.length ? rankArray : ['E'];
-    return list.indexOf(rank);
+    const canonical = this.normalizeRankLabel(rank, list);
+    return canonical ? list.indexOf(canonical) : -1;
   }
 
   getRankIndexValue(rank, rankArray = this.settings?.dungeonRanks) {
@@ -7448,7 +7540,7 @@ module.exports = class Dungeons {
       this._rankPowerCache = new Map();
     }
 
-    const cacheKey = rank || 'E';
+    const cacheKey = this.normalizeRankLabel(rank, list) || list[0] || 'E';
     const cached = this._rankPowerCache.get(cacheKey);
     if (cached !== undefined) return cached;
 
@@ -8639,7 +8731,9 @@ module.exports = class Dungeons {
 
     const weightedDungeons = activeDungeonsList
       .map((d) => {
-        const rIdx = getRankIndex(d.rank);
+        const canonicalRank = this.normalizeRankLabel(d?.rank) || 'E';
+        d.rank = canonicalRank;
+        const rIdx = getRankIndex(canonicalRank);
         const weight = Math.pow(rIdx + 1, 1.25) * getUrgency(d);
         return { dungeon: d, channelKey: d.channelKey, rankIndex: rIdx, weight };
       })
@@ -8789,16 +8883,38 @@ module.exports = class Dungeons {
       rankBuckets.get(ri).push(s);
     }
 
-    // Step 2: Group dungeons by rank so same-rank dungeons share a bucket proportionally
-    const dungeonsByRank = new Map(); // rankIndex → [dw, ...]
-    for (const dw of weightedDungeons) {
-      if (!dungeonsByRank.has(dw.rankIndex)) dungeonsByRank.set(dw.rankIndex, []);
-      dungeonsByRank.get(dw.rankIndex).push(dw);
-    }
-
-    // Step 3: For each dungeon, pick from same-rank (90%) + one-higher (25%) + spillover
-    const SAME_RANK_PERCENT = 0.90;
-    const HIGHER_RANK_PERCENT = 0.25;
+    // Step 2: Global deployment budget + per-dungeon rank-pair targets
+    const DEPLOY_POOL_SHARE = this.clampNumber(
+      Number.isFinite(this.settings?.rankAllocationDeployPoolShare)
+        ? this.settings.rankAllocationDeployPoolShare
+        : 0.8,
+      0.05,
+      1
+    );
+    const PREFERRED_PAIR_SHARE = this.clampNumber(
+      Number.isFinite(this.settings?.rankAllocationPreferredPairShare)
+        ? this.settings.rankAllocationPreferredPairShare
+        : 0.8,
+      0.5,
+      1
+    );
+    const SAME_RANK_WITHIN_PAIR_SHARE = this.clampNumber(
+      Number.isFinite(this.settings?.rankAllocationSameRankShare)
+        ? this.settings.rankAllocationSameRankShare
+        : 0.75,
+      0.5,
+      0.95
+    );
+    const MIN_DUNGEON_ASSIGNMENT = 3;
+    const totalWeight = weightedDungeons.reduce((sum, d) => sum + d.weight, 0) || 1;
+    const minDeployTarget = Math.min(
+      combatPool.length,
+      weightedDungeons.length * MIN_DUNGEON_ASSIGNMENT
+    );
+    const deployPoolTarget = Math.min(
+      combatPool.length,
+      Math.max(minDeployTarget, Math.floor(combatPool.length * DEPLOY_POOL_SHARE))
+    );
 
     const pickFromBucket = (bucket, count) => {
       // Pick strongest-first (bucket inherits combatPool sort order: strongest first)
@@ -8813,68 +8929,89 @@ module.exports = class Dungeons {
       return picked;
     };
 
+    const pickFallbackNearest = (dungeonRI, neededCount) => {
+      if (neededCount <= 0) return [];
+      const picked = [];
+      const rankIndices = Array.from(rankBuckets.keys());
+      if (rankIndices.length === 0) return picked;
+      const maxRI = Math.max(...rankIndices);
+      for (let distance = 1; distance <= maxRI + 1 && picked.length < neededCount; distance++) {
+        const lowerRI = dungeonRI - distance;
+        if (lowerRI >= 0) {
+          picked.push(...pickFromBucket(rankBuckets.get(lowerRI) || [], neededCount - picked.length));
+        }
+        if (picked.length >= neededCount) break;
+        const upperRI = dungeonRI + distance;
+        if (upperRI <= maxRI) {
+          picked.push(...pickFromBucket(rankBuckets.get(upperRI) || [], neededCount - picked.length));
+        }
+      }
+      return picked;
+    };
+
     // Allocate rank-tiered shadows to each dungeon
-    weightedDungeons.forEach((dw) => {
+    let remainingDeployBudget = deployPoolTarget;
+    let remainingWeight = totalWeight;
+    weightedDungeons.forEach((dw, idx) => {
+      const previousAssigned = this.shadowAllocations.get(dw.channelKey);
+      const previousCount = Array.isArray(previousAssigned) ? previousAssigned.length : 0;
       const selected = [];
       const dungeonRI = dw.rankIndex;
-
-      // How many same-rank dungeons share this rank bucket?
-      const sameRankDungeons = dungeonsByRank.get(dungeonRI) || [dw];
-      const shareWeight = dw.weight / (sameRankDungeons.reduce((s, d) => s + d.weight, 0) || 1);
-
-      // === Same-rank shadows: take 90% of the bucket (proportional if shared) ===
       const sameRankBucket = rankBuckets.get(dungeonRI) || [];
-      const sameRankAvailable = sameRankBucket.filter(s => !assignedIds.has(getShadowId(s)));
-      const sameRankTotal = Math.max(0, Math.floor(sameRankAvailable.length * SAME_RANK_PERCENT));
-      const sameRankTarget = sameRankDungeons.length > 1
-        ? Math.max(1, Math.round(sameRankTotal * shareWeight))
-        : sameRankTotal;
-      selected.push(...pickFromBucket(sameRankBucket, sameRankTarget));
+      const higherBucket = rankBuckets.get(dungeonRI + 1) || [];
+      const sameRankAvailable = sameRankBucket.reduce(
+        (count, shadow) => count + (assignedIds.has(getShadowId(shadow)) ? 0 : 1),
+        0
+      );
+      const higherRankAvailable = higherBucket.reduce(
+        (count, shadow) => count + (assignedIds.has(getShadowId(shadow)) ? 0 : 1),
+        0
+      );
+      const pairAvailable = sameRankAvailable + higherRankAvailable;
+      const dungeonsLeft = weightedDungeons.length - idx;
+      const reservedForOthers = Math.max(0, (dungeonsLeft - 1) * MIN_DUNGEON_ASSIGNMENT);
+      const maxForThis = Math.max(0, remainingDeployBudget - reservedForOthers);
+      const weightedShare =
+        remainingWeight > 0
+          ? Math.round((remainingDeployBudget * dw.weight) / remainingWeight)
+          : Math.floor(remainingDeployBudget / Math.max(1, dungeonsLeft));
+      const baseTargetCount = Math.max(
+        0,
+        Math.min(maxForThis, Math.max(MIN_DUNGEON_ASSIGNMENT, weightedShare))
+      );
+      const maxTargetByPair =
+        PREFERRED_PAIR_SHARE > 0
+          ? Math.floor(pairAvailable / PREFERRED_PAIR_SHARE)
+          : baseTargetCount;
+      const targetCount =
+        maxTargetByPair > 0 ? Math.min(baseTargetCount, maxTargetByPair) : Math.min(baseTargetCount, MIN_DUNGEON_ASSIGNMENT);
 
-      // === One-rank-higher shadows: take 25% of the higher bucket ===
-      const higherRI = dungeonRI + 1;
-      const higherBucket = rankBuckets.get(higherRI) || [];
-      const higherAvailable = higherBucket.filter(s => !assignedIds.has(getShadowId(s)));
-      const higherRankDungeons = dungeonsByRank.get(higherRI) || [];
-      // If there are dungeons AT the higher rank, they get priority — only take 25%
-      // If NO dungeons at the higher rank, we can still take 25% to supplement
-      const higherTotal = Math.max(0, Math.floor(higherAvailable.length * HIGHER_RANK_PERCENT));
-      const higherTarget = higherRankDungeons.length > 0
-        ? Math.max(0, Math.round(higherTotal * shareWeight * 0.5))  // Reduced if higher-rank dungeons exist
-        : higherTotal;
-      if (higherTarget > 0) {
-        selected.push(...pickFromBucket(higherBucket, higherTarget));
+      const pairTarget = Math.min(
+        targetCount,
+        Math.max(1, Math.floor(targetCount * PREFERRED_PAIR_SHARE))
+      );
+      const sameRankTarget = Math.floor(pairTarget * SAME_RANK_WITHIN_PAIR_SHARE);
+      const higherRankTarget = Math.max(0, pairTarget - sameRankTarget);
+
+      // Preferred composition: same-rank majority + smaller one-rank-higher supplement.
+      if (sameRankTarget > 0) {
+        selected.push(...pickFromBucket(sameRankBucket, sameRankTarget));
+      }
+      if (higherRankTarget > 0) {
+        selected.push(...pickFromBucket(higherBucket, higherRankTarget));
       }
 
-      // === Spillover: fill from other rank buckets if under minimum viable count ===
-      // minViable = at least 3, or a fair share of the combat pool across active dungeons
-      const fairShare = Math.floor(combatPool.length / weightedDungeons.length);
-      const minViable = Math.max(3, Math.floor(Math.max(sameRankTarget, fairShare) * 0.5));
-      if (selected.length < minViable) {
-        // Pull DOWN: lower-rank shadows first (weakest shadows as fodder)
-        for (let ri = Math.max(0, dungeonRI - 1); ri >= 0 && selected.length < minViable; ri--) {
-          const lowerBucket = rankBuckets.get(ri) || [];
-          const lowerAvailable = lowerBucket.filter(s => !assignedIds.has(getShadowId(s)));
-          const spillCount = Math.min(lowerAvailable.length, minViable - selected.length);
-          if (spillCount > 0) {
-            selected.push(...pickFromBucket(lowerBucket, spillCount));
-          }
-        }
+      // Pair top-up: if preferred pair shortfalls, fill from same/higher before any spillover.
+      if (selected.length < pairTarget) {
+        selected.push(...pickFromBucket(sameRankBucket, pairTarget - selected.length));
       }
-      if (selected.length < minViable) {
-        // Pull UP: higher-rank shadows (stronger than needed, but better than 0)
-        // Start from one above dungeon rank (higherRI was already partially tapped at 25%)
-        const maxRI = Math.max(...Array.from(rankBuckets.keys()));
-        for (let ri = dungeonRI + 1; ri <= maxRI && selected.length < minViable; ri++) {
-          const upperBucket = rankBuckets.get(ri) || [];
-          const spillCount = Math.min(
-            upperBucket.filter(s => !assignedIds.has(getShadowId(s))).length,
-            minViable - selected.length
-          );
-          if (spillCount > 0) {
-            selected.push(...pickFromBucket(upperBucket, spillCount));
-          }
-        }
+      if (selected.length < pairTarget) {
+        selected.push(...pickFromBucket(higherBucket, pairTarget - selected.length));
+      }
+
+      // Spillover: nearest-rank fallback only after pair target is exhausted.
+      if (selected.length < targetCount) {
+        selected.push(...pickFallbackNearest(dungeonRI, targetCount - selected.length));
       }
 
       // Normalize IDs: older shadow records sometimes use `i` instead of `id`.
@@ -8895,6 +9032,14 @@ module.exports = class Dungeons {
       if (dw.dungeon.boss) {
         dw.dungeon.boss.expectedShadowCount = normalizedAssigned.length;
       }
+      if (normalizedAssigned.length !== previousCount) {
+        // Allocation size changed; force alive-count recompute to avoid stale critical warnings.
+        dw.dungeon._cachedAliveCount = null;
+        dw.dungeon.criticalHPWarningShown = false;
+      }
+
+      remainingDeployBudget = Math.max(0, remainingDeployBudget - normalizedAssigned.length);
+      remainingWeight = Math.max(0, remainingWeight - dw.weight);
     });
 
     // Allocation summary (debug-only): helps validate rank-tiered deployment decisions quickly.
@@ -8919,7 +9064,11 @@ module.exports = class Dungeons {
       });
     });
     this.debugLog('ALLOCATION', 'Rank-tiered allocation summary', {
-      strategy: `${Math.round(SAME_RANK_PERCENT * 100)}% same-rank + ${Math.round(HIGHER_RANK_PERCENT * 100)}% higher-rank`,
+      strategy:
+        `${Math.round(PREFERRED_PAIR_SHARE * 100)}% preferred pair ` +
+        `(same-rank ${Math.round(SAME_RANK_WITHIN_PAIR_SHARE * 100)}% / one-rank-higher ${Math.round((1 - SAME_RANK_WITHIN_PAIR_SHARE) * 100)}%)`,
+      deployPoolShare: `${Math.round(DEPLOY_POOL_SHARE * 100)}%`,
+      deployPoolTarget,
       rankBucketSizes: Object.fromEntries(
         Array.from(rankBuckets.entries()).map(([ri, arr]) => [rankNames[ri] || ri, arr.length])
       ),
