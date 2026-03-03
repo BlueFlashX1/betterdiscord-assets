@@ -89,11 +89,14 @@ module.exports = class ShadowRecon {
 
     this._domObserver = null;
     this._refreshInterval = null;
+    this._visualRefreshTimeout = null;
 
     this._modalEl = null;
 
     this._shadowCache = { timestamp: 0, map: new Map() };
     this._permissionBitsCache = null;
+    this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
+    this._guildNavOrientationCacheTTL = 1200;
   }
 
   start() {
@@ -514,13 +517,15 @@ module.exports = class ShadowRecon {
     // PERF: 15s refresh (was 4s — guild hints rarely change, MutationObserver handles DOM)
     this._refreshInterval = setInterval(() => {
       if (this._stopped || document.hidden) return;
-      this.refreshAllVisuals();
+      this._queueVisualRefresh(0);
     }, 15000);
   }
 
   stopRefreshLoops() {
     if (this._refreshInterval) clearInterval(this._refreshInterval);
     this._refreshInterval = null;
+    if (this._visualRefreshTimeout) clearTimeout(this._visualRefreshTimeout);
+    this._visualRefreshTimeout = null;
   }
 
   refreshAllVisuals() {
@@ -529,14 +534,22 @@ module.exports = class ShadowRecon {
     this.refreshGuildIconHints();
   }
 
+  _queueVisualRefresh(delayMs = 120) {
+    if (this._visualRefreshTimeout) return;
+    this._visualRefreshTimeout = setTimeout(() => {
+      this._visualRefreshTimeout = null;
+      if (this._stopped || document.hidden) return;
+      this.refreshAllVisuals();
+    }, Math.max(0, delayMs));
+  }
+
   setupObserver() {
     try {
       // PERF(P5-4): Use shared LayoutObserverBus instead of independent MutationObserver
       if (_PluginUtils?.LayoutObserverBus) {
         this._layoutBusUnsub = _PluginUtils.LayoutObserverBus.subscribe('ShadowRecon', () => {
-          this.injectServerCounterWidget();
-          this.removeMemberCounterBanner();
-          this.refreshGuildIconHints();
+          if (this._stopped || document.hidden) return;
+          this._queueVisualRefresh(120);
         }, 500);
       }
     } catch (err) {
@@ -564,29 +577,50 @@ module.exports = class ShadowRecon {
 
   _isHorizontalGuildNav(target) {
     if (!target || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return false;
+    const cache = this._guildNavOrientationCache;
+    const now = Date.now();
+    if (
+      cache.target === target
+      && (now - cache.measuredAt) < this._guildNavOrientationCacheTTL
+    ) {
+      return cache.horizontal;
+    }
 
+    let horizontal = false;
     const candidates = [target, target.firstElementChild, target.parentElement].filter(Boolean);
     for (const node of candidates) {
       try {
         const style = window.getComputedStyle(node);
         const direction = String(style?.flexDirection || "").toLowerCase();
-        if (direction.startsWith("row")) return true;
+        if (direction.startsWith("row")) {
+          horizontal = true;
+          break;
+        }
       } catch (_) {}
     }
 
-    try {
-      const rect = target.getBoundingClientRect();
-      if (rect.width > rect.height * 1.3) return true;
-    } catch (_) {}
+    if (!horizontal) {
+      try {
+        const rect = target.getBoundingClientRect();
+        if (rect.width > rect.height * 1.3) horizontal = true;
+      } catch (_) {}
+    }
 
-    return false;
+    cache.target = target;
+    cache.measuredAt = now;
+    cache.horizontal = horizontal;
+    return horizontal;
   }
 
   _syncServerCounterWidgetOrientation(widget, target = null) {
     if (!widget) return false;
     const navTarget = target || this._getGuildsTarget();
     const horizontal = this._isHorizontalGuildNav(navTarget);
-    widget.classList.toggle("shadow-recon-widget--rotated", horizontal);
+    const orientationFlag = horizontal ? "1" : "0";
+    if (widget.dataset.shadowReconHorizontal !== orientationFlag) {
+      widget.classList.toggle("shadow-recon-widget--rotated", horizontal);
+      widget.dataset.shadowReconHorizontal = orientationFlag;
+    }
     return horizontal;
   }
 
@@ -619,7 +653,6 @@ module.exports = class ShadowRecon {
       else target.appendChild(widget);
     }
 
-    this._syncServerCounterWidgetOrientation(widget, target);
     this.updateServerCounterWidget(target);
   }
 
@@ -630,9 +663,12 @@ module.exports = class ShadowRecon {
     const guildCount = this.getServerCount();
     const markedGuildCount = this._markedGuildIds.size;
     const markedTargetCount = this._getShadowDeploymentMap().size;
-    widget.textContent = horizontal
+    const nextText = horizontal
       ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}`
       : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
+    if (widget.textContent !== nextText) {
+      widget.textContent = nextText;
+    }
   }
 
   removeServerCounterWidget() {

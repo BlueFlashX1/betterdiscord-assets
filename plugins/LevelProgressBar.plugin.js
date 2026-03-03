@@ -247,7 +247,7 @@ module.exports = class LevelProgressBar {
       this.saveManager = new UnifiedSaveManager('LevelProgressBar');
     }
     this._runtimeHelpers = levelProgressBarRuntimeHelpers;
-    this._missingRuntimeHelpersLogged = new Set();
+    this._runtimeHelperFallbackNotified = false;
   }
   async start() {
     this._isStopped = false;
@@ -754,9 +754,13 @@ module.exports = class LevelProgressBar {
     const fn = this._runtimeHelpers?.[name];
     if (typeof fn === 'function') return fn(this, ...args);
 
-    if (!this._missingRuntimeHelpersLogged.has(name)) {
-      this._missingRuntimeHelpersLogged.add(name);
-      this.debugError('RUNTIME_HELPER_MISSING', new Error(`Missing runtime helper: ${name}`));
+    if (!this._runtimeHelperFallbackNotified) {
+      this._runtimeHelperFallbackNotified = true;
+      this.debugLog(
+        'RUNTIME_HELPER_FALLBACK',
+        'LevelProgressBar runtime helpers missing; using safe fallback defaults',
+        { helper: name }
+      );
     }
 
     const defaults = {

@@ -1029,6 +1029,8 @@ module.exports = class SoloLevelingStats {
     this._headerStatsPopupDocClickHandler = null;
     this._headerStatsPopupResizeHandler = null;
     this._headerStatsPopupScrollHandler = null;
+    this._headerStatsPopupPositionRaf = null;
+    this._headerStatsPopupScrollListenerOptions = { capture: true, passive: true };
 
     // Quest definitions — single source of truth for names, descriptions, and rewards
     this.questData = {
@@ -9493,17 +9495,21 @@ module.exports = class SoloLevelingStats {
         this.closeHeaderStatsPopup();
       }
     };
-    this._headerStatsPopupResizeHandler = () => this.positionHeaderStatsPopup();
-    this._headerStatsPopupScrollHandler = () => this.positionHeaderStatsPopup();
+    this._headerStatsPopupResizeHandler = () => this.queueHeaderStatsPopupPosition();
+    this._headerStatsPopupScrollHandler = () => this.queueHeaderStatsPopupPosition();
 
     document.addEventListener('mousedown', this._headerStatsPopupDocClickHandler, true);
     window.addEventListener('resize', this._headerStatsPopupResizeHandler);
-    window.addEventListener('scroll', this._headerStatsPopupScrollHandler, true);
+    window.addEventListener('scroll', this._headerStatsPopupScrollHandler, this._headerStatsPopupScrollListenerOptions);
 
     this.positionHeaderStatsPopup();
   }
 
   closeHeaderStatsPopup() {
+    if (this._headerStatsPopupPositionRaf) {
+      cancelAnimationFrame(this._headerStatsPopupPositionRaf);
+      this._headerStatsPopupPositionRaf = null;
+    }
     if (this._headerStatsPopupDocClickHandler) {
       document.removeEventListener('mousedown', this._headerStatsPopupDocClickHandler, true);
       this._headerStatsPopupDocClickHandler = null;
@@ -9513,7 +9519,7 @@ module.exports = class SoloLevelingStats {
       this._headerStatsPopupResizeHandler = null;
     }
     if (this._headerStatsPopupScrollHandler) {
-      window.removeEventListener('scroll', this._headerStatsPopupScrollHandler, true);
+      window.removeEventListener('scroll', this._headerStatsPopupScrollHandler, this._headerStatsPopupScrollListenerOptions);
       this._headerStatsPopupScrollHandler = null;
     }
 
@@ -9530,6 +9536,18 @@ module.exports = class SoloLevelingStats {
       this._headerStatsPopup.remove();
     }
     this._headerStatsPopup = null;
+  }
+
+  queueHeaderStatsPopupPosition() {
+    if (this._headerStatsPopupPositionRaf) return;
+    if (typeof requestAnimationFrame !== 'function') {
+      this.positionHeaderStatsPopup();
+      return;
+    }
+    this._headerStatsPopupPositionRaf = requestAnimationFrame(() => {
+      this._headerStatsPopupPositionRaf = null;
+      this.positionHeaderStatsPopup();
+    });
   }
 
   positionHeaderStatsPopup() {
@@ -9583,7 +9601,7 @@ module.exports = class SoloLevelingStats {
       }
 
       this.ensureHeaderStatsButton();
-      this.positionHeaderStatsPopup();
+      this.queueHeaderStatsPopupPosition();
 
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
