@@ -185,6 +185,16 @@
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const _slsStartupWarn = (...args) => {
+  try {
+    // Opt-in startup diagnostics only; keep normal startup console clean.
+    if (typeof window !== 'undefined' && window.__SLS_DEBUG_STARTUP__) {
+      console.warn(...args);
+    }
+  } catch (_) {
+    // ignore
+  }
+};
 
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 let UnifiedSaveManager;
@@ -196,7 +206,7 @@ try {
     if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {
-  console.warn('[SoloLevelingStats] Failed to load UnifiedSaveManager:', error);
+  _slsStartupWarn('[SoloLevelingStats] Failed to load UnifiedSaveManager:', error);
 }
 
 // Load SoloLevelingUtils at top level
@@ -4569,7 +4579,21 @@ module.exports = class SoloLevelingStats {
     // Save before stopping
     this.saveSettings(true);
 
-    // Detach settings panel delegated handler if attached
+    // Detach settings panel delegated handlers if attached
+    this._detachSettingsPanelHandlers();
+    if (this._settingsPreviewRoot) {
+      try {
+        this._settingsPreviewRoot.unmount();
+      } catch (error) {
+        this.debugError('STOP', error, { phase: 'unmount-settings-preview-root' });
+      }
+      this._settingsPreviewRoot = null;
+    }
+
+    this.debugLog('STOP', 'Plugin stopped');
+  }
+
+  _detachSettingsPanelHandlers() {
     if (this._settingsPanelRoot && this._settingsPanelHandlers?.change) {
       try {
         this._settingsPanelRoot.removeEventListener('change', this._settingsPanelHandlers.change);
@@ -4586,16 +4610,6 @@ module.exports = class SoloLevelingStats {
     }
     this._settingsPanelRoot = null;
     this._settingsPanelHandlers = null;
-    if (this._settingsPreviewRoot) {
-      try {
-        this._settingsPreviewRoot.unmount();
-      } catch (error) {
-        this.debugError('STOP', error, { phase: 'unmount-settings-preview-root' });
-      }
-      this._settingsPreviewRoot = null;
-    }
-
-    this.debugLog('STOP', 'Plugin stopped');
   }
 
   // ── §3.12 SETTINGS MANAGEMENT ────────────────────────────────────────────
@@ -11471,22 +11485,7 @@ module.exports = class SoloLevelingStats {
     }
 
     // Delegated settings panel binding (single handler)
-    if (this._settingsPanelRoot && this._settingsPanelHandlers?.change) {
-      try {
-        this._settingsPanelRoot.removeEventListener('change', this._settingsPanelHandlers.change);
-      } catch (_) {
-        // Ignore removal errors
-      }
-    }
-    if (this._settingsPanelRoot && this._settingsPanelHandlers?.click) {
-      try {
-        this._settingsPanelRoot.removeEventListener('click', this._settingsPanelHandlers.click);
-      } catch (_) {
-        // Ignore removal errors
-      }
-    }
-    this._settingsPanelRoot = null;
-    this._settingsPanelHandlers = null;
+    this._detachSettingsPanelHandlers();
 
     this._settingsPanelHandlers = {
       change: (e) => {
