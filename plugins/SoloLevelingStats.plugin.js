@@ -213,8 +213,8 @@ function buildChatUIComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
-  // ── HPManaDisplay: Fixed top bar with HP/MP progress bars ──
-  function HPManaDisplay({ expanded }) {
+  // ── HPManaDisplay: Compact HP/MP strip shown near chat composer ──
+  function HPManaDisplay({ compact = false }) {
     const s = pluginInstance.settings;
     const totalStats = pluginInstance.getTotalEffectiveStats();
     pluginInstance.recomputeHPManaFromStats(totalStats);
@@ -222,16 +222,16 @@ function buildChatUIComponents(pluginInstance) {
     const hpPercent = (s.userHP / s.userMaxHP) * 100;
     const manaPercent = (s.userMana / s.userMaxMana) * 100;
 
-    const barHeight = expanded ? '12px' : '16px';
-    const containerMinWidth = expanded ? '0' : '133px';
-    const containerFlex = expanded ? '1' : '1.3';
-    const textDisplay = expanded ? 'flex' : 'none';
-    const barMinWidth = expanded ? '0' : '100px';
+    const barHeight = compact ? '10px' : '12px';
+    const containerMinWidth = compact ? '120px' : '0';
+    const containerFlex = compact ? '1' : '1';
+    const textDisplay = 'block';
+    const barMinWidth = compact ? '72px' : '0';
 
     return ce('div', {
-      className: `sls-chat-hp-mana-display${expanded ? '' : ' sls-hp-mana-collapsed'}`,
+      className: `sls-chat-hp-mana-display${compact ? ' sls-chat-hp-mana-compact' : ''}`,
       id: 'sls-chat-hp-mana-display',
-      style: { display: 'flex', alignItems: 'center', gap: '12px', flex: '1', minWidth: '0' }
+      style: { display: 'flex', alignItems: 'center', gap: compact ? '8px' : '12px', flex: '1', minWidth: '0' }
     },
       // HP bar
       ce('div', { style: { display: 'flex', alignItems: 'center', gap: '6px', flex: containerFlex, minWidth: containerMinWidth } },
@@ -318,6 +318,92 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
+  // ── StatsRadarGraph: Spider-web chart for effective stat distribution ──
+  function StatsRadarGraph() {
+    const totalStats = pluginInstance.getTotalEffectiveStats();
+    const statKeys = pluginInstance.STAT_KEYS.filter((key) => Boolean(pluginInstance.STAT_METADATA[key]));
+    if (!statKeys.length) return null;
+
+    const values = statKeys.map((key) => Math.max(0, Number(totalStats[key]) || 0));
+    const maxObserved = Math.max(...values, 1);
+    const scaleSteps = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
+    let chartMax = scaleSteps.find((step) => step >= maxObserved);
+    if (!chartMax) {
+      const magnitude = Math.pow(10, Math.max(0, Math.floor(Math.log10(maxObserved))));
+      chartMax = Math.ceil(maxObserved / magnitude) * magnitude;
+    }
+
+    const size = 200;
+    const center = size / 2;
+    const radius = 66;
+    const labelRadius = radius + 16;
+
+    const toPoint = (index, ratio = 1) => {
+      const angle = (-Math.PI / 2) + (index / statKeys.length) * (Math.PI * 2);
+      const clamped = Math.max(0, Math.min(1, ratio));
+      const x = center + Math.cos(angle) * radius * clamped;
+      const y = center + Math.sin(angle) * radius * clamped;
+      return [x, y];
+    };
+
+    const toLabelPoint = (index) => {
+      const angle = (-Math.PI / 2) + (index / statKeys.length) * (Math.PI * 2);
+      const x = center + Math.cos(angle) * labelRadius;
+      const y = center + Math.sin(angle) * labelRadius;
+      return [x, y];
+    };
+
+    const formatPoints = (points) => points
+      .map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`)
+      .join(' ');
+
+    const rings = [0.25, 0.5, 0.75, 1];
+    const ringPolygons = rings.map((ringRatio) =>
+      formatPoints(statKeys.map((_, index) => toPoint(index, ringRatio)))
+    );
+    const dataPolygon = formatPoints(
+      statKeys.map((_, index) => toPoint(index, values[index] / chartMax))
+    );
+
+    return ce('div', { className: 'sls-popup-radar' },
+      ce('div', { className: 'sls-popup-section-title' }, 'Stat Radar'),
+      ce('div', { className: 'sls-popup-radar-wrap' },
+        ce('svg', {
+          className: 'sls-popup-radar-svg',
+          viewBox: `0 0 ${size} ${size}`,
+          role: 'img',
+          'aria-label': 'Stat radar chart'
+        },
+          ringPolygons.map((points, idx) =>
+            ce('polygon', { key: `ring-${rings[idx]}`, className: 'sls-popup-radar-ring', points })
+          ),
+          statKeys.map((key, index) => {
+            const [x, y] = toPoint(index, 1);
+            return ce('line', {
+              key: `axis-${key}`,
+              className: 'sls-popup-radar-axis',
+              x1: center,
+              y1: center,
+              x2: x,
+              y2: y,
+            });
+          }),
+          ce('polygon', { className: 'sls-popup-radar-area', points: dataPolygon }),
+          statKeys.map((key, index) => {
+            const [x, y] = toPoint(index, values[index] / chartMax);
+            return ce('circle', { key: `node-${key}`, className: 'sls-popup-radar-node', cx: x, cy: y, r: 2.4 });
+          }),
+          statKeys.map((key, index) => {
+            const [x, y] = toLabelPoint(index);
+            const label = pluginInstance.STAT_METADATA[key]?.name || key.toUpperCase();
+            return ce('text', { key: `label-${key}`, className: 'sls-popup-radar-label', x, y }, label);
+          })
+        ),
+        ce('div', { className: 'sls-popup-radar-scale' }, `Scale max: ${Number(chartMax).toLocaleString()}`)
+      )
+    );
+  }
+
   // ── StatButton: Single allocation button ──
   function StatButton({ statKey, onAllocate }) {
     const s = pluginInstance.settings;
@@ -361,6 +447,27 @@ function buildChatUIComponents(pluginInstance) {
           ce(StatButton, { key, statKey: key, onAllocate })
         )
       )
+    );
+  }
+
+  // ── BuffSummaryList: Unified buff summary across plugin ecosystem ──
+  function BuffSummaryList() {
+    const groups = pluginInstance.getUnifiedBuffSummary();
+
+    return ce('div', { className: 'sls-popup-buff-summary' },
+      ce('div', { className: 'sls-popup-section-title' }, 'Buff Summary'),
+      groups.length > 0
+        ? groups.map((group) =>
+            ce('div', { key: group.source, className: 'sls-popup-buff-group' },
+              ce('div', { className: 'sls-popup-buff-source' }, group.source),
+              ce('div', { className: 'sls-popup-buff-entries' },
+                group.entries.map((entry, idx) =>
+                  ce('span', { key: `${group.source}-${entry.label}-${idx}`, className: 'sls-popup-buff-entry' }, `${entry.label}: ${entry.value}`)
+                )
+              )
+            )
+          )
+        : ce('div', { className: 'sls-popup-empty' }, 'No active cross-plugin buffs detected.')
     );
   }
 
@@ -437,46 +544,57 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  // ── StatsPanel: Top-level container with forceUpdate bridge ──
+  // ── StatsPanel: Composer strip only (full panel moved to popup) ──
   function StatsPanel() {
-    const [expanded, setExpanded] = React.useState(pluginInstance.settings.chatUIPanelExpanded !== false);
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
-    // Expose forceUpdate to plugin instance for imperative updates
+    // Expose forceUpdate bridge to plugin instance for imperative updates
     React.useEffect(() => {
-      pluginInstance._chatUIForceUpdate = forceUpdate;
-      return () => { pluginInstance._chatUIForceUpdate = null; };
+      pluginInstance._registerUIForceUpdate?.(forceUpdate);
+      return () => { pluginInstance._unregisterUIForceUpdate?.(forceUpdate); };
     }, [forceUpdate]);
 
-    const handleToggle = React.useCallback((e) => {
-      e.stopPropagation();
-      e.preventDefault();
-      setExpanded((prev) => {
-        const next = !prev;
-        pluginInstance.settings.chatUIPanelExpanded = next;
-        return next;
-      });
-    }, []);
+    return ce('div', { className: 'sls-chat-strip' },
+      ce(HPManaDisplay, { compact: true })
+    );
+  }
+
+  // ── StatsPopup: Dedicated popup for stats, allocation, and buff summary ──
+  function StatsPopup({ onClose }) {
+    const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
 
     const handleAllocate = React.useCallback((statKey) => {
       if (pluginInstance.allocateStatPoint(statKey)) forceUpdate();
     }, []);
 
-    return ce(React.Fragment, null,
-      ce('div', { className: 'sls-chat-header' },
-        ce(HPManaDisplay, { expanded }),
-        ce('button', { className: 'sls-chat-toggle', id: 'sls-chat-toggle', onClick: handleToggle },
-          expanded ? '' : '')
+    React.useEffect(() => {
+      pluginInstance._registerUIForceUpdate?.(forceUpdate);
+      return () => { pluginInstance._unregisterUIForceUpdate?.(forceUpdate); };
+    }, [forceUpdate]);
+
+    return ce('div', {
+      className: 'sls-stats-popup-surface',
+      onClick: (e) => e.stopPropagation(),
+    },
+      ce('div', { className: 'sls-stats-popup-header' },
+        ce('div', { className: 'sls-stats-popup-title' }, 'Hunter Console'),
+        ce('button', {
+          className: 'sls-stats-popup-close',
+          onClick: (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            onClose?.();
+          }
+        }, '×')
       ),
-      ce('div', {
-        className: 'sls-chat-content',
-        id: 'sls-chat-content',
-        style: { display: expanded ? 'block' : 'none' }
-      },
+      ce('div', { className: 'sls-stats-popup-content' },
+        ce(HPManaDisplay, { compact: false }),
         ce(LevelInfo),
         ce(ActiveTitle),
         ce(StatsList),
+        ce(StatsRadarGraph),
         ce(StatAllocation, { onAllocate: handleAllocate }),
+        ce(BuffSummaryList),
         ce(CollapsibleSection, { sectionId: 'activity', title: 'Activity Summary' },
           ce(ActivityGrid)
         ),
@@ -487,7 +605,19 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
-  return { StatsPanel, HPManaDisplay, LevelInfo, ActiveTitle, StatsList, StatAllocation, ActivityGrid, QuestList };
+  return {
+    StatsPanel,
+    StatsPopup,
+    HPManaDisplay,
+    LevelInfo,
+    ActiveTitle,
+    StatsList,
+    StatsRadarGraph,
+    StatAllocation,
+    BuffSummaryList,
+    ActivityGrid,
+    QuestList,
+  };
 }
 
 module.exports = class SoloLevelingStats {
@@ -851,6 +981,13 @@ module.exports = class SoloLevelingStats {
     // Dirty flag for throttled UI updates (used by 2s chatUIUpdateInterval)
     this._chatUIDirty = false;
     this._chatUIForceUpdate = null; // React forceUpdate bridge (set by StatsPanel useEffect)
+    this._chatUIForceUpdates = new Set(); // Multi-surface forceUpdate bridge (strip + popup)
+    this._headerStatsButton = null;
+    this._headerStatsPopup = null;
+    this._headerStatsPopupRoot = null;
+    this._headerStatsPopupDocClickHandler = null;
+    this._headerStatsPopupResizeHandler = null;
+    this._headerStatsPopupScrollHandler = null;
 
     // Quest definitions — single source of truth for names, descriptions, and rewards
     this.questData = {
@@ -923,6 +1060,45 @@ module.exports = class SoloLevelingStats {
       clearTimeout(timeout);
       timeout = setTimeout(() => func.apply(this, args), wait);
     };
+  }
+
+  _registerUIForceUpdate(forceUpdate) {
+    if (typeof forceUpdate !== 'function') return;
+    this._chatUIForceUpdates ||= new Set();
+    this._chatUIForceUpdates.add(forceUpdate);
+    this._chatUIForceUpdate = forceUpdate;
+  }
+
+  _unregisterUIForceUpdate(forceUpdate) {
+    if (typeof forceUpdate === 'function') {
+      this._chatUIForceUpdates?.delete?.(forceUpdate);
+    }
+    if (this._chatUIForceUpdates?.size) {
+      const next = this._chatUIForceUpdates.values().next();
+      this._chatUIForceUpdate = next?.done ? null : next.value;
+    } else {
+      this._chatUIForceUpdate = null;
+    }
+  }
+
+  _triggerUIForceUpdates() {
+    if (this._chatUIForceUpdates?.size) {
+      this._chatUIForceUpdates.forEach((updateFn) => {
+        try {
+          updateFn();
+        } catch (_) {
+          // Ignore stale callbacks from unmounted React trees.
+        }
+      });
+      return;
+    }
+    if (this._chatUIForceUpdate) {
+      try {
+        this._chatUIForceUpdate();
+      } catch (_) {
+        // Ignore stale callback
+      }
+    }
   }
 
   initDOMCache() {
@@ -1799,6 +1975,170 @@ module.exports = class SoloLevelingStats {
     return { titlePercent, shadowPercent };
   }
 
+  formatSignedPercent(value, precision = 1) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return '+0%';
+    return `${numeric >= 0 ? '+' : ''}${(numeric * 100).toFixed(precision)}%`;
+  }
+
+  formatMultiplierDelta(multiplier, precision = 1) {
+    const numeric = Number(multiplier);
+    if (!Number.isFinite(numeric)) return '+0%';
+    return this.formatSignedPercent(numeric - 1, precision);
+  }
+
+  getUnifiedBuffSummary() {
+    const groups = [];
+
+    try {
+      const titleBonus = this.getActiveTitleBonus();
+      const activeTitle = this.settings?.achievements?.activeTitle || null;
+      const titleEntries = [];
+
+      (titleBonus.xp || 0) > 0 &&
+        titleEntries.push({ label: 'XP', value: this.formatSignedPercent(titleBonus.xp, 0) });
+      (titleBonus.critChance || 0) > 0 &&
+        titleEntries.push({ label: 'Crit', value: this.formatSignedPercent(titleBonus.critChance, 0) });
+
+      const statLabels = { strength: 'STR', agility: 'AGI', intelligence: 'INT', vitality: 'VIT', perception: 'PER' };
+      this.STAT_KEYS.forEach((statKey) => {
+        const { titlePercent } = this.getBuffPercents(statKey, titleBonus || {}, null);
+        if (titlePercent > 0) {
+          titleEntries.push({ label: statLabels[statKey], value: this.formatSignedPercent(titlePercent, 0) });
+        }
+      });
+
+      if (titleEntries.length > 0) {
+        groups.push({
+          source: activeTitle ? `Title Manager — ${activeTitle}` : 'Title Manager',
+          entries: titleEntries,
+        });
+      }
+    } catch (_) {}
+
+    try {
+      const shadowBuffs = this.getEffectiveShadowArmyBuffs();
+      const shadowEntries = [];
+      const statLabels = { strength: 'STR', agility: 'AGI', intelligence: 'INT', vitality: 'VIT', perception: 'PER' };
+
+      this.STAT_KEYS.forEach((statKey) => {
+        const value = Number(shadowBuffs?.[statKey] || 0);
+        if (value > 0) {
+          shadowEntries.push({ label: statLabels[statKey], value: this.formatSignedPercent(value, 1) });
+        }
+      });
+
+      if (shadowEntries.length > 0) {
+        groups.push({ source: 'Shadow Army', entries: shadowEntries });
+      }
+    } catch (_) {}
+
+    try {
+      const bonuses = this.getSkillTreeBonuses() || null;
+      const passiveEntries = [];
+      if (bonuses) {
+        Number(bonuses.xpBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'XP', value: this.formatSignedPercent(bonuses.xpBonus, 1) });
+        Number(bonuses.critBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'Crit', value: this.formatSignedPercent(bonuses.critBonus, 1) });
+        Number(bonuses.questBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'Quest', value: this.formatSignedPercent(bonuses.questBonus, 1) });
+        Number(bonuses.longMsgBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'Long Msg', value: this.formatSignedPercent(bonuses.longMsgBonus, 1) });
+        Number(bonuses.allStatBonus || 0) > 0 &&
+          passiveEntries.push({ label: 'All Stats', value: this.formatSignedPercent(bonuses.allStatBonus, 1) });
+      }
+      if (passiveEntries.length > 0) {
+        groups.push({ source: 'Skill Tree (Passive)', entries: passiveEntries });
+      }
+    } catch (_) {}
+
+    try {
+      const activeBuffs = this.getActiveSkillBuffs() || null;
+      const activeEntries = [];
+      if (activeBuffs) {
+        Number(activeBuffs.xpMultiplier || 1) > 1 &&
+          activeEntries.push({
+            label: 'XP Multiplier',
+            value: this.formatMultiplierDelta(activeBuffs.xpMultiplier, 1),
+          });
+        Number(activeBuffs.allStatMultiplier || 1) > 1 &&
+          activeEntries.push({
+            label: 'All Stats',
+            value: this.formatMultiplierDelta(activeBuffs.allStatMultiplier, 1),
+          });
+        Number(activeBuffs.questRewardMultiplier || 1) > 1 &&
+          activeEntries.push({
+            label: 'Quest Rewards',
+            value: this.formatMultiplierDelta(activeBuffs.questRewardMultiplier, 1),
+          });
+        Number(activeBuffs.shadowBuffMultiplier || 1) > 1 &&
+          activeEntries.push({
+            label: 'Shadow Buffs',
+            value: this.formatMultiplierDelta(activeBuffs.shadowBuffMultiplier, 1),
+          });
+        Number(activeBuffs.globalMultiplier || 1) > 1 &&
+          activeEntries.push({
+            label: 'Global Multiplier',
+            value: this.formatMultiplierDelta(activeBuffs.globalMultiplier, 1),
+          });
+        Number(activeBuffs.critChanceBonus || 0) > 0 &&
+          activeEntries.push({
+            label: 'Crit Chance',
+            value: this.formatSignedPercent(activeBuffs.critChanceBonus, 1),
+          });
+        activeBuffs.guaranteedCrit === true &&
+          activeEntries.push({ label: 'Guaranteed Crit', value: 'Active' });
+      }
+      if (activeEntries.length > 0) {
+        groups.push({ source: 'Skill Tree (Active)', entries: activeEntries });
+      }
+    } catch (_) {}
+
+    try {
+      const dungeons = this._SLUtils?.getPluginInstance?.('Dungeons');
+      if (dungeons) {
+        let channelKey = dungeons.currentChannelKey || dungeons.settings?.userActiveDungeon || null;
+        if (!channelKey && dungeons.activeDungeons?.size === 1) {
+          channelKey = dungeons.activeDungeons.keys().next().value || null;
+        }
+        if (!channelKey && typeof dungeons.getChannelInfo === 'function') {
+          const info = dungeons.getChannelInfo();
+          if (info?.guildId && info?.channelId) channelKey = `${info.guildId}_${info.channelId}`;
+        }
+
+        const roleEntries = [];
+        const roleContext = channelKey && typeof dungeons.getRoleCombatTickContext === 'function'
+          ? dungeons.getRoleCombatTickContext(channelKey)
+          : null;
+
+        if (roleContext?.enabled) {
+          const bossBoost = Number(roleContext.bossMarkMultiplier || 1) - 1;
+          const mobBoost = Number(roleContext.mobMarkMultiplier || 1) - 1;
+          const incomingReduction = 1 - Number(roleContext.incomingDamageMultiplier || 1);
+          bossBoost > 0 && roleEntries.push({ label: 'Boss Damage', value: this.formatSignedPercent(bossBoost, 1) });
+          mobBoost > 0 && roleEntries.push({ label: 'Mob Damage', value: this.formatSignedPercent(mobBoost, 1) });
+          incomingReduction > 0 &&
+            roleEntries.push({ label: 'Damage Taken', value: this.formatSignedPercent(-incomingReduction, 1) });
+        }
+
+        if (roleEntries.length > 0) {
+          const dungeonMeta = channelKey ? dungeons.activeDungeons?.get?.(channelKey) : null;
+          const dungeonLabel =
+            dungeonMeta?.name && dungeonMeta?.rank
+              ? `${dungeonMeta.name} [${dungeonMeta.rank}]`
+              : null;
+          groups.push({
+            source: dungeonLabel ? `Dungeons — ${dungeonLabel}` : 'Dungeons',
+            entries: roleEntries,
+          });
+        }
+      }
+    } catch (_) {}
+
+    return groups;
+  }
+
   getStatPointsForLevel(level) {
     const normalizedLevel = Math.max(1, Math.floor(Number(level) || 1));
     if (normalizedLevel < 100) return 5;
@@ -2325,12 +2665,13 @@ module.exports = class SoloLevelingStats {
           render: (React) => {
             return React.createElement('div', {
               id: 'sls-chat-ui',
-              className: 'sls-chat-panel',
+              className: 'sls-chat-strip-panel',
             }, React.createElement(StatsPanel));
           },
           onMount: (domEl) => {
             pluginInstance.chatUIPanel = domEl;
             pluginInstance.ensureChatUIUpdateInterval(true);
+            pluginInstance.ensureHeaderStatsButton();
           },
           debugLog: this.debugLog.bind(this),
           debugError: this.debugError.bind(this),
@@ -2410,7 +2751,7 @@ module.exports = class SoloLevelingStats {
                 const { StatsPanel } = pluginInstance._chatUIComponents;
                 const chatUIElement = React.createElement('div', {
                   id: 'sls-chat-ui',
-                  className: 'sls-chat-panel',
+                  className: 'sls-chat-strip-panel',
                 }, React.createElement(StatsPanel));
 
                 if (Array.isArray(bodyPath.props.children)) {
@@ -2429,6 +2770,7 @@ module.exports = class SoloLevelingStats {
                   if (domElement) {
                     pluginInstance.chatUIPanel = domElement;
                     pluginInstance.ensureChatUIUpdateInterval(true);
+                    pluginInstance.ensureHeaderStatsButton();
                   }
                 }, 100);
               }
@@ -3929,8 +4271,10 @@ module.exports = class SoloLevelingStats {
         } catch (retryError) {
           this.debugError('CREATE_CHAT_UI_RETRY', retryError);
         }
-      }, 2000);
+        }, 2000);
     }
+
+    this.ensureHeaderStatsButton();
 
     // OPTIMIZED: Use debugLog instead of direct console.log
     this.debugLog('START', `Started! Level ${this.settings.level}, ${this.settings.xp} XP`);
@@ -8861,8 +9205,8 @@ module.exports = class SoloLevelingStats {
       cachedShadowPower: this.cachedShadowPower,
     });
 
-    // Trigger React re-render — LevelInfo reads this.cachedShadowPower
-    this._chatUIForceUpdate?.();
+    // Trigger React re-render — LevelInfo/Popup both read this.cachedShadowPower
+    this._triggerUIForceUpdates();
 
     // Emit event for real-time updates in LevelProgressBar
     this.emit('shadowPowerChanged', {
@@ -8961,11 +9305,180 @@ module.exports = class SoloLevelingStats {
   // updateHPManaBars() — REMOVED in v3.0.0 (React HPManaDisplay component re-renders via forceUpdate)
 
   // ── §3.22 CHAT UI MANAGEMENT ─────────────────────────────────────────────
-  // createChatUI(): Build collapsible panel (level, stats, quests, achievements)
-  // renderChatUI(): Generate full HTML with sections (Stats | Activity | Quests)
-  // updateChatUI(): Refresh visible tab (throttled to 2s)
-  // attachChatUIListeners(): Tab switching, stat allocation buttons
-  // getChatUiCssText(): 1200+ lines of theme CSS (§3.22.1)
+  // createChatUI(): Build compact HP/MP strip near message composer
+  // header popup: interactive stats + allocation + cross-plugin buff summary
+  // updateChatUI(): Refresh React surfaces via shared forceUpdate bridge
+  // getChatUiCssText(): consolidated UI styles (strip + popup + legacy)
+
+  _getChannelHeaderToolbar() {
+    const selectors = [
+      '[aria-label="Channel header"] [class*="toolbar_"]',
+      '[class*="titleWrapper_"] [class*="toolbar_"]',
+      'header [class*="toolbar_"]',
+    ];
+    for (const selector of selectors) {
+      const toolbar = document.querySelector(selector);
+      if (toolbar) return toolbar;
+    }
+    return null;
+  }
+
+  _createHeaderStatsButton() {
+    if (this._headerStatsButton?.isConnected) return this._headerStatsButton;
+
+    const button = document.createElement('button');
+    button.id = 'sls-header-stats-button';
+    button.className = 'sls-header-stats-button';
+    button.type = 'button';
+    button.setAttribute('aria-label', 'Solo Leveling Stats');
+    button.innerHTML = `
+      <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+        <path d="M4 18h3v-6H4v6zm6 0h3V6h-3v12zm6 0h4V10h-4v8z" fill="currentColor"></path>
+      </svg>
+    `;
+
+    button.addEventListener('click', (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.toggleHeaderStatsPopup();
+    });
+
+    this._headerStatsButton = button;
+    return button;
+  }
+
+  ensureHeaderStatsButton() {
+    if (!this._isRunning || !this._isGuildTextChannel()) {
+      this.removeHeaderStatsButton();
+      return false;
+    }
+
+    const toolbar = this._getChannelHeaderToolbar();
+    if (!toolbar) {
+      // Header can remount during transitions; close popup to avoid orphan position.
+      this.closeHeaderStatsPopup();
+      return false;
+    }
+
+    const button = this._createHeaderStatsButton();
+    if (button.parentElement !== toolbar) {
+      toolbar.appendChild(button);
+    }
+    return true;
+  }
+
+  removeHeaderStatsButton() {
+    this.closeHeaderStatsPopup();
+    if (this._headerStatsButton?.isConnected) {
+      this._headerStatsButton.remove();
+    }
+    this._headerStatsButton = null;
+  }
+
+  toggleHeaderStatsPopup() {
+    if (this._headerStatsPopup?.isConnected) {
+      this.closeHeaderStatsPopup();
+    } else {
+      this.openHeaderStatsPopup();
+    }
+  }
+
+  openHeaderStatsPopup() {
+    if (this._headerStatsPopup?.isConnected) return;
+    if (!this.ensureHeaderStatsButton()) return;
+    if (!this._headerStatsButton?.isConnected) return;
+
+    const popup = document.createElement('div');
+    popup.id = 'sls-header-stats-popup';
+    popup.className = 'sls-header-stats-popup';
+    document.body.appendChild(popup);
+
+    try {
+      const { StatsPopup } = this._chatUIComponents || {};
+      const root = BdApi.ReactDOM.createRoot(popup);
+      root.render(BdApi.React.createElement(StatsPopup, { onClose: () => this.closeHeaderStatsPopup() }));
+      this._headerStatsPopupRoot = root;
+      this._headerStatsPopup = popup;
+    } catch (error) {
+      this.debugError('HEADER_POPUP', error, { phase: 'render' });
+      popup.remove();
+      return;
+    }
+
+    this._headerStatsPopupDocClickHandler = (event) => {
+      const target = event.target;
+      if (!target) return;
+      const clickedPopup = this._headerStatsPopup?.contains?.(target);
+      const clickedButton = this._headerStatsButton?.contains?.(target);
+      if (!clickedPopup && !clickedButton) {
+        this.closeHeaderStatsPopup();
+      }
+    };
+    this._headerStatsPopupResizeHandler = () => this.positionHeaderStatsPopup();
+    this._headerStatsPopupScrollHandler = () => this.positionHeaderStatsPopup();
+
+    document.addEventListener('mousedown', this._headerStatsPopupDocClickHandler, true);
+    window.addEventListener('resize', this._headerStatsPopupResizeHandler);
+    window.addEventListener('scroll', this._headerStatsPopupScrollHandler, true);
+
+    this.positionHeaderStatsPopup();
+  }
+
+  closeHeaderStatsPopup() {
+    if (this._headerStatsPopupDocClickHandler) {
+      document.removeEventListener('mousedown', this._headerStatsPopupDocClickHandler, true);
+      this._headerStatsPopupDocClickHandler = null;
+    }
+    if (this._headerStatsPopupResizeHandler) {
+      window.removeEventListener('resize', this._headerStatsPopupResizeHandler);
+      this._headerStatsPopupResizeHandler = null;
+    }
+    if (this._headerStatsPopupScrollHandler) {
+      window.removeEventListener('scroll', this._headerStatsPopupScrollHandler, true);
+      this._headerStatsPopupScrollHandler = null;
+    }
+
+    if (this._headerStatsPopupRoot) {
+      try {
+        this._headerStatsPopupRoot.unmount();
+      } catch (error) {
+        this.debugError('HEADER_POPUP', error, { phase: 'unmount' });
+      }
+      this._headerStatsPopupRoot = null;
+    }
+
+    if (this._headerStatsPopup?.isConnected) {
+      this._headerStatsPopup.remove();
+    }
+    this._headerStatsPopup = null;
+  }
+
+  positionHeaderStatsPopup() {
+    const popup = this._headerStatsPopup;
+    const button = this._headerStatsButton;
+    if (!popup || !button || !popup.isConnected || !button.isConnected) return;
+
+    const buttonRect = button.getBoundingClientRect();
+    const viewportWidth = window.innerWidth || 0;
+    const viewportHeight = window.innerHeight || 0;
+    const desiredWidth = Math.max(340, Math.min(520, viewportWidth - 24));
+    const maxHeight = Math.max(260, viewportHeight - 90);
+
+    popup.style.width = `${desiredWidth}px`;
+    popup.style.maxHeight = `${maxHeight}px`;
+
+    const margin = 12;
+    let left = buttonRect.right - desiredWidth;
+    left = Math.max(margin, Math.min(left, viewportWidth - desiredWidth - margin));
+
+    let top = buttonRect.bottom + 10;
+    if (top > viewportHeight - margin - 180) {
+      top = Math.max(margin, buttonRect.top - Math.min(maxHeight, 560) - 10);
+    }
+
+    popup.style.left = `${left}px`;
+    popup.style.top = `${Math.max(margin, top)}px`;
+  }
 
   ensureChatUIUpdateInterval(onlyWhenDirty = false) {
     if (this.chatUIUpdateInterval) return;
@@ -8989,6 +9502,9 @@ module.exports = class SoloLevelingStats {
           return;
         }
       }
+
+      this.ensureHeaderStatsButton();
+      this.positionHeaderStatsPopup();
 
       if (onlyWhenDirty && !this._chatUIDirty) return;
       this._chatUIDirty = false;
@@ -9022,8 +9538,10 @@ module.exports = class SoloLevelingStats {
       // Inject CSS for chat UI
       this.injectChatUICSS();
 
-      // Try React injection first (preferred method — v3.0.0 uses component tree)
-      if (this.tryReactInjection()) {
+      // Keep the strip composer-anchored. Top-level React injection can place it away from
+      // the message box in certain Discord layouts, so we intentionally use DOM insertion.
+      const useReactTreeInjection = false;
+      if (useReactTreeInjection && this.tryReactInjection()) {
         // React injection successful — components handle their own state + events
         this.debugLog('CREATE_CHAT_UI', 'React injection succeeded, waiting for DOM mount');
         setTimeout(() => {
@@ -9032,6 +9550,7 @@ module.exports = class SoloLevelingStats {
             this.chatUIPanel = uiPanel;
             this.debugLog('CREATE_CHAT_UI', 'Panel mounted in DOM via React injection');
             this.ensureChatUIUpdateInterval(true);
+            this.ensureHeaderStatsButton();
           } else {
             this.debugLog('CREATE_CHAT_UI', 'Panel NOT in DOM 100ms after React injection — patcher may not have fired yet');
           }
@@ -9046,7 +9565,6 @@ module.exports = class SoloLevelingStats {
       // Function to actually create the UI
       const tryCreateUI = () => {
         try {
-          if (this._isCreatingUI) return false;
           if (!this._canShowChatUIInCurrentView()) return false;
 
           // Find writable input area scoped to primary chat content only
@@ -9068,7 +9586,7 @@ module.exports = class SoloLevelingStats {
           // Create the UI panel container
           const uiPanel = document.createElement('div');
           uiPanel.id = 'sls-chat-ui';
-          uiPanel.className = 'sls-chat-panel';
+          uiPanel.className = 'sls-chat-strip-panel';
 
           // Insert before the message input area
           messageInputArea.parentElement.insertBefore(uiPanel, messageInputArea);
@@ -9088,6 +9606,7 @@ module.exports = class SoloLevelingStats {
           this.chatUIPanel = uiPanel;
           this.debugLog('CREATE_CHAT_UI', 'Panel mounted in DOM via DOM fallback');
           this.ensureChatUIUpdateInterval(true);
+          this.ensureHeaderStatsButton();
           return true;
         } catch (uiError) {
           this.debugError('TRY_CREATE_UI', uiError);
@@ -9242,6 +9761,10 @@ module.exports = class SoloLevelingStats {
       this.chatUIObserver = null;
     }
 
+    this.removeHeaderStatsButton();
+    this._chatUIForceUpdates?.clear?.();
+    this._chatUIForceUpdate = null;
+
     this._lastChatUIUpdateAt = 0;
 
     // Remove injected CSS so it doesn't persist after disable
@@ -9264,10 +9787,8 @@ module.exports = class SoloLevelingStats {
     if (now - lastUpdateAt < 150) return;
     this._lastChatUIUpdateAt = now;
 
-    // Trigger React re-render via forceUpdate bridge
-    if (this._chatUIForceUpdate) {
-      this._chatUIForceUpdate();
-    }
+    // Trigger React re-render via forceUpdate bridge(s)
+    this._triggerUIForceUpdates();
   }
 
   /**
@@ -9306,6 +9827,225 @@ module.exports = class SoloLevelingStats {
          This CSS file styles the Solo Leveling Stats plugin UI components.
          Organized by functional area for easy maintenance and navigation.
          ============================================================================ */
+
+      /* ============================================================================
+         SECTION 0: COMPOSER STRIP + HEADER POPUP
+         ============================================================================
+         Targets: Compact HP/MP strip near composer and channel-header popup shell
+         Purpose: Keep chat UI compact while moving interactive controls into popup
+         ============================================================================ */
+      .sls-chat-strip-panel {
+        position: relative;
+        margin: 6px 16px 8px 16px;
+        background: linear-gradient(135deg, rgba(10, 10, 15, 0.92) 0%, rgba(15, 15, 26, 0.92) 100%);
+        border: 1px solid rgba(138, 43, 226, 0.42);
+        border-radius: 8px;
+        padding: 8px 10px;
+        box-shadow: 0 0 8px rgba(138, 43, 226, 0.25);
+        z-index: 1000;
+        font-family: 'Friend or Foe BB', 'Orbitron', 'Segoe UI', sans-serif;
+        backdrop-filter: blur(8px);
+      }
+
+      .sls-chat-strip {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+      }
+
+      .sls-chat-hp-mana-display.sls-chat-hp-mana-compact #sls-hp-text,
+      .sls-chat-hp-mana-display.sls-chat-hp-mana-compact #sls-mp-text {
+        display: block !important;
+        min-width: 44px !important;
+        font-size: 9px !important;
+      }
+
+      .sls-chat-hp-mana-display.sls-chat-hp-mana-compact #sls-hp-bar-fill,
+      .sls-chat-hp-mana-display.sls-chat-hp-mana-compact #sls-mp-bar-fill {
+        box-shadow: none !important;
+      }
+
+      .sls-header-stats-button {
+        width: 32px;
+        height: 32px;
+        border: none;
+        border-radius: 8px;
+        background: rgba(18, 16, 32, 0.85);
+        color: #c9a8ff;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        transition: all 0.18s ease;
+        box-shadow: none;
+      }
+
+      .sls-header-stats-button:hover {
+        color: #efe4ff;
+        background: rgba(30, 24, 52, 0.92);
+        box-shadow: 0 0 10px rgba(138, 43, 226, 0.4);
+      }
+
+      .sls-header-stats-popup {
+        position: fixed;
+        z-index: 11000;
+        border: 1px solid rgba(138, 43, 226, 0.45);
+        border-radius: 10px;
+        background: rgba(9, 9, 16, 0.98);
+        box-shadow: 0 16px 40px rgba(0, 0, 0, 0.6), 0 0 18px rgba(138, 43, 226, 0.25);
+        overflow: hidden;
+      }
+
+      .sls-stats-popup-surface {
+        display: flex;
+        flex-direction: column;
+        max-height: inherit;
+      }
+
+      .sls-stats-popup-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        border-bottom: 1px solid rgba(138, 43, 226, 0.28);
+        background: rgba(20, 14, 33, 0.92);
+      }
+
+      .sls-stats-popup-title {
+        color: #d9beff;
+        font-size: 12px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        font-weight: 700;
+      }
+
+      .sls-stats-popup-close {
+        width: 26px;
+        height: 26px;
+        border: none;
+        border-radius: 6px;
+        background: rgba(138, 43, 226, 0.18);
+        color: #e7d6ff;
+        cursor: pointer;
+        font-size: 16px;
+        line-height: 1;
+      }
+
+      .sls-stats-popup-close:hover {
+        background: rgba(186, 85, 211, 0.28);
+      }
+
+      .sls-stats-popup-content {
+        padding: 10px 12px 12px;
+        overflow-y: auto;
+        max-height: inherit;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+
+      .sls-popup-section-title {
+        color: #d8b4fe;
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        margin-bottom: 4px;
+      }
+
+      .sls-popup-radar {
+        border: 1px solid rgba(138, 43, 226, 0.2);
+        background: rgba(18, 12, 32, 0.5);
+        border-radius: 8px;
+        padding: 8px;
+      }
+
+      .sls-popup-radar-wrap {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .sls-popup-radar-svg {
+        width: 100%;
+        max-width: 220px;
+        height: auto;
+        overflow: visible;
+      }
+
+      .sls-popup-radar-ring {
+        fill: rgba(138, 43, 226, 0.04);
+        stroke: rgba(186, 85, 211, 0.22);
+        stroke-width: 1;
+      }
+
+      .sls-popup-radar-axis {
+        stroke: rgba(203, 155, 255, 0.36);
+        stroke-width: 1;
+      }
+
+      .sls-popup-radar-area {
+        fill: rgba(138, 43, 226, 0.24);
+        stroke: rgba(229, 209, 255, 0.9);
+        stroke-width: 1.6;
+      }
+
+      .sls-popup-radar-node {
+        fill: #e9d5ff;
+        stroke: rgba(10, 8, 18, 0.9);
+        stroke-width: 1.1;
+      }
+
+      .sls-popup-radar-label {
+        fill: #d8b4fe;
+        font-size: 9px;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-anchor: middle;
+        dominant-baseline: middle;
+      }
+
+      .sls-popup-radar-scale {
+        color: rgba(214, 198, 232, 0.9);
+        font-size: 10px;
+      }
+
+      .sls-popup-buff-summary {
+        border: 1px solid rgba(138, 43, 226, 0.2);
+        background: rgba(18, 12, 32, 0.55);
+        border-radius: 8px;
+        padding: 8px;
+      }
+
+      .sls-popup-buff-group + .sls-popup-buff-group {
+        margin-top: 7px;
+        padding-top: 7px;
+        border-top: 1px dashed rgba(138, 43, 226, 0.24);
+      }
+
+      .sls-popup-buff-source {
+        color: #f3e8ff;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .sls-popup-buff-entries {
+        margin-top: 4px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px 8px;
+      }
+
+      .sls-popup-buff-entry {
+        color: #c6b4e2;
+        font-size: 10px;
+      }
+
+      .sls-popup-empty {
+        color: rgba(214, 198, 232, 0.82);
+        font-size: 10px;
+      }
 
       /* ============================================================================
          SECTION 1: BASE PANEL & LAYOUT
