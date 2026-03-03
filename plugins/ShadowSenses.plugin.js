@@ -98,6 +98,7 @@ const DEFAULT_SETTINGS = {
   removedFriendAlerts: true,
   showMarkedOnlineCount: true,
   typingAlertCooldownMs: DEFAULT_TYPING_ALERT_COOLDOWN_MS,
+  groupHighPriorityBursts: false,
   priorityKeywords: [],
   mentionNames: [],
 };
@@ -986,12 +987,48 @@ class SensesEngine {
   // ── Burst Grouping ───────────────────────────────────────────────────────
 
   /**
-   * Try to merge entry into an existing burst (same author+channel within 10s).
-   * Returns true if merged, false if a new entry should be created.
-   * P3+ entries always get their own entry.
+   * Resolve the current feed index for an existing burst key.
+   * This recovers from stale `feedIndex` values after feed insertions/trims.
    */
+  _resolveBurstTargetIndex(guildId, burst, entry) {
+    const feed = this._guildFeeds[guildId];
+    if (!feed || feed.length === 0) return -1;
+
+    const matchesTarget = (candidate) =>
+      !!candidate &&
+      candidate.eventType === "message" &&
+      candidate.authorId === entry.authorId &&
+      candidate.channelId === entry.channelId;
+
+    // Fast path: expected index still valid.
+    if (Number.isInteger(burst.feedIndex) && burst.feedIndex >= 0 && burst.feedIndex < feed.length) {
+      if (matchesTarget(feed[burst.feedIndex])) return burst.feedIndex;
+    }
+
+    // Recovery path 1: locate previously anchored message id.
+    if (burst.messageId) {
+      for (let i = feed.length - 1; i >= 0; i--) {
+        const candidate = feed[i];
+        if (!matchesTarget(candidate)) continue;
+        if (candidate.messageId === burst.messageId) return i;
+      }
+    }
+
+    // Recovery path 2: find latest eligible message in the burst window.
+    const cutoff = entry.timestamp - BURST_WINDOW_MS;
+    for (let i = feed.length - 1; i >= 0; i--) {
+      const candidate = feed[i];
+      if (!matchesTarget(candidate)) continue;
+      if ((candidate.timestamp || 0) < cutoff) break;
+      return i;
+    }
+
+    return -1;
+  }
+
   _tryBurstGroup(guildId, entry) {
-    if ((entry.priority || 1) >= PRIORITY.HIGH) return false;
+    const allowHighPriorityBursts = !!this._plugin.settings?.groupHighPriorityBursts;
+    if (!allowHighPriorityBursts && (entry.priority || 1) >= PRIORITY.HIGH) return false;
 
     const key = `${entry.authorId}:${entry.channelId}`;
     const burst = this._burstMap.get(key);
@@ -1003,19 +1040,20 @@ class SensesEngine {
     }
 
     const feed = this._guildFeeds[guildId];
-    if (!feed || burst.feedIndex >= feed.length) {
+    if (!feed || feed.length === 0) {
       this._burstMap.delete(key);
       return false;
     }
 
-    const target = feed[burst.feedIndex];
-    if (!target || target.authorId !== entry.authorId || target.channelId !== entry.channelId) {
+    const targetIndex = this._resolveBurstTargetIndex(guildId, burst, entry);
+    if (targetIndex < 0) {
       this._burstMap.delete(key);
       return false;
     }
+    const target = feed[targetIndex];
 
     // Don't merge into a high-priority entry
-    if ((target.priority || 1) >= PRIORITY.HIGH) return false;
+    if (!allowHighPriorityBursts && (target.priority || 1) >= PRIORITY.HIGH) return false;
 
     // Merge in-place
     if (!target.firstContent) target.firstContent = target.content;
@@ -1025,6 +1063,8 @@ class SensesEngine {
     target.messageCount = (target.messageCount || 1) + 1;
     if ((entry.priority || 1) > (target.priority || 1)) target.priority = entry.priority;
 
+    burst.feedIndex = targetIndex;
+    burst.messageId = target.messageId || entry.messageId || burst.messageId || null;
     burst.timestamp = entry.timestamp;
     this._feedVersion++;
     this._dirtyGuilds.add(guildId);
@@ -1042,6 +1082,7 @@ class SensesEngine {
     this._burstMap.set(key, {
       guildId,
       feedIndex: feed.length - 1,
+      messageId: entry.messageId || null,
       timestamp: entry.timestamp,
     });
     // LRU cap
@@ -3180,6 +3221,16 @@ module.exports = class ShadowSenses {
         })
       ),
 
+      ce("div", { style: rowStyle },
+        ce("span", { style: { color: "#999", fontSize: "13px" } }, "Group High Priority Bursts (P3/P4)"),
+        ce("input", {
+          type: "checkbox",
+          defaultChecked: !!this.settings.groupHighPriorityBursts,
+          onChange: (e) => updateSetting("groupHighPriorityBursts", e.target.checked),
+          style: { accentColor: "#8a2be2" },
+        })
+      ),
+
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Feed Policy"),
       ce("div", {
         style: {
@@ -3194,7 +3245,8 @@ module.exports = class ShadowSenses {
         },
       },
       "Status, typing, and connection alerts are toast-only and are not saved in Active Feed history. ",
-      "Active Feed records chat message detections only."
+      "Active Feed records chat message detections only. ",
+      "Burst grouping uses a 10s window per author+channel; enable high-priority grouping if you want P3/P4 merged too."
       ),
 
       ce("h3", { style: { color: "#8a2be2", marginBottom: "8px", marginTop: "16px", fontSize: "14px" } }, "Priority Keywords"),
