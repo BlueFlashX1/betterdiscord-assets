@@ -1456,6 +1456,17 @@ class ShadowStorageManager {
 // ================================================================================
 
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
+const _shadowArmyStartupWarn = (...args) => {
+  try {
+    // Opt-in startup diagnostics only; keep normal runtime logs quiet.
+    if (typeof window !== 'undefined' && window.__SHADOW_ARMY_DEBUG_STARTUP__) {
+      console.warn(...args);
+    }
+  } catch (_) {
+    // ignore
+  }
+};
+
 let UnifiedSaveManager;
 try {
   if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
@@ -1466,7 +1477,7 @@ try {
     if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {
-  console.warn('[ShadowArmy] Failed to load UnifiedSaveManager:', error);
+  _shadowArmyStartupWarn('[ShadowArmy] Failed to load UnifiedSaveManager:', error);
   UnifiedSaveManager = typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
 }
 
@@ -4095,20 +4106,8 @@ module.exports = class ShadowArmy {
         level: 1,
         xp: 0,
         baseStats: targetStats,
-        growthStats: {
-          strength: 0,
-          agility: 0,
-          intelligence: 0,
-          vitality: 0,
-          perception: 0,
-        },
-        naturalGrowthStats: {
-          strength: 0,
-          agility: 0,
-          intelligence: 0,
-          vitality: 0,
-          perception: 0,
-        },
+        growthStats: this.createZeroStatBlock(),
+        naturalGrowthStats: this.createZeroStatBlock(),
         totalCombatTime: 0,
         lastNaturalGrowth: Date.now(),
         ownerLevelAtExtraction: userLevel,
@@ -5032,20 +5031,8 @@ module.exports = class ShadowArmy {
       level: 1, // Shadow's own level
       xp: 0, // Shadow XP for growth
       baseStats, // Role-weighted stats based on rank baseline only
-      growthStats: {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        perception: 0,
-      },
-      naturalGrowthStats: {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        perception: 0,
-      },
+      growthStats: this.createZeroStatBlock(),
+      naturalGrowthStats: this.createZeroStatBlock(),
       totalCombatTime: 0,
       lastNaturalGrowth: Date.now(),
       ownerLevelAtExtraction: userLevel, // For reference only, doesn't affect stats
@@ -6068,10 +6055,20 @@ module.exports = class ShadowArmy {
     return {
       totalShadows: 0,
       totalPower: 0,
-      totalStats: { strength: 0, agility: 0, intelligence: 0, vitality: 0, perception: 0 },
+      totalStats: this.createZeroStatBlock(),
       byRank: {},
       byRole: {},
       avgLevel: 0,
+    };
+  }
+
+  createZeroStatBlock() {
+    return {
+      strength: 0,
+      agility: 0,
+      intelligence: 0,
+      vitality: 0,
+      perception: 0,
     };
   }
 
@@ -7047,13 +7044,7 @@ module.exports = class ShadowArmy {
   getShadowEffectiveStats(shadow) {
     // Guard clause: Return zero stats if no shadow provided
     if (!shadow) {
-      return {
-        strength: 0,
-        agility: 0,
-        intelligence: 0,
-        vitality: 0,
-        perception: 0,
-      };
+      return this.createZeroStatBlock();
     }
 
     // HYBRID COMPRESSION: Decompress if needed
@@ -8719,7 +8710,7 @@ module.exports = class ShadowArmy {
         }
       }
     } catch (e) {
-      console.error('[ShadowArmy] ARISE SVG failed:', e?.message || e);
+      this.debugError('ARISE_SVG', 'ARISE SVG failed', e?.message || e);
     }
     if (!_svgOk) {
       // Fallback: styled text with Speedy Space Goat Oddity font
