@@ -599,6 +599,26 @@ module.exports = class CriticalHit {
     );
   }
 
+  _resolveCandidateMessageId(rawValue, channelId, pureMethod, extractedMethod = null) {
+    if (rawValue === null || rawValue === undefined) return null;
+    const idStr = String(rawValue).trim();
+    if (!idStr) return null;
+
+    if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, channelId)) {
+      return { messageId: idStr, extractionMethod: pureMethod };
+    }
+
+    const extracted = this.extractPureDiscordId(idStr);
+    if (extracted && this.isValidMessageId(extracted, channelId)) {
+      return {
+        messageId: extracted,
+        extractionMethod: extractedMethod || `${pureMethod}_extracted`,
+      };
+    }
+
+    return null;
+  }
+
   // ============================================================================
   // MESSAGE ID & AUTHOR EXTRACTION
   // ============================================================================
@@ -625,16 +645,15 @@ module.exports = class CriticalHit {
       messageElement.closest('[data-message-id]')?.getAttribute('data-message-id');
 
     if (dataMsgId) {
-      const idStr = String(dataMsgId).trim();
-      if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
-        messageId = idStr;
-        extractionMethod = 'data-message-id';
-      } else {
-        const extracted = this.extractPureDiscordId(idStr);
-        if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
-          messageId = extracted;
-          extractionMethod = 'data-message-id_extracted';
-        }
+      const resolved = this._resolveCandidateMessageId(
+        dataMsgId,
+        currentChannelId,
+        'data-message-id',
+        'data-message-id_extracted'
+      );
+      if (resolved) {
+        messageId = resolved.messageId;
+        extractionMethod = resolved.extractionMethod;
       }
     }
 
@@ -645,13 +664,15 @@ module.exports = class CriticalHit {
         messageElement.closest('[data-list-item-id]')?.getAttribute('data-list-item-id');
 
       if (listItemId) {
-        const idStr = String(listItemId).trim();
-        const extractedId = this.isValidDiscordId(idStr) ? idStr : this.extractPureDiscordId(idStr);
-        if (extractedId && this.isValidMessageId(extractedId, currentChannelId)) {
-          messageId = extractedId;
-          extractionMethod = this.isValidDiscordId(idStr)
-            ? 'data-list-item-id_pure'
-            : 'data-list-item-id_extracted';
+        const resolved = this._resolveCandidateMessageId(
+          listItemId,
+          currentChannelId,
+          'data-list-item-id_pure',
+          'data-list-item-id_extracted'
+        );
+        if (resolved) {
+          messageId = resolved.messageId;
+          extractionMethod = resolved.extractionMethod;
         }
       }
     }
@@ -673,26 +694,30 @@ module.exports = class CriticalHit {
               currentFiber.stateNode?.message;
 
             if (messageObj?.id) {
-              const msgIdStr = String(messageObj.id).trim();
-              if (this.isValidDiscordId(msgIdStr) && this.isValidMessageId(msgIdStr, currentChannelId)) {
-                messageId = msgIdStr;
-                extractionMethod = 'react_fiber_message_obj';
+              const resolvedFromMessageObj = this._resolveCandidateMessageId(
+                messageObj.id,
+                currentChannelId,
+                'react_fiber_message_obj',
+                'react_fiber_message_obj_extracted'
+              );
+              if (resolvedFromMessageObj) {
+                messageId = resolvedFromMessageObj.messageId;
+                extractionMethod = resolvedFromMessageObj.extractionMethod;
                 break;
               }
             }
 
             const msgId = this._extractFiberMessageId(currentFiber);
             if (msgId) {
-              const idStr = String(msgId).trim();
-              if (this.isValidDiscordId(idStr) && this.isValidMessageId(idStr, currentChannelId)) {
-                messageId = idStr;
-                extractionMethod = 'react_fiber_message_id';
-                break;
-              }
-              const extracted = this.extractPureDiscordId(idStr);
-              if (extracted && this.isValidMessageId(extracted, currentChannelId)) {
-                messageId = extracted;
-                extractionMethod = 'react_fiber_extracted';
+              const resolvedFromFiber = this._resolveCandidateMessageId(
+                msgId,
+                currentChannelId,
+                'react_fiber_message_id',
+                'react_fiber_extracted'
+              );
+              if (resolvedFromFiber) {
+                messageId = resolvedFromFiber.messageId;
+                extractionMethod = resolvedFromFiber.extractionMethod;
                 break;
               }
             }
@@ -710,11 +735,15 @@ module.exports = class CriticalHit {
       const idAttr =
         messageElement.getAttribute('id') || messageElement.closest('[id]')?.getAttribute('id');
       if (idAttr) {
-        const idStr = String(idAttr).trim();
-        const extractedId = this.isValidDiscordId(idStr) ? idStr : this.extractPureDiscordId(idStr);
-        if (extractedId && this.isValidMessageId(extractedId, currentChannelId)) {
-          messageId = extractedId;
-          extractionMethod = this.isValidDiscordId(idStr) ? 'id_attr_pure' : 'id_attr_extracted';
+        const resolved = this._resolveCandidateMessageId(
+          idAttr,
+          currentChannelId,
+          'id_attr_pure',
+          'id_attr_extracted'
+        );
+        if (resolved) {
+          messageId = resolved.messageId;
+          extractionMethod = resolved.extractionMethod;
         }
       }
     }
