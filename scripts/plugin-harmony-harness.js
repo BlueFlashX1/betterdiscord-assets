@@ -86,13 +86,25 @@ function createStyleDecl() {
 class EventTargetShim {
   constructor() {
     this._listeners = new Map();
+    this._abortUnsubs = new Map();
   }
 
-  addEventListener(type, cb) {
+  addEventListener(type, cb, options) {
     if (!type || typeof cb !== "function") return;
     const list = this._listeners.get(type) || [];
     list.push(cb);
     this._listeners.set(type, list);
+
+    const signal = options && typeof options === "object" ? options.signal : null;
+    if (signal && typeof signal.addEventListener === "function") {
+      const abortHandler = () => this.removeEventListener(type, cb);
+      signal.addEventListener("abort", abortHandler, { once: true });
+      this._abortUnsubs.set(cb, () => {
+        try {
+          signal.removeEventListener("abort", abortHandler);
+        } catch (_) {}
+      });
+    }
   }
 
   removeEventListener(type, cb) {
@@ -101,6 +113,11 @@ class EventTargetShim {
       type,
       list.filter((fn) => fn !== cb)
     );
+    const unsubAbort = this._abortUnsubs.get(cb);
+    if (unsubAbort) {
+      unsubAbort();
+      this._abortUnsubs.delete(cb);
+    }
   }
 
   dispatchEvent(evt) {
@@ -136,6 +153,12 @@ class MockElement extends EventTargetShim {
     this.role = null;
     this.style = createStyleDecl();
     this._byId = byId;
+    if (this.tagName === "CANVAS") {
+      this.width = 0;
+      this.height = 0;
+      this.getContext = () => createMockCanvasContext();
+      this.toDataURL = () => "data:image/png;base64,";
+    }
     const classSet = new Set();
     this.classList = {
       add: (...values) => {
@@ -301,6 +324,54 @@ class MockElement extends EventTargetShim {
   get innerHTML() {
     return this._innerHTML || "";
   }
+}
+
+function createMockCanvasContext() {
+  return {
+    fillStyle: "",
+    strokeStyle: "",
+    lineWidth: 1,
+    globalAlpha: 1,
+    shadowBlur: 0,
+    shadowColor: "",
+    clearRect() {},
+    fillRect() {},
+    beginPath() {},
+    closePath() {},
+    arc() {},
+    moveTo() {},
+    lineTo() {},
+    stroke() {},
+    fill() {},
+    save() {},
+    restore() {},
+    translate() {},
+    rotate() {},
+    scale() {},
+    drawImage() {},
+    createImageData(width, height) {
+      const w = Number(width) || 0;
+      const h = Number(height) || 0;
+      return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+    },
+    putImageData() {},
+    getImageData(width, height) {
+      const w = Number(width) || 0;
+      const h = Number(height) || 0;
+      return { width: w, height: h, data: new Uint8ClampedArray(w * h * 4) };
+    },
+    createLinearGradient() {
+      return { addColorStop() {} };
+    },
+    createRadialGradient() {
+      return { addColorStop() {} };
+    },
+    measureText(text) {
+      return { width: String(text || "").length * 8 };
+    },
+    fillText() {},
+    strokeText() {},
+  };
 }
 
 function createIndexedDbStub() {

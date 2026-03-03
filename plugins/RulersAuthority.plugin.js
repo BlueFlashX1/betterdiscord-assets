@@ -49,7 +49,22 @@
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const _bdLoad = (f) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
+    const moduleShim = { exports: {} };
+    const factory = new Function("module", "exports", "require", source);
+    factory(moduleShim, moduleShim.exports, require);
+    const loaded = moduleShim.exports;
+    if (typeof loaded === "function") return loaded;
+    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
+    return null;
+  } catch (_) {
+    return null;
+  }
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // §1  Constants + Fallback Selectors
@@ -298,97 +313,126 @@ module.exports = class RulersAuthority {
 
   stop() {
     try {
-      // 1. Clear all timers FIRST (prevents callbacks firing on stopped plugin)
-      clearTimeout(this._iconReinjectTimeout);
-      this._iconReinjectTimeout = null;
-      clearTimeout(this._sidebarRevealTimer);
-      clearTimeout(this._sidebarHideTimer);
-      clearTimeout(this._membersRevealTimer);
-      clearTimeout(this._membersHideTimer);
-      clearTimeout(this._profileRevealTimer);
-      clearTimeout(this._profileHideTimer);
-      clearTimeout(this._channelRevealTimer);
-      clearTimeout(this._channelHideTimer);
-      clearTimeout(this._pushAnimTimer);
-      clearTimeout(this._pullAnimTimer);
-      clearTimeout(this._guildChangeApplyTimer);
-      clearTimeout(this._channelObserverRetryTimer);
+      // 1. Clear all timers first (prevents callbacks on stopped plugin).
+      this._clearLifecycleTimers();
 
-      // 2. Abort all listeners registered via AbortController
+      // 2. Abort all listeners registered via AbortController.
       if (this._controller) {
         this._controller.abort();
         this._controller = null;
       }
 
-      // 3. Remove body classes
-      for (const panelName of Object.keys(PANEL_DEFS)) {
-        document.body.classList.remove(`ra-${panelName}-pushed`, `ra-${panelName}-hover-reveal`);
-      }
-      document.body.classList.remove("ra-amplified", "ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
-      this._channelsHoverRevealActive = false;
+      // 3. Remove body classes and visual state.
+      this._resetBodyVisualState();
 
-      // 4. Remove CSS
+      // 4. Remove CSS.
       BdApi.DOM.removeStyle(RA_STYLE_ID);
       BdApi.DOM.removeStyle(RA_VARS_STYLE_ID);
 
-      // 5. Remove toolbar icon + tooltip
+      // 5. Remove toolbar icon + tooltip.
       const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
       if (icon) icon.remove();
       const raTip = document.getElementById("sl-toolbar-tip-ra");
       if (raTip) raTip.remove();
       this.teardownToolbarObserver();
 
-      // 6. Unpatch context menus
+      // 6. Unpatch context menus.
       if (this._unpatchChannelCtx) { this._unpatchChannelCtx(); this._unpatchChannelCtx = null; }
 
-      // 7. Disconnect observers
-      if (this._channelObserver) { this._channelObserver.disconnect(); this._channelObserver = null; }
-      if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
-      if (this._settingsObserver) { this._settingsObserver.disconnect(); this._settingsObserver = null; }
-      if (this._settingsGuardInterval) { clearInterval(this._settingsGuardInterval); this._settingsGuardInterval = null; }
+      // 7. Disconnect observers + guard interval.
+      this._disconnectObserversAndGuards();
 
-      // 8. SkillTree listeners
-      if (this._onSkillActivated) {
-        document.removeEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
-        this._onSkillActivated = null;
-      }
-      if (this._onSkillExpired) {
-        document.removeEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
-        this._onSkillExpired = null;
-      }
+      // 8. SkillTree listeners.
+      this._detachSkillTreeListeners();
 
-      // 9. Guild + channel change listeners
-      if (this._guildChangeHandler && this._SelectedGuildStore) {
-        this._SelectedGuildStore.removeChangeListener(this._guildChangeHandler);
-        this._guildChangeHandler = null;
-      }
-      if (this._channelChangeHandler && this._SelectedChannelStore) {
-        this._SelectedChannelStore.removeChangeListener(this._channelChangeHandler);
-        this._channelChangeHandler = null;
-      }
+      // 9. Guild + channel change listeners.
+      this._detachStoreListeners();
 
-      // 10. Restore hidden channels
+      // 10. Restore hidden channels.
       this.restoreAllHiddenChannels();
       this.restoreAllCrushedCategories();
 
-      // 11. Remove resize inline styles
+      // 11. Remove resize inline styles.
       this._removeAllResizeStyles();
       document.body.classList.remove(RA_SETTINGS_OPEN_CLASS);
 
-      // 12. Null refs
-      this._ChannelStore = null;
-      this._GuildStore = null;
-      this._SelectedGuildStore = null;
-      this._SelectedChannelStore = null;
-      this._statsCache.invalidate();
-      this._modules = null;
-      this._resolvedSelectors = {};
-      this._dragging = null;
-      this._dragPanel = null;
+      // 12. Null refs.
+      this._resetRuntimeReferences();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
     }
     this._toast("Ruler's Authority — Dormant", "info");
+  }
+
+  _clearLifecycleTimers() {
+    const timeoutKeys = [
+      "_iconReinjectTimeout",
+      "_sidebarRevealTimer",
+      "_sidebarHideTimer",
+      "_membersRevealTimer",
+      "_membersHideTimer",
+      "_profileRevealTimer",
+      "_profileHideTimer",
+      "_channelRevealTimer",
+      "_channelHideTimer",
+      "_pushAnimTimer",
+      "_pullAnimTimer",
+      "_guildChangeApplyTimer",
+      "_channelObserverRetryTimer",
+    ];
+    for (const key of timeoutKeys) {
+      clearTimeout(this[key]);
+      this[key] = null;
+    }
+  }
+
+  _resetBodyVisualState() {
+    for (const panelName of Object.keys(PANEL_DEFS)) {
+      document.body.classList.remove(`ra-${panelName}-pushed`, `ra-${panelName}-hover-reveal`);
+    }
+    document.body.classList.remove("ra-amplified", "ra-pushing", "ra-pulling", "ra-channels-hover-reveal");
+    this._channelsHoverRevealActive = false;
+  }
+
+  _disconnectObserversAndGuards() {
+    if (this._channelObserver) { this._channelObserver.disconnect(); this._channelObserver = null; }
+    if (this._dmObserver) { this._dmObserver.disconnect(); this._dmObserver = null; }
+    if (this._settingsObserver) { this._settingsObserver.disconnect(); this._settingsObserver = null; }
+    if (this._settingsGuardInterval) { clearInterval(this._settingsGuardInterval); this._settingsGuardInterval = null; }
+  }
+
+  _detachSkillTreeListeners() {
+    if (this._onSkillActivated) {
+      document.removeEventListener("SkillTree:activeSkillActivated", this._onSkillActivated);
+      this._onSkillActivated = null;
+    }
+    if (this._onSkillExpired) {
+      document.removeEventListener("SkillTree:activeSkillExpired", this._onSkillExpired);
+      this._onSkillExpired = null;
+    }
+  }
+
+  _detachStoreListeners() {
+    if (this._guildChangeHandler && this._SelectedGuildStore) {
+      this._SelectedGuildStore.removeChangeListener(this._guildChangeHandler);
+      this._guildChangeHandler = null;
+    }
+    if (this._channelChangeHandler && this._SelectedChannelStore) {
+      this._SelectedChannelStore.removeChangeListener(this._channelChangeHandler);
+      this._channelChangeHandler = null;
+    }
+  }
+
+  _resetRuntimeReferences() {
+    this._ChannelStore = null;
+    this._GuildStore = null;
+    this._SelectedGuildStore = null;
+    this._SelectedChannelStore = null;
+    this._statsCache.invalidate();
+    this._modules = null;
+    this._resolvedSelectors = {};
+    this._dragging = null;
+    this._dragPanel = null;
   }
 
   // ═══════════════════════════════════════════════════════════════════════

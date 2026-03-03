@@ -3,10 +3,35 @@
  * @description Deploy shadow soldiers to monitor Discord users — get notified when they speak, even while invisible. Solo Leveling themed.
  * @version 1.1.5
  * @author matthewthompson
+ *
+ * ============================================================================
+ * TABLE OF CONTENTS
+ * ============================================================================
+ * §1  Loader + Constants
+ * §2  DeploymentManager (cross-plugin allocation)
+ * §3  SensesEngine (feed + dispatcher wiring)
+ * §4  Shared Utils
+ * §5  Plugin Lifecycle + UI Integration
+ * §6  ShadowPortalCore Integration
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const _bdLoad = (f) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
+    const moduleShim = { exports: {} };
+    const factory = new Function("module", "exports", "require", source);
+    factory(moduleShim, moduleShim.exports, require);
+    const loaded = moduleShim.exports;
+    if (typeof loaded === "function") return loaded;
+    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
+    return null;
+  } catch (_) {
+    return null;
+  }
+};
 
 // ─── Constants ─────────────────────────────────────────────────────────────
 
@@ -195,94 +220,124 @@ class DeploymentManager {
     return this._monitoredUserIds;
   }
 
+  _getShadowArmyInstance() {
+    if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
+      this._debugError("DeploymentManager", "ShadowArmy plugin not enabled");
+      return null;
+    }
+    const armyPlugin = BdApi.Plugins.get("ShadowArmy");
+    if (!armyPlugin?.instance) {
+      this._debugError("DeploymentManager", "ShadowArmy plugin not available");
+      return null;
+    }
+    return armyPlugin.instance;
+  }
+
+  _getExchangeMarkedIds() {
+    try {
+      if (!BdApi.Plugins.isEnabled("ShadowExchange")) return new Set();
+      const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
+      if (typeof exchangePlugin?.instance?.getMarkedShadowIds !== "function") return new Set();
+      return exchangePlugin.instance.getMarkedShadowIds();
+    } catch (err) {
+      this._debugLog("DeploymentManager", "ShadowExchange not available for exclusion", err);
+      return new Set();
+    }
+  }
+
+  _getDungeonsSnapshot() {
+    const snapshot = {
+      dungeonAllocatedIds: new Set(),
+      reserveIds: new Set(),
+    };
+
+    try {
+      if (!BdApi.Plugins.isEnabled("Dungeons")) return snapshot;
+      const dungeonsPlugin = BdApi.Plugins.get("Dungeons");
+      if (!dungeonsPlugin?.instance) return snapshot;
+
+      const reserve = Array.isArray(dungeonsPlugin.instance.shadowReserve)
+        ? dungeonsPlugin.instance.shadowReserve
+        : [];
+      for (const shadow of reserve) {
+        const sid = shadow?.id || shadow?.extractedData?.id;
+        if (sid) snapshot.reserveIds.add(sid);
+      }
+
+      if (!(dungeonsPlugin.instance.shadowAllocations instanceof Map)) return snapshot;
+      for (const shadows of dungeonsPlugin.instance.shadowAllocations.values()) {
+        if (!Array.isArray(shadows)) continue;
+        for (const shadow of shadows) {
+          const sid = shadow?.id || shadow?.extractedData?.id;
+          if (sid) snapshot.dungeonAllocatedIds.add(sid);
+        }
+      }
+    } catch (err) {
+      this._debugLog("DeploymentManager", "Dungeons not available for exclusion", err);
+    }
+
+    return snapshot;
+  }
+
+  _buildAvailableShadowList(allShadows, exclusion) {
+    return allShadows.filter((shadow) => {
+      const sid = shadow?.id;
+      if (!sid) return false;
+      if (exclusion.deployedIds.has(sid)) return false;
+      if (exclusion.exchangeMarkedIds.has(sid)) return false;
+      if (exclusion.reserveIds.has(sid)) return true;             // Reserve = idle = available
+      if (exclusion.dungeonAllocatedIds.has(sid)) return false;   // In dungeon = unavailable
+      return true;
+    });
+  }
+
+  _injectDungeonFallbackShadow(available, allShadows, exclusion) {
+    if (available.length > 0 || exclusion.dungeonAllocatedIds.size === 0) return;
+
+    const fallback = allShadows
+      .filter((shadow) => {
+        const sid = shadow?.id;
+        if (!sid) return false;
+        if (!exclusion.dungeonAllocatedIds.has(sid)) return false;
+        if (exclusion.deployedIds.has(sid)) return false;
+        if (exclusion.exchangeMarkedIds.has(sid)) return false;
+        return true;
+      })
+      .sort((a, b) => RANKS.indexOf(a.rank || "E") - RANKS.indexOf(b.rank || "E"))[0];
+
+    if (fallback) available.push(fallback);
+  }
+
   async getAvailableShadows() {
     // 5s TTL cache — avoids redundant IDB reads + 3 cross-plugin lookups
     const cached = this._availableCache.get();
     if (cached) return cached;
     try {
-      if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
-        this._debugError("DeploymentManager", "ShadowArmy plugin not enabled");
-        return [];
-      }
-      const armyPlugin = BdApi.Plugins.get("ShadowArmy");
-      if (!armyPlugin || !armyPlugin.instance) {
-        this._debugError("DeploymentManager", "ShadowArmy plugin not available");
-        return [];
-      }
+      const armyInstance = this._getShadowArmyInstance();
+      if (!armyInstance) return [];
 
       // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB
-      const allShadows = armyPlugin.instance.getShadowSnapshot?.() || await armyPlugin.instance.getAllShadows();
+      const allShadows = armyInstance.getShadowSnapshot?.() || await armyInstance.getAllShadows();
       if (!Array.isArray(allShadows)) return [];
 
-      // Get IDs to exclude: already deployed + exchange-marked + dungeon-allocated
-      // Dungeons now keeps a reserve pool (weakest shadows) idle for ShadowSenses.
-      // Reserve shadows are available. Dungeon-allocated shadows are NOT (lore: one place at a time).
-      // Fallback: if zero available, pull the weakest shadow from a dungeon silently.
-      const deployedIds = this._deployedShadowIds;
-      let exchangeMarkedIds = new Set();
-      let dungeonAllocatedIds = new Set();
-      let dungeonReserve = [];
+      const dungeons = this._getDungeonsSnapshot();
+      const exclusion = {
+        deployedIds: this._deployedShadowIds,
+        exchangeMarkedIds: this._getExchangeMarkedIds(),
+        dungeonAllocatedIds: dungeons.dungeonAllocatedIds,
+        reserveIds: dungeons.reserveIds,
+      };
 
-      try {
-        if (BdApi.Plugins.isEnabled("ShadowExchange")) {
-          const exchangePlugin = BdApi.Plugins.get("ShadowExchange");
-          if (exchangePlugin && exchangePlugin.instance && typeof exchangePlugin.instance.getMarkedShadowIds === "function") {
-            exchangeMarkedIds = exchangePlugin.instance.getMarkedShadowIds();
-          }
-        }
-      } catch (exErr) {
-        this._debugLog("DeploymentManager", "ShadowExchange not available for exclusion", exErr);
-      }
-
-      try {
-        const dungeonsPlugin = BdApi.Plugins.isEnabled("Dungeons") ? BdApi.Plugins.get("Dungeons") : null;
-        if (dungeonsPlugin && dungeonsPlugin.instance) {
-          // Get reserve pool (idle shadows held back by Dungeons)
-          dungeonReserve = Array.isArray(dungeonsPlugin.instance.shadowReserve)
-            ? dungeonsPlugin.instance.shadowReserve : [];
-          // Build set of all dungeon-allocated shadow IDs
-          if (dungeonsPlugin.instance.shadowAllocations instanceof Map) {
-            for (const shadows of dungeonsPlugin.instance.shadowAllocations.values()) {
-              if (Array.isArray(shadows)) {
-                for (const s of shadows) {
-                  const sid = s?.id || s?.extractedData?.id;
-                  if (sid) dungeonAllocatedIds.add(sid);
-                }
-              }
-            }
-          }
-        }
-      } catch (dgErr) {
-        this._debugLog("DeploymentManager", "Dungeons not available for exclusion", dgErr);
-      }
-
-      const reserveIds = new Set(dungeonReserve.map(s => s?.id || s?.extractedData?.id).filter(Boolean));
-
-      // Available = not deployed, not exchange-marked, and either in reserve OR not in any dungeon
-      const available = allShadows.filter(s => {
-        if (!s || !s.id) return false;
-        if (deployedIds.has(s.id)) return false;
-        if (exchangeMarkedIds.has(s.id)) return false;
-        if (reserveIds.has(s.id)) return true;           // Reserve = idle = available
-        if (dungeonAllocatedIds.has(s.id)) return false;  // In dungeon = not available
-        return true;
-      });
-
-      // Fallback: if no idle shadows, pull weakest from dungeon silently
-      if (available.length === 0 && dungeonAllocatedIds.size > 0) {
-        const dungeonShadows = allShadows
-          .filter(s => s && s.id && dungeonAllocatedIds.has(s.id) && !deployedIds.has(s.id) && !exchangeMarkedIds.has(s.id))
-          .sort((a, b) => RANKS.indexOf(a.rank || "E") - RANKS.indexOf(b.rank || "E"));
-        if (dungeonShadows.length > 0) available.push(dungeonShadows[0]);
-      }
+      const available = this._buildAvailableShadowList(allShadows, exclusion);
+      this._injectDungeonFallbackShadow(available, allShadows, exclusion);
 
       this._debugLog("DeploymentManager", "Available shadows", {
         total: allShadows.length,
         available: available.length,
-        deployed: deployedIds.size,
-        exchangeMarked: exchangeMarkedIds.size,
-        dungeonAllocated: dungeonAllocatedIds.size,
-        reservePool: reserveIds.size,
+        deployed: exclusion.deployedIds.size,
+        exchangeMarked: exclusion.exchangeMarkedIds.size,
+        dungeonAllocated: exclusion.dungeonAllocatedIds.size,
+        reservePool: exclusion.reserveIds.size,
       });
 
       this._availableCache.set(available);
@@ -2388,8 +2443,10 @@ module.exports = class ShadowSenses {
 
   start() {
     try {
-      console.log(`[${PLUGIN_NAME}] Starting v${PLUGIN_VERSION}...`);
       this._debugMode = BdApi.Data.load(PLUGIN_NAME, "debugMode") ?? false;
+      if (this._debugMode) {
+        console.log(`[${PLUGIN_NAME}] Starting v${PLUGIN_VERSION}...`);
+      }
       this.loadSettings();
       this._stopped = false;
       this._widgetDirty = true;
@@ -3285,5 +3342,9 @@ const _ensureShadowPortalCoreApplied = (PluginClass = module.exports) => {
 };
 
 if (!_ensureShadowPortalCoreApplied(module.exports)) {
-  console.warn(`[${PLUGIN_NAME}] Shared portal core unavailable. Navigation/transition patch will not be shared.`);
+  const warnOnceKey = "__shadowSensesPortalCoreWarned";
+  if (typeof window !== "undefined" && !window[warnOnceKey]) {
+    window[warnOnceKey] = true;
+    console.warn(`[${PLUGIN_NAME}] Shared portal core unavailable. Navigation/transition patch will not be shared.`);
+  }
 }

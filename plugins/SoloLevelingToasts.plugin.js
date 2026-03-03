@@ -38,6 +38,15 @@
  * @changelog v1.0.4 (2025-12-03)
  * - Code structure improvements (section headers)
  * - Performance optimizations
+ *
+ * ============================================================================
+ * TABLE OF CONTENTS
+ * ============================================================================
+ * §1  Imports + Configuration + Constructor
+ * §2  Config/format helpers
+ * §3  Lifecycle + major operations
+ * §4  SoloLevelingStats hook + notification filtering
+ * §5  Toast rendering + settings panel + debug utilities
  */
 
 module.exports = class SoloLevelingToasts {
@@ -1706,48 +1715,48 @@ module.exports = class SoloLevelingToasts {
    * 6. Call showToast for filtered notifications
    * 7. Store patcher reference for cleanup
    */
-  hookIntoSoloLeveling() {
-    if (this._isStopped) {
-      return;
-    }
-
-    // Guard against unbounded retries (max 10 attempts = 20s)
+  _canRetrySoloHook() {
     if (!this._hookRetryCount) this._hookRetryCount = 0;
     if (this._hookRetryCount >= 10) {
       this.debugLog('HOOK_ABORT', 'Max retry attempts (10) reached for SoloLevelingStats hook — giving up');
-      return;
+      return false;
     }
     this._hookRetryCount++;
+    return true;
+  }
+
+  _scheduleSoloHookRetry(message, data = null) {
+    this.debugLog('HOOK_RETRY', message, data);
+    this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
+  }
+
+  _resolveSoloLevelingInstance() {
+    const now = Date.now();
+    if (
+      this._cache.soloPluginInstance &&
+      this._cache.soloPluginInstanceTime &&
+      now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL &&
+      BdApi.Plugins.isEnabled('SoloLevelingStats')
+    ) {
+      return this._cache.soloPluginInstance;
+    }
+
+    const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
+    if (!soloPlugin) return null;
+    const instance = soloPlugin.instance || soloPlugin;
+    this._cache.soloPluginInstance = instance;
+    this._cache.soloPluginInstanceTime = now;
+    return instance;
+  }
+
+  hookIntoSoloLeveling() {
+    if (this._isStopped) return;
+    if (!this._canRetrySoloHook()) return;
 
     try {
-      // Check cache first
-      const now = Date.now();
-      let instance = null;
-
-      if (
-        this._cache.soloPluginInstance &&
-        this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL &&
-        BdApi.Plugins.isEnabled('SoloLevelingStats')
-      ) {
-        instance = this._cache.soloPluginInstance;
-      } else {
-        const soloPlugin = BdApi.Plugins.get('SoloLevelingStats');
-        if (!soloPlugin) {
-          this.debugLog('HOOK_RETRY', 'SoloLevelingStats plugin not found, will retry...');
-          this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
-          return;
-        }
-
-        instance = soloPlugin.instance || soloPlugin;
-        // Cache the instance
-        this._cache.soloPluginInstance = instance;
-        this._cache.soloPluginInstanceTime = now;
-      }
-
+      const instance = this._resolveSoloLevelingInstance();
       if (!instance) {
-        this.debugLog('HOOK_RETRY', 'SoloLevelingStats instance not found, will retry...');
-        this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
+        this._scheduleSoloHookRetry('SoloLevelingStats plugin/instance not found, will retry...');
         return;
       }
 
@@ -1797,15 +1806,14 @@ module.exports = class SoloLevelingToasts {
           }
         );
       } else {
-        this.debugLog('HOOK_RETRY', 'showNotification method not found, will retry...', {
+        this._scheduleSoloHookRetry('showNotification method not found, will retry...', {
           hasInstance: !!instance,
           instanceKeys: instance ? Object.keys(instance).slice(0, 10) : [],
         });
-        this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
       }
     } catch (error) {
       this.debugError('HOOK_ERROR', error);
-      this._hookRetryId = this._setTrackedTimeout(() => this.hookIntoSoloLeveling(), 2000);
+      this._scheduleSoloHookRetry('Hook crashed, will retry...');
     }
   }
 
@@ -1821,6 +1829,7 @@ module.exports = class SoloLevelingToasts {
       this.patcher = null;
       this.debugLog('UNHOOK', 'Unhooked from SoloLevelingStats');
     }
+    this._hookRetryCount = 0;
   }
 
   /**

@@ -37,10 +37,34 @@
  * - Code structure improvements (section headers, better organization)
  * - Console log cleanup (removed verbose debug logs)
  * - Performance optimizations
+ *
+ * ============================================================================
+ * TABLE OF CONTENTS
+ * ============================================================================
+ * §1  Loader + React Component Factory
+ * §2  Lifecycle (start/stop) + watchers
+ * §3  Settings + SP/bonus calculations
+ * §4  Active Skills system
+ * §5  Unlock/upgrade planning + UI rendering
  */
 
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const _bdLoad = (f) => {
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
+    const moduleShim = { exports: {} };
+    const factory = new Function("module", "exports", "require", source);
+    factory(moduleShim, moduleShim.exports, require);
+    const loaded = moduleShim.exports;
+    if (typeof loaded === "function") return loaded;
+    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
+    return null;
+  } catch (_) {
+    return null;
+  }
+};
 
 // ============================================================================
 // REACT COMPONENT FACTORY (v3.0.0 — replaces innerHTML modal rendering)
@@ -1016,14 +1040,13 @@ module.exports = class SkillTree {
       this._cache.soloLevelingData = null;
       this._cache.soloLevelingDataTime = 0;
 
-      // FUNCTIONAL: Short-circuit for level up (no if-else)
-      data.newLevel > (this.settings.lastLevel || 1) &&
-        (() => {
-          const levelsGained = data.newLevel - (this.settings.lastLevel || 1);
-          this.awardSPForLevelUp(levelsGained);
-          this.settings.lastLevel = data.newLevel;
-          this.saveSettings();
-        })();
+      const lastLevel = this.settings.lastLevel || 1;
+      if (data.newLevel > lastLevel) {
+        const levelsGained = data.newLevel - lastLevel;
+        this.awardSPForLevelUp(levelsGained);
+        this.settings.lastLevel = data.newLevel;
+        this.saveSettings();
+      }
     });
     this.eventUnsubscribers.push(unsubscribeLevel);
     this.stopLevelPolling();
@@ -2161,6 +2184,32 @@ module.exports = class SkillTree {
     }
   }
 
+  _buildMaxUpgradePlan(tier, currentLevel, availableSP) {
+    const maxLevel = tier.maxLevel || 10;
+    const baseCost = tier.baseCost || 1;
+    const multiplier = tier.upgradeCostMultiplier || 1.5;
+
+    let targetLevel = currentLevel;
+    let totalCost = 0;
+    let levelsUpgraded = 0;
+    let remainingSP = availableSP;
+
+    while (targetLevel < maxLevel && remainingSP > 0) {
+      const nextCost =
+        targetLevel === 0
+          ? baseCost
+          : Math.ceil(baseCost * targetLevel * multiplier);
+      if (!nextCost || remainingSP < nextCost) break;
+
+      totalCost += nextCost;
+      remainingSP -= nextCost;
+      targetLevel++;
+      levelsUpgraded++;
+    }
+
+    return { maxLevel, targetLevel, levelsUpgraded, totalCost };
+  }
+
   /**
    * Max upgrade a skill (use all remaining SP)
    * @param {string} skillId - Skill ID to max upgrade
@@ -2176,54 +2225,31 @@ module.exports = class SkillTree {
 
       const { skill, tier } = result;
       const currentLevel = this.getSkillLevel(skillId);
-      const maxLevel = tier.maxLevel || 10;
+      const plan = this._buildMaxUpgradePlan(tier, currentLevel, this.settings.skillPoints);
 
       // Early returns
-      if (currentLevel >= maxLevel) return false;
+      if (currentLevel >= plan.maxLevel) return false;
 
       // Check requirements
       if (!this.canUnlockSkill(skill, tier)) {
         return false;
       }
 
-      // Calculate how many levels we can afford
-      let levelsUpgraded = 0;
-      let totalCost = 0;
-      let targetLevel = currentLevel;
-      let remainingSP = this.settings.skillPoints;
-
-      while (targetLevel < maxLevel && remainingSP > 0) {
-        // Calculate cost for next level
-        const nextCost =
-          targetLevel === 0
-            ? tier.baseCost || 1 // Unlock cost
-            : Math.ceil((tier.baseCost || 1) * targetLevel * (tier.upgradeCostMultiplier || 1.5)); // Upgrade cost
-
-        if (!nextCost || remainingSP < nextCost) {
-          break; // Can't afford next upgrade
-        }
-
-        totalCost += nextCost;
-        remainingSP -= nextCost;
-        targetLevel++;
-        levelsUpgraded++;
-      }
-
-      if (levelsUpgraded === 0) {
+      if (plan.levelsUpgraded === 0) {
         return false; // Can't afford any upgrades
       }
 
       // Apply upgrades
-      this.settings.skillPoints -= totalCost;
-      this.settings.skillLevels[skillId] = targetLevel;
+      this.settings.skillPoints -= plan.totalCost;
+      this.settings.skillLevels[skillId] = plan.targetLevel;
 
       this._finalizeSkillUpgrade(skillId);
 
       // Show notification
       const message =
         currentLevel === 0
-          ? `Skill Unlocked: ${skill.name} (Level ${targetLevel})`
-          : `${skill.name} upgraded ${levelsUpgraded} level(s) to Level ${targetLevel}!`;
+          ? `Skill Unlocked: ${skill.name} (Level ${plan.targetLevel})`
+          : `${skill.name} upgraded ${plan.levelsUpgraded} level(s) to Level ${plan.targetLevel}!`;
       this._toast(message, "success");
 
       return true;
