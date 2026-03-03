@@ -235,6 +235,9 @@ module.exports = class LevelProgressBar {
     this._trackedTimeouts = this._timeouts ? null : new Set();
     this._updateRafId = null;
     this._updateQueued = false;
+    this._deferredQueueTimeout = null;
+    this._lastQueuedUpdateTs = 0;
+    this._minQueuedUpdateGapMs = 120;
     this._lastMilestoneMask = null;
     this._prefersReducedMotion = null;
     this.webpackModules = {
@@ -272,6 +275,9 @@ module.exports = class LevelProgressBar {
   }
   async start() {
     this._isStopped = false;
+    this._deferredQueueTimeout = null;
+    this._lastQueuedUpdateTs = 0;
+    this._updateQueued = false;
     this._trace('START', 'Plugin starting...');
     this.debugLog('START', 'Plugin starting');
     this.initializeWebpackModules();
@@ -315,6 +321,7 @@ module.exports = class LevelProgressBar {
     this.stopUpdating();
     if (this._timeouts) this._timeouts.clearAll();
     else this._clearTrackedTimeouts();
+    this._deferredQueueTimeout = null;
     if (this._updateRafId) {
       cancelAnimationFrame(this._updateRafId);
       this._updateRafId = null;
@@ -750,12 +757,27 @@ module.exports = class LevelProgressBar {
   }
   queueProgressBarUpdate() {
     if (this._isStopped) return;
+    if (document.hidden) return;
+    if (!this.progressBar || !document.contains(this.progressBar)) return;
     if (this._updateQueued) return;
+    const now = Date.now();
+    const elapsed = now - this._lastQueuedUpdateTs;
+    if (elapsed < this._minQueuedUpdateGapMs) {
+      if (this._deferredQueueTimeout) return;
+      this._deferredQueueTimeout = this._setTrackedTimeout(() => {
+        this._deferredQueueTimeout = null;
+        this.queueProgressBarUpdate();
+      }, this._minQueuedUpdateGapMs - elapsed);
+      return;
+    }
+    this._lastQueuedUpdateTs = now;
     this._updateQueued = true;
     this._updateRafId = requestAnimationFrame(() => {
       this._updateQueued = false;
       this._updateRafId = null;
-      !this._isStopped && this.updateProgressBar();
+      if (!this._isStopped && !document.hidden && this.progressBar && document.contains(this.progressBar)) {
+        this.updateProgressBar();
+      }
     });
   }
   getPrefersReducedMotion() {

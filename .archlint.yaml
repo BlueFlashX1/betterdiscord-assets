@@ -9,6 +9,8 @@ entry_points:
   - plugins/BetterDiscordReactUtils.js
   - plugins/SoloLevelingUtils.js
   - plugins/UnifiedSaveManager.js
+  - plugins/PluginMainLoader.js
+  - plugins/TransitionCleanupUtils.js
 
 rules:
   dead_symbols:

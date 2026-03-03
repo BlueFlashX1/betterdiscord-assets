@@ -291,8 +291,16 @@ module.exports = class ShadowRecon {
 
   // ---- Context Menus ---------------------------------------------------
 
+  _resetContextPatch(unpatchKey) {
+    const unpatch = this?.[unpatchKey];
+    if (typeof unpatch !== "function") return;
+    try { unpatch(); } catch (_) {}
+    this[unpatchKey] = null;
+  }
+
   patchGuildContextMenu() {
     try {
+      this._resetContextPatch("_guildContextUnpatch");
       this._guildContextUnpatch = BdApi.ContextMenu.patch("guild-context", (tree, props) => {
         try {
           const guild = props?.guild || this._GuildStore?.getGuild?.(props?.guildId);
@@ -321,6 +329,7 @@ module.exports = class ShadowRecon {
 
   patchChannelContextMenu() {
     try {
+      this._resetContextPatch("_channelContextUnpatch");
       this._channelContextUnpatch = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
         try {
           const guildId =
@@ -364,6 +373,7 @@ module.exports = class ShadowRecon {
 
   patchUserContextMenu() {
     try {
+      this._resetContextPatch("_userContextUnpatch");
       this._userContextUnpatch = BdApi.ContextMenu.patch("user-context", (tree, props) => {
         try {
           const user = props?.user;

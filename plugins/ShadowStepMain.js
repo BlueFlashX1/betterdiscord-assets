@@ -49,6 +49,9 @@ try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _Plug
 let _SLUtils;
 try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
 
+let _TransitionCleanupUtils;
+try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
+
 const { isEditableTarget, matchesHotkey } = _PluginUtils || {
   isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
   matchesHotkey: () => false,
@@ -359,13 +362,13 @@ module.exports = class ShadowStep {
       this._unregisterHotkey();
 
       // 4. Stop and remove any active transition
-      this._cancelPendingTransition();
+      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
 
       // 5. Clear any queued navigation retries
-      this._clearNavigateRetries();
+      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
 
       // 6. Clear channel view fade state
-      this._cancelChannelViewFade();
+      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
 
       // 7. Remove CSS
       this.removeCSS();
@@ -450,6 +453,10 @@ module.exports = class ShadowStep {
 
   patchContextMenu() {
     try {
+      if (this._unpatchContextMenu) {
+        try { this._unpatchContextMenu(); } catch (_) {}
+        this._unpatchContextMenu = null;
+      }
       this._unpatchContextMenu = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
         if (!props || !props.channel) return;
         const channel = props.channel;

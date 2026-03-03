@@ -599,6 +599,9 @@ try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _Plug
 let _SLUtils;
 try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
 
+let _TransitionCleanupUtils;
+try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
+
 // ─── Plugin Class ──────────────────────────────────────────────────────────
 
 module.exports = class ShadowExchange {
@@ -682,9 +685,9 @@ module.exports = class ShadowExchange {
         this._unpatchContextMenu = null;
       }
       this.closePanel();
-      this._cancelPendingTransition();
-      this._clearNavigateRetries();
-      this._cancelChannelViewFade();
+      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
       this.teardownSwirlObserver();
       this.removeSwirlIcon();
       const seTip = document.getElementById("sl-toolbar-tip-se");
@@ -718,6 +721,10 @@ module.exports = class ShadowExchange {
 
   patchContextMenu() {
     try {
+      if (this._unpatchContextMenu) {
+        try { this._unpatchContextMenu(); } catch (_) {}
+        this._unpatchContextMenu = null;
+      }
       this._unpatchContextMenu = BdApi.ContextMenu.patch("message", (tree, props) => {
         try {
           const { message, channel } = props;

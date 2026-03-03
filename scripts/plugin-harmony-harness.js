@@ -458,6 +458,12 @@ function setupGlobalHarnessEnvironment() {
     documentElement: new MockElement("html", elementsById),
     readyState: "complete",
     createElement: (tag) => new MockElement(tag, elementsById),
+    createDocumentFragment: () => new MockElement("fragment", elementsById),
+    createTextNode: (text) => {
+      const node = new MockElement("text", elementsById);
+      node.textContent = String(text ?? "");
+      return node;
+    },
     getElementById: (id) => elementsById.get(id) || null,
     querySelector: (selector) => {
       if (selector === "#app-mount") return body;

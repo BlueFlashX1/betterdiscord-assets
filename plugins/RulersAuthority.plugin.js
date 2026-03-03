@@ -1176,6 +1176,10 @@ module.exports = class RulersAuthority {
 
   patchContextMenus() {
     try {
+      if (this._unpatchChannelCtx) {
+        try { this._unpatchChannelCtx(); } catch (_) {}
+        this._unpatchChannelCtx = null;
+      }
       this._unpatchChannelCtx = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
         if (!props?.channel) return;
         const channel = props.channel;

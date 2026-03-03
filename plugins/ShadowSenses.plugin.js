@@ -2424,6 +2424,8 @@ let _ReactUtils;
 try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
 let _PluginUtils;
 try { _PluginUtils = _bdLoad('BetterDiscordPluginUtils.js'); } catch (_) { _PluginUtils = null; }
+let _TransitionCleanupUtils;
+try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
 const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 
 // ─── Plugin Class ──────────────────────────────────────────────────────────
@@ -2548,9 +2550,9 @@ module.exports = class ShadowSenses {
       }
 
       // 6. Stop and remove any active transition
-      this._cancelPendingTransition();
-      this._clearNavigateRetries();
-      this._cancelChannelViewFade();
+      _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+      _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+      _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
 
       // 7. CSS
       this.removeCSS();
@@ -2968,6 +2970,10 @@ module.exports = class ShadowSenses {
 
   patchContextMenu() {
     try {
+      if (this._unpatchContextMenu) {
+        try { this._unpatchContextMenu(); } catch (_) {}
+        this._unpatchContextMenu = null;
+      }
       this._unpatchContextMenu = BdApi.ContextMenu.patch("user-context", (tree, props) => {
         // No outer try-catch — let menu construction errors propagate visibly
         if (!props || !props.user) return;
