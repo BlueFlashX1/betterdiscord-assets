@@ -599,6 +599,47 @@ class MobBossStorageManager {
     this._flushIntervalMs = 5000; // Debounce writes to reduce IndexedDB churn
     this._flushThreshold = 300; // Flush immediately when large batches accumulate
     this._lastBossSaveFraction = new Map(); // Throttle boss saves on HP delta
+    this._logHandlers = {
+      debug: null,
+      warn: null,
+      error: null,
+    };
+    this._warnOnceKeys = new Set();
+  }
+
+  setLogHandlers(handlers = {}) {
+    if (!handlers || typeof handlers !== 'object') return;
+    if (typeof handlers.debug === 'function') this._logHandlers.debug = handlers.debug;
+    if (typeof handlers.warn === 'function') this._logHandlers.warn = handlers.warn;
+    if (typeof handlers.error === 'function') this._logHandlers.error = handlers.error;
+  }
+
+  _logDebug(message, context = null) {
+    const handler = this._logHandlers.debug;
+    if (typeof handler === 'function') {
+      handler(message, context);
+    }
+  }
+
+  _logWarn(message, context = null, onceKey = null) {
+    if (onceKey && this._warnOnceKeys.has(onceKey)) return;
+    onceKey && this._warnOnceKeys.add(onceKey);
+
+    const handler = this._logHandlers.warn;
+    if (typeof handler === 'function') {
+      handler(message, context);
+      return;
+    }
+    console.warn(`[MobBossStorageManager] ${message}`, context || '');
+  }
+
+  _logError(message, context = null, error = null) {
+    const handler = this._logHandlers.error;
+    if (typeof handler === 'function') {
+      handler(message, context, error);
+      return;
+    }
+    console.error(`[MobBossStorageManager] ${message}`, context || '', error || '');
   }
 
   async init() {
@@ -723,7 +764,11 @@ class MobBossStorageManager {
     if (!this._pendingTimers.has(dungeonKey)) {
       const timer = setTimeout(() => {
         this.flushMobs(dungeonKey, 'interval').catch((error) => {
-          console.error('[MobBossStorageManager] Failed to flush mobs', error);
+          this._logWarn(
+            'Failed to flush mobs (interval)',
+            { dungeonKey, error: error?.message || String(error) },
+            `flush-interval-failed:${dungeonKey}`
+          );
         });
       }, this._flushIntervalMs);
       this._pendingTimers.set(dungeonKey, timer);
@@ -750,7 +795,7 @@ class MobBossStorageManager {
     try {
       const result = await this.batchSaveMobs(pending, dungeonKey);
       if (result.errors > 0) {
-        console.warn('[MobBossStorageManager] Flush completed with errors', {
+        this._logDebug('Flush completed with write errors', {
           dungeonKey,
           saved: result.saved,
           errors: result.errors,
@@ -759,7 +804,11 @@ class MobBossStorageManager {
       }
       return result;
     } catch (error) {
-      console.error('[MobBossStorageManager] Failed to flush mobs', { dungeonKey, reason }, error);
+      this._logError(
+        'Failed to flush mobs',
+        { dungeonKey, reason },
+        error
+      );
       return { saved: 0, errors: pending.length };
     }
   }
@@ -857,6 +906,17 @@ class MobBossStorageManager {
 // MAJOR SECTION: MAIN DUNGEONS PLUGIN CLASS (runtime orchestrator)
 // =============================================================================
 // ==== MAIN PLUGIN CLASS ====
+const _dungeonsStartupWarn = (...args) => {
+  try {
+    // Opt-in startup warnings only (avoids noisy console output in normal runtime).
+    if (typeof window !== 'undefined' && window.__DUNGEONS_DEBUG_STARTUP__) {
+      console.warn(...args);
+    }
+  } catch (_) {
+    // ignore
+  }
+};
+
 // Load UnifiedSaveManager for crash-resistant IndexedDB storage
 const UnifiedSaveManager = (() => {
   try {
@@ -868,7 +928,7 @@ const UnifiedSaveManager = (() => {
     if (_USM && typeof window !== 'undefined' && !window.UnifiedSaveManager) window.UnifiedSaveManager = _USM;
     return _USM;
   } catch (error) {
-    console.warn('[Dungeons] Failed to load UnifiedSaveManager:', error);
+    _dungeonsStartupWarn('[Dungeons] Failed to load UnifiedSaveManager:', error);
     return typeof window !== 'undefined' ? window.UnifiedSaveManager || null : null;
   }
 })();
@@ -2451,6 +2511,12 @@ module.exports = class Dungeons {
 
       // Initialize MobBossStorageManager for dedicated mob/boss database
       this.mobBossStorageManager = new MobBossStorageManager(userId);
+      this.mobBossStorageManager.setLogHandlers({
+        debug: (message, context) => this.debugLog('MOB_BOSS_STORAGE', message, context),
+        warn: (message, context) => this.debugLog('MOB_BOSS_STORAGE_WARN', message, context),
+        error: (message, context, error) =>
+          this.errorLog('MOB_BOSS_STORAGE', message, context, error),
+      });
       await this.mobBossStorageManager.init();
       this.debugLog('MobBossStorageManager initialized successfully');
       // Silent database initialization (no console spam)
@@ -8184,6 +8250,13 @@ module.exports = class Dungeons {
     };
   }
 
+  _getShadowArchetypeForRole(shadowRole = '', combatData = null) {
+    const shadowSource =
+      shadowRole && typeof shadowRole === 'object' ? shadowRole : { role: shadowRole };
+    const { archetype } = this._resolveShadowRoleProfile(shadowSource, combatData);
+    return archetype || 'balanced';
+  }
+
   _addRolePressureSample(rolePressure, shadow, combatData, attacks, scaleFactor = 1) {
     if (!rolePressure || !Number.isFinite(attacks) || attacks <= 0) return;
 
@@ -10729,11 +10802,7 @@ module.exports = class Dungeons {
     damage = this.applyBossDamageVariance(damage);
     const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(bossRole, bossFamily, 'shadow');
     // Slight protection for tank/support shadows against heavy monster archetypes.
-    const shadowRoleKey = this.normalizeShadowRoleKey(shadowRole);
-    const shadowArchetype = this.getRoleCombatArchetype(
-      shadowRoleKey,
-      this.derivePersonalityKeyFromRole(shadowRoleKey)
-    );
+    const shadowArchetype = this._getShadowArchetypeForRole(shadowRole);
     const defenderMultiplier =
       shadowArchetype === 'tank' ? 0.92 : shadowArchetype === 'support' ? 0.96 : 1;
     return Math.max(1, Math.floor(damage * roleMultiplier * defenderMultiplier));
@@ -10764,11 +10833,7 @@ module.exports = class Dungeons {
     damage = Math.floor(damage * 0.5); // 50% damage reduction (was 70%)
     damage = this.applyMobDamageVariance(damage);
     const roleMultiplier = this.getMonsterOutgoingDamageMultiplier(mobRole, mobFamily, 'shadow');
-    const shadowRoleKey = this.normalizeShadowRoleKey(shadowRole);
-    const shadowArchetype = this.getRoleCombatArchetype(
-      shadowRoleKey,
-      this.derivePersonalityKeyFromRole(shadowRoleKey)
-    );
+    const shadowArchetype = this._getShadowArchetypeForRole(shadowRole);
     const defenderMultiplier =
       shadowArchetype === 'tank' ? 0.9 : shadowArchetype === 'support' ? 0.95 : 1;
     return Math.max(1, Math.floor(damage * roleMultiplier * defenderMultiplier));
@@ -10887,11 +10952,7 @@ module.exports = class Dungeons {
    * @returns {number} Damage with role multiplier applied
    */
   applyRoleDamageMultiplier(role, damage) {
-    const roleKey = this.normalizeShadowRoleKey(role);
-    const archetype = this.getRoleCombatArchetype(
-      roleKey,
-      this.derivePersonalityKeyFromRole(roleKey)
-    );
+    const archetype = this._getShadowArchetypeForRole(role);
 
     let multiplier = 1;
     switch (archetype) {
