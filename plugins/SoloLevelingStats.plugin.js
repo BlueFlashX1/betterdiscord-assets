@@ -47,6 +47,7 @@
  *
  * ~11,500 lines organized into 4 major sections.
  * Search for "// SECTION N" or "// §N.N" to jump to any section.
+ * Line hints are approximate and may drift; section/subsection tags are authoritative.
  *
  * ┌─────────────────────────────────────────────────────────────────────┐
  * │ SECTION 1: IMPORTS & DEPENDENCIES                         ~L 150   │
@@ -213,11 +214,20 @@ function buildChatUIComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
 
+  // ============================================================================
+  // COMPONENT SECTION A: CORE STATUS DISPLAYS
+  // ============================================================================
+  // HPManaDisplay / LevelInfo / ActiveTitle
+
   // ── HPManaDisplay: Compact HP/MP strip shown near chat composer ──
-  function HPManaDisplay({ compact = false }) {
+  function HPManaDisplay({ compact = false, totalStatsOverride = null }) {
     const s = pluginInstance.settings;
-    const totalStats = pluginInstance.getTotalEffectiveStats();
-    pluginInstance.recomputeHPManaFromStats(totalStats);
+    const totalStats = totalStatsOverride || pluginInstance.getTotalEffectiveStats();
+    if (typeof pluginInstance.syncHPManaForDisplay === 'function') {
+      pluginInstance.syncHPManaForDisplay(totalStats);
+    } else {
+      pluginInstance.recomputeHPManaFromStats(totalStats);
+    }
 
     const hpPercent = (s.userHP / s.userMaxHP) * 100;
     const manaPercent = (s.userMana / s.userMaxMana) * 100;
@@ -302,9 +312,22 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
+  // ============================================================================
+  // COMPONENT SECTION B: STATS + ALLOCATION
+  // ============================================================================
+  // Shared render-context builder keeps popup stat reads coherent and cheap.
+
+  function buildStatsRenderContext() {
+    return {
+      totalStats: pluginInstance.getTotalEffectiveStats(),
+      titleBonus: pluginInstance.getActiveTitleBonus(),
+      shadowBuffs: pluginInstance.getEffectiveShadowArmyBuffs(),
+    };
+  }
+
   // ── StatsList: 5-stat grid (read-only display) ──
-  function StatsList() {
-    const totalStats = pluginInstance.getTotalEffectiveStats();
+  function StatsList({ totalStats }) {
+    const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
 
     return ce('div', { className: 'sls-chat-stats' },
       pluginInstance.STAT_KEYS.map((key) => {
@@ -312,19 +335,19 @@ function buildChatUIComponents(pluginInstance) {
         if (!def) return null;
         return ce('div', { key, className: 'sls-chat-stat-item', 'data-stat': key },
           ce('span', { className: 'sls-chat-stat-name' }, def.name),
-          ce('span', { className: 'sls-chat-stat-value' }, String(totalStats[key]))
+          ce('span', { className: 'sls-chat-stat-value' }, String(effectiveStats[key]))
         );
       })
     );
   }
 
   // ── StatsRadarGraph: Spider-web chart for effective stat distribution ──
-  function StatsRadarGraph() {
-    const totalStats = pluginInstance.getTotalEffectiveStats();
+  function StatsRadarGraph({ totalStats }) {
+    const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
     const statKeys = pluginInstance.STAT_KEYS.filter((key) => Boolean(pluginInstance.STAT_METADATA[key]));
     if (!statKeys.length) return null;
 
-    const values = statKeys.map((key) => Math.max(0, Number(totalStats[key]) || 0));
+    const values = statKeys.map((key) => Math.max(0, Number(effectiveStats[key]) || 0));
     const maxObserved = Math.max(...values, 1);
     const scaleSteps = [25, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000];
     let chartMax = scaleSteps.find((step) => step >= maxObserved);
@@ -405,18 +428,18 @@ function buildChatUIComponents(pluginInstance) {
   }
 
   // ── StatButton: Single allocation button ──
-  function StatButton({ statKey, onAllocate }) {
+  function StatButton({ statKey, onAllocate, totalStats, titleBonus, shadowBuffs }) {
     const s = pluginInstance.settings;
-    const totalStats = pluginInstance.getTotalEffectiveStats();
-    const titleBonus = pluginInstance.getActiveTitleBonus();
-    const shadowBuffs = pluginInstance.getEffectiveShadowArmyBuffs();
+    const effectiveStats = totalStats || pluginInstance.getTotalEffectiveStats();
+    const effectiveTitleBonus = titleBonus || pluginInstance.getActiveTitleBonus();
+    const effectiveShadowBuffs = shadowBuffs || pluginInstance.getEffectiveShadowArmyBuffs();
 
     const stat = pluginInstance.STAT_METADATA[statKey];
     const baseValue = s.stats[statKey];
-    const totalValue = totalStats[statKey];
+    const totalValue = effectiveStats[statKey];
     const canAllocate = s.unallocatedStatPoints > 0;
-    const tooltip = pluginInstance.buildStatTooltip(statKey, baseValue, totalValue, titleBonus, shadowBuffs);
-    const valueText = pluginInstance.getStatValueWithBuffsHTML(totalValue, statKey, titleBonus, shadowBuffs);
+    const tooltip = pluginInstance.buildStatTooltip(statKey, baseValue, totalValue, effectiveTitleBonus, effectiveShadowBuffs);
+    const valueText = pluginInstance.getStatValueWithBuffsHTML(totalValue, statKey, effectiveTitleBonus, effectiveShadowBuffs);
 
     return ce('button', {
       className: `sls-chat-stat-btn${canAllocate ? ' sls-chat-stat-btn-available' : ''}`,
@@ -436,7 +459,7 @@ function buildChatUIComponents(pluginInstance) {
   }
 
   // ── StatAllocation: Points display + 5 allocation buttons ──
-  function StatAllocation({ onAllocate }) {
+  function StatAllocation({ onAllocate, totalStats, titleBonus, shadowBuffs }) {
     const s = pluginInstance.settings;
     if (s.unallocatedStatPoints <= 0) return null;
 
@@ -444,11 +467,16 @@ function buildChatUIComponents(pluginInstance) {
       ce('div', { className: 'sls-chat-stat-points' }, pluginInstance.formatUnallocatedStatPointsText()),
       ce('div', { className: 'sls-chat-stat-buttons' },
         pluginInstance.STAT_KEYS.map((key) =>
-          ce(StatButton, { key, statKey: key, onAllocate })
+          ce(StatButton, { key, statKey: key, onAllocate, totalStats, titleBonus, shadowBuffs })
         )
       )
     );
   }
+
+  // ============================================================================
+  // COMPONENT SECTION C: POPUP SUMMARY + COLLAPSIBLE DETAILS
+  // ============================================================================
+  // Buff summary, activity cards, and quest progress sections.
 
   // ── BuffSummaryList: Unified buff summary across plugin ecosystem ──
   function BuffSummaryList() {
@@ -559,9 +587,15 @@ function buildChatUIComponents(pluginInstance) {
     );
   }
 
+  // ============================================================================
+  // COMPONENT SECTION D: HEADER POPUP SURFACE
+  // ============================================================================
+  // Top-level popup renderer that composes all sections.
+
   // ── StatsPopup: Dedicated popup for stats, allocation, and buff summary ──
   function StatsPopup({ onClose }) {
     const [, forceUpdate] = React.useReducer((x) => x + 1, 0);
+    const renderContext = buildStatsRenderContext();
 
     const handleAllocate = React.useCallback((statKey) => {
       if (pluginInstance.allocateStatPoint(statKey)) forceUpdate();
@@ -588,12 +622,17 @@ function buildChatUIComponents(pluginInstance) {
         }, '×')
       ),
       ce('div', { className: 'sls-stats-popup-content' },
-        ce(HPManaDisplay, { compact: false }),
+        ce(HPManaDisplay, { compact: false, totalStatsOverride: renderContext.totalStats }),
         ce(LevelInfo),
         ce(ActiveTitle),
-        ce(StatsList),
-        ce(StatsRadarGraph),
-        ce(StatAllocation, { onAllocate: handleAllocate }),
+        ce(StatsList, { totalStats: renderContext.totalStats }),
+        ce(StatsRadarGraph, { totalStats: renderContext.totalStats }),
+        ce(StatAllocation, {
+          onAllocate: handleAllocate,
+          totalStats: renderContext.totalStats,
+          titleBonus: renderContext.titleBonus,
+          shadowBuffs: renderContext.shadowBuffs,
+        }),
         ce(BuffSummaryList),
         ce(CollapsibleSection, { sectionId: 'activity', title: 'Activity Summary' },
           ce(ActivityGrid)
@@ -982,6 +1021,8 @@ module.exports = class SoloLevelingStats {
     this._chatUIDirty = false;
     this._chatUIForceUpdate = null; // React forceUpdate bridge (set by StatsPanel useEffect)
     this._chatUIForceUpdates = new Set(); // Multi-surface forceUpdate bridge (strip + popup)
+    this._shadowBuffsRefreshPromise = null; // Dedupes async ShadowArmy buff refreshes
+    this._shadowBuffsRefreshAt = 0;
     this._headerStatsButton = null;
     this._headerStatsPopup = null;
     this._headerStatsPopupRoot = null;
@@ -4299,6 +4340,8 @@ module.exports = class SoloLevelingStats {
 
   stop() {
     this._isRunning = false;
+    this._shadowBuffsRefreshPromise = null;
+    this._shadowBuffsRefreshAt = 0;
 
     // Clean up level up debounce timeout
     if (this.levelUpDebounceTimeout) {
@@ -4799,6 +4842,32 @@ module.exports = class SoloLevelingStats {
     const manaPercent = prevMaxMana > 0 ? Math.min(prevMana / prevMaxMana, 1) : 1;
     this.settings.userMaxMana = maxMana;
     this.settings.userMana = Math.min(maxMana, Math.floor(maxMana * manaPercent));
+  }
+
+  /**
+   * Lightweight display sync path for React renders.
+   * Recomputes HP/Mana only when maxima change or current values are uninitialized.
+   */
+  syncHPManaForDisplay(totalStatsOverride = null) {
+    const totalStats = totalStatsOverride || this.getTotalEffectiveStats();
+    const vitality = totalStats.vitality || 0;
+    const intelligence = totalStats.intelligence || 0;
+    const userRank = this.settings.rank || 'E';
+    const nextMaxHP = this.calculateHP(vitality, userRank);
+    const nextMaxMana = this.calculateMana(intelligence);
+
+    const needsMaxSync =
+      this.settings.userMaxHP !== nextMaxHP ||
+      this.settings.userMaxMana !== nextMaxMana;
+    const needsCurrentInit =
+      !Number.isFinite(this.settings.userHP) ||
+      !Number.isFinite(this.settings.userMana);
+
+    if (needsMaxSync || needsCurrentInit) {
+      this.recomputeHPManaFromStats(totalStats);
+      return true;
+    }
+    return false;
   }
 
   _isRealProgressState(data) {
@@ -9255,19 +9324,29 @@ module.exports = class SoloLevelingStats {
           return this.cacheShadowArmyBuffs(shadowArmy.cachedBuffs, now);
         }
 
-        // Trigger async calculation and cache it
-        shadowArmy
-          .calculateTotalBuffs()
-          .then((buffs) => {
-            shadowArmy.cachedBuffs = buffs;
-            shadowArmy.cachedBuffsTime = Date.now();
-            this.cacheShadowArmyBuffs(buffs);
-            // Update UI when buffs are calculated
-            this.updateChatUI();
-          })
-          .catch(() => {
-            // Silently fail if ShadowArmy isn't ready
-          });
+        // Trigger async calculation and cache it (deduped to avoid request storms).
+        const refreshCooldownMs = 750;
+        const canScheduleRefresh =
+          !this._shadowBuffsRefreshPromise &&
+          now - (this._shadowBuffsRefreshAt || 0) >= refreshCooldownMs;
+
+        if (canScheduleRefresh) {
+          this._shadowBuffsRefreshAt = now;
+          this._shadowBuffsRefreshPromise = Promise.resolve()
+            .then(() => shadowArmy.calculateTotalBuffs())
+            .then((buffs) => {
+              shadowArmy.cachedBuffs = buffs;
+              shadowArmy.cachedBuffsTime = Date.now();
+              this.cacheShadowArmyBuffs(buffs);
+              // Update UI when buffs are calculated
+              this.updateChatUI();
+              return buffs;
+            })
+            .catch(() => null)
+            .finally(() => {
+              this._shadowBuffsRefreshPromise = null;
+            });
+        }
 
         // Return zeros for now, will be updated when async calculation completes
         return this.cacheShadowArmyBuffs(shadowArmy.cachedBuffs, now);
