@@ -1060,6 +1060,12 @@ module.exports = class Dungeons {
     // CACHE MANAGEMENT
     this._shadowCountCache = null; // Shadow count cache (5s TTL)
     this._shadowsCache = null; // Shadows data cache (10s TTL — invalidated explicitly on mutations)
+    this._deployStarterPoolCache = null; // Rank-aware sampled pool for fast deploy allocation (not a full-army cache)
+    this._deployStarterPoolCacheTime = null;
+    this._deployStarterPoolCacheRank = null;
+    // Starter pool should stay reusable long enough for realistic "spawn then deploy" delays.
+    this._deployStarterPoolCacheTTL = 120000; // 2 min fresh window
+    this._deployStarterPoolStaleMaxAge = 900000; // 15 min stale fallback window
     this._shadowStatsCache = new Map(); // Shadow stats cache (500ms TTL)
     this._mobGenerationCache = new Map(); // Mob generation cache (prevents crashes from excessive generation)
     this._mobCacheTTL = 60000; // 60 seconds cache TTL for mob generation
@@ -1129,6 +1135,7 @@ module.exports = class Dungeons {
     this._lastRebalanceAt = new Map(); // channelKey -> timestamp (throttle reinforcement)
     this._rebalanceCooldownMs = 15000; // at most once per 15s per dungeon
     this._deployRebalanceInFlight = new Set(); // channelKeys currently running async post-deploy full split
+    this._deployStarterWarmInFlight = null; // Shared promise for starter-pool warmup (prevents duplicate IDB reads)
     this._deployStarterShadowCap = 240; // Fast-start provisional shadow cap before full split completes
     this._pendingDungeonXpPostProcess = new Map(); // taskKey -> metadata
 
@@ -1242,6 +1249,34 @@ module.exports = class Dungeons {
       this.errorLog?.('PLUGIN', `Failed to get plugin ${name}`, e);
       return null;
     }
+  }
+
+  _getShadowSensesDeployedIds() {
+    const deployed = new Set();
+    try {
+      const senses = this._getPluginSafe('ShadowSenses');
+      if (!senses) return deployed;
+
+      if (typeof senses.getDeployedShadowIds === 'function') {
+        const ids = senses.getDeployedShadowIds();
+        if (ids instanceof Set) {
+          ids.forEach((id) => id && deployed.add(String(id)));
+          return deployed;
+        }
+      }
+
+      // Compatibility fallback: ShadowSenses exposes deploymentManager in current builds.
+      const deployments = senses.deploymentManager?.getDeployments?.();
+      if (Array.isArray(deployments)) {
+        deployments.forEach((entry) => {
+          const id = entry?.shadowId;
+          id && deployed.add(String(id));
+        });
+      }
+    } catch (error) {
+      this.errorLog?.('PLUGIN', 'Failed to get ShadowSenses deployed IDs', error);
+    }
+    return deployed;
   }
 
   _ensureCombatLoop() {
@@ -2095,6 +2130,10 @@ module.exports = class Dungeons {
     this._allocationSortedShadowsCache = null;
     this._allocationSortedShadowsCacheTime = null;
     this._allocationScoreCache = null;
+    this._deployStarterPoolCache = null;
+    this._deployStarterPoolCacheTime = null;
+    this._deployStarterPoolCacheRank = null;
+    this._deployStarterWarmInFlight = null;
     this._allocationDirty = true;
     this._allocationDirtyReason = 'stop';
     this._allocationShadowSetDirty = true;
@@ -4158,6 +4197,9 @@ module.exports = class Dungeons {
 
     // Sync difficulty scale for mob/boss stat scaling
     this.syncDungeonDifficultyScale(dungeon, channelKey);
+    // Spawn-time rank warmup: pre-prime deploy starter pool for this dungeon rank
+    // so deploy click does not need to cold-read IDB.
+    this._scheduleSpawnRankStarterWarm(channelKey, rank);
 
     // MANUAL DEPLOY: No mob spawning, no shadow allocation, no combat until user deploys.
     // Prevents idle mob accumulation (7k+ mobs with nothing killing them = UI thread starvation).
@@ -5107,6 +5149,7 @@ module.exports = class Dungeons {
 
     // Check if user has HP
     if (this.settings.userHP <= 0) {
+      dungeon._deploying = false;
       this.showToast('You need HP to deploy shadows! Wait for HP to regenerate.', 'error');
       return;
     }
@@ -5167,26 +5210,76 @@ module.exports = class Dungeons {
     // (first deploy after plugin start, or long idle period), warm the cache via async IDB read
     // and retry the allocation once before giving up.
     if (starterAllocationCount === 0) {
-      this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting async cache warm', { channelKey });
+      this.debugLog('DEPLOY', 'Starter allocation returned 0 — attempting recovery warmup', { channelKey });
       try {
-        const allShadows = await this.getAllShadows(false); // force fresh IDB read
+        const warmedPoolCount = await this._warmDeployStarterPool(
+          {
+            dungeonRank: dungeon.rank,
+            targetCount: this._deployStarterShadowCap || 240,
+            sampleLimit: Math.max(400, Math.floor((this._deployStarterShadowCap || 240) * 4)),
+          }
+        );
         // Race guard: recall may have fired during async IDB read
         if (!dungeon.shadowsDeployed) {
           dungeon._deploying = false;
           this.debugLog('DEPLOY', 'Aborted — recalled during cache warm', { channelKey });
           return;
         }
-        if (Array.isArray(allShadows) && allShadows.length > 0) {
-          this.debugLog('DEPLOY', `Cache warmed: ${allShadows.length} shadows found — retrying allocation`, { channelKey });
+
+        if (warmedPoolCount > 0) {
+          this.debugLog('DEPLOY', `Starter pool warmed: ${warmedPoolCount} shadows available — retrying allocation`, { channelKey });
           const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
           starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, retryShadows);
+        }
+
+        // If reuse of a generic startup pool still yielded 0, force a rank-targeted refresh.
+        if (starterAllocationCount === 0) {
+          const refreshedPoolCount = await this._warmDeployStarterPool({
+            dungeonRank: dungeon.rank,
+            targetCount: this._deployStarterShadowCap || 240,
+            sampleLimit: Math.max(1200, Math.floor((this._deployStarterShadowCap || 240) * 8)),
+            forceRefresh: true,
+          });
+          if (refreshedPoolCount > 0) {
+            this.debugLog('DEPLOY', `Starter pool force-refreshed: ${refreshedPoolCount} shadows — retrying allocation`, { channelKey });
+            const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
+            starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, retryShadows);
+          }
+        }
+
+        // Last-resort compatibility path: force full IDB read only if lightweight warm still failed.
+        if (starterAllocationCount === 0) {
+          const allShadows = await this.getAllShadows(false); // force fresh full read
+          if (Array.isArray(allShadows) && allShadows.length > 0) {
+            this.debugLog('DEPLOY', `Full cache warmed: ${allShadows.length} shadows found — retrying allocation`, { channelKey });
+            const retryShadows = this._buildDeployStarterAllocation(channelKey, dungeon);
+            starterAllocationCount = this._applyDeployStarterAllocation(channelKey, dungeon, retryShadows);
+          }
         }
       } catch (error) {
         this.errorLog('DEPLOY', 'Cold-cache recovery failed', { channelKey, error });
       }
     }
 
-    const { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
+    let { assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon);
+
+    // Consistency fallback: if starter allocation is still empty, force one synchronous full split.
+    // This is heavier than starter allocation but avoids flaky "deploy with zero shadows" outcomes.
+    if (assignedShadows.length === 0 && starterAllocationCount === 0) {
+      try {
+        this._markAllocationDirty('deploy-starter-empty-force-full-split');
+        await this.preSplitShadowArmy(true);
+        ({ assignedShadows } = this._getAssignedShadowsForDungeon(channelKey, dungeon));
+        if (assignedShadows.length > 0) {
+          this.debugLog('DEPLOY', 'Recovered deploy allocation via forced full split', {
+            channelKey,
+            assigned: assignedShadows.length,
+          });
+        }
+      } catch (error) {
+        this.errorLog('DEPLOY', 'Forced full split failed after empty starter allocation', { channelKey, error });
+      }
+    }
 
     // GUARDRAIL: If 0 shadows were allocated, abort deploy entirely.
     // Without shadows, combat is meaningless — boss gate will unlock after 180s but
@@ -5512,6 +5605,257 @@ module.exports = class Dungeons {
     }
   }
 
+  /**
+   * Warm a lightweight shadow pool for starter deploy allocation without requiring
+   * a full-shadow-table scan/sort. This keeps first deploy responsive on cold start.
+   * Uses rank-targeted reads when a dungeon rank is provided.
+   * @param {Object} options
+   * @param {string|null} options.dungeonRank - Rank hint for targeted reads
+   * @param {number} options.targetCount - Desired candidate count
+   * @param {number} options.sampleLimit - Hard cap for sampled fetches
+   * @returns {Promise<number>} Number of warmed candidate shadows
+   */
+  async _warmDeployStarterPool(options = {}) {
+    const {
+      dungeonRank = null,
+      targetCount = this._deployStarterShadowCap || 240,
+      sampleLimit = 2000,
+      forceRefresh = false,
+    } = options || {};
+    if (!this.started || !this.shadowArmy) return 0;
+
+    const now = Date.now();
+    const starterPoolFresh =
+      Array.isArray(this._deployStarterPoolCache) &&
+      this._deployStarterPoolCache.length > 0 &&
+      this._deployStarterPoolCacheTime &&
+      now - this._deployStarterPoolCacheTime < this._deployStarterPoolCacheTTL;
+    const sameRankHint =
+      !dungeonRank ||
+      !this._deployStarterPoolCacheRank ||
+      this._deployStarterPoolCacheRank === dungeonRank;
+    const minReusablePool = this.clampNumber(
+      Number.isFinite(targetCount) ? Math.floor(targetCount) : this._deployStarterShadowCap || 240,
+      24,
+      2000
+    );
+
+    if (
+      !forceRefresh &&
+      starterPoolFresh &&
+      (sameRankHint || this._deployStarterPoolCache.length >= minReusablePool)
+    ) {
+      return this._deployStarterPoolCache.length;
+    }
+
+    if (this._deployStarterWarmInFlight && !forceRefresh) {
+      try {
+        return await this._deployStarterWarmInFlight;
+      } catch (_) {
+        return 0;
+      }
+    }
+    if (this._deployStarterWarmInFlight && forceRefresh) {
+      try {
+        await this._deployStarterWarmInFlight;
+      } catch (_) {}
+    }
+
+    const warmPromise = (async () => {
+      const desiredCount = this.clampNumber(
+        Math.max(
+          200,
+          Math.floor((Number.isFinite(targetCount) ? targetCount : this._deployStarterShadowCap || 240) * 4)
+        ),
+        200,
+        8000
+      );
+      const hardLimit = this.clampNumber(
+        Math.max(desiredCount, Number.isFinite(sampleLimit) ? Math.floor(sampleLimit) : 2000),
+        200,
+        10000
+      );
+
+      const candidates = [];
+      const seenIds = new Set();
+      const pushCandidates = (rows) => {
+        if (!Array.isArray(rows) || rows.length === 0) return;
+        for (let i = 0; i < rows.length; i++) {
+          const raw = rows[i];
+          let normalized = this.normalizeShadowId(raw);
+
+          // Some startup snapshots can contain lightweight IDs/primitives.
+          // Try to hydrate those entries before deciding they're unusable.
+          if ((!normalized || !this.getShadowIdValue(normalized)) && this.shadowArmy.getShadowData) {
+            try {
+              const decoded = this.shadowArmy.getShadowData(raw);
+              normalized = this.normalizeShadowId(decoded) || decoded;
+            } catch (_) {}
+          }
+
+          if (!normalized) continue;
+          const sid = this.getShadowIdValue(normalized);
+          if (!sid) continue;
+          const idKey = String(sid);
+          if (seenIds.has(idKey)) continue;
+          seenIds.add(idKey);
+          candidates.push(normalized);
+          if (candidates.length >= hardLimit) break;
+        }
+      };
+
+      // 1) Fast path: seed from ShadowArmy's shared in-memory snapshot when available.
+      const snapshot = this.shadowArmy.getShadowSnapshot?.();
+      if (Array.isArray(snapshot) && snapshot.length > 0) {
+        pushCandidates(snapshot);
+        if (this.settings.debug && candidates.length < snapshot.length) {
+          this.debugLog('DEPLOY', 'Starter warmup snapshot dropped non-shadow entries', {
+            snapshotSize: snapshot.length,
+            usableCount: candidates.length,
+            dropped: snapshot.length - candidates.length,
+          });
+        }
+
+        if (candidates.length >= minReusablePool) {
+          this._deployStarterPoolCache = candidates.slice(0, hardLimit);
+          this._deployStarterPoolCacheTime = Date.now();
+          this._deployStarterPoolCacheRank = null;
+
+          // Only mirror to broad cache when snapshot appears fully usable.
+          if (candidates.length === snapshot.length) {
+            this._shadowsCache = {
+              shadows: this._deployStarterPoolCache.slice(),
+              timestamp: Date.now(),
+            };
+          }
+          return this._deployStarterPoolCache.length;
+        }
+      }
+
+      // 2) Fallback: read a bounded sample from IDB instead of Infinity rows.
+      const shadowStorage = this.shadowArmy.storageManager;
+      if (!shadowStorage?.getShadows) {
+        if (candidates.length > 0) {
+          this._deployStarterPoolCache = candidates.slice(0, hardLimit);
+          this._deployStarterPoolCacheTime = Date.now();
+          this._deployStarterPoolCacheRank = dungeonRank || null;
+          return this._deployStarterPoolCache.length;
+        }
+        return this._deployStarterPoolCache?.length || 0;
+      }
+
+      // 2a) Rank-targeted sampling first (requested dungeon rank ± nearby ranks).
+      let rankQueryCount = 0;
+      const rankOrder = Array.isArray(this.settings?.dungeonRanks) ? this.settings.dungeonRanks : [];
+      const rankHintIndex =
+        dungeonRank && rankOrder.length > 0 ? this.getRankIndexValue(dungeonRank, rankOrder) : -1;
+      if (rankHintIndex >= 0) {
+        const rankOffsets = [0, 1, -1, 2, -2, 3, -3];
+        const perRankLimit = this.clampNumber(
+          Math.ceil(desiredCount / Math.max(1, rankOffsets.length)),
+          80,
+          1400
+        );
+        for (let i = 0; i < rankOffsets.length && candidates.length < desiredCount; i++) {
+          const rankIdx = rankHintIndex + rankOffsets[i];
+          if (rankIdx < 0 || rankIdx >= rankOrder.length) continue;
+          const rank = rankOrder[rankIdx];
+          const rows = await shadowStorage.getShadows({ rank }, 0, perRankLimit);
+          pushCandidates(rows);
+          rankQueryCount++;
+          if (rankQueryCount % 2 === 0) {
+            await this._yieldToEventLoop();
+            if (!this.started) return 0;
+          }
+        }
+      }
+
+      // 2b) Fill any remaining gaps with an unfiltered bounded sample.
+      const minHealthyPool = this.clampNumber(
+        Math.max(120, Math.floor((Number.isFinite(targetCount) ? targetCount : 240) * 1.5)),
+        120,
+        hardLimit
+      );
+      if (candidates.length < minHealthyPool) {
+        const remaining = this.clampNumber(hardLimit - candidates.length, 0, hardLimit);
+        if (remaining > 0) {
+          const rows = await shadowStorage.getShadows({}, 0, remaining);
+          pushCandidates(rows);
+        }
+      }
+
+      if (candidates.length === 0) {
+        return 0;
+      }
+
+      const scoreCache = new Map();
+      const readScore = (shadow) => {
+        const sid = this.getShadowIdValue(shadow);
+        if (!sid) return this.getShadowCombatScore(shadow);
+        const key = String(sid);
+        if (scoreCache.has(key)) return scoreCache.get(key);
+        const score = this.getShadowCombatScore(shadow);
+        scoreCache.set(key, score);
+        return score;
+      };
+      candidates.sort((a, b) => readScore(b) - readScore(a));
+
+      if (candidates.length > hardLimit) {
+        candidates.length = hardLimit;
+      }
+
+      this._deployStarterPoolCache = candidates;
+      this._deployStarterPoolCacheTime = Date.now();
+      this._deployStarterPoolCacheRank = dungeonRank || null;
+      return candidates.length;
+    })();
+
+    this._deployStarterWarmInFlight = warmPromise;
+    try {
+      return await warmPromise;
+    } finally {
+      this._deployStarterWarmInFlight === warmPromise && (this._deployStarterWarmInFlight = null);
+    }
+  }
+
+  _scheduleSpawnRankStarterWarm(channelKey, dungeonRank) {
+    if (!this.started || !this.shadowArmy || !channelKey) return;
+
+    const ageMs = this._deployStarterPoolCacheTime
+      ? Date.now() - this._deployStarterPoolCacheTime
+      : Number.POSITIVE_INFINITY;
+    const sameRankHint =
+      !dungeonRank ||
+      !this._deployStarterPoolCacheRank ||
+      this._deployStarterPoolCacheRank === dungeonRank;
+
+    // Force refresh when rank mismatch or cache is aging out soon.
+    const forceRefresh = !sameRankHint || ageMs > Math.max(30000, Math.floor(this._deployStarterPoolCacheTTL * 0.5));
+
+    this._setTrackedTimeout(() => {
+      Promise.resolve()
+        .then(async () => {
+          const warmedPoolCount = await this._warmDeployStarterPool({
+            dungeonRank: dungeonRank || null,
+            targetCount: this._deployStarterShadowCap || 240,
+            sampleLimit: Math.max(1200, Math.floor((this._deployStarterShadowCap || 240) * 8)),
+            forceRefresh,
+          });
+
+          this.settings.debug && this.debugLog('DEPLOY', 'Spawn rank warmup completed', {
+            channelKey,
+            dungeonRank: dungeonRank || null,
+            warmedPoolCount,
+            forceRefresh,
+            cacheRank: this._deployStarterPoolCacheRank || null,
+          });
+        })
+        .catch((error) => {
+          this.errorLog('DEPLOY', 'Spawn rank warmup failed', { channelKey, dungeonRank, error });
+        });
+    }, 0);
+  }
+
   _buildDeployStarterAllocation(channelKey, dungeon) {
     const starterCapSetting = Number(this.settings?.deployStarterShadowCap);
     const starterCap = this.clampNumber(
@@ -5538,42 +5882,80 @@ module.exports = class Dungeons {
     for (const [otherKey, assigned] of this.shadowAllocations.entries()) {
       if (otherKey === channelKey || !Array.isArray(assigned) || assigned.length === 0) continue;
       const otherDungeon = this._getActiveDungeon(otherKey);
-      if (!otherDungeon || !otherDungeon.shadowsDeployed) continue;
+      if (
+        !otherDungeon ||
+        !otherDungeon.shadowsDeployed ||
+        otherDungeon._completing ||
+        (otherDungeon.boss?.hp || 0) <= 0
+      ) continue;
       for (const shadow of assigned) {
         const sid = this.getShadowIdValue(shadow);
         sid && usedIds.add(String(sid));
       }
     }
 
-    const blockedIds = new Set();
+    const exchangeBlockedIds = new Set();
     try {
       const exchange = this._getPluginSafe('ShadowExchange');
       const markedIds = exchange?.getMarkedShadowIds?.();
-      markedIds instanceof Set && markedIds.forEach((id) => id && blockedIds.add(String(id)));
+      markedIds instanceof Set && markedIds.forEach((id) => id && exchangeBlockedIds.add(String(id)));
     } catch (err) {
       this.errorLog('DEPLOY', 'ShadowExchange blocked-ID fetch failed (non-fatal)', err);
     }
-    try {
-      const senses = this._getPluginSafe('ShadowSenses');
-      const deployedIds = senses?.getDeployedShadowIds?.();
-      deployedIds instanceof Set && deployedIds.forEach((id) => id && blockedIds.add(String(id)));
-    } catch (err) {
-      this.errorLog('DEPLOY', 'ShadowSenses deployed-ID fetch failed (non-fatal)', err);
-    }
+    const sensesBlockedIds = this._getShadowSensesDeployedIds();
+    const blockedIds = new Set([...exchangeBlockedIds, ...sensesBlockedIds]);
 
     let candidatePool =
       Array.isArray(this._allocationSortedShadowsCache) && this._allocationSortedShadowsCache.length > 0
         ? this._allocationSortedShadowsCache
         : null;
+    let candidateSource = candidatePool ? 'allocationSortedCache' : null;
+
+    const starterPoolAvailable =
+      Array.isArray(this._deployStarterPoolCache) &&
+      this._deployStarterPoolCache.length > 0 &&
+      this._deployStarterPoolCacheTime;
+    const starterPoolAgeMs = starterPoolAvailable
+      ? Date.now() - this._deployStarterPoolCacheTime
+      : Number.POSITIVE_INFINITY;
+
+    if (!candidatePool) {
+      const starterPoolFresh =
+        starterPoolAvailable &&
+        starterPoolAgeMs < this._deployStarterPoolCacheTTL;
+      if (starterPoolFresh) {
+        candidatePool = this._deployStarterPoolCache;
+        candidateSource = 'deployStarterPoolCache';
+      }
+    }
+
+    if (!candidatePool) {
+      const staleMaxAge = Number.isFinite(this._deployStarterPoolStaleMaxAge)
+        ? this._deployStarterPoolStaleMaxAge
+        : 900000;
+      const starterPoolStaleButUsable =
+        starterPoolAvailable &&
+        starterPoolAgeMs < staleMaxAge;
+      if (starterPoolStaleButUsable) {
+        candidatePool = this._deployStarterPoolCache;
+        candidateSource = 'deployStarterPoolCacheStale';
+      }
+    }
 
     if (!candidatePool) {
       const snapshot = this.shadowArmy?.getShadowSnapshot?.();
-      Array.isArray(snapshot) && snapshot.length > 0 && (candidatePool = snapshot);
+      if (Array.isArray(snapshot) && snapshot.length > 0) {
+        candidatePool = snapshot;
+        candidateSource = 'shadowArmySnapshot';
+      }
     }
 
     if (!candidatePool) {
       const cached = this._shadowsCache?.shadows;
-      Array.isArray(cached) && cached.length > 0 && (candidatePool = cached);
+      if (Array.isArray(cached) && cached.length > 0) {
+        candidatePool = cached;
+        candidateSource = 'shadowsCache';
+      }
     }
 
     if (!Array.isArray(candidatePool) || candidatePool.length === 0) {
@@ -5583,9 +5965,22 @@ module.exports = class Dungeons {
     const picked = [];
     const pickedIds = new Set();
     const dungeonRankIndex = this.getRankIndexValue(dungeon?.rank || 'E');
+    const normalizeCandidateShadow = (shadowLike) => {
+      let normalized = this.normalizeShadowId(shadowLike);
+      if (normalized && this.getShadowIdValue(normalized)) {
+        return normalized;
+      }
+      if (this.shadowArmy?.getShadowData) {
+        try {
+          const decoded = this.shadowArmy.getShadowData(shadowLike);
+          normalized = this.normalizeShadowId(decoded) || decoded;
+        } catch (_) {}
+      }
+      return normalized && this.getShadowIdValue(normalized) ? normalized : null;
+    };
 
     const tryPickShadow = (shadow) => {
-      const normalized = this.normalizeShadowId(shadow);
+      const normalized = normalizeCandidateShadow(shadow);
       const shadowId = this.getShadowIdValue(normalized);
       if (!shadowId) return null;
       const sid = String(shadowId);
@@ -5597,7 +5992,7 @@ module.exports = class Dungeons {
     // Pass 1: rank-adjacent shadows for fast combat fit.
     const preferredRankDistance = 2;
     for (let i = 0; i < candidatePool.length && picked.length < targetCount; i++) {
-      const normalized = this.normalizeShadowId(candidatePool[i]);
+      const normalized = normalizeCandidateShadow(candidatePool[i]);
       if (!normalized) continue;
       const rankDistance = Math.abs(
         this.getRankIndexValue(normalized.rank || 'E') - dungeonRankIndex
@@ -5613,6 +6008,50 @@ module.exports = class Dungeons {
         const accepted = tryPickShadow(candidatePool[i]);
         accepted && picked.push(accepted);
       }
+    }
+
+    if (picked.length === 0 && this.settings.debug) {
+      let totalWithId = 0;
+      let usedHits = 0;
+      let exchangeBlockedHits = 0;
+      let sensesBlockedHits = 0;
+      let availableStrict = 0;
+      for (let i = 0; i < candidatePool.length; i++) {
+        const normalized = normalizeCandidateShadow(candidatePool[i]);
+        const sidValue = this.getShadowIdValue(normalized);
+        if (!sidValue) continue;
+        totalWithId++;
+        const sid = String(sidValue);
+        if (usedIds.has(sid)) {
+          usedHits++;
+          continue;
+        }
+        if (exchangeBlockedIds.has(sid)) {
+          exchangeBlockedHits++;
+          continue;
+        }
+        if (sensesBlockedIds.has(sid)) {
+          sensesBlockedHits++;
+          continue;
+        }
+        availableStrict++;
+      }
+      this.debugLog('DEPLOY', 'Starter allocation produced 0 candidates', {
+        channelKey,
+        dungeonRank: dungeon?.rank,
+        candidateSource,
+        starterPoolAgeMs: Number.isFinite(starterPoolAgeMs) ? Math.floor(starterPoolAgeMs) : null,
+        poolSize: candidatePool.length,
+        totalWithId,
+        usedHits,
+        exchangeBlockedHits,
+        sensesBlockedHits,
+        availableStrict,
+        usedSetSize: usedIds.size,
+        blockedSetSize: blockedIds.size,
+        exchangeBlockedSetSize: exchangeBlockedIds.size,
+        sensesBlockedSetSize: sensesBlockedIds.size,
+      });
     }
 
     return picked;
@@ -7891,6 +8330,9 @@ module.exports = class Dungeons {
       this._allocationSortedShadowsCache = null;
       this._allocationSortedShadowsCacheTime = null;
       this._allocationScoreCache = null;
+      this._deployStarterPoolCache = null;
+      this._deployStarterPoolCacheTime = null;
+      this._deployStarterPoolCacheRank = null;
     }
   }
 
@@ -8179,7 +8621,10 @@ module.exports = class Dungeons {
     // - Prefer shadows close to the dungeon rank, but escalate to stronger ones if underpowered
     // - Higher-rank / higher-progress dungeons get priority first
     const getRankIndex = (rank) => this.getRankIndexValue(rank);
-    const getShadowId = (s) => this.getShadowIdValue(s);
+    const getShadowId = (s) => {
+      const id = this.getShadowIdValue(s);
+      return id ? String(id) : null;
+    };
     const getBossFraction = (d) =>
       d?.boss?.maxHp && d?.boss?.hp >= 0 ? d.boss.hp / d.boss.maxHp : 0;
     const getMobFraction = (d) =>
@@ -8207,18 +8652,15 @@ module.exports = class Dungeons {
     try {
       const seInstance = this._getPluginSafe("ShadowExchange");
       if (seInstance?.getMarkedShadowIds) {
-        exchangeMarkedIds = seInstance.getMarkedShadowIds();
+        const rawMarked = seInstance.getMarkedShadowIds();
+        if (rawMarked instanceof Set) {
+          rawMarked.forEach((id) => id && exchangeMarkedIds.add(String(id)));
+        }
       }
     } catch (_) { this.debugLog?.('ERROR', 'Failed to get ShadowExchange marked IDs', _); }
 
-    // Shadows deployed to ShadowSenses monitoring are unavailable for battle
-    let sensesDeployedIds = new Set();
-    try {
-      const ssInstance = this._getPluginSafe("ShadowSenses");
-      if (ssInstance?.getDeployedShadowIds) {
-        sensesDeployedIds = ssInstance.getDeployedShadowIds();
-      }
-    } catch (_) { this.debugLog?.('ERROR', 'Failed to get ShadowSenses deployed IDs', _); }
+    // Shadows deployed to ShadowSenses monitoring are unavailable for battle.
+    const sensesDeployedIds = this._getShadowSensesDeployedIds();
 
     let shadowsSortedAll = this._allocationSortedShadowsCache;
     const canReuseSortedCache =
@@ -9390,6 +9832,7 @@ module.exports = class Dungeons {
         }
 
         // BATCH MOB DAMAGE: Apply accumulated mob damage from all shadows
+        const deadMobsThisTick = [];
         if (mobDamageMap.size > 0) {
           this.batchApplyDamage(
             mobDamageMap,
@@ -9401,7 +9844,6 @@ module.exports = class Dungeons {
           );
 
           // Process killed mobs (XP, notifications) and collect for batch extraction
-          const deadMobsThisTick = [];
           mobDamageMap.forEach((_damage, mobId) => {
             const mob = combatSnapshot.mobById.get(mobId);
             if (!mob || mob.hp > 0) return; // Only process dead mobs
@@ -9523,12 +9965,15 @@ module.exports = class Dungeons {
    */
   invalidateShadowsCache() {
     this._shadowsCache = null;
+    this._deployStarterPoolCache = null;
+    this._deployStarterPoolCacheTime = null;
+    this._deployStarterPoolCacheRank = null;
     this._markAllocationDirty('invalidate-shadows-cache', { shadowSetChanged: true });
   }
 
   /**
    * Pre-warm shadow caches in background so the first deploy doesn't pay cold-cache IDB penalty.
-   * Populates _shadowsCache (10s TTL) and _allocationSortedShadowsCache (60s TTL).
+   * Large armies warm a sampled deploy-starter pool; smaller armies warm full sorted cache.
    * Called ~3s after start() — ShadowArmy ref and IDB are ready by then.
    * Fire-and-forget: failures silently fall back to current cold-cache path.
    */
@@ -9536,6 +9981,22 @@ module.exports = class Dungeons {
     if (!this.started || !this.shadowArmy) return;
 
     try {
+      const shadowCount = await this.getShadowCount();
+      // Large armies: pre-warm only deploy starter pool to avoid an expensive full-army scan/sort at startup.
+      if (shadowCount > 25000) {
+        const starterPoolCount = await this._warmDeployStarterPool({
+          targetCount: this._deployStarterShadowCap || 240,
+          sampleLimit: Math.max(1000, Math.floor((this._deployStarterShadowCap || 240) * 6)),
+        });
+        if (starterPoolCount > 0) {
+          this.settings.debug &&
+            console.log(
+              `[Dungeons] 🔥 PRE-WARM: Starter deploy pool ready — ${starterPoolCount} sampled shadows (shadowCount=${shadowCount.toLocaleString()})`
+            );
+        }
+        return;
+      }
+
       const allShadows = await this.getAllShadows(false); // force fresh read, populates _shadowsCache
       if (!this.started || !Array.isArray(allShadows) || allShadows.length === 0) return;
 
@@ -9853,22 +10314,24 @@ module.exports = class Dungeons {
     if (this._exclusionCache && now - this._exclusionCache.ts < 5000) {
       return this._exclusionCache;
     }
+    const normalizeIdSet = (setLike) => {
+      const normalized = new Set();
+      if (!(setLike instanceof Set)) return normalized;
+      setLike.forEach((id) => id && normalized.add(String(id)));
+      return normalized;
+    };
     let exchangeMarkedIds = new Set();
-    let sensesDeployedIds = new Set();
+    let sensesDeployedIds = this._getShadowSensesDeployedIds();
     try {
       if (BdApi.Plugins.isEnabled("ShadowExchange")) {
-        exchangeMarkedIds = BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set();
+        exchangeMarkedIds = normalizeIdSet(
+          BdApi.Plugins.get("ShadowExchange")?.instance?.getMarkedShadowIds?.() || new Set()
+        );
       }
     } catch (error) {
       this.errorLog?.(true, 'Failed to read ShadowExchange exclusion set', error);
     }
-    try {
-      if (BdApi.Plugins.isEnabled("ShadowSenses")) {
-        sensesDeployedIds = BdApi.Plugins.get("ShadowSenses")?.instance?.getDeployedShadowIds?.() || new Set();
-      }
-    } catch (error) {
-      this.errorLog?.(true, 'Failed to read ShadowSenses exclusion set', error);
-    }
+
     this._exclusionCache = { exchangeMarkedIds, sensesDeployedIds, ts: now };
     return this._exclusionCache;
   }
@@ -9880,10 +10343,11 @@ module.exports = class Dungeons {
     for (const shadow of assignedShadows) {
       const shadowId = this.getShadowIdValue(shadow);
       if (!shadowId) continue;
-      if (deadShadows.has(shadowId)) continue;
-      if (exchangeMarkedIds.has(shadowId)) continue;
-      if (sensesDeployedIds.has(shadowId)) continue;
-      const hpData = shadowHP.get(shadowId);
+      const shadowKey = String(shadowId);
+      if (deadShadows.has(shadowId) || deadShadows.has(shadowKey)) continue;
+      if (exchangeMarkedIds.has(shadowKey)) continue;
+      if (sensesDeployedIds.has(shadowKey)) continue;
+      const hpData = shadowHP.get(shadowId) || shadowHP.get(shadowKey);
       hpData && hpData.hp > 0 && combatReady.push(shadow);
     }
     return combatReady;
@@ -11117,6 +11581,11 @@ module.exports = class Dungeons {
       // Single-dungeon mode: deduct directly (no race possible)
       this.settings.userMana -= manaCost;
     }
+    let manaAfter = this.settings.userMana;
+    if (this._tickManaBudgetPerDungeon !== undefined) {
+      // In parallel mode mana is reconciled after Promise.all; use projected post-spend value for logs.
+      manaAfter = Math.max(0, manaBefore - manaCost);
+    }
 
     // Ensure mana doesn't go negative (safety check — only in single-dungeon mode)
     if (this._tickManaBudgetPerDungeon === undefined && this.settings.userMana < 0) {
@@ -11128,7 +11597,7 @@ module.exports = class Dungeons {
 
     // Verify mana was actually deducted (only meaningful in single-dungeon mode)
     if (this._tickManaBudgetPerDungeon === undefined) {
-      const manaAfter = this.settings.userMana;
+      manaAfter = this.settings.userMana;
       const actualDeduction = manaBefore - manaAfter;
       if (actualDeduction !== manaCost) {
         this.debugLog(`Mana deduction mismatch! Expected: ${manaCost}, Actual: ${actualDeduction}`);
@@ -11179,6 +11648,10 @@ module.exports = class Dungeons {
     if (dungeon._completing) return; // Prevent concurrent completion
     dungeon._completing = true;
     dungeon._completingStartedAt = Date.now(); // BUGFIX LOGIC-9: Timestamp for stranded dungeon recovery
+    let hadShadowsDeployed = false;
+    let corpsePileSnapshot = [];
+    let dungeonSnapshot = null;
+    let shadowDeathCount = 0;
 
     // ── PHASE A: Synchronous cleanup (dungeon disappears from UI immediately) ──
     try {
@@ -11187,7 +11660,7 @@ module.exports = class Dungeons {
     this.settings.lastDungeonEndTime || (this.settings.lastDungeonEndTime = {});
     this.settings.lastDungeonEndTime[channelKey] = Date.now();
 
-    const hadShadowsDeployed = Boolean(dungeon.shadowsDeployed);
+    hadShadowsDeployed = Boolean(dungeon.shadowsDeployed);
     dungeon.completed = reason !== 'timeout';
     dungeon.failed = reason === 'timeout';
 
@@ -11205,13 +11678,13 @@ module.exports = class Dungeons {
     this._markAllocationDirty(`dungeon-complete:${reason}`);
 
     // Snapshot the corpse pile, then clear the dungeon's copy
-    const corpsePileSnapshot = dungeon.corpsePile || [];
+    corpsePileSnapshot = dungeon.corpsePile || [];
     dungeon.corpsePile = [];
 
     // Build a lightweight snapshot with all data Phase B needs.
     // After Phase A deletes the dungeon from activeDungeons, the original object
     // becomes unreachable and will be GC'd — the snapshot keeps only shallow copies.
-    const dungeonSnapshot = {
+    dungeonSnapshot = {
       id: dungeon.id,
       name: dungeon.name,
       rank: dungeon.rank,
@@ -11231,7 +11704,7 @@ module.exports = class Dungeons {
     };
 
     // Capture shadow death count before we clear it
-    const shadowDeathCount = this.deadShadows.get(channelKey)?.size || 0;
+    shadowDeathCount = this.deadShadows.get(channelKey)?.size || 0;
 
     // Stop all combat systems
     this.stopShadowAttacks(channelKey);
@@ -13051,7 +13524,9 @@ module.exports = class Dungeons {
         this._visibilityDebounceTimer = setTimeout(() => {
           this._visibilityDebounceTimer = null;
           if (!document.hidden) {
-            this.debugLog('PERF', 'Discord window visible - simulating elapsed time and resuming');
+            if (this._windowHiddenTime && this._pausedIntervals.size > 0) {
+              this.debugLog('PERF', 'Discord window visible - simulating elapsed time and resuming');
+            }
             this.resumeDungeonProcessingWithSimulation();
           }
         }, 500);
@@ -13093,7 +13568,6 @@ module.exports = class Dungeons {
    * Stores interval states so they can be resumed later
    */
   pauseAllDungeonProcessing() {
-    this._windowHiddenTime = Date.now();
     this._pausedIntervals.clear();
 
     // Pause all active dungeons
@@ -13118,7 +13592,9 @@ module.exports = class Dungeons {
       this._pausedIntervals.set(channelKey, pausedState);
     });
 
-    this.debugLog('PERF', `Paused ${this._pausedIntervals.size} dungeon(s)`);
+    const pausedCount = this._pausedIntervals.size;
+    this._windowHiddenTime = pausedCount > 0 ? Date.now() : null;
+    this.debugLog('PERF', `Paused ${pausedCount} dungeon(s)`);
   }
 
   /**
@@ -13135,6 +13611,12 @@ module.exports = class Dungeons {
     if (!this._windowHiddenTime) {
       // No pause time recorded, just resume normally
       this.resumeAllDungeonProcessing();
+      return;
+    }
+    if (this._pausedIntervals.size === 0) {
+      // Nothing was paused, so skip simulation/logging noise.
+      this.resumeAllDungeonProcessing();
+      this._windowHiddenTime = null;
       return;
     }
 
