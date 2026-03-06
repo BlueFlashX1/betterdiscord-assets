@@ -1750,44 +1750,59 @@ div[role="dialog"] div[class^="body_"][class*="scrollerBase_"]::-webkit-scrollba
 }
 
 /* §9k — Notice banner: dark base + purple accent border
-   The "You were in a voice channel last time..." reconnect banner at the top.
+   Scope to active chat surfaces only so settings/accessibility notices are untouched.
    Dark background matching content area, subtle purple border. */
-div[class^="notice_"] {
+div[class^="chat_"] div[class^="notice_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] {
   background: rgba(8, 10, 20, 0.95) !important;
   border: 1px solid rgba(138, 43, 226, 0.35) !important;
   border-bottom: 2px solid rgba(138, 43, 226, 0.6) !important;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4),
     inset 0 0 12px rgba(138, 43, 226, 0.06) !important;
 }
-div[class^="notice_"],
-div[class^="notice_"] span,
-div[class^="notice_"] div {
+div[class^="chat_"] div[class^="notice_"],
+div[class^="chat_"] div[class^="notice_"] span,
+div[class^="chat_"] div[class^="notice_"] div,
+div[class^="channelChatWrapper_"] div[class^="notice_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] span,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div {
   color: #d4b0ff !important;
 }
-div[class^="notice_"] button {
+div[class^="chat_"] div[class^="notice_"] button,
+div[class^="channelChatWrapper_"] div[class^="notice_"] button {
   color: #d4b0ff !important;
   border-color: #d4b0ff !important;
 }
-div[class^="notice_"] button:hover {
+div[class^="chat_"] div[class^="notice_"] button:hover,
+div[class^="channelChatWrapper_"] div[class^="notice_"] button:hover {
   color: #ffffff !important;
   border-color: #ffffff !important;
   background: rgba(var(--sl-color-primary-rgb), 0.4) !important;
 }
-div[class^="notice_"] div[class^="closeButton_"] svg,
-div[class^="notice_"] div[class^="closeButton_"] path {
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"] svg,
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"] path,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"] svg,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"] path {
   color: #d4b0ff !important;
   fill: #d4b0ff !important;
 }
-div[class^="notice_"] div[class^="closeButton_"]:hover svg,
-div[class^="notice_"] div[class^="closeButton_"]:hover path {
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
+div[class^="chat_"] div[class^="notice_"] div[class^="closeButton_"]:hover path,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover svg,
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="closeButton_"]:hover path {
   color: #ffffff !important;
   fill: #ffffff !important;
 }
 /* Strip inner card border inside notice to avoid double-border */
-div[class^="notice_"] div[class^="preview_"],
-div[class^="notice_"] div[class^="cardPrimary_"],
-div[class^="notice_"] div[class*="card_"] {
+div[class^="chat_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="chat_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="chat_"] div[class^="notice_"] div[class*="card_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="channelChatWrapper_"] div[class^="notice_"] div[class*="card_"] {
   border: none !important;
+  border-color: initial !important;
+  border-width: initial !important;
   box-shadow: none !important;
 }
 
@@ -2300,6 +2315,15 @@ div[class^="contentBody_"] div[class*="card_"] {
 div[class^="contentBody_"] div[class^="preview_"] {
   border: 1px solid rgba(var(--sl-color-primary-rgb), 0.45) !important;
   border-radius: 2px !important;
+}
+/* Keep accessibility/user-settings notice previews neutral (no inner purple border). */
+div[class^="contentBody_"] div[class^="notice_"] div[class^="preview_"],
+div[class^="contentBody_"] div[class^="notice_"] div[class^="cardPrimary_"],
+div[class^="contentBody_"] div[class^="notice_"] div[class*="card_"] {
+  border: none !important;
+  border-color: initial !important;
+  border-width: initial !important;
+  box-shadow: none !important;
 }
 /* §10c (continued) — Account profile card bg + credential list: match container */
 div[class^="contentBody_"] div[class^="background_"],
@@ -2823,4 +2847,31 @@ div[class^="buttonsInner_"][class*="popover_"] {
 .bd-toast {
   color: #ffffff !important;
   border-radius: 0 !important;
+}
+
+/* §14k — Global scrollbar visual suppression (keep scrolling functional)
+   Applies app-wide so any remaining default scrollbars are hidden without
+   disabling wheel/trackpad/keyboard scrolling. */
+html,
+body,
+#app-mount,
+#app-mount * {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+#app-mount *::-webkit-scrollbar {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
+}
+
+#app-mount *::-webkit-scrollbar-thumb,
+#app-mount *::-webkit-scrollbar-track,
+#app-mount *::-webkit-scrollbar-corner {
+  background: transparent !important;
+  border: none !important;
 }
