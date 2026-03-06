@@ -1332,7 +1332,71 @@ module.exports = class SoloLevelingTitleManager {
         border-color: rgba(138, 43, 226, 1);
         box-shadow: 0 0 15px rgba(138, 43, 226, 0.8);
         transform: translateY(-1px);
-    }
+      }
+
+      /* Shadow-theme harmonization (scoped to TitleManager classes only) */
+      .tm-title-modal {
+        --tm-primary-rgb: var(--sl-color-primary-rgb, 138, 43, 226);
+        --tm-primary: rgb(var(--tm-primary-rgb));
+        --tm-surface: rgba(8, 10, 20, 0.96);
+        --tm-surface-soft: rgba(12, 15, 30, 0.92);
+        --tm-text: rgba(236, 233, 255, 0.94);
+        --tm-text-muted: rgba(236, 233, 255, 0.68);
+        --tm-active-rgb: 0, 255, 136;
+      }
+
+      .tm-title-button {
+        border-color: rgba(var(--sl-color-primary-rgb, 138, 43, 226), 0.9);
+      }
+
+      .tm-title-button:hover {
+        background: rgba(var(--sl-color-primary-rgb, 138, 43, 226), 0.14);
+        border-color: rgba(var(--sl-color-primary-rgb, 138, 43, 226), 1);
+      }
+
+      .tm-modal-content {
+        background: linear-gradient(145deg, var(--tm-surface) 0%, var(--tm-surface-soft) 100%);
+        border-color: rgba(var(--tm-primary-rgb), 0.45);
+        box-shadow: 0 18px 45px rgba(0, 0, 0, 0.55), 0 0 28px rgba(var(--tm-primary-rgb), 0.24);
+      }
+
+      .tm-modal-header,
+      .tm-filter-bar,
+      .tm-no-title,
+      .tm-title-card,
+      .tm-sort-dropdown {
+        border-color: rgba(var(--tm-primary-rgb), 0.35);
+      }
+
+      .tm-modal-header h2,
+      .tm-section-title,
+      .tm-title-name,
+      .tm-close-button,
+      .tm-filter-label {
+        color: var(--tm-primary);
+      }
+
+      .tm-sort-dropdown,
+      .tm-sort-dropdown option,
+      .tm-title-bonus,
+      .tm-empty-state,
+      .tm-no-title-text {
+        color: var(--tm-text);
+      }
+
+      .tm-title-card.active,
+      .tm-active-title {
+        border-color: rgba(var(--tm-active-rgb), 0.52);
+        background: rgba(var(--tm-active-rgb), 0.1);
+      }
+
+      .tm-title-card.active .tm-title-name,
+      .tm-title-status,
+      .tm-active-name,
+      .tm-active-bonus,
+      .tm-active-label {
+        color: rgba(var(--tm-active-rgb), 0.96);
+      }
     `;
 
     // Use BdApi.DOM.addStyle (official API) instead of direct DOM manipulation

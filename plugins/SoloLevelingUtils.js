@@ -255,6 +255,10 @@ function tryReactInjection(opts) {
  * @returns {{ log: Function, error: Function, console: Function }}
  */
 function createDebugLogger(pluginName, isEnabled) {
+  const noisyLevelProgressBarOps =
+    pluginName === 'LevelProgressBar'
+      ? new Set(['GET_SOLO_DATA', 'UPDATE_BAR', 'UPDATE_TEXT'])
+      : null;
   const state = {
     errorCount: 0,
     lastError: null,
@@ -269,6 +273,7 @@ function createDebugLogger(pluginName, isEnabled) {
 
   function log(operation, message, data = null) {
     if (!isEnabled()) return;
+    if (noisyLevelProgressBarOps?.has(operation)) return;
 
     const isFrequent = state.frequentOps.has(operation);
     if (isFrequent) {

@@ -79,6 +79,7 @@ const RA_ICON_REINJECT_DELAY_MS = 140;
 const RA_STATS_CACHE_TTL = 5000;
 const RA_OBSERVER_THROTTLE_MS = 200;
 const RA_RESIZE_MIN_WIDTH = 80;
+const RA_PANEL_HOVER_REVEAL_MIN_MS = 500;
 const RA_SETTINGS_OPEN_CLASS = "ra-settings-open";
 
 // Fallback selectors — used when Webpack module extraction fails.
@@ -190,7 +191,7 @@ const DEFAULT_SETTINGS = {
 
   // Hover config
   hoverFudgePx: 15,
-  hoverRevealDelayMs: 120,
+  hoverRevealDelayMs: 500,
   hoverHideDelayMs: 300,
 
   // Per-guild micro state
@@ -749,13 +750,23 @@ module.exports = class RulersAuthority {
       const revealDelay = this.settings.hoverRevealDelayMs;
       const hideDelay = this.settings.hoverHideDelayMs;
       const viewportWidth = window.innerWidth;
+      const panelRevealDelay = {
+        sidebar: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+        members: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+      };
 
       // ── Channel sidebar hover (left edge) ──
       if (sidebarHoverEnabled && this.settings.panels.sidebar.pushed) {
         const inZone = e.clientX <= fudge;
         const sidebarEl = this._findPanelElement("sidebar");
         const inPanel = sidebarEl ? this._isInsideElement(e, sidebarEl, fudge) : false;
-        this._applyHoverRevealState("sidebar", inZone || inPanel, revealDelay, hideDelay);
+        this._applyHoverRevealState("sidebar", inZone || inPanel, panelRevealDelay.sidebar, hideDelay);
+      } else {
+        clearTimeout(this._sidebarRevealTimer);
+        clearTimeout(this._sidebarHideTimer);
+        this._sidebarRevealTimer = null;
+        this._sidebarHideTimer = null;
+        document.body.classList.remove("ra-sidebar-hover-reveal");
       }
 
       // ── Members list hover (right edge) ──
@@ -764,7 +775,13 @@ module.exports = class RulersAuthority {
         const inZone = distFromRight <= fudge;
         const membersEl = this._findPanelElement("members");
         const inPanel = membersEl ? this._isInsideElement(e, membersEl, fudge) : false;
-        this._applyHoverRevealState("members", inZone || inPanel, revealDelay, hideDelay);
+        this._applyHoverRevealState("members", inZone || inPanel, panelRevealDelay.members, hideDelay);
+      } else {
+        clearTimeout(this._membersRevealTimer);
+        clearTimeout(this._membersHideTimer);
+        this._membersRevealTimer = null;
+        this._membersHideTimer = null;
+        document.body.classList.remove("ra-members-hover-reveal");
       }
 
       // ── Profile panel hover (right edge, offset from members) ──
@@ -2091,6 +2108,16 @@ body.ra-pulling [class*="chatContent_"] {
         if (def.hoverCapable && typeof this.settings.panels[panelName].hoverExpand !== "boolean") {
           this.settings.panels[panelName].hoverExpand = true;
         }
+      }
+      // Migration: old default reveal delay (120ms) caused accidental panel opens.
+      if (this.settings.hoverRevealDelayMs === 120) {
+        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+      }
+      if (!Number.isFinite(this.settings.hoverRevealDelayMs) || this.settings.hoverRevealDelayMs < 0) {
+        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+      }
+      if (!Number.isFinite(this.settings.hoverHideDelayMs) || this.settings.hoverHideDelayMs < 0) {
+        this.settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
       }
     } catch (_) {
       this.settings = structuredClone(DEFAULT_SETTINGS);

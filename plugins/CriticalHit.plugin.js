@@ -153,7 +153,7 @@ module.exports = class CriticalHit {
       ownUserId: null,
       // Debug settings
       debugMode: false, // Debug logging (can be toggled in settings)
-      diagnosticLogs: true, // Always-on targeted diagnostics for crit style loss/mismatch
+      diagnosticLogs: false, // Keep off by default; can be enabled manually for targeted troubleshooting
     };
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings modification
@@ -180,6 +180,8 @@ module.exports = class CriticalHit {
     // Throttle restoration checks to prevent spam
     this._restorationCheckThrottle = new Map(); // Map<messageId, lastCheckTime>
     this._restorationCheckThrottleMs = 100; // Minimum 100ms between checks for same message
+    this._diagLogThrottle = new Map(); // Map<operation:key, ts> to suppress repeated diagnostics
+    this._diagLogThrottleMs = 15000;
     this.originalPushState = null;
     this.originalReplaceState = null;
     this.observerStartTime = Date.now(); // Track when observer started
@@ -8119,6 +8121,7 @@ ${childSel} {
       this.clearSessionTracking();
       this.pendingCrits && this.pendingCrits.clear();
       this.animatedMessages && this.animatedMessages.clear();
+      this._diagLogThrottle && this._diagLogThrottle.clear();
       this.activeAnimations?.forEach((el) => this._cancelComboCountUp(el));
       this.activeAnimations && this.activeAnimations.clear();
 
@@ -8164,6 +8167,8 @@ ${childSel} {
 
       // Force debug off — re-enable manually via settings when needed
       this.settings.debugMode = false;
+      // Diagnostic stream is intentionally opt-in to avoid noisy consoles during normal play.
+      this.settings.diagnosticLogs = false;
 
       // Sync debug.enabled with settings.debugMode
       this.debug.enabled = this.settings.debugMode === true;
@@ -8189,6 +8194,7 @@ ${childSel} {
       this.settings = structuredClone(this.defaultSettings);
       // Ensure debugMode is false (default)
       this.settings.debugMode = false;
+      this.settings.diagnosticLogs = false;
       this.debug.enabled = false;
     }
   }
@@ -8262,7 +8268,20 @@ ${childSel} {
    * @param {'info'|'warn'|'error'} level
    */
   diagLog(operation, message, data = null, level = 'info') {
-    if (this.settings?.diagnosticLogs === false) return;
+    if (this.settings?.diagnosticLogs !== true) return;
+    const now = Date.now();
+    const messageId = data?.messageId ? String(data.messageId) : '';
+    const key = messageId ? `${operation}:${messageId}` : `${operation}:${message}`;
+    const opThrottleMs = operation === 'STYLE_RESTORED' ? 60000 : this._diagLogThrottleMs;
+    const lastLogged = this._diagLogThrottle?.get(key) || 0;
+    if (now - lastLogged < opThrottleMs) return;
+    this._diagLogThrottle?.set(key, now);
+    if (this._diagLogThrottle && this._diagLogThrottle.size > 2000) {
+      const cleanupCutoff = now - Math.max(opThrottleMs * 2, 120000);
+      for (const [throttleKey, ts] of this._diagLogThrottle.entries()) {
+        if (ts < cleanupCutoff) this._diagLogThrottle.delete(throttleKey);
+      }
+    }
     const method =
       level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
     const prefix = `[CriticalHit:DIAG:${operation}] ${message}`;

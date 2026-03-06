@@ -237,7 +237,7 @@ module.exports = class LevelProgressBar {
     this._updateQueued = false;
     this._deferredQueueTimeout = null;
     this._lastQueuedUpdateTs = 0;
-    this._minQueuedUpdateGapMs = 120;
+    this._minQueuedUpdateGapMs = 350;
     this._lastMilestoneMask = null;
     this._prefersReducedMotion = null;
     this.webpackModules = {
@@ -272,6 +272,8 @@ module.exports = class LevelProgressBar {
     }
     this._runtimeHelpers = levelProgressBarRuntimeHelpers;
     this._runtimeHelperFallbackNotified = false;
+    this._debugLogLastByOp = new Map();
+    this._suppressedDebugOps = new Set(['GET_SOLO_DATA', 'UPDATE_BAR', 'UPDATE_TEXT']);
   }
   async start() {
     this._isStopped = false;
@@ -669,7 +671,6 @@ module.exports = class LevelProgressBar {
       } else {
         instance = SLUtils?.getPluginInstance?.('SoloLevelingStats');
         if (!instance) {
-          this.debugLog('GET_SOLO_DATA', 'SoloLevelingStats plugin not available');
           this._cache.soloLevelingData = null;
           this._cache.soloLevelingDataTime = now;
           this._cache.soloPluginInstance = null;
@@ -680,29 +681,17 @@ module.exports = class LevelProgressBar {
         this._cache.soloPluginInstanceTime = now;
       }
       if (!instance?.getCurrentLevel) {
-        this.debugLog('GET_SOLO_DATA', 'Instance or method not found', {
-          hasInstance: !!instance,
-          hasMethod: !!(instance && instance.getCurrentLevel),
-        });
         this._cache.soloLevelingData = null;
         this._cache.soloLevelingDataTime = now;
         return null;
       }
       const levelInfo = instance.getCurrentLevel();
       if (!levelInfo) {
-        this.debugLog('GET_SOLO_DATA', 'Level info not available');
         this._cache.soloLevelingData = null;
         this._cache.soloLevelingDataTime = now;
         return null;
       }
       const rank = instance.settings?.rank || 'E';
-      this.debugLog('GET_SOLO_DATA', 'Retrieved SoloLevelingStats data', {
-        level: levelInfo.level,
-        xp: levelInfo.xp,
-        xpRequired: levelInfo.xpRequired,
-        rank: rank,
-        totalXP: instance.settings?.totalXP,
-      });
       const result = {
         instance,
         levelInfo,
@@ -912,7 +901,6 @@ module.exports = class LevelProgressBar {
       this.subscribeToDomEvents();
       return false;
     }
-    this.subscribeToDomEvents();
     const events = ['xpChanged', 'levelChanged', 'rankChanged', 'statsChanged'];
     for (const event of events) {
       const unsub = instance.on(event, (data) => this._handleEvent(event, data));
@@ -996,6 +984,13 @@ module.exports = class LevelProgressBar {
     else console.log(prefix, ...styles, `[${tag}]`, msg);
   }
   debugLog(operation, message, data = null) {
+    if (this._suppressedDebugOps?.has(operation)) return;
+    const now = Date.now();
+    const throttleKey = `${operation}:${message}`;
+    const lastTs = this._debugLogLastByOp?.get(throttleKey) || 0;
+    if (now - lastTs < 1000) return;
+    this._debugLogLastByOp?.set(throttleKey, now);
+
     if (this._debug) { this._debug.log(operation, message, data); return; }
     if (!this.settings?.debugMode) return;
     console.log(`[LevelProgressBar] ${operation}:`, message, data || '');

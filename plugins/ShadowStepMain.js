@@ -1116,13 +1116,15 @@ module.exports = class ShadowStep {
   padding: 4px 8px;
   min-height: 80px;
   max-height: 45vh;
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
 }
 
-.ss-panel-list::-webkit-scrollbar { width: 6px; }
-.ss-panel-list::-webkit-scrollbar-track { background: transparent; }
+.ss-panel-list::-webkit-scrollbar { width: 0 !important; height: 0 !important; display: none !important; }
+.ss-panel-list::-webkit-scrollbar-track { background: transparent !important; }
 .ss-panel-list::-webkit-scrollbar-thumb {
-  background: rgba(138, 43, 226, 0.3);
-  border-radius: 2px;
+  background: transparent !important;
+  border: none !important;
 }
 
 .ss-panel-empty {

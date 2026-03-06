@@ -1488,17 +1488,86 @@ module.exports = class SkillTree {
     return passiveLevel >= def.unlock.passiveLevel;
   }
 
+  _computeMaxManaFromStats() {
+    const soloData = this.getSoloLevelingData();
+    const intelligence = soloData?.stats?.intelligence || 0;
+    return 100 + intelligence * 2;
+  }
+
+  _getSoloLevelingInstance(now = Date.now()) {
+    if (
+      this._cache.soloPluginInstance &&
+      this._cache.soloPluginInstanceTime &&
+      now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
+    ) {
+      return this._cache.soloPluginInstance;
+    }
+
+    const instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats') || null;
+    this._cache.soloPluginInstance = instance;
+    this._cache.soloPluginInstanceTime = now;
+    return instance;
+  }
+
+  _getSharedManaInfo() {
+    const instance = this._getSoloLevelingInstance();
+    if (!instance?.settings) return null;
+
+    const fallbackMax = this._computeMaxManaFromStats();
+    const loadedMax = Number(instance.settings.userMaxMana);
+    const max = Number.isFinite(loadedMax) && loadedMax > 0 ? loadedMax : fallbackMax;
+    const loadedCurrent = Number(instance.settings.userMana);
+
+    if (!Number.isFinite(max) || max <= 0 || !Number.isFinite(loadedCurrent)) {
+      return null;
+    }
+
+    return {
+      instance,
+      max,
+      current: Math.max(0, Math.min(loadedCurrent, max)),
+    };
+  }
+
+  _setSharedMana(nextMana, maxManaHint) {
+    const instance = this._getSoloLevelingInstance();
+    if (!instance?.settings) return false;
+
+    const loadedMax = Number(instance.settings.userMaxMana);
+    const max =
+      Number.isFinite(loadedMax) && loadedMax > 0
+        ? loadedMax
+        : Number.isFinite(maxManaHint) && maxManaHint > 0
+          ? maxManaHint
+          : this._computeMaxManaFromStats();
+
+    if (!Number.isFinite(max) || max <= 0) return false;
+
+    const current = Math.max(0, Math.min(Number(nextMana) || 0, max));
+    instance.settings.userMaxMana = max;
+    instance.settings.userMana = current;
+    if (typeof instance.updateChatUI === 'function') {
+      instance.updateChatUI();
+    }
+    return true;
+  }
+
   /**
    * Get current mana (with intelligence-based max calculation)
    * @returns {{ current: number, max: number }}
    */
   getManaInfo() {
-    const soloData = this.getSoloLevelingData();
-    const intelligence = soloData?.stats?.intelligence || 0;
-    // Max mana: base 100 + 2 per intelligence point
-    const maxMana = 100 + intelligence * 2;
-    // Ensure current doesn't exceed max
-    const current = Math.min(this.settings.currentMana || 0, maxMana);
+    const sharedMana = this._getSharedManaInfo();
+    if (sharedMana) {
+      this.settings.currentMana = sharedMana.current;
+      this.settings.maxMana = sharedMana.max;
+      return { current: sharedMana.current, max: sharedMana.max };
+    }
+
+    const maxMana = this._computeMaxManaFromStats();
+    const current = Math.max(0, Math.min(this.settings.currentMana || 0, maxMana));
+    this.settings.currentMana = current;
+    this.settings.maxMana = maxMana;
     return { current, max: maxMana };
   }
 
@@ -1518,10 +1587,10 @@ module.exports = class SkillTree {
     const regenAmount = regenPerMinute * elapsedMinutes;
 
     const manaInfo = this.getManaInfo();
-    this.settings.currentMana = Math.min(
-      (this.settings.currentMana || 0) + regenAmount,
-      manaInfo.max
-    );
+    const nextMana = Math.min((manaInfo.current || 0) + regenAmount, manaInfo.max);
+    this.settings.currentMana = nextMana;
+    this.settings.maxMana = manaInfo.max;
+    this._setSharedMana(nextMana, manaInfo.max);
     this.settings.lastManaRegen = now;
     // Don't save on every tick - let periodic save handle it
   }
@@ -1637,7 +1706,10 @@ module.exports = class SkillTree {
     }
 
     // Deduct mana
-    this.settings.currentMana = manaInfo.current - def.manaCost;
+    const remainingMana = Math.max(0, manaInfo.current - def.manaCost);
+    this.settings.currentMana = remainingMana;
+    this.settings.maxMana = manaInfo.max;
+    this._setSharedMana(remainingMana, manaInfo.max);
 
     // Set state
     const now = Date.now();
@@ -1814,34 +1886,21 @@ module.exports = class SkillTree {
     }
 
     try {
-      // Cache plugin instance to avoid repeated lookups
-      let soloPlugin = null;
-      let instance = null;
-
-      if (
-        this._cache.soloPluginInstance &&
-        this._cache.soloPluginInstanceTime &&
-        now - this._cache.soloPluginInstanceTime < this._cache.soloPluginInstanceTTL
-      ) {
-        instance = this._cache.soloPluginInstance;
-      } else {
-        instance = this._SLUtils?.getPluginInstance?.('SoloLevelingStats');
-        if (!instance) {
-          this._cache.soloLevelingData = null;
-          this._cache.soloLevelingDataTime = now;
-          this._cache.soloPluginInstance = null;
-          this._cache.soloPluginInstanceTime = 0;
-          return null;
-        }
-        // Cache the instance
-        this._cache.soloPluginInstance = instance;
-        this._cache.soloPluginInstanceTime = now;
+      const instance = this._getSoloLevelingInstance(now);
+      if (!instance) {
+        this._cache.soloLevelingData = null;
+        this._cache.soloLevelingDataTime = now;
+        this._cache.soloPluginInstance = null;
+        this._cache.soloPluginInstanceTime = 0;
+        return null;
       }
 
       const result = {
         stats: instance.settings?.stats || {},
         level: instance.settings?.level || 1,
         totalXP: instance.settings?.totalXP || 0,
+        userMana: instance.settings?.userMana,
+        userMaxMana: instance.settings?.userMaxMana,
       };
 
       // Cache the result
@@ -2577,21 +2636,23 @@ module.exports = class SkillTree {
         background: linear-gradient(135deg, #12091e 0%, #0e0716 100%);
         border-bottom: 2px solid rgba(138, 43, 226, 0.2);
         overflow-x: auto;
-        scrollbar-width: thin;
-        scrollbar-color: rgba(138, 43, 226, 0.5) #0a0a0f;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
       }
 
       .skilltree-tier-nav::-webkit-scrollbar {
-        height: 6px;
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
       }
 
       .skilltree-tier-nav::-webkit-scrollbar-track {
-        background: #0a0a0f;
+        background: transparent !important;
       }
 
       .skilltree-tier-nav::-webkit-scrollbar-thumb {
-        background: rgba(138, 43, 226, 0.5);
-        border-radius: 2px;
+        background: transparent !important;
+        border: none !important;
       }
 
       .skilltree-tier-nav-btn {
@@ -3018,6 +3079,56 @@ module.exports = class SkillTree {
         font-size: 11px;
         color: rgba(255, 68, 68, 0.8);
         font-style: italic;
+      }
+
+      /* Shadow-theme harmonization (kept scoped to SkillTree classes) */
+      .skilltree-modal {
+        --st-primary-rgb: var(--sl-color-primary-rgb, 138, 43, 226);
+        --st-primary: rgb(var(--st-primary-rgb));
+        --st-surface: rgba(8, 10, 20, 0.98);
+        --st-surface-soft: rgba(12, 15, 30, 0.95);
+        --st-text: rgba(236, 233, 255, 0.95);
+        --st-text-muted: rgba(236, 233, 255, 0.72);
+      }
+
+      .skilltree-modal,
+      .st-confirm-dialog {
+        background: linear-gradient(145deg, var(--st-surface) 0%, var(--st-surface-soft) 100%);
+        border-color: rgba(var(--st-primary-rgb), 0.42);
+        box-shadow: 0 18px 42px rgba(0, 0, 0, 0.55), 0 0 28px rgba(var(--st-primary-rgb), 0.24);
+      }
+
+      .skilltree-header,
+      .skilltree-tier-nav,
+      .skilltree-tier,
+      .skilltree-skill,
+      .skilltree-active-skill,
+      .skilltree-mana-bar-container {
+        background: linear-gradient(145deg, rgba(12, 15, 30, 0.95) 0%, rgba(8, 10, 20, 0.95) 100%);
+        border-color: rgba(var(--st-primary-rgb), 0.32);
+      }
+
+      .skilltree-header h2,
+      .skilltree-tier-header,
+      .skilltree-active-section-header {
+        color: var(--st-text);
+      }
+
+      .skilltree-skill-desc,
+      .skilltree-active-skill-desc,
+      .skilltree-active-skill-info,
+      .skilltree-active-skill-unlock-req {
+        color: var(--st-text-muted);
+      }
+
+      .skilltree-tier-nav-btn,
+      .skilltree-activate-btn,
+      .skilltree-max-btn {
+        border-color: rgba(var(--st-primary-rgb), 0.72);
+      }
+
+      .skilltree-tier-nav-btn.active {
+        background: linear-gradient(135deg, rgba(var(--st-primary-rgb), 0.48) 0%, rgba(40, 22, 72, 0.92) 100%);
       }
     `;
 

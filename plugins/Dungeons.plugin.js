@@ -1096,6 +1096,7 @@ module.exports = class Dungeons {
     this._mobSpawnQueueNextAt = new Map(); // channelKey -> next queue flush timestamp
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
+    this._mobSpawnLoopNextAt = 0;
     // 500ms base tick: fast enough for responsive queue flushes, light enough for CPU
     this._mobSpawnLoopTickMs = 500;
     this.bossAttackTimers = new Map(); // Boss attack timers per dungeon
@@ -1114,6 +1115,7 @@ module.exports = class Dungeons {
     // PERFORMANCE: global combat loop (replaces per-dungeon intervals)
     this._combatLoopInterval = null;
     this._combatLoopInFlight = false;
+    this._combatLoopNextAt = 0;
     // 1s base tick: reduces baseline CPU; per-dungeon cadence still handled by interval maps.
     this._combatLoopTickMs = 1000;
     this._shadowActiveIntervalMs = new Map(); // channelKey -> active interval ms
@@ -1181,7 +1183,8 @@ module.exports = class Dungeons {
     this.shadowReserve = []; // Weakest shadows held back for ShadowSenses deployment
     this.allocationCache = null; // Cache of all shadows
     this.allocationCacheTime = null; // When cache was created
-    this.allocationCacheTTL = 15000; // BUGFIX INTEGRITY-2: Reduced from 60s to 15s to limit ghost combatant window
+    this.allocationCacheTTL = 45000; // Reduced recompute churn; immediate dirty invalidation still handles ghost-combatant consistency
+    this._allocationHardRefreshTTL = 120000; // Safety full refresh in case dirty invalidation misses an edge path
     this._allocationDirty = true; // Recompute allocations on first use
     this._allocationDirtyReason = 'init';
     this._allocationShadowSetDirty = true; // Rebuild sorted shadow pool when army composition/stats changed
@@ -1204,7 +1207,14 @@ module.exports = class Dungeons {
     this.storageManager = null;
     this.mobBossStorageManager = null; // Dedicated storage for mobs and bosses
     this.activeDungeons = new Map(); // Use Map for better performance
+    this._pendingDungeonMobXPByBatch = new Map(); // xpBatchKey -> pending mob XP (awarded on dungeon end)
+    this._pendingDungeonMobKillsByBatch = new Map(); // xpBatchKey -> pending mob kills (summary context)
     this._roleCombatStates = new Map(); // channelKey -> bounded role-combat pressure state
+    this._perfTelemetry = {
+      combatTickEmaMs: 0,
+      mobSpawnTickEmaMs: 0,
+      lastAutotuneLogAt: 0,
+    };
 
     this.hiddenComments = new Map(); // Track hidden comment elements per channel
 
@@ -1405,6 +1415,7 @@ module.exports = class Dungeons {
     this._intervals.delete(this._combatLoopInterval);
     this._combatLoopInterval = null;
     this._combatLoopInFlight = false;
+    this._combatLoopNextAt = 0;
   }
 
   _ensureMobSpawnLoop() {
@@ -1448,6 +1459,7 @@ module.exports = class Dungeons {
     this._intervals.delete(this._mobSpawnLoopInterval);
     this._mobSpawnLoopInterval = null;
     this._mobSpawnLoopInFlight = false;
+    this._mobSpawnLoopNextAt = 0;
   }
 
   _computeNextMobSpawnDelayMs(dungeonState) {
@@ -1479,6 +1491,71 @@ module.exports = class Dungeons {
 
     const variance = baseInterval * 0.15;
     return baseInterval - variance + Math.random() * variance * 2;
+  }
+
+  _getDesiredMobSpawnTickMs(isVisible = true) {
+    if (!isVisible) return 1000;
+    const activeCount = this.activeDungeons?.size || 0;
+    let base = this._mobSpawnLoopTickMs || 500;
+    if (activeCount >= 3) base = 750;
+    else if (activeCount >= 2) base = 650;
+    const adaptive = this._getAdaptiveLoadState();
+    return base + Math.floor(adaptive.tickPenaltyMs * 0.7);
+  }
+
+  _getDesiredCombatTickMs(isWindowVisible = true) {
+    const activeCount = this.activeDungeons?.size || 0;
+    let base = this._combatLoopTickMs || 1000;
+    if (!isWindowVisible) base = 2000;
+    else if (activeCount >= 4) base = 1500;
+    else if (activeCount >= 2) base = 1250;
+    const adaptive = this._getAdaptiveLoadState();
+    return base + adaptive.tickPenaltyMs;
+  }
+
+  _recordPerfMetric(metricKey, sampleMs, alpha = 0.15) {
+    if (!this._perfTelemetry || !Number.isFinite(sampleMs) || sampleMs < 0) return;
+    const prev = Number(this._perfTelemetry[metricKey]) || 0;
+    if (prev <= 0) {
+      this._perfTelemetry[metricKey] = sampleMs;
+      return;
+    }
+    this._perfTelemetry[metricKey] = prev + (sampleMs - prev) * this.clampNumber(alpha, 0.05, 0.5);
+  }
+
+  _getAdaptiveLoadState() {
+    const combatEma = Number(this._perfTelemetry?.combatTickEmaMs) || 0;
+    const spawnEma = Number(this._perfTelemetry?.mobSpawnTickEmaMs) || 0;
+    const maxEma = Math.max(combatEma, spawnEma);
+    if (maxEma >= 450) {
+      return { tickPenaltyMs: 500, budgetScale: 0.6, maxEma, combatEma, spawnEma };
+    }
+    if (maxEma >= 300) {
+      return { tickPenaltyMs: 300, budgetScale: 0.75, maxEma, combatEma, spawnEma };
+    }
+    if (maxEma >= 200) {
+      return { tickPenaltyMs: 150, budgetScale: 0.9, maxEma, combatEma, spawnEma };
+    }
+    return { tickPenaltyMs: 0, budgetScale: 1, maxEma, combatEma, spawnEma };
+  }
+
+  _isAllocationHardExpired(now = Date.now()) {
+    if (!this.allocationCache || !this.allocationCacheTime) return true;
+    const hardTtl = Number.isFinite(this._allocationHardRefreshTTL)
+      ? Math.max(30000, this._allocationHardRefreshTTL)
+      : 120000;
+    return now - this.allocationCacheTime >= hardTtl;
+  }
+
+  _hasDeployedDungeonMissingAllocation() {
+    for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+      if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) continue;
+      if (dungeon?._deployPendingFullAllocation === true) continue;
+      if (this._deployRebalanceInFlight?.has?.(channelKey)) continue;
+      const assigned = this.shadowAllocations.get(channelKey);
+      if (!Array.isArray(assigned) || assigned.length === 0) return true;
+    }
+    return false;
   }
 
   /**
@@ -1656,182 +1733,221 @@ module.exports = class Dungeons {
   }
 
   async _mobSpawnLoopTick(isVisible = true) {
-    const now = Date.now();
-    const MAX_QUEUE_FLUSH_PER_TICK = 2; // lower per tick to reduce spikes
+    const tickStartedAt = Date.now();
+    const now = tickStartedAt;
+    const desiredTickMs = this._getDesiredMobSpawnTickMs(isVisible);
+    if (this._mobSpawnLoopNextAt && now < this._mobSpawnLoopNextAt) {
+      return;
+    }
+    this._mobSpawnLoopNextAt = now + desiredTickMs;
+    const adaptive = this._getAdaptiveLoadState();
+    const MAX_QUEUE_FLUSH_PER_TICK = adaptive.maxEma >= 300 ? 1 : 2; // lower per tick under sustained load
     const MAX_SPAWN_WAVES_PER_TICK = 1; // one wave per tick to smooth load
 
-    // Flush queued mobs (batch append) when ready
-    if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
-      let flushes = 0;
-      for (const [channelKey, nextAt] of this._mobSpawnQueueNextAt.entries()) {
-        if (flushes >= MAX_QUEUE_FLUSH_PER_TICK) break;
-        if (now < nextAt) continue;
-        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
-        const queuedRemaining = this.processMobSpawnQueue(channelKey);
-        if (queuedRemaining > 0) {
-          const retryDelay = 500 + Math.random() * 500;
-          this._mobSpawnQueueNextAt.set(channelKey, now + retryDelay);
-        } else {
-          this._mobSpawnQueueNextAt.delete(channelKey);
+    try {
+      // Flush queued mobs (batch append) when ready
+      if (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0) {
+        let flushes = 0;
+        for (const [channelKey, nextAt] of this._mobSpawnQueueNextAt.entries()) {
+          if (flushes >= MAX_QUEUE_FLUSH_PER_TICK) break;
+          if (now < nextAt) continue;
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: FLUSHING queue for ${channelKey}, queuedMobs=${this._mobSpawnQueue?.get(channelKey)?.length || 0}`);
+          const queuedRemaining = this.processMobSpawnQueue(channelKey);
+          if (queuedRemaining > 0) {
+            const retryDelay = 500 + Math.random() * 500;
+            this._mobSpawnQueueNextAt.set(channelKey, now + retryDelay);
+          } else {
+            this._mobSpawnQueueNextAt.delete(channelKey);
+          }
+          flushes++;
         }
-        flushes++;
       }
-    }
 
-    // Trigger spawn waves when due.
-    // PERF: Still spawn while hidden but at reduced rate (1 wave per tick, already throttled by delay).
-    // Previously skipping entirely while hidden caused "frozen" mob counts on dungeon creation.
-    if (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
-      let spawns = 0;
-      for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
-        if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
-        if (now < nextAt) continue;
+      // Trigger spawn waves when due.
+      // PERF: Still spawn while hidden but at reduced rate (1 wave per tick, already throttled by delay).
+      // Previously skipping entirely while hidden caused "frozen" mob counts on dungeon creation.
+      if (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) {
+        let spawns = 0;
+        for (const [channelKey, nextAt] of this._mobSpawnNextAt.entries()) {
+          if (spawns >= MAX_SPAWN_WAVES_PER_TICK) break;
+          if (now < nextAt) continue;
 
-        const dungeon = this._getActiveDungeon(channelKey);
-        if (!dungeon) {
-          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: NO DUNGEON for ${channelKey} — cleaning up`);
-          this._mobSpawnNextAt.delete(channelKey);
-          this._mobSpawnQueueNextAt?.delete?.(channelKey);
-          this._mobSpawnQueue?.delete?.(channelKey);
-          continue;
+          const dungeon = this._getActiveDungeon(channelKey);
+          if (!dungeon) {
+            this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: NO DUNGEON for ${channelKey} — cleaning up`);
+            this._mobSpawnNextAt.delete(channelKey);
+            this._mobSpawnQueueNextAt?.delete?.(channelKey);
+            this._mobSpawnQueue?.delete?.(channelKey);
+            continue;
+          }
+
+          // FIX: Early cap check BEFORE calling spawnMobs — prevents wasteful no-op spawn ticks
+          // and misleading "SPAWNING" logs when mobs are already at cap.
+          const _preCheckAlive = dungeon.mobs?.activeMobs?.length || 0;
+          const _preCheckCap = Math.min(
+            Number.isFinite(Number(dungeon.mobs?.mobCapacity)) && Number(dungeon.mobs.mobCapacity) > 0
+              ? Number(dungeon.mobs.mobCapacity) : Infinity,
+            Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
+              ? Number(this.settings.mobMaxActiveCap) : this.defaultSettings.mobMaxActiveCap
+          );
+          if (_preCheckAlive >= _preCheckCap) {
+            // At cap — back off with a longer delay instead of hot-looping every 2.5s
+            this._mobSpawnNextAt.set(channelKey, now + 10000);
+            continue;
+          }
+
+          this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${_preCheckAlive}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
+          this.spawnMobs(channelKey);
+          const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
+          this._mobSpawnNextAt.set(channelKey, now + nextDelay);
+          spawns++;
         }
-
-        // FIX: Early cap check BEFORE calling spawnMobs — prevents wasteful no-op spawn ticks
-        // and misleading "SPAWNING" logs when mobs are already at cap.
-        const _preCheckAlive = dungeon.mobs?.activeMobs?.length || 0;
-        const _preCheckCap = Math.min(
-          Number.isFinite(Number(dungeon.mobs?.mobCapacity)) && Number(dungeon.mobs.mobCapacity) > 0
-            ? Number(dungeon.mobs.mobCapacity) : Infinity,
-          Number.isFinite(Number(this.settings?.mobMaxActiveCap)) && Number(this.settings.mobMaxActiveCap) > 0
-            ? Number(this.settings.mobMaxActiveCap) : this.defaultSettings.mobMaxActiveCap
-        );
-        if (_preCheckAlive >= _preCheckCap) {
-          // At cap — back off with a longer delay instead of hot-looping every 2.5s
-          this._mobSpawnNextAt.set(channelKey, now + 10000);
-          continue;
-        }
-
-        this.settings.debug && console.log(`[Dungeons] MOB_SPAWN_TICK: SPAWNING wave for ${channelKey}, boss.hp=${dungeon.boss?.hp}, activeMobs=${_preCheckAlive}, total=${dungeon.mobs?.total || 0}, target=${dungeon.mobs?.targetCount || '?'}`);
-        this.spawnMobs(channelKey);
-        const nextDelay = this._computeNextMobSpawnDelayMs(dungeon);
-        this._mobSpawnNextAt.set(channelKey, now + nextDelay);
-        spawns++;
       }
-    }
 
-    const hasWork =
-      (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
-      (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
-    !hasWork && this._stopMobSpawnLoop();
+      const hasWork =
+        (this._mobSpawnNextAt && this._mobSpawnNextAt.size > 0) ||
+        (this._mobSpawnQueueNextAt && this._mobSpawnQueueNextAt.size > 0);
+      !hasWork && this._stopMobSpawnLoop();
+    } finally {
+      this._recordPerfMetric('mobSpawnTickEmaMs', Date.now() - tickStartedAt, 0.2);
+    }
   }
 
   async _combatLoopTick() {
     const now = Date.now();
-    this._combatTickCount = ((this._combatTickCount || 0) + 1) % 1000;
-
-    // PERF: Hoist shared computations — compute ONCE per tick, not per-dungeon × per-function
     const isWindowVisible = this.isWindowVisible();
-    if (isWindowVisible) {
-      this.syncHPAndManaFromStats();
+    const desiredTickMs = this._getDesiredCombatTickMs(isWindowVisible);
+    if (this._combatLoopNextAt && now < this._combatLoopNextAt) {
+      return;
     }
-
-    // PERF T2-1: Global combat budget — divide fixed sample cap across dungeons so total
-    // CPU stays constant regardless of dungeon count. Without this, 5 dungeons = 5× sampling cost.
-    const activeDungeonCount = Math.max(1, this.activeDungeons.size);
-    const globalShadowBudget = Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) && this.settings.maxSimulatedShadowsPerTick > 0
-      ? this.settings.maxSimulatedShadowsPerTick
-      : 500; // Total shadow samples across ALL dungeons
-    const globalMobBudget = 1000; // Total mob samples across ALL dungeons
-    const perDungeonShadowBudget = Math.max(20, Math.floor(globalShadowBudget / activeDungeonCount));
-    const perDungeonMobBudget = Math.max(50, Math.floor(globalMobBudget / activeDungeonCount));
-
-    // PERF T1-1: Pre-ensure shadow allocations exist before parallel processing.
-    // preSplitShadowArmy is expensive (IDB read + sort), so call it once here instead of
-    // letting each parallel dungeon race to call it.
-    const cacheExpired = !this.allocationCache || !this.allocationCacheTime ||
-      Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
-    if (cacheExpired || this._allocationDirty) {
-      await this.preSplitShadowArmy();
-    }
-
-    // Per-tick lock: prevent parallel dungeons from calling preSplitShadowArmy redundantly
-    this._tickAllocationLock = false;
-
-    // BUGFIX LOGIC-1: Pre-snapshot mana to prevent race conditions during Promise.all.
-    // Each dungeon gets an equal slice of the available mana pool for resurrections.
-    // This prevents concurrent dungeons from both reading the same mana balance and
-    // double-spending (non-atomic read-modify-write on this.settings.userMana).
-    if (activeDungeonCount > 1) {
-      this._tickManaPool = this.settings.userMana || 0;
-      this._tickManaBudgetPerDungeon = Math.floor(this._tickManaPool / activeDungeonCount);
-      this._tickManaSpent = 0;
-    } else {
-      this._tickManaPool = undefined;
-      this._tickManaBudgetPerDungeon = undefined;
-    }
-
-    // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
-    // Each dungeon has isolated shadow allocations, deadShadows, and dungeon state.
-    // Shared state (userHP, userMana) has minor race potential but is self-correcting via
-    // periodic SoloLevelingStats sync and debounced saveSettings.
-    const dungeonPromises = [];
-    let dungeonIndex = 0;
-    for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
-      if (!dungeon || dungeon.completed || dungeon.failed) {
-        this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
-        this.bossAttackTimers.has(channelKey) && this.stopBossAttacks(channelKey);
-        this.mobAttackTimers.has(channelKey) && this.stopMobAttacks(channelKey);
-        continue;
+    this._combatLoopNextAt = now + desiredTickMs;
+    this._combatTickCount = ((this._combatTickCount || 0) + 1) % 1000;
+    const tickStartedAt = now;
+    try {
+      // PERF: Hoist shared computations — compute ONCE per tick, not per-dungeon × per-function
+      if (isWindowVisible) {
+        this.syncHPAndManaFromStats();
       }
 
-      dungeonPromises.push(this._processDungeonCombatTick(
-        channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget, dungeonIndex
-      ));
-      dungeonIndex++;
-    }
+      // PERF T2-1: Global combat budget — divide fixed sample cap across dungeons so total
+      // CPU stays constant regardless of dungeon count. Without this, 5 dungeons = 5× sampling cost.
+      const activeDungeonCount = Math.max(1, this.activeDungeons.size);
+      const configuredShadowBudget = Number.isFinite(this.settings?.maxSimulatedShadowsPerTick) && this.settings.maxSimulatedShadowsPerTick > 0
+        ? this.settings.maxSimulatedShadowsPerTick
+        : 400; // Total shadow samples across ALL dungeons
+      const pressureScale = activeDungeonCount >= 4 ? 0.65 : activeDungeonCount >= 2 ? 0.8 : 1;
+      const visibilityScale = isWindowVisible ? 1 : 0.65;
+      const adaptive = this._getAdaptiveLoadState();
+      const adaptiveScale = this.clampNumber(adaptive?.budgetScale ?? 1, 0.5, 1);
+      const globalShadowBudget = Math.max(160, Math.floor(configuredShadowBudget * pressureScale * visibilityScale * adaptiveScale));
+      const globalMobBudget = Math.max(320, Math.floor(800 * pressureScale * visibilityScale * adaptiveScale));
+      const perDungeonShadowBudget = Math.max(20, Math.floor(globalShadowBudget / activeDungeonCount));
+      const perDungeonMobBudget = Math.max(50, Math.floor(globalMobBudget / activeDungeonCount));
 
-    if (dungeonPromises.length > 0) {
-      await Promise.all(dungeonPromises);
-    }
-
-    // BUGFIX LOGIC-1: Reconcile mana after parallel dungeon processing.
-    // Each dungeon tracked its own spend via dungeon._tickManaUsed (set in attemptAutoResurrection).
-    // Deduct the actual total from the real mana pool in one atomic operation.
-    if (this._tickManaBudgetPerDungeon !== undefined) {
-      let totalManaUsed = 0;
-      for (const [, dungeon] of this.activeDungeons.entries()) {
-        if (dungeon._tickManaUsed > 0) {
-          totalManaUsed += dungeon._tickManaUsed;
-          dungeon._tickManaUsed = 0;
-        }
-      }
-      if (totalManaUsed > 0) {
-        this.settings.userMana = Math.max(0, this._tickManaPool - totalManaUsed);
-        // Sync reconciled mana to SoloLevelingStats (deferred from parallel mode)
-        this.pushManaToStats(false);
-      }
-      this._tickManaBudgetPerDungeon = undefined;
-      this._tickManaPool = undefined;
-    }
-
-    // ALWAYS-ON: Periodic combat status log (every 30s) — mob kills, shadow deaths, resurrections
-    if (this._combatTickCount % 30 === 0) {
-      for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
-        if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) continue;
-        const deadSet = this.deadShadows.get(channelKey);
-        const permanentDeaths = deadSet?.size || 0;
-        const totalRevives = dungeon.shadowRevives || 0;
-        const totalDeaths = permanentDeaths + totalRevives; // Total deaths ever = still dead + successfully revived
-        const assigned = this.shadowAllocations.get(channelKey)?.length || 0;
-        const alive = assigned - permanentDeaths;
-        this.settings.debug && console.log(
-          `[Dungeons] 📊 COMBAT STATUS: ${dungeon.name} (${dungeon.rank}) | ` +
-          `Mobs killed: ${dungeon.mobs?.killed || 0}/${dungeon.mobs?.targetCount || '?'} | ` +
-          `Boss HP: ${dungeon.boss?.hp?.toLocaleString() || 0}/${dungeon.boss?.maxHp?.toLocaleString() || '?'} | ` +
-          `Shadows: ${alive}/${assigned} alive | ` +
-          `Deaths: ${totalDeaths} total (${permanentDeaths} still dead, ${totalRevives} resurrected)`
+      if (
+        this.settings.debug &&
+        adaptive.maxEma >= 200 &&
+        (!this._perfTelemetry?.lastAutotuneLogAt || now - this._perfTelemetry.lastAutotuneLogAt >= 30000)
+      ) {
+        this._perfTelemetry.lastAutotuneLogAt = now;
+        console.log(
+          `[Dungeons] PERF AUTOTUNE combatEma=${Math.round(adaptive.combatEma)}ms spawnEma=${Math.round(adaptive.spawnEma)}ms ` +
+          `tick=${desiredTickMs}ms scale=${adaptiveScale.toFixed(2)} budget=${globalShadowBudget}/${globalMobBudget}`
         );
       }
+
+      // PERF T1-1: Pre-ensure shadow allocations exist before parallel processing.
+      // preSplitShadowArmy is expensive (IDB read + sort), so call it once here instead of
+      // letting each parallel dungeon race to call it.
+      const forceRefresh =
+        this._allocationDirty ||
+        this._isAllocationHardExpired(now) ||
+        this._hasDeployedDungeonMissingAllocation();
+      if (forceRefresh) {
+        await this.preSplitShadowArmy();
+      }
+
+      // Per-tick lock: prevent parallel dungeons from calling preSplitShadowArmy redundantly
+      this._tickAllocationLock = false;
+
+      // BUGFIX LOGIC-1: Pre-snapshot mana to prevent race conditions during Promise.all.
+      // Each dungeon gets an equal slice of the available mana pool for resurrections.
+      // This prevents concurrent dungeons from both reading the same mana balance and
+      // double-spending (non-atomic read-modify-write on this.settings.userMana).
+      if (activeDungeonCount > 1) {
+        this._tickManaPool = this.settings.userMana || 0;
+        this._tickManaBudgetPerDungeon = Math.floor(this._tickManaPool / activeDungeonCount);
+        this._tickManaSpent = 0;
+      } else {
+        this._tickManaPool = undefined;
+        this._tickManaBudgetPerDungeon = undefined;
+      }
+
+      // PERF T1-1: Process dungeons in parallel — tick time = max(perDungeon) instead of sum(perDungeon).
+      // Each dungeon has isolated shadow allocations, deadShadows, and dungeon state.
+      // Shared state (userHP, userMana) has minor race potential but is self-correcting via
+      // periodic SoloLevelingStats sync and debounced saveSettings.
+      const dungeonPromises = [];
+      let dungeonIndex = 0;
+      for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+        if (!dungeon || dungeon.completed || dungeon.failed) {
+          this.shadowAttackIntervals.has(channelKey) && this.stopShadowAttacks(channelKey);
+          this.bossAttackTimers.has(channelKey) && this.stopBossAttacks(channelKey);
+          this.mobAttackTimers.has(channelKey) && this.stopMobAttacks(channelKey);
+          continue;
+        }
+
+        dungeonPromises.push(this._processDungeonCombatTick(
+          channelKey, dungeon, now, isWindowVisible, perDungeonShadowBudget, perDungeonMobBudget, dungeonIndex
+        ));
+        dungeonIndex++;
+      }
+
+      if (dungeonPromises.length > 0) {
+        await Promise.all(dungeonPromises);
+      }
+
+      // BUGFIX LOGIC-1: Reconcile mana after parallel dungeon processing.
+      // Each dungeon tracked its own spend via dungeon._tickManaUsed (set in attemptAutoResurrection).
+      // Deduct the actual total from the real mana pool in one atomic operation.
+      if (this._tickManaBudgetPerDungeon !== undefined) {
+        let totalManaUsed = 0;
+        for (const [, dungeon] of this.activeDungeons.entries()) {
+          if (dungeon._tickManaUsed > 0) {
+            totalManaUsed += dungeon._tickManaUsed;
+            dungeon._tickManaUsed = 0;
+          }
+        }
+        if (totalManaUsed > 0) {
+          this.settings.userMana = Math.max(0, this._tickManaPool - totalManaUsed);
+          // Sync reconciled mana to SoloLevelingStats (deferred from parallel mode)
+          this.pushManaToStats(false);
+        }
+        this._tickManaBudgetPerDungeon = undefined;
+        this._tickManaPool = undefined;
+      }
+
+      // ALWAYS-ON: Periodic combat status log (every 30s) — mob kills, shadow deaths, resurrections
+      if (this._combatTickCount % 30 === 0) {
+        for (const [channelKey, dungeon] of this.activeDungeons.entries()) {
+          if (!dungeon || dungeon.completed || dungeon.failed || !dungeon.shadowsDeployed) continue;
+          const deadSet = this.deadShadows.get(channelKey);
+          const permanentDeaths = deadSet?.size || 0;
+          const totalRevives = dungeon.shadowRevives || 0;
+          const totalDeaths = permanentDeaths + totalRevives; // Total deaths ever = still dead + successfully revived
+          const assigned = this.shadowAllocations.get(channelKey)?.length || 0;
+          const alive = assigned - permanentDeaths;
+          this.settings.debug && console.log(
+            `[Dungeons] 📊 COMBAT STATUS: ${dungeon.name} (${dungeon.rank}) | ` +
+            `Mobs killed: ${dungeon.mobs?.killed || 0}/${dungeon.mobs?.targetCount || '?'} | ` +
+            `Boss HP: ${dungeon.boss?.hp?.toLocaleString() || 0}/${dungeon.boss?.maxHp?.toLocaleString() || '?'} | ` +
+            `Shadows: ${alive}/${assigned} alive | ` +
+            `Deaths: ${totalDeaths} total (${permanentDeaths} still dead, ${totalRevives} resurrected)`
+          );
+        }
+      }
+    } finally {
+      this._recordPerfMetric('combatTickEmaMs', Date.now() - tickStartedAt, 0.15);
     }
   }
 
@@ -2242,6 +2358,12 @@ module.exports = class Dungeons {
     // Clear shadow allocations cache
     if (this.shadowAllocations) {
       this.shadowAllocations.clear();
+    }
+    if (this._pendingDungeonMobXPByBatch) {
+      this._pendingDungeonMobXPByBatch.clear();
+    }
+    if (this._pendingDungeonMobKillsByBatch) {
+      this._pendingDungeonMobKillsByBatch.clear();
     }
     if (this._deployRebalanceInFlight) {
       this._deployRebalanceInFlight.clear();
@@ -4207,6 +4329,8 @@ module.exports = class Dungeons {
       rankList
     );
     const initialBossGate = this.getBossGateRuntimeConfig();
+    const dungeonStartTime = Date.now();
+    const dungeonXPBatchKey = `${channelKey}:${dungeonStartTime}`;
 
     const dungeon = {
       id: channelKey,
@@ -4279,7 +4403,10 @@ module.exports = class Dungeons {
         // Description for display
         description: `${rank}-rank ${bossBeastType.name} Boss from ${dungeonBiome.name}`,
       },
-      startTime: Date.now(),
+      startTime: dungeonStartTime,
+      _xpBatchKey: dungeonXPBatchKey,
+      pendingUserMobXP: 0,
+      pendingUserMobKills: 0,
       channelId: channelInfo.channelId,
       guildId: channelInfo.guildId,
       userParticipating: null,
@@ -6710,8 +6837,67 @@ module.exports = class Dungeons {
     return true;
   }
 
+  _resolveDungeonXPBatchKey(channelKey, dungeonLike = null) {
+    const explicit = typeof dungeonLike?._xpBatchKey === 'string' ? dungeonLike._xpBatchKey.trim() : '';
+    if (explicit) return explicit;
+    const startTime = Number(dungeonLike?.startTime);
+    if (Number.isFinite(startTime) && startTime > 0) {
+      return `${channelKey}:${Math.floor(startTime)}`;
+    }
+    return `${channelKey}:legacy`;
+  }
+
+  _queuePendingDungeonMobXP(channelKey, dungeon, xpAmount, killCount = 1) {
+    const normalizedXP = Math.floor(Number(xpAmount) || 0);
+    if (!dungeon || normalizedXP <= 0) return 0;
+
+    const batchKey = this._resolveDungeonXPBatchKey(channelKey, dungeon);
+    dungeon._xpBatchKey = batchKey;
+
+    const currentXP = Number(dungeon.pendingUserMobXP);
+    const safeCurrentXP = Number.isFinite(currentXP) && currentXP > 0 ? Math.floor(currentXP) : 0;
+    const nextXP = safeCurrentXP + normalizedXP;
+    dungeon.pendingUserMobXP = nextXP;
+
+    const currentKills = Number(dungeon.pendingUserMobKills);
+    const safeCurrentKills = Number.isFinite(currentKills) && currentKills > 0 ? Math.floor(currentKills) : 0;
+    const normalizedKills = Math.max(1, Math.floor(Number(killCount) || 1));
+    const nextKills = safeCurrentKills + normalizedKills;
+    dungeon.pendingUserMobKills = nextKills;
+
+    this._pendingDungeonMobXPByBatch?.set(batchKey, nextXP);
+    this._pendingDungeonMobKillsByBatch?.set(batchKey, nextKills);
+    return nextXP;
+  }
+
+  _consumePendingDungeonMobXP(batchKey, snapshot = null) {
+    const snapXP = Number(snapshot?.pendingUserMobXP);
+    const queuedXP = Number(this._pendingDungeonMobXPByBatch?.get(batchKey));
+    const pendingXP = Math.max(
+      Number.isFinite(snapXP) && snapXP > 0 ? Math.floor(snapXP) : 0,
+      Number.isFinite(queuedXP) && queuedXP > 0 ? Math.floor(queuedXP) : 0
+    );
+
+    const snapKills = Number(snapshot?.pendingUserMobKills);
+    const queuedKills = Number(this._pendingDungeonMobKillsByBatch?.get(batchKey));
+    const pendingKills = Math.max(
+      Number.isFinite(snapKills) && snapKills > 0 ? Math.floor(snapKills) : 0,
+      Number.isFinite(queuedKills) && queuedKills > 0 ? Math.floor(queuedKills) : 0
+    );
+
+    this._pendingDungeonMobXPByBatch?.delete(batchKey);
+    this._pendingDungeonMobKillsByBatch?.delete(batchKey);
+    return { pendingXP, pendingKills };
+  }
+
+  _discardPendingDungeonMobXP(batchKey) {
+    if (!batchKey) return;
+    this._pendingDungeonMobXPByBatch?.delete(batchKey);
+    this._pendingDungeonMobKillsByBatch?.delete(batchKey);
+  }
+
   /**
-   * Shared mob-kill bookkeeping: update counters, track notification, grant XP.
+   * Shared mob-kill bookkeeping: update counters, track notification, queue XP for end-of-dungeon grant.
    * Consolidates the duplicated pattern from user-attacks-mob, shadow-attacks-mob,
    * and batch processMobAttacks paths.
    * @param {string} channelKey - Dungeon channel key
@@ -6737,16 +6923,12 @@ module.exports = class Dungeons {
     }
     this.settings.mobKillNotifications[channelKey].count += killCount;
 
-    if (this.soloLevelingStats) {
-      // Shadow Monarch receives full mob XP regardless of participation — your army is your strength.
-      const xpPerKill = this.calculateMobXP(mobRank, true);
-      if (xpPerKill > 0) {
-        this._grantUserDungeonXP(xpPerKill * killCount, 'dungeon_mob_kill', {
-          channelKey,
-          mobRank,
-          killCount,
-        });
-      }
+    // Batch mob XP per dungeon run and award once on dungeon completion.
+    // This prevents XP-event fanout during high-kill combat bursts.
+    const xpPerKill = this.calculateMobXP(mobRank, true);
+    if (xpPerKill > 0) {
+      const totalMobXP = xpPerKill * killCount;
+      this._queuePendingDungeonMobXP(channelKey, dungeon, totalMobXP, killCount);
     }
   }
 
@@ -9615,21 +9797,18 @@ module.exports = class Dungeons {
         const hasAllocation =
           this.shadowAllocations.has(channelKey) &&
           this.shadowAllocations.get(channelKey)?.length > 0;
-        const cacheExpired =
-          !this.allocationCache ||
-          !this.allocationCacheTime ||
-          Date.now() - this.allocationCacheTime >= this.allocationCacheTTL;
+        const hardExpired = this._isAllocationHardExpired();
         const deployRebalancePending =
           dungeon?._deployPendingFullAllocation === true ||
           this._deployRebalanceInFlight?.has?.(channelKey);
 
         let didReallocate = false;
-        if ((cacheExpired || !hasAllocation) && !this._tickAllocationLock) {
+        if ((hardExpired || this._allocationDirty || !hasAllocation) && !this._tickAllocationLock) {
           if (deployRebalancePending) {
             // Keep combat loop responsive while async deploy rebalance computes full split.
             !hasAllocation && this.ensureDeployedSpawnPipeline(channelKey, 'combat_waiting_for_rebalance');
           } else {
-            this._markAllocationDirty(cacheExpired ? 'combat-cache-expired' : 'combat-missing-allocation');
+            this._markAllocationDirty(hardExpired ? 'combat-hard-refresh' : 'combat-missing-allocation');
             this._tickAllocationLock = true;
             await this.preSplitShadowArmy();
             didReallocate = true;
@@ -9783,7 +9962,9 @@ module.exports = class Dungeons {
 
         // PERFORMANCE: Limit mobs processed based on window visibility
         // Reuse isWindowVisible from function start
-        const maxMobsToProcess = isWindowVisible ? 500 : 100; // Cap mob processing to prevent UI freezes
+        const maxMobsToProcess = isWindowVisible
+          ? Math.min(400, Math.max(120, Math.floor(shadowBudget * 1.6)))
+          : 80; // Adaptive cap keeps combat fluid while reducing CPU spikes under heavy load
         const aliveMobs = [];
         for (const m of dungeon.mobs.activeMobs) {
           if (aliveMobs.length >= maxMobsToProcess) break;
@@ -9822,9 +10003,16 @@ module.exports = class Dungeons {
         // We simulate a subset and scale damage up. This keeps gameplay responsive and prevents CPU pegging.
         // T2-1: shadowBudget is computed per-tick in _combatLoopTick as globalBudget / activeDungeonCount,
         // so total CPU stays constant regardless of how many dungeons are running.
+        const visibleTargetBudget = aliveMobs.length > 0
+          ? Math.max(80, Math.min(shadowBudget, aliveMobs.length * 2))
+          : Math.max(100, Math.min(shadowBudget, 160));
+        const backgroundTargetBudget = Math.max(
+          20,
+          Math.min(80, Math.floor(combatReadyShadows.length * 0.25))
+        );
         const maxShadowsToProcess = isWindowVisible
-          ? Math.min(combatReadyShadows.length, shadowBudget)
-          : Math.min(20, Math.floor(combatReadyShadows.length * 0.5)); // background: 50% sample (min 20)
+          ? Math.min(combatReadyShadows.length, visibleTargetBudget)
+          : Math.min(combatReadyShadows.length, backgroundTargetBudget);
 
         const stride =
           maxShadowsToProcess > 0
@@ -12031,24 +12219,31 @@ module.exports = class Dungeons {
     // Build a lightweight snapshot with all data Phase B needs.
     // After Phase A deletes the dungeon from activeDungeons, the original object
     // becomes unreachable and will be GC'd — the snapshot keeps only shallow copies.
-    dungeonSnapshot = {
-      id: dungeon.id,
-      name: dungeon.name,
-      rank: dungeon.rank,
-      channelName: dungeon.channelName,
-      guildName: dungeon.guildName,
-      userParticipating: dungeon.userParticipating,
-      shadowContributions: { ...dungeon.shadowContributions },
-      boss: dungeon.boss ? { ...dungeon.boss } : null,
+      dungeonSnapshot = {
+        id: dungeon.id,
+        name: dungeon.name,
+        rank: dungeon.rank,
+        _xpBatchKey: this._resolveDungeonXPBatchKey(channelKey, dungeon),
+        channelName: dungeon.channelName,
+        guildName: dungeon.guildName,
+        userParticipating: dungeon.userParticipating,
+        shadowContributions: { ...dungeon.shadowContributions },
+        boss: dungeon.boss ? { ...dungeon.boss } : null,
       bossGate: dungeon.bossGate ? { ...dungeon.bossGate, deployedAt: originalBossGateDeployedAt } : null,
       deployedAt: originalDeployedAt,
-      startTime: dungeon.startTime,
-      mobs: { killed: dungeon.mobs?.killed || 0 },
-      shadowRevives: dungeon.shadowRevives || 0,
-      userDamageDealt: dungeon.userDamageDealt || 0,
-      beastFamilies: dungeon.beastFamilies,
-      combatAnalytics: dungeon.combatAnalytics ? { ...dungeon.combatAnalytics } : {},
-    };
+        startTime: dungeon.startTime,
+        mobs: { killed: dungeon.mobs?.killed || 0 },
+        pendingUserMobXP: Number.isFinite(Number(dungeon.pendingUserMobXP))
+          ? Math.max(0, Math.floor(Number(dungeon.pendingUserMobXP)))
+          : 0,
+        pendingUserMobKills: Number.isFinite(Number(dungeon.pendingUserMobKills))
+          ? Math.max(0, Math.floor(Number(dungeon.pendingUserMobKills)))
+          : 0,
+        shadowRevives: dungeon.shadowRevives || 0,
+        userDamageDealt: dungeon.userDamageDealt || 0,
+        beastFamilies: dungeon.beastFamilies,
+        combatAnalytics: dungeon.combatAnalytics ? { ...dungeon.combatAnalytics } : {},
+      };
 
     // Capture shadow death count before we clear it
     shadowDeathCount = this.deadShadows.get(channelKey)?.size || 0;
@@ -12211,6 +12406,25 @@ module.exports = class Dungeons {
       shadowsAttackedMobs: combatAnalytics.shadowsAttackedMobs || 0,
     };
 
+    // ── Batched mob-kill XP grant ──
+    const xpBatchKey = this._resolveDungeonXPBatchKey(channelKey, snap);
+    const { pendingXP: pendingMobXP, pendingKills: pendingMobKills } =
+      this._consumePendingDungeonMobXP(xpBatchKey, snap);
+    if (pendingMobXP > 0) {
+      if (
+        this._grantUserDungeonXP(pendingMobXP, 'dungeon_mob_kill_batch', {
+          channelKey,
+          dungeonRank: snap.rank,
+          reason,
+          pendingMobKills,
+        })
+      ) {
+        summaryStats.userXP += pendingMobXP;
+      }
+    }
+    summaryStats.mobKillXP = pendingMobXP;
+    summaryStats.mobKillsAwarded = pendingMobKills;
+
     // ── Shadow XP grants ──
     if (reason === 'boss' || reason === 'complete') {
       const contributionEntries = Object.values(snap.shadowContributions || {}).filter((entry) => {
@@ -12259,7 +12473,7 @@ module.exports = class Dungeons {
             reason,
           })
         ) {
-          summaryStats.userXP = completionXP;
+          summaryStats.userXP += completionXP;
         }
       }
     }
@@ -12283,7 +12497,7 @@ module.exports = class Dungeons {
             userParticipating: snap.userParticipating,
           })
         ) {
-          summaryStats.userXP = bossXP;
+          summaryStats.userXP += bossXP;
         }
       }
 
@@ -15034,6 +15248,21 @@ module.exports = class Dungeons {
           // Clear runtime-only flags that should never persist across restarts
           delete dungeon._completing;
 
+          // Ensure dungeon-run XP batching metadata exists and is sane after restore.
+          dungeon._xpBatchKey = this._resolveDungeonXPBatchKey(dungeon.channelKey, dungeon);
+          dungeon.pendingUserMobXP = Number.isFinite(Number(dungeon.pendingUserMobXP))
+            ? Math.max(0, Math.floor(Number(dungeon.pendingUserMobXP)))
+            : 0;
+          dungeon.pendingUserMobKills = Number.isFinite(Number(dungeon.pendingUserMobKills))
+            ? Math.max(0, Math.floor(Number(dungeon.pendingUserMobKills)))
+            : 0;
+          if (dungeon.pendingUserMobXP > 0) {
+            this._pendingDungeonMobXPByBatch?.set(dungeon._xpBatchKey, dungeon.pendingUserMobXP);
+          }
+          if (dungeon.pendingUserMobKills > 0) {
+            this._pendingDungeonMobKillsByBatch?.set(dungeon._xpBatchKey, dungeon.pendingUserMobKills);
+          }
+
           // MIGRATION: Force bossGate to code defaults (saved settings may have stale values)
           if (!dungeon.bossGate || typeof dungeon.bossGate !== 'object') {
             dungeon.bossGate = {
@@ -15092,6 +15321,7 @@ module.exports = class Dungeons {
         // Release channel lock if held
         this.channelLocks.delete(dungeon.channelKey);
         this.shadowAllocations.delete(dungeon.channelKey);
+        this._discardPendingDungeonMobXP(this._resolveDungeonXPBatchKey(dungeon.channelKey, dungeon));
         this._markAllocationDirty('restore-cleanup-stale-dungeon');
 
         // Delete from IndexedDB
@@ -15179,7 +15409,7 @@ module.exports = class Dungeons {
     const now = Date.now();
 
     // Clear expired allocation cache
-    if (this.allocationCacheTime && now - this.allocationCacheTime > this.allocationCacheTTL) {
+    if (this.allocationCacheTime && now - this.allocationCacheTime > this._allocationHardRefreshTTL) {
       this.allocationCache = null;
       this.allocationCacheTime = null;
       this.debugLog('Cleared expired allocation cache');

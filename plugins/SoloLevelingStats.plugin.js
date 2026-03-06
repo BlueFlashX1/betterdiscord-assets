@@ -6691,15 +6691,29 @@ module.exports = class SoloLevelingStats {
       }
 
       let critBonus = this.checkCriticalHitBonus();
-      // Active skill: Bloodlust — bonus crit chance (if not already crit)
-      if (critBonus <= 0 && activeBuffs?.critChanceBonus > 0) {
+      // SkillTree passive + active crit chance support (only if base crit didn't already trigger).
+      const passiveSkillCritChance = Math.min(
+        0.35,
+        Math.max(0, Number(skillBonuses?.critBonus || 0))
+      );
+      const activeSkillCritChance = Math.min(
+        0.5,
+        Math.max(0, Number(activeBuffs?.critChanceBonus || 0))
+      );
+      const supplementalCritChance = Math.min(
+        0.85,
+        passiveSkillCritChance + activeSkillCritChance
+      );
+
+      if (critBonus <= 0 && supplementalCritChance > 0) {
         const roll = Math.random();
-        if (roll < activeBuffs.critChanceBonus) {
-          // Bloodlust-triggered crit: use base crit multiplier from agility
+        if (roll < supplementalCritChance) {
+          // Skill-triggered crit: use base crit multiplier from agility.
           const agilityStat = this.settings.stats?.agility || 0;
           critBonus = Math.min(1.2, 0.2 + Math.min(0.75, agilityStat * 0.006));
         }
       }
+
       // Active skill: Mutilate — force crit if guaranteed
       if (activeSkillForcedCrit && critBonus <= 0) {
         const agilityStat = this.settings.stats?.agility || 0;

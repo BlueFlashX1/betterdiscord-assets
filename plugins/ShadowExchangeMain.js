@@ -1730,16 +1730,20 @@ ${buildPortalTransitionCSS()}
         gap: 8px;
         min-height: 120px;
         max-height: 55vh;
+        scrollbar-width: none !important;
+        -ms-overflow-style: none !important;
       }
       .se-waypoint-list::-webkit-scrollbar {
-        width: 6px;
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
       }
       .se-waypoint-list::-webkit-scrollbar-track {
-        background: transparent;
+        background: transparent !important;
       }
       .se-waypoint-list::-webkit-scrollbar-thumb {
-        background: rgba(138, 43, 226, 0.3);
-        border-radius: 3px;
+        background: transparent !important;
+        border: none !important;
       }
 
       /* ── Empty State ───────────────────────────────────────────────── */

@@ -252,21 +252,10 @@ function _syncProgressBarClasses(self) {
 function updateProgressText(self, rank, level, xp, xpRequired) {
   try {
     const progressText = self.getCachedElement('#lpb-progress-text');
-    if (!progressText) {
-      self.debugLog('UPDATE_TEXT', 'Progress text element not found');
-      return;
-    }
+    if (!progressText) return;
 
     const text = `Rank: ${rank} Lv.${level} ${xp}/${xpRequired} XP`;
     progressText.textContent = text;
-
-    self.debugLog('UPDATE_TEXT', 'Progress text updated', {
-      rank,
-      level,
-      xp,
-      xpRequired,
-      text,
-    });
   } catch (error) {
     self.debugError('UPDATE_TEXT', error);
   }
@@ -278,23 +267,10 @@ function updateProgressBar(self) {
   try {
     const reconChanged = updateReconIntelText(self);
     const soloData = self.getSoloLevelingData();
-    if (!soloData) {
-      self.debugLog('UPDATE_BAR', 'SoloLevelingStats data not available', {
-        hasBar: !!self.progressBar,
-        enabled: self.settings.enabled,
-      });
-      return;
-    }
+    if (!soloData) return;
 
     const snapshot = _buildProgressSnapshot(self, soloData);
     if (_isProgressSnapshotUnchanged(self, snapshot, reconChanged)) return;
-
-    self.debugLog('UPDATE_BAR', 'Data changed, updating bar', {
-      oldLevel: self.lastLevel,
-      newLevel: snapshot.currentLevel,
-      oldXP: self.lastXP,
-      newXP: snapshot.currentXP,
-    });
 
     _cacheProgressSnapshot(self, snapshot);
     updateProgressText(
@@ -307,17 +283,6 @@ function updateProgressBar(self) {
     _updateProgressFill(self, snapshot.xpPercent);
     _updateMilestoneMarkersIfNeeded(self, snapshot.xpPercent);
     _syncProgressBarClasses(self);
-
-    self.debugLog('UPDATE_BAR', 'Progress bar updated successfully', {
-      level: snapshot.currentLevel,
-      xp: snapshot.currentXP,
-      xpRequired: snapshot.xpRequired,
-      percent: Math.round(snapshot.xpPercent),
-      rank: snapshot.rank,
-      showLevel: self.settings.showLevel,
-      showRank: self.settings.showRank,
-      showXP: self.settings.showXP,
-    });
   } catch (error) {
     self.debugError('UPDATE_BAR', error, {
       hasBar: !!self.progressBar,
