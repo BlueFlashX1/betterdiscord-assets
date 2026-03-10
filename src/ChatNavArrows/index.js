@@ -348,9 +348,10 @@ module.exports = class ChatNavArrows {
     const tick = () => {
       if (this._isStopped) return;
       if (document.hidden) return; // PERF: Skip when window not visible
+      const state = this._domFallback;
+      // Fast path: skip DOM queries if cached elements are still connected
+      if (state.currentScroller?.isConnected && state.currentWrapper?.isConnected) return;
       const { wrapper, scroller } = getScrollerPair();
-      // Early exit: skip if same scroller is still connected
-      if (scroller === this._domFallback.currentScroller && scroller?.isConnected) return;
       bindScroller(wrapper, scroller);
     };
 
@@ -431,10 +432,10 @@ module.exports = class ChatNavArrows {
         };
 
         const findAndBind = () => {
+          // Fast path: skip DOM queries if current scroller is still connected
+          if (currentScroller?.isConnected) return;
           const { wrapper, scroller } = findScroller();
           if (!scroller) { dbg('findAndBind: no scroller found'); return; }
-          // Same scroller still connected — no rebind needed
-          if (scroller === currentScroller && scroller.isConnected) return;
 
           dbg('findAndBind: binding new scroller (isConnected:', scroller.isConnected, ')');
 

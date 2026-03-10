@@ -113,22 +113,28 @@ const normalizeHotkey =
       .toLowerCase()
       .replace(/\s+/g, ""));
 
+let _parsedHotkeyCache = null;
+let _parsedHotkeyInput = "";
+
 const parseHotkey =
   _PluginUtils?.parseHotkey ||
   ((hotkey) => {
+    if (hotkey === _parsedHotkeyInput && _parsedHotkeyCache) return _parsedHotkeyCache;
     const normalized = normalizeHotkey(hotkey);
     const parts = normalized.split("+").filter(Boolean);
     const mods = new Set(
       parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p))
     );
     const key = parts.find((p) => !mods.has(p)) || "";
-    return {
+    _parsedHotkeyCache = {
       key,
       hasCtrl: mods.has("ctrl"),
       hasShift: mods.has("shift"),
       hasAlt: mods.has("alt"),
       hasMeta: mods.has("meta") || mods.has("cmd") || mods.has("command"),
     };
+    _parsedHotkeyInput = hotkey;
+    return _parsedHotkeyCache;
   });
 
 const matchesHotkey =

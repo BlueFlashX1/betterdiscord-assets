@@ -350,6 +350,7 @@ module.exports = class LevelProgressBar {
     this._cache.soloPluginInstanceTime = 0;
     this._cache.domElements = new Map();
     this._cache.domElementsTime = 0;
+    this._debugLogLastByOp.clear();
     this.debugLog('STOP', 'Plugin stopped successfully');
   }
   // === Settings + Persistence ===

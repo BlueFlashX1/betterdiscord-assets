@@ -308,10 +308,12 @@ module.exports = class ChatNavArrows {
       updateArrowState();
     };
     const tick = () => {
+      var _a, _b;
       if (this._isStopped) return;
       if (document.hidden) return;
+      const state = this._domFallback;
+      if (((_a = state.currentScroller) == null ? void 0 : _a.isConnected) && ((_b = state.currentWrapper) == null ? void 0 : _b.isConnected)) return;
       const { wrapper, scroller } = getScrollerPair();
-      if (scroller === this._domFallback.currentScroller && (scroller == null ? void 0 : scroller.isConnected)) return;
       bindScroller(wrapper, scroller);
     };
     tick();
@@ -376,12 +378,12 @@ module.exports = class ChatNavArrows {
           return { wrapper: wrapper2 || null, scroller: scroller || null };
         };
         const findAndBind = () => {
+          if (currentScroller == null ? void 0 : currentScroller.isConnected) return;
           const { wrapper: wrapper2, scroller } = findScroller();
           if (!scroller) {
             dbg("findAndBind: no scroller found");
             return;
           }
-          if (scroller === currentScroller && scroller.isConnected) return;
           dbg("findAndBind: binding new scroller (isConnected:", scroller.isConnected, ")");
           if (currentScroller && scrollHandler) {
             currentScroller.removeEventListener("scroll", scrollHandler);
