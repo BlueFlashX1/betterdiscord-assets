@@ -221,7 +221,6 @@ module.exports = class LevelProgressBar {
     this.lastXPRequired = 0;
     this.lastReconText = '';
     this.eventUnsubscribers = [];
-    this.fallbackInterval = null;
     this.reconUpdateInterval = null;
     this._isStopped = true;
     this._timeouts = SLUtils ? SLUtils.createTrackedTimeouts() : null;

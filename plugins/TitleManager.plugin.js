@@ -689,12 +689,8 @@ module.exports = class SoloLevelingTitleManager {
       // Default sort filter (xpBonus, critBonus, strBonus, etc.)
     };
     this.settings = structuredClone(this.defaultSettings);
-    this.titleButton = null;
-    this.titleModal = null;
     this._urlChangeCleanup = null;
     this._windowFocusCleanup = null;
-    this._retryTimeout1 = null;
-    this._retryTimeout2 = null;
     this._modalContainer = null;
     this._modalReactRoot = null;
     this._modalForceUpdate = null;
@@ -825,10 +821,7 @@ module.exports = class SoloLevelingTitleManager {
         {
           className: "tm-title-button",
           title: "Titles",
-          onClick: () => pluginInstance.openTitleModal(),
-          ref: (el) => {
-            if (el) pluginInstance.titleButton = el;
-          }
+          onClick: () => pluginInstance.openTitleModal()
         },
         React.createElement(
           "svg",
@@ -1029,10 +1022,7 @@ module.exports = class SoloLevelingTitleManager {
         id: "tm-title-button-wrapper",
         priority: 10,
         // Before SkillTree (20)
-        renderReact: (React, _channel) => this._renderTitleButtonReact(React),
-        cleanup: () => {
-          this.titleButton = null;
-        }
+        renderReact: (React, _channel) => this._renderTitleButtonReact(React)
       });
     } else {
       this.warnOnce("slutils-missing", "[TitleManager] SLUtils not available \u2014 toolbar button inactive");
@@ -1050,14 +1040,11 @@ module.exports = class SoloLevelingTitleManager {
       this.warnOnce("toolbar-unregister-failed", "[TitleManager] Failed to unregister toolbar button", error);
     }
     try {
-      this.removeTitleButton();
       this.closeTitleModal();
       this.detachTitleManagerSettingsPanelHandlers();
       this.removeCSS();
       this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
       this._retryTimeouts.clear();
-      this._retryTimeout1 && (this._clearTrackedTimeout(this._retryTimeout1), this._retryTimeout1 = null);
-      this._retryTimeout2 && (this._clearTrackedTimeout(this._retryTimeout2), this._retryTimeout2 = null);
     } finally {
       this._urlChangeCleanup && (this._urlChangeCleanup(), this._urlChangeCleanup = null);
       this._windowFocusCleanup && (this._windowFocusCleanup(), this._windowFocusCleanup = null);
@@ -1233,9 +1220,6 @@ module.exports = class SoloLevelingTitleManager {
   // NOTE: createTitleButton(), observeToolbar(), removeTitleButton() removed in v1.3.0.
   // Toolbar button is now managed entirely via SLUtils React patcher.
   // See _renderTitleButtonReact() for the React implementation.
-  removeTitleButton() {
-    this.titleButton = null;
-  }
   /**
    * 3.5 TITLE MANAGEMENT
    */
@@ -1374,7 +1358,6 @@ module.exports = class SoloLevelingTitleManager {
       this._modalContainer = null;
     }
     this._modalForceUpdate = null;
-    this.titleModal = null;
     this.debugLog("MODAL", "Title modal closed");
   }
   // ============================================================================

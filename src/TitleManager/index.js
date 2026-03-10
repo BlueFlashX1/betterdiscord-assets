@@ -68,7 +68,7 @@
  *
  * - Fixed close button using inline onclick that bypassed cleanup
  * - Close button now routes through central modal click handler
- * - Ensures proper state cleanup (titleModal, _titleManagerInstances)
+ * - Ensures proper state cleanup (_titleManagerInstances)
  * - Enhanced memory cleanup (modal instance tracking cleared on stop)
  *
  * - Code structure improvements (section headers)
@@ -164,13 +164,9 @@ module.exports = class SoloLevelingTitleManager {
 
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     this.settings = structuredClone(this.defaultSettings);
-    this.titleButton = null;
-    this.titleModal = null; // legacy ref — kept for backward compat checks
     // toolbarObserver removed — React patcher handles button persistence
     this._urlChangeCleanup = null; // Cleanup function for URL change watcher
     this._windowFocusCleanup = null; // Cleanup function for window focus watcher
-    this._retryTimeout1 = null; // Timeout ID for first retry
-    this._retryTimeout2 = null; // Timeout ID for second retry
     // _periodicCheckInterval removed — React patcher handles button persistence
 
     // React modal refs (v2.0.0)
@@ -341,9 +337,6 @@ module.exports = class SoloLevelingTitleManager {
           className: 'tm-title-button',
           title: 'Titles',
           onClick: () => pluginInstance.openTitleModal(),
-          ref: (el) => {
-            if (el) pluginInstance.titleButton = el;
-          },
         },
         React.createElement(
           'svg',
@@ -599,9 +592,6 @@ module.exports = class SoloLevelingTitleManager {
         id: 'tm-title-button-wrapper',
         priority: 10, // Before SkillTree (20)
         renderReact: (React, _channel) => this._renderTitleButtonReact(React),
-        cleanup: () => {
-          this.titleButton = null;
-        },
       });
     } else {
       this.warnOnce('slutils-missing', '[TitleManager] SLUtils not available — toolbar button inactive');
@@ -628,7 +618,6 @@ module.exports = class SoloLevelingTitleManager {
     }
 
     try {
-      this.removeTitleButton();
       this.closeTitleModal();
       this.detachTitleManagerSettingsPanelHandlers();
       this.removeCSS();
@@ -636,10 +625,6 @@ module.exports = class SoloLevelingTitleManager {
       // Clear all tracked retry timeouts
       this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
       this._retryTimeouts.clear();
-
-      // FUNCTIONAL: Clear legacy timeouts (short-circuit)
-      this._retryTimeout1 && (this._clearTrackedTimeout(this._retryTimeout1), (this._retryTimeout1 = null));
-      this._retryTimeout2 && (this._clearTrackedTimeout(this._retryTimeout2), (this._retryTimeout2 = null));
     } finally {
       // FUNCTIONAL: Cleanup URL watcher (short-circuit)
       this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
@@ -846,10 +831,6 @@ module.exports = class SoloLevelingTitleManager {
   // Toolbar button is now managed entirely via SLUtils React patcher.
   // See _renderTitleButtonReact() for the React implementation.
 
-  removeTitleButton() {
-    this.titleButton = null;
-  }
-
   /**
    * 3.5 TITLE MANAGEMENT
    */
@@ -1015,7 +996,6 @@ module.exports = class SoloLevelingTitleManager {
       this._modalContainer = null;
     }
     this._modalForceUpdate = null;
-    this.titleModal = null;
     this.debugLog('MODAL', 'Title modal closed');
   }
 
