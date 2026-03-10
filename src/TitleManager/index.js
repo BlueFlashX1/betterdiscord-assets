@@ -75,28 +75,7 @@
  * - Console log cleanup (removed verbose logs)
  */
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      'module',
-      'exports',
-      'require',
-      'BdApi',
-      `${source}\nreturn module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === 'function') return candidate;
-    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {}
-  return null;
-}
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 
 const PERCENT_BONUS_RULES = [
   ['xp', 'XP'], ['critChance', 'Crit'], ['strengthPercent', 'STR'],
@@ -133,14 +112,14 @@ const { buildTitleManagerSettingsPanel } = require("./settings-panel");
 const { getTitleManagerCss } = require("./styles");
 
 let _ReactUtils;
-try { _ReactUtils = _bdLoad('BetterDiscordReactUtils.js'); } catch (_) { _ReactUtils = null; }
+try { _ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js"); } catch (_) { _ReactUtils = null; }
 
 let _SLUtils;
-_SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+_SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 
 let _PluginUtils;
-try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 module.exports = class SoloLevelingTitleManager {
   // ============================================================================

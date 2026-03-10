@@ -5,8 +5,68 @@
  * @author BlueFlashX1
  * @source https://github.com/BlueFlashX1/betterdiscord-assets
  */
+var __create = Object.create;
+var __defProp = Object.defineProperty;
+var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __getProtoOf = Object.getPrototypeOf;
+var __hasOwnProp = Object.prototype.hasOwnProperty;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+var __copyProps = (to, from, except, desc) => {
+  if (from && typeof from === "object" || typeof from === "function") {
+    for (let key of __getOwnPropNames(from))
+      if (!__hasOwnProp.call(to, key) && key !== except)
+        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
+  }
+  return to;
+};
+var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
+  // If the importer is in node compatibility mode or this is not an ESM
+  // file that has been converted to a CommonJS file using a Babel-
+  // compatible transform (i.e. "__esModule" has not been set), then set
+  // "default" to the CommonJS "module.exports" for node compatibility.
+  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
+  mod
+));
+
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
 
 // src/RulersAuthority/constants.js
+var import_bd_module_loader = __toESM(require_bd_module_loader());
 var RA_PLUGIN_NAME = "RulersAuthority";
 var RA_VERSION = "2.1.2";
 var RA_STYLE_ID = "rulers-authority-css";
@@ -83,22 +143,8 @@ var DEFAULT_SETTINGS = {
   grippedDMs: []
   // [{ channelId, username }]
 };
-var _bdLoad = (f) => {
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
-    const moduleShim = { exports: {} };
-    const factory = new Function("module", "exports", "require", source);
-    factory(moduleShim, moduleShim.exports, require);
-    const loaded = moduleShim.exports;
-    if (typeof loaded === "function") return loaded;
-    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
-    return null;
-  } catch (_) {
-    return null;
-  }
-};
+var { loadBdModuleFromPlugins } = import_bd_module_loader.default;
+var _bdLoad = loadBdModuleFromPlugins;
 var _PluginUtils;
 try {
   _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
@@ -138,29 +184,41 @@ function matchesHotkey(e, hotkey) {
 }
 
 // src/RulersAuthority/resize.js
+function isResizeEdgeHit(panelName, rect, clientX) {
+  const isLeftEdge = panelName !== "sidebar" && clientX <= rect.left + 12;
+  const isRightEdge = panelName === "sidebar" && clientX >= rect.right - 12;
+  return isLeftEdge || isRightEdge;
+}
+function shouldSkipPanelResizeStart(panelName) {
+  return panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS);
+}
+function tryStartPanelDrag(ctx, event, target, panelName) {
+  if (shouldSkipPanelResizeStart(panelName)) return false;
+  const panelEl = ctx._findPanelElement(panelName);
+  if (!panelEl) return false;
+  const clickedPanel = target === panelEl || target.parentElement === panelEl;
+  if (!clickedPanel) return false;
+  const rect = panelEl.getBoundingClientRect();
+  if (!isResizeEdgeHit(panelName, rect, event.clientX)) return false;
+  event.preventDefault();
+  ctx._dragging = panelEl;
+  ctx._dragPanel = panelName;
+  panelEl.style.setProperty("transition", "none", "important");
+  ctx.debugLog("Resize", `Started dragging ${panelName}`);
+  return true;
+}
+function handleResizeMouseDown(ctx, event) {
+  if (event.button !== 0) return;
+  const target = event.target;
+  for (const panelName of Object.keys(PANEL_DEFS)) {
+    if (tryStartPanelDrag(ctx, event, target, panelName)) return;
+  }
+}
 function setupResizeHandlers(ctx) {
   if (!ctx._controller) return;
   const signal = ctx._controller.signal;
   document.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    const target = e.target;
-    for (const panelName of Object.keys(PANEL_DEFS)) {
-      if (panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) continue;
-      const panelEl = ctx._findPanelElement(panelName);
-      if (!panelEl) continue;
-      if (target === panelEl || target.parentElement === panelEl) {
-        const rect = panelEl.getBoundingClientRect();
-        const isLeftEdge = panelName !== "sidebar" && e.clientX <= rect.left + 12;
-        const isRightEdge = panelName === "sidebar" && e.clientX >= rect.right - 12;
-        if (isLeftEdge || isRightEdge) {
-          e.preventDefault();
-          ctx._dragging = panelEl;
-          ctx._dragPanel = panelName;
-          panelEl.style.setProperty("transition", "none", "important");
-          ctx.debugLog("Resize", `Started dragging ${panelName}`);
-        }
-      }
-    }
+    handleResizeMouseDown(ctx, e);
   }, { passive: false, signal });
   let _resizeRafId = null;
   document.addEventListener("mousemove", (e) => {
@@ -213,6 +271,119 @@ function removeAllResizeStyles(ctx) {
   }
 }
 
+// src/RulersAuthority/context-menu-helpers.js
+function appendContextMenuItems(tree, ...items) {
+  var _a2;
+  const children = (_a2 = tree == null ? void 0 : tree.props) == null ? void 0 : _a2.children;
+  if (!Array.isArray(children)) return;
+  children.push(...items);
+}
+function buildDMGripContextItem(ctx, channel, channelId, isGripped, actions) {
+  return BdApi.ContextMenu.buildItem({
+    type: "text",
+    label: isGripped ? "Release Grip" : "Grip DM",
+    id: isGripped ? "ra-release-dm" : "ra-grip-dm",
+    action: () => {
+      var _a2, _b;
+      if (isGripped) {
+        actions.releaseDM(ctx, channelId);
+        return;
+      }
+      actions.gripDM(
+        ctx,
+        channelId,
+        ((_b = (_a2 = channel.rawRecipients) == null ? void 0 : _a2[0]) == null ? void 0 : _b.username) || channel.name || "Unknown"
+      );
+    }
+  });
+}
+function handleDMContextMenuPatch(options) {
+  const {
+    ctx,
+    tree,
+    channel,
+    channelId,
+    guildId,
+    actions
+  } = options;
+  if (guildId || channel.type !== 1 && channel.type !== 3) return false;
+  const isGripped = actions.isDMGripped(ctx, channelId);
+  const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+  const item = buildDMGripContextItem(ctx, channel, channelId, isGripped, actions);
+  appendContextMenuItems(tree, separator, item);
+  return true;
+}
+function buildCategoryContextItem(ctx, guildId, channelId, channelName, actions) {
+  const crushed = actions.isCategoryCrushed(ctx, guildId, channelId);
+  return {
+    type: "text",
+    label: crushed ? "Release Category" : "Crush Category",
+    id: crushed ? "ra-release-category" : "ra-crush-category",
+    action: () => {
+      if (crushed) {
+        actions.releaseCategory(ctx, guildId, channelId);
+        ctx._toast(`Released ${channelName}`, "info");
+        return;
+      }
+      actions.crushCategory(ctx, guildId, channelId, channelName);
+      ctx._toast(`Crushed ${channelName}`, "success");
+    }
+  };
+}
+function buildChannelContextItem(ctx, guildId, channelId, channelName, actions) {
+  const hidden = actions.isChannelHidden(ctx, guildId, channelId);
+  return {
+    type: "text",
+    label: hidden ? "Recall Channel" : "Push Channel",
+    id: hidden ? "ra-recall-channel" : "ra-push-channel",
+    action: () => {
+      if (hidden) {
+        actions.recallChannel(ctx, guildId, channelId);
+        ctx._toast(`Recalled #${channelName}`, "info");
+        return;
+      }
+      actions.pushChannel(ctx, guildId, channelId, channelName);
+      ctx._toast(`Pushed #${channelName}`, "success");
+    }
+  };
+}
+function buildGuildContextItems(ctx, guildId, channel, actions) {
+  const channelId = channel.id;
+  const channelName = channel.name;
+  const items = [];
+  if (channel.type === 4) {
+    items.push(buildCategoryContextItem(ctx, guildId, channelId, channelName, actions));
+  }
+  if (channel.type !== 4) {
+    items.push(buildChannelContextItem(ctx, guildId, channelId, channelName, actions));
+  }
+  return items;
+}
+function appendGuildSubmenu(tree, items) {
+  if (!Array.isArray(items) || items.length === 0) return;
+  const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
+  const submenu = BdApi.ContextMenu.buildItem({
+    type: "submenu",
+    label: "Ruler's Authority",
+    id: "ra-submenu",
+    items
+  });
+  appendContextMenuItems(tree, separator, submenu);
+}
+function applyChannelContextMenuPatch(options) {
+  const {
+    ctx,
+    tree,
+    channel,
+    guildId,
+    actions
+  } = options;
+  const channelId = channel.id;
+  if (handleDMContextMenuPatch({ ctx, tree, channel, channelId, guildId, actions })) return;
+  if (!guildId) return;
+  appendGuildSubmenu(tree, buildGuildContextItems(ctx, guildId, channel, actions));
+}
+
 // src/RulersAuthority/panels.js
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -254,7 +425,15 @@ function restorePanelStates(ctx) {
 function getPushedPanelCount(ctx) {
   return Object.values(ctx.settings.panels).filter((p) => p.pushed).length;
 }
-function applyHoverRevealState(ctx, name, inZone, revealDelay, hideDelay, isActive, setActive) {
+function applyHoverRevealState(ctx, options) {
+  const {
+    name,
+    inZone,
+    revealDelay,
+    hideDelay,
+    isActive,
+    setActive
+  } = options;
   const revealKey = `_${name}RevealTimer`;
   const hideKey = `_${name}HideTimer`;
   const className = `ra-${name}-hover-reveal`;
@@ -286,84 +465,122 @@ function applyHoverRevealState(ctx, name, inZone, revealDelay, hideDelay, isActi
     }
   }
 }
+function clearPanelHoverState(ctx, name) {
+  const revealKey = `_${name}RevealTimer`;
+  const hideKey = `_${name}HideTimer`;
+  clearTimeout(ctx[revealKey]);
+  clearTimeout(ctx[hideKey]);
+  ctx[revealKey] = null;
+  ctx[hideKey] = null;
+  document.body.classList.remove(`ra-${name}-hover-reveal`);
+}
+function getHoverRuntime(ctx, e) {
+  var _a2, _b, _c, _d, _e;
+  const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
+  const hiddenChannelsCount = currentGuildId ? ((_e = (_d = (_c = ctx.settings.guilds) == null ? void 0 : _c[currentGuildId]) == null ? void 0 : _d.hiddenChannels) == null ? void 0 : _e.length) || 0 : 0;
+  const channelHoverEnabled = hiddenChannelsCount > 0;
+  const sidebarHoverEnabled = ctx.settings.panels.sidebar.hoverExpand;
+  const membersHoverEnabled = ctx.settings.panels.members.hoverExpand;
+  const profileHoverEnabled = ctx.settings.panels.profile.hoverExpand;
+  const anyEnabled = sidebarHoverEnabled || membersHoverEnabled || profileHoverEnabled || channelHoverEnabled;
+  if (!anyEnabled) return null;
+  const fudge = ctx.settings.hoverFudgePx;
+  const revealDelay = ctx.settings.hoverRevealDelayMs;
+  return {
+    event: e,
+    fudge,
+    hideDelay: ctx.settings.hoverHideDelayMs,
+    revealDelay,
+    panelRevealDelay: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+    viewportWidth: window.innerWidth,
+    sidebarHoverEnabled,
+    membersHoverEnabled,
+    profileHoverEnabled,
+    channelHoverEnabled
+  };
+}
+function handleSidebarHover(ctx, runtime) {
+  if (!(runtime.sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed)) {
+    clearPanelHoverState(ctx, "sidebar");
+    return;
+  }
+  const sidebarEl = ctx._findPanelElement("sidebar");
+  const inZone = runtime.event.clientX <= runtime.fudge;
+  const inPanel = sidebarEl ? ctx._isInsideElement(runtime.event, sidebarEl, runtime.fudge) : false;
+  applyHoverRevealState(ctx, {
+    name: "sidebar",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.panelRevealDelay,
+    hideDelay: runtime.hideDelay
+  });
+}
+function handleMembersHover(ctx, runtime) {
+  if (!(runtime.membersHoverEnabled && ctx.settings.panels.members.pushed)) {
+    clearPanelHoverState(ctx, "members");
+    return;
+  }
+  const membersEl = ctx._findPanelElement("members");
+  const distFromRight = runtime.viewportWidth - runtime.event.clientX;
+  const inZone = distFromRight <= runtime.fudge;
+  const inPanel = membersEl ? ctx._isInsideElement(runtime.event, membersEl, runtime.fudge) : false;
+  applyHoverRevealState(ctx, {
+    name: "members",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.panelRevealDelay,
+    hideDelay: runtime.hideDelay
+  });
+}
+function handleProfileHover(ctx, runtime) {
+  if (!(runtime.profileHoverEnabled && ctx.settings.panels.profile.pushed)) return;
+  const profileEl = ctx._findPanelElement("profile");
+  const inPanel = profileEl ? ctx._isInsideElement(runtime.event, profileEl, runtime.fudge) : false;
+  const distFromRight = runtime.viewportWidth - runtime.event.clientX;
+  const inZone = distFromRight <= runtime.fudge && !document.body.classList.contains("ra-members-hover-reveal");
+  applyHoverRevealState(ctx, {
+    name: "profile",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.revealDelay,
+    hideDelay: runtime.hideDelay
+  });
+}
+function handleChannelHover(ctx, runtime) {
+  if (!runtime.channelHoverEnabled) {
+    clearPanelHoverState(ctx, "channel");
+    setHiddenChannelRevealState(ctx, false);
+    return;
+  }
+  const hoverEl = getChannelHoverElement();
+  const inChannelPanel = hoverEl ? ctx._isInsideElement(runtime.event, hoverEl, runtime.fudge) : false;
+  applyHoverRevealState(ctx, {
+    name: "channel",
+    inZone: inChannelPanel,
+    revealDelay: runtime.revealDelay,
+    hideDelay: runtime.hideDelay,
+    isActive: () => ctx._channelsHoverRevealActive,
+    setActive: (revealed) => setHiddenChannelRevealState(ctx, revealed)
+  });
+}
 function setupHoverHandlers(ctx) {
   if (!ctx._controller) return;
   const handler = ctx._throttle((e) => {
-    var _a2, _b, _c, _d, _e;
     if (!ctx._controller) return;
     if (document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) {
       clearAllHoverStates(ctx);
       return;
     }
-    const sidebarHoverEnabled = ctx.settings.panels.sidebar.hoverExpand;
-    const membersHoverEnabled = ctx.settings.panels.members.hoverExpand;
-    const profileHoverEnabled = ctx.settings.panels.profile.hoverExpand;
-    const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
-    const hiddenChannelsCount = currentGuildId ? ((_e = (_d = (_c = ctx.settings.guilds) == null ? void 0 : _c[currentGuildId]) == null ? void 0 : _d.hiddenChannels) == null ? void 0 : _e.length) || 0 : 0;
-    const channelHoverEnabled = hiddenChannelsCount > 0;
-    if (!sidebarHoverEnabled && !membersHoverEnabled && !profileHoverEnabled && !channelHoverEnabled) {
+    const runtime = getHoverRuntime(ctx, e);
+    if (!runtime) {
+      clearPanelHoverState(ctx, "sidebar");
+      clearPanelHoverState(ctx, "members");
+      clearPanelHoverState(ctx, "profile");
+      clearPanelHoverState(ctx, "channel");
       setHiddenChannelRevealState(ctx, false);
       return;
     }
-    const fudge = ctx.settings.hoverFudgePx;
-    const revealDelay = ctx.settings.hoverRevealDelayMs;
-    const hideDelay = ctx.settings.hoverHideDelayMs;
-    const viewportWidth = window.innerWidth;
-    const panelRevealDelay = {
-      sidebar: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
-      members: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay)
-    };
-    if (sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed) {
-      const inZone = e.clientX <= fudge;
-      const sidebarEl = ctx._findPanelElement("sidebar");
-      const inPanel = sidebarEl ? ctx._isInsideElement(e, sidebarEl, fudge) : false;
-      applyHoverRevealState(ctx, "sidebar", inZone || inPanel, panelRevealDelay.sidebar, hideDelay);
-    } else {
-      clearTimeout(ctx._sidebarRevealTimer);
-      clearTimeout(ctx._sidebarHideTimer);
-      ctx._sidebarRevealTimer = null;
-      ctx._sidebarHideTimer = null;
-      document.body.classList.remove("ra-sidebar-hover-reveal");
-    }
-    if (membersHoverEnabled && ctx.settings.panels.members.pushed) {
-      const distFromRight = viewportWidth - e.clientX;
-      const inZone = distFromRight <= fudge;
-      const membersEl = ctx._findPanelElement("members");
-      const inPanel = membersEl ? ctx._isInsideElement(e, membersEl, fudge) : false;
-      applyHoverRevealState(ctx, "members", inZone || inPanel, panelRevealDelay.members, hideDelay);
-    } else {
-      clearTimeout(ctx._membersRevealTimer);
-      clearTimeout(ctx._membersHideTimer);
-      ctx._membersRevealTimer = null;
-      ctx._membersHideTimer = null;
-      document.body.classList.remove("ra-members-hover-reveal");
-    }
-    if (profileHoverEnabled && ctx.settings.panels.profile.pushed) {
-      const profileEl = ctx._findPanelElement("profile");
-      const inPanel = profileEl ? ctx._isInsideElement(e, profileEl, fudge) : false;
-      const distFromRight = viewportWidth - e.clientX;
-      const inZone = distFromRight <= fudge && !document.body.classList.contains("ra-members-hover-reveal");
-      applyHoverRevealState(ctx, "profile", inZone || inPanel, revealDelay, hideDelay);
-    }
-    if (channelHoverEnabled) {
-      const hoverEl = getChannelHoverElement();
-      const inChannelPanel = hoverEl ? ctx._isInsideElement(e, hoverEl, fudge) : false;
-      applyHoverRevealState(
-        ctx,
-        "channel",
-        inChannelPanel,
-        revealDelay,
-        hideDelay,
-        () => ctx._channelsHoverRevealActive,
-        (revealed) => setHiddenChannelRevealState(ctx, revealed)
-      );
-    } else {
-      clearTimeout(ctx._channelRevealTimer);
-      clearTimeout(ctx._channelHideTimer);
-      ctx._channelRevealTimer = null;
-      ctx._channelHideTimer = null;
-      setHiddenChannelRevealState(ctx, false);
-    }
+    handleSidebarHover(ctx, runtime);
+    handleMembersHover(ctx, runtime);
+    handleProfileHover(ctx, runtime);
+    handleChannelHover(ctx, runtime);
   }, 16);
   document.addEventListener("mousemove", handler, {
     passive: true,
@@ -431,40 +648,56 @@ function setHiddenChannelRevealState(ctx, shouldReveal) {
   document.body.classList.toggle("ra-channels-hover-reveal", next);
   applyChannelHiding(ctx);
 }
-function applyChannelHiding(ctx, guildId) {
+function getEffectiveGuildId(ctx, guildId) {
   var _a2, _b;
   const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
-  if (guildId && guildId !== currentGuildId) return;
-  const effectiveGuildId = guildId || currentGuildId;
-  if (!effectiveGuildId) return;
-  const guildData = ctx.settings.guilds[effectiveGuildId];
-  if (!(guildData == null ? void 0 : guildData._hiddenIdSet)) {
-    if (guildData) guildData._hiddenIdSet = new Set((guildData.hiddenChannels || []).map((entry) => String(entry.id)));
+  if (guildId && guildId !== currentGuildId) return null;
+  return guildId || currentGuildId || null;
+}
+function resolveHiddenIdSet(guildData) {
+  if (!guildData) return /* @__PURE__ */ new Set();
+  if (!guildData._hiddenIdSet) {
+    guildData._hiddenIdSet = new Set(
+      (guildData.hiddenChannels || []).map((entry) => String(entry.id))
+    );
   }
-  const hiddenIds = (guildData == null ? void 0 : guildData._hiddenIdSet) || /* @__PURE__ */ new Set();
-  const sidebar = findChannelSidebar();
-  const pushedEls = (sidebar || document).querySelectorAll("[data-ra-pushed]");
+  return guildData._hiddenIdSet;
+}
+function clearStalePushedChannelMarkers(scope, hiddenIds) {
+  const pushedEls = scope.querySelectorAll("[data-ra-pushed]");
   for (const el of pushedEls) {
     const listId = el.getAttribute("data-list-item-id") || "";
     const channelId = listId.startsWith("channels___") ? listId.replace("channels___", "") : null;
-    if (!channelId || !hiddenIds.has(channelId)) {
-      el.style.display = "";
-      el.removeAttribute("data-ra-pushed");
-    }
+    if (channelId && hiddenIds.has(channelId)) continue;
+    el.style.display = "";
+    el.removeAttribute("data-ra-pushed");
   }
-  if (hiddenIds.size === 0) {
-    ctx._channelsHoverRevealActive = false;
-    document.body.classList.remove("ra-channels-hover-reveal");
-    return;
-  }
-  const scope = sidebar || document;
+}
+function applyHiddenChannelVisibility(scope, hiddenIds, revealActive) {
   for (const id of hiddenIds) {
     const el = scope.querySelector(`[data-list-item-id="channels___${id}"]`);
-    if (el) {
-      el.style.display = ctx._channelsHoverRevealActive ? "" : "none";
-      el.setAttribute("data-ra-pushed", "true");
-    }
+    if (!el) continue;
+    el.style.display = revealActive ? "" : "none";
+    el.setAttribute("data-ra-pushed", "true");
   }
+}
+function resetHiddenChannelReveal(ctx) {
+  ctx._channelsHoverRevealActive = false;
+  document.body.classList.remove("ra-channels-hover-reveal");
+}
+function applyChannelHiding(ctx, guildId) {
+  const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  const hiddenIds = resolveHiddenIdSet(guildData);
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
+  clearStalePushedChannelMarkers(scope, hiddenIds);
+  if (hiddenIds.size === 0) {
+    resetHiddenChannelReveal(ctx);
+    return;
+  }
+  applyHiddenChannelVisibility(scope, hiddenIds, ctx._channelsHoverRevealActive);
 }
 function restoreAllHiddenChannels() {
   const pushed = document.querySelectorAll("[data-ra-pushed]");
@@ -500,42 +733,51 @@ function isCategoryCrushed(ctx, guildId, categoryId) {
   const guildData = ctx.settings.guilds[guildId];
   return ((_a2 = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _a2.some((c) => c.id === categoryId)) || false;
 }
-function applyCategoryCrushing(ctx, guildId) {
-  var _a2, _b, _c, _d, _e, _f;
-  const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
-  if (guildId && guildId !== currentGuildId) return;
-  const effectiveGuildId = guildId || currentGuildId;
-  if (!effectiveGuildId) return;
-  const guildData = ctx.settings.guilds[effectiveGuildId];
-  if (!((_c = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _c.length)) return;
-  const sidebar = findChannelSidebar();
-  const scope = sidebar || document;
-  for (const { id: catId } of guildData.crushedCategories) {
-    const catEl = scope.querySelector(`[data-list-item-id="channels___${catId}"]`);
-    if (!catEl) continue;
-    if (catEl.hasAttribute("data-ra-crushed") && ((_d = catEl.nextElementSibling) == null ? void 0 : _d.getAttribute("data-ra-category-crushed")) === catId) {
+function getChannelIdFromListItem(el) {
+  const listId = (el == null ? void 0 : el.getAttribute("data-list-item-id")) || "";
+  if (!listId.startsWith("channels___")) return null;
+  return listId.replace("channels___", "");
+}
+function hideCrushedCategoryChildren(ctx, categoryEl, categoryId) {
+  var _a2, _b;
+  let next = categoryEl.nextElementSibling;
+  let safetyLimit = 200;
+  let nonChannelSkips = 0;
+  while (next && safetyLimit-- > 0) {
+    const channelId = getChannelIdFromListItem(next);
+    if (!channelId) {
+      nonChannelSkips++;
+      if (nonChannelSkips > 5) break;
+      next = next.nextElementSibling;
       continue;
     }
-    catEl.setAttribute("data-ra-crushed", "true");
-    let next = catEl.nextElementSibling;
-    let safetyLimit = 200;
-    let nonChannelSkips = 0;
-    while (next && safetyLimit-- > 0) {
-      const listId = next.getAttribute("data-list-item-id") || "";
-      if (!listId.startsWith("channels___")) {
-        nonChannelSkips++;
-        if (nonChannelSkips > 5) break;
-        next = next.nextElementSibling;
-        continue;
-      }
-      nonChannelSkips = 0;
-      const channelId = listId.replace("channels___", "");
-      const channel = (_f = (_e = ctx._ChannelStore) == null ? void 0 : _e.getChannel) == null ? void 0 : _f.call(_e, channelId);
-      if (!channel || channel.type === 4) break;
-      next.style.display = "none";
-      next.setAttribute("data-ra-category-crushed", catId);
-      next = next.nextElementSibling;
-    }
+    nonChannelSkips = 0;
+    const channel = (_b = (_a2 = ctx._ChannelStore) == null ? void 0 : _a2.getChannel) == null ? void 0 : _b.call(_a2, channelId);
+    if (!channel || channel.type === 4) break;
+    next.style.display = "none";
+    next.setAttribute("data-ra-category-crushed", categoryId);
+    next = next.nextElementSibling;
+  }
+}
+function applyCategoryCrushForId(ctx, scope, categoryId) {
+  var _a2;
+  const categoryEl = scope.querySelector(`[data-list-item-id="channels___${categoryId}"]`);
+  if (!categoryEl) return;
+  const alreadyCrushed = categoryEl.hasAttribute("data-ra-crushed") && ((_a2 = categoryEl.nextElementSibling) == null ? void 0 : _a2.getAttribute("data-ra-category-crushed")) === categoryId;
+  if (alreadyCrushed) return;
+  categoryEl.setAttribute("data-ra-crushed", "true");
+  hideCrushedCategoryChildren(ctx, categoryEl, categoryId);
+}
+function applyCategoryCrushing(ctx, guildId) {
+  const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  const crushedCategories = (guildData == null ? void 0 : guildData.crushedCategories) || [];
+  if (crushedCategories.length === 0) return;
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
+  for (const { id: categoryId } of crushedCategories) {
+    applyCategoryCrushForId(ctx, scope, categoryId);
   }
 }
 function restoreAllCrushedCategories() {
@@ -624,77 +866,26 @@ function patchContextMenus(ctx) {
       ctx._unpatchChannelCtx = null;
     }
     ctx._unpatchChannelCtx = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
-      var _a2, _b;
       if (!(props == null ? void 0 : props.channel)) return;
       const channel = props.channel;
-      const channelId = channel.id;
       const guildId = channel.guild_id || null;
-      if (!guildId && (channel.type === 1 || channel.type === 3)) {
-        const isGripped = isDMGripped(ctx, channelId);
-        const separator2 = BdApi.ContextMenu.buildItem({ type: "separator" });
-        const item = BdApi.ContextMenu.buildItem({
-          type: "text",
-          label: isGripped ? "Release Grip" : "Grip DM",
-          id: isGripped ? "ra-release-dm" : "ra-grip-dm",
-          action: () => {
-            var _a3, _b2;
-            if (isGripped) {
-              releaseDM(ctx, channelId);
-            } else {
-              gripDM(ctx, channelId, ((_b2 = (_a3 = channel.rawRecipients) == null ? void 0 : _a3[0]) == null ? void 0 : _b2.username) || channel.name || "Unknown");
-            }
-          }
-        });
-        const children2 = (_a2 = tree == null ? void 0 : tree.props) == null ? void 0 : _a2.children;
-        if (Array.isArray(children2)) children2.push(separator2, item);
-        return;
-      }
-      if (!guildId) return;
-      const items = [];
-      if (channel.type === 4) {
-        const crushed = isCategoryCrushed(ctx, guildId, channelId);
-        items.push({
-          type: "text",
-          label: crushed ? "Release Category" : "Crush Category",
-          id: crushed ? "ra-release-category" : "ra-crush-category",
-          action: () => {
-            if (crushed) {
-              releaseCategory(ctx, guildId, channelId);
-              ctx._toast(`Released ${channel.name}`, "info");
-            } else {
-              crushCategory(ctx, guildId, channelId, channel.name);
-              ctx._toast(`Crushed ${channel.name}`, "success");
-            }
-          }
-        });
-      }
-      if (channel.type !== 4) {
-        const hidden = isChannelHidden(ctx, guildId, channelId);
-        items.push({
-          type: "text",
-          label: hidden ? "Recall Channel" : "Push Channel",
-          id: hidden ? "ra-recall-channel" : "ra-push-channel",
-          action: () => {
-            if (hidden) {
-              recallChannel(ctx, guildId, channelId);
-              ctx._toast(`Recalled #${channel.name}`, "info");
-            } else {
-              pushChannel(ctx, guildId, channelId, channel.name);
-              ctx._toast(`Pushed #${channel.name}`, "success");
-            }
-          }
-        });
-      }
-      if (items.length === 0) return;
-      const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-      const submenu = BdApi.ContextMenu.buildItem({
-        type: "submenu",
-        label: "Ruler's Authority",
-        id: "ra-submenu",
-        items
+      applyChannelContextMenuPatch({
+        ctx,
+        tree,
+        channel,
+        guildId,
+        actions: {
+          gripDM,
+          isCategoryCrushed,
+          isChannelHidden,
+          isDMGripped,
+          crushCategory,
+          pushChannel,
+          recallChannel,
+          releaseCategory,
+          releaseDM
+        }
       });
-      const children = (_b = tree == null ? void 0 : tree.props) == null ? void 0 : _b.children;
-      if (Array.isArray(children)) children.push(separator, submenu);
     });
     ctx.debugLog("ContextMenu", "Patched channel-context");
   } catch (err) {
@@ -1701,6 +1892,42 @@ var _ttl = ((_a = _PluginUtils) == null ? void 0 : _a.createTTLCache) || ((ms) =
   } };
 });
 setPluginUtils(_PluginUtils);
+function ensureGuildSettingsShape(settings) {
+  if (typeof settings.guilds !== "object" || settings.guilds === null) settings.guilds = {};
+}
+function ensurePanelSettingsShape(settings) {
+  if (!settings.panels || typeof settings.panels !== "object") {
+    settings.panels = structuredClone(DEFAULT_SETTINGS.panels);
+  }
+  for (const [panelName, def] of Object.entries(PANEL_DEFS)) {
+    if (!settings.panels[panelName] || typeof settings.panels[panelName] !== "object") {
+      settings.panels[panelName] = structuredClone(DEFAULT_SETTINGS.panels[panelName] || {});
+    }
+    if (def.hoverCapable && typeof settings.panels[panelName].hoverExpand !== "boolean") {
+      settings.panels[panelName].hoverExpand = true;
+    }
+  }
+}
+function normalizeHoverDelays(settings) {
+  if (settings.hoverRevealDelayMs === 120) {
+    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+  }
+  if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
+    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+  }
+  if (!Number.isFinite(settings.hoverHideDelayMs) || settings.hoverHideDelayMs < 0) {
+    settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
+  }
+}
+function sanitizeLoadedSettings(saved, deepMerge) {
+  const settings = deepMerge(DEFAULT_SETTINGS, saved);
+  if (!Array.isArray(settings.grippedDMs)) settings.grippedDMs = [];
+  if (!settings.defaultWidths) settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
+  ensureGuildSettingsShape(settings);
+  ensurePanelSettingsShape(settings);
+  normalizeHoverDelays(settings);
+  return settings;
+}
 module.exports = class RulersAuthority {
   constructor() {
     this.settings = structuredClone(DEFAULT_SETTINGS);
@@ -1984,30 +2211,7 @@ module.exports = class RulersAuthority {
   loadSettings() {
     try {
       const saved = BdApi.Data.load(RA_PLUGIN_NAME, "settings") || {};
-      this.settings = this._deepMerge(DEFAULT_SETTINGS, saved);
-      if (!Array.isArray(this.settings.grippedDMs)) this.settings.grippedDMs = [];
-      if (typeof this.settings.guilds !== "object" || this.settings.guilds === null) this.settings.guilds = {};
-      if (!this.settings.defaultWidths) this.settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
-      if (!this.settings.panels || typeof this.settings.panels !== "object") {
-        this.settings.panels = structuredClone(DEFAULT_SETTINGS.panels);
-      }
-      for (const [panelName, def] of Object.entries(PANEL_DEFS)) {
-        if (!this.settings.panels[panelName] || typeof this.settings.panels[panelName] !== "object") {
-          this.settings.panels[panelName] = structuredClone(DEFAULT_SETTINGS.panels[panelName] || {});
-        }
-        if (def.hoverCapable && typeof this.settings.panels[panelName].hoverExpand !== "boolean") {
-          this.settings.panels[panelName].hoverExpand = true;
-        }
-      }
-      if (this.settings.hoverRevealDelayMs === 120) {
-        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-      }
-      if (!Number.isFinite(this.settings.hoverRevealDelayMs) || this.settings.hoverRevealDelayMs < 0) {
-        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-      }
-      if (!Number.isFinite(this.settings.hoverHideDelayMs) || this.settings.hoverHideDelayMs < 0) {
-        this.settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
-      }
+      this.settings = sanitizeLoadedSettings(saved, this._deepMerge.bind(this));
     } catch (_) {
       this.settings = structuredClone(DEFAULT_SETTINGS);
     }

@@ -187,7 +187,14 @@ var require_panel_components = __commonJS({
         );
       });
     }
-    function buildWaypointListContent(React, WaypointCard, waypoints, searchQuery, handleTeleport, handleRemove) {
+    function buildWaypointListContent(React, options) {
+      const {
+        WaypointCard,
+        waypoints,
+        searchQuery,
+        handleTeleport,
+        handleRemove
+      } = options;
       const ce = React.createElement;
       if (waypoints.length === 0) {
         return ce(
@@ -283,14 +290,13 @@ var require_panel_components = __commonJS({
           if (e.target.classList.contains("se-panel-overlay")) onClose();
         }, [onClose]);
         const totalWaypoints = pluginInstance.settings.waypoints.length;
-        const listContent = buildWaypointListContent(
-          React,
+        const listContent = buildWaypointListContent(React, {
           WaypointCard,
           waypoints,
           searchQuery,
           handleTeleport,
           handleRemove
-        );
+        });
         return ce(
           "div",
           { className: "se-panel-overlay", onClick: handleOverlayClick },

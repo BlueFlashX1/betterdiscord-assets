@@ -96,6 +96,46 @@ import { getSettingsPanel } from "./settings";
 // Inject PluginUtils into hotkeys module
 setPluginUtils(_PluginUtils);
 
+function ensureGuildSettingsShape(settings) {
+  if (typeof settings.guilds !== "object" || settings.guilds === null) settings.guilds = {};
+}
+
+function ensurePanelSettingsShape(settings) {
+  if (!settings.panels || typeof settings.panels !== "object") {
+    settings.panels = structuredClone(DEFAULT_SETTINGS.panels);
+  }
+  for (const [panelName, def] of Object.entries(PANEL_DEFS)) {
+    if (!settings.panels[panelName] || typeof settings.panels[panelName] !== "object") {
+      settings.panels[panelName] = structuredClone(DEFAULT_SETTINGS.panels[panelName] || {});
+    }
+    if (def.hoverCapable && typeof settings.panels[panelName].hoverExpand !== "boolean") {
+      settings.panels[panelName].hoverExpand = true;
+    }
+  }
+}
+
+function normalizeHoverDelays(settings) {
+  if (settings.hoverRevealDelayMs === 120) {
+    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+  }
+  if (!Number.isFinite(settings.hoverRevealDelayMs) || settings.hoverRevealDelayMs < 0) {
+    settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
+  }
+  if (!Number.isFinite(settings.hoverHideDelayMs) || settings.hoverHideDelayMs < 0) {
+    settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
+  }
+}
+
+function sanitizeLoadedSettings(saved, deepMerge) {
+  const settings = deepMerge(DEFAULT_SETTINGS, saved);
+  if (!Array.isArray(settings.grippedDMs)) settings.grippedDMs = [];
+  if (!settings.defaultWidths) settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
+  ensureGuildSettingsShape(settings);
+  ensurePanelSettingsShape(settings);
+  normalizeHoverDelays(settings);
+  return settings;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §5  Core Class
 // ═══════════════════════════════════════════════════════════════════════════
@@ -446,31 +486,7 @@ module.exports = class RulersAuthority {
   loadSettings() {
     try {
       const saved = BdApi.Data.load(RA_PLUGIN_NAME, "settings") || {};
-      this.settings = this._deepMerge(DEFAULT_SETTINGS, saved);
-      if (!Array.isArray(this.settings.grippedDMs)) this.settings.grippedDMs = [];
-      if (typeof this.settings.guilds !== "object" || this.settings.guilds === null) this.settings.guilds = {};
-      if (!this.settings.defaultWidths) this.settings.defaultWidths = { ...DEFAULT_SETTINGS.defaultWidths };
-      if (!this.settings.panels || typeof this.settings.panels !== "object") {
-        this.settings.panels = structuredClone(DEFAULT_SETTINGS.panels);
-      }
-      for (const [panelName, def] of Object.entries(PANEL_DEFS)) {
-        if (!this.settings.panels[panelName] || typeof this.settings.panels[panelName] !== "object") {
-          this.settings.panels[panelName] = structuredClone(DEFAULT_SETTINGS.panels[panelName] || {});
-        }
-        if (def.hoverCapable && typeof this.settings.panels[panelName].hoverExpand !== "boolean") {
-          this.settings.panels[panelName].hoverExpand = true;
-        }
-      }
-      // Migration: old default reveal delay (120ms) caused accidental panel opens.
-      if (this.settings.hoverRevealDelayMs === 120) {
-        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-      }
-      if (!Number.isFinite(this.settings.hoverRevealDelayMs) || this.settings.hoverRevealDelayMs < 0) {
-        this.settings.hoverRevealDelayMs = DEFAULT_SETTINGS.hoverRevealDelayMs;
-      }
-      if (!Number.isFinite(this.settings.hoverHideDelayMs) || this.settings.hoverHideDelayMs < 0) {
-        this.settings.hoverHideDelayMs = DEFAULT_SETTINGS.hoverHideDelayMs;
-      }
+      this.settings = sanitizeLoadedSettings(saved, this._deepMerge.bind(this));
     } catch (_) {
       this.settings = structuredClone(DEFAULT_SETTINGS);
     }

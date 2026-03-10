@@ -1,6 +1,7 @@
 import STYLES from "./styles.css";
 const { startDomFallback, stopDomFallback } = require("./dom-fallback");
 const { createArrowManagerComponent } = require("./arrow-manager-component");
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 
 /**
  * TABLE OF CONTENTS
@@ -8,29 +9,6 @@ const { createArrowManagerComponent } = require("./arrow-manager-component");
  * 2) React Patcher + DOM Fallback
  * 3) Arrow Manager Component
  */
-
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require('fs');
-    const path = require('path');
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), 'utf8');
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      'module',
-      'exports',
-      'require',
-      'BdApi',
-      `${source}\nreturn module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === 'function') return candidate;
-    if (candidate && typeof candidate === 'object' && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {}
-  return null;
-}
 
 module.exports = class ChatNavArrows {
   constructor() {
@@ -171,7 +149,7 @@ module.exports = class ChatNavArrows {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad('BetterDiscordReactUtils.js');
+      ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
     } catch (e) {
       this._debugLog('ReactUtils load error:', e.message);
       ReactUtils = null;

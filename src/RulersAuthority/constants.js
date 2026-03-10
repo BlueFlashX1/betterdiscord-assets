@@ -1,3 +1,5 @@
+import bdModuleLoader from "../shared/bd-module-loader.js";
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §1  Constants + Fallback Selectors
 // ═══════════════════════════════════════════════════════════════════════════
@@ -107,23 +109,8 @@ export const DEFAULT_SETTINGS = {
 // §4  Shared PluginUtils
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = (f) => {
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, f), "utf8");
-    const moduleShim = { exports: {} };
-    const factory = new Function("module", "exports", "require", source);
-    factory(moduleShim, moduleShim.exports, require);
-    const loaded = moduleShim.exports;
-    if (typeof loaded === "function") return loaded;
-    if (loaded && typeof loaded === "object" && Object.keys(loaded).length > 0) return loaded;
-    return null;
-  } catch (_) {
-    return null;
-  }
-};
+const { loadBdModuleFromPlugins } = bdModuleLoader;
+const _bdLoad = loadBdModuleFromPlugins;
 
 export let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }

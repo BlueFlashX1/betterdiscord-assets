@@ -24,32 +24,7 @@ import {
   trySaveReportJson,
   tryCopyJsonToClipboard,
 } from "./inspection.js";
-
-// ── Runtime shared module loader ─────────────────────────────────
-
-/** Load a local shared module from BD's plugins folder. */
-const _bdLoad = (fileName) => {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}\nreturn module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0)
-      return candidate;
-  } catch (_) {}
-  return null;
-};
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 
 // ── Config & settings ────────────────────────────────────────────
 
@@ -90,7 +65,7 @@ const saveSettings = (settings) => {
 
 let _PluginUtils = null;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }

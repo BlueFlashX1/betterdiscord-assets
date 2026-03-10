@@ -5,7 +5,7 @@
 
 /* global Element */
 
-import { truncateMiddle, getElementSummary } from "./selectors.js";
+import { truncateMiddle, getElementSummary } from "./element-summary.js";
 
 // ── Formatting helpers ───────────────────────────────────────────
 

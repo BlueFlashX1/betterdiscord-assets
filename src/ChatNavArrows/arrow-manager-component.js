@@ -30,7 +30,15 @@ function removeDomArrows(domArrowsRef) {
   domArrowsRef.current = null;
 }
 
-function useScrollerBinding(React, pluginInstance, dbg, refs, setShowDown, setShowUp, setBindCount) {
+function useScrollerBinding(React, options) {
+  const {
+    pluginInstance,
+    dbg,
+    refs,
+    setShowDown,
+    setShowUp,
+    setBindCount,
+  } = options;
   const { scrollerRef, wrapperRef, pollRef, lastScrollLogRef } = refs;
 
   React.useEffect(() => {
@@ -166,7 +174,14 @@ function useDomArrowInjection(React, args) {
   }, [portalAvailable, wrapperConnected, wrapper, bindCount, handleDownClick, handleUpClick]);
 }
 
-function useDomArrowVisibilitySync(React, portalAvailable, showDown, showUp, bindCount, domArrowsRef) {
+function useDomArrowVisibilitySync(React, options) {
+  const {
+    portalAvailable,
+    showDown,
+    showUp,
+    bindCount,
+    domArrowsRef,
+  } = options;
   React.useEffect(() => {
     if (portalAvailable) return;
     const arrows = domArrowsRef.current;
@@ -176,7 +191,16 @@ function useDomArrowVisibilitySync(React, portalAvailable, showDown, showUp, bin
   }, [portalAvailable, showDown, showUp, bindCount]);
 }
 
-function renderPortalArrows(React, ReactDOM, wrapper, showDown, showUp, handleDownClick, handleUpClick) {
+function renderPortalArrows(options) {
+  const {
+    React,
+    ReactDOM,
+    wrapper,
+    showDown,
+    showUp,
+    handleDownClick,
+    handleUpClick,
+  } = options;
   return ReactDOM.createPortal(
     React.createElement(
       React.Fragment,
@@ -229,15 +253,14 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
     const domArrowsRef = React.useRef(null);
     const lastScrollLogRef = React.useRef(0);
 
-    useScrollerBinding(
-      React,
-      activePlugin,
+    useScrollerBinding(React, {
+      pluginInstance: activePlugin,
       dbg,
-      { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
+      refs: { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
       setShowDown,
       setShowUp,
-      setBindCount
-    );
+      setBindCount,
+    });
 
     const handleDownClick = React.useCallback(() => {
       const wrapper = wrapperRef.current;
@@ -276,14 +299,13 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
       handleUpClick,
     });
 
-    useDomArrowVisibilitySync(
-      React,
+    useDomArrowVisibilitySync(React, {
       portalAvailable,
       showDown,
       showUp,
       bindCount,
-      domArrowsRef
-    );
+      domArrowsRef,
+    });
 
     dbg(
       `render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper?.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`
@@ -291,15 +313,15 @@ function createArrowManagerComponent(BdApi, pluginInstance) {
 
     if (wrapperConnected && portalAvailable) {
       dbg("render -> PORTAL path");
-      return renderPortalArrows(
+      return renderPortalArrows({
         React,
-        BdApi.ReactDOM,
+        ReactDOM: BdApi.ReactDOM,
         wrapper,
         showDown,
         showUp,
         handleDownClick,
-        handleUpClick
-      );
+        handleUpClick,
+      });
     }
 
     if (!wrapper) dbg("render -> NULL (no wrapper yet, waiting for findAndBind)");

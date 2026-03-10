@@ -164,7 +164,14 @@ function createWaypointCard(React, pluginInstance) {
   });
 }
 
-function buildWaypointListContent(React, WaypointCard, waypoints, searchQuery, handleTeleport, handleRemove) {
+function buildWaypointListContent(React, options) {
+  const {
+    WaypointCard,
+    waypoints,
+    searchQuery,
+    handleTeleport,
+    handleRemove,
+  } = options;
   const ce = React.createElement;
   if (waypoints.length === 0) {
     return ce("div", { className: "se-empty-state" },
@@ -265,14 +272,13 @@ function createWaypointPanel(React, pluginInstance, WaypointCard) {
     }, [onClose]);
 
     const totalWaypoints = pluginInstance.settings.waypoints.length;
-    const listContent = buildWaypointListContent(
-      React,
+    const listContent = buildWaypointListContent(React, {
       WaypointCard,
       waypoints,
       searchQuery,
       handleTeleport,
-      handleRemove
-    );
+      handleRemove,
+    });
 
     return ce("div", { className: "se-panel-overlay", onClick: handleOverlayClick },
       ce("div", { className: "se-panel-container" },

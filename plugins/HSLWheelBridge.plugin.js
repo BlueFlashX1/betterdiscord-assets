@@ -4,31 +4,47 @@
  * @version 2.0.0
  * @author Solo Leveling Theme Dev
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
 
 // src/HSLWheelBridge/index.js
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
-  }
-  return null;
-}
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 var HSL_SCROLLER_SELECTORS = [
   "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
   "nav[aria-label='Servers'] ul[role='tree'] [class*='scroller_']",
@@ -37,7 +53,7 @@ var HSL_SCROLLER_SELECTORS = [
 var _scrollerCache = {};
 var _PluginUtils;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }
@@ -179,7 +195,7 @@ module.exports = class HSLWheelBridge {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+      ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
     } catch (_) {
       ReactUtils = null;
     }

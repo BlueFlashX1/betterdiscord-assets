@@ -8,6 +8,41 @@
 
 import { PANEL_DEFS, RA_RESIZE_MIN_WIDTH, RA_SETTINGS_OPEN_CLASS } from "./constants";
 
+function isResizeEdgeHit(panelName, rect, clientX) {
+  const isLeftEdge = panelName !== "sidebar" && clientX <= rect.left + 12;
+  const isRightEdge = panelName === "sidebar" && clientX >= rect.right - 12;
+  return isLeftEdge || isRightEdge;
+}
+
+function shouldSkipPanelResizeStart(panelName) {
+  return panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS);
+}
+
+function tryStartPanelDrag(ctx, event, target, panelName) {
+  if (shouldSkipPanelResizeStart(panelName)) return false;
+  const panelEl = ctx._findPanelElement(panelName);
+  if (!panelEl) return false;
+  const clickedPanel = target === panelEl || target.parentElement === panelEl;
+  if (!clickedPanel) return false;
+  const rect = panelEl.getBoundingClientRect();
+  if (!isResizeEdgeHit(panelName, rect, event.clientX)) return false;
+
+  event.preventDefault();
+  ctx._dragging = panelEl;
+  ctx._dragPanel = panelName;
+  panelEl.style.setProperty("transition", "none", "important");
+  ctx.debugLog("Resize", `Started dragging ${panelName}`);
+  return true;
+}
+
+function handleResizeMouseDown(ctx, event) {
+  if (event.button !== 0) return;
+  const target = event.target;
+  for (const panelName of Object.keys(PANEL_DEFS)) {
+    if (tryStartPanelDrag(ctx, event, target, panelName)) return;
+  }
+}
+
 /**
  * Sets up mousedown/mousemove/mouseup handlers for panel resize dragging.
  * @param {RulersAuthority} ctx - plugin instance
@@ -18,31 +53,7 @@ export function setupResizeHandlers(ctx) {
 
   // ── mousedown: detect drag start (on document for full coverage) ──
   document.addEventListener("mousedown", (e) => {
-    if (e.button !== 0) return;
-    const target = e.target;
-
-    // Check if target matches any panel's resize handle zone
-    for (const panelName of Object.keys(PANEL_DEFS)) {
-      if (panelName === "sidebar" && document.body.classList.contains(RA_SETTINGS_OPEN_CLASS)) continue;
-      const panelEl = ctx._findPanelElement(panelName);
-      if (!panelEl) continue;
-
-      // The ::before pseudo-element click registers on the parent element
-      if (target === panelEl || target.parentElement === panelEl) {
-        const rect = panelEl.getBoundingClientRect();
-        // Only trigger if click is near the resize edge (left edge for right panels, right edge for sidebar)
-        const isLeftEdge = panelName !== "sidebar" && e.clientX <= rect.left + 12;
-        const isRightEdge = panelName === "sidebar" && e.clientX >= rect.right - 12;
-
-        if (isLeftEdge || isRightEdge) {
-          e.preventDefault();
-          ctx._dragging = panelEl;
-          ctx._dragPanel = panelName;
-          panelEl.style.setProperty("transition", "none", "important");
-          ctx.debugLog("Resize", `Started dragging ${panelName}`);
-        }
-      }
-    }
+    handleResizeMouseDown(ctx, e);
   }, { passive: false, signal });
 
   // ── mousemove: update width while dragging (RAF-throttled for perf) ──

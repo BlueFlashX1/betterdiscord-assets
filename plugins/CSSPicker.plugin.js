@@ -4,6 +4,61 @@
  * @version 1.5.0
  * @author BlueFlashX1
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
+// src/CSSPicker/element-summary.js
+function truncateMiddle(value, max = 90) {
+  const str = String(value ?? "");
+  if (str.length <= max) return str;
+  const left = Math.max(10, Math.floor(max * 0.6));
+  const right = Math.max(8, max - left - 3);
+  return `${str.slice(0, left)}...${str.slice(-right)}`;
+}
+function getElementSummary(el) {
+  var _a, _b;
+  if (!el) return "unknown";
+  const tag = ((_b = (_a = el.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "unknown";
+  const id = el.id ? `#${el.id}` : "";
+  const className = typeof el.className === "string" && el.className.trim() ? `.${el.className.trim().split(/\s+/)[0]}` : "";
+  return `${tag}${id}${className}`;
+}
 
 // src/CSSPicker/inspection.js
 function formatCssValueCompact(value) {
@@ -541,21 +596,6 @@ function escapeHtml(text) {
   div.textContent = String(text ?? "");
   return div.innerHTML;
 }
-function truncateMiddle(value, max = 90) {
-  const str = String(value ?? "");
-  if (str.length <= max) return str;
-  const left = Math.max(10, Math.floor(max * 0.6));
-  const right = Math.max(8, max - left - 3);
-  return `${str.slice(0, left)}...${str.slice(-right)}`;
-}
-function getElementSummary(el) {
-  var _a, _b;
-  if (!el) return "unknown";
-  const tag = ((_b = (_a = el.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "unknown";
-  const id = el.id ? `#${el.id}` : "";
-  const className = typeof el.className === "string" && el.className.trim() ? `.${el.className.trim().split(/\s+/)[0]}` : "";
-  return `${tag}${id}${className}`;
-}
 function getSemanticClassSelectors(el) {
   if (!(el == null ? void 0 : el.classList)) return [];
   const classes = Array.from(el.classList);
@@ -790,30 +830,7 @@ function getElementDetails(el) {
 }
 
 // src/CSSPicker/index.js
-var _bdLoad = (fileName) => {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0)
-      return candidate;
-  } catch (_) {
-  }
-  return null;
-};
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 var PLUGIN_NAME = "CSS Picker";
 var PLUGIN_VERSION = "1.5.0";
 var DEFAULT_SETTINGS = {
@@ -844,7 +861,7 @@ var saveSettings = (settings) => {
 };
 var _PluginUtils = null;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }

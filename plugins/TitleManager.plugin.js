@@ -10,6 +10,40 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
 // src/TitleManager/components.js
 var require_components = __commonJS({
   "src/TitleManager/components.js"(exports2, module2) {
@@ -702,29 +736,7 @@ var require_styles = __commonJS({
 });
 
 // src/TitleManager/index.js
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
-  }
-  return null;
-}
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 var PERCENT_BONUS_RULES = [
   ["xp", "XP"],
   ["critChance", "Crit"],
@@ -764,16 +776,16 @@ var { buildTitleManagerSettingsPanel } = require_settings_panel();
 var { getTitleManagerCss } = require_styles();
 var _ReactUtils;
 try {
-  _ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+  _ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
 } catch (_) {
   _ReactUtils = null;
 }
 var _SLUtils;
-_SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+_SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (_SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = _SLUtils;
 var _PluginUtils;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }

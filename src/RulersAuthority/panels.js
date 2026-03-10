@@ -5,7 +5,6 @@
 // Macro panel control (toggle, restore, count), hover-to-expand system,
 // micro channel/category/DM operations, context menus, toolbar icon,
 // visual effects, channel observer, guild change listener, settings guard.
-
 import {
   PANEL_DEFS,
   RA_PLUGIN_NAME,
@@ -22,7 +21,7 @@ import {
   DM_LIST_FALLBACKS,
   _PluginUtils,
 } from "./constants";
-
+import { applyChannelContextMenuPatch } from "./context-menu-helpers";
 // ── Helper: find channel sidebar element ──
 function findChannelSidebar() {
   for (const sel of SIDEBAR_FALLBACKS) {
@@ -31,7 +30,6 @@ function findChannelSidebar() {
   }
   return null;
 }
-
 // ═══════════════════════════════════════════════════════════════════════════
 // §8  Macro Panel Control
 // ═══════════════════════════════════════════════════════════════════════════
@@ -94,7 +92,15 @@ export function getPushedPanelCount(ctx) {
  * @param {function} [isActive]  Custom "is currently revealed" check (defaults to body class)
  * @param {function} [setActive] Custom reveal/hide setter (defaults to body class toggle)
  */
-export function applyHoverRevealState(ctx, name, inZone, revealDelay, hideDelay, isActive, setActive) {
+export function applyHoverRevealState(ctx, options) {
+  const {
+    name,
+    inZone,
+    revealDelay,
+    hideDelay,
+    isActive,
+    setActive,
+  } = options;
   const revealKey = `_${name}RevealTimer`;
   const hideKey = `_${name}HideTimer`;
   const className = `ra-${name}-hover-reveal`;
@@ -129,6 +135,113 @@ export function applyHoverRevealState(ctx, name, inZone, revealDelay, hideDelay,
   }
 }
 
+function clearPanelHoverState(ctx, name) {
+  const revealKey = `_${name}RevealTimer`;
+  const hideKey = `_${name}HideTimer`;
+  clearTimeout(ctx[revealKey]);
+  clearTimeout(ctx[hideKey]);
+  ctx[revealKey] = null;
+  ctx[hideKey] = null;
+  document.body.classList.remove(`ra-${name}-hover-reveal`);
+}
+
+function getHoverRuntime(ctx, e) {
+  const currentGuildId = ctx._SelectedGuildStore?.getGuildId?.();
+  const hiddenChannelsCount = currentGuildId
+    ? ctx.settings.guilds?.[currentGuildId]?.hiddenChannels?.length || 0
+    : 0;
+  const channelHoverEnabled = hiddenChannelsCount > 0;
+  const sidebarHoverEnabled = ctx.settings.panels.sidebar.hoverExpand;
+  const membersHoverEnabled = ctx.settings.panels.members.hoverExpand;
+  const profileHoverEnabled = ctx.settings.panels.profile.hoverExpand;
+  const anyEnabled =
+    sidebarHoverEnabled || membersHoverEnabled || profileHoverEnabled || channelHoverEnabled;
+  if (!anyEnabled) return null;
+
+  const fudge = ctx.settings.hoverFudgePx;
+  const revealDelay = ctx.settings.hoverRevealDelayMs;
+  return {
+    event: e,
+    fudge,
+    hideDelay: ctx.settings.hoverHideDelayMs,
+    revealDelay,
+    panelRevealDelay: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
+    viewportWidth: window.innerWidth,
+    sidebarHoverEnabled,
+    membersHoverEnabled,
+    profileHoverEnabled,
+    channelHoverEnabled,
+  };
+}
+
+function handleSidebarHover(ctx, runtime) {
+  if (!(runtime.sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed)) {
+    clearPanelHoverState(ctx, "sidebar");
+    return;
+  }
+  const sidebarEl = ctx._findPanelElement("sidebar");
+  const inZone = runtime.event.clientX <= runtime.fudge;
+  const inPanel = sidebarEl ? ctx._isInsideElement(runtime.event, sidebarEl, runtime.fudge) : false;
+  applyHoverRevealState(ctx, {
+    name: "sidebar",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.panelRevealDelay,
+    hideDelay: runtime.hideDelay,
+  });
+}
+
+function handleMembersHover(ctx, runtime) {
+  if (!(runtime.membersHoverEnabled && ctx.settings.panels.members.pushed)) {
+    clearPanelHoverState(ctx, "members");
+    return;
+  }
+  const membersEl = ctx._findPanelElement("members");
+  const distFromRight = runtime.viewportWidth - runtime.event.clientX;
+  const inZone = distFromRight <= runtime.fudge;
+  const inPanel = membersEl ? ctx._isInsideElement(runtime.event, membersEl, runtime.fudge) : false;
+  applyHoverRevealState(ctx, {
+    name: "members",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.panelRevealDelay,
+    hideDelay: runtime.hideDelay,
+  });
+}
+
+function handleProfileHover(ctx, runtime) {
+  if (!(runtime.profileHoverEnabled && ctx.settings.panels.profile.pushed)) return;
+  const profileEl = ctx._findPanelElement("profile");
+  const inPanel = profileEl ? ctx._isInsideElement(runtime.event, profileEl, runtime.fudge) : false;
+  const distFromRight = runtime.viewportWidth - runtime.event.clientX;
+  const inZone =
+    distFromRight <= runtime.fudge && !document.body.classList.contains("ra-members-hover-reveal");
+  applyHoverRevealState(ctx, {
+    name: "profile",
+    inZone: inZone || inPanel,
+    revealDelay: runtime.revealDelay,
+    hideDelay: runtime.hideDelay,
+  });
+}
+
+function handleChannelHover(ctx, runtime) {
+  if (!runtime.channelHoverEnabled) {
+    clearPanelHoverState(ctx, "channel");
+    setHiddenChannelRevealState(ctx, false);
+    return;
+  }
+  const hoverEl = getChannelHoverElement();
+  const inChannelPanel = hoverEl
+    ? ctx._isInsideElement(runtime.event, hoverEl, runtime.fudge)
+    : false;
+  applyHoverRevealState(ctx, {
+    name: "channel",
+    inZone: inChannelPanel,
+    revealDelay: runtime.revealDelay,
+    hideDelay: runtime.hideDelay,
+    isActive: () => ctx._channelsHoverRevealActive,
+    setActive: (revealed) => setHiddenChannelRevealState(ctx, revealed),
+  });
+}
+
 export function setupHoverHandlers(ctx) {
   if (!ctx._controller) return;
 
@@ -139,82 +252,19 @@ export function setupHoverHandlers(ctx) {
       clearAllHoverStates(ctx);
       return;
     }
-    const sidebarHoverEnabled = ctx.settings.panels.sidebar.hoverExpand;
-    const membersHoverEnabled = ctx.settings.panels.members.hoverExpand;
-    const profileHoverEnabled = ctx.settings.panels.profile.hoverExpand;
-    const currentGuildId = ctx._SelectedGuildStore?.getGuildId?.();
-    const hiddenChannelsCount = currentGuildId
-      ? ctx.settings.guilds?.[currentGuildId]?.hiddenChannels?.length || 0
-      : 0;
-    const channelHoverEnabled = hiddenChannelsCount > 0;
-    if (!sidebarHoverEnabled && !membersHoverEnabled && !profileHoverEnabled && !channelHoverEnabled) {
+    const runtime = getHoverRuntime(ctx, e);
+    if (!runtime) {
+      clearPanelHoverState(ctx, "sidebar");
+      clearPanelHoverState(ctx, "members");
+      clearPanelHoverState(ctx, "profile");
+      clearPanelHoverState(ctx, "channel");
       setHiddenChannelRevealState(ctx, false);
       return;
     }
-
-    const fudge = ctx.settings.hoverFudgePx;
-    const revealDelay = ctx.settings.hoverRevealDelayMs;
-    const hideDelay = ctx.settings.hoverHideDelayMs;
-    const viewportWidth = window.innerWidth;
-    const panelRevealDelay = {
-      sidebar: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
-      members: Math.max(RA_PANEL_HOVER_REVEAL_MIN_MS, revealDelay),
-    };
-
-    // ── Channel sidebar hover (left edge) ──
-    if (sidebarHoverEnabled && ctx.settings.panels.sidebar.pushed) {
-      const inZone = e.clientX <= fudge;
-      const sidebarEl = ctx._findPanelElement("sidebar");
-      const inPanel = sidebarEl ? ctx._isInsideElement(e, sidebarEl, fudge) : false;
-      applyHoverRevealState(ctx, "sidebar", inZone || inPanel, panelRevealDelay.sidebar, hideDelay);
-    } else {
-      clearTimeout(ctx._sidebarRevealTimer);
-      clearTimeout(ctx._sidebarHideTimer);
-      ctx._sidebarRevealTimer = null;
-      ctx._sidebarHideTimer = null;
-      document.body.classList.remove("ra-sidebar-hover-reveal");
-    }
-
-    // ── Members list hover (right edge) ──
-    if (membersHoverEnabled && ctx.settings.panels.members.pushed) {
-      const distFromRight = viewportWidth - e.clientX;
-      const inZone = distFromRight <= fudge;
-      const membersEl = ctx._findPanelElement("members");
-      const inPanel = membersEl ? ctx._isInsideElement(e, membersEl, fudge) : false;
-      applyHoverRevealState(ctx, "members", inZone || inPanel, panelRevealDelay.members, hideDelay);
-    } else {
-      clearTimeout(ctx._membersRevealTimer);
-      clearTimeout(ctx._membersHideTimer);
-      ctx._membersRevealTimer = null;
-      ctx._membersHideTimer = null;
-      document.body.classList.remove("ra-members-hover-reveal");
-    }
-
-    // ── Profile panel hover (right edge, offset from members) ──
-    if (profileHoverEnabled && ctx.settings.panels.profile.pushed) {
-      const profileEl = ctx._findPanelElement("profile");
-      const inPanel = profileEl ? ctx._isInsideElement(e, profileEl, fudge) : false;
-      const distFromRight = viewportWidth - e.clientX;
-      const inZone = distFromRight <= fudge && !document.body.classList.contains("ra-members-hover-reveal");
-      applyHoverRevealState(ctx, "profile", inZone || inPanel, revealDelay, hideDelay);
-    }
-
-    // ── Pushed channel hover reveal (channel sidebar region) ──
-    if (channelHoverEnabled) {
-      const hoverEl = getChannelHoverElement();
-      const inChannelPanel = hoverEl ? ctx._isInsideElement(e, hoverEl, fudge) : false;
-      applyHoverRevealState(
-        ctx, "channel", inChannelPanel, revealDelay, hideDelay,
-        () => ctx._channelsHoverRevealActive,
-        (revealed) => setHiddenChannelRevealState(ctx, revealed)
-      );
-    } else {
-      clearTimeout(ctx._channelRevealTimer);
-      clearTimeout(ctx._channelHideTimer);
-      ctx._channelRevealTimer = null;
-      ctx._channelHideTimer = null;
-      setHiddenChannelRevealState(ctx, false);
-    }
+    handleSidebarHover(ctx, runtime);
+    handleMembersHover(ctx, runtime);
+    handleProfileHover(ctx, runtime);
+    handleChannelHover(ctx, runtime);
   }, 16); // ~60fps throttle
 
   document.addEventListener("mousemove", handler, {
@@ -298,48 +348,65 @@ export function setHiddenChannelRevealState(ctx, shouldReveal) {
   applyChannelHiding(ctx);
 }
 
-export function applyChannelHiding(ctx, guildId) {
+function getEffectiveGuildId(ctx, guildId) {
   const currentGuildId = ctx._SelectedGuildStore?.getGuildId?.();
-  if (guildId && guildId !== currentGuildId) return;
+  if (guildId && guildId !== currentGuildId) return null;
+  return guildId || currentGuildId || null;
+}
 
-  const effectiveGuildId = guildId || currentGuildId;
-  if (!effectiveGuildId) return;
-  const guildData = ctx.settings.guilds[effectiveGuildId];
-  // Cache the hiddenIds Set — only rebuild when invalidated (pushChannel/recallChannel set _hiddenIdSet = null)
-  if (!guildData?._hiddenIdSet) {
-    if (guildData) guildData._hiddenIdSet = new Set((guildData.hiddenChannels || []).map((entry) => String(entry.id)));
+function resolveHiddenIdSet(guildData) {
+  if (!guildData) return new Set();
+  if (!guildData._hiddenIdSet) {
+    guildData._hiddenIdSet = new Set(
+      (guildData.hiddenChannels || []).map((entry) => String(entry.id))
+    );
   }
-  const hiddenIds = guildData?._hiddenIdSet || new Set();
+  return guildData._hiddenIdSet;
+}
 
-  // Clear stale pushed markers — scoped to sidebar to avoid full-document scan
-  const sidebar = findChannelSidebar();
-  const pushedEls = (sidebar || document).querySelectorAll("[data-ra-pushed]");
+function clearStalePushedChannelMarkers(scope, hiddenIds) {
+  const pushedEls = scope.querySelectorAll("[data-ra-pushed]");
   for (const el of pushedEls) {
     const listId = el.getAttribute("data-list-item-id") || "";
     const channelId = listId.startsWith("channels___")
       ? listId.replace("channels___", "")
       : null;
-    if (!channelId || !hiddenIds.has(channelId)) {
-      el.style.display = "";
-      el.removeAttribute("data-ra-pushed");
-    }
+    if (channelId && hiddenIds.has(channelId)) continue;
+    el.style.display = "";
+    el.removeAttribute("data-ra-pushed");
   }
+}
+
+function applyHiddenChannelVisibility(scope, hiddenIds, revealActive) {
+  for (const id of hiddenIds) {
+    const el = scope.querySelector(`[data-list-item-id="channels___${id}"]`);
+    if (!el) continue;
+    el.style.display = revealActive ? "" : "none";
+    el.setAttribute("data-ra-pushed", "true");
+  }
+}
+
+function resetHiddenChannelReveal(ctx) {
+  ctx._channelsHoverRevealActive = false;
+  document.body.classList.remove("ra-channels-hover-reveal");
+}
+
+export function applyChannelHiding(ctx, guildId) {
+  const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  const hiddenIds = resolveHiddenIdSet(guildData);
+
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
+  clearStalePushedChannelMarkers(scope, hiddenIds);
 
   if (hiddenIds.size === 0) {
-    ctx._channelsHoverRevealActive = false;
-    document.body.classList.remove("ra-channels-hover-reveal");
+    resetHiddenChannelReveal(ctx);
     return;
   }
 
-  // Scope per-channel queries to sidebar (avoids N full-document scans)
-  const scope = sidebar || document;
-  for (const id of hiddenIds) {
-    const el = scope.querySelector(`[data-list-item-id="channels___${id}"]`);
-    if (el) {
-      el.style.display = ctx._channelsHoverRevealActive ? "" : "none";
-      el.setAttribute("data-ra-pushed", "true");
-    }
-  }
+  applyHiddenChannelVisibility(scope, hiddenIds, ctx._channelsHoverRevealActive);
 }
 
 export function restoreAllHiddenChannels() {
@@ -381,49 +448,60 @@ export function isCategoryCrushed(ctx, guildId, categoryId) {
   return guildData?.crushedCategories?.some((c) => c.id === categoryId) || false;
 }
 
-export function applyCategoryCrushing(ctx, guildId) {
-  const currentGuildId = ctx._SelectedGuildStore?.getGuildId?.();
-  if (guildId && guildId !== currentGuildId) return;
+function getChannelIdFromListItem(el) {
+  const listId = el?.getAttribute("data-list-item-id") || "";
+  if (!listId.startsWith("channels___")) return null;
+  return listId.replace("channels___", "");
+}
 
-  const effectiveGuildId = guildId || currentGuildId;
-  if (!effectiveGuildId) return;
-  const guildData = ctx.settings.guilds[effectiveGuildId];
-  if (!guildData?.crushedCategories?.length) return;
+function hideCrushedCategoryChildren(ctx, categoryEl, categoryId) {
+  let next = categoryEl.nextElementSibling;
+  let safetyLimit = 200;
+  let nonChannelSkips = 0;
 
-  // Scope querySelector to sidebar to avoid full-document scans
-  const sidebar = findChannelSidebar();
-  const scope = sidebar || document;
-
-  for (const { id: catId } of guildData.crushedCategories) {
-    const catEl = scope.querySelector(`[data-list-item-id="channels___${catId}"]`);
-    if (!catEl) continue;
-
-    // Skip re-processing if already crushed and children are marked
-    if (catEl.hasAttribute("data-ra-crushed") && catEl.nextElementSibling?.getAttribute("data-ra-category-crushed") === catId) {
+  while (next && safetyLimit-- > 0) {
+    const channelId = getChannelIdFromListItem(next);
+    if (!channelId) {
+      nonChannelSkips++;
+      if (nonChannelSkips > 5) break;
+      next = next.nextElementSibling;
       continue;
     }
 
-    catEl.setAttribute("data-ra-crushed", "true");
+    nonChannelSkips = 0;
+    const channel = ctx._ChannelStore?.getChannel?.(channelId);
+    if (!channel || channel.type === 4) break;
+    next.style.display = "none";
+    next.setAttribute("data-ra-category-crushed", categoryId);
+    next = next.nextElementSibling;
+  }
+}
 
-    let next = catEl.nextElementSibling;
-    let safetyLimit = 200;
-    let nonChannelSkips = 0;
-    while (next && safetyLimit-- > 0) {
-      const listId = next.getAttribute("data-list-item-id") || "";
-      if (!listId.startsWith("channels___")) {
-        nonChannelSkips++;
-        if (nonChannelSkips > 5) break;
-        next = next.nextElementSibling;
-        continue;
-      }
-      nonChannelSkips = 0;
-      const channelId = listId.replace("channels___", "");
-      const channel = ctx._ChannelStore?.getChannel?.(channelId);
-      if (!channel || channel.type === 4) break;
-      next.style.display = "none";
-      next.setAttribute("data-ra-category-crushed", catId);
-      next = next.nextElementSibling;
-    }
+function applyCategoryCrushForId(ctx, scope, categoryId) {
+  const categoryEl = scope.querySelector(`[data-list-item-id="channels___${categoryId}"]`);
+  if (!categoryEl) return;
+
+  const alreadyCrushed =
+    categoryEl.hasAttribute("data-ra-crushed") &&
+    categoryEl.nextElementSibling?.getAttribute("data-ra-category-crushed") === categoryId;
+  if (alreadyCrushed) return;
+
+  categoryEl.setAttribute("data-ra-crushed", "true");
+  hideCrushedCategoryChildren(ctx, categoryEl, categoryId);
+}
+
+export function applyCategoryCrushing(ctx, guildId) {
+  const effectiveGuildId = getEffectiveGuildId(ctx, guildId);
+  if (!effectiveGuildId) return;
+  const guildData = ctx.settings.guilds[effectiveGuildId];
+  const crushedCategories = guildData?.crushedCategories || [];
+  if (crushedCategories.length === 0) return;
+
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
+
+  for (const { id: categoryId } of crushedCategories) {
+    applyCategoryCrushForId(ctx, scope, categoryId);
   }
 }
 
@@ -519,10 +597,6 @@ export function applyDMGripping(ctx) {
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// §13  Context Menu Patches
-// ═══════════════════════════════════════════════════════════════════════════
-
 export function patchContextMenus(ctx) {
   try {
     if (ctx._unpatchChannelCtx) {
@@ -532,84 +606,24 @@ export function patchContextMenus(ctx) {
     ctx._unpatchChannelCtx = BdApi.ContextMenu.patch("channel-context", (tree, props) => {
       if (!props?.channel) return;
       const channel = props.channel;
-      const channelId = channel.id;
       const guildId = channel.guild_id || null;
-
-      // ── DM Context: Grip ──
-      if (!guildId && (channel.type === 1 || channel.type === 3)) {
-        const isGripped = isDMGripped(ctx, channelId);
-        const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-        const item = BdApi.ContextMenu.buildItem({
-          type: "text",
-          label: isGripped ? "Release Grip" : "Grip DM",
-          id: isGripped ? "ra-release-dm" : "ra-grip-dm",
-          action: () => {
-            if (isGripped) {
-              releaseDM(ctx, channelId);
-            } else {
-              gripDM(ctx, channelId, channel.rawRecipients?.[0]?.username || channel.name || "Unknown");
-            }
-          },
-        });
-        const children = tree?.props?.children;
-        if (Array.isArray(children)) children.push(separator, item);
-        return;
-      }
-
-      // ── Guild Context: Push Channel / Crush Category ──
-      if (!guildId) return;
-      const items = [];
-
-      // Category (type === 4): Crush
-      if (channel.type === 4) {
-        const crushed = isCategoryCrushed(ctx, guildId, channelId);
-        items.push({
-          type: "text",
-          label: crushed ? "Release Category" : "Crush Category",
-          id: crushed ? "ra-release-category" : "ra-crush-category",
-          action: () => {
-            if (crushed) {
-              releaseCategory(ctx, guildId, channelId);
-              ctx._toast(`Released ${channel.name}`, "info");
-            } else {
-              crushCategory(ctx, guildId, channelId, channel.name);
-              ctx._toast(`Crushed ${channel.name}`, "success");
-            }
-          },
-        });
-      }
-
-      // Regular channel: Push
-      if (channel.type !== 4) {
-        const hidden = isChannelHidden(ctx, guildId, channelId);
-        items.push({
-          type: "text",
-          label: hidden ? "Recall Channel" : "Push Channel",
-          id: hidden ? "ra-recall-channel" : "ra-push-channel",
-          action: () => {
-            if (hidden) {
-              recallChannel(ctx, guildId, channelId);
-              ctx._toast(`Recalled #${channel.name}`, "info");
-            } else {
-              pushChannel(ctx, guildId, channelId, channel.name);
-              ctx._toast(`Pushed #${channel.name}`, "success");
-            }
-          },
-        });
-      }
-
-      if (items.length === 0) return;
-
-      const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
-      const submenu = BdApi.ContextMenu.buildItem({
-        type: "submenu",
-        label: "Ruler's Authority",
-        id: "ra-submenu",
-        items,
+      applyChannelContextMenuPatch({
+        ctx,
+        tree,
+        channel,
+        guildId,
+        actions: {
+          gripDM,
+          isCategoryCrushed,
+          isChannelHidden,
+          isDMGripped,
+          crushCategory,
+          pushChannel,
+          recallChannel,
+          releaseCategory,
+          releaseDM,
+        },
       });
-
-      const children = tree?.props?.children;
-      if (Array.isArray(children)) children.push(separator, submenu);
     });
     ctx.debugLog("ContextMenu", "Patched channel-context");
   } catch (err) {

@@ -200,7 +200,15 @@ var require_arrow_manager_component = __commonJS({
       if ((_b = arrows.up) == null ? void 0 : _b.isConnected) arrows.up.remove();
       domArrowsRef.current = null;
     }
-    function useScrollerBinding(React, pluginInstance, dbg, refs, setShowDown, setShowUp, setBindCount) {
+    function useScrollerBinding(React, options) {
+      const {
+        pluginInstance,
+        dbg,
+        refs,
+        setShowDown,
+        setShowUp,
+        setBindCount
+      } = options;
       const { scrollerRef, wrapperRef, pollRef, lastScrollLogRef } = refs;
       React.useEffect(() => {
         dbg("useEffect mounted");
@@ -320,7 +328,14 @@ var require_arrow_manager_component = __commonJS({
         return () => removeDomArrows(domArrowsRef);
       }, [portalAvailable, wrapperConnected, wrapper, bindCount, handleDownClick, handleUpClick]);
     }
-    function useDomArrowVisibilitySync(React, portalAvailable, showDown, showUp, bindCount, domArrowsRef) {
+    function useDomArrowVisibilitySync(React, options) {
+      const {
+        portalAvailable,
+        showDown,
+        showUp,
+        bindCount,
+        domArrowsRef
+      } = options;
       React.useEffect(() => {
         if (portalAvailable) return;
         const arrows = domArrowsRef.current;
@@ -329,7 +344,16 @@ var require_arrow_manager_component = __commonJS({
         arrows.up.classList.toggle("sl-visible", showUp);
       }, [portalAvailable, showDown, showUp, bindCount]);
     }
-    function renderPortalArrows(React, ReactDOM, wrapper, showDown, showUp, handleDownClick, handleUpClick) {
+    function renderPortalArrows(options) {
+      const {
+        React,
+        ReactDOM,
+        wrapper,
+        showDown,
+        showUp,
+        handleDownClick,
+        handleUpClick
+      } = options;
       return ReactDOM.createPortal(
         React.createElement(
           React.Fragment,
@@ -378,15 +402,14 @@ var require_arrow_manager_component = __commonJS({
         const pollRef = React.useRef(null);
         const domArrowsRef = React.useRef(null);
         const lastScrollLogRef = React.useRef(0);
-        useScrollerBinding(
-          React,
-          activePlugin,
+        useScrollerBinding(React, {
+          pluginInstance: activePlugin,
           dbg,
-          { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
+          refs: { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
           setShowDown,
           setShowUp,
           setBindCount
-        );
+        });
         const handleDownClick = React.useCallback(() => {
           const wrapper2 = wrapperRef.current;
           const scroller = scrollerRef.current;
@@ -419,28 +442,27 @@ var require_arrow_manager_component = __commonJS({
           handleDownClick,
           handleUpClick
         });
-        useDomArrowVisibilitySync(
-          React,
+        useDomArrowVisibilitySync(React, {
           portalAvailable,
           showDown,
           showUp,
           bindCount,
           domArrowsRef
-        );
+        });
         dbg(
           `render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper == null ? void 0 : wrapper.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`
         );
         if (wrapperConnected && portalAvailable) {
           dbg("render -> PORTAL path");
-          return renderPortalArrows(
+          return renderPortalArrows({
             React,
-            BdApi2.ReactDOM,
+            ReactDOM: BdApi2.ReactDOM,
             wrapper,
             showDown,
             showUp,
             handleDownClick,
             handleUpClick
-          );
+          });
         }
         if (!wrapper) dbg("render -> NULL (no wrapper yet, waiting for findAndBind)");
         return null;
@@ -450,35 +472,47 @@ var require_arrow_manager_component = __commonJS({
   }
 });
 
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
 // src/ChatNavArrows/styles.css
 var styles_default = '/* Hide native jump-to-present bars globally */\ndiv[class^="jumpToPresentBar_"] {\n  display: none !important;\n}\n\n.sl-chat-nav-arrow {\n  position: absolute;\n  z-index: 500;\n  width: 36px;\n  height: 36px;\n  border-radius: 50%;\n  background: rgba(8, 10, 20, 0.92);\n  border: 1px solid rgba(138, 43, 226, 0.45);\n  color: #b48cff;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: background 0.15s ease, border-color 0.15s ease,\n              box-shadow 0.15s ease, transform 0.15s ease,\n              opacity 0.2s ease;\n  box-shadow: 0 2px 8px rgba(0,0,0,0.3);\n  right: 24px;\n  pointer-events: none;\n  opacity: 0;\n}\n.sl-chat-nav-arrow.sl-visible {\n  opacity: 1;\n  pointer-events: auto;\n}\n.sl-chat-nav-arrow:hover {\n  background: rgba(138, 43, 226, 0.2);\n  border-color: #8a2be2;\n  box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);\n  transform: scale(1.1);\n}\n.sl-chat-nav-arrow:active {\n  transform: scale(0.95);\n}\n.sl-chat-nav-arrow svg {\n  width: 18px;\n  height: 18px;\n  fill: currentColor;\n}\n.sl-chat-nav-down {\n  bottom: 24px;\n}\n.sl-chat-nav-up {\n  bottom: 68px;\n}\n';
 
 // src/ChatNavArrows/index.js
 var { startDomFallback, stopDomFallback } = require_dom_fallback();
 var { createArrowManagerComponent } = require_arrow_manager_component();
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
-  }
-  return null;
-}
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 module.exports = class ChatNavArrows {
   constructor() {
     this._patcherId = "ChatNavArrows";
@@ -605,7 +639,7 @@ module.exports = class ChatNavArrows {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+      ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
     } catch (e) {
       this._debugLog("ReactUtils load error:", e.message);
       ReactUtils = null;

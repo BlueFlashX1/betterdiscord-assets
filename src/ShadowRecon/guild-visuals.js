@@ -141,21 +141,51 @@ function readOnlineCountFromObject(obj) {
   return null;
 }
 
+function parseOnlineCountResult(result) {
+  const direct = safeNonNegativeInt(result);
+  if (direct !== null) return direct;
+  return readOnlineCountFromObject(result);
+}
+
+function resolveOnlineCountFromMethod(plugin, countStore, guildId, methodRef) {
+  if (typeof methodRef !== "function") return null;
+  try {
+    const parsed = parseOnlineCountResult(methodRef.call(countStore, guildId));
+    if (parsed === null) return null;
+    plugin._onlineCountMethod = methodRef;
+    return parsed;
+  } catch (_) {
+    return null;
+  }
+}
+
+function readOnlineCountFromMethodCache(plugin, countStore, guildId) {
+  if (!plugin._onlineCountMethod) return null;
+  const result = resolveOnlineCountFromMethod(
+    plugin,
+    countStore,
+    guildId,
+    plugin._onlineCountMethod
+  );
+  if (result !== null) return result;
+  plugin._onlineCountMethod = null;
+  return null;
+}
+
+function readOnlineCountFromMethodList(plugin, countStore, guildId, methodNames) {
+  for (const methodName of methodNames) {
+    const count = resolveOnlineCountFromMethod(plugin, countStore, guildId, countStore?.[methodName]);
+    if (count !== null) return count;
+  }
+  return null;
+}
+
 function readOnlineCountFromStore(plugin, guildId) {
   const countStore = plugin._GuildMemberCountStore;
   if (!countStore || typeof countStore !== "object") return null;
 
-  if (plugin._onlineCountMethod) {
-    try {
-      const result = plugin._onlineCountMethod.call(countStore, guildId);
-      const direct = safeNonNegativeInt(result);
-      if (direct !== null) return direct;
-      const nested = readOnlineCountFromObject(result);
-      if (nested !== null) return nested;
-    } catch (_) {
-      plugin._onlineCountMethod = null;
-    }
-  }
+  const cachedMethodCount = readOnlineCountFromMethodCache(plugin, countStore, guildId);
+  if (cachedMethodCount !== null) return cachedMethodCount;
 
   const storeMethods = [
     "getOnlineCount",
@@ -165,26 +195,7 @@ function readOnlineCountFromStore(plugin, guildId) {
     "getCounts",
     "getGuildCounts",
   ];
-
-  for (const methodName of storeMethods) {
-    const fn = countStore?.[methodName];
-    if (typeof fn !== "function") continue;
-    try {
-      const result = fn.call(countStore, guildId);
-      const direct = safeNonNegativeInt(result);
-      if (direct !== null) {
-        plugin._onlineCountMethod = fn;
-        return direct;
-      }
-      const nested = readOnlineCountFromObject(result);
-      if (nested !== null) {
-        plugin._onlineCountMethod = fn;
-        return nested;
-      }
-    } catch (_) {}
-  }
-
-  return null;
+  return readOnlineCountFromMethodList(plugin, countStore, guildId, storeMethods);
 }
 
 function getGuildOnlineCount(plugin, guildId, guild = null) {
@@ -206,14 +217,50 @@ function extractSnowflake(text, regex) {
   return match ? match[0] : null;
 }
 
-function refreshGuildIconHints(plugin, snowflakeRegex) {
-  if (!plugin.settings.showGuildHoverIntel) return;
+function getGuildHintNodes(plugin) {
   const scope = getGuildsTarget(plugin) || document;
   let nodes = scope.querySelectorAll('[data-list-item-id*="guild"]');
   if (!nodes.length && scope !== document) {
     // Safety fallback if nav target is temporarily detached/swapped.
     nodes = document.querySelectorAll('[data-list-item-id*="guild"]');
   }
+  return nodes;
+}
+
+function getGuildHintStats(plugin, guildId, guild) {
+  const memberCount =
+    plugin._GuildMemberCountStore?.getMemberCount?.(guildId) ||
+    guild?.memberCount ||
+    guild?.member_count ||
+    0;
+  const online = getGuildOnlineCount(plugin, guildId, guild);
+  const marked = plugin.isGuildMarked(guildId);
+  return { memberCount, online, marked };
+}
+
+function shouldSkipGuildHintUpdate(plugin, node, guildId, stats) {
+  const cached = plugin._guildHintCache.get(guildId);
+  if (!cached) return false;
+  const unchanged =
+    cached.memberCount === stats.memberCount &&
+    cached.online === stats.online &&
+    cached.marked === stats.marked;
+  if (!unchanged) return false;
+  return node.getAttribute("data-shadow-recon-title") === "1";
+}
+
+function applyGuildHintTitle(plugin, node, guildId, guild, stats) {
+  const markedLabel = stats.marked ? "[Marked]" : "[Unmarked]";
+  const title = `${markedLabel} ${guild.name} | Online ${plugin._formatNumber(stats.online)} | Members ${plugin._formatNumber(stats.memberCount)}`;
+  plugin._guildHintCache.set(guildId, stats);
+  if (node.getAttribute("title") === title) return;
+  node.setAttribute("title", title);
+  node.setAttribute("data-shadow-recon-title", "1");
+}
+
+function refreshGuildIconHints(plugin, snowflakeRegex) {
+  if (!plugin.settings.showGuildHoverIntel) return;
+  const nodes = getGuildHintNodes(plugin);
   for (const node of nodes) {
     const raw = node.getAttribute("data-list-item-id") || "";
     const guildId = extractSnowflake(raw, snowflakeRegex);
@@ -222,24 +269,9 @@ function refreshGuildIconHints(plugin, snowflakeRegex) {
     const guild = plugin._GuildStore?.getGuild?.(guildId);
     if (!guild) continue;
 
-    const memberCount = plugin._GuildMemberCountStore?.getMemberCount?.(guildId)
-      || guild?.memberCount
-      || guild?.member_count
-      || 0;
-    const online = getGuildOnlineCount(plugin, guildId, guild);
-    const marked = plugin.isGuildMarked(guildId);
-
-    const cached = plugin._guildHintCache.get(guildId);
-    if (cached && cached.memberCount === memberCount && cached.online === online && cached.marked === marked) {
-      if (node.getAttribute("data-shadow-recon-title") === "1") continue;
-    }
-
-    const markedLabel = marked ? "[Marked]" : "[Unmarked]";
-    const title = `${markedLabel} ${guild.name} | Online ${plugin._formatNumber(online)} | Members ${plugin._formatNumber(memberCount)}`;
-    plugin._guildHintCache.set(guildId, { memberCount, online, marked });
-    if (node.getAttribute("title") === title) continue;
-    node.setAttribute("title", title);
-    node.setAttribute("data-shadow-recon-title", "1");
+    const stats = getGuildHintStats(plugin, guildId, guild);
+    if (shouldSkipGuildHintUpdate(plugin, node, guildId, stats)) continue;
+    applyGuildHintTitle(plugin, node, guildId, guild, stats);
   }
 }
 
