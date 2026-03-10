@@ -151,8 +151,7 @@ function buildTitleComponents(pluginInstance) {
     const titlesKey = (soloData?.titles || []).join('\x00');
     const titles = React.useMemo(() => {
       const raw = (soloData?.titles || []).filter(isTitleAllowed);
-      pluginInstance.getSortedTitles({ titles: raw, sortBy });
-      return raw;
+      return pluginInstance.getSortedTitles({ titles: raw, sortBy });
     }, [titlesKey, sortBy]);
 
     const activeTitle = soloData?.activeTitle && isTitleAllowed(soloData.activeTitle) ? soloData.activeTitle : null;
@@ -173,7 +172,7 @@ function buildTitleComponents(pluginInstance) {
     }, []);
 
     const handleOverlayClick = React.useCallback((e) => {
-      if (e.target.className === 'tm-title-modal') onClose();
+      if (e.target.classList?.contains('tm-title-modal')) onClose();
     }, [onClose]);
 
     // Active title section
@@ -1068,12 +1067,11 @@ module.exports = class SoloLevelingTitleManager {
       }
 
       .tm-filter-label {
-        color: rgba(255, 255, 255, 0.9);
+        color: #8a2be2;
         font-weight: bold;
         font-size: 14px;
         letter-spacing: 0.5px;
         text-transform: uppercase;
-        color: #8a2be2;
       }
 
       .tm-sort-dropdown {
@@ -1418,7 +1416,7 @@ module.exports = class SoloLevelingTitleManager {
         access: this.webpackModuleAccess,
       });
     } catch (error) {
-      this.debugError('WEBPACK', error, { phase: 'initialization' });
+      this.debugError('WEBPACK', `Initialization failed: ${error?.message || error}`, error);
       this.webpackModuleAccess = false;
     }
   }
@@ -1493,7 +1491,7 @@ module.exports = class SoloLevelingTitleManager {
       if (instance.setActiveTitle) {
         // Try setting to null - if that doesn't work, set directly
         const result = instance.setActiveTitle(null);
-        if (!result && instance.settings) {
+        if (!result && instance.settings?.achievements) {
           // Fallback: set directly
           instance.settings.achievements.activeTitle = null;
           if (instance.saveSettings) {

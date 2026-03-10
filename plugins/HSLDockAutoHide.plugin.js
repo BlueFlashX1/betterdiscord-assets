@@ -96,7 +96,6 @@ var DockEngine = class {
     this.suppressOpenUntil = 0;
     this.typingLockUntil = 0;
     this.requireRevealReset = false;
-    this.revealCandidateAt = 0;
     this.pointerOverDock = false;
     this.lastMouseX = -1;
     this.lastMouseY = -1;
@@ -112,6 +111,7 @@ var DockEngine = class {
     this.userPanel = null;
     this.isUserPanelPositioned = false;
     this._panelHoverContainer = null;
+    this._panelHoverBindAttempted = false;
     this._onPanelEnter = null;
     this._onPanelLeave = null;
     this._lastDockHeight = null;
@@ -119,6 +119,7 @@ var DockEngine = class {
     this.hideTimer = null;
     this.revealTimer = null;
     this.syncInterval = null;
+    this._mouseMoveRafId = null;
     this.tickCount = 0;
     this.debugEnabled = false;
     this.debugConsole = false;
@@ -190,6 +191,11 @@ var DockEngine = class {
       clearInterval(this.syncInterval);
       this.syncInterval = null;
     }
+    if (this._mouseMoveRafId) {
+      cancelAnimationFrame(this._mouseMoveRafId);
+      this._mouseMoveRafId = null;
+      this._mouseMoveRafPending = false;
+    }
     this.unbindDockEvents();
     if (this.dockMoveTarget) {
       this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
@@ -223,6 +229,8 @@ var DockEngine = class {
   }
   // ── Dock Discovery (called by React effect + safeTick) ────────────────────
   syncDock() {
+    var _a;
+    if ((_a = this.dock) == null ? void 0 : _a.isConnected) return;
     const nextDock = this.findActiveDock();
     if (nextDock === this.dock) return;
     this.debug("dock:change", {
@@ -270,7 +278,7 @@ var DockEngine = class {
         bestScore = score;
       }
     }
-    const chosen = best || docks[0];
+    const chosen = best;
     this.debug("dock:find", { count: docks.length, chosen: this.describeDock(chosen) });
     return chosen;
   }
@@ -295,7 +303,7 @@ var DockEngine = class {
       if (!panel.classList.contains("sl-userpanel-docked")) {
         panel.classList.add("sl-userpanel-docked");
       }
-      if (!this._panelHoverContainer) this.bindUserPanelHover(panel);
+      if (!this._panelHoverContainer && !this._panelHoverBindAttempted) this.bindUserPanelHover(panel);
       return;
     }
     if (this.userPanel && this.userPanel !== panel) {
@@ -311,6 +319,7 @@ var DockEngine = class {
   }
   bindUserPanelHover(panel) {
     this.unbindUserPanelHover();
+    this._panelHoverBindAttempted = true;
     const container = panel.querySelector("div[class^='container_']");
     if (!container) return;
     this._onPanelEnter = () => {
@@ -336,6 +345,7 @@ var DockEngine = class {
       if (this._onPanelLeave) this._panelHoverContainer.removeEventListener("mouseleave", this._onPanelLeave);
     }
     this._panelHoverContainer = null;
+    this._panelHoverBindAttempted = false;
     this._onPanelEnter = null;
     this._onPanelLeave = null;
   }
@@ -521,8 +531,9 @@ var DockEngine = class {
     this.lastMouseY = event.clientY;
     if (this._mouseMoveRafPending) return;
     this._mouseMoveRafPending = true;
-    requestAnimationFrame(() => {
+    this._mouseMoveRafId = requestAnimationFrame(() => {
       this._mouseMoveRafPending = false;
+      this._mouseMoveRafId = null;
       this._processMouseMove();
     });
   }
@@ -537,7 +548,6 @@ var DockEngine = class {
     }
     if (this.requireRevealReset) {
       this.requireRevealReset = false;
-      this.revealCandidateAt = 0;
     }
     const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
     const hidden = Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden"));
@@ -580,7 +590,6 @@ var DockEngine = class {
   onWindowBlur() {
     this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
     this.requireRevealReset = true;
-    this.revealCandidateAt = 0;
     this.pointerOverDock = false;
     this.hasMouseMoved = false;
     this.lastMouseMoveAt = 0;
@@ -591,7 +600,6 @@ var DockEngine = class {
   onWindowFocus() {
     this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
     this.requireRevealReset = true;
-    this.revealCandidateAt = 0;
     this.pointerOverDock = false;
     this.hasMouseMoved = false;
     this.lastMouseMoveAt = 0;
@@ -602,7 +610,6 @@ var DockEngine = class {
     if (document.visibilityState === "visible") {
       this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
       this.requireRevealReset = true;
-      this.revealCandidateAt = 0;
       this.pointerOverDock = false;
       this.hasMouseMoved = false;
       this.lastMouseMoveAt = 0;

@@ -69,6 +69,8 @@ module.exports = class Stealth {
     };
     this._warningTimestamps = /* @__PURE__ */ new Map();
     this._protoUtils = null;
+    this._sentryDisabled = false;
+    this._pendingTimers = /* @__PURE__ */ new Set();
   }
   _toast(message, type = "info", timeout = null) {
     var _a;
@@ -108,12 +110,22 @@ module.exports = class Stealth {
     this._syncStatusPolicy();
     this._toast("Stealth engaged", "success");
   }
+  _scheduleTimer(fn, delay) {
+    const tid = setTimeout(() => {
+      this._pendingTimers.delete(tid);
+      fn();
+    }, delay);
+    this._pendingTimers.add(tid);
+  }
   stop() {
+    for (const tid of this._pendingTimers) clearTimeout(tid);
+    this._pendingTimers.clear();
     this._unsubscribeFluxEvents();
     if (this._dispatcherPollTimer) {
       clearInterval(this._dispatcherPollTimer);
       this._dispatcherPollTimer = null;
     }
+    this._sentryDisabled = false;
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
     if (this.settings.restoreStatusOnStop) {
@@ -210,13 +222,13 @@ module.exports = class Stealth {
           this._disableSentryAndTelemetry();
         }
         if (this.settings.enabled && this.settings.invisibleStatus) {
-          setTimeout(() => this._ensureInvisibleStatus(), 1e3);
+          this._scheduleTimer(() => this._ensureInvisibleStatus(), 1e3);
         }
       },
       // Fires when user changes status via Discord's UI status picker
       USER_SETTINGS_PROTO_UPDATE: () => {
         if (!this.settings.enabled || !this.settings.invisibleStatus) return;
-        setTimeout(() => this._ensureInvisibleStatus(), 300);
+        this._scheduleTimer(() => this._ensureInvisibleStatus(), 300);
       }
     };
     for (const [eventName, handler] of Object.entries(events)) {
@@ -229,7 +241,10 @@ module.exports = class Stealth {
     }
   }
   _unsubscribeFluxEvents() {
-    if (!this._Dispatcher) return;
+    if (!this._Dispatcher) {
+      this._fluxHandlers.clear();
+      return;
+    }
     for (const [eventName, handler] of this._fluxHandlers.entries()) {
       try {
         this._Dispatcher.unsubscribe(eventName, handler);
@@ -450,6 +465,7 @@ module.exports = class Stealth {
   }
   _disableSentryAndTelemetry() {
     var _a, _b, _c, _d, _e, _f, _g, _h, _i, _j, _k, _l, _m, _n, _o, _p, _q, _r, _s;
+    if (this._sentryDisabled) return;
     try {
       (_d = (_a = window == null ? void 0 : window.__SENTRY__) == null ? void 0 : _a.globalEventProcessors) == null ? void 0 : _d.splice(
         0,
@@ -474,6 +490,7 @@ module.exports = class Stealth {
           console[key] = current.__sentry_original__;
         }
       }
+      this._sentryDisabled = true;
     } catch (error) {
       this._logWarning("TELEMETRY", "Failed while disabling Sentry hooks", error, "telemetry-sentry");
     }
@@ -774,10 +791,7 @@ module.exports = class Stealth {
   }
   _restoreOriginalStatus() {
     if (!this._originalStatus) return;
-    if (this._setStatusViaProto(this._originalStatus)) {
-      this._originalStatus = null;
-      return;
-    }
+    this._setStatusViaProto(this._originalStatus);
     this._setStatus(this._originalStatus);
     this._originalStatus = null;
   }

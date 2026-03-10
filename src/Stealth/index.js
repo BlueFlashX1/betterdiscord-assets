@@ -70,6 +70,8 @@ module.exports = class Stealth {
 
     this._warningTimestamps = new Map();
     this._protoUtils = null;
+    this._sentryDisabled = false;
+    this._pendingTimers = new Set();
   }
 
   _toast(message, type = "info", timeout = null) {
@@ -110,12 +112,23 @@ module.exports = class Stealth {
     this._toast("Stealth engaged", "success");
   }
 
+  _scheduleTimer(fn, delay) {
+    const tid = setTimeout(() => {
+      this._pendingTimers.delete(tid);
+      fn();
+    }, delay);
+    this._pendingTimers.add(tid);
+  }
+
   stop() {
+    for (const tid of this._pendingTimers) clearTimeout(tid);
+    this._pendingTimers.clear();
     this._unsubscribeFluxEvents();
     if (this._dispatcherPollTimer) {
       clearInterval(this._dispatcherPollTimer);
       this._dispatcherPollTimer = null;
     }
+    this._sentryDisabled = false;
     this._processMonitorPatched = false;
     this._warningTimestamps.clear();
 
@@ -235,7 +248,7 @@ module.exports = class Stealth {
           this._disableSentryAndTelemetry();
         }
         if (this.settings.enabled && this.settings.invisibleStatus) {
-          setTimeout(() => this._ensureInvisibleStatus(), 1000);
+          this._scheduleTimer(() => this._ensureInvisibleStatus(), 1000);
         }
       },
 
@@ -243,7 +256,7 @@ module.exports = class Stealth {
       USER_SETTINGS_PROTO_UPDATE: () => {
         if (!this.settings.enabled || !this.settings.invisibleStatus) return;
         // Small delay so Discord applies the setting, then we override
-        setTimeout(() => this._ensureInvisibleStatus(), 300);
+        this._scheduleTimer(() => this._ensureInvisibleStatus(), 300);
       },
     };
 
@@ -258,7 +271,10 @@ module.exports = class Stealth {
   }
 
   _unsubscribeFluxEvents() {
-    if (!this._Dispatcher) return;
+    if (!this._Dispatcher) {
+      this._fluxHandlers.clear();
+      return;
+    }
 
     for (const [eventName, handler] of this._fluxHandlers.entries()) {
       try {
@@ -519,6 +535,7 @@ module.exports = class Stealth {
   }
 
   _disableSentryAndTelemetry() {
+    if (this._sentryDisabled) return;
     try {
       window?.__SENTRY__?.globalEventProcessors?.splice(
         0,
@@ -545,6 +562,7 @@ module.exports = class Stealth {
           console[key] = current.__sentry_original__;
         }
       }
+      this._sentryDisabled = true;
     } catch (error) {
       this._logWarning("TELEMETRY", "Failed while disabling Sentry hooks", error, "telemetry-sentry");
     }
@@ -903,12 +921,8 @@ module.exports = class Stealth {
     if (!this._originalStatus) return;
 
     // Proto uses string values directly: "online", "idle", "dnd", "invisible"
-    if (this._setStatusViaProto(this._originalStatus)) {
-      this._originalStatus = null;
-      return;
-    }
-
-    // Fallback to legacy
+    // Always try both paths as belt-and-suspenders — proto callback is async and may silently no-op
+    this._setStatusViaProto(this._originalStatus);
     this._setStatus(this._originalStatus);
     this._originalStatus = null;
   }

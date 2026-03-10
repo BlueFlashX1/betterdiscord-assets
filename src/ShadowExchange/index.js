@@ -75,14 +75,6 @@ const FALLBACK_SHADOWS = [
 
 // ─── Utility ───────────────────────────────────────────────────────────────
 
-function escHtml(s) {
-  return String(s)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
-
 function formatTimestamp(ts) {
   try {
     const d = new Date(ts);
@@ -469,10 +461,10 @@ function buildPanelComponents(pluginInstance) {
         const q = searchQuery.toLowerCase();
         wps = wps.filter(
           (w) =>
-            w.label.toLowerCase().includes(q) ||
-            w.shadowName.toLowerCase().includes(q) ||
-            w.channelName.toLowerCase().includes(q) ||
-            w.guildName.toLowerCase().includes(q) ||
+            (w.label || "").toLowerCase().includes(q) ||
+            (w.shadowName || "").toLowerCase().includes(q) ||
+            (w.channelName || "").toLowerCase().includes(q) ||
+            (w.guildName || "").toLowerCase().includes(q) ||
             (w.messagePreview || "").toLowerCase().includes(q) ||
             (w.messageAuthor || "").toLowerCase().includes(q)
         );
@@ -616,6 +608,8 @@ module.exports = class ShadowExchange {
     this._navigateRequestId = 0;
     this._channelFadeToken = 0;
     this._channelFadeResetTimer = null;
+    this._saveDebounceTimer = null;
+    this._layoutBusUnsub = null;
   }
 
   constructor() {
@@ -657,10 +651,7 @@ module.exports = class ShadowExchange {
       // Right-click context menu on messages → "Shadow Mark"
       this.patchContextMenu();
 
-      this._toast(
-      `ShadowExchange v${SE_VERSION} active`,
-        { type: "success", timeout: 2200 }
-      );
+      this._toast(`ShadowExchange v${SE_VERSION} active`, "success");
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
       this._toast("ShadowExchange failed to start", "error");
@@ -1028,6 +1019,10 @@ module.exports = class ShadowExchange {
     );
   }
 
+  isShadowMarked(shadowId) {
+    return this.getMarkedShadowIds().has(shadowId);
+  }
+
   // ── Shadow Assignment ────────────────────────────────────────────────
 
   async getWeakestAvailableShadow() {
@@ -1100,12 +1095,12 @@ module.exports = class ShadowExchange {
 
   async getAvailableShadowCount() {
     if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
-      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+      return Math.max(0, FALLBACK_SHADOWS.length - this.settings.waypoints.length);
     }
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
     const saInstance = saPlugin?.instance;
     if (!saInstance || typeof saInstance.getAllShadows !== "function") {
-      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+      return Math.max(0, FALLBACK_SHADOWS.length - this.settings.waypoints.length);
     }
     try {
       // CROSS-PLUGIN SNAPSHOT: Use ShadowArmy's shared snapshot if fresh, else fall back to IDB

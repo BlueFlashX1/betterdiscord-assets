@@ -441,7 +441,7 @@ function buildPanelComponents(pluginInstance) {
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         wps = wps.filter(
-          (w) => w.label.toLowerCase().includes(q) || w.shadowName.toLowerCase().includes(q) || w.channelName.toLowerCase().includes(q) || w.guildName.toLowerCase().includes(q) || (w.messagePreview || "").toLowerCase().includes(q) || (w.messageAuthor || "").toLowerCase().includes(q)
+          (w) => (w.label || "").toLowerCase().includes(q) || (w.shadowName || "").toLowerCase().includes(q) || (w.channelName || "").toLowerCase().includes(q) || (w.guildName || "").toLowerCase().includes(q) || (w.messagePreview || "").toLowerCase().includes(q) || (w.messageAuthor || "").toLowerCase().includes(q)
         );
       }
       if (sortBy === "created") wps.sort((a, b) => b.createdAt - a.createdAt);
@@ -602,6 +602,8 @@ module.exports = class ShadowExchange {
     this._navigateRequestId = 0;
     this._channelFadeToken = 0;
     this._channelFadeResetTimer = null;
+    this._saveDebounceTimer = null;
+    this._layoutBusUnsub = null;
   }
   constructor() {
     this._resetRuntimeState();
@@ -634,10 +636,7 @@ module.exports = class ShadowExchange {
       this.injectSwirlIcon();
       this.setupSwirlObserver();
       this.patchContextMenu();
-      this._toast(
-        `ShadowExchange v${SE_VERSION} active`,
-        { type: "success", timeout: 2200 }
-      );
+      this._toast(`ShadowExchange v${SE_VERSION} active`, "success");
     } catch (err) {
       console.error("[ShadowExchange] start() failed:", err);
       this._toast("ShadowExchange failed to start", "error");
@@ -961,6 +960,9 @@ module.exports = class ShadowExchange {
       (((_a2 = this.settings) == null ? void 0 : _a2.waypoints) || []).map((w) => w.shadowId).filter(Boolean)
     );
   }
+  isShadowMarked(shadowId) {
+    return this.getMarkedShadowIds().has(shadowId);
+  }
   // ── Shadow Assignment ────────────────────────────────────────────────
   async getWeakestAvailableShadow() {
     var _a2;
@@ -1023,12 +1025,12 @@ module.exports = class ShadowExchange {
   async getAvailableShadowCount() {
     var _a2;
     if (!BdApi.Plugins.isEnabled("ShadowArmy")) {
-      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+      return Math.max(0, FALLBACK_SHADOWS.length - this.settings.waypoints.length);
     }
     const saPlugin = BdApi.Plugins.get("ShadowArmy");
     const saInstance = saPlugin == null ? void 0 : saPlugin.instance;
     if (!saInstance || typeof saInstance.getAllShadows !== "function") {
-      return FALLBACK_SHADOWS.length - this.settings.waypoints.length;
+      return Math.max(0, FALLBACK_SHADOWS.length - this.settings.waypoints.length);
     }
     try {
       const all = ((_a2 = saInstance.getShadowSnapshot) == null ? void 0 : _a2.call(saInstance)) || await saInstance.getAllShadows();

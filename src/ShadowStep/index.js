@@ -194,8 +194,8 @@ function buildComponents(pluginRef) {
 
     const handleTeleport = useCallback((anchorId) => {
       pluginRef.teleportTo(anchorId);
-      onClose();
-    }, [onClose]);
+      // teleportTo already calls closePanel() internally
+    }, []);
 
     const handleRemove = useCallback((anchorId) => {
       pluginRef.removeAnchor(anchorId);
@@ -355,12 +355,18 @@ module.exports = class ShadowStep {
 
       // 4. Stop and remove any active transition
       _TransitionCleanupUtils?.cancelPendingTransition?.(this);
+      // Fallback timer cleanup if TransitionCleanupUtils unavailable
+      if (this._transitionNavTimeout) { clearTimeout(this._transitionNavTimeout); this._transitionNavTimeout = null; }
+      if (this._transitionCleanupTimeout) { clearTimeout(this._transitionCleanupTimeout); this._transitionCleanupTimeout = null; }
 
       // 5. Clear any queued navigation retries
       _TransitionCleanupUtils?.clearNavigateRetries?.(this);
+      // Fallback: clear retry timers directly
+      if (this._navigateRetryTimers?.size) { for (const t of this._navigateRetryTimers) clearTimeout(t); this._navigateRetryTimers.clear(); }
 
       // 6. Clear channel view fade state
       _TransitionCleanupUtils?.cancelChannelViewFade?.(this);
+      if (this._channelFadeResetTimer) { clearTimeout(this._channelFadeResetTimer); this._channelFadeResetTimer = null; }
 
       // 7. Remove CSS
       this.removeCSS();
@@ -527,7 +533,7 @@ module.exports = class ShadowStep {
       sortOrder: this.settings.anchors.length,
     };
 
-    this.settings.anchors.push(anchor);
+    this.settings.anchors = [...this.settings.anchors, anchor];
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this._toast(`Shadow Anchor planted: #${anchor.channelName}`, "success");
@@ -581,7 +587,7 @@ module.exports = class ShadowStep {
 
   _getAgiStat() {
     const cached = this._statsCache.get();
-    if (cached && BdApi.Plugins.isEnabled('SoloLevelingStats')) {
+    if (cached !== null) {
       return cached.agility || 0;
     }
     try {
@@ -1351,7 +1357,8 @@ module.exports = class ShadowStep {
             type: "range", min: 300, max: 1400, step: 50, value: animDuration,
             style: { accentColor: "#8a2be2", width: "120px" },
             onChange: (e) => {
-              const val = parseInt(e.target.value);
+              const val = parseInt(e.target.value, 10);
+              if (isNaN(val)) return;
               setAnimDuration(val);
               self.settings.animationDuration = val;
               self.scheduleSaveSettings();
@@ -1366,7 +1373,7 @@ module.exports = class ShadowStep {
             type: "number", min: 3, max: 50, value: maxAnchors,
             style: { ...inputStyle, width: "60px" },
             onChange: (e) => {
-              const val = Math.max(3, Math.min(50, parseInt(e.target.value) || BASE_MAX_ANCHORS));
+              const val = Math.max(3, Math.min(50, parseInt(e.target.value, 10) || BASE_MAX_ANCHORS));
               setMaxAnchors(val);
               self.settings.maxAnchors = val;
               self.scheduleSaveSettings();

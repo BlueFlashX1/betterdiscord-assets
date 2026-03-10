@@ -94,7 +94,6 @@ module.exports = class ShadowRecon {
     this._guildContextUnpatch = null;
     this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
-    this._domObserver = null;
     this._refreshInterval = null;
     this._visualRefreshTimeout = null;
     this._modalEl = null;
@@ -128,6 +127,7 @@ module.exports = class ShadowRecon {
   }
   stop() {
     this._stopped = true;
+    this._permissionBitsCache = null;
     this.unpatchContextMenus();
     this.stopRefreshLoops();
     this.teardownObserver();
@@ -235,7 +235,7 @@ module.exports = class ShadowRecon {
   _getShadowDeploymentMap() {
     var _a, _b;
     const now = Date.now();
-    if (now - this._shadowCache.timestamp < 3e3 && BdApi.Plugins.isEnabled("ShadowSenses")) return this._shadowCache.map;
+    if (now - this._shadowCache.timestamp < 3e3) return this._shadowCache.map;
     const nextMap = /* @__PURE__ */ new Map();
     try {
       const plugin = BdApi.Plugins.get("ShadowSenses");
@@ -573,15 +573,17 @@ module.exports = class ShadowRecon {
       widget.id = WIDGET_ID;
       widget.className = "shadow-recon-widget";
       widget.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
-      widget.addEventListener("click", () => {
+      this._widgetClickHandler = () => {
         const guildId = this._getCurrentGuildId();
         if (guildId) this.openGuildDossier(guildId);
         else this._toast("Select a guild first", "warning");
-      });
-      widget.addEventListener("contextmenu", (event) => {
+      };
+      this._widgetContextHandler = (event) => {
         event.preventDefault();
         this._toggleCurrentGuildMarkWithToast();
-      });
+      };
+      widget.addEventListener("click", this._widgetClickHandler);
+      widget.addEventListener("contextmenu", this._widgetContextHandler);
       if (target.firstChild) target.insertBefore(widget, target.firstChild);
       else target.appendChild(widget);
     }
@@ -601,7 +603,13 @@ module.exports = class ShadowRecon {
   }
   removeServerCounterWidget() {
     const widget = document.getElementById(WIDGET_ID);
-    if (widget) widget.remove();
+    if (widget) {
+      if (this._widgetClickHandler) widget.removeEventListener("click", this._widgetClickHandler);
+      if (this._widgetContextHandler) widget.removeEventListener("contextmenu", this._widgetContextHandler);
+      widget.remove();
+    }
+    this._widgetClickHandler = null;
+    this._widgetContextHandler = null;
   }
   // ---- Member Counter Banner ------------------------------------------
   removeMemberCounterBanner() {
@@ -838,6 +846,7 @@ module.exports = class ShadowRecon {
     body.appendChild(connectionsSection);
     try {
       const connections = await this.getConnectionsIntel(userId, guildId);
+      if (this._stopped || !document.getElementById(MODAL_ID)) return;
       connectionsSection.innerHTML = "";
       const rows = connections.length ? connections.map((c) => [c.type, `${c.name}${c.verified ? " (verified)" : ""}`]) : [["Status", "No public connections returned for this target"]];
       connectionsSection.appendChild(this._buildGrid(rows));

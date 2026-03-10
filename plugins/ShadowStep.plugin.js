@@ -204,8 +204,7 @@ Uses: ${anchor.useCount}`
     }, [anchors]);
     const handleTeleport = useCallback((anchorId) => {
       pluginRef.teleportTo(anchorId);
-      onClose();
-    }, [onClose]);
+    }, []);
     const handleRemove = useCallback((anchorId) => {
       pluginRef.removeAnchor(anchorId);
       forceUpdate();
@@ -345,7 +344,7 @@ module.exports = class ShadowStep {
     this._toast(`${PLUGIN_NAME} v${PLUGIN_VERSION} \u2014 Shadows ready`, "info");
   }
   stop() {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     try {
       this.closePanel();
       if (this._unpatchContextMenu) {
@@ -358,8 +357,24 @@ module.exports = class ShadowStep {
       }
       this._unregisterHotkey();
       (_a = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.cancelPendingTransition) == null ? void 0 : _a.call(_TransitionCleanupUtils, this);
+      if (this._transitionNavTimeout) {
+        clearTimeout(this._transitionNavTimeout);
+        this._transitionNavTimeout = null;
+      }
+      if (this._transitionCleanupTimeout) {
+        clearTimeout(this._transitionCleanupTimeout);
+        this._transitionCleanupTimeout = null;
+      }
       (_b = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.clearNavigateRetries) == null ? void 0 : _b.call(_TransitionCleanupUtils, this);
-      (_c = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.cancelChannelViewFade) == null ? void 0 : _c.call(_TransitionCleanupUtils, this);
+      if ((_c = this._navigateRetryTimers) == null ? void 0 : _c.size) {
+        for (const t of this._navigateRetryTimers) clearTimeout(t);
+        this._navigateRetryTimers.clear();
+      }
+      (_d = _TransitionCleanupUtils == null ? void 0 : _TransitionCleanupUtils.cancelChannelViewFade) == null ? void 0 : _d.call(_TransitionCleanupUtils, this);
+      if (this._channelFadeResetTimer) {
+        clearTimeout(this._channelFadeResetTimer);
+        this._channelFadeResetTimer = null;
+      }
       this.removeCSS();
       this._components = null;
       this._NavigationUtils = null;
@@ -505,7 +520,7 @@ module.exports = class ShadowStep {
       useCount: 0,
       sortOrder: this.settings.anchors.length
     };
-    this.settings.anchors.push(anchor);
+    this.settings.anchors = [...this.settings.anchors, anchor];
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this._toast(`Shadow Anchor planted: #${anchor.channelName}`, "success");
@@ -556,7 +571,7 @@ module.exports = class ShadowStep {
   _getAgiStat() {
     var _a, _b, _c;
     const cached = this._statsCache.get();
-    if (cached && BdApi.Plugins.isEnabled("SoloLevelingStats")) {
+    if (cached !== null) {
       return cached.agility || 0;
     }
     try {
@@ -1315,7 +1330,8 @@ module.exports = class ShadowStep {
             value: animDuration,
             style: { accentColor: "#8a2be2", width: "120px" },
             onChange: (e) => {
-              const val = parseInt(e.target.value);
+              const val = parseInt(e.target.value, 10);
+              if (isNaN(val)) return;
               setAnimDuration(val);
               self.settings.animationDuration = val;
               self.scheduleSaveSettings();
@@ -1334,7 +1350,7 @@ module.exports = class ShadowStep {
             value: maxAnchors,
             style: { ...inputStyle, width: "60px" },
             onChange: (e) => {
-              const val = Math.max(3, Math.min(50, parseInt(e.target.value) || BASE_MAX_ANCHORS));
+              const val = Math.max(3, Math.min(50, parseInt(e.target.value, 10) || BASE_MAX_ANCHORS));
               setMaxAnchors(val);
               self.settings.maxAnchors = val;
               self.scheduleSaveSettings();
