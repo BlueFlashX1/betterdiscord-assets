@@ -445,6 +445,7 @@ body.ra-pulling [class*="chatContent_"] {
  * @param {RulersAuthority} ctx - plugin instance
  */
 export function injectCSS(ctx) {
+  if (!ctx._builtCSS) ctx._builtCSS = buildCSS(ctx);
   BdApi.DOM.removeStyle(RA_STYLE_ID);
-  BdApi.DOM.addStyle(RA_STYLE_ID, buildCSS(ctx));
+  BdApi.DOM.addStyle(RA_STYLE_ID, ctx._builtCSS);
 }

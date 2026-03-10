@@ -332,6 +332,7 @@ module.exports = class RulersAuthority {
 
     // ── CSS class modules (lazy getters — CollapsibleUI pattern) ──
     this._modules = _createModules();
+    this._builtCSS = null; // invalidate cached CSS on module refresh
 
     // ── Build resolved selectors from Webpack + fallbacks ──
     this._buildResolvedSelectors();

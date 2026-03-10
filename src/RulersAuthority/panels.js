@@ -711,11 +711,12 @@ export function injectToolbarIcon(ctx) {
 export function updateToolbarIcon(ctx) {
   const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
   if (!icon) return;
-  const anyPushed = getPushedPanelCount(ctx) > 0;
+  const pushedCount = getPushedPanelCount(ctx);
+  const anyPushed = pushedCount > 0;
   icon.classList.toggle("ra-toolbar-icon--active", anyPushed);
   icon.classList.toggle("ra-toolbar-icon--amplified", ctx._amplifiedMode);
 
-  icon.title = `Ruler's Authority${anyPushed ? ` (${getPushedPanelCount(ctx)} pushed)` : ""}${ctx._amplifiedMode ? " [AMPLIFIED]" : ""}`;
+  icon.title = `Ruler's Authority${anyPushed ? ` (${pushedCount} pushed)` : ""}${ctx._amplifiedMode ? " [AMPLIFIED]" : ""}`;
 }
 
 export function scheduleIconReinject(ctx, delayMs = RA_ICON_REINJECT_DELAY_MS) {

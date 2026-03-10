@@ -777,10 +777,11 @@ function injectToolbarIcon(ctx) {
 function updateToolbarIcon(ctx) {
   const icon = document.getElementById(RA_TOOLBAR_ICON_ID);
   if (!icon) return;
-  const anyPushed = getPushedPanelCount(ctx) > 0;
+  const pushedCount = getPushedPanelCount(ctx);
+  const anyPushed = pushedCount > 0;
   icon.classList.toggle("ra-toolbar-icon--active", anyPushed);
   icon.classList.toggle("ra-toolbar-icon--amplified", ctx._amplifiedMode);
-  icon.title = `Ruler's Authority${anyPushed ? ` (${getPushedPanelCount(ctx)} pushed)` : ""}${ctx._amplifiedMode ? " [AMPLIFIED]" : ""}`;
+  icon.title = `Ruler's Authority${anyPushed ? ` (${pushedCount} pushed)` : ""}${ctx._amplifiedMode ? " [AMPLIFIED]" : ""}`;
 }
 function scheduleIconReinject(ctx, delayMs = RA_ICON_REINJECT_DELAY_MS) {
   if (ctx._iconReinjectTimeout) clearTimeout(ctx._iconReinjectTimeout);
@@ -1386,8 +1387,9 @@ body.ra-pulling [class*="chatContent_"] {
   `.trim();
 }
 function injectCSS(ctx) {
+  if (!ctx._builtCSS) ctx._builtCSS = buildCSS(ctx);
   BdApi.DOM.removeStyle(RA_STYLE_ID);
-  BdApi.DOM.addStyle(RA_STYLE_ID, buildCSS(ctx));
+  BdApi.DOM.addStyle(RA_STYLE_ID, ctx._builtCSS);
 }
 
 // src/RulersAuthority/settings.js
@@ -1910,6 +1912,7 @@ module.exports = class RulersAuthority {
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
     this._SelectedChannelStore = Webpack.getStore("SelectedChannelStore");
     this._modules = _createModules();
+    this._builtCSS = null;
     this._buildResolvedSelectors();
     this.debugLog("Webpack", "Modules acquired", {
       stores: {

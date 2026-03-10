@@ -555,7 +555,7 @@ module.exports = class SystemWindow {
     if (!this._currentUserId || !article) return false;
     try {
       let fiber = BdApi.ReactUtils.getInternalInstance(article);
-      for (let i = 0; i < 15 && fiber; i++) {
+      for (let i = 0; i < 8 && fiber; i++) {
         const authorId = ((_c = (_b = (_a = fiber.memoizedProps) == null ? void 0 : _a.message) == null ? void 0 : _b.author) == null ? void 0 : _c.id) || ((_f = (_e = (_d = fiber.memoizedState) == null ? void 0 : _d.message) == null ? void 0 : _e.author) == null ? void 0 : _f.id);
         if (authorId) return authorId === this._currentUserId;
         fiber = fiber.return;

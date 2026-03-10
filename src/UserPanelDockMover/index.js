@@ -169,6 +169,14 @@ module.exports = class UserPanelDockMover {
   // 3) DOCK/PANEL SYNC LOOP
   // =========================================================================
   trySetup() {
+    // Fast path: skip DOM queries if cached elements are still connected
+    if (this.isPositioned && this.panel?.isConnected && this.dock?.isConnected) {
+      if (!this.panel.classList.contains("sl-userpanel-docked")) {
+        this.panel.classList.add("sl-userpanel-docked");
+      }
+      return;
+    }
+
     const panel = document.querySelector(this.panelSelector);
     const dock = document.querySelector(this.dockSelector);
 

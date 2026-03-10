@@ -223,19 +223,16 @@ module.exports = class HSLWheelBridge {
         const engine = new WheelBridgeEngine();
         engineRef.current = engine;
         engine.syncScroller();
+        const syncInterval = setInterval(() => {
+          if (pluginInstance._isStopped || document.hidden) return;
+          engine.syncScroller();
+        }, 2e3);
         return () => {
+          clearInterval(syncInterval);
           engine.unmount();
           engineRef.current = null;
         };
       }, []);
-      const lastSyncRef = React.useRef(0);
-      React.useEffect(() => {
-        if (!engineRef.current || pluginInstance._isStopped) return;
-        const now = Date.now();
-        if (now - lastSyncRef.current < 500) return;
-        lastSyncRef.current = now;
-        engineRef.current.syncScroller();
-      });
       return null;
     };
     return this.__WheelControllerCached;

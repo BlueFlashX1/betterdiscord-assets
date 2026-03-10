@@ -153,6 +153,13 @@ module.exports = class UserPanelDockMover {
   // 3) DOCK/PANEL SYNC LOOP
   // =========================================================================
   trySetup() {
+    var _a, _b;
+    if (this.isPositioned && ((_a = this.panel) == null ? void 0 : _a.isConnected) && ((_b = this.dock) == null ? void 0 : _b.isConnected)) {
+      if (!this.panel.classList.contains("sl-userpanel-docked")) {
+        this.panel.classList.add("sl-userpanel-docked");
+      }
+      return;
+    }
     const panel = document.querySelector(this.panelSelector);
     const dock = document.querySelector(this.dockSelector);
     if (!panel || !dock) return;
