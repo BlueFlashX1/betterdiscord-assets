@@ -1,0 +1,238 @@
+/* ShadowArmy — Static CSS
+ * Extraction animation, ARISE animation, settings panel, widget button.
+ * Imported as text string by esbuild (loader: { ".css": "text" }).
+ *
+ * NOTE: .sa-arise-text font-family is dynamic (settings-dependent).
+ *       animation.js overrides it at injection time via template literal.
+ */
+
+/* ── Extraction Animation ── */
+
+.shadow-army-extraction-animation {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 10000;
+  pointer-events: none;
+  animation: shadowExtract 2s ease-out;
+}
+
+.shadow-extraction-content {
+  background: rgba(0, 0, 0, 0.9);
+  border: 2px solid #8a2be2;
+  border-radius: 2px;
+  padding: 20px 30px;
+  text-align: center;
+  box-shadow: 0 0 20px rgba(138, 43, 226, 0.6);
+}
+
+.shadow-extraction-title {
+  font-family: 'Speedy Space Goat Oddity', 'Orbitron', sans-serif !important;
+  font-size: 32px;
+  font-weight: 700;
+  color: #9370db;
+  text-shadow: 0 0 10px rgba(138, 43, 226, 0.8);
+  margin-bottom: 10px;
+  animation: glow 1s ease-in-out infinite alternate;
+}
+
+.shadow-extraction-info {
+  color: #d4a5ff;
+  font-size: 16px;
+}
+
+.shadow-rank {
+  font-weight: 700;
+  margin-bottom: 5px;
+}
+
+.shadow-role {
+  font-size: 14px;
+  opacity: 0.8;
+}
+
+@keyframes shadowExtract {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.5);
+  }
+  20% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+
+@keyframes glow {
+  from {
+    text-shadow: 0 0 10px rgba(138, 43, 226, 0.8);
+  }
+  to {
+    text-shadow: 0 0 20px rgba(138, 43, 226, 1), 0 0 30px rgba(138, 43, 226, 0.6);
+  }
+}
+
+.shadow-army-extraction-animation.fade-out {
+  animation: fadeOut 0.5s ease-out forwards;
+}
+
+@keyframes fadeOut {
+  to {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+  }
+}
+
+/* ── ARISE Animation ── */
+
+.sa-animation-container {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 999999;
+}
+
+.sa-arise-wrapper {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  animation: sa-arise-float var(--sa-duration, 2.5s) ease-out forwards;
+}
+
+.sa-arise-text {
+  /* font-family is set dynamically by animation.js (settings-dependent) */
+  font-weight: 700;
+  font-size: 42px;
+  line-height: 1.12;
+  letter-spacing: 0.12em;
+  text-transform: none; /* Preserve "ARiSe" casing */
+  color: #ffffff;
+  text-shadow:
+    0 0 6px rgba(138, 43, 226, 0.9),
+    0 0 14px rgba(138, 43, 226, 0.7),
+    0 0 28px rgba(138, 43, 226, 0.5),
+    0 0 42px rgba(75, 0, 130, 0.4);
+  animation: sa-arise-glow 0.7s ease-in-out infinite alternate;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+.sa-arise-text .sa-small-s {
+  font-size: 0.8em !important;
+  display: inline-block !important;
+}
+
+.sa-arise-text .sa-small-r {
+  font-size: 0.72em !important;
+  display: inline-block !important;
+}
+
+.sa-arise-text .sa-mid-i {
+  font-size: 0.9em !important;
+  display: inline-block !important;
+}
+
+.sa-arise-text .sa-mid-e {
+  font-size: 1em !important;
+  display: inline-block !important;
+}
+
+.sa-arise-meta {
+  margin-top: calc(4px + (var(--sa-scale, 1) - 1) * 4px);
+  font-family: 'Orbitron', system-ui, sans-serif;
+  font-size: 16px;
+  font-weight: 900;
+  line-height: 1.25;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: linear-gradient(180deg, #d8b4fe 0%, #7e22ce 58%, #09060d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke: 1px rgba(147, 51, 234, 0.9);
+  text-shadow:
+    0 0 4px rgba(147, 51, 234, 0.9),
+    0 0 10px rgba(147, 51, 234, 0.65),
+    0 0 18px rgba(45, 15, 65, 0.45);
+}
+
+.sa-arise-particle {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 999px;
+  background: radial-gradient(circle, #9333ea 0%, rgba(75, 0, 130, 0) 70%);
+  animation: sa-arise-particle-fade var(--sa-duration, 2.5s) ease-out forwards;
+}
+
+@keyframes sa-arise-float {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -40%) scale(calc(0.6 * var(--sa-scale, 1)));
+  }
+  15% {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(calc(1.1 * var(--sa-scale, 1)));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -70%) scale(calc(0.9 * var(--sa-scale, 1)));
+  }
+}
+
+@keyframes sa-arise-glow {
+  from {
+    filter:
+      drop-shadow(0 0 8px rgba(138, 43, 226, 0.8))
+      drop-shadow(0 0 16px rgba(75, 0, 130, 0.6));
+  }
+  to {
+    filter:
+      drop-shadow(0 0 14px rgba(138, 43, 226, 1))
+      drop-shadow(0 0 30px rgba(147, 51, 234, 0.8));
+  }
+}
+
+@keyframes sa-arise-particle-fade {
+  0% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(var(--sa-particle-x, 0px), var(--sa-particle-y, -140px)) scale(0);
+  }
+}
+
+/* ── Settings Panel ── */
+
+.shadow-army-settings {
+  padding: 10px;
+  color: #d4a5ff;
+  max-width: 600px;
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1e2e;
+  border-radius: 2px;
+}
+
+.shadow-army-settings h2,
+.shadow-army-settings h3 {
+  margin: 4px 0;
+}
+
+.shadow-army-stats > div,
+.shadow-army-config > div {
+  margin: 2px 0;
+}
