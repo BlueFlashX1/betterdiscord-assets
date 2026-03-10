@@ -34,6 +34,20 @@ const DEFAULT_SETTINGS = {
   debugMode: false,
 };
 
+// ─── Settings Panel Styles (hoisted to avoid re-creation per render) ────────
+const SETTINGS_ROW_STYLE = {
+  display: "flex", alignItems: "center", justifyContent: "space-between",
+  padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)",
+};
+const SETTINGS_LABEL_STYLE = { color: "#ccc", fontSize: "13px" };
+const SETTINGS_INPUT_STYLE = {
+  background: "rgba(0,0,0,0.3)", border: "1px solid rgba(138,43,226,0.3)",
+  borderRadius: "6px", color: "#ddd", padding: "4px 8px", fontSize: "13px",
+  outline: "none", width: "120px", textAlign: "center",
+};
+const SETTINGS_CHECK_STYLE = { accentColor: "#8a2be2" };
+const SETTINGS_LAST_ROW_STYLE = { ...SETTINGS_ROW_STYLE, borderBottom: "none" };
+
 // ─── Hotkey Utilities (from BetterDiscordPluginUtils) ────────────────────────
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
@@ -378,6 +392,7 @@ module.exports = class ShadowStep {
       this._GuildStore = null;
       this._SelectedGuildStore = null;
       this._statsCache.invalidate();
+      this._cssCache = null;
       this._flushScheduledSettingsSave();
     } catch (err) {
       this.debugError("Lifecycle", "Error during stop:", err);
@@ -514,8 +529,9 @@ module.exports = class ShadowStep {
       this._toast("Channel already anchored", "warning");
       return;
     }
-    if (this.settings.anchors.length >= this.getMaxAnchors()) {
-      this._toast(`Max anchors reached (${this.getMaxAnchors()})`, "warning");
+    const maxAnchors = this.getMaxAnchors();
+    if (this.settings.anchors.length >= maxAnchors) {
+      this._toast(`Max anchors reached (${maxAnchors})`, "warning");
       return;
     }
 
@@ -601,7 +617,10 @@ module.exports = class ShadowStep {
     }
     try {
       const soloPlugin = BdApi.Plugins.get("SoloLevelingStats");
-      if (!soloPlugin?.instance) return 0;
+      if (!soloPlugin?.instance) {
+        this._statsCache.set({ agility: 0 });
+        return 0;
+      }
       const stats =
         soloPlugin.instance.getTotalEffectiveStats?.() ||
         soloPlugin.instance.settings?.stats ||
@@ -609,6 +628,7 @@ module.exports = class ShadowStep {
       this._statsCache.set(stats);
       return stats.agility || 0;
     } catch (_) {
+      this._statsCache.set({ agility: 0 });
       return 0;
     }
   }
@@ -819,7 +839,8 @@ module.exports = class ShadowStep {
   }
 
   buildCSS() {
-    return `
+    if (this._cssCache) return this._cssCache;
+    return (this._cssCache = `
 /* ═══════════════════════════════════════════════════════════════
    ShadowStep v${PLUGIN_VERSION} — Shadow Anchor Teleportation
    ═══════════════════════════════════════════════════════════════ */
@@ -1259,7 +1280,7 @@ module.exports = class ShadowStep {
 }
 
 .ss-panel-hint { color: #555; }
-`;
+`);
   }
 
   // ── Settings Panel ──────────────────────────────────────────
@@ -1279,18 +1300,6 @@ module.exports = class ShadowStep {
       const agiStat = self._getAgiStat();
       const effectiveMax = (maxAnchors || BASE_MAX_ANCHORS) + Math.floor(agiStat / AGI_BONUS_DIVISOR);
       const anchorCount = (self.settings.anchors || []).length;
-
-      const rowStyle = {
-        display: "flex", alignItems: "center", justifyContent: "space-between",
-        padding: "8px 0", borderBottom: "1px solid rgba(255,255,255,0.05)",
-      };
-      const labelStyle = { color: "#ccc", fontSize: "13px" };
-      const inputStyle = {
-        background: "rgba(0,0,0,0.3)", border: "1px solid rgba(138,43,226,0.3)",
-        borderRadius: "6px", color: "#ddd", padding: "4px 8px", fontSize: "13px",
-        outline: "none", width: "120px", textAlign: "center",
-      };
-      const checkStyle = { accentColor: "#8a2be2" };
 
       return React.createElement("div", {
         style: { padding: "16px", background: "#1e1e2e", borderRadius: "8px", color: "#ccc" },
@@ -1319,10 +1328,10 @@ module.exports = class ShadowStep {
         ),
 
         // Hotkey
-        React.createElement("div", { style: rowStyle },
-          React.createElement("span", { style: labelStyle }, "Hotkey"),
+        React.createElement("div", { style: SETTINGS_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, "Hotkey"),
           React.createElement("input", {
-            style: inputStyle, value: hotkey,
+            style: SETTINGS_INPUT_STYLE, value: hotkey,
             onChange: (e) => {
               setHotkey(e.target.value);
               self.settings.hotkey = e.target.value;
@@ -1334,10 +1343,10 @@ module.exports = class ShadowStep {
         ),
 
         // Animation enabled
-        React.createElement("div", { style: rowStyle },
-          React.createElement("span", { style: labelStyle }, "Shadow Transition"),
+        React.createElement("div", { style: SETTINGS_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, "Shadow Transition"),
           React.createElement("input", {
-            type: "checkbox", checked: animEnabled, style: checkStyle,
+            type: "checkbox", checked: animEnabled, style: SETTINGS_CHECK_STYLE,
             onChange: (e) => {
               setAnimEnabled(e.target.checked);
               self.settings.animationEnabled = e.target.checked;
@@ -1347,10 +1356,10 @@ module.exports = class ShadowStep {
         ),
 
         // Respect reduced-motion preference
-        React.createElement("div", { style: rowStyle },
-          React.createElement("span", { style: labelStyle }, "Respect Reduced Motion"),
+        React.createElement("div", { style: SETTINGS_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, "Respect Reduced Motion"),
           React.createElement("input", {
-            type: "checkbox", checked: respectReducedMotion, style: checkStyle,
+            type: "checkbox", checked: respectReducedMotion, style: SETTINGS_CHECK_STYLE,
             onChange: (e) => {
               setRespectReducedMotion(e.target.checked);
               self.settings.respectReducedMotion = e.target.checked;
@@ -1360,8 +1369,8 @@ module.exports = class ShadowStep {
         ),
 
         // Animation duration
-        React.createElement("div", { style: rowStyle },
-          React.createElement("span", { style: labelStyle }, `Animation (${animDuration}ms + mist hold)`),
+        React.createElement("div", { style: SETTINGS_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, `Animation (${animDuration}ms + mist hold)`),
           React.createElement("input", {
             type: "range", min: 300, max: 1400, step: 50, value: animDuration,
             style: { accentColor: "#8a2be2", width: "120px" },
@@ -1376,11 +1385,11 @@ module.exports = class ShadowStep {
         ),
 
         // Max anchors
-        React.createElement("div", { style: rowStyle },
-          React.createElement("span", { style: labelStyle }, "Base Max Anchors"),
+        React.createElement("div", { style: SETTINGS_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, "Base Max Anchors"),
           React.createElement("input", {
             type: "number", min: 3, max: 50, value: maxAnchors,
-            style: { ...inputStyle, width: "60px" },
+            style: { ...SETTINGS_INPUT_STYLE, width: "60px" },
             onChange: (e) => {
               const val = Math.max(3, Math.min(50, parseInt(e.target.value, 10) || BASE_MAX_ANCHORS));
               setMaxAnchors(val);
@@ -1391,10 +1400,10 @@ module.exports = class ShadowStep {
         ),
 
         // Debug mode
-        React.createElement("div", { style: { ...rowStyle, borderBottom: "none" } },
-          React.createElement("span", { style: labelStyle }, "Debug Mode"),
+        React.createElement("div", { style: SETTINGS_LAST_ROW_STYLE },
+          React.createElement("span", { style: SETTINGS_LABEL_STYLE }, "Debug Mode"),
           React.createElement("input", {
-            type: "checkbox", checked: debug, style: checkStyle,
+            type: "checkbox", checked: debug, style: SETTINGS_CHECK_STYLE,
             onChange: (e) => {
               setDebug(e.target.checked);
               self.settings.debugMode = e.target.checked;
