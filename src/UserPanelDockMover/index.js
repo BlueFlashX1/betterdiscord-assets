@@ -1,5 +1,6 @@
 import STYLES from "./styles.css";
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createToast } = require("../shared/toast");
 
 let _PluginUtils = null;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
@@ -28,7 +29,7 @@ module.exports = class UserPanelDockMover {
     if (this._toastEngine) {
       this._toastEngine.showToast(message, type, timeout, { callerId: "userPanelDockMover" });
     } else {
-      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      createToast()(message, type);
     }
   }
 

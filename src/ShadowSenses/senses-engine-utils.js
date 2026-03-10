@@ -5,6 +5,8 @@ const {
   STATUS_LABELS,
   STATUS_TOAST_TIMEOUT_MS,
 } = require("./constants");
+const { createToast } = require("../shared/toast");
+const _fallbackToast = createToast();
 
 function resolveUserStore() {
   if (this._plugin._UserStore) return this._plugin._UserStore;
@@ -114,7 +116,7 @@ function toast(message, type = "info", timeout = null) {
   if (this._toastEngine) {
     this._toastEngine.showToast(message, type, timeout, { callerId: "shadowSenses" });
   } else {
-    BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    _fallbackToast(message, type);
   }
 }
 

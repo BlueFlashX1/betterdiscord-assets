@@ -6,6 +6,7 @@
  */
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createToast } = require("../shared/toast");
 
 // Scroller selectors — primary + fallbacks for Discord class name changes
 const HSL_SCROLLER_SELECTORS = [
@@ -104,7 +105,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackEngine = null;
     this._fallbackTimer = null;
     this._fallbackPoll = null;
-    this._toast = (msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type });
+    this._toast = createToast();
     this._warnedReactFallback = false;
     this._warnedMessages = new Set();
   }
@@ -140,7 +141,7 @@ module.exports = class HSLWheelBridge {
   // 2) PLUGIN LIFECYCLE
   // =========================================================================
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("hSLWheelBridge") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("hSLWheelBridge") || createToast();
     this._cleanupRuntime();
     this._isStopped = false;
     this._engineMounted = false;

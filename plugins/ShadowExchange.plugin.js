@@ -9,6 +9,34 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
+// src/shared/navigation.js
+var require_navigation = __commonJS({
+  "src/shared/navigation.js"(exports2, module2) {
+    var { Webpack } = BdApi;
+    var _cached = null;
+    function getNavigationUtils2() {
+      if (_cached) return _cached;
+      _cached = Webpack.getByKeys("transitionTo", "back", "forward") || Webpack.getModule((m) => m.transitionTo && m.back && m.forward) || null;
+      return _cached;
+    }
+    module2.exports = { getNavigationUtils: getNavigationUtils2 };
+  }
+});
+
 // src/ShadowExchange/panel-components.js
 var require_panel_components = __commonJS({
   "src/ShadowExchange/panel-components.js"(exports2, module2) {
@@ -1123,6 +1151,8 @@ var FALLBACK_SHADOWS = [
   { name: "Shadow Paragon", rank: "SSS+" },
   { name: "Shadow Apex", rank: "Shadow Monarch" }
 ];
+var { createToast } = require_toast();
+var { getNavigationUtils } = require_navigation();
 var { buildPanelComponents } = require_panel_components();
 var { getShadowExchangeCss } = require_styles();
 var { PORTAL_TRANSITION_CSS } = require_portal_transition_css();
@@ -1184,7 +1214,7 @@ module.exports = class ShadowExchange {
   }
   start() {
     var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowExchange")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowExchange")) || createToast();
     try {
       this.panelOpen = false;
       this.swirlIcon = null;
@@ -1244,9 +1274,7 @@ module.exports = class ShadowExchange {
   initWebpack() {
     const { Webpack } = BdApi;
     try {
-      this._NavigationUtils = Webpack.getModule(
-        (m) => m && m.transitionTo && m.back && m.forward
-      );
+      this._NavigationUtils = getNavigationUtils();
       this.NavigationUtils = this._NavigationUtils;
     } catch (_) {
       this._NavigationUtils = null;

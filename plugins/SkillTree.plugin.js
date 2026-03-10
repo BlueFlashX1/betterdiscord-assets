@@ -2360,6 +2360,57 @@ var require_ui_methods = __commonJS({
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
+// src/shared/react-dom.js
+var require_react_dom = __commonJS({
+  "src/shared/react-dom.js"(exports2, module2) {
+    function getCreateRoot() {
+      var _a;
+      if ((_a = BdApi.ReactDOM) == null ? void 0 : _a.createRoot) {
+        return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+      }
+      return null;
+    }
+    function getLegacyReactDOM() {
+      return BdApi.ReactDOM || BdApi.Webpack.getModule((m) => m && m.render && m.unmountComponentAtNode) || null;
+    }
+    function renderToContainer(container, element) {
+      const createRoot = getCreateRoot();
+      if (createRoot) {
+        const root = createRoot(container);
+        root.render(element);
+        return () => root.unmount();
+      }
+      const legacyDOM = getLegacyReactDOM();
+      if (legacyDOM == null ? void 0 : legacyDOM.render) {
+        legacyDOM.render(element, container);
+        return () => {
+          if (legacyDOM.unmountComponentAtNode) {
+            legacyDOM.unmountComponentAtNode(container);
+          }
+        };
+      }
+      console.error("[shared/react-dom] Neither createRoot nor ReactDOM.render available");
+      return () => {
+      };
+    }
+    module2.exports = { getCreateRoot, getLegacyReactDOM, renderToContainer };
+  }
+});
+
 // src/SkillTree/index.js
 var { buildSkillTreeComponents } = require_components();
 var { ActiveSkillMethods } = require_active_skill_methods();
@@ -2368,6 +2419,8 @@ var { SkillTreeUpgradeMethods } = require_skill_upgrade_methods();
 var { injectSkillTreeCss } = require_styles();
 var { SkillTreeUiMethods } = require_ui_methods();
 var { _PluginUtils, _ReactUtils, _SLUtils } = require_shared_utils();
+var { createToast } = require_toast();
+var { getCreateRoot: _sharedGetCreateRoot } = require_react_dom();
 module.exports = class SkillTree {
   // ============================================================================
   // §1 CONSTRUCTOR & INITIALIZATION
@@ -2426,7 +2479,7 @@ module.exports = class SkillTree {
   // ============================================================================
   start() {
     var _a, _b;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "skillTree")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "skillTree")) || createToast();
     this._isStopped = false;
     this.loadSettings();
     this._loadSLUtils();
@@ -2481,10 +2534,8 @@ module.exports = class SkillTree {
    * Get React 18 createRoot with webpack fallbacks (same pattern as ShadowExchange)
    */
   _getCreateRoot() {
-    var _a;
     if (_ReactUtils == null ? void 0 : _ReactUtils.getCreateRoot) return _ReactUtils.getCreateRoot();
-    if ((_a = BdApi.ReactDOM) == null ? void 0 : _a.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    return null;
+    return _sharedGetCreateRoot();
   }
   /**
    * Render SkillTree button as a React element (for SLUtils Tier 1 React toolbar patcher).

@@ -44,6 +44,20 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/SystemWindow/styles.css
 var styles_default = `/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
    SystemWindow v2.5.0 \u2014 LI-level codeblock wrapping
@@ -335,6 +349,7 @@ li.sw-mentioned.sw-group-end:hover {
 
 // src/SystemWindow/index.js
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createToast } = require_toast();
 var _PluginUtils;
 try {
   _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
@@ -366,7 +381,7 @@ module.exports = class SystemWindow {
     if (this._started) {
       this.stop();
     }
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "systemWindow")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "systemWindow")) || createToast();
     this.settings = {
       ...this._defaultSettings,
       ...BdApi.Data.load("SystemWindow", "settings") || {}

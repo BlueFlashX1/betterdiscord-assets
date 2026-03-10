@@ -43,8 +43,23 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/HSLWheelBridge/index.js
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createToast } = require_toast();
 var HSL_SCROLLER_SELECTORS = [
   "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
   "nav[aria-label='Servers'] ul[role='tree'] [class*='scroller_']",
@@ -124,7 +139,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackEngine = null;
     this._fallbackTimer = null;
     this._fallbackPoll = null;
-    this._toast = (msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type });
+    this._toast = createToast();
     this._warnedReactFallback = false;
     this._warnedMessages = /* @__PURE__ */ new Set();
   }
@@ -158,7 +173,7 @@ module.exports = class HSLWheelBridge {
   // =========================================================================
   start() {
     var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "hSLWheelBridge")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "hSLWheelBridge")) || createToast();
     this._cleanupRuntime();
     this._isStopped = false;
     this._engineMounted = false;

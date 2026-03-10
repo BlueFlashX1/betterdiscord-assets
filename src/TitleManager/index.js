@@ -40,7 +40,7 @@
  *
  * - Migrated title selection modal from innerHTML + event delegation to React components
  * - Added buildTitleComponents() factory with TitleModal + TitleCard components
- * - Uses BdApi.ReactDOM.createRoot() with webpack fallbacks (_getCreateRoot)
+ * - Uses shared/react-dom getCreateRoot() with webpack fallbacks
  * - useReducer force-update bridge for imperative → React state sync
  * - Equip/unequip now trigger React diffed update (no full modal rebuild)
  * - Deleted: renderTitlesGrid, refreshModalSmooth, createTitleButtonIconSvg, escapeHtml
@@ -76,6 +76,8 @@
  */
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createToast } = require("../shared/toast");
+const { getCreateRoot } = require("../shared/react-dom");
 
 const PERCENT_BONUS_RULES = [
   ['xp', 'XP'], ['critChance', 'Crit'], ['strengthPercent', 'STR'],
@@ -280,18 +282,15 @@ module.exports = class SoloLevelingTitleManager {
     return !!this._SLUtils;
   }
 
-  /** React 18 createRoot with shared utility + fallback */
+  /** React 18 createRoot — delegates to shared/react-dom */
   _getCreateRoot() {
+    // Prefer shared _ReactUtils if available (extra webpack fallbacks)
     const fromShared = typeof _ReactUtils?.getCreateRoot === 'function'
       ? _ReactUtils.getCreateRoot()
       : null;
     if (fromShared) return fromShared;
 
-    const reactDom = BdApi.ReactDOM;
-    if (typeof reactDom?.createRoot === 'function') {
-      return (container) => reactDom.createRoot(container);
-    }
-    return null;
+    return getCreateRoot();
   }
 
   /**
@@ -551,7 +550,7 @@ module.exports = class SoloLevelingTitleManager {
    */
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("titleManager") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("titleManager") || createToast();
     this._warnedMessages.clear();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;

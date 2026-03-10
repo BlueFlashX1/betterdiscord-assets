@@ -147,6 +147,9 @@ class DockEngine {
     this.revealTimer = null;
     this.syncInterval = null;
     this._mouseMoveRafId = null;
+    this._resizeRafPending = false;
+    this._dockHeightDirty = true;
+    this._lastTickRefreshAt = 0;
 
     // ── Debug ──
     this.tickCount = 0;
@@ -295,6 +298,7 @@ class DockEngine {
     this.dock = nextDock;
     this.dockMoveTarget = nextDock;
     this.pointerOverDock = false;
+    this._dockHeightDirty = true;
 
     if (!this.dock) return;
     if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
@@ -577,6 +581,10 @@ class DockEngine {
   refreshPointerState() {
     if (!this.dock) { this.pointerOverDock = false; return; }
     if (Date.now() < this.typingLockUntil) { this.pointerOverDock = false; return; }
+    // PERF: Skip expensive geometry checks (getBoundingClientRect + elementFromPoint)
+    // when mouse hasn't moved since last tick refresh
+    if (this.lastMouseMoveAt <= this._lastTickRefreshAt) return;
+    this._lastTickRefreshAt = Date.now();
     this.pointerOverDock = (
       this.hasMouseMoved &&
       this.isCursorInsideDockRect() &&
@@ -651,8 +659,15 @@ class DockEngine {
   }
 
   onResize() {
+    this._dockHeightDirty = true;
     this.startRailFollow(700);
-    this.safeTick();
+    // PERF: Debounce resize → safeTick via RAF to avoid redundant layout during drag-resize
+    if (this._resizeRafPending) return;
+    this._resizeRafPending = true;
+    requestAnimationFrame(() => {
+      this._resizeRafPending = false;
+      this.safeTick();
+    });
   }
 
   onWindowBlur() {
@@ -799,6 +814,8 @@ class DockEngine {
   // ── Dock Height ───────────────────────────────────────────────────────────
 
   updateDockHeightVar() {
+    // PERF: Only re-measure when dock geometry may have changed (resize, dock swap)
+    if (!this._dockHeightDirty && this._lastDockHeight) return;
     if (!this.stateTarget || !this.dock) return;
     const rect = this.dock.getBoundingClientRect();
     const h = Math.max(52, Math.round(rect.height || this.dock.offsetHeight || 80));
@@ -807,6 +824,7 @@ class DockEngine {
       this._lastDockHeight = next;
       this.stateTarget.style.setProperty("--sl-dock-height", next);
     }
+    this._dockHeightDirty = false;
   }
 
   // ── Alert Rail ────────────────────────────────────────────────────────────

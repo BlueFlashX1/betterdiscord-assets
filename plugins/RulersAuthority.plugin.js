@@ -65,6 +65,51 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/hotkeys.js
+var require_hotkeys = __commonJS({
+  "src/shared/hotkeys.js"(exports2, module2) {
+    function isEditableTarget2(target) {
+      var _a2, _b;
+      if (!target) return false;
+      const tag = ((_b = (_a2 = target.tagName) == null ? void 0 : _a2.toLowerCase) == null ? void 0 : _b.call(_a2)) || "";
+      return tag === "input" || tag === "textarea" || tag === "select" || !!target.isContentEditable;
+    }
+    function parseHotkey2(hotkey) {
+      const parts = String(hotkey || "").split("+").map((p) => p.trim().toLowerCase());
+      return {
+        key: parts.filter(
+          (p) => p !== "ctrl" && p !== "shift" && p !== "alt" && p !== "meta" && p !== "cmd"
+        )[0] || "",
+        ctrl: parts.includes("ctrl"),
+        shift: parts.includes("shift"),
+        alt: parts.includes("alt"),
+        meta: parts.includes("meta") || parts.includes("cmd")
+      };
+    }
+    function matchesHotkey2(event, hotkey) {
+      if (!event || !hotkey) return false;
+      const spec = parseHotkey2(hotkey);
+      if (!spec.key) return false;
+      return event.key.toLowerCase() === spec.key && event.ctrlKey === spec.ctrl && event.shiftKey === spec.shift && event.altKey === spec.alt && event.metaKey === spec.meta;
+    }
+    module2.exports = { isEditableTarget: isEditableTarget2, parseHotkey: parseHotkey2, matchesHotkey: matchesHotkey2 };
+  }
+});
+
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/RulersAuthority/constants.js
 var import_bd_module_loader = __toESM(require_bd_module_loader());
 var RA_PLUGIN_NAME = "RulersAuthority";
@@ -153,34 +198,18 @@ try {
 }
 
 // src/RulersAuthority/hotkeys.js
+var { isEditableTarget: _sharedIsEditableTarget, parseHotkey, matchesHotkey: _sharedMatchesHotkey } = require_hotkeys();
 var _pluginUtilsRef = null;
 function setPluginUtils(utils) {
   _pluginUtilsRef = utils;
 }
 function isEditableTarget(t) {
-  var _a2, _b;
   if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.isEditableTarget) return _pluginUtilsRef.isEditableTarget(t);
-  if (!t) return false;
-  const tag = ((_b = (_a2 = t.tagName) == null ? void 0 : _a2.toLowerCase) == null ? void 0 : _b.call(_a2)) || "";
-  return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
-}
-var _parsedHotkeyCache = /* @__PURE__ */ new Map();
-function _parseHotkey(hotkey) {
-  let parsed = _parsedHotkeyCache.get(hotkey);
-  if (parsed) return parsed;
-  const parts = hotkey.toLowerCase().replace(/\s+/g, "").split("+").filter(Boolean);
-  const mods = new Set(parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p)));
-  const key = parts.find((p) => !mods.has(p)) || "";
-  parsed = { key, ctrl: mods.has("ctrl"), shift: mods.has("shift"), alt: mods.has("alt"), meta: mods.has("meta") || mods.has("cmd") || mods.has("command") };
-  _parsedHotkeyCache.set(hotkey, parsed);
-  return parsed;
+  return _sharedIsEditableTarget(t);
 }
 function matchesHotkey(e, hotkey) {
   if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.matchesHotkey) return _pluginUtilsRef.matchesHotkey(e, hotkey);
-  if (!hotkey || !e) return false;
-  const { key, ctrl, shift, alt, meta } = _parseHotkey(hotkey);
-  if (!key) return false;
-  return e.key.toLowerCase() === key && !!e.ctrlKey === ctrl && !!e.shiftKey === shift && !!e.altKey === alt && !!e.metaKey === meta;
+  return _sharedMatchesHotkey(e, hotkey);
 }
 
 // src/RulersAuthority/resize.js
@@ -1806,6 +1835,7 @@ function getSettingsPanel(ctx) {
 }
 
 // src/RulersAuthority/index.js
+var { createToast } = require_toast();
 var _createModules = () => ({
   _members: void 0,
   _membersResolved: false,
@@ -1970,7 +2000,7 @@ module.exports = class RulersAuthority {
   // ── Lifecycle ──────────────────────────────────────────────
   start() {
     var _a2, _b;
-    this._toast = ((_b = (_a2 = _PluginUtils) == null ? void 0 : _a2.createToastHelper) == null ? void 0 : _b.call(_a2, "rulersAuthority")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_b = (_a2 = _PluginUtils) == null ? void 0 : _a2.createToastHelper) == null ? void 0 : _b.call(_a2, "rulersAuthority")) || createToast();
     try {
       this._controller = new AbortController();
       this.loadSettings();

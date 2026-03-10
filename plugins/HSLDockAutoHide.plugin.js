@@ -9,6 +9,20 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/HSLDockAutoHide/debug.js
 var require_debug = __commonJS({
   "src/HSLDockAutoHide/debug.js"(exports2, module2) {
@@ -262,6 +276,9 @@ var require_engine = __commonJS({
         this.revealTimer = null;
         this.syncInterval = null;
         this._mouseMoveRafId = null;
+        this._resizeRafPending = false;
+        this._dockHeightDirty = true;
+        this._lastTickRefreshAt = 0;
         this.tickCount = 0;
         this.debugEnabled = false;
         this.debugConsole = false;
@@ -383,6 +400,7 @@ var require_engine = __commonJS({
         this.dock = nextDock;
         this.dockMoveTarget = nextDock;
         this.pointerOverDock = false;
+        this._dockHeightDirty = true;
         if (!this.dock) return;
         if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
         this.mountRailToDock();
@@ -659,6 +677,8 @@ var require_engine = __commonJS({
           this.pointerOverDock = false;
           return;
         }
+        if (this.lastMouseMoveAt <= this._lastTickRefreshAt) return;
+        this._lastTickRefreshAt = Date.now();
         this.pointerOverDock = this.hasMouseMoved && this.isCursorInsideDockRect() && this.isPointerOnDockHitTarget();
       }
       // ── Event Handlers ────────────────────────────────────────────────────────
@@ -719,8 +739,14 @@ var require_engine = __commonJS({
         this.scheduleHide(this.hideDelayMs);
       }
       onResize() {
+        this._dockHeightDirty = true;
         this.startRailFollow(700);
-        this.safeTick();
+        if (this._resizeRafPending) return;
+        this._resizeRafPending = true;
+        requestAnimationFrame(() => {
+          this._resizeRafPending = false;
+          this.safeTick();
+        });
       }
       onWindowBlur() {
         this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
@@ -842,6 +868,7 @@ var require_engine = __commonJS({
       }
       // ── Dock Height ───────────────────────────────────────────────────────────
       updateDockHeightVar() {
+        if (!this._dockHeightDirty && this._lastDockHeight) return;
         if (!this.stateTarget || !this.dock) return;
         const rect = this.dock.getBoundingClientRect();
         const h = Math.max(52, Math.round(rect.height || this.dock.offsetHeight || 80));
@@ -850,6 +877,7 @@ var require_engine = __commonJS({
           this._lastDockHeight = next;
           this.stateTarget.style.setProperty("--sl-dock-height", next);
         }
+        this._dockHeightDirty = false;
       }
       // ── Alert Rail ────────────────────────────────────────────────────────────
       createRail() {
@@ -1230,6 +1258,7 @@ try {
 } catch (_) {
   _PluginUtils = null;
 }
+var { createToast } = require_toast();
 var { DockEngine } = require_engine();
 var { getHslDockAutoHideCss } = require_styles();
 module.exports = class HSLDockAutoHide {
@@ -1265,7 +1294,7 @@ module.exports = class HSLDockAutoHide {
         }
       })();
       if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
-      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      else createToast()(message, type);
     });
     this._isStopped = false;
     this._engineMounted = false;

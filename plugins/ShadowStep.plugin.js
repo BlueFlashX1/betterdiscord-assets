@@ -10,6 +10,65 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/hotkeys.js
+var require_hotkeys = __commonJS({
+  "src/shared/hotkeys.js"(exports2, module2) {
+    function isEditableTarget2(target) {
+      var _a, _b;
+      if (!target) return false;
+      const tag = ((_b = (_a = target.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "";
+      return tag === "input" || tag === "textarea" || tag === "select" || !!target.isContentEditable;
+    }
+    function parseHotkey(hotkey) {
+      const parts = String(hotkey || "").split("+").map((p) => p.trim().toLowerCase());
+      return {
+        key: parts.filter(
+          (p) => p !== "ctrl" && p !== "shift" && p !== "alt" && p !== "meta" && p !== "cmd"
+        )[0] || "",
+        ctrl: parts.includes("ctrl"),
+        shift: parts.includes("shift"),
+        alt: parts.includes("alt"),
+        meta: parts.includes("meta") || parts.includes("cmd")
+      };
+    }
+    function matchesHotkey2(event, hotkey) {
+      if (!event || !hotkey) return false;
+      const spec = parseHotkey(hotkey);
+      if (!spec.key) return false;
+      return event.key.toLowerCase() === spec.key && event.ctrlKey === spec.ctrl && event.shiftKey === spec.shift && event.altKey === spec.alt && event.metaKey === spec.meta;
+    }
+    module2.exports = { isEditableTarget: isEditableTarget2, parseHotkey, matchesHotkey: matchesHotkey2 };
+  }
+});
+
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
+// src/shared/navigation.js
+var require_navigation = __commonJS({
+  "src/shared/navigation.js"(exports2, module2) {
+    var { Webpack } = BdApi;
+    var _cached = null;
+    function getNavigationUtils2() {
+      if (_cached) return _cached;
+      _cached = Webpack.getByKeys("transitionTo", "back", "forward") || Webpack.getModule((m) => m.transitionTo && m.back && m.forward) || null;
+      return _cached;
+    }
+    module2.exports = { getNavigationUtils: getNavigationUtils2 };
+  }
+});
+
 // src/ShadowStep/components.js
 var require_components = __commonJS({
   "src/ShadowStep/components.js"(exports2, module2) {
@@ -919,15 +978,11 @@ try {
 } catch (_) {
   _TransitionCleanupUtils = null;
 }
-var { isEditableTarget, matchesHotkey } = _PluginUtils || {
-  isEditableTarget: (t) => {
-    var _a, _b;
-    if (!t) return false;
-    const tag = ((_b = (_a = t.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "";
-    return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
-  },
-  matchesHotkey: () => false
-};
+var { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatchesHotkey } = require_hotkeys();
+var { createToast } = require_toast();
+var { getNavigationUtils } = require_navigation();
+var isEditableTarget = (_PluginUtils == null ? void 0 : _PluginUtils.isEditableTarget) || _sharedIsEditableTarget;
+var matchesHotkey = (_PluginUtils == null ? void 0 : _PluginUtils.matchesHotkey) || _sharedMatchesHotkey;
 var _ttl = (_PluginUtils == null ? void 0 : _PluginUtils.createTTLCache) || ((ms) => {
   let v, t = 0;
   return { get: () => Date.now() - t < ms ? v : null, set: (x) => {
@@ -968,7 +1023,7 @@ module.exports = class ShadowStep {
   // ── Lifecycle ───────────────────────────────────────────────
   start() {
     var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowStep")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowStep")) || createToast();
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(BdApi, this);
@@ -1030,7 +1085,7 @@ module.exports = class ShadowStep {
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
-    this._NavigationUtils = Webpack.getByKeys("transitionTo", "back", "forward") || Webpack.getModule((m) => m.transitionTo && m.back && m.forward);
+    this._NavigationUtils = getNavigationUtils();
     this.debugLog("Webpack", "Modules acquired", {
       ChannelStore: !!this._ChannelStore,
       GuildStore: !!this._GuildStore,

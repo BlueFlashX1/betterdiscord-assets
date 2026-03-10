@@ -15,6 +15,8 @@ const SensesEngineFeed = require("./senses-engine-feed");
 const SensesEngineEvents = require("./senses-engine-events");
 const SensesEngineUtils = require("./senses-engine-utils");
 const { _TransitionCleanupUtils } = require("./shared-utils");
+const { createToast } = require("../shared/toast");
+const _fallbackToast = createToast();
 
 // ─── SensesEngine ──────────────────────────────────────────────────────────
 
@@ -430,7 +432,7 @@ module.exports = class ShadowSenses {
     if (engine) {
       engine.showToast(message, type, timeout, { callerId: "shadowSenses" });
     } else {
-      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      _fallbackToast(message, type);
     }
   }
 

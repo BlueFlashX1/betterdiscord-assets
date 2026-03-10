@@ -61,6 +61,8 @@ const FALLBACK_SHADOWS = [
   { name: "Shadow Apex", rank: "Shadow Monarch" },
 ];
 
+const { createToast } = require("../shared/toast");
+const { getNavigationUtils } = require("../shared/navigation");
 const { buildPanelComponents } = require("./panel-components");
 const { getShadowExchangeCss } = require("./styles");
 const { PORTAL_TRANSITION_CSS } = require("./portal-transition-css");
@@ -116,7 +118,7 @@ module.exports = class ShadowExchange {
   }
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("shadowExchange") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("shadowExchange") || createToast();
     try {
       this.panelOpen = false;
       this.swirlIcon = null;
@@ -187,9 +189,7 @@ module.exports = class ShadowExchange {
   initWebpack() {
     const { Webpack } = BdApi;
     try {
-      this._NavigationUtils = Webpack.getModule(
-        (m) => m && m.transitionTo && m.back && m.forward
-      );
+      this._NavigationUtils = getNavigationUtils();
       this.NavigationUtils = this._NavigationUtils;
     } catch (_) {
       this._NavigationUtils = null;

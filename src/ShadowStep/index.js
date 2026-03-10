@@ -44,10 +44,11 @@ try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || 
 let _TransitionCleanupUtils;
 try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
 
-const { isEditableTarget, matchesHotkey } = _PluginUtils || {
-  isEditableTarget: (t) => { if (!t) return false; const tag = t.tagName?.toLowerCase?.() || ""; return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable; },
-  matchesHotkey: () => false,
-};
+const { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatchesHotkey } = require("../shared/hotkeys");
+const { createToast } = require("../shared/toast");
+const { getNavigationUtils } = require("../shared/navigation");
+const isEditableTarget = _PluginUtils?.isEditableTarget || _sharedIsEditableTarget;
+const matchesHotkey = _PluginUtils?.matchesHotkey || _sharedMatchesHotkey;
 const _ttl = _PluginUtils?.createTTLCache || (ms => { let v, t = 0; return { get: () => Date.now() - t < ms ? v : null, set: x => { v = x; t = Date.now(); }, invalidate: () => { v = null; t = 0; } }; });
 const { buildComponents } = require("./components");
 const { buildShadowStepSettingsPanel } = require("./settings-panel");
@@ -83,7 +84,7 @@ module.exports = class ShadowStep {
   // ── Lifecycle ───────────────────────────────────────────────
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("shadowStep") || createToast();
     this.loadSettings();
     this.initWebpack();
     this._components = buildComponents(BdApi, this);
@@ -152,9 +153,7 @@ module.exports = class ShadowStep {
     this._ChannelStore = Webpack.getStore("ChannelStore");
     this._GuildStore = Webpack.getStore("GuildStore");
     this._SelectedGuildStore = Webpack.getStore("SelectedGuildStore");
-    this._NavigationUtils =
-      Webpack.getByKeys("transitionTo", "back", "forward") ||
-      Webpack.getModule((m) => m.transitionTo && m.back && m.forward);
+    this._NavigationUtils = getNavigationUtils();
     this.debugLog("Webpack", "Modules acquired", {
       ChannelStore: !!this._ChannelStore,
       GuildStore: !!this._GuildStore,

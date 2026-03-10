@@ -2799,6 +2799,20 @@ var require_senses_engine_events = __commonJS({
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/ShadowSenses/senses-engine-utils.js
 var require_senses_engine_utils = __commonJS({
   "src/ShadowSenses/senses-engine-utils.js"(exports2, module2) {
@@ -2809,6 +2823,8 @@ var require_senses_engine_utils = __commonJS({
       STATUS_LABELS,
       STATUS_TOAST_TIMEOUT_MS
     } = require_constants();
+    var { createToast: createToast2 } = require_toast();
+    var _fallbackToast2 = createToast2();
     function resolveUserStore() {
       if (this._plugin._UserStore) return this._plugin._UserStore;
       try {
@@ -2918,7 +2934,7 @@ var require_senses_engine_utils = __commonJS({
       if (this._toastEngine) {
         this._toastEngine.showToast(message, type, timeout, { callerId: "shadowSenses" });
       } else {
-        BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+        _fallbackToast2(message, type);
       }
     }
     function scheduleStatusToast(toastPayload, delayMs = 0) {
@@ -3093,6 +3109,8 @@ var SensesEngineFeed = require_senses_engine_feed();
 var SensesEngineEvents = require_senses_engine_events();
 var SensesEngineUtils = require_senses_engine_utils();
 var { _TransitionCleanupUtils } = require_shared_utils();
+var { createToast } = require_toast();
+var _fallbackToast = createToast();
 var SensesEngine = class {
   constructor(pluginRef) {
     this._plugin = pluginRef;
@@ -3427,7 +3445,7 @@ module.exports = class ShadowSenses {
     if (engine) {
       engine.showToast(message, type, timeout, { callerId: "shadowSenses" });
     } else {
-      BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      _fallbackToast(message, type);
     }
   }
   loadSettings() {

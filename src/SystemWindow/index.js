@@ -1,5 +1,6 @@
 import STYLES from "./styles.css";
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createToast } = require("../shared/toast");
 
 /**
  * TABLE OF CONTENTS
@@ -40,7 +41,7 @@ module.exports = class SystemWindow {
       this.stop();
     }
 
-    this._toast = _PluginUtils?.createToastHelper?.("systemWindow") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("systemWindow") || createToast();
     this.settings = {
       ...this._defaultSettings,
       ...(BdApi.Data.load("SystemWindow", "settings") || {}),

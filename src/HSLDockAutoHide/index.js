@@ -30,6 +30,7 @@ function _bdLoad(fileName) {
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
+const { createToast } = require("../shared/toast");
 const { DockEngine } = require("./engine");
 const { getHslDockAutoHideCss } = require("./styles");
 
@@ -65,7 +66,7 @@ module.exports = class HSLDockAutoHide {
           } catch (_) { return null; }
         })();
         if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
-        else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+        else createToast()(message, type);
       });
     this._isStopped = false;
     this._engineMounted = false;

@@ -13,6 +13,7 @@
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+const { createToast } = require("../shared/toast");
 const { buildStealthSettingsPanel } = require("./settings-panel");
 const { STEALTH_SETTINGS_CSS } = require("./styles");
 const { attachStealthStatusPolicyMethods } = require("./status-policy");
@@ -93,7 +94,7 @@ module.exports = class Stealth {
           } catch (_) { return null; }
         })();
         if (p) p.showToast(message, type, timeout, { callerId: "stealth" });
-        else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+        else createToast()(message, type);
       });
     this.loadSettings();
     this.injectCSS();

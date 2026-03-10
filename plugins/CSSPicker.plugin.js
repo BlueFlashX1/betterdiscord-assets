@@ -43,6 +43,51 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
+// src/shared/hotkeys.js
+var require_hotkeys = __commonJS({
+  "src/shared/hotkeys.js"(exports2, module2) {
+    function isEditableTarget2(target) {
+      var _a, _b;
+      if (!target) return false;
+      const tag = ((_b = (_a = target.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "";
+      return tag === "input" || tag === "textarea" || tag === "select" || !!target.isContentEditable;
+    }
+    function parseHotkey(hotkey) {
+      const parts = String(hotkey || "").split("+").map((p) => p.trim().toLowerCase());
+      return {
+        key: parts.filter(
+          (p) => p !== "ctrl" && p !== "shift" && p !== "alt" && p !== "meta" && p !== "cmd"
+        )[0] || "",
+        ctrl: parts.includes("ctrl"),
+        shift: parts.includes("shift"),
+        alt: parts.includes("alt"),
+        meta: parts.includes("meta") || parts.includes("cmd")
+      };
+    }
+    function matchesHotkey2(event, hotkey) {
+      if (!event || !hotkey) return false;
+      const spec = parseHotkey(hotkey);
+      if (!spec.key) return false;
+      return event.key.toLowerCase() === spec.key && event.ctrlKey === spec.ctrl && event.shiftKey === spec.shift && event.altKey === spec.alt && event.metaKey === spec.meta;
+    }
+    module2.exports = { isEditableTarget: isEditableTarget2, parseHotkey, matchesHotkey: matchesHotkey2 };
+  }
+});
+
 // src/CSSPicker/element-summary.js
 function truncateMiddle(value, max = 90) {
   const str = String(value ?? "");
@@ -831,6 +876,8 @@ function getElementDetails(el) {
 
 // src/CSSPicker/index.js
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createToast } = require_toast();
+var { isEditableTarget, matchesHotkey } = require_hotkeys();
 var PLUGIN_NAME = "CSS Picker";
 var PLUGIN_VERSION = "1.5.0";
 var DEFAULT_SETTINGS = {
@@ -865,40 +912,6 @@ try {
 } catch (_) {
   _PluginUtils = null;
 }
-var isEditableTarget = (_PluginUtils == null ? void 0 : _PluginUtils.isEditableTarget) || ((target) => {
-  var _a, _b;
-  if (!target) return false;
-  const tag = ((_b = (_a = target.tagName) == null ? void 0 : _a.toLowerCase) == null ? void 0 : _b.call(_a)) || "";
-  if (tag === "input" || tag === "textarea" || tag === "select") return true;
-  return !!target.isContentEditable;
-});
-var normalizeHotkey = (_PluginUtils == null ? void 0 : _PluginUtils.normalizeHotkey) || ((hotkey) => String(hotkey || "").trim().toLowerCase().replace(/\s+/g, ""));
-var _parsedHotkeyCache = null;
-var _parsedHotkeyInput = "";
-var parseHotkey = (_PluginUtils == null ? void 0 : _PluginUtils.parseHotkey) || ((hotkey) => {
-  if (hotkey === _parsedHotkeyInput && _parsedHotkeyCache) return _parsedHotkeyCache;
-  const normalized = normalizeHotkey(hotkey);
-  const parts = normalized.split("+").filter(Boolean);
-  const mods = new Set(
-    parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p))
-  );
-  const key = parts.find((p) => !mods.has(p)) || "";
-  _parsedHotkeyCache = {
-    key,
-    hasCtrl: mods.has("ctrl"),
-    hasShift: mods.has("shift"),
-    hasAlt: mods.has("alt"),
-    hasMeta: mods.has("meta") || mods.has("cmd") || mods.has("command")
-  };
-  _parsedHotkeyInput = hotkey;
-  return _parsedHotkeyCache;
-});
-var matchesHotkey = (_PluginUtils == null ? void 0 : _PluginUtils.matchesHotkey) || ((event, hotkey) => {
-  const spec = parseHotkey(hotkey);
-  if (!spec.key) return false;
-  const key = String(event.key || "").toLowerCase();
-  return key === spec.key && !!event.ctrlKey === spec.hasCtrl && !!event.shiftKey === spec.hasShift && !!event.altKey === spec.hasAlt && !!event.metaKey === spec.hasMeta;
-});
 var _rootCtxCache = null;
 var _rootCtxClassKey = "";
 var getRootContext = () => {
@@ -1040,7 +1053,7 @@ var positionOverlayOnElement = ({ overlay, el }) => {
 module.exports = class CSSPicker {
   start() {
     var _a, _b, _c;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "cSSPicker")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "cSSPicker")) || createToast();
     this.isActive = false;
     this.lastHoverElement = null;
     this.overlay = null;

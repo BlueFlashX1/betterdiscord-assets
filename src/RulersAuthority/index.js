@@ -36,6 +36,8 @@ import {
   PANEL_DEFS, DEFAULT_SETTINGS, _PluginUtils,
 } from "./constants";
 
+const { createToast } = require("../shared/toast");
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §2  Webpack Module Definitions (lazy getter pattern — matches CollapsibleUI)
 // ═══════════════════════════════════════════════════════════════════════════
@@ -205,7 +207,7 @@ module.exports = class RulersAuthority {
   // ── Lifecycle ──────────────────────────────────────────────
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("rulersAuthority") || createToast();
     try {
       this._controller = new AbortController();
       this.loadSettings();

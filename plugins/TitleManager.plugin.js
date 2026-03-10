@@ -44,6 +44,57 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
+// src/shared/react-dom.js
+var require_react_dom = __commonJS({
+  "src/shared/react-dom.js"(exports2, module2) {
+    function getCreateRoot2() {
+      var _a;
+      if ((_a = BdApi.ReactDOM) == null ? void 0 : _a.createRoot) {
+        return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
+      }
+      return null;
+    }
+    function getLegacyReactDOM() {
+      return BdApi.ReactDOM || BdApi.Webpack.getModule((m) => m && m.render && m.unmountComponentAtNode) || null;
+    }
+    function renderToContainer(container, element) {
+      const createRoot = getCreateRoot2();
+      if (createRoot) {
+        const root = createRoot(container);
+        root.render(element);
+        return () => root.unmount();
+      }
+      const legacyDOM = getLegacyReactDOM();
+      if (legacyDOM == null ? void 0 : legacyDOM.render) {
+        legacyDOM.render(element, container);
+        return () => {
+          if (legacyDOM.unmountComponentAtNode) {
+            legacyDOM.unmountComponentAtNode(container);
+          }
+        };
+      }
+      console.error("[shared/react-dom] Neither createRoot nor ReactDOM.render available");
+      return () => {
+      };
+    }
+    module2.exports = { getCreateRoot: getCreateRoot2, getLegacyReactDOM, renderToContainer };
+  }
+});
+
 // src/TitleManager/components.js
 var require_components = __commonJS({
   "src/TitleManager/components.js"(exports2, module2) {
@@ -737,6 +788,8 @@ var require_styles = __commonJS({
 
 // src/TitleManager/index.js
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createToast } = require_toast();
+var { getCreateRoot } = require_react_dom();
 var PERCENT_BONUS_RULES = [
   ["xp", "XP"],
   ["critChance", "Crit"],
@@ -912,15 +965,11 @@ module.exports = class SoloLevelingTitleManager {
     this._SLUtils = fromWindow || _SLUtils || null;
     return !!this._SLUtils;
   }
-  /** React 18 createRoot with shared utility + fallback */
+  /** React 18 createRoot — delegates to shared/react-dom */
   _getCreateRoot() {
     const fromShared = typeof (_ReactUtils == null ? void 0 : _ReactUtils.getCreateRoot) === "function" ? _ReactUtils.getCreateRoot() : null;
     if (fromShared) return fromShared;
-    const reactDom = BdApi.ReactDOM;
-    if (typeof (reactDom == null ? void 0 : reactDom.createRoot) === "function") {
-      return (container) => reactDom.createRoot(container);
-    }
-    return null;
+    return getCreateRoot();
   }
   /**
    * Render Title button as a React element (for SLUtils React toolbar patcher — Tier 1).
@@ -1130,7 +1179,7 @@ module.exports = class SoloLevelingTitleManager {
    */
   start() {
     var _a, _b;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "titleManager")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "titleManager")) || createToast();
     this._warnedMessages.clear();
     this._isStopped = false;
     this.loadSettings();

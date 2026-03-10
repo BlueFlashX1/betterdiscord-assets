@@ -25,6 +25,8 @@ import {
   tryCopyJsonToClipboard,
 } from "./inspection.js";
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createToast } = require("../shared/toast");
+const { isEditableTarget, matchesHotkey } = require("../shared/hotkeys");
 
 // ── Config & settings ────────────────────────────────────────────
 
@@ -70,62 +72,7 @@ try {
   _PluginUtils = null;
 }
 
-// Hotkey + editable-target utilities -- shared module with inline fallback
-const isEditableTarget =
-  _PluginUtils?.isEditableTarget ||
-  ((target) => {
-    if (!target) return false;
-    const tag = target.tagName?.toLowerCase?.() || "";
-    if (tag === "input" || tag === "textarea" || tag === "select") return true;
-    return !!target.isContentEditable;
-  });
-
-const normalizeHotkey =
-  _PluginUtils?.normalizeHotkey ||
-  ((hotkey) =>
-    String(hotkey || "")
-      .trim()
-      .toLowerCase()
-      .replace(/\s+/g, ""));
-
-let _parsedHotkeyCache = null;
-let _parsedHotkeyInput = "";
-
-const parseHotkey =
-  _PluginUtils?.parseHotkey ||
-  ((hotkey) => {
-    if (hotkey === _parsedHotkeyInput && _parsedHotkeyCache) return _parsedHotkeyCache;
-    const normalized = normalizeHotkey(hotkey);
-    const parts = normalized.split("+").filter(Boolean);
-    const mods = new Set(
-      parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p))
-    );
-    const key = parts.find((p) => !mods.has(p)) || "";
-    _parsedHotkeyCache = {
-      key,
-      hasCtrl: mods.has("ctrl"),
-      hasShift: mods.has("shift"),
-      hasAlt: mods.has("alt"),
-      hasMeta: mods.has("meta") || mods.has("cmd") || mods.has("command"),
-    };
-    _parsedHotkeyInput = hotkey;
-    return _parsedHotkeyCache;
-  });
-
-const matchesHotkey =
-  _PluginUtils?.matchesHotkey ||
-  ((event, hotkey) => {
-    const spec = parseHotkey(hotkey);
-    if (!spec.key) return false;
-    const key = String(event.key || "").toLowerCase();
-    return (
-      key === spec.key &&
-      !!event.ctrlKey === spec.hasCtrl &&
-      !!event.shiftKey === spec.hasShift &&
-      !!event.altKey === spec.hasAlt &&
-      !!event.metaKey === spec.hasMeta
-    );
-  });
+// Hotkey + editable-target utilities — from shared/hotkeys.js
 
 // ── Root context helper (cached — root/body classes rarely change mid-session) ──
 
@@ -294,9 +241,7 @@ const positionOverlayOnElement = ({ overlay, el }) => {
 module.exports = class CSSPicker {
   start() {
     this._toast =
-      _PluginUtils?.createToastHelper?.("cSSPicker") ||
-      ((msg, type = "info") =>
-        BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+      _PluginUtils?.createToastHelper?.("cSSPicker") || createToast();
     this.isActive = false;
     this.lastHoverElement = null;
 

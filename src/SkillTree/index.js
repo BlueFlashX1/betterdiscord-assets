@@ -55,6 +55,8 @@ const { SkillTreeUpgradeMethods } = require("./skill-upgrade-methods");
 const { injectSkillTreeCss } = require("./styles");
 const { SkillTreeUiMethods } = require("./ui-methods");
 const { _PluginUtils, _ReactUtils, _SLUtils } = require("./shared-utils");
+const { createToast } = require("../shared/toast");
+const { getCreateRoot: _sharedGetCreateRoot } = require("../shared/react-dom");
 
 module.exports = class SkillTree {
   // ============================================================================
@@ -116,7 +118,7 @@ module.exports = class SkillTree {
   // ============================================================================
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("skillTree") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("skillTree") || createToast();
     // Reset stopped flag to allow watchers to recreate
     this._isStopped = false;
 
@@ -200,9 +202,7 @@ module.exports = class SkillTree {
    */
   _getCreateRoot() {
     if (_ReactUtils?.getCreateRoot) return _ReactUtils.getCreateRoot();
-    // Minimal inline fallback
-    if (BdApi.ReactDOM?.createRoot) return BdApi.ReactDOM.createRoot.bind(BdApi.ReactDOM);
-    return null;
+    return _sharedGetCreateRoot();
   }
 
   /**

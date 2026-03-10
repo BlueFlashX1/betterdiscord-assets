@@ -9,6 +9,20 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/ShadowRecon/settings-panel.js
 var require_settings_panel = __commonJS({
   "src/ShadowRecon/settings-panel.js"(exports2, module2) {
@@ -1005,6 +1019,7 @@ var _bdLoad = (f) => {
     return null;
   }
 };
+var { createToast } = require_toast();
 var PLUGIN_NAME = "ShadowRecon";
 var PLUGIN_VERSION = "1.0.5";
 var STYLE_ID = "shadow-recon-css";
@@ -1123,7 +1138,7 @@ module.exports = class ShadowRecon {
   }
   start() {
     var _a;
-    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowRecon")) || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "shadowRecon")) || createToast();
     try {
       this._stopped = false;
       this.loadSettings();

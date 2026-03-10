@@ -9,6 +9,20 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/toast.js
+var require_toast = __commonJS({
+  "src/shared/toast.js"(exports2, module2) {
+    function createToast2() {
+      return (message, type = "info") => {
+        BdApi.UI.showToast(message, {
+          type: type === "level-up" ? "info" : type
+        });
+      };
+    }
+    module2.exports = { createToast: createToast2 };
+  }
+});
+
 // src/Stealth/settings-panel.js
 var require_settings_panel = __commonJS({
   "src/Stealth/settings-panel.js"(exports2, module2) {
@@ -462,6 +476,7 @@ try {
 } catch (_) {
   _PluginUtils = null;
 }
+var { createToast } = require_toast();
 var { buildStealthSettingsPanel } = require_settings_panel();
 var { STEALTH_SETTINGS_CSS } = require_styles();
 var { attachStealthStatusPolicyMethods } = require_status_policy();
@@ -535,7 +550,7 @@ module.exports = class Stealth {
         }
       })();
       if (p) p.showToast(message, type, timeout, { callerId: "stealth" });
-      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+      else createToast()(message, type);
     });
     this.loadSettings();
     this.injectCSS();

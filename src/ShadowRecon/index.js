@@ -1,6 +1,7 @@
 /** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
 const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
 
+const { createToast } = require("../shared/toast");
 const PLUGIN_NAME = "ShadowRecon";
 const PLUGIN_VERSION = "1.0.5";
 const STYLE_ID = "shadow-recon-css";
@@ -128,7 +129,7 @@ module.exports = class ShadowRecon {
   }
 
   start() {
-    this._toast = _PluginUtils?.createToastHelper?.("shadowRecon") || ((msg, type = "info") => BdApi.UI.showToast(msg, { type: type === "level-up" ? "info" : type }));
+    this._toast = _PluginUtils?.createToastHelper?.("shadowRecon") || createToast();
     try {
       this._stopped = false;
       this.loadSettings();
