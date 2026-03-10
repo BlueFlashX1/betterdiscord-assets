@@ -810,8 +810,7 @@ module.exports = class SoloLevelingTitleManager {
       this._cache.soloPluginInstanceTime = 0;
       this._cache.achievementDefinitions = null;
       this._cache.achievementDefinitionsTime = 0;
-      this._cache.titleBonuses = {};
-      this._cache.titleBonusesTime = {};
+      this._cache.titleBonuses = new Map();
     }
 
     this.debugLog('STOP', 'Plugin stopped');

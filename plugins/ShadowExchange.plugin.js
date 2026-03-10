@@ -89,8 +89,7 @@ function getTypeBadge(locationType) {
   if (locationType === "message") return "Msg";
   return "Channel";
 }
-function buildPortalTransitionCSS() {
-  return `
+var PORTAL_TRANSITION_CSS = `
 @keyframes ss-mist-css-overlay {
   0% { opacity: 0; }
   14% { opacity: 0.98; }
@@ -276,7 +275,6 @@ function buildPortalTransitionCSS() {
   display: none;
 }
 `;
-}
 function buildPanelComponents(pluginInstance) {
   const React = BdApi.React;
   const ce = React.createElement;
@@ -340,7 +338,7 @@ function buildPanelComponents(pluginInstance) {
       )
     );
   }
-  function WaypointCard({ wp, onTeleport, onRemove }) {
+  const WaypointCard = React.memo(function WaypointCard2({ wp, onTeleport, onRemove }) {
     const rankColor = RANK_COLORS[wp.shadowRank] || "#808080";
     const typeBadge = getTypeBadge(wp.locationType);
     const visits = wp.visitCount || 0;
@@ -392,7 +390,7 @@ function buildPanelComponents(pluginInstance) {
         }, "Teleport")
       )
     );
-  }
+  });
   function WaypointPanel({ onClose }) {
     const [searchInput, setSearchInput] = React.useState("");
     const [searchQuery, setSearchQuery] = React.useState("");
@@ -605,6 +603,7 @@ module.exports = class ShadowExchange {
     this._saveDebounceTimer = null;
     this._layoutBusUnsub = null;
     this._markedShadowIdsCache = null;
+    this._waypointByLocationCache = null;
   }
   constructor() {
     this._resetRuntimeState();
@@ -700,9 +699,7 @@ module.exports = class ShadowExchange {
         try {
           const { message, channel } = props;
           if (!message || !channel) return;
-          const existingWaypoint = this.settings.waypoints.find(
-            (w) => w.channelId === channel.id && w.messageId === message.id
-          );
+          const existingWaypoint = this._getWaypointByLocation(channel.id, message.id);
           const separator = BdApi.ContextMenu.buildItem({ type: "separator" });
           let item;
           if (existingWaypoint) {
@@ -791,9 +788,7 @@ module.exports = class ShadowExchange {
     const channelId = channel.id;
     const guildId = channel.guild_id || null;
     const messageId = message.id;
-    const dup = this.settings.waypoints.find(
-      (w) => w.channelId === channelId && w.messageId === messageId
-    );
+    const dup = this._getWaypointByLocation(channelId, messageId);
     if (dup) {
       this._toast(`Already marked: ${dup.label}`, "warning");
       return;
@@ -889,6 +884,7 @@ module.exports = class ShadowExchange {
   }
   _flushSaveSettings() {
     this._markedShadowIdsCache = null;
+    this._waypointByLocationCache = null;
     this.settings._metadata = {
       lastSave: (/* @__PURE__ */ new Date()).toISOString(),
       version: SE_VERSION
@@ -929,20 +925,22 @@ module.exports = class ShadowExchange {
     if (!this.fileBackupPath) return;
     try {
       const fs = require("fs");
-      for (let i = 4; i >= 0; i--) {
-        const src = i === 0 ? this.fileBackupPath : `${this.fileBackupPath}.bak${i}`;
-        const dest = `${this.fileBackupPath}.bak${i + 1}`;
-        try {
-          if (fs.existsSync(src)) {
-            fs.writeFileSync(dest, fs.readFileSync(src));
-          }
-        } catch (error) {
-          this.debugError("Settings", `Failed rotating backup ${src} -> ${dest}`, error);
-        }
-      }
       const json = JSON.stringify(data, null, 2);
       fs.writeFile(this.fileBackupPath, json, "utf8", (err) => {
-        if (err) console.error("[ShadowExchange] File backup write failed:", err);
+        if (err) {
+          console.error("[ShadowExchange] File backup write failed:", err);
+          return;
+        }
+        for (let i = 4; i >= 1; i--) {
+          const src = `${this.fileBackupPath}.bak${i}`;
+          const dest = `${this.fileBackupPath}.bak${i + 1}`;
+          try {
+            fs.renameSync(src, dest);
+          } catch (_) {
+          }
+        }
+        fs.copyFile(this.fileBackupPath, `${this.fileBackupPath}.bak1`, () => {
+        });
       });
     } catch (err) {
       console.error("[ShadowExchange] writeFileBackup error:", err);
@@ -968,6 +966,17 @@ module.exports = class ShadowExchange {
   isShadowMarked(shadowId) {
     return this.getMarkedShadowIds().has(shadowId);
   }
+  /** O(1) waypoint lookup by channelId+messageId (cached Map, invalidated on save) */
+  _getWaypointByLocation(channelId, messageId) {
+    var _a2;
+    if (!this._waypointByLocationCache) {
+      this._waypointByLocationCache = /* @__PURE__ */ new Map();
+      for (const w of ((_a2 = this.settings) == null ? void 0 : _a2.waypoints) || []) {
+        this._waypointByLocationCache.set(`${w.channelId}:${w.messageId || ""}`, w);
+      }
+    }
+    return this._waypointByLocationCache.get(`${channelId}:${messageId || ""}`) || null;
+  }
   // ── Shadow Assignment ────────────────────────────────────────────────
   async getWeakestAvailableShadow() {
     var _a2;
@@ -982,7 +991,7 @@ module.exports = class ShadowExchange {
       if (!Array.isArray(allShadows) || allShadows.length === 0) {
         return this.getFallbackShadow();
       }
-      const assignedIds = new Set(this.settings.waypoints.map((w) => w.shadowId));
+      const assignedIds = this.getMarkedShadowIds();
       const available = allShadows.filter((s) => (s == null ? void 0 : s.id) && !assignedIds.has(s.id));
       if (available.length === 0) {
         return this.getFallbackShadow();
@@ -1039,7 +1048,7 @@ module.exports = class ShadowExchange {
     }
     try {
       const all = ((_a2 = saInstance.getShadowSnapshot) == null ? void 0 : _a2.call(saInstance)) || await saInstance.getAllShadows();
-      const assignedIds = new Set(this.settings.waypoints.map((w) => w.shadowId));
+      const assignedIds = this.getMarkedShadowIds();
       return all.filter((s) => (s == null ? void 0 : s.id) && !assignedIds.has(s.id)).length;
     } catch (_) {
       return 0;
@@ -1099,9 +1108,7 @@ module.exports = class ShadowExchange {
       this._toast("Navigate to a channel first", "warning");
       return;
     }
-    const dup = this.settings.waypoints.find(
-      (w) => w.channelId === loc.channelId && w.messageId === loc.messageId
-    );
+    const dup = this._getWaypointByLocation(loc.channelId, loc.messageId);
     if (dup) {
       this._toast(`Already marked: ${dup.label}`, "warning");
       return;
@@ -1385,7 +1392,7 @@ module.exports = class ShadowExchange {
   // ── CSS ────────────────────────────────────────────────────────────────
   injectCSS() {
     const css = `
-${buildPortalTransitionCSS()}
+${PORTAL_TRANSITION_CSS}
 
       /* \u2500\u2500 Swirl Icon (anchored in channel-header toolbar) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500 */
       .se-swirl-icon {
