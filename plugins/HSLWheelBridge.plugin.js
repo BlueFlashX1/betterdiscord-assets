@@ -43,6 +43,21 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/warn-once.js
+var require_warn_once = __commonJS({
+  "src/shared/warn-once.js"(exports2, module2) {
+    function createWarnOnce2() {
+      const warned = /* @__PURE__ */ new Set();
+      return (key, message, detail = null) => {
+        if (warned.has(key)) return;
+        warned.add(key);
+        detail !== null ? console.warn(message, detail) : console.warn(message);
+      };
+    }
+    module2.exports = { createWarnOnce: createWarnOnce2 };
+  }
+});
+
 // src/shared/toast.js
 var require_toast = __commonJS({
   "src/shared/toast.js"(exports2, module2) {
@@ -59,6 +74,7 @@ var require_toast = __commonJS({
 
 // src/HSLWheelBridge/index.js
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createWarnOnce } = require_warn_once();
 var { createToast } = require_toast();
 var HSL_SCROLLER_SELECTORS = [
   "nav[aria-label='Servers sidebar'] ul[role='tree'] > div[class^='itemsContainer_'] > div[class^='stack_'][class*='scroller_'][class*='scrollerBase_']",
@@ -141,16 +157,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackPoll = null;
     this._toast = createToast();
     this._warnedReactFallback = false;
-    this._warnedMessages = /* @__PURE__ */ new Set();
-  }
-  _warnOnce(key, message, detail = null) {
-    if (this._warnedMessages.has(key)) return;
-    this._warnedMessages.add(key);
-    if (detail !== null) {
-      console.warn(message, detail);
-      return;
-    }
-    console.warn(message);
+    this._warnOnce = createWarnOnce();
   }
   _cleanupRuntime() {
     if (this._fallbackTimer) {
@@ -178,7 +185,7 @@ module.exports = class HSLWheelBridge {
     this._isStopped = false;
     this._engineMounted = false;
     this._warnedReactFallback = false;
-    this._warnedMessages.clear();
+    this._warnOnce = createWarnOnce();
     this._installReactPatcher();
     this._fallbackTimer = setTimeout(() => {
       this._fallbackTimer = null;

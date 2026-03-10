@@ -506,6 +506,21 @@ return module.exports || exports || null;`
   }
 });
 
+// src/shared/warn-once.js
+var require_warn_once = __commonJS({
+  "src/shared/warn-once.js"(exports2, module2) {
+    function createWarnOnce2() {
+      const warned = /* @__PURE__ */ new Set();
+      return (key, message, detail = null) => {
+        if (warned.has(key)) return;
+        warned.add(key);
+        detail !== null ? console.warn(message, detail) : console.warn(message);
+      };
+    }
+    module2.exports = { createWarnOnce: createWarnOnce2 };
+  }
+});
+
 // src/ChatNavArrows/styles.css
 var styles_default = '/* Hide native jump-to-present bars globally */\ndiv[class^="jumpToPresentBar_"] {\n  display: none !important;\n}\n\n.sl-chat-nav-arrow {\n  position: absolute;\n  z-index: 500;\n  width: 36px;\n  height: 36px;\n  border-radius: 50%;\n  background: rgba(8, 10, 20, 0.92);\n  border: 1px solid rgba(138, 43, 226, 0.45);\n  color: #b48cff;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: background 0.15s ease, border-color 0.15s ease,\n              box-shadow 0.15s ease, transform 0.15s ease,\n              opacity 0.2s ease;\n  box-shadow: 0 2px 8px rgba(0,0,0,0.3);\n  right: 24px;\n  pointer-events: none;\n  opacity: 0;\n}\n.sl-chat-nav-arrow.sl-visible {\n  opacity: 1;\n  pointer-events: auto;\n}\n.sl-chat-nav-arrow:hover {\n  background: rgba(138, 43, 226, 0.2);\n  border-color: #8a2be2;\n  box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);\n  transform: scale(1.1);\n}\n.sl-chat-nav-arrow:active {\n  transform: scale(0.95);\n}\n.sl-chat-nav-arrow svg {\n  width: 18px;\n  height: 18px;\n  fill: currentColor;\n}\n.sl-chat-nav-down {\n  bottom: 24px;\n}\n.sl-chat-nav-up {\n  bottom: 68px;\n}\n';
 
@@ -513,13 +528,14 @@ var styles_default = '/* Hide native jump-to-present bars globally */\ndiv[class
 var { startDomFallback, stopDomFallback } = require_dom_fallback();
 var { createArrowManagerComponent } = require_arrow_manager_component();
 var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createWarnOnce } = require_warn_once();
 module.exports = class ChatNavArrows {
   constructor() {
     this._patcherId = "ChatNavArrows";
     this._isStopped = false;
     this._domFallback = null;
     this._settings = Object.assign({ debug: false }, BdApi.Data.load("ChatNavArrows", "settings"));
-    this._warnedMessages = /* @__PURE__ */ new Set();
+    this._warnOnce = createWarnOnce();
   }
   // ==========================================================================
   // 1) LIFECYCLE + SETTINGS
@@ -527,15 +543,6 @@ module.exports = class ChatNavArrows {
   _debugLog(...args) {
     if (!this._settings.debug) return;
     console.log("[ChatNavArrows:DEBUG]", ...args);
-  }
-  _warnOnce(key, message, detail = null) {
-    if (this._warnedMessages.has(key)) return;
-    this._warnedMessages.add(key);
-    if (detail !== null) {
-      console.warn(message, detail);
-      return;
-    }
-    console.warn(message);
   }
   getSettingsPanel() {
     const panel = document.createElement("div");
@@ -563,7 +570,7 @@ module.exports = class ChatNavArrows {
     }
     this._isStopped = false;
     this._patcherCallbackFired = false;
-    this._warnedMessages.clear();
+    this._warnOnce = createWarnOnce();
     BdApi.DOM.addStyle("sl-chat-nav-arrows-css", styles_default);
     this._debugLog("start() called");
     const reactPatched = this._installReactPatcher();

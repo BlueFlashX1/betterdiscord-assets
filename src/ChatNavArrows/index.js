@@ -2,6 +2,7 @@ import STYLES from "./styles.css";
 const { startDomFallback, stopDomFallback } = require("./dom-fallback");
 const { createArrowManagerComponent } = require("./arrow-manager-component");
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createWarnOnce } = require("../shared/warn-once");
 
 /**
  * TABLE OF CONTENTS
@@ -16,7 +17,7 @@ module.exports = class ChatNavArrows {
     this._isStopped = false;
     this._domFallback = null;
     this._settings = Object.assign({ debug: false }, BdApi.Data.load('ChatNavArrows', 'settings'));
-    this._warnedMessages = new Set();
+    this._warnOnce = createWarnOnce();
   }
 
   // ==========================================================================
@@ -26,16 +27,6 @@ module.exports = class ChatNavArrows {
   _debugLog(...args) {
     if (!this._settings.debug) return;
     console.log('[ChatNavArrows:DEBUG]', ...args);
-  }
-
-  _warnOnce(key, message, detail = null) {
-    if (this._warnedMessages.has(key)) return;
-    this._warnedMessages.add(key);
-    if (detail !== null) {
-      console.warn(message, detail);
-      return;
-    }
-    console.warn(message);
   }
 
   getSettingsPanel() {
@@ -70,7 +61,7 @@ module.exports = class ChatNavArrows {
 
     this._isStopped = false;
     this._patcherCallbackFired = false;
-    this._warnedMessages.clear();
+    this._warnOnce = createWarnOnce();
     BdApi.DOM.addStyle('sl-chat-nav-arrows-css', STYLES);
     this._debugLog('start() called');
     const reactPatched = this._installReactPatcher();

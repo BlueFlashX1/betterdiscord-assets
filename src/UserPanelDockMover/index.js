@@ -1,6 +1,7 @@
 import STYLES from "./styles.css";
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const { createToast } = require("../shared/toast");
+const { version: PLUGIN_VERSION } = require("./manifest.json");
 
 let _PluginUtils = null;
 try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
@@ -12,7 +13,7 @@ try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } c
 module.exports = class UserPanelDockMover {
   constructor() {
     this.pluginId = "UserPanelDockMover";
-    this.version = "3.7.0";
+    this.version = PLUGIN_VERSION;
     this.instanceKey = "__UserPanelDockMoverInstance";
     this.panelSelector = "section[aria-label='User status and settings']";
     this.dockSelector = "nav[aria-label='Servers sidebar']";
@@ -86,7 +87,7 @@ module.exports = class UserPanelDockMover {
       );
     }
 
-    this._toast("UserPanelDockMover v3.7.0 active", "success", 2200);
+    this._toast(`UserPanelDockMover v${PLUGIN_VERSION} active`, "success", 2200);
   }
 
   stop({ silent = false } = {}) {

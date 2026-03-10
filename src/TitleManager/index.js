@@ -147,8 +147,6 @@ module.exports = class SoloLevelingTitleManager {
     // CRITICAL FIX: Deep copy to prevent defaultSettings from being modified
     this.settings = structuredClone(this.defaultSettings);
     // toolbarObserver removed — React patcher handles button persistence
-    this._urlChangeCleanup = null; // Cleanup function for URL change watcher
-    this._windowFocusCleanup = null; // Cleanup function for window focus watcher
     // _periodicCheckInterval removed — React patcher handles button persistence
 
     // React modal refs (v2.0.0)
@@ -265,12 +263,6 @@ module.exports = class SoloLevelingTitleManager {
     clearTimeout(timeoutId);
     this._retryTimeouts.delete(timeoutId);
     return true;
-  }
-
-  _unsubscribeNavigationBus() {
-    if (!this._navBusUnsub) return;
-    this._navBusUnsub();
-    this._navBusUnsub = null;
   }
 
   /**
@@ -576,12 +568,6 @@ module.exports = class SoloLevelingTitleManager {
       this.warnOnce('slutils-missing', '[TitleManager] SLUtils not available — toolbar button inactive');
     }
 
-    // Watch for channel changes and recreate button
-    this.setupChannelWatcher();
-
-    // Watch for window focus/visibility changes (user coming back from another window)
-    this.setupWindowFocusWatcher();
-
     this.debugLog('START', 'Plugin started');
   }
 
@@ -605,10 +591,6 @@ module.exports = class SoloLevelingTitleManager {
       this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
       this._retryTimeouts.clear();
     } finally {
-      // FUNCTIONAL: Cleanup URL watcher (short-circuit)
-      this._urlChangeCleanup && (this._urlChangeCleanup(), (this._urlChangeCleanup = null));
-      // FUNCTIONAL: Cleanup window focus watcher (short-circuit)
-      this._windowFocusCleanup && (this._windowFocusCleanup(), (this._windowFocusCleanup = null));
       // No periodic check interval to clear — React patcher handles persistence.
 
       // Clear webpack module references
@@ -791,44 +773,8 @@ module.exports = class SoloLevelingTitleManager {
    * 3.6 EVENT HANDLING & WATCHERS
    */
 
-  /**
-   * Setup channel watcher for URL changes (event-based, no polling)
-   * Enhanced to persist buttons across guild/channel switches
-   */
-  setupChannelWatcher() {
-    let previousUrl = window.location.href;
-    const handleNavigation = () => {
-      if (this._isStopped) return;
-      const nextUrl = window.location.href;
-      if (nextUrl === previousUrl) return;
-      previousUrl = nextUrl;
-      // React patcher handles button persistence on channel switch — no manual re-creation needed.
-    };
-
-    const navigationBus = _PluginUtils?.NavigationBus;
-    if (navigationBus && typeof navigationBus.subscribe === 'function') {
-      this._navBusUnsub = navigationBus.subscribe(handleNavigation);
-    } else {
-      this._navBusUnsub = null;
-    }
-
-    this._urlChangeCleanup = () => {
-      this._unsubscribeNavigationBus();
-    };
-  }
-
-  /**
-   * Setup window focus/visibility watcher (detects when user returns from another window)
-   * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
-   */
-  setupWindowFocusWatcher() {
-    // All blur/focus/visibilitychange handlers were no-ops (React patcher handles
-    // button persistence natively). Removed to eliminate 3 permanent global listeners.
-    this._windowFocusCleanup = null;
-  }
-
-  // NOTE: startPeriodicButtonCheck() and stopPeriodicButtonCheck() removed in v1.3.0.
-  // React patcher handles button persistence natively.
+  // NOTE: Channel/focus watchers and periodic button checks removed — React patcher
+  // handles button persistence natively across channel switches and focus changes.
 
   openTitleModal() {
     // If already open, just force-update the React tree

@@ -10,8 +10,7 @@
  * 8) Diagnostics + Shared Portal Core
  */
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 const PLUGIN_NAME = "ShadowStep";
@@ -36,13 +35,13 @@ const DEFAULT_SETTINGS = {
 
 // ─── Hotkey Utilities (from BetterDiscordPluginUtils) ────────────────────────
 let _PluginUtils;
-try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 let _SLUtils;
-try { _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
+try { _SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null; } catch (_) { _SLUtils = window.SoloLevelingUtils || null; }
 
 let _TransitionCleanupUtils;
-try { _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
+try { _TransitionCleanupUtils = loadBdModuleFromPlugins("TransitionCleanupUtils.js"); } catch (_) { _TransitionCleanupUtils = null; }
 
 const { isEditableTarget: _sharedIsEditableTarget, matchesHotkey: _sharedMatchesHotkey } = require("../shared/hotkeys");
 const { createToast } = require("../shared/toast");

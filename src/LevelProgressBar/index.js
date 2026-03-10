@@ -9,7 +9,7 @@
  * 7) Diagnostics + Effects
  */
 
-const _bdLoad = f => { try { const m = {exports:{}}; new Function('module','exports',require('fs').readFileSync(require('path').join(BdApi.Plugins.folder, f),'utf8'))(m,m.exports); return typeof m.exports === 'function' || Object.keys(m.exports).length ? m.exports : null; } catch(e) { return null; } };
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
 const PLUGIN_ID = 'LevelProgressBar';
 const STYLE_ID = 'level-progress-bar-css';
 const { buildLevelProgressBarSettingsPanel } = require("./settings-panel");
@@ -17,21 +17,21 @@ const { getFallbackLevelProgressBarCss } = require("./fallback-styles");
 
 const _loadOptionalModule = (fileName, isValid) => {
   try {
-    const mod = _bdLoad(fileName);
+    const mod = loadBdModuleFromPlugins(fileName);
     return isValid(mod) ? mod : null;
   } catch (_) {
     return null;
   }
 };
 let SLUtils;
-SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 if (SLUtils && !window.SoloLevelingUtils) window.SoloLevelingUtils = SLUtils;
 let UnifiedSaveManager;
 try {
   if (typeof window !== 'undefined' && typeof window.UnifiedSaveManager === 'function') {
     UnifiedSaveManager = window.UnifiedSaveManager;
   } else {
-    UnifiedSaveManager = _bdLoad("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
+    UnifiedSaveManager = loadBdModuleFromPlugins("UnifiedSaveManager.js") || window.UnifiedSaveManager || null;
     if (UnifiedSaveManager && !window.UnifiedSaveManager) window.UnifiedSaveManager = UnifiedSaveManager;
   }
 } catch (error) {

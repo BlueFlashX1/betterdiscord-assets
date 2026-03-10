@@ -149,7 +149,7 @@ export function getMessageGroupKey(message, type) {
 /**
  * Pull all numeric-looking tokens from an array of { message } objects.
  */
-export function extractMessageNumbers(messages) {
+function extractMessageNumbers(messages) {
   const numbers = [];
   messages.forEach((msg) => {
     const matches = msg.message.match(/(\+?\d+(?:,\d{3})*(?:\.\d+)?)/g);
@@ -163,7 +163,7 @@ export function extractMessageNumbers(messages) {
 /**
  * Sum parsed integer numbers from a token list.
  */
-export function sumParsedNumbers(numbers) {
+function sumParsedNumbers(numbers) {
   return numbers
     .filter((n) => !isNaN(parseInt(n, 10)))
     .reduce((sum, n) => sum + parseInt(n, 10), 0);
@@ -250,7 +250,7 @@ export function combineMessages(messages) {
 /**
  * Normalise message text for filter comparisons (lowercase, collapse whitespace).
  */
-export function normalizeNotificationText(messageText) {
+function normalizeNotificationText(messageText) {
   if (typeof messageText !== "string") return "";
   return messageText.replace(/\s+/g, " ").trim().toLowerCase();
 }
@@ -258,7 +258,7 @@ export function normalizeNotificationText(messageText) {
 /**
  * Does the (lowercased) message look like a natural-growth notification?
  */
-export function isNaturalGrowthNotification(msgLower) {
+function isNaturalGrowthNotification(msgLower) {
   const hasNatural = msgLower.includes("natural");
   const hasGrowth = msgLower.includes("growth");
   return (
@@ -276,7 +276,7 @@ export function isNaturalGrowthNotification(msgLower) {
 /**
  * Does the (lowercased) message look like a stat-allocation notification?
  */
-export function isStatAllocationNotification(msgLower) {
+function isStatAllocationNotification(msgLower) {
   return (
     msgLower.includes("stat point allocated") ||
     msgLower.includes("allocated to") ||

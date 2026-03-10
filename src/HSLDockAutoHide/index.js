@@ -3,36 +3,16 @@
  * Dock behavior/state machine lives in ./engine as DockEngine.
  */
 
-/** Load a local shared module from BD's plugins folder (BD require only handles Node built-ins). */
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const fullPath = path.join(BdApi.Plugins.folder, fileName);
-    const source = fs.readFileSync(fullPath, "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}\nreturn module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {}
-  return null;
-}
+const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createWarnOnce } = require("../shared/warn-once");
 
 let _PluginUtils;
-try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
+try { _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const { createToast } = require("../shared/toast");
 const { DockEngine } = require("./engine");
 const { getHslDockAutoHideCss } = require("./styles");
+const { version: PLUGIN_VERSION } = require("./manifest.json");
 
 module.exports = class HSLDockAutoHide {
   constructor() {
@@ -41,15 +21,8 @@ module.exports = class HSLDockAutoHide {
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
-    this._warnedKeys = new Set();
+    this._warnOnce = createWarnOnce();
     this._toastImpl = null;
-  }
-
-  _warnOnce(key, message, error = null) {
-    if (this._warnedKeys.has(key)) return;
-    this._warnedKeys.add(key);
-    if (error) console.warn(`[HSLDockAutoHide] ${message}`, error);
-    else console.warn(`[HSLDockAutoHide] ${message}`);
   }
 
   _toast(message, type = "info", timeout = null) {
@@ -85,7 +58,7 @@ module.exports = class HSLDockAutoHide {
       }
     }, 3000);
 
-    this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
+    this._toast(`HSLDockAutoHide v${PLUGIN_VERSION} active (+ UserPanel)`, "success", 2200);
   }
 
   stop() {
@@ -114,7 +87,7 @@ module.exports = class HSLDockAutoHide {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+      ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
     } catch (_) {
       ReactUtils = null;
     }

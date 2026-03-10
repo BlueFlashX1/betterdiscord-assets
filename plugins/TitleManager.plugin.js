@@ -863,8 +863,6 @@ module.exports = class SoloLevelingTitleManager {
       // Default sort filter (xpBonus, critBonus, strBonus, etc.)
     };
     this.settings = structuredClone(this.defaultSettings);
-    this._urlChangeCleanup = null;
-    this._windowFocusCleanup = null;
     this._modalContainer = null;
     this._modalReactRoot = null;
     this._modalForceUpdate = null;
@@ -951,11 +949,6 @@ module.exports = class SoloLevelingTitleManager {
     clearTimeout(timeoutId);
     this._retryTimeouts.delete(timeoutId);
     return true;
-  }
-  _unsubscribeNavigationBus() {
-    if (!this._navBusUnsub) return;
-    this._navBusUnsub();
-    this._navBusUnsub = null;
   }
   /**
    * Load SoloLevelingUtils shared library (toolbar registry, React injection, etc.)
@@ -1197,8 +1190,6 @@ module.exports = class SoloLevelingTitleManager {
     } else {
       this.warnOnce("slutils-missing", "[TitleManager] SLUtils not available \u2014 toolbar button inactive");
     }
-    this.setupChannelWatcher();
-    this.setupWindowFocusWatcher();
     this.debugLog("START", "Plugin started");
   }
   stop() {
@@ -1216,8 +1207,6 @@ module.exports = class SoloLevelingTitleManager {
       this._retryTimeouts.forEach((timeoutId) => this._clearTrackedTimeout(timeoutId));
       this._retryTimeouts.clear();
     } finally {
-      this._urlChangeCleanup && (this._urlChangeCleanup(), this._urlChangeCleanup = null);
-      this._windowFocusCleanup && (this._windowFocusCleanup(), this._windowFocusCleanup = null);
       this.webpackModules = {
         ChannelStore: null
       };
@@ -1366,37 +1355,8 @@ module.exports = class SoloLevelingTitleManager {
   /**
    * 3.6 EVENT HANDLING & WATCHERS
    */
-  /**
-   * Setup channel watcher for URL changes (event-based, no polling)
-   * Enhanced to persist buttons across guild/channel switches
-   */
-  setupChannelWatcher() {
-    let previousUrl = window.location.href;
-    const handleNavigation = () => {
-      if (this._isStopped) return;
-      const nextUrl = window.location.href;
-      if (nextUrl === previousUrl) return;
-      previousUrl = nextUrl;
-    };
-    const navigationBus = _PluginUtils == null ? void 0 : _PluginUtils.NavigationBus;
-    if (navigationBus && typeof navigationBus.subscribe === "function") {
-      this._navBusUnsub = navigationBus.subscribe(handleNavigation);
-    } else {
-      this._navBusUnsub = null;
-    }
-    this._urlChangeCleanup = () => {
-      this._unsubscribeNavigationBus();
-    };
-  }
-  /**
-   * Setup window focus/visibility watcher (detects when user returns from another window)
-   * Pattern from AutoIdleOnAFK plugin - uses window blur/focus events for reliable detection
-   */
-  setupWindowFocusWatcher() {
-    this._windowFocusCleanup = null;
-  }
-  // NOTE: startPeriodicButtonCheck() and stopPeriodicButtonCheck() removed in v1.3.0.
-  // React patcher handles button persistence natively.
+  // NOTE: Channel/focus watchers and periodic button checks removed — React patcher
+  // handles button persistence natively across channel switches and focus changes.
   openTitleModal() {
     var _a, _b;
     if (this._modalReactRoot) {

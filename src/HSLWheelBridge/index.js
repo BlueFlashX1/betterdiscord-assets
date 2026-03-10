@@ -6,6 +6,7 @@
  */
 
 const { loadBdModuleFromPlugins } = require("../shared/bd-module-loader");
+const { createWarnOnce } = require("../shared/warn-once");
 const { createToast } = require("../shared/toast");
 
 // Scroller selectors — primary + fallbacks for Discord class name changes
@@ -107,17 +108,7 @@ module.exports = class HSLWheelBridge {
     this._fallbackPoll = null;
     this._toast = createToast();
     this._warnedReactFallback = false;
-    this._warnedMessages = new Set();
-  }
-
-  _warnOnce(key, message, detail = null) {
-    if (this._warnedMessages.has(key)) return;
-    this._warnedMessages.add(key);
-    if (detail !== null) {
-      console.warn(message, detail);
-      return;
-    }
-    console.warn(message);
+    this._warnOnce = createWarnOnce();
   }
 
   _cleanupRuntime() {
@@ -146,7 +137,7 @@ module.exports = class HSLWheelBridge {
     this._isStopped = false;
     this._engineMounted = false;
     this._warnedReactFallback = false;
-    this._warnedMessages.clear();
+    this._warnOnce = createWarnOnce();
     this._installReactPatcher();
 
     // Fallback: if React patcher does not mount within 3s, mount engine directly

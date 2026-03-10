@@ -9,6 +9,40 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
 // src/shared/toast.js
 var require_toast = __commonJS({
   "src/shared/toast.js"(exports2, module2) {
@@ -461,18 +495,10 @@ var require_status_policy = __commonJS({
 });
 
 // src/Stealth/index.js
-var _bdLoad = (f) => {
-  try {
-    const m = { exports: {} };
-    new Function("module", "exports", require("fs").readFileSync(require("path").join(BdApi.Plugins.folder, f), "utf8"))(m, m.exports);
-    return typeof m.exports === "function" || Object.keys(m.exports).length ? m.exports : null;
-  } catch (e) {
-    return null;
-  }
-};
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 var _PluginUtils;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }

@@ -9,6 +9,55 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
+// src/shared/warn-once.js
+var require_warn_once = __commonJS({
+  "src/shared/warn-once.js"(exports2, module2) {
+    function createWarnOnce2() {
+      const warned = /* @__PURE__ */ new Set();
+      return (key, message, detail = null) => {
+        if (warned.has(key)) return;
+        warned.add(key);
+        detail !== null ? console.warn(message, detail) : console.warn(message);
+      };
+    }
+    module2.exports = { createWarnOnce: createWarnOnce2 };
+  }
+});
+
 // src/shared/toast.js
 var require_toast = __commonJS({
   "src/shared/toast.js"(exports2, module2) {
@@ -1227,40 +1276,31 @@ var require_styles = __commonJS({
   }
 });
 
-// src/HSLDockAutoHide/index.js
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const fullPath = path.join(BdApi.Plugins.folder, fileName);
-    const source = fs.readFileSync(fullPath, "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
+// src/HSLDockAutoHide/manifest.json
+var require_manifest = __commonJS({
+  "src/HSLDockAutoHide/manifest.json"(exports2, module2) {
+    module2.exports = {
+      name: "HSLDockAutoHide",
+      description: "Auto-hide/show bottom horizontal server dock on hover/near-bottom cursor, with dynamic layout shift. Includes user panel dock mover.",
+      version: "4.0.1",
+      author: "Solo Leveling Theme Dev, BlueFlashX1"
+    };
   }
-  return null;
-}
+});
+
+// src/HSLDockAutoHide/index.js
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
+var { createWarnOnce } = require_warn_once();
 var _PluginUtils;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }
 var { createToast } = require_toast();
 var { DockEngine } = require_engine();
 var { getHslDockAutoHideCss } = require_styles();
+var { version: PLUGIN_VERSION } = require_manifest();
 module.exports = class HSLDockAutoHide {
   constructor() {
     this._patcherId = "HSLDockAutoHide";
@@ -1268,14 +1308,8 @@ module.exports = class HSLDockAutoHide {
     this._engineMounted = false;
     this._fallbackEngine = null;
     this._fallbackTimer = null;
-    this._warnedKeys = /* @__PURE__ */ new Set();
+    this._warnOnce = createWarnOnce();
     this._toastImpl = null;
-  }
-  _warnOnce(key, message, error = null) {
-    if (this._warnedKeys.has(key)) return;
-    this._warnedKeys.add(key);
-    if (error) console.warn(`[HSLDockAutoHide] ${message}`, error);
-    else console.warn(`[HSLDockAutoHide] ${message}`);
   }
   _toast(message, type = "info", timeout = null) {
     var _a;
@@ -1311,7 +1345,7 @@ module.exports = class HSLDockAutoHide {
         engine.mount();
       }
     }, 3e3);
-    this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
+    this._toast(`HSLDockAutoHide v${PLUGIN_VERSION} active (+ UserPanel)`, "success", 2200);
   }
   stop() {
     var _a;
@@ -1339,7 +1373,7 @@ module.exports = class HSLDockAutoHide {
   _installReactPatcher() {
     let ReactUtils;
     try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+      ReactUtils = loadBdModuleFromPlugins("BetterDiscordReactUtils.js");
     } catch (_) {
       ReactUtils = null;
     }

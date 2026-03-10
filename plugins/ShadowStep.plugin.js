@@ -10,6 +10,40 @@ var __commonJS = (cb, mod) => function __require() {
   return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
 };
 
+// src/shared/bd-module-loader.js
+var require_bd_module_loader = __commonJS({
+  "src/shared/bd-module-loader.js"(exports2, module2) {
+    function loadBdModuleFromPlugins2(fileName) {
+      if (!fileName) return null;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const source = fs.readFileSync(path.join(BdApi.Plugins.folder, fileName), "utf8");
+        const moduleObj = { exports: {} };
+        const factory = new Function(
+          "module",
+          "exports",
+          "require",
+          "BdApi",
+          `${source}
+return module.exports || exports || null;`
+        );
+        const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+        const candidate = loaded || moduleObj.exports;
+        if (typeof candidate === "function") return candidate;
+        if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) {
+          return candidate;
+        }
+      } catch (_) {
+      }
+      return null;
+    }
+    module2.exports = {
+      loadBdModuleFromPlugins: loadBdModuleFromPlugins2
+    };
+  }
+});
+
 // src/shared/hotkeys.js
 var require_hotkeys = __commonJS({
   "src/shared/hotkeys.js"(exports2, module2) {
@@ -933,15 +967,7 @@ var require_styles = __commonJS({
 });
 
 // src/ShadowStep/index.js
-var _bdLoad = (f) => {
-  try {
-    const m = { exports: {} };
-    new Function("module", "exports", require("fs").readFileSync(require("path").join(BdApi.Plugins.folder, f), "utf8"))(m, m.exports);
-    return typeof m.exports === "function" || Object.keys(m.exports).length ? m.exports : null;
-  } catch (e) {
-    return null;
-  }
-};
+var { loadBdModuleFromPlugins } = require_bd_module_loader();
 var PLUGIN_NAME = "ShadowStep";
 var PLUGIN_VERSION = "1.0.1";
 var STYLE_ID = "shadow-step-css";
@@ -962,19 +988,19 @@ var DEFAULT_SETTINGS = {
 };
 var _PluginUtils;
 try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+  _PluginUtils = loadBdModuleFromPlugins("BetterDiscordPluginUtils.js");
 } catch (_) {
   _PluginUtils = null;
 }
 var _SLUtils;
 try {
-  _SLUtils = _bdLoad("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
+  _SLUtils = loadBdModuleFromPlugins("SoloLevelingUtils.js") || window.SoloLevelingUtils || null;
 } catch (_) {
   _SLUtils = window.SoloLevelingUtils || null;
 }
 var _TransitionCleanupUtils;
 try {
-  _TransitionCleanupUtils = _bdLoad("TransitionCleanupUtils.js");
+  _TransitionCleanupUtils = loadBdModuleFromPlugins("TransitionCleanupUtils.js");
 } catch (_) {
   _TransitionCleanupUtils = null;
 }
