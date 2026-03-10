@@ -65,9 +65,11 @@ desktop.ini
 *.webp
 !docs/**/*.png
 !docs/**/*.jpg
+!themes/**/*.gif
 !themes/**/*.png
 !themes/**/*.jpg
 !themes/**/*.jpeg
+!themes/**/*.webp
 
 # Debug/test files
 *Debug.js
@@ -149,10 +151,5 @@ plugins/PYTHON_RULES_BYTEROVER.json
 # Local workspace bucket (do not track)
 _local/
 
-# Ignored Plugin Source Files (temporarily tracked until dev is done)
-# plugins/*.plugin.js
-# plugins/*.json
-# plugins/*.md
-# plugins/*.css
-# plugins/*.js
-!plugins/README.md
+# Plugin files — cannot share plugin code publicly
+plugins/
