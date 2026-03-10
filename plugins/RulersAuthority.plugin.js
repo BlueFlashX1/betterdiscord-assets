@@ -120,7 +120,12 @@ function isEditableTarget(t) {
 }
 function matchesHotkey(e, hotkey) {
   if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.matchesHotkey) return _pluginUtilsRef.matchesHotkey(e, hotkey);
-  return false;
+  if (!hotkey || !e) return false;
+  const parts = hotkey.toLowerCase().replace(/\s+/g, "").split("+").filter(Boolean);
+  const mods = new Set(parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p)));
+  const key = parts.find((p) => !mods.has(p)) || "";
+  if (!key) return false;
+  return e.key.toLowerCase() === key && !!e.ctrlKey === mods.has("ctrl") && !!e.shiftKey === mods.has("shift") && !!e.altKey === mods.has("alt") && !!e.metaKey === (mods.has("meta") || mods.has("cmd") || mods.has("command"));
 }
 
 // src/RulersAuthority/resize.js
@@ -394,7 +399,8 @@ function applyChannelHiding(ctx, guildId) {
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
   const hiddenIds = new Set(((guildData == null ? void 0 : guildData.hiddenChannels) || []).map((entry) => String(entry.id)));
-  const pushedEls = document.querySelectorAll("[data-ra-pushed]");
+  const sidebar = findChannelSidebar();
+  const pushedEls = (sidebar || document).querySelectorAll("[data-ra-pushed]");
   for (const el of pushedEls) {
     const listId = el.getAttribute("data-list-item-id") || "";
     const channelId = listId.startsWith("channels___") ? listId.replace("channels___", "") : null;

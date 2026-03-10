@@ -280,8 +280,9 @@ export function applyChannelHiding(ctx, guildId) {
   const guildData = ctx.settings.guilds[effectiveGuildId];
   const hiddenIds = new Set((guildData?.hiddenChannels || []).map((entry) => String(entry.id)));
 
-  // Clear stale pushed markers first (when channels were recalled or guild changed)
-  const pushedEls = document.querySelectorAll("[data-ra-pushed]");
+  // Clear stale pushed markers — scoped to sidebar to avoid full-document scan
+  const sidebar = findChannelSidebar();
+  const pushedEls = (sidebar || document).querySelectorAll("[data-ra-pushed]");
   for (const el of pushedEls) {
     const listId = el.getAttribute("data-list-item-id") || "";
     const channelId = listId.startsWith("channels___")

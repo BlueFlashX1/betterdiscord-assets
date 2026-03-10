@@ -267,11 +267,15 @@ module.exports = class HSLWheelBridge {
         };
       }, []);
 
-      // Re-discover scroller on every React render (instant recovery)
+      // Re-discover scroller on React renders, throttled to avoid per-frame overhead
+      const lastSyncRef = React.useRef(0);
       React.useEffect(() => {
         if (!engineRef.current || pluginInstance._isStopped) return;
+        const now = Date.now();
+        if (now - lastSyncRef.current < 500) return;
+        lastSyncRef.current = now;
         engineRef.current.syncScroller();
-      }); // No deps = runs on every render
+      }); // No deps = runs on every render, but throttled to 500ms
 
       return null; // No visible output
     };

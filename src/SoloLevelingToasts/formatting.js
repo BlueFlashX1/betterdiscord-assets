@@ -97,7 +97,7 @@ export function summarizeMessage(message) {
 export function detectToastType(message, type) {
   const msg = message.toLowerCase();
 
-  if (type === "success" || msg.includes("level up") || msg.includes("level")) {
+  if (type === "success" || msg.includes("level up") || msg.includes("leveled") || /\blv\.?\d/i.test(msg)) {
     return "level-up";
   }
   if (msg.includes("achievement") || msg.includes("unlocked")) {

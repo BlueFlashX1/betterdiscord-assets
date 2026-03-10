@@ -577,6 +577,9 @@ module.exports = class SoloLevelingToasts {
         this.createToastContainer();
       }
 
+      // Track toast synchronously so _scheduleToastFadeOut can always find it
+      this.activeToasts.push(toast);
+
       requestAnimationFrame(() => {
         if (this._isStopped) return;
         if (!this.toastContainer) {
@@ -584,7 +587,6 @@ module.exports = class SoloLevelingToasts {
           return;
         }
         this.toastContainer.appendChild(toast);
-        this.activeToasts.push(toast);
 
         requestAnimationFrame(() => {
           if (this._isStopped) return;
@@ -690,6 +692,12 @@ module.exports = class SoloLevelingToasts {
     if (recent.length >= maxPerMinute) return false;
     recent.push(now);
     this._rateLimiter.set(callerId, recent);
+    // Prune stale callerIds (no activity in 60s) to prevent unbounded growth
+    if (this._rateLimiter.size > 50) {
+      for (const [id, ts] of this._rateLimiter) {
+        if (!ts.length || now - ts[ts.length - 1] > 60000) this._rateLimiter.delete(id);
+      }
+    }
     return true;
   }
 
@@ -816,10 +824,11 @@ module.exports = class SoloLevelingToasts {
 
     if (!this.toastContainer) this.createToastContainer();
 
+    this.activeToasts.push(toast);
+
     requestAnimationFrame(() => {
       if (this._isStopped || !this.toastContainer) return;
       this.toastContainer.appendChild(toast);
-      this.activeToasts.push(toast);
     });
 
     this._scheduleToastFadeOut(toast, toastTimeout);

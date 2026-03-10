@@ -46,7 +46,7 @@ function summarizeMessage(message) {
 }
 function detectToastType(message, type) {
   const msg = message.toLowerCase();
-  if (type === "success" || msg.includes("level up") || msg.includes("level")) {
+  if (type === "success" || msg.includes("level up") || msg.includes("leveled") || /\blv\.?\d/i.test(msg)) {
     return "level-up";
   }
   if (msg.includes("achievement") || msg.includes("unlocked")) {
@@ -624,6 +624,7 @@ module.exports = class SoloLevelingToasts {
       if (!this.toastContainer) {
         this.createToastContainer();
       }
+      this.activeToasts.push(toast);
       requestAnimationFrame(() => {
         if (this._isStopped) return;
         if (!this.toastContainer) {
@@ -631,7 +632,6 @@ module.exports = class SoloLevelingToasts {
           return;
         }
         this.toastContainer.appendChild(toast);
-        this.activeToasts.push(toast);
         requestAnimationFrame(() => {
           if (this._isStopped) return;
           this.createParticles(toast, this.settings.particleCount);
@@ -719,6 +719,11 @@ module.exports = class SoloLevelingToasts {
     if (recent.length >= maxPerMinute) return false;
     recent.push(now);
     this._rateLimiter.set(callerId, recent);
+    if (this._rateLimiter.size > 50) {
+      for (const [id, ts] of this._rateLimiter) {
+        if (!ts.length || now - ts[ts.length - 1] > 6e4) this._rateLimiter.delete(id);
+      }
+    }
     return true;
   }
   /**
@@ -813,10 +818,10 @@ module.exports = class SoloLevelingToasts {
       );
     });
     if (!this.toastContainer) this.createToastContainer();
+    this.activeToasts.push(toast);
     requestAnimationFrame(() => {
       if (this._isStopped || !this.toastContainer) return;
       this.toastContainer.appendChild(toast);
-      this.activeToasts.push(toast);
     });
     this._scheduleToastFadeOut(toast, toastTimeout);
     this.debugLog("CARD_TOAST", "Card toast created", {

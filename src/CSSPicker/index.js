@@ -333,7 +333,7 @@ module.exports = class CSSPicker {
 
       event.preventDefault();
       event.stopPropagation();
-      (this.isActive && this.deactivatePickMode()) || this.activatePickMode();
+      if (this.isActive) this.deactivatePickMode(); else this.activatePickMode();
     };
     document.addEventListener("keydown", this.onGlobalHotkeyDown, true);
 
@@ -637,7 +637,7 @@ module.exports = class CSSPicker {
     this._launcherClickHandler =
       this._launcherClickHandler ||
       (() => {
-        (this.isActive && this.deactivatePickMode()) || this.activatePickMode();
+        if (this.isActive) this.deactivatePickMode(); else this.activatePickMode();
       });
     this.launcher.removeEventListener("click", this._launcherClickHandler);
     this.launcher.addEventListener("click", this._launcherClickHandler);

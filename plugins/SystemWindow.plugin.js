@@ -388,6 +388,15 @@ module.exports = class SystemWindow {
     }, 1e4);
   }
   _checkChannelSwitch() {
+    var _a, _b;
+    try {
+      const currentId = ((_b = (_a = BdApi.Webpack.getStore("UserStore")) == null ? void 0 : _a.getCurrentUser()) == null ? void 0 : _b.id) || null;
+      if (currentId && currentId !== this._currentUserId) {
+        this._currentUserId = currentId;
+        document.querySelectorAll('div[role="article"][data-sw-self]').forEach((el) => el.removeAttribute("data-sw-self"));
+      }
+    } catch (_) {
+    }
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (!scroller) return;
     if (scroller !== this._lastScrollerEl) {

@@ -362,7 +362,7 @@ var iterCssRules = (rules, onRule, state) => {
 var _cachedFlatRules = null;
 var _cachedFlatRulesTime = 0;
 var _corsBlockedCount = 0;
-var RULE_CACHE_TTL_MS = 1e4;
+var RULE_CACHE_TTL_MS = 3e3;
 function _lastCorsBlockedCount() {
   return _corsBlockedCount;
 }
@@ -386,13 +386,14 @@ function _getFlatRules() {
       rules,
       (rule, ruleIndex) => {
         if (rule.selectorText) {
+          const owner = sheet.ownerNode;
           flat.push({
             rule,
             ruleIndex,
             sheetLabel,
             sheetIndex,
             sheetHref: sheet.href || null,
-            ownerNode: sheet.ownerNode || null
+            ownerNode: owner ? { id: owner.id || "", tagName: owner.tagName || "" } : null
           });
         }
       },
@@ -1038,7 +1039,8 @@ module.exports = class CSSPicker {
       if (!matchesHotkey(event, settings.hotkey)) return;
       event.preventDefault();
       event.stopPropagation();
-      this.isActive && this.deactivatePickMode() || this.activatePickMode();
+      if (this.isActive) this.deactivatePickMode();
+      else this.activatePickMode();
     };
     document.addEventListener("keydown", this.onGlobalHotkeyDown, true);
     const hotkeyLabel = ((_b = this.settings) == null ? void 0 : _b.hotkeyEnabled) && ((_c = this.settings) == null ? void 0 : _c.hotkey) ? ` Hotkey: ${this.settings.hotkey}` : "";
@@ -1293,7 +1295,8 @@ module.exports = class CSSPicker {
     if (this.launcher && document.body.contains(this.launcher)) return;
     this.launcher = this.launcher || createLauncherButton();
     this._launcherClickHandler = this._launcherClickHandler || (() => {
-      this.isActive && this.deactivatePickMode() || this.activatePickMode();
+      if (this.isActive) this.deactivatePickMode();
+      else this.activatePickMode();
     });
     this.launcher.removeEventListener("click", this._launcherClickHandler);
     this.launcher.addEventListener("click", this._launcherClickHandler);

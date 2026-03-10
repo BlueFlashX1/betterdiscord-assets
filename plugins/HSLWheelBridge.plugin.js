@@ -228,8 +228,12 @@ module.exports = class HSLWheelBridge {
           engineRef.current = null;
         };
       }, []);
+      const lastSyncRef = React.useRef(0);
       React.useEffect(() => {
         if (!engineRef.current || pluginInstance._isStopped) return;
+        const now = Date.now();
+        if (now - lastSyncRef.current < 500) return;
+        lastSyncRef.current = now;
         engineRef.current.syncScroller();
       });
       return null;

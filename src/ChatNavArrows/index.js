@@ -283,6 +283,7 @@ module.exports = class ChatNavArrows {
       wrapper.style.position = 'relative';
 
       if (!state.downEl || !state.downEl.isConnected) {
+        if (state.downEl) state.downEl.removeEventListener('click', handleDownClick);
         state.downEl = document.createElement('div');
         state.downEl.className = 'sl-chat-nav-arrow sl-chat-nav-down';
         state.downEl.title = 'Jump to Present';
@@ -291,6 +292,7 @@ module.exports = class ChatNavArrows {
       }
 
       if (!state.upEl || !state.upEl.isConnected) {
+        if (state.upEl) state.upEl.removeEventListener('click', handleUpClick);
         state.upEl = document.createElement('div');
         state.upEl.className = 'sl-chat-nav-arrow sl-chat-nav-up';
         state.upEl.title = 'Jump to Top';

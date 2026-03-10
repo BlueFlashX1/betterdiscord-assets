@@ -109,6 +109,16 @@ module.exports = class SystemWindow {
   }
 
   _checkChannelSwitch() {
+    // Detect account switch — invalidate cached self-flags
+    try {
+      const currentId = BdApi.Webpack.getStore("UserStore")?.getCurrentUser()?.id || null;
+      if (currentId && currentId !== this._currentUserId) {
+        this._currentUserId = currentId;
+        document.querySelectorAll('div[role="article"][data-sw-self]')
+          .forEach((el) => el.removeAttribute('data-sw-self'));
+      }
+    } catch (_) {}
+
     const scroller = document.querySelector('ol[role="list"][class*="scrollerInner_"]');
     if (!scroller) return;
     if (scroller !== this._lastScrollerEl) {

@@ -479,7 +479,7 @@ const iterCssRules = (rules, onRule, state) => {
 let _cachedFlatRules = null;
 let _cachedFlatRulesTime = 0;
 let _corsBlockedCount = 0;
-const RULE_CACHE_TTL_MS = 10000;
+const RULE_CACHE_TTL_MS = 3000;
 
 /** Accessor for CORS-blocked count (used by selectors.js getElementDetails). */
 export function _lastCorsBlockedCount() {
@@ -507,13 +507,14 @@ export function _getFlatRules() {
       rules,
       (rule, ruleIndex) => {
         if (rule.selectorText) {
+          const owner = sheet.ownerNode;
           flat.push({
             rule,
             ruleIndex,
             sheetLabel,
             sheetIndex,
             sheetHref: sheet.href || null,
-            ownerNode: sheet.ownerNode || null,
+            ownerNode: owner ? { id: owner.id || "", tagName: owner.tagName || "" } : null,
           });
         }
       },
