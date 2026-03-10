@@ -4,6 +4,209 @@
  * @version 2.1.1
  * @author matthewthompson
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/Stealth/settings-panel.js
+var require_settings_panel = __commonJS({
+  "src/Stealth/settings-panel.js"(exports2, module2) {
+    function buildStealthSettingsPanel2(BdApi2, plugin) {
+      const React = BdApi2.React;
+      const rowStyle = {
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "space-between",
+        gap: "12px",
+        padding: "10px 0",
+        borderBottom: "1px solid rgba(255,255,255,0.06)"
+      };
+      const labelWrapStyle = {
+        display: "flex",
+        flexDirection: "column",
+        gap: "2px",
+        flex: 1
+      };
+      const titleStyle = {
+        color: "#e9d5ff",
+        fontFamily: "'Orbitron', sans-serif",
+        fontWeight: 700,
+        fontSize: "13px",
+        letterSpacing: "0.04em"
+      };
+      const descStyle = {
+        color: "rgba(220, 220, 230, 0.72)",
+        fontSize: "12px",
+        lineHeight: 1.3
+      };
+      const checkStyle = { accentColor: "#8a2be2", width: "16px", height: "16px" };
+      const Header = () => React.createElement(
+        "div",
+        {
+          style: {
+            padding: "12px 14px",
+            border: "1px solid rgba(138,43,226,0.4)",
+            borderRadius: "10px",
+            marginBottom: "14px",
+            background: "linear-gradient(135deg, rgba(32, 15, 52, 0.7), rgba(12, 8, 20, 0.8))"
+          }
+        },
+        React.createElement(
+          "div",
+          {
+            style: {
+              color: "#c084fc",
+              fontFamily: "'Orbitron', sans-serif",
+              fontSize: "14px",
+              fontWeight: 700,
+              marginBottom: "6px"
+            }
+          },
+          "Shadow Monarch Stealth"
+        ),
+        React.createElement(
+          "div",
+          { style: { color: "rgba(226, 232, 240, 0.82)", fontSize: "12px", lineHeight: 1.35 } },
+          "Total concealment: hide typing, force Invisible, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
+        )
+      );
+      const SettingRow = ({ settingKey, title, description }) => {
+        const [checked, setChecked] = React.useState(Boolean(plugin.settings[settingKey]));
+        React.useEffect(() => {
+          setChecked(Boolean(plugin.settings[settingKey]));
+        }, [settingKey]);
+        return React.createElement(
+          "div",
+          { style: rowStyle },
+          React.createElement(
+            "div",
+            { style: labelWrapStyle },
+            React.createElement("span", { style: titleStyle }, title),
+            React.createElement("span", { style: descStyle }, description)
+          ),
+          React.createElement("input", {
+            type: "checkbox",
+            checked,
+            style: checkStyle,
+            onChange: (e) => {
+              const value = Boolean(e.target.checked);
+              setChecked(value);
+              plugin._setSetting(settingKey, value);
+            }
+          })
+        );
+      };
+      const Metrics = () => React.createElement(
+        "div",
+        {
+          style: {
+            marginTop: "14px",
+            padding: "10px",
+            borderRadius: "8px",
+            background: "rgba(10, 10, 16, 0.7)",
+            border: "1px solid rgba(138,43,226,0.25)",
+            color: "rgba(226,232,240,0.82)",
+            fontSize: "12px",
+            lineHeight: 1.4
+          }
+        },
+        `Patched methods: typing ${plugin._patchMetrics.typing}, activities ${plugin._patchMetrics.activities}, telemetry ${plugin._patchMetrics.telemetry}, @silent ${plugin._patchMetrics.silent}, process ${plugin._patchMetrics.process}, readReceipts ${plugin._patchMetrics.readReceipts}`
+      );
+      const Panel = () => React.createElement(
+        "div",
+        {
+          className: "sl-stealth-settings",
+          style: {
+            padding: "16px",
+            borderRadius: "12px",
+            background: "rgba(8, 8, 14, 0.92)",
+            border: "1px solid rgba(138,43,226,0.35)",
+            boxShadow: "0 0 24px rgba(138,43,226,0.18)",
+            color: "#d4d4dc"
+          }
+        },
+        React.createElement(Header),
+        React.createElement(SettingRow, {
+          settingKey: "enabled",
+          title: "Master Stealth",
+          description: "Global toggle for all stealth suppression rules."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "suppressTyping",
+          title: "Conceal Typing",
+          description: "Blocks outbound typing indicators so others do not see when you are typing."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "invisibleStatus",
+          title: "Force Invisible Status",
+          description: "Automatically keeps your presence status set to Invisible."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "suppressActivities",
+          title: "Hide Activity Updates",
+          description: "Suppresses outbound activity updates (custom status / game activity module calls)."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "suppressTelemetry",
+          title: "Erase Tracking Footprints",
+          description: "Blocks analytics tracking and disables Sentry telemetry hooks where possible."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "disableProcessMonitor",
+          title: "Sever Process Monitor",
+          description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "suppressIdle",
+          title: "Suppress Idle Detection",
+          description: "Blocks idle/AFK state transitions that can leak presence information."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "autoSilentMessages",
+          title: "Silent Whisper (@silent)",
+          description: "Prefixes normal text messages with @silent automatically (slash commands are skipped)."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "suppressReadReceipts",
+          title: "Block Read Receipts",
+          description: "Blocks outbound read acknowledgments - channels/DMs never mark as read for other users."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "restoreStatusOnStop",
+          title: "Restore Previous Status",
+          description: "When disabled/stopped, revert to your pre-stealth status if captured."
+        }),
+        React.createElement(SettingRow, {
+          settingKey: "showToasts",
+          title: "Show Toasts",
+          description: "Display stealth on/off and warning toasts."
+        }),
+        React.createElement(Metrics)
+      );
+      return React.createElement(Panel);
+    }
+    module2.exports = { buildStealthSettingsPanel: buildStealthSettingsPanel2 };
+  }
+});
+
+// src/Stealth/styles.js
+var require_styles = __commonJS({
+  "src/Stealth/styles.js"(exports2, module2) {
+    var STEALTH_SETTINGS_CSS2 = `
+.sl-stealth-settings input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.sl-stealth-settings input[type="checkbox"]:focus-visible {
+  outline: 2px solid rgba(168, 85, 247, 0.9);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+`;
+    module2.exports = { STEALTH_SETTINGS_CSS: STEALTH_SETTINGS_CSS2 };
+  }
+});
 
 // src/Stealth/index.js
 var _bdLoad = (f) => {
@@ -21,6 +224,8 @@ try {
 } catch (_) {
   _PluginUtils = null;
 }
+var { buildStealthSettingsPanel } = require_settings_panel();
+var { STEALTH_SETTINGS_CSS } = require_styles();
 var STEALTH_PLUGIN_ID = "Stealth";
 var STEALTH_STYLE_ID = "stealth-plugin-css";
 var DEFAULT_SETTINGS = {
@@ -888,194 +1093,9 @@ module.exports = class Stealth {
   }
   // ── Settings UI ────────────────────────────────────────────────────────
   getSettingsPanel() {
-    const React = BdApi.React;
-    const self = this;
-    const rowStyle = {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      gap: "12px",
-      padding: "10px 0",
-      borderBottom: "1px solid rgba(255,255,255,0.06)"
-    };
-    const labelWrapStyle = {
-      display: "flex",
-      flexDirection: "column",
-      gap: "2px",
-      flex: 1
-    };
-    const titleStyle = {
-      color: "#e9d5ff",
-      fontFamily: "'Orbitron', sans-serif",
-      fontWeight: 700,
-      fontSize: "13px",
-      letterSpacing: "0.04em"
-    };
-    const descStyle = {
-      color: "rgba(220, 220, 230, 0.72)",
-      fontSize: "12px",
-      lineHeight: 1.3
-    };
-    const checkStyle = { accentColor: "#8a2be2", width: "16px", height: "16px" };
-    const Header = () => React.createElement(
-      "div",
-      {
-        style: {
-          padding: "12px 14px",
-          border: "1px solid rgba(138,43,226,0.4)",
-          borderRadius: "10px",
-          marginBottom: "14px",
-          background: "linear-gradient(135deg, rgba(32, 15, 52, 0.7), rgba(12, 8, 20, 0.8))"
-        }
-      },
-      React.createElement(
-        "div",
-        {
-          style: {
-            color: "#c084fc",
-            fontFamily: "'Orbitron', sans-serif",
-            fontSize: "14px",
-            fontWeight: 700,
-            marginBottom: "6px"
-          }
-        },
-        "Shadow Monarch Stealth"
-      ),
-      React.createElement(
-        "div",
-        { style: { color: "rgba(226, 232, 240, 0.82)", fontSize: "12px", lineHeight: 1.35 } },
-        "Total concealment: hide typing, force Invisible, suppress idle detection, silence messages, erase telemetry footprints, and sever process monitoring."
-      )
-    );
-    const SettingRow = ({ settingKey, title, description }) => {
-      const [checked, setChecked] = React.useState(Boolean(self.settings[settingKey]));
-      React.useEffect(() => {
-        setChecked(Boolean(self.settings[settingKey]));
-      }, [settingKey]);
-      return React.createElement(
-        "div",
-        { style: rowStyle },
-        React.createElement(
-          "div",
-          { style: labelWrapStyle },
-          React.createElement("span", { style: titleStyle }, title),
-          React.createElement("span", { style: descStyle }, description)
-        ),
-        React.createElement("input", {
-          type: "checkbox",
-          checked,
-          style: checkStyle,
-          onChange: (e) => {
-            const value = Boolean(e.target.checked);
-            setChecked(value);
-            self._setSetting(settingKey, value);
-          }
-        })
-      );
-    };
-    const Metrics = () => React.createElement(
-      "div",
-      {
-        style: {
-          marginTop: "14px",
-          padding: "10px",
-          borderRadius: "8px",
-          background: "rgba(10, 10, 16, 0.7)",
-          border: "1px solid rgba(138,43,226,0.25)",
-          color: "rgba(226,232,240,0.82)",
-          fontSize: "12px",
-          lineHeight: 1.4
-        }
-      },
-      `Patched methods: typing ${self._patchMetrics.typing}, activities ${self._patchMetrics.activities}, telemetry ${self._patchMetrics.telemetry}, @silent ${self._patchMetrics.silent}, process ${self._patchMetrics.process}, readReceipts ${self._patchMetrics.readReceipts}`
-    );
-    const Panel = () => React.createElement(
-      "div",
-      {
-        className: "sl-stealth-settings",
-        style: {
-          padding: "16px",
-          borderRadius: "12px",
-          background: "rgba(8, 8, 14, 0.92)",
-          border: "1px solid rgba(138,43,226,0.35)",
-          boxShadow: "0 0 24px rgba(138,43,226,0.18)",
-          color: "#d4d4dc"
-        }
-      },
-      React.createElement(Header),
-      React.createElement(SettingRow, {
-        settingKey: "enabled",
-        title: "Master Stealth",
-        description: "Global toggle for all stealth suppression rules."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressTyping",
-        title: "Conceal Typing",
-        description: "Blocks outbound typing indicators so others do not see when you are typing."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "invisibleStatus",
-        title: "Force Invisible Status",
-        description: "Automatically keeps your presence status set to Invisible."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressActivities",
-        title: "Hide Activity Updates",
-        description: "Suppresses outbound activity updates (custom status / game activity module calls)."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressTelemetry",
-        title: "Erase Tracking Footprints",
-        description: "Blocks analytics tracking and disables Sentry telemetry hooks where possible."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "disableProcessMonitor",
-        title: "Sever Process Monitor",
-        description: "Stops observed-game callbacks and suppresses Discord RPC game process monitoring."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressIdle",
-        title: "Suppress Idle Detection",
-        description: "Blocks idle/AFK state transitions that can leak presence information."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "autoSilentMessages",
-        title: "Silent Whisper (@silent)",
-        description: "Prefixes normal text messages with @silent automatically (slash commands are skipped)."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "suppressReadReceipts",
-        title: "Block Read Receipts",
-        description: "Blocks outbound read acknowledgments \u2014 channels/DMs never mark as read for other users."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "restoreStatusOnStop",
-        title: "Restore Previous Status",
-        description: "When disabled/stopped, revert to your pre-stealth status if captured."
-      }),
-      React.createElement(SettingRow, {
-        settingKey: "showToasts",
-        title: "Show Toasts",
-        description: "Display stealth on/off and warning toasts."
-      }),
-      React.createElement(Metrics)
-    );
-    return React.createElement(Panel);
+    return buildStealthSettingsPanel(BdApi, this);
   }
   injectCSS() {
-    BdApi.DOM.addStyle(
-      STEALTH_STYLE_ID,
-      `
-.sl-stealth-settings input[type="checkbox"] {
-  cursor: pointer;
-}
-
-.sl-stealth-settings input[type="checkbox"]:focus-visible {
-  outline: 2px solid rgba(168, 85, 247, 0.9);
-  outline-offset: 2px;
-  border-radius: 2px;
-}
-`
-    );
+    BdApi.DOM.addStyle(STEALTH_STYLE_ID, STEALTH_SETTINGS_CSS);
   }
 };

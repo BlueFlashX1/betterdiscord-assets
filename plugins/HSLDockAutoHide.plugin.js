@@ -4,1125 +4,1021 @@
  * @version 4.0.1
  * @author Solo Leveling Theme Dev, BlueFlashX1
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
 
-// src/HSLDockAutoHide/index.js
-function _bdLoad(fileName) {
-  if (!fileName) return null;
-  try {
-    const fs = require("fs");
-    const path = require("path");
-    const fullPath = path.join(BdApi.Plugins.folder, fileName);
-    const source = fs.readFileSync(fullPath, "utf8");
-    const moduleObj = { exports: {} };
-    const factory = new Function(
-      "module",
-      "exports",
-      "require",
-      "BdApi",
-      `${source}
-return module.exports || exports || null;`
-    );
-    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
-    const candidate = loaded || moduleObj.exports;
-    if (typeof candidate === "function") return candidate;
-    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
-  } catch (_) {
+// src/HSLDockAutoHide/debug.js
+var require_debug = __commonJS({
+  "src/HSLDockAutoHide/debug.js"(exports2, module2) {
+    function describeDock(el) {
+      var _a;
+      if (!el) return null;
+      const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
+      return {
+        tag: String(el.tagName || "").toLowerCase(),
+        id: el.id || null,
+        className: typeof el.className === "string" ? el.className : null,
+        ariaLabel: ((_a = el.getAttribute) == null ? void 0 : _a.call(el, "aria-label")) || null,
+        rect: rect ? { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null
+      };
+    }
+    function sanitizeDebugValue(engine, value) {
+      if (value == null) return value;
+      if (value instanceof Element) return describeDock(value);
+      if (Array.isArray(value)) return value.map((entry) => sanitizeDebugValue(engine, entry));
+      if (typeof value === "object") {
+        const out = {};
+        for (const [key, item] of Object.entries(value)) out[key] = sanitizeDebugValue(engine, item);
+        return out;
+      }
+      if (typeof value === "function") return "[Function]";
+      return value;
+    }
+    function sanitizeDebugData(engine, data) {
+      const out = {};
+      if (!data || typeof data !== "object") return out;
+      for (const [key, value] of Object.entries(data)) out[key] = sanitizeDebugValue(engine, value);
+      return out;
+    }
+    function snapshotState(engine) {
+      var _a, _b, _c, _d;
+      return {
+        lockRemainingMs: Math.max(0, engine.lockOpenUntil - Date.now()),
+        hasMouseMoved: engine.hasMouseMoved,
+        lastMouseX: engine.lastMouseX,
+        lastMouseY: engine.lastMouseY,
+        pointerOverDock: engine.pointerOverDock,
+        nearBottom: engine.isCursorNearBottom(),
+        rootHiddenClass: Boolean((_b = (_a = engine.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden")),
+        rootVisibleClass: Boolean((_d = (_c = engine.stateTarget) == null ? void 0 : _c.classList) == null ? void 0 : _d.contains("sl-dock-visible")),
+        dock: describeDock(engine.dock),
+        dockTarget: describeDock(engine.dockMoveTarget),
+        railVisible: engine.railVisible,
+        railMounted: Boolean(engine.rail && engine.rail.parentElement),
+        hideTimerActive: Boolean(engine.hideTimer),
+        tickCount: engine.tickCount
+      };
+    }
+    function writeDebugEntry(engine, entry) {
+      if (!engine.debugFileEnabled || !engine.fs || !engine.debugFilePath) return;
+      try {
+        engine.fs.appendFileSync(engine.debugFilePath, JSON.stringify(entry) + "\n");
+      } catch (error) {
+        engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed writing debug entry to file", error);
+      }
+    }
+    function installDebugApi(engine) {
+      try {
+        const handle = {
+          version: engine.version,
+          getLogs: () => engine.debugBuffer.slice(),
+          dump: () => {
+            const logs = engine.debugBuffer.slice();
+            console.group("[HSLDockAutoHide] Debug dump");
+            console.table(logs);
+            console.groupEnd();
+            return logs;
+          },
+          state: () => snapshotState(engine),
+          filePath: () => engine.debugFilePath,
+          clear: () => {
+            engine.debugBuffer.length = 0;
+            engine.debugSeq = 0;
+            return true;
+          }
+        };
+        try {
+          window.__HSLDockAutoHideDebug = handle;
+        } catch (error) {
+          engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on window", error);
+        }
+        try {
+          globalThis.__HSLDockAutoHideDebug = handle;
+        } catch (error) {
+          engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on globalThis", error);
+        }
+      } catch (error) {
+        engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API", error);
+      }
+    }
+    function removeDebugApi(engine) {
+      try {
+        delete window.__HSLDockAutoHideDebug;
+      } catch (error) {
+        engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from window", error);
+      }
+      try {
+        delete globalThis.__HSLDockAutoHideDebug;
+      } catch (error) {
+        engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from globalThis", error);
+      }
+    }
+    function initDebugFileSink(engine) {
+      if (!engine.debugFileEnabled) return;
+      try {
+        const fs = require("fs");
+        const path = require("path");
+        const os = require("os");
+        const dir = path.join(os.homedir(), "Library", "Application Support", "BetterDiscord", "logs", "HSLDockAutoHide");
+        fs.mkdirSync(dir, { recursive: true });
+        const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
+        engine.debugFilePath = path.join(dir, `dock-autohide-${stamp}.jsonl`);
+        engine.fs = fs;
+      } catch (error) {
+        engine.debugFilePath = null;
+        engine.fs = null;
+        engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to initialize debug file sink", error);
+      }
+    }
+    function debug(engine, event, data = {}, includeState = false) {
+      if (!engine.debugEnabled) return;
+      const entry = { seq: ++engine.debugSeq, at: (/* @__PURE__ */ new Date()).toISOString(), event, ...sanitizeDebugData(engine, data) };
+      if (includeState) entry.state = snapshotState(engine);
+      engine.debugBuffer.push(entry);
+      if (engine.debugBuffer.length > engine.debugMaxEntries) engine.debugBuffer.shift();
+      writeDebugEntry(engine, entry);
+      if (engine.debugConsole) {
+        try {
+          console.debug("[HSLDockAutoHide]", entry);
+        } catch (error) {
+          engine.debugEnabled && console.warn("[HSLDockAutoHide] Failed to write debug console entry", error);
+        }
+      }
+    }
+    module2.exports = {
+      debug,
+      describeDock,
+      initDebugFileSink,
+      installDebugApi,
+      removeDebugApi,
+      sanitizeDebugData,
+      sanitizeDebugValue,
+      snapshotState,
+      writeDebugEntry
+    };
   }
-  return null;
-}
-var _PluginUtils;
-try {
-  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
-} catch (_) {
-  _PluginUtils = null;
-}
-var DOCK_SELECTORS = [
-  "nav[aria-label='Servers sidebar']",
-  "nav[aria-label='Servers']",
-  "nav[class*='guilds_']",
-  "[class*='guilds_'][class*='wrapper_']"
-];
-var DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
-var PANEL_SELECTORS = [
-  "section[aria-label='User status and settings']",
-  "section[class*='panels_'] > section"
-];
-var PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
-var COMPOSER_CONTAINER_SELECTORS = [
-  "form[class*='form_']",
-  "div[class*='channelBottomBarArea_']",
-  "div[class*='channelTextArea_']",
-  "div[class*='scrollableContainer_']",
-  "div[class*='inner_']",
-  "div[class*='textArea_']",
-  "div[class*='slateContainer_']",
-  "div[class*='slateTextArea_']",
-  "div[class*='editor_']",
-  "div[class*='markup_']"
-].join(", ");
-var COMPOSER_EDITABLE_SELECTORS = [
-  "textarea",
-  "input[type='text']",
-  "input[type='search']",
-  "input:not([type])",
-  "[role='textbox']",
-  "[contenteditable='']",
-  "[contenteditable='true']",
-  "[contenteditable='plaintext-only']"
-].join(", ");
-var ALERT_SELECTORS = [
-  "[class*='listItem'] [class*='mentionsBadge']",
-  "[class*='listItem'] [aria-label*='mention' i]",
-  "[class*='pill'] [class*='mentionsBadge']",
-  "[class*='pill'] [aria-label*='mention' i]",
-  "[class*='numberBadge']",
-  "[class*='mentionsBadge']"
-];
-var ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
-var DIGITS_RE = /\d+/;
-var DIGITS_ONLY_RE = /^\d+$/;
-var DockEngine = class {
-  constructor() {
-    this.version = "4.0.0";
-    this.stateTarget = document.body;
-    this.root = document.documentElement;
-    this.peekPx = 8;
-    this.revealZonePx = 85;
-    this.hideDelayMs = 220;
-    this.revealHoldMs = 900;
-    this.revealConfirmMs = 140;
-    this.focusReentryGuardMs = 1e3;
-    this.composerHideSuppressMs = 1200;
-    this.startupLockMs = 6500;
-    this.typingLockMs = 2600;
-    this.railHeightPx = 9;
-    this.lockOpenUntil = Date.now() + this.startupLockMs;
-    this.revealHoldUntil = 0;
-    this.suppressOpenUntil = 0;
-    this.typingLockUntil = 0;
-    this.requireRevealReset = false;
-    this.pointerOverDock = false;
-    this.lastMouseX = -1;
-    this.lastMouseY = -1;
-    this.lastMouseMoveAt = 0;
-    this.hasMouseMoved = false;
-    this.dock = null;
-    this.dockMoveTarget = null;
-    this.dockBaseTop = null;
-    this.dockBaseLeft = null;
-    this.rail = null;
-    this.railVisible = false;
-    this.railFollowFrame = null;
-    this.userPanel = null;
-    this.isUserPanelPositioned = false;
-    this._panelHoverContainer = null;
-    this._panelHoverBindAttempted = false;
-    this._onPanelEnter = null;
-    this._onPanelLeave = null;
-    this._lastDockHeight = null;
-    this._origPanelsHeight = document.body.style.getPropertyValue("--custom-app-panels-height") || null;
-    this.hideTimer = null;
-    this.revealTimer = null;
-    this.syncInterval = null;
-    this._mouseMoveRafId = null;
-    this.tickCount = 0;
-    this.debugEnabled = false;
-    this.debugConsole = false;
-    this.debugFileEnabled = false;
-    this.debugMaxEntries = 2200;
-    this.debugBuffer = [];
-    this.debugSeq = 0;
-    this.debugLastNearBottom = null;
-    this.debugFilePath = null;
-    this.fs = null;
-    this.onMouseMove = this.onMouseMove.bind(this);
-    this.onDockEnter = this.onDockEnter.bind(this);
-    this.onDockLeave = this.onDockLeave.bind(this);
-    this.onResize = this.onResize.bind(this);
-    this.onWindowBlur = this.onWindowBlur.bind(this);
-    this.onWindowFocus = this.onWindowFocus.bind(this);
-    this.onVisibilityChange = this.onVisibilityChange.bind(this);
-    this.onComposerInput = this.onComposerInput.bind(this);
-    this.onComposerKeyDown = this.onComposerKeyDown.bind(this);
-    this.onComposerFocusIn = this.onComposerFocusIn.bind(this);
-    this.safeTick = this.safeTick.bind(this);
-  }
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
-  mount() {
-    this.initDebugFileSink();
-    this.installDebugApi();
-    this.debug("mount:init", { version: this.version }, true);
-    document.body.style.setProperty("--custom-app-panels-height", "0px");
-    document.body.style.removeProperty("--sl-userpanel-width");
-    this.stateTarget.classList.add("sl-dock-autohide", "sl-dock-hidden");
-    this.stateTarget.classList.remove("sl-dock-visible");
-    this.stateTarget.style.setProperty("--sl-dock-peek", `${this.peekPx}px`);
-    this.createRail();
-    document.addEventListener("mousemove", this.onMouseMove, { passive: true });
-    document.addEventListener("beforeinput", this.onComposerInput, { capture: true, passive: true });
-    document.addEventListener("input", this.onComposerInput, { capture: true, passive: true });
-    document.addEventListener("compositionstart", this.onComposerInput, { capture: true, passive: true });
-    document.addEventListener("compositionupdate", this.onComposerInput, { capture: true, passive: true });
-    document.addEventListener("keydown", this.onComposerKeyDown, { capture: true, passive: true });
-    document.addEventListener("focusin", this.onComposerFocusIn, { capture: true, passive: true });
-    window.addEventListener("resize", this.onResize, { passive: true });
-    window.addEventListener("blur", this.onWindowBlur, { passive: true });
-    window.addEventListener("focus", this.onWindowFocus, { passive: true });
-    document.addEventListener("visibilitychange", this.onVisibilityChange, { passive: true });
-    this.syncDock();
-    this.safeTick();
-    this.syncInterval = setInterval(() => {
-      if (document.hidden) return;
-      this.safeTick();
-    }, 1500);
-    this.debug("mount:ready", { syncIntervalMs: 1500 }, true);
-  }
-  unmount() {
-    this.debug("unmount:begin", {}, true);
-    document.removeEventListener("mousemove", this.onMouseMove);
-    document.removeEventListener("beforeinput", this.onComposerInput, true);
-    document.removeEventListener("input", this.onComposerInput, true);
-    document.removeEventListener("compositionstart", this.onComposerInput, true);
-    document.removeEventListener("compositionupdate", this.onComposerInput, true);
-    document.removeEventListener("keydown", this.onComposerKeyDown, true);
-    document.removeEventListener("focusin", this.onComposerFocusIn, true);
-    window.removeEventListener("resize", this.onResize);
-    window.removeEventListener("blur", this.onWindowBlur);
-    window.removeEventListener("focus", this.onWindowFocus);
-    document.removeEventListener("visibilitychange", this.onVisibilityChange);
-    this.clearHideTimer();
-    this.clearRevealTimer("unmount");
-    if (this.syncInterval) {
-      clearInterval(this.syncInterval);
-      this.syncInterval = null;
-    }
-    if (this._mouseMoveRafId) {
-      cancelAnimationFrame(this._mouseMoveRafId);
-      this._mouseMoveRafId = null;
-      this._mouseMoveRafPending = false;
-    }
-    this.unbindDockEvents();
-    if (this.dockMoveTarget) {
-      this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
-      this.dockMoveTarget.style.removeProperty("translate");
-    }
-    if (this.stateTarget) {
-      this.stateTarget.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
-      this.stateTarget.style.removeProperty("--sl-dock-height");
-      this.stateTarget.style.removeProperty("--sl-dock-peek");
-    }
-    this.removeRail();
-    this.stopRailFollow();
-    this.unbindUserPanelHover();
-    if (this.userPanel) {
-      this.userPanel.classList.remove("sl-userpanel-docked");
-      this.userPanel.style.removeProperty("right");
-      this.userPanel.style.removeProperty("left");
-    }
-    if (this._origPanelsHeight) {
-      document.body.style.setProperty("--custom-app-panels-height", this._origPanelsHeight);
-    } else {
-      document.body.style.removeProperty("--custom-app-panels-height");
-    }
-    this.removeDebugApi();
-    this.dock = null;
-    this.dockMoveTarget = null;
-    this.userPanel = null;
-    this.isUserPanelPositioned = false;
-    this.root = null;
-    this.stateTarget = null;
-  }
-  // ── Dock Discovery (called by React effect + safeTick) ────────────────────
-  syncDock() {
-    var _a;
-    if ((_a = this.dock) == null ? void 0 : _a.isConnected) return;
-    const nextDock = this.findActiveDock();
-    if (nextDock === this.dock) return;
-    this.debug("dock:change", {
-      prev: this.describeDock(this.dock),
-      next: this.describeDock(nextDock)
-    }, true);
-    this.unbindDockEvents();
-    if (this.dockMoveTarget) this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
-    this.dock = nextDock;
-    this.dockMoveTarget = nextDock;
-    this.dockBaseTop = null;
-    this.dockBaseLeft = null;
-    this.pointerOverDock = false;
-    if (!this.dock) return;
-    if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
-    this.mountRailToDock();
-    if (Date.now() < this.typingLockUntil) {
-      if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-hidden")) {
+});
+
+// src/HSLDockAutoHide/engine.js
+var require_engine = __commonJS({
+  "src/HSLDockAutoHide/engine.js"(exports2, module2) {
+    var {
+      debug: debugDockEngine,
+      describeDock,
+      initDebugFileSink,
+      installDebugApi,
+      removeDebugApi,
+      sanitizeDebugData,
+      sanitizeDebugValue,
+      snapshotState,
+      writeDebugEntry
+    } = require_debug();
+    var DOCK_SELECTORS = [
+      "nav[aria-label='Servers sidebar']",
+      "nav[aria-label='Servers']",
+      "nav[class*='guilds_']",
+      "[class*='guilds_'][class*='wrapper_']"
+    ];
+    var DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
+    var PANEL_SELECTORS = [
+      "section[aria-label='User status and settings']",
+      "section[class*='panels_'] > section"
+    ];
+    var PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
+    var COMPOSER_CONTAINER_SELECTORS = [
+      "form[class*='form_']",
+      "div[class*='channelBottomBarArea_']",
+      "div[class*='channelTextArea_']",
+      "div[class*='scrollableContainer_']",
+      "div[class*='inner_']",
+      "div[class*='textArea_']",
+      "div[class*='slateContainer_']",
+      "div[class*='slateTextArea_']",
+      "div[class*='editor_']",
+      "div[class*='markup_']"
+    ].join(", ");
+    var COMPOSER_EDITABLE_SELECTORS = [
+      "textarea",
+      "input[type='text']",
+      "input[type='search']",
+      "input:not([type])",
+      "[role='textbox']",
+      "[contenteditable='']",
+      "[contenteditable='true']",
+      "[contenteditable='plaintext-only']"
+    ].join(", ");
+    var ALERT_SELECTORS = [
+      "[class*='listItem'] [class*='mentionsBadge']",
+      "[class*='listItem'] [aria-label*='mention' i]",
+      "[class*='pill'] [class*='mentionsBadge']",
+      "[class*='pill'] [aria-label*='mention' i]",
+      "[class*='numberBadge']",
+      "[class*='mentionsBadge']"
+    ];
+    var ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
+    var DIGITS_RE = /\d+/;
+    var DIGITS_ONLY_RE = /^\d+$/;
+    var DockEngine2 = class {
+      constructor() {
+        this.version = "4.0.0";
+        this.stateTarget = document.body;
+        this.root = document.documentElement;
+        this.peekPx = 8;
+        this.revealZonePx = 85;
+        this.hideDelayMs = 220;
+        this.revealHoldMs = 900;
+        this.revealConfirmMs = 140;
+        this.focusReentryGuardMs = 1e3;
+        this.composerHideSuppressMs = 1200;
+        this.startupLockMs = 6500;
+        this.typingLockMs = 2600;
+        this.railHeightPx = 9;
+        this.lockOpenUntil = Date.now() + this.startupLockMs;
+        this.revealHoldUntil = 0;
+        this.suppressOpenUntil = 0;
+        this.typingLockUntil = 0;
+        this.requireRevealReset = false;
+        this.pointerOverDock = false;
+        this.lastMouseX = -1;
+        this.lastMouseY = -1;
+        this.lastMouseMoveAt = 0;
+        this.hasMouseMoved = false;
+        this.dock = null;
+        this.dockMoveTarget = null;
+        this.rail = null;
+        this.railVisible = false;
+        this.railFollowFrame = null;
+        this.userPanel = null;
+        this.isUserPanelPositioned = false;
+        this._panelHoverContainer = null;
+        this._panelHoverBindAttempted = false;
+        this._onPanelEnter = null;
+        this._onPanelLeave = null;
+        this._lastDockHeight = null;
+        this._origPanelsHeight = document.body.style.getPropertyValue("--custom-app-panels-height") || null;
+        this.hideTimer = null;
+        this.revealTimer = null;
+        this.syncInterval = null;
+        this._mouseMoveRafId = null;
+        this.tickCount = 0;
+        this.debugEnabled = false;
+        this.debugConsole = false;
+        this.debugFileEnabled = false;
+        this.debugMaxEntries = 2200;
+        this.debugBuffer = [];
+        this.debugSeq = 0;
+        this.debugFilePath = null;
+        this.fs = null;
+        this.onMouseMove = this.onMouseMove.bind(this);
+        this.onDockEnter = this.onDockEnter.bind(this);
+        this.onDockLeave = this.onDockLeave.bind(this);
+        this.onResize = this.onResize.bind(this);
+        this.onWindowBlur = this.onWindowBlur.bind(this);
+        this.onWindowFocus = this.onWindowFocus.bind(this);
+        this.onVisibilityChange = this.onVisibilityChange.bind(this);
+        this.onComposerInput = this.onComposerInput.bind(this);
+        this.onComposerKeyDown = this.onComposerKeyDown.bind(this);
+        this.onComposerFocusIn = this.onComposerFocusIn.bind(this);
+        this.safeTick = this.safeTick.bind(this);
+      }
+      // ── Lifecycle ──────────────────────────────────────────────────────────────
+      mount() {
+        this.initDebugFileSink();
+        this.installDebugApi();
+        this.debug("mount:init", { version: this.version }, true);
+        document.body.style.setProperty("--custom-app-panels-height", "0px");
+        document.body.style.removeProperty("--sl-userpanel-width");
+        this.stateTarget.classList.add("sl-dock-autohide", "sl-dock-hidden");
+        this.stateTarget.classList.remove("sl-dock-visible");
+        this.stateTarget.style.setProperty("--sl-dock-peek", `${this.peekPx}px`);
+        this.createRail();
+        document.addEventListener("mousemove", this.onMouseMove, { passive: true });
+        document.addEventListener("beforeinput", this.onComposerInput, { capture: true, passive: true });
+        document.addEventListener("input", this.onComposerInput, { capture: true, passive: true });
+        document.addEventListener("compositionstart", this.onComposerInput, { capture: true, passive: true });
+        document.addEventListener("compositionupdate", this.onComposerInput, { capture: true, passive: true });
+        document.addEventListener("keydown", this.onComposerKeyDown, { capture: true, passive: true });
+        document.addEventListener("focusin", this.onComposerFocusIn, { capture: true, passive: true });
+        window.addEventListener("resize", this.onResize, { passive: true });
+        window.addEventListener("blur", this.onWindowBlur, { passive: true });
+        window.addEventListener("focus", this.onWindowFocus, { passive: true });
+        document.addEventListener("visibilitychange", this.onVisibilityChange, { passive: true });
+        this.syncDock();
+        this.safeTick();
+        this.syncInterval = setInterval(() => {
+          if (document.hidden) return;
+          this.safeTick();
+        }, 1500);
+        this.debug("mount:ready", { syncIntervalMs: 1500 }, true);
+      }
+      unmount() {
+        this.debug("unmount:begin", {}, true);
+        document.removeEventListener("mousemove", this.onMouseMove);
+        document.removeEventListener("beforeinput", this.onComposerInput, true);
+        document.removeEventListener("input", this.onComposerInput, true);
+        document.removeEventListener("compositionstart", this.onComposerInput, true);
+        document.removeEventListener("compositionupdate", this.onComposerInput, true);
+        document.removeEventListener("keydown", this.onComposerKeyDown, true);
+        document.removeEventListener("focusin", this.onComposerFocusIn, true);
+        window.removeEventListener("resize", this.onResize);
+        window.removeEventListener("blur", this.onWindowBlur);
+        window.removeEventListener("focus", this.onWindowFocus);
+        document.removeEventListener("visibilitychange", this.onVisibilityChange);
+        this.clearHideTimer();
+        this.clearRevealTimer("unmount");
+        if (this.syncInterval) {
+          clearInterval(this.syncInterval);
+          this.syncInterval = null;
+        }
+        if (this._mouseMoveRafId) {
+          cancelAnimationFrame(this._mouseMoveRafId);
+          this._mouseMoveRafId = null;
+          this._mouseMoveRafPending = false;
+        }
+        this.unbindDockEvents();
+        if (this.dockMoveTarget) {
+          this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
+          this.dockMoveTarget.style.removeProperty("translate");
+        }
+        if (this.stateTarget) {
+          this.stateTarget.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
+          this.stateTarget.style.removeProperty("--sl-dock-height");
+          this.stateTarget.style.removeProperty("--sl-dock-peek");
+        }
+        this.removeRail();
+        this.stopRailFollow();
+        this.unbindUserPanelHover();
+        if (this.userPanel) {
+          this.userPanel.classList.remove("sl-userpanel-docked");
+          this.userPanel.style.removeProperty("right");
+          this.userPanel.style.removeProperty("left");
+        }
+        if (this._origPanelsHeight) {
+          document.body.style.setProperty("--custom-app-panels-height", this._origPanelsHeight);
+        } else {
+          document.body.style.removeProperty("--custom-app-panels-height");
+        }
+        this.removeDebugApi();
+        this.dock = null;
+        this.dockMoveTarget = null;
+        this.userPanel = null;
+        this.isUserPanelPositioned = false;
+        this.root = null;
+        this.stateTarget = null;
+      }
+      // ── Dock Discovery (called by React effect + safeTick) ────────────────────
+      syncDock() {
+        var _a;
+        if ((_a = this.dock) == null ? void 0 : _a.isConnected) return;
+        const nextDock = this.findActiveDock();
+        if (nextDock === this.dock) return;
+        this.debug("dock:change", {
+          prev: this.describeDock(this.dock),
+          next: this.describeDock(nextDock)
+        }, true);
+        this.unbindDockEvents();
+        if (this.dockMoveTarget) this.dockMoveTarget.classList.remove("sl-hsl-dock-target");
+        this.dock = nextDock;
+        this.dockMoveTarget = nextDock;
+        this.pointerOverDock = false;
+        if (!this.dock) return;
+        if (this.dockMoveTarget) this.dockMoveTarget.classList.add("sl-hsl-dock-target");
+        this.mountRailToDock();
+        if (Date.now() < this.typingLockUntil) {
+          if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-hidden")) {
+            this.stateTarget.classList.add("sl-dock-hidden");
+            this.stateTarget.classList.remove("sl-dock-visible");
+          }
+        }
+        this.applyDockStateInline();
+        this.dock.addEventListener("mouseenter", this.onDockEnter);
+        this.dock.addEventListener("mouseleave", this.onDockLeave);
+        this.debug("dock:bound-events", { dock: this.describeDock(this.dock) });
+      }
+      findActiveDock() {
+        const docks = Array.from(document.querySelectorAll(DOCK_SELECTOR_STR));
+        if (!docks.length) return null;
+        const measured = [];
+        for (const dock of docks) {
+          measured.push({ dock, rect: dock.getBoundingClientRect() });
+        }
+        let best = null;
+        let bestScore = -Infinity;
+        for (const { dock, rect } of measured) {
+          if (rect.width < 120 || rect.height < 24) continue;
+          const style = getComputedStyle(dock);
+          if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
+          const score = rect.width + rect.top * 2;
+          if (score > bestScore) {
+            best = dock;
+            bestScore = score;
+          }
+        }
+        const chosen = best;
+        this.debug("dock:find", { count: docks.length, chosen: this.describeDock(chosen) });
+        return chosen;
+      }
+      unbindDockEvents() {
+        if (!this.dock) return;
+        this.dock.removeEventListener("mouseenter", this.onDockEnter);
+        this.dock.removeEventListener("mouseleave", this.onDockLeave);
+      }
+      ensureDockTargetClass() {
+        if (!this.dockMoveTarget) return;
+        if (!this.dockMoveTarget.classList.contains("sl-hsl-dock-target")) {
+          this.dockMoveTarget.classList.add("sl-hsl-dock-target");
+        }
+      }
+      // ── User Panel (called by React effect + safeTick) ────────────────────────
+      trySetupUserPanel() {
+        const panel = document.querySelector(PANEL_SELECTOR_STR);
+        const dock = this.dock;
+        if (!panel || !dock) return;
+        if (this.isUserPanelPositioned && panel === this.userPanel) {
+          if (!panel.classList.contains("sl-userpanel-docked")) {
+            panel.classList.add("sl-userpanel-docked");
+          }
+          if (!this._panelHoverContainer && !this._panelHoverBindAttempted) this.bindUserPanelHover(panel);
+          return;
+        }
+        if (this.userPanel && this.userPanel !== panel) {
+          this.userPanel.classList.remove("sl-userpanel-docked");
+          this.userPanel.style.removeProperty("right");
+          this.userPanel.style.removeProperty("left");
+        }
+        this.userPanel = panel;
+        panel.classList.add("sl-userpanel-docked");
+        this.isUserPanelPositioned = true;
+        this.bindUserPanelHover(panel);
+        this.debug("userpanel:setup", { found: true }, true);
+      }
+      bindUserPanelHover(panel) {
+        this.unbindUserPanelHover();
+        this._panelHoverBindAttempted = true;
+        const container = panel.querySelector("div[class^='container_']");
+        if (!container) return;
+        this._onPanelEnter = () => {
+          if (Date.now() < this.typingLockUntil) return;
+          this.pointerOverDock = true;
+          this.revealHoldUntil = 0;
+          this.clearHideTimer();
+          this.clearRevealTimer("userpanel-enter");
+          this.showDock("userpanel-enter");
+        };
+        this._onPanelLeave = () => {
+          this.pointerOverDock = false;
+          this.scheduleHide(this.hideDelayMs);
+        };
+        container.addEventListener("mouseenter", this._onPanelEnter);
+        container.addEventListener("mouseleave", this._onPanelLeave);
+        this._panelHoverContainer = container;
+        this.debug("userpanel:hover-bridge-bound", {}, true);
+      }
+      unbindUserPanelHover() {
+        if (this._panelHoverContainer) {
+          if (this._onPanelEnter) this._panelHoverContainer.removeEventListener("mouseenter", this._onPanelEnter);
+          if (this._onPanelLeave) this._panelHoverContainer.removeEventListener("mouseleave", this._onPanelLeave);
+        }
+        this._panelHoverContainer = null;
+        this._panelHoverBindAttempted = false;
+        this._onPanelEnter = null;
+        this._onPanelLeave = null;
+      }
+      // ── safeTick — Reduced Scope ──────────────────────────────────────────────
+      // Discovery (syncDock, trySetupUserPanel) is now handled by React effects.
+      // Tick focuses on: typing enforcement, pointer refresh, alerts, rail, height.
+      safeTick() {
+        try {
+          this.tickCount += 1;
+          this.debug("tick:begin", { tick: this.tickCount });
+          if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-autohide")) {
+            this.stateTarget.classList.add("sl-dock-autohide");
+          }
+          if (this.tickCount % 5 === 0) {
+            this.syncDock();
+            this.trySetupUserPanel();
+          }
+          if (this.stateTarget) {
+            if (Date.now() < this.typingLockUntil) {
+              this.stateTarget.classList.add("sl-dock-composer-lock");
+              if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
+                this.stateTarget.classList.add("sl-dock-hidden");
+                this.stateTarget.classList.remove("sl-dock-visible");
+              }
+              this.pointerOverDock = false;
+              this.revealHoldUntil = 0;
+            } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
+              this.stateTarget.classList.remove("sl-dock-composer-lock");
+            }
+          }
+          this.ensureDockTargetClass();
+          this.mountRailToDock();
+          this.refreshPointerState();
+          this.enforceStartupLock();
+          this.enforceAutoHideState();
+          this.applyDockStateInline();
+          this.updateDockHeightVar();
+          this.updateAlertState();
+          this.updateRailGeometry();
+          this.debug("tick:end", { tick: this.tickCount });
+        } catch (err) {
+          this.debug("tick:error", { error: String(err) }, true);
+        }
+      }
+      // ── Show / Hide State Machine ─────────────────────────────────────────────
+      showDock(trigger = "unknown") {
+        if (!this.stateTarget) {
+          this.debug("dock:show-blocked", { reason: "no-root" }, true);
+          return;
+        }
+        if (!this.hasMouseMoved) {
+          this.debug("dock:show-blocked", { reason: "no-mouse-move" }, true);
+          return;
+        }
+        if (Date.now() < this.lockOpenUntil) {
+          this.debug("dock:show-blocked", { reason: "startup-lock" }, true);
+          return;
+        }
+        if (this.isOpenSuppressed()) {
+          this.debug("dock:show-blocked", { reason: "focus-guard" }, true);
+          return;
+        }
+        if (Date.now() < this.typingLockUntil) {
+          this.debug("dock:show-blocked", { reason: "typing-active" }, true);
+          return;
+        }
+        if (this.stateTarget.classList.contains("sl-dock-visible")) {
+          this.debug("dock:show-noop", { reason: "already-visible" });
+          return;
+        }
+        this.clearHideTimer();
+        this.stateTarget.classList.remove("sl-dock-composer-lock");
+        this.stateTarget.classList.add("sl-dock-visible");
+        this.stateTarget.classList.remove("sl-dock-hidden");
+        this.revealHoldUntil = trigger === "reveal-zone-hover" ? Date.now() + this.revealHoldMs : 0;
+        this.debug("dock:show-applied", { trigger, revealHoldUntil: this.revealHoldUntil }, true);
+        this.applyDockStateInline();
+        this.startRailFollow(620);
+      }
+      hideDock() {
+        if (!this.stateTarget) {
+          this.debug("dock:hide-blocked", { reason: "no-root" }, true);
+          return;
+        }
+        if (this.shouldKeepDockOpen()) {
+          this.debug("dock:hide-blocked", { reason: "keep-open" }, true);
+          return;
+        }
+        if (this.stateTarget.classList.contains("sl-dock-hidden")) {
+          this.applyDockStateInline();
+          return;
+        }
         this.stateTarget.classList.add("sl-dock-hidden");
         this.stateTarget.classList.remove("sl-dock-visible");
+        this.debug("dock:hide-applied", {}, true);
+        this.applyDockStateInline();
+        this.startRailFollow(620);
       }
-    }
-    this.applyDockStateInline();
-    this.dock.addEventListener("mouseenter", this.onDockEnter);
-    this.dock.addEventListener("mouseleave", this.onDockLeave);
-    this.debug("dock:bound-events", { dock: this.describeDock(this.dock) });
-  }
-  findActiveDock() {
-    const docks = Array.from(document.querySelectorAll(DOCK_SELECTOR_STR));
-    if (!docks.length) return null;
-    const measured = [];
-    for (const dock of docks) {
-      measured.push({ dock, rect: dock.getBoundingClientRect() });
-    }
-    let best = null;
-    let bestScore = -Infinity;
-    for (const { dock, rect } of measured) {
-      if (rect.width < 120 || rect.height < 24) continue;
-      const style = getComputedStyle(dock);
-      if (style.display === "none" || style.visibility === "hidden" || Number(style.opacity) === 0) continue;
-      const score = rect.width + rect.top * 2;
-      if (score > bestScore) {
-        best = dock;
-        bestScore = score;
+      applyDockStateInline() {
+        if (!this.stateTarget || !this.dockMoveTarget) return;
+        const typingActive = Date.now() < this.typingLockUntil;
+        if (typingActive && !this.stateTarget.classList.contains("sl-dock-hidden")) {
+          this.stateTarget.classList.add("sl-dock-hidden");
+          this.stateTarget.classList.remove("sl-dock-visible");
+        }
+        if (this.dockMoveTarget.style.translate) {
+          this.dockMoveTarget.style.removeProperty("translate");
+        }
       }
-    }
-    const chosen = best;
-    this.debug("dock:find", { count: docks.length, chosen: this.describeDock(chosen) });
-    return chosen;
-  }
-  unbindDockEvents() {
-    if (!this.dock) return;
-    this.dock.removeEventListener("mouseenter", this.onDockEnter);
-    this.dock.removeEventListener("mouseleave", this.onDockLeave);
-  }
-  ensureDockTargetClass() {
-    if (!this.dockMoveTarget) return;
-    if (!this.dockMoveTarget.classList.contains("sl-hsl-dock-target")) {
-      this.dockMoveTarget.classList.add("sl-hsl-dock-target");
-    }
-  }
-  // ── User Panel (called by React effect + safeTick) ────────────────────────
-  trySetupUserPanel() {
-    const panel = document.querySelector(PANEL_SELECTOR_STR);
-    const dock = this.dock;
-    if (!panel || !dock) return;
-    if (this.isUserPanelPositioned && panel === this.userPanel) {
-      if (!panel.classList.contains("sl-userpanel-docked")) {
-        panel.classList.add("sl-userpanel-docked");
+      shouldKeepDockOpen() {
+        if (Date.now() < this.typingLockUntil) return false;
+        return this.pointerOverDock || Date.now() < this.revealHoldUntil;
       }
-      if (!this._panelHoverContainer && !this._panelHoverBindAttempted) this.bindUserPanelHover(panel);
-      return;
-    }
-    if (this.userPanel && this.userPanel !== panel) {
-      this.userPanel.classList.remove("sl-userpanel-docked");
-      this.userPanel.style.removeProperty("right");
-      this.userPanel.style.removeProperty("left");
-    }
-    this.userPanel = panel;
-    panel.classList.add("sl-userpanel-docked");
-    this.isUserPanelPositioned = true;
-    this.bindUserPanelHover(panel);
-    this.debug("userpanel:setup", { found: true }, true);
-  }
-  bindUserPanelHover(panel) {
-    this.unbindUserPanelHover();
-    this._panelHoverBindAttempted = true;
-    const container = panel.querySelector("div[class^='container_']");
-    if (!container) return;
-    this._onPanelEnter = () => {
-      if (Date.now() < this.typingLockUntil) return;
-      this.pointerOverDock = true;
-      this.revealHoldUntil = 0;
-      this.clearHideTimer();
-      this.clearRevealTimer("userpanel-enter");
-      this.showDock("userpanel-enter");
-    };
-    this._onPanelLeave = () => {
-      this.pointerOverDock = false;
-      this.scheduleHide(this.hideDelayMs);
-    };
-    container.addEventListener("mouseenter", this._onPanelEnter);
-    container.addEventListener("mouseleave", this._onPanelLeave);
-    this._panelHoverContainer = container;
-    this.debug("userpanel:hover-bridge-bound", {}, true);
-  }
-  unbindUserPanelHover() {
-    if (this._panelHoverContainer) {
-      if (this._onPanelEnter) this._panelHoverContainer.removeEventListener("mouseenter", this._onPanelEnter);
-      if (this._onPanelLeave) this._panelHoverContainer.removeEventListener("mouseleave", this._onPanelLeave);
-    }
-    this._panelHoverContainer = null;
-    this._panelHoverBindAttempted = false;
-    this._onPanelEnter = null;
-    this._onPanelLeave = null;
-  }
-  // ── safeTick — Reduced Scope ──────────────────────────────────────────────
-  // Discovery (syncDock, trySetupUserPanel) is now handled by React effects.
-  // Tick focuses on: typing enforcement, pointer refresh, alerts, rail, height.
-  safeTick() {
-    try {
-      this.tickCount += 1;
-      this.debug("tick:begin", { tick: this.tickCount });
-      if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-autohide")) {
-        this.stateTarget.classList.add("sl-dock-autohide");
+      isOpenSuppressed() {
+        if (Date.now() < this.suppressOpenUntil) return true;
+        if (document.visibilityState !== "visible") return true;
+        if (typeof document.hasFocus === "function" && !document.hasFocus()) return true;
+        return false;
       }
-      if (this.tickCount % 5 === 0) {
-        this.syncDock();
-        this.trySetupUserPanel();
+      // ── Timer Management ──────────────────────────────────────────────────────
+      scheduleHide(delayMs) {
+        if (this.shouldKeepDockOpen()) {
+          this.clearHideTimer();
+          return;
+        }
+        this.clearHideTimer();
+        this.hideTimer = setTimeout(() => this.hideDock(), delayMs);
       }
-      if (this.stateTarget) {
+      clearHideTimer() {
+        if (!this.hideTimer) return;
+        clearTimeout(this.hideTimer);
+        this.hideTimer = null;
+      }
+      scheduleRevealShow(reason) {
+        if (this.revealTimer) return;
+        if (Date.now() < this.typingLockUntil) return;
+        this.revealTimer = setTimeout(() => {
+          this.revealTimer = null;
+          this.showDock("reveal-zone-hover");
+        }, this.revealConfirmMs);
+      }
+      clearRevealTimer(reason) {
+        if (!this.revealTimer) return;
+        clearTimeout(this.revealTimer);
+        this.revealTimer = null;
+      }
+      // ── Enforcement ───────────────────────────────────────────────────────────
+      enforceAutoHideState() {
+        if (!this.stateTarget) return;
+        const visible = this.stateTarget.classList.contains("sl-dock-visible");
+        if (visible && Date.now() < this.typingLockUntil) {
+          this.pointerOverDock = false;
+          this.revealHoldUntil = 0;
+          this.clearRevealTimer("typing-enforce");
+          this.hideDock();
+          return;
+        }
+      }
+      enforceStartupLock() {
+        if (!this.root) return;
+        if (Date.now() >= this.lockOpenUntil) return;
+        this.pointerOverDock = false;
+        this.hasMouseMoved = false;
+        this.lastMouseX = -1;
+        this.lastMouseY = -1;
+        this.hideDock();
+      }
+      refreshPointerState() {
+        if (!this.dock) {
+          this.pointerOverDock = false;
+          return;
+        }
         if (Date.now() < this.typingLockUntil) {
+          this.pointerOverDock = false;
+          return;
+        }
+        this.pointerOverDock = this.hasMouseMoved && this.isCursorInsideDockRect() && this.isPointerOnDockHitTarget();
+      }
+      // ── Event Handlers ────────────────────────────────────────────────────────
+      onMouseMove(event) {
+        this.hasMouseMoved = true;
+        this.lastMouseX = event.clientX;
+        this.lastMouseY = event.clientY;
+        if (this._mouseMoveRafPending) return;
+        this._mouseMoveRafPending = true;
+        this._mouseMoveRafId = requestAnimationFrame(() => {
+          this._mouseMoveRafPending = false;
+          this._mouseMoveRafId = null;
+          this._processMouseMove();
+        });
+      }
+      _processMouseMove() {
+        var _a, _b;
+        if (Date.now() < this.lockOpenUntil) return;
+        this.lastMouseMoveAt = Date.now();
+        if (Date.now() < this.typingLockUntil) {
+          this.clearRevealTimer("typing-active-move");
+          this.clearHideTimer();
+          return;
+        }
+        if (this.requireRevealReset) {
+          this.requireRevealReset = false;
+        }
+        const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
+        const hidden = Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden"));
+        const shouldReveal = hidden && nearBottom && !this.pointerOverDock && !this.isOpenSuppressed() && this.isRecentMouseMove(1200);
+        if (shouldReveal) {
+          this.scheduleRevealShow("reveal-zone-hover");
+        } else {
+          this.clearRevealTimer("reveal-zone-exit");
+        }
+        if (this.shouldKeepDockOpen()) {
+          this.clearHideTimer();
+          return;
+        }
+        this.scheduleHide(this.hideDelayMs);
+      }
+      onDockEnter() {
+        if (Date.now() < this.lockOpenUntil) return;
+        if (Date.now() < this.typingLockUntil) return;
+        if (this.isOpenSuppressed()) return;
+        const recentMove = this.isRecentMouseMove(500);
+        const insideDockRect = this.isCursorInsideDockRect();
+        const hitOnDock = this.isPointerOnDockHitTarget();
+        if (!recentMove || !insideDockRect || !hitOnDock) return;
+        this.pointerOverDock = true;
+        this.revealHoldUntil = 0;
+        this.clearRevealTimer("dock-enter");
+        this.showDock("dock-enter");
+      }
+      onDockLeave() {
+        this.pointerOverDock = false;
+        this.clearRevealTimer("dock-leave");
+        this.scheduleHide(this.hideDelayMs);
+      }
+      onResize() {
+        this.startRailFollow(700);
+        this.safeTick();
+      }
+      onWindowBlur() {
+        this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
+        this.requireRevealReset = true;
+        this.pointerOverDock = false;
+        this.hasMouseMoved = false;
+        this.lastMouseMoveAt = 0;
+        this.revealHoldUntil = 0;
+        this.clearRevealTimer("blur");
+        this.hideDock();
+      }
+      onWindowFocus() {
+        this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
+        this.requireRevealReset = true;
+        this.pointerOverDock = false;
+        this.hasMouseMoved = false;
+        this.lastMouseMoveAt = 0;
+        this.revealHoldUntil = 0;
+        this.clearRevealTimer("focus");
+      }
+      onVisibilityChange() {
+        if (document.visibilityState === "visible") {
+          this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
+          this.requireRevealReset = true;
+          this.pointerOverDock = false;
+          this.hasMouseMoved = false;
+          this.lastMouseMoveAt = 0;
+          this.revealHoldUntil = 0;
+          this.clearRevealTimer("visibility-visible");
+        }
+      }
+      // ── Typing Detection ──────────────────────────────────────────────────────
+      touchTypingLock(source, target) {
+        const active = target instanceof Element ? target : document.activeElement instanceof Element ? document.activeElement : null;
+        if (!this.isElementInMessageComposer(active)) return;
+        const now = Date.now();
+        const nextLock = now + this.typingLockMs;
+        if (nextLock > this.typingLockUntil) this.typingLockUntil = nextLock;
+        if (this._lastTypingLockDOM && now - this._lastTypingLockDOM < 16) return;
+        this._lastTypingLockDOM = now;
+        this.clearRevealTimer("typing-lock");
+        this.clearHideTimer();
+        this.pointerOverDock = false;
+        this.revealHoldUntil = 0;
+        this.suppressOpenUntil = Math.max(this.suppressOpenUntil, now + this.composerHideSuppressMs);
+        this.requireRevealReset = true;
+        if (this.stateTarget) {
           this.stateTarget.classList.add("sl-dock-composer-lock");
           if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
             this.stateTarget.classList.add("sl-dock-hidden");
             this.stateTarget.classList.remove("sl-dock-visible");
           }
-          this.pointerOverDock = false;
-          this.revealHoldUntil = 0;
-        } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
-          this.stateTarget.classList.remove("sl-dock-composer-lock");
+          this.applyDockStateInline();
         }
       }
-      this.ensureDockTargetClass();
-      this.mountRailToDock();
-      this.refreshPointerState();
-      this.enforceStartupLock();
-      this.enforceAutoHideState();
-      this.applyDockStateInline();
-      this.updateDockHeightVar();
-      this.updateAlertState();
-      this.updateRailGeometry();
-      this.debug("tick:end", { tick: this.tickCount });
-    } catch (err) {
-      this.debug("tick:error", { error: String(err) }, true);
-    }
-  }
-  // ── Show / Hide State Machine ─────────────────────────────────────────────
-  showDock(trigger = "unknown") {
-    if (!this.stateTarget) {
-      this.debug("dock:show-blocked", { reason: "no-root" }, true);
-      return;
-    }
-    if (!this.hasMouseMoved) {
-      this.debug("dock:show-blocked", { reason: "no-mouse-move" }, true);
-      return;
-    }
-    if (Date.now() < this.lockOpenUntil) {
-      this.debug("dock:show-blocked", { reason: "startup-lock" }, true);
-      return;
-    }
-    if (this.isOpenSuppressed()) {
-      this.debug("dock:show-blocked", { reason: "focus-guard" }, true);
-      return;
-    }
-    if (Date.now() < this.typingLockUntil) {
-      this.debug("dock:show-blocked", { reason: "typing-active" }, true);
-      return;
-    }
-    if (this.stateTarget.classList.contains("sl-dock-visible")) {
-      this.debug("dock:show-noop", { reason: "already-visible" });
-      return;
-    }
-    this.clearHideTimer();
-    this.stateTarget.classList.remove("sl-dock-composer-lock");
-    this.stateTarget.classList.add("sl-dock-visible");
-    this.stateTarget.classList.remove("sl-dock-hidden");
-    this.revealHoldUntil = trigger === "reveal-zone-hover" ? Date.now() + this.revealHoldMs : 0;
-    this.debug("dock:show-applied", { trigger, revealHoldUntil: this.revealHoldUntil }, true);
-    this.applyDockStateInline();
-    this.startRailFollow(620);
-  }
-  hideDock() {
-    if (!this.stateTarget) {
-      this.debug("dock:hide-blocked", { reason: "no-root" }, true);
-      return;
-    }
-    if (this.shouldKeepDockOpen()) {
-      this.debug("dock:hide-blocked", { reason: "keep-open" }, true);
-      return;
-    }
-    if (this.stateTarget.classList.contains("sl-dock-hidden")) {
-      this.applyDockStateInline();
-      return;
-    }
-    this.stateTarget.classList.add("sl-dock-hidden");
-    this.stateTarget.classList.remove("sl-dock-visible");
-    this.debug("dock:hide-applied", {}, true);
-    this.applyDockStateInline();
-    this.startRailFollow(620);
-  }
-  applyDockStateInline() {
-    if (!this.stateTarget || !this.dockMoveTarget) return;
-    const typingActive = Date.now() < this.typingLockUntil;
-    if (typingActive && !this.stateTarget.classList.contains("sl-dock-hidden")) {
-      this.stateTarget.classList.add("sl-dock-hidden");
-      this.stateTarget.classList.remove("sl-dock-visible");
-    }
-    if (this.dockMoveTarget.style.translate) {
-      this.dockMoveTarget.style.removeProperty("translate");
-    }
-  }
-  shouldKeepDockOpen() {
-    if (Date.now() < this.typingLockUntil) return false;
-    return this.pointerOverDock || Date.now() < this.revealHoldUntil;
-  }
-  isOpenSuppressed() {
-    if (Date.now() < this.suppressOpenUntil) return true;
-    if (document.visibilityState !== "visible") return true;
-    if (typeof document.hasFocus === "function" && !document.hasFocus()) return true;
-    return false;
-  }
-  // ── Timer Management ──────────────────────────────────────────────────────
-  scheduleHide(delayMs) {
-    if (this.shouldKeepDockOpen()) {
-      this.clearHideTimer();
-      return;
-    }
-    this.clearHideTimer();
-    this.hideTimer = setTimeout(() => this.hideDock(), delayMs);
-  }
-  clearHideTimer() {
-    if (!this.hideTimer) return;
-    clearTimeout(this.hideTimer);
-    this.hideTimer = null;
-  }
-  scheduleRevealShow(reason) {
-    if (this.revealTimer) return;
-    if (Date.now() < this.typingLockUntil) return;
-    this.revealTimer = setTimeout(() => {
-      this.revealTimer = null;
-      this.showDock("reveal-zone-hover");
-    }, this.revealConfirmMs);
-  }
-  clearRevealTimer(reason) {
-    if (!this.revealTimer) return;
-    clearTimeout(this.revealTimer);
-    this.revealTimer = null;
-  }
-  // ── Enforcement ───────────────────────────────────────────────────────────
-  enforceAutoHideState() {
-    if (!this.stateTarget) return;
-    const visible = this.stateTarget.classList.contains("sl-dock-visible");
-    if (visible && Date.now() < this.typingLockUntil) {
-      this.pointerOverDock = false;
-      this.revealHoldUntil = 0;
-      this.clearRevealTimer("typing-enforce");
-      this.hideDock();
-      return;
-    }
-  }
-  enforceStartupLock() {
-    if (!this.root) return;
-    if (Date.now() >= this.lockOpenUntil) return;
-    this.pointerOverDock = false;
-    this.hasMouseMoved = false;
-    this.lastMouseX = -1;
-    this.lastMouseY = -1;
-    this.hideDock();
-  }
-  refreshPointerState() {
-    if (!this.dock) {
-      this.pointerOverDock = false;
-      return;
-    }
-    if (Date.now() < this.typingLockUntil) {
-      this.pointerOverDock = false;
-      return;
-    }
-    this.pointerOverDock = this.hasMouseMoved && this.isCursorInsideDockRect() && this.isPointerOnDockHitTarget();
-  }
-  // ── Event Handlers ────────────────────────────────────────────────────────
-  onMouseMove(event) {
-    this.hasMouseMoved = true;
-    this.lastMouseX = event.clientX;
-    this.lastMouseY = event.clientY;
-    if (this._mouseMoveRafPending) return;
-    this._mouseMoveRafPending = true;
-    this._mouseMoveRafId = requestAnimationFrame(() => {
-      this._mouseMoveRafPending = false;
-      this._mouseMoveRafId = null;
-      this._processMouseMove();
-    });
-  }
-  _processMouseMove() {
-    var _a, _b;
-    if (Date.now() < this.lockOpenUntil) return;
-    this.lastMouseMoveAt = Date.now();
-    if (Date.now() < this.typingLockUntil) {
-      this.clearRevealTimer("typing-active-move");
-      this.clearHideTimer();
-      return;
-    }
-    if (this.requireRevealReset) {
-      this.requireRevealReset = false;
-    }
-    const nearBottom = this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
-    const hidden = Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden"));
-    const shouldReveal = hidden && nearBottom && !this.pointerOverDock && !this.isOpenSuppressed() && this.isRecentMouseMove(1200);
-    if (shouldReveal) {
-      this.scheduleRevealShow("reveal-zone-hover");
-    } else {
-      this.clearRevealTimer("reveal-zone-exit");
-    }
-    if (this.shouldKeepDockOpen()) {
-      this.clearHideTimer();
-      return;
-    }
-    this.scheduleHide(this.hideDelayMs);
-  }
-  onDockEnter() {
-    if (Date.now() < this.lockOpenUntil) return;
-    if (Date.now() < this.typingLockUntil) return;
-    if (this.isOpenSuppressed()) return;
-    const recentMove = this.isRecentMouseMove(500);
-    const insideDockRect = this.isCursorInsideDockRect();
-    const hitOnDock = this.isPointerOnDockHitTarget();
-    if (!recentMove || !insideDockRect || !hitOnDock) return;
-    this.pointerOverDock = true;
-    this.revealHoldUntil = 0;
-    this.clearRevealTimer("dock-enter");
-    this.showDock("dock-enter");
-  }
-  onDockLeave() {
-    this.pointerOverDock = false;
-    this.clearRevealTimer("dock-leave");
-    this.scheduleHide(this.hideDelayMs);
-  }
-  onResize() {
-    this.dockBaseTop = null;
-    this.dockBaseLeft = null;
-    this.startRailFollow(700);
-    this.safeTick();
-  }
-  onWindowBlur() {
-    this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
-    this.requireRevealReset = true;
-    this.pointerOverDock = false;
-    this.hasMouseMoved = false;
-    this.lastMouseMoveAt = 0;
-    this.revealHoldUntil = 0;
-    this.clearRevealTimer("blur");
-    this.hideDock();
-  }
-  onWindowFocus() {
-    this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
-    this.requireRevealReset = true;
-    this.pointerOverDock = false;
-    this.hasMouseMoved = false;
-    this.lastMouseMoveAt = 0;
-    this.revealHoldUntil = 0;
-    this.clearRevealTimer("focus");
-  }
-  onVisibilityChange() {
-    if (document.visibilityState === "visible") {
-      this.suppressOpenUntil = Date.now() + this.focusReentryGuardMs;
-      this.requireRevealReset = true;
-      this.pointerOverDock = false;
-      this.hasMouseMoved = false;
-      this.lastMouseMoveAt = 0;
-      this.revealHoldUntil = 0;
-      this.clearRevealTimer("visibility-visible");
-    }
-  }
-  // ── Typing Detection ──────────────────────────────────────────────────────
-  touchTypingLock(source, target) {
-    const active = target instanceof Element ? target : document.activeElement instanceof Element ? document.activeElement : null;
-    if (!this.isElementInMessageComposer(active)) return;
-    const now = Date.now();
-    const nextLock = now + this.typingLockMs;
-    if (nextLock > this.typingLockUntil) this.typingLockUntil = nextLock;
-    if (this._lastTypingLockDOM && now - this._lastTypingLockDOM < 16) return;
-    this._lastTypingLockDOM = now;
-    this.clearRevealTimer("typing-lock");
-    this.clearHideTimer();
-    this.pointerOverDock = false;
-    this.revealHoldUntil = 0;
-    this.suppressOpenUntil = Math.max(this.suppressOpenUntil, now + this.composerHideSuppressMs);
-    this.requireRevealReset = true;
-    if (this.stateTarget) {
-      this.stateTarget.classList.add("sl-dock-composer-lock");
-      if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
-        this.stateTarget.classList.add("sl-dock-hidden");
-        this.stateTarget.classList.remove("sl-dock-visible");
+      onComposerInput(event) {
+        this.touchTypingLock("input", (event == null ? void 0 : event.target) || null);
       }
-      this.applyDockStateInline();
-    }
-  }
-  onComposerInput(event) {
-    this.touchTypingLock("input", (event == null ? void 0 : event.target) || null);
-  }
-  onComposerKeyDown(event) {
-    if (!event) return;
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const key = String(event.key || "");
-    const isTypingKey = key.length === 1 || key === "Backspace" || key === "Delete" || key === "Enter";
-    if (!isTypingKey) return;
-    this.touchTypingLock("keydown", event.target || null);
-  }
-  onComposerFocusIn(event) {
-    if (!event || !event.target) return;
-    const el = event.target instanceof Element ? event.target : null;
-    if (!el) return;
-    if (!el.matches(COMPOSER_EDITABLE_SELECTORS) && !this.isElementInMessageComposer(el)) return;
-    this.clearRevealTimer("composer-focus");
-    this.requireRevealReset = true;
-  }
-  isElementInMessageComposer(el) {
-    if (!el || !(el instanceof Element)) return false;
-    if (el === this._cachedComposerEl) return this._cachedComposerResult;
-    const result = Boolean(el.closest(COMPOSER_CONTAINER_SELECTORS));
-    this._cachedComposerEl = el;
-    this._cachedComposerResult = result;
-    return result;
-  }
-  // ── Cursor Geometry ───────────────────────────────────────────────────────
-  isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
-    if (typeof x !== "number" || typeof y !== "number") return false;
-    if (x < 0 || y < 0) return false;
-    if (x > window.innerWidth || y > window.innerHeight) return false;
-    if (!this.dock || !this.dock.getBoundingClientRect) {
-      return y >= window.innerHeight - this.revealZonePx;
-    }
-    const rect = this.dock.getBoundingClientRect();
-    const zoneTop = Math.max(0, rect.top - this.revealZonePx);
-    const zoneBottom = Math.min(window.innerHeight, rect.bottom + 2);
-    return y >= zoneTop && y <= zoneBottom;
-  }
-  isCursorInsideDockRect(x = this.lastMouseX, y = this.lastMouseY) {
-    if (!this.dock || !this.dock.getBoundingClientRect) return false;
-    if (typeof x !== "number" || typeof y !== "number") return false;
-    if (x < 0 || y < 0) return false;
-    const rect = this.dock.getBoundingClientRect();
-    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
-  }
-  isCursorNearBottom() {
-    return this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
-  }
-  isPointerOnDockHitTarget(x = this.lastMouseX, y = this.lastMouseY) {
-    if (!this.dock || !(document == null ? void 0 : document.elementFromPoint)) return false;
-    if (typeof x !== "number" || typeof y !== "number") return false;
-    if (x < 0 || y < 0) return false;
-    const hit = document.elementFromPoint(x, y);
-    if (!hit || !(hit instanceof Element)) return false;
-    if (hit === this.dock || this.dock.contains(hit)) return true;
-    if (this.userPanel && (hit === this.userPanel || this.userPanel.contains(hit))) return true;
-    return false;
-  }
-  isRecentMouseMove(maxAgeMs = 500) {
-    if (!this.lastMouseMoveAt) return false;
-    return Date.now() - this.lastMouseMoveAt <= maxAgeMs;
-  }
-  // ── Dock Height ───────────────────────────────────────────────────────────
-  updateDockHeightVar() {
-    if (!this.stateTarget || !this.dock) return;
-    const rect = this.dock.getBoundingClientRect();
-    const h = Math.max(52, Math.round(rect.height || this.dock.offsetHeight || 80));
-    const next = `${h}px`;
-    if (this._lastDockHeight !== next) {
-      this._lastDockHeight = next;
-      this.stateTarget.style.setProperty("--sl-dock-height", next);
-    }
-  }
-  // ── Alert Rail ────────────────────────────────────────────────────────────
-  createRail() {
-    if (this.rail) return;
-    const rail = document.createElement("div");
-    rail.id = "sl-hsl-alert-rail";
-    rail.style.cssText = [
-      "position: fixed",
-      "left: 0px",
-      "top: 0px",
-      "width: 0px",
-      `height: ${this.railHeightPx}px`,
-      "pointer-events: none",
-      "opacity: 0",
-      "z-index: 40",
-      "background: linear-gradient(90deg, rgba(138,43,226,0.96), rgba(167,139,250,0.96))",
-      "box-shadow: 0 0 18px rgba(138,43,226,0.68), 0 0 34px rgba(138,43,226,0.42)",
-      "transform: none",
-      "transition: opacity 180ms ease, top 120ms cubic-bezier(0.2, 0.75, 0.25, 1)"
-    ].join(";");
-    this.rail = rail;
-  }
-  mountRailToDock() {
-    if (!this.rail) return;
-    if (this.rail.parentElement !== document.body) document.body.appendChild(this.rail);
-  }
-  removeRail() {
-    if (!this.rail) return;
-    this.rail.remove();
-    this.rail = null;
-  }
-  startRailFollow(durationMs = 520) {
-    this.stopRailFollow();
-    const startedAt = performance.now();
-    const step = (now) => {
-      this.updateRailGeometry();
-      if (!this.rail || !this.root) {
-        this.railFollowFrame = null;
-        return;
+      onComposerKeyDown(event) {
+        if (!event) return;
+        if (event.metaKey || event.ctrlKey || event.altKey) return;
+        const key = String(event.key || "");
+        const isTypingKey = key.length === 1 || key === "Backspace" || key === "Delete" || key === "Enter";
+        if (!isTypingKey) return;
+        this.touchTypingLock("keydown", event.target || null);
       }
-      if (now - startedAt >= durationMs) {
-        this.railFollowFrame = null;
-        return;
+      onComposerFocusIn(event) {
+        if (!event || !event.target) return;
+        const el = event.target instanceof Element ? event.target : null;
+        if (!el) return;
+        if (!el.matches(COMPOSER_EDITABLE_SELECTORS) && !this.isElementInMessageComposer(el)) return;
+        this.clearRevealTimer("composer-focus");
+        this.requireRevealReset = true;
       }
-      this.railFollowFrame = requestAnimationFrame(step);
-    };
-    this.railFollowFrame = requestAnimationFrame(step);
-  }
-  stopRailFollow() {
-    if (!this.railFollowFrame) return;
-    cancelAnimationFrame(this.railFollowFrame);
-    this.railFollowFrame = null;
-  }
-  updateAlertState() {
-    if (!this.dock) {
-      this.railVisible = false;
-      if (this.rail) this.rail.style.opacity = "0";
-      return;
-    }
-    const hasBlockingDialog = Boolean(document.querySelector("div[role='dialog']"));
-    let candidates = this.dock.querySelectorAll(ALERT_SELECTOR_STR);
-    if (!candidates.length && this.dock.parentElement) {
-      candidates = this.dock.parentElement.querySelectorAll(ALERT_SELECTOR_STR);
-    }
-    let hasAlert = false;
-    if (!hasBlockingDialog) {
-      for (const el of candidates) {
-        if (this.isAlertNodeActive(el)) {
-          hasAlert = true;
-          break;
+      isElementInMessageComposer(el) {
+        if (!el || !(el instanceof Element)) return false;
+        if (el === this._cachedComposerEl) return this._cachedComposerResult;
+        const result = Boolean(el.closest(COMPOSER_CONTAINER_SELECTORS));
+        this._cachedComposerEl = el;
+        this._cachedComposerResult = result;
+        return result;
+      }
+      // ── Cursor Geometry ───────────────────────────────────────────────────────
+      isCursorInRevealStrip(x = this.lastMouseX, y = this.lastMouseY) {
+        if (typeof x !== "number" || typeof y !== "number") return false;
+        if (x < 0 || y < 0) return false;
+        if (x > window.innerWidth || y > window.innerHeight) return false;
+        if (!this.dock || !this.dock.getBoundingClientRect) {
+          return y >= window.innerHeight - this.revealZonePx;
+        }
+        const rect = this.dock.getBoundingClientRect();
+        const zoneTop = Math.max(0, rect.top - this.revealZonePx);
+        const zoneBottom = Math.min(window.innerHeight, rect.bottom + 2);
+        return y >= zoneTop && y <= zoneBottom;
+      }
+      isCursorInsideDockRect(x = this.lastMouseX, y = this.lastMouseY) {
+        if (!this.dock || !this.dock.getBoundingClientRect) return false;
+        if (typeof x !== "number" || typeof y !== "number") return false;
+        if (x < 0 || y < 0) return false;
+        const rect = this.dock.getBoundingClientRect();
+        return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+      }
+      isCursorNearBottom() {
+        return this.isCursorInRevealStrip(this.lastMouseX, this.lastMouseY);
+      }
+      isPointerOnDockHitTarget(x = this.lastMouseX, y = this.lastMouseY) {
+        if (!this.dock || !(document == null ? void 0 : document.elementFromPoint)) return false;
+        if (typeof x !== "number" || typeof y !== "number") return false;
+        if (x < 0 || y < 0) return false;
+        const hit = document.elementFromPoint(x, y);
+        if (!hit || !(hit instanceof Element)) return false;
+        if (hit === this.dock || this.dock.contains(hit)) return true;
+        if (this.userPanel && (hit === this.userPanel || this.userPanel.contains(hit))) return true;
+        return false;
+      }
+      isRecentMouseMove(maxAgeMs = 500) {
+        if (!this.lastMouseMoveAt) return false;
+        return Date.now() - this.lastMouseMoveAt <= maxAgeMs;
+      }
+      // ── Dock Height ───────────────────────────────────────────────────────────
+      updateDockHeightVar() {
+        if (!this.stateTarget || !this.dock) return;
+        const rect = this.dock.getBoundingClientRect();
+        const h = Math.max(52, Math.round(rect.height || this.dock.offsetHeight || 80));
+        const next = `${h}px`;
+        if (this._lastDockHeight !== next) {
+          this._lastDockHeight = next;
+          this.stateTarget.style.setProperty("--sl-dock-height", next);
         }
       }
-    }
-    const changed = hasAlert !== this.railVisible;
-    this.railVisible = hasAlert;
-    if (this.rail) this.rail.style.opacity = hasAlert ? "1" : "0";
-    if (changed) this.startRailFollow(700);
-  }
-  updateRailGeometry() {
-    var _a, _b;
-    if (!this.rail || !this.dock) return;
-    const target = this.dockMoveTarget || this.dock;
-    const rect = target.getBoundingClientRect();
-    if (rect.width <= 1 || rect.height <= 1) {
-      this.rail.style.opacity = "0";
-      return;
-    }
-    let left = Math.round(rect.left);
-    let top = Math.round(rect.top - this.railHeightPx);
-    if ((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-visible")) top += 5;
-    if (left < 0) left = 0;
-    const maxTop = window.innerHeight - this.railHeightPx;
-    if (top < 0) top = 0;
-    if (top > maxTop) top = maxTop;
-    let width = Math.max(1, Math.round(rect.width));
-    const maxWidth = Math.max(1, window.innerWidth - left);
-    if (width > maxWidth) width = maxWidth;
-    this.rail.style.left = `${left}px`;
-    this.rail.style.top = `${top}px`;
-    this.rail.style.width = `${width}px`;
-  }
-  _isAlertNodeUsable(el) {
-    if (!el || !(el instanceof Element)) return false;
-    if (el.getAttribute("aria-hidden") === "true") return false;
-    if (el.offsetParent === null && getComputedStyle(el).position !== "fixed") return false;
-    return true;
-  }
-  _getAlertNodeTextData(el) {
-    return {
-      className: String(el.className || "").toLowerCase(),
-      label: String(el.getAttribute("aria-label") || "").toLowerCase(),
-      text: String(el.textContent || "").trim().toLowerCase()
-    };
-  }
-  _isMentionLabelActive(label) {
-    if (!label) return false;
-    if (label.includes("no mention") || label.includes("no mentions")) return false;
-    if (!label.includes("mention")) return false;
-    const amount = label.match(DIGITS_RE);
-    return amount ? Number(amount[0]) > 0 : true;
-  }
-  _isBadgeClassActive(className, text) {
-    if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
-    return DIGITS_ONLY_RE.test(text) ? Number(text) > 0 : true;
-  }
-  isAlertNodeActive(el) {
-    if (!this._isAlertNodeUsable(el)) return false;
-    const { className, label, text } = this._getAlertNodeTextData(el);
-    if (this._isMentionLabelActive(label)) return true;
-    return this._isBadgeClassActive(className, text);
-  }
-  // ── Debug Infrastructure ──────────────────────────────────────────────────
-  debug(event, data = {}, includeState = false) {
-    if (!this.debugEnabled) return;
-    const entry = { seq: ++this.debugSeq, at: (/* @__PURE__ */ new Date()).toISOString(), event, ...this.sanitizeDebugData(data) };
-    if (includeState) entry.state = this.snapshotState();
-    this.debugBuffer.push(entry);
-    if (this.debugBuffer.length > this.debugMaxEntries) this.debugBuffer.shift();
-    this.writeDebugEntry(entry);
-    if (this.debugConsole) {
-      try {
-        console.debug("[HSLDockAutoHide]", entry);
-      } catch (error) {
-        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to write debug console entry", error);
+      // ── Alert Rail ────────────────────────────────────────────────────────────
+      createRail() {
+        if (this.rail) return;
+        const rail = document.createElement("div");
+        rail.id = "sl-hsl-alert-rail";
+        rail.style.cssText = [
+          "position: fixed",
+          "left: 0px",
+          "top: 0px",
+          "width: 0px",
+          `height: ${this.railHeightPx}px`,
+          "pointer-events: none",
+          "opacity: 0",
+          "z-index: 40",
+          "background: linear-gradient(90deg, rgba(138,43,226,0.96), rgba(167,139,250,0.96))",
+          "box-shadow: 0 0 18px rgba(138,43,226,0.68), 0 0 34px rgba(138,43,226,0.42)",
+          "transform: none",
+          "transition: opacity 180ms ease, top 120ms cubic-bezier(0.2, 0.75, 0.25, 1)"
+        ].join(";");
+        this.rail = rail;
       }
-    }
-  }
-  installDebugApi() {
-    try {
-      const engine = this;
-      const handle = {
-        version: this.version,
-        getLogs: () => engine.debugBuffer.slice(),
-        dump: () => {
-          const logs = engine.debugBuffer.slice();
-          console.group("[HSLDockAutoHide] Debug dump");
-          console.table(logs);
-          console.groupEnd();
-          return logs;
-        },
-        state: () => engine.snapshotState(),
-        filePath: () => engine.debugFilePath,
-        clear: () => {
-          engine.debugBuffer.length = 0;
-          engine.debugSeq = 0;
-          return true;
-        }
-      };
-      try {
-        window.__HSLDockAutoHideDebug = handle;
-      } catch (error) {
-        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on window", error);
+      mountRailToDock() {
+        if (!this.rail) return;
+        if (this.rail.parentElement !== document.body) document.body.appendChild(this.rail);
       }
-      try {
-        globalThis.__HSLDockAutoHideDebug = handle;
-      } catch (error) {
-        this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API on globalThis", error);
+      removeRail() {
+        if (!this.rail) return;
+        this.rail.remove();
+        this.rail = null;
       }
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to install debug API", error);
-    }
-  }
-  removeDebugApi() {
-    try {
-      delete window.__HSLDockAutoHideDebug;
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from window", error);
-    }
-    try {
-      delete globalThis.__HSLDockAutoHideDebug;
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to remove debug API from globalThis", error);
-    }
-  }
-  initDebugFileSink() {
-    if (!this.debugFileEnabled) return;
-    try {
-      const fs = require("fs");
-      const path = require("path");
-      const os = require("os");
-      const dir = path.join(os.homedir(), "Library", "Application Support", "BetterDiscord", "logs", "HSLDockAutoHide");
-      fs.mkdirSync(dir, { recursive: true });
-      const stamp = (/* @__PURE__ */ new Date()).toISOString().replace(/[:.]/g, "-");
-      this.debugFilePath = path.join(dir, `dock-autohide-${stamp}.jsonl`);
-      this.fs = fs;
-    } catch (error) {
-      this.debugFilePath = null;
-      this.fs = null;
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to initialize debug file sink", error);
-    }
-  }
-  writeDebugEntry(entry) {
-    if (!this.debugFileEnabled || !this.fs || !this.debugFilePath) return;
-    try {
-      this.fs.appendFileSync(this.debugFilePath, JSON.stringify(entry) + "\n");
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed writing debug entry to file", error);
-    }
-  }
-  snapshotState() {
-    var _a, _b, _c, _d;
-    return {
-      lockRemainingMs: Math.max(0, this.lockOpenUntil - Date.now()),
-      hasMouseMoved: this.hasMouseMoved,
-      lastMouseX: this.lastMouseX,
-      lastMouseY: this.lastMouseY,
-      pointerOverDock: this.pointerOverDock,
-      nearBottom: this.isCursorNearBottom(),
-      rootHiddenClass: Boolean((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-hidden")),
-      rootVisibleClass: Boolean((_d = (_c = this.stateTarget) == null ? void 0 : _c.classList) == null ? void 0 : _d.contains("sl-dock-visible")),
-      dock: this.describeDock(this.dock),
-      dockTarget: this.describeDock(this.dockMoveTarget),
-      railVisible: this.railVisible,
-      railMounted: Boolean(this.rail && this.rail.parentElement),
-      hideTimerActive: Boolean(this.hideTimer),
-      tickCount: this.tickCount
-    };
-  }
-  sanitizeDebugData(data) {
-    const out = {};
-    if (!data || typeof data !== "object") return out;
-    for (const [k, v] of Object.entries(data)) out[k] = this.sanitizeDebugValue(v);
-    return out;
-  }
-  sanitizeDebugValue(value) {
-    if (value == null) return value;
-    if (value instanceof Element) return this.describeDock(value);
-    if (Array.isArray(value)) return value.map((v) => this.sanitizeDebugValue(v));
-    if (typeof value === "object") {
-      const obj = {};
-      for (const [k, v] of Object.entries(value)) obj[k] = this.sanitizeDebugValue(v);
-      return obj;
-    }
-    if (typeof value === "function") return "[Function]";
-    return value;
-  }
-  describeDock(el) {
-    var _a;
-    if (!el) return null;
-    const rect = el.getBoundingClientRect ? el.getBoundingClientRect() : null;
-    return {
-      tag: String(el.tagName || "").toLowerCase(),
-      id: el.id || null,
-      className: typeof el.className === "string" ? el.className : null,
-      ariaLabel: ((_a = el.getAttribute) == null ? void 0 : _a.call(el, "aria-label")) || null,
-      rect: rect ? { left: Math.round(rect.left), top: Math.round(rect.top), width: Math.round(rect.width), height: Math.round(rect.height) } : null
-    };
-  }
-};
-module.exports = class HSLDockAutoHide {
-  constructor() {
-    this._patcherId = "HSLDockAutoHide";
-    this._isStopped = false;
-    this._engineMounted = false;
-    this._fallbackEngine = null;
-    this._fallbackTimer = null;
-    this._warnedKeys = /* @__PURE__ */ new Set();
-    this._toastImpl = null;
-  }
-  _warnOnce(key, message, error = null) {
-    if (this._warnedKeys.has(key)) return;
-    this._warnedKeys.add(key);
-    if (error) console.warn(`[HSLDockAutoHide] ${message}`, error);
-    else console.warn(`[HSLDockAutoHide] ${message}`);
-  }
-  _toast(message, type = "info", timeout = null) {
-    var _a;
-    (_a = this._toastImpl) == null ? void 0 : _a.call(this, message, type, timeout);
-  }
-  start() {
-    var _a;
-    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "HSLDockAutoHide")) || ((message, type = "info", timeout = null) => {
-      const p = (() => {
-        var _a2;
-        try {
-          const plugin = BdApi.Plugins.get("SoloLevelingToasts");
-          return ((_a2 = plugin == null ? void 0 : plugin.instance) == null ? void 0 : _a2.toastEngineVersion) >= 2 ? plugin.instance : null;
-        } catch (_) {
-          return null;
-        }
-      })();
-      if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
-      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
-    });
-    this._isStopped = false;
-    this._engineMounted = false;
-    this._fallbackEngine = null;
-    BdApi.DOM.addStyle("HSLDockAutoHide", this.getCSS());
-    this._installReactPatcher();
-    this._fallbackTimer = setTimeout(() => {
-      this._fallbackTimer = null;
-      if (!this._isStopped && !this._engineMounted) {
-        this._warnOnce("react-fallback-timeout", "React patcher did not mount \u2014 using direct DOM fallback");
-        const engine = new DockEngine();
-        this._fallbackEngine = engine;
-        this._engineMounted = true;
-        engine.mount();
-      }
-    }, 3e3);
-    this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
-  }
-  stop() {
-    var _a;
-    this._isStopped = true;
-    if (this._fallbackTimer) {
-      clearTimeout(this._fallbackTimer);
-      this._fallbackTimer = null;
-    }
-    if (this._fallbackEngine) {
-      this._fallbackEngine.unmount();
-      this._fallbackEngine = null;
-    }
-    this._engineMounted = false;
-    BdApi.Patcher.unpatchAll(this._patcherId);
-    BdApi.DOM.removeStyle("HSLDockAutoHide");
-    document.body.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
-    document.body.style.removeProperty("--sl-dock-height");
-    document.body.style.removeProperty("--sl-dock-peek");
-    document.body.style.removeProperty("--custom-app-panels-height");
-    document.querySelectorAll(".sl-hsl-dock-target").forEach((el) => el.classList.remove("sl-hsl-dock-target"));
-    document.querySelectorAll(".sl-userpanel-docked").forEach((el) => el.classList.remove("sl-userpanel-docked"));
-    (_a = document.getElementById("sl-hsl-alert-rail")) == null ? void 0 : _a.remove();
-    this._toast("HSLDockAutoHide stopped", "info", 2e3);
-  }
-  // ── React Patcher — MainContent.Z ─────────────────────────────────────────
-  _installReactPatcher() {
-    let ReactUtils;
-    try {
-      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
-    } catch (_) {
-      ReactUtils = null;
-    }
-    if (!(ReactUtils == null ? void 0 : ReactUtils.patchReactMainContent) || !(ReactUtils == null ? void 0 : ReactUtils.injectReactComponent)) {
-      this._warnOnce("react-utils-missing", "BetterDiscordReactUtils unavailable; relying on direct DOM fallback");
-      return;
-    }
-    const pluginInstance = this;
-    const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
-      const component = React.createElement(pluginInstance._DockController, {
-        key: "sl-dock-autohide",
-        pluginInstance
-      });
-      ReactUtils.injectReactComponent(appNode, "sl-dock-autohide-root", component, returnValue);
-    });
-    if (!ok) {
-      this._warnOnce("maincontent-patch-missing", "MainContent React patch unavailable; relying on direct DOM fallback");
-    }
-  }
-  // ── DockAutoHideController — React Functional Component ───────────────────
-  get _DockController() {
-    if (this.__DockControllerCached) return this.__DockControllerCached;
-    this.__DockControllerCached = ({ pluginInstance }) => {
-      const React = BdApi.React;
-      const engineRef = React.useRef(null);
-      React.useEffect(() => {
-        if (pluginInstance._isStopped) return;
-        pluginInstance._engineMounted = true;
-        if (pluginInstance._fallbackTimer) {
-          clearTimeout(pluginInstance._fallbackTimer);
-          pluginInstance._fallbackTimer = null;
-        }
-        if (pluginInstance._fallbackEngine) {
-          pluginInstance._fallbackEngine.unmount();
-          pluginInstance._fallbackEngine = null;
-        }
-        const engine = new DockEngine();
-        engineRef.current = engine;
-        engine.mount();
-        return () => {
-          engine.unmount();
-          engineRef.current = null;
+      startRailFollow(durationMs = 520) {
+        this.stopRailFollow();
+        const startedAt = performance.now();
+        const step = (now) => {
+          this.updateRailGeometry();
+          if (!this.rail || !this.root) {
+            this.railFollowFrame = null;
+            return;
+          }
+          if (now - startedAt >= durationMs) {
+            this.railFollowFrame = null;
+            return;
+          }
+          this.railFollowFrame = requestAnimationFrame(step);
         };
-      }, []);
-      React.useEffect(() => {
-        if (!engineRef.current || pluginInstance._isStopped) return;
-        engineRef.current.syncDock();
-        engineRef.current.trySetupUserPanel();
-      });
-      return null;
+        this.railFollowFrame = requestAnimationFrame(step);
+      }
+      stopRailFollow() {
+        if (!this.railFollowFrame) return;
+        cancelAnimationFrame(this.railFollowFrame);
+        this.railFollowFrame = null;
+      }
+      updateAlertState() {
+        if (!this.dock) {
+          this.railVisible = false;
+          if (this.rail) this.rail.style.opacity = "0";
+          return;
+        }
+        const hasBlockingDialog = Boolean(document.querySelector("div[role='dialog']"));
+        let candidates = this.dock.querySelectorAll(ALERT_SELECTOR_STR);
+        if (!candidates.length && this.dock.parentElement) {
+          candidates = this.dock.parentElement.querySelectorAll(ALERT_SELECTOR_STR);
+        }
+        let hasAlert = false;
+        if (!hasBlockingDialog) {
+          for (const el of candidates) {
+            if (this.isAlertNodeActive(el)) {
+              hasAlert = true;
+              break;
+            }
+          }
+        }
+        const changed = hasAlert !== this.railVisible;
+        this.railVisible = hasAlert;
+        if (this.rail) this.rail.style.opacity = hasAlert ? "1" : "0";
+        if (changed) this.startRailFollow(700);
+      }
+      updateRailGeometry() {
+        var _a, _b;
+        if (!this.rail || !this.dock) return;
+        const target = this.dockMoveTarget || this.dock;
+        const rect = target.getBoundingClientRect();
+        if (rect.width <= 1 || rect.height <= 1) {
+          this.rail.style.opacity = "0";
+          return;
+        }
+        let left = Math.round(rect.left);
+        let top = Math.round(rect.top - this.railHeightPx);
+        if ((_b = (_a = this.stateTarget) == null ? void 0 : _a.classList) == null ? void 0 : _b.contains("sl-dock-visible")) top += 5;
+        if (left < 0) left = 0;
+        const maxTop = window.innerHeight - this.railHeightPx;
+        if (top < 0) top = 0;
+        if (top > maxTop) top = maxTop;
+        let width = Math.max(1, Math.round(rect.width));
+        const maxWidth = Math.max(1, window.innerWidth - left);
+        if (width > maxWidth) width = maxWidth;
+        this.rail.style.left = `${left}px`;
+        this.rail.style.top = `${top}px`;
+        this.rail.style.width = `${width}px`;
+      }
+      _isAlertNodeUsable(el) {
+        if (!el || !(el instanceof Element)) return false;
+        if (el.getAttribute("aria-hidden") === "true") return false;
+        if (el.offsetParent === null && getComputedStyle(el).position !== "fixed") return false;
+        return true;
+      }
+      _getAlertNodeTextData(el) {
+        return {
+          className: String(el.className || "").toLowerCase(),
+          label: String(el.getAttribute("aria-label") || "").toLowerCase(),
+          text: String(el.textContent || "").trim().toLowerCase()
+        };
+      }
+      _isMentionLabelActive(label) {
+        if (!label) return false;
+        if (label.includes("no mention") || label.includes("no mentions")) return false;
+        if (!label.includes("mention")) return false;
+        const amount = label.match(DIGITS_RE);
+        return amount ? Number(amount[0]) > 0 : true;
+      }
+      _isBadgeClassActive(className, text) {
+        if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
+        return DIGITS_ONLY_RE.test(text) ? Number(text) > 0 : true;
+      }
+      isAlertNodeActive(el) {
+        if (!this._isAlertNodeUsable(el)) return false;
+        const { className, label, text } = this._getAlertNodeTextData(el);
+        if (this._isMentionLabelActive(label)) return true;
+        return this._isBadgeClassActive(className, text);
+      }
+      // ── Debug Infrastructure ──────────────────────────────────────────────────
+      debug(event, data = {}, includeState = false) {
+        return debugDockEngine(this, event, data, includeState);
+      }
+      installDebugApi() {
+        return installDebugApi(this);
+      }
+      removeDebugApi() {
+        return removeDebugApi(this);
+      }
+      initDebugFileSink() {
+        return initDebugFileSink(this);
+      }
+      writeDebugEntry(entry) {
+        return writeDebugEntry(this, entry);
+      }
+      snapshotState() {
+        return snapshotState(this);
+      }
+      sanitizeDebugData(data) {
+        return sanitizeDebugData(this, data);
+      }
+      sanitizeDebugValue(value) {
+        return sanitizeDebugValue(this, value);
+      }
+      describeDock(el) {
+        return describeDock(el);
+      }
     };
-    return this.__DockControllerCached;
+    module2.exports = { DockEngine: DockEngine2 };
   }
-  // ── CSS ───────────────────────────────────────────────────────────────────
-  getCSS() {
-    return `
+});
+
+// src/HSLDockAutoHide/styles.js
+var require_styles = __commonJS({
+  "src/HSLDockAutoHide/styles.js"(exports2, module2) {
+    function getHslDockAutoHideCss2() {
+      return `
       body.sl-dock-autohide {
         --sl-dock-height: 80px;
         --sl-dock-peek: 8px;
@@ -1296,5 +1192,178 @@ module.exports = class HSLDockAutoHide {
         overflow: hidden !important;
       }
     `;
+    }
+    module2.exports = {
+      getHslDockAutoHideCss: getHslDockAutoHideCss2
+    };
+  }
+});
+
+// src/HSLDockAutoHide/index.js
+function _bdLoad(fileName) {
+  if (!fileName) return null;
+  try {
+    const fs = require("fs");
+    const path = require("path");
+    const fullPath = path.join(BdApi.Plugins.folder, fileName);
+    const source = fs.readFileSync(fullPath, "utf8");
+    const moduleObj = { exports: {} };
+    const factory = new Function(
+      "module",
+      "exports",
+      "require",
+      "BdApi",
+      `${source}
+return module.exports || exports || null;`
+    );
+    const loaded = factory(moduleObj, moduleObj.exports, require, BdApi);
+    const candidate = loaded || moduleObj.exports;
+    if (typeof candidate === "function") return candidate;
+    if (candidate && typeof candidate === "object" && Object.keys(candidate).length > 0) return candidate;
+  } catch (_) {
+  }
+  return null;
+}
+var _PluginUtils;
+try {
+  _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js");
+} catch (_) {
+  _PluginUtils = null;
+}
+var { DockEngine } = require_engine();
+var { getHslDockAutoHideCss } = require_styles();
+module.exports = class HSLDockAutoHide {
+  constructor() {
+    this._patcherId = "HSLDockAutoHide";
+    this._isStopped = false;
+    this._engineMounted = false;
+    this._fallbackEngine = null;
+    this._fallbackTimer = null;
+    this._warnedKeys = /* @__PURE__ */ new Set();
+    this._toastImpl = null;
+  }
+  _warnOnce(key, message, error = null) {
+    if (this._warnedKeys.has(key)) return;
+    this._warnedKeys.add(key);
+    if (error) console.warn(`[HSLDockAutoHide] ${message}`, error);
+    else console.warn(`[HSLDockAutoHide] ${message}`);
+  }
+  _toast(message, type = "info", timeout = null) {
+    var _a;
+    (_a = this._toastImpl) == null ? void 0 : _a.call(this, message, type, timeout);
+  }
+  start() {
+    var _a;
+    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "HSLDockAutoHide")) || ((message, type = "info", timeout = null) => {
+      const p = (() => {
+        var _a2;
+        try {
+          const plugin = BdApi.Plugins.get("SoloLevelingToasts");
+          return ((_a2 = plugin == null ? void 0 : plugin.instance) == null ? void 0 : _a2.toastEngineVersion) >= 2 ? plugin.instance : null;
+        } catch (_) {
+          return null;
+        }
+      })();
+      if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
+      else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
+    });
+    this._isStopped = false;
+    this._engineMounted = false;
+    this._fallbackEngine = null;
+    BdApi.DOM.addStyle("HSLDockAutoHide", this.getCSS());
+    this._installReactPatcher();
+    this._fallbackTimer = setTimeout(() => {
+      this._fallbackTimer = null;
+      if (!this._isStopped && !this._engineMounted) {
+        this._warnOnce("react-fallback-timeout", "React patcher did not mount - using direct DOM fallback");
+        const engine = new DockEngine();
+        this._fallbackEngine = engine;
+        this._engineMounted = true;
+        engine.mount();
+      }
+    }, 3e3);
+    this._toast("HSLDockAutoHide v4.0.0 active (+ UserPanel)", "success", 2200);
+  }
+  stop() {
+    var _a;
+    this._isStopped = true;
+    if (this._fallbackTimer) {
+      clearTimeout(this._fallbackTimer);
+      this._fallbackTimer = null;
+    }
+    if (this._fallbackEngine) {
+      this._fallbackEngine.unmount();
+      this._fallbackEngine = null;
+    }
+    this._engineMounted = false;
+    BdApi.Patcher.unpatchAll(this._patcherId);
+    BdApi.DOM.removeStyle("HSLDockAutoHide");
+    document.body.classList.remove("sl-dock-autohide", "sl-dock-visible", "sl-dock-hidden", "sl-dock-composer-lock");
+    document.body.style.removeProperty("--sl-dock-height");
+    document.body.style.removeProperty("--sl-dock-peek");
+    document.body.style.removeProperty("--custom-app-panels-height");
+    document.querySelectorAll(".sl-hsl-dock-target").forEach((el) => el.classList.remove("sl-hsl-dock-target"));
+    document.querySelectorAll(".sl-userpanel-docked").forEach((el) => el.classList.remove("sl-userpanel-docked"));
+    (_a = document.getElementById("sl-hsl-alert-rail")) == null ? void 0 : _a.remove();
+    this._toast("HSLDockAutoHide stopped", "info", 2e3);
+  }
+  _installReactPatcher() {
+    let ReactUtils;
+    try {
+      ReactUtils = _bdLoad("BetterDiscordReactUtils.js");
+    } catch (_) {
+      ReactUtils = null;
+    }
+    if (!(ReactUtils == null ? void 0 : ReactUtils.patchReactMainContent) || !(ReactUtils == null ? void 0 : ReactUtils.injectReactComponent)) {
+      this._warnOnce("react-utils-missing", "BetterDiscordReactUtils unavailable; relying on direct DOM fallback");
+      return;
+    }
+    const pluginInstance = this;
+    const ok = ReactUtils.patchReactMainContent(this, this._patcherId, (React, appNode, returnValue) => {
+      const component = React.createElement(pluginInstance._DockController, {
+        key: "sl-dock-autohide",
+        pluginInstance
+      });
+      ReactUtils.injectReactComponent(appNode, "sl-dock-autohide-root", component, returnValue);
+    });
+    if (!ok) {
+      this._warnOnce("maincontent-patch-missing", "MainContent React patch unavailable; relying on direct DOM fallback");
+    }
+  }
+  get _DockController() {
+    if (this.__DockControllerCached) return this.__DockControllerCached;
+    this.__DockControllerCached = ({ pluginInstance }) => {
+      const React = BdApi.React;
+      const engineRef = React.useRef(null);
+      React.useEffect(() => {
+        if (pluginInstance._isStopped) return;
+        pluginInstance._engineMounted = true;
+        if (pluginInstance._fallbackTimer) {
+          clearTimeout(pluginInstance._fallbackTimer);
+          pluginInstance._fallbackTimer = null;
+        }
+        if (pluginInstance._fallbackEngine) {
+          pluginInstance._fallbackEngine.unmount();
+          pluginInstance._fallbackEngine = null;
+        }
+        const engine = new DockEngine();
+        engineRef.current = engine;
+        engine.mount();
+        return () => {
+          engine.unmount();
+          engineRef.current = null;
+        };
+      }, []);
+      React.useEffect(() => {
+        if (!engineRef.current || pluginInstance._isStopped) return;
+        engineRef.current.syncDock();
+        engineRef.current.trySetupUserPanel();
+      });
+      return null;
+    };
+    return this.__DockControllerCached;
+  }
+  getCSS() {
+    return getHslDockAutoHideCss();
   }
 };

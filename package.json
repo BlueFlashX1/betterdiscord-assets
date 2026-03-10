@@ -5,6 +5,8 @@
   "scripts": {
     "build": "node scripts/build-plugin.js",
     "watch": "node scripts/build-plugin.js --watch",
+    "build:all": "node scripts/build-plugin.js --all",
+    "watch:all": "node scripts/build-plugin.js --all --watch",
     "link:plugin": "node scripts/link-plugin.js",
     "link:theme": "node scripts/link-theme.js",
     "harness:harmony": "node scripts/plugin-harmony-harness.js"

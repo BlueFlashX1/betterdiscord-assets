@@ -24,7 +24,7 @@ export function truncateMiddle(value, max = 90) {
   return `${str.slice(0, left)}...${str.slice(-right)}`;
 }
 
-// ── Element summary / node info ──────────────────────────────────
+// ── Element summary ───────────────────────────────────────────────
 
 export function getElementSummary(el) {
   if (!el) return "unknown";
@@ -35,25 +35,6 @@ export function getElementSummary(el) {
       ? `.${el.className.trim().split(/\s+/)[0]}`
       : "";
   return `${tag}${id}${className}`;
-}
-
-export function getElementNodeInfo(el) {
-  if (!el || !(el instanceof Element)) return null;
-
-  const tagName = el.tagName.toLowerCase();
-  const id = el.id || null;
-  const classList = Array.from(el.classList || []);
-  const role = el.getAttribute("role") || null;
-  const ariaLabel = el.getAttribute("aria-label") || null;
-
-  return {
-    summary: getElementSummary(el),
-    tagName,
-    id,
-    classList,
-    role,
-    ariaLabel,
-  };
 }
 
 // ── Class-based selector generators ──────────────────────────────

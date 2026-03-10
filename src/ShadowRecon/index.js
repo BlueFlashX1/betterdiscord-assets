@@ -64,31 +64,43 @@ const STATUS_LABELS = {
   streaming: "Streaming",
 };
 
-let _ReactUtils;
-try { _ReactUtils = _bdLoad("BetterDiscordReactUtils.js"); } catch (_) { _ReactUtils = null; }
 let _PluginUtils;
 try { _PluginUtils = _bdLoad("BetterDiscordPluginUtils.js"); } catch (_) { _PluginUtils = null; }
 
 const _humanizedPermCache = {}; // permission key → "Manage Channels" etc. (fixed set, never evicted)
 
-const PANEL_STYLE = {
-  padding: "16px",
-  background: "#111827",
-  color: "#d1d5db",
-  borderRadius: "10px",
-  border: "1px solid rgba(75, 123, 236, 0.35)",
-};
-const ROW_STYLE = {
-  display: "flex",
-  justifyContent: "space-between",
-  alignItems: "center",
-  gap: "12px",
-  padding: "10px 0",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.2)",
-};
-const LABEL_STYLE = { color: "#e5e7eb", fontSize: "13px", fontWeight: "600" };
-const NOTE_STYLE = { color: "#9ca3af", fontSize: "11px", marginTop: "2px", maxWidth: "480px" };
-const STAT_STYLE = { color: "#93c5fd", fontWeight: "700" };
+const { buildSettingsPanel } = require("./settings-panel");
+const { getShadowReconCss } = require("./styles");
+const {
+  createModal,
+  buildKeyValueSection,
+  buildPermissionsSection,
+  buildGrid,
+} = require("./modal-utils");
+const {
+  getPlatformIntel,
+  getConnectionsIntel,
+} = require("./target-intel");
+const {
+  getCurrentUserPermissionSummary,
+  getPermissionSummaryForMember,
+  getStaffIntel,
+  isDetailedStaffIntelUnlocked,
+  toBigInt,
+} = require("./permissions");
+const {
+  clearGuildIconHints,
+  getGuildOnlineCount,
+  injectServerCounterWidget,
+  refreshGuildIconHints,
+  removeServerCounterWidget,
+  updateServerCounterWidget,
+} = require("./guild-visuals");
+const {
+  appendContextItems,
+  buildGuildReconActions,
+  buildUserContextReconItems,
+} = require("./context-menu");
 
 module.exports = class ShadowRecon {
   constructor() {
@@ -328,7 +340,7 @@ module.exports = class ShadowRecon {
           const guildId = guild?.id || props?.guildId;
           if (!guildId) return;
 
-          const items = this._buildGuildReconActions(guildId, guild);
+          const items = buildGuildReconActions(this, BdApi, guildId, guild);
           let groupedItem = null;
           try {
             groupedItem = BdApi.ContextMenu.buildItem({
@@ -338,7 +350,7 @@ module.exports = class ShadowRecon {
             });
           } catch (_) {}
 
-          this._appendContextItems(tree, groupedItem ? [groupedItem] : items);
+          appendContextItems(BdApi, tree, groupedItem ? [groupedItem] : items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] guild-context patch error`, err);
         }
@@ -382,7 +394,7 @@ module.exports = class ShadowRecon {
               action: () => this.openGuildDossier(guildId),
             }),
           ];
-          this._appendContextItems(tree, items);
+          appendContextItems(BdApi, tree, items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] channel-context patch error`, err);
         }
@@ -401,9 +413,9 @@ module.exports = class ShadowRecon {
           if (!user?.id) return;
 
           const currentGuildId = this._SelectedGuildStore?.getGuildId?.();
-          const items = this._buildUserContextReconItems(user.id, currentGuildId);
+          const items = buildUserContextReconItems(this, BdApi, user.id, currentGuildId);
 
-          if (items.length > 0) this._appendContextItems(tree, items);
+          if (items.length > 0) appendContextItems(BdApi, tree, items);
         } catch (err) {
           console.error(`[${PLUGIN_NAME}] user-context patch error`, err);
         }
@@ -413,52 +425,6 @@ module.exports = class ShadowRecon {
     }
   }
 
-  _buildStaffContextItems(userId, currentGuildId) {
-    if (!this.settings.showStaffIntelInContextMenu) return [];
-    const staff = this.getStaffIntel(userId, currentGuildId);
-    if (!staff) return [];
-
-    const detailedUnlocked = this.isDetailedStaffIntelUnlocked(currentGuildId);
-    return [
-      BdApi.ContextMenu.buildItem({
-        type: "text",
-        label: `Shadow Recon: ${staff.label}`,
-        disabled: true,
-      }),
-      BdApi.ContextMenu.buildItem({
-        type: "text",
-        label: detailedUnlocked
-          ? "Shadow Recon: Open Staff Dossier"
-          : "Shadow Recon: Staff Dossier (recon guild)",
-        action: detailedUnlocked
-          ? () => this.openStaffIntelModal(userId, currentGuildId)
-          : undefined,
-        disabled: !detailedUnlocked,
-      }),
-    ];
-  }
-
-  _buildMarkedTargetContextItems(userId, currentGuildId) {
-    if (!this.settings.showMarkedTargetIntelInContext) return [];
-    if (!this._isMarkedTarget(userId)) return [];
-
-    const deployment = this._getShadowDeploymentMap().get(String(userId));
-    return [
-      BdApi.ContextMenu.buildItem({
-        type: "text",
-        label: `Shadow Recon: Target Intel${deployment?.shadowRank ? ` [${deployment.shadowRank}]` : ""}`,
-        action: () => this.openUserIntelModal(userId, currentGuildId),
-      }),
-    ];
-  }
-
-  _buildUserContextReconItems(userId, currentGuildId) {
-    return [
-      ...this._buildStaffContextItems(userId, currentGuildId),
-      ...this._buildMarkedTargetContextItems(userId, currentGuildId),
-    ];
-  }
-
   unpatchContextMenus() {
     try { if (this._guildContextUnpatch) this._guildContextUnpatch(); } catch (_) {}
     try { if (this._channelContextUnpatch) this._channelContextUnpatch(); } catch (_) {}
@@ -466,79 +432,6 @@ module.exports = class ShadowRecon {
     this._guildContextUnpatch = null;
     this._channelContextUnpatch = null;
     this._userContextUnpatch = null;
-  }
-
-  _appendContextItems(tree, items) {
-    if (!Array.isArray(items) || items.length === 0) return;
-    const target = this._resolveContextChildrenArray(tree);
-    if (!target || !Array.isArray(target)) return;
-    target.push(BdApi.ContextMenu.buildItem({ type: "separator" }), ...items);
-  }
-
-  _buildGuildReconActions(guildId, guild = null) {
-    if (!guildId) return [];
-    const marked = this.isGuildMarked(guildId);
-    const guildName = guild?.name || guildId;
-
-    return [
-      BdApi.ContextMenu.buildItem({
-        type: "text",
-        label: marked ? "Unrecon Guild" : "Recon Guild",
-        action: () => {
-          const nextMarked = this.toggleGuildMark(guildId);
-          this._toast(
-            nextMarked
-              ? `Recon enabled for guild: ${guildName}`
-              : `Recon removed for guild: ${guildName}`,
-            nextMarked ? "success" : "info"
-          );
-        },
-      }),
-      BdApi.ContextMenu.buildItem({
-        type: "text",
-        label: "Open Guild Dossier",
-        action: () => this.openGuildDossier(guildId),
-      }),
-    ];
-  }
-
-  _getDirectContextChildrenArray(node) {
-    if (Array.isArray(node)) return node;
-    if (Array.isArray(node?.props?.children)) return node.props.children;
-    if (Array.isArray(node?.children)) return node.children;
-    return null;
-  }
-
-  _collectContextChildrenCandidates(node) {
-    const candidates = [];
-    if (node?.props?.children) candidates.push(node.props.children);
-    if (node?.children) candidates.push(node.children);
-
-    if (node?.props && typeof node.props === "object") {
-      for (const value of Object.values(node.props)) {
-        if (!value || value === node.props.children) continue;
-        if (typeof value === "object") candidates.push(value);
-      }
-    }
-    return candidates;
-  }
-
-  _resolveContextChildrenArray(node, depth = 0, seen = null) {
-    if (!node || depth > 7) return null;
-    if (!seen) seen = new Set();
-    if (typeof node !== "object") return null;
-    if (seen.has(node)) return null;
-    seen.add(node);
-
-    const direct = this._getDirectContextChildrenArray(node);
-    if (direct) return direct;
-
-    for (const candidate of this._collectContextChildrenCandidates(node)) {
-      const found = this._resolveContextChildrenArray(candidate, depth + 1, seen);
-      if (found) return found;
-    }
-
-    return null;
   }
 
   // ---- Visual Refresh --------------------------------------------------
@@ -597,246 +490,30 @@ module.exports = class ShadowRecon {
 
   // ---- Server Counter Widget ------------------------------------------
 
-  _getGuildsTarget() {
-    if (this._guildsTargetCache && this._guildsTargetCache.isConnected) {
-      return this._guildsTargetCache;
-    }
-    const target =
-      document.querySelector('[data-list-id="guildsnav"]') ||
-      document.querySelector('[class*="guilds_"] [class*="scroller_"]') ||
-      document.querySelector('[class*="guilds_"]');
-    this._guildsTargetCache = target;
-    return target;
-  }
-
-  _isHorizontalGuildNav(target) {
-    if (!target || typeof window === "undefined" || typeof window.getComputedStyle !== "function") return false;
-    const cache = this._guildNavOrientationCache;
-    const now = Date.now();
-    if (
-      cache.target === target
-      && (now - cache.measuredAt) < this._guildNavOrientationCacheTTL
-    ) {
-      return cache.horizontal;
-    }
-
-    let horizontal = false;
-    const candidates = [target, target.firstElementChild, target.parentElement].filter(Boolean);
-    for (const node of candidates) {
-      try {
-        const style = window.getComputedStyle(node);
-        const direction = String(style?.flexDirection || "").toLowerCase();
-        if (direction.startsWith("row")) {
-          horizontal = true;
-          break;
-        }
-      } catch (_) {}
-    }
-
-    if (!horizontal) {
-      try {
-        const rect = target.getBoundingClientRect();
-        if (rect.width > rect.height * 1.3) horizontal = true;
-      } catch (_) {}
-    }
-
-    cache.target = target;
-    cache.measuredAt = now;
-    cache.horizontal = horizontal;
-    return horizontal;
-  }
-
-  _syncServerCounterWidgetOrientation(widget, target = null) {
-    if (!widget) return false;
-    const navTarget = target || this._getGuildsTarget();
-    const horizontal = this._isHorizontalGuildNav(navTarget);
-    const orientationFlag = horizontal ? "1" : "0";
-    if (widget.dataset.shadowReconHorizontal !== orientationFlag) {
-      widget.classList.toggle("shadow-recon-widget--rotated", horizontal);
-      widget.dataset.shadowReconHorizontal = orientationFlag;
-    }
-    return horizontal;
-  }
-
   injectServerCounterWidget() {
-    if (!this.settings.showServerCounterWidget) {
-      this.removeServerCounterWidget();
-      return;
-    }
-
-    const target = this._getGuildsTarget();
-    if (!target) return;
-
-    let widget = document.getElementById(WIDGET_ID);
-    if (!widget) {
-      widget = document.createElement("div");
-      widget.id = WIDGET_ID;
-      widget.className = "shadow-recon-widget";
-      widget.title = "Left click: Open current guild dossier | Right click: Recon/unrecon current guild";
-      this._widgetClickHandler = () => {
-        const guildId = this._getCurrentGuildId();
-        if (guildId) this.openGuildDossier(guildId);
-        else this._toast("Select a guild first", "warning");
-      };
-      this._widgetContextHandler = (event) => {
-        event.preventDefault();
-        this._toggleCurrentGuildMarkWithToast();
-      };
-      widget.addEventListener("click", this._widgetClickHandler);
-      widget.addEventListener("contextmenu", this._widgetContextHandler);
-
-      if (target.firstChild) target.insertBefore(widget, target.firstChild);
-      else target.appendChild(widget);
-    }
-
-    this.updateServerCounterWidget(target);
+    return injectServerCounterWidget(this, WIDGET_ID);
   }
 
   updateServerCounterWidget(target = null) {
-    const widget = document.getElementById(WIDGET_ID);
-    if (!widget) return;
-    const horizontal = this._syncServerCounterWidgetOrientation(widget, target);
-    const guildCount = this.getServerCount();
-    const markedGuildCount = this._markedGuildIds.size;
-    const markedTargetCount = this._getShadowDeploymentMap().size;
-    const nextText = horizontal
-      ? `R ${guildCount} / ${markedGuildCount} / ${markedTargetCount}`
-      : `Recon: ${guildCount} guilds | ${markedGuildCount} marked | ${markedTargetCount} marked targets`;
-    if (widget.textContent !== nextText) {
-      widget.textContent = nextText;
-    }
+    return updateServerCounterWidget(this, WIDGET_ID, target);
   }
 
   removeServerCounterWidget() {
-    const widget = document.getElementById(WIDGET_ID);
-    if (widget) {
-      if (this._widgetClickHandler) widget.removeEventListener("click", this._widgetClickHandler);
-      if (this._widgetContextHandler) widget.removeEventListener("contextmenu", this._widgetContextHandler);
-      widget.remove();
-    }
-    this._widgetClickHandler = null;
-    this._widgetContextHandler = null;
-  }
-
-  _safeNonNegativeInt(value) {
-    const n = Number(value);
-    return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
-  }
-
-  _readOnlineCountFromObject(obj) {
-    if (!obj || typeof obj !== "object") return null;
-    const keys = [
-      "online",
-      "onlineCount",
-      "presence",
-      "presenceCount",
-      "approximatePresenceCount",
-      "approximate_presence_count",
-    ];
-    for (const key of keys) {
-      const parsed = this._safeNonNegativeInt(obj[key]);
-      if (parsed !== null) return parsed;
-    }
-    return null;
-  }
-
-  _readOnlineCountFromStore(guildId) {
-    const countStore = this._GuildMemberCountStore;
-    if (!countStore || typeof countStore !== "object") return null;
-
-    // Fast path: use cached working method
-    if (this._onlineCountMethod) {
-      try {
-        const result = this._onlineCountMethod.call(countStore, guildId);
-        const direct = this._safeNonNegativeInt(result);
-        if (direct !== null) return direct;
-        const nested = this._readOnlineCountFromObject(result);
-        if (nested !== null) return nested;
-      } catch (_) { this._onlineCountMethod = null; }
-    }
-
-    const storeMethods = [
-      "getOnlineCount",
-      "getOnlineMemberCount",
-      "getPresenceCount",
-      "getMemberCounts",
-      "getCounts",
-      "getGuildCounts",
-    ];
-    for (const methodName of storeMethods) {
-      const fn = countStore?.[methodName];
-      if (typeof fn !== "function") continue;
-      try {
-        const result = fn.call(countStore, guildId);
-        const direct = this._safeNonNegativeInt(result);
-        if (direct !== null) { this._onlineCountMethod = fn; return direct; }
-        const nested = this._readOnlineCountFromObject(result);
-        if (nested !== null) { this._onlineCountMethod = fn; return nested; }
-      } catch (_) {}
-    }
-    return null;
+    return removeServerCounterWidget(this, WIDGET_ID);
   }
 
   _getGuildOnlineCount(guildId, guild = null) {
-    if (!guildId) return 0;
-
-    const fromStore = this._readOnlineCountFromStore(guildId);
-    if (fromStore !== null) return fromStore;
-
-    const activeGuild = guild || this._GuildStore?.getGuild?.(guildId);
-    const fromGuild = this._readOnlineCountFromObject(activeGuild);
-    if (fromGuild !== null) return fromGuild;
-
-    return 0;
+    return getGuildOnlineCount(this, guildId, guild);
   }
 
   // ---- Guild Hover Intel ----------------------------------------------
 
   refreshGuildIconHints() {
-    if (!this.settings.showGuildHoverIntel) return;
-    const nodes = document.querySelectorAll('[data-list-item-id*="guild"]');
-    for (const node of nodes) {
-      const raw = node.getAttribute("data-list-item-id") || "";
-      const guildId = this._extractSnowflake(raw);
-      if (!guildId) continue;
-
-      const guild = this._GuildStore?.getGuild?.(guildId);
-      if (!guild) continue;
-
-      const memberCount = this._GuildMemberCountStore?.getMemberCount?.(guildId)
-        || guild?.memberCount
-        || guild?.member_count
-        || 0;
-      const online = this._getGuildOnlineCount(guildId, guild);
-      const marked = this.isGuildMarked(guildId);
-
-      // Skip store-derived title rebuild if data unchanged
-      const cached = this._guildHintCache.get(guildId);
-      if (cached && cached.memberCount === memberCount && cached.online === online && cached.marked === marked) {
-        if (node.getAttribute("data-shadow-recon-title") === "1") continue;
-      }
-
-      const markedLabel = marked ? "[Marked]" : "[Unmarked]";
-      const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
-      this._guildHintCache.set(guildId, { memberCount, online, marked });
-      if (node.getAttribute('title') === title) continue;
-      node.setAttribute("title", title);
-      node.setAttribute("data-shadow-recon-title", "1");
-    }
+    return refreshGuildIconHints(this, SNOWFLAKE_RE);
   }
 
   clearGuildIconHints() {
-    const nodes = document.querySelectorAll('[data-shadow-recon-title="1"]');
-    for (const node of nodes) {
-      node.removeAttribute("title");
-      node.removeAttribute("data-shadow-recon-title");
-    }
-  }
-
-  _extractSnowflake(text) {
-    if (!text) return null;
-    const match = String(text).match(SNOWFLAKE_RE);
-    return match ? match[0] : null;
+    return clearGuildIconHints();
   }
 
   // ---- Guild Dossier ---------------------------------------------------
@@ -1027,125 +704,21 @@ module.exports = class ShadowRecon {
     }
   }
 
-  _collectSessionClientStatuses() {
-    const out = {};
-    if (!this._SessionsStore?.getSessions) return out;
-    const sessions = this._SessionsStore.getSessions() || {};
-    for (const session of Object.values(sessions)) {
-      const client = session?.clientInfo?.client;
-      if (!client) continue;
-      out[client] = session?.status || "unknown";
-    }
-    return out;
-  }
-
-  _collectClientStatuses(userId) {
-    const currentUserId = this._UserStore?.getCurrentUser?.()?.id;
-    if (currentUserId && String(userId) === String(currentUserId)) {
-      return this._collectSessionClientStatuses();
-    }
-    return this._PresenceStore?.getState?.()?.clientStatuses?.[userId] || {};
-  }
-
-  _mapClientStatusesToRows(clientStatuses) {
-    const rows = [];
-    for (const [platformRaw, statusRaw] of Object.entries(clientStatuses || {})) {
-      const platform = PLATFORM_LABELS[platformRaw] || this._capitalize(platformRaw);
-      const status = STATUS_LABELS[statusRaw] || this._capitalize(statusRaw);
-      rows.push({ platform, status });
-    }
-    return rows;
-  }
-
-  _appendPresenceFallbackRow(rows, userId) {
-    if (rows.length > 0) return;
-    const statusRaw = this._PresenceStore?.getStatus?.(userId);
-    if (!statusRaw) return;
-    rows.push({
-      platform: "Presence",
-      status: STATUS_LABELS[statusRaw] || this._capitalize(statusRaw),
+  getPlatformIntel(userId) {
+    return getPlatformIntel(this, userId, {
+      platformLabels: PLATFORM_LABELS,
+      statusLabels: STATUS_LABELS,
     });
   }
 
-  getPlatformIntel(userId) {
-    try {
-      const rows = this._mapClientStatusesToRows(this._collectClientStatuses(userId));
-      this._appendPresenceFallbackRow(rows, userId);
-      return rows;
-    } catch (err) {
-      console.error(`[${PLUGIN_NAME}] Failed getting platform intel`, err);
-      return [];
-    }
-  }
-
   async getConnectionsIntel(userId, guildId) {
-    await this._requestUserProfile(userId, guildId);
-
-    const profile = this._getUserProfile(userId);
-    const possible =
-      profile?.connectedAccounts ||
-      profile?.connected_accounts ||
-      profile?.connections ||
-      profile?.userProfile?.connectedAccounts ||
-      profile?.userProfile?.connected_accounts ||
-      [];
-
-    if (!Array.isArray(possible)) return [];
-
-    return possible
-      .map((c) => ({
-        type: this._capitalize(String(c?.type || c?.platform || "unknown")),
-        name: String(c?.name || c?.username || c?.id || "unknown"),
-        verified: Boolean(c?.verified),
-      }))
-      .slice(0, 20);
-  }
-
-  async _requestUserProfile(userId, guildId) {
-    const actions = this._UserProfileActions;
-    if (!actions) return;
-
-    try {
-      if (typeof actions.fetchProfile === "function") {
-        await Promise.resolve(actions.fetchProfile(userId, { guildId }));
-      } else if (typeof actions.fetchUserProfile === "function") {
-        await Promise.resolve(actions.fetchUserProfile(userId, { guildId }));
-      }
-    } catch (_) {
-      try {
-        if (typeof actions.fetchProfile === "function") {
-          await Promise.resolve(actions.fetchProfile(userId));
-        } else if (typeof actions.fetchUserProfile === "function") {
-          await Promise.resolve(actions.fetchUserProfile(userId));
-        }
-      } catch (err) {
-        console.error(`[${PLUGIN_NAME}] profile request failed`, err);
-      }
-    }
-
-    await new Promise(resolve => setTimeout(resolve, 200));
-  }
-
-  _getUserProfile(userId) {
-    const store = this._UserProfileStore;
-    if (!store) return null;
-
-    try {
-      if (typeof store.getUserProfile === "function") return store.getUserProfile(userId);
-      if (typeof store.getProfile === "function") return store.getProfile(userId);
-    } catch (err) {
-      console.error(`[${PLUGIN_NAME}] Failed reading UserProfileStore`, err);
-    }
-
-    return null;
+    return getConnectionsIntel(this, userId, guildId, PLUGIN_NAME);
   }
 
   // ---- Staff / Permissions --------------------------------------------
 
   isDetailedStaffIntelUnlocked(guildId) {
-    if (!guildId) return false;
-    if (!this.settings.loreLockedRecon) return true;
-    return this.isGuildMarked(guildId);
+    return isDetailedStaffIntelUnlocked(this, guildId);
   }
 
   openStaffIntelModal(userId, guildId) {
@@ -1205,153 +778,33 @@ module.exports = class ShadowRecon {
   }
 
   getCurrentUserPermissionSummary(guildId) {
-    const currentUser = this._UserStore?.getCurrentUser?.();
-    if (!currentUser?.id) return [];
-    return this.getPermissionSummaryForMember(guildId, currentUser.id);
+    return getCurrentUserPermissionSummary(this, guildId, {
+      importantPermissions: IMPORTANT_PERMISSIONS,
+      staffPermissionKeys: STAFF_PERMISSION_KEYS,
+      humanizedPermCache: _humanizedPermCache,
+    });
   }
 
   getStaffIntel(userId, guildId) {
-    if (!guildId || !userId) return null;
-    const guild = this._GuildStore?.getGuild?.(guildId);
-    if (!guild) return null;
-
-    if (String(guild.ownerId) === String(userId)) {
-      return { label: "Server Owner", capabilities: ["Full control"] };
-    }
-
-    const summary = this.getPermissionSummaryForMember(guildId, userId);
-    const hasAdmin = summary.find(p => p.key === "ADMINISTRATOR" && p.allowed);
-    if (hasAdmin) {
-      return { label: "Administrator", capabilities: ["Full administrative access"] };
-    }
-
-    const capabilities = summary
-      .filter(p => p.allowed && STAFF_PERMISSION_KEYS.includes(p.key) && p.key !== "ADMINISTRATOR")
-      .map(p => p.label);
-
-    if (capabilities.length > 0) {
-      return { label: "Management", capabilities };
-    }
-
-    return null;
+    return getStaffIntel(this, userId, guildId, {
+      importantPermissions: IMPORTANT_PERMISSIONS,
+      staffPermissionKeys: STAFF_PERMISSION_KEYS,
+      humanizedPermCache: _humanizedPermCache,
+    });
   }
 
   getPermissionSummaryForMember(guildId, userId) {
-    const bits = this._computeGuildPermissionBits(guildId, userId);
-    const bitMap = this._getPermissionBitsMap();
-    const adminBit = bitMap.ADMINISTRATOR || 0n;
-    const hasAdmin = adminBit !== 0n && ((bits & adminBit) === adminBit);
-
-    const summary = [];
-    for (const key of IMPORTANT_PERMISSIONS) {
-      const bit = bitMap[key] || 0n;
-      const allowed = hasAdmin || (bit !== 0n && ((bits & bit) === bit));
-      summary.push({ key, label: this._humanizePermissionKey(key), allowed });
-    }
-    return summary;
-  }
-
-  _computeGuildPermissionBits(guildId, userId) {
-    const guild = this._GuildStore?.getGuild?.(guildId);
-    if (!guild) return 0n;
-
-    if (String(guild.ownerId) === String(userId)) {
-      return this._allPermissionBits();
-    }
-
-    const member = this._GuildMemberStore?.getMember?.(guildId, userId);
-    if (!member) return 0n;
-
-    const roleIds = new Set([String(guildId), ...(Array.isArray(member.roles) ? member.roles.map(String) : [])]);
-    let bits = 0n;
-
-    for (const roleId of roleIds) {
-      const role = guild.roles?.[roleId];
-      if (!role) continue;
-      bits |= this._toBigInt(role.permissions);
-    }
-
-    return bits;
-  }
-
-  _allPermissionBits() {
-    if (this._allPermsBitsCache !== undefined) return this._allPermsBitsCache;
-    const map = this._getPermissionBitsMap();
-    let all = 0n;
-    for (const bit of Object.values(map)) {
-      if (typeof bit === "bigint") all |= bit;
-    }
-    this._allPermsBitsCache = all;
-    return all;
-  }
-
-  _getPermissionBitsMap() {
-    if (this._permissionBitsCache) return this._permissionBitsCache;
-
-    const source = this._PermissionsBits || {};
-    const map = {};
-    for (const [key, value] of Object.entries(source)) {
-      if (!/^[A-Z0-9_]+$/.test(key)) continue;
-      if (!["number", "string", "bigint"].includes(typeof value)) continue;
-      try {
-        map[key] = this._toBigInt(value);
-      } catch (_) {}
-    }
-
-    this._permissionBitsCache = map;
-    return map;
+    return getPermissionSummaryForMember(this, guildId, userId, {
+      importantPermissions: IMPORTANT_PERMISSIONS,
+      staffPermissionKeys: STAFF_PERMISSION_KEYS,
+      humanizedPermCache: _humanizedPermCache,
+    });
   }
 
   // ---- Modal Builders --------------------------------------------------
 
   _createModal(title, subtitle = "") {
-    this.closeModal();
-
-    const overlay = document.createElement("div");
-    overlay.id = MODAL_ID;
-    overlay.className = "shadow-recon-overlay";
-
-    const panel = document.createElement("div");
-    panel.className = "shadow-recon-modal";
-
-    const header = document.createElement("div");
-    header.className = "shadow-recon-modal-header";
-
-    const titleWrap = document.createElement("div");
-    titleWrap.className = "shadow-recon-modal-title-wrap";
-
-    const titleEl = document.createElement("h2");
-    titleEl.className = "shadow-recon-modal-title";
-    titleEl.textContent = title;
-
-    const subtitleEl = document.createElement("div");
-    subtitleEl.className = "shadow-recon-modal-subtitle";
-    subtitleEl.textContent = subtitle;
-
-    const closeBtn = document.createElement("button");
-    closeBtn.className = "shadow-recon-close";
-    closeBtn.textContent = "x";
-    closeBtn.addEventListener("click", () => this.closeModal());
-
-    titleWrap.appendChild(titleEl);
-    titleWrap.appendChild(subtitleEl);
-    header.appendChild(titleWrap);
-    header.appendChild(closeBtn);
-
-    const body = document.createElement("div");
-    body.className = "shadow-recon-modal-body";
-
-    panel.appendChild(header);
-    panel.appendChild(body);
-    overlay.appendChild(panel);
-
-    overlay.addEventListener("click", (e) => {
-      if (e.target === overlay) this.closeModal();
-    });
-
-    document.body.appendChild(overlay);
-    this._modalEl = overlay;
-    return overlay;
+    return createModal(this, MODAL_ID, title, subtitle);
   }
 
   closeModal() {
@@ -1361,67 +814,15 @@ module.exports = class ShadowRecon {
   }
 
   _buildKeyValueSection(title, rows) {
-    const section = document.createElement("section");
-    section.className = "shadow-recon-section";
-
-    const h = document.createElement("h3");
-    h.className = "shadow-recon-section-title";
-    h.textContent = title;
-
-    section.appendChild(h);
-    section.appendChild(this._buildGrid(rows));
-    return section;
+    return buildKeyValueSection(title, rows);
   }
 
   _buildPermissionsSection(title, summary) {
-    const section = document.createElement("section");
-    section.className = "shadow-recon-section";
-
-    const h = document.createElement("h3");
-    h.className = "shadow-recon-section-title";
-    h.textContent = title;
-
-    const list = document.createElement("div");
-    list.className = "shadow-recon-perm-list";
-
-    for (const item of summary) {
-      const row = document.createElement("div");
-      row.className = `shadow-recon-perm-item ${item.allowed ? "allowed" : "denied"}`;
-
-      const label = document.createElement("span");
-      label.textContent = item.label;
-
-      const status = document.createElement("span");
-      status.textContent = item.allowed ? "Allowed" : "Denied";
-
-      row.appendChild(label);
-      row.appendChild(status);
-      list.appendChild(row);
-    }
-
-    section.appendChild(h);
-    section.appendChild(list);
-    return section;
+    return buildPermissionsSection(title, summary);
   }
 
   _buildGrid(rows) {
-    const grid = document.createElement("div");
-    grid.className = "shadow-recon-grid";
-
-    for (const [key, value] of rows) {
-      const k = document.createElement("div");
-      k.className = "shadow-recon-key";
-      k.textContent = String(key);
-
-      const v = document.createElement("div");
-      v.className = "shadow-recon-value";
-      v.textContent = String(value);
-
-      grid.appendChild(k);
-      grid.appendChild(v);
-    }
-
-    return grid;
+    return buildGrid(rows);
   }
 
   // ---- Counts / Stores -------------------------------------------------
@@ -1490,12 +891,7 @@ module.exports = class ShadowRecon {
   }
 
   _toBigInt(value) {
-    if (typeof value === "bigint") return value;
-    if (typeof value === "number" && Number.isFinite(value)) return BigInt(Math.trunc(value));
-    if (typeof value === "string" && value.trim().length > 0) {
-      try { return BigInt(value); } catch (_) { return 0n; }
-    }
-    return 0n;
+    return toBigInt(value);
   }
 
   _formatNumber(value) {
@@ -1510,261 +906,15 @@ module.exports = class ShadowRecon {
     return str.charAt(0).toUpperCase() + str.slice(1);
   }
 
-  _humanizePermissionKey(key) {
-    if (_humanizedPermCache[key]) return _humanizedPermCache[key];
-    const result = String(key)
-      .toLowerCase()
-      .split("_")
-      .map(part => part.charAt(0).toUpperCase() + part.slice(1))
-      .join(" ");
-    _humanizedPermCache[key] = result;
-    return result;
-  }
-
   // ---- Settings Panel --------------------------------------------------
 
   getSettingsPanel() {
-    const React = BdApi.React;
-    const ce = React.createElement;
-
-    const makeToggle = (label, key, note) => ce("div", { style: ROW_STYLE },
-      ce("div", null,
-        ce("div", { style: LABEL_STYLE }, label),
-        note ? ce("div", { style: NOTE_STYLE }, note) : null
-      ),
-      ce("input", {
-        type: "checkbox",
-        defaultChecked: !!this.settings[key],
-        onChange: (e) => {
-          this.settings[key] = e.target.checked;
-          this.saveSettings();
-          this.refreshAllVisuals();
-        },
-        style: { accentColor: "#4b7bec" },
-      })
-    );
-
-    const markedTargets = this._getShadowDeploymentMap().size;
-
-    return ce("div", { style: PANEL_STYLE },
-      ce("h3", { style: { marginTop: 0, color: "#60a5fa" } }, "Shadow Recon Control"),
-
-      ce("div", { style: { marginBottom: "12px", color: "#9ca3af", fontSize: "12px" } },
-        ce("span", null, "Guilds: "),
-        ce("span", { style: STAT_STYLE }, this._formatNumber(this.getServerCount())),
-        ce("span", null, " | Marked Guilds: "),
-        ce("span", { style: STAT_STYLE }, this._formatNumber(this._markedGuildIds.size)),
-        ce("span", null, " | Marked Targets: "),
-        ce("span", { style: STAT_STYLE }, this._formatNumber(markedTargets))
-      ),
-
-      makeToggle("Lore Lock (recon guild for full dossier)", "loreLockedRecon", "When enabled, unrecon guild dossiers only show a limited briefing."),
-      makeToggle("Server Counter Widget", "showServerCounterWidget", "Adds total guild / marked intel at top of guild bar."),
-      makeToggle("Guild Hover Intel Hint", "showGuildHoverIntel", "Adds recon hint text on guild icon hover elements."),
-      makeToggle("Staff Intel in User Context", "showStaffIntelInContextMenu", "Shows rank without recon mark; detailed staff dossier unlocks when guild is recon-marked."),
-      makeToggle("Marked Target Intel Action", "showMarkedTargetIntelInContext", "Adds platform/connections intel action for ShadowSenses targets."),
-
-      ce("div", { style: { display: "flex", gap: "8px", marginTop: "14px" } },
-        ce("button", {
-          className: "shadow-recon-button",
-          onClick: () => this._toggleCurrentGuildMarkWithToast(),
-        }, currentGuildId && this.isGuildMarked(currentGuildId) ? "Unrecon Current Guild" : "Recon Current Guild"),
-        ce("button", {
-          className: "shadow-recon-button",
-          onClick: () => {
-            if (currentGuildId) this.openGuildDossier(currentGuildId);
-            else this._toast("Select a guild first", "warning");
-          },
-        }, "Open Current Guild Dossier"),
-        ce("button", {
-          className: "shadow-recon-button",
-          onClick: () => {
-            this._markedGuildIds.clear();
-            this.saveMarkedGuilds();
-            this.refreshAllVisuals();
-            this._toast("Shadow Recon guild marks cleared", "info");
-          },
-        }, "Clear Recon Guilds")
-      )
-    );
+    return buildSettingsPanel(BdApi, this);
   }
 
   // ---- CSS -------------------------------------------------------------
 
   injectCSS() {
-    BdApi.DOM.addStyle(STYLE_ID, `
-#${WIDGET_ID}.shadow-recon-widget {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  margin: 6px 8px;
-  padding: 8px 10px;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 2px;
-  background: linear-gradient(145deg, rgba(15, 23, 42, 0.95), rgba(30, 41, 59, 0.95));
-  color: #bfdbfe;
-  font-size: 11px;
-  line-height: 1.4;
-  white-space: nowrap;
-  cursor: pointer;
-  user-select: none;
-  transform-origin: center center;
-  transition: border-color 120ms ease, color 120ms ease, transform 140ms ease;
-}
-
-#${WIDGET_ID}.shadow-recon-widget.shadow-recon-widget--rotated {
-  transform: rotate(90deg);
-  margin: 10px -12px;
-  padding: 7px 9px;
-  border-radius: 2px;
-  font-size: 10px;
-  line-height: 1.2;
-}
-
-#${WIDGET_ID}.shadow-recon-widget:hover {
-  border-color: rgba(96, 165, 250, 0.85);
-  color: #dbeafe;
-}
-
-#${MODAL_ID}.shadow-recon-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 10060;
-  background: rgba(2, 6, 23, 0.75);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-#${MODAL_ID} .shadow-recon-modal {
-  width: min(900px, 94vw);
-  max-height: 85vh;
-  border-radius: 2px;
-  overflow: hidden;
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  background: #0f172a;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.55);
-  display: flex;
-  flex-direction: column;
-}
-
-#${MODAL_ID} .shadow-recon-modal-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 14px;
-  border-bottom: 1px solid rgba(96, 165, 250, 0.25);
-  background: rgba(30, 41, 59, 0.9);
-}
-
-#${MODAL_ID} .shadow-recon-modal-title-wrap { display: flex; flex-direction: column; gap: 2px; }
-#${MODAL_ID} .shadow-recon-modal-title { margin: 0; color: #dbeafe; font-size: 16px; }
-#${MODAL_ID} .shadow-recon-modal-subtitle { color: #93c5fd; font-size: 12px; }
-
-#${MODAL_ID} .shadow-recon-close {
-  border: 1px solid rgba(148, 163, 184, 0.45);
-  background: transparent;
-  color: #e2e8f0;
-  border-radius: 2px;
-  width: 30px;
-  height: 30px;
-  cursor: pointer;
-}
-
-#${MODAL_ID} .shadow-recon-close:hover {
-  border-color: rgba(248, 113, 113, 0.8);
-  color: #fecaca;
-}
-
-#${MODAL_ID} .shadow-recon-modal-body {
-  overflow: auto;
-  padding: 14px;
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-  gap: 12px;
-}
-
-#${MODAL_ID} .shadow-recon-section {
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 2px;
-  padding: 10px;
-  background: rgba(15, 23, 42, 0.82);
-}
-
-#${MODAL_ID} .shadow-recon-section-title {
-  margin: 0 0 8px;
-  color: #93c5fd;
-  font-size: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-#${MODAL_ID} .shadow-recon-grid {
-  display: grid;
-  grid-template-columns: 130px 1fr;
-  gap: 6px 10px;
-}
-
-#${MODAL_ID} .shadow-recon-key {
-  color: #94a3b8;
-  font-size: 11px;
-}
-
-#${MODAL_ID} .shadow-recon-value {
-  color: #e2e8f0;
-  font-size: 12px;
-  word-break: break-word;
-}
-
-#${MODAL_ID} .shadow-recon-perm-list {
-  display: grid;
-  gap: 6px;
-}
-
-#${MODAL_ID} .shadow-recon-perm-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 2px;
-  padding: 6px 8px;
-  font-size: 12px;
-}
-
-#${MODAL_ID} .shadow-recon-perm-item.allowed {
-  border-color: rgba(34, 197, 94, 0.45);
-  color: #bbf7d0;
-}
-
-#${MODAL_ID} .shadow-recon-perm-item.denied {
-  border-color: rgba(239, 68, 68, 0.4);
-  color: #fecaca;
-}
-
-.shadow-recon-notice {
-  grid-column: 1 / -1;
-  padding: 10px;
-  border: 1px solid rgba(250, 204, 21, 0.5);
-  border-radius: 2px;
-  color: #fde68a;
-  background: rgba(120, 53, 15, 0.22);
-  margin-bottom: 8px;
-}
-
-.shadow-recon-button {
-  border: 1px solid rgba(96, 165, 250, 0.45);
-  border-radius: 2px;
-  background: rgba(15, 23, 42, 0.85);
-  color: #dbeafe;
-  padding: 7px 10px;
-  cursor: pointer;
-}
-
-.shadow-recon-button:hover {
-  border-color: rgba(96, 165, 250, 0.85);
-  background: rgba(30, 58, 138, 0.35);
-}
-`);
+    BdApi.DOM.addStyle(STYLE_ID, getShadowReconCss(WIDGET_ID, MODAL_ID));
   }
 };
