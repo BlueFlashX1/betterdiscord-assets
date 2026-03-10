@@ -339,6 +339,7 @@ module.exports = class SystemWindow {
     this._throttleTimer = null;
     this._lastScrollerEl = null;
     this._classifyRAF = null;
+    this._classifyVersion = 0;
     this._started = false;
   }
   /* ═══════════════════════════════════════════════
@@ -514,13 +515,22 @@ module.exports = class SystemWindow {
     if (!scroller) return;
     const items = scroller.querySelectorAll(':scope > li[class*="messageListItem_"]');
     if (!items.length) return;
+    this._classifyVersion = (this._classifyVersion || 0) + 1;
+    const ver = String(this._classifyVersion);
     let groupCount = 0;
     let currentGroup = [];
+    let groupHasNew = false;
     const flushGroup = () => {
       if (!currentGroup.length) return;
-      this._classifyGroup(currentGroup);
+      if (groupHasNew) {
+        this._classifyGroup(currentGroup);
+        for (const { li } of currentGroup) {
+          li.dataset.swVer = ver;
+        }
+      }
       groupCount++;
       currentGroup = [];
+      groupHasNew = false;
     };
     for (const li of items) {
       const article = li.querySelector(':scope > div[role="article"]');
@@ -530,11 +540,12 @@ module.exports = class SystemWindow {
       }
       const isGroupStart = article.className.includes("groupStart");
       if (isGroupStart) flushGroup();
+      if (li.dataset.swVer !== ver) groupHasNew = true;
       currentGroup.push({ li, article });
     }
     flushGroup();
     if (this.settings.debugMode) {
-      console.log(`[SystemWindow] Classified ${items.length} messages into ${groupCount} groups`);
+      console.log(`[SystemWindow] Classified ${items.length} messages into ${groupCount} groups (v${ver})`);
     }
   }
   _isOwnMessage(article) {
@@ -556,6 +567,7 @@ module.exports = class SystemWindow {
       (el) => el.classList.remove("sw-group-solo", "sw-group-start", "sw-group-middle", "sw-group-end", "sw-self", "sw-mentioned")
     );
     document.querySelectorAll('div[role="article"][data-sw-self]').forEach((el) => el.removeAttribute("data-sw-self"));
+    document.querySelectorAll("li[data-sw-ver]").forEach((el) => delete el.dataset.swVer);
   }
   /* ═══════════════════════════════════════════════
      §4  CSS Injection

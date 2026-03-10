@@ -882,12 +882,16 @@ var matchesHotkey = (_PluginUtils == null ? void 0 : _PluginUtils.matchesHotkey)
   const key = String(event.key || "").toLowerCase();
   return key === spec.key && !!event.ctrlKey === spec.hasCtrl && !!event.shiftKey === spec.hasShift && !!event.altKey === spec.hasAlt && !!event.metaKey === spec.hasMeta;
 });
+var _rootCtxCache = null;
+var _rootCtxClassKey = "";
 var getRootContext = () => {
   const root = document.documentElement;
   const body = document.body;
+  const classKey = ((root == null ? void 0 : root.className) || "") + "|" + ((body == null ? void 0 : body.className) || "");
+  if (_rootCtxCache && classKey === _rootCtxClassKey) return _rootCtxCache;
   const getAttrs = (node) => Array.from((node == null ? void 0 : node.attributes) || []).map((a) => ({ name: a.name, value: a.value })).slice(0, 30);
   const getClasses = (node) => Array.from((node == null ? void 0 : node.classList) || []);
-  return {
+  _rootCtxCache = {
     root: {
       summary: root ? getElementSummary(root) : null,
       classList: getClasses(root),
@@ -899,6 +903,8 @@ var getRootContext = () => {
       attributes: getAttrs(body)
     }
   };
+  _rootCtxClassKey = classKey;
+  return _rootCtxCache;
 };
 var createOverlay = () => {
   const overlay = document.createElement("div");
@@ -1266,6 +1272,8 @@ module.exports = class CSSPicker {
     }
     this.isActive = false;
     this.lastHoverElement = null;
+    _rootCtxCache = null;
+    _rootCtxClassKey = "";
     if (this.onMouseMove) document.removeEventListener("mousemove", this.onMouseMove, true);
     if (this.onClick) document.removeEventListener("click", this.onClick, true);
     if (this.onKeyDown) document.removeEventListener("keydown", this.onKeyDown, true);

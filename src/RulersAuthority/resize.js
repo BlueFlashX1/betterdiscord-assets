@@ -45,27 +45,31 @@ export function setupResizeHandlers(ctx) {
     }
   }, { passive: false, signal });
 
-  // ── mousemove: update width while dragging (on document for full coverage) ──
+  // ── mousemove: update width while dragging (RAF-throttled for perf) ──
+  let _resizeRafId = null;
   document.addEventListener("mousemove", (e) => {
     if (!ctx._dragging || !ctx._dragPanel) return;
+    if (_resizeRafId) return; // Already scheduled
 
-    const rect = ctx._dragging.getBoundingClientRect();
-    let width;
+    _resizeRafId = requestAnimationFrame(() => {
+      _resizeRafId = null;
+      if (!ctx._dragging || !ctx._dragPanel) return;
 
-    if (ctx._dragPanel === "sidebar") {
-      // Sidebar: cursor X minus left edge
-      width = e.clientX - rect.left;
-    } else {
-      // Right-side panels: right edge minus cursor X
-      width = rect.right - e.clientX;
-    }
+      const rect = ctx._dragging.getBoundingClientRect();
+      let width;
 
-    // Clamp: min 80px, max 60vw
-    width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
+      if (ctx._dragPanel === "sidebar") {
+        width = e.clientX - rect.left;
+      } else {
+        width = rect.right - e.clientX;
+      }
 
-    ctx._dragging.style.setProperty("width", `${width}px`, "important");
-    ctx._dragging.style.setProperty("max-width", `${width}px`, "important");
-    ctx._dragging.style.setProperty("min-width", `${width}px`, "important");
+      width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
+
+      ctx._dragging.style.setProperty("width", `${width}px`, "important");
+      ctx._dragging.style.setProperty("max-width", `${width}px`, "important");
+      ctx._dragging.style.setProperty("min-width", `${width}px`, "important");
+    });
   }, { passive: true, signal });
 
   // ── mouseup: commit width and restore transitions (on document for full coverage) ──

@@ -23,6 +23,15 @@ import {
   _PluginUtils,
 } from "./constants";
 
+// ── Helper: find channel sidebar element ──
+function findChannelSidebar() {
+  for (const sel of SIDEBAR_FALLBACKS) {
+    const el = document.querySelector(sel);
+    if (el) return el;
+  }
+  return null;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // §8  Macro Panel Control
 // ═══════════════════════════════════════════════════════════════════════════
@@ -254,13 +263,29 @@ export function isChannelHidden(ctx, guildId, channelId) {
   return guildData?.hiddenChannels?.some((c) => c.id === channelId) || false;
 }
 
+// Cached channel hover element (500ms TTL — DOM doesn't change that fast)
+let _channelHoverEl = null;
+let _channelHoverElTime = 0;
+const _CHANNEL_HOVER_TTL = 500;
+
 export function getChannelHoverElement() {
+  const now = Date.now();
+  if (_channelHoverEl && now - _channelHoverElTime < _CHANNEL_HOVER_TTL && _channelHoverEl.isConnected) {
+    return _channelHoverEl;
+  }
   const channelTree =
     document.querySelector('ul[aria-label="Channels"]') ||
     document.querySelector('[role="tree"][aria-label="Channels"]') ||
     document.querySelector('[class*="sidebar_"] [role="tree"]');
-  if (!channelTree) return null;
-  return channelTree.closest('[class*="sidebar_"]') || channelTree;
+  if (!channelTree) { _channelHoverEl = null; return null; }
+  _channelHoverEl = channelTree.closest('[class*="sidebar_"]') || channelTree;
+  _channelHoverElTime = now;
+  return _channelHoverEl;
+}
+
+export function invalidateChannelHoverCache() {
+  _channelHoverEl = null;
+  _channelHoverElTime = 0;
 }
 
 export function setHiddenChannelRevealState(ctx, shouldReveal) {
@@ -300,8 +325,10 @@ export function applyChannelHiding(ctx, guildId) {
     return;
   }
 
+  // Scope per-channel queries to sidebar (avoids N full-document scans)
+  const scope = sidebar || document;
   for (const id of hiddenIds) {
-    const el = document.querySelector(`[data-list-item-id="channels___${id}"]`);
+    const el = scope.querySelector(`[data-list-item-id="channels___${id}"]`);
     if (el) {
       el.style.display = ctx._channelsHoverRevealActive ? "" : "none";
       el.setAttribute("data-ra-pushed", "true");
@@ -357,28 +384,36 @@ export function applyCategoryCrushing(ctx, guildId) {
   const guildData = ctx.settings.guilds[effectiveGuildId];
   if (!guildData?.crushedCategories?.length) return;
 
+  // Scope querySelector to sidebar to avoid full-document scans
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
+
   for (const { id: catId } of guildData.crushedCategories) {
-    const catEl = document.querySelector(`[data-list-item-id="channels___${catId}"]`);
+    const catEl = scope.querySelector(`[data-list-item-id="channels___${catId}"]`);
     if (!catEl) continue;
+
+    // Skip re-processing if already crushed and children are marked
+    if (catEl.hasAttribute("data-ra-crushed") && catEl.nextElementSibling?.getAttribute("data-ra-category-crushed") === catId) {
+      continue;
+    }
 
     catEl.setAttribute("data-ra-crushed", "true");
 
     let next = catEl.nextElementSibling;
-    let safetyLimit = 200; // Prevent runaway walks (Discord guilds rarely have >200 channels)
+    let safetyLimit = 200;
     let nonChannelSkips = 0;
     while (next && safetyLimit-- > 0) {
       const listId = next.getAttribute("data-list-item-id") || "";
       if (!listId.startsWith("channels___")) {
         nonChannelSkips++;
-        // If we've skipped too many non-channel elements, we've likely crossed into another section
         if (nonChannelSkips > 5) break;
         next = next.nextElementSibling;
         continue;
       }
-      nonChannelSkips = 0; // Reset on valid channel element
+      nonChannelSkips = 0;
       const channelId = listId.replace("channels___", "");
       const channel = ctx._ChannelStore?.getChannel?.(channelId);
-      if (!channel || channel.type === 4) break; // Stop at next category or unknown channel
+      if (!channel || channel.type === 4) break;
       next.style.display = "none";
       next.setAttribute("data-ra-category-crushed", catId);
       next = next.nextElementSibling;
@@ -810,6 +845,7 @@ export function setupGuildChangeListener(ctx) {
   if (!ctx._SelectedGuildStore) return;
   ctx._guildChangeHandler = () => {
     ctx._panelElCache = null; // Invalidate panel element cache on guild switch
+    invalidateChannelHoverCache();
     clearTimeout(ctx._guildChangeApplyTimer);
     ctx._guildChangeApplyTimer = setTimeout(() => {
       if (!ctx._controller) return;

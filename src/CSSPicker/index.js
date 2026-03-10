@@ -146,17 +146,24 @@ const matchesHotkey =
     );
   });
 
-// ── Root context helper ──────────────────────────────────────────
+// ── Root context helper (cached — root/body classes rarely change mid-session) ──
+
+let _rootCtxCache = null;
+let _rootCtxClassKey = "";
 
 const getRootContext = () => {
   const root = document.documentElement;
   const body = document.body;
+  // Fast fingerprint: classList values change far less often than hover targets
+  const classKey = (root?.className || "") + "|" + (body?.className || "");
+  if (_rootCtxCache && classKey === _rootCtxClassKey) return _rootCtxCache;
+
   const getAttrs = (node) =>
     Array.from(node?.attributes || [])
       .map((a) => ({ name: a.name, value: a.value }))
       .slice(0, 30);
   const getClasses = (node) => Array.from(node?.classList || []);
-  return {
+  _rootCtxCache = {
     root: {
       summary: root ? getElementSummary(root) : null,
       classList: getClasses(root),
@@ -168,6 +175,8 @@ const getRootContext = () => {
       attributes: getAttrs(body),
     },
   };
+  _rootCtxClassKey = classKey;
+  return _rootCtxCache;
 };
 
 // ── DOM element creation (overlay, launcher, tooltip) ────────────
@@ -599,6 +608,8 @@ module.exports = class CSSPicker {
 
     this.isActive = false;
     this.lastHoverElement = null;
+    _rootCtxCache = null;
+    _rootCtxClassKey = "";
 
     if (this.onMouseMove) document.removeEventListener("mousemove", this.onMouseMove, true);
     if (this.onClick) document.removeEventListener("click", this.onClick, true);

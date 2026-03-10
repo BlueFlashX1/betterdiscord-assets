@@ -436,8 +436,10 @@ module.exports = class SoloLevelingToasts {
     const rect = toastElement.getBoundingClientRect();
     const centerX = rect.left + rect.width / 2;
     const centerY = rect.top + rect.height / 2;
-    const fragment = document.createDocumentFragment();
-    Array.from({ length: count }).forEach((_, i) => {
+    const wrapper = document.createElement("div");
+    wrapper.className = "sl-toast-particle-batch";
+    wrapper.style.cssText = "position:fixed;top:0;left:0;pointer-events:none;z-index:100000;";
+    for (let i = 0; i < count; i++) {
       const particle = document.createElement("div");
       particle.className = "sl-toast-particle";
       const angle = Math.PI * 2 * i / count + Math.random() * 0.5;
@@ -448,10 +450,10 @@ module.exports = class SoloLevelingToasts {
       particle.style.top = `${centerY}px`;
       particle.style.setProperty("--sl-particle-x", `${particleX}px`);
       particle.style.setProperty("--sl-particle-y", `${particleY}px`);
-      fragment.appendChild(particle);
-      this._setTrackedTimeout(() => particle.remove(), 1500);
-    });
-    document.body.appendChild(fragment);
+      wrapper.appendChild(particle);
+    }
+    document.body.appendChild(wrapper);
+    this._setTrackedTimeout(() => wrapper.remove(), 1500);
   }
   // ==========================================================================
   // SECTION 7: SHOW TOAST (public API) + GROUPING

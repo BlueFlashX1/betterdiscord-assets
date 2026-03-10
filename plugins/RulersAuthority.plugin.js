@@ -153,19 +153,25 @@ function setupResizeHandlers(ctx) {
       }
     }
   }, { passive: false, signal });
+  let _resizeRafId = null;
   document.addEventListener("mousemove", (e) => {
     if (!ctx._dragging || !ctx._dragPanel) return;
-    const rect = ctx._dragging.getBoundingClientRect();
-    let width;
-    if (ctx._dragPanel === "sidebar") {
-      width = e.clientX - rect.left;
-    } else {
-      width = rect.right - e.clientX;
-    }
-    width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
-    ctx._dragging.style.setProperty("width", `${width}px`, "important");
-    ctx._dragging.style.setProperty("max-width", `${width}px`, "important");
-    ctx._dragging.style.setProperty("min-width", `${width}px`, "important");
+    if (_resizeRafId) return;
+    _resizeRafId = requestAnimationFrame(() => {
+      _resizeRafId = null;
+      if (!ctx._dragging || !ctx._dragPanel) return;
+      const rect = ctx._dragging.getBoundingClientRect();
+      let width;
+      if (ctx._dragPanel === "sidebar") {
+        width = e.clientX - rect.left;
+      } else {
+        width = rect.right - e.clientX;
+      }
+      width = Math.max(RA_RESIZE_MIN_WIDTH, Math.min(width, window.innerWidth * 0.6));
+      ctx._dragging.style.setProperty("width", `${width}px`, "important");
+      ctx._dragging.style.setProperty("max-width", `${width}px`, "important");
+      ctx._dragging.style.setProperty("min-width", `${width}px`, "important");
+    });
   }, { passive: true, signal });
   document.addEventListener("mouseup", (e) => {
     if (!ctx._dragging || !ctx._dragPanel) return;
@@ -199,6 +205,13 @@ function removeAllResizeStyles(ctx) {
 }
 
 // src/RulersAuthority/panels.js
+function findChannelSidebar() {
+  for (const sel of SIDEBAR_FALLBACKS) {
+    const el = document.querySelector(sel);
+    if (el) return el;
+  }
+  return null;
+}
 function togglePanel(ctx, panelName) {
   const def = PANEL_DEFS[panelName];
   if (!def) return;
@@ -379,10 +392,26 @@ function isChannelHidden(ctx, guildId, channelId) {
   const guildData = ctx.settings.guilds[guildId];
   return ((_a2 = guildData == null ? void 0 : guildData.hiddenChannels) == null ? void 0 : _a2.some((c) => c.id === channelId)) || false;
 }
+var _channelHoverEl = null;
+var _channelHoverElTime = 0;
+var _CHANNEL_HOVER_TTL = 500;
 function getChannelHoverElement() {
+  const now = Date.now();
+  if (_channelHoverEl && now - _channelHoverElTime < _CHANNEL_HOVER_TTL && _channelHoverEl.isConnected) {
+    return _channelHoverEl;
+  }
   const channelTree = document.querySelector('ul[aria-label="Channels"]') || document.querySelector('[role="tree"][aria-label="Channels"]') || document.querySelector('[class*="sidebar_"] [role="tree"]');
-  if (!channelTree) return null;
-  return channelTree.closest('[class*="sidebar_"]') || channelTree;
+  if (!channelTree) {
+    _channelHoverEl = null;
+    return null;
+  }
+  _channelHoverEl = channelTree.closest('[class*="sidebar_"]') || channelTree;
+  _channelHoverElTime = now;
+  return _channelHoverEl;
+}
+function invalidateChannelHoverCache() {
+  _channelHoverEl = null;
+  _channelHoverElTime = 0;
 }
 function setHiddenChannelRevealState(ctx, shouldReveal) {
   const next = !!shouldReveal;
@@ -414,8 +443,9 @@ function applyChannelHiding(ctx, guildId) {
     document.body.classList.remove("ra-channels-hover-reveal");
     return;
   }
+  const scope = sidebar || document;
   for (const id of hiddenIds) {
-    const el = document.querySelector(`[data-list-item-id="channels___${id}"]`);
+    const el = scope.querySelector(`[data-list-item-id="channels___${id}"]`);
     if (el) {
       el.style.display = ctx._channelsHoverRevealActive ? "" : "none";
       el.setAttribute("data-ra-pushed", "true");
@@ -457,16 +487,21 @@ function isCategoryCrushed(ctx, guildId, categoryId) {
   return ((_a2 = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _a2.some((c) => c.id === categoryId)) || false;
 }
 function applyCategoryCrushing(ctx, guildId) {
-  var _a2, _b, _c, _d, _e;
+  var _a2, _b, _c, _d, _e, _f;
   const currentGuildId = (_b = (_a2 = ctx._SelectedGuildStore) == null ? void 0 : _a2.getGuildId) == null ? void 0 : _b.call(_a2);
   if (guildId && guildId !== currentGuildId) return;
   const effectiveGuildId = guildId || currentGuildId;
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
   if (!((_c = guildData == null ? void 0 : guildData.crushedCategories) == null ? void 0 : _c.length)) return;
+  const sidebar = findChannelSidebar();
+  const scope = sidebar || document;
   for (const { id: catId } of guildData.crushedCategories) {
-    const catEl = document.querySelector(`[data-list-item-id="channels___${catId}"]`);
+    const catEl = scope.querySelector(`[data-list-item-id="channels___${catId}"]`);
     if (!catEl) continue;
+    if (catEl.hasAttribute("data-ra-crushed") && ((_d = catEl.nextElementSibling) == null ? void 0 : _d.getAttribute("data-ra-category-crushed")) === catId) {
+      continue;
+    }
     catEl.setAttribute("data-ra-crushed", "true");
     let next = catEl.nextElementSibling;
     let safetyLimit = 200;
@@ -481,7 +516,7 @@ function applyCategoryCrushing(ctx, guildId) {
       }
       nonChannelSkips = 0;
       const channelId = listId.replace("channels___", "");
-      const channel = (_e = (_d = ctx._ChannelStore) == null ? void 0 : _d.getChannel) == null ? void 0 : _e.call(_d, channelId);
+      const channel = (_f = (_e = ctx._ChannelStore) == null ? void 0 : _e.getChannel) == null ? void 0 : _f.call(_e, channelId);
       if (!channel || channel.type === 4) break;
       next.style.display = "none";
       next.setAttribute("data-ra-category-crushed", catId);
@@ -845,6 +880,7 @@ function setupGuildChangeListener(ctx) {
   if (!ctx._SelectedGuildStore) return;
   ctx._guildChangeHandler = () => {
     ctx._panelElCache = null;
+    invalidateChannelHoverCache();
     clearTimeout(ctx._guildChangeApplyTimer);
     ctx._guildChangeApplyTimer = setTimeout(() => {
       if (!ctx._controller) return;
