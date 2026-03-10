@@ -159,17 +159,18 @@ module.exports = class Stealth {
     }
   }
   _initDispatcher() {
-    var _a;
-    this._Dispatcher = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a.call(_PluginUtils)) || null;
+    var _a, _b, _c;
+    const { Webpack } = BdApi;
+    this._Dispatcher = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a.call(_PluginUtils)) || ((_c = (_b = Webpack.Stores) == null ? void 0 : _b.UserStore) == null ? void 0 : _c._dispatcher) || Webpack.getModule((m) => m.dispatch && m.subscribe) || null;
     if (this._Dispatcher) {
       this._subscribeFluxEvents();
       return;
     }
     let attempt = 0;
     this._dispatcherPollTimer = setInterval(() => {
-      var _a2;
+      var _a2, _b2, _c2;
       attempt++;
-      this._Dispatcher = ((_a2 = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a2.call(_PluginUtils)) || null;
+      this._Dispatcher = ((_a2 = _PluginUtils == null ? void 0 : _PluginUtils.getDispatcher) == null ? void 0 : _a2.call(_PluginUtils)) || ((_c2 = (_b2 = Webpack.Stores) == null ? void 0 : _b2.UserStore) == null ? void 0 : _c2._dispatcher) || Webpack.getModule((m) => m.dispatch && m.subscribe) || null;
       if (this._Dispatcher) {
         clearInterval(this._dispatcherPollTimer);
         this._dispatcherPollTimer = null;

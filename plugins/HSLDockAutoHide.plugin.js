@@ -349,18 +349,22 @@ var DockEngine = class {
       if (this.stateTarget && !this.stateTarget.classList.contains("sl-dock-autohide")) {
         this.stateTarget.classList.add("sl-dock-autohide");
       }
-      this.syncDock();
-      this.trySetupUserPanel();
-      if (Date.now() < this.typingLockUntil) {
-        this.stateTarget.classList.add("sl-dock-composer-lock");
-        if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
-          this.stateTarget.classList.add("sl-dock-hidden");
-          this.stateTarget.classList.remove("sl-dock-visible");
+      if (this.tickCount % 5 === 0) {
+        this.syncDock();
+        this.trySetupUserPanel();
+      }
+      if (this.stateTarget) {
+        if (Date.now() < this.typingLockUntil) {
+          this.stateTarget.classList.add("sl-dock-composer-lock");
+          if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
+            this.stateTarget.classList.add("sl-dock-hidden");
+            this.stateTarget.classList.remove("sl-dock-visible");
+          }
+          this.pointerOverDock = false;
+          this.revealHoldUntil = 0;
+        } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
+          this.stateTarget.classList.remove("sl-dock-composer-lock");
         }
-        this.pointerOverDock = false;
-        this.revealHoldUntil = 0;
-      } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
-        this.stateTarget.classList.remove("sl-dock-composer-lock");
       }
       this.ensureDockTargetClass();
       this.mountRailToDock();
@@ -992,7 +996,7 @@ module.exports = class HSLDockAutoHide {
   }
   start() {
     var _a;
-    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "hSLDockAutoHide")) || ((message, type = "info", timeout = null) => {
+    this._toastImpl = ((_a = _PluginUtils == null ? void 0 : _PluginUtils.createToastHelper) == null ? void 0 : _a.call(_PluginUtils, "HSLDockAutoHide")) || ((message, type = "info", timeout = null) => {
       const p = (() => {
         var _a2;
         try {
@@ -1002,7 +1006,7 @@ module.exports = class HSLDockAutoHide {
           return null;
         }
       })();
-      if (p) p.showToast(message, type, timeout, { callerId: "hSLDockAutoHide" });
+      if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
       else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
     });
     this._isStopped = false;

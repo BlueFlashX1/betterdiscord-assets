@@ -438,21 +438,25 @@ class DockEngine {
         this.stateTarget.classList.add("sl-dock-autohide");
       }
 
-      // Still call syncDock + trySetupUserPanel as safety net (reduced urgency)
-      this.syncDock();
-      this.trySetupUserPanel();
+      // PERF: syncDock + trySetupUserPanel as safety net every 5th tick (React effects handle normal case)
+      if (this.tickCount % 5 === 0) {
+        this.syncDock();
+        this.trySetupUserPanel();
+      }
 
-      // Typing lock enforcement
-      if (Date.now() < this.typingLockUntil) {
-        this.stateTarget.classList.add("sl-dock-composer-lock");
-        if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
-          this.stateTarget.classList.add("sl-dock-hidden");
-          this.stateTarget.classList.remove("sl-dock-visible");
+      // Typing lock enforcement (guard stateTarget — can be null before first syncDock)
+      if (this.stateTarget) {
+        if (Date.now() < this.typingLockUntil) {
+          this.stateTarget.classList.add("sl-dock-composer-lock");
+          if (!this.stateTarget.classList.contains("sl-dock-hidden")) {
+            this.stateTarget.classList.add("sl-dock-hidden");
+            this.stateTarget.classList.remove("sl-dock-visible");
+          }
+          this.pointerOverDock = false;
+          this.revealHoldUntil = 0;
+        } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
+          this.stateTarget.classList.remove("sl-dock-composer-lock");
         }
-        this.pointerOverDock = false;
-        this.revealHoldUntil = 0;
-      } else if (this.stateTarget.classList.contains("sl-dock-composer-lock") && !this.isOpenSuppressed()) {
-        this.stateTarget.classList.remove("sl-dock-composer-lock");
       }
 
       this.ensureDockTargetClass();
@@ -1100,7 +1104,7 @@ module.exports = class HSLDockAutoHide {
 
 
   start() {
-    this._toastImpl = _PluginUtils?.createToastHelper?.("hSLDockAutoHide")
+    this._toastImpl = _PluginUtils?.createToastHelper?.("HSLDockAutoHide")
       || ((message, type = "info", timeout = null) => {
         const p = (() => {
           try {
@@ -1108,7 +1112,7 @@ module.exports = class HSLDockAutoHide {
             return plugin?.instance?.toastEngineVersion >= 2 ? plugin.instance : null;
           } catch (_) { return null; }
         })();
-        if (p) p.showToast(message, type, timeout, { callerId: "hSLDockAutoHide" });
+        if (p) p.showToast(message, type, timeout, { callerId: "HSLDockAutoHide" });
         else BdApi.UI.showToast(message, { type: type === "level-up" ? "info" : type });
       });
     this._isStopped = false;

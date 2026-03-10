@@ -505,7 +505,7 @@ module.exports = class LevelProgressBar {
         debugMode: (value) => {
           this.settings.debugMode = !!value;
           this.saveSettings();
-          console.log("[LevelProgressBar] Debug mode:", value ? "ENABLED" : "DISABLED");
+          this.debugLog("SETTINGS", `Debug mode: ${value ? "ENABLED" : "DISABLED"}`);
         }
       };
       (handlers[key] || (() => {
@@ -1043,10 +1043,12 @@ module.exports = class LevelProgressBar {
   }
   updateMilestoneMarkers(progressTrack, xpPercent) {
     if (!progressTrack) return;
+    const activeCount = [25, 50, 75].filter((m) => xpPercent >= m).length;
+    if (this._lastMilestoneCount === activeCount) return;
+    this._lastMilestoneCount = activeCount;
     const existingMarkers = progressTrack.querySelectorAll(".lpb-milestone");
     existingMarkers.forEach((m) => m.remove());
-    const milestones = [25, 50, 75];
-    milestones.filter((milestone) => xpPercent >= milestone).forEach((milestone) => {
+    [25, 50, 75].filter((milestone) => xpPercent >= milestone).forEach((milestone) => {
       const marker = document.createElement("div");
       marker.className = "lpb-milestone";
       marker.style.left = `${milestone}%`;

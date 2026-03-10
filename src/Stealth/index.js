@@ -168,18 +168,27 @@ module.exports = class Stealth {
   }
 
   _initDispatcher() {
-    this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+    const { Webpack } = BdApi;
+    this._Dispatcher =
+      _PluginUtils?.getDispatcher?.() ||
+      Webpack.Stores?.UserStore?._dispatcher ||
+      Webpack.getModule(m => m.dispatch && m.subscribe) ||
+      null;
 
     if (this._Dispatcher) {
       this._subscribeFluxEvents();
       return;
     }
 
-    // Poll for late-loading Dispatcher (same pattern as ShadowSenses)
+    // Poll for late-loading Dispatcher
     let attempt = 0;
     this._dispatcherPollTimer = setInterval(() => {
       attempt++;
-      this._Dispatcher = _PluginUtils?.getDispatcher?.() || null;
+      this._Dispatcher =
+        _PluginUtils?.getDispatcher?.() ||
+        Webpack.Stores?.UserStore?._dispatcher ||
+        Webpack.getModule(m => m.dispatch && m.subscribe) ||
+        null;
 
       if (this._Dispatcher) {
         clearInterval(this._dispatcherPollTimer);
