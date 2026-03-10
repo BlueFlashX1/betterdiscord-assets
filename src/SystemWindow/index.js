@@ -67,10 +67,12 @@ module.exports = class SystemWindow {
       ...this._defaultSettings,
       ...(BdApi.Data.load("SystemWindow", "settings") || {}),
     };
-    // Cache current user ID for self-message detection (purple vs blue)
+    // Cache store refs + current user ID for self-message detection (purple vs blue)
     try {
-      this._currentUserId = BdApi.Webpack.getStore("UserStore")?.getCurrentUser()?.id || null;
+      this._UserStore = BdApi.Webpack.getStore("UserStore");
+      this._currentUserId = this._UserStore?.getCurrentUser()?.id || null;
     } catch (e) {
+      this._UserStore = null;
       this._currentUserId = null;
     }
     if (this.settings.enabled) {
@@ -112,7 +114,7 @@ module.exports = class SystemWindow {
   _checkChannelSwitch() {
     // Detect account switch — invalidate cached self-flags
     try {
-      const currentId = BdApi.Webpack.getStore("UserStore")?.getCurrentUser()?.id || null;
+      const currentId = this._UserStore?.getCurrentUser()?.id || null;
       if (currentId && currentId !== this._currentUserId) {
         this._currentUserId = currentId;
         document.querySelectorAll('div[role="article"][data-sw-self]')
@@ -243,7 +245,7 @@ module.exports = class SystemWindow {
     for (let i = 0; i < groupSize; i++) {
       const { li, article } = group[i];
       const desiredPos = this._getDesiredGroupPosition(groupSize, i);
-      const wantMentioned = /\bmentioned/.test(article.className);
+      const wantMentioned = article.className.includes("mentioned");
       this._applyGroupClasses(li, desiredPos, isSelf, wantMentioned);
     }
   }

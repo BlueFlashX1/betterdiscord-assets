@@ -42,10 +42,12 @@ var DOCK_SELECTORS = [
   "nav[class*='guilds_']",
   "[class*='guilds_'][class*='wrapper_']"
 ];
+var DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
 var PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
   "section[class*='panels_'] > section"
 ];
+var PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 var COMPOSER_CONTAINER_SELECTORS = [
   "form[class*='form_']",
   "div[class*='channelBottomBarArea_']",
@@ -76,6 +78,9 @@ var ALERT_SELECTORS = [
   "[class*='numberBadge']",
   "[class*='mentionsBadge']"
 ];
+var ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
+var DIGITS_RE = /\d+/;
+var DIGITS_ONLY_RE = /^\d+$/;
 var DockEngine = class {
   constructor() {
     this.version = "4.0.0";
@@ -259,8 +264,7 @@ var DockEngine = class {
     this.debug("dock:bound-events", { dock: this.describeDock(this.dock) });
   }
   findActiveDock() {
-    const selectorStr = DOCK_SELECTORS.join(", ");
-    const docks = Array.from(document.querySelectorAll(selectorStr));
+    const docks = Array.from(document.querySelectorAll(DOCK_SELECTOR_STR));
     if (!docks.length) return null;
     const measured = [];
     for (const dock of docks) {
@@ -295,8 +299,7 @@ var DockEngine = class {
   }
   // ── User Panel (called by React effect + safeTick) ────────────────────────
   trySetupUserPanel() {
-    const selectorStr = PANEL_SELECTORS.join(", ");
-    const panel = document.querySelector(selectorStr);
+    const panel = document.querySelector(PANEL_SELECTOR_STR);
     const dock = this.dock;
     if (!panel || !dock) return;
     if (this.isUserPanelPositioned && panel === this.userPanel) {
@@ -775,12 +778,19 @@ var DockEngine = class {
       return;
     }
     const hasBlockingDialog = Boolean(document.querySelector("div[role='dialog']"));
-    const selectorStr = ALERT_SELECTORS.join(",");
-    let candidates = this.dock.querySelectorAll(selectorStr);
+    let candidates = this.dock.querySelectorAll(ALERT_SELECTOR_STR);
     if (!candidates.length && this.dock.parentElement) {
-      candidates = this.dock.parentElement.querySelectorAll(selectorStr);
+      candidates = this.dock.parentElement.querySelectorAll(ALERT_SELECTOR_STR);
     }
-    const hasAlert = !hasBlockingDialog && Array.from(candidates).some((el) => this.isAlertNodeActive(el));
+    let hasAlert = false;
+    if (!hasBlockingDialog) {
+      for (const el of candidates) {
+        if (this.isAlertNodeActive(el)) {
+          hasAlert = true;
+          break;
+        }
+      }
+    }
     const changed = hasAlert !== this.railVisible;
     this.railVisible = hasAlert;
     if (this.rail) this.rail.style.opacity = hasAlert ? "1" : "0";
@@ -812,12 +822,8 @@ var DockEngine = class {
   _isAlertNodeUsable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
-    try {
-      return getComputedStyle(el).display !== "none";
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to read computed style for alert node", error);
-      return false;
-    }
+    if (el.offsetParent === null && getComputedStyle(el).position !== "fixed") return false;
+    return true;
   }
   _getAlertNodeTextData(el) {
     return {
@@ -830,12 +836,12 @@ var DockEngine = class {
     if (!label) return false;
     if (label.includes("no mention") || label.includes("no mentions")) return false;
     if (!label.includes("mention")) return false;
-    const amount = label.match(/\d+/);
+    const amount = label.match(DIGITS_RE);
     return amount ? Number(amount[0]) > 0 : true;
   }
   _isBadgeClassActive(className, text) {
     if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
-    return /^\d+$/.test(text) ? Number(text) > 0 : true;
+    return DIGITS_ONLY_RE.test(text) ? Number(text) > 0 : true;
   }
   isAlertNodeActive(el) {
     if (!this._isAlertNodeUsable(el)) return false;

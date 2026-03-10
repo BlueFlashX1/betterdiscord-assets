@@ -302,9 +302,7 @@ module.exports = class SoloLevelingToasts {
     try {
       const saved = BdApi.Data.load("SoloLevelingToasts", "settings");
       if (saved) {
-        this.settings = JSON.parse(
-          JSON.stringify({ ...this.defaultSettings, ...saved })
-        );
+        this.settings = structuredClone({ ...this.defaultSettings, ...saved });
         this.debugMode = this.settings.debugMode || false;
         this.debugLog("SETTINGS", "Settings loaded", this.settings);
       }
@@ -716,11 +714,17 @@ module.exports = class SoloLevelingToasts {
   // ==========================================================================
   _checkRateLimit(callerId, maxPerMinute = 15) {
     const now = Date.now();
-    const timestamps = this._rateLimiter.get(callerId) || [];
-    const recent = timestamps.filter((t) => now - t < 6e4);
-    if (recent.length >= maxPerMinute) return false;
-    recent.push(now);
-    this._rateLimiter.set(callerId, recent);
+    let timestamps = this._rateLimiter.get(callerId);
+    if (!timestamps) {
+      timestamps = [];
+      this._rateLimiter.set(callerId, timestamps);
+    }
+    const cutoff = now - 6e4;
+    let i = 0;
+    while (i < timestamps.length && timestamps[i] < cutoff) i++;
+    if (i > 0) timestamps.splice(0, i);
+    if (timestamps.length >= maxPerMinute) return false;
+    timestamps.push(now);
     if (this._rateLimiter.size > 50) {
       for (const [id, ts] of this._rateLimiter) {
         if (!ts.length || now - ts[ts.length - 1] > 6e4) this._rateLimiter.delete(id);

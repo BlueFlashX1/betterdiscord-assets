@@ -356,8 +356,10 @@ module.exports = class SystemWindow {
       ...BdApi.Data.load("SystemWindow", "settings") || {}
     };
     try {
-      this._currentUserId = ((_c = (_b = BdApi.Webpack.getStore("UserStore")) == null ? void 0 : _b.getCurrentUser()) == null ? void 0 : _c.id) || null;
+      this._UserStore = BdApi.Webpack.getStore("UserStore");
+      this._currentUserId = ((_c = (_b = this._UserStore) == null ? void 0 : _b.getCurrentUser()) == null ? void 0 : _c.id) || null;
     } catch (e) {
+      this._UserStore = null;
       this._currentUserId = null;
     }
     if (this.settings.enabled) {
@@ -391,7 +393,7 @@ module.exports = class SystemWindow {
   _checkChannelSwitch() {
     var _a, _b;
     try {
-      const currentId = ((_b = (_a = BdApi.Webpack.getStore("UserStore")) == null ? void 0 : _a.getCurrentUser()) == null ? void 0 : _b.id) || null;
+      const currentId = ((_b = (_a = this._UserStore) == null ? void 0 : _a.getCurrentUser()) == null ? void 0 : _b.id) || null;
       if (currentId && currentId !== this._currentUserId) {
         this._currentUserId = currentId;
         document.querySelectorAll('div[role="article"][data-sw-self]').forEach((el) => el.removeAttribute("data-sw-self"));
@@ -506,7 +508,7 @@ module.exports = class SystemWindow {
     for (let i = 0; i < groupSize; i++) {
       const { li, article } = group[i];
       const desiredPos = this._getDesiredGroupPosition(groupSize, i);
-      const wantMentioned = /\bmentioned/.test(article.className);
+      const wantMentioned = article.className.includes("mentioned");
       this._applyGroupClasses(li, desiredPos, isSelf, wantMentioned);
     }
   }

@@ -418,6 +418,7 @@ module.exports = class ShadowStep {
     } catch (_) {
       this.settings = { ...DEFAULT_SETTINGS };
     }
+    this._rebuildAnchorIndex();
   }
 
   saveSettings() {
@@ -479,11 +480,12 @@ module.exports = class ShadowStep {
             },
           });
         } else {
-          const atMax = this.settings.anchors.length >= this.getMaxAnchors();
+          const maxAnchors = this.getMaxAnchors();
+          const atMax = this.settings.anchors.length >= maxAnchors;
           menuItem = BdApi.ContextMenu.buildItem({
             type: "text",
             label: atMax
-              ? `Shadow Anchor (${this.settings.anchors.length}/${this.getMaxAnchors()})`
+              ? `Shadow Anchor (${this.settings.anchors.length}/${maxAnchors})`
               : "Plant Shadow Anchor",
             id: "shadow-step-add",
             disabled: atMax,
@@ -534,6 +536,7 @@ module.exports = class ShadowStep {
     };
 
     this.settings.anchors = [...this.settings.anchors, anchor];
+    this._rebuildAnchorIndex();
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this._toast(`Shadow Anchor planted: #${anchor.channelName}`, "success");
@@ -544,6 +547,7 @@ module.exports = class ShadowStep {
     this.settings.anchors = this.settings.anchors.filter((a) => a.id !== anchorId);
     // Re-index sortOrder
     this.settings.anchors.forEach((a, i) => { a.sortOrder = i; });
+    this._rebuildAnchorIndex();
     this.saveSettings();
     if (this._panelForceUpdate) this._panelForceUpdate();
     this.debugLog("Anchor", "Removed:", anchorId);
@@ -559,7 +563,11 @@ module.exports = class ShadowStep {
   }
 
   hasAnchor(channelId) {
-    return this.settings.anchors.some((a) => a.channelId === channelId);
+    return this._anchoredChannelIds?.has(channelId) ?? this.settings.anchors.some((a) => a.channelId === channelId);
+  }
+
+  _rebuildAnchorIndex() {
+    this._anchoredChannelIds = new Set(this.settings.anchors.map((a) => a.channelId));
   }
 
   getMaxAnchors() {
@@ -578,6 +586,7 @@ module.exports = class ShadowStep {
     const pruned = before - this.settings.anchors.length;
     if (pruned > 0) {
       this.settings.anchors.forEach((a, i) => { a.sortOrder = i; });
+      this._rebuildAnchorIndex();
       this.saveSettings();
       this.debugLog("Prune", `Removed ${pruned} stale anchors`);
     }

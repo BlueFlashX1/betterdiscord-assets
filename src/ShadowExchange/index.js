@@ -610,6 +610,7 @@ module.exports = class ShadowExchange {
     this._channelFadeResetTimer = null;
     this._saveDebounceTimer = null;
     this._layoutBusUnsub = null;
+    this._markedShadowIdsCache = null;
   }
 
   constructor() {
@@ -934,6 +935,7 @@ module.exports = class ShadowExchange {
   }
 
   _flushSaveSettings() {
+    this._markedShadowIdsCache = null; // invalidate on waypoint mutation
     this.settings._metadata = {
       lastSave: new Date().toISOString(),
       version: SE_VERSION,
@@ -1012,11 +1014,14 @@ module.exports = class ShadowExchange {
    * Other plugins (e.g., Dungeons) should exclude these from battle deployment.
    */
   getMarkedShadowIds() {
-    return new Set(
-      (this.settings?.waypoints || [])
-        .map((w) => w.shadowId)
-        .filter(Boolean)
-    );
+    if (!this._markedShadowIdsCache) {
+      this._markedShadowIdsCache = new Set(
+        (this.settings?.waypoints || [])
+          .map((w) => w.shadowId)
+          .filter(Boolean)
+      );
+    }
+    return this._markedShadowIdsCache;
   }
 
   isShadowMarked(shadowId) {

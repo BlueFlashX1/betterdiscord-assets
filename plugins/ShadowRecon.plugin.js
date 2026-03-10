@@ -21,6 +21,7 @@ var STYLE_ID = "shadow-recon-css";
 var WIDGET_ID = "shadow-recon-widget";
 var MEMBER_BANNER_ID = "shadow-recon-member-banner";
 var MODAL_ID = "shadow-recon-modal-root";
+var SNOWFLAKE_RE = /\d{16,20}/;
 var DEFAULT_SETTINGS = {
   loreLockedRecon: true,
   showServerCounterWidget: true,
@@ -99,6 +100,7 @@ module.exports = class ShadowRecon {
     this._modalEl = null;
     this._shadowCache = { timestamp: 0, map: /* @__PURE__ */ new Map() };
     this._permissionBitsCache = null;
+    this._guildHintCache = /* @__PURE__ */ new Map();
     this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
     this._guildNavOrientationCacheTTL = 1200;
   }
@@ -684,8 +686,14 @@ module.exports = class ShadowRecon {
       if (!guild) continue;
       const memberCount = ((_d = (_c = this._GuildMemberCountStore) == null ? void 0 : _c.getMemberCount) == null ? void 0 : _d.call(_c, guildId)) || (guild == null ? void 0 : guild.memberCount) || (guild == null ? void 0 : guild.member_count) || 0;
       const online = this._getGuildOnlineCount(guildId, guild);
-      const markedLabel = this.isGuildMarked(guildId) ? "[Marked]" : "[Unmarked]";
+      const marked = this.isGuildMarked(guildId);
+      const cached = this._guildHintCache.get(guildId);
+      if (cached && cached.memberCount === memberCount && cached.online === online && cached.marked === marked) {
+        if (node.getAttribute("data-shadow-recon-title") === "1") continue;
+      }
+      const markedLabel = marked ? "[Marked]" : "[Unmarked]";
       const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
+      this._guildHintCache.set(guildId, { memberCount, online, marked });
       if (node.getAttribute("title") === title) continue;
       node.setAttribute("title", title);
       node.setAttribute("data-shadow-recon-title", "1");
@@ -700,7 +708,7 @@ module.exports = class ShadowRecon {
   }
   _extractSnowflake(text) {
     if (!text) return null;
-    const match = String(text).match(/\d{16,20}/);
+    const match = String(text).match(SNOWFLAKE_RE);
     return match ? match[0] : null;
   }
   // ---- Guild Dossier ---------------------------------------------------

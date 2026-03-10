@@ -98,6 +98,17 @@ function _bdLoad(fileName) {
   return null;
 }
 
+const PERCENT_BONUS_RULES = [
+  ['xp', 'XP'], ['critChance', 'Crit'], ['strengthPercent', 'STR'],
+  ['agilityPercent', 'AGI'], ['intelligencePercent', 'INT'],
+  ['vitalityPercent', 'VIT'], ['perceptionPercent', 'PER'],
+];
+const RAW_BONUS_RULES = [
+  ['strength', 'strengthPercent', 'STR'], ['agility', 'agilityPercent', 'AGI'],
+  ['intelligence', 'intelligencePercent', 'INT'], ['vitality', 'vitalityPercent', 'VIT'],
+  ['perception', 'perceptionPercent', 'PER'],
+];
+
 // ============================================================================
 // REACT COMPONENT FACTORY (v2.0.0 — replaces innerHTML modal rendering)
 // ============================================================================
@@ -657,29 +668,10 @@ module.exports = class SoloLevelingTitleManager {
   formatTitleBonusLines(bonus) {
     if (!bonus) return [];
     const lines = [];
-
-    const percentRules = [
-      ['xp', 'XP'],
-      ['critChance', 'Crit'],
-      ['strengthPercent', 'STR'],
-      ['agilityPercent', 'AGI'],
-      ['intelligencePercent', 'INT'],
-      ['vitalityPercent', 'VIT'],
-      ['perceptionPercent', 'PER'],
-    ];
-    percentRules.forEach(([key, label]) => this._appendPercentBonusLine(lines, bonus, key, label));
-
-    const rawRules = [
-      ['strength', 'strengthPercent', 'STR'],
-      ['agility', 'agilityPercent', 'AGI'],
-      ['intelligence', 'intelligencePercent', 'INT'],
-      ['vitality', 'vitalityPercent', 'VIT'],
-      ['perception', 'perceptionPercent', 'PER'],
-    ];
-    rawRules.forEach(([rawKey, percentKey, label]) =>
+    PERCENT_BONUS_RULES.forEach(([key, label]) => this._appendPercentBonusLine(lines, bonus, key, label));
+    RAW_BONUS_RULES.forEach(([rawKey, percentKey, label]) =>
       this._appendRawBonusLine(lines, bonus, rawKey, percentKey, label)
     );
-
     return lines;
   }
 

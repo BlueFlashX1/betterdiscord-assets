@@ -982,7 +982,8 @@ module.exports = class LevelProgressBar {
     const throttleKey = `${operation}:${message}`;
     const lastTs = this._debugLogLastByOp?.get(throttleKey) || 0;
     if (now - lastTs < 1000) return;
-    this._debugLogLastByOp?.set(throttleKey, now);
+    if (this._debugLogLastByOp.size > 200) this._debugLogLastByOp.clear();
+    this._debugLogLastByOp.set(throttleKey, now);
 
     if (this._debug) { this._debug.log(operation, message, data); return; }
     if (!this.settings?.debugMode) return;

@@ -240,6 +240,7 @@ export function pushChannel(ctx, guildId, channelId, channelName) {
   const guildData = getGuildData(ctx, guildId);
   if (guildData.hiddenChannels.some((c) => c.id === channelId)) return;
   guildData.hiddenChannels.push({ id: channelId, name: channelName });
+  guildData._hiddenIdSet = null; // invalidate cache
   applyChannelHiding(ctx, guildId);
   ctx.saveSettings();
   ctx.debugLog("PushChannel", `Pushed #${channelName} in ${guildId}`);
@@ -248,6 +249,7 @@ export function pushChannel(ctx, guildId, channelId, channelName) {
 export function recallChannel(ctx, guildId, channelId) {
   const guildData = getGuildData(ctx, guildId);
   guildData.hiddenChannels = guildData.hiddenChannels.filter((c) => c.id !== channelId);
+  guildData._hiddenIdSet = null; // invalidate cache
   const el = document.querySelector(`[data-list-item-id="channels___${channelId}"]`);
   if (el) {
     el.style.display = "";
@@ -303,7 +305,11 @@ export function applyChannelHiding(ctx, guildId) {
   const effectiveGuildId = guildId || currentGuildId;
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
-  const hiddenIds = new Set((guildData?.hiddenChannels || []).map((entry) => String(entry.id)));
+  // Cache the hiddenIds Set — only rebuild when invalidated (pushChannel/recallChannel set _hiddenIdSet = null)
+  if (!guildData?._hiddenIdSet) {
+    if (guildData) guildData._hiddenIdSet = new Set((guildData.hiddenChannels || []).map((entry) => String(entry.id)));
+  }
+  const hiddenIds = guildData?._hiddenIdSet || new Set();
 
   // Clear stale pushed markers — scoped to sidebar to avoid full-document scan
   const sidebar = findChannelSidebar();

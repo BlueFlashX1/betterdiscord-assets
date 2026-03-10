@@ -7,6 +7,7 @@ const STYLE_ID = "shadow-recon-css";
 const WIDGET_ID = "shadow-recon-widget";
 const MEMBER_BANNER_ID = "shadow-recon-member-banner";
 const MODAL_ID = "shadow-recon-modal-root";
+const SNOWFLAKE_RE = /\d{16,20}/;
 
 const DEFAULT_SETTINGS = {
   loreLockedRecon: true,
@@ -87,6 +88,7 @@ module.exports = class ShadowRecon {
 
     this._shadowCache = { timestamp: 0, map: new Map() };
     this._permissionBitsCache = null;
+    this._guildHintCache = new Map(); // guildId -> { memberCount, online, marked, title }
     this._guildNavOrientationCache = { target: null, measuredAt: 0, horizontal: false };
     this._guildNavOrientationCacheTTL = 1200;
   }
@@ -772,9 +774,17 @@ module.exports = class ShadowRecon {
         || guild?.member_count
         || 0;
       const online = this._getGuildOnlineCount(guildId, guild);
-      const markedLabel = this.isGuildMarked(guildId) ? "[Marked]" : "[Unmarked]";
+      const marked = this.isGuildMarked(guildId);
 
+      // Skip store-derived title rebuild if data unchanged
+      const cached = this._guildHintCache.get(guildId);
+      if (cached && cached.memberCount === memberCount && cached.online === online && cached.marked === marked) {
+        if (node.getAttribute("data-shadow-recon-title") === "1") continue;
+      }
+
+      const markedLabel = marked ? "[Marked]" : "[Unmarked]";
       const title = `${markedLabel} ${guild.name} | Online ${this._formatNumber(online)} | Members ${this._formatNumber(memberCount)}`;
+      this._guildHintCache.set(guildId, { memberCount, online, marked });
       if (node.getAttribute('title') === title) continue;
       node.setAttribute("title", title);
       node.setAttribute("data-shadow-recon-title", "1");
@@ -791,7 +801,7 @@ module.exports = class ShadowRecon {
 
   _extractSnowflake(text) {
     if (!text) return null;
-    const match = String(text).match(/\d{16,20}/);
+    const match = String(text).match(SNOWFLAKE_RE);
     return match ? match[0] : null;
   }
 

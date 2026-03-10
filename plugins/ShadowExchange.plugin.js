@@ -604,6 +604,7 @@ module.exports = class ShadowExchange {
     this._channelFadeResetTimer = null;
     this._saveDebounceTimer = null;
     this._layoutBusUnsub = null;
+    this._markedShadowIdsCache = null;
   }
   constructor() {
     this._resetRuntimeState();
@@ -887,6 +888,7 @@ module.exports = class ShadowExchange {
     }, 500);
   }
   _flushSaveSettings() {
+    this._markedShadowIdsCache = null;
     this.settings._metadata = {
       lastSave: (/* @__PURE__ */ new Date()).toISOString(),
       version: SE_VERSION
@@ -956,9 +958,12 @@ module.exports = class ShadowExchange {
    */
   getMarkedShadowIds() {
     var _a2;
-    return new Set(
-      (((_a2 = this.settings) == null ? void 0 : _a2.waypoints) || []).map((w) => w.shadowId).filter(Boolean)
-    );
+    if (!this._markedShadowIdsCache) {
+      this._markedShadowIdsCache = new Set(
+        (((_a2 = this.settings) == null ? void 0 : _a2.waypoints) || []).map((w) => w.shadowId).filter(Boolean)
+      );
+    }
+    return this._markedShadowIdsCache;
   }
   isShadowMarked(shadowId) {
     return this.getMarkedShadowIds().has(shadowId);

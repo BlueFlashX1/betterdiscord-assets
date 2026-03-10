@@ -107,6 +107,7 @@ module.exports = class Stealth {
     };
 
     this._installPatches();
+    this._statusSetters = this._resolveStatusSetters(); // eager resolve, avoid lazy init on hot path
     this._syncStatusPolicy();
 
     this._toast("Stealth engaged", "success");

@@ -118,14 +118,23 @@ function isEditableTarget(t) {
   const tag = ((_b = (_a2 = t.tagName) == null ? void 0 : _a2.toLowerCase) == null ? void 0 : _b.call(_a2)) || "";
   return tag === "input" || tag === "textarea" || tag === "select" || !!t.isContentEditable;
 }
-function matchesHotkey(e, hotkey) {
-  if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.matchesHotkey) return _pluginUtilsRef.matchesHotkey(e, hotkey);
-  if (!hotkey || !e) return false;
+var _parsedHotkeyCache = /* @__PURE__ */ new Map();
+function _parseHotkey(hotkey) {
+  let parsed = _parsedHotkeyCache.get(hotkey);
+  if (parsed) return parsed;
   const parts = hotkey.toLowerCase().replace(/\s+/g, "").split("+").filter(Boolean);
   const mods = new Set(parts.filter((p) => ["ctrl", "shift", "alt", "meta", "cmd", "command"].includes(p)));
   const key = parts.find((p) => !mods.has(p)) || "";
+  parsed = { key, ctrl: mods.has("ctrl"), shift: mods.has("shift"), alt: mods.has("alt"), meta: mods.has("meta") || mods.has("cmd") || mods.has("command") };
+  _parsedHotkeyCache.set(hotkey, parsed);
+  return parsed;
+}
+function matchesHotkey(e, hotkey) {
+  if (_pluginUtilsRef == null ? void 0 : _pluginUtilsRef.matchesHotkey) return _pluginUtilsRef.matchesHotkey(e, hotkey);
+  if (!hotkey || !e) return false;
+  const { key, ctrl, shift, alt, meta } = _parseHotkey(hotkey);
   if (!key) return false;
-  return e.key.toLowerCase() === key && !!e.ctrlKey === mods.has("ctrl") && !!e.shiftKey === mods.has("shift") && !!e.altKey === mods.has("alt") && !!e.metaKey === (mods.has("meta") || mods.has("cmd") || mods.has("command"));
+  return e.key.toLowerCase() === key && !!e.ctrlKey === ctrl && !!e.shiftKey === shift && !!e.altKey === alt && !!e.metaKey === meta;
 }
 
 // src/RulersAuthority/resize.js
@@ -371,6 +380,7 @@ function pushChannel(ctx, guildId, channelId, channelName) {
   const guildData = getGuildData(ctx, guildId);
   if (guildData.hiddenChannels.some((c) => c.id === channelId)) return;
   guildData.hiddenChannels.push({ id: channelId, name: channelName });
+  guildData._hiddenIdSet = null;
   applyChannelHiding(ctx, guildId);
   ctx.saveSettings();
   ctx.debugLog("PushChannel", `Pushed #${channelName} in ${guildId}`);
@@ -378,6 +388,7 @@ function pushChannel(ctx, guildId, channelId, channelName) {
 function recallChannel(ctx, guildId, channelId) {
   const guildData = getGuildData(ctx, guildId);
   guildData.hiddenChannels = guildData.hiddenChannels.filter((c) => c.id !== channelId);
+  guildData._hiddenIdSet = null;
   const el = document.querySelector(`[data-list-item-id="channels___${channelId}"]`);
   if (el) {
     el.style.display = "";
@@ -427,7 +438,10 @@ function applyChannelHiding(ctx, guildId) {
   const effectiveGuildId = guildId || currentGuildId;
   if (!effectiveGuildId) return;
   const guildData = ctx.settings.guilds[effectiveGuildId];
-  const hiddenIds = new Set(((guildData == null ? void 0 : guildData.hiddenChannels) || []).map((entry) => String(entry.id)));
+  if (!(guildData == null ? void 0 : guildData._hiddenIdSet)) {
+    if (guildData) guildData._hiddenIdSet = new Set((guildData.hiddenChannels || []).map((entry) => String(entry.id)));
+  }
+  const hiddenIds = (guildData == null ? void 0 : guildData._hiddenIdSet) || /* @__PURE__ */ new Set();
   const sidebar = findChannelSidebar();
   const pushedEls = (sidebar || document).querySelectorAll("[data-ra-pushed]");
   for (const el of pushedEls) {

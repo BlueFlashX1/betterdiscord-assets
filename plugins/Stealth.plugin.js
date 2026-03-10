@@ -107,6 +107,7 @@ module.exports = class Stealth {
       readReceipts: 0
     };
     this._installPatches();
+    this._statusSetters = this._resolveStatusSetters();
     this._syncStatusPolicy();
     this._toast("Stealth engaged", "success");
   }

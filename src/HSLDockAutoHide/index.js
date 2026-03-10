@@ -62,11 +62,13 @@ const DOCK_SELECTORS = [
   "nav[class*='guilds_']",
   "[class*='guilds_'][class*='wrapper_']",
 ];
+const DOCK_SELECTOR_STR = DOCK_SELECTORS.join(", ");
 
 const PANEL_SELECTORS = [
   "section[aria-label='User status and settings']",
   "section[class*='panels_'] > section",
 ];
+const PANEL_SELECTOR_STR = PANEL_SELECTORS.join(", ");
 
 const COMPOSER_CONTAINER_SELECTORS = [
   "form[class*='form_']",
@@ -100,6 +102,9 @@ const ALERT_SELECTORS = [
   "[class*='numberBadge']",
   "[class*='mentionsBadge']",
 ];
+const ALERT_SELECTOR_STR = ALERT_SELECTORS.join(",");
+const DIGITS_RE = /\d+/;
+const DIGITS_ONLY_RE = /^\d+$/;
 
 // ─── DockEngine — Imperative State Machine ──────────────────────────────────
 // A plain JS class that holds ALL dock interaction state and logic.
@@ -326,8 +331,7 @@ class DockEngine {
   }
 
   findActiveDock() {
-    const selectorStr = DOCK_SELECTORS.join(", ");
-    const docks = Array.from(document.querySelectorAll(selectorStr));
+    const docks = Array.from(document.querySelectorAll(DOCK_SELECTOR_STR));
     if (!docks.length) return null;
 
     // PERF: Batch-read all rects first (single layout pass), then filter in JS
@@ -368,8 +372,7 @@ class DockEngine {
   // ── User Panel (called by React effect + safeTick) ────────────────────────
 
   trySetupUserPanel() {
-    const selectorStr = PANEL_SELECTORS.join(", ");
-    const panel = document.querySelector(selectorStr);
+    const panel = document.querySelector(PANEL_SELECTOR_STR);
     const dock = this.dock;
 
     if (!panel || !dock) return;
@@ -880,12 +883,16 @@ class DockEngine {
       return;
     }
     const hasBlockingDialog = Boolean(document.querySelector("div[role='dialog']"));
-    const selectorStr = ALERT_SELECTORS.join(",");
-    let candidates = this.dock.querySelectorAll(selectorStr);
+    let candidates = this.dock.querySelectorAll(ALERT_SELECTOR_STR);
     if (!candidates.length && this.dock.parentElement) {
-      candidates = this.dock.parentElement.querySelectorAll(selectorStr);
+      candidates = this.dock.parentElement.querySelectorAll(ALERT_SELECTOR_STR);
     }
-    const hasAlert = !hasBlockingDialog && Array.from(candidates).some((el) => this.isAlertNodeActive(el));
+    let hasAlert = false;
+    if (!hasBlockingDialog) {
+      for (const el of candidates) {
+        if (this.isAlertNodeActive(el)) { hasAlert = true; break; }
+      }
+    }
     const changed = hasAlert !== this.railVisible;
     this.railVisible = hasAlert;
     if (this.rail) this.rail.style.opacity = hasAlert ? "1" : "0";
@@ -916,12 +923,9 @@ class DockEngine {
   _isAlertNodeUsable(el) {
     if (!el || !(el instanceof Element)) return false;
     if (el.getAttribute("aria-hidden") === "true") return false;
-    try {
-      return getComputedStyle(el).display !== "none";
-    } catch (error) {
-      this.debugEnabled && console.warn("[HSLDockAutoHide] Failed to read computed style for alert node", error);
-      return false;
-    }
+    // offsetParent is null for display:none elements (cheaper than getComputedStyle)
+    if (el.offsetParent === null && getComputedStyle(el).position !== "fixed") return false;
+    return true;
   }
 
   _getAlertNodeTextData(el) {
@@ -936,13 +940,13 @@ class DockEngine {
     if (!label) return false;
     if (label.includes("no mention") || label.includes("no mentions")) return false;
     if (!label.includes("mention")) return false;
-    const amount = label.match(/\d+/);
+    const amount = label.match(DIGITS_RE);
     return amount ? Number(amount[0]) > 0 : true;
   }
 
   _isBadgeClassActive(className, text) {
     if (!className.includes("mentionsbadge") && !className.includes("numberbadge")) return false;
-    return /^\d+$/.test(text) ? Number(text) > 0 : true;
+    return DIGITS_ONLY_RE.test(text) ? Number(text) > 0 : true;
   }
 
   isAlertNodeActive(el) {

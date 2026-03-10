@@ -1020,18 +1020,19 @@ module.exports = class LevelProgressBar {
     else console.log(prefix, ...styles, `[${tag}]`, msg);
   }
   debugLog(operation, message, data = null) {
-    var _a, _b, _c, _d;
+    var _a, _b, _c;
     if ((_a = this._suppressedDebugOps) == null ? void 0 : _a.has(operation)) return;
     const now = Date.now();
     const throttleKey = `${operation}:${message}`;
     const lastTs = ((_b = this._debugLogLastByOp) == null ? void 0 : _b.get(throttleKey)) || 0;
     if (now - lastTs < 1e3) return;
-    (_c = this._debugLogLastByOp) == null ? void 0 : _c.set(throttleKey, now);
+    if (this._debugLogLastByOp.size > 200) this._debugLogLastByOp.clear();
+    this._debugLogLastByOp.set(throttleKey, now);
     if (this._debug) {
       this._debug.log(operation, message, data);
       return;
     }
-    if (!((_d = this.settings) == null ? void 0 : _d.debugMode)) return;
+    if (!((_c = this.settings) == null ? void 0 : _c.debugMode)) return;
     console.log(`[LevelProgressBar] ${operation}:`, message, data || "");
   }
   debugError(operation, error, data = null) {
