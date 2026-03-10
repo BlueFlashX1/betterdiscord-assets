@@ -4,11 +4,458 @@
  * @version 2.0.1
  * @author Solo Leveling Theme Dev
  */
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __commonJS = (cb, mod) => function __require() {
+  return mod || (0, cb[__getOwnPropNames(cb)[0]])((mod = { exports: {} }).exports, mod), mod.exports;
+};
+
+// src/ChatNavArrows/dom-fallback.js
+var require_dom_fallback = __commonJS({
+  "src/ChatNavArrows/dom-fallback.js"(exports2, module2) {
+    var EDGE_THRESHOLD = 100;
+    var POLL_INTERVAL_MS = 2e3;
+    function getScrollerPair() {
+      var _a, _b;
+      const wrapper = document.querySelector('div[class*="messagesWrapper_"]') || document.querySelector('div[class*="messagesWrapper-"]') || ((_a = document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')) == null ? void 0 : _a.parentElement);
+      const scroller = (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller_"]')) || (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller-"]')) || ((_b = wrapper == null ? void 0 : wrapper.querySelector('[class*="scrollerInner_"]')) == null ? void 0 : _b.parentElement) || null;
+      return { wrapper: wrapper || null, scroller };
+    }
+    function setArrowVisible(el, isVisible) {
+      if (!el) return;
+      if (isVisible) el.classList.add("sl-visible");
+      else el.classList.remove("sl-visible");
+    }
+    function updateArrowState(state) {
+      const scroller = state == null ? void 0 : state.currentScroller;
+      if (!state || !scroller) return;
+      const { scrollTop, scrollHeight, clientHeight } = scroller;
+      const atBottom = scrollHeight - scrollTop - clientHeight < EDGE_THRESHOLD;
+      const atTop = scrollTop < EDGE_THRESHOLD;
+      setArrowVisible(state.downEl, !atBottom);
+      setArrowVisible(state.upEl, !atTop);
+    }
+    function createArrowElement(className, title, svgPath, clickHandler) {
+      const el = document.createElement("div");
+      el.className = className;
+      el.title = title;
+      el.innerHTML = `<svg viewBox="0 0 24 24"><path d="${svgPath}"></path></svg>`;
+      el.addEventListener("click", clickHandler);
+      return el;
+    }
+    function ensureArrowElements(state, wrapper) {
+      if (!state || !wrapper) return;
+      wrapper.style.position = "relative";
+      if (!state.downEl || !state.downEl.isConnected) {
+        if (state.downEl && state.downClickHandler) {
+          state.downEl.removeEventListener("click", state.downClickHandler);
+        }
+        state.downEl = createArrowElement(
+          "sl-chat-nav-arrow sl-chat-nav-down",
+          "Jump to Present",
+          "M12 16l-6-6h12l-6 6z",
+          state.downClickHandler
+        );
+      }
+      if (!state.upEl || !state.upEl.isConnected) {
+        if (state.upEl && state.upClickHandler) {
+          state.upEl.removeEventListener("click", state.upClickHandler);
+        }
+        state.upEl = createArrowElement(
+          "sl-chat-nav-arrow sl-chat-nav-up",
+          "Jump to Top",
+          "M12 8l-6 6h12l-6-6z",
+          state.upClickHandler
+        );
+      }
+      if (!wrapper.contains(state.downEl)) wrapper.appendChild(state.downEl);
+      if (!wrapper.contains(state.upEl)) wrapper.appendChild(state.upEl);
+    }
+    function unbindScroller(state) {
+      if (!(state == null ? void 0 : state.currentScroller) || !state.scrollHandler) return;
+      state.currentScroller.removeEventListener("scroll", state.scrollHandler);
+      state.currentScroller = null;
+      state.scrollHandler = null;
+    }
+    function bindScroller(state, wrapper, scroller) {
+      if (!state) return;
+      if (state.currentScroller === scroller && state.currentWrapper === wrapper) {
+        updateArrowState(state);
+        return;
+      }
+      unbindScroller(state);
+      state.currentWrapper = wrapper;
+      state.currentScroller = scroller;
+      if (!wrapper || !scroller) {
+        if (state.downEl) setArrowVisible(state.downEl, false);
+        if (state.upEl) setArrowVisible(state.upEl, false);
+        return;
+      }
+      ensureArrowElements(state, wrapper);
+      let scrollRafPending = false;
+      state.scrollHandler = () => {
+        if (scrollRafPending) return;
+        scrollRafPending = true;
+        requestAnimationFrame(() => {
+          scrollRafPending = false;
+          updateArrowState(state);
+        });
+      };
+      scroller.addEventListener("scroll", state.scrollHandler, { passive: true });
+      updateArrowState(state);
+    }
+    function createFallbackState(plugin) {
+      const state = {
+        currentWrapper: null,
+        currentScroller: null,
+        scrollHandler: null,
+        pollTimer: null,
+        downEl: null,
+        upEl: null,
+        downClickHandler: null,
+        upClickHandler: null
+      };
+      state.downClickHandler = () => {
+        const wrapper = state.currentWrapper;
+        const scroller = state.currentScroller;
+        if (!wrapper || !scroller) return;
+        const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
+        const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
+        if (nativeBtn) {
+          nativeBar.style.display = "";
+          nativeBtn.click();
+          requestAnimationFrame(() => {
+            nativeBar.style.display = "none";
+          });
+        } else {
+          scroller.scrollTop = scroller.scrollHeight;
+        }
+        updateArrowState(state);
+      };
+      state.upClickHandler = () => {
+        const scroller = state.currentScroller;
+        if (!scroller) return;
+        scroller.scrollTop = 0;
+        updateArrowState(state);
+      };
+      state.tick = () => {
+        var _a, _b;
+        if (plugin._isStopped) return;
+        if (document.hidden) return;
+        if (((_a = state.currentScroller) == null ? void 0 : _a.isConnected) && ((_b = state.currentWrapper) == null ? void 0 : _b.isConnected)) return;
+        const { wrapper, scroller } = getScrollerPair();
+        bindScroller(state, wrapper, scroller);
+      };
+      return state;
+    }
+    function stopDomFallback2(plugin) {
+      const state = plugin._domFallback;
+      if (!state) return;
+      unbindScroller(state);
+      if (state.pollTimer) clearInterval(state.pollTimer);
+      if (state.downEl && state.downClickHandler) {
+        state.downEl.removeEventListener("click", state.downClickHandler);
+      }
+      if (state.upEl && state.upClickHandler) {
+        state.upEl.removeEventListener("click", state.upClickHandler);
+      }
+      if (state.downEl) state.downEl.remove();
+      if (state.upEl) state.upEl.remove();
+      plugin._domFallback = null;
+    }
+    function startDomFallback2(plugin) {
+      stopDomFallback2(plugin);
+      plugin._domFallback = createFallbackState(plugin);
+      plugin._domFallback.tick();
+      plugin._domFallback.pollTimer = setInterval(plugin._domFallback.tick, POLL_INTERVAL_MS);
+      plugin._debugLog("Using DOM fallback mode");
+    }
+    module2.exports = { startDomFallback: startDomFallback2, stopDomFallback: stopDomFallback2 };
+  }
+});
+
+// src/ChatNavArrows/arrow-manager-component.js
+var require_arrow_manager_component = __commonJS({
+  "src/ChatNavArrows/arrow-manager-component.js"(exports2, module2) {
+    var EDGE_THRESHOLD = 100;
+    var POLL_INTERVAL_MS = 2e3;
+    function findScrollerElements() {
+      var _a, _b;
+      const wrapper = document.querySelector('div[class*="messagesWrapper_"]') || document.querySelector('div[class*="messagesWrapper-"]') || ((_a = document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')) == null ? void 0 : _a.parentElement);
+      const scroller = (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller_"]')) || (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller-"]')) || ((_b = wrapper == null ? void 0 : wrapper.querySelector('[class*="scrollerInner_"]')) == null ? void 0 : _b.parentElement);
+      return { wrapper: wrapper || null, scroller: scroller || null };
+    }
+    function createArrowElement(className, title, pathD, clickHandler) {
+      const el = document.createElement("div");
+      el.className = className;
+      el.title = title;
+      el.innerHTML = `<svg viewBox="0 0 24 24"><path d="${pathD}"></path></svg>`;
+      el.addEventListener("click", clickHandler);
+      return el;
+    }
+    function removeDomArrows(domArrowsRef) {
+      var _a, _b;
+      const arrows = domArrowsRef.current;
+      if (!arrows) return;
+      if ((_a = arrows.down) == null ? void 0 : _a.isConnected) arrows.down.remove();
+      if ((_b = arrows.up) == null ? void 0 : _b.isConnected) arrows.up.remove();
+      domArrowsRef.current = null;
+    }
+    function useScrollerBinding(React, pluginInstance, dbg, refs, setShowDown, setShowUp, setBindCount) {
+      const { scrollerRef, wrapperRef, pollRef, lastScrollLogRef } = refs;
+      React.useEffect(() => {
+        dbg("useEffect mounted");
+        if (pluginInstance._isStopped) {
+          dbg("BAIL: pluginInstance._isStopped");
+          return void 0;
+        }
+        let currentScroller = null;
+        let scrollHandler = null;
+        const applyScrollState = (scroller) => {
+          if (!scroller.isConnected) {
+            dbg("scrollHandler: scroller disconnected");
+            return;
+          }
+          const { scrollTop, scrollHeight, clientHeight } = scroller;
+          const atBottom = scrollHeight - scrollTop - clientHeight < EDGE_THRESHOLD;
+          const atTop = scrollTop < EDGE_THRESHOLD;
+          setShowDown(!atBottom);
+          setShowUp(!atTop);
+          const now = Date.now();
+          if (now - lastScrollLogRef.current > 3e3) {
+            lastScrollLogRef.current = now;
+            dbg(
+              `scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, atTop=${atTop}, atBottom=${atBottom}, showDown=${!atBottom}, showUp=${!atTop}`
+            );
+          }
+        };
+        const bindScroller = (wrapper, scroller) => {
+          if (!scroller) {
+            dbg("findAndBind: no scroller found");
+            return;
+          }
+          dbg("findAndBind: binding new scroller (isConnected:", scroller.isConnected, ")");
+          if (currentScroller && scrollHandler) {
+            currentScroller.removeEventListener("scroll", scrollHandler);
+          }
+          currentScroller = scroller;
+          scrollerRef.current = scroller;
+          wrapperRef.current = wrapper;
+          if (wrapper) wrapper.style.position = "relative";
+          let scrollRafPending = false;
+          scrollHandler = () => {
+            if (scrollRafPending) return;
+            scrollRafPending = true;
+            requestAnimationFrame(() => {
+              scrollRafPending = false;
+              applyScrollState(scroller);
+            });
+          };
+          scroller.addEventListener("scroll", scrollHandler, { passive: true });
+          scrollHandler();
+          setBindCount((count) => count + 1);
+          dbg("findAndBind: bound, bindCount incremented");
+        };
+        const findAndBind = () => {
+          if (currentScroller == null ? void 0 : currentScroller.isConnected) return;
+          const { wrapper, scroller } = findScrollerElements();
+          dbg("findScroller:", {
+            wrapper: wrapper ? `<${wrapper.tagName} class="${(wrapper.className || "").slice(0, 60)}">` : null,
+            scroller: scroller ? `<${scroller.tagName} class="${(scroller.className || "").slice(0, 60)}">` : null
+          });
+          bindScroller(wrapper, scroller);
+        };
+        findAndBind();
+        if (!currentScroller) {
+          dbg("Initial bind failed \u2014 scheduling 150ms retry");
+          setTimeout(findAndBind, 150);
+        }
+        pollRef.current = setInterval(findAndBind, POLL_INTERVAL_MS);
+        return () => {
+          dbg("useEffect cleanup");
+          if (currentScroller && scrollHandler) {
+            currentScroller.removeEventListener("scroll", scrollHandler);
+          }
+          if (pollRef.current) {
+            clearInterval(pollRef.current);
+            pollRef.current = null;
+          }
+        };
+      }, []);
+    }
+    function useDomArrowInjection(React, args) {
+      const {
+        portalAvailable,
+        wrapperConnected,
+        wrapper,
+        bindCount,
+        domArrowsRef,
+        handleDownClick,
+        handleUpClick
+      } = args;
+      React.useEffect(() => {
+        var _a;
+        if (portalAvailable || !wrapperConnected || !wrapper) {
+          removeDomArrows(domArrowsRef);
+          return void 0;
+        }
+        let arrows = domArrowsRef.current;
+        if (!arrows || !((_a = arrows.down) == null ? void 0 : _a.isConnected)) {
+          const down = createArrowElement(
+            "sl-chat-nav-arrow sl-chat-nav-down",
+            "Jump to Present",
+            "M12 16l-6-6h12l-6 6z",
+            handleDownClick
+          );
+          const up = createArrowElement(
+            "sl-chat-nav-arrow sl-chat-nav-up",
+            "Jump to Top",
+            "M12 8l-6 6h12l-6-6z",
+            handleUpClick
+          );
+          arrows = { down, up };
+          domArrowsRef.current = arrows;
+        }
+        if (!wrapper.contains(arrows.down)) wrapper.appendChild(arrows.down);
+        if (!wrapper.contains(arrows.up)) wrapper.appendChild(arrows.up);
+        return () => removeDomArrows(domArrowsRef);
+      }, [portalAvailable, wrapperConnected, wrapper, bindCount, handleDownClick, handleUpClick]);
+    }
+    function useDomArrowVisibilitySync(React, portalAvailable, showDown, showUp, bindCount, domArrowsRef) {
+      React.useEffect(() => {
+        if (portalAvailable) return;
+        const arrows = domArrowsRef.current;
+        if (!arrows) return;
+        arrows.down.classList.toggle("sl-visible", showDown);
+        arrows.up.classList.toggle("sl-visible", showUp);
+      }, [portalAvailable, showDown, showUp, bindCount]);
+    }
+    function renderPortalArrows(React, ReactDOM, wrapper, showDown, showUp, handleDownClick, handleUpClick) {
+      return ReactDOM.createPortal(
+        React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(
+            "div",
+            {
+              className: `sl-chat-nav-arrow sl-chat-nav-down${showDown ? " sl-visible" : ""}`,
+              title: "Jump to Present",
+              onClick: handleDownClick
+            },
+            React.createElement(
+              "svg",
+              { viewBox: "0 0 24 24" },
+              React.createElement("path", { d: "M12 16l-6-6h12l-6 6z" })
+            )
+          ),
+          React.createElement(
+            "div",
+            {
+              className: `sl-chat-nav-arrow sl-chat-nav-up${showUp ? " sl-visible" : ""}`,
+              title: "Jump to Top",
+              onClick: handleUpClick
+            },
+            React.createElement(
+              "svg",
+              { viewBox: "0 0 24 24" },
+              React.createElement("path", { d: "M12 8l-6 6h12l-6-6z" })
+            )
+          )
+        ),
+        wrapper
+      );
+    }
+    function createArrowManagerComponent2(BdApi2, pluginInstance) {
+      const React = BdApi2.React;
+      return function ArrowManager({ pluginInstance: injectedPlugin }) {
+        var _a;
+        const activePlugin = injectedPlugin || pluginInstance;
+        const dbg = (...args) => activePlugin._debugLog("[ArrowManager]", ...args);
+        const [showDown, setShowDown] = React.useState(false);
+        const [showUp, setShowUp] = React.useState(false);
+        const [bindCount, setBindCount] = React.useState(0);
+        const scrollerRef = React.useRef(null);
+        const wrapperRef = React.useRef(null);
+        const pollRef = React.useRef(null);
+        const domArrowsRef = React.useRef(null);
+        const lastScrollLogRef = React.useRef(0);
+        useScrollerBinding(
+          React,
+          activePlugin,
+          dbg,
+          { scrollerRef, wrapperRef, pollRef, lastScrollLogRef },
+          setShowDown,
+          setShowUp,
+          setBindCount
+        );
+        const handleDownClick = React.useCallback(() => {
+          const wrapper2 = wrapperRef.current;
+          const scroller = scrollerRef.current;
+          if (!wrapper2 || !scroller) return;
+          const nativeBar = wrapper2.querySelector('div[class^="jumpToPresentBar_"]');
+          const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
+          if (nativeBtn) {
+            nativeBar.style.display = "";
+            nativeBtn.click();
+            requestAnimationFrame(() => {
+              nativeBar.style.display = "none";
+            });
+          } else {
+            scroller.scrollTop = scroller.scrollHeight;
+          }
+        }, []);
+        const handleUpClick = React.useCallback(() => {
+          const scroller = scrollerRef.current;
+          if (scroller) scroller.scrollTop = 0;
+        }, []);
+        const wrapper = wrapperRef.current;
+        const wrapperConnected = !!(wrapper && wrapper.isConnected);
+        const portalAvailable = !!((_a = BdApi2.ReactDOM) == null ? void 0 : _a.createPortal);
+        useDomArrowInjection(React, {
+          portalAvailable,
+          wrapperConnected,
+          wrapper,
+          bindCount,
+          domArrowsRef,
+          handleDownClick,
+          handleUpClick
+        });
+        useDomArrowVisibilitySync(
+          React,
+          portalAvailable,
+          showDown,
+          showUp,
+          bindCount,
+          domArrowsRef
+        );
+        dbg(
+          `render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper == null ? void 0 : wrapper.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`
+        );
+        if (wrapperConnected && portalAvailable) {
+          dbg("render -> PORTAL path");
+          return renderPortalArrows(
+            React,
+            BdApi2.ReactDOM,
+            wrapper,
+            showDown,
+            showUp,
+            handleDownClick,
+            handleUpClick
+          );
+        }
+        if (!wrapper) dbg("render -> NULL (no wrapper yet, waiting for findAndBind)");
+        return null;
+      };
+    }
+    module2.exports = { createArrowManagerComponent: createArrowManagerComponent2 };
+  }
+});
 
 // src/ChatNavArrows/styles.css
 var styles_default = '/* Hide native jump-to-present bars globally */\ndiv[class^="jumpToPresentBar_"] {\n  display: none !important;\n}\n\n.sl-chat-nav-arrow {\n  position: absolute;\n  z-index: 500;\n  width: 36px;\n  height: 36px;\n  border-radius: 50%;\n  background: rgba(8, 10, 20, 0.92);\n  border: 1px solid rgba(138, 43, 226, 0.45);\n  color: #b48cff;\n  display: flex;\n  align-items: center;\n  justify-content: center;\n  cursor: pointer;\n  transition: background 0.15s ease, border-color 0.15s ease,\n              box-shadow 0.15s ease, transform 0.15s ease,\n              opacity 0.2s ease;\n  box-shadow: 0 2px 8px rgba(0,0,0,0.3);\n  right: 24px;\n  pointer-events: none;\n  opacity: 0;\n}\n.sl-chat-nav-arrow.sl-visible {\n  opacity: 1;\n  pointer-events: auto;\n}\n.sl-chat-nav-arrow:hover {\n  background: rgba(138, 43, 226, 0.2);\n  border-color: #8a2be2;\n  box-shadow: 0 0 12px rgba(138, 43, 226, 0.35);\n  transform: scale(1.1);\n}\n.sl-chat-nav-arrow:active {\n  transform: scale(0.95);\n}\n.sl-chat-nav-arrow svg {\n  width: 18px;\n  height: 18px;\n  fill: currentColor;\n}\n.sl-chat-nav-down {\n  bottom: 24px;\n}\n.sl-chat-nav-up {\n  bottom: 68px;\n}\n';
 
 // src/ChatNavArrows/index.js
+var { startDomFallback, stopDomFallback } = require_dom_fallback();
+var { createArrowManagerComponent } = require_arrow_manager_component();
 function _bdLoad(fileName) {
   if (!fileName) return null;
   try {
@@ -193,353 +640,17 @@ module.exports = class ChatNavArrows {
     return true;
   }
   _startDomFallback() {
-    this._stopDomFallback();
-    this._domFallback = {
-      currentWrapper: null,
-      currentScroller: null,
-      scrollHandler: null,
-      pollTimer: null,
-      downEl: null,
-      upEl: null
-    };
-    const getScrollerPair = () => {
-      var _a, _b;
-      const wrapper = document.querySelector('div[class*="messagesWrapper_"]') || document.querySelector('div[class*="messagesWrapper-"]') || ((_a = document.querySelector('main[class*="chatContent"] > div > div[class*="scroller"]')) == null ? void 0 : _a.parentElement);
-      const scroller = (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller_"]')) || (wrapper == null ? void 0 : wrapper.querySelector('div[class*="scroller-"]')) || ((_b = wrapper == null ? void 0 : wrapper.querySelector('[class*="scrollerInner_"]')) == null ? void 0 : _b.parentElement) || null;
-      return { wrapper: wrapper || null, scroller };
-    };
-    const setArrowVisible = (el, isVisible) => {
-      if (!el) return;
-      if (isVisible) el.classList.add("sl-visible");
-      else el.classList.remove("sl-visible");
-    };
-    const updateArrowState = () => {
-      const state = this._domFallback;
-      const scroller = state == null ? void 0 : state.currentScroller;
-      if (!state || !scroller) return;
-      const { scrollTop, scrollHeight, clientHeight } = scroller;
-      const threshold = 100;
-      const atBottom = scrollHeight - scrollTop - clientHeight < threshold;
-      const atTop = scrollTop < threshold;
-      setArrowVisible(state.downEl, !atBottom);
-      setArrowVisible(state.upEl, !atTop);
-    };
-    const handleDownClick = () => {
-      const state = this._domFallback;
-      const wrapper = state == null ? void 0 : state.currentWrapper;
-      const scroller = state == null ? void 0 : state.currentScroller;
-      if (!wrapper || !scroller) return;
-      const nativeBar = wrapper.querySelector('div[class^="jumpToPresentBar_"]');
-      const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
-      if (nativeBtn) {
-        nativeBar.style.display = "";
-        nativeBtn.click();
-        requestAnimationFrame(() => {
-          nativeBar.style.display = "none";
-        });
-      } else {
-        scroller.scrollTop = scroller.scrollHeight;
-      }
-      updateArrowState();
-    };
-    const handleUpClick = () => {
-      var _a;
-      const scroller = (_a = this._domFallback) == null ? void 0 : _a.currentScroller;
-      if (!scroller) return;
-      scroller.scrollTop = 0;
-      updateArrowState();
-    };
-    const ensureArrowElements = (wrapper) => {
-      const state = this._domFallback;
-      if (!state || !wrapper) return;
-      wrapper.style.position = "relative";
-      if (!state.downEl || !state.downEl.isConnected) {
-        if (state.downEl) state.downEl.removeEventListener("click", handleDownClick);
-        state.downEl = document.createElement("div");
-        state.downEl.className = "sl-chat-nav-arrow sl-chat-nav-down";
-        state.downEl.title = "Jump to Present";
-        state.downEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
-        state.downEl.addEventListener("click", handleDownClick);
-      }
-      if (!state.upEl || !state.upEl.isConnected) {
-        if (state.upEl) state.upEl.removeEventListener("click", handleUpClick);
-        state.upEl = document.createElement("div");
-        state.upEl.className = "sl-chat-nav-arrow sl-chat-nav-up";
-        state.upEl.title = "Jump to Top";
-        state.upEl.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
-        state.upEl.addEventListener("click", handleUpClick);
-      }
-      if (!wrapper.contains(state.downEl)) wrapper.appendChild(state.downEl);
-      if (!wrapper.contains(state.upEl)) wrapper.appendChild(state.upEl);
-    };
-    const unbindScroller = () => {
-      const state = this._domFallback;
-      if (!(state == null ? void 0 : state.currentScroller) || !state.scrollHandler) return;
-      state.currentScroller.removeEventListener("scroll", state.scrollHandler);
-      state.currentScroller = null;
-      state.scrollHandler = null;
-    };
-    const bindScroller = (wrapper, scroller) => {
-      const state = this._domFallback;
-      if (!state) return;
-      if (state.currentScroller === scroller && state.currentWrapper === wrapper) {
-        updateArrowState();
-        return;
-      }
-      unbindScroller();
-      state.currentWrapper = wrapper;
-      state.currentScroller = scroller;
-      if (!wrapper || !scroller) {
-        if (state.downEl) setArrowVisible(state.downEl, false);
-        if (state.upEl) setArrowVisible(state.upEl, false);
-        return;
-      }
-      ensureArrowElements(wrapper);
-      let scrollRafPending = false;
-      state.scrollHandler = () => {
-        if (scrollRafPending) return;
-        scrollRafPending = true;
-        requestAnimationFrame(() => {
-          scrollRafPending = false;
-          updateArrowState();
-        });
-      };
-      scroller.addEventListener("scroll", state.scrollHandler, { passive: true });
-      updateArrowState();
-    };
-    const tick = () => {
-      var _a, _b;
-      if (this._isStopped) return;
-      if (document.hidden) return;
-      const state = this._domFallback;
-      if (((_a = state.currentScroller) == null ? void 0 : _a.isConnected) && ((_b = state.currentWrapper) == null ? void 0 : _b.isConnected)) return;
-      const { wrapper, scroller } = getScrollerPair();
-      bindScroller(wrapper, scroller);
-    };
-    tick();
-    this._domFallback.pollTimer = setInterval(tick, 2e3);
-    this._debugLog("Using DOM fallback mode");
+    startDomFallback(this);
   }
   _stopDomFallback() {
-    const state = this._domFallback;
-    if (!state) return;
-    if (state.currentScroller && state.scrollHandler) {
-      state.currentScroller.removeEventListener("scroll", state.scrollHandler);
-    }
-    if (state.pollTimer) {
-      clearInterval(state.pollTimer);
-    }
-    if (state.downEl) {
-      state.downEl.remove();
-    }
-    if (state.upEl) {
-      state.upEl.remove();
-    }
-    this._domFallback = null;
+    stopDomFallback(this);
   }
   // ==========================================================================
   // 3) ARROW MANAGER COMPONENT
   // ==========================================================================
   get _ArrowManager() {
     if (this.__ArrowManagerCached) return this.__ArrowManagerCached;
-    const THRESHOLD = 100;
-    const POLL_INTERVAL = 2e3;
-    this.__ArrowManagerCached = ({ pluginInstance }) => {
-      var _a;
-      const React = BdApi.React;
-      const dbg = (...a) => pluginInstance._debugLog("[ArrowManager]", ...a);
-      const [showDown, setShowDown] = React.useState(false);
-      const [showUp, setShowUp] = React.useState(false);
-      const [bindCount, setBindCount] = React.useState(0);
-      const scrollerRef = React.useRef(null);
-      const wrapperRef = React.useRef(null);
-      const pollRef = React.useRef(null);
-      const domArrowsRef = React.useRef(null);
-      const lastScrollLogRef = React.useRef(0);
-      React.useEffect(() => {
-        dbg("useEffect mounted");
-        if (pluginInstance._isStopped) {
-          dbg("BAIL: pluginInstance._isStopped");
-          return;
-        }
-        let currentScroller = null;
-        let scrollHandler = null;
-        const findScroller = () => {
-          var _a2, _b;
-          const sel1 = 'div[class*="messagesWrapper_"]';
-          const sel2 = 'div[class*="messagesWrapper-"]';
-          const sel3 = 'main[class*="chatContent"] > div > div[class*="scroller"]';
-          const wrapper2 = document.querySelector(sel1) || document.querySelector(sel2) || ((_a2 = document.querySelector(sel3)) == null ? void 0 : _a2.parentElement);
-          const scroller = (wrapper2 == null ? void 0 : wrapper2.querySelector('div[class*="scroller_"]')) || (wrapper2 == null ? void 0 : wrapper2.querySelector('div[class*="scroller-"]')) || ((_b = wrapper2 == null ? void 0 : wrapper2.querySelector('[class*="scrollerInner_"]')) == null ? void 0 : _b.parentElement);
-          dbg("findScroller:", {
-            wrapper: wrapper2 ? `<${wrapper2.tagName} class="${(wrapper2.className || "").slice(0, 60)}">` : null,
-            scroller: scroller ? `<${scroller.tagName} class="${(scroller.className || "").slice(0, 60)}">` : null
-          });
-          return { wrapper: wrapper2 || null, scroller: scroller || null };
-        };
-        const findAndBind = () => {
-          if (currentScroller == null ? void 0 : currentScroller.isConnected) return;
-          const { wrapper: wrapper2, scroller } = findScroller();
-          if (!scroller) {
-            dbg("findAndBind: no scroller found");
-            return;
-          }
-          dbg("findAndBind: binding new scroller (isConnected:", scroller.isConnected, ")");
-          if (currentScroller && scrollHandler) {
-            currentScroller.removeEventListener("scroll", scrollHandler);
-          }
-          currentScroller = scroller;
-          scrollerRef.current = scroller;
-          wrapperRef.current = wrapper2;
-          if (wrapper2) wrapper2.style.position = "relative";
-          let scrollRafPending = false;
-          const scrollWork = () => {
-            if (!scroller.isConnected) {
-              dbg("scrollHandler: scroller disconnected");
-              return;
-            }
-            const { scrollTop, scrollHeight, clientHeight } = scroller;
-            const atBottom = scrollHeight - scrollTop - clientHeight < THRESHOLD;
-            const atTop = scrollTop < THRESHOLD;
-            setShowDown(!atBottom);
-            setShowUp(!atTop);
-            const now = Date.now();
-            if (now - lastScrollLogRef.current > 3e3) {
-              lastScrollLogRef.current = now;
-              dbg(`scroll: top=${scrollTop}, height=${scrollHeight}, client=${clientHeight}, atTop=${atTop}, atBottom=${atBottom}, showDown=${!atBottom}, showUp=${!atTop}`);
-            }
-          };
-          scrollHandler = () => {
-            if (scrollRafPending) return;
-            scrollRafPending = true;
-            requestAnimationFrame(() => {
-              scrollRafPending = false;
-              scrollWork();
-            });
-          };
-          scroller.addEventListener("scroll", scrollHandler, { passive: true });
-          scrollHandler();
-          setBindCount((c) => c + 1);
-          dbg("findAndBind: bound, bindCount incremented");
-        };
-        findAndBind();
-        if (!currentScroller) {
-          dbg("Initial bind failed \u2014 scheduling 150ms retry");
-          setTimeout(findAndBind, 150);
-        }
-        pollRef.current = setInterval(findAndBind, POLL_INTERVAL);
-        return () => {
-          dbg("useEffect cleanup");
-          if (currentScroller && scrollHandler) {
-            currentScroller.removeEventListener("scroll", scrollHandler);
-          }
-          if (pollRef.current) {
-            clearInterval(pollRef.current);
-            pollRef.current = null;
-          }
-        };
-      }, []);
-      const handleDownClick = React.useCallback(() => {
-        const wrapper2 = wrapperRef.current;
-        const scroller = scrollerRef.current;
-        if (!wrapper2 || !scroller) return;
-        const nativeBar = wrapper2.querySelector('div[class^="jumpToPresentBar_"]');
-        const nativeBtn = nativeBar ? nativeBar.querySelector("button") : null;
-        if (nativeBtn) {
-          nativeBar.style.display = "";
-          nativeBtn.click();
-          requestAnimationFrame(() => {
-            nativeBar.style.display = "none";
-          });
-        } else {
-          scroller.scrollTop = scroller.scrollHeight;
-        }
-      }, []);
-      const handleUpClick = React.useCallback(() => {
-        const scroller = scrollerRef.current;
-        if (scroller) scroller.scrollTop = 0;
-      }, []);
-      const wrapper = wrapperRef.current;
-      const wrapperConnected = !!(wrapper && wrapper.isConnected);
-      const portalAvailable = !!((_a = BdApi.ReactDOM) == null ? void 0 : _a.createPortal);
-      React.useEffect(() => {
-        var _a2;
-        const removeArrows = () => {
-          var _a3, _b;
-          const arrows2 = domArrowsRef.current;
-          if (!arrows2) return;
-          if ((_a3 = arrows2.down) == null ? void 0 : _a3.isConnected) arrows2.down.remove();
-          if ((_b = arrows2.up) == null ? void 0 : _b.isConnected) arrows2.up.remove();
-          domArrowsRef.current = null;
-        };
-        if (portalAvailable || !wrapperConnected || !wrapper) {
-          removeArrows();
-          return;
-        }
-        let arrows = domArrowsRef.current;
-        if (!arrows || !((_a2 = arrows.down) == null ? void 0 : _a2.isConnected)) {
-          const down = document.createElement("div");
-          down.className = "sl-chat-nav-arrow sl-chat-nav-down";
-          down.title = "Jump to Present";
-          down.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 16l-6-6h12l-6 6z"></path></svg>';
-          down.addEventListener("click", handleDownClick);
-          const up = document.createElement("div");
-          up.className = "sl-chat-nav-arrow sl-chat-nav-up";
-          up.title = "Jump to Top";
-          up.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 8l-6 6h12l-6-6z"></path></svg>';
-          up.addEventListener("click", handleUpClick);
-          arrows = { down, up };
-          domArrowsRef.current = arrows;
-        }
-        if (!wrapper.contains(arrows.down)) wrapper.appendChild(arrows.down);
-        if (!wrapper.contains(arrows.up)) wrapper.appendChild(arrows.up);
-        return () => {
-          var _a3, _b;
-          if (!domArrowsRef.current) return;
-          if ((_a3 = domArrowsRef.current.down) == null ? void 0 : _a3.isConnected) domArrowsRef.current.down.remove();
-          if ((_b = domArrowsRef.current.up) == null ? void 0 : _b.isConnected) domArrowsRef.current.up.remove();
-          domArrowsRef.current = null;
-        };
-      }, [portalAvailable, wrapperConnected, wrapper, bindCount, handleDownClick, handleUpClick]);
-      React.useEffect(() => {
-        if (portalAvailable) return;
-        const arrows = domArrowsRef.current;
-        if (!arrows) return;
-        arrows.down.classList.toggle("sl-visible", showDown);
-        arrows.up.classList.toggle("sl-visible", showUp);
-      }, [portalAvailable, showDown, showUp, bindCount]);
-      dbg(`render: bindCount=${bindCount}, wrapper=${!!wrapper}, connected=${wrapper == null ? void 0 : wrapper.isConnected}, createPortal=${portalAvailable}, showDown=${showDown}, showUp=${showUp}`);
-      if (wrapperConnected && portalAvailable) {
-        dbg("render \u2192 PORTAL path");
-        return BdApi.ReactDOM.createPortal(
-          React.createElement(
-            React.Fragment,
-            null,
-            React.createElement("div", {
-              className: `sl-chat-nav-arrow sl-chat-nav-down${showDown ? " sl-visible" : ""}`,
-              title: "Jump to Present",
-              onClick: handleDownClick
-            }, React.createElement(
-              "svg",
-              { viewBox: "0 0 24 24" },
-              React.createElement("path", { d: "M12 16l-6-6h12l-6 6z" })
-            )),
-            React.createElement("div", {
-              className: `sl-chat-nav-arrow sl-chat-nav-up${showUp ? " sl-visible" : ""}`,
-              title: "Jump to Top",
-              onClick: handleUpClick
-            }, React.createElement(
-              "svg",
-              { viewBox: "0 0 24 24" },
-              React.createElement("path", { d: "M12 8l-6 6h12l-6-6z" })
-            ))
-          ),
-          wrapper
-        );
-      }
-      if (!wrapper) dbg("render \u2192 NULL (no wrapper yet, waiting for findAndBind)");
-      return null;
-    };
+    this.__ArrowManagerCached = createArrowManagerComponent(BdApi, this);
     return this.__ArrowManagerCached;
   }
 };

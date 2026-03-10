@@ -30,116 +30,168 @@ function getTypeBadge(locationType) {
   return "Channel";
 }
 
-function buildPanelComponents(BdApi, pluginInstance) {
-  const React = BdApi.React;
+function buildLocationLabel(wp) {
+  return wp.guildName
+    ? `${wp.guildName} » #${wp.channelName}`
+    : `DM » ${wp.channelName}`;
+}
+
+function hasMessageLookupTarget(wp) {
+  return Boolean(wp.messageId && wp.channelId);
+}
+
+function getCachedMessagePreviewText(cached) {
+  if (!cached) return "";
+  if (cached.content) {
+    return cached.content.length > 120 ? `${cached.content.slice(0, 120)}…` : cached.content;
+  }
+  if (Array.isArray(cached.embeds) && cached.embeds.length > 0) return "[Embed]";
+  const attachmentCount = Number(cached.attachments?.size || cached.attachments?.length || 0);
+  if (attachmentCount > 0) return "[Attachment]";
+  return "";
+}
+
+function getCachedMessageAuthor(cached) {
+  if (!cached?.author) return "";
+  return cached.author.globalName || cached.author.username || "";
+}
+
+function resolveMessagePreviewData(pluginInstance, wp) {
+  let preview = wp.messagePreview || "";
+  let author = wp.messageAuthor || "";
+  if (preview || !hasMessageLookupTarget(wp)) return { preview, author };
+
+  try {
+    const cached = pluginInstance.MessageStore?.getMessage(wp.channelId, wp.messageId);
+    if (!cached) return { preview, author };
+
+    const nextPreview = getCachedMessagePreviewText(cached);
+    if (nextPreview) {
+      preview = nextPreview;
+      wp.messagePreview = nextPreview;
+    }
+
+    if (!author) {
+      const nextAuthor = getCachedMessageAuthor(cached);
+      if (nextAuthor) {
+        author = nextAuthor;
+        wp.messageAuthor = nextAuthor;
+      }
+    }
+  } catch (error) {
+    pluginInstance.debugError("Panel", "Failed to parse message metadata for preview", error);
+  }
+
+  return { preview, author };
+}
+
+function buildWaypointMessageSection(React, pluginInstance, wp) {
+  if (wp.locationType !== "message") return null;
   const ce = React.createElement;
+  const { preview, author } = resolveMessagePreviewData(pluginInstance, wp);
+  return ce("div", { className: "se-message-preview" },
+    author ? ce("span", { className: "se-msg-author" }, `${author}:`) : null,
+    ce("span", { className: "se-msg-text" },
+      preview || ce("em", { style: { color: "#666" } }, "Navigate to load preview")
+    )
+  );
+}
 
-  function buildLocationLabel(wp) {
-    return wp.guildName
-      ? `${wp.guildName} \u00BB #${wp.channelName}`
-      : `DM \u00BB ${wp.channelName}`;
-  }
+function getFilteredSortedWaypoints(waypoints, searchQuery, sortBy) {
+  let filtered = [...waypoints];
 
-  function hasMessageLookupTarget(wp) {
-    return Boolean(wp.messageId && wp.channelId);
-  }
-
-  function getCachedMessagePreviewText(cached) {
-    if (!cached) return "";
-    if (cached.content) {
-      return cached.content.length > 120 ? `${cached.content.slice(0, 120)}\u2026` : cached.content;
-    }
-    if (Array.isArray(cached.embeds) && cached.embeds.length > 0) return "[Embed]";
-    const attachmentCount = Number(cached.attachments?.size || cached.attachments?.length || 0);
-    if (attachmentCount > 0) return "[Attachment]";
-    return "";
-  }
-
-  function getCachedMessageAuthor(cached) {
-    if (!cached?.author) return "";
-    return cached.author.globalName || cached.author.username || "";
-  }
-
-  function resolveMessagePreviewData(wp) {
-    let preview = wp.messagePreview || "";
-    let author = wp.messageAuthor || "";
-    if (preview || !hasMessageLookupTarget(wp)) return { preview, author };
-
-    try {
-      const cached = pluginInstance.MessageStore?.getMessage(wp.channelId, wp.messageId);
-      if (!cached) return { preview, author };
-
-      const nextPreview = getCachedMessagePreviewText(cached);
-      if (nextPreview) {
-        preview = nextPreview;
-        wp.messagePreview = nextPreview;
-      }
-
-      if (!author) {
-        const nextAuthor = getCachedMessageAuthor(cached);
-        if (nextAuthor) {
-          author = nextAuthor;
-          wp.messageAuthor = nextAuthor;
-        }
-      }
-    } catch (error) {
-      pluginInstance.debugError("Panel", "Failed to parse message metadata for preview", error);
-    }
-
-    return { preview, author };
-  }
-
-  function buildWaypointMessageSection(wp) {
-    if (wp.locationType !== "message") return null;
-    const { preview, author } = resolveMessagePreviewData(wp);
-    return ce("div", { className: "se-message-preview" },
-      author ? ce("span", { className: "se-msg-author" }, `${author}:`) : null,
-      ce("span", { className: "se-msg-text" },
-        preview || ce("em", { style: { color: "#666" } }, "Navigate to load preview")
-      )
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    filtered = filtered.filter(
+      (w) =>
+        (w.label || "").toLowerCase().includes(q) ||
+        (w.shadowName || "").toLowerCase().includes(q) ||
+        (w.channelName || "").toLowerCase().includes(q) ||
+        (w.guildName || "").toLowerCase().includes(q) ||
+        (w.messagePreview || "").toLowerCase().includes(q) ||
+        (w.messageAuthor || "").toLowerCase().includes(q)
     );
   }
 
-  const WaypointCard = React.memo(function WaypointCard({ wp, onTeleport, onRemove }) {
+  if (sortBy === "created") filtered.sort((a, b) => b.createdAt - a.createdAt);
+  else if (sortBy === "visited") filtered.sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
+  else if (sortBy === "name") filtered.sort((a, b) => a.label.localeCompare(b.label));
+  else if (sortBy === "rank") {
+    filtered.sort((a, b) => RANK_ORDER.indexOf(b.shadowRank) - RANK_ORDER.indexOf(a.shadowRank));
+  }
+
+  return filtered;
+}
+
+function createWaypointCard(React, pluginInstance) {
+  const ce = React.createElement;
+  return React.memo(function WaypointCard({ wp, onTeleport, onRemove }) {
     const rankColor = RANK_COLORS[wp.shadowRank] || "#808080";
     const typeBadge = getTypeBadge(wp.locationType);
     const visits = wp.visitCount || 0;
     const timeStr = formatTimestamp(wp.createdAt);
     const fullLocation = buildLocationLabel(wp);
-    const messageSection = buildWaypointMessageSection(wp);
+    const messageSection = buildWaypointMessageSection(React, pluginInstance, wp);
 
     return ce("div", {
       className: "se-waypoint-card",
       style: { borderLeftColor: rankColor },
     },
-      ce("div", { className: "se-card-top" },
-        ce("span", { className: "se-shadow-rank", style: { background: rankColor } }, wp.shadowRank),
-        ce("span", { className: "se-shadow-name" }, wp.shadowName),
-        ce("button", {
-          className: "se-card-remove",
-          title: "Recall shadow",
-          onClick: (e) => { e.stopPropagation(); onRemove(wp.id); },
-        }, "\u2716")
+    ce("div", { className: "se-card-top" },
+      ce("span", { className: "se-shadow-rank", style: { background: rankColor } }, wp.shadowRank),
+      ce("span", { className: "se-shadow-name" }, wp.shadowName),
+      ce("button", {
+        className: "se-card-remove",
+        title: "Recall shadow",
+        onClick: (e) => { e.stopPropagation(); onRemove(wp.id); },
+      }, "✖")
+    ),
+    ce("div", { className: "se-card-body" },
+      ce("div", { className: "se-location-label" }, fullLocation),
+      messageSection,
+      ce("div", { className: "se-location-meta" },
+        ce("span", { className: "se-type-badge" }, typeBadge),
+        ce("span", { className: "se-visit-count" }, `${visits} visit${visits !== 1 ? "s" : ""}`),
+        ce("span", { className: "se-created-time" }, timeStr)
+      )
+    ),
+    ce("div", { className: "se-card-footer" },
+      ce("button", {
+        className: "se-teleport-btn",
+        onClick: () => onTeleport(wp.id),
+      }, "Teleport")
+    ));
+  });
+}
+
+function buildWaypointListContent(React, WaypointCard, waypoints, searchQuery, handleTeleport, handleRemove) {
+  const ce = React.createElement;
+  if (waypoints.length === 0) {
+    return ce("div", { className: "se-empty-state" },
+      ce("div", { className: "se-empty-icon" }, "⚓"),
+      ce("div", { className: "se-empty-text" },
+        searchQuery ? "No waypoints match your search" : "No waypoints yet"
       ),
-      ce("div", { className: "se-card-body" },
-        ce("div", { className: "se-location-label" }, fullLocation),
-        messageSection,
-        ce("div", { className: "se-location-meta" },
-          ce("span", { className: "se-type-badge" }, typeBadge),
-          ce("span", { className: "se-visit-count" }, `${visits} visit${visits !== 1 ? "s" : ""}`),
-          ce("span", { className: "se-created-time" }, timeStr)
-        )
-      ),
-      ce("div", { className: "se-card-footer" },
-        ce("button", {
-          className: "se-teleport-btn",
-          onClick: () => onTeleport(wp.id),
-        }, "Teleport")
+      ce("div", { className: "se-empty-hint" },
+        searchQuery ? "Try a different search" : 'Click "Mark Current Location" to station a shadow'
       )
     );
-  });
+  }
 
-  function WaypointPanel({ onClose }) {
+  return waypoints.map((wp) =>
+    ce(WaypointCard, {
+      key: wp.id,
+      wp,
+      onTeleport: handleTeleport,
+      onRemove: handleRemove,
+    })
+  );
+}
+
+function createWaypointPanel(React, pluginInstance, WaypointCard) {
+  const ce = React.createElement;
+
+  return function WaypointPanel({ onClose }) {
     const [searchInput, setSearchInput] = React.useState("");
     const [searchQuery, setSearchQuery] = React.useState("");
     const searchTimerRef = React.useRef(null);
@@ -184,31 +236,10 @@ function buildPanelComponents(BdApi, pluginInstance) {
       return () => clearTimeout(timer);
     }, []);
 
-    const waypoints = React.useMemo(() => {
-      let wps = [...pluginInstance.settings.waypoints];
-
-      if (searchQuery) {
-        const q = searchQuery.toLowerCase();
-        wps = wps.filter(
-          (w) =>
-            (w.label || "").toLowerCase().includes(q) ||
-            (w.shadowName || "").toLowerCase().includes(q) ||
-            (w.channelName || "").toLowerCase().includes(q) ||
-            (w.guildName || "").toLowerCase().includes(q) ||
-            (w.messagePreview || "").toLowerCase().includes(q) ||
-            (w.messageAuthor || "").toLowerCase().includes(q)
-        );
-      }
-
-      if (sortBy === "created") wps.sort((a, b) => b.createdAt - a.createdAt);
-      else if (sortBy === "visited") wps.sort((a, b) => (b.lastVisited || 0) - (a.lastVisited || 0));
-      else if (sortBy === "name") wps.sort((a, b) => a.label.localeCompare(b.label));
-      else if (sortBy === "rank") {
-        wps.sort((a, b) => RANK_ORDER.indexOf(b.shadowRank) - RANK_ORDER.indexOf(a.shadowRank));
-      }
-
-      return wps;
-    }, [searchQuery, sortBy, pluginInstance.settings.waypoints.length]);
+    const waypoints = React.useMemo(
+      () => getFilteredSortedWaypoints(pluginInstance.settings.waypoints, searchQuery, sortBy),
+      [searchQuery, sortBy, pluginInstance.settings.waypoints.length]
+    );
 
     const handleSortChange = React.useCallback((e) => {
       const val = e.target.value;
@@ -234,28 +265,14 @@ function buildPanelComponents(BdApi, pluginInstance) {
     }, [onClose]);
 
     const totalWaypoints = pluginInstance.settings.waypoints.length;
-
-    let listContent;
-    if (waypoints.length === 0) {
-      listContent = ce("div", { className: "se-empty-state" },
-        ce("div", { className: "se-empty-icon" }, "\u2693"),
-        ce("div", { className: "se-empty-text" },
-          searchQuery ? "No waypoints match your search" : "No waypoints yet"
-        ),
-        ce("div", { className: "se-empty-hint" },
-          searchQuery ? "Try a different search" : 'Click "Mark Current Location" to station a shadow'
-        )
-      );
-    } else {
-      listContent = waypoints.map((wp) =>
-        ce(WaypointCard, {
-          key: wp.id,
-          wp,
-          onTeleport: handleTeleport,
-          onRemove: handleRemove,
-        })
-      );
-    }
+    const listContent = buildWaypointListContent(
+      React,
+      WaypointCard,
+      waypoints,
+      searchQuery,
+      handleTeleport,
+      handleRemove
+    );
 
     return ce("div", { className: "se-panel-overlay", onClick: handleOverlayClick },
       ce("div", { className: "se-panel-container" },
@@ -263,7 +280,7 @@ function buildPanelComponents(BdApi, pluginInstance) {
           ce("h2", { className: "se-panel-title" }, "Shadow Exchange"),
           ce("div", { className: "se-header-actions" },
             ce("button", { className: "se-mark-btn", onClick: handleMark }, "Mark Current Location"),
-            ce("button", { className: "se-close-btn", onClick: onClose }, "\u00D7")
+            ce("button", { className: "se-close-btn", onClick: onClose }, "×")
           )
         ),
         ce("div", { className: "se-panel-controls" },
@@ -272,11 +289,10 @@ function buildPanelComponents(BdApi, pluginInstance) {
             value: sortBy,
             onChange: handleSortChange,
           },
-            ce("option", { value: "created" }, "Newest First"),
-            ce("option", { value: "visited" }, "Recently Visited"),
-            ce("option", { value: "name" }, "Name"),
-            ce("option", { value: "rank" }, "Shadow Rank")
-          ),
+          ce("option", { value: "created" }, "Newest First"),
+          ce("option", { value: "visited" }, "Recently Visited"),
+          ce("option", { value: "name" }, "Name"),
+          ce("option", { value: "rank" }, "Shadow Rank")),
           ce("input", {
             type: "text",
             className: "se-search-input",
@@ -296,8 +312,13 @@ function buildPanelComponents(BdApi, pluginInstance) {
         )
       )
     );
-  }
+  };
+}
 
+function buildPanelComponents(BdApi, pluginInstance) {
+  const React = BdApi.React;
+  const WaypointCard = createWaypointCard(React, pluginInstance);
+  const WaypointPanel = createWaypointPanel(React, pluginInstance, WaypointCard);
   return { WaypointPanel, WaypointCard };
 }
 

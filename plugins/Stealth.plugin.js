@@ -208,26 +208,11 @@ var require_styles = __commonJS({
   }
 });
 
-// src/Stealth/status-policy.js
-var require_status_policy = __commonJS({
-  "src/Stealth/status-policy.js"(exports2, module2) {
-    var STEALTH_PLUGIN_ID2 = "Stealth";
-    function attachStealthStatusPolicyMethods2(StealthClass) {
+// src/Stealth/status-setters.js
+var require_status_setters = __commonJS({
+  "src/Stealth/status-setters.js"(exports2, module2) {
+    function attachStealthStatusSetterMethods(StealthClass) {
       Object.assign(StealthClass.prototype, {
-        _syncStatusPolicy() {
-          const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
-          if (!shouldForceInvisible) {
-            if (this._forcedInvisible) {
-              this._restoreOriginalStatus();
-              this._forcedInvisible = false;
-            }
-            return;
-          }
-          const forced = this._ensureInvisibleStatus();
-          if (!forced && this.settings.showToasts) {
-            this._toast("Stealth: could not force Invisible status", "warning");
-          }
-        },
         _resolveStatusSetters() {
           const candidates = [];
           const add = (module3, fnName) => {
@@ -274,6 +259,51 @@ var require_status_policy = __commonJS({
           });
           return unique;
         },
+        _setStatus(status) {
+          if (!status) return false;
+          if (!Array.isArray(this._statusSetters) || this._statusSetters.length === 0) {
+            this._statusSetters = this._resolveStatusSetters();
+          }
+          let lastError = null;
+          for (const entry of this._statusSetters) {
+            const { module: module3, fnName } = entry;
+            try {
+              if (fnName === "setPresence") {
+                try {
+                  module3[fnName].call(module3, { status });
+                } catch (presenceError) {
+                  this._logWarning("STATUS", "setPresence({status}) failed, trying plain string", presenceError, "status-presence-obj");
+                  module3[fnName].call(module3, status);
+                }
+                return true;
+              }
+              if (fnName === "updateStatus") {
+                module3[fnName].call(module3, status);
+                return true;
+              }
+              module3[fnName].call(module3, status);
+              return true;
+            } catch (error) {
+              lastError = error;
+            }
+          }
+          if (lastError) {
+            this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
+          }
+          return false;
+        }
+      });
+    }
+    module2.exports = { attachStealthStatusSetterMethods };
+  }
+});
+
+// src/Stealth/status-proto.js
+var require_status_proto = __commonJS({
+  "src/Stealth/status-proto.js"(exports2, module2) {
+    var STEALTH_PLUGIN_ID2 = "Stealth";
+    function attachStealthStatusProtoMethods(StealthClass) {
+      Object.assign(StealthClass.prototype, {
         /** Find Discord's PreloadedUserSettings proto module.
          *  This is the REAL status-change mechanism in modern Discord —
          *  updateAsync("status", cb) is what the UI status picker calls. */
@@ -339,6 +369,35 @@ var require_status_policy = __commonJS({
             this._logWarning("STATUS", "Proto updateAsync call failed", err, "proto-set");
             return false;
           }
+        }
+      });
+    }
+    module2.exports = { attachStealthStatusProtoMethods };
+  }
+});
+
+// src/Stealth/status-policy.js
+var require_status_policy = __commonJS({
+  "src/Stealth/status-policy.js"(exports2, module2) {
+    var { attachStealthStatusSetterMethods } = require_status_setters();
+    var { attachStealthStatusProtoMethods } = require_status_proto();
+    function attachStealthStatusPolicyMethods2(StealthClass) {
+      attachStealthStatusSetterMethods(StealthClass);
+      attachStealthStatusProtoMethods(StealthClass);
+      Object.assign(StealthClass.prototype, {
+        _syncStatusPolicy() {
+          const shouldForceInvisible = this.settings.enabled && this.settings.invisibleStatus;
+          if (!shouldForceInvisible) {
+            if (this._forcedInvisible) {
+              this._restoreOriginalStatus();
+              this._forcedInvisible = false;
+            }
+            return;
+          }
+          const forced = this._ensureInvisibleStatus();
+          if (!forced && this.settings.showToasts) {
+            this._toast("Stealth: could not force Invisible status", "warning");
+          }
         },
         _ensureInvisibleStatus() {
           const current = this._getCurrentStatus();
@@ -358,39 +417,6 @@ var require_status_policy = __commonJS({
             this._forcedInvisible = true;
           }
           return updated;
-        },
-        _setStatus(status) {
-          if (!status) return false;
-          if (!Array.isArray(this._statusSetters) || this._statusSetters.length === 0) {
-            this._statusSetters = this._resolveStatusSetters();
-          }
-          let lastError = null;
-          for (const entry of this._statusSetters) {
-            const { module: module3, fnName } = entry;
-            try {
-              if (fnName === "setPresence") {
-                try {
-                  module3[fnName].call(module3, { status });
-                } catch (presenceError) {
-                  this._logWarning("STATUS", "setPresence({status}) failed, trying plain string", presenceError, "status-presence-obj");
-                  module3[fnName].call(module3, status);
-                }
-                return true;
-              }
-              if (fnName === "updateStatus") {
-                module3[fnName].call(module3, status);
-                return true;
-              }
-              module3[fnName].call(module3, status);
-              return true;
-            } catch (error) {
-              lastError = error;
-            }
-          }
-          if (lastError) {
-            this._logWarning("STATUS", "All status setter candidates failed", lastError, "status-all-setters-failed");
-          }
-          return false;
         },
         _restoreOriginalStatus() {
           if (!this._originalStatus) return;
